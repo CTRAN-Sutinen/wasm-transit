@@ -87,3 +87,66 @@ dev:
 basemap bbox maxzoom="15":
     pmtiles extract "https://build.protomaps.com/$(date +%Y%m%d).pmtiles" \
         web/public/basemap.pmtiles --bbox={{ bbox }} --maxzoom={{ maxzoom }}
+
+# ---------------------------------------------------------------
+# correctness infrastructure
+# ---------------------------------------------------------------
+
+# Regenerate the golden corpus (testdata/corpus.json) from the
+# artifact itself. Run after any response-shape change, then commit
+# the diff — that diff IS the reviewable contract change.
+corpus:
+    node testdata/generate-corpus.mjs
+
+# Provenance + reproducibility: rebuild the artifact from scratch and
+# verify byte-identical output, then record what built it. This is the
+# chain of custody that makes "the artifact is what matters" checkable.
+provenance:
+    #!/usr/bin/env bash
+    set -e
+    cargo build --release -p transit-wasm --target wasm32-unknown-unknown
+    a1=$(sha256sum target/wasm32-unknown-unknown/release/transit_wasm.wasm | cut -d' ' -f1)
+    CARGO_TARGET_DIR=/tmp/transit-repro cargo build --release -p transit-wasm --target wasm32-unknown-unknown >/dev/null 2>&1
+    a2=$(sha256sum /tmp/transit-repro/wasm32-unknown-unknown/release/transit_wasm.wasm | cut -d' ' -f1)
+    if [ "$a1" != "$a2" ]; then
+        echo "NOT REPRODUCIBLE: $a1 != $a2"
+        exit 1
+    fi
+    commit=$(git rev-parse HEAD 2>/dev/null || echo "no-git")
+    dirty_bool=false
+    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then dirty_bool=true; fi
+    rustc=$(rustc --version | awk '{print $2}')
+    os=$(uname -srm)
+    printf '{\n  "artifact": "web/pkg/transit_wasm.wasm",\n  "sha256": "%s",\n  "source_commit": "%s",\n  "dirty_tree": %s,\n  "rustc": "%s",\n  "built_on": "%s",\n  "reproducible": true\n}\n' \
+        "$a1" "$commit" "$dirty_bool" "$rustc" "$os" > testdata/provenance.json
+    cp target/wasm32-unknown-unknown/release/transit_wasm.wasm web/pkg/transit_wasm.wasm
+    echo "artifact sha256:$a1 reproducible from $commit (rustc $rustc)"
+    cat testdata/provenance.json
+
+# Supply-chain audit: runs whatever is installed, reports what is
+# missing. Recommended installs:
+#   cargo install cargo-audit cargo-mutants
+# go install golang.org/x/vuln/cmd/govulncheck@latest
+audit:
+    #!/usr/bin/env bash
+    set +e
+    status=0
+    if command -v cargo-audit >/dev/null; then
+        cargo audit || status=1
+    else
+        echo "SKIP: cargo-audit not installed (cargo install cargo-audit)"
+    fi
+    if command -v govulncheck >/dev/null; then
+        (cd server && govulncheck ./...) || status=1
+    else
+        echo "SKIP: govulncheck not installed (go install golang.org/x/vuln/cmd/govulncheck@latest)"
+    fi
+    (cd web && npm audit --audit-level=high) || status=1
+    exit $status
+
+# Mutation-test the domain crates: every surviving mutant is a place
+# where "tests passed" is a lie. Generated code (transit-rt) and the
+# ABI shim (transit-wasm) are excluded; needs cargo-mutants:
+# cargo install cargo-mutants
+mutants:
+    cargo mutants -p transit-core -p transit-router -p transit-sync -p transit-ops

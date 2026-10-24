@@ -16,4 +16,5 @@ transit-rt = { path = "../transit-rt" }
 transit-sync = { path = "../transit-sync" }
 
 [dev-dependencies]
+proptest = "1"
 zip = { workspace = true }

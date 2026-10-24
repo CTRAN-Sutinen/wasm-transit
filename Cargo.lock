@@ -778,6 +778,7 @@ name = "transit-ops"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "proptest",
  "prost",
  "serde",
  "serde_json",
@@ -804,6 +805,7 @@ dependencies = [
 name = "transit-rt"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "prost",
  "prost-build",
  "protoc-bin-vendored",

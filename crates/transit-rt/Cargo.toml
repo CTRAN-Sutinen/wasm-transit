@@ -9,6 +9,9 @@ license.workspace = true
 prost = { workspace = true }
 thiserror = { workspace = true }
 
+[dev-dependencies]
+proptest = "1"
+
 [build-dependencies]
 prost-build = { workspace = true }
 protoc-bin-vendored = { workspace = true }

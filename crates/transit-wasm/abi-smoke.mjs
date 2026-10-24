@@ -58,6 +58,31 @@ function read(outPtr) {
   return outcome.ok;
 }
 
+/// Invoke and return the RAW wrapper text ({"ok":...}/{"error":...})
+/// — the golden corpus compares these bytes exactly.
+function rawInvoke(requestText) {
+  const payload = Buffer.from(requestText);
+  const ptr = transit_alloc(payload.length);
+  new Uint8Array(memory.buffer, ptr, payload.length).set(payload);
+  const outPtr = transit_invoke(ptr, payload.length);
+  transit_free(ptr, payload.length);
+  const len = new DataView(memory.buffer).getUint32(outPtr, true);
+  const text = Buffer.from(memory.buffer, outPtr + 4, len).toString("utf8");
+  transit_free(outPtr, len + 4);
+  return text;
+}
+
+function rawInvokeBytes(op, payload) {
+  const ptr = transit_alloc(payload.length);
+  new Uint8Array(memory.buffer, ptr, payload.length).set(payload);
+  const outPtr = transit_invoke_bytes(op, ptr, payload.length);
+  transit_free(ptr, payload.length);
+  const len = new DataView(memory.buffer).getUint32(outPtr, true);
+  const text = Buffer.from(memory.buffer, outPtr + 4, len).toString("utf8");
+  transit_free(outPtr, len + 4);
+  return text;
+}
+
 const feed = invokeBytes(OP_LOAD_FEED, readFileSync(FIXTURE));
 const feedId = feed.feed_id;
 assert(feed.summary.stops === 3, "load_feed registers and summarizes");
@@ -125,6 +150,42 @@ assert(errOutcome.error && errOutcome.error.includes("unknown feed_id"), "unknow
 // A second registry entry: multiple feeds coexist in one instance.
 const second = invokeBytes(OP_LOAD_FEED, readFileSync(FIXTURE));
 assert(second.feed_id !== feedId, "registry assigns distinct feed ids");
+
+// Non-UTF-8 request payloads: an error outcome, never a trap.
+{
+  const payload = Buffer.from([0xff, 0xfe, 0x00, 0b10101010, 0xf0]);
+  const ptr = transit_alloc(payload.length);
+  new Uint8Array(memory.buffer, ptr, payload.length).set(payload);
+  const outPtr = transit_invoke(ptr, payload.length);
+  const len = new DataView(memory.buffer).getUint32(outPtr, true);
+  const outcome = JSON.parse(Buffer.from(memory.buffer, outPtr + 4, len).toString("utf8"));
+  transit_free(outPtr, len + 4);
+  transit_free(ptr, payload.length);
+  assert(outcome.error && /UTF-8/.test(outcome.error), "invalid UTF-8 yields an error outcome");
+}
+
+// Golden corpus replay: byte-identical with the native Rust and Go
+// replays — the cross-host equivalence proof. The corpus's own load
+// step registers a fresh feed, so prior sections don't matter.
+{
+  const corpusPath = path.join(here, "../../testdata/corpus.json");
+  const corpus = JSON.parse(readFileSync(corpusPath, "utf8"));
+  const fixtureBytes = readFileSync(FIXTURE);
+  let feedToken = "";
+  for (const step of corpus.steps) {
+    let got;
+    if (step.bytes_op !== undefined) {
+      got = rawInvokeBytes(step.bytes_op, fixtureBytes);
+      feedToken = String(JSON.parse(got).ok.feed_id);
+    } else {
+      if (!feedToken) throw new Error(`corpus step ${step.name} uses $FEED before load`);
+      got = rawInvoke(step.request.replaceAll("$FEED", feedToken));
+    }
+    const want = step.expect.replaceAll("$FEED", feedToken);
+    assert(got === want, `corpus step ${step.name} diverges`);
+  }
+  assert(corpus.steps.length >= 14, "corpus has the full step set");
+}
 
 console.log("smoke passed");
 
