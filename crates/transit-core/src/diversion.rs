@@ -58,7 +58,7 @@ mod iso_date {
 }
 
 /// One vertex of a drawn detour polyline.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct DetourPoint {
     pub lat: f64,
     pub lon: f64,
@@ -66,7 +66,7 @@ pub struct DetourPoint {
 
 /// One operator edit, serializable so the UI can persist it next to
 /// the feed bytes and replay it after a reload.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Diversion {
     pub id: String,
     pub route_id: String,

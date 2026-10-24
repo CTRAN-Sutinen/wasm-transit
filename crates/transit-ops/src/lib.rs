@@ -108,6 +108,18 @@ pub enum Request {
     /// Release a feed and its caches. Hosts use this when a
     /// republished artifact replaces the one they pinned.
     DropFeed { feed_id: u32 },
+    /// Sync: merge a client document with a server document (LWW per
+    /// id, see transit-sync), transition drafts to submitted (the
+    /// clock is passed by the host — hosts own time), and — when a
+    /// feed is given — validate the merged document against it, so
+    /// the response carries authoritative reports. This is the op
+    /// behind POST /edits.
+    SyncEdits {
+        feed_id: Option<u32>,
+        client: Vec<EditRecord>,
+        server: Vec<EditRecord>,
+        now_ms: u64,
+    },
 }
 
 /// The result of one operation. Same tagging as [`Request`].
@@ -136,6 +148,7 @@ pub enum Response {
     DecodeRt { overview: RtOverview },
     FeedInfo { info: Option<transit_core::FeedInfo> },
     DropFeed {},
+    SyncEdits { records: Vec<EditRecord>, reports: Vec<transit_sync::EditReport> },
 }
 
 /// Operation failure: a message hosts can surface or serialize.
@@ -301,6 +314,16 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
         Request::DropFeed { feed_id } => {
             state::drop_feed(feed_id);
             Ok(Response::DropFeed {})
+        }
+        Request::SyncEdits { feed_id, client, server, now_ms } => {
+            let records = transit_sync::submit(transit_sync::merge(&client, &server), now_ms);
+            let reports = match feed_id {
+                Some(feed_id) => state::with_feed(feed_id, |f| {
+                    Ok(transit_sync::report_all(&f.gtfs, &records))
+                })?,
+                None => Vec::new(),
+            };
+            Ok(Response::SyncEdits { records, reports })
         }
     }
 }

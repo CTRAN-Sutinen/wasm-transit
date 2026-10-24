@@ -8,13 +8,18 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 const date = "2026-10-23" // Friday: WK + HOL both run
 
-// fixtureZip mirrors the e2e fixture (www/e2e/make_fixtures.py).
+// fixtureZip mirrors the e2e fixture (web/e2e/make_fixtures.py).
 func fixtureZip(t *testing.T) []byte {
 	t.Helper()
 	files := map[string]string{
@@ -47,7 +52,7 @@ func fixtureZip(t *testing.T) []byte {
 
 func newTestHost(t *testing.T) *WasmHost {
 	t.Helper()
-	host, err := NewWasmHost(context.Background(), "../www/pkg/transit_wasm.wasm")
+	host, err := NewWasmHost(context.Background(), "../web/pkg/transit_wasm.wasm")
 	if err != nil {
 		t.Fatalf("load artifact: %v", err)
 	}
@@ -185,8 +190,84 @@ func TestArtifactRoundTrip(t *testing.T) {
 // test reading that exact path.
 func TestArtifactIsTheDeployedBytes(t *testing.T) {
 	host := newTestHost(t)
-	sum := sha256File(t, "../www/pkg/transit_wasm.wasm")
+	sum := sha256File(t, "../web/pkg/transit_wasm.wasm")
 	if host.Hash() != sum {
 		t.Fatalf("host hash %s != file hash %s", host.Hash(), sum)
+	}
+}
+
+// TestEditsSyncEndpoint exercises POST/GET /edits through real HTTP:
+// the client document merges with the server's (LWW in the artifact),
+// drafts submit, tombstones propagate, and persistence round-trips.
+func TestEditsSyncEndpoint(t *testing.T) {
+	host := newTestHost(t)
+
+	s := &server{wasm: host, editsPath: t.TempDir() + "/edits.json"}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/edits", s.handleEdits)
+	base := httptest.NewServer(mux).URL
+
+	editJSON := func(id, status string, rev, at int64) string {
+		diversion := `{"id":"d-` + id + `","route_id":"10","direction_id":null,` +
+			`"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],` +
+			`"detour":null,"added_secs":300,"start_date":"` + date + `","end_date":"` + date + `"}`
+		return `[{"id":"` + id + `","diversion":` + diversion +
+			`,"status":"` + status + `","rev":` + strconv.FormatInt(rev, 10) +
+			`,"updated_at":` + strconv.FormatInt(at, 10) + `}]`
+	}
+	post := func(doc string) (int, string) {
+		resp, err := http.Post(base+"/edits", "application/json", strings.NewReader(doc))
+		if err != nil {
+			t.Fatalf("post: %v", err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(body)
+	}
+
+	// Push a draft; the server must submit it.
+	code, body := post(editJSON("e1", "draft", 1, 100))
+	if code != 200 {
+		t.Fatalf("post: %d %s", code, body)
+	}
+	if !strings.Contains(body, `"status":"submitted"`) {
+		t.Fatalf("draft not submitted: %s", body)
+	}
+
+	// A second push with a newer tombstone for the same id: LWW. The
+	// timestamp must beat the server's submit stamp (real epoch ms),
+	// so date it in the future.
+	code, body = post(editJSON("e1", "retired", 2, time.Now().UnixMilli()+60_000))
+	if code != 200 {
+		t.Fatalf("post 2: %d %s", code, body)
+	}
+	if !strings.Contains(body, `"status":"retired"`) {
+		t.Fatalf("tombstone did not win: %s", body)
+	}
+
+	// GET returns the merged document.
+	resp, err := http.Get(base + "/edits")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	got, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(got), `"id":"e1"`) || !strings.Contains(string(got), `"retired"`) {
+		t.Fatalf("get: %s", got)
+	}
+
+	// Persistence: a fresh server with the same path restores the doc.
+	s2 := &server{wasm: host, edits: loadEdits(s.editsPath), editsPath: s.editsPath}
+	mux2 := http.NewServeMux()
+	mux2.HandleFunc("/edits", s2.handleEdits)
+	base2 := httptest.NewServer(mux2).URL
+	resp2, err := http.Get(base2 + "/edits")
+	if err != nil {
+		t.Fatalf("get 2: %v", err)
+	}
+	body2, _ := io.ReadAll(resp2.Body)
+	resp2.Body.Close()
+	if !strings.Contains(string(body2), `"retired"`) {
+		t.Fatalf("persisted document lost the tombstone: %s", body2)
 	}
 }

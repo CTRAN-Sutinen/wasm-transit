@@ -3,8 +3,8 @@
 #
 #   Rust  — transit-core/-router/-rt/-sync/-ops (cargo), transit-wasm artifact
 #   Go    — server/ (the sync server: wazero host, manifest, proxy)
-#   Node  — www/e2e/abi-smoke.mjs (runs the artifact directly)
-#   Web   — www/ (Svelte + Vite) and Playwright e2e
+#   Node  — crates/transit-wasm/abi-smoke.mjs (runs the artifact directly)
+#   Web   — web/ (Svelte + Vite) and Playwright e2e
 
 default:
     @just --list
@@ -13,13 +13,13 @@ default:
 # build
 # ---------------------------------------------------------------
 
-# Build the wasm artifact only (cargo release → www/pkg/transit_wasm.wasm).
+# Build the wasm artifact only (cargo release → web/pkg/transit_wasm.wasm).
 wasm:
-    cd www && npm run build:wasm
+    cd web && npm run build:wasm
 
-# Build everything the server serves: artifact + frontend (www/dist).
+# Build everything the server serves: artifact + frontend (web/dist).
 build:
-    cd www && npm run build
+    cd web && npm run build
 
 # ---------------------------------------------------------------
 # test
@@ -29,19 +29,19 @@ build:
 test:
     cargo test
     cd server && go test ./...
-    cd www && node e2e/abi-smoke.mjs
+    node crates/transit-wasm/abi-smoke.mjs
 
 # Browser e2e (Chromium via Playwright, against the Go server).
 # Builds first; the runner starts the server unless :8080 is taken.
 e2e: build
-    cd www && npx playwright test
+    cd web && npx playwright test
 
 # Everything: host tests + e2e.
 check: test e2e
 
-# Regenerate the e2e GTFS fixture (www/e2e/fixtures/sample-gtfs.zip).
+# Regenerate the e2e GTFS fixture (web/e2e/fixtures/sample-gtfs.zip).
 fixtures:
-    cd www/e2e && python3 make_fixtures.py
+    cd web/e2e && python3 make_fixtures.py
 
 # ---------------------------------------------------------------
 # run
@@ -73,7 +73,7 @@ dev:
     (cd server && go build -o /tmp/transit-server . && \
       /tmp/transit-server >/tmp/transit-server.log 2>&1 & echo $! >/tmp/transit-server.pid)
     trap 'kill "$(cat /tmp/transit-server.pid)" 2>/dev/null || true' EXIT
-    cd www && npx vite
+    cd web && npx vite
 
 # ---------------------------------------------------------------
 # basemap
@@ -86,4 +86,4 @@ dev:
 # just basemap "-123.20,45.25,-122.10,45.95" 14
 basemap bbox maxzoom="15":
     pmtiles extract "https://build.protomaps.com/$(date +%Y%m%d).pmtiles" \
-        www/public/basemap.pmtiles --bbox={{ bbox }} --maxzoom={{ maxzoom }}
+        web/public/basemap.pmtiles --bbox={{ bbox }} --maxzoom={{ maxzoom }}

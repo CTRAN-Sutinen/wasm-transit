@@ -3,16 +3,17 @@
 // the core domain flows — the same artifact the browser and the Go
 // server run.
 //
-// Run from anywhere: node e2e/abi-smoke.mjs (paths resolve from this
-// file's location). Also `just test`.
+// Lives next to the artifact crate: it tests the ABI, in Node.
+// Run from anywhere: `node crates/transit-wasm/abi-smoke.mjs` (paths
+// resolve from this file's location). Also `just test`.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const ARTIFACT = path.join(here, "../pkg/transit_wasm.wasm");
-const FIXTURE = path.join(here, "fixtures/sample-gtfs.zip");
+const ARTIFACT = path.join(here, "../../web/pkg/transit_wasm.wasm");
+const FIXTURE = path.join(here, "../../web/e2e/fixtures/sample-gtfs.zip");
 
 const bytes = readFileSync(ARTIFACT);
 const mod = new WebAssembly.Module(bytes);
@@ -126,3 +127,25 @@ const second = invokeBytes(OP_LOAD_FEED, readFileSync(FIXTURE));
 assert(second.feed_id !== feedId, "registry assigns distinct feed ids");
 
 console.log("smoke passed");
+
+// Sync op: merge + submit, through the same artifact the server runs.
+const synced = invoke({
+  op: "sync_edits", feed_id: null,
+  client: [record({ status: "draft", rev: 5, updated_at: 200 })],
+  server: [record({ status: "retired", rev: 6, updated_at: 300 })],
+  now_ms: 1000,
+});
+assert(synced.records.length === 1, "sync merges to one record per id");
+assert(synced.records[0].status === "retired", "server's newer tombstone wins");
+assert(synced.reports.length === 0, "no feed: no reports");
+
+const syncedFresh = invoke({
+  op: "sync_edits", feed_id: null,
+  client: [record({ status: "draft", rev: 1, updated_at: 100 })],
+  server: [],
+  now_ms: 1000,
+});
+assert(syncedFresh.records[0].status === "submitted", "drafts become submitted");
+assert(syncedFresh.records[0].rev === 2, "submit bumps rev");
+
+console.log("sync smoke passed");

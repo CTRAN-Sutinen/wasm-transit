@@ -8,7 +8,7 @@ import { loadWasm } from "./wasm.js";
 import { get } from "idb-keyval";
 import App from "./App.svelte";
 import { app, setEditDocument } from "./state.svelte.js";
-import { loadGtfsBytes, FEED_KEY, EDITS_KEY, saveSettings, setNowOverride, flushPersist } from "./actions.svelte.js";
+import { loadGtfsBytes, FEED_KEY, EDITS_KEY, saveSettings, setNowOverride, flushPersist, syncEdits } from "./actions.svelte.js";
 
 app.wasm = await loadWasm();
 app.status = "wasm ready";
@@ -39,6 +39,11 @@ try {
     // Awaited: the final status is deterministic ("Restored", not a
     // race with loadGtfsBytes's "Loaded").
     await loadGtfsBytes(new Uint8Array(cached.bytes), cached.label);
+  }
+  // Pull the server's edit document (quietly — status stays with the
+  // restore message; a server without /edits is not an error).
+  await syncEdits({ quiet: true });
+  if (cached) {
     app.status = `Restored ${cached.label} from local cache.`;
   }
 

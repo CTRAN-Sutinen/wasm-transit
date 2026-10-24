@@ -236,3 +236,58 @@ test("diversion ripple shows as a tight block layover", async ({ page }) => {
   await expect(blocks.getByText("tight")).toBeVisible();
   await expect(blocks.getByText("4 min")).toBeVisible();
 });
+
+test("diversion syncs to the server and back", async ({ page }) => {
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+
+  // Push: create a diversion (a local draft), sync, and the server
+  // document must hold it as submitted. Other tests in this run may
+  // have left retired records on the server (every reload syncs), so
+  // assert on *this* record, not on document shape.
+  await makeDiversion(page, 5);
+  await page.getByRole("button", { name: "Sync with server" }).click();
+  await expect(page.getByText(/Synced with server/)).toBeVisible();
+  await expect(page.locator(".diversion-list")).toContainText("submitted");
+
+  const doc = await page.evaluate(() => fetch("/edits").then((r) => r.json()));
+  const mine = doc.find(
+    (r) => r.status === "submitted" && r.diversion.skipped_stops?.includes("C"),
+  );
+  expect(mine).toBeTruthy();
+  expect(mine.diversion.added_secs).toBe(300);
+
+  // Pull: a second client pushes a record of its own; our reload must
+  // surface it through the bootstrap sync.
+  await page.evaluate(async () => {
+    const doc = await fetch("/edits").then((r) => r.json());
+    const mine = doc.find(
+      (r) => r.status === "submitted" && r.diversion.skipped_stops?.includes("C"),
+    );
+    const record = {
+      ...mine,
+      id: "e-injected",
+      diversion: {
+        ...mine.diversion,
+        id: "d-injected",
+        added_secs: 120,
+        skipped_stops: [],
+      },
+    };
+    const res = await fetch("/edits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([record]),
+    });
+    if (!res.ok) throw new Error(`inject failed: ${res.status}`);
+  });
+
+  await page.reload();
+  await waitForMap(page);
+  await expect(page.getByText(/Restored/)).toBeVisible({ timeout: 10_000 });
+  // Bootstrap sync pulled the injected record (+2 min, no skips)
+  // alongside our own (skips C, +5 min).
+  await expect(page.locator(".diversion-list")).toContainText("skips Main & 3rd");
+  await expect(page.locator(".diversion-list")).toContainText("+2 min");
+});

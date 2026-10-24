@@ -30,10 +30,11 @@ import (
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8080", "listen address")
-	dist := flag.String("dist", "../www/dist", "directory of static files to serve")
-	wasmPath := flag.String("wasm", "../www/pkg/transit_wasm.wasm", "the wasm artifact to host and pin")
+	dist := flag.String("dist", "../web/dist", "directory of static files to serve")
+	wasmPath := flag.String("wasm", "../web/pkg/transit_wasm.wasm", "the wasm artifact to host and pin")
 	feedPath := flag.String("feed", "", "path to the GTFS zip (enables /feed and the manifest's feed section)")
 	publisher := flag.String("publisher", "", "manifest provenance (who publishes this schedule)")
+	editsPath := flag.String("edits", "", "path to persist the edit document (JSON); empty = in-memory only")
 	flag.Parse()
 
 	mime.AddExtensionType(".wasm", "application/wasm")
@@ -51,15 +52,18 @@ func main() {
 		dist:      *dist,
 		wasm:      host,
 		publisher: *publisher,
+		editsPath: *editsPath,
 	}
 	if *feedPath != "" {
 		s.feeder = &fileFeed{path: *feedPath}
 	}
+	s.edits = loadEdits(*editsPath)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rt", s.handleProxy)
 	mux.HandleFunc("/manifest", s.handleManifest)
 	mux.HandleFunc("/feed", s.handleFeed)
+	mux.HandleFunc("/edits", s.handleEdits)
 	mux.HandleFunc("/", s.handleStatic)
 
 	log.Printf("listening on http://%s (dist: %s)", *addr, *dist)
@@ -72,6 +76,13 @@ type server struct {
 	wasm      *WasmHost
 	feeder    *fileFeed // nil when no feed is configured
 	publisher string
+
+	// The edit document. Opaque JSON: the artifact owns the schema
+	// and every domain decision about it (merge, submit, validation)
+	// — this host only stores and ferries it.
+	editsMu   sync.Mutex
+	edits     json.RawMessage // []EditRecord
+	editsPath string          // empty = in-memory only
 }
 
 // handleStatic serves the built frontend. http.ServeContent gives

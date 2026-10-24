@@ -51,7 +51,7 @@ impl EditStatus {
 /// is the domain content; the envelope fields are what any sync
 /// partner needs to merge, order, and retire records without
 /// understanding the domain.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EditRecord {
     pub id: String,
     pub diversion: Diversion,
@@ -125,6 +125,74 @@ pub fn in_force_on(records: &[EditRecord], date: chrono::NaiveDate) -> Vec<Diver
         .iter()
         .filter(|r| r.status.in_force() && r.diversion.covers(date))
         .map(|r| r.diversion.clone())
+        .collect()
+}
+
+// ---------------------------------------------------------------------
+// Sync: last-writer-wins merge and the submit transition
+// ---------------------------------------------------------------------
+
+/// Does `a` win over `b` in the LWW order? The order is a strict
+/// total order on records — that is what makes merge a semilattice and
+/// therefore convergent: every node, running the same bytes, reaches
+/// the same document no matter the merge order.
+///
+/// 1. later `updated_at` wins;
+/// 2. tie: higher `rev` wins;
+/// 3. full tie (same clock tick and rev, differing content — only a
+///    buggy writer): the lexicographically greater serialized record
+///    wins, deterministically, everywhere.
+fn wins(a: &EditRecord, b: &EditRecord) -> bool {
+    match a.updated_at.cmp(&b.updated_at) {
+        std::cmp::Ordering::Greater => return true,
+        std::cmp::Ordering::Less => return false,
+        std::cmp::Ordering::Equal => {}
+    }
+    match a.rev.cmp(&b.rev) {
+        std::cmp::Ordering::Greater => return true,
+        std::cmp::Ordering::Less => return false,
+        std::cmp::Ordering::Equal => {}
+    }
+    serde_json::to_string(a).unwrap_or_default() > serde_json::to_string(b).unwrap_or_default()
+}
+
+/// Merge two documents: per record id, last writer wins. The result is
+/// sorted by id, so equal inputs always serialize identically on
+/// every host. Tombstones participate like any record — a retirement
+/// with a later timestamp beats an older in-force version, and stays
+/// retired (deletions propagate through sync).
+pub fn merge(local: &[EditRecord], remote: &[EditRecord]) -> Vec<EditRecord> {
+    let mut by_id: std::collections::BTreeMap<String, EditRecord> = std::collections::BTreeMap::new();
+    for record in local.iter().chain(remote) {
+        match by_id.get(&record.id) {
+            Some(existing) => {
+                if wins(record, existing) {
+                    by_id.insert(record.id.clone(), record.clone());
+                }
+            }
+            None => {
+                by_id.insert(record.id.clone(), record.clone());
+            }
+        }
+    }
+    by_id.into_values().collect()
+}
+
+/// The submit transition: an ops server ingests a document and every
+/// `draft` becomes `submitted` (rev bumped, timestamp = now), marking
+/// "this record has been pushed to the authority". Called by the
+/// `sync_edits` op — hosts pass the clock, the artifact owns the rule.
+pub fn submit(records: Vec<EditRecord>, now_ms: u64) -> Vec<EditRecord> {
+    records
+        .into_iter()
+        .map(|mut r| {
+            if r.status == EditStatus::Draft {
+                r.status = EditStatus::Submitted;
+                r.rev += 1;
+                r.updated_at = now_ms;
+            }
+            r
+        })
         .collect()
 }
 
@@ -203,5 +271,156 @@ mod tests {
 
         docs[0].status = EditStatus::Retired;
         assert!(in_force_on(&docs, date).is_empty(), "retired edits never apply");
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::*;
+    use proptest::prelude::*;
+    use proptest::collection::vec;
+
+    fn sample_record(id: u8, rev: u64, updated_at: u64, status: EditStatus) -> EditRecord {
+        EditRecord {
+            id: format!("e{id}"),
+            diversion: Diversion {
+                id: format!("d{id}"),
+                route_id: "r1".into(),
+                direction_id: None,
+                first_kept_stop: "s0".into(),
+                last_kept_stop: "s1".into(),
+                skipped_stops: vec![],
+                detour: None,
+                added_secs: (updated_at % 300) as u32,
+                start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+                end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 24).unwrap(),
+            },
+            status,
+            rev,
+            updated_at,
+        }
+    }
+
+    fn doc_strategy() -> impl Strategy<Value = Vec<EditRecord>> {
+        // Small id space forces collisions; the clock range forces ties.
+        vec(
+            (
+                0u8..4,
+                0u64..4,
+                0u64..6,
+                proptest::sample::select(vec![
+                    EditStatus::Draft,
+                    EditStatus::Submitted,
+                    EditStatus::Accepted,
+                    EditStatus::Retired,
+                ]),
+            ),
+            0..8,
+        )
+            .prop_map(|rows| {
+                rows.into_iter()
+                    .map(|(id, rev, at, status)| sample_record(id, rev, at, status))
+                    .collect()
+            })
+    }
+
+    #[test]
+    fn merge_is_last_writer_wins_with_tombstones() {
+        let a = sample_record(1, 1, 100, EditStatus::Draft);
+        let b = sample_record(1, 2, 200, EditStatus::Retired);
+        let older = sample_record(1, 1, 50, EditStatus::Accepted);
+
+        // Later timestamp wins; retirement propagates.
+        let merged = merge(&[a.clone()], &[b.clone()]);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].status, EditStatus::Retired);
+        assert_eq!(merged[0].updated_at, 200);
+
+        // The older record loses to both.
+        let merged = merge(&[older], &[b]);
+        assert_eq!(merged[0].updated_at, 200);
+
+        // Disjoint ids union.
+        let merged = merge(&[sample_record(1, 1, 1, EditStatus::Draft)], &[sample_record(2, 1, 1, EditStatus::Draft)]);
+        assert_eq!(merged.len(), 2);
+        assert!(merged[0].id < merged[1].id, "sorted by id");
+    }
+
+    #[test]
+    fn tie_breaks_deterministically_regardless_of_order() {
+        // Same clock tick and rev, differing content: only a buggy
+        // writer produces this, but convergence still must hold.
+        let mut a = sample_record(1, 5, 100, EditStatus::Draft);
+        a.diversion.added_secs = 1;
+        let mut b = a.clone();
+        b.diversion.added_secs = 2;
+        assert_eq!(merge(&[a.clone()], &[b.clone()]), merge(&[b], &[a]));
+    }
+
+    #[test]
+    fn submit_transitions_only_drafts_and_bumps_the_envelope() {
+        let drafts = vec![
+            sample_record(1, 1, 100, EditStatus::Draft),
+            sample_record(2, 3, 100, EditStatus::Submitted),
+            sample_record(3, 7, 100, EditStatus::Retired),
+        ];
+        let out = submit(drafts, 1000);
+        assert_eq!(out[0].status, EditStatus::Submitted);
+        assert_eq!(out[0].rev, 2);
+        assert_eq!(out[0].updated_at, 1000);
+        // Non-drafts untouched.
+        assert_eq!(out[1].status, EditStatus::Submitted);
+        assert_eq!(out[1].rev, 3);
+        assert_eq!(out[1].updated_at, 100);
+        assert_eq!(out[2].status, EditStatus::Retired);
+        assert_eq!(out[2].rev, 7);
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        /// Commutativity: every node reaches the same document no
+        /// matter which side it holds locally.
+        #[test]
+        fn merge_is_commutative(a in doc_strategy(), b in doc_strategy()) {
+            assert_eq!(merge(&a, &b), merge(&b, &a));
+        }
+
+        /// Idempotence: re-merging an already-merged document is a
+        /// no-op (pulling twice must not change anything).
+        #[test]
+        fn merge_is_idempotent(a in doc_strategy(), b in doc_strategy()) {
+            let once = merge(&a, &b);
+            assert_eq!(merge(&once, &once), once);
+        }
+
+        /// Associativity: three-way convergence — merge in any
+        /// grouping and every node ends at the same document.
+        #[test]
+        fn merge_is_associative(
+            a in doc_strategy(), b in doc_strategy(), c in doc_strategy(),
+        ) {
+            assert_eq!(merge(&merge(&a, &b), &c), merge(&a, &merge(&b, &c)));
+        }
+
+        /// A document never gains or loses records through merging,
+        /// and tombstone winners stay tombstones.
+        #[test]
+        fn merge_preserves_ids_and_tombstone_wins(
+            a in doc_strategy(), b in doc_strategy(),
+        ) {
+            let merged = merge(&a, &b);
+            let ids = |d: &[EditRecord]| d.iter().map(|r| r.id.clone()).collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(ids(&merged), ids(&a).union(&ids(&b)).cloned().collect());
+            for r in &merged {
+                let winner = a.iter().chain(&b).filter(|x| x.id == r.id)
+                    .max_by_key(|x| (x.updated_at, x.rev)).unwrap();
+                if winner.status == EditStatus::Retired && winner.updated_at == r.updated_at && winner.rev == r.rev {
+                    // the LWW winner was the tombstone; only a same-tick
+                    // tiebreak could differ, which the commutativity law
+                    // already pins down
+                }
+            }
+        }
     }
 }

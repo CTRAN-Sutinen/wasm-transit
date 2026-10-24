@@ -366,3 +366,63 @@ fn dispatch_json_round_trips_the_seam() {
     let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
     assert!(parsed["error"].as_str().unwrap().contains("unknown bytes op"));
 }
+
+#[test]
+fn sync_edits_merges_submits_and_reports() {
+    let feed_id = load();
+
+    // Client arrives with a draft; the server already holds a newer
+    // tombstone for one record and nothing for the other.
+    let mut draft = record(EditStatus::Draft, 1);
+    draft.id = "e-new".into();
+    let mut retired = record(EditStatus::Accepted, 3);
+    retired.id = "e-old".into();
+    retired.status = EditStatus::Retired;
+    retired.updated_at = 2;
+
+    let mut stale_local = retired.clone();
+    stale_local.status = EditStatus::Accepted;
+    stale_local.updated_at = 1;
+
+    match dispatch(Request::SyncEdits {
+        feed_id: Some(feed_id),
+        client: vec![draft, stale_local],
+        server: vec![retired],
+        now_ms: 1_000,
+    })
+    .unwrap()
+    {
+        Response::SyncEdits { records, reports } => {
+            // Union of ids, sorted; the tombstone (newer timestamp)
+            // won over the stale accepted version.
+            let ids: Vec<&str> = records.iter().map(|r| r.id.as_str()).collect();
+            assert_eq!(ids, vec!["e-new", "e-old"]);
+            assert_eq!(records[0].status, EditStatus::Submitted, "drafts submit");
+            assert_eq!(records[0].rev, 2, "submit bumps rev");
+            assert_eq!(records[0].updated_at, 1_000, "submit stamps the host clock");
+            assert_eq!(records[1].status, EditStatus::Retired, "tombstone propagates");
+
+            // The valid draft reports against the feed.
+            assert_eq!(reports.len(), 2);
+            assert!(reports.iter().all(|r| r.valid), "fixture-valid records: {reports:?}");
+        }
+        _ => panic!("expected SyncEdits response"),
+    }
+
+    // No feed: no reports, records still merge and submit.
+    match dispatch(Request::SyncEdits {
+        feed_id: None,
+        client: vec![],
+        server: vec![record(EditStatus::Draft, 1)],
+        now_ms: 5,
+    })
+    .unwrap()
+    {
+        Response::SyncEdits { records, reports } => {
+            assert_eq!(records.len(), 1);
+            assert_eq!(records[0].status, EditStatus::Submitted);
+            assert!(reports.is_empty(), "no feed, no reports");
+        }
+        _ => panic!(),
+    }
+}

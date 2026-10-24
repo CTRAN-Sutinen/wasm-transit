@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate the e2e GTFS fixture (www/e2e/fixtures/sample-gtfs.zip).
+"""Regenerate the e2e GTFS fixture (web/e2e/fixtures/sample-gtfs.zip).
 
 The feed models a small downtown corridor:
 

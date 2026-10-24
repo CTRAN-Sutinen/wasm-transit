@@ -35,7 +35,7 @@ server/            Go + wazero: the sync server. Scaffolding only —
                    static serving, /rt proxy, /manifest (pins the feed
                    and wasm hashes), /feed. All domain logic runs in
                    the artifact it hosts.
-www/               Svelte 5 + Vite frontend (see below).
+web/               Svelte 5 + Vite frontend (see below).
 ```
 
 ## Commands
@@ -44,7 +44,7 @@ www/               Svelte 5 + Vite frontend (see below).
 commands live in the justfile; the common entries:
 
 ```
-just build         # wasm artifact + frontend (www/dist)
+just build         # wasm artifact + frontend (web/dist)
 just test          # Rust suites + Go suite + ABI smoke (Node)
 just e2e           # browser e2e (builds first, Chromium + Playwright)
 just check         # everything above
@@ -55,13 +55,13 @@ just fixtures      # regenerate the e2e GTFS fixture
 just basemap "-123.20,45.25,-122.10,45.95"    # regional pmtiles extract
 ```
 
-First time: `npm install` in `www/`, and Go 1.22+ (go.mod pulls wazero
+First time: `npm install` in `web/`, and Go 1.22+ (go.mod pulls wazero
 on first build).
 
 The test stack, bottom-up: `just test` covers the host side — Rust
 suites (unit + property tests against independent oracles), the Go
 suite (including the round-trip proof that the server runs the exact
-artifact bytes), and `www/e2e/abi-smoke.mjs`, which instantiates the
+artifact bytes), and `web/e2e/abi-smoke.mjs`, which instantiates the
 artifact directly in Node with zero imports. `just e2e` runs real
 Chromium against the built app served by the Go server and covers:
 clean load (no console errors), feed loading, the departure board,
@@ -69,7 +69,7 @@ trip planning (including the clipped ridden segment), unreachable-plan
 feedback, IndexedDB restore across reloads, GTFS-rt delay joins (chips,
 predicted times, vehicle colors), and the full diversion flow (schedule
 shift, skipped stop, planner compare, block layover warnings,
-persistence). Fixture feed + protobuf live in `www/e2e/fixtures/`.
+persistence). Fixture feed + protobuf live in `web/e2e/fixtures/`.
 
 Run the sync server, then open http://127.0.0.1:8080:
 
@@ -79,7 +79,7 @@ just serve path/to/gtfs.zip "Test Transit"          # + /feed, /manifest
 ```
 
 The Go server is scaffolding around the wasm artifact: it serves
-`www/dist` (stdlib `http.ServeContent` handles the Range requests
+`web/dist` (stdlib `http.ServeContent` handles the Range requests
 PMTiles needs) and exposes:
 
 - `/rt?url=<encoded>` — localhost-only proxy that fetches agency feeds
@@ -93,9 +93,16 @@ PMTiles needs) and exposes:
 - `/feed` — the configured GTFS artifact itself. Republishing the file
   is picked up on the next request (mtime-checked reload): the planner
   persona publishes, everyone else re-pins.
+- `/edits` — edit-document sync. `POST` your local document, receive
+  the LWW-merged result back (drafts submitted, tombstones propagated,
+  validated against the server's feed when one is configured); `GET`
+  reads the server's document. Merge and the submit transition run in
+  the artifact — the host treats documents as opaque JSON, so client
+  and server agree by construction. `-edits <path>` persists the
+  document across restarts.
 
 `go test ./...` in `server/` is the round-trip proof: the server loads
-the exact `www/pkg/transit_wasm.wasm` bytes (hash-pinned in the
+the exact `web/pkg/transit_wasm.wasm` bytes (hash-pinned in the
 manifest) and gets the same domain answers the browser does — feeds,
 boards, plans, edit documents.
 
@@ -105,7 +112,7 @@ For frontend development with hot reload:
 just dev      # vite on :5173 (proxies /rt to :8080) + server alongside
 ```
 
-## Frontend (www/)
+## Frontend (web/)
 
 Svelte 5 (runes) + Vite. Shared reactive state lives in
 `src/state.svelte.js` as a single `$state` object; every component —
@@ -163,7 +170,7 @@ Implementation shape:
 
 ## Basemap
 
-The map prefers `basemap.pmtiles` if it exists in `www/public/` (Vite
+The map prefers `basemap.pmtiles` if it exists in `web/public/` (Vite
 copies it into the build; transit-server serves it with Range requests)
 and renders it with the Protomaps v4 style; otherwise it falls back to
 OpenFreeMap (free vector tiles, no API key).
@@ -176,7 +183,7 @@ never download the full planet. Example (Portland metro, z0-15,
 
 ```
 pmtiles extract https://build.protomaps.com/<yyyymmdd>.pmtiles \
-  www/public/basemap.pmtiles \
+  web/public/basemap.pmtiles \
   --bbox=-123.20,45.25,-122.10,45.95 --maxzoom=15
 ```
 
@@ -186,10 +193,10 @@ region from scratch instead (requires Java 21+):
 ```
 curl -LO https://github.com/onthegomap/planetiler/releases/latest/download/planetiler.jar
 curl -LO https://download.geofabrik.de/<your-region>-latest.osm.pbf
-java -jar planetiler.jar --osm-path=<your-region>-latest.osm.pbf --output=www/public/basemap.pmtiles
+java -jar planetiler.jar --osm-path=<your-region>-latest.osm.pbf --output=web/public/basemap.pmtiles
 ```
 
-After adding or changing the basemap, run `npm run build` in `www/`.
+After adding or changing the basemap, run `npm run build` in `web/`.
 A metro-area extract is small enough to keep next to the GTFS zip,
 making the whole app (feed, queries, basemap) fully offline-capable.
 

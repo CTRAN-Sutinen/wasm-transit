@@ -444,3 +444,40 @@ export function toggleDiversion(id) {
     edit.updated_at = Date.now();
   });
 }
+
+// ---------------------------------------------------------------
+// sync: push the local document, adopt the merged response
+// ---------------------------------------------------------------
+
+/** Sync with the server's edit document: POST our document, get back
+ * the LWW-merged result (drafts submitted, tombstones propagated),
+ * adopt it wholesale. One round trip is the whole protocol — the
+ * server merges with its copy in the same artifact we run locally.
+ * `quiet` (bootstrap) leaves app.status untouched. */
+export async function syncEdits({ quiet = false } = {}) {
+  if (!app.gtfs && !quiet) return;
+  try {
+    const res = await fetch("/edits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(getEditDocument()),
+    });
+    if (res.status === 404) {
+      if (!quiet) app.status = "Sync unavailable — this server has no /edits endpoint.";
+      return;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const merged = await res.json();
+    // Adopt: wholesale replace, revalidate through wasm, persist.
+    setEditDocument(merged);
+    pushEdits();
+    schedulePersist();
+    if (!quiet) {
+      const inForce = merged.filter((r) => r.status !== "retired").length;
+      app.status = `Synced with server — ${merged.length} edit record(s), ${inForce} in force.`;
+    }
+  } catch (e) {
+    if (!quiet) app.status = `Sync failed: ${e.message}`;
+    console.warn("edit sync failed:", e);
+  }
+}

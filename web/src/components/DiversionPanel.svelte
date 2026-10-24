@@ -2,7 +2,7 @@
   import { app, getEditDocument } from "../state.svelte.js";
   import {
     startDiversion, cancelDiversion, setDiversionAnchor, toggleSkipped,
-    applyDiversion, toggleDiversion, toggleDrawing, clearDetour,
+    applyDiversion, toggleDiversion, toggleDrawing, clearDetour, syncEdits,
   } from "../actions.svelte.js";
 
   const routes = $derived(app.gtfs ? app.gtfs.routes() : []);
@@ -177,7 +177,12 @@
       </p>
     </div>
   {:else}
-    <p><button onclick={startDiversion}>New diversion</button></p>
+    <p>
+      <button onclick={startDiversion}>New diversion</button>
+      <button onclick={() => syncEdits()} title="Push local edits, pull the server's, merge (last writer wins)">
+        Sync with server
+      </button>
+    </p>
   {/if}
 </section>
 {/if}
