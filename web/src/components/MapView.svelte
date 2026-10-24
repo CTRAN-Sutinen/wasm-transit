@@ -146,6 +146,14 @@
           layout: { "line-join": "round", "line-cap": "round" },
           paint: { "line-width": 1.5, "line-color": "#b8b8b8" },
         });
+        // The diversion editor's selected route, as a muted ghost —
+        // where the route runs, so the detour is drawn against it.
+        map.addSource("route-context", { type: "geojson", data: EMPTY_FC });
+        map.addLayer({
+          id: "route-ghost", type: "line", source: "route-context",
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: { "line-width": 5, "line-color": "#7d8ba1", "line-opacity": 0.65 },
+        });
         map.addLayer({
           id: "stops-base", type: "circle", source: "stops",
           paint: {
@@ -308,6 +316,12 @@
   $effect(() => {
     if (!mapLoaded) return;
     src("streets").setData(getStreets()?.geojson ?? EMPTY_FC);
+  });
+
+  // The diversion editor's route ghost.
+  $effect(() => {
+    if (!mapLoaded) return;
+    src("route-context").setData(app.routeContext ?? EMPTY_FC);
   });
 
   $effect(() => {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Loader from "./components/Loader.svelte";
+  import DataSources from "./components/DataSources.svelte";
   import MapView from "./components/MapView.svelte";
   import DepartureBoard from "./components/DepartureBoard.svelte";
   import BlocksPanel from "./components/BlocksPanel.svelte";
@@ -76,13 +76,11 @@
       {/if}
 
       {#if app.persona === "rider"}
-        <Loader />
         {#if app.gtfs}
           <DepartureBoard />
           <TripPlanner />
         {/if}
       {:else if app.persona === "dispatcher"}
-        <Loader />
         {#if app.gtfs}
           <BlocksPanel />
           <DiversionPanel />
@@ -101,3 +99,7 @@
     <PlanOverlay />
   </div>
 {/if}
+
+<!-- App config (feed + street network), shared by every persona:
+     fixed-position, so it floats over both skeletons. -->
+<DataSources />

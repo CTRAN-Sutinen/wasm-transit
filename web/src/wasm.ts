@@ -184,6 +184,18 @@ export class GtfsHandle {
     }) as { feature: TripLineFeature | null }).feature ?? null;
   }
 
+  /// The route's alignment (representative trip, shapes when present)
+  /// — the ghost the diversion editor draws before a detour.
+  route_path_geojson(routeId: string, directionId: number | null, date: string): TripLineFeature | null {
+    return (invoke({
+      op: "route_path_geojson",
+      feed_id: this.#feedId,
+      route_id: routeId,
+      direction_id: directionId,
+      date,
+    }) as { feature: TripLineFeature | null }).feature ?? null;
+  }
+
   trip_segment_geojson(tripId: string, fromStopId: string, toStopId: string, date: string): TripLineFeature | null {
     return (invoke({
       op: "trip_segment_geojson",

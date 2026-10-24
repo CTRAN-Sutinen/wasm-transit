@@ -44,6 +44,7 @@ try {
   app.gtfsUrl = settings.gtfsUrl ?? "";
   app.rtUrl = settings.rtUrl ?? "";
   app.vpUrl = settings.vpUrl ?? "";
+  app.streetsUrl = settings.streetsUrl ?? "";
   app.rtPolling = !!settings.rtPolling && !!settings.rtUrl;
   app.vpPolling = !!settings.vpPolling && !!settings.vpUrl;
   app.persona = (localStorage.getItem("transit:persona") ?? "rider") as "rider";

@@ -85,6 +85,16 @@ pub enum Request {
     /// One trip's path as a GeoJSON LineString Feature (date scopes
     /// operator edits: diverted trips draw patched shapes).
     TripPathGeojson { feed_id: u32, trip_id: String, date: String },
+    /// The route's alignment as a GeoJSON LineString Feature: the
+    /// path of the representative trip (the same trip the diversion
+    /// editor's anchors come from), shape polyline when the feed has
+    /// one. The date scopes operator edits like `trip_path_geojson`.
+    RoutePathGeojson {
+        feed_id: u32,
+        route_id: String,
+        direction_id: Option<u8>,
+        date: String,
+    },
     /// One leg of a trip (board → alight) as a GeoJSON LineString
     /// Feature — the ridden segment only.
     TripSegmentGeojson {
@@ -160,6 +170,7 @@ pub enum Response {
     BlockTrips { trips: Vec<transit_core::BlockTrip> },
     StopsGeojson { collection: FeatureCollection },
     TripPathGeojson { feature: Option<TripLineFeature> },
+    RoutePathGeojson { feature: Option<TripLineFeature> },
     TripSegmentGeojson { feature: Option<TripLineFeature> },
     StopPoint { feature: Option<StopFeature> },
     PlanTrip { itinerary: Option<transit_router::Itinerary> },
@@ -285,6 +296,21 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
                     gtfs.trip_path_segment(&trip_id, &from_stop_id, &to_stop_id)
                 })?;
                 Ok(Response::TripSegmentGeojson {
+                    feature: geojson::trip_line_feature(&f.gtfs, &trip_id, &path),
+                })
+            })
+        }
+        Request::RoutePathGeojson { feed_id, route_id, direction_id, date } => {
+            state::with_feed(feed_id, |f| {
+                let trip_id = f
+                    .gtfs
+                    .representative_trip_id(&route_id, direction_id)
+                    .map(str::to_string);
+                let Some(trip_id) = trip_id else {
+                    return Ok(Response::RoutePathGeojson { feature: None });
+                };
+                let path = f.with_effective(&date, |gtfs| gtfs.trip_path(&trip_id))?;
+                Ok(Response::RoutePathGeojson {
                     feature: geojson::trip_line_feature(&f.gtfs, &trip_id, &path),
                 })
             })

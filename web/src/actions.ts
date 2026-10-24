@@ -28,6 +28,7 @@ export function saveSettings(): void {
       gtfsUrl: app.gtfsUrl,
       rtUrl: app.rtUrl,
       vpUrl: app.vpUrl,
+      streetsUrl: app.streetsUrl,
       rtPolling: app.rtPolling,
       vpPolling: app.vpPolling,
     })
@@ -409,22 +410,45 @@ export function toggleDrawing(): void {
 }
 
 /// Import a street network (GeoJSON: LineString/MultiLineString
-/// features, e.g. an OSM extract). Detour clicks snap to it. Not
-/// persisted — reference data, re-imported per session.
+/// features, e.g. an OSM extract from an open data portal). Detour
+/// clicks snap to it. Not persisted — reference data, re-imported
+/// per session.
 export async function importStreetsFile(file: File): Promise<void> {
   try {
-    const text = await file.text();
-    const streets = buildStreetNetwork(JSON.parse(text));
-    if (!streets) {
-      app.status = "No line features in that file — expected GeoJSON with LineString/MultiLineString geometries.";
-      return;
-    }
-    setStreets(streets);
-    app.status = `Street network loaded — ${streets.network.segmentCount} segments; detour clicks snap to streets and stops.`;
+    await installStreets(JSON.parse(await file.text()), file.name);
   } catch (e) {
     app.status = `Street import failed: ${(e as Error).message}`;
     console.warn("street import failed:", e);
   }
+}
+
+/// Same, from a URL (through the /rt proxy — open data portals
+/// rarely send CORS headers).
+export async function loadStreetsFromUrl(): Promise<void> {
+  if (!app.streetsUrl) { app.status = "Enter a street network URL first."; return; }
+  try {
+    app.status = `Downloading ${app.streetsUrl}...`;
+    const bytes = await fetchBytes(proxied(app.streetsUrl));
+    await installStreets(JSON.parse(new TextDecoder().decode(bytes)), app.streetsUrl);
+  } catch (e) {
+    app.status = `Street import failed: ${(e as Error).message}`;
+    console.warn("street import failed:", e);
+  }
+}
+
+export function clearStreets(): void {
+  setStreets(null);
+  app.status = "Street network cleared — detour clicks snap to stops only.";
+}
+
+async function installStreets(geojson: unknown, label: string): Promise<void> {
+  const streets = buildStreetNetwork(geojson);
+  if (!streets) {
+    app.status = "No line features in that file — expected GeoJSON with LineString/MultiLineString geometries.";
+    return;
+  }
+  setStreets(streets);
+  app.status = `Street network loaded (${label}) — ${streets.network.segmentCount} segments; detour clicks snap to streets and stops.`;
 }
 
 export function applyDiversion(): void {

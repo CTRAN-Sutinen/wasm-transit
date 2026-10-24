@@ -282,9 +282,20 @@ test("detour drawing snaps to an imported street network", async ({ page }) => {
 
   await page.getByRole("button", { name: "New diversion" }).click();
 
+  // Selecting a route shows its alignment — the ghost the detour is
+  // drawn against (t30 is route 10's representative: A → C → B).
+  await page.getByLabel("Route").selectOption("10");
+  const ghost = (await mapData(page, "route-context")).features;
+  expect(ghost.length).toBe(1);
+  expect(ghost[0].geometry.coordinates.length).toBe(3);
+
   // Import the street network: Side St (2 segments) + Nowhere Rd (1).
+  // The config panel auto-closed when the feed loaded, but its inputs
+  // stay attached — the import works regardless.
   await page.locator("#streets-file").setInputFiles(path.join(fixtures, "streets.geojson"));
-  await expect(page.getByText("3 street segments — snapping on")).toBeVisible();
+  await expect(
+    page.locator(".diversion-editor").getByText("snapping on"),
+  ).toBeVisible();
   expect((await mapData(page, "streets")).features.length).toBe(2);
 
   await page.getByRole("button", { name: "Draw detour on map" }).click();
@@ -412,10 +423,12 @@ test("persona tabs split the workflows", async ({ page }) => {
   await expect(page.getByRole("button", { name: "New diversion" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Trip planner" })).toHaveCount(0);
 
-  // Planner: network authoring, and no feed loader at all.
+  // Planner: network authoring. Loading data is app config now, not
+  // persona content — the Data sources panel is closed in the
+  // workspace (its inputs stay attached for the config flows).
   await switchPersona(page, "Planner");
   await expect(page.getByRole("heading", { name: "Network document" })).toBeVisible();
-  await expect(page.locator(".dropzone")).toHaveCount(0);
+  await expect(page.locator("#data-sources")).toBeHidden();
 });
 
 test("planner authors a network and the rider uses it", async ({ page }) => {

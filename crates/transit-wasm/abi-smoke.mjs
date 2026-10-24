@@ -124,6 +124,11 @@ const stops = invoke({ op: "stops_geojson", feed_id: feedId }).collection;
 assert(stops.type === "FeatureCollection" && stops.features.length === 3, "typed geojson collection");
 const trip = invoke({ op: "trip_path_geojson", feed_id: feedId, trip_id: "t10", date: DATE }).feature;
 assert(trip && trip.geometry.coordinates.length === 5, "full trip path via ABI (5-point shape)");
+const ghost = invoke({ op: "route_path_geojson", feed_id: feedId, route_id: "10", direction_id: null, date: DATE }).feature;
+assert(ghost && ghost.properties.trip_id === "t30" && ghost.geometry.coordinates.length === 3,
+  "route ghost: representative trip (t30) chord line via ABI");
+const ghostNone = invoke({ op: "route_path_geojson", feed_id: feedId, route_id: "missing", direction_id: null, date: DATE }).feature;
+assert(ghostNone === null, "route ghost: unknown route is null");
 
 // feed_info op (the manifest's version source).
 const info = invoke({ op: "feed_info", feed_id: feedId }).info;

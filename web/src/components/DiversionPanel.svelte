@@ -3,7 +3,7 @@
   import {
     startDiversion, cancelDiversion, setDiversionAnchor, toggleSkipped,
     applyDiversion, toggleDiversion, toggleDrawing, clearDetour, syncEdits,
-    importStreetsFile,
+    serviceDate,
   } from "../actions";
 
   const routes = $derived(app.gtfs ? app.gtfs.routes() : []);
@@ -61,14 +61,21 @@
     return interior.some((s) => s.stop_id === stopId);
   }
 
-  async function onStreetsFile(ev: Event): Promise<void> {
-    const input = ev.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    if (file) await importStreetsFile(file);
-    input.value = ""; // same file can be re-imported after an edit
-  }
-
-  let streetsInput = $state<HTMLInputElement | null>(null); // bind:this target
+  // Route ghost: once a route is picked, show where it runs — the
+  // alignment (shapes when the feed has them) the detour is drawn
+  // against. Re-fetches on operator edits: a diverted route shows
+  // its patched path.
+  $effect(() => {
+    void app.feedEpoch;
+    const d = app.diversionDraft;
+    const routeId = d?.routeId;
+    if (!d || !routeId || !app.gtfs) {
+      app.routeContext = null;
+      return;
+    }
+    const dir = d.directionId === "" ? null : Number(d.directionId);
+    app.routeContext = app.gtfs.route_path_geojson(routeId, dir, serviceDate());
+  });
 </script>
 
 {#if app.gtfs}
@@ -179,25 +186,12 @@
           <span class="muted">{draft.detour.length} points</span>
           <button class="link" onclick={clearDetour}>Clear</button>
         {/if}
-      </p>
-
-      <p>
-        <input
-          type="file"
-          id="streets-file"
-          accept=".geojson,.json,application/geo+json"
-          hidden
-          bind:this={streetsInput}
-          onchange={onStreetsFile}
-        >
-        <button onclick={() => streetsInput?.click()}>Import street network (GeoJSON)</button>
         {#if getStreets()}
-          {@const count = getStreets()?.network.segmentCount ?? 0}
-          <span class="chip svc" title="Detour clicks snap to street segments and stops">
-            {count} street segments — snapping on
+          <span class="chip svc" title="Clicks snap to the imported street geometry and stops">
+            snapping on
           </span>
         {:else}
-          <span class="muted">without one, detour clicks snap to stops only</span>
+          <span class="muted">clicks snap to stops only — streets: Data sources</span>
         {/if}
       </p>
 

@@ -75,11 +75,15 @@ export type AppState = {
   diversionDraft: DiversionDraft | null,
   pickingAnchor: "first" | "last" | null, // stop clicks set anchors
   drawingDetour: boolean, // map clicks append detour vertices
+  // The selected route's alignment (route_path_geojson) — the ghost
+  // the detour is drawn against. Plain data; MapView just draws it.
+  routeContext: TripLineFeature | null,
 
   // URL fields and poll toggles
   gtfsUrl: string,
   rtUrl: string,
   vpUrl: string,
+  streetsUrl: string,
   rtPolling: boolean,
   vpPolling: boolean,
 
@@ -165,10 +169,12 @@ export const app = $state<AppState>({
   diversionDraft: null,
   pickingAnchor: null,
   drawingDetour: false,
+  routeContext: null,
 
   gtfsUrl: "",
   rtUrl: "",
   vpUrl: "",
+  streetsUrl: "",
   rtPolling: false,
   vpPolling: false,
 

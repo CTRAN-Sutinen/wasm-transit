@@ -229,6 +229,48 @@ fn geojson_ops_return_typed_features() {
         }
         _ => panic!(),
     }
+    // The route ghost: the representative trip's path — t30 is route
+    // 10's longest trip (A→C→B, no shape), so the ghost is its chord
+    // line; direction filtering narrows within the route.
+    match dispatch(Request::RoutePathGeojson {
+        feed_id,
+        route_id: "10".into(),
+        direction_id: None,
+        date: DATE.into(),
+    })
+    .unwrap()
+    {
+        Response::RoutePathGeojson { feature } => {
+            let f = feature.expect("route 10 has a representative");
+            assert_eq!(f.properties.trip_id, "t30");
+            assert_eq!(f.geometry.coordinates.len(), 3); // A → C → B
+        }
+        _ => panic!(),
+    }
+    match dispatch(Request::RoutePathGeojson {
+        feed_id,
+        route_id: "10".into(),
+        direction_id: Some(0),
+        date: DATE.into(),
+    })
+    .unwrap()
+    {
+        Response::RoutePathGeojson { feature } => {
+            assert!(feature.is_some(), "t30 is direction 0 — same trip");
+        }
+        _ => panic!(),
+    }
+    match dispatch(Request::RoutePathGeojson {
+        feed_id,
+        route_id: "no-such-route".into(),
+        direction_id: None,
+        date: DATE.into(),
+    })
+    .unwrap()
+    {
+        Response::RoutePathGeojson { feature } => assert!(feature.is_none()),
+        _ => panic!(),
+    }
 }
 
 #[test]

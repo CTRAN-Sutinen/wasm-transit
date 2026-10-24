@@ -129,7 +129,11 @@ impl Gtfs {
     /// anchors against. Trips of the route that follow other variants
     /// simply don't match the anchors and run untouched. Consecutive
     /// duplicate stops are collapsed.
-    pub fn route_stop_sequence(&self, route_id: &str, direction_id: Option<u8>) -> Vec<StopSummary> {
+    /// The trip the diversion editor anchors against: the route's
+    /// (or route+direction's) longest trip, ties on lowest trip id.
+    /// Shared by every route-level view so they all agree on which
+    /// trip represents the route.
+    pub fn representative_trip_id(&self, route_id: &str, direction_id: Option<u8>) -> Option<&str> {
         let mut best: Option<(&str, usize)> = None;
         for trip in self.trips.values() {
             if trip.route_id != route_id {
@@ -148,7 +152,13 @@ impl Gtfs {
                 _ => best = Some((trip.trip_id.as_str(), len)),
             }
         }
-        let Some((trip_id, _)) = best else { return Vec::new() };
+        best.map(|(trip_id, _)| trip_id)
+    }
+
+    pub fn route_stop_sequence(&self, route_id: &str, direction_id: Option<u8>) -> Vec<StopSummary> {
+        let Some(trip_id) = self.representative_trip_id(route_id, direction_id) else {
+            return Vec::new();
+        };
         let Some(rows) = self.trip_stop_times(trip_id) else { return Vec::new() };
         let mut out: Vec<StopSummary> = Vec::with_capacity(rows.len());
         for row in rows {
