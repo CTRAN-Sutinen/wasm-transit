@@ -11,6 +11,12 @@ crates/
 ├── transit-core   GTFS static: data model, zip/CSV parsing, calendar
 │                  logic, departure queries, diversion patching.
 │                  Pure Rust, no I/O deps.
+├── transit-network The authored network model (the planner's view):
+│                  patterns, timing profiles, calendar rules, services,
+│                  and the runcut; trips are derived by `materialize`.
+│                  GTFS is a codec at the boundary, never the shape.
+│                  Property-tested against an independent expansion
+│                  oracle.
 ├── transit-router Earliest-arrival trip planning (RAPTOR): trip
 │                  patterns, footpaths, round-based search, itinerary
 │                  reconstruction. Property-tested against a

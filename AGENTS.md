@@ -32,6 +32,11 @@ go module fetches are fine.
 ```
 transit-core    GTFS codec: model, zip/CSV parse, calendar, queries,
                 diversion patching. Pure, no I/O.
+transit-network The authored network model (planner authority):
+                patterns, timing profiles, calendar rules, services,
+                runcut. Trips are DERIVED (`materialize`) — trips are
+                never stored. GTFS is a codec at the boundary, not the
+                model; no GTFS types leak in here.
 transit-router  RAPTOR earliest-arrival planning.
 transit-rt      prost types from the official GTFS-rt proto.
 transit-sync   THE sync document: EditRecord, FeedManifest, EditReport,
@@ -77,6 +82,10 @@ web/            Svelte 5 runes + Vite. src/wasm.js wraps the artifact
 
 ## Conventions and gotchas
 
+- **serde_json must keep the `float_roundtrip` feature** (root
+  Cargo.toml workspace dep): the default parser is 1 ULP off on some
+  f64s (`-122.7 + 0.005` reproducibly), which broke document
+  round-trip equality. Found via a transit-network property test.
 - **Add new operations at the transit-ops seam**: extend
   `Request`/`Response` (serde-tagged; JSON form is `{"op": ...}`),
   implement in `dispatch`, expose in each host (wasm.js method, Go
@@ -123,9 +132,12 @@ Every change lands with tests at the layer that owns the logic:
 ## Deliberate non-goals (do not "fix" these)
 
 - No CRDT/automerge for sync — LWW + tombstones is the design.
-- No planner-authoring model here. GTFS is a serialization format;
-  runcutting and friends live in a future separate crate with GTFS as
-  one codec, not an evolution of transit-core.
+- transit-network is the authored model; GTFS stays OUT of it. The
+  GTFS import (inference) and export (materialization) codecs live at
+  the boundary and are not written yet — do not grow GTFS-shaped
+  fields into the model for codec convenience.
+- Runcutting in transit-network stops at blocks + layovers; operator
+  duties/rosters are a future layer, not a `Block` extension.
 - wasm-bindgen / JS glue in the artifact is gone on purpose; the
   artifact is the raw rustc output with four exports.
 - The Go server stays scaffolding; domain logic that the server needs

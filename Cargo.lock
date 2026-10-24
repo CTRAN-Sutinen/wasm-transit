@@ -774,6 +774,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "transit-network"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "transit-ops"
 version = "0.1.0"
 dependencies = [

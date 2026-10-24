@@ -7,7 +7,7 @@ license.workspace = true
 
 [dependencies]
 serde = { workspace = true }
-serde_json = "1"
+serde_json = { workspace = true }
 chrono = { workspace = true }
 prost = { workspace = true }
 transit-core = { path = "../transit-core" }

@@ -1,0 +1,15 @@
+[package]
+name = "transit-network"
+description = "The authored network model: patterns, service rules, runcut. GTFS is a codec at the boundary, never the shape"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"
+serde_json = { workspace = true }
