@@ -179,3 +179,36 @@ button { font-size: 0.92rem; padding: 0.25rem 0.6rem; border-radius: 6px; cursor
 
 input[type="date"], input[type="number"] { font-size: 0.9rem; padding: 0.2rem; }
 .plan-compare { font-size: 0.88rem; background: rgba(230, 126, 34, 0.15); border-radius: 6px; padding: 0.3rem 0.5rem; margin: 0.3rem 0; }
+
+/* persona tabs: one workflow per tab, shared map underneath */
+.tabs { display: flex; gap: 0.3rem; margin: 0.5rem 0 0.2rem; }
+.tabs button { flex: 1; padding: 0.3rem 0.4rem; font-size: 0.85rem; opacity: 0.7; }
+.tabs button.active { opacity: 1; background: rgba(0, 124, 191, 0.22); font-weight: 600; }
+
+/* compact feed line (the summary table was retired with the persona split) */
+.feed-line { margin: 0.15rem 0 0; font-size: 0.85rem; opacity: 0.7; font-variant-numeric: tabular-nums; }
+
+/* planner: validation issues and schedule editor rows */
+.issues { list-style: none; margin: 0.4rem 0; padding: 0; display: grid; gap: 0.3rem; }
+.issues li { font-size: 0.88rem; color: #d02b2b; }
+.issues code { font-size: 0.82rem; background: rgba(208, 43, 43, 0.15); padding: 0 0.25rem; border-radius: 4px; }
+.svc-rows { list-style: none; margin: 0.4rem 0; padding: 0; display: grid; gap: 0.35rem; }
+.svc-rows li { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.svc-rows input { width: 5.5rem; font-variant-numeric: tabular-nums; }
+.svc-rows input[type="number"] { width: 3.5rem; }
+
+/* planner entity editors */
+.ent-row { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin: 0.25rem 0; }
+.ent-row code { font-size: 0.8rem; opacity: 0.8; }
+.ent-row input, .ent-row select { font-size: 0.88rem; padding: 0.15rem 0.25rem; }
+.chips button.chip.sched { background: rgba(0, 124, 191, 0.3); font-weight: 600; }
+.chips button.chip.off { opacity: 0.45; }
+.timing-profile { border: 1px solid color-mix(in srgb, currentColor 15%, transparent); border-radius: 8px; padding: 0.4rem 0.6rem; margin: 0.4rem 0; }
+.block-editor { border: 1px solid color-mix(in srgb, currentColor 15%, transparent); border-radius: 8px; padding: 0.4rem 0.6rem; margin: 0.5rem 0; }
+.io-drawer { margin-top: 0.6rem; font-size: 0.9rem; }
+.io-drawer summary { cursor: pointer; opacity: 0.7; }
+.io-drawer[open] summary { opacity: 1; }
+
+/* filtered selects: thousands of options without the DOM cost */
+.fselect { display: inline-flex; gap: 0.25rem; align-items: center; }
+.fselect input { width: 6rem; }

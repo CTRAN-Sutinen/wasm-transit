@@ -3,8 +3,9 @@
 
 use std::io::Write;
 
-use transit_ops::{dispatch, Request, Response};
+use transit_ops::{dispatch, network_to_gtfs, Request, Response};
 use prost::Message;
+use transit_network::Schedule;
 use transit_rt::gtfs_rt as rt;
 use transit_sync::{EditRecord, EditStatus};
 
@@ -425,4 +426,241 @@ fn sync_edits_merges_submits_and_reports() {
         }
         _ => panic!(),
     }
+}
+
+// ---------------------------------------------------------------------
+// Authored network documents (transit-network) through the same seam
+// ---------------------------------------------------------------------
+
+/// The shared network fixture (testdata/network.json — the corpus
+/// generator and the ABI smoke read the same file): A→B→C pattern,
+/// weekday calendar with one removed date, three exact trips, one
+/// two-trip block.
+const NETWORK_DOC: &str = include_str!("../../../testdata/network.json");
+
+fn network_load() -> u32 {
+    let outcome = transit_ops::dispatch_json(&format!(
+        r#"{{"op":"network_load","network":{NETWORK_DOC}}}"#
+    ));
+    let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
+    assert!(parsed.get("ok").is_some(), "fixture network must load: {outcome}");
+    parsed["ok"]["feed_id"].as_u64().unwrap() as u32
+}
+
+#[test]
+fn network_validate_reports_issues_without_loading() {
+    // The valid fixture: no issues.
+    let outcome = transit_ops::dispatch_json(&format!(
+        r#"{{"op":"network_validate","network":{NETWORK_DOC}}}"#
+    ));
+    let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
+    assert_eq!(parsed["ok"]["issues"].as_array().unwrap().len(), 0);
+
+    // Broken: a service points at a calendar that doesn't exist, and
+    // the headway is zero. Every issue comes back, loadable elsewhere.
+    let broken = NETWORK_DOC
+        .replace("\"calendar\": \"weekday\"", "\"calendar\": \"ghost\"")
+        + ""; // one defect is enough; see prop_test for the battery
+    let outcome = transit_ops::dispatch_json(&format!(
+        r#"{{"op":"network_validate","network":{broken}}}"#
+    ));
+    let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
+    let issues = parsed["ok"]["issues"].as_array().unwrap();
+    assert_eq!(issues.len(), 1, "one referential defect: {issues:?}");
+    assert!(
+        issues[0].get("unknown_calendar").is_some(),
+        "snake_case NetworkError: {issues:?}"
+    );
+}
+
+#[test]
+fn network_load_rejects_invalid_documents() {
+    let invalid = NETWORK_DOC.replace("\"stop\": \"B\"", "\"stop\": \"ghost\"");
+    let outcome = transit_ops::dispatch_json(&format!(
+        r#"{{"op":"network_load","network":{invalid}}}"#
+    ));
+    let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
+    let error = parsed["error"].as_str().unwrap();
+    assert!(error.contains("invalid network"), "{error}");
+}
+
+#[test]
+fn network_document_drives_the_whole_op_surface() {
+    let feed_id = network_load();
+
+    // Summary: 3 stops, 1 route, 3 trips, 9 stop_times.
+    let summary = match dispatch(Request::Summary { feed_id }).unwrap() {
+        Response::Summary { summary } => summary,
+        _ => panic!("summary"),
+    };
+    assert_eq!((summary.stops, summary.routes, summary.trips, summary.stop_times), (3, 1, 3, 9));
+
+    // The calendar rule (weekday, minus 2026-11-26) becomes explicit
+    // running dates: Friday 2026-10-23 runs, the removed day doesn't.
+    let services = match dispatch(Request::ActiveServices { feed_id, date: "2026-10-23".into() }).unwrap() {
+        Response::ActiveServices { services } => services,
+        _ => panic!("active_services"),
+    };
+    assert_eq!(services, vec!["10-weekday".to_string()]);
+    let none = match dispatch(Request::ActiveServices { feed_id, date: "2026-11-26".into() }).unwrap() {
+        Response::ActiveServices { services } => services,
+        _ => panic!("active_services"),
+    };
+    assert!(none.is_empty(), "the Removed exception date has no service");
+
+    // Departures at A: the derived trip ids are "<service>@<start>".
+    let deps = match dispatch(Request::Departures {
+        feed_id,
+        stop_id: "A".into(),
+        date: "2026-10-23".into(),
+        from_secs: 0,
+        limit: 10,
+    })
+    .unwrap()
+    {
+        Response::Departures { departures } => departures,
+        _ => panic!("departures"),
+    };
+    assert_eq!(deps.len(), 3);
+    assert_eq!(deps[0].trip_id, "10-weekday@28800");
+    assert_eq!(deps[0].service_id, "10-weekday");
+    // Interpolation: B (midpoint of a 600s run) is 5 minutes in.
+    let deps_b = match dispatch(Request::Departures {
+        feed_id,
+        stop_id: "B".into(),
+        date: "2026-10-23".into(),
+        from_secs: 0,
+        limit: 10,
+    })
+    .unwrap()
+    {
+        Response::Departures { departures } => departures,
+        _ => panic!("departures"),
+    };
+    assert_eq!(deps_b[0].departure_time, Some(28800 + 300));
+
+    // The runcut: block 400 chains both trips. The derived view shows
+    // the realized gap (20 min: 15 min authored layover + 5 min run
+    // slack) — the authored layover minimum is a constraint, not a
+    // time, and GTFS-shaped views can only carry the gap.
+    let block = match dispatch(Request::BlockTrips {
+        feed_id,
+        block_id: "400".into(),
+        date: "2026-10-23".into(),
+    })
+    .unwrap()
+    {
+        Response::BlockTrips { trips } => trips,
+        _ => panic!("block_trips"),
+    };
+    assert_eq!(block.len(), 2);
+    assert_eq!(block[1].layover_secs, Some(1200));
+
+    // Planning: A→C on the planner's own document, 1 leg.
+    let plan = match dispatch(Request::PlanTrip {
+        feed_id,
+        from: "A".into(),
+        to: "C".into(),
+        date: "2026-10-23".into(),
+        depart_secs: 28800,
+        max_legs: 3,
+    })
+    .unwrap()
+    {
+        Response::PlanTrip { itinerary } => itinerary,
+        _ => panic!("plan_trip"),
+    };
+    let itinerary = plan.expect("A→C is plannable");
+    assert_eq!(itinerary.legs.len(), 1);
+    match &itinerary.legs[0] {
+        transit_router::Leg::Transit { trip_id, alight_secs, .. } => {
+            assert_eq!(trip_id, "10-weekday@28800");
+            // C is a timepoint: the full 600s run.
+            assert_eq!(*alight_secs, 28800 + 600);
+        }
+        leg => panic!("expected a transit leg, got {leg:?}"),
+    }
+}
+
+#[test]
+fn network_import_infers_a_valid_document_from_a_feed() {
+    let feed_id = load();
+    let network = match dispatch(Request::NetworkImport { feed_id }).unwrap() {
+        Response::NetworkImport { network } => network,
+        _ => panic!("network_import"),
+    };
+    // The inference must produce a document the model accepts — that
+    // is the contract that lets the planner edit it immediately.
+    assert!(
+        network.validate().is_ok(),
+        "inferred document must validate: {:?}",
+        transit_network::validation_issues(&network)
+    );
+
+    // Fixture shape (see fixture_zip): 3 stops, 2 routes, three
+    // two-plus-stop patterns (t12 is a single-stop trip — dropped by
+    // design), two calendars (HOL served only t12), four services.
+    assert_eq!(network.stops.len(), 3);
+    assert_eq!(network.routes.len(), 2);
+    assert_eq!(network.patterns.len(), 3);
+    assert_eq!(network.calendars.len(), 2);
+    assert!(network.calendars.contains_key("WK"));
+    assert!(network.calendars.contains_key("SUN"));
+    assert_eq!(network.services.len(), 4);
+
+    // Route 10's A→B pattern: exact starts 08:00 (WK, t10) and
+    // 09:00 (SUN, t11) — one service per (service key, pattern).
+    let svc = network.services.get("WK:pat-10-0-0").expect("service id scheme");
+    assert_eq!(svc.schedule, Schedule::ExactTimes { starts: vec![8 * 3600] });
+    let pattern = &network.patterns[&svc.pattern];
+    assert_eq!(pattern.stops.len(), 2);
+    assert!(pattern.stops.iter().all(|s| s.timepoint));
+
+    // The runcut survives: B1 chains t10 and t20 chronologically.
+    let block = network.blocks.get("B1").expect("block B1 kept");
+    assert_eq!(block.trips.len(), 2);
+    assert_eq!(block.trips[0].start_secs, 8 * 3600);
+    assert_eq!(block.trips[0].service, "WK:pat-10-0-0");
+    assert!(block.layovers.is_empty(), "GTFS carries no layover data");
+}
+
+#[test]
+fn imported_network_preserves_the_service_view() {
+    // Law: what riders see is preserved through the codec round trip
+    // (feed → inferred document → materialized service view), except
+    // for the documented drop (single-stop trips).
+    let feed_id = load();
+    let date = DATE;
+    let original = match dispatch(Request::Departures {
+        feed_id,
+        stop_id: "A".into(),
+        date: date.into(),
+        from_secs: 0,
+        limit: 10,
+    })
+    .unwrap()
+    {
+        Response::Departures { departures } => departures,
+        _ => panic!("departures"),
+    };
+    let network = match dispatch(Request::NetworkImport { feed_id }).unwrap() {
+        Response::NetworkImport { network } => network,
+        _ => panic!("network_import"),
+    };
+    let derived = network_to_gtfs(&network).unwrap();
+    let at_a: Vec<(u32, String)> = derived
+        .next_departures(
+            "A",
+            chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap(),
+            0,
+            10,
+        )
+        .iter()
+        .map(|d| (d.departure_time.unwrap(), d.route_id.clone()))
+        .collect();
+    let expected: Vec<(u32, String)> = original
+        .iter()
+        .map(|d| (d.departure_time.unwrap(), d.route_id.clone()))
+        .collect();
+    assert_eq!(at_a, expected, "departures at A survive the round trip");
 }

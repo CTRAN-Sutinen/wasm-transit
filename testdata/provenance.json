@@ -1,7 +1,7 @@
 {
   "artifact": "web/pkg/transit_wasm.wasm",
-  "sha256": "d7d6a509e0e64a38e1e5222c0b44533f65934b7e4807ebd304758a995f06e658",
-  "source_commit": "ef966277770a9bbf12853d4df0544ff15a35afb8",
+  "sha256": "fcdaace7e58dbb2bdf3a3c585523f5a9bdbae6870aedba474fb90d52c8f6ba05",
+  "source_commit": "69d392bf0f3e8fce9c379dc3fe31d151e2306032",
   "dirty_tree": true,
   "rustc": "1.99.1",
   "built_on": "Linux 7.2.11-200.fc44.x86_64 x86_64",

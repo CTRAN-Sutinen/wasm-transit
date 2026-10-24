@@ -102,6 +102,47 @@ pub fn trip_arrival_end_secs(
         })
 }
 
+/// Materialize every trip of one service, regardless of date — the
+/// schedule expanded against its pattern. Trip *times* don't depend
+/// on the date (only whether the service runs at all does), so this
+/// is what an authoring UI previews and what transit-ops loads into
+/// the derived-feed view. On a validated network it cannot fail.
+pub fn materialize_service(
+    network: &Network,
+    service_id: &str,
+) -> Result<Vec<MaterializedTrip>, NetworkError> {
+    let service = network
+        .services
+        .get(service_id)
+        .ok_or_else(|| NetworkError::UnknownService {
+            service: service_id.to_string(),
+        })?;
+    let pattern = network
+        .patterns
+        .get(&service.pattern)
+        .ok_or_else(|| NetworkError::UnknownPattern {
+            service: service_id.to_string(),
+            pattern: service.pattern.clone(),
+        })?;
+    if network.routes.get(&pattern.route).is_none() {
+        return Err(NetworkError::UnknownRoute {
+            pattern: service.pattern.clone(),
+            route: pattern.route.clone(),
+        });
+    }
+    let mut trips = Vec::new();
+    for start in trip_starts(&service.schedule) {
+        trips.push(MaterializedTrip {
+            service: service_id.to_string(),
+            route: pattern.route.clone(),
+            pattern: service.pattern.clone(),
+            start_secs: start,
+            stop_times: stop_times(&service.pattern, pattern, start)?,
+        });
+    }
+    Ok(trips)
+}
+
 /// Materialize every trip that runs on `date`, sorted by start time
 /// (ties by service id). Empty result means "nothing runs today".
 pub fn materialize(
@@ -120,28 +161,7 @@ pub fn materialize(
         if !calendar.runs_on(date) {
             continue;
         }
-        let pattern = network
-            .patterns
-            .get(&service.pattern)
-            .ok_or_else(|| NetworkError::UnknownPattern {
-                service: service_id.clone(),
-                pattern: service.pattern.clone(),
-            })?;
-        if network.routes.get(&pattern.route).is_none() {
-            return Err(NetworkError::UnknownRoute {
-                pattern: service.pattern.clone(),
-                route: pattern.route.clone(),
-            });
-        }
-        for start in trip_starts(&service.schedule) {
-            trips.push(MaterializedTrip {
-                service: service_id.clone(),
-                route: pattern.route.clone(),
-                pattern: service.pattern.clone(),
-                start_secs: start,
-                stop_times: stop_times(service_id, pattern, start)?,
-            });
-        }
+        trips.extend(materialize_service(network, service_id)?);
     }
     trips.sort_by(|a, b| {
         a.start_secs

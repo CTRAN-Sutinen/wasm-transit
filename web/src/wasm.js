@@ -63,8 +63,22 @@ export class GtfsHandle {
     this.#feedId = feedId;
   }
 
+  /// The registry id — hosts need it to address ops directly (the
+  /// planner's `network_import`, for instance).
+  feedId() {
+    return this.#feedId;
+  }
+
   static load(bytes) {
     const resp = invokeBytes(OP_LOAD_FEED, bytes);
+    return new GtfsHandle(resp.feed_id);
+  }
+
+  /// An authored network document (transit-network) materialized into
+  /// the same derived-feed view — same registry, same ops. Invalid
+  /// documents throw (validate first via `network_validate`).
+  static load_network(network) {
+    const resp = invoke({ op: "network_load", network });
     return new GtfsHandle(resp.feed_id);
   }
 
@@ -124,9 +138,22 @@ export function decode_rt(bytes) {
   return invokeBytes(OP_DECODE_RT, bytes).overview;
 }
 
+/// Validate an authored network document without loading it — every
+/// issue comes back for the authoring UI. Never throws.
+export function network_validate(network) {
+  return invoke({ op: "network_validate", network }).issues;
+}
+
+/// Infer an authored network document from a loaded feed — the
+/// planner's bootstrap path. Deterministic: the same feed bytes give
+/// the same document everywhere.
+export function network_import(feedId) {
+  return invoke({ op: "network_import", feed_id: feedId }).network;
+}
+
 /// The entry point main.js awaits: instantiate the artifact, then
 /// hand back the same API surface the app expects.
 export async function loadWasm() {
   await instantiate();
-  return { GtfsHandle, decode_rt };
+  return { GtfsHandle, decode_rt, network_validate, network_import };
 }

@@ -24,7 +24,9 @@ crates/
 ├── transit-ops   The host-agnostic operations layer: a typed
 │                  `dispatch(Request) -> Response` seam (serde-tagged,
 │                  so it serializes to `{"op": ...}` JSON) plus the
-│                  per-feed registry. Native tests call it directly.
+│                  per-feed registry. Authored network documents
+│                  (transit-network) load through the same registry.
+│                  Native tests call it directly.
 ├── transit-rt     GTFS-realtime: Rust types generated from the official
 │                  gtfs-realtime.proto (see proto/), plus a decode helper.
 ├── transit-sync  The sync document: EditRecord (an operator edit plus

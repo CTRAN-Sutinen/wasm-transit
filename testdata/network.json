@@ -1,0 +1,49 @@
+{
+  "name": "Planner Network",
+  "anchor": "noon_minus_twelve",
+  "stops": {
+    "A": { "name": "Main & 1st", "lat": 45.5, "lon": -73.5 },
+    "B": { "name": "Main & 2nd", "lat": 45.51, "lon": -73.51 },
+    "C": { "name": "Main & 3rd", "lat": 45.52, "lon": -73.52 }
+  },
+  "routes": {
+    "10": { "name": "Route 10", "mode": "bus" }
+  },
+  "patterns": {
+    "10-inbound": {
+      "route": "10",
+      "name": "10 inbound via Main",
+      "stops": [
+        { "stop": "A", "timepoint": true, "distance_m": 0 },
+        { "stop": "B", "timepoint": false, "distance_m": 600 },
+        { "stop": "C", "timepoint": true, "distance_m": 1200 }
+      ],
+      "timing": [
+        { "start_secs": 0, "end_secs": 108000, "at_timepoints": [0, 600] }
+      ]
+    }
+  },
+  "calendars": {
+    "weekday": {
+      "days": { "mon": true, "tue": true, "wed": true, "thu": true, "fri": true, "sat": false, "sun": false },
+      "ranges": [ { "start": "2026-01-01", "end": "2026-12-31" } ],
+      "exceptions": [ { "date": "2026-11-26", "state": "removed" } ]
+    }
+  },
+  "services": {
+    "10-weekday": {
+      "pattern": "10-inbound",
+      "calendar": "weekday",
+      "schedule": { "kind": "exact_times", "starts": [28800, 30600, 91800] }
+    }
+  },
+  "blocks": {
+    "400": {
+      "trips": [
+        { "service": "10-weekday", "start_secs": 28800 },
+        { "service": "10-weekday", "start_secs": 30600 }
+      ],
+      "layovers": [ { "after_trip": 0, "secs": 900, "at": "C" } ]
+    }
+  }
+}

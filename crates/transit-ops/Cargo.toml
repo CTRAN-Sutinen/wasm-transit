@@ -14,6 +14,7 @@ transit-core = { path = "../transit-core" }
 transit-router = { path = "../transit-router" }
 transit-rt = { path = "../transit-rt" }
 transit-sync = { path = "../transit-sync" }
+transit-network = { path = "../transit-network" }
 
 [dev-dependencies]
 proptest = "1"

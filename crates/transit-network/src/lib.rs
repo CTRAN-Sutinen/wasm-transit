@@ -31,7 +31,10 @@ pub mod model;
 pub mod validate;
 
 pub use error::NetworkError;
-pub use materialize::{materialize, trip_arrival_end_secs, trip_starts, MaterializedTrip, StopTime};
+pub use materialize::{
+    materialize, materialize_service, trip_arrival_end_secs, trip_starts, MaterializedTrip,
+    StopTime,
+};
 pub use model::{
     Anchor, Block, CalendarException, CalendarRule, DateRange, DayState, HeadwayBand, Layover,
     Mode, Network, Pattern, PatternStop, Route, Schedule, Service, Stop, TimingProfile, TripRef,

@@ -16,6 +16,7 @@
 //! "YYYY-MM-DD" strings and times as seconds since midnight.
 
 pub mod geojson;
+pub mod network;
 pub mod rt;
 pub mod state;
 
@@ -23,6 +24,7 @@ pub use geojson::{
     FeatureCollection, LineGeometry, PointGeometry, StopFeature, StopProps, TripLineFeature,
     TripProps,
 };
+pub use network::network_to_gtfs;
 pub use rt::{RtOverview, StopUpdateView, TripUpdateView, VehicleView};
 pub use state::FeedState;
 
@@ -38,6 +40,20 @@ use transit_sync::EditRecord;
 pub enum Request {
     /// Parse a GTFS static zip from raw bytes; registers the feed.
     LoadFeed { bytes: Vec<u8> },
+    /// Validate an authored network document without loading it.
+    /// Returns every issue — the authoring UI's feedback loop.
+    NetworkValidate { network: transit_network::Network },
+    /// Infer an authored network document from a loaded feed — the
+    /// planner's bootstrap path: the network the agency already runs,
+    /// clustered into patterns. Deliberately lossy; deterministic.
+    NetworkImport { feed_id: u32 },
+    /// Materialize an authored network document into the derived-feed
+    /// view and register it in the same registry a parsed zip lands
+    /// in, so every other op (departures, planning, blocks, geojson)
+    /// works on a planner's document unchanged. Invalid documents are
+    /// rejected; the error carries the first issue (validate first
+    /// when the whole list is wanted).
+    NetworkLoad { network: transit_network::Network },
     /// Entity counts of a feed.
     Summary { feed_id: u32 },
     /// Name-sorted `[{ stop_id, name }]` for UI pickers.
@@ -127,6 +143,9 @@ pub enum Request {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     LoadFeed { feed_id: u32, summary: transit_core::FeedSummary },
+    NetworkValidate { issues: Vec<transit_network::NetworkError> },
+    NetworkImport { network: transit_network::Network },
+    NetworkLoad { feed_id: u32, summary: transit_core::FeedSummary },
     Summary { summary: transit_core::FeedSummary },
     Stops { stops: Vec<transit_core::StopSummary> },
     Routes { routes: Vec<transit_core::RouteSummary> },
@@ -185,6 +204,20 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
             let summary = gtfs.summary();
             let feed_id = state::register_feed(gtfs);
             Ok(Response::LoadFeed { feed_id, summary })
+        }
+        Request::NetworkValidate { network } => Ok(Response::NetworkValidate {
+            issues: transit_network::validation_issues(&network),
+        }),
+        Request::NetworkImport { feed_id } => state::with_feed(feed_id, |f| {
+            Ok(Response::NetworkImport {
+                network: network::gtfs_to_network(&f.gtfs),
+            })
+        }),
+        Request::NetworkLoad { network } => {
+            let gtfs = network::network_to_gtfs(&network)?;
+            let summary = gtfs.summary();
+            let feed_id = state::register_feed(gtfs);
+            Ok(Response::NetworkLoad { feed_id, summary })
         }
         Request::DecodeRt { bytes } => {
             Ok(Response::DecodeRt { overview: rt::decode_rt_overview(&bytes)? })

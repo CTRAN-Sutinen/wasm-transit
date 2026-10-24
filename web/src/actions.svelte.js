@@ -317,7 +317,7 @@ export function flushPersist() {
  * caches drop, and derived views re-query via feedEpoch. Also called
  * after a feed load — every record is revalidated against the new
  * artifact. No-op when no feed is loaded (records wait in the doc). */
-function pushEdits() {
+export function pushEdits() {
   if (!app.gtfs) return;
   try {
     app.editReports = app.gtfs.set_diversions(getEditDocument());

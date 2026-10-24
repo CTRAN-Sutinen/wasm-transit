@@ -2,9 +2,15 @@
 //! document can carry, plus the failure modes of materialization.
 //! One enum so callers (and the wasm seam) match on a single type.
 
+use serde::Serialize;
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Error)]
+/// Every invariant violation a network document can carry, plus the
+/// failure modes of materialization. One enum so callers (and the
+/// wasm seam) match on a single type. Serializes as the payload of
+/// the `network_validate` op.
+#[derive(Debug, Clone, PartialEq, Error, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum NetworkError {
     // -----------------------------------------------------------------
     // Referential integrity

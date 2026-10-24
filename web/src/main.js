@@ -14,10 +14,16 @@ app.wasm = await loadWasm();
 app.status = "wasm ready";
 
 // E2E/inspection hooks: override the app's clock, read the map state
-// (set by MapView), and force the debounced edit-document write so
-// reloads in tests are deterministic. All no-op in normal use.
+// (set by MapView), force the debounced edit-document write so
+// reloads in tests are deterministic, and drop the local edit
+// document (so a test can isolate itself from the server's shared
+// one). All no-op in normal use.
 window.__setNow = setNowOverride;
 window.__flushEdits = flushPersist;
+window.__clearEdits = () => {
+  setEditDocument([]);
+  flushPersist();
+};
 
 // Bootstrap, in dependency order: settings (cheap, local) → the edit
 // document (plain data, may exist without a feed) → the cached feed
@@ -30,6 +36,7 @@ try {
   app.vpUrl = settings.vpUrl ?? "";
   app.rtPolling = !!settings.rtPolling && !!settings.rtUrl;
   app.vpPolling = !!settings.vpPolling && !!settings.vpUrl;
+  app.persona = localStorage.getItem("transit:persona") ?? "rider";
 
   const edits = await get(EDITS_KEY);
   if (Array.isArray(edits)) setEditDocument(edits);

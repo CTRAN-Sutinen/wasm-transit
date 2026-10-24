@@ -42,14 +42,27 @@ transit-rt      prost types from the official GTFS-rt proto.
 transit-sync   THE sync document: EditRecord, FeedManifest, EditReport,
                 pure validation/merge logic. Shared by every host.
 transit-ops     dispatch(Request) -> Response: the host-agnostic seam
-                + per-feed registry (feed_id keyed).
+                + per-feed registry (feed_id keyed). The network
+                codec lives in src/network.rs, both directions:
+                network_import infers a document from a loaded feed
+                (the planner's bootstrap — a planner works off an
+                existing network), network_validate reports every
+                issue, network_load materializes a document into the
+                same registry a parsed zip lands in.
 transit-wasm    THE artifact: flat import-free C ABI over dispatch.
                 No wasm-bindgen — do not reintroduce host glue.
 server/         Go + wazero host: scaffolding only (HTTP, manifest,
                 proxy). It must never make a domain decision.
-web/            Svelte 5 runes + Vite. src/wasm.js wraps the artifact
-                with a stable GtfsHandle API; components never see
-                the ABI.
+web/            Svelte 5 runes + Vite. Persona tabs (rider /
+                dispatcher / planner) share one map and one feed
+                underneath — each tab shows only its own workflow.
+                src/wasm.js wraps the artifact (GtfsHandle, including
+                load_network; network_validate); components never
+                see the ABI. The planner tab authors a
+                transit-network document (src/planner.svelte.js:
+                clone → edit → replace → revalidate, same
+                discipline as the edit document) and materializes
+                it as the active feed.
 ```
 
 **Ownership rules** (violations here caused real bugs; keep them):

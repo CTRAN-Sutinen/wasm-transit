@@ -20,8 +20,15 @@ async function loadFeed(page) {
   // Deterministic clock: Friday 2026-10-23 at 07:30, so the fixture's
   // 08:00/08:20 trips are always upcoming regardless of real time.
   await page.evaluate(() => window.__setNow({ date: "2026-10-23", secs: 27000 }));
-  await page.setInputFiles("input[type=file]", path.join(fixtures, "sample-gtfs.zip"));
+  // Scoped to the data loader: the planner panel carries its own
+  // (hidden) file input for network documents.
+  await page.locator(".dropzone input[type=file]").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
   await expect(page.getByText(/Loaded|Restored/)).toBeVisible();
+}
+
+/// Switch the panel to a persona view (Rider / Dispatcher / Planner).
+async function switchPersona(page, name) {
+  await page.getByRole("tab", { name }).click();
 }
 
 /// Wait until the MapLibre instance exists and its sources are live.
@@ -60,8 +67,8 @@ test("loading a feed populates summary, board and map", async ({ page }) => {
   await waitForMap(page);
   await loadFeed(page);
 
-  // summary card
-  await expect(page.getByRole("cell", { name: "agencies" })).toBeVisible();
+  // compact feed line (the persona split retired the summary table)
+  await expect(page.locator(".feed-line")).toContainText("5 trips");
 
   // departures render for the first stop once selected
   await page.getByLabel("Stop").selectOption("A");
@@ -134,7 +141,7 @@ test("refresh restores the feed from local cache", async ({ page }) => {
 
   await page.reload();
   await expect(page.getByText(/Restored/)).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByRole("cell", { name: "agencies" })).toBeVisible();
+  await expect(page.locator(".feed-line")).toContainText("5 trips");
 });
 
 test("realtime feed colors delays and vehicles", async ({ page }) => {
@@ -142,7 +149,7 @@ test("realtime feed colors delays and vehicles", async ({ page }) => {
   await waitForMap(page);
   await loadFeed(page);
 
-  await page.setInputFiles("input[type=file]", path.join(fixtures, "sample-rt.pb"));
+  await page.locator(".dropzone input[type=file]").setInputFiles(path.join(fixtures, "sample-rt.pb"));
 
   // severity chip for the delayed trip (worst +180 s -> "late 1-5 min")
   await expect(page.getByText(/late 1–5 min/)).toBeVisible();
@@ -176,10 +183,12 @@ test("diversion reroutes the schedule, the board and the planner", async ({ page
   await waitForMap(page);
   await loadFeed(page);
 
-  // Route 10, anchors A -> B, skip C, +5 minutes.
+  // Route 10, anchors A -> B, skip C, +5 minutes — dispatcher work.
+  await switchPersona(page, "Dispatcher");
   await makeDiversion(page, 5);
 
-  // C loses its only service (t30 used to run A -> C -> B).
+  // The rider's view: C loses its only service (t30 used to run A -> C -> B).
+  await switchPersona(page, "Rider");
   await page.getByLabel("Stop").selectOption("C");
   const rows = page.locator("section:has(h2:text('Departures')) tbody tr");
   await expect(rows).toHaveCount(0);
@@ -205,18 +214,22 @@ test("diversion reroutes the schedule, the board and the planner", async ({ page
   await page.getByRole("button", { name: "Plan trip" }).click();
   await expect(page.locator(".plan-notice")).toContainText(/without it you would arrive 08:45/);
 
-  // Toggle the diversion off: C's service returns.
+  // Toggle the diversion off (dispatcher again): C's service returns.
+  await switchPersona(page, "Dispatcher");
   await page.locator(".diversion-list input[type=checkbox]").first().uncheck();
+  await switchPersona(page, "Rider");
   await page.getByLabel("Stop").selectOption("C");
   await expect(rows).toHaveCount(1);
   await expect(page.getByText("08:45", { exact: true })).toBeVisible();
 
   // The edit persists in IndexedDB next to the feed: after a reload
   // it is still listed (retired, as toggled — the tombstone survives).
+  // The persona persists too: the panel comes back in Rider.
   await page.evaluate(() => window.__flushEdits());
   await page.reload();
   await waitForMap(page);
   await expect(page.getByText(/Restored/)).toBeVisible({ timeout: 10_000 });
+  await switchPersona(page, "Dispatcher");
   await expect(page.locator(".diversion-list li.inactive")).toHaveCount(1);
 });
 
@@ -224,6 +237,9 @@ test("diversion ripple shows as a tight block layover", async ({ page }) => {
   await page.goto("/");
   await waitForMap(page);
   await loadFeed(page);
+
+  // Blocks and diversions live in the dispatcher view.
+  await switchPersona(page, "Dispatcher");
 
   // Block B1: t10 08:00 -> 08:10, then t20 at 08:20 (10 min layover).
   const blocks = page.locator("section", { has: page.getByRole("heading", { name: "Blocks" }) });
@@ -241,6 +257,7 @@ test("diversion syncs to the server and back", async ({ page }) => {
   await page.goto("/");
   await waitForMap(page);
   await loadFeed(page);
+  await switchPersona(page, "Dispatcher");
 
   // Push: create a diversion (a local draft), sync, and the server
   // document must hold it as submitted. Other tests in this run may
@@ -290,4 +307,67 @@ test("diversion syncs to the server and back", async ({ page }) => {
   // alongside our own (skips C, +5 min).
   await expect(page.locator(".diversion-list")).toContainText("skips Main & 3rd");
   await expect(page.locator(".diversion-list")).toContainText("+2 min");
+});
+
+test("persona tabs split the workflows", async ({ page }) => {
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+
+  // Rider: arrivals and trip planning, no ops tools.
+  await expect(page.getByRole("heading", { name: "Trip planner" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "New diversion" })).toHaveCount(0);
+
+  // Dispatcher: the operation — blocks and diversions, no trip planner.
+  await switchPersona(page, "Dispatcher");
+  await expect(page.getByRole("heading", { name: "Blocks" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "New diversion" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trip planner" })).toHaveCount(0);
+
+  // Planner: network authoring, and no feed loader at all.
+  await switchPersona(page, "Planner");
+  await expect(page.getByRole("heading", { name: "Network document" })).toBeVisible();
+  await expect(page.locator(".dropzone")).toHaveCount(0);
+});
+
+test("planner authors a network and the rider uses it", async ({ page }) => {
+  await page.goto("/");
+  await waitForMap(page);
+  // The server's edit document is shared across this run (earlier
+  // tests pushed diversions whose route/stop ids match the derived
+  // network — they apply to it, by design). This test is about
+  // authoring, not diversions: drop the local document.
+  await page.evaluate(() => window.__clearEdits());
+  await loadFeed(page);
+  await switchPersona(page, "Planner");
+
+  // The planner works off an existing network: derive the document
+  // from the loaded feed (trips cluster into patterns).
+  await page.getByRole("button", { name: "Derive from loaded feed" }).click();
+  await expect(page.getByText("valid", { exact: true })).toBeVisible();
+
+  // Move route 10's 08:00 trip (t10) five minutes later.
+  await page.getByLabel("Service", { exact: true }).selectOption("WK:pat-10-0-0");
+  const firstStart = page.locator(".trip-start").first();
+  await firstStart.fill("08:05:00");
+  await firstStart.blur();
+  await expect(page.getByText("valid", { exact: true })).toBeVisible();
+
+  // Materialize: the app's active feed is now the authored network.
+  await page.getByRole("button", { name: "Load into app" }).click();
+  await expect(page.getByText(/Materialized/)).toBeVisible();
+
+  // The rider sees the authored schedule: the 08:05 departure at A.
+  await page.evaluate(() => window.__setNow({ date: "2026-10-23", secs: 27000 }));
+  await switchPersona(page, "Rider");
+  await page.getByLabel("Stop").selectOption("A");
+  await expect(page.getByText("08:05", { exact: true })).toBeVisible();
+
+  // And rides it: A -> B boards the 08:05 trip, arrives 08:15 (the
+  // authored 10-minute run).
+  await page.getByLabel("From", { exact: true }).selectOption("A");
+  await page.getByLabel("To", { exact: true }).selectOption("B");
+  await page.locator("#plan-time").fill("07:30");
+  await page.getByRole("button", { name: "Plan trip" }).click();
+  await expect(page.locator(".plan-overlay").getByText("08:15", { exact: true })).toBeVisible();
 });

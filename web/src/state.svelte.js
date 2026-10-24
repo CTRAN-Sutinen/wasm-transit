@@ -18,11 +18,29 @@ export function setEditDocument(next) {
   editDocument = next;
 }
 
+/// The authored network document (transit-network `Network`) — same
+/// discipline as the edit document: JS-owned, plain data, wholesale
+/// replacement. wasm only ever sees it as an argument to
+/// `network_validate` / `network_load`; the materialized feed it
+/// registers is a derived view. Deliberately not persisted yet —
+/// planner sync is a separate (future) concern.
+let networkDoc = $state.raw(null);
+export function getNetworkDoc() {
+  return networkDoc;
+}
+export function setNetworkDoc(next) {
+  networkDoc = next;
+}
+
 export const app = $state({
   // wasm exports, injected at startup (main.js)
   wasm: null,
 
   status: "loading wasm...",
+
+  // Persona views: which workflow the panel serves. The map is shared
+  // by all of them; the panel content is focused per persona.
+  persona: "rider", // "rider" | "dispatcher" | "planner"
 
   // GTFS static
   gtfs: null, // GtfsHandle
@@ -63,6 +81,11 @@ export const app = $state({
   vpUrl: "",
   rtPolling: false,
   vpPolling: false,
+
+  // Network authoring (planner persona). Issues come back from the
+  // artifact (`network_validate`): typed, whole-list, never thrown.
+  networkIssues: [],
+  networkLabel: "",
 
   // Persistence: the raw feed zip is cached in IndexedDB so refreshes
   // restore instantly without re-downloading.

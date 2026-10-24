@@ -54,6 +54,37 @@ impl Gtfs {
         parse::from_zip_bytes(bytes)
     }
 
+    /// Build a feed from parts, wiring the secondary indexes. The zip
+    /// parser is the usual producer; the network materializer in
+    /// transit-ops (an authored network document expanded into the
+    /// derived-feed view) is the other one.
+    pub fn from_parts(
+        agencies: Vec<Agency>,
+        routes: HashMap<String, Route>,
+        stops: HashMap<String, Stop>,
+        trips: HashMap<String, Trip>,
+        stop_times: Vec<StopTime>,
+        services: ServiceCalendar,
+        shapes: HashMap<String, Vec<ShapePoint>>,
+        feed_info: Option<FeedInfo>,
+    ) -> Gtfs {
+        let mut gtfs = Gtfs {
+            agencies,
+            routes,
+            stops,
+            trips,
+            stop_times,
+            services,
+            stop_times_by_stop: HashMap::new(),
+            stop_times_by_trip: HashMap::new(),
+            blocks: HashMap::new(),
+            shapes,
+            feed_info,
+        };
+        gtfs.rebuild_indexes();
+        gtfs
+    }
+
     /// Rebuild the secondary indexes from the current `stop_times` and
     /// `trips`. Used after diversion patching, which rewrites rows
     /// wholesale.

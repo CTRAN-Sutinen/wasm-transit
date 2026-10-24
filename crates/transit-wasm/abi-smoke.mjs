@@ -151,6 +151,33 @@ assert(errOutcome.error && errOutcome.error.includes("unknown feed_id"), "unknow
 const second = invokeBytes(OP_LOAD_FEED, readFileSync(FIXTURE));
 assert(second.feed_id !== feedId, "registry assigns distinct feed ids");
 
+// An authored network document drives the same op surface a parsed
+// zip does (testdata/network.json is shared with the corpus and the
+// native dispatch tests). GTFS is also the bootstrap: infer a
+// document from the loaded feed first.
+{
+  const imported = invoke({ op: "network_import", feed_id: feedId });
+  assert(imported.network && Object.keys(imported.network.stops).length === 3,
+    "network_import infers the fixture feed (3 stops)");
+  assert(invoke({ op: "network_validate", network: imported.network }).issues.length === 0,
+    "the inferred document validates clean");
+
+  const netDoc = JSON.parse(readFileSync(path.join(here, "../../testdata/network.json"), "utf8"));
+  const v = invoke({ op: "network_validate", network: netDoc });
+  assert(v.issues.length === 0, "fixture network validates clean");
+  const loaded = invoke({ op: "network_load", network: netDoc });
+  assert(loaded.summary.stops === 3 && loaded.summary.trips === 3, "network loads with summary");
+  const netFeed = loaded.feed_id;
+  const deps = invoke({ op: "departures", feed_id: netFeed, stop_id: "A", date: "2026-10-23", from_secs: 0, limit: 10 }).departures;
+  assert(deps.length === 3 && deps[0].trip_id === "10-weekday@28800", "derived trip ids are <service>@<start>");
+  const plan = invoke({ op: "plan_trip", feed_id: netFeed, from: "A", to: "C", date: "2026-10-23", depart_secs: 28800, max_legs: 3 }).itinerary;
+  assert(plan && plan.legs.length === 1 && plan.legs[0].trip_id === "10-weekday@28800", "plan on the planner's document");
+  const broken = JSON.parse(JSON.stringify(netDoc));
+  broken.patterns["10-inbound"].stops[1].stop = "ghost";
+  const invalid = JSON.parse(rawInvoke(JSON.stringify({ op: "network_load", network: broken })));
+  assert(invalid.error && invalid.error.includes("invalid network"), "invalid documents are error outcomes");
+}
+
 // Non-UTF-8 request payloads: an error outcome, never a trap.
 {
   const payload = Buffer.from([0xff, 0xfe, 0x00, 0b10101010, 0xf0]);
@@ -172,16 +199,23 @@ assert(second.feed_id !== feedId, "registry assigns distinct feed ids");
   const corpus = JSON.parse(readFileSync(corpusPath, "utf8"));
   const fixtureBytes = readFileSync(FIXTURE);
   let feedToken = "";
+  let netToken = "";
   for (const step of corpus.steps) {
     let got;
     if (step.bytes_op !== undefined) {
       got = rawInvokeBytes(step.bytes_op, fixtureBytes);
       feedToken = String(JSON.parse(got).ok.feed_id);
     } else {
-      if (!feedToken) throw new Error(`corpus step ${step.name} uses $FEED before load`);
-      got = rawInvoke(step.request.replaceAll("$FEED", feedToken));
+      if (step.request.includes("$FEED") && !feedToken) throw new Error(`corpus step ${step.name} uses $FEED before load`);
+      if (step.request.includes("$NET") && !netToken) throw new Error(`corpus step ${step.name} uses $NET before network_load`);
+      got = rawInvoke(step.request.replaceAll("$FEED", feedToken).replaceAll("$NET", netToken));
     }
-    const want = step.expect.replaceAll("$FEED", feedToken);
+    // A step with bind registers a second feed (the network
+    // document); its id is captured like the bytes load above.
+    if (step.bind === "$NET") {
+      netToken = String(JSON.parse(got).ok.feed_id);
+    }
+    const want = step.expect.replaceAll("$FEED", feedToken).replaceAll("$NET", netToken);
     assert(got === want, `corpus step ${step.name} diverges`);
   }
   assert(corpus.steps.length >= 14, "corpus has the full step set");

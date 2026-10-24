@@ -7,6 +7,7 @@
   import TripPlanner from "./components/TripPlanner.svelte";
   import PlanOverlay from "./components/PlanOverlay.svelte";
   import DiversionPanel from "./components/DiversionPanel.svelte";
+  import PlannerPanel from "./components/PlannerPanel.svelte";
   import { app } from "./state.svelte.js";
   import { loadRtFromUrl, loadVpFromUrl, saveSettings } from "./actions.svelte.js";
 
@@ -15,6 +16,21 @@
   let panelOpen = $state(localStorage.getItem("transit:panel-open") !== "closed");
 
   const summary = $derived(app.gtfs ? app.gtfs.summary() : null);
+
+  // Persona views: one workflow per tab, no clutter across them. The
+  // rider plans trips and watches arrivals; the dispatcher runs the
+  // operation (blocks, diversions, adherence); the planner authors
+  // the network itself. The map and the feed underneath are shared.
+  const personas = [
+    { id: "rider", label: "Rider" },
+    { id: "dispatcher", label: "Dispatcher" },
+    { id: "planner", label: "Planner" },
+  ];
+
+  function setPersona(id) {
+    app.persona = id;
+    localStorage.setItem("transit:persona", id);
+  }
 
   function togglePanel() {
     panelOpen = !panelOpen;
@@ -58,32 +74,37 @@
       <button onclick={togglePanel}>{panelOpen ? "Hide" : "Show"} panel</button>
     </header>
 
+    <nav class="tabs" role="tablist" aria-label="View">
+      {#each personas as p (p.id)}
+        <button role="tab" class:active={app.persona === p.id} onclick={() => setPersona(p.id)}>{p.label}</button>
+      {/each}
+    </nav>
+
     <p class="muted">{app.status}</p>
 
-    <Loader />
-
     {#if summary}
-    <section>
-      <h2>Feed summary</h2>
-      <table>
-        <tbody>
-          <tr><td>agencies</td><td>{summary.agencies}</td></tr>
-          <tr><td>routes</td><td>{summary.routes}</td></tr>
-          <tr><td>stops</td><td>{summary.stops}</td></tr>
-          <tr><td>trips</td><td>{summary.trips}</td></tr>
-          <tr><td>stop times</td><td>{summary.stop_times}</td></tr>
-        </tbody>
-      </table>
-    </section>
+      <p class="feed-line">
+        {summary.stops} stops · {summary.routes} routes · {summary.trips} trips · {summary.stop_times} stop times
+      </p>
     {/if}
 
-    {#if app.gtfs}
-      <DepartureBoard />
-      <TripPlanner />
-      <BlocksPanel />
-      <DiversionPanel />
+    {#if app.persona === "rider"}
+      <Loader />
+      {#if app.gtfs}
+        <DepartureBoard />
+        <TripPlanner />
+      {/if}
+    {:else if app.persona === "dispatcher"}
+      <Loader />
+      {#if app.gtfs}
+        <BlocksPanel />
+        <DiversionPanel />
+      {/if}
+    {:else if app.persona === "planner"}
+      <PlannerPanel />
     {/if}
-    {#if app.rtOverview}
+
+    {#if app.rtOverview && app.persona !== "planner"}
       <RtPanel />
     {/if}
   </aside>
