@@ -1,6 +1,16 @@
+# Rust
 /target
+
+# Node / frontend
 node_modules
 www/dist
 www/pkg
 www/test-results
 www/.playwright
+playwright-report
+
+# Go: `go build ./...` drops the binary in server/
+/server/server
+
+# Basemap extract — regenerate with `just basemap` (~94 MB at z15)
+www/public/basemap.pmtiles
