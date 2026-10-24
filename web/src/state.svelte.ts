@@ -18,6 +18,7 @@ import type { VehicleView } from "./types/VehicleView";
 import type { EntityKind, Focus } from "./planner";
 import type { GtfsHandle, WasmApi } from "./wasm";
 import type { PlanFeature } from "./actions";
+import type { Streets } from "./streets";
 
 /// The diversion editor's form state (UI only — the edit document
 /// below is the persisted truth).
@@ -122,6 +123,19 @@ export function getNetworkDoc(): Network | null {
 }
 export function setNetworkDoc(next: Network | null): void {
   networkDoc = next;
+}
+
+/// The imported street network (dispatcher detour snapping) — same
+/// discipline: plain data, wholesale replacement. Never proxied
+/// (extracts can be tens of MB) and not persisted: it is reference
+/// data the dispatcher re-imports, not authored state worth cloning
+/// into IndexedDB.
+let streets = $state.raw<Streets | null>(null);
+export function getStreets(): Streets | null {
+  return streets;
+}
+export function setStreets(next: Streets | null): void {
+  streets = next;
 }
 
 export const app = $state<AppState>({

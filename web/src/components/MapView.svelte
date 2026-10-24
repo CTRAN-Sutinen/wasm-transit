@@ -5,8 +5,11 @@
   // bundled app that path doesn't exist (404 + text/html => the "MIME
   // type" worker error). Point it at the worker file Vite emits instead.
   import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
-  import { app, getEditDocument } from "../state.svelte";
+  import { PMTiles, Protocol } from "pmtiles";
+  import { layers as basemapLayers, namedFlavor } from "@protomaps/basemaps";
+  import { app, getEditDocument, getStreets } from "../state.svelte";
   import { selectStop, setDiversionAnchor, addDetourPoint } from "../actions";
+  import { snapToStreet } from "../streets";
 
   maplibregl.setWorkerUrl(workerUrl);
 
@@ -17,12 +20,18 @@
   const src = (name: string): maplibregl.GeoJSONSource => map.getSource(name) as maplibregl.GeoJSONSource;
   let map!: maplibregl.Map;
   let mapLoaded = $state(false);
+  /// Stop positions as [lat, lon] — snap candidates for detour
+  /// drawing, cached when the stops layer updates.
+  let stopPts: [number, number][] = [];
 
   /// Basemap choice, in order of preference:
   /// 1. basemap.pmtiles served next to the app (built with planetiler or
   ///    pmtiles extract) — the fully local option; the map opens on the
   ///    archive's bounds, since tiles only exist inside them.
   /// 2. OpenFreeMap — free vector tiles, no API key.
+  /// The pmtiles viewer and basemap style are bundled (real npm deps,
+  /// no runtime CDN import on every map mount); only the glyph/sprite
+  /// assets still come from protomaps.github.io.
   /// Returns { style, initialView }.
   async function pickStyle(): Promise<{ style: any; initialView: { center: [number, number]; zoom: number } }> {
     const hasLocal = await fetch("basemap.pmtiles", { method: "HEAD" })
@@ -30,14 +39,12 @@
       .catch(() => false);
     if (hasLocal) {
       try {
-        const pmtiles: any = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/pmtiles@4/+esm");
-        const basemaps: any = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/@protomaps/basemaps/+esm");
-        maplibregl.addProtocol("pmtiles", new pmtiles.Protocol().tile);
+        maplibregl.addProtocol("pmtiles", new Protocol().tile);
 
         // A regional extract has no tiles outside its bbox — start the
         // map inside it. Read the bounds from the archive header.
-        const archive = new pmtiles.PMTiles("basemap.pmtiles");
-        const header: any = await archive.getHeader();
+        const archive = new PMTiles("basemap.pmtiles");
+        const header = await archive.getHeader();
         const initialView = {
           center: [(header.minLon + header.maxLon) / 2, (header.minLat + header.maxLat) / 2] as [number, number],
           zoom: Math.max(2, Math.round(Math.log2(360 / Math.max(0.05, header.maxLon - header.minLon))) + 1),
@@ -55,7 +62,7 @@
                 attribution: "Protomaps © OpenStreetMap contributors",
               },
             },
-            layers: basemaps.layers("protomaps", basemaps.namedFlavor("light"), { lang: "en" }),
+            layers: basemapLayers("protomaps", namedFlavor("light"), { lang: "en" }),
           } as maplibregl.StyleSpecification,
           initialView,
         };
@@ -67,6 +74,42 @@
       style: "https://tiles.openfreemap.org/styles/liberty",
       initialView: { center: [0, 0], zoom: 1 },
     };
+  }
+
+  /// Bounds over many coordinates, extended ONE point at a time.
+  /// MapLibre's `extend` parses a bare array-of-arrays as the
+  /// `[[west, south], [east, north]]` bounds form — passing all
+  /// coordinates at once silently ignores everything past the first
+  /// two and produces a degenerate box (this bit the planner framing).
+  const boundsOf = (coords: number[][]): maplibregl.LngLatBounds =>
+    coords.reduce(
+      (b, c) => b.extend(c as [number, number]),
+      new maplibregl.LngLatBounds(coords[0] as [number, number], coords[0] as [number, number]),
+    );
+
+  /// Snap radius in pixels: forgiving, but not fighting the drawer.
+  const SNAP_PX = 14;
+
+  /// A detour-drawing click, snapped to the nearest street segment or
+  /// stop within a few pixels; the raw position when nothing is close.
+  function snapClick(e: maplibregl.MapMouseEvent): { lat: number; lon: number } {
+    let best: { lat: number; lon: number } | null = null;
+    let bestPx = SNAP_PX;
+    const consider = (lat: number, lon: number): void => {
+      const p = map.project([lon, lat]);
+      const d = Math.hypot(p.x - e.point.x, p.y - e.point.y);
+      if (d <= bestPx) {
+        bestPx = d;
+        best = { lat, lon };
+      }
+    };
+    const streets = getStreets();
+    if (streets) {
+      const hit = snapToStreet(streets.network, e.lngLat.lat, e.lngLat.lng);
+      if (hit) consider(hit.lat, hit.lon);
+    }
+    for (const [lat, lon] of stopPts) consider(lat, lon);
+    return best ?? { lat: e.lngLat.lat, lon: e.lngLat.lng };
   }
 
   onMount(() => {
@@ -95,6 +138,14 @@
         // the console) inspect sources directly.
         window.__map = map;
         map.addSource("stops", { type: "geojson", data: EMPTY_FC });
+        // Streets sit under everything: a context layer for drawing,
+        // not the subject of the view.
+        map.addSource("streets", { type: "geojson", data: EMPTY_FC });
+        map.addLayer({
+          id: "streets-lines", type: "line", source: "streets",
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: { "line-width": 1.5, "line-color": "#b8b8b8" },
+        });
         map.addLayer({
           id: "stops-base", type: "circle", source: "stops",
           paint: {
@@ -194,10 +245,15 @@
           },
         });
 
-        // Detour drawing mode: plain map clicks append vertices. The
-        // stop layers below still get their own click events first.
+        // Detour drawing mode: clicks append vertices — snapped to
+        // streets (when imported) and stops within a few pixels, so
+        // the drawn detour follows real geometry instead of raw
+        // clicks. The stop layers below still get their own click
+        // events first.
         map.on("click", (e) => {
-          if (app.drawingDetour) addDetourPoint(e.lngLat.lat, e.lngLat.lng);
+          if (!app.drawingDetour) return;
+          const { lat, lon } = snapClick(e);
+          addDetourPoint(lat, lon);
         });
 
         map.on("click", "stops-base", (e) => {
@@ -232,10 +288,14 @@
     if (!mapLoaded || !app.gtfs) return;
     const data = app.gtfs.stops_geojson();
     src("stops").setData(data);
+    stopPts = data.features.map((f) => [
+      f.geometry.coordinates[1],
+      f.geometry.coordinates[0],
+    ]);
     const coords = data.features.map((f) => f.geometry.coordinates);
     if (coords.length === 1) map.jumpTo({ center: coords[0] as [number, number], zoom: 13 });
     else if (coords.length > 1) {
-      map.fitBounds(new maplibregl.LngLatBounds(coords[0] as [number, number], coords[0] as [number, number]).extend(coords as never), { padding: 40 });
+      map.fitBounds(boundsOf(coords), { padding: 40 });
     }
   });
 
@@ -244,13 +304,19 @@
     map.setFilter("stops-selected", ["==", ["get", "stop_id"], app.selectedStop ?? ""]);
   });
 
+  // The imported street network: context for detour drawing.
+  $effect(() => {
+    if (!mapLoaded) return;
+    src("streets").setData(getStreets()?.geojson ?? EMPTY_FC);
+  });
+
   $effect(() => {
     if (!mapLoaded) return;
     const feature = app.tripFeature;
     src("trip").setData(feature ?? EMPTY_FC);
     if (feature) {
       const coords = feature.geometry.coordinates as [number, number][];
-      map.fitBounds(new maplibregl.LngLatBounds(coords[0], coords[0]).extend(coords as never), { padding: 60 });
+      map.fitBounds(boundsOf(coords), { padding: 60 });
     }
   });
 
@@ -286,7 +352,7 @@
     src("itinerary").setData({ type: "FeatureCollection", features });
     if (features.length) {
       const coords = features.flatMap((f) => f.geometry.coordinates as [number, number][]);
-      map.fitBounds(new maplibregl.LngLatBounds(coords[0], coords[0]).extend(coords as never), { padding: 60 });
+      map.fitBounds(boundsOf(coords), { padding: 60 });
     }
   });
 
@@ -357,7 +423,7 @@
       f.geometry.type === "Point" ? [f.geometry.coordinates as [number, number]] : (f.geometry.coordinates as [number, number][]),
     );
     if (all.length) {
-      map.fitBounds(new maplibregl.LngLatBounds(all[0], all[0]).extend(all as never), { padding: 60 });
+      map.fitBounds(boundsOf(all), { padding: 60 });
     }
   });
 </script>

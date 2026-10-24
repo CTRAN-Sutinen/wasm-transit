@@ -253,6 +253,94 @@ test("diversion ripple shows as a tight block layover", async ({ page }) => {
   await expect(blocks.getByText("4 min")).toBeVisible();
 });
 
+test("detour drawing snaps to an imported street network", async ({ page }) => {
+  // Slow by nature: loading the feed flies the camera from the
+  // basemap's initial view across the country to the stops.
+  test.setTimeout(90_000);
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+  await switchPersona(page, "Dispatcher");
+
+  // Pixel-precise clicks need the camera settled on the feed's stops:
+  // loading the feed fires a fitBounds whose flight (from the local
+  // basemap's initial view) lasts seconds, and clicks mid-flight land
+  // at meaningless lngLats.
+  await switchPersona(page, "Dispatcher");
+  await page.waitForFunction(
+    () => {
+      const map = window.__map;
+      if (!map) return false;
+      const c = map.getCenter();
+      return (
+        !map.isMoving() && c.lng > -73.55 && c.lng < -73.45 &&
+        Math.abs(c.lat - 45.51) < 0.02 && map.getZoom() > 10
+      );
+    },
+    null, { timeout: 30_000 },
+  );
+
+  await page.getByRole("button", { name: "New diversion" }).click();
+
+  // Import the street network: Side St (2 segments) + Nowhere Rd (1).
+  await page.locator("#streets-file").setInputFiles(path.join(fixtures, "streets.geojson"));
+  await expect(page.getByText("3 street segments — snapping on")).toBeVisible();
+  expect((await mapData(page, "streets")).features.length).toBe(2);
+
+  await page.getByRole("button", { name: "Draw detour on map" }).click();
+
+  // Point-segment distance in degrees (planar is fine at this scale).
+  const distToSeg = (lon, lat, a, b) => {
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const len2 = dx * dx + dy * dy;
+    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((lon - a[0]) * dx + (lat - a[1]) * dy) / len2));
+    return Math.hypot(lon - (a[0] + t * dx), lat - (a[1] + t * dy));
+  };
+  const sideSt = [
+    [[-73.4990, 45.5030], [-73.5060, 45.5100]],
+    [[-73.5060, 45.5100], [-73.5130, 45.5170]],
+  ];
+
+  // Click ~12 px east of Side St's midpoint: the drawn vertex must
+  // land ON the street, not where the cursor was. Integer pixels —
+  // mouse events dispatch at whole-pixel positions.
+  const near = await page.evaluate(() => {
+    const p = window.__map.project([-73.5060, 45.5100]);
+    return { x: Math.round(p.x) + 10, y: Math.round(p.y) + 6 };
+  });
+  const rawNear = await page.evaluate(
+    ({ x, y }) => window.__map.unproject([x, y]),
+    near,
+  );
+  await page.mouse.click(near.x, near.y);
+
+  // A click far from every street and stop keeps its raw position.
+  const far = await page.evaluate(() => {
+    const p = window.__map.project([-73.5060, 45.5100]);
+    return { x: Math.round(p.x) - 200, y: Math.round(p.y) + 100 };
+  });
+  const rawFar = await page.evaluate(
+    ({ x, y }) => window.__map.unproject([x, y]),
+    far,
+  );
+  await page.mouse.click(far.x, far.y);
+
+  const drawn = (await mapData(page, "detour-draft")).features.filter(
+    (f) => f.geometry.type === "Point",
+  );
+  expect(drawn.length).toBe(2);
+
+  const [snappedLon, snappedLat] = drawn[0].geometry.coordinates;
+  const snappedDist = Math.min(...sideSt.map(([a, b]) => distToSeg(snappedLon, snappedLat, a, b)));
+  expect(snappedDist).toBeLessThan(2e-6); // on the street geometry
+  expect(Math.hypot(snappedLon - rawNear.lng, snappedLat - rawNear.lat))
+    .toBeGreaterThan(1e-5); // not the raw click
+
+  const [rawLon, rawLat] = drawn[1].geometry.coordinates;
+  expect(rawLon).toBeCloseTo(rawFar.lng, 7);
+  expect(rawLat).toBeCloseTo(rawFar.lat, 7);
+});
+
 test("diversion syncs to the server and back", async ({ page }) => {
   await page.goto("/");
   await waitForMap(page);

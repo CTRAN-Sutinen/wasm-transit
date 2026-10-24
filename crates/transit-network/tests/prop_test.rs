@@ -157,6 +157,7 @@ fn build_network(spec: &Spec) -> Network {
             Pattern {
                 route: "r0".into(),
                 name: format!("Pattern {j}"),
+                path: None,
                 stops,
                 timing: vec![TimingProfile {
                     start_secs: 0,

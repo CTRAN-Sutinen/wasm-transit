@@ -33,6 +33,17 @@ pub type CalendarId = String;
 pub type ServiceId = String;
 pub type BlockId = String;
 
+/// A WGS84 position. Authored geometry (a pattern's alignment) is
+/// model data — `lat` first, matching `Stop`'s field order. (GeoJSON
+/// views at the boundary reorder to [lon, lat]; the model never
+/// stores GeoJSON order.)
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Coord {
+    pub lat: f64,
+    pub lon: f64,
+}
+
 /// Serde helper: dates cross every boundary as `"YYYY-MM-DD"`.
 /// (chrono's serde feature is deliberately not enabled workspace-wide.)
 pub mod iso_date {
@@ -157,6 +168,12 @@ pub struct Pattern {
     pub route: RouteId,
     /// Human-facing description, e.g. "5-K Ave to Downtown via MLK".
     pub name: String,
+    /// The alignment the pattern follows on the ground, if authored.
+    /// Purely geographic: it carries no timing and no stops, and
+    /// materialization only uses it for map rendering (shapes), never
+    /// for scheduling. `None` (omitted) means "draw stop-to-stop lines".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<Vec<Coord>>,
     pub stops: Vec<PatternStop>,
     pub timing: Vec<TimingProfile>,
 }

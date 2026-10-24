@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { app, getEditDocument } from "../state.svelte";
+  import { app, getEditDocument, getStreets } from "../state.svelte";
   import {
     startDiversion, cancelDiversion, setDiversionAnchor, toggleSkipped,
     applyDiversion, toggleDiversion, toggleDrawing, clearDetour, syncEdits,
+    importStreetsFile,
   } from "../actions";
 
   const routes = $derived(app.gtfs ? app.gtfs.routes() : []);
@@ -59,6 +60,15 @@
   function isInterior(stopId: string) {
     return interior.some((s) => s.stop_id === stopId);
   }
+
+  async function onStreetsFile(ev: Event): Promise<void> {
+    const input = ev.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (file) await importStreetsFile(file);
+    input.value = ""; // same file can be re-imported after an edit
+  }
+
+  let streetsInput = $state<HTMLInputElement | null>(null); // bind:this target
 </script>
 
 {#if app.gtfs}
@@ -168,6 +178,26 @@
         {#if draft.detour.length}
           <span class="muted">{draft.detour.length} points</span>
           <button class="link" onclick={clearDetour}>Clear</button>
+        {/if}
+      </p>
+
+      <p>
+        <input
+          type="file"
+          id="streets-file"
+          accept=".geojson,.json,application/geo+json"
+          hidden
+          bind:this={streetsInput}
+          onchange={onStreetsFile}
+        >
+        <button onclick={() => streetsInput?.click()}>Import street network (GeoJSON)</button>
+        {#if getStreets()}
+          {@const count = getStreets()?.network.segmentCount ?? 0}
+          <span class="chip svc" title="Detour clicks snap to street segments and stops">
+            {count} street segments — snapping on
+          </span>
+        {:else}
+          <span class="muted">without one, detour clicks snap to stops only</span>
         {/if}
       </p>
 

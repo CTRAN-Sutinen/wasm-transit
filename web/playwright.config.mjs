@@ -1,20 +1,21 @@
 import { defineConfig } from "@playwright/test";
 
 // E2E tests run against the built app (npm run build) served by the
-// Go sync server on :8080. The server is started/stopped by the
-// runner unless one is already running (reuseExistingServer).
+// Go sync server — on their OWN port, never reused: a shared server
+// carries a live edit document, and the suite must be hermetic (nor
+// should test records land in a dev server someone is using).
 export default defineConfig({
   testDir: "./e2e",
   timeout: 20_000,
   retries: 0,
   use: {
-    baseURL: "http://127.0.0.1:8080",
+    baseURL: "http://127.0.0.1:8081",
   },
   webServer: {
-    command: "go run .",
+    command: "go run . -addr 127.0.0.1:8081",
     cwd: "../server",
-    url: "http://127.0.0.1:8080",
-    reuseExistingServer: true,
+    url: "http://127.0.0.1:8081",
+    reuseExistingServer: false,
     stdout: "ignore",
     stderr: "pipe",
   },

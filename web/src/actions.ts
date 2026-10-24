@@ -1,8 +1,9 @@
-import { app, getEditDocument, setEditDocument, type DiversionDraft } from "./state.svelte";
+import { app, getEditDocument, setEditDocument, setStreets, type DiversionDraft } from "./state.svelte";
 import { get as idbGet, set as idbSet, del as idbDel } from "idb-keyval";
 import type { EditRecord } from "./types/EditRecord";
 import type { Itinerary } from "./types/Itinerary";
 import type { LineGeometry } from "./types/LineGeometry";
+import { buildStreetNetwork } from "./streets";
 
 /// One drawn plan feature (transit leg or walk segment). MapView
 /// consumes these; the geometry is GeoJSON.
@@ -405,6 +406,25 @@ export function clearDetour(): void {
 
 export function toggleDrawing(): void {
   app.drawingDetour = !app.drawingDetour;
+}
+
+/// Import a street network (GeoJSON: LineString/MultiLineString
+/// features, e.g. an OSM extract). Detour clicks snap to it. Not
+/// persisted — reference data, re-imported per session.
+export async function importStreetsFile(file: File): Promise<void> {
+  try {
+    const text = await file.text();
+    const streets = buildStreetNetwork(JSON.parse(text));
+    if (!streets) {
+      app.status = "No line features in that file — expected GeoJSON with LineString/MultiLineString geometries.";
+      return;
+    }
+    setStreets(streets);
+    app.status = `Street network loaded — ${streets.network.segmentCount} segments; detour clicks snap to streets and stops.`;
+  } catch (e) {
+    app.status = `Street import failed: ${(e as Error).message}`;
+    console.warn("street import failed:", e);
+  }
 }
 
 export function applyDiversion(): void {

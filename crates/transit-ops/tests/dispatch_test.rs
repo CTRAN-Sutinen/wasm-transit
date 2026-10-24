@@ -616,6 +616,19 @@ fn network_import_infers_a_valid_document_from_a_feed() {
     assert_eq!(pattern.stops.len(), 2);
     assert!(pattern.stops.iter().all(|s| s.timepoint));
 
+    // The alignment survives inference: t10's sh1 (3 points) is the
+    // pattern's path; patterns whose trips carry no shapes have none.
+    let path = pattern.path.as_ref().expect("sh1 becomes the pattern path");
+    assert_eq!(path.len(), 3);
+    assert_eq!((path[0].lat, path[0].lon), (45.400, -73.400));
+    let unshaped: Vec<&String> = network
+        .patterns
+        .iter()
+        .filter(|(_, p)| p.path.is_none())
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(unshaped.len(), 2, "only pat-10-0-0 has a path: {unshaped:?}");
+
     // The runcut survives: B1 chains t10 and t20 chronologically.
     let block = network.blocks.get("B1").expect("block B1 kept");
     assert_eq!(block.trips.len(), 2);
@@ -663,4 +676,34 @@ fn imported_network_preserves_the_service_view() {
         .map(|d| (d.departure_time.unwrap(), d.route_id.clone()))
         .collect();
     assert_eq!(at_a, expected, "departures at A survive the round trip");
+}
+
+#[test]
+fn imported_alignment_survives_materialization() {
+    // Law: a pattern's authored path is the geometry the derived feed
+    // draws — trips reference it as their shape, so rider views after
+    // a planner publish follow the real alignment, not stop chords.
+    let feed_id = load();
+    let network = match dispatch(Request::NetworkImport { feed_id }).unwrap() {
+        Response::NetworkImport { network } => network,
+        _ => panic!("network_import"),
+    };
+    let derived = network_to_gtfs(&network).unwrap();
+
+    let points = derived.shapes.get("pat-10-0-0").expect("pattern path exported");
+    assert_eq!(points.len(), 3);
+    assert_eq!(points[0].shape_pt_sequence, 1);
+
+    let trip = derived.trips.get("WK:pat-10-0-0@28800").expect("derived trip id scheme");
+    assert_eq!(trip.shape_id.as_deref(), Some("pat-10-0-0"));
+
+    // And the geometry riders actually draw is the polyline, not the
+    // stop-to-stop fallback.
+    let path = derived.trip_path("WK:pat-10-0-0@28800");
+    assert_eq!(path.len(), 3, "trip_path follows the shape: {path:?}");
+    assert_eq!(path[0], (45.400, -73.400));
+
+    // Unauthored patterns keep the fallback: no shape reference.
+    let bare = derived.trips.get("WK:pat-20-0-0@30000").expect("t20 derived trip");
+    assert_eq!(bare.shape_id, None);
 }

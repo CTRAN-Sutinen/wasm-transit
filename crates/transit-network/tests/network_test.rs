@@ -55,6 +55,7 @@ pub(crate) fn valid_network() -> Network {
             Pattern {
                 route: "5".into(),
                 name: "5 inbound".into(),
+                path: None,
                 stops: vec![
                     PatternStop {
                         stop: "A".into(),

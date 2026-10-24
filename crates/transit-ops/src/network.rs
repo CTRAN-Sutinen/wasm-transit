@@ -15,17 +15,21 @@
 //!   per running date): the derived equivalent of an exception-only
 //!   feed, exact for any authored rule including Added exceptions.
 //!
-//! No shapes: derived paths draw stop-to-stop lines (the base
-//! `trip_path` fallback).
+//! Shapes: a pattern's authored `path` becomes a `shapes.txt` entry
+//! keyed by the pattern id, and every trip the pattern materializes
+//! references it. Patterns without a path keep `shape_id: None` and
+//! draw stop-to-stop lines (the base `trip_path` fallback).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::{Duration, NaiveDate};
 
-use transit_core::{Agency, CalendarDate, FeedInfo, Gtfs, Route, ServiceCalendar, Stop, StopTime, Trip};
+use transit_core::{
+    Agency, CalendarDate, FeedInfo, Gtfs, Route, ServiceCalendar, ShapePoint, Stop, StopTime, Trip,
+};
 use transit_network::{
-    materialize_service, Anchor, Block, CalendarException, CalendarRule, DateRange, DayState, Mode,
-    Network, Pattern, PatternStop, Schedule, Service, TimingProfile, TripRef, WeekdaySet,
+    materialize_service, Anchor, Block, CalendarException, CalendarRule, Coord, DateRange, DayState,
+    Mode, Network, Pattern, PatternStop, Schedule, Service, TimingProfile, TripRef, WeekdaySet,
 };
 
 use crate::OpError;
@@ -99,6 +103,32 @@ pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, OpError> {
     let mut stop_times: Vec<StopTime> = Vec::new();
     let mut calendar_dates: Vec<CalendarDate> = Vec::new();
 
+    // Authored alignments, in the derived view's shape map: one
+    // shapes.txt polyline per pattern, keyed by the pattern id.
+    let shapes: HashMap<String, Vec<ShapePoint>> = net
+        .patterns
+        .iter()
+        .filter_map(|(pattern_id, p)| {
+            let path = p.path.as_ref()?;
+            if path.len() < 2 {
+                return None;
+            }
+            Some((
+                pattern_id.clone(),
+                path.iter()
+                    .enumerate()
+                    .map(|(i, c)| ShapePoint {
+                        shape_id: pattern_id.clone(),
+                        shape_pt_lat: c.lat,
+                        shape_pt_lon: c.lon,
+                        shape_pt_sequence: (i + 1) as u32,
+                        shape_dist_traveled: None,
+                    })
+                    .collect(),
+            ))
+        })
+        .collect();
+
     for (service_id, service) in &net.services {
         // Calendar: explicit running dates, exact for any rule.
         if let Some(rule) = net.calendars.get(&service.calendar) {
@@ -126,7 +156,14 @@ pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, OpError> {
                     block_id: block_of
                         .get(&(service_id.clone(), trip.start_secs))
                         .cloned(),
-                    shape_id: None,
+                    // The pattern's authored alignment, when there is
+                    // one; None keeps the stop-to-stop fallback.
+                    shape_id: net
+                        .patterns
+                        .get(&trip.pattern)
+                        .and_then(|p| p.path.as_ref())
+                        .filter(|path| path.len() >= 2)
+                        .map(|_| trip.pattern.clone()),
                 },
             );
             for (i, st) in trip.stop_times.iter().enumerate() {
@@ -158,7 +195,7 @@ pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, OpError> {
         trips,
         stop_times,
         services,
-        HashMap::new(),
+        shapes,
         feed_info,
     ))
 }
@@ -221,7 +258,14 @@ fn gtfs_route_type(mode: Mode) -> u8 {
 /// * single-stop trips and trips without a first departure are
 ///   dropped (the model requires two stops and a start);
 /// * blocks keep their trip chains but carry no layovers (GTFS has
-///   no layover data — the planner authors those).
+///   no layover data — the planner authors those);
+/// * the pattern's alignment comes from the member trips' richest
+///   `shapes.txt` polyline (ties: lowest trip id) — variation between
+///   trips of one pattern is not preserved;
+/// * stops without coordinates (malformed per the GTFS spec) drop
+///   out, along with every trip that serves them: the model cannot
+///   represent a place at (0, 0) and silently mapping one there
+///   poisons every map view.
 ///
 /// Deterministic: every iteration is sorted, so the same feed yields
 /// the same document on every host.
@@ -242,12 +286,17 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> Network {
     };
 
     for (id, s) in &gtfs.stops {
+        // Missing coordinates are a spec violation; importing a stop
+        // at (0, 0) would place it in the Gulf of Guinea on every map.
+        let (Some(lat), Some(lon)) = (s.stop_lat, s.stop_lon) else {
+            continue;
+        };
         net.stops.insert(
             id.clone(),
             transit_network::Stop {
                 name: s.stop_name.clone(),
-                lat: s.stop_lat.unwrap_or_default(),
-                lon: s.stop_lon.unwrap_or_default(),
+                lat,
+                lon,
                 parent: s.parent_station.clone(),
             },
         );
@@ -286,6 +335,9 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> Network {
         if sts.len() < 2 {
             continue; // the model requires two stops; single-stop
         } // trips (e.g. one-stop shuttles) cannot be represented
+        if sts.iter().any(|st| !net.stops.contains_key(&st.stop_id)) {
+            continue; // serves a stop the import dropped (no coords)
+        }
         let Some(start) = sts[0].departure_time.or(sts[0].arrival_time) else {
             continue;
         };
@@ -361,11 +413,37 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> Network {
             .map(|r| r.display_name())
             .unwrap_or_else(|| route_id.clone());
 
+        // The alignment: the member trips' richest shapes.txt
+        // polyline. Members are in trip-id order, so ties keep the
+        // lowest id — deterministic.
+        let mut path: Option<Vec<Coord>> = None;
+        let mut best = 0usize;
+        for &i in members {
+            let Some(shape_id) = gtfs
+                .trips
+                .get(kept[i].trip_id)
+                .and_then(|t| t.shape_id.as_deref())
+            else {
+                continue;
+            };
+            let Some(points) = gtfs.shapes.get(shape_id) else { continue };
+            if points.len() > best {
+                best = points.len();
+                path = Some(
+                    points
+                        .iter()
+                        .map(|p| Coord { lat: p.shape_pt_lat, lon: p.shape_pt_lon })
+                        .collect(),
+                );
+            }
+        }
+
         net.patterns.insert(
             pattern_id.clone(),
             Pattern {
                 route: route_id.clone(),
                 name: format!("{route_name} → {last_stop_name}"),
+                path,
                 stops: seq
                     .iter()
                     .enumerate()

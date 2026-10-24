@@ -36,7 +36,7 @@ pub use materialize::{
     StopTime,
 };
 pub use model::{
-    Anchor, Block, CalendarException, CalendarRule, DateRange, DayState, HeadwayBand, Layover,
+    Anchor, Block, CalendarException, CalendarRule, Coord, DateRange, DayState, HeadwayBand, Layover,
     Mode, Network, Pattern, PatternStop, Route, Schedule, Service, Stop, TimingProfile, TripRef,
     WeekdaySet,
 };

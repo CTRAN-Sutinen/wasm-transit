@@ -1,0 +1,28 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Side St" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-73.4990, 45.5030],
+          [-73.5060, 45.5100],
+          [-73.5130, 45.5170]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Nowhere Rd" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-73.6000, 45.6000],
+          [-73.6100, 45.6100]
+        ]
+      }
+    }
+  ]
+}

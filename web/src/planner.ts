@@ -652,26 +652,34 @@ function patternCoords(doc: Network, patternId: string | undefined | null): numb
   return out;
 }
 
+/// The pattern's drawn alignment as [lon, lat] lines: the authored
+/// path when there is one, otherwise straight chords between its
+/// stops (the pre-shape rendering — still right for paths that never
+/// got one).
+function patternLines(doc: Network, patternId: string | undefined | null): number[][][] {
+  const p = patternId ? doc?.patterns?.[patternId] : undefined;
+  if (!p) return [];
+  if (p.path && p.path.length >= 2) return [p.path.map((c) => [c.lon, c.lat])];
+  const coords = patternCoords(doc, patternId);
+  return coords.length >= 2 ? [coords] : [];
+}
+
 function focusFor(doc: Network | null, kind: EntityKind, id: string): Focus | null {
   if (!doc) return null;
-  const line = (coords: number[][]): number[][][] => (coords.length >= 2 ? [coords] : []);
-  const point = (coords: number[][]): number[][] => (coords.length ? [coords[coords.length - 1]] : []);
   if (kind === "pattern") {
-    const coords = patternCoords(doc, id);
-    return { lines: line(coords), points: coords };
+    return { lines: patternLines(doc, id), points: patternCoords(doc, id) };
   }
   if (kind === "service") {
-    const coords = patternCoords(doc, doc.services?.[id]?.pattern ?? null);
-    return { lines: line(coords), points: coords };
+    const pattern = doc.services?.[id]?.pattern ?? null;
+    return { lines: patternLines(doc, pattern), points: patternCoords(doc, pattern) };
   }
   if (kind === "route") {
     const lines: number[][][] = [];
     const points: number[][] = [];
     for (const [pid, p] of Object.entries(doc.patterns ?? {})) {
       if (p.route !== id) continue;
-      const coords = patternCoords(doc, pid);
-      if (coords.length >= 2) lines.push(coords);
-      points.push(...coords);
+      lines.push(...patternLines(doc, pid));
+      points.push(...patternCoords(doc, pid));
     }
     return { lines, points };
   }
