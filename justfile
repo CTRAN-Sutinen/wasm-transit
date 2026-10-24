@@ -45,7 +45,9 @@ test:
     export TS_RS_EXPORT_DIR="$PWD/web/src/types"
     cargo test
     node crates/transit-wasm/abi-smoke.mjs
-    cd server && go test ./...
+    # -race: the artifact is one non-reentrant instance; the host must
+    # serialize invokes (see server/race_test.go — the gate watches it).
+    cd server && go test -race ./...
 
 # Browser e2e (Chromium via Playwright, against the Go server).
 # Builds first; the runner starts the server unless :8080 is taken.

@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
@@ -30,6 +31,13 @@ const (
 
 // WasmHost wraps one instance of the artifact. The runtime is held for
 // the host's lifetime — wazero ties module lifetime to it.
+//
+// The artifact is NOT reentrant: its heap and linear memory are
+// single-instance state, and its internal Mutex only guards the feed
+// registry map. Every invoke is therefore serialized here — one
+// module instance, one call at a time (net/http serves each request
+// on its own goroutine; without this lock concurrent /edits and
+// /manifest handling would corrupt wasm memory).
 type WasmHost struct {
 	runtime     wazero.Runtime
 	module      api.Module
@@ -39,6 +47,8 @@ type WasmHost struct {
 	invoke      api.Function
 	invokeBytes api.Function
 	hash        string // sha256 of the loaded bytes — the manifest pins this
+
+	mu sync.Mutex
 }
 
 // NewWasmHost loads the artifact and instantiates it. The bytes are
@@ -142,7 +152,12 @@ type FeedInfo struct {
 // optional leading extra arg for the bytes-op code), reads the
 // length-prefixed result, frees both buffers, and returns the payload
 // of a successful {"ok": ...} outcome.
+//
+// The whole alloc→free sequence is atomic: the artifact is not
+// reentrant, so interleaved calls would race on its heap.
 func (h *WasmHost) call(ctx context.Context, fn api.Function, payload []byte, extra ...uint64) ([]byte, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	ptr, err := h.alloc.Call(ctx, uint64(len(payload)))
 	if err != nil {
 		return nil, fmt.Errorf("alloc: %w", err)

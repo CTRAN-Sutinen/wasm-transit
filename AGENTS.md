@@ -123,6 +123,13 @@ web/            Svelte 5 runes + Vite. Two skeletons: Rider /
 - **wazero `memory.Read` returns a view** — copy bytes out before
   freeing the buffer, or the Rust allocator corrupts them (this bit
   us once).
+- **The artifact is NOT reentrant** — one module instance, one
+  invoke at a time. The Go host serializes the whole alloc→free
+  sequence in `WasmHost.call` (net/http is per-goroutine); the
+  artifact's internal Mutex only guards its registry map, not its
+  heap. `go test -race` is part of `just test`, and
+  `server/race_test.go` is what gives it something to watch —
+  verify the test still fails if you touch that lock.
 - **Svelte `$state` proxies are not structured-cloneable** — persist
   plain data (`$state.raw`, wholesale replacement), never proxies.
 - **await arrayBuffer() before crossing into wasm** — a Promise in a
