@@ -1,12 +1,12 @@
-<script>
-  import { app, getNetworkDoc } from "../state.svelte.js";
+<script lang="ts">
+  import { app, getNetworkDoc } from "../state.svelte";
   import {
     toggleCalendarDay, setCalendarRange, addCalendarRange, removeCalendarRange,
     addCalendarException, removeCalendarException, clearSelection, dayNames,
-  } from "../planner.svelte.js";
+  } from "../planner";
 
   const doc = $derived(getNetworkDoc());
-  const id = $derived(app.plannerSelection?.kind === "calendar" ? app.plannerSelection.id : null);
+  const id = $derived(app.plannerSelection?.kind === "calendar" ? app.plannerSelection.id : "");
   const calendar = $derived(id ? doc?.calendars?.[id] ?? null : null);
 
   let exceptionDate = $state("");
@@ -43,7 +43,7 @@
       <li>
         <code>{exc.date}</code>
         <select aria-label={`Exception state for ${exc.date}`} value={exc.state}
-                onchange={(e) => addCalendarException(id, exc.date, e.currentTarget.value)}>
+                onchange={(e) => addCalendarException(id, exc.date, e.currentTarget.value as "added" | "removed")}>
           <option value="added">added</option>
           <option value="removed">removed</option>
         </select>

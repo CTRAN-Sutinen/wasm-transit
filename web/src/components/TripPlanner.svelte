@@ -1,6 +1,6 @@
-<script>
-  import { app } from "../state.svelte.js";
-  import { planTrip } from "../actions.svelte.js";
+<script lang="ts">
+  import { app } from "../state.svelte";
+  import { planTrip } from "../actions";
 
   let from = $state("");
   let to = $state("");

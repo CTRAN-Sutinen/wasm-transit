@@ -1,35 +1,38 @@
-<script>
-  import { app, getNetworkDoc } from "../state.svelte.js";
+<script lang="ts">
+  import { app, getNetworkDoc } from "../state.svelte";
   import {
     setServiceRefs, removeService, setServiceStarts, addServiceStart,
     removeServiceStart, setBandField, addBand, removeBand,
     clearSelection, fmtHHMMSS, parseHHMMSS,
-  } from "../planner.svelte.js";
+  } from "../planner";
   import FilteredSelect from "./FilteredSelect.svelte";
 
   const doc = $derived(getNetworkDoc());
-  const id = $derived(app.plannerSelection?.kind === "service" ? app.plannerSelection.id : null);
+  const id = $derived(app.plannerSelection?.kind === "service" ? app.plannerSelection.id : "");
   const service = $derived(id ? doc?.services?.[id] ?? null : null);
   const patternName = $derived(service ? doc?.patterns?.[service.pattern]?.name ?? service.pattern : "");
-  const patternOptions = $derived(doc ? Object.keys(doc.patterns ?? {}).sort().map((p) => [p, p]) : []);
-  const calendarOptions = $derived(doc ? Object.keys(doc.calendars ?? {}).sort().map((c) => [c, c]) : []);
+  const patternOptions: [string, string][] = $derived(doc ? Object.keys(doc.patterns ?? {}).sort().map((p): [string, string] => [p, p]) : []);
+  const calendarOptions: [string, string][] = $derived(doc ? Object.keys(doc.calendars ?? {}).sort().map((c): [string, string] => [c, c]) : []);
 
-  function updateStart(index, text) {
+  function updateStart(index: number, text: string) {
     const secs = parseHHMMSS(text);
     if (secs === null) {
       app.status = `Not a valid time: "${text}" (use HH:MM:SS; hours may pass 24).`;
       return;
     }
-    const starts = service.schedule.starts.map((s, i) => (i === index ? secs : s));
+    const sched = service?.schedule;
+    if (sched?.kind !== "exact_times") return;
+    const starts = sched.starts.map((s: number, i: number) => (i === index ? secs : s));
     setServiceStarts(id, starts);
   }
 
-  function updateBand(index, field, text, asMinutes = false) {
+  function updateBand(index: number, field: string, text: string, asMinutes = false) {
     const secs = asMinutes ? Math.round(Number(text) * 60) : parseHHMMSS(text);
     if (secs === null || Number.isNaN(secs) || secs < 0) {
       app.status = `Not a valid ${field === "headway_secs" ? "headway" : "time"}: "${text}"`;
       return;
     }
+    if (service?.schedule?.kind !== "headway_bands") return;
     setBandField(id, index, field, secs);
   }
 </script>

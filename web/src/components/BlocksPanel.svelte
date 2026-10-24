@@ -1,6 +1,6 @@
-<script>
-  import { app } from "../state.svelte.js";
-  import { refreshNow, serviceDate } from "../actions.svelte.js";
+<script lang="ts">
+  import { app } from "../state.svelte";
+  import { refreshNow, serviceDate } from "../actions";
 
   const blocks = $derived(app.gtfs ? app.gtfs.blocks() : []);
   let selectedBlock = $state("");
@@ -19,7 +19,7 @@
     }
   });
 
-  function fmtLayover(s) {
+  function fmtLayover(s: number | null | undefined) {
     if (s === null || s === undefined) return "—";
     const min = Math.round(s / 60);
     return min >= 1 ? `${min} min` : `${s} s`;
@@ -28,7 +28,7 @@
   // A diverted trip ending later eats into the vehicle's next layover.
   // Flag tight connections (< 5 min) and overlaps (the next trip now
   // starts before the previous one ends — a missed connection).
-  function layoverFlag(chain, i) {
+  function layoverFlag(chain: any[], i: number) {
     if (i === 0) return null;
     const prev = chain[i - 1];
     const t = chain[i];

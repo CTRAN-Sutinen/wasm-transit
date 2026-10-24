@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
   import Loader from "./components/Loader.svelte";
   import MapView from "./components/MapView.svelte";
   import DepartureBoard from "./components/DepartureBoard.svelte";
@@ -10,7 +10,7 @@
   import PlannerWorkspace from "./components/PlannerWorkspace.svelte";
   import PersonaTabs from "./components/PersonaTabs.svelte";
   import { app } from "./state.svelte.js";
-  import { loadRtFromUrl, loadVpFromUrl, saveSettings } from "./actions.svelte.js";
+  import { loadRtFromUrl, loadVpFromUrl, saveSettings } from "./actions";
 
   // Two skeletons, one app: the rider/dispatcher views float a focused
   // panel over the full-viewport map; the planner gets a workspace

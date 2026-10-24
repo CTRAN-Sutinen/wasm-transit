@@ -1,15 +1,15 @@
-<script>
+<script lang="ts">
   /// The planner persona's layout: NOT the floating passenger panel.
   /// A workspace — the network as a whole on the left (searchable
   /// overview, counts, health), the map as the canvas, and one
   /// focused element editor at a time when you drill in. Selecting
   /// an element frames it on the map.
-  import { app, getNetworkDoc } from "../state.svelte.js";
+  import { app, getNetworkDoc } from "../state.svelte";
   import {
     deriveFromFeed, materializeNetwork, validateNetwork, loadNetworkText,
     loadNetworkFile, exportNetworkText, downloadNetwork, selectEntity, clearSelection,
     addStop, addRoute, addPattern, addCalendar, addService, addBlock,
-  } from "../planner.svelte.js";
+  } from "../planner";
   import PersonaTabs from "./PersonaTabs.svelte";
   import MapView from "./MapView.svelte";
   import StopForm from "./StopForm.svelte";
@@ -36,20 +36,21 @@
   // The overview: every entity group, searchable, capped per group.
   let filter = $state("");
   const q = $derived(filter.trim().toLowerCase());
-  const hits = (ids) => {
+  const hits = (ids: string[]): string[] => {
     const all = [...ids];
-    return q ? all.filter((id) => id.toLowerCase().includes(q)) : all;
+    return q ? all.filter((id: string) => id.toLowerCase().includes(q)) : all;
   };
   const groups = $derived.by(() => {
     if (!doc) return [];
     const cap = 50;
-    const mk = (kind, label, ids, open = false) => ({
+    type Group = { kind: import("../planner").EntityKind; label: string; open: boolean; total: number; items: string[]; hidden: number };
+    const mk = (kind: import("../planner").EntityKind, label: string, ids: string[], open = false): Group => ({
       kind, label, open,
       total: ids.length,
       items: hits(ids).slice(0, cap),
       hidden: Math.max(0, hits(ids).length - cap),
     });
-    const ids = (o) => Object.keys(o ?? {}).sort();
+    const ids = (o: Record<string, unknown> | undefined | null): string[] => Object.keys(o ?? {}).sort();
     return [
       mk("route", "Routes", ids(doc.routes)),
       mk("pattern", "Patterns", ids(doc.patterns)),
@@ -60,7 +61,7 @@
     ];
   });
 
-  const addItem = {
+  const addItem: Partial<Record<import("../planner").EntityKind, () => void>> = {
     route: addRoute,
     pattern: addPattern,
     service: addService,
@@ -70,9 +71,9 @@
   };
 
   let pasteText = $state("");
-  let networkFile;
+  let networkFile: HTMLInputElement;
 
-  const drawerTitle = { stop: "Stop", route: "Route", pattern: "Pattern", service: "Service", calendar: "Calendar", block: "Block" };
+  const drawerTitle: Record<string, string> = { stop: "Stop", route: "Route", pattern: "Pattern", service: "Service", calendar: "Calendar", block: "Block" };
 </script>
 
 <div class="planner-shell">
@@ -128,7 +129,7 @@
           <button onclick={async () => { await navigator.clipboard.writeText(exportNetworkText()); app.status = "Document copied to the clipboard as JSON."; }}
                   disabled={!doc}>Copy JSON</button>
           <input type="file" accept=".json,application/json" hidden bind:this={networkFile}
-                 onchange={(e) => { if (e.currentTarget.files[0]) loadNetworkFile(e.currentTarget.files[0]); e.currentTarget.value = ""; }}>
+                 onchange={(e) => { const f = e.currentTarget.files?.[0]; if (f) loadNetworkFile(f); e.currentTarget.value = ""; }}>
         </p>
         <textarea rows="3" cols="40" placeholder="…or paste a network document (JSON)"
                   aria-label="Network JSON" bind:value={pasteText}></textarea>

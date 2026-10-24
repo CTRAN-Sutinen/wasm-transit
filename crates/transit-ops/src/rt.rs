@@ -2,17 +2,20 @@
 //! entity counts by type, trip updates (delays), and live vehicles.
 //! Serialization target of [`crate::Request::DecodeRt`].
 
+use ts_rs::TS;
 use serde::Serialize;
 
 /// Flat view of one trip update in a feed.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct TripUpdateView {
     pub trip_id: Option<String>,
     pub route_id: Option<String>,
     pub stop_updates: Vec<StopUpdateView>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct StopUpdateView {
     pub stop_id: Option<String>,
     pub stop_sequence: Option<u32>,
@@ -22,7 +25,8 @@ pub struct StopUpdateView {
 }
 
 /// One live vehicle from a VehiclePositions feed.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct VehicleView {
     pub entity_id: String,
     pub trip_id: Option<String>,
@@ -33,7 +37,8 @@ pub struct VehicleView {
     pub stop_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct RtOverview {
     pub gtfs_realtime_version: Option<String>,
     /// Unix seconds, as served in the feed header.

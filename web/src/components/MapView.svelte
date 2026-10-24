@@ -1,17 +1,21 @@
-<script>
+<script lang="ts">
   import { onMount } from "svelte";
   import * as maplibregl from "maplibre-gl";
   // MapLibre computes its worker URL from import.meta.url — inside a
   // bundled app that path doesn't exist (404 + text/html => the "MIME
   // type" worker error). Point it at the worker file Vite emits instead.
   import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
-  import { app, getEditDocument } from "../state.svelte.js";
-  import { selectStop, setDiversionAnchor, addDetourPoint } from "../actions.svelte.js";
+  import { app, getEditDocument } from "../state.svelte";
+  import { selectStop, setDiversionAnchor, addDetourPoint } from "../actions";
 
   maplibregl.setWorkerUrl(workerUrl);
 
   const EMPTY_FC = { type: "FeatureCollection", features: [] };
-  let map = null;
+
+  /// Every source this view adds is a geojson source; this accessor
+  /// keeps the setData calls typed.
+  const src = (name: string): maplibregl.GeoJSONSource => map.getSource(name) as maplibregl.GeoJSONSource;
+  let map!: maplibregl.Map;
   let mapLoaded = $state(false);
 
   /// Basemap choice, in order of preference:
@@ -20,22 +24,22 @@
   ///    archive's bounds, since tiles only exist inside them.
   /// 2. OpenFreeMap — free vector tiles, no API key.
   /// Returns { style, initialView }.
-  async function pickStyle() {
+  async function pickStyle(): Promise<{ style: any; initialView: { center: [number, number]; zoom: number } }> {
     const hasLocal = await fetch("basemap.pmtiles", { method: "HEAD" })
       .then((r) => r.ok)
       .catch(() => false);
     if (hasLocal) {
       try {
-        const pmtiles = await import("https://cdn.jsdelivr.net/npm/pmtiles@4/+esm");
-        const basemaps = await import("https://cdn.jsdelivr.net/npm/@protomaps/basemaps/+esm");
+        const pmtiles: any = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/pmtiles@4/+esm");
+        const basemaps: any = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/@protomaps/basemaps/+esm");
         maplibregl.addProtocol("pmtiles", new pmtiles.Protocol().tile);
 
         // A regional extract has no tiles outside its bbox — start the
         // map inside it. Read the bounds from the archive header.
         const archive = new pmtiles.PMTiles("basemap.pmtiles");
-        const header = await archive.getHeader();
+        const header: any = await archive.getHeader();
         const initialView = {
-          center: [(header.minLon + header.maxLon) / 2, (header.minLat + header.maxLat) / 2],
+          center: [(header.minLon + header.maxLon) / 2, (header.minLat + header.maxLat) / 2] as [number, number],
           zoom: Math.max(2, Math.round(Math.log2(360 / Math.max(0.05, header.maxLon - header.minLon))) + 1),
         };
 
@@ -52,7 +56,7 @@
               },
             },
             layers: basemaps.layers("protomaps", basemaps.namedFlavor("light"), { lang: "en" }),
-          },
+          } as maplibregl.StyleSpecification,
           initialView,
         };
       } catch (e) {
@@ -197,9 +201,10 @@
         });
 
         map.on("click", "stops-base", (e) => {
-          const stopId = e.features[0].properties.stop_id;
+          const stopId = (e.features?.[0]?.properties as Record<string, string> | undefined)?.stop_id;
           // While the diversion editor is armed, stop clicks set
           // anchors; selecting the stop stays useful either way.
+          if (!stopId) return;
           if (app.pickingAnchor) setDiversionAnchor(stopId);
           selectStop(stopId);
         });
@@ -226,11 +231,11 @@
   $effect(() => {
     if (!mapLoaded || !app.gtfs) return;
     const data = app.gtfs.stops_geojson();
-    map.getSource("stops").setData(data);
+    src("stops").setData(data);
     const coords = data.features.map((f) => f.geometry.coordinates);
-    if (coords.length === 1) map.jumpTo({ center: coords[0], zoom: 13 });
+    if (coords.length === 1) map.jumpTo({ center: coords[0] as [number, number], zoom: 13 });
     else if (coords.length > 1) {
-      map.fitBounds(new maplibregl.LngLatBounds(coords[0], coords[0]).extend(coords), { padding: 40 });
+      map.fitBounds(new maplibregl.LngLatBounds(coords[0] as [number, number], coords[0] as [number, number]).extend(coords as never), { padding: 40 });
     }
   });
 
@@ -242,10 +247,10 @@
   $effect(() => {
     if (!mapLoaded) return;
     const feature = app.tripFeature;
-    map.getSource("trip").setData(feature ?? EMPTY_FC);
+    src("trip").setData(feature ?? EMPTY_FC);
     if (feature) {
-      const coords = feature.geometry.coordinates;
-      map.fitBounds(new maplibregl.LngLatBounds(coords[0], coords[0]).extend(coords), { padding: 60 });
+      const coords = feature.geometry.coordinates as [number, number][];
+      map.fitBounds(new maplibregl.LngLatBounds(coords[0], coords[0]).extend(coords as never), { padding: 60 });
     }
   });
 
@@ -272,16 +277,16 @@
         delay: v.trip_id ? (delayByTrip.get(v.trip_id) ?? null) : null,
       },
     }));
-    map.getSource("vehicles").setData({ type: "FeatureCollection", features });
+    src("vehicles").setData({ type: "FeatureCollection", features });
   });
 
   $effect(() => {
     if (!mapLoaded) return;
     const features = app.itineraryFeatures;
-    map.getSource("itinerary").setData({ type: "FeatureCollection", features });
+    src("itinerary").setData({ type: "FeatureCollection", features });
     if (features.length) {
-      const coords = features.flatMap((f) => f.geometry.coordinates);
-      map.fitBounds(new maplibregl.LngLatBounds(coords[0], coords[0]).extend(coords), { padding: 60 });
+      const coords = features.flatMap((f) => f.geometry.coordinates as [number, number][]);
+      map.fitBounds(new maplibregl.LngLatBounds(coords[0], coords[0]).extend(coords as never), { padding: 60 });
     }
   });
 
@@ -301,7 +306,7 @@
         properties: { id: record.id, route: record.diversion.route_id },
       });
     }
-    map.getSource("diversions").setData({ type: "FeatureCollection", features });
+    src("diversions").setData({ type: "FeatureCollection", features });
   });
 
   // The detour draft: vertices as points, the polyline once it has
@@ -310,7 +315,7 @@
   $effect(() => {
     if (!mapLoaded) return;
     const pts = app.diversionDraft?.detour ?? [];
-    const features = pts.map(([lat, lon]) => ({
+    const features: any[] = pts.map(([lat, lon]: [number, number]) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: [lon, lat] },
       properties: {},
@@ -318,11 +323,11 @@
     if (pts.length >= 2) {
       features.push({
         type: "Feature",
-        geometry: { type: "LineString", coordinates: pts.map(([lat, lon]) => [lon, lat]) },
+        geometry: { type: "LineString", coordinates: pts.map(([lat, lon]: [number, number]) => [lon, lat] as [number, number]) },
         properties: {},
       });
     }
-    map.getSource("detour-draft").setData({ type: "FeatureCollection", features });
+    src("detour-draft").setData({ type: "FeatureCollection", features });
   });
 
   // Planner drill-down focus: the selected element, drawn on the map
@@ -347,12 +352,12 @@
         });
       }
     }
-    map.getSource("planner").setData({ type: "FeatureCollection", features });
-    const all = features.flatMap((f) =>
-      f.geometry.type === "Point" ? [f.geometry.coordinates] : f.geometry.coordinates,
+    src("planner").setData({ type: "FeatureCollection", features });
+    const all: [number, number][] = features.flatMap((f) =>
+      f.geometry.type === "Point" ? [f.geometry.coordinates as [number, number]] : (f.geometry.coordinates as [number, number][]),
     );
     if (all.length) {
-      map.fitBounds(new maplibregl.LngLatBounds(all[0], all[0]).extend(all), { padding: 60 });
+      map.fitBounds(new maplibregl.LngLatBounds(all[0], all[0]).extend(all as never), { padding: 60 });
     }
   });
 </script>

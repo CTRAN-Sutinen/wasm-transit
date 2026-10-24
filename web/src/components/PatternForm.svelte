@@ -1,19 +1,19 @@
-<script>
-  import { app, getNetworkDoc } from "../state.svelte.js";
+<script lang="ts">
+  import { app, getNetworkDoc } from "../state.svelte";
   import {
     updatePattern, removePattern, addPatternStop, removePatternStop,
     movePatternStop, setPatternStop, togglePatternTimepoint,
     addTimingProfile, removeTimingProfile, setTimingProfileField, setTimepointTime,
     clearSelection, fmtHHMMSS, parseHHMMSS,
-  } from "../planner.svelte.js";
+  } from "../planner";
 
   const doc = $derived(getNetworkDoc());
-  const id = $derived(app.plannerSelection?.kind === "pattern" ? app.plannerSelection.id : null);
+  const id = $derived(app.plannerSelection?.kind === "pattern" ? app.plannerSelection.id : "");
   const pattern = $derived(id ? doc?.patterns?.[id] ?? null : null);
   const routeIds = $derived(doc ? Object.keys(doc.routes ?? {}).sort() : []);
   const timepointNames = $derived.by(() => {
     if (!pattern) return [];
-    const names = new Map(Object.entries(doc.stops ?? {}).map(([sid, s]) => [sid, s.name]));
+    const names = new Map(Object.entries(doc?.stops ?? {}).map(([sid, s]) => [sid, s.name]));
     return pattern.stops.filter((s) => s.timepoint).map((s) => names.get(s.stop) ?? s.stop);
   });
 
@@ -21,7 +21,7 @@
   const stopOptions = $derived.by(() => {
     const ids = doc ? Object.keys(doc.stops ?? {}).sort() : [];
     const q = stopFilter.trim().toLowerCase();
-    let hits = q ? ids.filter((sid) => sid.toLowerCase().includes(q)) : ids;
+    let hits: string[] = q ? ids.filter((sid: string) => sid.toLowerCase().includes(q)) : ids;
     hits = hits.slice(0, 200);
     if (pattern) for (const s of pattern.stops) if (!hits.includes(s.stop)) hits = [s.stop, ...hits];
     return hits;
@@ -29,7 +29,7 @@
 
   let addStopId = $state("");
 
-  function parseTime(text) {
+  function parseTime(text: string) {
     const secs = parseHHMMSS(text);
     if (secs === null) app.status = `Not a valid time: "${text}" (HH:MM:SS; hours may pass 24).`;
     return secs;

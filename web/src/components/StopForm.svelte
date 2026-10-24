@@ -1,9 +1,9 @@
-<script>
-  import { app, getNetworkDoc } from "../state.svelte.js";
-  import { updateStop, removeStop, clearSelection } from "../planner.svelte.js";
+<script lang="ts">
+  import { app, getNetworkDoc } from "../state.svelte";
+  import { updateStop, removeStop, clearSelection } from "../planner";
 
   const doc = $derived(getNetworkDoc());
-  const id = $derived(app.plannerSelection?.kind === "stop" ? app.plannerSelection.id : null);
+  const id = $derived(app.plannerSelection?.kind === "stop" ? app.plannerSelection.id : "");
   const stop = $derived(id ? doc?.stops?.[id] ?? null : null);
 </script>
 

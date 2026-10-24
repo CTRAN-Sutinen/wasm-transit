@@ -10,6 +10,7 @@ transit-core = { path = "../transit-core" }
 chrono = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+ts-rs = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"

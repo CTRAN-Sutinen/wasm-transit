@@ -1,5 +1,5 @@
-<script>
-  import { app } from "../state.svelte.js";
+<script lang="ts">
+  import { app } from "../state.svelte";
 
   const plan = $derived(app.plan);
   let dismissed = $state(false);
@@ -9,12 +9,12 @@
     if (plan) dismissed = false;
   });
 
-  function fmtClock(secs) {
+  function fmtClock(secs: number) {
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   }
-  function fmtWalk(secs) {
+  function fmtWalk(secs: number) {
     const min = Math.round(secs / 60);
     return min >= 1 ? `${min} min` : `${secs} s`;
   }

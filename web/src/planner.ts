@@ -18,21 +18,30 @@
 /// materialization live in the artifact (transit-ops), this file only
 /// moves documents across the seam.
 
-import { app, getNetworkDoc, setNetworkDoc } from "./state.svelte.js";
-import { pushEdits } from "./actions.svelte.js";
+import { app, getNetworkDoc, setNetworkDoc } from "./state.svelte";
+import type { DayState } from "./types/DayState";
+import type { HeadwayBand } from "./types/HeadwayBand";
+import type { Mode } from "./types/Mode";
+import type { Network } from "./types/Network";
+
+export type EntityKind = "stop" | "route" | "pattern" | "service" | "calendar" | "block";
+
+export type Focus = { lines: number[][][]; points: number[][] };
+export type DayName = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+import { pushEdits } from "./actions";
 
 // ---------------------------------------------------------------
 // time helpers — service-day times, hours may pass 24
 // ---------------------------------------------------------------
 
-export function fmtHHMMSS(secs) {
+export function fmtHHMMSS(secs: number): string {
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
   const s = secs % 60;
   return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
 }
 
-export function parseHHMMSS(text) {
+export function parseHHMMSS(text: string | null | undefined): number | null {
   const parts = (text ?? "").trim().split(":").map(Number);
   if (parts.length < 2 || parts.length > 3 || parts.some((n) => Number.isNaN(n))) return null;
   const [h, m, s = 0] = parts;
@@ -47,7 +56,7 @@ export function parseHHMMSS(text) {
 /** Re-run `network_validate` on the current document. The op always
  * returns the whole issue list (snake_case variant + fields) — it
  * never throws, and the UI never blocks on it. */
-export function validateNetwork() {
+export function validateNetwork(): void {
   const doc = getNetworkDoc();
   if (!doc || !app.wasm) {
     app.networkIssues = [];
@@ -59,17 +68,17 @@ export function validateNetwork() {
 // Validation is whole-document work in the artifact; on a real
 // agency feed that is real work per edit. Debounce it: the chip
 // catches up a beat after the last change instead of on every one.
-let validateTimer = null;
-function validateNetworkSoon() {
-  clearTimeout(validateTimer);
+let validateTimer: ReturnType<typeof setTimeout> | null = null;
+function validateNetworkSoon(): void {
+  if (validateTimer !== null) clearTimeout(validateTimer);
   validateTimer = setTimeout(validateNetwork, 250);
 }
 
-function setDoc(next, label, { validateNow = false } = {}) {
+function setDoc(next: Network, label: string, { validateNow = false } = {}): void {
   setNetworkDoc(next);
   app.networkLabel = label;
   if (validateNow) {
-    clearTimeout(validateTimer);
+    if (validateTimer !== null) clearTimeout(validateTimer);
     validateNetwork();
   } else {
     validateNetworkSoon();
@@ -78,7 +87,7 @@ function setDoc(next, label, { validateNow = false } = {}) {
 
 /** The planner's bootstrap: infer a network document from the feed
  * the app already has loaded (Rider/Dispatcher views load feeds). */
-export async function deriveFromFeed() {
+export async function deriveFromFeed(): Promise<void> {
   if (!app.gtfs) {
     app.status = "Load a GTFS feed first (Rider or Dispatcher view).";
     return;
@@ -90,6 +99,7 @@ export async function deriveFromFeed() {
   app.status = "Deriving a network from the loaded feed…";
   await new Promise((r) => setTimeout(r, 30));
   try {
+    if (!app.wasm) return;
     const net = app.wasm.network_import(app.gtfs.feedId());
     setDoc(net, "derived from loaded feed", { validateNow: true });
     app.status = `Derived a network from the loaded feed (${Object.keys(net.patterns).length} patterns, ${Object.keys(net.services).length} services) — edit it, then load it into the app.`;
@@ -98,7 +108,7 @@ export async function deriveFromFeed() {
   }
 }
 
-export function loadNetworkText(text, label) {
+export function loadNetworkText(text: string, label: string): boolean {
   let doc;
   try {
     doc = JSON.parse(text);
@@ -115,16 +125,16 @@ export function loadNetworkText(text, label) {
   return true;
 }
 
-export async function loadNetworkFile(file) {
+export async function loadNetworkFile(file: File): Promise<void> {
   loadNetworkText(await file.text(), file.name);
 }
 
-export function exportNetworkText() {
+export function exportNetworkText(): string {
   const doc = getNetworkDoc();
   return doc ? JSON.stringify(doc, null, 2) : "";
 }
 
-export function downloadNetwork() {
+export function downloadNetwork(): void {
   const doc = getNetworkDoc();
   if (!doc) return;
   const name = (doc.name ?? "network").replace(/[^\w.-]+/g, "-").toLowerCase();
@@ -140,7 +150,7 @@ export function downloadNetwork() {
  * a GTFS zip lands in). Mirrors loadGtfsBytes's side effects minus
  * caching: the document, not a zip, is the source of truth. Invalid
  * documents are refused — the artifact's own gate, not a JS guess. */
-export function materializeNetwork() {
+export function materializeNetwork(): void {
   const doc = getNetworkDoc();
   if (!doc) {
     app.status = "No network document loaded.";
@@ -151,6 +161,7 @@ export function materializeNetwork() {
     app.status = `Cannot load: ${app.networkIssues.length} validation issue(s) to fix first.`;
     return;
   }
+  if (!app.wasm) return;
   try {
     app.gtfs = app.wasm.GtfsHandle.load_network(doc);
     app.selectedStop = null;
@@ -170,14 +181,14 @@ export function materializeNetwork() {
 // editing — one mutation path: clone → edit → replace → revalidate
 // ---------------------------------------------------------------
 
-export function mutateNetwork(fn) {
+export function mutateNetwork(fn: (doc: Network) => void): void {
   const doc = structuredClone(getNetworkDoc());
   if (!doc) return;
   fn(doc);
   setDoc(doc, app.networkLabel);
 }
 
-function nextId(map, prefix) {
+function nextId(map: Record<string, unknown> | undefined | null, prefix: string): string {
   if (!map) return `${prefix}1`;
   let n = 1;
   while (Object.prototype.hasOwnProperty.call(map, `${prefix}${n}`)) n++;
@@ -186,7 +197,7 @@ function nextId(map, prefix) {
 
 // --- stops ------------------------------------------------------
 
-export function addStop() {
+export function addStop(): void {
   const doc = getNetworkDoc();
   const i = Object.keys(doc?.stops ?? {}).length + 1;
   const id = nextId(doc?.stops, "s");
@@ -195,7 +206,7 @@ export function addStop() {
   });
 }
 
-export function updateStop(id, { name, lat, lon }) {
+export function updateStop(id: string, { name, lat, lon }: { name?: string; lat?: number; lon?: number }): void {
   mutateNetwork((d) => {
     const s = d.stops[id];
     if (!s) return;
@@ -205,7 +216,7 @@ export function updateStop(id, { name, lat, lon }) {
   });
 }
 
-export function removeStop(id) {
+export function removeStop(id: string): void {
   mutateNetwork((d) => {
     delete d.stops[id];
   });
@@ -213,13 +224,13 @@ export function removeStop(id) {
 
 // --- routes -----------------------------------------------------
 
-const MODES = ["bus", "tram", "subway", "rail", "ferry", "cable_car", "gondola", "funicular", "trolleybus", "monorail", "other"];
+const MODES: Mode[] = ["bus", "tram", "subway", "rail", "ferry", "cable_car", "gondola", "funicular", "trolleybus", "monorail", "other"];
 
-export function modes() {
+export function modes(): Mode[] {
   return MODES;
 }
 
-export function addRoute() {
+export function addRoute(): void {
   const doc = getNetworkDoc();
   const i = Object.keys(doc?.routes ?? {}).length + 1;
   const id = nextId(doc?.routes, "r");
@@ -228,7 +239,7 @@ export function addRoute() {
   });
 }
 
-export function updateRoute(id, { name, mode }) {
+export function updateRoute(id: string, { name, mode }: { name?: string; mode?: Mode }): void {
   mutateNetwork((d) => {
     const r = d.routes[id];
     if (!r) return;
@@ -237,7 +248,7 @@ export function updateRoute(id, { name, mode }) {
   });
 }
 
-export function removeRoute(id) {
+export function removeRoute(id: string): void {
   mutateNetwork((d) => {
     delete d.routes[id];
   });
@@ -245,7 +256,7 @@ export function removeRoute(id) {
 
 // --- patterns ---------------------------------------------------
 
-export function addPattern() {
+export function addPattern(): void {
   const doc = getNetworkDoc();
   if (!doc) return;
   const routeId = Object.keys(doc.routes ?? {}).sort()[0];
@@ -272,7 +283,7 @@ export function addPattern() {
   });
 }
 
-export function updatePattern(id, { name, route }) {
+export function updatePattern(id: string, { name, route }: { name?: string; route?: string }): void {
   mutateNetwork((d) => {
     const p = d.patterns[id];
     if (!p) return;
@@ -281,7 +292,7 @@ export function updatePattern(id, { name, route }) {
   });
 }
 
-export function removePattern(id) {
+export function removePattern(id: string): void {
   mutateNetwork((d) => {
     delete d.patterns[id];
   });
@@ -289,7 +300,7 @@ export function removePattern(id) {
 
 /** Insert a stop visit before the pattern's last stop (endpoints stay
  * endpoints; non-timepoint, so timing vectors are untouched). */
-export function addPatternStop(patternId, stopId) {
+export function addPatternStop(patternId: string, stopId: string): void {
   mutateNetwork((d) => {
     const p = d.patterns[patternId];
     if (!p || !stopId || p.stops.length < 2) return;
@@ -302,7 +313,7 @@ export function addPatternStop(patternId, stopId) {
 
 /** Middle stops only — the first and last are timepoints by model
  * invariant and the UI keeps them fixed. */
-export function removePatternStop(patternId, index) {
+export function removePatternStop(patternId: string, index: number): void {
   mutateNetwork((d) => {
     const p = d.patterns[patternId];
     if (!p) return;
@@ -316,7 +327,7 @@ export function removePatternStop(patternId, index) {
   });
 }
 
-export function movePatternStop(patternId, index, dir) {
+export function movePatternStop(patternId: string, index: number, dir: number): void {
   mutateNetwork((d) => {
     const p = d.patterns[patternId];
     if (!p) return;
@@ -327,7 +338,7 @@ export function movePatternStop(patternId, index, dir) {
   });
 }
 
-export function setPatternStop(patternId, index, { stop, distance_m }) {
+export function setPatternStop(patternId: string, index: number, { stop, distance_m }: { stop?: string; distance_m?: number }): void {
   mutateNetwork((d) => {
     const row = d.patterns[patternId]?.stops[index];
     if (!row) return;
@@ -338,7 +349,7 @@ export function setPatternStop(patternId, index, { stop, distance_m }) {
 
 /** Toggle a middle stop's timepoint flag, keeping every timing
  * profile's vector aligned (insert a midpoint / drop the entry). */
-export function togglePatternTimepoint(patternId, index) {
+export function togglePatternTimepoint(patternId: string, index: number): void {
   mutateNetwork((d) => {
     const p = d.patterns[patternId];
     if (!p) return;
@@ -361,7 +372,7 @@ export function togglePatternTimepoint(patternId, index) {
 
 // --- timing profiles --------------------------------------------
 
-export function addTimingProfile(patternId) {
+export function addTimingProfile(patternId: string): void {
   mutateNetwork((d) => {
     const p = d.patterns[patternId];
     if (!p) return;
@@ -375,7 +386,7 @@ export function addTimingProfile(patternId) {
   });
 }
 
-export function removeTimingProfile(patternId, index) {
+export function removeTimingProfile(patternId: string, index: number): void {
   mutateNetwork((d) => {
     const p = d.patterns[patternId];
     if (!p || p.timing.length <= 1) return;
@@ -383,7 +394,7 @@ export function removeTimingProfile(patternId, index) {
   });
 }
 
-export function setTimingProfileField(patternId, index, { start_secs, end_secs }) {
+export function setTimingProfileField(patternId: string, index: number, { start_secs, end_secs }: { start_secs?: number | null; end_secs?: number | null }): void {
   mutateNetwork((d) => {
     const prof = d.patterns[patternId]?.timing[index];
     if (!prof) return;
@@ -392,7 +403,7 @@ export function setTimingProfileField(patternId, index, { start_secs, end_secs }
   });
 }
 
-export function setTimepointTime(patternId, profileIndex, timepointIndex, secs) {
+export function setTimepointTime(patternId: string, profileIndex: number, timepointIndex: number, secs: number | null): void {
   mutateNetwork((d) => {
     const prof = d.patterns[patternId]?.timing[profileIndex];
     if (!prof || timepointIndex >= prof.at_timepoints.length || secs === null) return;
@@ -402,13 +413,13 @@ export function setTimepointTime(patternId, profileIndex, timepointIndex, secs) 
 
 // --- calendars --------------------------------------------------
 
-const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const DAYS: DayName[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
-export function dayNames() {
+export function dayNames(): DayName[] {
   return DAYS;
 }
 
-export function addCalendar() {
+export function addCalendar(): void {
   const doc = getNetworkDoc();
   const id = nextId(doc?.calendars, "cal");
   mutateNetwork((d) => {
@@ -420,14 +431,14 @@ export function addCalendar() {
   });
 }
 
-export function toggleCalendarDay(id, day) {
+export function toggleCalendarDay(id: string, day: DayName): void {
   mutateNetwork((d) => {
     const c = d.calendars[id];
     if (c) c.days[day] = !c.days[day];
   });
 }
 
-export function setCalendarRange(id, index, { start, end }) {
+export function setCalendarRange(id: string, index: number, { start, end }: { start?: string; end?: string }): void {
   mutateNetwork((d) => {
     const r = d.calendars[id]?.ranges[index];
     if (!r) return;
@@ -436,7 +447,7 @@ export function setCalendarRange(id, index, { start, end }) {
   });
 }
 
-export function addCalendarRange(id) {
+export function addCalendarRange(id: string): void {
   mutateNetwork((d) => {
     const c = d.calendars[id];
     if (!c) return;
@@ -449,13 +460,13 @@ export function addCalendarRange(id) {
   });
 }
 
-export function removeCalendarRange(id, index) {
+export function removeCalendarRange(id: string, index: number): void {
   mutateNetwork((d) => {
     d.calendars[id]?.ranges.splice(index, 1);
   });
 }
 
-export function addCalendarException(id, date, state) {
+export function addCalendarException(id: string, date: string, state: DayState): void {
   if (!date) return;
   mutateNetwork((d) => {
     const c = d.calendars[id];
@@ -467,7 +478,7 @@ export function addCalendarException(id, date, state) {
   });
 }
 
-export function removeCalendarException(id, date) {
+export function removeCalendarException(id: string, date: string): void {
   mutateNetwork((d) => {
     const c = d.calendars[id];
     if (!c) return;
@@ -475,7 +486,7 @@ export function removeCalendarException(id, date) {
   });
 }
 
-export function removeCalendar(id) {
+export function removeCalendar(id: string): void {
   mutateNetwork((d) => {
     delete d.calendars[id];
   });
@@ -483,7 +494,7 @@ export function removeCalendar(id) {
 
 // --- services ---------------------------------------------------
 
-export function addService() {
+export function addService(): void {
   const doc = getNetworkDoc();
   if (!doc) return;
   const patternId = Object.keys(doc.patterns ?? {}).sort()[0];
@@ -502,7 +513,7 @@ export function addService() {
   });
 }
 
-export function setServiceRefs(id, { pattern, calendar }) {
+export function setServiceRefs(id: string, { pattern, calendar }: { pattern?: string; calendar?: string }): void {
   mutateNetwork((d) => {
     const s = d.services[id];
     if (!s) return;
@@ -511,14 +522,14 @@ export function setServiceRefs(id, { pattern, calendar }) {
   });
 }
 
-export function removeService(id) {
+export function removeService(id: string): void {
   mutateNetwork((d) => {
     delete d.services[id];
   });
 }
 
 /** Replace an exact-times service's trip starts (sorted, unique). */
-export function setServiceStarts(serviceId, starts) {
+export function setServiceStarts(serviceId: string, starts: number[]): void {
   const clean = [...new Set(starts)].sort((a, b) => a - b);
   mutateNetwork((d) => {
     const svc = d.services[serviceId];
@@ -526,31 +537,31 @@ export function setServiceStarts(serviceId, starts) {
   });
 }
 
-export function addServiceStart(serviceId) {
+export function addServiceStart(serviceId: string): void {
   const doc = getNetworkDoc();
-  const starts = doc?.services?.[serviceId]?.schedule?.starts;
+  const starts = (doc?.services?.[serviceId]?.schedule as { starts?: number[] } | undefined)?.starts;
   if (!starts) return;
   const last = starts.length ? starts[starts.length - 1] : 6 * 3600;
   setServiceStarts(serviceId, [...starts, Math.min(last + 600, 47 * 3600)]);
 }
 
-export function removeServiceStart(serviceId, index) {
+export function removeServiceStart(serviceId: string, index: number): void {
   const doc = getNetworkDoc();
-  const starts = doc?.services?.[serviceId]?.schedule?.starts;
+  const starts = (doc?.services?.[serviceId]?.schedule as { starts?: number[] } | undefined)?.starts;
   if (!starts || starts.length <= 1) return;
   setServiceStarts(serviceId, starts.filter((_, i) => i !== index));
 }
 
 /** Set one field of one headway band. */
-export function setBandField(serviceId, index, field, value) {
+export function setBandField(serviceId: string, index: number, field: string, value: number): void {
   mutateNetwork((d) => {
     const svc = d.services[serviceId];
     if (svc?.schedule?.kind !== "headway_bands" || !svc.schedule.bands[index]) return;
-    svc.schedule.bands[index][field] = value;
+    (svc.schedule.bands[index] as HeadwayBand)[field as keyof HeadwayBand] = value as never;
   });
 }
 
-export function addBand(serviceId) {
+export function addBand(serviceId: string): void {
   mutateNetwork((d) => {
     const svc = d.services[serviceId];
     if (svc?.schedule?.kind !== "headway_bands") return;
@@ -561,7 +572,7 @@ export function addBand(serviceId) {
   });
 }
 
-export function removeBand(serviceId, index) {
+export function removeBand(serviceId: string, index: number): void {
   mutateNetwork((d) => {
     const svc = d.services[serviceId];
     if (svc?.schedule?.kind !== "headway_bands" || svc.schedule.bands.length <= 1) return;
@@ -571,7 +582,7 @@ export function removeBand(serviceId, index) {
 
 // --- blocks (the runcut) ----------------------------------------
 
-export function addBlock() {
+export function addBlock(): void {
   const doc = getNetworkDoc();
   const id = nextId(doc?.blocks, "b");
   mutateNetwork((d) => {
@@ -579,13 +590,13 @@ export function addBlock() {
   });
 }
 
-export function removeBlock(id) {
+export function removeBlock(id: string): void {
   mutateNetwork((d) => {
     delete d.blocks[id];
   });
 }
 
-export function addBlockTrip(blockId, serviceId, startSecs) {
+export function addBlockTrip(blockId: string, serviceId: string, startSecs: number | null): void {
   if (!serviceId || startSecs === null) {
     app.status = "Pick a service and a valid start time first.";
     return;
@@ -600,7 +611,7 @@ export function addBlockTrip(blockId, serviceId, startSecs) {
   });
 }
 
-export function removeBlockTrip(blockId, index) {
+export function removeBlockTrip(blockId: string, index: number): void {
   mutateNetwork((d) => {
     const b = d.blocks[blockId];
     if (!b) return;
@@ -609,7 +620,7 @@ export function removeBlockTrip(blockId, index) {
   });
 }
 
-export function setBlockLayover(blockId, afterTrip, secs) {
+export function setBlockLayover(blockId: string, afterTrip: number, secs: number | null): void {
   mutateNetwork((d) => {
     const b = d.blocks[blockId];
     if (!b || afterTrip + 1 >= b.trips.length) return;
@@ -630,8 +641,8 @@ export function setBlockLayover(blockId, afterTrip, secs) {
 
 /// Ordered [lon, lat] of a pattern's stops (skips stops without
 /// coordinates).
-function patternCoords(doc, patternId) {
-  const p = doc?.patterns?.[patternId];
+function patternCoords(doc: Network, patternId: string | undefined | null): number[][] {
+  const p = patternId ? doc?.patterns?.[patternId] : undefined;
   if (!p) return [];
   const out = [];
   for (const s of p.stops) {
@@ -641,21 +652,21 @@ function patternCoords(doc, patternId) {
   return out;
 }
 
-function focusFor(doc, kind, id) {
+function focusFor(doc: Network | null, kind: EntityKind, id: string): Focus | null {
   if (!doc) return null;
-  const line = (coords) => (coords.length >= 2 ? [coords] : []);
-  const point = (coords) => (coords.length ? [coords[coords.length - 1]] : []);
+  const line = (coords: number[][]): number[][][] => (coords.length >= 2 ? [coords] : []);
+  const point = (coords: number[][]): number[][] => (coords.length ? [coords[coords.length - 1]] : []);
   if (kind === "pattern") {
     const coords = patternCoords(doc, id);
     return { lines: line(coords), points: coords };
   }
   if (kind === "service") {
-    const coords = patternCoords(doc, doc.services?.[id]?.pattern);
+    const coords = patternCoords(doc, doc.services?.[id]?.pattern ?? null);
     return { lines: line(coords), points: coords };
   }
   if (kind === "route") {
-    const lines = [];
-    const points = [];
+    const lines: number[][][] = [];
+    const points: number[][] = [];
     for (const [pid, p] of Object.entries(doc.patterns ?? {})) {
       if (p.route !== id) continue;
       const coords = patternCoords(doc, pid);
@@ -672,13 +683,13 @@ function focusFor(doc, kind, id) {
 }
 
 /** Drill into one entity: opens its editor and frames it on the map. */
-export function selectEntity(kind, id) {
+export function selectEntity(kind: EntityKind, id: string): void {
   app.plannerSelection = id ? { kind, id } : null;
   app.plannerFocus = focusFor(getNetworkDoc(), kind, id);
 }
 
 /** Clear focus (persona switch away, or a removed entity). */
-export function clearSelection() {
+export function clearSelection(): void {
   app.plannerSelection = null;
   app.plannerFocus = null;
 }

@@ -15,6 +15,7 @@
 //! * The answer is `tau[rounds][destination]`; the itinerary is
 //!   rebuilt by following parents backward in time.
 
+use ts_rs::TS;
 use serde::Serialize;
 
 use crate::network::RouterNetwork;
@@ -24,7 +25,8 @@ const INF: u32 = u32::MAX;
 
 /// One leg of a planned itinerary. Internally tagged for JSON
 /// serialization: `{"type": "transit", ...}` / `{"type": "walk", ...}`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Leg {
     Walk {
@@ -51,7 +53,8 @@ pub enum Leg {
 }
 
 /// A full plan: origin, destination, and legs in chronological order.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct Itinerary {
     pub from_stop_id: String,
     pub from_stop_name: String,

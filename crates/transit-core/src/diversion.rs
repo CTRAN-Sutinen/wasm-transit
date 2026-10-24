@@ -28,6 +28,7 @@
 //! matches how the rest of the crate queries (departures, plans and
 //! blocks all take a date).
 
+use ts_rs::TS;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -58,7 +59,8 @@ mod iso_date {
 }
 
 /// One vertex of a drawn detour polyline.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct DetourPoint {
     pub lat: f64,
     pub lon: f64,
@@ -66,7 +68,8 @@ pub struct DetourPoint {
 
 /// One operator edit, serializable so the UI can persist it next to
 /// the feed bytes and replay it after a reload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Diversion {
     pub id: String,
     pub route_id: String,
@@ -88,8 +91,10 @@ pub struct Diversion {
     #[serde(default)]
     pub added_secs: u32,
     #[serde(with = "iso_date")]
+    #[ts(type = "string")]
     pub start_date: NaiveDate,
     #[serde(with = "iso_date")]
+    #[ts(type = "string")]
     pub end_date: NaiveDate,
 }
 

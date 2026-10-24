@@ -1,9 +1,9 @@
-<script>
-  import { app, getEditDocument } from "../state.svelte.js";
+<script lang="ts">
+  import { app, getEditDocument } from "../state.svelte";
   import {
     startDiversion, cancelDiversion, setDiversionAnchor, toggleSkipped,
     applyDiversion, toggleDiversion, toggleDrawing, clearDetour, syncEdits,
-  } from "../actions.svelte.js";
+  } from "../actions";
 
   const routes = $derived(app.gtfs ? app.gtfs.routes() : []);
   const draft = $derived(app.diversionDraft);
@@ -23,11 +23,11 @@
     return m;
   });
 
-  const reportOf = (id) => app.editReports.find((r) => r.id === id);
+  const reportOf = (id: string) => app.editReports.find((r) => r.id === id);
 
   // The pattern the anchors are picked from: the route's longest trip.
   const sequence = $derived.by(() => {
-    if (!draft?.routeId) return [];
+    if (!draft?.routeId || !app.gtfs) return [];
     const dir = draft.directionId === "" ? null : Number(draft.directionId);
     return app.gtfs.route_stop_sequence(draft.routeId, dir);
   });
@@ -56,7 +56,7 @@
     }
   });
 
-  function isInterior(stopId) {
+  function isInterior(stopId: string) {
     return interior.some((s) => s.stop_id === stopId);
   }
 </script>

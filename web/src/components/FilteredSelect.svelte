@@ -1,14 +1,22 @@
-<script>
+<script lang="ts">
   /// A select over possibly thousands of options: a filter box narrows
   /// the list, and only the first `cap` matches render. Without this,
   /// a real agency feed (thousands of services/patterns) turns every
   /// dropdown into tens of thousands of DOM nodes.
-  let { label, value = "", options = [], onchange, cap = 200 } = $props();
+  let {
+    label, value = "", options = [], onchange, cap = 200,
+  }: {
+    label: string;
+    value?: string;
+    options: [string, string][];
+    onchange: (id: string) => void;
+    cap?: number;
+  } = $props();
 
   let filter = $state("");
   const shown = $derived.by(() => {
     const q = filter.trim().toLowerCase();
-    const hits = q
+    const hits: [string, string][] = q
       ? options.filter(([id, text]) => id.toLowerCase().includes(q) || text.toLowerCase().includes(q))
       : options;
     // The current value always renders, filter or not.

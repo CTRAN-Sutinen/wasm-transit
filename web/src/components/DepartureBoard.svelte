@@ -1,6 +1,6 @@
-<script>
-  import { app } from "../state.svelte.js";
-  import { selectStop, showTrip, refreshNow, serviceDate, secondsSinceMidnight } from "../actions.svelte.js";
+<script lang="ts">
+  import { app } from "../state.svelte";
+  import { selectStop, showTrip, refreshNow, serviceDate, secondsSinceMidnight } from "../actions";
 
   const stops = $derived(app.gtfs ? app.gtfs.stops().slice(0, 2000) : []);
   const services = $derived(app.gtfs ? app.gtfs.active_services(serviceDate()) : []);
@@ -39,13 +39,13 @@
     });
   });
 
-  function fmtClock(secs) {
+  function fmtClock(secs: number) {
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   }
 
-  function delayChip(delay) {
+  function delayChip(delay: number | null) {
     if (delay == null) return null;
     if (delay <= 60) return { label: "on time", cls: "ok" };
     const min = Math.round(delay / 60);
@@ -74,7 +74,7 @@
           {@const chip = delayChip(d.delay)}
           <tr class="clickable-row" class:selected={app.selectedTripId === d.trip_id} onclick={() => showTrip(d.trip_id)}>
             <td class="time">
-              {fmtClock(d.departure_time)}
+              {fmtClock(d.departure_time ?? 0)}
               {#if d.expected != null && d.expected !== d.departure_time}
                 <span class="expected" class:late={d.delay > 60} class:early={d.delay < 0}>
                   → {fmtClock(d.expected)}

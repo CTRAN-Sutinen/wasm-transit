@@ -6,18 +6,21 @@
 //! structs become plain objects. GeoJSON coordinate order is
 //! [lon, lat].
 
+use ts_rs::TS;
 use serde::Serialize;
 
 use transit_core::{Route, Stop, StopSummary};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct FeatureCollection {
     #[serde(rename = "type")]
     pub kind: &'static str,
     pub features: Vec<StopFeature>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct StopFeature {
     #[serde(rename = "type")]
     pub kind: &'static str,
@@ -25,21 +28,24 @@ pub struct StopFeature {
     pub properties: StopProps,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct PointGeometry {
     #[serde(rename = "type")]
     pub kind: &'static str,
     pub coordinates: [f64; 2],
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct StopProps {
     pub stop_id: String,
     pub name: String,
     pub code: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct TripLineFeature {
     #[serde(rename = "type")]
     pub kind: &'static str,
@@ -47,14 +53,16 @@ pub struct TripLineFeature {
     pub properties: TripProps,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct LineGeometry {
     #[serde(rename = "type")]
     pub kind: &'static str,
     pub coordinates: Vec<[f64; 2]>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct TripProps {
     pub trip_id: String,
     pub route_id: Option<String>,

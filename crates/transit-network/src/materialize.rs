@@ -20,13 +20,15 @@
 //!   where the departure is the trip start; dwells are folded into
 //!   the authored running times, not added on top.
 
+use ts_rs::TS;
 use chrono::NaiveDate;
 
 use crate::error::NetworkError;
 use crate::model::{Network, Pattern, Schedule};
 
 /// One derived trip for one service date.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
 pub struct MaterializedTrip {
     pub service: String,
     pub route: String,
@@ -38,7 +40,8 @@ pub struct MaterializedTrip {
 
 /// One derived stop visit. Times are seconds after the service-day
 /// anchor; departure == arrival except at the first stop.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
 pub struct StopTime {
     pub stop: String,
     pub arrival_secs: u32,

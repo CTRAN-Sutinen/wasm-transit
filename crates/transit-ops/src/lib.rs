@@ -28,6 +28,7 @@ pub use network::network_to_gtfs;
 pub use rt::{RtOverview, StopUpdateView, TripUpdateView, VehicleView};
 pub use state::FeedState;
 
+use ts_rs::TS;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
@@ -35,7 +36,8 @@ use transit_sync::EditRecord;
 
 /// One operation call. Tagged enums, so the serde form is
 /// `{"op": "<name>", ...fields}` — one shape, native or JSON.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     /// Parse a GTFS static zip from raw bytes; registers the feed.
@@ -134,12 +136,14 @@ pub enum Request {
         feed_id: Option<u32>,
         client: Vec<EditRecord>,
         server: Vec<EditRecord>,
+        #[ts(type = "number")]
         now_ms: u64,
     },
 }
 
 /// The result of one operation. Same tagging as [`Request`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     LoadFeed { feed_id: u32, summary: transit_core::FeedSummary },
@@ -171,7 +175,8 @@ pub enum Response {
 }
 
 /// Operation failure: a message hosts can surface or serialize.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct OpError {
     pub message: String,
 }

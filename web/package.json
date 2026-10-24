@@ -7,7 +7,8 @@
     "build": "npm run build:wasm && vite build",
     "build:wasm": "cargo build --release -p transit-wasm --target wasm32-unknown-unknown && cp ../target/wasm32-unknown-unknown/release/transit_wasm.wasm pkg/transit_wasm.wasm",
     "preview": "vite preview",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "typecheck": "svelte-check --fail-on-warnings false --output human"
   },
   "dependencies": {
     "idb-keyval": "^6.3.0",
@@ -17,6 +18,8 @@
     "@playwright/test": "^1.64.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "svelte": "^5.57.2",
+    "svelte-check": "^4.7.7",
+    "typescript": "^6.0.3",
     "vite": "^8.3.5"
   }
 }

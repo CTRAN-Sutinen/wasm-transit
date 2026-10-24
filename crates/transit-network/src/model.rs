@@ -16,6 +16,7 @@
 //! planners author timing anyway. Non-timepoint stops interpolate by
 //! distance between their bracketing timepoints.
 
+use ts_rs::TS;
 use std::collections::BTreeMap;
 
 use chrono::{Datelike, NaiveDate, Weekday};
@@ -59,7 +60,8 @@ pub mod iso_date {
 /// compatibility: no DST transition occurs near noon, so offsets
 /// stay unambiguous on change days. The authored model makes the
 /// convention *explicit* where GTFS leaves it to inference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum Anchor {
     /// Seconds after "noon minus 12h" of the service date.
@@ -74,7 +76,8 @@ impl Default for Anchor {
 
 /// A stop as a planner authors it: one name, one location, optional
 /// parent (platform-in-station groupings).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Stop {
     pub name: String,
     pub lat: f64,
@@ -85,7 +88,8 @@ pub struct Stop {
 
 /// A route as a planner authors it: one display name (GTFS's
 /// short/long split is a serialization concern), a closed mode set.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Route {
     pub name: String,
     pub mode: Mode,
@@ -94,7 +98,8 @@ pub struct Route {
 }
 
 /// Vehicle modes as a domain concept, not GTFS's numeric codes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
     Tram,
@@ -111,7 +116,8 @@ pub enum Mode {
 }
 
 /// One stop visit within a pattern.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct PatternStop {
     pub stop: StopId,
     /// Timepoints carry authored times; non-timepoints interpolate
@@ -128,7 +134,8 @@ pub struct PatternStop {
 /// the pattern's timepoints, in pattern order. The first entry is 0
 /// (the trip *departs* its first stop at `start_secs`); the last is
 /// the arrival at the final stop.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct TimingProfile {
     pub start_secs: u32,
     pub end_secs: u32,
@@ -144,7 +151,8 @@ impl TimingProfile {
 
 /// A route pattern: the stop sequence a planner draws, with its
 /// timing. Trips are instances of a pattern, not free-standing rows.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Pattern {
     pub route: RouteId,
     /// Human-facing description, e.g. "5-K Ave to Downtown via MLK".
@@ -173,7 +181,8 @@ impl Pattern {
 /// Which days a service runs on, as authored rules rather than GTFS
 /// exception rows: weekday flags plus date ranges, with explicit
 /// per-date exceptions that always win.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct CalendarRule {
     #[serde(default)]
     pub days: WeekdaySet,
@@ -199,22 +208,28 @@ impl CalendarRule {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct DateRange {
     #[serde(with = "iso_date")]
+    #[ts(type = "string")]
     pub start: NaiveDate,
     #[serde(with = "iso_date")]
+    #[ts(type = "string")]
     pub end: NaiveDate,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct CalendarException {
     #[serde(with = "iso_date")]
+    #[ts(type = "string")]
     pub date: NaiveDate,
     pub state: DayState,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum DayState {
     /// Service runs this date even though the weekly rule says no.
@@ -226,7 +241,8 @@ pub enum DayState {
 
 /// Authored weekday flags. A rule with no flags still runs on dates
 /// explicitly `Added` (special-event service) — see `runs_on`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct WeekdaySet {
     #[serde(default)]
     pub mon: bool,
@@ -286,7 +302,8 @@ impl WeekdaySet {
 
 /// When trips of a service run. A planner authors either headway
 /// bands ("15-minute peak service") or exact departure offsets.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Schedule {
     /// Trips depart at `start_secs + k * headway_secs` while the
@@ -298,7 +315,8 @@ pub enum Schedule {
     ExactTimes { starts: Vec<u32> },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct HeadwayBand {
     pub start_secs: u32,
     pub end_secs: u32,
@@ -307,7 +325,8 @@ pub struct HeadwayBand {
 
 /// A scheduled service: this pattern, on this calendar, at these
 /// times. Everything RAPTOR and dispatch consume derives from this.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Service {
     pub pattern: PatternId,
     pub calendar: CalendarId,
@@ -316,7 +335,8 @@ pub struct Service {
 
 /// One vehicle's work: trips in order with the layovers between
 /// them. Authored (runcutting), not derived from trip rows.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Block {
     pub trips: Vec<TripRef>,
     pub layovers: Vec<Layover>,
@@ -324,14 +344,16 @@ pub struct Block {
 
 /// A block's reference to a trip — trips being derived values, the
 /// (service, start) pair *is* the trip's identity.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct TripRef {
     pub service: ServiceId,
     pub start_secs: u32,
 }
 
 /// Recovery time between two trips of a block.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Layover {
     /// Index into the block's trips: the layover follows that trip.
     pub after_trip: usize,
@@ -343,7 +365,8 @@ pub struct Layover {
 
 /// The authored network document. BTreeMap-keyed so serialization is
 /// canonical and per-entity sync falls out later.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Network {
     pub name: String,
     /// The service-day time anchor every offset in the network is

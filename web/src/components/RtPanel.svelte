@@ -1,10 +1,10 @@
-<script>
-  import { app } from "../state.svelte.js";
+<script lang="ts">
+  import { app } from "../state.svelte";
 
   const rt = $derived(app.rtOverview);
 
   /// Worst known delay for a trip update (max over its stops).
-  function worstDelay(t) {
+  function worstDelay(t: any) {
     let worst = null;
     for (const s of t.stop_updates ?? []) {
       const d = s.departure_delay ?? s.arrival_delay;
@@ -33,7 +33,7 @@
       .slice(0, 15)
   );
 
-  function fmtDelay(d) {
+  function fmtDelay(d: number) {
     const min = Math.round(d / 60);
     return min >= 1 ? `+${min} min` : `+${d} s`;
   }
@@ -45,8 +45,8 @@
     {#if buckets.ok}<span class="chip ok">{buckets.ok} on time</span>{/if}
     {#if buckets.warn}<span class="chip warn">{buckets.warn} late 1–5 min</span>{/if}
     {#if buckets.bad}<span class="chip bad">{buckets.bad} late 5+ min</span>{/if}
-    {#if rt.vehicles}<span class="chip svc">{rt.vehicles} vehicles</span>{/if}
-    {#if rt.alerts}<span class="chip warn">{rt.alerts} alerts</span>{/if}
+    {#if rt?.vehicles}<span class="chip svc">{rt.vehicles} vehicles</span>{/if}
+    {#if rt?.alerts}<span class="chip warn">{rt.alerts} alerts</span>{/if}
   </p>
 
   {#if late.length}
@@ -61,7 +61,7 @@
         {/each}
       </tbody>
     </table>
-  {:else if rt.trips.length}
+  {:else if rt?.trips.length}
     <p class="muted">Everything with data is on time.</p>
   {:else}
     <p class="muted">No trip updates in this feed.</p>

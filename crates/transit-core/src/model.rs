@@ -12,6 +12,7 @@
 //! * GTFS writes dates as `YYYYMMDD` strings — `de_date` parses those into
 //!   `chrono::NaiveDate`.
 
+use ts_rs::TS;
 use chrono::{NaiveDate, Weekday};
 use serde::{Deserialize, Serialize};
 
@@ -207,7 +208,8 @@ pub struct ShapePoint {
 
 /// One upcoming departure at a stop, joined across stop_times → trips →
 /// routes. Returned by [`crate::Gtfs::next_departures`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct Departure {
     pub stop_id: String,
     pub trip_id: String,
@@ -226,7 +228,8 @@ pub struct Departure {
 }
 
 /// One block: the vehicle's trip chain. Listed by [`crate::Gtfs::blocks`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct BlockSummary {
     pub block_id: String,
     pub trip_count: usize,
@@ -235,7 +238,8 @@ pub struct BlockSummary {
 /// One trip within a block, as returned by
 /// [`crate::Gtfs::block_trips`]: where the vehicle starts, where it ends,
 /// and how long it waits between the previous trip and this one.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct BlockTrip {
     pub trip_id: String,
     pub route_id: String,
@@ -259,7 +263,8 @@ pub struct BlockTrip {
 }
 
 /// High-level feed statistics (what the demo page shows first).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct FeedSummary {
     pub agencies: usize,
     pub routes: usize,
@@ -269,14 +274,16 @@ pub struct FeedSummary {
 }
 
 /// Minimal stop info for UI lists.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct StopSummary {
     pub stop_id: String,
     pub name: String,
 }
 
 /// Minimal route info for UI pickers.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct RouteSummary {
     pub route_id: String,
     pub name: String,
@@ -287,7 +294,8 @@ pub struct RouteSummary {
 /// practice (agencies are inconsistent), but `feed_version` is the
 /// one that matters: it identifies the artifact a manifest points at,
 /// alongside the content hash.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct FeedInfo {
     #[serde(default)]
     pub feed_id: Option<String>,

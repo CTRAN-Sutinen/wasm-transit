@@ -97,6 +97,16 @@ web/            Svelte 5 runes + Vite. Two skeletons: Rider /
 
 ## Conventions and gotchas
 
+- **The frontend is TypeScript, end to end** — every type that
+  crosses the wasm boundary is GENERATED (`just types`, refreshed by
+  `just test`): ts-rs derives on the model crates emit
+  `web/src/types/*.ts`; commit the diff like any artifact. The TS
+  contract IS the artifact's contract. Plain `cargo test` scatters
+  bindings into `crates/*/bindings` — always set `TS_RS_EXPORT_DIR`
+  (the justfile does). `npm run typecheck` (svelte-check, wired into
+  `just build`) gates all of src/ — components carry
+  `lang="ts"`, the runes modules are `.svelte.ts`. TypeScript is
+  pinned to 6.x: svelte-check does not yet accept TS 7.
 - **serde_json must keep the `float_roundtrip` feature** (root
   Cargo.toml workspace dep): the default parser is 1 ULP off on some
   f64s (`-122.7 + 0.005` reproducibly), which broke document

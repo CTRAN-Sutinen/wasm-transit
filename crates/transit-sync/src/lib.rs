@@ -17,6 +17,7 @@
 //! Everything here is pure: types plus functions over them. No I/O,
 //! no clocks — callers stamp `updated_at`/`rev` when they mutate.
 
+use ts_rs::TS;
 use serde::{Deserialize, Serialize};
 
 use transit_core::{Diversion, Gtfs};
@@ -24,7 +25,8 @@ use transit_core::{Diversion, Gtfs};
 /// Lifecycle of an edit record. `retired` is the tombstone: the record
 /// stays in the document (sync needs to see the deletion), but it is
 /// no longer in force and the UI hides it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "lowercase")]
 pub enum EditStatus {
     /// Created locally, not yet submitted anywhere.
@@ -51,14 +53,17 @@ impl EditStatus {
 /// is the domain content; the envelope fields are what any sync
 /// partner needs to merge, order, and retire records without
 /// understanding the domain.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct EditRecord {
     pub id: String,
     pub diversion: Diversion,
     pub status: EditStatus,
     /// Monotonic per id; bumped on every change by the writer.
+    #[ts(type = "number")]
     pub rev: u64,
     /// Unix epoch milliseconds, stamped by the writer.
+    #[ts(type = "number")]
     pub updated_at: u64,
 }
 
@@ -66,7 +71,8 @@ pub struct EditRecord {
 /// client needs after pushing a document (or what a server would
 /// return from a validation endpoint). The record itself is display
 /// data; the report only carries what requires the feed.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct EditReport {
     pub id: String,
     pub valid: bool,
@@ -106,13 +112,15 @@ pub fn report_all(gtfs: &Gtfs, records: &[EditRecord]) -> Vec<EditReport> {
 /// whom, when. Schedules change by artifact replacement — the planner
 /// persona publishes a new manifest with a new `feed_hash`; everyone
 /// else re-pins and revalidates their edits against it.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct FeedManifest {
     /// Content hash (sha256) of the authoritative GTFS zip.
     pub feed_hash: String,
     /// Human-facing version from `feed_info.txt`, if the feed has one.
     pub feed_version: Option<String>,
     /// Unix epoch seconds of publication.
+    #[ts(type = "number")]
     pub generated_at: u64,
     /// Who published (authoring system or agency), for provenance.
     pub publisher: Option<String>,

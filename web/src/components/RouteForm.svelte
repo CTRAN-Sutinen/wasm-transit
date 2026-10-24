@@ -1,11 +1,11 @@
-<script>
-  import { app, getNetworkDoc } from "../state.svelte.js";
-  import { updateRoute, removeRoute, clearSelection, modes } from "../planner.svelte.js";
+<script lang="ts">
+  import { app, getNetworkDoc } from "../state.svelte";
+  import { updateRoute, removeRoute, clearSelection, modes } from "../planner";
 
   const doc = $derived(getNetworkDoc());
-  const id = $derived(app.plannerSelection?.kind === "route" ? app.plannerSelection.id : null);
+  const id = $derived(app.plannerSelection?.kind === "route" ? app.plannerSelection.id : "");
   const route = $derived(id ? doc?.routes?.[id] ?? null : null);
-  const patternIds = $derived.by(() =>
+  const patternIds: string[] = $derived.by(() =>
     doc ? Object.entries(doc.patterns ?? {}).filter(([, p]) => p.route === id).map(([pid]) => pid) : [],
   );
 </script>
@@ -18,7 +18,7 @@
              onchange={(e) => updateRoute(id, { name: e.currentTarget.value })}>
     </label>
     <select aria-label="Route mode" value={route.mode}
-            onchange={(e) => updateRoute(id, { mode: e.currentTarget.value })}>
+            onchange={(e) => updateRoute(id, { mode: e.currentTarget.value as import("../types/Mode").Mode })}>
       {#each modes() as m (m)}
         <option value={m}>{m}</option>
       {/each}

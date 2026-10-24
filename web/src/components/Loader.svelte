@@ -1,11 +1,11 @@
-<script>
-  import { app } from "../state.svelte.js";
-  import { loadGtfsFromUrl, loadRtFromUrl, loadVpFromUrl, dropFile, clearCachedFeed } from "../actions.svelte.js";
+<script lang="ts">
+  import { app } from "../state.svelte";
+  import { loadGtfsFromUrl, loadRtFromUrl, loadVpFromUrl, dropFile, clearCachedFeed } from "../actions";
 
   let dragActive = $state(false);
-  let fileInput; // bind:this target — no need for reactivity
+  let fileInput: HTMLInputElement; // bind:this target — no need for reactivity
 
-  async function handleFiles(files) {
+  async function handleFiles(files: FileList) {
     for (const file of files) await dropFile(file);
   }
 </script>
@@ -27,7 +27,7 @@
     tabindex="0"
     ondragover={(e) => { e.preventDefault(); dragActive = true; }}
     ondragleave={() => (dragActive = false)}
-    ondrop={(e) => { e.preventDefault(); dragActive = false; handleFiles(e.dataTransfer.files); }}
+    ondrop={(e) => { e.preventDefault(); dragActive = false; if (e.dataTransfer) handleFiles(e.dataTransfer.files); }}
     onclick={() => fileInput.click()}
     onkeydown={(e) => e.key === "Enter" && fileInput.click()}
   >
@@ -42,7 +42,7 @@
       multiple
       hidden
       bind:this={fileInput}
-      onchange={(e) => handleFiles(e.currentTarget.files)}
+      onchange={(e) => { if (e.currentTarget.files) handleFiles(e.currentTarget.files); }}
     />
   </div>
 

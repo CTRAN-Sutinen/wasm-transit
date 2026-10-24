@@ -1,20 +1,20 @@
-<script>
-  import { app, getNetworkDoc } from "../state.svelte.js";
+<script lang="ts">
+  import { app, getNetworkDoc } from "../state.svelte";
   import {
     removeBlock, addBlockTrip, removeBlockTrip, setBlockLayover,
     clearSelection, fmtHHMMSS, parseHHMMSS,
-  } from "../planner.svelte.js";
+  } from "../planner";
   import FilteredSelect from "./FilteredSelect.svelte";
 
   const doc = $derived(getNetworkDoc());
-  const id = $derived(app.plannerSelection?.kind === "block" ? app.plannerSelection.id : null);
+  const id = $derived(app.plannerSelection?.kind === "block" ? app.plannerSelection.id : "");
   const block = $derived(id ? doc?.blocks?.[id] ?? null : null);
-  const serviceOptions = $derived(doc ? Object.keys(doc.services ?? {}).sort().map((s) => [s, s]) : []);
+  const serviceOptions: [string, string][] = $derived(doc ? Object.keys(doc.services ?? {}).sort().map((s): [string, string] => [s, s]) : []);
 
   let addServiceId = $state("");
   let addTime = $state("");
 
-  const layoverOf = (afterTrip) => block?.layovers.find((l) => l.after_trip === afterTrip);
+  const layoverOf = (afterTrip: number) => block?.layovers.find((l) => l.after_trip === afterTrip);
 </script>
 
 {#if block}
@@ -43,11 +43,12 @@
     <h4>Layovers</h4>
     <ul class="svc-rows">
       {#each block.trips.slice(0, -1) as _, i (i)}
+        {@const layover = layoverOf(i)}
         <li>
           <span class="muted">after trip {i + 1}</span>
           <label>
             <input aria-label={`Layover after trip ${i + 1}`} type="number" min="0"
-                   value={layoverOf(i)?.secs / 60 ?? ""}
+                   value={layover ? layover.secs / 60 : ""}
                    onchange={(e) => {
                      const mins = e.currentTarget.value;
                      setBlockLayover(id, i, mins === "" ? null : Math.round(Number(mins) * 60));

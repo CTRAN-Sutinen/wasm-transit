@@ -4,11 +4,21 @@ import "maplibre-gl/dist/maplibre-gl.css";
 // The wasm artifact has zero imports — the wrapper (src/wasm.js)
 // fetches it and instantiates it directly, then exposes the same
 // GtfsHandle/decode_rt API the app speaks.
-import { loadWasm } from "./wasm.js";
+import { loadWasm } from "./wasm";
 import { get } from "idb-keyval";
 import App from "./App.svelte";
-import { app, setEditDocument } from "./state.svelte.js";
-import { loadGtfsBytes, FEED_KEY, EDITS_KEY, saveSettings, setNowOverride, flushPersist, syncEdits } from "./actions.svelte.js";
+
+// E2E/inspection hooks.
+declare global {
+  interface Window {
+    __setNow: (v: { date: string; secs: number } | null) => void;
+    __flushEdits: () => Promise<void>;
+    __clearEdits: () => void;
+    __map: unknown;
+  }
+}
+import { app, setEditDocument } from "./state.svelte";
+import { loadGtfsBytes, FEED_KEY, EDITS_KEY, saveSettings, setNowOverride, flushPersist, syncEdits } from "./actions";
 
 app.wasm = await loadWasm();
 app.status = "wasm ready";
@@ -36,7 +46,7 @@ try {
   app.vpUrl = settings.vpUrl ?? "";
   app.rtPolling = !!settings.rtPolling && !!settings.rtUrl;
   app.vpPolling = !!settings.vpPolling && !!settings.vpUrl;
-  app.persona = localStorage.getItem("transit:persona") ?? "rider";
+  app.persona = (localStorage.getItem("transit:persona") ?? "rider") as "rider";
 
   const edits = await get(EDITS_KEY);
   if (Array.isArray(edits)) setEditDocument(edits);
@@ -61,4 +71,4 @@ try {
   app.status = "wasm ready — drop a GTFS zip or paste a URL to begin.";
 }
 
-mount(App, { target: document.getElementById("app") });
+mount(App, { target: document.getElementById("app")! });

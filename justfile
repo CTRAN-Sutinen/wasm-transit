@@ -18,18 +18,34 @@ wasm:
     cd web && npm run build:wasm
 
 # Build everything the server serves: artifact + frontend (web/dist).
+# Type-checks first — the TS layer is part of the gate.
 build:
+    cd web && npm run typecheck
     cd web && npm run build
+
+# Regenerate web/src/types/*.ts from the Rust model (ts-rs). The TS
+# contract is generated, never hand-written; regenerate after model
+# changes and commit the diff like any other artifact.
+types:
+    #!/usr/bin/env bash
+    export TS_RS_EXPORT_DIR="$PWD/web/src/types"
+    cargo test --workspace export_bindings >/dev/null
+    echo "$(ls web/src/types | wc -l) type files in web/src/types"
 
 # ---------------------------------------------------------------
 # test
 # ---------------------------------------------------------------
 
 # All host-side tests: Rust suites, Go suite, artifact smoke in Node.
+# TS_RS_EXPORT_DIR keeps the ts-rs bindings regenerating into
+# web/src/types on every run (plain `cargo test` would scatter them
+# into crates/*/bindings).
 test:
+    #!/usr/bin/env bash
+    export TS_RS_EXPORT_DIR="$PWD/web/src/types"
     cargo test
-    cd server && go test ./...
     node crates/transit-wasm/abi-smoke.mjs
+    cd server && go test ./...
 
 # Browser e2e (Chromium via Playwright, against the Go server).
 # Builds first; the runner starts the server unless :8080 is taken.

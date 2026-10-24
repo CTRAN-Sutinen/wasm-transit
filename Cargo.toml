@@ -30,6 +30,11 @@ thiserror = "1"
 prost = "0.13"
 prost-build = "0.13"
 protoc-bin-vendored = "3"
+# TypeScript bindings for every type that crosses the wasm boundary:
+# the TS contract is generated from the Rust model (single source of
+# truth — hand-written .d.ts drifts). serde-compat makes the derives
+# mirror the serde attributes (tags, renames).
+ts-rs = { version = "12", features = ["serde-compat"] }
 wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"
 
