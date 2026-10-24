@@ -20,7 +20,7 @@ use std::collections::HashMap;
 
 use crate::model::{Calendar, CalendarDate};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ServiceCalendar {
     /// Patterns from `calendar.txt`, by service_id.
     pub regular: HashMap<String, Calendar>,

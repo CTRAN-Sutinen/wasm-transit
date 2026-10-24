@@ -5,8 +5,8 @@
   // bundled app that path doesn't exist (404 + text/html => the "MIME
   // type" worker error). Point it at the worker file Vite emits instead.
   import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
-  import { app } from "../state.svelte.js";
-  import { selectStop } from "../actions.svelte.js";
+  import { app, getEditDocument } from "../state.svelte.js";
+  import { selectStop, setDiversionAnchor, addDetourPoint } from "../actions.svelte.js";
 
   maplibregl.setWorkerUrl(workerUrl);
 
@@ -149,8 +149,42 @@
           paint: { "line-width": 6, "line-color": "#0a7" },
         });
 
-        map.on("click", "stops-base", (e) =>
-          selectStop(e.features[0].properties.stop_id));
+        // Active diversions: the drawn detour polylines (orange),
+        // dashed so they read as "not the normal alignment".
+        map.addSource("diversions", { type: "geojson", data: EMPTY_FC });
+        map.addLayer({
+          id: "diversion-detours", type: "line", source: "diversions",
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-width": 4, "line-color": "#e67e22", "line-dasharray": [2, 1.5],
+          },
+        });
+
+        // The detour being drawn: vertices + draft polyline.
+        map.addSource("detour-draft", { type: "geojson", data: EMPTY_FC });
+        map.addLayer({
+          id: "detour-draft-line", type: "line", source: "detour-draft",
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: { "line-width": 3, "line-color": "#c2185b", "line-dasharray": [1, 1] },
+        });
+        map.addLayer({
+          id: "detour-draft-verts", type: "circle", source: "detour-draft",
+          paint: { "circle-radius": 4, "circle-color": "#c2185b" },
+        });
+
+        // Detour drawing mode: plain map clicks append vertices. The
+        // stop layers below still get their own click events first.
+        map.on("click", (e) => {
+          if (app.drawingDetour) addDetourPoint(e.lngLat.lat, e.lngLat.lng);
+        });
+
+        map.on("click", "stops-base", (e) => {
+          const stopId = e.features[0].properties.stop_id;
+          // While the diversion editor is armed, stop clicks set
+          // anchors; selecting the stop stays useful either way.
+          if (app.pickingAnchor) setDiversionAnchor(stopId);
+          selectStop(stopId);
+        });
         for (const layer of ["stops-base", "stops-selected", "vehicle-dots"]) {
           map.on("mouseenter", layer, () => (map.getCanvas().style.cursor = "pointer"));
           map.on("mouseleave", layer, () => (map.getCanvas().style.cursor = ""));
@@ -226,6 +260,46 @@
       const coords = features.flatMap((f) => f.geometry.coordinates);
       map.fitBounds(new maplibregl.LngLatBounds(coords[0], coords[0]).extend(coords), { padding: 60 });
     }
+  });
+
+  // In-force diversions draw their detours on the map.
+  $effect(() => {
+    if (!mapLoaded) return;
+    const features = [];
+    for (const record of getEditDocument()) {
+      const detour = record.diversion.detour;
+      if (record.status === "retired" || !detour?.length) continue;
+      features.push({
+        type: "Feature",
+        geometry: {
+          type: "LineString",
+          coordinates: detour.map((p) => [p.lon, p.lat]),
+        },
+        properties: { id: record.id, route: record.diversion.route_id },
+      });
+    }
+    map.getSource("diversions").setData({ type: "FeatureCollection", features });
+  });
+
+  // The detour draft: vertices as points, the polyline once it has
+  // two of them. (Circle layers only render Point features, line
+  // layers only LineStrings, so one source feeds both layers.)
+  $effect(() => {
+    if (!mapLoaded) return;
+    const pts = app.diversionDraft?.detour ?? [];
+    const features = pts.map(([lat, lon]) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [lon, lat] },
+      properties: {},
+    }));
+    if (pts.length >= 2) {
+      features.push({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: pts.map(([lat, lon]) => [lon, lat]) },
+        properties: {},
+      });
+    }
+    map.getSource("detour-draft").setData({ type: "FeatureCollection", features });
   });
 </script>
 

@@ -6,6 +6,7 @@
   import RtPanel from "./components/RtPanel.svelte";
   import TripPlanner from "./components/TripPlanner.svelte";
   import PlanOverlay from "./components/PlanOverlay.svelte";
+  import DiversionPanel from "./components/DiversionPanel.svelte";
   import { app } from "./state.svelte.js";
   import { loadRtFromUrl, loadVpFromUrl, saveSettings } from "./actions.svelte.js";
 
@@ -80,6 +81,7 @@
       <DepartureBoard />
       <TripPlanner />
       <BlocksPanel />
+      <DiversionPanel />
     {/if}
     {#if app.rtOverview}
       <RtPanel />

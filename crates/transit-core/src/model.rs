@@ -274,3 +274,29 @@ pub struct StopSummary {
     pub stop_id: String,
     pub name: String,
 }
+
+/// Minimal route info for UI pickers.
+#[derive(Debug, Clone, Serialize)]
+pub struct RouteSummary {
+    pub route_id: String,
+    pub name: String,
+    pub route_type: String,
+}
+
+/// `feed_info.txt` — feed-level metadata. All fields are optional in
+/// practice (agencies are inconsistent), but `feed_version` is the
+/// one that matters: it identifies the artifact a manifest points at,
+/// alongside the content hash.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeedInfo {
+    #[serde(default)]
+    pub feed_id: Option<String>,
+    #[serde(default)]
+    pub feed_version: Option<String>,
+    #[serde(default)]
+    pub feed_publisher_name: Option<String>,
+    #[serde(default)]
+    pub feed_publisher_url: Option<String>,
+    #[serde(default)]
+    pub feed_lang: Option<String>,
+}

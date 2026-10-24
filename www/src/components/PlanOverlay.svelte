@@ -18,6 +18,18 @@
     const min = Math.round(secs / 60);
     return min >= 1 ? `${min} min` : `${secs} s`;
   }
+
+  // Before/after when diversions are in force: how the active edits
+  // changed this plan vs the base schedule.
+  const compare = $derived.by(() => {
+    const base = app.planBaseline;
+    if (!base || !plan) return null;
+    const delta = plan.arrival_secs - base.arrival_secs;
+    if (delta === 0 && plan.legs.length === base.legs.length) return null;
+    const min = Math.round(Math.abs(delta) / 60);
+    const label = delta > 0 ? `${min} min later` : delta < 0 ? `${min} min earlier` : "different legs";
+    return { base, label };
+  });
 </script>
 
 {#if plan && !dismissed && plan.legs.length}
@@ -31,6 +43,12 @@
       arrive <strong>{fmtClock(plan.arrival_secs)}</strong> ·
       {plan.legs.filter((l) => l.type === "transit").length} legs
     </p>
+    {#if compare}
+      <p class="plan-compare">
+        Without the active diversion: arrive {fmtClock(compare.base.arrival_secs)}
+        ({compare.label}) — toggle it off in the Diversions section to compare.
+      </p>
+    {/if}
     <ol class="timeline">
       {#each plan.legs as leg, i (i)}
         {#if leg.type === "transit"}

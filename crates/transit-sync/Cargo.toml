@@ -1,0 +1,15 @@
+[package]
+name = "transit-sync"
+description = "The sync document: edit records with provenance, feed manifests, validation reports"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+chrono = { workspace = true }
+transit-core = { path = "../transit-core" }
+
+[dev-dependencies]
+serde_json = "1"
+zip = { workspace = true }

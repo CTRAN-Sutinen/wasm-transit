@@ -12,7 +12,7 @@ use serde::de::DeserializeOwned;
 
 use crate::calendar::ServiceCalendar;
 use crate::error::{GtfsError, Result};
-use crate::model::{Agency, Calendar, CalendarDate, Route, ShapePoint, Stop, StopTime, Trip};
+use crate::model::{Agency, Calendar, CalendarDate, FeedInfo, Route, ShapePoint, Stop, StopTime, Trip};
 use crate::time::parse_time;
 use crate::Gtfs;
 
@@ -110,8 +110,7 @@ pub fn from_zip_bytes(bytes: &[u8]) -> Result<Gtfs> {
     let calendars: Vec<Calendar> = match read_member(&mut archive, "calendar.txt")? {
         Some(text) => parse_csv("calendar.txt", &text)?,
         None => Vec::new(),
-    };
-    let calendar_dates: Vec<CalendarDate> =
+    };    let calendar_dates: Vec<CalendarDate> =
         match read_member(&mut archive, "calendar_dates.txt")? {
             Some(text) => parse_csv("calendar_dates.txt", &text)?,
             None => Vec::new(),
@@ -122,6 +121,16 @@ pub fn from_zip_bytes(bytes: &[u8]) -> Result<Gtfs> {
             message: "feed has neither calendar.txt nor calendar_dates.txt".into(),
         });
     }
+
+    // feed_info.txt is optional metadata; feeds are inconsistent about
+    // which columns appear, so every field parses as Option.
+    let feed_info: Option<FeedInfo> = match read_member(&mut archive, "feed_info.txt")? {
+        Some(text) => {
+            let rows: Vec<FeedInfo> = parse_csv("feed_info.txt", &text)?;
+            rows.into_iter().next()
+        }
+        None => None,
+    };
 
     // shapes.txt is optional; group its points by shape_id and order them
     // by sequence so they read as a polyline.
@@ -209,5 +218,6 @@ pub fn from_zip_bytes(bytes: &[u8]) -> Result<Gtfs> {
         stop_times_by_trip,
         blocks,
         shapes,
+        feed_info,
     })
 }

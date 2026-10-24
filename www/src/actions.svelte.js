@@ -1,11 +1,12 @@
-import { app } from "./state.svelte.js";
-import { set as idbSet, del as idbDel } from "idb-keyval";
+import { app, getEditDocument, setEditDocument } from "./state.svelte.js";
+import { get as idbGet, set as idbSet, del as idbDel } from "idb-keyval";
 
 // ---------------------------------------------------------------
 // persistence: feed bytes in IndexedDB, settings in localStorage
 // ---------------------------------------------------------------
 
 const FEED_KEY = "transit:gtfs-feed";
+export const EDITS_KEY = "transit:edits";
 const SETTINGS_KEY = "transit:settings";
 
 export function saveSettings() {
@@ -96,6 +97,13 @@ export async function loadGtfsBytes(bytes, label) {
   app.selectedStop = null;
   app.selectedTripId = null;
   app.tripFeature = null;
+  app.plan = null;
+  app.planBaseline = null;
+  app.planNotice = null;
+  // The edit document may reference this feed (or an older one) —
+  // re-push so wasm revalidates every record against the new artifact
+  // and derived views re-derive.
+  pushEdits();
   // Diagnostics: proves which wasm queries actually answer in-browser.
   const stops = app.gtfs.stops();
   const blocks = app.gtfs.blocks();
@@ -169,7 +177,8 @@ export function selectStop(stopId) {
 
 export function showTrip(tripId) {
   app.selectedTripId = tripId;
-  const feature = app.gtfs?.trip_path_geojson(tripId);
+  // The date scopes operator edits: diverted trips draw patched shapes.
+  const feature = app.gtfs?.trip_path_geojson(tripId, serviceDate());
   // No geometry -> clear the path, but never wipe other state.
   app.tripFeature = feature ?? null;
 }
@@ -187,6 +196,12 @@ function hhmmssToSecs(hhmm) {
   return h * 3600 + m * 60 + s;
 }
 
+function fmtClock(secs) {
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 export function planTrip(fromStopId, toStopId, departTime) {
   if (!app.gtfs) return;
   if (!fromStopId || !toStopId) {
@@ -197,12 +212,27 @@ export function planTrip(fromStopId, toStopId, departTime) {
     const depart = departTime
       ? hhmmssToSecs(departTime)
       : secondsSinceMidnight();
-    const plan = app.gtfs.plan_trip(fromStopId, toStopId, serviceDate(), depart, 6);
-    app.plan = plan;
-    app.planNotice = plan
-      ? null
-      : "No trip found within 6 legs — try a different time or closer stops.";
-    app.itineraryFeatures = buildItineraryFeatures(plan);
+    const anyActive = getEditDocument().some((e) => e.status !== "retired");
+    if (anyActive) {
+      // With edits in force, plan both worlds and show the delta.
+      const cmp = app.gtfs.plan_trip_compare(fromStopId, toStopId, serviceDate(), depart, 6);
+      app.plan = cmp.active ?? null;
+      app.planBaseline = cmp.baseline ?? null;
+      if (!cmp.active && cmp.baseline) {
+        app.planNotice =
+          `No trip found while the diversion is active — ` +
+          `without it you would arrive ${fmtClock(cmp.baseline.arrival_secs)}.`;
+      } else {
+        app.planNotice = cmp.active ? null : "No trip found within 6 legs — try a different time or closer stops.";
+      }
+    } else {
+      app.plan = app.gtfs.plan_trip(fromStopId, toStopId, serviceDate(), depart, 6);
+      app.planBaseline = null;
+      app.planNotice = app.plan
+        ? null
+        : "No trip found within 6 legs — try a different time or closer stops.";
+    }
+    app.itineraryFeatures = buildItineraryFeatures(app.plan);
   } catch (e) {
     app.planNotice = `Planning failed: ${e.message}`;
     error(e);
@@ -215,7 +245,8 @@ function buildItineraryFeatures(plan) {
   for (const leg of plan.legs) {
     if (leg.type === "transit") {
       // The ridden segment only — the full route would be confusing.
-      const path = app.gtfs.trip_segment_geojson(leg.trip_id, leg.board_stop_id, leg.alight_stop_id);
+      const path = app.gtfs.trip_segment_geojson(
+        leg.trip_id, leg.board_stop_id, leg.alight_stop_id, serviceDate());
       if (path) {
         features.push({ type: "Feature", geometry: path.geometry, properties: { kind: "transit" } });
       }
@@ -235,4 +266,181 @@ function buildItineraryFeatures(plan) {
     }
   }
   return features;
+}
+
+// ---------------------------------------------------------------
+// operator edits (the sync document)
+//
+// One mutation path: mutateEdits(fn) is the ONLY code that changes
+// the document or wasm's view of it. It (1) clones the current
+// records, (2) lets fn transform the copy, (3) adopts it wholesale,
+// (4) pushes it to wasm (which validates each record and drops its
+// derived caches), (5) bumps feedEpoch so derived views re-query, and
+// (6) schedules one debounced persist. Call sites cannot forget a
+// step because there are no steps.
+// ---------------------------------------------------------------
+
+function cloneEdits(edits) {
+  return edits.map((r) => ({
+    ...r,
+    diversion: {
+      ...r.diversion,
+      skipped_stops: [...(r.diversion.skipped_stops ?? [])],
+      detour: r.diversion.detour ? r.diversion.detour.map((p) => ({ ...p })) : null,
+    },
+  }));
+}
+
+let persistTimer = null;
+let pendingWrite = null;
+function persistNow() {
+  clearTimeout(persistTimer);
+  // The document is plain data ($state.raw) — IndexedDB can clone
+  // it directly, no plain-ifying needed.
+  pendingWrite = idbSet(EDITS_KEY, getEditDocument()).catch((e) =>
+    console.warn("edit document cache write failed:", e));
+  return pendingWrite;
+}
+
+function schedulePersist() {
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(persistNow, 400);
+}
+
+/** Write the document immediately (cancels any scheduled write).
+ * Test hook for deterministic reloads; normal flow only schedules. */
+export function flushPersist() {
+  return persistNow() ?? Promise.resolve();
+}
+
+/** Push the current document to wasm: validation reports come back,
+ * caches drop, and derived views re-query via feedEpoch. Also called
+ * after a feed load — every record is revalidated against the new
+ * artifact. No-op when no feed is loaded (records wait in the doc). */
+function pushEdits() {
+  if (!app.gtfs) return;
+  try {
+    app.editReports = app.gtfs.set_diversions(getEditDocument());
+  } catch (e) {
+    error(e);
+    return;
+  }
+  app.feedEpoch++;
+}
+
+export function mutateEdits(fn) {
+  const next = cloneEdits(getEditDocument());
+  fn(next);
+  setEditDocument(next);
+  pushEdits();
+  schedulePersist();
+}
+
+export function startDiversion() {
+  const today = serviceDate();
+  app.diversionDraft = {
+    routeId: "",
+    directionId: "", // "" = any, "0"/"1" filter
+    firstKept: "",
+    lastKept: "",
+    skipped: new Set(),
+    addedMins: 5,
+    start: today,
+    end: today,
+    detour: [], // [[lat, lon], ...] as drawn on the map
+  };
+  app.pickingAnchor = "first";
+}
+
+export function cancelDiversion() {
+  app.diversionDraft = null;
+  app.pickingAnchor = null;
+  app.drawingDetour = false;
+}
+
+/** Stop click (list or map) while the editor is open: first click sets
+ * the first anchor, second sets the last. */
+export function setDiversionAnchor(stopId) {
+  const draft = app.diversionDraft;
+  if (!draft || !stopId) return;
+  if (app.pickingAnchor === "first") {
+    draft.firstKept = stopId;
+    draft.lastKept = "";
+    app.pickingAnchor = "last";
+  } else if (app.pickingAnchor === "last") {
+    if (stopId === draft.firstKept) return;
+    draft.lastKept = stopId;
+    app.pickingAnchor = null;
+  }
+}
+
+export function toggleSkipped(stopId) {
+  const skipped = app.diversionDraft?.skipped;
+  if (!skipped) return;
+  if (skipped.has(stopId)) skipped.delete(stopId);
+  else skipped.add(stopId);
+}
+
+export function addDetourPoint(lat, lon) {
+  app.diversionDraft?.detour.push([lat, lon]);
+}
+
+export function clearDetour() {
+  if (app.diversionDraft) app.diversionDraft.detour = [];
+}
+
+export function toggleDrawing() {
+  app.drawingDetour = !app.drawingDetour;
+}
+
+export function applyDiversion() {
+  const draft = app.diversionDraft;
+  if (!draft) return;
+  if (!draft.routeId || !draft.firstKept || !draft.lastKept) {
+    app.status = "Diversion needs a route and both anchor stops.";
+    return;
+  }
+  const record = {
+    id: crypto.randomUUID ? crypto.randomUUID() : `edit-${Date.now()}`,
+    diversion: {
+      id: `div-${draft.routeId}-${Date.now()}`, // domain id; sync id is above
+      route_id: draft.routeId,
+      direction_id: draft.directionId === "" ? null : Number(draft.directionId),
+      first_kept_stop: draft.firstKept,
+      last_kept_stop: draft.lastKept,
+      skipped_stops: [...draft.skipped],
+      detour: draft.detour.length >= 2 ? draft.detour.map(([lat, lon]) => ({ lat, lon })) : null,
+      added_secs: Math.round(Number(draft.addedMins) * 60),
+      start_date: draft.start,
+      end_date: draft.end,
+    },
+    status: "draft",
+    rev: 1,
+    updated_at: Date.now(),
+  };
+  mutateEdits((edits) => {
+    const i = edits.findIndex((e) => e.id === record.id);
+    if (i >= 0) edits[i] = record;
+    else edits.push(record);
+  });
+  const report = app.editReports.find((r) => r.id === record.id);
+  app.status = !report || !report.valid
+    ? `Diversion saved but invalid: ${report?.error ?? "unknown error"}.`
+    : report.affected_trips === 0
+      ? "Diversion saved, but no trips match its anchor stops — check the route and anchors."
+      : `Diversion applied: ${report.affected_trips} trips updated. Boards, blocks and plans now use it.`;
+  cancelDiversion();
+}
+
+/** In force <-> retired. Retiring is the sync tombstone: the record
+ * stays in the document (a future server needs to see the deletion);
+ * the UI greys it out and un-retiring is always possible. */
+export function toggleDiversion(id) {
+  mutateEdits((edits) => {
+    const edit = edits.find((e) => e.id === id);
+    if (!edit) return;
+    edit.status = edit.status === "retired" ? "draft" : "retired";
+    edit.rev += 1;
+    edit.updated_at = Date.now();
+  });
 }

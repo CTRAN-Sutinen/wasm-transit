@@ -5,14 +5,16 @@
 //! point is [`Gtfs::from_zip_bytes`].
 
 pub mod calendar;
+pub mod diversion;
 pub mod error;
 pub mod model;
 pub mod parse;
 pub mod time;
 
 pub use calendar::ServiceCalendar;
+pub use diversion::{apply_diversions, affected_trips, validate_diversion, DetourPoint, Diversion};
 pub use error::{GtfsError, Result};
-pub use model::{route_type_name, Agency, BlockSummary, BlockTrip, Calendar, CalendarDate, Departure, FeedSummary, Route, ShapePoint, Stop, StopSummary, StopTime, Trip};
+pub use model::{route_type_name, Agency, BlockSummary, BlockTrip, Calendar, CalendarDate, Departure, FeedInfo, FeedSummary, Route, RouteSummary, ShapePoint, Stop, StopSummary, StopTime, Trip};
 pub use time::{fmt_time, parse_time};
 
 use std::collections::HashMap;
@@ -42,12 +44,90 @@ pub struct Gtfs {
     blocks: HashMap<String, Vec<String>>,
     /// shape_id → points in sequence order.
     pub shapes: HashMap<String, Vec<ShapePoint>>,
+    /// `feed_info.txt` metadata, when the feed provides it.
+    pub feed_info: Option<FeedInfo>,
 }
 
 impl Gtfs {
     /// Parse a feed from the bytes of a GTFS `.zip` archive.
     pub fn from_zip_bytes(bytes: &[u8]) -> Result<Gtfs> {
         parse::from_zip_bytes(bytes)
+    }
+
+    /// Rebuild the secondary indexes from the current `stop_times` and
+    /// `trips`. Used after diversion patching, which rewrites rows
+    /// wholesale.
+    pub(crate) fn rebuild_indexes(&mut self) {
+        let mut stop_times_by_stop: HashMap<String, Vec<u32>> = HashMap::new();
+        let mut stop_times_by_trip: HashMap<String, Vec<u32>> = HashMap::new();
+        for (i, st) in self.stop_times.iter().enumerate() {
+            stop_times_by_stop.entry(st.stop_id.clone()).or_default().push(i as u32);
+            stop_times_by_trip.entry(st.trip_id.clone()).or_default().push(i as u32);
+        }
+        for indices in stop_times_by_trip.values_mut() {
+            indices.sort_by_key(|&i| self.stop_times[i as usize].stop_sequence);
+        }
+        let mut blocks: HashMap<String, Vec<String>> = HashMap::new();
+        for trip in self.trips.values() {
+            if let Some(block_id) = &trip.block_id {
+                blocks.entry(block_id.clone()).or_default().push(trip.trip_id.clone());
+            }
+        }
+        self.stop_times_by_stop = stop_times_by_stop;
+        self.stop_times_by_trip = stop_times_by_trip;
+        self.blocks = blocks;
+    }
+
+    /// Name-sorted route list for UI pickers.
+    pub fn route_summaries(&self) -> Vec<RouteSummary> {
+        let mut list: Vec<RouteSummary> = self
+            .routes
+            .values()
+            .map(|r| RouteSummary {
+                route_id: r.route_id.clone(),
+                name: r.display_name(),
+                route_type: r.route_type_name().to_string(),
+            })
+            .collect();
+        list.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.route_id.cmp(&b.route_id)));
+        list
+    }
+
+    /// The stop sequence of a route (+direction), as served by its
+    /// longest matching trip — the pattern the diversion editor
+    /// anchors against. Trips of the route that follow other variants
+    /// simply don't match the anchors and run untouched. Consecutive
+    /// duplicate stops are collapsed.
+    pub fn route_stop_sequence(&self, route_id: &str, direction_id: Option<u8>) -> Vec<StopSummary> {
+        let mut best: Option<(&str, usize)> = None;
+        for trip in self.trips.values() {
+            if trip.route_id != route_id {
+                continue;
+            }
+            if let Some(dir) = direction_id {
+                if trip.direction_id != Some(dir) {
+                    continue;
+                }
+            }
+            let len = self.stop_times_by_trip.get(&trip.trip_id).map_or(0, |v| v.len());
+            match best {
+                // Ties break on trip id: HashMap order must not leak.
+                Some((_, best_len)) if len < best_len => {}
+                Some((best_id, best_len)) if len == best_len && trip.trip_id.as_str() > best_id => {}
+                _ => best = Some((trip.trip_id.as_str(), len)),
+            }
+        }
+        let Some((trip_id, _)) = best else { return Vec::new() };
+        let Some(rows) = self.trip_stop_times(trip_id) else { return Vec::new() };
+        let mut out: Vec<StopSummary> = Vec::with_capacity(rows.len());
+        for row in rows {
+            let Some(stop) = self.stops.get(&row.stop_id) else { continue };
+            if out.last().map(|s| s.stop_id.as_str()) == Some(stop.stop_id.as_str()) {
+                continue;
+            }
+            out.push(StopSummary { stop_id: stop.stop_id.clone(), name: stop.stop_name.clone() });
+        }
+        out
     }
 
     /// Entity counts, for a quick feed overview.
@@ -335,7 +415,7 @@ impl Gtfs {
 }
 
 /// Index of the shape vertex closest to a coordinate.
-fn nearest_shape_point(points: &[ShapePoint], target: (f64, f64)) -> usize {
+pub(crate) fn nearest_shape_point(points: &[ShapePoint], target: (f64, f64)) -> usize {
     let mut best = 0;
     let mut best_dist = f64::INFINITY;
     for (i, p) in points.iter().enumerate() {

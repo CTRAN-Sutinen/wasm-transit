@@ -1,10 +1,14 @@
 // End-to-end tests: real Chromium against the built app served by
 // transit-server, exercising the flows a user actually performs.
 //
-// Fixture feed (sample-gtfs.zip):
+// Fixture feed (sample-gtfs.zip, see make_fixtures.py):
 //   t10: A 08:00 -> B 08:10 (shape sh1), t20: A 08:20 -> B 08:30
-//   all Friday service. Fixture realtime (sample-rt.pb): t10 delayed
-//   +120 s at A / +180 s at B, one vehicle at 45.44/-73.44 on t10.
+//   t30: A 08:40 -> C 08:45 -> B 08:50 (the interior-stop trip)
+//   t11: A 09:00 -> B 09:10, SUN service only
+//   t12: B 07:30, HOL service added on Friday 2026-10-23
+//   all Friday service except where noted. Fixture realtime
+//   (sample-rt.pb): t10 delayed +120 s at A / +180 s at B, one
+//   vehicle at 45.44/-73.44 on t10.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -62,12 +66,12 @@ test("loading a feed populates summary, board and map", async ({ page }) => {
   // departures render for the first stop once selected
   await page.getByLabel("Stop").selectOption("A");
   const rows = page.locator("section:has(h2:text('Departures')) tbody tr");
-  await expect(rows).toHaveCount(2, { timeout: 10_000 });
+  await expect(rows).toHaveCount(3, { timeout: 10_000 });
 
   // stops are drawn on the map
   await expect
     .poll(async () => (await mapData(page, "stops")).features.length)
-    .toBe(2);
+    .toBe(3);
 });
 
 test("clicking a departure draws the trip path", async ({ page }) => {
@@ -152,4 +156,83 @@ test("realtime feed colors delays and vehicles", async ({ page }) => {
   await page.getByLabel("Stop").selectOption("A");
   await expect(page.getByText("08:02")).toBeVisible();
   await expect(page.getByText("+2 min")).toBeVisible();
+});
+
+/// Create a diversion through the editor UI: route 10, anchors
+/// A -> B, interior stop C auto-skipped, `mins` minutes added.
+async function makeDiversion(page, mins) {
+  await page.getByRole("button", { name: "New diversion" }).click();
+  await page.getByLabel("Route").selectOption("10");
+  // Click the two anchors in the stop-sequence list (A, C, B).
+  await page.locator(".stop-seq").getByRole("button", { name: "Main & 1st" }).click();
+  await page.locator(".stop-seq").getByRole("button", { name: "Main & 2nd" }).click();
+  await page.getByLabel("Added time (min)").fill(String(mins));
+  await page.getByRole("button", { name: "Apply diversion" }).click();
+  await expect(page.getByText(/Diversion applied: 3 trips/)).toBeVisible();
+}
+
+test("diversion reroutes the schedule, the board and the planner", async ({ page }) => {
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+
+  // Route 10, anchors A -> B, skip C, +5 minutes.
+  await makeDiversion(page, 5);
+
+  // C loses its only service (t30 used to run A -> C -> B).
+  await page.getByLabel("Stop").selectOption("C");
+  const rows = page.locator("section:has(h2:text('Departures')) tbody tr");
+  await expect(rows).toHaveCount(0);
+
+  // B's board shifts: t10 08:15, t30 08:55 (t12/t20 untouched).
+  await page.getByLabel("Stop").selectOption("B");
+  await expect(page.getByText("08:15", { exact: true })).toBeVisible();
+  await expect(page.getByText("08:55", { exact: true })).toBeVisible();
+  await expect(page.getByText("08:10", { exact: true })).toHaveCount(0);
+
+  // The planner rides the diverted schedule and shows the delta.
+  await page.getByLabel("From", { exact: true }).selectOption("A");
+  await page.getByLabel("To", { exact: true }).selectOption("B");
+  await page.locator("#plan-time").fill("07:30");
+  await page.getByRole("button", { name: "Plan trip" }).click();
+  await expect(page.locator(".plan-overlay")).toBeVisible();
+  await expect(page.locator(".plan-overlay").getByText("08:15", { exact: true })).toBeVisible();
+  await expect(page.locator(".plan-compare")).toContainText(/without the active diversion: arrive 08:10\s+\(5 min later\)/i);
+
+  // A -> C is unreachable while the diversion is active; the notice
+  // says what the baseline looked like.
+  await page.getByLabel("To", { exact: true }).selectOption("C");
+  await page.getByRole("button", { name: "Plan trip" }).click();
+  await expect(page.locator(".plan-notice")).toContainText(/without it you would arrive 08:45/);
+
+  // Toggle the diversion off: C's service returns.
+  await page.locator(".diversion-list input[type=checkbox]").first().uncheck();
+  await page.getByLabel("Stop").selectOption("C");
+  await expect(rows).toHaveCount(1);
+  await expect(page.getByText("08:45", { exact: true })).toBeVisible();
+
+  // The edit persists in IndexedDB next to the feed: after a reload
+  // it is still listed (retired, as toggled — the tombstone survives).
+  await page.evaluate(() => window.__flushEdits());
+  await page.reload();
+  await waitForMap(page);
+  await expect(page.getByText(/Restored/)).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".diversion-list li.inactive")).toHaveCount(1);
+});
+
+test("diversion ripple shows as a tight block layover", async ({ page }) => {
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+
+  // Block B1: t10 08:00 -> 08:10, then t20 at 08:20 (10 min layover).
+  const blocks = page.locator("section", { has: page.getByRole("heading", { name: "Blocks" }) });
+  await expect(blocks.getByText("10 min")).toBeVisible();
+  await expect(blocks.getByText("tight")).toHaveCount(0);
+
+  // Divert route 10 with 6 extra minutes: t10 now ends 08:16 and the
+  // layover shrinks to 4 minutes — flagged.
+  await makeDiversion(page, 6);
+  await expect(blocks.getByText("tight")).toBeVisible();
+  await expect(blocks.getByText("4 min")).toBeVisible();
 });

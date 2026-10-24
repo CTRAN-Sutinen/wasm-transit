@@ -163,3 +163,19 @@ button { font-size: 0.92rem; padding: 0.25rem 0.6rem; border-radius: 6px; cursor
 .clickable-row.selected { outline: 2px solid #007cbf; }
 
 #map:fullscreen { border-radius: 0; }
+
+/* diversion editor */
+.diversion-list { list-style: none; margin: 0.4rem 0; padding: 0; display: grid; gap: 0.35rem; }
+.diversion-list li { display: flex; gap: 0.5rem; align-items: baseline; }
+.diversion-list li.inactive { opacity: 0.5; }
+.diversion-chip { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; text-align: left; }
+
+.diversion-editor { border: 1px solid color-mix(in srgb, currentColor 20%, transparent); border-radius: 8px; padding: 0.6rem; margin: 0.5rem 0; }
+.stop-seq { list-style: none; margin: 0.3rem 0; padding: 0; display: grid; gap: 0.15rem; }
+.stop-seq li { display: flex; gap: 0.5rem; align-items: center; padding: 0.12rem 0.2rem; border-radius: 4px; }
+.stop-seq li.anchor-first, .stop-seq li.anchor-last { background: rgba(0, 124, 191, 0.18); font-weight: 600; }
+.stop-seq li.skipped { opacity: 0.55; text-decoration: line-through; }
+.stop-seq .chip { font-size: 0.78rem; padding: 0 0.35rem; display: inline-flex; gap: 0.25rem; align-items: center; }
+
+input[type="date"], input[type="number"] { font-size: 0.9rem; padding: 0.2rem; }
+.plan-compare { font-size: 0.88rem; background: rgba(230, 126, 34, 0.15); border-radius: 6px; padding: 0.3rem 0.5rem; margin: 0.3rem 0; }

@@ -19,7 +19,10 @@ use std::io::Write;
 use chrono::{Datelike, Duration, NaiveDate};
 use proptest::collection::vec;
 use proptest::prelude::*;
-use transit_core::{fmt_time, parse_time, Calendar, CalendarDate, Gtfs, ServiceCalendar};
+use transit_core::{
+    apply_diversions, fmt_time, parse_time, validate_diversion, Calendar, CalendarDate, Diversion,
+    DetourPoint, Gtfs, ServiceCalendar,
+};
 
 const EPOCH: NaiveDate = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
 
@@ -425,6 +428,110 @@ proptest! {
             };
             prop_assert_eq!(trip.layover_secs, expected_layover);
             previous_end = Some(end);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
+// 5. Diversion properties (oracle over generated feeds)
+// ---------------------------------------------------------------------
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    /// A diversion shifts exactly the matching trips, exactly from the
+    /// last anchor onward — with sequences renumbered contiguously —
+    /// and leaves every other trip, and the base feed, untouched.
+    #[test]
+    fn diversion_shifts_matching_trips_only(
+        spec in feed_spec(),
+        day in 0u32..365,
+        added in 0u32..600,
+        detour in proptest::option::of(vec((0.0f64..1.0, 0.0f64..1.0), 2..=4)),
+    ) {
+        let date = date_2026(day);
+        let base = Gtfs::from_zip_bytes(&build_zip(&spec)).expect("parse");
+
+        // Anchor on the first trip whose two stops differ; feeds where
+        // no such trip exists can't exercise a diversion.
+        let anchor = spec.trips.iter().find(|t| t.first_stop != spec.second_stop(t));
+        prop_assume!(anchor.is_some());
+        let anchor = anchor.unwrap();
+        let first_kept = spec.stop_id(anchor.first_stop);
+        let last_kept = spec.stop_id(spec.second_stop(anchor));
+
+        // A skipped stop that is neither anchor. Generated trips have
+        // no interior between two anchors, so this must be a no-op —
+        // the property doubles as a check that only interior rows go.
+        let skipped: Vec<String> = (0..spec.n_stops)
+            .map(|i| spec.stop_id(i))
+            .filter(|s| s != &first_kept && s != &last_kept)
+            .take(1)
+            .collect();
+
+        let diversion = Diversion {
+            id: "d".into(),
+            route_id: format!("r{}", anchor.route),
+            direction_id: None,
+            first_kept_stop: first_kept.clone(),
+            last_kept_stop: last_kept.clone(),
+            skipped_stops: skipped,
+            detour: detour
+                .map(|pts| pts.into_iter().map(|(lat, lon)| DetourPoint { lat, lon }).collect()),
+            added_secs: added,
+            start_date: date,
+            end_date: date,
+        };
+        validate_diversion(&base, &diversion).expect("generated diversion is valid");
+
+        let patched = apply_diversions(&base, date, &[diversion]).expect("apply");
+
+        for (i, t) in spec.trips.iter().enumerate() {
+            let trip_id = spec.trip_id(i);
+            let rows = patched.trip_stop_times(&trip_id).expect("trip survives the patch");
+            prop_assert!(rows.len() <= 2, "nothing interior can be skipped");
+
+            // Oracle: a generated trip matches iff it runs on the
+            // diversion's route AND its two stops are exactly the
+            // anchors in order; matching trips shift from the last
+            // anchor (row 1) onward and renumber their sequences
+            // contiguously, non-matching trips are untouched.
+            let matches = t.route == anchor.route
+                && spec.stop_id(t.first_stop) == first_kept
+                && spec.stop_id(spec.second_stop(t)) == last_kept;
+            let shift = if matches { added } else { 0 };
+            let expected: Vec<(String, Option<u32>)> = vec![
+                (spec.stop_id(t.first_stop), Some(t.start)),
+                (spec.stop_id(spec.second_stop(t)), Some(t.start + t.duration + shift)),
+            ];
+            let got: Vec<(String, Option<u32>)> = rows
+                .iter()
+                .map(|r| (r.stop_id.clone(), r.departure_time))
+                .collect();
+            prop_assert_eq!(got, expected);
+            if matches {
+                for (j, r) in rows.iter().enumerate() {
+                    prop_assert_eq!(r.stop_sequence, j as u32);
+                }
+            }
+
+            // The base feed was not mutated.
+            let base_rows = base.trip_stop_times(&trip_id).expect("base rows");
+            let base_got: Vec<(String, Option<u32>)> = base_rows
+                .iter()
+                .map(|r| (r.stop_id.clone(), r.departure_time))
+                .collect();
+            let base_expected: Vec<(String, Option<u32>)> = vec![
+                (spec.stop_id(t.first_stop), Some(t.start)),
+                (spec.stop_id(spec.second_stop(t)), Some(t.start + t.duration)),
+            ];
+            prop_assert_eq!(base_got, base_expected);
+            if !matches {
+                // Untouched trips keep their rows (and sequences) as
+                // the generator wrote them.
+                let seqs: Vec<u32> = rows.iter().map(|r| r.stop_sequence).collect();
+                prop_assert_eq!(seqs, vec![1, 2]);
+            }
         }
     }
 }

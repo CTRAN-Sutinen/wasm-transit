@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run build:wasm && vite build",
+    "build:wasm": "cargo build --release -p transit-wasm --target wasm32-unknown-unknown && cp ../target/wasm32-unknown-unknown/release/transit_wasm.wasm pkg/transit_wasm.wasm",
     "preview": "vite preview",
     "test:e2e": "playwright test"
   },

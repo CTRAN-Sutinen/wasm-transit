@@ -24,7 +24,8 @@
   });
 
   const deps = $derived.by(() => {
-    void app.clock; // refresh trigger
+    void app.clock; // time moved
+    void app.feedEpoch; // the effective feed changed (edits, reload)
     if (!app.gtfs || !app.selectedStop) return [];
     const raw = app.gtfs.departures(app.selectedStop, serviceDate(), secondsSinceMidnight(), 15);
     return raw.map((d) => {

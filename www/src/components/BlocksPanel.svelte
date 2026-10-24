@@ -6,7 +6,8 @@
   let selectedBlock = $state("");
 
   const chain = $derived.by(() => {
-    void app.clock; // refresh trigger
+    void app.clock; // time moved
+    void app.feedEpoch; // the effective feed changed (edits, reload)
     if (!app.gtfs || !selectedBlock) return [];
     return app.gtfs.block_trips(selectedBlock, serviceDate());
   });
@@ -22,6 +23,22 @@
     if (s === null || s === undefined) return "—";
     const min = Math.round(s / 60);
     return min >= 1 ? `${min} min` : `${s} s`;
+  }
+
+  // A diverted trip ending later eats into the vehicle's next layover.
+  // Flag tight connections (< 5 min) and overlaps (the next trip now
+  // starts before the previous one ends — a missed connection).
+  function layoverFlag(chain, i) {
+    if (i === 0) return null;
+    const prev = chain[i - 1];
+    const t = chain[i];
+    if (prev.end_time != null && t.start_time != null && t.start_time < prev.end_time) {
+      return { label: "overlap", cls: "bad" };
+    }
+    if (t.layover_secs != null && t.layover_secs < 300) {
+      return { label: "tight", cls: "warn" };
+    }
+    return null;
   }
 </script>
 
@@ -41,6 +58,7 @@
     <tbody>
       <tr><th>#</th><th>start</th><th>end</th><th>route</th><th>trip</th><th>service</th><th>from → to</th><th>layover</th></tr>
       {#each chain as t, i (t.trip_id)}
+        {@const flag = layoverFlag(chain, i)}
         <tr>
           <td>{i + 1}</td>
           <td>{t.start_time_hhmmss}</td>
@@ -49,7 +67,10 @@
           <td class="muted">{t.trip_id}</td>
           <td class="muted">{t.service_id}</td>
           <td>{t.first_stop_name} → {t.last_stop_name}</td>
-          <td>{fmtLayover(t.layover_secs)}</td>
+          <td>
+            {fmtLayover(t.layover_secs)}
+            {#if flag}<span class="chip {flag.cls}">{flag.label}</span>{/if}
+          </td>
         </tr>
       {/each}
     </tbody>

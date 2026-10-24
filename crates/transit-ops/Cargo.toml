@@ -1,0 +1,19 @@
+[package]
+name = "transit-ops"
+description = "Host-agnostic operations layer: the dispatch seam every host (wasm-bindgen, wasmtime, tests) shares"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = "1"
+chrono = { workspace = true }
+prost = { workspace = true }
+transit-core = { path = "../transit-core" }
+transit-router = { path = "../transit-router" }
+transit-rt = { path = "../transit-rt" }
+transit-sync = { path = "../transit-sync" }
+
+[dev-dependencies]
+zip = { workspace = true }

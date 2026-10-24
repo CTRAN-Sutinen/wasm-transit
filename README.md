@@ -9,64 +9,100 @@ localhost proxy — the browser is the consumer, nothing is uploaded.
 ```
 crates/
 ├── transit-core   GTFS static: data model, zip/CSV parsing, calendar
-│                  logic, departure queries. Pure Rust, no I/O deps.
+│                  logic, departure queries, diversion patching.
+│                  Pure Rust, no I/O deps.
 ├── transit-router Earliest-arrival trip planning (RAPTOR): trip
 │                  patterns, footpaths, round-based search, itinerary
 │                  reconstruction. Property-tested against a
 │                  brute-force oracle.
+├── transit-ops   The host-agnostic operations layer: a typed
+│                  `dispatch(Request) -> Response` seam (serde-tagged,
+│                  so it serializes to `{"op": ...}` JSON) plus the
+│                  per-feed registry. Native tests call it directly.
 ├── transit-rt     GTFS-realtime: Rust types generated from the official
 │                  gtfs-realtime.proto (see proto/), plus a decode helper.
-└── transit-wasm   wasm-bindgen wrapper exposing transit-core + transit-rt
-                   + transit-router to JavaScript (built for bundlers).
+├── transit-sync  The sync document: EditRecord (an operator edit plus
+│                  its lifecycle/status envelope), FeedManifest (the
+│                  authority pointer to a feed artifact), validation
+│                  reports. Pure functions, shared by wasm and the
+│                  server — the document is the contract.
+└── transit-wasm   THE wasm artifact: a flat, import-free C ABI
+                   (`transit_alloc/free/invoke/invoke_bytes`) over the
+                   dispatch seam. The rustc output IS the deployment
+                   artifact — the same bytes run in the browser, in
+                   Node, and in the server's wazero runtime.
+server/            Go + wazero: the sync server. Scaffolding only —
+                   static serving, /rt proxy, /manifest (pins the feed
+                   and wasm hashes), /feed. All domain logic runs in
+                   the artifact it hosts.
 www/               Svelte 5 + Vite frontend (see below).
 ```
 
 ## Commands
 
-Run tests (host, fast — no wasm needed):
+`just` is the task runner (`just --list` shows everything). The raw
+commands live in the justfile; the common entries:
 
 ```
-cargo test
+just build         # wasm artifact + frontend (www/dist)
+just test          # Rust suites + Go suite + ABI smoke (Node)
+just e2e           # browser e2e (builds first, Chromium + Playwright)
+just check         # everything above
+just serve         # the sync server on :8080
+just serve path/to/gtfs.zip "Test Transit"   # + /feed, /manifest
+just dev           # vite hot reload (:5173) + server alongside
+just fixtures      # regenerate the e2e GTFS fixture
+just basemap "-123.20,45.25,-122.10,45.95"    # regional pmtiles extract
 ```
 
-End-to-end tests (real Chromium, against the built app served by
-transit-server — start it, or let the runner start it):
+First time: `npm install` in `www/`, and Go 1.22+ (go.mod pulls wazero
+on first build).
+
+The test stack, bottom-up: `just test` covers the host side — Rust
+suites (unit + property tests against independent oracles), the Go
+suite (including the round-trip proof that the server runs the exact
+artifact bytes), and `www/e2e/abi-smoke.mjs`, which instantiates the
+artifact directly in Node with zero imports. `just e2e` runs real
+Chromium against the built app served by the Go server and covers:
+clean load (no console errors), feed loading, the departure board,
+trip planning (including the clipped ridden segment), unreachable-plan
+feedback, IndexedDB restore across reloads, GTFS-rt delay joins (chips,
+predicted times, vehicle colors), and the full diversion flow (schedule
+shift, skipped stop, planner compare, block layover warnings,
+persistence). Fixture feed + protobuf live in `www/e2e/fixtures/`.
+
+Run the sync server, then open http://127.0.0.1:8080:
 
 ```
-cd www && npm run test:e2e
+just serve                                          # static + /rt
+just serve path/to/gtfs.zip "Test Transit"          # + /feed, /manifest
 ```
 
-The suite covers: clean load (no console errors), feed loading, the
-departure board, trip planning (including the clipped ridden segment),
-unreachable-plan feedback, IndexedDB restore across reloads, and
-GTFS-rt delay joins (chips, predicted times, vehicle colors). Fixture
-feed + protobuf live in `www/e2e/fixtures/`.
+The Go server is scaffolding around the wasm artifact: it serves
+`www/dist` (stdlib `http.ServeContent` handles the Range requests
+PMTiles needs) and exposes:
 
-Build the wasm module and the frontend (first time: `npm install` in
-`www/`):
+- `/rt?url=<encoded>` — localhost-only proxy that fetches agency feeds
+  and returns them with CORS headers, so realtime feeds without
+  `Access-Control-Allow-Origin` can be polled from the page.
+- `/manifest` — `{ feed_hash, feed_version, wasm_hash, generated_at,
+  publisher }`: which GTFS artifact is authoritative (sha256), which
+  wasm bytes every host runs (sha256), and who says so. The feed
+  version is parsed *by the artifact* (`feed_info.txt` op) — the host
+  never duplicates GTFS knowledge.
+- `/feed` — the configured GTFS artifact itself. Republishing the file
+  is picked up on the next request (mtime-checked reload): the planner
+  persona publishes, everyone else re-pins.
 
-```
-wasm-pack build crates/transit-wasm --target bundler --out-dir ../../www/pkg
-cd www && npm run build
-```
-
-Run the dev server (from the repo root), then open
-http://127.0.0.1:8080:
-
-```
-cargo run -p transit-server
-```
-
-transit-server serves `www/dist` (with Range request support — PMTiles
-needs it) and exposes `/rt?url=<encoded>` — a localhost-only proxy that
-fetches agency feeds and returns them with CORS headers, so realtime
-feeds without `Access-Control-Allow-Origin` can be polled from the page.
+`go test ./...` in `server/` is the round-trip proof: the server loads
+the exact `www/pkg/transit_wasm.wasm` bytes (hash-pinned in the
+manifest) and gets the same domain answers the browser does — feeds,
+boards, plans, edit documents.
 
 For frontend development with hot reload:
 
 ```
-cargo run -p transit-server &   # for the /rt proxy
-cd www && npm run dev           # vite on :5173, proxies /rt to :8080
+just dev      # vite on :5173 (proxies /rt to :8080) + server alongside
 ```
 
 ## Frontend (www/)
@@ -78,7 +114,52 @@ structure is what keeps feeds from stomping on each other (a TripUpdates
 poll can never wipe vehicle dots drawn from a VehiclePositions feed).
 
 The wasm boundary is unchanged: JS owns networking, files, and the
-clock; Rust receives bytes and dates, and returns plain data.
+clock; Rust receives bytes and dates, and returns plain data. The
+artifact has zero imports — `src/wasm.js` is a thin hand-written
+wrapper (fetch, instantiate, JSON over the flat ABI) that preserves the
+`GtfsHandle` API, so components and tests never see the ABI.
+
+## Diversions (operator edits)
+
+Beyond passenger information, the wasm binary can *edit* the feed. A
+diversion models what a scheduler does when a road closes: pick a route,
+anchor the segment (first/last stop kept), skip interior stops, draw a
+detour on the map, add running time, and set a date window.
+
+Implementation shape:
+
+- `transit-core::diversion` — the `Diversion` spec plus
+  `apply_diversions(base, date, edits)`, which produces a patched copy
+  of the feed for one service date (skip + renumber, time shift from
+  the last anchor onward, shape splice). The base feed is never
+  mutated; property tests check the patched feed against an oracle.
+- `transit-wasm` serves every date-scoped query (departures, blocks,
+  plans, trip paths) from the *effective* feed. `plan_trip_compare`
+  returns both the diverted plan and the baseline, so the UI shows
+  "without the diversion: arrive 08:10".
+- **The edit document is the sync unit and JS owns it**: a
+  `$state.raw` array of transit-sync `EditRecord`s, replaced
+  wholesale (never mutated in place — that is what makes it safe to
+  structured-clone into IndexedDB and, later, to sync to an ops
+  server). wasm holds only a materialized view: one
+  `set_diversions(records)` call replaces the whole document and
+  returns a validation report per record. Every UI mutation flows
+  through a single `mutateEdits(fn)` (adopt → push to wasm → bump
+  `feedEpoch` → one debounced persist), so mirrors cannot drift.
+- Retirement is the tombstone: unchecking an edit sets
+  `status: "retired"` (rev bumped) — the record stays in the
+  document for sync to see the deletion, and can be restored.
+- The UI is a Diversions section: pick route + direction, click the
+  two anchors (list or map), toggle interior skips, optionally draw
+  the detour by clicking the map, set added minutes and dates. Active
+  detours draw as dashed orange lines; block chains flag tight (<5 min)
+  and overlapping layovers that a shift creates downstream.
+- Edits persist in IndexedDB next to the feed bytes and are
+  revalidated against whatever feed loads next — records that no
+  longer validate (feed republished underneath) stay in the document
+  with their error shown, they just never apply. A trip's block
+  ripple is visible but not automatic — shifting the *next* trip on
+  the block is a separate operator decision.
 
 ## Basemap
 
@@ -114,9 +195,15 @@ making the whole app (feed, queries, basemap) fully offline-capable.
 
 ## Design notes
 
-- Network stays in JavaScript. JS fetches (or file-drops) raw bytes; Rust
-  receives `&[u8]` and does all the parsing. This keeps the Rust side
-  portable across browser/node/native.
+- **The artifact is the deployment unit.** All domain logic lives in
+  `transit-ops` behind the dispatch seam; `transit-wasm` is a flat,
+  import-free C ABI over it. The rustc output runs unmodified in the
+  browser (via `src/wasm.js`), in Node (smoke tests), and in the Go
+  server (wazero) — and the manifest pins its sha256 so "same artifact
+  everywhere" is a checkable claim, not a discipline.
+- Hosts own I/O, files, and the clock; the wasm module owns domain
+  logic and nothing else. JS fetches (or drops) raw bytes; Go serves
+  files and the manifest; neither makes a domain decision.
 - GTFS static parsing is intentionally ours (no `gtfs-structures`
   dependency): it is CSV in a zip, and owning the data model is the point
   of the exercise.
@@ -133,3 +220,9 @@ making the whole app (feed, queries, basemap) fully offline-capable.
 - Property-based tests (`transit-core/tests/prop_test.rs`) generate
   random feeds and check laws against independent oracles; failure seeds
   are kept in `tests/prop_test.proptest-regressions`.
+- **All domain logic lives behind transit-ops' dispatch seam** — the
+  flat ABI exports in transit-wasm marshal bytes over it, native tests
+  call it directly (`crates/transit-ops/tests/dispatch_test.rs`), and
+  the Go sync server's wazero host calls the same ops through the
+  same artifact. Feeds live in a module-level registry keyed by
+  `feed_id`; hosts never hold typed handles across the boundary.

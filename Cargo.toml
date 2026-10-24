@@ -2,9 +2,10 @@
 resolver = "2"
 members = [
     "crates/transit-core",
+    "crates/transit-ops",
     "crates/transit-router",
     "crates/transit-rt",
-    "crates/transit-server",
+    "crates/transit-sync",
     "crates/transit-wasm",
 ]
 
@@ -24,3 +25,14 @@ prost-build = "0.13"
 protoc-bin-vendored = "3"
 wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"
+
+# Size the wasm artifact: without wasm-pack's wasm-opt pass, the
+# release profile does the work in-repo. opt-level "s" beats 3 on wasm
+# by a wide margin here; LTO + one codegen unit + abort-on-panic
+# (traps are host errors, never caught) strip the rest.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

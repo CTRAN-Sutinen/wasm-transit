@@ -1,0 +1,128 @@
+// ABI smoke test: instantiates the wasm artifact directly (no
+// wasm-bindgen, zero imports) and verifies the flat-ABI contract plus
+// the core domain flows — the same artifact the browser and the Go
+// server run.
+//
+// Run from anywhere: node e2e/abi-smoke.mjs (paths resolve from this
+// file's location). Also `just test`.
+
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const ARTIFACT = path.join(here, "../pkg/transit_wasm.wasm");
+const FIXTURE = path.join(here, "fixtures/sample-gtfs.zip");
+
+const bytes = readFileSync(ARTIFACT);
+const mod = new WebAssembly.Module(bytes);
+const imports = WebAssembly.Module.imports(mod);
+const assert = (cond, msg) => {
+  if (!cond) throw new Error("FAIL: " + msg);
+  console.log("ok - " + msg);
+};
+
+assert(imports.length === 0, `artifact has zero imports, got ${imports.length}`);
+assert(WebAssembly.Module.exports(mod).some((e) => e.name === "transit_invoke"), "transit_invoke exported");
+
+const inst = new WebAssembly.Instance(mod, {});
+const { transit_alloc, transit_free, transit_invoke, transit_invoke_bytes, memory } = inst.exports;
+
+const OP_LOAD_FEED = 0;
+const OP_DECODE_RT = 1;
+const DATE = "2026-10-23";
+
+function invoke(request) {
+  const payload = Buffer.from(JSON.stringify(request));
+  const ptr = transit_alloc(payload.length);
+  new Uint8Array(memory.buffer, ptr, payload.length).set(payload);
+  const outPtr = transit_invoke(ptr, payload.length);
+  transit_free(ptr, payload.length);
+  return read(outPtr);
+}
+
+function invokeBytes(op, payload) {
+  const ptr = transit_alloc(payload.length);
+  new Uint8Array(memory.buffer, ptr, payload.length).set(payload);
+  const outPtr = transit_invoke_bytes(op, ptr, payload.length);
+  transit_free(ptr, payload.length);
+  return read(outPtr);
+}
+
+function read(outPtr) {
+  const len = new DataView(memory.buffer).getUint32(outPtr, true);
+  const outcome = JSON.parse(Buffer.from(memory.buffer, outPtr + 4, len).toString("utf8"));
+  transit_free(outPtr, len + 4);
+  if (outcome.error) throw new Error("op error: " + outcome.error);
+  return outcome.ok;
+}
+
+const feed = invokeBytes(OP_LOAD_FEED, readFileSync(FIXTURE));
+const feedId = feed.feed_id;
+assert(feed.summary.stops === 3, "load_feed registers and summarizes");
+
+const boardAt = (stop) =>
+  invoke({ op: "departures", feed_id: feedId, stop_id: stop, date: DATE, from_secs: 0, limit: 10 })
+    .departures.map((d) => `${d.trip_id}@${d.departure_time_hhmmss}`);
+
+const baseB = boardAt("B");
+assert(JSON.stringify(baseB) === JSON.stringify(["t12@07:30:00", "t10@08:10:00", "t20@08:30:00", "t30@08:50:00"]),
+  `baseline board at B, got ${JSON.stringify(baseB)}`);
+
+// The whole edit-document flow through JSON.
+const record = (over = {}) => ({
+  id: "e1",
+  diversion: {
+    id: "d1", route_id: "10", direction_id: null,
+    first_kept_stop: "A", last_kept_stop: "B",
+    skipped_stops: ["C"], detour: null,
+    added_secs: 300, start_date: DATE, end_date: DATE,
+  },
+  status: "draft", rev: 1, updated_at: 1, ...over,
+});
+
+const reports = invoke({ op: "set_diversions", feed_id: feedId, records: [record()] }).reports;
+assert(reports.length === 1 && reports[0].valid && reports[0].affected_trips === 3,
+  "reports validate and count trips");
+
+assert(JSON.stringify(boardAt("B")) === JSON.stringify(["t12@07:30:00", "t10@08:15:00", "t20@08:30:00", "t30@08:55:00"]),
+  "effective board reflects the edit");
+assert(boardAt("C").length === 0, "C loses service");
+
+const cmp = invoke({ op: "plan_trip_compare", feed_id: feedId, from: "A", to: "B", date: DATE, depart_secs: 27000, max_legs: 6 });
+assert(cmp.active.arrival_hhmmss === "08:15:00" && cmp.baseline.arrival_hhmmss === "08:10:00",
+  "plan compare: 08:15 vs 08:10");
+
+// GeoJSON comes back as plain data.
+const stops = invoke({ op: "stops_geojson", feed_id: feedId }).collection;
+assert(stops.type === "FeatureCollection" && stops.features.length === 3, "typed geojson collection");
+const trip = invoke({ op: "trip_path_geojson", feed_id: feedId, trip_id: "t10", date: DATE }).feature;
+assert(trip && trip.geometry.coordinates.length === 5, "full trip path via ABI (5-point shape)");
+
+// feed_info op (the manifest's version source).
+const info = invoke({ op: "feed_info", feed_id: feedId }).info;
+assert(info && info.feed_version === "2026.10.1", "feed_info surfaces the artifact version");
+
+// Retire = tombstone.
+invoke({ op: "set_diversions", feed_id: feedId, records: [record({ status: "retired", rev: 2 })] });
+assert(JSON.stringify(boardAt("B")) === JSON.stringify(baseB), "retired records never apply");
+
+// Error outcomes, not traps.
+const errOutcome = (() => {
+  const payload = Buffer.from(JSON.stringify({ op: "summary", feed_id: 99 }));
+  const ptr = transit_alloc(payload.length);
+  new Uint8Array(memory.buffer, ptr, payload.length).set(payload);
+  const outPtr = transit_invoke(ptr, payload.length);
+  transit_free(ptr, payload.length);
+  const len = new DataView(memory.buffer).getUint32(outPtr, true);
+  const o = JSON.parse(Buffer.from(memory.buffer, outPtr + 4, len).toString("utf8"));
+  transit_free(outPtr, len + 4);
+  return o;
+})();
+assert(errOutcome.error && errOutcome.error.includes("unknown feed_id"), "unknown feed: error outcome");
+
+// A second registry entry: multiple feeds coexist in one instance.
+const second = invokeBytes(OP_LOAD_FEED, readFileSync(FIXTURE));
+assert(second.feed_id !== feedId, "registry assigns distinct feed ids");
+
+console.log("smoke passed");
