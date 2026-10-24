@@ -53,16 +53,18 @@ transit-wasm    THE artifact: flat import-free C ABI over dispatch.
                 No wasm-bindgen — do not reintroduce host glue.
 server/         Go + wazero host: scaffolding only (HTTP, manifest,
                 proxy). It must never make a domain decision.
-web/            Svelte 5 runes + Vite. Persona tabs (rider /
-                dispatcher / planner) share one map and one feed
-                underneath — each tab shows only its own workflow.
-                src/wasm.js wraps the artifact (GtfsHandle, including
-                load_network; network_validate); components never
-                see the ABI. The planner tab authors a
-                transit-network document (src/planner.svelte.js:
-                clone → edit → replace → revalidate, same
-                discipline as the edit document) and materializes
-                it as the active feed.
+web/            Svelte 5 runes + Vite. Two skeletons: Rider /
+                Dispatcher share a floating panel over the full-map
+                view; the Planner persona gets a WORKSPACE (rail:
+                network overview + drill-down, map canvas, one
+                focused entity editor at a time — selection frames
+                the element on the map). src/wasm.js wraps the
+                artifact (GtfsHandle, network_import/validate/load);
+                components never see the ABI. src/planner.svelte.js
+                owns authoring mutations (clone → edit → replace →
+                revalidate) and MapView owns all map state — personas
+                remount MapView, so window.__map is cleared on
+                unmount.
 ```
 
 **Ownership rules** (violations here caused real bugs; keep them):

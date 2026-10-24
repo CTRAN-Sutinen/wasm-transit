@@ -172,6 +172,24 @@
           paint: { "circle-radius": 4, "circle-color": "#c2185b" },
         });
 
+        // Planner focus: the selected element's geometry (the drill-
+        // down target), framed by its own effect below.
+        map.addSource("planner", { type: "geojson", data: EMPTY_FC });
+        map.addLayer({
+          id: "planner-line", type: "line", source: "planner",
+          filter: ["==", ["get", "kind"], "line"],
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: { "line-width": 5, "line-color": "#7c4dff" },
+        });
+        map.addLayer({
+          id: "planner-points", type: "circle", source: "planner",
+          filter: ["==", ["get", "kind"], "point"],
+          paint: {
+            "circle-radius": 5, "circle-color": "#7c4dff",
+            "circle-stroke-width": 2, "circle-stroke-color": "#fff",
+          },
+        });
+
         // Detour drawing mode: plain map clicks append vertices. The
         // stop layers below still get their own click events first.
         map.on("click", (e) => {
@@ -193,7 +211,12 @@
         mapLoaded = true; // the $effects below replay current state
       });
     })();
-    return () => map?.remove();
+    return () => {
+      // The inspection hook must not outlive the instance: personas
+      // remount the map (the planner workspace has its own).
+      if (window.__map === map) window.__map = undefined;
+      map?.remove();
+    };
   });
 
   // Reactive bindings: each map layer follows exactly one slice of
@@ -300,6 +323,37 @@
       });
     }
     map.getSource("detour-draft").setData({ type: "FeatureCollection", features });
+  });
+
+  // Planner drill-down focus: the selected element, drawn on the map
+  // and framed. Empty when nothing is selected (rider/dispatcher).
+  $effect(() => {
+    if (!mapLoaded) return;
+    const focus = app.plannerFocus;
+    const features = [];
+    if (focus) {
+      for (const coords of focus.lines ?? []) {
+        features.push({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: coords },
+          properties: { kind: "line" },
+        });
+      }
+      for (const coord of focus.points ?? []) {
+        features.push({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: coord },
+          properties: { kind: "point" },
+        });
+      }
+    }
+    map.getSource("planner").setData({ type: "FeatureCollection", features });
+    const all = features.flatMap((f) =>
+      f.geometry.type === "Point" ? [f.geometry.coordinates] : f.geometry.coordinates,
+    );
+    if (all.length) {
+      map.fitBounds(new maplibregl.LngLatBounds(all[0], all[0]).extend(all), { padding: 60 });
+    }
   });
 </script>
 

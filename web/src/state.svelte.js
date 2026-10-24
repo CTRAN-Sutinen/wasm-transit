@@ -86,6 +86,11 @@ export const app = $state({
   // artifact (`network_validate`): typed, whole-list, never thrown.
   networkIssues: [],
   networkLabel: "",
+  // Drill-down: the entity the planner is focused on ({kind, id}),
+  // and what the map should frame for it ({lines, points} in
+  // [lon, lat] — plain data, MapView just draws it).
+  plannerSelection: null,
+  plannerFocus: null,
 
   // Persistence: the raw feed zip is cached in IndexedDB so refreshes
   // restore instantly without re-downloading.

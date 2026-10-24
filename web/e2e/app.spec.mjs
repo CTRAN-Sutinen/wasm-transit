@@ -346,8 +346,17 @@ test("planner authors a network and the rider uses it", async ({ page }) => {
   await page.getByRole("button", { name: "Derive from loaded feed" }).click();
   await expect(page.getByText("valid", { exact: true })).toBeVisible();
 
+  // Drill into the service: the overview rail selects it, its editor
+  // opens in the drawer, and the map frames the pattern.
+  await page.getByRole("button", { name: "Open service WK:pat-10-0-0" }).click();
+  await expect(page.locator(".planner-drawer")).toBeVisible();
+  // The persona switch remounted the map — wait for the new instance.
+  await waitForMap(page);
+  await expect
+    .poll(async () => (await mapData(page, "planner")).features.length)
+    .toBeGreaterThan(0);
+
   // Move route 10's 08:00 trip (t10) five minutes later.
-  await page.getByLabel("Service", { exact: true }).selectOption("WK:pat-10-0-0");
   const firstStart = page.locator(".trip-start").first();
   await firstStart.fill("08:05:00");
   await firstStart.blur();

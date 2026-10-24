@@ -623,3 +623,62 @@ export function setBlockLayover(blockId, afterTrip, secs) {
     }
   });
 }
+
+// ---------------------------------------------------------------
+// drill-down: select an entity, focus the map on it
+// ---------------------------------------------------------------
+
+/// Ordered [lon, lat] of a pattern's stops (skips stops without
+/// coordinates).
+function patternCoords(doc, patternId) {
+  const p = doc?.patterns?.[patternId];
+  if (!p) return [];
+  const out = [];
+  for (const s of p.stops) {
+    const stop = doc.stops?.[s.stop];
+    if (stop) out.push([stop.lon, stop.lat]);
+  }
+  return out;
+}
+
+function focusFor(doc, kind, id) {
+  if (!doc) return null;
+  const line = (coords) => (coords.length >= 2 ? [coords] : []);
+  const point = (coords) => (coords.length ? [coords[coords.length - 1]] : []);
+  if (kind === "pattern") {
+    const coords = patternCoords(doc, id);
+    return { lines: line(coords), points: coords };
+  }
+  if (kind === "service") {
+    const coords = patternCoords(doc, doc.services?.[id]?.pattern);
+    return { lines: line(coords), points: coords };
+  }
+  if (kind === "route") {
+    const lines = [];
+    const points = [];
+    for (const [pid, p] of Object.entries(doc.patterns ?? {})) {
+      if (p.route !== id) continue;
+      const coords = patternCoords(doc, pid);
+      if (coords.length >= 2) lines.push(coords);
+      points.push(...coords);
+    }
+    return { lines, points };
+  }
+  if (kind === "stop") {
+    const s = doc.stops?.[id];
+    return s ? { lines: [], points: [[s.lon, s.lat]] } : null;
+  }
+  return null; // calendars and blocks have no geometry
+}
+
+/** Drill into one entity: opens its editor and frames it on the map. */
+export function selectEntity(kind, id) {
+  app.plannerSelection = id ? { kind, id } : null;
+  app.plannerFocus = focusFor(getNetworkDoc(), kind, id);
+}
+
+/** Clear focus (persona switch away, or a removed entity). */
+export function clearSelection() {
+  app.plannerSelection = null;
+  app.plannerFocus = null;
+}
