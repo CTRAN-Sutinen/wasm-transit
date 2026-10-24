@@ -1,0 +1,16 @@
+[package]
+name = "transit-router"
+description = "Earliest-arrival trip planning over GTFS (RAPTOR) — pure algorithm, no I/O"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+transit-core = { path = "../transit-core" }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"
+zip = { workspace = true }

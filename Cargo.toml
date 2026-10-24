@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/transit-core",
+    "crates/transit-router",
+    "crates/transit-rt",
+    "crates/transit-server",
+    "crates/transit-wasm",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+csv = "1"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+thiserror = "1"
+prost = "0.13"
+prost-build = "0.13"
+protoc-bin-vendored = "3"
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"

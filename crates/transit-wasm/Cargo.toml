@@ -1,0 +1,19 @@
+[package]
+name = "transit-wasm"
+description = "wasm-bindgen API exposing transit-core + transit-rt to JavaScript"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+serde = { workspace = true }
+chrono = { workspace = true }
+transit-core = { path = "../transit-core" }
+transit-rt = { path = "../transit-rt" }
+transit-router = { path = "../transit-router" }
+prost = { workspace = true }

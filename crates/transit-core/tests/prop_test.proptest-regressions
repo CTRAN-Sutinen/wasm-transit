@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 4539aa6f28d87cca0d4c30e84324f3b9f2fa248b80525f52eb384df58b47b5d9 # shrinks to spec = FeedSpec { n_routes: 1, n_stops: 1, services: [([false, false, false, false, true, false, false], 17, 55)], exceptions: [(5029929074668480563, 264, 1)], trips: [TripSpec { route: 0, service: 0, start: 0, duration: 0, first_stop: 0, block: Some(2) }] }, block_num = 210, day = 71

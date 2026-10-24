@@ -1,0 +1,6 @@
+/target
+node_modules
+www/dist
+www/pkg
+www/test-results
+www/.playwright
