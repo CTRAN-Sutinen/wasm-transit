@@ -152,16 +152,16 @@ proptest! {
         trips in proptest::collection::vec(gen_trip(), 0..=14),
     ) {
         let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
-        let first = transit_ops::network::gtfs_to_network(&gtfs);
+        let first = transit_codec::gtfs_to_network(&gtfs);
         prop_assert!(
             transit_network::validation_issues(&first.network).is_empty(),
             "the model rejects its own import: {:?}",
             transit_network::validation_issues(&first.network)
         );
 
-        let exported = transit_ops::network::network_to_gtfs(&first.network)
+        let exported = transit_codec::network_to_gtfs(&first.network)
             .expect("a valid document exports");
-        let second = transit_ops::network::gtfs_to_network(&exported);
+        let second = transit_codec::gtfs_to_network(&exported);
 
         prop_assert!(
             transit_network::validation_issues(&second.network).is_empty(),
@@ -265,10 +265,10 @@ proptest! {
         trips in proptest::collection::vec(gen_trip(), 0..=14),
     ) {
         let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
-        let first = transit_ops::network::gtfs_to_network(&gtfs);
-        let exported = transit_ops::network::network_to_gtfs(&first.network)
+        let first = transit_codec::gtfs_to_network(&gtfs);
+        let exported = transit_codec::network_to_gtfs(&first.network)
             .expect("a valid document exports");
-        let second = transit_ops::network::gtfs_to_network(&exported);
+        let second = transit_codec::gtfs_to_network(&exported);
 
         for day in [0i64, 4, 9, 400] {
             let date = EPOCH + Duration::days(day);
@@ -287,11 +287,11 @@ proptest! {
         trips in proptest::collection::vec(gen_trip(), 0..=14),
     ) {
         let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
-        let first = transit_ops::network::gtfs_to_network(&gtfs);
-        let exported = transit_ops::network::network_to_gtfs(&first.network)
+        let first = transit_codec::gtfs_to_network(&gtfs);
+        let exported = transit_codec::network_to_gtfs(&first.network)
             .expect("a valid document exports");
-        let a = transit_ops::network::gtfs_to_network(&exported);
-        let b = transit_ops::network::gtfs_to_network(&exported);
+        let a = transit_codec::gtfs_to_network(&exported);
+        let b = transit_codec::gtfs_to_network(&exported);
         prop_assert_eq!(a.network, b.network);
         prop_assert_eq!(a.notes, b.notes);
     }

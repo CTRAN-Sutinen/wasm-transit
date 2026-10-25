@@ -82,7 +82,9 @@ function shell(exports) {
 const byId = Object.fromEntries(manifest.capabilities.map((c) => [c.id, c]));
 assert(manifest.kernel === 1, "manifest speaks kernel v1");
 assert(byId.gtfs && byId.router, "manifest advertises gtfs and router");
+assert(byId.network, "manifest advertises the network capability");
 assert(byId.router.consumes.feed === "gtfs", "router declares its registry edge");
+assert(byId.analysis.consumes.network === "network", "analysis consumes networks from the network capability");
 
 // Agent context: every capability states its purpose and documents
 // every op — the discovery surface an agent assembles from.
@@ -276,5 +278,66 @@ assert(
 );
 const unknownNet = analysis.raw({ op: "network_stats", network_hash: "sha256:missing", date: "2026-01-05" });
 assert(unknownNet.error && unknownNet.error.includes("unknown network"), "unknown hashes error, never panic");
+
+// The network flow — the second REAL capability extracted from the
+// monolith: the planner's whole bootstrap → author → publish path.
+// The same feed bytes into a THIRD module, identity asserted; import
+// derives the document (hash returned, resolutions reported);
+// export produces a GTFS zip whose identity any module agrees on.
+const network = shell(loadModule(byId.network));
+const loadedNetCap = network.invokeBytes(0, feed);
+assert(loadedNetCap.op === "load_feed", "network load_feed answers on the bulk-bytes seam");
+assert(
+  loadedNetCap.feed_hash === loadedGtfs.feed_hash,
+  "three capabilities agree on the feed identity",
+);
+const imported = network.invoke({ op: "import", feed_hash: loadedNetCap.feed_hash });
+assert(
+  imported.network && Object.keys(imported.network.stops).length === 3,
+  "import infers the fixture feed (3 stops)",
+);
+assert(
+  imported.network_hash.startsWith("sha256:"),
+  "import registers the derived document and returns its hash",
+);
+assert(
+  Array.isArray(imported.notes) && imported.notes.length > 0,
+  "the fixture's dropped single-stop trip is reported — never silent",
+);
+const validated = network.invoke({ op: "validate", network_hash: imported.network_hash });
+assert(validated.issues.length === 0, "the derived document validates clean");
+const loadedDoc = network.invoke({ op: "load_document", network: imported.network });
+assert(
+  loadedDoc.network_hash === imported.network_hash,
+  "load_document is idempotent by content hash",
+);
+const exported = network.invoke({ op: "export", network_hash: imported.network_hash });
+const zip = Buffer.from(exported.zip_b64, "base64");
+assert(
+  "sha256:" + createHash("sha256").update(zip).digest("hex") === exported.feed_hash,
+  "the export's hash is the content hash of the decoded bytes",
+);
+assert(
+  zip[0] === 0x50 && zip[1] === 0x4b,
+  "the export payload is zip bytes",
+);
+// The composition moment of the publish path: the exported artifact is
+// a first-class feed — cap-gtfs loads the SAME bytes and returns the
+// SAME identity the export advertised.
+const published = gtfs.invokeBytes(0, zip);
+assert(
+  published.feed_hash === exported.feed_hash,
+  "the exported zip loads into cap-gtfs under the advertised hash",
+);
+// Broken documents: validate reports every issue, export refuses.
+const broken = JSON.parse(JSON.stringify(imported.network));
+broken.patterns[Object.keys(broken.patterns)[0]].stops[1].stop = "ghost";
+const brokenHash = network.invoke({ op: "load_document", network: broken }).network_hash;
+const brokenIssues = network.invoke({ op: "validate", network_hash: brokenHash });
+assert(brokenIssues.issues.length > 0, "a referential break is reported");
+const refused = network.raw({ op: "export", network_hash: brokenHash });
+assert(refused.error && refused.error.includes("invalid network"), "export refuses invalid documents");
+const unknownFeed = network.raw({ op: "import", feed_hash: "sha256:missing" });
+assert(unknownFeed.error && unknownFeed.error.includes("unknown feed"), "unknown hashes error, never panic");
 
 console.log("capability modules: ABI smoke ok");

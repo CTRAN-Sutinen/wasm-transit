@@ -19,7 +19,6 @@ fn golden_corpus_replays_byte_identically() {
         fs::read(format!("{root}/{}", corpus["fixture"].as_str().unwrap())).expect("fixture zip");
 
     let mut feed_id = String::new();
-    let mut net_feed_id = String::new();
     for step in corpus["steps"].as_array().expect("steps") {
         let name = step["name"].as_str().unwrap();
         let actual = match step["bytes_op"].as_u64() {
@@ -39,25 +38,13 @@ fn golden_corpus_replays_byte_identically() {
                     !request.contains("$FEED") || !feed_id.is_empty(),
                     "step {name} uses $FEED before the load step"
                 );
-                assert!(
-                    !request.contains("$NET") || !net_feed_id.is_empty(),
-                    "step {name} uses $NET before the network_load step"
-                );
-                transit_ops::dispatch_json(&request.replace("$FEED", &feed_id).replace("$NET", &net_feed_id))
+                transit_ops::dispatch_json(&request.replace("$FEED", &feed_id))
             }
         };
-        // A step with `bind` registers a second feed (the network
-        // document); its id is captured here, exactly like the bytes
-        // load above.
-        if step["bind"].as_str() == Some("$NET") {
-            let parsed: Value = serde_json::from_str(&actual).unwrap();
-            net_feed_id = parsed["ok"]["feed_id"].as_u64().unwrap().to_string();
-        }
         let expected = step["expect"]
             .as_str()
             .unwrap()
-            .replace("$FEED", &feed_id)
-            .replace("$NET", &net_feed_id);
+            .replace("$FEED", &feed_id);
         assert_eq!(actual, expected, "corpus step {name} diverges");
     }
 }

@@ -1,0 +1,23 @@
+[package]
+name = "cap-network"
+description = "The network codec capability: infer an authored network document from a GTFS feed (the planner's bootstrap) and export one back to GTFS bytes (the publish path). The second capability extracted from the monolith — transit-codec is shared as a library."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]  # rlib: integration tests link the crate natively
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+ts-rs = { workspace = true }
+transit-core = { path = "../transit-core" }
+transit-network = { path = "../transit-network" }
+transit-codec = { path = "../transit-codec" }
+cap-abi = { path = "../cap-abi" }
+
+[dev-dependencies]
+sha2 = { workspace = true }
+

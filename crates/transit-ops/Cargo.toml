@@ -18,6 +18,7 @@ transit-streets = { path = "../transit-streets" }
 transit-sync = { path = "../transit-sync" }
 transit-network = { path = "../transit-network" }
 transit-analysis = { path = "../transit-analysis" }
+transit-codec = { path = "../transit-codec" }
 
 [dev-dependencies]
 proptest = "1"

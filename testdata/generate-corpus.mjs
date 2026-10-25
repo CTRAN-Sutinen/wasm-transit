@@ -15,7 +15,6 @@ import path from "node:path";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ARTIFACT = path.join(here, "../web/pkg/transit_wasm.wasm");
 const FIXTURE = path.join(here, "../web/e2e/fixtures/sample-gtfs.zip");
-const NETWORK = path.join(here, "network.json");
 const OUT = path.join(here, "corpus.json");
 
 const bytes = readFileSync(ARTIFACT);
@@ -50,13 +49,6 @@ function rawInvokeBytes(op, payload) {
 }
 
 const feedIdPlaceholder = "$FEED";
-// The authored-network feed registered by the network_load step.
-// Replays bind the actual id from that step's response.
-const netFeedIdPlaceholder = "$NET";
-// Compact one-line form of the shared network fixture.
-const NET = JSON.stringify(JSON.parse(readFileSync(NETWORK, "utf8")));
-// Same fixture with a referential break: the error outcome shape.
-const NET_BROKEN = NET.replace('"stop":"B"', '"stop":"ghost"');
 
 // The corpus: one op per response shape, plus the edit-document flow
 // and an error outcome. Requests are written with $FEED placeholders.
@@ -104,40 +96,10 @@ const steps = [
     name: "sync_edits_deterministic",
     request: `{"op":"sync_edits","feed_id":${feedIdPlaceholder},"client":[],"server":[],"now_ms":1000}`,
   },
-  // The authored-network flow: infer from the loaded feed (pins the
-  // inference byte-for-byte), validate the shared fixture, load it
-  // (binds $NET for the steps below), then the same ops the GTFS
-  // feed gets — proving a planner's document and a parsed zip drive
-  // identical behavior.
-  {
-    name: "network_import",
-    request: `{"op":"network_import","feed_id":${feedIdPlaceholder}}`,
-  },
-  {
-    name: "network_validate",
-    request: `{"op":"network_validate","network":${NET}}`,
-  },
-  {
-    name: "network_load",
-    request: `{"op":"network_load","network":${NET}}`,
-    bind: netFeedIdPlaceholder,
-  },
-  {
-    name: "network_departures",
-    request: `{"op":"departures","feed_id":${netFeedIdPlaceholder},"stop_id":"A","date":"2026-10-23","from_secs":0,"limit":10}`,
-  },
-  {
-    name: "network_plan_trip",
-    request: `{"op":"plan_trip","feed_id":${netFeedIdPlaceholder},"from":"A","to":"C","date":"2026-10-23","depart_secs":28800,"max_legs":3}`,
-  },
-  {
-    name: "network_active_services_removed_day",
-    request: `{"op":"active_services","feed_id":${netFeedIdPlaceholder},"date":"2026-11-26"}`,
-  },
-  {
-    name: "network_load_invalid_errors",
-    request: `{"op":"network_load","network":${NET_BROKEN}}`,
-  },
+  // The authored-network flow (network_import / network_load) moved
+  // out of the monolith with the codec: cap-network owns it now,
+  // and its module tests hold the "a planner's document drives the
+  // same ops" proof (export → zip → parse → the same op surface).
   { name: "unknown_feed_errors", request: `{"op":"summary","feed_id":999}` },
 ];
 
@@ -150,30 +112,15 @@ const feedId = String(loadOutcome.ok.feed_id);
 const corpusSteps = [
   { name: "load_fixture", bytes_op: OP_LOAD_FEED, expect: loadText.replaceAll(`"feed_id":${feedId}`, `"feed_id":${feedIdPlaceholder}`) },
 ];
-let netFeedId = null;
 for (const step of steps) {
-  let request = step.request.replaceAll(feedIdPlaceholder, feedId);
-  if (request.includes(netFeedIdPlaceholder)) {
-    if (netFeedId === null) throw new Error(`step ${step.name} uses $NET before network_load`);
-    request = request.replaceAll(netFeedIdPlaceholder, netFeedId);
-  }
+  const request = step.request.replaceAll(feedIdPlaceholder, feedId);
   const expect = rawInvoke(request);
-  if (step.bind === netFeedIdPlaceholder) {
-    netFeedId = String(JSON.parse(expect).ok.feed_id);
-    corpusSteps.push({
-      name: step.name,
-      request: step.request,
-      bind: step.bind,
-      expect: expect.replaceAll(`"feed_id":${netFeedId}`, `"feed_id":${netFeedIdPlaceholder}`),
-    });
-  } else {
-    corpusSteps.push({ name: step.name, request: step.request, expect });
-  }
+  corpusSteps.push({ name: step.name, request: step.request, expect });
 }
 
 const corpus = {
   fixture: "web/e2e/fixtures/sample-gtfs.zip",
-  note: "Golden corpus: every host replays these against the artifact and must get byte-identical wrapper text. $FEED substitutes the GTFS feed id, $NET the network feed id (bound from the network_load step's response). Regenerate with: just corpus",
+  note: "Golden corpus: every host replays these against the artifact and must get byte-identical wrapper text. $FEED substitutes the GTFS feed id. Regenerate with: just corpus",
   steps: corpusSteps,
 };
 writeFileSync(OUT, JSON.stringify(corpus, null, 2) + "\n");

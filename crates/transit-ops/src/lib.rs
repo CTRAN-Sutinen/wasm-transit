@@ -16,8 +16,8 @@
 //! "YYYY-MM-DD" strings and times as seconds since midnight.
 
 pub use transit_analysis as analysis; // the analysis module moved to its own crate — the bus shares it as a library
+pub use transit_codec as codec; // the network codec moved to its own crate — the bus shares it as a library
 pub mod geojson;
-pub mod network;
 pub mod plans;
 pub mod rt;
 pub mod state;
@@ -27,7 +27,6 @@ pub use geojson::{
     FeatureCollection, LineGeometry, PointGeometry, StopFeature, StopProps, TripLineFeature,
     TripProps,
 };
-pub use network::{network_to_gtfs, ImportNote, ImportOutcome};
 pub use rt::{RtOverview, StopUpdateView, TripUpdateView, VehicleView};
 pub use state::FeedState;
 
@@ -56,9 +55,6 @@ pub enum Request {
     /// until the next pick) — derived, never stored: pick dates are
     /// targets that move during planning.
     PlansPeriods { plans: Vec<PlanInfo> },
-    /// Validate an authored network document without loading it.
-    /// Returns every issue — the authoring UI's feedback loop.
-    NetworkValidate { network: transit_network::Network },
     /// Parse a population layer (GeoJSON points with a population
     /// property) for the UI's import handle. `pop_field` names the
     /// property; `None` tries the common candidates. Parse-only —
@@ -68,17 +64,6 @@ pub enum Request {
         bytes: Vec<u8>,
         pop_field: Option<String>,
     },
-    /// Infer an authored network document from a loaded feed — the
-    /// planner's bootstrap path: the network the agency already runs,
-    /// clustered into patterns. Deliberately lossy; deterministic.
-    NetworkImport { feed_id: u32 },
-    /// Materialize an authored network document into the derived-feed
-    /// view and register it in the same registry a parsed zip lands
-    /// in, so every other op (departures, planning, blocks, geojson)
-    /// works on a planner's document unchanged. Invalid documents are
-    /// rejected; the error carries the first issue (validate first
-    /// when the whole list is wanted).
-    NetworkLoad { network: transit_network::Network },
     /// Entity counts of a feed.
     Summary { feed_id: u32 },
     /// Name-sorted `[{ stop_id, name }]` for UI pickers.
@@ -196,7 +181,6 @@ pub enum Request {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     LoadFeed { feed_id: u32, summary: transit_core::FeedSummary },
-    NetworkValidate { issues: Vec<transit_network::NetworkError> },
     PlansResolve { plan: Option<String> },
     PlansValidate { issues: Vec<PlanIssue> },
     PlansPeriods { periods: Vec<plans::PlanPeriod> },
@@ -205,8 +189,6 @@ pub enum Response {
         pop_field: String,
         total_pop: f64,
     },
-    NetworkImport { network: transit_network::Network, notes: Vec<ImportNote> },
-    NetworkLoad { feed_id: u32, summary: transit_core::FeedSummary },
     Summary { summary: transit_core::FeedSummary },
     Stops { stops: Vec<transit_core::StopSummary> },
     Routes { routes: Vec<transit_core::RouteSummary> },
@@ -271,9 +253,6 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
             let feed_id = state::register_feed(gtfs);
             Ok(Response::LoadFeed { feed_id, summary })
         }
-        Request::NetworkValidate { network } => Ok(Response::NetworkValidate {
-            issues: transit_network::validation_issues(&network),
-        }),
         Request::PlansResolve { plans, date } => {
             let parsed = parse_date(&date)?;
             Ok(Response::PlansResolve {
@@ -293,19 +272,6 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
             let total_pop = layer.points.iter().map(|p| p.pop).sum();
             let pop_field = layer.pop_field.clone();
             Ok(Response::CoverageLoad { points, pop_field, total_pop })
-        }
-        Request::NetworkImport { feed_id } => state::with_feed(feed_id, |f| {
-            let outcome = network::gtfs_to_network(&f.gtfs);
-            Ok(Response::NetworkImport {
-                network: outcome.network,
-                notes: outcome.notes,
-            })
-        }),
-        Request::NetworkLoad { network } => {
-            let gtfs = network::network_to_gtfs(&network)?;
-            let summary = gtfs.summary();
-            let feed_id = state::register_feed(gtfs);
-            Ok(Response::NetworkLoad { feed_id, summary })
         }
         Request::DecodeRt { bytes } => {
             Ok(Response::DecodeRt { overview: rt::decode_rt_overview(&bytes)? })

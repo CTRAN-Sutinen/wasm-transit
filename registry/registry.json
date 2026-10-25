@@ -1,12 +1,16 @@
 {
   "capabilities": [
     {
-      "hash": "sha256:0729c121325a109fc3cf32a1e35acfdadbe32b34042e930cdeca281d7b706574",
+      "hash": "sha256:b0bf03c19026ea3d30c8547881507649e76215b92db84c07068501d55d25269b",
       "id": "gtfs"
     },
     {
-      "hash": "sha256:e0429e0df86a2001a764e37cd9dba24e81ea1e66ec9f47b5b3e1dba16f227f36",
+      "hash": "sha256:44742ee914e2f2343bb4f325294579c535df6f95f0f7c9e7842435ed75d61686",
       "id": "router"
+    },
+    {
+      "hash": "sha256:ad7d18d5fdd6cf08eb8b2276a5e758186c23789bc078af973f9118d9774d8aa3",
+      "id": "network"
     },
     {
       "hash": "sha256:8ef603b89e493b6b7f088a93630c2a9d44463f506aeaae3272420baf298b9111",
@@ -21,7 +25,7 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "4834315400309d17b688c31c07d2fb1c2e07e4c3"
+    "source_commit": "a500a4f8acf535bf366cc89c79da54d1714581e4"
   },
   "kernel": 1
 }

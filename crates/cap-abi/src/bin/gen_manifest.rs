@@ -87,18 +87,33 @@ const MODULES: &[ModuleSpec] = &[
         ],
     },
     ModuleSpec {
+        id: "network",
+        file: "cap_network.wasm",
+        ops: &["load_feed", "import", "load_document", "validate", "export"],
+        consumes: &[],
+        speaks: &[("feed", &[1]), ("network", &[1])],
+        migrates: &[],
+        purpose: "The network codec: infer an authored network document from a GTFS feed (the planner's bootstrap — patterns, service types, blocks, reported resolutions) and export one back to GTFS zip bytes (the publish path). The second capability extracted from the monolith — the codec lives in the shared transit-codec library, and the monolith keeps no copy. Assemble for planners: it is how a planner's session starts and how it publishes.",
+        op_docs: &[
+            ("load_feed", "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes."),
+            ("import", "The planner's bootstrap: infer an authored network document from a loaded feed. Deterministic; every resolution the inference applied is reported in the notes — never silent. The inferred document registers itself, so its hash answers validate/export immediately."),
+            ("load_document", "Register an authored network document (the planner's JSON document) under its content hash; idempotent."),
+            ("validate", "Every issue of a registered document — the authoring UI's feedback loop, the whole list, never thrown."),
+            ("export", "The publish path: materialize a registered document into a GTFS zip (deterministic bytes) and return it base64-encoded under the content hash of those bytes — the same identity any capability returns for the same bytes. Invalid documents are refused."),
+        ],
+    },
+    ModuleSpec {
         id: "analysis",
         file: "cap_analysis.wasm",
         ops: &["load_network", "load_population_layer", "network_stats", "service_types_overview", "service_type_detail", "type_coverage"],
-        consumes: &[],
-        // The network document is produced by a future network codec
-        // capability; until then the host loads documents by bytes and
-        // the hash is the composition point.
+        // The network document is produced by the network capability —
+        // the extraction this module's own docs once called "future".
+        consumes: &[("network", "network")],
         speaks: &[("network", &[1])],
         migrates: &[],
         purpose: "Planner analysis over an authored network document: network/route/stop stats, per-service-type overview and detail, population coverage. The first capability extracted from the monolith — the domain code lives in the shared transit-analysis library. Assemble for planners; riders never download it. Documents are hash-addressed (load once, query by hash — never per-op document serialization).",
         op_docs: &[
-            ("load_network", "Register an authored network document (the planner's JSON document) under its content hash; idempotent."),
+            ("load_network", "Register an authored network document (the planner's JSON document, produced or derived by the network capability) under its content hash; idempotent."),
             ("load_population_layer", "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried)."),
             ("network_stats", "The network's numbers on one service date: trips, spans, revenue hours, per-route and per-stop activity, headways."),
             ("service_types_overview", "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight."),
@@ -126,6 +141,12 @@ fn main() {
     let feed_hex = format!("{:x}", Sha256::digest(&feed_bytes));
     fs::copy(&fixture, dist.join("sample-gtfs.zip")).expect("copy demo feed");
     let feed_hash = format!("sha256:{feed_hex}");
+
+    // The network capability's worked examples are computed from the
+    // REAL fixture: import derives the document, export produces the
+    // zip — both through the shared transit-codec library, so the
+    // examples are exactly what the module returns and cannot drift.
+    let net_ctx = network_example_context(&feed_bytes);
 
     let mut capabilities = Vec::with_capacity(MODULES.len());
     for module in MODULES {
@@ -168,7 +189,7 @@ fn main() {
                 .op_docs
                 .iter()
                 .map(|(op, description)| {
-                    let example = example_for(module.id, op, &feed_hash);
+                    let example = example_for(module.id, op, &feed_hash, net_ctx.as_ref());
                     (
                         (*op).to_string(),
                         OpDoc { description: (*description).into(), example },
@@ -278,10 +299,49 @@ fn publish_registry(root: &Path, manifest: &CapManifest) {
     );
 }
 
+/// The network examples' real context: the fixture's derived
+/// document (canonical hash — the module's formula), and its
+/// exported zip (content hash of the deterministic bytes).
+struct NetworkExampleContext {
+    derived: serde_json::Value,
+    notes: serde_json::Value,
+    network_hash: String,
+    export_feed_hash: String,
+    export_summary: serde_json::Value,
+    zip_b64: String,
+}
+
+fn network_example_context(feed_bytes: &[u8]) -> Option<NetworkExampleContext> {
+    let gtfs = transit_core::Gtfs::from_zip_bytes(feed_bytes).ok()?;
+    let outcome = transit_codec::gtfs_to_network(&gtfs);
+    let canonical = serde_json::to_string(&outcome.network).ok()?;
+    let network_hash = format!("sha256:{:x}", Sha256::digest(canonical.as_bytes()));
+    let derived = serde_json::to_value(&outcome.network).ok()?;
+    let notes = serde_json::to_value(&outcome.notes).ok()?;
+    let exported = transit_codec::network_to_gtfs(&outcome.network).ok()?;
+    let export_summary = serde_json::to_value(exported.summary()).ok()?;
+    let zip = transit_core::write::to_zip_bytes(&exported);
+    let export_feed_hash = format!("sha256:{:x}", Sha256::digest(&zip));
+    let zip_b64 = transit_core::write::base64_encode(&zip);
+    Some(NetworkExampleContext {
+        derived,
+        notes,
+        network_hash,
+        export_feed_hash,
+        export_summary,
+        zip_b64,
+    })
+}
+
 /// Worked examples — the corpus-as-context idea: an agent reads these
 /// to learn the shapes. Requests carry the REAL feed hash computed
 /// above; responses carry the fixture's known answers.
-fn example_for(capability: &str, op: &str, feed_hash: &str) -> Option<OpExample> {
+fn example_for(
+    capability: &str,
+    op: &str,
+    feed_hash: &str,
+    net: Option<&NetworkExampleContext>,
+) -> Option<OpExample> {
     use serde_json::json;
     let (request, response) = match (capability, op) {
         ("gtfs", "departures") => (
@@ -349,6 +409,39 @@ fn example_for(capability: &str, op: &str, feed_hash: &str) -> Option<OpExample>
                 "depart_secs": 28800, "arrival_secs": 29400, "arrival_hhmmss": "08:10:00",
                 "legs": [] } } }),
         ),
+        // The network capability's examples carry the REAL derived
+        // document and exported zip of the fixture — computed by the
+        // same shared library the module dispatches through.
+        ("network", "import") => {
+            let ctx = net?;
+            (
+                json!({ "op": "import", "feed_hash": feed_hash }),
+                json!({ "ok": { "op": "import", "network": ctx.derived,
+                    "notes": ctx.notes, "network_hash": ctx.network_hash } }),
+            )
+        }
+        ("network", "load_document") => {
+            let ctx = net?;
+            (
+                json!({ "op": "load_document", "network": ctx.derived }),
+                json!({ "ok": { "op": "load_document", "network_hash": ctx.network_hash } }),
+            )
+        }
+        ("network", "validate") => {
+            let ctx = net?;
+            (
+                json!({ "op": "validate", "network_hash": ctx.network_hash }),
+                json!({ "ok": { "op": "validate", "issues": [] } }),
+            )
+        }
+        ("network", "export") => {
+            let ctx = net?;
+            (
+                json!({ "op": "export", "network_hash": ctx.network_hash }),
+                json!({ "ok": { "op": "export", "feed_hash": ctx.export_feed_hash,
+                    "summary": ctx.export_summary, "zip_b64": ctx.zip_b64 } }),
+            )
+        }
         // Bulk-bytes ops have no JSON request example (the payload is
         // the raw zip); the description carries the contract.
         (_, "load_feed") => return None,

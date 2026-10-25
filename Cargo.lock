@@ -116,6 +116,9 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "transit-codec",
+ "transit-core",
+ "transit-network",
  "ts-rs",
 ]
 
@@ -130,9 +133,9 @@ dependencies = [
  "serde_json",
  "sha2",
  "transit-analysis",
+ "transit-codec",
  "transit-core",
  "transit-network",
- "transit-ops",
  "ts-rs",
  "zip",
 ]
@@ -148,6 +151,20 @@ dependencies = [
  "serde_json",
  "sha2",
  "transit-core",
+ "ts-rs",
+]
+
+[[package]]
+name = "cap-network"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "serde",
+ "serde_json",
+ "sha2",
+ "transit-codec",
+ "transit-core",
+ "transit-network",
  "ts-rs",
 ]
 
@@ -914,9 +931,23 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "transit-codec",
  "transit-core",
  "transit-network",
- "transit-ops",
+ "ts-rs",
+ "zip",
+]
+
+[[package]]
+name = "transit-codec"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "proptest",
+ "serde",
+ "serde_json",
+ "transit-core",
+ "transit-network",
  "ts-rs",
  "zip",
 ]
@@ -956,6 +987,7 @@ dependencies = [
  "serde",
  "serde_json",
  "transit-analysis",
+ "transit-codec",
  "transit-core",
  "transit-network",
  "transit-router",

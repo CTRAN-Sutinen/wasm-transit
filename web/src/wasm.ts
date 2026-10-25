@@ -17,10 +17,8 @@ import type { EditReport } from "./types/EditReport";
 import type { FeatureCollection } from "./types/FeatureCollection";
 import type { FeedInfo } from "./types/FeedInfo";
 import type { FeedSummary } from "./types/FeedSummary";
-import type { ImportNote } from "./types/ImportNote";
 import type { Itinerary } from "./types/Itinerary";
 import type { Network } from "./types/Network";
-import type { NetworkError } from "./types/NetworkError";
 import type { BlockSummary } from "./types/BlockSummary";
 import type { BlockTrip } from "./types/BlockTrip";
 import type { RtOverview } from "./types/RtOverview";
@@ -107,22 +105,13 @@ export class GtfsHandle {
     this.#feedId = feedId;
   }
 
-  /// The registry id — hosts need it to address ops directly (the
-  /// planner's `network_import`, for instance).
+  /// The registry id — hosts need it to address ops directly.
   feedId(): number {
     return this.#feedId;
   }
 
   static load(bytes: Uint8Array): GtfsHandle {
     const resp = invokeBytes(OP_LOAD_FEED, bytes) as { feed_id: number };
-    return new GtfsHandle(resp.feed_id);
-  }
-
-  /// An authored network document (transit-network) materialized into
-  /// the same derived-feed view — same registry, same ops. Invalid
-  /// documents throw (validate first via `network_validate`).
-  static load_network(network: Network): GtfsHandle {
-    const resp = invoke({ op: "network_load", network }) as { feed_id: number };
     return new GtfsHandle(resp.feed_id);
   }
 
@@ -312,23 +301,6 @@ export function street_route(
   ).points;
 }
 
-/// Validate an authored network document without loading it — every
-/// issue comes back for the authoring UI. Never throws.
-export function network_validate(network: Network): NetworkError[] {
-  return (invoke({ op: "network_validate", network }) as { issues: NetworkError[] }).issues;
-}
-
-/// Infer an authored network document from a loaded feed — the
-/// planner's bootstrap path. Deterministic: the same feed bytes give
-/// the same document everywhere. The notes list every resolution the
-/// inference applied (reported, never silent).
-export function network_import(feedId: number): { network: Network; notes: ImportNote[] } {
-  return invoke({ op: "network_import", feed_id: feedId }) as {
-    network: Network;
-    notes: ImportNote[];
-  };
-}
-
 /// Which service plan is in force on a date (the latest pick at or
 /// before it; unversioned plans never resolve).
 export function plans_resolve(plans: PlanInfo[], date: string): string | null {
@@ -366,8 +338,6 @@ export function coverage_load(bytes: Uint8Array): CoverageLayer {
 export type WasmApi = {
   GtfsHandle: typeof GtfsHandle;
   decode_rt: typeof decode_rt;
-  network_validate: typeof network_validate;
-  network_import: typeof network_import;
   plans_resolve: typeof plans_resolve;
   plans_validate: typeof plans_validate;
   plans_periods: typeof plans_periods;
@@ -384,8 +354,6 @@ export async function loadWasm(): Promise<WasmApi> {
   return {
     GtfsHandle,
     decode_rt,
-    network_validate,
-    network_import,
     plans_resolve,
     plans_validate,
     plans_periods,

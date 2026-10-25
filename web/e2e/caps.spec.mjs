@@ -36,6 +36,9 @@ test("the manifest assembles both capabilities", async ({ page }) => {
   // three capabilities, one resolver.
   await expect(panel.getByTestId("cap-analysis")).toContainText("ready");
   await expect(panel).toContainText("analysis");
+  // And the second (the codec): bootstrap and publish through the bus.
+  await expect(panel.getByTestId("cap-network")).toContainText("ready");
+  await expect(panel).toContainText("network");
 });
 
 test("the composition runs across two modules", async ({ page }) => {

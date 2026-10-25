@@ -1,7 +1,14 @@
+//! transit-codec — the network codec, as a shared library.
+//!
 //! The Layer A → Layer B bridge: an authored network document
 //! (transit-network) expanded into the derived-feed view
 //! (transit-core's `Gtfs`) that every downstream op — departures,
-//! planning, blocks, geojson — already consumes.
+//! planning, blocks, geojson — already consumes, and the reverse
+//! inference (GTFS → authored network) that is the planner's
+//! bootstrap. The second crate extracted out of transit-ops for the
+//! capability bus (after transit-analysis): transit-ops and the
+//! cap-network module share this code — the same codec, gated once,
+//! dispatched from two hosts.
 //!
 //! This is the only place where model-owned ids and the derived view
 //! meet, and it is a *translation*, not a model: GTFS-the-format
@@ -39,18 +46,17 @@ use transit_network::{
     Mode, Network, Pattern, PatternSchedule, PatternStop, Schedule, ServiceType, TimingProfile, TripRef, WeekdaySet,
 };
 
-use crate::OpError;
 
 /// Expand a validated network document into a derived feed. Invalid
 /// documents are rejected: the registry only ever holds feeds built
-/// from documents that passed validation (the `network_validate` op
-/// reports the full issue list for authoring UIs).
-pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, OpError> {
+/// from documents that passed validation (cap-network's `validate`
+/// op reports the full issue list for authoring UIs).
+pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, String> {
     if let Err(first) = net.validate() {
         let count = transit_network::validation_issues(net).len();
-        return Err(OpError::new(format!(
-            "invalid network: {first} ({count} issues total; network_validate returns all)"
-        )));
+        return Err(format!(
+            "invalid network: {first} ({count} issues total; the validate op returns all)"
+        ));
     }
 
     let agencies = vec![Agency {
@@ -147,7 +153,7 @@ pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, OpError> {
                 });
             }
         }
-        for trip in materialize_service(net, schedule_id).map_err(|e| OpError::new(e.to_string()))? {
+        for trip in materialize_service(net, schedule_id).map_err(|e| e.to_string())? {
             let trip_id = format!("{schedule_id}@{}", trip.start_secs);
             trips.insert(
                 trip_id.clone(),

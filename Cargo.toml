@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/transit-core",
     "crates/transit-network",
+    "crates/transit-codec",
     "crates/transit-ops",
     "crates/transit-router",
     "crates/transit-rt",
@@ -13,6 +14,7 @@ members = [
     "crates/cap-gtfs",
     "crates/cap-router",
     "crates/cap-analysis",
+    "crates/cap-network",
     "crates/transit-analysis",
 ]
 

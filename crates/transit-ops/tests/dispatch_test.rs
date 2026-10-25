@@ -4,7 +4,8 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 
-use transit_ops::{dispatch, network_to_gtfs, PlanInfo, Request, Response};
+use transit_codec::{gtfs_to_network, network_to_gtfs};
+use transit_ops::{dispatch, PlanInfo, Request, Response};
 use prost::Message;
 use transit_network::Schedule;
 use transit_rt::gtfs_rt as rt;
@@ -521,7 +522,10 @@ fn sync_edits_merges_submits_and_reports() {
 }
 
 // ---------------------------------------------------------------------
-// Authored network documents (transit-network) through the same seam
+// Authored network documents (transit-network) through the same seam.
+// The codec itself (import/export/validate) lives in transit-codec
+// and its own tests; here the MATERIALIZED feed drives the monolith's
+// op surface — a planner's document must behave like any feed.
 // ---------------------------------------------------------------------
 
 /// The shared network fixture (testdata/network.json — the corpus
@@ -531,49 +535,9 @@ fn sync_edits_merges_submits_and_reports() {
 const NETWORK_DOC: &str = include_str!("../../../testdata/network.json");
 
 fn network_load() -> u32 {
-    let outcome = transit_ops::dispatch_json(&format!(
-        r#"{{"op":"network_load","network":{NETWORK_DOC}}}"#
-    ));
-    let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
-    assert!(parsed.get("ok").is_some(), "fixture network must load: {outcome}");
-    parsed["ok"]["feed_id"].as_u64().unwrap() as u32
-}
-
-#[test]
-fn network_validate_reports_issues_without_loading() {
-    // The valid fixture: no issues.
-    let outcome = transit_ops::dispatch_json(&format!(
-        r#"{{"op":"network_validate","network":{NETWORK_DOC}}}"#
-    ));
-    let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
-    assert_eq!(parsed["ok"]["issues"].as_array().unwrap().len(), 0);
-
-    // Broken: a service points at a calendar that doesn't exist, and
-    // the headway is zero. Every issue comes back, loadable elsewhere.
-    let broken = NETWORK_DOC
-        .replace("\"service_type\": \"weekday\"", "\"service_type\": \"ghost\"")
-        + ""; // one defect is enough; see prop_test for the battery
-    let outcome = transit_ops::dispatch_json(&format!(
-        r#"{{"op":"network_validate","network":{broken}}}"#
-    ));
-    let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
-    let issues = parsed["ok"]["issues"].as_array().unwrap();
-    assert_eq!(issues.len(), 1, "one referential defect: {issues:?}");
-    assert!(
-        issues[0].get("unknown_service_type").is_some(),
-        "snake_case NetworkError: {issues:?}"
-    );
-}
-
-#[test]
-fn network_load_rejects_invalid_documents() {
-    let invalid = NETWORK_DOC.replace("\"stop\": \"B\"", "\"stop\": \"ghost\"");
-    let outcome = transit_ops::dispatch_json(&format!(
-        r#"{{"op":"network_load","network":{invalid}}}"#
-    ));
-    let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
-    let error = parsed["error"].as_str().unwrap();
-    assert!(error.contains("invalid network"), "{error}");
+    let net: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
+    let gtfs = network_to_gtfs(&net).expect("fixture network materializes");
+    transit_ops::state::register_feed(gtfs)
 }
 
 #[test]
@@ -676,11 +640,8 @@ fn network_document_drives_the_whole_op_surface() {
 
 #[test]
 fn network_import_infers_a_valid_document_from_a_feed() {
-    let feed_id = load();
-    let network = match dispatch(Request::NetworkImport { feed_id }).unwrap() {
-        Response::NetworkImport { network, .. } => network,
-        _ => panic!("network_import"),
-    };
+    let gtfs = transit_core::Gtfs::from_zip_bytes(&fixture_zip()).unwrap();
+    let network = gtfs_to_network(&gtfs).network;
     // The inference must produce a document the model accepts — that
     // is the contract that lets the planner edit it immediately.
     assert!(
@@ -781,14 +742,8 @@ fn production_zip() -> Vec<u8> {
 }
 
 fn import_production() -> transit_network::Network {
-    let feed_id = match dispatch(Request::LoadFeed { bytes: production_zip() }).unwrap() {
-        Response::LoadFeed { feed_id, .. } => feed_id,
-        _ => panic!("expected LoadFeed response"),
-    };
-    match dispatch(Request::NetworkImport { feed_id }).unwrap() {
-        Response::NetworkImport { network, .. } => network,
-        _ => panic!("expected NetworkImport response"),
-    }
+    let gtfs = transit_core::Gtfs::from_zip_bytes(&production_zip()).unwrap();
+    gtfs_to_network(&gtfs).network
 }
 
 #[test]
@@ -961,14 +916,8 @@ fn network_import_reports_its_resolutions() {
         "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nWK,1,1,1,1,1,0,0,20260101,20261231\n");
     let bytes = w.finish().unwrap().into_inner();
 
-    let feed_id = match dispatch(Request::LoadFeed { bytes }).unwrap() {
-        Response::LoadFeed { feed_id, .. } => feed_id,
-        _ => panic!("expected LoadFeed response"),
-    };
-    let (network, notes) = match dispatch(Request::NetworkImport { feed_id }).unwrap() {
-        Response::NetworkImport { network, notes } => (network, notes),
-        _ => panic!("expected NetworkImport response"),
-    };
+    let gtfs = transit_core::Gtfs::from_zip_bytes(&bytes).unwrap();
+    let transit_codec::ImportOutcome { network, notes } = gtfs_to_network(&gtfs);
     // The whole point: the resolved document is valid.
     assert!(
         network.validate().is_ok(),
@@ -1029,14 +978,8 @@ fn transfer_zip() -> Vec<u8> {
 
 #[test]
 fn import_flags_transfer_points_and_reports_unusable_ones() {
-    let feed_id = match dispatch(Request::LoadFeed { bytes: transfer_zip() }).unwrap() {
-        Response::LoadFeed { feed_id, .. } => feed_id,
-        _ => panic!("expected LoadFeed response"),
-    };
-    let (network, notes) = match dispatch(Request::NetworkImport { feed_id }).unwrap() {
-        Response::NetworkImport { network, notes } => (network, notes),
-        _ => panic!("expected NetworkImport response"),
-    };
+    let gtfs = transit_core::Gtfs::from_zip_bytes(&transfer_zip()).unwrap();
+    let transit_codec::ImportOutcome { network, notes } = gtfs_to_network(&gtfs);
     // The composed flags land; the aspirational ones do not — and are
     // reported instead of silently ignored.
     assert!(network.stops["N1"].transfer, "two routes meet across the street");
@@ -1045,7 +988,7 @@ fn import_flags_transfer_points_and_reports_unusable_ones() {
     let unusable: Vec<String> = notes
         .iter()
         .filter_map(|n| match n {
-            transit_ops::ImportNote::UnusableTransferPoint { stop } => Some(stop.clone()),
+            transit_codec::ImportNote::UnusableTransferPoint { stop } => Some(stop.clone()),
             _ => None,
         })
         .collect();
@@ -1190,9 +1133,9 @@ fn imported_network_preserves_the_service_view() {
         Response::Departures { departures } => departures,
         _ => panic!("departures"),
     };
-    let network = match dispatch(Request::NetworkImport { feed_id }).unwrap() {
-        Response::NetworkImport { network, .. } => network,
-        _ => panic!("network_import"),
+    let network = {
+        let gtfs = transit_core::Gtfs::from_zip_bytes(&fixture_zip()).unwrap();
+        gtfs_to_network(&gtfs).network
     };
     let derived = network_to_gtfs(&network).unwrap();
     let at_a: Vec<(u32, String)> = derived
@@ -1217,10 +1160,9 @@ fn imported_alignment_survives_materialization() {
     // Law: a pattern's authored path is the geometry the derived feed
     // draws — trips reference it as their shape, so rider views after
     // a planner publish follow the real alignment, not stop chords.
-    let feed_id = load();
-    let network = match dispatch(Request::NetworkImport { feed_id }).unwrap() {
-        Response::NetworkImport { network, .. } => network,
-        _ => panic!("network_import"),
+    let network = {
+        let gtfs = transit_core::Gtfs::from_zip_bytes(&fixture_zip()).unwrap();
+        gtfs_to_network(&gtfs).network
     };
     let derived = network_to_gtfs(&network).unwrap();
 

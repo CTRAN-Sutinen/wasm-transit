@@ -26,7 +26,11 @@ import type { Request as RouterRequest } from "./types/cap_router/Request";
 import type { Response as RouterResponse } from "./types/cap_router/Response";
 import type { Request as AnalysisRequest } from "./types/cap_analysis/Request";
 import type { Response as AnalysisResponse } from "./types/cap_analysis/Response";
+import type { Request as NetworkCapRequest } from "./types/cap_network/Request";
+import type { Response as NetworkCapResponse } from "./types/cap_network/Response";
 import type { Network } from "./types/Network";
+import type { NetworkError } from "./types/NetworkError";
+import type { ImportNote } from "./types/ImportNote";
 import type { ServiceTypeDetail } from "./types/ServiceTypeDetail";
 import type { ServiceTypeSummary } from "./types/ServiceTypeSummary";
 import type { TypeCoverage } from "./types/TypeCoverage";
@@ -63,27 +67,39 @@ class CapModule {
   }
 
   invoke(
-    request: GtfsRequest | RouterRequest | AnalysisRequest,
-  ): GtfsResponse | RouterResponse | AnalysisResponse {
+    request:
+      | GtfsRequest
+      | RouterRequest
+      | AnalysisRequest
+      | NetworkCapRequest,
+  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse {
     const wasm = this.#exports;
     const payload = new TextEncoder().encode(JSON.stringify(request));
     const ptr = wasm.transit_alloc(payload.length);
     new Uint8Array(wasm.memory.buffer, ptr, payload.length).set(payload);
     const outPtr = wasm.transit_invoke(ptr, payload.length);
     wasm.transit_free(ptr, payload.length);
-    return this.#read(outPtr) as GtfsResponse | RouterResponse | AnalysisResponse;
+    return this.#read(outPtr) as
+      | GtfsResponse
+      | RouterResponse
+      | AnalysisResponse
+      | NetworkCapResponse;
   }
 
   invokeBytes(
     op: number,
     bytes: Uint8Array,
-  ): GtfsResponse | RouterResponse | AnalysisResponse {
+  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse {
     const wasm = this.#exports;
     const ptr = wasm.transit_alloc(bytes.length);
     new Uint8Array(wasm.memory.buffer, ptr, bytes.length).set(bytes);
     const outPtr = wasm.transit_invoke_bytes(op, ptr, bytes.length);
     wasm.transit_free(ptr, bytes.length);
-    return this.#read(outPtr) as GtfsResponse | RouterResponse | AnalysisResponse;
+    return this.#read(outPtr) as
+      | GtfsResponse
+      | RouterResponse
+      | AnalysisResponse
+      | NetworkCapResponse;
   }
 
   #read(outPtr: number): unknown {
@@ -541,4 +557,95 @@ export function assertSameDocument(a: GtfsLoadFeed, b: GtfsLoadFeed, kind = "fee
   if (a.feedHash !== b.feedHash) {
     throw new Error(`${kind} identity disagrees across capabilities: ${a.feedHash} != ${b.feedHash}`);
   }
+}
+
+// ---------------------------------------------------------------------
+// The network capability — the second REAL capability extracted from
+// the monolith (the codec: import / validate / export). The planner's
+// bootstrap, authoring feedback loop, and publish path all cross the
+// bus now; when the capability cannot assemble the planner degrades
+// loudly (bootstrap and publish refuse with an honest status,
+// validation turns off) — never silently.
+// ---------------------------------------------------------------------
+
+export type NetworkImport = {
+  network: Network;
+  notes: ImportNote[];
+  networkHash: string;
+};
+
+export function networkCap(module: CapModule) {
+  return {
+    loadFeed(bytes: Uint8Array): GtfsLoadFeed {
+      const resp = module.invokeBytes(OP_LOAD_FEED, bytes) as Extract<
+        NetworkCapResponse,
+        { op: "load_feed" }
+      >;
+      return { feedHash: resp.feed_hash, summary: resp.summary };
+    },
+    import(feedHash: string): NetworkImport {
+      const resp = module.invoke({
+        op: "import",
+        feed_hash: feedHash,
+      } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "import" }>;
+      return {
+        network: resp.network,
+        notes: resp.notes,
+        networkHash: resp.network_hash,
+      };
+    },
+    loadDocument(network: Network): string {
+      const resp = module.invoke({
+        op: "load_document",
+        network,
+      } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "load_document" }>;
+      return resp.network_hash;
+    },
+    validate(networkHash: string): NetworkError[] {
+      const resp = module.invoke({
+        op: "validate",
+        network_hash: networkHash,
+      } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "validate" }>;
+      return resp.issues;
+    },
+    export(networkHash: string): { feedHash: string; summary: FeedSummary; zipB64: string } {
+      const resp = module.invoke({
+        op: "export",
+        network_hash: networkHash,
+      } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "export" }>;
+      return { feedHash: resp.feed_hash, summary: resp.summary, zipB64: resp.zip_b64 };
+    },
+  };
+}
+
+/// The current network module, if the bus assembled one.
+export async function networkModule(): Promise<CapModule | null> {
+  const modules = await ensure(["network"]);
+  return modules.network ?? null;
+}
+
+const networkDocuments: Record<string, Map<string, string>> = {};
+
+/// Register the current network document in cap-network, memoized —
+/// the document crosses the seam once per edit, not once per query.
+/// THE MODULE IS THE HASH AUTHORITY: its canonical serialization
+/// decides the document's identity (the host never mints its own).
+export async function ensureNetworkDocument(document: Network): Promise<string | null> {
+  const module = await networkModule();
+  if (!module) return null;
+  const memoKey = await hashDocument(JSON.stringify(document));
+  const memo = (networkDocuments[module.cap.id] ??= new Map());
+  if (!memo.has(memoKey)) {
+    memo.set(memoKey, networkCap(module).loadDocument(document));
+  }
+  return memo.get(memoKey) ?? null;
+}
+
+/// Standard base64 → bytes (the export op's payload crosses the JSON
+/// seam encoded; the host decodes and holds the bytes).
+export function base64Decode(text: string): Uint8Array {
+  const binary = atob(text);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
 }

@@ -18,11 +18,15 @@ declare global {
     /// Which path served the last planner analysis refresh: the
     /// capability bus ("bus") or the monolith fallback.
     __analysisPath: () => "bus" | "monolith" | null;
+    /// Drop a loaded capability so the next `ensure` re-fetches it —
+    /// the degrade simulation for e2e (the resolver's own lever).
+    __forgetCapability: (id: string) => void;
   }
 }
 import { app, setEditDocument, restorePlans } from "./state.svelte";
 import { analysisPath } from "./planner";
 import { loadGtfsBytes, FEED_KEY, EDITS_KEY, saveSettings, setNowOverride, flushPersist, syncEdits } from "./actions";
+import { forgetCapability } from "./capabilities.svelte";
 
 app.wasm = await loadWasm();
 app.status = "wasm ready";
@@ -34,6 +38,7 @@ app.status = "wasm ready";
 // one). All no-op in normal use.
 window.__setNow = setNowOverride;
 window.__analysisPath = () => analysisPath;
+window.__forgetCapability = forgetCapability;
 window.__flushEdits = flushPersist;
 window.__clearEdits = () => {
   setEditDocument([]);

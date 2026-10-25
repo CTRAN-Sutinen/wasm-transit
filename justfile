@@ -24,7 +24,7 @@ wasm:
 caps:
     #!/usr/bin/env bash
     set -e
-    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis --target wasm32-unknown-unknown
+    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network --target wasm32-unknown-unknown
     cargo run --quiet -p cap-abi --bin gen-manifest
 
 # Publish the registry: gates first (the records report them), then
@@ -75,6 +75,12 @@ test: caps
     # registry change fails here (the corpus spirit, one layer up).
     node tools/caps-run.mjs gtfs --load web/public/caps/sample-gtfs.zip \
       --op '{"op":"stops","feed_hash":"sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2","limit":2}' | grep -q '"stop_id":"A"'
+    # The network capability's gate: the same session an agent (or a
+    # planner) dogfoods — load the feed by its pinned hash, import
+    # (bootstrap), and the dropped single-stop trip must be REPORTED
+    # (the never-silent law, one layer up).
+    node tools/caps-run.mjs network --load web/public/caps/sample-gtfs.zip \
+      --op '{"op":"import","feed_hash":"sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2"}' | grep -q '"kind":"dropped_trips"'
     # -race: the artifact is one non-reentrant instance; the host must
     # serialize invokes (see server/race_test.go — the gate watches it).
     cd server && go test -race ./...

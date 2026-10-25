@@ -163,7 +163,7 @@ fn spec_and_layer() -> impl Strategy<Value = (transit_network::Network, Vec<PopS
     proptest::collection::vec(gen_trip(), 0..=14).prop_flat_map(|trips| {
         proptest::collection::vec(pop_spec(), 1..=20).prop_map(move |points| {
             let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
-            let net = transit_ops::network::gtfs_to_network(&gtfs).network;
+            let net = transit_codec::gtfs_to_network(&gtfs).network;
             (net.clone(), points)
         })
     })
@@ -199,11 +199,11 @@ proptest! {
         trips in proptest::collection::vec(gen_trip(), 0..=14),
     ) {
         let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
-        let net = transit_ops::network::gtfs_to_network(&gtfs).network;
+        let net = transit_codec::gtfs_to_network(&gtfs).network;
 
         for day in [0i64, 3, 400] {
             let date = EPOCH + Duration::days(day);
-            let stats = transit_ops::analysis::network_stats(&net, date);
+            let stats = transit_analysis::network_stats(&net, date);
 
             // Oracle: aggregate the materialized trips directly.
             let materialized = transit_network::materialize(&net, date).expect("materialize");
@@ -301,13 +301,13 @@ proptest! {
     fn coverage_is_monotone_and_bounded(
         (net, points) in spec_and_layer(),
     ) {
-        let layer = transit_ops::analysis::parse_pop_layer(&build_layer(&net, &points), Some("pop"))
+        let layer = transit_analysis::parse_pop_layer(&build_layer(&net, &points), Some("pop"))
             .expect("generated layer parses");
         let date = EPOCH + Duration::days(0); // a weekday: service 0 runs
 
-        let c50 = transit_ops::analysis::coverage(&net, date, &layer, 50.0, 3600, 2);
-        let c200 = transit_ops::analysis::coverage(&net, date, &layer, 200.0, 3600, 2);
-        let c1000 = transit_ops::analysis::coverage(&net, date, &layer, 1000.0, 3600, 2);
+        let c50 = transit_analysis::coverage(&net, date, &layer, 50.0, 3600, 2);
+        let c200 = transit_analysis::coverage(&net, date, &layer, 200.0, 3600, 2);
+        let c1000 = transit_analysis::coverage(&net, date, &layer, 1000.0, 3600, 2);
 
         prop_assert!(c200.served_pop >= c50.served_pop - 1e-9, "served pop not monotone 50->200");
         prop_assert!(c1000.served_pop >= c200.served_pop - 1e-9, "served pop not monotone 200->1000");
@@ -331,13 +331,13 @@ proptest! {
     fn type_coverage_agrees_with_coverage(
         (net, points) in spec_and_layer(),
     ) {
-        let layer = transit_ops::analysis::parse_pop_layer(&build_layer(&net, &points), Some("pop"))
+        let layer = transit_analysis::parse_pop_layer(&build_layer(&net, &points), Some("pop"))
             .expect("generated layer parses");
-        let per_type = transit_ops::analysis::type_coverage(&net, &layer, 500.0, 3600, 2);
+        let per_type = transit_analysis::type_coverage(&net, &layer, 500.0, 3600, 2);
         for entry in &per_type {
             let date = NaiveDate::parse_from_str(&entry.date, "%Y-%m-%d")
                 .expect("representative dates are ISO");
-            let whole = transit_ops::analysis::coverage(&net, date, &layer, 500.0, 3600, 2);
+            let whole = transit_analysis::coverage(&net, date, &layer, 500.0, 3600, 2);
             prop_assert!(close(entry.served_pct, whole.served_pct, 1e-9),
                 "served_pct disagrees for {}", entry.service_type);
             prop_assert!(close(entry.frequent_pct, whole.frequent_pct, 1e-9),

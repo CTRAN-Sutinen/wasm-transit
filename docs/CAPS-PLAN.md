@@ -9,11 +9,14 @@ and the dogfood-QA expectation. The bus's own state:
 - **Done**: cap-abi (ABI macro + manifest contract + compose-time
   validator + `gen-manifest`, which also publishes `registry/`),
   cap-gtfs, cap-router, cap-analysis (the first REAL extraction —
-  the monolith's analysis ops are deleted), migrations (watchlist
-  v1→v2), agent context (purpose + op docs + worked examples), the
-  resolver (web/src/capabilities.svelte.ts), the registry
-  (`registry/`, published by `just registry`), and the agent
-  runner (`tools/caps-run.mjs`).
+  the monolith's analysis ops are deleted), cap-network (the second —
+  the codec: import/validate/export, the monolith's network ops are
+  deleted), migrations (watchlist v1→v2), agent context (purpose +
+  op docs + worked examples — the network examples are computed from
+  the REAL fixture at generation time), the resolver
+  (web/src/capabilities.svelte.ts), the registry (`registry/`,
+  published by `just registry`), and the agent runner
+  (`tools/caps-run.mjs`).
 - **The pattern for every extraction** (AGENTS.md): crate boundary
   first, capability wrapper second, monolith op deletion last.
 - **The QA feed**: `testdata/ctran-gtfs.zip` — the real C-TRAN
@@ -42,28 +45,39 @@ principle extends to the web UI in the same way: a question easy
 via the CLI but absent from the UI is a UI gap (item 5); a
 question hard via the CLI is an op gap. Both signals land here.
 
-## 1. Extract the network codec (cap-network) — the bootstrap gap
+## 1. Extract the network codec (cap-network) — DONE (2026-10-25)
 
-**What.** `network_import` / `network_to_gtfs` live in
-`transit-ops/src/network.rs`. Extract per the standard pattern:
-(a) move the codec to a shared library crate (`transit-codec`?),
-keeping transit-ops dispatching through it unchanged; (b) wrap it in
-`cap-network` — ops `load_feed` (bytes → feed hash), `import`
-(feed hash → network document + notes), `export` (network hash →
-GTFS), `validate` (network document → issues); (c) delete the
-monolith ops, regenerate bindings, watch the artifact shrink again.
-The codec fixpoint laws (`crates/transit-ops/tests/codec_prop_test.rs`)
-move with the code — they are the extraction's safety net.
+Landed per the standard pattern, one change: `transit-codec` (the
+moved codec + its fixpoint laws, `codec_prop_test` and
+`import_prop_test`), `cap-network` (ops `load_feed`, `import`,
+`load_document`, `validate`, `export`), the monolith ops DELETED
+(`network_import` / `network_load` / `network_validate` gone from
+Request/Response, wasm.ts, the corpus, and the ABI smoke — which now
+pins that the retired ops error through the standard outcome), and
+transit-core gained the WRITE half of the codec (`src/write.rs`:
+deterministic zip bytes, so the export path produces a real GTFS
+artifact whose content hash is its identity). The web planner's
+bootstrap, validation, and materialize cross the bus
+(capabilities.svelte.ts `networkCap`; derive uses the cached feed
+bytes, materialize exports → zip → the same LoadFeed a parsed zip
+uses) and degrade loudly: `validation off` is a chip state, not a
+claim of validity.
 
-**Why.** The planner's bootstrap ("derive a network from the feed
-I loaded") is the last planner flow that still requires the
-monolith. Until it's a capability, the planner persona cannot be
-assembled without the full artifact.
+Dogfood acceptance met on the real C-TRAN feed, zero monolith:
+`caps-run network --load ctran.zip` → import (2.5 MB document,
+notes reported) → analysis on the derived document (1,773 trips /
+29 routes / 886 stops / 646.5 revenue hours — the founding
+session's numbers, reproduced through capabilities alone) → export
+(1.1 MB spec-shaped zip, identity asserted when cap-gtfs loads it).
+The published artifact is a first-class feed document.
 
-**Dogfood acceptance.** `caps-run` must do the whole planner flow
-with zero monolith involvement: `caps run gtfs --load ctran.zip`,
-then `caps run network --op '{import, feed_hash}'`, then analysis
-on the derived document.
+Two findings from that session, both routing into item 3: chaining
+import → analysis → export required hand-copying `network_hash`
+between `caps-run` invocations and building a request file with the
+2.5 MB document embedded — result references
+(`$import.network_hash`, `$load.feed_hash`) remove both, and now
+that a session's whole flow is capability-side the need is daily,
+not occasional.
 
 ## 2. Parent stations answer zero departures (cap-gtfs)
 
@@ -89,11 +103,14 @@ return the union of its bays.
 
 **Finding.** Chained ops need a hash only the PREVIOUS op's output
 contains. Every placeholder-hash mistake costs a full document
-load (2.5 MB zip, seconds) — twice in one session.
+load (2.5 MB zip, seconds) — twice in one founding session, and
+twice again in the cap-network dogfood (import → analysis → export
+chains by `network_hash`; see item 1's findings).
 
 **What.** `--op` values support references into prior results:
 `{"feed_hash": "$load.feed_hash"}` resolves against the session's
-load results (and `$1`, `$2` for prior ops). Implement in the
+load results (and `$1`, `$2` for prior ops — `$import.network_hash`
+is the network flow's everyday shape). Implement in the
 worker before invoking. Tests: extend the `just test` runner line
 to a chained two-op session that uses `$load.feed_hash`.
 

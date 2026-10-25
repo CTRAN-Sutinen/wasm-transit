@@ -229,7 +229,9 @@
       </ul>
     {/if}
 
-    {#if app.networkIssues.length === 0}
+    {#if app.networkValidationOff}
+      <p><span class="chip bad" title="the network capability did not assemble">validation off</span></p>
+    {:else if app.networkIssues.length === 0}
       <p><span class="chip ok">valid</span></p>
     {:else}
       <p>
@@ -411,7 +413,12 @@
     <p>
       <button onclick={deriveFromFeed} disabled={!app.gtfs}>Derive from loaded feed</button>
     </p>
-    {#if app.networkIssues.length === 0}
+    {#if app.networkValidationOff}
+      <p>
+        <span class="chip bad" title="the network capability did not assemble">validation off</span>
+        <button class="primary" onclick={materializeNetwork}>Load into app</button>
+      </p>
+    {:else if app.networkIssues.length === 0}
       <p><span class="chip ok">valid</span> <button class="primary" onclick={materializeNetwork}>Load into app</button></p>
     {:else}
       <p><span class="chip bad">{app.networkIssues.length} issue{app.networkIssues.length > 1 ? "s" : ""}</span>

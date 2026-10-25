@@ -1,8 +1,10 @@
 //! transit-core — our own GTFS static implementation.
 //!
 //! Data model in [`model`], service calendar in [`calendar`], zip/CSV
-//! loading in [`parse`], GTFS time handling in [`time`]. The public entry
-//! point is [`Gtfs::from_zip_bytes`].
+//! loading in [`parse`], GTFS time handling in [`time`], and the
+//! write direction (feed → zip bytes, deterministic) in [`write`].
+//! The public entry points are [`Gtfs::from_zip_bytes`] and
+//! [`write::to_zip_bytes`].
 
 pub mod calendar;
 pub mod diversion;
@@ -10,6 +12,7 @@ pub mod error;
 pub mod model;
 pub mod parse;
 pub mod time;
+pub mod write;
 
 pub use calendar::ServiceCalendar;
 pub use diversion::{apply_diversions, affected_trips, validate_diversion, DetourPoint, Diversion};

@@ -14,9 +14,10 @@
 ///            Rider/Dispatcher views then run on the authored network)
 ///
 /// The planner works off an existing network: there is no blank
-/// canvas. GTFS-the-format never appears here — inference and
-/// materialization live in the artifact (transit-ops), this file only
-/// moves documents across the seam.
+/// canvas. GTFS-the-format never appears here — inference,
+/// validation and materialization live in the NETWORK CAPABILITY
+/// (cap-network over the shared transit-codec library; the monolith
+/// keeps no copy), and this file only moves documents across the bus.
 
 import { app, getNetworkDoc, setNetworkDoc, getAllPlans, getActivePlanId, putPlan, setActivePlan, removePlan as removePlanFromStore } from "./state.svelte";
 import type { CoverageStats } from "./types/CoverageStats";
@@ -27,12 +28,17 @@ import type { Mode } from "./types/Mode";
 import type { Network } from "./types/Network";
 import type { NetworkStats } from "./types/NetworkStats";
 import type { PlanInfo } from "./types/PlanInfo";
-import { pushEdits, serviceDate } from "./actions";
+import { pushEdits, serviceDate, FEED_KEY } from "./actions";
+import { get as idbGet } from "idb-keyval";
 import {
   ensureAnalysisNetwork,
   ensureAnalysisLayer,
   analysisModule,
   analysisCap,
+  ensureNetworkDocument,
+  networkModule,
+  networkCap,
+  base64Decode,
 } from "./capabilities.svelte";
 
 export type EntityKind = "stop" | "route" | "pattern" | "schedule" | "service_type" | "block";
@@ -83,16 +89,41 @@ export function parseHHMMSS(text: string | null | undefined): number | null {
 // source / validate / apply
 // ---------------------------------------------------------------
 
-/** Re-run `network_validate` on the current document. The op always
- * returns the whole issue list (snake_case variant + fields) — it
- * never throws, and the UI never blocks on it. */
-export function validateNetwork(): void {
+/** Re-run validation on the current document — through the network
+ * capability, the codec's home since the extraction. The op always
+ * returns the whole issue list (snake_case variant + fields), never
+ * throws, and the UI never blocks on it.
+ *
+ * Stage B of the extraction: when the capability cannot assemble
+ * (offline, stale manifest), VALIDATION IS OFF and the planner says
+ * so — authoring continues, and `materializeNetwork` still refuses
+ * broken documents (it exports through the same capability). */
+export let validatePath: "bus" | null = null;
+let validateSeq = 0;
+
+export async function validateNetwork(): Promise<void> {
   const doc = getNetworkDoc();
-  if (!doc || !app.wasm) {
+  const seq = ++validateSeq;
+  if (!doc) {
     app.networkIssues = [];
+    app.networkValidationOff = false;
+    validatePath = null;
     return;
   }
-  app.networkIssues = app.wasm.network_validate(doc);
+  const networkHash = await ensureNetworkDocument(doc);
+  if (seq !== validateSeq) return;
+  if (!networkHash) {
+    app.networkIssues = [];
+    app.networkValidationOff = true;
+    validatePath = null;
+    app.status = "Network capability unavailable — document validation is off until it loads.";
+    return;
+  }
+  const module = await networkModule();
+  if (!module || seq !== validateSeq) return;
+  app.networkIssues = networkCap(module).validate(networkHash);
+  app.networkValidationOff = false;
+  validatePath = "bus";
 }
 
 // Validation is whole-document work in the artifact; on a real
@@ -333,21 +364,38 @@ export function scheduleTripCount(schedule: { kind: string; starts?: number[]; b
 }
 
 /** The planner's bootstrap: infer a network document from the feed
- * the app already has loaded (Rider/Dispatcher views load feeds). */
+ * the app already has loaded (Rider/Dispatcher views load feeds).
+ * Stage B of the extraction: the inference runs in the NETWORK
+ * CAPABILITY — the same bytes, the same laws the CLI dogfoods — and
+ * the raw feed bytes come from the load-time cache (JS owns the
+ * documents; the artifact's feed registry is a view, not a store). */
 export async function deriveFromFeed(): Promise<void> {
   if (!app.gtfs) {
     app.status = "Load a GTFS feed first (Rider or Dispatcher view).";
     return;
   }
-  // The artifact runs on this thread: yield a frame so the status
-  // paints before the (potentially seconds-long) inference + JSON
-  // transfer on a real feed. A worker host is the eventual fix for
-  // the freeze itself.
+  // The capability runs on this thread: yield a frame so the status
+  // paints before the (potentially seconds-long) load + inference +
+  // JSON transfer on a real feed. A worker host is the eventual fix
+  // for the freeze itself.
   app.status = "Deriving a network from the loaded feed…";
   await new Promise((r) => setTimeout(r, 30));
   try {
     if (!app.wasm) return;
-    const { network: net, notes } = app.wasm.network_import(app.gtfs.feedId());
+    const cached = await idbGet<{ label: string; bytes: Uint8Array }>(FEED_KEY);
+    if (!cached) {
+      app.status = "The raw feed bytes are not cached — reload the GTFS feed, then derive.";
+      return;
+    }
+    const module = await networkModule();
+    if (!module) {
+      app.status =
+        "Network capability unavailable — bootstrap needs it (the capability bus did not assemble).";
+      return;
+    }
+    const cap = networkCap(module);
+    const loaded = cap.loadFeed(new Uint8Array(cached.bytes));
+    const { network: net, notes } = cap.import(loaded.feedHash);
     app.networkNotes = notes;
     // The derived document is a plan in the set — unversioned until
     // the planner frames it (gives it a pick date). The chain is the
@@ -419,22 +467,35 @@ export function downloadNetwork(): void {
 
 /** Materialize the document into the app's active feed (same registry
  * a GTFS zip lands in). Mirrors loadGtfsBytes's side effects minus
- * caching: the document, not a zip, is the source of truth. Invalid
- * documents are refused — the artifact's own gate, not a JS guess. */
-export function materializeNetwork(): void {
+ * caching: the document, not a zip, is the source of truth. Stage B
+ * of the extraction: the document EXPORTS through the network
+ * capability (the publish path — deterministic GTFS zip bytes), and
+ * the produced artifact loads through the same LoadFeed op a parsed
+ * zip does. Invalid documents are refused — the capability's own
+ * gate, not a JS guess. */
+export async function materializeNetwork(): Promise<void> {
   const doc = getNetworkDoc();
   if (!doc) {
     app.status = "No network document loaded.";
     return;
   }
-  validateNetwork(); // flush any debounced check first — this is the gate
+  await validateNetwork(); // flush any debounced check first — this is the gate
   if (app.networkIssues.length > 0) {
     app.status = `Cannot load: ${app.networkIssues.length} validation issue(s) to fix first.`;
     return;
   }
   if (!app.wasm) return;
   try {
-    app.gtfs = app.wasm.GtfsHandle.load_network(doc);
+    const networkHash = await ensureNetworkDocument(doc);
+    const module = await networkModule();
+    if (!networkHash || !module) {
+      app.status =
+        "Network capability unavailable — cannot materialize until it loads (the capability bus did not assemble).";
+      return;
+    }
+    const { feedHash, zipB64 } = networkCap(module).export(networkHash);
+    const bytes = base64Decode(zipB64);
+    app.gtfs = app.wasm.GtfsHandle.load(bytes);
     app.selectedStop = null;
     app.selectedTripId = null;
     app.tripFeature = null;
@@ -442,7 +503,7 @@ export function materializeNetwork(): void {
     app.planBaseline = null;
     app.planNotice = null;
     pushEdits();
-    app.status = `Materialized "${doc.name}" — the Rider and Dispatcher views now run on the authored network.`;
+    app.status = `Materialized "${doc.name}" — the Rider and Dispatcher views now run on the authored network (published GTFS ${feedHash.slice(0, 19)}…).`;
   } catch (e) {
     app.status = `Error: ${e?.message ?? e}`;
   }

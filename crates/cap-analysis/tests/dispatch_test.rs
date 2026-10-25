@@ -96,7 +96,7 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
 /// generated feed — the document a planner would derive.
 fn network(trips: &[GenTrip]) -> transit_network::Network {
     let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(trips)).expect("parse");
-    transit_ops::network::gtfs_to_network(&gtfs).network
+    transit_codec::gtfs_to_network(&gtfs).network
 }
 
 fn layer_geojson() -> Vec<u8> {

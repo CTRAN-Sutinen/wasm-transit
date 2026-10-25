@@ -113,8 +113,13 @@ export type AppState = {
   cachedFeed: string | null,
 
   // Network authoring (planner persona). Issues come back from the
-  // artifact (`network_validate`): typed, whole-list, never thrown.
+  // NETWORK CAPABILITY (`validate`): typed, whole-list, never
+  // thrown. When the capability cannot assemble, issues are empty
+  // AND `networkValidationOff` is set — the chip must not claim
+  // validity it cannot check (materialize still refuses broken
+  // documents: export is the module's own gate).
   networkIssues: NetworkError[],
+  networkValidationOff: boolean,
   // Resolutions the artifact's import applied to the last derived
   // document (dropped block trips, unusable transfer points, …) —
   // reported, never silent. Cleared when a document is loaded from
@@ -371,6 +376,7 @@ export const app = $state<AppState>({
   cachedFeed: null,
 
   networkIssues: [],
+  networkValidationOff: false,
   networkNotes: [],
   plannerStack: [{ view: "plans" }] as PlannerScreen[],
   typeOverview: [],

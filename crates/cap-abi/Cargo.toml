@@ -10,6 +10,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 ts-rs = { workspace = true }
+# gen-manifest computes the network capability's worked examples from
+# the REAL fixture (import → document, export → zip): examples that
+# cannot drift from the code.
+transit-core = { path = "../transit-core" }
+transit-network = { path = "../transit-network" }
+transit-codec = { path = "../transit-codec" }
 
 [dev-dependencies]
 proptest = "1"

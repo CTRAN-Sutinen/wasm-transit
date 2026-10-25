@@ -28,7 +28,6 @@ func TestGoldenCorpusReplay(t *testing.T) {
 			Name    string  `json:"name"`
 			Request string  `json:"request"`
 			BytesOp *uint32 `json:"bytes_op"`
-			Bind    string  `json:"bind"`
 			Expect  string  `json:"expect"`
 		} `json:"steps"`
 	}
@@ -43,7 +42,6 @@ func TestGoldenCorpusReplay(t *testing.T) {
 	host := newTestHost(t)
 	ctx := context.Background()
 	feedID := ""
-	netFeedID := ""
 
 	// The registry assigns feed ids; this captures one from a load
 	// outcome so the corpus replays regardless of how many feeds
@@ -73,22 +71,14 @@ func TestGoldenCorpusReplay(t *testing.T) {
 			if strings.Contains(step.Request, "$FEED") && feedID == "" {
 				t.Fatalf("%s: uses $FEED before the load step", step.Name)
 			}
-			if strings.Contains(step.Request, "$NET") && netFeedID == "" {
-				t.Fatalf("%s: uses $NET before the network_load step", step.Name)
-			}
-			request := strings.ReplaceAll(strings.ReplaceAll(step.Request, "$FEED", feedID), "$NET", netFeedID)
+			request := strings.ReplaceAll(step.Request, "$FEED", feedID)
 			var err error
 			got, err = host.call(ctx, host.invoke, []byte(request))
 			if err != nil {
 				t.Fatalf("%s: invoke: %v", step.Name, err)
 			}
 		}
-		// A step with bind registers a second feed (the network
-		// document); its id is captured like the bytes load above.
-		if step.Bind == "$NET" {
-			netFeedID = bindID(got)
-		}
-		want := strings.ReplaceAll(strings.ReplaceAll(step.Expect, "$FEED", feedID), "$NET", netFeedID)
+		want := strings.ReplaceAll(step.Expect, "$FEED", feedID)
 		if string(got) != want {
 			t.Fatalf("corpus step %s diverges:\n got  %s\n want %s", step.Name, got, want)
 		}

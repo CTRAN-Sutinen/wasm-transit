@@ -54,7 +54,9 @@ go module fetches are fine.
 
 ```
 transit-core    GTFS codec: model, zip/CSV parse, calendar, queries,
-                diversion patching. Pure, no I/O.
+                diversion patching, and the WRITE direction —
+                deterministic zip bytes (src/write.rs), so a produced
+                feed has one identity everywhere. Pure, no I/O.
 transit-network The authored network model (planner authority):
                 patterns, timing profiles, service types (the
                 service identifier, linked to days by its calendar
@@ -71,6 +73,18 @@ transit-network The authored network model (planner authority):
                 picks a year at defined dates; empty identity =
                 unversioned (a fresh import).
 transit-router  RAPTOR earliest-arrival planning.
+transit-codec   The network codec, both directions: a network document
+                expanded into the derived-feed view (the publish
+                path) and a GTFS feed inferred into an authored
+                document (the planner's bootstrap). The import is
+                VALID BY CONSTRUCTION over spec-valid feeds (the law,
+                property-tested in tests/import_prop_test) and every
+                resolution it applies (dropped block trips, unusable
+                transfer points, …) is REPORTED as an ImportNote —
+                never silent. A LIBRARY shared by cap-network and
+                transit-ops's tests — the extraction pattern: crate
+                boundary first, capability wrapper second, monolith
+                deletion last.
 transit-analysis Planner analysis over an authored network document:
                 stats, service-type overview/detail, population
                 coverage. A LIBRARY shared by transit-ops (parse-only
@@ -88,25 +102,19 @@ transit-streets Street routing graph for detour authoring: GeoJSON in,
                 geometry — its own registry at the seam (streets_id
                 keyed), never mixed with feed state.
 transit-ops     dispatch(Request) -> Response: the host-agnostic seam
-                + per-feed registry (feed_id keyed). The network
-                codec lives in src/network.rs, both directions:
-                network_import infers a document from a loaded feed
-                (the planner's bootstrap), network_validate reports
-                every issue, network_load materializes a document
-                into the same registry a parsed zip lands in. The
-                import is VALID BY CONSTRUCTION over spec-valid feeds
-                (the law, property-tested in tests/import_prop_test)
-                and every resolution it applies (dropped block
-                trips, unusable transfer points, …) is REPORTED as
-                an ImportNote — never silent. Analysis lives in
-                src/analysis.rs (network_stats, service-type
-                overview/detail/coverage, population coverage over
-                an imported layer registry) — the planner's numbers
-                are computed in the artifact, never in JS. The
-                service-plan chain lives in src/plans.rs
-                (plans_resolve / plans_validate / plans_periods) —
-                cross-document domain logic, the same standing as
-                transit-sync's merge. Streets ops here too:
+                + per-feed registry (feed_id keyed). The codec ops
+                (network_import / network_validate / network_load)
+                and the analysis ops are DELETED — they live in
+                cap-network and cap-analysis over the shared
+                transit-codec / transit-analysis libraries (the
+                monolith keeps shrinking; the corpus and the ABI
+                smoke pin the deletions). What remains: the parsed-
+                feed op surface (departures, planning, blocks,
+                geojson, rt, streets, sync), the plans chain in
+                src/plans.rs (plans_resolve / plans_validate /
+                plans_periods — cross-document domain logic, the
+                same standing as transit-sync's merge), and the
+                parse-only coverage handle. Streets ops here too:
                 streets_load / street_snap / street_route.
 transit-wasm    THE artifact: flat import-free C ABI over dispatch.
                 No wasm-bindgen — do not reintroduce host glue.
@@ -114,16 +122,21 @@ transit-wasm    THE artifact: flat import-free C ABI over dispatch.
 **The capability bus (graduating):** horizontal capability modules
 assembled per user from a manifest — the thesis is "ship capabilities
 to match the user," so capability bytes differ per user while the
-DOCUMENT and the contracts stay identical everywhere. The first
-extraction is DONE: analysis (stats, service types, coverage) lives in
-`transit-analysis` — a library shared by cap-analysis (the module,
-hash-keyed document registries) and transit-ops — and its ops are
-DELETED from the monolith; the planner UI reads numbers through the
-bus and degrades loudly (authoring continues, numbers off) when the
-capability cannot assemble. Future extractions follow the same
-three-stage shape: crate boundary first, capability wrapper second,
-monolith op deletion last. The monolith remains the deployed artifact
-for everything not yet extracted.
+DOCUMENT and the contracts stay identical everywhere. Two extractions
+are DONE, both by the same three-stage shape (crate boundary first,
+capability wrapper second, monolith op deletion last):
+* analysis (stats, service types, coverage) lives in
+  `transit-analysis`, shared by cap-analysis (the module, hash-keyed
+  document registries) and transit-ops — the planner UI reads numbers
+  through the bus and degrades loudly (authoring continues, numbers
+  off) when the capability cannot assemble;
+* the network codec lives in `transit-codec`, shared by cap-network
+  and transit-ops's tests — the planner's bootstrap (derive), the
+  authoring feedback loop (validate), and the publish path
+  (export → deterministic GTFS zip bytes → LoadFeed) all cross the
+  bus; the planner persona no longer needs the monolith for them.
+Future extractions follow the same shape. The monolith remains the
+deployed artifact for everything not yet extracted.
 
 ```
 cap-abi         The seam crate: the flat C ABI as a macro (every
@@ -153,6 +166,19 @@ cap-analysis    The analysis capability: planner numbers (stats,
                 in the shared transit-analysis library — the first
                 extraction where a monolith op family is DELETED
                 (the planner UI has no monolith fallback for it).
+                Consumes network documents from cap-network (the
+                registry edge the manifest carries).
+cap-network     The network codec capability: load_feed (zip bytes →
+                content-hash feed registry), import (the planner's
+                bootstrap — the derived document registers itself
+                and its hash is in the response), load_document,
+                validate (the authoring feedback loop), export (the
+                publish path — deterministic GTFS zip bytes under
+                their content hash, base64 across the JSON seam).
+                The domain code lives in the shared transit-codec
+                library — the monolith keeps no copy; the planner
+                persona's bootstrap, validation, and materialize
+                cross the bus and degrade loudly without it.
 web/src/        capabilities.svelte.ts: the resolver — manifest
                 validation, demand-driven load, byte verification
                 against pinned hashes, per-capability degradation,
@@ -360,10 +386,11 @@ web/            Svelte 5 runes + Vite, TypeScript end to end. ONE
 Every change lands with tests at the layer that owns the logic:
 
 1. Unit/property tests in the owning crate (oracle style for laws —
-   e.g. the import law: `import_prop_test` holds that the inferred
-   document is valid by construction over every spec-valid feed and
-   deterministic; `plans_prop_test` holds the service-plan chain
-   laws with independent oracles).
+   e.g. the import law: `transit-codec`'s `import_prop_test` holds
+   that the inferred document is valid by construction over every
+   spec-valid feed and deterministic, and its `codec_prop_test` holds
+   the export round trip; `plans_prop_test` holds the service-plan
+   chain laws with independent oracles).
 2. A dispatch test if a new op exists (native, JSON round-trip).
 3. Extend `crates/transit-wasm/abi-smoke.mjs` for ABI contract
    changes; regenerate `testdata/corpus.json` (`just wasm` then `just
@@ -389,8 +416,9 @@ Every change lands with tests at the layer that owns the logic:
 - No CRDT/automerge for sync — LWW + tombstones is the design.
 - transit-network is the authored model; GTFS stays OUT of it. The
   GTFS import (inference) and export (materialization) codecs live
-  at the boundary in transit-ops `src/network.rs` — do not grow
-  GTFS-shaped fields into the model for codec convenience.
+  at the boundary in transit-codec (shared by cap-network and the
+  monolith's tests) — do not grow GTFS-shaped fields into the model
+  for codec convenience.
 - Runcutting in transit-network stops at blocks + layovers; operator
   duties/rosters are a future layer, not a `Block` extension.
 - wasm-bindgen / JS glue in the artifact is gone on purpose; the

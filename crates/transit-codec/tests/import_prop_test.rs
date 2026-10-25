@@ -130,7 +130,7 @@ proptest! {
         let bytes = gen_feed(&trips);
         let gtfs = transit_core::Gtfs::from_zip_bytes(&bytes)
             .expect("generated feeds parse");
-        let outcome = transit_ops::network::gtfs_to_network(&gtfs);
+        let outcome = transit_codec::gtfs_to_network(&gtfs);
         let issues = transit_network::validation_issues(&outcome.network);
         prop_assert!(
             issues.is_empty(),
@@ -139,7 +139,7 @@ proptest! {
         );
         // Determinism: same feed bytes, same document AND same
         // resolution notes, in the same order.
-        let again = transit_ops::network::gtfs_to_network(&gtfs);
+        let again = transit_codec::gtfs_to_network(&gtfs);
         prop_assert_eq!(outcome.network, again.network);
         prop_assert_eq!(outcome.notes, again.notes);
     }

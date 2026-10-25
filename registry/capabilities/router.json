@@ -1,6 +1,6 @@
 {
-  "blob": "blobs/e0429e0df86a2001a764e37cd9dba24e81ea1e66ec9f47b5b3e1dba16f227f36.wasm",
-  "bytes": 517361,
+  "blob": "blobs/44742ee914e2f2343bb4f325294579c535df6f95f0f7c9e7842435ed75d61686.wasm",
+  "bytes": 518793,
   "consumes": {
     "feed": "gtfs"
   },
@@ -12,9 +12,9 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "4834315400309d17b688c31c07d2fb1c2e07e4c3"
+    "source_commit": "a500a4f8acf535bf366cc89c79da54d1714581e4"
   },
-  "hash": "sha256:e0429e0df86a2001a764e37cd9dba24e81ea1e66ec9f47b5b3e1dba16f227f36",
+  "hash": "sha256:44742ee914e2f2343bb4f325294579c535df6f95f0f7c9e7842435ed75d61686",
   "id": "router",
   "kernel": 1,
   "migrates": {},

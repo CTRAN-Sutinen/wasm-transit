@@ -710,6 +710,41 @@ test("planner degrades when the analysis capability cannot assemble", async ({ p
   expect(await page.evaluate(() => window.__analysisPath())).toBeNull();
 });
 
+// Stage B of the SECOND extraction (the codec): bootstrap, validation
+// and the publish path live in the NETWORK CAPABILITY — the monolith
+// has no copy. When the module cannot assemble, every one of them
+// degrades loudly: bootstrap refuses with an honest status, and a
+// session that loses the capability mid-flight flips the chip to
+// "validation off" instead of claiming validity it cannot check,
+// while materialize refuses rather than loading unchecked.
+test("planner degrades when the network capability cannot assemble", async ({ page }) => {
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+  await switchPersona(page, "Planner");
+
+  // Bootstrap assembles: the derived document is valid (the chip
+  // says so — the capability is up).
+  await page.getByRole("button", { name: "Derive from loaded feed" }).click();
+  await expect(page.getByText("valid", { exact: true })).toBeVisible();
+
+  // Now the capability goes away mid-session (unfetchable + forgotten):
+  // the next composition must degrade, never silently serve stale
+  // claims.
+  await page.route(/caps\/network-.*\.wasm/, (route) => route.abort());
+  await page.evaluate(() => window.__forgetCapability("network"));
+
+  // Materialize refuses — export is the capability's op.
+  await page.getByRole("button", { name: "Document" }).click();
+  await page.getByRole("button", { name: "Load into app" }).click();
+  await expect(page.getByText(/Network capability unavailable — cannot materialize/)).toBeVisible();
+
+  // And validation is OFF: the materialize attempt re-validated
+  // through the missing capability and turned the chip off (the chip
+  // says so — it must not claim validity nobody can check).
+  await expect(page.getByText("validation off", { exact: true })).toBeVisible();
+});
+
 test("planner authors a network and the rider uses it", async ({ page }) => {
   await page.goto("/");
   await waitForMap(page);
