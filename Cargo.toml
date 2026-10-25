@@ -9,6 +9,9 @@ members = [
     "crates/transit-streets",
     "crates/transit-sync",
     "crates/transit-wasm",
+    "crates/cap-abi",
+    "crates/cap-gtfs",
+    "crates/cap-router",
 ]
 
 [workspace.package]
@@ -36,6 +39,10 @@ protoc-bin-vendored = "3"
 # truth — hand-written .d.ts drifts). serde-compat makes the derives
 # mirror the serde attributes (tags, renames).
 ts-rs = { version = "12", features = ["serde-compat"] }
+# Capability modules address documents by content hash (the manifest
+# format) — sha256 is the hash everywhere (Rust, JS crypto.subtle,
+# Go crypto).
+sha2 = "0.10"
 wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"
 

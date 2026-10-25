@@ -1,0 +1,19 @@
+[package]
+name = "cap-abi"
+description = "The capability-module seam: the flat import-free C ABI as a macro, plus the capability-manifest contract every host assembles from."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"
+
+[[bin]]
+name = "gen-manifest"
+path = "src/bin/gen_manifest.rs"

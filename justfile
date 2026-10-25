@@ -17,6 +17,16 @@ default:
 wasm:
     cd web && npm run build:wasm
 
+# Build the capability modules (the capability-bus PoC: horizontal
+# capabilities assembled per user) and regenerate the capability
+# manifest — hash-pinned modules in web/public/caps/, served under
+# their content hash so the HTTP cache holds them forever.
+caps:
+    #!/usr/bin/env bash
+    set -e
+    cargo build --release -p cap-gtfs -p cap-router --target wasm32-unknown-unknown
+    cargo run --quiet -p cap-abi --bin gen-manifest
+
 # Build everything the server serves: artifact + frontend (web/dist).
 # Type-checks first — the TS layer is part of the gate.
 build:
@@ -36,22 +46,25 @@ types:
 # test
 # ---------------------------------------------------------------
 
-# All host-side tests: Rust suites, Go suite, artifact smoke in Node.
+# All host-side tests: Rust suites, Go suite, artifact smoke in Node,
+# capability-module smoke (needs `caps` built — hash-pinned modules
+# and the manifest the smoke verifies against).
 # TS_RS_EXPORT_DIR keeps the ts-rs bindings regenerating into
 # web/src/types on every run (plain `cargo test` would scatter them
 # into crates/*/bindings).
-test:
+test: caps
     #!/usr/bin/env bash
     export TS_RS_EXPORT_DIR="$PWD/web/src/types"
     cargo test
     node crates/transit-wasm/abi-smoke.mjs
+    node crates/cap-abi/caps-smoke.mjs
     # -race: the artifact is one non-reentrant instance; the host must
     # serialize invokes (see server/race_test.go — the gate watches it).
     cd server && go test -race ./...
 
 # Browser e2e (Chromium via Playwright, against the Go server).
 # Builds first; the runner starts the server unless :8080 is taken.
-e2e: build
+e2e: caps build
     cd web && npx playwright test
 
 # Everything: host tests + e2e.
@@ -123,9 +136,12 @@ basemap bbox maxzoom="15":
 # ---------------------------------------------------------------
 
 # Regenerate the golden corpus (testdata/corpus.json) from the
-# artifact itself. Run after any response-shape change, then commit
-# the diff — that diff IS the reviewable contract change.
-corpus:
+# artifact itself — ALWAYS freshly built (the dependency is the
+# harness's guarantee: replaying against a stale web/pkg artifact
+# writes a no-op diff and the golden test keeps failing). Run after
+# any response-shape change, then commit the diff — that diff IS the
+# reviewable contract change.
+corpus: wasm
     node testdata/generate-corpus.mjs
 
 # Provenance + reproducibility: rebuild the artifact from scratch and

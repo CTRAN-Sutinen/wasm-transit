@@ -7,6 +7,7 @@
     loadRtFromUrl, loadVpFromUrl,
   } from "../actions";
   import { refreshCoverage } from "../planner";
+  import CapabilityDemo from "./CapabilityDemo.svelte";
 
   // App config, not workflow: loading a feed and importing reference
   // layers happen once. A MODAL, not a floating panel — it never
@@ -190,4 +191,6 @@
     <label><input type="checkbox" bind:checked={app.vpPolling}> refresh every 30s</label>
   </p>
   <p class="muted">All URLs go through the local <code>/rt</code> proxy (CORS-free).</p>
+
+  <CapabilityDemo />
 </aside>

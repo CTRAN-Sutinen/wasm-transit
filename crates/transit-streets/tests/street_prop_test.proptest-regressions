@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 3851d9af891e857f3e39bdbc45cdfe68e99ebe747400d02ea921ada440a513b0 # shrinks to spec = Spec { features: [(Forward, [[(0, 0), (0, 0)]])] }
+cc 8d1975dc5e059c19411cb043b5f726ce7c487b3153ab2daf09ec5590fd8bd023 # shrinks to (spec, qa, qb, _far) = (Spec { features: [(Both, [[(0, 0), (1, 3)]])] }, (0, 0.837017368125235, 0.0), (0, 0.0, 0.0), (20, 20))

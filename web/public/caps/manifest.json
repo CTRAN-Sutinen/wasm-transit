@@ -1,0 +1,293 @@
+{
+  "kernel": 1,
+  "capabilities": [
+    {
+      "id": "gtfs",
+      "hash": "sha256:0729c121325a109fc3cf32a1e35acfdadbe32b34042e930cdeca281d7b706574",
+      "url": "caps/gtfs-0729c121325a109fc3cf32a1e35acfdadbe32b34042e930cdeca281d7b706574.wasm",
+      "bytes": 541906,
+      "ops": [
+        "load_feed",
+        "departures",
+        "stops",
+        "load_watchlist",
+        "migrate_watchlist",
+        "watchlist_board"
+      ],
+      "consumes": {},
+      "speaks": {
+        "watchlist": [
+          1,
+          2
+        ],
+        "feed": [
+          1
+        ]
+      },
+      "migrates": {
+        "watchlist": [
+          {
+            "from": 1,
+            "to": 2
+          }
+        ]
+      },
+      "purpose": "Read a GTFS static zip: parse it into a hash-addressed feed registry and answer schedule questions (departures at a stop, stop lists). Assemble for any user who needs to know when service runs. Also owns the watchlist document (the rider's saved stops) and its v1→v2 migration.",
+      "op_docs": {
+        "load_feed": {
+          "description": "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
+          "example": null
+        },
+        "departures": {
+          "description": "Upcoming departures at one stop on a service date, schedule only (GTFS-rt is another capability).",
+          "example": {
+            "request": {
+              "date": "2026-10-23",
+              "feed_hash": "sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2",
+              "from_secs": 25200,
+              "limit": 5,
+              "op": "departures",
+              "stop_id": "A"
+            },
+            "response": {
+              "ok": {
+                "departures": [
+                  {
+                    "block_id": "B1",
+                    "departure_time": 28800,
+                    "departure_time_hhmmss": "08:00:00",
+                    "headsign": null,
+                    "route_id": "10",
+                    "route_name": "10",
+                    "service_id": "WK",
+                    "stop_id": "A",
+                    "stop_sequence": 1,
+                    "trip_id": "t10"
+                  },
+                  {
+                    "block_id": "B1",
+                    "departure_time": 30000,
+                    "departure_time_hhmmss": "08:20:00",
+                    "headsign": null,
+                    "route_id": "20",
+                    "route_name": "20",
+                    "service_id": "WK",
+                    "stop_id": "A",
+                    "stop_sequence": 1,
+                    "trip_id": "t20"
+                  }
+                ],
+                "op": "departures"
+              }
+            }
+          }
+        },
+        "stops": {
+          "description": "Stop list for UI pickers, first N by id.",
+          "example": {
+            "request": {
+              "feed_hash": "sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2",
+              "limit": 3,
+              "op": "stops"
+            },
+            "response": {
+              "ok": {
+                "op": "stops",
+                "stops": [
+                  {
+                    "name": "Main & 1st",
+                    "stop_id": "A"
+                  },
+                  {
+                    "name": "Main & 2nd",
+                    "stop_id": "B"
+                  },
+                  {
+                    "name": "Main & 3rd",
+                    "stop_id": "C"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "watchlist_board": {
+          "description": "Each watched stop's upcoming departures, labelled per the watchlist's version.",
+          "example": {
+            "request": {
+              "date": "2026-10-23",
+              "feed_hash": "sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2",
+              "from_secs": 25200,
+              "limit": 3,
+              "op": "watchlist_board",
+              "watchlist_hash": "sha256:<of the document>"
+            },
+            "response": {
+              "ok": {
+                "op": "watchlist_board",
+                "stops": [
+                  {
+                    "departures": [
+                      {
+                        "block_id": "B1",
+                        "departure_time": 28800,
+                        "departure_time_hhmmss": "08:00:00",
+                        "headsign": null,
+                        "route_id": "10",
+                        "route_name": "10",
+                        "service_id": "WK",
+                        "stop_id": "A",
+                        "stop_sequence": 1,
+                        "trip_id": "t10"
+                      }
+                    ],
+                    "id": "A",
+                    "label": "home"
+                  },
+                  {
+                    "departures": [
+                      {
+                        "block_id": "B2",
+                        "departure_time": 27000,
+                        "departure_time_hhmmss": "07:30:00",
+                        "headsign": "Extra run",
+                        "route_id": "20",
+                        "route_name": "20",
+                        "service_id": "HOL",
+                        "stop_id": "B",
+                        "stop_sequence": 1,
+                        "trip_id": "t12"
+                      }
+                    ],
+                    "id": "B",
+                    "label": "work"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "load_watchlist": {
+          "description": "Register a watchlist document (version-tagged JSON) under its content hash.",
+          "example": {
+            "request": {
+              "document": {
+                "stops": [
+                  {
+                    "id": "A",
+                    "label": "home"
+                  },
+                  {
+                    "id": "B",
+                    "label": "work"
+                  }
+                ],
+                "version": "v2"
+              },
+              "op": "load_watchlist"
+            },
+            "response": {
+              "ok": {
+                "op": "load_watchlist",
+                "version": 2,
+                "watchlist_hash": "sha256:<of the document>"
+              }
+            }
+          }
+        },
+        "migrate_watchlist": {
+          "description": "Migrate a version-1 watchlist to version 2: label = note, colors dropped and reported. Pure and deterministic; the caller keeps the old bytes.",
+          "example": {
+            "request": {
+              "document": {
+                "stops": [
+                  {
+                    "color": "blue",
+                    "id": "A",
+                    "note": "home"
+                  }
+                ],
+                "version": "v1"
+              },
+              "op": "migrate_watchlist"
+            },
+            "response": {
+              "ok": {
+                "document": {
+                  "stops": [
+                    {
+                      "id": "A",
+                      "label": "home"
+                    }
+                  ],
+                  "version": "v2"
+                },
+                "notes": [
+                  {
+                    "count": 1,
+                    "field": "color",
+                    "kind": "dropped_field"
+                  }
+                ],
+                "op": "migrated_watchlist"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "router",
+      "hash": "sha256:e0429e0df86a2001a764e37cd9dba24e81ea1e66ec9f47b5b3e1dba16f227f36",
+      "url": "caps/router-e0429e0df86a2001a764e37cd9dba24e81ea1e66ec9f47b5b3e1dba16f227f36.wasm",
+      "bytes": 517361,
+      "ops": [
+        "load_feed",
+        "plan"
+      ],
+      "consumes": {
+        "feed": "gtfs"
+      },
+      "speaks": {
+        "feed": [
+          1
+        ]
+      },
+      "migrates": {},
+      "purpose": "Earliest-arrival trip planning (RAPTOR) over a feed document the gtfs capability produced. Assemble for users who need directions, not just departure times. Reads documents by content hash; writes nothing.",
+      "op_docs": {
+        "plan": {
+          "description": "Earliest-arrival itinerary from stop to stop at a departure time; null itinerary = unreachable within max_legs.",
+          "example": {
+            "request": {
+              "date": "2026-10-23",
+              "depart_secs": 25200,
+              "feed_hash": "sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2",
+              "from": "A",
+              "max_legs": 4,
+              "op": "plan",
+              "to": "B"
+            },
+            "response": {
+              "ok": {
+                "itinerary": {
+                  "arrival_hhmmss": "08:10:00",
+                  "arrival_secs": 29400,
+                  "depart_secs": 28800,
+                  "from_stop_id": "A",
+                  "legs": [],
+                  "to_stop_id": "B"
+                },
+                "op": "plan"
+              }
+            }
+          }
+        },
+        "load_feed": {
+          "description": "Register a GTFS zip under its content hash (the same document identity gtfs returns — assert equality at the host). Bulk-bytes op 0.",
+          "example": null
+        }
+      }
+    }
+  ]
+}
