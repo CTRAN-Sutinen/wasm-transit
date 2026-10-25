@@ -173,12 +173,17 @@ export async function main(argv) {
 
 // Entry: run as a CLI only when invoked as main module (worker
 // threads import this same file — the isMainThread branch above
-// keeps them out of here).
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+// keeps them out of here). exitCode (NOT process.exit): exiting
+// without the event loop flushing stdout TRUNCATES results larger
+// than the 64 KiB pipe buffer — found by dogfooding the C-TRAN
+// feed through this exact CLI.
+if (isMainThread && process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
   main(process.argv.slice(2))
-    .then((code) => process.exit(code))
+    .then((code) => {
+      process.exitCode = code;
+    })
     .catch((error) => {
       console.error(error.message);
-      process.exit(1);
+      process.exitCode = 1;
     });
 }

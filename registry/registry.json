@@ -21,7 +21,7 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "7796a273d04c391dd5f8ed53f10173b9d3fa17ed"
+    "source_commit": "4834315400309d17b688c31c07d2fb1c2e07e4c3"
   },
   "kernel": 1
 }

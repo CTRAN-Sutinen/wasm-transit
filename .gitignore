@@ -16,3 +16,5 @@ playwright-report
 web/public/basemap.pmtiles
 
 mutants.out/
+# Real C-TRAN GTFS — licensed agency data, fetched for dogfood QA only (docs/CAPS-PLAN.md)
+testdata/ctran-gtfs.zip
