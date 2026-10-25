@@ -69,6 +69,9 @@ export { FEED_KEY };
 let nowOverride: { date: string; secs: number } | null = null;
 export function setNowOverride(value: { date: string; secs: number } | null): void {
   nowOverride = value; // { date: "YYYY-MM-DD", secs: number } | null
+  // The override changing IS time moving: re-derive the views that
+  // track the clock (departure board, blocks-of-the-day).
+  app.clock = Date.now();
 }
 
 export function serviceDate(): string {

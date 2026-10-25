@@ -1,8 +1,10 @@
 <script lang="ts">
   import { app } from "../state.svelte";
   import { selectStop, showTrip, refreshNow, serviceDate, secondsSinceMidnight } from "../actions";
+  import Combobox from "./Combobox.svelte";
 
   const stops = $derived(app.gtfs ? app.gtfs.stops().slice(0, 2000) : []);
+  const stopOptions = $derived(stops.map((s) => ({ value: s.stop_id, label: s.name, sub: s.stop_id })));
   const services = $derived(app.gtfs ? app.gtfs.active_services(serviceDate()) : []);
 
   /// trip_id → { byStop: Map(stop_id → delay), worst: delay }
@@ -55,12 +57,13 @@
 
 <section>
   <h2>Departures</h2>
-  <p>
-    <select aria-label="Stop" value={app.selectedStop ?? ""} onchange={(e) => selectStop(e.currentTarget.value)}>
-      {#each stops as s (s.stop_id)}
-        <option value={s.stop_id}>{s.name}</option>
-      {/each}
-    </select>
+  <p class="picker-row">
+    <Combobox
+      label="Stop"
+      options={stopOptions}
+      value={app.selectedStop ?? ""}
+      onchange={(v) => selectStop(v)}
+    />
     <button onclick={refreshNow}>Refresh</button>
     {#each services as s (s)}
       <span class="chip svc" title="service key running today">{s}</span>

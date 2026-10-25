@@ -6,6 +6,7 @@
     addTimingProfile, removeTimingProfile, setTimingProfileField, setTimepointTime,
     clearSelection, fmtHHMMSS, parseHHMMSS,
   } from "../planner";
+  import Combobox from "./Combobox.svelte";
 
   const doc = $derived(getNetworkDoc());
   const id = $derived(app.plannerSelection?.kind === "pattern" ? app.plannerSelection.id : "");
@@ -17,14 +18,13 @@
     return pattern.stops.filter((s) => s.timepoint).map((s) => names.get(s.stop) ?? s.stop);
   });
 
-  let stopFilter = $state("");
+  // Stop options for the comboboxes: names read, ids as the sub
+  // label — the search matches both.
   const stopOptions = $derived.by(() => {
-    const ids = doc ? Object.keys(doc.stops ?? {}).sort() : [];
-    const q = stopFilter.trim().toLowerCase();
-    let hits: string[] = q ? ids.filter((sid: string) => sid.toLowerCase().includes(q)) : ids;
-    hits = hits.slice(0, 200);
-    if (pattern) for (const s of pattern.stops) if (!hits.includes(s.stop)) hits = [s.stop, ...hits];
-    return hits;
+    const names = new Map(Object.entries(doc?.stops ?? {}).map(([sid, s]) => [sid, s.name]));
+    return Object.keys(doc?.stops ?? {})
+      .sort()
+      .map((sid) => ({ value: sid, label: names.get(sid) ?? sid, sub: sid }));
   });
 
   let addStopId = $state("");
@@ -41,28 +41,18 @@
   <p class="ent-row">
     <input aria-label="Pattern name" value={pattern.name}
            onchange={(e) => updatePattern(id, { name: e.currentTarget.value })}>
-    <select aria-label="Pattern route" value={pattern.route}
-            onchange={(e) => updatePattern(id, { route: e.currentTarget.value })}>
-      {#each routeIds as rid (rid)}
-        <option value={rid}>{rid}</option>
-      {/each}
-    </select>
+    <Combobox label="Pattern route" options={routeIds.map((rid) => ({ value: rid, label: rid }))}
+              value={pattern.route}
+              onchange={(v) => updatePattern(id, { route: v })} />
   </p>
 
   <h4>Stop sequence</h4>
-  {#if (doc ? Object.keys(doc.stops ?? {}).length : 0) > 200}
-    <p><input aria-label="Filter stops" placeholder="filter stops…" bind:value={stopFilter}></p>
-  {/if}
   <ul class="svc-rows">
     {#each pattern.stops as s, i (i)}
       <li>
         <code>{i + 1}</code>
-        <select aria-label={`Stop at position ${i + 1}`} value={s.stop}
-                onchange={(e) => setPatternStop(id, i, { stop: e.currentTarget.value })}>
-          {#each stopOptions as sid (sid)}
-            <option value={sid}>{sid}</option>
-          {/each}
-        </select>
+        <Combobox label={`Stop at position ${i + 1}`} options={stopOptions} value={s.stop}
+                  onchange={(v) => setPatternStop(id, i, { stop: v })} />
         <label>
           <input type="checkbox" checked={s.timepoint} disabled={i === 0 || i === pattern.stops.length - 1}
                  aria-label={`Timepoint at position ${i + 1}`}
@@ -81,12 +71,7 @@
     {/each}
   </ul>
   <p class="ent-row">
-    <select aria-label="Stop to add" bind:value={addStopId}>
-      <option value="" disabled>stop…</option>
-      {#each stopOptions as sid (sid)}
-        <option value={sid}>{sid}</option>
-      {/each}
-    </select>
+    <Combobox label="Stop to add" placeholder="stop…" options={stopOptions} bind:value={addStopId} />
     <button disabled={!addStopId} onclick={() => { addPatternStop(id, addStopId); addStopId = ""; }}>
       Add stop before the end
     </button>

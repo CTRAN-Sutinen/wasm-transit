@@ -464,31 +464,25 @@
           selectStop(stopId);
         });
         // Click a bus for its details. DOM content (not HTML strings):
-        // feed ids are untrusted text, never markup.
+        // feed ids are untrusted text, never markup. The popup then
+        // RIDES with the bus — the vehicles effect re-anchors it on
+        // every refresh and drops it when the bus leaves the feed.
         map.on("click", "vehicle-bodies", (e) => {
-          const p = e.features?.[0]?.properties as Record<string, string | number | null> | undefined;
+          const p = e.features?.[0]?.properties as VehicleProps | undefined;
           if (!p) return;
-          const stopName = app.gtfs?.stops().find((s) => s.stop_id === p.stop_id)?.name;
-          const row = (k: string, v: string): void => {
-            const div = document.createElement("div");
-            const b = document.createElement("b");
-            b.textContent = k;
-            div.append(b, document.createTextNode(` ${v}`));
-            content.append(div);
-          };
-          const content = document.createElement("div");
-          const delay = p.delay == null ? null : Number(p.delay);
-          const delayText = delay == null ? "no prediction" : delay <= 0 ? "on time"
-            : `+${Math.round(delay / 60)} min late`;
-          row("Bus", String(p.label_text ?? ""));
-          row("Trip", String(p.trip_id ?? "—"));
-          row("Next stop", stopName ?? String(p.stop_id ?? "—"));
-          row("Delay", delayText);
-          if (p.vehicle_id) row("Vehicle", String(p.vehicle_id));
-          new maplibregl.Popup({ offset: 8, maxWidth: "240px" })
-            .setLngLat(e.lngLat)
-            .setDOMContent(content)
+          vehiclePopup?.popup.remove();
+          const key = String(p.vehicle_id || p.trip_id || "");
+          // Anchor at the vehicle's true position (the icon's anchor),
+          // not wherever inside the icon the click landed.
+          const v = app.vehicles.find((x) => String(x.vehicle_id || x.trip_id || "") === key);
+          const popup = new maplibregl.Popup({ offset: 10, maxWidth: "260px" })
+            .setLngLat(v ? [v.lon, v.lat] : e.lngLat)
+            .setDOMContent(vehiclePopupContent(p))
             .addTo(map);
+          vehiclePopup = { popup, key };
+          popup.on("close", () => {
+            if (vehiclePopup?.popup === popup) vehiclePopup = null;
+          });
         });
         for (const layer of ["stops-base", "stops-selected", "vehicle-bodies"]) {
           // While tracing, the crosshair wins — every position on the
@@ -508,6 +502,7 @@
       // The inspection hook must not outlive the instance: personas
       // remount the map (the planner workspace has its own).
       if (window.__map === map) window.__map = undefined;
+      vehiclePopup = null; // goes down with the map instance
       map?.remove();
     };
   });
@@ -579,6 +574,50 @@
     }
   });
 
+  type VehicleProps = Record<string, string | number | null | undefined>;
+  /// The open bus popup rides with its bus: keyed by vehicle (trip
+  /// as fallback), re-anchored and re-rendered by the vehicles effect
+  /// on every feed refresh, closed when the bus leaves the feed.
+  let vehiclePopup: { popup: maplibregl.Popup; key: string } | null = null;
+
+  /// Popup rows as DOM nodes. Rows with nothing to say stay out —
+  /// C-TRAN's vehicle feed, for instance, carries no next stop.
+  const vehiclePopupContent = (p: VehicleProps): HTMLDivElement => {
+    const content = document.createElement("div");
+    content.className = "bus-popup";
+    const row = (k: string, v: string): void => {
+      const div = document.createElement("div");
+      const b = document.createElement("b");
+      b.textContent = k;
+      div.append(b, document.createTextNode(` ${v}`));
+      content.append(div);
+    };
+    if (p.label_text) {
+      const bus = document.createElement("div");
+      bus.className = "bus-no";
+      bus.textContent = String(p.label_text);
+      content.append(bus);
+    }
+    if (p.trip_id) row("Trip", String(p.trip_id));
+    const stopName = p.stop_id
+      ? (app.gtfs?.stops().find((s) => s.stop_id === p.stop_id)?.name ?? String(p.stop_id))
+      : undefined;
+    if (stopName) row("Next stop", stopName);
+    const delayRow = document.createElement("div");
+    const delayLabel = document.createElement("b");
+    delayLabel.textContent = "Delay";
+    const delayValue = document.createElement("span");
+    const delay = p.delay == null ? null : Number(p.delay);
+    delayValue.className = delay == null ? "delay none"
+      : delay <= 0 ? "delay on" : delay <= 300 ? "delay late" : "delay verylate";
+    delayValue.textContent = delay == null ? "no prediction" : delay <= 0 ? "on time"
+      : `+${Math.round(delay / 60)} min late`;
+    delayRow.append(delayLabel, document.createTextNode(" "), delayValue);
+    content.append(delayRow);
+    if (p.vehicle_id) row("Vehicle", String(p.vehicle_id));
+    return content;
+  };
+
   $effect(() => {
     if (!mapLoaded) return;
     // Buses signal their lateness by color: join the vehicle's trip_id
@@ -620,6 +659,19 @@
       };
     });
     src("vehicles").setData({ type: "FeatureCollection", features });
+    // The open popup follows its bus: re-anchor to the fresh
+    // position and re-render the rows (delays move too); a bus that
+    // left the feed takes its popup with it.
+    if (vehiclePopup) {
+      const open = vehiclePopup;
+      const f = features.find((x) => String(x.properties.vehicle_id || x.properties.trip_id) === open.key);
+      if (f) {
+        open.popup.setLngLat(f.geometry.coordinates as [number, number]);
+        open.popup.setDOMContent(vehiclePopupContent(f.properties));
+      } else {
+        open.popup.remove();
+      }
+    }
   });
 
   // The rider's planned itinerary (rider-owned).

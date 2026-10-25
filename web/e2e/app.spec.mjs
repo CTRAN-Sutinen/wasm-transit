@@ -8,7 +8,9 @@
 //   t12: B 07:30, HOL service added on Friday 2026-10-23
 //   all Friday service except where noted. Fixture realtime
 //   (sample-rt.pb): t10 delayed +120 s at A / +180 s at B, one
-//   vehicle at 45.44/-73.44 on t10.
+//   vehicle at 45.44/-73.44 on t10. sample-rt-moved.pb is the same
+//   feed with the vehicle at 45.442 (encode_sample takes lat/lon) —
+//   it proves the bus popup follows its vehicle across refreshes.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -65,6 +67,16 @@ async function mapUnproject(page, x, y) {
   }, [x, y]);
 }
 
+/// Pick an option in a Combobox (the searchable select replacement):
+/// focus the box, type the query, click the first matching row.
+/// `query` must prefix-match the option's label.
+async function comboPick(page, label, query) {
+  const box = page.getByRole("combobox", { name: label, exact: true });
+  await box.click();
+  await box.fill(query);
+  await page.getByRole("option", { name: new RegExp(`^${query}`) }).first().click();
+}
+
 test("loads cleanly with no console errors", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e}`));
@@ -88,7 +100,7 @@ test("loading a feed populates summary, board and map", async ({ page }) => {
   await expect(page.locator(".feed-line")).toContainText("5 trips");
 
   // departures render for the first stop once selected
-  await page.getByLabel("Stop").selectOption("A");
+  await comboPick(page, "Stop", "Main & 1st");
   const rows = page.locator("section:has(h2:text('Departures')) tbody tr");
   await expect(rows).toHaveCount(3, { timeout: 10_000 });
 
@@ -102,7 +114,7 @@ test("clicking a departure draws the trip path", async ({ page }) => {
   await page.goto("/");
   await waitForMap(page);
   await loadFeed(page);
-  await page.getByLabel("Stop").selectOption("A");
+  await comboPick(page, "Stop", "Main & 1st");
   const departures = page.locator("section", { has: page.getByRole("heading", { name: "Departures" }) });
   await departures.getByRole("row", { name: /08:00/ }).click();
   await expect
@@ -115,8 +127,8 @@ test("trip planner draws the ridden segment, not the whole route", async ({ page
   await waitForMap(page);
   await loadFeed(page);
 
-  await page.getByLabel("From", { exact: true }).selectOption("A");
-  await page.getByLabel("To", { exact: true }).selectOption("B");
+  await comboPick(page, "From", "Main & 1st");
+  await comboPick(page, "To", "Main & 2nd");
   await page.locator("#plan-time").fill("07:30");
   await page.getByRole("button", { name: "Plan trip" }).click();
 
@@ -142,8 +154,8 @@ test("unplannable trip gives inline feedback", async ({ page }) => {
   await loadFeed(page);
 
   // B -> A has no service at any time (t10/t20 only run A -> B)
-  await page.getByLabel("From", { exact: true }).selectOption("B");
-  await page.getByLabel("To", { exact: true }).selectOption("A");
+  await comboPick(page, "From", "Main & 2nd");
+  await comboPick(page, "To", "Main & 1st");
   await page.getByRole("button", { name: "Plan trip" }).click();
 
   await expect(page.locator(".plan-notice")).toContainText(/No trip found/i);
@@ -182,17 +194,56 @@ test("realtime feed colors delays and vehicles", async ({ page }) => {
   expect(veh.properties.label).toBe("4201");
   expect(veh.properties.label_text).toBe("10 · 4201");
 
-  // Click the bus: its details popup — trip, next stop, delay.
+  // Click the bus: its details popup — the bus number leads, then
+  // trip, next stop, delay.
   await page.evaluate(() => window.__map.jumpTo({ center: [-73.44, 45.44], zoom: 15 }));
   const bus = await mapViewportPoint(page, [-73.44, 45.44]);
   await page.mouse.click(bus.x, bus.y);
-  await expect(page.getByText("Bus 10 · 4201")).toBeVisible();
+  await expect(page.getByText("10 · 4201")).toBeVisible();
   await expect(page.getByText("Trip t10")).toBeVisible();
   await expect(page.getByText("Next stop Main & 1st")).toBeVisible();
   await expect(page.getByText("Delay +3 min late")).toBeVisible();
 
+  // Dark mode must not blank the popup: the stock card hardcodes a
+  // white background while the text color inherits — white-on-white
+  // looked like an empty box. Any theme is fine as long as text and
+  // card contrast.
+  await page.emulateMedia({ colorScheme: "dark" });
+  const popupPalette = await page
+    .locator(".maplibregl-popup-content")
+    .evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { color: cs.color, background: cs.backgroundColor };
+    });
+  expect(popupPalette.color).not.toBe(popupPalette.background);
+
+  // The popup rides with its bus: refresh the feed with the vehicle
+  // moved, and the open popup re-anchors to the new position (and
+  // keeps its content).
+  await page.locator(".dropzone input[type=file]").setInputFiles(path.join(fixtures, "sample-rt-moved.pb"));
+  await expect(async () => {
+    const veh = (await mapData(page, "vehicles")).features[0];
+    // f32 coordinates: closeTo, not exact equality.
+    expect(veh.geometry.coordinates[0]).toBeCloseTo(-73.44, 3);
+    expect(veh.geometry.coordinates[1]).toBeCloseTo(45.442, 3);
+  }).toPass();
+  const anchor = await mapViewportPoint(page, [-73.44, 45.442]);
+  const rect = await page.evaluate(() => {
+    const r = document.querySelector(".maplibregl-popup").getBoundingClientRect();
+    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+  });
+  // anchored at the new position…
+  expect(anchor.x).toBeGreaterThanOrEqual(rect.left - 10);
+  expect(anchor.x).toBeLessThanOrEqual(rect.right + 10);
+  expect(anchor.y).toBeGreaterThanOrEqual(rect.top - 20);
+  expect(anchor.y).toBeLessThanOrEqual(rect.bottom + 20);
+  // …not the old one, and still telling the story.
+  const oldAnchor = await mapViewportPoint(page, [-73.44, 45.44]);
+  expect(oldAnchor.y).toBeGreaterThan(rect.bottom);
+  await expect(page.locator(".bus-popup").getByText("10 · 4201")).toBeVisible();
+
   // the departure board predicts the delayed time: 08:00 + 120 s
-  await page.getByLabel("Stop").selectOption("A");
+  await comboPick(page, "Stop", "Main & 1st");
   await expect(page.getByText("08:02")).toBeVisible();
   await expect(page.getByText("+2 min")).toBeVisible();
 });
@@ -201,7 +252,7 @@ test("realtime feed colors delays and vehicles", async ({ page }) => {
 /// A -> B, interior stop C auto-skipped, `mins` minutes added.
 async function makeDiversion(page, mins) {
   await page.getByRole("button", { name: "New diversion" }).click();
-  await page.getByLabel("Route").selectOption("10");
+  await comboPick(page, "Route", "10");
   // Click the two anchors in the stop-sequence list (A, C, B).
   await page.locator(".stop-seq").getByRole("button", { name: "Main & 1st" }).click();
   await page.locator(".stop-seq").getByRole("button", { name: "Main & 2nd" }).click();
@@ -221,19 +272,19 @@ test("diversion reroutes the schedule, the board and the planner", async ({ page
 
   // The rider's view: C loses its only service (t30 used to run A -> C -> B).
   await switchPersona(page, "Rider");
-  await page.getByLabel("Stop").selectOption("C");
+  await comboPick(page, "Stop", "Main & 3rd");
   const rows = page.locator("section:has(h2:text('Departures')) tbody tr");
   await expect(rows).toHaveCount(0);
 
   // B's board shifts: t10 08:15, t30 08:55 (t12/t20 untouched).
-  await page.getByLabel("Stop").selectOption("B");
+  await comboPick(page, "Stop", "Main & 2nd");
   await expect(page.getByText("08:15", { exact: true })).toBeVisible();
   await expect(page.getByText("08:55", { exact: true })).toBeVisible();
   await expect(page.getByText("08:10", { exact: true })).toHaveCount(0);
 
   // The planner rides the diverted schedule and shows the delta.
-  await page.getByLabel("From", { exact: true }).selectOption("A");
-  await page.getByLabel("To", { exact: true }).selectOption("B");
+  await comboPick(page, "From", "Main & 1st");
+  await comboPick(page, "To", "Main & 2nd");
   await page.locator("#plan-time").fill("07:30");
   await page.getByRole("button", { name: "Plan trip" }).click();
   await expect(page.locator(".plan-overlay")).toBeVisible();
@@ -242,7 +293,7 @@ test("diversion reroutes the schedule, the board and the planner", async ({ page
 
   // A -> C is unreachable while the diversion is active; the notice
   // says what the baseline looked like.
-  await page.getByLabel("To", { exact: true }).selectOption("C");
+  await comboPick(page, "To", "Main & 3rd");
   await page.getByRole("button", { name: "Plan trip" }).click();
   await expect(page.locator(".plan-notice")).toContainText(/without it you would arrive 08:45/);
 
@@ -254,7 +305,7 @@ test("diversion reroutes the schedule, the board and the planner", async ({ page
   await page.getByRole("button", { name: /Show \d+ retired/ }).click();
   await expect(page.locator(".diversion-list li.inactive")).toHaveCount(1);
   await switchPersona(page, "Rider");
-  await page.getByLabel("Stop").selectOption("C");
+  await comboPick(page, "Stop", "Main & 3rd");
   await expect(rows).toHaveCount(1);
   await expect(page.getByText("08:45", { exact: true })).toBeVisible();
 
@@ -288,6 +339,84 @@ test("diversion ripple shows as a tight block layover", async ({ page }) => {
   await makeDiversion(page, 6);
   await expect(blocks.getByText("tight")).toBeVisible();
   await expect(blocks.getByText("4 min")).toBeVisible();
+});
+
+test("comboboxes search, and blocks scope to the service day", async ({ page }) => {
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page); // Friday 2026-10-23, 07:30
+
+  // The stop picker is a combobox: typing narrows the options (the
+  // debounce lets the list settle), picking re-targets the board.
+  const stopBox = page.getByRole("combobox", { name: "Stop", exact: true });
+  await stopBox.click();
+  await expect(page.getByRole("option")).toHaveCount(3);
+  await stopBox.fill("3rd");
+  await expect(page.getByRole("option")).toHaveCount(1);
+  await page.getByRole("option", { name: /^Main & 3rd/ }).click();
+  const rows = page.locator("section:has(h2:text('Departures')) tbody tr");
+  await expect(rows).toHaveCount(1, { timeout: 10_000 }); // t30 at C: 08:45
+
+  // Dispatcher: Friday runs both blocks — B1 (weekday service) and
+  // B2 (the Friday-only holiday trip). The picker offers exactly
+  // those, with that day's trip counts.
+  await switchPersona(page, "Dispatcher");
+  const blockBox = page.getByRole("combobox", { name: "Block", exact: true });
+  await blockBox.click();
+  // Opening pre-fills the search with the selection (B1); clear it to
+  // see every block running today.
+  await blockBox.fill("");
+  await expect(page.getByRole("option", { name: /^B1/ })).toBeVisible();
+  await expect(page.getByRole("option")).toHaveCount(2);
+  await page.getByRole("option", { name: /^B2/ }).click();
+  await expect(page.getByText("07:30:00").first()).toBeVisible(); // t12's start
+
+  // Saturday: WK is off and the holiday was Friday-only — every bus
+  // is parked, so there is nothing to pick and no table to show.
+  await page.evaluate(() => window.__setNow({ date: "2026-10-24", secs: 27000 }));
+  await expect(page.getByRole("heading", { name: "Blocks" })).toBeHidden();
+});
+
+test("status text stays on one line in every persona", async ({ page }) => {
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+  await page.locator(".dropzone input[type=file]").setInputFiles(path.join(fixtures, "sample-rt.pb"));
+  await expect(page.getByText("1 buses", { exact: true })).toBeVisible();
+
+  // Chips, badges and table cells hold single horizontal tokens —
+  // any of them spilling onto a second line is unreadable (the
+  // realtime bus chip shipped wrapped once). The fixture texts are
+  // short, so the guard is structural: no wrapping allowed, and the
+  // rendered text must actually sit on one line, in every persona.
+  for (const persona of ["Rider", "Dispatcher", "Planner"]) {
+    await switchPersona(page, persona);
+    const spills = await page.evaluate(() => {
+      const bad = [];
+      for (const el of document.querySelectorAll(".chip, .route-badge, .feed-line, td, th")) {
+        if (!el.textContent?.trim()) continue;
+        const cs = getComputedStyle(el);
+        if (cs.whiteSpace !== "nowrap") {
+          bad.push(`white-space:${cs.whiteSpace} on ${el.className || el.tagName}`);
+          continue;
+        }
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const rects = [...range.getClientRects()];
+        if (rects.length) {
+          // A second line sits a full line-height below the first;
+          // the sub-pixel offset between an inline-block box and its
+          // inner line box must not count as a wrap.
+          const top = Math.min(...rects.map((r) => r.top));
+          const bottom = Math.max(...rects.map((r) => r.bottom));
+          const height = Math.max(...rects.map((r) => r.height));
+          if (bottom - top > height * 1.5) bad.push(`wrapped: ${el.textContent.trim().slice(0, 40)}`);
+        }
+      }
+      return bad;
+    });
+    expect(spills, `${persona} spilled text`).toEqual([]);
+  }
 });
 
 test("street network import paginates ArcGIS-style queries", async ({ page }) => {
@@ -357,7 +486,7 @@ test("detour drawing snaps to an imported street network", async ({ page }) => {
 
   // Selecting a route shows its alignment — the ghost the detour is
   // drawn against (t30 is route 10's representative: A → C → B).
-  await page.getByLabel("Route").selectOption("10");
+  await comboPick(page, "Route", "10");
   const ghost = (await mapData(page, "route-context")).features;
   expect(ghost.length).toBe(1);
   expect(ghost[0].geometry.coordinates.length).toBe(3);
@@ -600,13 +729,13 @@ test("planner authors a network and the rider uses it", async ({ page }) => {
   // The rider sees the authored schedule: the 08:05 departure at A.
   await page.evaluate(() => window.__setNow({ date: "2026-10-23", secs: 27000 }));
   await switchPersona(page, "Rider");
-  await page.getByLabel("Stop").selectOption("A");
+  await comboPick(page, "Stop", "Main & 1st");
   await expect(page.getByText("08:05", { exact: true })).toBeVisible();
 
   // And rides it: A -> B boards the 08:05 trip, arrives 08:15 (the
   // authored 10-minute run).
-  await page.getByLabel("From", { exact: true }).selectOption("A");
-  await page.getByLabel("To", { exact: true }).selectOption("B");
+  await comboPick(page, "From", "Main & 1st");
+  await comboPick(page, "To", "Main & 2nd");
   await page.locator("#plan-time").fill("07:30");
   await page.getByRole("button", { name: "Plan trip" }).click();
   await expect(page.locator(".plan-overlay").getByText("08:15", { exact: true })).toBeVisible();
@@ -687,7 +816,7 @@ test("escape exits tracing mode", async ({ page }) => {
   await settleOnStops(page);
 
   await page.getByRole("button", { name: "New diversion" }).click();
-  await page.getByLabel("Route").selectOption("10");
+  await comboPick(page, "Route", "10");
   await page.getByRole("button", { name: "Trace path on map" }).click();
   await expect(page.getByText("click confirms · drag pans")).toBeVisible();
 
@@ -715,7 +844,7 @@ test("a selected trip can always be cleared from the map", async ({ page }) => {
   // Select t30 at stop A (08:40 — the first anchor, so leftover
   // diversions from other tests do not shift it): its route line
   // appears. (The first row can be a one-stop trip — no geometry.)
-  await page.getByLabel("Stop").selectOption("A");
+  await comboPick(page, "Stop", "Main & 1st");
   await page.locator(".clickable-row", { hasText: "08:40" }).click();
   await expect
     .poll(async () => (await mapData(page, "trip")).features.length)
@@ -733,8 +862,8 @@ test("a selected trip can always be cleared from the map", async ({ page }) => {
   await expect
     .poll(async () => (await mapData(page, "trip")).features.length)
     .toBeGreaterThan(0);
-  await page.getByLabel("From", { exact: true }).selectOption("A");
-  await page.getByLabel("To", { exact: true }).selectOption("B");
+  await comboPick(page, "From", "Main & 1st");
+  await comboPick(page, "To", "Main & 2nd");
   await page.locator("#plan-time").fill("07:30");
   await page.getByRole("button", { name: "Plan trip" }).click();
   await expect(page.locator(".plan-overlay")).toBeVisible();

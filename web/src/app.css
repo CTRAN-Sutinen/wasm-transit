@@ -11,7 +11,7 @@ body {
 /* One shell: sidebar (persona workflow) + map, side by side. The map
    never remounts on a persona switch — only the sidebar's content
    changes. */
-.app-shell { display: grid; grid-template-columns: minmax(320px, 400px) 1fr; height: 100%; }
+.app-shell { display: grid; grid-template-columns: minmax(360px, 440px) 1fr; height: 100%; }
 .map-side { position: relative; height: 100%; }
 
 /* The map fills its side; overlays (plan overlay, planner drawer)
@@ -98,7 +98,10 @@ section {
 h2 { font-size: 0.85rem; margin: 0 0 0.5rem; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.75; }
 h3 { font-size: 0.9rem; margin: 0.8rem 0 0.3rem; }
 
-/* chips: compact status pills */
+/* chips: compact status pills. The text is a single horizontal
+   token (a count, a service key, a bus number) — it NEVER spills to
+   a second line; a pill too wide for the panel ellipsizes instead.
+   The chips CONTAINER wraps between pills. */
 .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .chip {
   display: inline-block;
@@ -106,8 +109,9 @@ h3 { font-size: 0.9rem; margin: 0.8rem 0 0.3rem; }
   padding: 0.05rem 0.5rem;
   border-radius: 999px;
   max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .chip.ok   { background: rgba(16, 150, 72, 0.22); }
 .chip.warn { background: rgba(230, 162, 60, 0.25); }
@@ -124,7 +128,8 @@ h3 { font-size: 0.9rem; margin: 0.8rem 0 0.3rem; }
 .dot.warn { background: #e6a23c; }
 .dot.bad  { background: #d02b2b; }
 
-/* route badges (transit lines) */
+/* route badges (transit lines): a line number is one horizontal
+   token — same no-spill rule as chips. */
 .route-badge {
   display: inline-block;
   background: #007cbf; color: #fff;
@@ -133,8 +138,9 @@ h3 { font-size: 0.9rem; margin: 0.8rem 0 0.3rem; }
   font-weight: 600;
   font-size: 0.85rem;
   max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* departure board */
@@ -179,7 +185,11 @@ h3 { font-size: 0.9rem; margin: 0.8rem 0 0.3rem; }
 .timeline .leg-walk { grid-template-columns: 3.2rem 1fr; }
 
 table { border-collapse: collapse; width: 100%; }
-td, th { padding: 0.25rem 0.4rem; text-align: left; border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent); font-size: 0.92rem; overflow-wrap: anywhere; }
+/* Cell text is horizontal by nature (times, ids, names): one line,
+   no spilling. A table too wide for the panel scrolls inside its
+   .table-scroll wrapper instead of wrapping its cells. */
+td, th { padding: 0.25rem 0.4rem; text-align: left; border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent); font-size: 0.92rem; white-space: nowrap; }
+.table-scroll { overflow-x: auto; }
 
 code { background: rgba(127,127,127,.15); padding: 0.05rem 0.3rem; border-radius: 4px; font-size: 0.85em; }
 .muted { opacity: 0.65; font-size: 0.9rem; }
@@ -223,7 +233,7 @@ input[type="date"], input[type="number"] { font-size: 0.9rem; padding: 0.2rem; }
 .tabs button.active { opacity: 1; background: rgba(0, 124, 191, 0.22); font-weight: 600; }
 
 /* compact feed line (the summary table was retired with the persona split) */
-.feed-line { margin: 0.15rem 0 0; font-size: 0.85rem; opacity: 0.7; font-variant-numeric: tabular-nums; }
+.feed-line { margin: 0.15rem 0 0; font-size: 0.85rem; opacity: 0.7; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* planner: validation issues and schedule editor rows */
 .issues { list-style: none; margin: 0.4rem 0; padding: 0; display: grid; gap: 0.3rem; }
@@ -233,6 +243,7 @@ input[type="date"], input[type="number"] { font-size: 0.9rem; padding: 0.2rem; }
 .svc-rows li { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 .svc-rows input { width: 5.5rem; font-variant-numeric: tabular-nums; }
 .svc-rows input[type="number"] { width: 3.5rem; }
+.svc-rows .combo, .ent-row .combo { flex: 1; min-width: 12rem; }
 
 /* planner entity editors */
 .ent-row { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin: 0.25rem 0; }
@@ -246,9 +257,43 @@ input[type="date"], input[type="number"] { font-size: 0.9rem; padding: 0.2rem; }
 .io-drawer summary { cursor: pointer; opacity: 0.7; }
 .io-drawer[open] summary { opacity: 1; }
 
-/* filtered selects: thousands of options without the DOM cost */
-.fselect { display: inline-flex; gap: 0.25rem; align-items: center; }
-.fselect input { width: 6rem; }
+/* Combobox: the searchable replacement for data-sized <select>s.
+   Rows ellipsize (long stop names no longer spill), the list caps
+   and scrolls, and it floats above the panel. */
+.combo { position: relative; width: 100%; }
+.combo input { width: 100%; font-size: 0.95rem; padding: 0.2rem 0.3rem; }
+.combo-list {
+  position: absolute;
+  z-index: 6;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: Canvas;
+  border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.combo-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.18rem 0.45rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.combo-list li.active { background: color-mix(in srgb, currentColor 12%, transparent); }
+.combo-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-sub { opacity: 0.6; white-space: nowrap; flex-shrink: 0; }
+.combo-more, .combo-empty { opacity: 0.6; font-size: 0.8rem; cursor: default; }
+
+/* label + combobox on one line, the combobox taking the width */
+.picker-row { display: flex; gap: 0.4rem 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.3rem 0; }
+.picker-row .combo { flex: 1 1 100%; }
 
 /* Planner workspace pieces: the rail's section styling (the rail
    itself lives in the shared sidebar now) and the drill-down drawer
@@ -275,3 +320,38 @@ input[type="date"], input[type="number"] { font-size: 0.9rem; padding: 0.2rem; }
 .rail-items { list-style: none; margin: 0.2rem 0; padding: 0; display: grid; gap: 0.15rem; max-height: 16rem; overflow-y: auto; }
 .rail-item { text-align: left; width: 100%; font-size: 0.85rem; padding: 0.12rem 0.4rem; border-radius: 6px; }
 .rail-item.active { background: rgba(0, 124, 191, 0.25); font-weight: 600; }
+
+/* MapLibre popups: the stock card is an opaque white slab that
+   hardcodes its background while the text color inherits — with
+   color-scheme: light dark, dark mode rendered it white-on-white
+   (an "empty" popup). Style it like the app's floating panels
+   instead: system colors, translucent, blurred — readable in both
+   modes. The doubled .maplibregl-popup raises specificity above
+   the stock rules (app.css is imported before maplibre's). */
+.maplibregl-popup .maplibregl-popup-content {
+  background: color-mix(in srgb, Canvas 92%, transparent);
+  color: CanvasText;
+  border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.maplibregl-popup .maplibregl-popup-tip { display: none; }
+.maplibregl-popup .maplibregl-popup-close-button {
+  border-radius: 0 10px 0 6px;
+  color: inherit;
+  font-size: 15px;
+}
+
+/* Bus popup rows: the bus number leads, delay gets the same
+   severity palette as the map icons and the realtime chips. */
+.bus-popup { display: grid; gap: 0.1rem; font-size: 0.85rem; min-width: 170px; }
+.bus-popup .bus-no { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.15rem; }
+.bus-popup b { font-weight: 600; opacity: 0.6; margin-right: 0.35rem; }
+.bus-popup .delay { font-weight: 600; }
+.bus-popup .delay.on { color: #109648; }
+.bus-popup .delay.late { color: #e6a23c; }
+.bus-popup .delay.verylate { color: #d02b2b; }
+.bus-popup .delay.none { font-weight: 400; opacity: 0.6; }

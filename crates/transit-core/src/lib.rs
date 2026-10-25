@@ -273,6 +273,30 @@ impl Gtfs {
         list
     }
 
+    /// The blocks that actually run on `date`: a block whose every
+    /// trip is out of service that day is a vehicle still in the
+    /// garage, and a picker of "today's blocks" must not offer it.
+    /// `trip_count` counts only the trips active that date.
+    pub fn blocks_on(&self, date: NaiveDate) -> Vec<BlockSummary> {
+        let mut list: Vec<BlockSummary> = self
+            .blocks
+            .iter()
+            .filter_map(|(id, trips)| {
+                let active = trips
+                    .iter()
+                    .filter(|t| {
+                        self.trips
+                            .get(*t)
+                            .is_some_and(|trip| self.services.is_active(&trip.service_id, date))
+                    })
+                    .count();
+                (active > 0).then(|| BlockSummary { block_id: id.clone(), trip_count: active })
+            })
+            .collect();
+        list.sort_by(|a, b| a.block_id.cmp(&b.block_id));
+        list
+    }
+
     /// The trips of one block, as the vehicle runs them on `date`,
     /// sorted by start time: where it starts, where it ends, and the
     /// layover between consecutive trips.

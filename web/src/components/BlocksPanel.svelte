@@ -1,8 +1,19 @@
 <script lang="ts">
   import { app } from "../state.svelte";
   import { refreshNow, serviceDate } from "../actions";
+  import Combobox from "./Combobox.svelte";
 
-  const blocks = $derived(app.gtfs ? app.gtfs.blocks() : []);
+  // Only the blocks running on the service day — a parked bus is not
+  // a pickable block (the artifact scopes the list; trip counts are
+  // that day's).
+  const blocks = $derived.by(() => {
+    void app.clock; // the service day can roll over
+    void app.feedEpoch;
+    return app.gtfs ? app.gtfs.blocks(serviceDate()) : [];
+  });
+  const options = $derived(
+    blocks.map((b) => ({ value: b.block_id, label: b.block_id, sub: `${b.trip_count} trips` })),
+  );
   let selectedBlock = $state("");
 
   const chain = $derived.by(() => {
@@ -13,7 +24,7 @@
   });
 
   $effect(() => {
-    // Pick the first block when the feed changes.
+    // Pick the first block when the day's list changes.
     if (blocks.length && !blocks.some((b) => b.block_id === selectedBlock)) {
       selectedBlock = blocks[0].block_id;
     }
@@ -46,15 +57,12 @@
 <section>
   <h2>Blocks</h2>
   <p class="muted">One vehicle's day: consecutive trips, layovers included.</p>
-  <p>
+  <p class="picker-row">
     <label for="block">Block:</label>
-    <select id="block" bind:value={selectedBlock}>
-      {#each blocks as b (b.block_id)}
-        <option value={b.block_id}>{b.block_id} ({b.trip_count} trips)</option>
-      {/each}
-    </select>
+    <Combobox id="block" label="Block" options={options} bind:value={selectedBlock} />
   </p>
-  <table>
+  <div class="table-scroll">
+    <table>
     <tbody>
       <tr><th>#</th><th>start</th><th>end</th><th>route</th><th>trip</th><th>service</th><th>from → to</th><th>layover</th></tr>
       {#each chain as t, i (t.trip_id)}
@@ -74,7 +82,8 @@
         </tr>
       {/each}
     </tbody>
-  </table>
+    </table>
+  </div>
   <p class="muted">{chain.length} trips on {serviceDate()} — schedule only.</p>
 </section>
 {/if}

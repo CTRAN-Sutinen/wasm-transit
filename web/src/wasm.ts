@@ -161,8 +161,12 @@ export class GtfsHandle {
     }) as { services: string[] }).services;
   }
 
-  blocks(): BlockSummary[] {
-    return (invoke({ op: "blocks", feed_id: this.#feedId }) as { blocks: BlockSummary[] }).blocks;
+  /// Blocks, optionally scoped to a service date: with `date`, only
+  /// blocks running that day, with that day's trip counts.
+  blocks(date?: string): BlockSummary[] {
+    return (invoke({ op: "blocks", feed_id: this.#feedId, date: date ?? null }) as {
+      blocks: BlockSummary[];
+    }).blocks;
   }
 
   block_trips(blockId: string, date: string): BlockTrip[] {

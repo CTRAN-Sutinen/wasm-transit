@@ -345,6 +345,46 @@ fn decode_rt_reports_delays_and_vehicles() {
 }
 
 #[test]
+fn blocks_op_lists_all_blocks_or_only_the_days() {
+    let feed_id = load();
+
+    // Without a date: every block in the feed, full trip counts.
+    let Response::Blocks { blocks } = dispatch(Request::Blocks { feed_id, date: None }).unwrap() else {
+        panic!("expected Blocks response");
+    };
+    let ids: Vec<(&str, usize)> = blocks
+        .iter()
+        .map(|b| (b.block_id.as_str(), b.trip_count))
+        .collect();
+    assert_eq!(ids, vec![("B1", 2), ("B2", 1)]);
+
+    // With Friday's date: both run (B1's WK trips, B2's holiday trip).
+    let Response::Blocks { blocks } =
+        dispatch(Request::Blocks { feed_id, date: Some(DATE.into()) }).unwrap() else {
+            panic!("expected Blocks response");
+        };
+    let ids: Vec<(&str, usize)> = blocks
+        .iter()
+        .map(|b| (b.block_id.as_str(), b.trip_count))
+        .collect();
+    assert_eq!(ids, vec![("B1", 2), ("B2", 1)]);
+
+    // Sunday: WK is off and the holiday is Friday-only — every bus is
+    // parked, so the picker has nothing to offer.
+    let Response::Blocks { blocks } = dispatch(Request::Blocks {
+        feed_id,
+        date: Some("2026-10-25".into()),
+    })
+    .unwrap() else {
+        panic!("expected Blocks response");
+    };
+    assert!(blocks.is_empty());
+
+    // A bad date is an error, not a panic.
+    assert!(dispatch(Request::Blocks { feed_id, date: Some("2026-13-99".into()) }).is_err());
+}
+
+#[test]
 fn request_serializes_as_tagged_json() {
     // The protocol has a textual form for hosts that want one —
     // serde-tagged enums make the "op" naming rule explicit.

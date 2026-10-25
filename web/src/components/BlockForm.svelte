@@ -4,12 +4,14 @@
     removeBlock, addBlockTrip, removeBlockTrip, setBlockLayover,
     clearSelection, fmtHHMMSS, parseHHMMSS,
   } from "../planner";
-  import FilteredSelect from "./FilteredSelect.svelte";
+  import Combobox from "./Combobox.svelte";
 
   const doc = $derived(getNetworkDoc());
   const id = $derived(app.plannerSelection?.kind === "block" ? app.plannerSelection.id : "");
   const block = $derived(id ? doc?.blocks?.[id] ?? null : null);
-  const serviceOptions: [string, string][] = $derived(doc ? Object.keys(doc.services ?? {}).sort().map((s): [string, string] => [s, s]) : []);
+  const serviceOptions = $derived(
+    doc ? Object.keys(doc.services ?? {}).sort().map((s) => ({ value: s, label: s })) : [],
+  );
 
   let addServiceId = $state("");
   let addTime = $state("");
@@ -30,8 +32,7 @@
     {/each}
   </ul>
   <p class="ent-row">
-    <FilteredSelect label="Service to add" value={addServiceId} options={serviceOptions} cap={200}
-                    onchange={(s) => (addServiceId = s)} />
+    <Combobox label="Service to add" options={serviceOptions} bind:value={addServiceId} />
     <input aria-label="Start time to add" placeholder="HH:MM:SS" bind:value={addTime}>
     <button disabled={!addServiceId || parseHHMMSS(addTime) === null}
             onclick={() => { addBlockTrip(id, addServiceId, parseHHMMSS(addTime)); addTime = ""; }}>

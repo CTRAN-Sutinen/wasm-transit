@@ -76,8 +76,10 @@ pub enum Request {
     },
     /// Service keys running on a date (often several).
     ActiveServices { feed_id: u32, date: String },
-    /// All blocks in the feed.
-    Blocks { feed_id: u32 },
+    /// All blocks in the feed. With `date`: only the blocks running
+    /// that day, with that day's trip counts — the dispatcher's
+    /// block picker shows vehicles in service, not parked buses.
+    Blocks { feed_id: u32, date: Option<String> },
     /// The trip chain of one block on a service date.
     BlockTrips { feed_id: u32, block_id: String, date: String },
     /// All stops as a GeoJSON FeatureCollection.
@@ -286,8 +288,12 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
                 Ok(Response::ActiveServices { services: f.gtfs.active_services(parsed) })
             })
         }
-        Request::Blocks { feed_id } => state::with_feed(feed_id, |f| {
-            Ok(Response::Blocks { blocks: f.gtfs.blocks() })
+        Request::Blocks { feed_id, date } => state::with_feed(feed_id, |f| {
+            let blocks = match date {
+                Some(d) => f.gtfs.blocks_on(parse_date(&d)?),
+                None => f.gtfs.blocks(),
+            };
+            Ok(Response::Blocks { blocks })
         }),
         Request::BlockTrips { feed_id, block_id, date } => {
             let parsed = parse_date(&date)?;

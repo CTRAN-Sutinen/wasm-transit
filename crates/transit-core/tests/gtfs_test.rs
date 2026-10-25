@@ -200,6 +200,35 @@ fn blocks_list_and_chain_trips() {
 }
 
 #[test]
+fn blocks_on_lists_only_blocks_running_that_date() {
+    let gtfs = Gtfs::from_zip_bytes(&fixture_zip()).expect("parse");
+
+    // Friday: B1 (t10 + t20, both WK) runs; B2's only trip is the
+    // Friday-2026-10-23 holiday trip t12, so it runs too.
+    let blocks = gtfs.blocks_on(date(2026, 10, 23));
+    let ids: Vec<(&str, usize)> = blocks
+        .iter()
+        .map(|b| (b.block_id.as_str(), b.trip_count))
+        .collect();
+    assert_eq!(ids, vec![("B1", 2), ("B2", 1)]);
+
+    // Sunday: WK is off, so B1 is a parked bus — only the holiday
+    // block (if its service included that date) would show. t12's HOL
+    // service is a single-day exception for 2026-10-23 only.
+    let blocks = gtfs.blocks_on(date(2026, 10, 25));
+    assert!(blocks.is_empty());
+
+    // The day after the holiday: B2 drops out, B1 (weekday service)
+    // runs — but 2026-10-24 is a Saturday, so both are parked.
+    assert!(gtfs.blocks_on(date(2026, 10, 24)).is_empty());
+
+    // Monday: back to work.
+    let blocks = gtfs.blocks_on(date(2026, 10, 26));
+    let ids: Vec<&str> = blocks.iter().map(|b| b.block_id.as_str()).collect();
+    assert_eq!(ids, vec!["B1"]);
+}
+
+#[test]
 fn departures_expose_block_id() {
     let gtfs = Gtfs::from_zip_bytes(&fixture_zip()).expect("parse");
     let deps = gtfs.next_departures("A", date(2026, 10, 23), 0, 10);

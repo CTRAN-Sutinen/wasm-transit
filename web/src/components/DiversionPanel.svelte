@@ -6,8 +6,12 @@
     undoDetourSlice, syncEdits, serviceDate,
   } from "../actions";
   import { pathLengthMeters } from "../streets";
+  import Combobox from "./Combobox.svelte";
 
   const routes = $derived(app.gtfs ? app.gtfs.routes() : []);
+  const routeOptions = $derived(
+    routes.map((r) => ({ value: r.route_id, label: r.name, sub: r.route_type })),
+  );
   const draft = $derived(app.diversionDraft);
   // Retired records (tombstones) are hidden until asked for.
   let showRetired = $state(false);
@@ -174,14 +178,15 @@ The draft itself is untouched: Done (or Apply) still owns it. -->
 
   {#if draft}
     <div class="diversion-editor">
-      <p>
+      <p class="picker-row">
         <label for="div-route">Route</label>
-        <select id="div-route" bind:value={draft.routeId}>
-          <option value="" disabled>Pick a route…</option>
-          {#each routes as r (r.route_id)}
-            <option value={r.route_id}>{r.name} ({r.route_type})</option>
-          {/each}
-        </select>
+        <Combobox
+          id="div-route"
+          label="Route"
+          placeholder="Pick a route…"
+          options={routeOptions}
+          bind:value={draft.routeId}
+        />
         <label for="div-dir">Direction</label>
         <select id="div-dir" bind:value={draft.directionId}>
           <option value="">any</option>

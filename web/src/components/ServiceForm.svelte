@@ -5,14 +5,18 @@
     removeServiceStart, setBandField, addBand, removeBand,
     clearSelection, fmtHHMMSS, parseHHMMSS,
   } from "../planner";
-  import FilteredSelect from "./FilteredSelect.svelte";
+  import Combobox from "./Combobox.svelte";
 
   const doc = $derived(getNetworkDoc());
   const id = $derived(app.plannerSelection?.kind === "service" ? app.plannerSelection.id : "");
   const service = $derived(id ? doc?.services?.[id] ?? null : null);
   const patternName = $derived(service ? doc?.patterns?.[service.pattern]?.name ?? service.pattern : "");
-  const patternOptions: [string, string][] = $derived(doc ? Object.keys(doc.patterns ?? {}).sort().map((p): [string, string] => [p, p]) : []);
-  const calendarOptions: [string, string][] = $derived(doc ? Object.keys(doc.calendars ?? {}).sort().map((c): [string, string] => [c, c]) : []);
+  const patternOptions = $derived(
+    doc ? Object.keys(doc.patterns ?? {}).sort().map((p) => ({ value: p, label: p })) : [],
+  );
+  const calendarOptions = $derived(
+    doc ? Object.keys(doc.calendars ?? {}).sort().map((c) => ({ value: c, label: c })) : [],
+  );
 
   function updateStart(index: number, text: string) {
     const secs = parseHHMMSS(text);
@@ -41,10 +45,10 @@
   <h3>Service <code>{id}</code></h3>
   <p class="chips"><span class="chip svc">{patternName}</span></p>
   <p class="ent-row">
-    <FilteredSelect label="Service pattern" value={service.pattern} options={patternOptions} cap={200}
-                    onchange={(p) => setServiceRefs(id, { pattern: p })} />
-    <FilteredSelect label="Service calendar" value={service.calendar} options={calendarOptions} cap={200}
-                    onchange={(c) => setServiceRefs(id, { calendar: c })} />
+    <Combobox label="Service pattern" options={patternOptions} value={service.pattern}
+              onchange={(p) => setServiceRefs(id, { pattern: p })} />
+    <Combobox label="Service calendar" options={calendarOptions} value={service.calendar}
+              onchange={(c) => setServiceRefs(id, { calendar: c })} />
   </p>
 
   {#if service.schedule.kind === "exact_times"}

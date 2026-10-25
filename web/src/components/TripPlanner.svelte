@@ -1,31 +1,20 @@
 <script lang="ts">
   import { app } from "../state.svelte";
   import { planTrip } from "../actions";
+  import Combobox from "./Combobox.svelte";
 
   let from = $state("");
   let to = $state("");
   let departTime = $state("");
 
   const stops = $derived(app.gtfs ? app.gtfs.stops().slice(0, 2000) : []);
+  const stopOptions = $derived(stops.map((s) => ({ value: s.stop_id, label: s.name, sub: s.stop_id })));
 </script>
 
 <section>
   <h2>Trip planner</h2>
-  <p>
-    <select aria-label="From" bind:value={from}>
-      <option value="" disabled>From…</option>
-      {#each stops as s (s.stop_id)}
-        <option value={s.stop_id}>{s.name}</option>
-      {/each}
-    </select>
-    <span aria-hidden="true">→</span>
-    <select aria-label="To" bind:value={to}>
-      <option value="" disabled>To…</option>
-      {#each stops as s (s.stop_id)}
-        <option value={s.stop_id}>{s.name}</option>
-      {/each}
-    </select>
-  </p>
+  <p><Combobox label="From" placeholder="From…" options={stopOptions} bind:value={from} /></p>
+  <p><Combobox label="To" placeholder="To…" options={stopOptions} bind:value={to} /></p>
   <p>
     <label for="plan-time">Leave</label>
     <input type="time" id="plan-time" bind:value={departTime}>
