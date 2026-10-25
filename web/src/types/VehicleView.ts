@@ -3,4 +3,9 @@
 /**
  * One live vehicle from a VehiclePositions feed.
  */
-export type VehicleView = { entity_id: string, trip_id: string | null, route_id: string | null, lat: number, lon: number, bearing: number | null, stop_id: string | null, };
+export type VehicleView = { entity_id: string, trip_id: string | null, route_id: string | null, lat: number, lon: number, bearing: number | null, stop_id: string | null, 
+/**
+ * VehicleDescriptor: the internal vehicle id and the user-
+ * visible label — the bus number a rider reads off the vehicle.
+ */
+vehicle_id: string | null, label: string | null, };

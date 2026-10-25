@@ -48,6 +48,23 @@ async function mapData(page, source) {
   }, source);
 }
 
+/// MapLibre projects in CANVAS coordinates; the sidebar layout
+/// offsets the canvas inside the viewport. Viewport coordinates for
+/// a lon/lat (with a pixel nudge), and its inverse.
+async function mapViewportPoint(page, lonLat, dx = 0, dy = 0) {
+  return page.evaluate(([lon, lat, dx, dy]) => {
+    const r = window.__map.getCanvas().getBoundingClientRect();
+    const p = window.__map.project([lon, lat]);
+    return { x: Math.round(p.x + r.x) + dx, y: Math.round(p.y + r.y) + dy };
+  }, [...lonLat, dx, dy]);
+}
+async function mapUnproject(page, x, y) {
+  return page.evaluate(([x, y]) => {
+    const r = window.__map.getCanvas().getBoundingClientRect();
+    return window.__map.unproject([x - r.x, y - r.y]);
+  }, [x, y]);
+}
+
 test("loads cleanly with no console errors", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e}`));
@@ -151,13 +168,28 @@ test("realtime feed colors delays and vehicles", async ({ page }) => {
 
   await page.locator(".dropzone input[type=file]").setInputFiles(path.join(fixtures, "sample-rt.pb"));
 
-  // severity chip for the delayed trip (worst +180 s -> "late 1-5 min")
+  // severity chip for the delayed BUS (worst +180 s -> "late 1-5 min"):
+  // the chips count vehicles joined to trip delays, not raw trip
+  // updates — one bus on t10, late 3 minutes.
   await expect(page.getByText(/late 1–5 min/)).toBeVisible();
+  await expect(page.getByText("1 buses", { exact: true })).toBeVisible();
 
-  // the vehicle dot carries the joined delay
-  await expect
-    .poll(async () => (await mapData(page, "vehicles")).features[0]?.properties.delay)
-    .toBe(180);
+  // the vehicle body carries the joined delay, and the bus number
+  // (VehicleDescriptor) rides on the map: label_text joins the route
+  // badge to the vehicle label.
+  const veh = (await mapData(page, "vehicles")).features[0];
+  expect(veh.properties.delay).toBe(180);
+  expect(veh.properties.label).toBe("4201");
+  expect(veh.properties.label_text).toBe("10 · 4201");
+
+  // Click the bus: its details popup — trip, next stop, delay.
+  await page.evaluate(() => window.__map.jumpTo({ center: [-73.44, 45.44], zoom: 15 }));
+  const bus = await mapViewportPoint(page, [-73.44, 45.44]);
+  await page.mouse.click(bus.x, bus.y);
+  await expect(page.getByText("Bus 10 · 4201")).toBeVisible();
+  await expect(page.getByText("Trip t10")).toBeVisible();
+  await expect(page.getByText("Next stop Main & 1st")).toBeVisible();
+  await expect(page.getByText("Delay +3 min late")).toBeVisible();
 
   // the departure board predicts the delayed time: 08:00 + 120 s
   await page.getByLabel("Stop").selectOption("A");
@@ -216,7 +248,11 @@ test("diversion reroutes the schedule, the board and the planner", async ({ page
 
   // Toggle the diversion off (dispatcher again): C's service returns.
   await switchPersona(page, "Dispatcher");
-  await page.locator(".diversion-list input[type=checkbox]").first().uncheck();
+  await page.locator(".diversion-list input[type=checkbox]").first().click();
+  // Retired leaves the working list (a tombstone behind the
+  // disclosure) — reveal it to assert it survives the reload.
+  await page.getByRole("button", { name: /Show \d+ retired/ }).click();
+  await expect(page.locator(".diversion-list li.inactive")).toHaveCount(1);
   await switchPersona(page, "Rider");
   await page.getByLabel("Stop").selectOption("C");
   await expect(rows).toHaveCount(1);
@@ -230,6 +266,7 @@ test("diversion reroutes the schedule, the board and the planner", async ({ page
   await waitForMap(page);
   await expect(page.getByText(/Restored/)).toBeVisible({ timeout: 10_000 });
   await switchPersona(page, "Dispatcher");
+  await page.getByRole("button", { name: /Show \d+ retired/ }).click();
   await expect(page.locator(".diversion-list li.inactive")).toHaveCount(1);
 });
 
@@ -352,31 +389,20 @@ test("detour drawing snaps to an imported street network", async ({ page }) => {
   // Click ~12 px east of Side St's midpoint: the drawn vertex must
   // land ON the street, not where the cursor was. Integer pixels —
   // mouse events dispatch at whole-pixel positions.
-  const near = await page.evaluate(() => {
-    const p = window.__map.project([-73.5060, 45.5100]);
-    return { x: Math.round(p.x) + 10, y: Math.round(p.y) + 6 };
-  });
-  const rawNear = await page.evaluate(
-    ({ x, y }) => window.__map.unproject([x, y]),
-    near,
-  );
+  const near = await mapViewportPoint(page, [-73.5060, 45.5100], 10, 6);
+  const rawNear = await mapUnproject(page, near.x, near.y);
   await page.mouse.click(near.x, near.y);
 
-  // A click far from every street and stop keeps its raw position.
-  const far = await page.evaluate(() => {
-    const p = window.__map.project([-73.5060, 45.5100]);
-    return { x: Math.round(p.x) - 200, y: Math.round(p.y) + 100 };
-  });
-  const rawFar = await page.evaluate(
-    ({ x, y }) => window.__map.unproject([x, y]),
-    far,
-  );
+  // With a street network loaded, a click far from every street and
+  // stop places NOTHING — off-network waypoints are not drivable.
+  const far = await mapViewportPoint(page, [-73.5060, 45.5100], -200, 100);
   await page.mouse.click(far.x, far.y);
+  await expect(page.getByText(/off-network points are ignored/)).toBeVisible();
 
   const drawn = (await mapData(page, "detour-draft")).features.filter(
     (f) => f.geometry.type === "Point",
   );
-  expect(drawn.length).toBe(2);
+  expect(drawn.length).toBe(1); // only the snapped street click
 
   const [snappedLon, snappedLat] = drawn[0].geometry.coordinates;
   const snappedDist = Math.min(...sideSt.map(([a, b]) => distToSeg(snappedLon, snappedLat, a, b)));
@@ -384,34 +410,22 @@ test("detour drawing snaps to an imported street network", async ({ page }) => {
   expect(Math.hypot(snappedLon - rawNear.lng, snappedLat - rawNear.lat))
     .toBeGreaterThan(1e-5); // not the raw click
 
-  const [rawLon, rawLat] = drawn[1].geometry.coordinates;
-  expect(rawLon).toBeCloseTo(rawFar.lng, 7);
-  expect(rawLat).toBeCloseTo(rawFar.lat, 7);
-
-  // A drag along the street places waypoints every ~30 px; each step
-  // ROUTES along the graph, so the trace commits Side St's own
-  // vertices — including v1 (-73.5060, 45.5100), crossed mid-stroke.
-  const start = await page.evaluate(() => {
-    const p = window.__map.project([-73.5025, 45.5065]); // mid first segment
-    return { x: Math.round(p.x), y: Math.round(p.y) };
-  });
-  const end = await page.evaluate(() => {
-    const p = window.__map.project([-73.5095, 45.5135]); // mid second segment
-    return { x: Math.round(p.x), y: Math.round(p.y) };
-  });
-  await page.mouse.move(start.x, start.y);
-  await page.mouse.down();
-  for (let i = 1; i <= 6; i++) {
-    await page.mouse.move(
-      Math.round(start.x + (end.x - start.x) * (i / 6)),
-      Math.round(start.y + (end.y - start.y) * (i / 6)),
-    );
-  }
-  await page.mouse.up();
+  // Click-to-confirm: two clicks along Side St; the second click
+  // ROUTES through the graph, so the trace commits Side St's own
+  // vertices — including v1 (-73.5060, 45.5100), crossed on the way.
+  const start = await mapViewportPoint(page, [-73.5025, 45.5065]); // mid first segment
+  const end = await mapViewportPoint(page, [-73.5095, 45.5135]); // mid second segment
+  await page.mouse.click(start.x, start.y);
+  // Between clicks nothing commits — the routed path to the cursor is
+  // only PREVIEWED (a line + the snapped cursor dot).
+  await page.mouse.move(end.x - 8, end.y - 8);
+  const preview = (await mapData(page, "detour-preview")).features;
+  expect(preview.length).toBe(2);
+  await page.mouse.click(end.x, end.y);
   const stroked = (await mapData(page, "detour-draft")).features.filter(
     (f) => f.geometry.type === "Point",
   );
-  expect(stroked.length).toBeGreaterThan(4); // 2 clicks + routed waypoints
+  expect(stroked.length).toBeGreaterThanOrEqual(4); // 3 clicks + routed corner
   const v1 = stroked.some((f) =>
     Math.hypot(f.geometry.coordinates[0] + 73.5060, f.geometry.coordinates[1] - 45.5100) < 1e-6
   );
@@ -441,11 +455,7 @@ test("detour trace routes along the street graph, not straight lines", async ({ 
   // → corner (-73.5080, 45.5040) → end (-73.5080, 45.5090). A
   // straight-line trace would cut the diagonal; the routed trace
   // must commit the corner vertex exactly.
-  const clickAt = (lonLat) =>
-    page.evaluate(([lon, lat]) => {
-      const p = window.__map.project([lon, lat]);
-      return { x: Math.round(p.x), y: Math.round(p.y) };
-    }, lonLat);
+  const clickAt = (lonLat) => mapViewportPoint(page, lonLat);
   const e1 = await clickAt([-73.5030, 45.5040]);
   const e2 = await clickAt([-73.5080, 45.5080]);
   await page.mouse.click(e1.x, e1.y);
@@ -541,6 +551,16 @@ test("persona tabs split the workflows", async ({ page }) => {
   await switchPersona(page, "Planner");
   await expect(page.getByRole("heading", { name: "Network document" })).toBeVisible();
   await expect(page.locator("#data-sources")).toBeHidden();
+
+  // The map is ONE canvas across personas: switching never remounts
+  // it (the camera would visibly jump and every source would clear).
+  const mapId = await page.evaluate(() => {
+    window.__map.__marker = Symbol ? String(Math.random()) : "x";
+    return window.__map.__marker;
+  });
+  await switchPersona(page, "Rider");
+  const sameMap = await page.evaluate((id) => window.__map.__marker === id, mapId);
+  expect(sameMap).toBe(true);
 });
 
 test("planner authors a network and the rider uses it", async ({ page }) => {
@@ -563,8 +583,6 @@ test("planner authors a network and the rider uses it", async ({ page }) => {
   // opens in the drawer, and the map frames the pattern.
   await page.getByRole("button", { name: "Open service WK:pat-10-0-0" }).click();
   await expect(page.locator(".planner-drawer")).toBeVisible();
-  // The persona switch remounted the map — wait for the new instance.
-  await waitForMap(page);
   await expect
     .poll(async () => (await mapData(page, "planner")).features.length)
     .toBeGreaterThan(0);
@@ -592,4 +610,166 @@ test("planner authors a network and the rider uses it", async ({ page }) => {
   await page.locator("#plan-time").fill("07:30");
   await page.getByRole("button", { name: "Plan trip" }).click();
   await expect(page.locator(".plan-overlay").getByText("08:15", { exact: true })).toBeVisible();
+});
+
+test("a malformed saved record cannot wedge apply and retire", async ({ page }) => {
+  // A document written by an older build — junk entries and records
+  // missing serde-defaulted fields. Restore must DROP the junk, FILL
+  // the defaults, and leave Apply/Retire working (a malformed entry
+  // used to throw inside cloneEdits: both buttons died silently).
+  test.setTimeout(90_000);
+  await page.goto("/");
+  await page.evaluate(async () => {
+    const junk = [
+      { id: "junk-entry", status: "draft", rev: 1, updated_at: 0 }, // no diversion
+      {
+        id: "old-shape", status: "retired", rev: 1, updated_at: 1, // pre-detour build
+        diversion: {
+          id: "div-old", route_id: "10", first_kept_stop: "A", last_kept_stop: "B",
+          start_date: "2026-10-23", end_date: "2026-10-23",
+        },
+      },
+      {
+        id: "junk-detour", status: "draft", rev: 1, updated_at: 0, // detour is not a polyline
+        diversion: {
+          id: "div-j", route_id: "10", first_kept_stop: "A", last_kept_stop: "B",
+          start_date: "2026-10-23", end_date: "2026-10-23", detour: "polyline??",
+        },
+      },
+    ];
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.open("keyval-store", 1); // idb-keyval's default store
+      req.onupgradeneeded = () => req.result.createObjectStore("keyval");
+      req.onsuccess = () => {
+        const tx = req.result.transaction("keyval", "readwrite");
+        tx.objectStore("keyval").put(junk, "transit:edits");
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  });
+  await page.reload();
+  await waitForMap(page);
+  await loadFeed(page);
+  await switchPersona(page, "Dispatcher");
+
+  // The junk is gone and the old-shape record survived (filled): no
+  // "undefined" chips. It is retired, so it lives behind the
+  // disclosure — reveal it.
+  await page.getByRole("button", { name: /Show \d+ retired/ }).click();
+  const listText = await page.locator(".diversion-list").innerText();
+  expect(listText).toContain("Main & 1st → Main & 2nd");
+  expect(listText).not.toContain("undefined");
+  expect(listText).not.toContain("junk");
+  await page.getByRole("button", { name: /Hide \d+ retired/ }).click();
+
+  // Apply works (this is the button that was dead).
+  await makeDiversion(page, 7);
+  // Retire works: the record LEAVES the working list...
+  const item = page.locator(".diversion-list li", { hasText: "+7 min" });
+  await item.locator("input[type=checkbox]").click();
+  await expect(item).toHaveCount(0);
+  // ...and the tombstone is revealable and restorable.
+  await page.getByRole("button", { name: /Show \d+ retired/ }).click();
+  const tombstone = page.locator(".diversion-list li.inactive", { hasText: "+7 min" });
+  await expect(tombstone).toBeVisible();
+  await tombstone.locator("input[type=checkbox]").click();
+  await expect(page.locator(".diversion-list li", { hasText: "+7 min" })).toBeVisible();
+});
+
+test("escape exits tracing mode", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+  await switchPersona(page, "Dispatcher");
+  await settleOnStops(page);
+
+  await page.getByRole("button", { name: "New diversion" }).click();
+  await page.getByLabel("Route").selectOption("10");
+  await page.getByRole("button", { name: "Trace path on map" }).click();
+  await expect(page.getByText("click confirms · drag pans")).toBeVisible();
+
+  // ESC: the drawing reflex. The draft survives; only the mode ends.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Trace path on map" })).toBeVisible();
+
+  // Off-mode clicks commit nothing.
+  const center = await page.evaluate(() => window.__map.getCenter());
+  const c = await mapViewportPoint(page, [center.lng, center.lat]);
+  await page.mouse.click(c.x, c.y);
+  const pts = await page.evaluate(() => {
+    const d = window.__map.getSource("detour-draft").serialize().data;
+    return d.features.filter((f) => f.geometry.type === "Point").length;
+  });
+  expect(pts).toBe(0);
+});
+
+test("a selected trip can always be cleared from the map", async ({ page }) => {
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+  await settleOnStops(page);
+
+  // Select t30 at stop A (08:40 — the first anchor, so leftover
+  // diversions from other tests do not shift it): its route line
+  // appears. (The first row can be a one-stop trip — no geometry.)
+  await page.getByLabel("Stop").selectOption("A");
+  await page.locator(".clickable-row", { hasText: "08:40" }).click();
+  await expect
+    .poll(async () => (await mapData(page, "trip")).features.length)
+    .toBeGreaterThan(0);
+
+  // Clicking the row again deselects — the line leaves the map.
+  await page.locator(".clickable-row", { hasText: "08:40" }).click();
+  await expect
+    .poll(async () => (await mapData(page, "trip")).features.length)
+    .toBe(0);
+
+  // And a fresh trip plan supersedes a lingering selection: the
+  // itinerary replaces the trip line, not adds to it.
+  await page.locator(".clickable-row", { hasText: "08:40" }).click();
+  await expect
+    .poll(async () => (await mapData(page, "trip")).features.length)
+    .toBeGreaterThan(0);
+  await page.getByLabel("From", { exact: true }).selectOption("A");
+  await page.getByLabel("To", { exact: true }).selectOption("B");
+  await page.locator("#plan-time").fill("07:30");
+  await page.getByRole("button", { name: "Plan trip" }).click();
+  await expect(page.locator(".plan-overlay")).toBeVisible();
+  expect((await mapData(page, "trip")).features.length).toBe(0);
+  expect((await mapData(page, "itinerary")).features.length).toBeGreaterThan(0);
+});
+
+test("hiding the panel gives the map the full screen", async ({ page }) => {
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+
+  // Collapse: the sidebar leaves the grid and the map takes every
+  // pixel — the canvas resizes with its container (a grid-item bug
+  // once left the map in a dead 0px column behind a black screen).
+  await page.getByRole("button", { name: "Hide panel" }).click();
+  await expect(page.getByRole("button", { name: "Show panel" })).toBeVisible();
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const r = document.querySelector(".map-side").getBoundingClientRect();
+        return { w: Math.round(r.width), h: Math.round(r.height) };
+      }),
+    )
+    .toEqual({ w: page.viewportSize().width, h: page.viewportSize().height });
+  await expect
+    .poll(async () => page.evaluate(() => window.__map.getCanvas().getBoundingClientRect().width))
+    .toBeGreaterThan(1000);
+
+  // Restore: the sidebar returns, the map resizes back.
+  await page.getByRole("button", { name: "Show panel" }).click();
+  await expect(page.getByRole("heading", { name: "Departures" })).toBeVisible();
+  await expect
+    .poll(async () =>
+      page.evaluate(() => window.innerWidth - document.querySelector(".map-side").getBoundingClientRect().width),
+    )
+    .toBeGreaterThan(300);
 });

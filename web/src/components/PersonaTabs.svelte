@@ -11,8 +11,11 @@
   ];
 
   function setPersona(id: "rider" | "dispatcher" | "planner") {
-    // Leaving the planner workspace clears its map focus.
+    // Leaving the planner workspace clears its map focus; leaving
+    // the dispatcher mid-trace ends the trace (the map persists, the
+    // modes do not).
     if (app.persona === "planner" && id !== "planner") clearSelection();
+    if (app.persona === "dispatcher" && id !== "dispatcher") app.drawingDetour = false;
     app.persona = id;
     localStorage.setItem("transit:persona", id);
   }

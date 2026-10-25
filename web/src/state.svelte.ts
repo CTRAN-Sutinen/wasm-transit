@@ -125,8 +125,74 @@ let editDocument = $state.raw<EditRecord[]>([]);
 export function getEditDocument(): EditRecord[] {
   return editDocument;
 }
-export function setEditDocument(next: EditRecord[]): void {
-  editDocument = next;
+
+/// Shape guard for records crossing IN from outside: the persisted
+/// document and sync responses were written by older builds (and the
+/// server treats documents as opaque JSON). One malformed entry
+/// must not wedge every later mutation — `cloneEdits` throws on a
+/// missing `diversion`, silently killing Apply and Retire (this
+/// shipped: a stale IndexedDB document made the dispatcher's buttons
+/// dead). Mirrors the artifact's serde shape: fields with
+/// `#[serde(default)]` are filled when absent, records missing
+/// REQUIRED fields are dropped (with a status line saying so).
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const STATUSES = new Set(["draft", "submitted", "accepted", "retired"]);
+
+function looksLikeRecord(r: unknown): r is EditRecord {
+  if (typeof r !== "object" || r === null) return false;
+  const rec = r as Record<string, unknown>;
+  if (typeof rec.id !== "string" || !STATUSES.has(String(rec.status))) return false;
+  if (typeof rec.rev !== "number" || typeof rec.updated_at !== "number") return false;
+  const d = rec.diversion as Record<string, unknown> | undefined;
+  if (typeof d !== "object" || d === null) return false;
+  for (const f of ["id", "route_id", "first_kept_stop", "last_kept_stop"]) {
+    if (typeof d[f] !== "string") return false;
+  }
+  if (!ISO_DATE.test(String(d.start_date)) || !ISO_DATE.test(String(d.end_date))) return false;
+  // A detour must be a polyline of numeric [lat, lon] objects — junk
+  // here is exactly what serde would reject, wedging set_diversions.
+  if (d.detour != null) {
+    if (!Array.isArray(d.detour)) return false;
+    for (const p of d.detour) {
+      const pt = p as Record<string, unknown>;
+      if (typeof pt?.lat !== "number" || typeof pt?.lon !== "number"
+        || !Number.isFinite(pt.lat) || !Number.isFinite(pt.lon)) return false;
+    }
+  }
+  return true;
+}
+
+export function sanitizeEdits(input: unknown): EditRecord[] {
+  if (!Array.isArray(input)) return [];
+  const kept: EditRecord[] = [];
+  let dropped = 0;
+  for (const r of input) {
+    if (!looksLikeRecord(r)) {
+      dropped++;
+      continue;
+    }
+    kept.push({
+      ...r,
+      diversion: {
+        ...r.diversion,
+        // serde defaults, filled so a record from before the field
+        // existed still validates in the artifact.
+        direction_id: r.diversion.direction_id ?? null,
+        skipped_stops: r.diversion.skipped_stops ?? [],
+        detour: r.diversion.detour ?? null,
+        added_secs: r.diversion.added_secs ?? 0,
+      },
+    });
+  }
+  if (dropped > 0) {
+    app.status = `Dropped ${dropped} malformed edit record(s) from the saved document — they were not valid under the current schema.`;
+    console.warn(`dropped ${dropped} malformed edit record(s)`);
+  }
+  return kept;
+}
+
+export function setEditDocument(next: unknown): void {
+  editDocument = sanitizeEdits(next);
 }
 
 /// The authored network document (transit-network `Network`) — same

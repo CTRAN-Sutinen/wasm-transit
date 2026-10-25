@@ -7,28 +7,31 @@ body {
   overflow: hidden;
 }
 #app { height: 100dvh; }
-.shell { position: relative; height: 100%; }
 
-/* The map fills the viewport; everything else floats over it. */
+/* One shell: sidebar (persona workflow) + map, side by side. The map
+   never remounts on a persona switch — only the sidebar's content
+   changes. */
+.app-shell { display: grid; grid-template-columns: minmax(320px, 400px) 1fr; height: 100%; }
+.map-side { position: relative; height: 100%; }
+
+/* The map fills its side; overlays (plan overlay, planner drawer)
+   float over it. */
 #map { position: absolute; inset: 0; height: 100%; width: 100%; }
 
-/* Floating panel: the app UI. Translucent, blurred, scrollable. */
-.panel {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  bottom: 12px;
-  width: min(440px, calc(100% - 24px));
-  background: color-mix(in srgb, Canvas 90%, transparent);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-  border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
-  border-radius: 12px;
+/* The sidebar: opaque, scrollable — it owns its pixels, so nothing
+   paints underneath it. Collapsible to give the map the screen. */
+.sidebar {
   overflow-y: auto;
   padding: 0.75rem 1rem 1.25rem;
   z-index: 1;
+  background: Canvas;
+  border-right: 1px solid color-mix(in srgb, currentColor 12%, transparent);
 }
-.panel.hidden { display: none; }
+.sidebar.hidden { display: none; }
+/* A display:none item leaves the grid — the map-side becomes the
+   first (only) item, so there must be exactly one track for it, not
+   a dead 0px column it would land in. */
+.app-shell:has(.sidebar.hidden) { grid-template-columns: 1fr; }
 .panel-header {
   display: flex;
   justify-content: space-between;
@@ -247,7 +250,9 @@ input[type="date"], input[type="number"] { font-size: 0.9rem; padding: 0.2rem; }
 .fselect { display: inline-flex; gap: 0.25rem; align-items: center; }
 .fselect input { width: 6rem; }
 
-/* planner workspace: a different skeleton than the floating panel */
+/* Planner workspace pieces: the rail's section styling (the rail
+   itself lives in the shared sidebar now) and the drill-down drawer
+   over the map. */
 .planner-shell { position: relative; display: grid; grid-template-columns: 300px 1fr; height: 100%; }
 .planner-shell .tabs { margin: 0 0 0.5rem; }
 .rail { overflow-y: auto; padding: 0.6rem 0.8rem 1.5rem; z-index: 1;

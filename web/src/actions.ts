@@ -194,11 +194,23 @@ export function selectStop(stopId: string): void {
 }
 
 export function showTrip(tripId: string): void {
+  // Clicking the selected row again deselects: the route line always
+  // has a way off the map.
+  if (app.selectedTripId === tripId) {
+    clearTrip();
+    return;
+  }
   app.selectedTripId = tripId;
   // The date scopes operator edits: diverted trips draw patched shapes.
   const feature = app.gtfs?.trip_path_geojson(tripId, serviceDate());
   // No geometry -> clear the path, but never wipe other state.
   app.tripFeature = feature ?? null;
+}
+
+/** Deselect the board's trip: the highlighted row and its map line. */
+export function clearTrip(): void {
+  app.selectedTripId = null;
+  app.tripFeature = null;
 }
 
 export function refreshNow(): void {
@@ -250,6 +262,9 @@ export function planTrip(fromStopId: string, toStopId: string, departTime: strin
         ? null
         : "No trip found within 6 legs — try a different time or closer stops.";
     }
+    // A new plan is the focus now — the previously selected trip's
+    // line would fight the itinerary for the same pixels.
+    clearTrip();
     app.itineraryFeatures = buildItineraryFeatures(app.plan);
   } catch (e) {
     app.planNotice = `Planning failed: ${e.message}`;
@@ -347,11 +362,17 @@ export function pushEdits(): void {
 }
 
 export function mutateEdits(fn: (edits: EditRecord[]) => void): void {
-  const next = cloneEdits(getEditDocument());
-  fn(next);
-  setEditDocument(next);
-  pushEdits();
-  schedulePersist();
+  // Never silent: a wedged document reads as dead buttons otherwise
+  // (Apply and Retire both go through here).
+  try {
+    const next = cloneEdits(getEditDocument());
+    fn(next);
+    setEditDocument(next);
+    pushEdits();
+    schedulePersist();
+  } catch (e) {
+    error(e);
+  }
 }
 
 export function startDiversion(): void {

@@ -7,15 +7,17 @@
   import TripPlanner from "./components/TripPlanner.svelte";
   import PlanOverlay from "./components/PlanOverlay.svelte";
   import DiversionPanel from "./components/DiversionPanel.svelte";
-  import PlannerWorkspace from "./components/PlannerWorkspace.svelte";
+  import PlannerRail from "./components/PlannerRail.svelte";
+  import PlannerDrawer from "./components/PlannerDrawer.svelte";
   import PersonaTabs from "./components/PersonaTabs.svelte";
   import { app } from "./state.svelte.js";
   import { loadRtFromUrl, loadVpFromUrl, saveSettings } from "./actions";
 
-  // Two skeletons, one app: the rider/dispatcher views float a focused
-  // panel over the full-viewport map; the planner gets a workspace
-  // (rail + map + drill-down editor) because authoring is a different
-  // job from reading information.
+  // One shell, one persistent map. The sidebar carries the persona
+  // (tabs + workflow); the map never remounts on a persona switch —
+  // it is the same canvas, drawing different state. Collapsible when
+  // the map is the whole point (rider following a trip, dispatcher
+  // mid-trace).
   let panelOpen = $state(localStorage.getItem("transit:panel-open") !== "closed");
 
   const summary = $derived(app.gtfs ? app.gtfs.summary() : null);
@@ -53,53 +55,55 @@
   });
 </script>
 
-{#if app.persona === "planner"}
-  <PlannerWorkspace />
-{:else}
-  <div class="shell">
+<div class="app-shell">
+  <aside class="sidebar" class:hidden={!panelOpen}>
+    <header class="panel-header">
+      <h1>rustwasm transit</h1>
+      <button onclick={togglePanel}>Hide panel</button>
+    </header>
+
+    <PersonaTabs />
+
+    <p class="muted">{app.status}</p>
+
+    {#if summary}
+      <p class="feed-line">
+        {summary.stops} stops · {summary.routes} routes · {summary.trips} trips · {summary.stop_times} stop times
+      </p>
+    {/if}
+
+    {#if app.persona === "planner"}
+      <PlannerRail />
+    {:else if app.gtfs}
+      {#if app.persona === "rider"}
+        <DepartureBoard />
+        <TripPlanner />
+      {:else}
+        <BlocksPanel />
+        <DiversionPanel />
+      {/if}
+    {/if}
+
+    {#if app.persona !== "planner" && app.rtOverview}
+      <RtPanel />
+    {/if}
+  </aside>
+
+  <div class="map-side">
     <MapView />
 
-    <aside class="panel" class:hidden={!panelOpen}>
-      <header class="panel-header">
-        <h1>rustwasm transit</h1>
-        <button onclick={togglePanel}>{panelOpen ? "Hide" : "Show"} panel</button>
-      </header>
-
-      <PersonaTabs />
-
-      <p class="muted">{app.status}</p>
-
-      {#if summary}
-        <p class="feed-line">
-          {summary.stops} stops · {summary.routes} routes · {summary.trips} trips · {summary.stop_times} stop times
-        </p>
-      {/if}
-
-      {#if app.persona === "rider"}
-        {#if app.gtfs}
-          <DepartureBoard />
-          <TripPlanner />
-        {/if}
-      {:else if app.persona === "dispatcher"}
-        {#if app.gtfs}
-          <BlocksPanel />
-          <DiversionPanel />
-        {/if}
-      {/if}
-
-      {#if app.rtOverview}
-        <RtPanel />
-      {/if}
-    </aside>
-
-    {#if !panelOpen}
-      <button class="panel-fab" onclick={togglePanel}>Show panel</button>
+    {#if app.persona === "planner"}
+      <PlannerDrawer />
     {/if}
 
     <PlanOverlay />
   </div>
+</div>
+
+{#if !panelOpen}
+  <button class="panel-fab" onclick={togglePanel}>Show panel</button>
 {/if}
 
 <!-- App config (feed + street network), shared by every persona:
-     fixed-position, so it floats over both skeletons. -->
+     fixed-position, so it floats over the whole shell. -->
 <DataSources />

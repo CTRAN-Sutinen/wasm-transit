@@ -90,59 +90,145 @@
   /// Snap radius in pixels: forgiving, but not fighting the drawer.
   const SNAP_PX = 14;
 
-  /// One waypoint step of the detour trace. The waypoint lands on the
-  /// nearest street or stop within a few pixels (raw otherwise); the
-  /// path from the previous waypoint is ROUTED along the street
-  /// graph inside the artifact, so the committed trace is street
-  /// geometry — not freehand chords. Falls back to a straight line
-  /// when no street network is imported or no route exists.
-  function commitWaypoint(e: maplibregl.MapMouseEvent): void {
+  /// Where a trace click at `e` would land: the nearest stop within
+  /// the snap radius, a snapped street position, or — only when NO
+  /// street network is imported — the raw click. Null when a network
+  /// is loaded and the click hits neither: waypoints must stay on the
+  /// imported graph (an off-street detour is not drivable).
+  type WaypointTarget = {
+    kind: "stop" | "street" | "raw";
+    /// [lat, lon] where the waypoint would be committed.
+    point: [number, number];
+    /// Graph address when the target is on a street — the next
+    /// step routes from here.
+    streetPos: StreetPosition | null;
+  };
+
+  function resolveWaypoint(e: maplibregl.MapMouseEvent): WaypointTarget | null {
     const streets = getStreets();
     // The artifact snaps; JS owns pixels (thresholds are visual).
-    const streetPos = streets && app.wasm
-      ? app.wasm.street_snap(streets.streetsId, e.lngLat.lat, e.lngLat.lng)
-      : null;
     const pxOf = (lat: number, lon: number): number => {
       const p = map.project([lon, lat]);
       return Math.hypot(p.x - e.point.x, p.y - e.point.y);
     };
-    const streetPx = streetPos ? pxOf(streetPos.lat, streetPos.lon) : Infinity;
-
+    let streetPos: StreetPosition | null = null;
+    let streetPx = Infinity;
+    if (streets && app.wasm) {
+      const snap = app.wasm.street_snap(streets.streetsId, e.lngLat.lat, e.lngLat.lng);
+      if (snap) {
+        const px = pxOf(snap.lat, snap.lon);
+        if (px <= SNAP_PX) {
+          streetPos = snap;
+          streetPx = px;
+        }
+      }
+    }
     // Nearest stop within the threshold.
-    let stop: { lat: number; lon: number } | null = null;
+    let stop: [number, number] | null = null;
     let stopPx = SNAP_PX;
     for (const [lat, lon] of stopPts) {
       const px = pxOf(lat, lon);
       if (px <= stopPx) {
         stopPx = px;
-        stop = { lat, lon };
+        stop = [lat, lon];
       }
     }
-
     if (stop && stopPx <= streetPx) {
+      return { kind: "stop", point: stop, streetPos };
+    }
+    if (streetPos) {
+      return { kind: "street", point: [streetPos.lat, streetPos.lon], streetPos };
+    }
+    if (!streets) {
+      return { kind: "raw", point: [e.lngLat.lat, e.lngLat.lng], streetPos: null };
+    }
+    return null;
+  }
+
+  /// One waypoint step of the detour trace: the waypoint lands on the
+  /// nearest street or stop within a few pixels; the path from the
+  /// previous waypoint is ROUTED along the street graph inside the
+  /// artifact, so the committed trace is street geometry — not
+  /// freehand chords. Falls back to a straight line when no street
+  /// network is imported or no route exists.
+  function commitWaypoint(e: maplibregl.MapMouseEvent): void {
+    const streets = getStreets();
+    const target = resolveWaypoint(e);
+    if (!target) {
+      app.status = "Waypoint not placed — click a street or a stop; off-network points are ignored.";
+      return;
+    }
+    if (target.kind === "stop") {
       // A stop waypoint: commit the stop exactly; route onward from
       // the street beneath it when there is one.
       const anchor = streets && app.wasm
-        ? app.wasm.street_snap(streets.streetsId, stop.lat, stop.lon)
+        ? app.wasm.street_snap(streets.streetsId, target.point[0], target.point[1])
         : null;
-      addDetourSlice([[stop.lat, stop.lon]], anchor);
+      addDetourSlice([target.point], anchor);
       return;
     }
-    if (streetPos && streetPx <= SNAP_PX && streets && app.wasm) {
+    if (target.kind === "street" && streets && app.wasm) {
       const prev: StreetPosition | null =
         app.diversionDraft?.slices.at(-1)?.endPos ?? null;
       const routed = prev
-        ? app.wasm.street_route(streets.streetsId, prev, streetPos)
+        ? app.wasm.street_route(streets.streetsId, prev, target.streetPos!)
         : [];
       if (routed.length) {
-        addDetourSlice(routed.map((p) => [p.lat, p.lon] as [number, number]), streetPos);
+        addDetourSlice(routed.map((p) => [p.lat, p.lon] as [number, number]), target.streetPos);
         return;
       }
       if (prev) app.status = "No street path found — using a direct line.";
-      addDetourSlice([[streetPos.lat, streetPos.lon]], streetPos);
+      addDetourSlice([target.point], target.streetPos);
       return;
     }
-    addDetourSlice([[e.lngLat.lat, e.lngLat.lng]], null);
+    addDetourSlice([target.point], null);
+  }
+
+  /// Live preview of the next trace segment: the routed street path
+  /// from the last confirmed waypoint to where the click would land
+  /// (the same resolution rule as commitWaypoint). Nothing previews
+  /// where a click would place nothing. Purely visual; the click
+  /// confirms.
+  function previewSegment(e: maplibregl.MapMouseEvent): void {
+    const draft = app.diversionDraft;
+    if (!draft?.detour.length) {
+      src("detour-preview").setData(EMPTY_FC);
+      return;
+    }
+    const lastPt = draft.detour[draft.detour.length - 1];
+    const target = resolveWaypoint(e);
+    if (!target) {
+      src("detour-preview").setData(EMPTY_FC);
+      return;
+    }
+    const streets = getStreets();
+    const prev = draft.slices.at(-1)?.endPos ?? null;
+    let path: [number, number][] = [];
+    if (target.streetPos && prev && streets && app.wasm) {
+      path = app.wasm.street_route(streets.streetsId, prev, target.streetPos)
+        .map((p) => [p.lat, p.lon] as [number, number]);
+    }
+    // No route (or none possible): preview the direct line — that is
+    // what a click would commit.
+    if (!path.length) path = [target.point];
+    src("detour-preview").setData({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "LineString",
+            coordinates: [[lastPt[1], lastPt[0]], ...path.map(([lat, lon]) => [lon, lat])],
+          },
+        },
+        {
+          type: "Feature",
+          properties: {},
+          geometry: { type: "Point", coordinates: [target.point[1], target.point[0]] },
+        },
+      ],
+    });
   }
 
   onMount(() => {
@@ -211,20 +297,59 @@
         });
 
         map.addSource("vehicles", { type: "geojson", data: EMPTY_FC });
+        // Buses as small rectangle ICONS, drawn on a canvas — constant
+        // screen size at every zoom (a meter-based rect vanishes
+        // below z13), rotated to the vehicle's bearing, colored by
+        // the delay join: green on time, amber late, red very late,
+        // grey when no prediction exists. Square when the feed gives
+        // no bearing — an axis-aligned rectangle would imply a
+        // direction the data doesn't support. The bus number rides
+        // above each rectangle: route badge · vehicle label.
+        const busIcons = (shape: "bus" | "busq"): void => {
+          for (const fill of ["#888888", "#109648", "#e6a23c", "#d02b2b"]) {
+            const c = document.createElement("canvas");
+            c.width = shape === "bus" ? 28 : 16;
+            c.height = 16;
+            const g = c.getContext("2d")!;
+            g.fillStyle = "#fff";
+            g.fillRect(0, 0, c.width, c.height);
+            g.fillStyle = fill;
+            g.fillRect(2, 2, c.width - 4, 12);
+            map.addImage(`${shape}-${fill.slice(1)}`, {
+              width: c.width,
+              height: c.height,
+              data: g.getImageData(0, 0, c.width, c.height).data,
+            });
+          }
+        };
+        busIcons("bus");
+        busIcons("busq");
         map.addLayer({
-          id: "vehicle-dots", type: "circle", source: "vehicles",
-          paint: {
-            "circle-radius": 6,
-            // Delay from joined trip updates: green on time, amber late,
-            // red very late, grey when no prediction exists.
-            "circle-color": ["case",
-              ["==", ["get", "delay"], null], "#888",
-              ["<=", ["get", "delay"], 60], "#109648",
-              ["<=", ["get", "delay"], 300], "#e6a23c",
-              "#d02b2b",
+          id: "vehicle-bodies", type: "symbol", source: "vehicles",
+          layout: {
+            "icon-image": ["concat",
+              ["case", ["==", ["get", "bearing"], null], "busq-", "bus-"],
+              ["case",
+                ["==", ["get", "delay"], null], "888888",
+                ["<=", ["get", "delay"], 60], "109648",
+                ["<=", ["get", "delay"], 300], "e6a23c",
+                "d02b2b",
+              ],
             ],
-            "circle-stroke-width": 2,
-            "circle-stroke-color": "#fff",
+            "icon-rotate": ["coalesce", ["get", "bearing"], 0],
+            "icon-size": 1,
+            "icon-allow-overlap": false,
+            "text-field": ["get", "label_text"],
+            "text-font": ["Noto Sans Regular"],
+            "text-size": 11,
+            "text-offset": [0, -1.1],
+            "text-anchor": "bottom",
+            "text-allow-overlap": false,
+          },
+          paint: {
+            "text-color": "#222",
+            "text-halo-width": 1.5,
+            "text-halo-color": "#fff",
           },
         });
 
@@ -267,6 +392,22 @@
           id: "detour-draft-verts", type: "circle", source: "detour-draft",
           paint: { "circle-radius": 4, "circle-color": "#c2185b" },
         });
+        // The live preview of the next trace segment: routed path to
+        // the cursor, thin and dashed so it reads as tentative — it
+        // vanishes the moment the click confirms and the committed
+        // detour-draft layer takes over.
+        map.addSource("detour-preview", { type: "geojson", data: EMPTY_FC });
+        map.addLayer({
+          id: "detour-preview-line", type: "line", source: "detour-preview",
+          filter: ["==", ["geometry-type"], "LineString"],
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: { "line-width": 2, "line-color": "#c2185b", "line-opacity": 0.6, "line-dasharray": [2, 2] },
+        });
+        map.addLayer({
+          id: "detour-preview-dot", type: "circle", source: "detour-preview",
+          filter: ["==", ["geometry-type"], "Point"],
+          paint: { "circle-radius": 4, "circle-color": "#fff", "circle-stroke-width": 2, "circle-stroke-color": "#c2185b" },
+        });
 
         // Planner focus: the selected element's geometry (the drill-
         // down target), framed by its own effect below.
@@ -286,33 +427,33 @@
           },
         });
 
-        // Detour drawing: waypoints. A click places one waypoint; a
-        // drag places them every ~30 px along the stroke. Each step
-        // routes along the street graph (see commitWaypoint). Panning
-        // is off while the trace mode is armed — Done drawing
-        // re-enables it (the effect below owns the toggle).
-        let drawingStroke = false;
-        let lastWaypointPx: [number, number] | null = null;
-        map.on("mousedown", (e) => {
-          if (!app.drawingDetour) return;
-          drawingStroke = true;
-          commitWaypoint(e);
-          lastWaypointPx = [e.point.x, e.point.y];
-        });
+        // Detour drawing: click to confirm each segment. Between
+        // clicks the routed path to the cursor is PREVIEWED (see
+        // previewSegment); the mouse never commits anything by
+        // itself, so the trace stays under the dispatcher's control.
+        // Panning stays ON — MapLibre only fires "click" when the
+        // press did not become a drag, so tracing and panning cannot
+        // conflict, and clicks over the panel never reach the canvas.
+        let previewPx: [number, number] | null = null;
         map.on("mousemove", (e) => {
-          if (!drawingStroke || !lastWaypointPx) return;
-          // 30 px between waypoints: routing makes denser sampling
-          // pointless, and each step is a cheap graph search.
-          if (Math.hypot(e.point.x - lastWaypointPx[0], e.point.y - lastWaypointPx[1]) < 30) return;
-          commitWaypoint(e);
-          lastWaypointPx = [e.point.x, e.point.y];
+          if (!app.drawingDetour) return;
+          // Recompute only when the cursor actually moved: each step
+          // is a graph search inside the artifact.
+          if (previewPx && Math.hypot(e.point.x - previewPx[0], e.point.y - previewPx[1]) < 3) return;
+          previewPx = [e.point.x, e.point.y];
+          previewSegment(e);
         });
-        const endStroke = (): void => {
-          drawingStroke = false;
-          lastWaypointPx = null;
-        };
-        map.on("mouseup", endStroke);
-        map.on("dragend", endStroke);
+        map.on("dragstart", () => {
+          if (!app.drawingDetour) return;
+          previewPx = null;
+          src("detour-preview").setData(EMPTY_FC);
+        });
+        map.on("click", (e) => {
+          if (!app.drawingDetour) return;
+          commitWaypoint(e);
+          previewPx = null;
+          src("detour-preview").setData(EMPTY_FC);
+        });
 
         map.on("click", "stops-base", (e) => {
           const stopId = (e.features?.[0]?.properties as Record<string, string> | undefined)?.stop_id;
@@ -322,9 +463,42 @@
           if (app.pickingAnchor) setDiversionAnchor(stopId);
           selectStop(stopId);
         });
-        for (const layer of ["stops-base", "stops-selected", "vehicle-dots"]) {
-          map.on("mouseenter", layer, () => (map.getCanvas().style.cursor = "pointer"));
-          map.on("mouseleave", layer, () => (map.getCanvas().style.cursor = ""));
+        // Click a bus for its details. DOM content (not HTML strings):
+        // feed ids are untrusted text, never markup.
+        map.on("click", "vehicle-bodies", (e) => {
+          const p = e.features?.[0]?.properties as Record<string, string | number | null> | undefined;
+          if (!p) return;
+          const stopName = app.gtfs?.stops().find((s) => s.stop_id === p.stop_id)?.name;
+          const row = (k: string, v: string): void => {
+            const div = document.createElement("div");
+            const b = document.createElement("b");
+            b.textContent = k;
+            div.append(b, document.createTextNode(` ${v}`));
+            content.append(div);
+          };
+          const content = document.createElement("div");
+          const delay = p.delay == null ? null : Number(p.delay);
+          const delayText = delay == null ? "no prediction" : delay <= 0 ? "on time"
+            : `+${Math.round(delay / 60)} min late`;
+          row("Bus", String(p.label_text ?? ""));
+          row("Trip", String(p.trip_id ?? "—"));
+          row("Next stop", stopName ?? String(p.stop_id ?? "—"));
+          row("Delay", delayText);
+          if (p.vehicle_id) row("Vehicle", String(p.vehicle_id));
+          new maplibregl.Popup({ offset: 8, maxWidth: "240px" })
+            .setLngLat(e.lngLat)
+            .setDOMContent(content)
+            .addTo(map);
+        });
+        for (const layer of ["stops-base", "stops-selected", "vehicle-bodies"]) {
+          // While tracing, the crosshair wins — every position on the
+          // canvas is a potential waypoint.
+          map.on("mouseenter", layer, () => {
+            map.getCanvas().style.cursor = app.drawingDetour ? "crosshair" : "pointer";
+          });
+          map.on("mouseleave", layer, () => {
+            map.getCanvas().style.cursor = app.drawingDetour ? "crosshair" : "";
+          });
         }
 
         mapLoaded = true; // the $effects below replay current state
@@ -368,28 +542,36 @@
     src("streets").setData(getStreets()?.geojson ?? EMPTY_FC);
   });
 
-  // The diversion editor's route ghost.
+  // The map persists across persona switches — so each persona-owned
+  // layer DERIVES from the persona: leaving a persona clears its
+  // state from the canvas, returning re-draws it. Without this the
+  // detour ghost would ride along into the rider view.
+
+  // The diversion editor's route ghost (dispatcher).
   $effect(() => {
     if (!mapLoaded) return;
-    src("route-context").setData(app.routeContext ?? EMPTY_FC);
+    const feature = app.persona === "dispatcher" ? app.routeContext : null;
+    src("route-context").setData(feature ?? EMPTY_FC);
   });
 
-  // Stroke mode: the map becomes a drawing surface — no panning
-  // (distinguish stroke from pan), crosshair cursor.
+  // Trace mode: crosshair over the canvas, preview cleared. Panning
+  // stays on — clicks confirm segments, drags pan; MapLibre tells
+  // them apart, so no mode switch is needed. Ends with the persona
+  // too (the map persists; the mode is dispatcher-only).
   $effect(() => {
     if (!mapLoaded) return;
-    if (app.drawingDetour) {
-      map.dragPan.disable();
+    if (app.drawingDetour && app.persona === "dispatcher") {
       map.getCanvas().style.cursor = "crosshair";
     } else {
-      map.dragPan.enable();
       map.getCanvas().style.cursor = "";
+      src("detour-preview").setData(EMPTY_FC);
     }
   });
 
+  // The rider's selected trip (rider-owned).
   $effect(() => {
     if (!mapLoaded) return;
-    const feature = app.tripFeature;
+    const feature = app.persona === "rider" ? app.tripFeature : null;
     src("trip").setData(feature ?? EMPTY_FC);
     if (feature) {
       const coords = feature.geometry.coordinates as [number, number][];
@@ -400,8 +582,10 @@
   $effect(() => {
     if (!mapLoaded) return;
     // Buses signal their lateness by color: join the vehicle's trip_id
-    // against the GTFS-rt trip updates (worst known delay for the trip).
-    const delayByTrip = new Map();
+    // against the GTFS-rt trip updates (worst known delay for the
+    // trip, and the route when the vehicle's own descriptor omits
+    // it — common in real feeds).
+    const tripInfo = new Map<string, { delay: number; routeId: string }>();
     for (const t of app.rtOverview?.trips ?? []) {
       if (!t.trip_id) continue;
       let worst = null;
@@ -409,23 +593,39 @@
         const d = s.departure_delay ?? s.arrival_delay;
         if (d != null) worst = worst == null ? d : Math.max(worst, d);
       }
-      if (worst != null) delayByTrip.set(t.trip_id, worst);
+      if (worst != null) tripInfo.set(t.trip_id, { delay: worst, routeId: t.route_id ?? "" });
     }
-    const features = app.vehicles.map((v) => ({
-      type: "Feature",
-      geometry: { type: "Point", coordinates: [v.lon, v.lat] },
-      properties: {
-        trip_id: v.trip_id ?? "",
-        route_id: v.route_id ?? "",
-        delay: v.trip_id ? (delayByTrip.get(v.trip_id) ?? null) : null,
-      },
-    }));
+    const routeShort = new Map<string, string>();
+    if (app.gtfs) for (const r of app.gtfs.routes()) routeShort.set(r.route_id, r.name);
+    const features = app.vehicles.map((v) => {
+      // The rider-visible bus number, and the small label on the map:
+      // route badge · bus number (falling back to what exists).
+      const info = v.trip_id ? tripInfo.get(v.trip_id) : undefined;
+      const busNo = v.label ?? v.vehicle_id;
+      const routeName = routeShort.get(v.route_id ?? info?.routeId ?? "");
+      const parts = [routeName, busNo].filter(Boolean);
+      return {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [v.lon, v.lat] },
+        properties: {
+          trip_id: v.trip_id ?? "",
+          route_id: v.route_id ?? info?.routeId ?? "",
+          delay: v.trip_id ? (tripInfo.get(v.trip_id)?.delay ?? null) : null,
+          bearing: v.bearing ?? null,
+          stop_id: v.stop_id ?? "",
+          vehicle_id: v.vehicle_id ?? "",
+          label: v.label ?? "",
+          label_text: parts.length ? parts.join(" · ") : (v.trip_id ?? ""),
+        },
+      };
+    });
     src("vehicles").setData({ type: "FeatureCollection", features });
   });
 
+  // The rider's planned itinerary (rider-owned).
   $effect(() => {
     if (!mapLoaded) return;
-    const features = app.itineraryFeatures;
+    const features = app.persona === "rider" ? app.itineraryFeatures : [];
     src("itinerary").setData({ type: "FeatureCollection", features });
     if (features.length) {
       const coords = features.flatMap((f) => f.geometry.coordinates as [number, number][]);
@@ -453,17 +653,18 @@
   });
 
   // The detour draft: vertices as points, the polyline once it has
-  // two of them. (Circle layers only render Point features, line
-  // layers only LineStrings, so one source feeds both layers.)
+  // two of them. Dispatcher-owned. (Circle layers only render Point
+  // features, line layers only LineStrings, so one source feeds both
+  // layers.)
   $effect(() => {
     if (!mapLoaded) return;
-    const pts = app.diversionDraft?.detour ?? [];
-    const features: any[] = pts.map(([lat, lon]: [number, number]) => ({
+    const pts = app.persona === "dispatcher" ? app.diversionDraft?.detour : undefined;
+    const features: any[] = (pts ?? []).map(([lat, lon]: [number, number]) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: [lon, lat] },
       properties: {},
     }));
-    if (pts.length >= 2) {
+    if (pts && pts.length >= 2) {
       features.push({
         type: "Feature",
         geometry: { type: "LineString", coordinates: pts.map(([lat, lon]: [number, number]) => [lon, lat] as [number, number]) },
@@ -474,10 +675,10 @@
   });
 
   // Planner drill-down focus: the selected element, drawn on the map
-  // and framed. Empty when nothing is selected (rider/dispatcher).
+  // and framed. Planner-owned: empty when another persona is active.
   $effect(() => {
     if (!mapLoaded) return;
-    const focus = app.plannerFocus;
+    const focus = app.persona === "planner" ? app.plannerFocus : null;
     const features = [];
     if (focus) {
       for (const coords of focus.lines ?? []) {

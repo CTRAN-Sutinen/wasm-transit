@@ -9,10 +9,13 @@
 
   const routes = $derived(app.gtfs ? app.gtfs.routes() : []);
   const draft = $derived(app.diversionDraft);
-
+  // Retired records (tombstones) are hidden until asked for.
+  let showRetired = $state(false);
   // The document: transit-sync EditRecords (id, diversion, status,
   // rev, updated_at). Display is derived here; truth lives in the doc.
   const records = $derived(getEditDocument());
+  const activeRecords = $derived(records.filter((d) => d.status !== "retired"));
+  const retiredRecords = $derived(records.filter((d) => d.status === "retired"));
 
   const routeName = $derived.by(() => {
     const m = new Map();
@@ -88,23 +91,37 @@
   });
 </script>
 
+<!-- ESC exits tracing mode — the reflex every drawing tool has.
+The draft itself is untouched: Done (or Apply) still owns it. -->
+<svelte:window
+  onkeydown={(e) => {
+    if (e.key === "Escape" && app.drawingDetour) toggleDrawing();
+  }}
+/>
+
 {#if app.gtfs}
 <section>
   <h2>Diversions</h2>
   <p class="muted">Operator edits: reroute around a closure. Boards, blocks and plans re-derive locally.</p>
 
+  <!-- The list the dispatcher works in: only in-force diversions.
+  Retired records stay in the document — sync needs the tombstone to
+  carry the deletion to replicas that still hold the record — but
+  they leave the working list, revealable here to inspect or restore.
+  Pruning tombstones is a sync-document lifecycle decision (the
+  server's, after a grace window past a record's own dates), never
+  a feed-artifact one: the feed is a codec, not the data model. -->
   {#if records.length}
     <ul class="diversion-list">
-      {#each records as d (d.id)}
+      {#each activeRecords as d (d.id)}
         {@const rep = reportOf(d.id)}
-        {@const retired = d.status === "retired"}
-        <li class:inactive={retired}>
+        <li>
           <label class="chip diversion-chip">
             <input
               type="checkbox"
-              checked={!retired}
+              checked
               onchange={() => toggleDiversion(d.id)}
-              title={retired ? "Retired (tombstone) — check to restore" : "In force — uncheck to retire"}
+              title="In force — uncheck to retire"
             >
             <strong>{routeName.get(d.diversion.route_id) ?? d.diversion.route_id}</strong>
             {stopName.get(d.diversion.first_kept_stop) ?? d.diversion.first_kept_stop}
@@ -126,8 +143,33 @@
           </label>
         </li>
       {/each}
+      {#if showRetired}
+        {#each retiredRecords as d (d.id)}
+          <li class="inactive">
+            <label class="chip diversion-chip">
+              <input
+                type="checkbox"
+                onchange={() => toggleDiversion(d.id)}
+                title="Retired (sync tombstone) — check to restore"
+              >
+              <strong>{routeName.get(d.diversion.route_id) ?? d.diversion.route_id}</strong>
+              {stopName.get(d.diversion.first_kept_stop) ?? d.diversion.first_kept_stop}
+              → {stopName.get(d.diversion.last_kept_stop) ?? d.diversion.last_kept_stop}
+              {#if d.diversion.added_secs}+{Math.round(d.diversion.added_secs / 60)} min{/if}
+              <span class="muted">retired — restore by checking</span>
+            </label>
+          </li>
+        {/each}
+      {/if}
     </ul>
-    <p class="muted">Unchecking retires an edit (it stays as a sync tombstone); checking restores it.</p>
+    <p class="muted">
+      Unchecking retires an edit (a sync tombstone — it leaves this list).
+      {#if retiredRecords.length}
+        <button class="link" onclick={() => (showRetired = !showRetired)}>
+          {showRetired ? "Hide" : "Show"} {retiredRecords.length} retired
+        </button>
+      {/if}
+    </p>
   {/if}
 
   {#if draft}
@@ -189,8 +231,9 @@
       </p>
 
       <p class="muted">
-        Trace the reroute: click (or drag) waypoints — the path routes along the
-        imported street network between them and snaps to stops. It becomes the
+        Trace the reroute: click to confirm each segment — the path routes along the
+        imported street network and snaps to stops; move the mouse to see where the
+        next click lands, drag to pan. It becomes the
         alignment the vehicle follows between the anchor stops; serving comes
         from the anchors and skip flags, the schedule effect from added time.
       </p>
@@ -199,7 +242,7 @@
           {app.drawingDetour ? "Done tracing" : "Trace path on map"}
         </button>
         {#if app.drawingDetour}
-          <span class="chip svc">click or drag waypoints — panning is off</span>
+          <span class="chip svc">click confirms · drag pans</span>
         {/if}
         {#if draft.detour.length}
           <span class="muted">
@@ -209,8 +252,8 @@
           <button class="link" onclick={clearDetour}>Clear</button>
         {/if}
         {#if getStreets()}
-          <span class="chip svc" title="Points snap to the imported street geometry and stops">
-            snapping on
+          <span class="chip svc" title="Waypoints snap to the imported street geometry and stops; off-network clicks place nothing">
+            snapping on — off-street clicks ignored
           </span>
         {:else if !app.drawingDetour}
           <span class="muted">points snap to stops only — streets: Data sources</span>

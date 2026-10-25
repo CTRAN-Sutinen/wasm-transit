@@ -18,6 +18,7 @@ just e2e                   # browser e2e (builds first)
 just serve [feed.zip ["Publisher"]]   # sync server on :8080
 just dev                   # vite hot reload + server alongside
 just fixtures              # regenerate the e2e GTFS fixture
+just soak                  # real-data soak (COUNTY_GEOJSON=… county roads)
 ```
 
 Toolchains live in `~/.cargo/bin` and `~/.local/bin` (rustc, pmtiles,
@@ -43,8 +44,11 @@ transit-sync   THE sync document: EditRecord, FeedManifest, EditReport,
                 pure validation/merge logic. Shared by every host.
 transit-streets Street routing graph for detour authoring: GeoJSON in,
                 snap (nearest street position) + shortest-path route
-                out. Pure reference geometry — its own registry at the
-                seam (streets_id keyed), never mixed with feed state.
+                out (one-way aware — TIGER `OneWay` and OSM `oneway`
+                conventions; turn restrictions are a non-goal until a
+                restriction table ships in the data). Pure reference
+                geometry — its own registry at the seam (streets_id
+                keyed), never mixed with feed state.
 transit-ops     dispatch(Request) -> Response: the host-agnostic seam
                 + per-feed registry (feed_id keyed). The network
                 codec lives in src/network.rs, both directions:
@@ -58,18 +62,22 @@ transit-wasm    THE artifact: flat import-free C ABI over dispatch.
                 No wasm-bindgen — do not reintroduce host glue.
 server/         Go + wazero host: scaffolding only (HTTP, manifest,
                 proxy). It must never make a domain decision.
-web/            Svelte 5 runes + Vite. Two skeletons: Rider /
-                Dispatcher share a floating panel over the full-map
-                view; the Planner persona gets a WORKSPACE (rail:
-                network overview + drill-down, map canvas, one
+web/            Svelte 5 runes + Vite. ONE shell: a sidebar
+                (persona tabs + the active workflow — Rider boards
+                and trip planning, Dispatcher blocks and diversions,
+                Planner the network rail and document tools) beside a
+                PERSISTENT map canvas. The map never remounts on a
+                persona switch; persona-owned layers (trip,
+                itinerary, detour, planner focus) DERIVE from
+                app.persona so they clear/re-draw on switch.
+                Planner drill-down is a drawer over the map: one
                 focused entity editor at a time — selection frames
-                the element on the map). src/wasm.js wraps the
+                the element on the map. src/wasm.js wraps the
                 artifact (GtfsHandle, network_import/validate/load);
                 components never see the ABI. src/planner.svelte.js
                 owns authoring mutations (clone → edit → replace →
-                revalidate) and MapView owns all map state — personas
-                remount MapView, so window.__map is cleared on
-                unmount.
+                revalidate) and MapView owns all map state
+                (window.__map).
 ```
 
 **Ownership rules** (violations here caused real bugs; keep them):

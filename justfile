@@ -57,6 +57,18 @@ e2e: build
 # Everything: host tests + e2e.
 check: test e2e
 
+# Real-data soak: transit-streets against the downloaded county
+# export. Hermetic tests skip it; point COUNTY_GEOJSON at the file to
+# run it (e.g. the CTRAN Trapeze roads geojson from the open data
+# portal).
+soak:
+    #!/usr/bin/env bash
+    if [ -z "$COUNTY_GEOJSON" ]; then
+        echo "set COUNTY_GEOJSON to the downloaded county roads geojson"
+        exit 1
+    fi
+    cargo test --release -p transit-streets --test county_data -- --nocapture
+
 # Regenerate the e2e GTFS fixture (web/e2e/fixtures/sample-gtfs.zip).
 fixtures:
     cd web/e2e && python3 make_fixtures.py

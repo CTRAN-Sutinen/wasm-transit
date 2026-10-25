@@ -309,6 +309,13 @@ fn decode_rt_reports_delays_and_vehicles() {
                         ..Default::default()
                     }),
                     stop_id: Some("A".into()),
+                    // The descriptor carries the bus number: internal
+                    // id and the rider-visible label.
+                    vehicle: Some(rt::VehicleDescriptor {
+                        id: Some("4201".into()),
+                        label: Some("4201".into()),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -327,6 +334,8 @@ fn decode_rt_reports_delays_and_vehicles() {
             // Position lat/lon are f32 on the wire (GTFS-rt spec).
             assert_eq!(overview.vehicle_positions[0].lat, 45.44f32 as f64);
             assert_eq!(overview.vehicle_positions[0].stop_id.as_deref(), Some("A"));
+            assert_eq!(overview.vehicle_positions[0].vehicle_id.as_deref(), Some("4201"));
+            assert_eq!(overview.vehicle_positions[0].label.as_deref(), Some("4201"));
         }
         _ => panic!(),
     }

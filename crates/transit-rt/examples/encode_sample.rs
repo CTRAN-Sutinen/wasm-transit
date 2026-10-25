@@ -63,6 +63,12 @@ fn main() -> std::io::Result<()> {
                         ..Default::default()
                     }),
                     stop_id: Some("A".into()),
+                    // The bus number, as an agency would serve it.
+                    vehicle: Some(transit_rt::gtfs_rt::VehicleDescriptor {
+                        id: Some("4201".into()),
+                        label: Some("4201".into()),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 }),
                 ..Default::default()

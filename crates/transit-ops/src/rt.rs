@@ -35,6 +35,10 @@ pub struct VehicleView {
     pub lon: f64,
     pub bearing: Option<f32>,
     pub stop_id: Option<String>,
+    /// VehicleDescriptor: the internal vehicle id and the user-
+    /// visible label — the bus number a rider reads off the vehicle.
+    pub vehicle_id: Option<String>,
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -106,6 +110,8 @@ pub fn decode_rt_overview(bytes: &[u8]) -> Result<RtOverview, crate::OpError> {
                     lon: position.longitude as f64,
                     bearing: position.bearing,
                     stop_id: vehicle.stop_id.clone(),
+                    vehicle_id: vehicle.vehicle.as_ref().and_then(|d| d.id.clone()),
+                    label: vehicle.vehicle.as_ref().and_then(|d| d.label.clone()),
                 });
             }
         }
