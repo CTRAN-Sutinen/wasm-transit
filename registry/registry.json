@@ -1,0 +1,27 @@
+{
+  "capabilities": [
+    {
+      "hash": "sha256:0729c121325a109fc3cf32a1e35acfdadbe32b34042e930cdeca281d7b706574",
+      "id": "gtfs"
+    },
+    {
+      "hash": "sha256:e0429e0df86a2001a764e37cd9dba24e81ea1e66ec9f47b5b3e1dba16f227f36",
+      "id": "router"
+    },
+    {
+      "hash": "sha256:8ef603b89e493b6b7f088a93630c2a9d44463f506aeaae3272420baf298b9111",
+      "id": "analysis"
+    }
+  ],
+  "evidence": {
+    "dirty_tree": true,
+    "gates": [
+      "cargo test (workspace, includes the capability law suites)",
+      "node crates/cap-abi/caps-smoke.mjs (ABI + composition + context)"
+    ],
+    "recipe": "just registry",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "source_commit": "7796a273d04c391dd5f8ed53f10173b9d3fa17ed"
+  },
+  "kernel": 1
+}

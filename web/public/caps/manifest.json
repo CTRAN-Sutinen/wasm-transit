@@ -34,79 +34,41 @@
       },
       "purpose": "Read a GTFS static zip: parse it into a hash-addressed feed registry and answer schedule questions (departures at a stop, stop lists). Assemble for any user who needs to know when service runs. Also owns the watchlist document (the rider's saved stops) and its v1→v2 migration.",
       "op_docs": {
-        "stops": {
-          "description": "Stop list for UI pickers, first N by id.",
+        "migrate_watchlist": {
+          "description": "Migrate a version-1 watchlist to version 2: label = note, colors dropped and reported. Pure and deterministic; the caller keeps the old bytes.",
           "example": {
             "request": {
-              "feed_hash": "sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2",
-              "limit": 3,
-              "op": "stops"
-            },
-            "response": {
-              "ok": {
-                "op": "stops",
+              "document": {
                 "stops": [
                   {
-                    "name": "Main & 1st",
-                    "stop_id": "A"
-                  },
-                  {
-                    "name": "Main & 2nd",
-                    "stop_id": "B"
-                  },
-                  {
-                    "name": "Main & 3rd",
-                    "stop_id": "C"
+                    "color": "blue",
+                    "id": "A",
+                    "note": "home"
                   }
-                ]
-              }
-            }
-          }
-        },
-        "load_feed": {
-          "description": "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
-          "example": null
-        },
-        "departures": {
-          "description": "Upcoming departures at one stop on a service date, schedule only (GTFS-rt is another capability).",
-          "example": {
-            "request": {
-              "date": "2026-10-23",
-              "feed_hash": "sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2",
-              "from_secs": 25200,
-              "limit": 5,
-              "op": "departures",
-              "stop_id": "A"
+                ],
+                "version": "v1"
+              },
+              "op": "migrate_watchlist"
             },
             "response": {
               "ok": {
-                "departures": [
+                "document": {
+                  "stops": [
+                    {
+                      "id": "A",
+                      "label": "home"
+                    }
+                  ],
+                  "version": "v2"
+                },
+                "notes": [
                   {
-                    "block_id": "B1",
-                    "departure_time": 28800,
-                    "departure_time_hhmmss": "08:00:00",
-                    "headsign": null,
-                    "route_id": "10",
-                    "route_name": "10",
-                    "service_id": "WK",
-                    "stop_id": "A",
-                    "stop_sequence": 1,
-                    "trip_id": "t10"
-                  },
-                  {
-                    "block_id": "B1",
-                    "departure_time": 30000,
-                    "departure_time_hhmmss": "08:20:00",
-                    "headsign": null,
-                    "route_id": "20",
-                    "route_name": "20",
-                    "service_id": "WK",
-                    "stop_id": "A",
-                    "stop_sequence": 1,
-                    "trip_id": "t20"
+                    "count": 1,
+                    "field": "color",
+                    "kind": "dropped_field"
                   }
                 ],
-                "op": "departures"
+                "op": "migrated_watchlist"
               }
             }
           }
@@ -167,6 +129,83 @@
             }
           }
         },
+        "departures": {
+          "description": "Upcoming departures at one stop on a service date, schedule only (GTFS-rt is another capability).",
+          "example": {
+            "request": {
+              "date": "2026-10-23",
+              "feed_hash": "sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2",
+              "from_secs": 25200,
+              "limit": 5,
+              "op": "departures",
+              "stop_id": "A"
+            },
+            "response": {
+              "ok": {
+                "departures": [
+                  {
+                    "block_id": "B1",
+                    "departure_time": 28800,
+                    "departure_time_hhmmss": "08:00:00",
+                    "headsign": null,
+                    "route_id": "10",
+                    "route_name": "10",
+                    "service_id": "WK",
+                    "stop_id": "A",
+                    "stop_sequence": 1,
+                    "trip_id": "t10"
+                  },
+                  {
+                    "block_id": "B1",
+                    "departure_time": 30000,
+                    "departure_time_hhmmss": "08:20:00",
+                    "headsign": null,
+                    "route_id": "20",
+                    "route_name": "20",
+                    "service_id": "WK",
+                    "stop_id": "A",
+                    "stop_sequence": 1,
+                    "trip_id": "t20"
+                  }
+                ],
+                "op": "departures"
+              }
+            }
+          }
+        },
+        "load_feed": {
+          "description": "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
+          "example": null
+        },
+        "stops": {
+          "description": "Stop list for UI pickers, first N by id.",
+          "example": {
+            "request": {
+              "feed_hash": "sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2",
+              "limit": 3,
+              "op": "stops"
+            },
+            "response": {
+              "ok": {
+                "op": "stops",
+                "stops": [
+                  {
+                    "name": "Main & 1st",
+                    "stop_id": "A"
+                  },
+                  {
+                    "name": "Main & 2nd",
+                    "stop_id": "B"
+                  },
+                  {
+                    "name": "Main & 3rd",
+                    "stop_id": "C"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "load_watchlist": {
           "description": "Register a watchlist document (version-tagged JSON) under its content hash.",
           "example": {
@@ -194,45 +233,6 @@
               }
             }
           }
-        },
-        "migrate_watchlist": {
-          "description": "Migrate a version-1 watchlist to version 2: label = note, colors dropped and reported. Pure and deterministic; the caller keeps the old bytes.",
-          "example": {
-            "request": {
-              "document": {
-                "stops": [
-                  {
-                    "color": "blue",
-                    "id": "A",
-                    "note": "home"
-                  }
-                ],
-                "version": "v1"
-              },
-              "op": "migrate_watchlist"
-            },
-            "response": {
-              "ok": {
-                "document": {
-                  "stops": [
-                    {
-                      "id": "A",
-                      "label": "home"
-                    }
-                  ],
-                  "version": "v2"
-                },
-                "notes": [
-                  {
-                    "count": 1,
-                    "field": "color",
-                    "kind": "dropped_field"
-                  }
-                ],
-                "op": "migrated_watchlist"
-              }
-            }
-          }
         }
       }
     },
@@ -256,6 +256,10 @@
       "migrates": {},
       "purpose": "Earliest-arrival trip planning (RAPTOR) over a feed document the gtfs capability produced. Assemble for users who need directions, not just departure times. Reads documents by content hash; writes nothing.",
       "op_docs": {
+        "load_feed": {
+          "description": "Register a GTFS zip under its content hash (the same document identity gtfs returns — assert equality at the host). Bulk-bytes op 0.",
+          "example": null
+        },
         "plan": {
           "description": "Earliest-arrival itinerary from stop to stop at a departure time; null itinerary = unreachable within max_legs.",
           "example": {
@@ -282,10 +286,6 @@
               }
             }
           }
-        },
-        "load_feed": {
-          "description": "Register a GTFS zip under its content hash (the same document identity gtfs returns — assert equality at the host). Bulk-bytes op 0.",
-          "example": null
         }
       }
     },
@@ -311,10 +311,6 @@
       "migrates": {},
       "purpose": "Planner analysis over an authored network document: network/route/stop stats, per-service-type overview and detail, population coverage. The first capability extracted from the monolith — the domain code lives in the shared transit-analysis library. Assemble for planners; riders never download it. Documents are hash-addressed (load once, query by hash — never per-op document serialization).",
       "op_docs": {
-        "load_population_layer": {
-          "description": "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried).",
-          "example": null
-        },
         "network_stats": {
           "description": "The network's numbers on one service date: trips, spans, revenue hours, per-route and per-stop activity, headways.",
           "example": null
@@ -323,16 +319,20 @@
           "description": "Population coverage per service type against a hash-addressed layer: what share of the population each type serves, and serves frequently.",
           "example": null
         },
-        "service_types_overview": {
-          "description": "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight.",
-          "example": null
-        },
         "load_network": {
           "description": "Register an authored network document (the planner's JSON document) under its content hash; idempotent.",
           "example": null
         },
+        "load_population_layer": {
+          "description": "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried).",
+          "example": null
+        },
         "service_type_detail": {
           "description": "One service type expanded on its representative day: routes, stops, schedules, totals.",
+          "example": null
+        },
+        "service_types_overview": {
+          "description": "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight.",
           "example": null
         }
       }

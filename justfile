@@ -27,6 +27,18 @@ caps:
     cargo build --release -p cap-gtfs -p cap-router -p cap-analysis --target wasm32-unknown-unknown
     cargo run --quiet -p cap-abi --bin gen-manifest
 
+# Publish the registry: gates first (the records report them), then
+# build and publish — immutable blobs, evidence records per
+# capability, and the pointer. This is the artifact an agent (or a
+# human dogfooding `caps run`) pulls compute from.
+registry:
+    #!/usr/bin/env bash
+    set -e
+    export TS_RS_EXPORT_DIR="$PWD/web/src/types"
+    cargo test
+    node crates/cap-abi/caps-smoke.mjs
+    just caps
+
 # Build everything the server serves: artifact + frontend (web/dist).
 # Type-checks first — the TS layer is part of the gate.
 build:
@@ -58,6 +70,11 @@ test: caps
     cargo test
     node crates/transit-wasm/abi-smoke.mjs
     node crates/cap-abi/caps-smoke.mjs
+    # The agent runner, gated: pull gtfs by its pinned hash and ask a
+    # question — the fixture's feed hash is stable, so a fixture or
+    # registry change fails here (the corpus spirit, one layer up).
+    node tools/caps-run.mjs gtfs --load web/public/caps/sample-gtfs.zip \
+      --op '{"op":"stops","feed_hash":"sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2","limit":2}' | grep -q '"stop_id":"A"'
     # -race: the artifact is one non-reentrant instance; the host must
     # serialize invokes (see server/race_test.go — the gate watches it).
     cd server && go test -race ./...

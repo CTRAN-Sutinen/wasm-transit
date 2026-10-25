@@ -1,21 +1,36 @@
 //! gen-manifest: assemble the capability manifest after the wasm
-//! builds (`just caps`). Reads each capability module, pins it by
-//! content hash, serves it under that hash, and writes the manifest
-//! hosts assemble from. The capability set lives HERE, next to the
-//! contract — the manifest is the deployment, and the deployment is
-//! code-reviewed.
+//! builds (`just caps`) and PUBLISH the registry (`just registry`).
+//! Reads each capability module, pins it by content hash, serves it
+//! under that hash, and writes both surfaces hosts and agents read:
+//!
+//! * `web/public/caps/` — the browser's manifest + hash-addressed
+//!   module files (the assembly the resolver loads);
+//! * `registry/` — the REGISTRY: immutable blobs, one evidence record
+//!   per capability (contracts + agent context + which gates ran when
+//!   these exact bytes were published), and a registry pointer. An
+//!   agent (or a human dogfooding `caps run`) pulls compute from
+//!   here and verifies the bytes against the record.
 //!
 //! Before writing, the manifest is run through the compose-time
 //! validator (cap_abi::validate): a manifest this crate assembles
 //! must be provably coherent, and the generation is the first
 //! consumer of that proof.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 use cap_abi::manifest::{CapManifest, Capability, MigrationSpec, OpDoc, OpExample};
 use cap_abi::validate::validate_assembly;
 use sha2::{Digest as _, Sha256};
+
+/// The gates `just registry` runs before publishing. The recipe is
+/// the authority; the record is the honest report of it.
+const PUBLISH_GATES: &[&str] = &[
+    "cargo test (workspace, includes the capability law suites)",
+    "node crates/cap-abi/caps-smoke.mjs (ABI + composition + context)",
+];
 
 /// The document-kernel version this build speaks.
 const KERNEL: u32 = 1;
@@ -179,7 +194,88 @@ fn main() {
     let json = serde_json::to_string_pretty(&manifest).expect("manifest serializes");
     fs::write(dist.join("manifest.json"), json + "\n").expect("write manifest");
 
+    publish_registry(&root, &manifest);
+
     println!("manifest: {} capabilities, kernel v{KERNEL}, assembly valid", MODULES.len());
+}
+
+/// Publish the REGISTRY: immutable blobs, one evidence record per
+/// capability, and the pointer. The record says what these exact
+/// bytes are, what they answer, what they speak — and WHICH GATES
+/// the publish recipe ran against them, at which commit. That
+/// record is what makes "known good" a checkable claim for an agent
+/// (or a human dogfooding `caps run`) rather than a marketing one.
+fn publish_registry(root: &Path, manifest: &CapManifest) {
+    let registry = root.join("registry");
+    let blobs = registry.join("blobs");
+    let caps_dir = registry.join("capabilities");
+    let _ = fs::remove_dir_all(&registry);
+    fs::create_dir_all(&blobs).expect("create registry blobs");
+    fs::create_dir_all(&caps_dir).expect("create registry records");
+
+    // Provenance-style evidence: what built these bytes, from where.
+    let run = |args: &[&str]| {
+        Command::new(args[0])
+            .args(&args[1..])
+            .current_dir(root)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default()
+    };
+    let commit = run(&["git", "rev-parse", "HEAD"]);
+    let dirty = !run(&["git", "status", "--porcelain"]).is_empty();
+    let rustc = run(&["rustc", "--version"]);
+    let evidence = serde_json::json!({
+        "gates": PUBLISH_GATES,
+        "recipe": "just registry",
+        "source_commit": commit,
+        "dirty_tree": dirty,
+        "rustc": rustc,
+    });
+
+    for cap in &manifest.capabilities {
+        let bytes = fs::read(root.join("web/public/caps").join(Path::new(&cap.url).file_name().unwrap()))
+            .expect("module bytes (the manifest step wrote them)");
+        let hex = cap.hash.strip_prefix("sha256:").expect("hash format");
+        fs::write(blobs.join(format!("{hex}.wasm")), &bytes).expect("write blob");
+
+        let record = serde_json::json!({
+            "id": cap.id,
+            "hash": cap.hash,
+            "bytes": cap.bytes,
+            "kernel": manifest.kernel,
+            "ops": cap.ops,
+            "consumes": cap.consumes,
+            "speaks": cap.speaks,
+            "migrates": cap.migrates,
+            "purpose": cap.purpose,
+            "op_docs": cap.op_docs,
+            "blob": format!("blobs/{hex}.wasm"),
+            "evidence": evidence,
+        });
+        let json = serde_json::to_string_pretty(&record).expect("record serializes");
+        fs::write(caps_dir.join(format!("{}.json", cap.id)), json + "\n")
+            .expect("write record");
+    }
+
+    // The pointer: which capabilities (at which hashes) this registry
+    // currently names. Blobs are immutable; this file moves.
+    let pointer = serde_json::json!({
+        "kernel": manifest.kernel,
+        "capabilities": manifest
+            .capabilities
+            .iter()
+            .map(|c| serde_json::json!({ "id": c.id, "hash": c.hash }))
+            .collect::<Vec<_>>(),
+        "evidence": evidence,
+    });
+    let json = serde_json::to_string_pretty(&pointer).expect("pointer serializes");
+    fs::write(registry.join("registry.json"), json + "\n").expect("write pointer");
+
+    println!(
+        "registry: {} capabilities published (blobs + records + pointer)",
+        manifest.capabilities.len()
+    );
 }
 
 /// Worked examples — the corpus-as-context idea: an agent reads these

@@ -1,0 +1,64 @@
+{
+  "blob": "blobs/e0429e0df86a2001a764e37cd9dba24e81ea1e66ec9f47b5b3e1dba16f227f36.wasm",
+  "bytes": 517361,
+  "consumes": {
+    "feed": "gtfs"
+  },
+  "evidence": {
+    "dirty_tree": true,
+    "gates": [
+      "cargo test (workspace, includes the capability law suites)",
+      "node crates/cap-abi/caps-smoke.mjs (ABI + composition + context)"
+    ],
+    "recipe": "just registry",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "source_commit": "7796a273d04c391dd5f8ed53f10173b9d3fa17ed"
+  },
+  "hash": "sha256:e0429e0df86a2001a764e37cd9dba24e81ea1e66ec9f47b5b3e1dba16f227f36",
+  "id": "router",
+  "kernel": 1,
+  "migrates": {},
+  "op_docs": {
+    "load_feed": {
+      "description": "Register a GTFS zip under its content hash (the same document identity gtfs returns — assert equality at the host). Bulk-bytes op 0.",
+      "example": null
+    },
+    "plan": {
+      "description": "Earliest-arrival itinerary from stop to stop at a departure time; null itinerary = unreachable within max_legs.",
+      "example": {
+        "request": {
+          "date": "2026-10-23",
+          "depart_secs": 25200,
+          "feed_hash": "sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2",
+          "from": "A",
+          "max_legs": 4,
+          "op": "plan",
+          "to": "B"
+        },
+        "response": {
+          "ok": {
+            "itinerary": {
+              "arrival_hhmmss": "08:10:00",
+              "arrival_secs": 29400,
+              "depart_secs": 28800,
+              "from_stop_id": "A",
+              "legs": [],
+              "to_stop_id": "B"
+            },
+            "op": "plan"
+          }
+        }
+      }
+    }
+  },
+  "ops": [
+    "load_feed",
+    "plan"
+  ],
+  "purpose": "Earliest-arrival trip planning (RAPTOR) over a feed document the gtfs capability produced. Assemble for users who need directions, not just departure times. Reads documents by content hash; writes nothing.",
+  "speaks": {
+    "feed": [
+      1
+    ]
+  }
+}

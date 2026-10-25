@@ -1,0 +1,59 @@
+{
+  "blob": "blobs/8ef603b89e493b6b7f088a93630c2a9d44463f506aeaae3272420baf298b9111.wasm",
+  "bytes": 531960,
+  "consumes": {},
+  "evidence": {
+    "dirty_tree": true,
+    "gates": [
+      "cargo test (workspace, includes the capability law suites)",
+      "node crates/cap-abi/caps-smoke.mjs (ABI + composition + context)"
+    ],
+    "recipe": "just registry",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "source_commit": "7796a273d04c391dd5f8ed53f10173b9d3fa17ed"
+  },
+  "hash": "sha256:8ef603b89e493b6b7f088a93630c2a9d44463f506aeaae3272420baf298b9111",
+  "id": "analysis",
+  "kernel": 1,
+  "migrates": {},
+  "op_docs": {
+    "load_network": {
+      "description": "Register an authored network document (the planner's JSON document) under its content hash; idempotent.",
+      "example": null
+    },
+    "load_population_layer": {
+      "description": "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried).",
+      "example": null
+    },
+    "network_stats": {
+      "description": "The network's numbers on one service date: trips, spans, revenue hours, per-route and per-stop activity, headways.",
+      "example": null
+    },
+    "service_type_detail": {
+      "description": "One service type expanded on its representative day: routes, stops, schedules, totals.",
+      "example": null
+    },
+    "service_types_overview": {
+      "description": "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight.",
+      "example": null
+    },
+    "type_coverage": {
+      "description": "Population coverage per service type against a hash-addressed layer: what share of the population each type serves, and serves frequently.",
+      "example": null
+    }
+  },
+  "ops": [
+    "load_network",
+    "load_population_layer",
+    "network_stats",
+    "service_types_overview",
+    "service_type_detail",
+    "type_coverage"
+  ],
+  "purpose": "Planner analysis over an authored network document: network/route/stop stats, per-service-type overview and detail, population coverage. The first capability extracted from the monolith — the domain code lives in the shared transit-analysis library. Assemble for planners; riders never download it. Documents are hash-addressed (load once, query by hash — never per-op document serialization).",
+  "speaks": {
+    "network": [
+      1
+    ]
+  }
+}
