@@ -1,0 +1,26 @@
+[package]
+name = "cap-analysis"
+description = "The analysis capability: planner numbers (stats, service types, coverage) over a network document keyed by content hash. The first REAL capability extracted from the monolith — transit-analysis is shared as a library, and the monolith keeps shrinking."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]  # rlib: integration tests link the crate natively
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+chrono = { workspace = true }
+ts-rs = { workspace = true }
+transit-network = { path = "../transit-network" }
+transit-analysis = { path = "../transit-analysis" }
+cap-abi = { path = "../cap-abi" }
+
+[dev-dependencies]
+proptest = "1"
+zip = { workspace = true }
+transit-core = { path = "../transit-core" }
+transit-network = { path = "../transit-network" }
+transit-ops = { path = "../transit-ops" }

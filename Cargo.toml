@@ -12,6 +12,8 @@ members = [
     "crates/cap-abi",
     "crates/cap-gtfs",
     "crates/cap-router",
+    "crates/cap-analysis",
+    "crates/transit-analysis",
 ]
 
 [workspace.package]

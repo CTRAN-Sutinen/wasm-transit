@@ -94,7 +94,7 @@ for (const cap of manifest.capabilities) {
   for (const op of cap.ops) {
     assert(cap.op_docs[op], `capability ${cap.id} documents op ${op}`);
   }
-  assert(Array.isArray(cap.speaks.feed), `capability ${cap.id} declares feed versions`);
+  assert(Object.keys(cap.speaks).length > 0, `capability ${cap.id} declares the documents it speaks`);
 }
 
 // Compatibility documentation: gtfs speaks both watchlist versions
@@ -198,5 +198,83 @@ for (const document of [v1, migrated.document]) {
     `board departures at ${document.version}`,
   );
 }
+
+// The analysis flow — the first REAL capability extracted from the
+// monolith: a network document in by content hash, planner numbers
+// out by hash.
+const analysis = shell(loadModule(byId.analysis));
+const NETWORK = {
+  name: "Cap Analysis Net",
+  plan: { id: "", name: "" },
+  anchor: "noon_minus_twelve",
+  stops: {
+    A: { name: "Main & 1st", lat: 45.5, lon: -73.5, transfer: false },
+    B: { name: "Main & 2nd", lat: 45.501, lon: -73.501, transfer: false },
+  },
+  routes: { "10": { name: "10", mode: "bus" } },
+  patterns: {
+    "pat-10-0-0": {
+      route: "10",
+      name: "10 → Main & 2nd",
+      stops: [
+        { stop: "A", timepoint: true, distance_m: 0.0 },
+        { stop: "B", timepoint: true, distance_m: 500.0 },
+      ],
+      timing: [{ start_secs: 0, end_secs: 108000, at_timepoints: [0, 600] }],
+    },
+  },
+  service_types: {
+    WK: {
+      name: "WK",
+      rule: {
+        days: { mon: true, tue: true, wed: true, thu: true, fri: true, sat: false, sun: false },
+        ranges: [{ start: "2026-01-01", end: "2026-12-31" }],
+        exceptions: [],
+      },
+    },
+  },
+  schedules: {
+    "WK:pat-10-0-0": {
+      pattern: "pat-10-0-0",
+      service_type: "WK",
+      schedule: { kind: "exact_times", starts: [28800] },
+    },
+  },
+  blocks: {},
+  notes: [],
+};
+const loadedNet = analysis.invoke({ op: "load_network", network: NETWORK });
+assert(loadedNet.network_hash.startsWith("sha256:"), "analysis registers the network by content hash");
+const stats = analysis.invoke({
+  op: "network_stats",
+  network_hash: loadedNet.network_hash,
+  date: "2026-01-05", // a Monday: WK runs
+});
+assert(stats.stats.trips === 1, `analysis computes the document's weekday trips: ${stats.stats.trips}`);
+const overview = analysis.invoke({ op: "service_types_overview", network_hash: loadedNet.network_hash });
+assert(overview.service_types.length === 1, "the design axis answers");
+const layer = analysis.invokeBytes(0, Buffer.from(JSON.stringify({
+  type: "FeatureCollection",
+  features: [
+    { type: "Feature", properties: { pop: 500 }, geometry: { type: "Point", coordinates: [-73.5, 45.5] } },
+    { type: "Feature", properties: { pop: 500 }, geometry: { type: "Point", coordinates: [-74.0, 46.0] } },
+  ],
+})));
+assert(layer.points === 2, "analysis registers a population layer by content hash");
+const coverage = analysis.invoke({
+  op: "type_coverage",
+  network_hash: loadedNet.network_hash,
+  layer_hash: layer.layer_hash,
+  radius_m: 500,
+  frequent_secs: 3600,
+  min_departures: 2,
+});
+assert(coverage.coverage.length === 1, "type coverage answers by hash pair");
+assert(
+  coverage.coverage[0].served_pct === 50,
+  `half the layer is served (one point at a stop, one far away): ${coverage.coverage[0].served_pct}`,
+);
+const unknownNet = analysis.raw({ op: "network_stats", network_hash: "sha256:missing", date: "2026-01-05" });
+assert(unknownNet.error && unknownNet.error.includes("unknown network"), "unknown hashes error, never panic");
 
 console.log("capability modules: ABI smoke ok");

@@ -71,6 +71,26 @@ const MODULES: &[ModuleSpec] = &[
             ("plan", "Earliest-arrival itinerary from stop to stop at a departure time; null itinerary = unreachable within max_legs."),
         ],
     },
+    ModuleSpec {
+        id: "analysis",
+        file: "cap_analysis.wasm",
+        ops: &["load_network", "load_population_layer", "network_stats", "service_types_overview", "service_type_detail", "type_coverage"],
+        consumes: &[],
+        // The network document is produced by a future network codec
+        // capability; until then the host loads documents by bytes and
+        // the hash is the composition point.
+        speaks: &[("network", &[1])],
+        migrates: &[],
+        purpose: "Planner analysis over an authored network document: network/route/stop stats, per-service-type overview and detail, population coverage. The first capability extracted from the monolith — the domain code lives in the shared transit-analysis library. Assemble for planners; riders never download it. Documents are hash-addressed (load once, query by hash — never per-op document serialization).",
+        op_docs: &[
+            ("load_network", "Register an authored network document (the planner's JSON document) under its content hash; idempotent."),
+            ("load_population_layer", "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried)."),
+            ("network_stats", "The network's numbers on one service date: trips, spans, revenue hours, per-route and per-stop activity, headways."),
+            ("service_types_overview", "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight."),
+            ("service_type_detail", "One service type expanded on its representative day: routes, stops, schedules, totals."),
+            ("type_coverage", "Population coverage per service type against a hash-addressed layer: what share of the population each type serves, and serves frequently."),
+        ],
+    },
 ];
 
 fn main() {

@@ -32,6 +32,10 @@ test("the manifest assembles both capabilities", async ({ page }) => {
   await expect(panel.getByTestId("cap-router")).toContainText("ready");
   // Sizes render from the manifest — the size budget is visible.
   await expect(panel.getByTestId("cap-gtfs")).toContainText("KiB");
+  // The first capability extracted from the monolith assembles too:
+  // three capabilities, one resolver.
+  await expect(panel.getByTestId("cap-analysis")).toContainText("ready");
+  await expect(panel).toContainText("analysis");
 });
 
 test("the composition runs across two modules", async ({ page }) => {

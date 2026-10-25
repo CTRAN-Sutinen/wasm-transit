@@ -24,6 +24,12 @@ import type { MigrationNote } from "./types/cap_gtfs/MigrationNote";
 import type { WatchBoardStop } from "./types/cap_gtfs/WatchBoardStop";
 import type { Request as RouterRequest } from "./types/cap_router/Request";
 import type { Response as RouterResponse } from "./types/cap_router/Response";
+import type { Request as AnalysisRequest } from "./types/cap_analysis/Request";
+import type { Response as AnalysisResponse } from "./types/cap_analysis/Response";
+import type { Network } from "./types/Network";
+import type { ServiceTypeDetail } from "./types/ServiceTypeDetail";
+import type { ServiceTypeSummary } from "./types/ServiceTypeSummary";
+import type { TypeCoverage } from "./types/TypeCoverage";
 import type { Departure } from "./types/Departure";
 import type { FeedSummary } from "./types/FeedSummary";
 import type { Itinerary } from "./types/Itinerary";
@@ -56,23 +62,28 @@ class CapModule {
     this.#exports = exports as unknown as CapExports;
   }
 
-  invoke(request: GtfsRequest | RouterRequest): GtfsResponse | RouterResponse {
+  invoke(
+    request: GtfsRequest | RouterRequest | AnalysisRequest,
+  ): GtfsResponse | RouterResponse | AnalysisResponse {
     const wasm = this.#exports;
     const payload = new TextEncoder().encode(JSON.stringify(request));
     const ptr = wasm.transit_alloc(payload.length);
     new Uint8Array(wasm.memory.buffer, ptr, payload.length).set(payload);
     const outPtr = wasm.transit_invoke(ptr, payload.length);
     wasm.transit_free(ptr, payload.length);
-    return this.#read(outPtr) as GtfsResponse | RouterResponse;
+    return this.#read(outPtr) as GtfsResponse | RouterResponse | AnalysisResponse;
   }
 
-  invokeBytes(op: number, bytes: Uint8Array): GtfsResponse | RouterResponse {
+  invokeBytes(
+    op: number,
+    bytes: Uint8Array,
+  ): GtfsResponse | RouterResponse | AnalysisResponse {
     const wasm = this.#exports;
     const ptr = wasm.transit_alloc(bytes.length);
     new Uint8Array(wasm.memory.buffer, ptr, bytes.length).set(bytes);
     const outPtr = wasm.transit_invoke_bytes(op, ptr, bytes.length);
     wasm.transit_free(ptr, bytes.length);
-    return this.#read(outPtr) as GtfsResponse | RouterResponse;
+    return this.#read(outPtr) as GtfsResponse | RouterResponse | AnalysisResponse;
   }
 
   #read(outPtr: number): unknown {
@@ -395,6 +406,100 @@ export async function migrateWatchlistForward(
   entry.current = hash;
   await persistDocuments();
   return { record, notes };
+}
+
+// ---------------------------------------------------------------------
+// The analysis capability — the first REAL capability extracted from
+// the monolith (Stage B): the planner's screens read their numbers
+// through the bus when it assembles, and fall back to the monolith
+// when it doesn't. Documents are registered ONCE per edit (hash-
+// memoized); every query addresses the hash — the fix for per-op
+// whole-document serialization, on the hot authoring path.
+// ---------------------------------------------------------------------
+
+const OP_LOAD_LAYER = 0;
+
+export function analysisCap(module: CapModule) {
+  return {
+    serviceTypesOverview(networkHash: string): ServiceTypeSummary[] {
+      const resp = module.invoke({
+        op: "service_types_overview",
+        network_hash: networkHash,
+      } as AnalysisRequest) as Extract<AnalysisResponse, { op: "service_types_overview" }>;
+      return resp.service_types;
+    },
+    serviceTypeDetail(networkHash: string, serviceType: string): ServiceTypeDetail {
+      const resp = module.invoke({
+        op: "service_type_detail",
+        network_hash: networkHash,
+        service_type: serviceType,
+      } as AnalysisRequest) as Extract<AnalysisResponse, { op: "service_type_detail" }>;
+      return resp.detail;
+    },
+    typeCoverage(
+      networkHash: string,
+      layerHash: string,
+      radiusM: number,
+      frequentSecs: number,
+      minDepartures: number,
+    ): TypeCoverage[] {
+      const resp = module.invoke({
+        op: "type_coverage",
+        network_hash: networkHash,
+        layer_hash: layerHash,
+        radius_m: radiusM,
+        frequent_secs: frequentSecs,
+        min_departures: minDepartures,
+      } as AnalysisRequest) as Extract<AnalysisResponse, { op: "type_coverage" }>;
+      return resp.coverage;
+    },
+  };
+}
+
+/// Register the current network document in cap-analysis, memoized —
+/// the document crosses the seam once per edit, not once per query.
+/// THE MODULE IS THE HASH AUTHORITY: its canonical serialization
+/// decides the document's identity (the host's JSON.stringify can
+/// differ in float formatting, so the host never mints its own).
+export async function ensureAnalysisNetwork(document: Network): Promise<string | null> {
+  const module = await analysisModule();
+  if (!module) return null;
+  const memoKey = await hashDocument(JSON.stringify(document));
+  const memo = (analysisNetworks[module.cap.id] ??= new Map());
+  if (!memo.has(memoKey)) {
+    const resp = module.invoke({
+      op: "load_network",
+      network: document,
+    } as AnalysisRequest) as Extract<AnalysisResponse, { op: "load_network" }>;
+    memo.set(memoKey, resp.network_hash);
+  }
+  return memo.get(memoKey) ?? null;
+}
+
+/// Register a population layer in cap-analysis, memoized like
+/// networks. Same rule: the module's returned hash is the identity.
+export async function ensureAnalysisLayer(bytes: Uint8Array): Promise<string | null> {
+  const module = await analysisModule();
+  if (!module) return null;
+  const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
+  const memo = (analysisLayers[module.cap.id] ??= new Map());
+  if (!memo.has(memoKey)) {
+    const resp = module.invokeBytes(OP_LOAD_LAYER, bytes) as Extract<
+      AnalysisResponse,
+      { op: "load_population_layer" }
+    >;
+    memo.set(memoKey, resp.layer_hash);
+  }
+  return memo.get(memoKey) ?? null;
+}
+
+const analysisNetworks: Record<string, Map<string, string>> = {};
+const analysisLayers: Record<string, Map<string, string>> = {};
+
+/// The current analysis module, if the bus assembled one.
+export async function analysisModule(): Promise<CapModule | null> {
+  const modules = await ensure(["analysis"]);
+  return modules.analysis ?? null;
 }
 
 export function routerCap(module: CapModule) {

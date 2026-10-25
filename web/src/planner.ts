@@ -28,6 +28,12 @@ import type { Network } from "./types/Network";
 import type { NetworkStats } from "./types/NetworkStats";
 import type { PlanInfo } from "./types/PlanInfo";
 import { pushEdits, serviceDate } from "./actions";
+import {
+  ensureAnalysisNetwork,
+  ensureAnalysisLayer,
+  analysisModule,
+  analysisCap,
+} from "./capabilities.svelte";
 
 export type EntityKind = "stop" | "route" | "pattern" | "schedule" | "service_type" | "block";
 
@@ -119,8 +125,19 @@ function setDoc(next: Network, label: string, { validateNow = false } = {}): voi
  * headways at or under 15 minutes are "frequent". */
 const COVERAGE_RADIUS_M = 400;
 const FREQUENT_HEADWAY_SECS = 15 * 60;
+/** The monolith's default for a frequent pocket (dispatch's null → 6);
+ * the capability path passes it explicitly so both paths agree. */
+const MIN_DEPARTURES = 6;
 
 let analysisTimer: ReturnType<typeof setTimeout> | null = null;
+/** Async analysis runs out of order with edits; a stale refresh must
+ * never overwrite a newer one's results. */
+let analysisSeq = 0;
+
+/** Which path served the last analysis refresh — the bus (the
+ * capability extracted from the monolith) or the monolith fallback.
+ * Exposed for e2e/inspection like the map hook. */
+export let analysisPath: "bus" | "monolith" | null = null;
 
 /** Whole-document analysis is real work in the artifact on a real
  * feed — debounce it like validation, one beat after the last edit. */
@@ -131,15 +148,65 @@ function refreshAnalysisSoon(): void {
 
 /** Recompute the planner's views: the service-type overview, per-type
  * coverage (when a population layer is loaded), and the drilled-in
- * type's detail. Best-effort: analysis never blocks authoring. */
-export function refreshAnalysis(): void {
+ * type's detail. Best-effort: analysis never blocks authoring.
+ *
+ * Stage B: the numbers come from the ANALYSIS CAPABILITY when the
+ * bus assembles it (the same domain code, extracted), with the
+ * monolith ops as the fallback. Either path, the same artifact
+ * semantics — the capability registers the document once per edit
+ * and queries by hash; the monolith re-serializes per call. */
+export async function refreshAnalysis(): Promise<void> {
   const doc = getNetworkDoc();
-  if (!doc || !app.wasm) {
+  const seq = ++analysisSeq;
+  const clearViews = () => {
     app.typeOverview = [];
     app.serviceTypeDetail = null;
     app.typeCoverage = null;
+  };
+  if (!doc || !app.wasm) {
+    clearViews();
     return;
   }
+
+  // The bus path: the analysis capability, documents by hash.
+  try {
+    const networkHash = await ensureAnalysisNetwork(doc);
+    if (networkHash && seq === analysisSeq) {
+      const module = await analysisModule();
+      if (module) {
+        const analysis = analysisCap(module);
+        const top = app.plannerStack[app.plannerStack.length - 1];
+        app.typeOverview = analysis.serviceTypesOverview(networkHash);
+        if (app.popLayer && app.popLayerBytes) {
+          const layerHash = await ensureAnalysisLayer(app.popLayerBytes);
+          if (layerHash) {
+            app.typeCoverage = analysis.typeCoverage(
+              networkHash,
+              layerHash,
+              COVERAGE_RADIUS_M,
+              FREQUENT_HEADWAY_SECS,
+              MIN_DEPARTURES,
+            );
+          } else {
+            app.typeCoverage = null;
+          }
+        } else {
+          app.typeCoverage = null;
+        }
+        app.serviceTypeDetail =
+          top && top.view === "service_type" && "id" in top
+            ? analysis.serviceTypeDetail(networkHash, top.id)
+            : null;
+        analysisPath = "bus";
+        return;
+      }
+    }
+  } catch (e) {
+    console.warn("analysis via capability failed, falling back:", e);
+  }
+  if (seq !== analysisSeq) return;
+
+  // The monolith fallback — identical semantics, per-call documents.
   try {
     app.typeOverview = app.wasm.service_types_overview(doc);
     app.typeCoverage = app.popLayer
@@ -153,11 +220,10 @@ export function refreshAnalysis(): void {
       top && top.view === "service_type" && "id" in top
         ? app.wasm.service_type_detail(doc, top.id)
         : null;
+    analysisPath = "monolith";
   } catch (e) {
     console.warn("analysis failed:", e);
-    app.typeOverview = [];
-    app.serviceTypeDetail = null;
-    app.typeCoverage = null;
+    clearViews();
   }
 }
 

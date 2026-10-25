@@ -24,7 +24,7 @@ wasm:
 caps:
     #!/usr/bin/env bash
     set -e
-    cargo build --release -p cap-gtfs -p cap-router --target wasm32-unknown-unknown
+    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis --target wasm32-unknown-unknown
     cargo run --quiet -p cap-abi --bin gen-manifest
 
 # Build everything the server serves: artifact + frontend (web/dist).

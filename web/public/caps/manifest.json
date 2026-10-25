@@ -16,12 +16,12 @@
       ],
       "consumes": {},
       "speaks": {
+        "feed": [
+          1
+        ],
         "watchlist": [
           1,
           2
-        ],
-        "feed": [
-          1
         ]
       },
       "migrates": {
@@ -34,6 +34,34 @@
       },
       "purpose": "Read a GTFS static zip: parse it into a hash-addressed feed registry and answer schedule questions (departures at a stop, stop lists). Assemble for any user who needs to know when service runs. Also owns the watchlist document (the rider's saved stops) and its v1→v2 migration.",
       "op_docs": {
+        "load_watchlist": {
+          "description": "Register a watchlist document (version-tagged JSON) under its content hash.",
+          "example": {
+            "request": {
+              "document": {
+                "stops": [
+                  {
+                    "id": "A",
+                    "label": "home"
+                  },
+                  {
+                    "id": "B",
+                    "label": "work"
+                  }
+                ],
+                "version": "v2"
+              },
+              "op": "load_watchlist"
+            },
+            "response": {
+              "ok": {
+                "op": "load_watchlist",
+                "version": 2,
+                "watchlist_hash": "sha256:<of the document>"
+              }
+            }
+          }
+        },
         "load_feed": {
           "description": "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
           "example": null
@@ -167,34 +195,6 @@
             }
           }
         },
-        "load_watchlist": {
-          "description": "Register a watchlist document (version-tagged JSON) under its content hash.",
-          "example": {
-            "request": {
-              "document": {
-                "stops": [
-                  {
-                    "id": "A",
-                    "label": "home"
-                  },
-                  {
-                    "id": "B",
-                    "label": "work"
-                  }
-                ],
-                "version": "v2"
-              },
-              "op": "load_watchlist"
-            },
-            "response": {
-              "ok": {
-                "op": "load_watchlist",
-                "version": 2,
-                "watchlist_hash": "sha256:<of the document>"
-              }
-            }
-          }
-        },
         "migrate_watchlist": {
           "description": "Migrate a version-1 watchlist to version 2: label = note, colors dropped and reported. Pure and deterministic; the caller keeps the old bytes.",
           "example": {
@@ -285,6 +285,54 @@
         },
         "load_feed": {
           "description": "Register a GTFS zip under its content hash (the same document identity gtfs returns — assert equality at the host). Bulk-bytes op 0.",
+          "example": null
+        }
+      }
+    },
+    {
+      "id": "analysis",
+      "hash": "sha256:8ef603b89e493b6b7f088a93630c2a9d44463f506aeaae3272420baf298b9111",
+      "url": "caps/analysis-8ef603b89e493b6b7f088a93630c2a9d44463f506aeaae3272420baf298b9111.wasm",
+      "bytes": 531960,
+      "ops": [
+        "load_network",
+        "load_population_layer",
+        "network_stats",
+        "service_types_overview",
+        "service_type_detail",
+        "type_coverage"
+      ],
+      "consumes": {},
+      "speaks": {
+        "network": [
+          1
+        ]
+      },
+      "migrates": {},
+      "purpose": "Planner analysis over an authored network document: network/route/stop stats, per-service-type overview and detail, population coverage. The first capability extracted from the monolith — the domain code lives in the shared transit-analysis library. Assemble for planners; riders never download it. Documents are hash-addressed (load once, query by hash — never per-op document serialization).",
+      "op_docs": {
+        "network_stats": {
+          "description": "The network's numbers on one service date: trips, spans, revenue hours, per-route and per-stop activity, headways.",
+          "example": null
+        },
+        "load_population_layer": {
+          "description": "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried).",
+          "example": null
+        },
+        "service_type_detail": {
+          "description": "One service type expanded on its representative day: routes, stops, schedules, totals.",
+          "example": null
+        },
+        "load_network": {
+          "description": "Register an authored network document (the planner's JSON document) under its content hash; idempotent.",
+          "example": null
+        },
+        "type_coverage": {
+          "description": "Population coverage per service type against a hash-addressed layer: what share of the population each type serves, and serves frequently.",
+          "example": null
+        },
+        "service_types_overview": {
+          "description": "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight.",
           "example": null
         }
       }

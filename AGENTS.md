@@ -4,6 +4,10 @@ Local-first transit software: GTFS static + GTFS-rt, parsed by Rust,
 shipped as **one wasm artifact** that runs in the browser (JS), in
 Node (ABI smoke), and on the sync server (Go + wazero). The same
 bytes everywhere is the point of the project — do not break it.
+(The capability-bus PoC restates this for a per-user future: the
+same DOCUMENT and the same contracts everywhere; capability bytes
+are assembled per user. The monolith stays deployed until the bus
+graduates — see the capability bus section.)
 
 **This file is load-bearing.** When your work changes the
 architecture, the ops surface, naming, conventions, commands, or
@@ -97,6 +101,56 @@ transit-ops     dispatch(Request) -> Response: the host-agnostic seam
                 streets_load / street_snap / street_route.
 transit-wasm    THE artifact: flat import-free C ABI over dispatch.
                 No wasm-bindgen — do not reintroduce host glue.
+
+**The capability bus (PoC, alongside the monolith):** horizontal
+capability modules assembled per user from a manifest — the thesis
+is "ship capabilities to match the user," so capability bytes differ
+per user while the DOCUMENT and the contracts stay identical
+everywhere. The monolith remains the deployed artifact until the bus
+graduates.
+
+```
+cap-abi         The seam crate: the flat C ABI as a macro (every
+                capability module is the same four exports), the
+                capability-manifest contract (speaks/migrates/
+                consumes + agent context), the ASSEMBLY VALIDATOR
+                (compose-time proof: closure, version coherence,
+                migration-path reachability — total and property-
+                tested; gen-manifest self-validates before writing),
+                and gen-manifest (the capability set as code; the
+                manifest diff IS the reviewable assembly change).
+                Also caps-smoke.mjs: Node ABI smoke + the law that
+                every advertised op is documented (undocumented ops
+                fail the build — agent context cannot drift).
+cap-gtfs        The gtfs capability: GTFS zip → content-hash feed
+                registry, departures/stops queries, and the watchlist
+                document (v1/v2) with its v1→v2 migration — pure,
+                deterministic, loss REPORTED (MigrationNotes, never
+                silent; identity-preservation is a property law —
+                migrations never touch the sync key space).
+cap-router      The router capability: RAPTOR over a feed document
+                gtfs produced — a pure-function capability; it
+                writes nothing.
+web/src/        capabilities.svelte.ts: the resolver — manifest
+                validation, demand-driven load, byte verification
+                against pinned hashes, per-capability degradation,
+                and the IMMUTABLE document store (every version
+                hash-chained by produced_by; `current` is a pointer;
+                migrations move it forward, rollback moves it back;
+                IndexedDB-persisted). CapabilityDemo.svelte is the
+                visible story (assembly, hash handoff, degraded
+                state, migrate/rollback) in the DataSources modal.
+```
+
+Bus rules that are load-bearing: capabilities compose through
+DOCUMENTS addressed by content hash, never module-to-module — the
+host loads the same bytes into each module and ASSERTS the returned
+hashes agree (`assertSameDocument` is the law); one Request enum per
+capability is the whole surface (only planners write networks —
+readers have no authoring ops by construction); `#[no_mangle]` ABI
+exports collide if one binary links two cap crates (tests assert
+against the hash formula instead); cap crates need
+`crate-type = ["cdylib", "rlib"]` for native tests to link.
 server/         Go + wazero host: scaffolding only (HTTP, manifest,
                 proxy). It must never make a domain decision.
 web/            Svelte 5 runes + Vite, TypeScript end to end. ONE
@@ -257,10 +311,16 @@ Every change lands with tests at the layer that owns the logic:
    changes; regenerate `testdata/corpus.json` (`just wasm` then `just
    corpus`) when response shapes change — the corpus is the
    cross-host byte-identical replay (Rust `golden_test`, Go
-   `golden_test.go`).
+   `golden_test.go`). Capability-module changes extend
+   `crates/cap-abi/caps-smoke.mjs` the same way (`just test` runs it;
+   `just test` and `just e2e` build `caps` first).
 4. A Go round-trip test if server-visible behavior changes.
 5. Playwright e2e for user-visible flows (Svelte components should
-   not need changes when only the ABI underneath changes).
+   not need changes when only the ABI underneath changes). The
+   capability bus keeps its own spec (`web/e2e/caps.spec.mjs`:
+   assembly, composition, degraded state, migrate/rollback) — extend
+   it for bus-visible changes; `caps-prop`/law tests (migration
+   laws, validator mutation law) follow expectation 1.
 
 ## Deliberate non-goals (do not "fix" these)
 
@@ -272,6 +332,13 @@ Every change lands with tests at the layer that owns the logic:
 - Runcutting in transit-network stops at blocks + layovers; operator
   duties/rosters are a future layer, not a `Block` extension.
 - wasm-bindgen / JS glue in the artifact is gone on purpose; the
-  artifact is the raw rustc output with four exports.
+  artifact is the raw rustc output with four exports. Capability
+  modules keep the same flat ABI (cap-abi's macro) — do not give a
+  capability a custom calling convention.
 - The Go server stays scaffolding; domain logic that the server needs
   becomes a transit-ops op.
+- The capability bus is a PoC alongside the monolith: do not split the
+  monolith's ops into capabilities before the registry exists, and
+  do not let a capability grow a private document format — shared
+  data crosses modules as kernel documents addressed by content hash
+  only.

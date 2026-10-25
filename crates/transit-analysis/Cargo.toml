@@ -1,0 +1,22 @@
+[package]
+name = "transit-analysis"
+description = "Planner analysis over an authored network document: network/route/stop stats, service-type overview, population coverage. Pure functions — the same numbers on every host, never computed in a host."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+ts-rs = { workspace = true }
+transit-network = { path = "../transit-network" }
+
+[dev-dependencies]
+proptest = "1"
+zip = { workspace = true }
+transit-core = { path = "../transit-core" }
+# The property-law generator builds networks by importing a generated
+# feed — the inference lives in transit-ops (network.rs), so the law
+# suite dev-depends on it. (Cargo permits dev-only cycles.)
+transit-ops = { path = "../transit-ops" }

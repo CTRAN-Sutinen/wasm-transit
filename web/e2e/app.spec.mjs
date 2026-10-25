@@ -708,6 +708,13 @@ test("planner authors a network and the rider uses it", async ({ page }) => {
   await page.getByRole("button", { name: "Derive from loaded feed" }).click();
   await expect(page.getByText("valid", { exact: true })).toBeVisible();
 
+  // Stage B: the planner's numbers come from the ANALYSIS CAPABILITY
+  // when the bus assembles it — same domain code, extracted from the
+  // monolith, registered once per edit and queried by hash.
+  await expect
+    .poll(async () => page.evaluate(() => window.__analysisPath()))
+    .toBe("bus");
+
   // The service type screen shows the type's WHOLE day — routes,
   // schedules, stops — and frames the type's network on the map
   // (every pattern scheduled under it).

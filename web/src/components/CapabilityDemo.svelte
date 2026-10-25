@@ -8,6 +8,7 @@
   import {
     caps,
     ensure,
+    loadManifest,
     gtfsCap,
     routerCap,
     assertSameDocument,
@@ -49,13 +50,17 @@
     // The panel DECLARES its needs; the resolver assembles
     // demand-driven. Statuses render from resolver state alone.
     if (!caps.manifest) {
-      ensure(["gtfs", "router"]).catch((error: unknown) => {
-        steps.push({
-          label: "manifest",
-          detail: error instanceof Error ? error.message : String(error),
-          ok: false,
+      loadManifest()
+        .then((manifest) =>
+          ensure(manifest.capabilities.map((c) => c.id)),
+        )
+        .catch((error: unknown) => {
+          steps.push({
+            label: "manifest",
+            detail: error instanceof Error ? error.message : String(error),
+            ok: false,
+          });
         });
-      });
     }
     restoreDocuments();
   });

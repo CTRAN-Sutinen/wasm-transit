@@ -15,9 +15,13 @@ declare global {
     __flushEdits: () => Promise<void>;
     __clearEdits: () => void;
     __map: unknown;
+    /// Which path served the last planner analysis refresh: the
+    /// capability bus ("bus") or the monolith fallback.
+    __analysisPath: () => "bus" | "monolith" | null;
   }
 }
 import { app, setEditDocument, restorePlans } from "./state.svelte";
+import { analysisPath } from "./planner";
 import { loadGtfsBytes, FEED_KEY, EDITS_KEY, saveSettings, setNowOverride, flushPersist, syncEdits } from "./actions";
 
 app.wasm = await loadWasm();
@@ -29,6 +33,7 @@ app.status = "wasm ready";
 // document (so a test can isolate itself from the server's shared
 // one). All no-op in normal use.
 window.__setNow = setNowOverride;
+window.__analysisPath = () => analysisPath;
 window.__flushEdits = flushPersist;
 window.__clearEdits = () => {
   setEditDocument([]);

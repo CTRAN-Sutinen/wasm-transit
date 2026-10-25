@@ -573,6 +573,7 @@ export async function loadPopulationFromUrl(): Promise<void> {
 
 export function clearPopulation(): void {
   app.popLayer = null;
+  app.popLayerBytes = null;
   app.status = "Population layer cleared — coverage analysis is off until one is imported.";
 }
 
@@ -580,6 +581,9 @@ async function installPopulation(bytes: Uint8Array, label: string): Promise<void
   if (!app.wasm) return;
   const handle = app.wasm.coverage_load(bytes);
   app.popLayer = { ...handle, label };
+  // The bytes stay: the analysis capability registers layers by
+  // content hash (the monolith path keeps its layer_id registry).
+  app.popLayerBytes = bytes;
   app.status =
     `Population layer loaded (${label}) — ${handle.points} points, field "${handle.pop_field}", ` +
     `${Math.round(handle.total_pop).toLocaleString()} people. Coverage analysis is on.`;

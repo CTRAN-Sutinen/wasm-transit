@@ -120,6 +120,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "cap-analysis"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "chrono",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "transit-analysis",
+ "transit-core",
+ "transit-network",
+ "transit-ops",
+ "ts-rs",
+ "zip",
+]
+
+[[package]]
 name = "cap-gtfs"
 version = "0.1.0"
 dependencies = [
@@ -889,6 +907,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "transit-analysis"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "proptest",
+ "serde",
+ "serde_json",
+ "transit-core",
+ "transit-network",
+ "transit-ops",
+ "ts-rs",
+ "zip",
+]
+
+[[package]]
 name = "transit-core"
 version = "0.1.0"
 dependencies = [
@@ -922,6 +955,7 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
+ "transit-analysis",
  "transit-core",
  "transit-network",
  "transit-router",

@@ -15,7 +15,7 @@
 //! Hosts own I/O, files, and the clock — ops receive dates as
 //! "YYYY-MM-DD" strings and times as seconds since midnight.
 
-pub mod analysis;
+pub use transit_analysis as analysis; // the analysis module moved to its own crate — the bus shares it as a library
 pub mod geojson;
 pub mod network;
 pub mod plans;
