@@ -18,10 +18,12 @@
 pub mod analysis;
 pub mod geojson;
 pub mod network;
+pub mod plans;
 pub mod rt;
 pub mod state;
 
 pub use analysis::{CoverageStats, NetworkStats, PopLayer, RouteStats, StopStats};
+pub use plans::{PlanInfo, PlanIssue};
 pub use geojson::{
     FeatureCollection, LineGeometry, PointGeometry, StopFeature, StopProps, TripLineFeature,
     TripProps,
@@ -44,6 +46,17 @@ use transit_sync::EditRecord;
 pub enum Request {
     /// Parse a GTFS static zip from raw bytes; registers the feed.
     LoadFeed { bytes: Vec<u8> },
+    /// The service-plan chain: which plan is in force on a date (the
+    /// latest effective date at or before it). Unversioned plans
+    /// never resolve.
+    PlansResolve { plans: Vec<PlanInfo>, date: String },
+    /// Chain validity: unique plan ids, versioned plans
+    /// effective-dated, effective dates unique.
+    PlansValidate { plans: Vec<PlanInfo> },
+    /// Every chain member's governing period — [effective_from,
+    /// until the next pick) — derived, never stored: pick dates are
+    /// targets that move during planning.
+    PlansPeriods { plans: Vec<PlanInfo> },
     /// Validate an authored network document without loading it.
     /// Returns every issue — the authoring UI's feedback loop.
     NetworkValidate { network: transit_network::Network },
@@ -225,6 +238,9 @@ pub enum Request {
 pub enum Response {
     LoadFeed { feed_id: u32, summary: transit_core::FeedSummary },
     NetworkValidate { issues: Vec<transit_network::NetworkError> },
+    PlansResolve { plan: Option<String> },
+    PlansValidate { issues: Vec<PlanIssue> },
+    PlansPeriods { periods: Vec<plans::PlanPeriod> },
     NetworkStats { stats: NetworkStats },
     ServiceTypesOverview { service_types: Vec<analysis::ServiceTypeSummary> },
     ServiceTypeDetail { detail: analysis::ServiceTypeDetail },
@@ -304,6 +320,18 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
         }
         Request::NetworkValidate { network } => Ok(Response::NetworkValidate {
             issues: transit_network::validation_issues(&network),
+        }),
+        Request::PlansResolve { plans, date } => {
+            let parsed = parse_date(&date)?;
+            Ok(Response::PlansResolve {
+                plan: plans::resolve(&plans, parsed)?,
+            })
+        }
+        Request::PlansValidate { plans } => Ok(Response::PlansValidate {
+            issues: plans::validate(&plans),
+        }),
+        Request::PlansPeriods { plans } => Ok(Response::PlansPeriods {
+            periods: plans::periods(&plans),
         }),
         Request::NetworkStats { network, date } => {
             let parsed = parse_date(&date)?;

@@ -678,7 +678,7 @@ test("persona tabs split the workflows", async ({ page }) => {
   // persona content — the Data sources panel is closed in the
   // workspace (its inputs stay attached for the config flows).
   await switchPersona(page, "Planner");
-  await expect(page.getByRole("heading", { name: "Network document" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Service plans" })).toBeVisible();
   await expect(page.locator("#data-sources")).toBeHidden();
 
   // The map is ONE canvas across personas: switching never remounts
@@ -922,4 +922,45 @@ test("hiding the panel gives the map the full screen", async ({ page }) => {
       page.evaluate(() => window.innerWidth - document.querySelector(".map-side").getBoundingClientRect().width),
     )
     .toBeGreaterThan(300);
+});
+
+test("service plans frame service changes and survive reload", async ({ page }) => {
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+  await switchPersona(page, "Planner");
+
+  // The workspace roots at the plan chain.
+  await expect(page.getByRole("heading", { name: "Service plans" })).toBeVisible();
+  await page.getByRole("button", { name: "Derive from loaded feed" }).click();
+  await expect(page.getByText("valid", { exact: true })).toBeVisible();
+
+  // Frame the derived network as a pick: name + effective date.
+  await page.getByRole("button", { name: "Document" }).click();
+  await page.getByLabel("Plan name").fill("Spring 2026");
+  await page.getByLabel("Plan effective date").fill("2026-03-01");
+  // Spring is in force in June; the fall pick is still a target.
+  await page.evaluate(() => window.__setNow({ date: "2026-06-01", secs: 0 }));
+
+  // Fork the next pick — the service-change workflow.
+  await page.getByRole("button", { name: "Plans" }).click();
+  await page.getByLabel("New pick name").fill("Fall 2026 pick");
+  await page.getByLabel("New pick effective date").fill("2026-09-07");
+  await page.getByRole("button", { name: "Fork into the next pick" }).click();
+  await expect(page.getByText(/Forked into/)).toBeVisible();
+
+  // The chain resolves and derives the governing periods.
+  await page.getByRole("button", { name: "Plans" }).click();
+  await expect(page.getByText("in force", { exact: true })).toBeVisible();
+  await expect(page.getByText("2026-03-01 → 2026-09-07")).toBeVisible();
+  await expect(page.getByText("2026-09-07 → open")).toBeVisible();
+
+  // Plans are documents: they outlive the session.
+  await page.reload();
+  await waitForMap(page);
+  await switchPersona(page, "Planner");
+  await page.getByRole("button", { name: "Plans" }).click();
+  await expect(page.getByRole("button", { name: "Open plan Fall 2026 pick" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open plan Spring 2026" })).toBeVisible();
+  await expect(page.getByText("2026-03-01 → 2026-09-07")).toBeVisible();
 });

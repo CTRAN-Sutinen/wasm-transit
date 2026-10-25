@@ -33,6 +33,7 @@ fn stop(id: &str, lat: f64, lon: f64) -> (String, transit_network::Stop) {
 pub(crate) fn valid_network() -> Network {
     let net = Network {
         name: "Test Transit".into(),
+        plan: Default::default(),
         anchor: Anchor::NoonMinusTwelve,
         stops: [
             stop("A", 45.0, -122.7),

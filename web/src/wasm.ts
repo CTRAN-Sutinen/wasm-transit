@@ -29,6 +29,9 @@ import type { RtOverview } from "./types/RtOverview";
 import type { RouteSummary } from "./types/RouteSummary";
 import type { ServiceTypeDetail } from "./types/ServiceTypeDetail";
 import type { ServiceTypeSummary } from "./types/ServiceTypeSummary";
+import type { PlanInfo } from "./types/PlanInfo";
+import type { PlanIssue } from "./types/PlanIssue";
+import type { PlanPeriod } from "./types/PlanPeriod";
 import type { TypeCoverage } from "./types/TypeCoverage";
 import type { StopFeature } from "./types/StopFeature";
 import type { StopSummary } from "./types/StopSummary";
@@ -374,6 +377,24 @@ export function type_coverage(
   ).coverage;
 }
 
+/// Which service plan is in force on a date (the latest pick at or
+/// before it; unversioned plans never resolve).
+export function plans_resolve(plans: PlanInfo[], date: string): string | null {
+  return (invoke({ op: "plans_resolve", plans, date }) as { plan: string | null }).plan;
+}
+
+/// Chain validity: unique plan ids, versioned plans effective-dated,
+/// effective dates unique.
+export function plans_validate(plans: PlanInfo[]): PlanIssue[] {
+  return (invoke({ op: "plans_validate", plans }) as { issues: PlanIssue[] }).issues;
+}
+
+/// Every pick's governing period — [effective_from, until the next
+/// pick) — derived, never stored.
+export function plans_periods(plans: PlanInfo[]): PlanPeriod[] {
+  return (invoke({ op: "plans_periods", plans }) as { periods: PlanPeriod[] }).periods;
+}
+
 export type CoverageLayer = {
   layer_id: number;
   points: number;
@@ -420,6 +441,9 @@ export type WasmApi = {
   service_types_overview: typeof service_types_overview;
   service_type_detail: typeof service_type_detail;
   type_coverage: typeof type_coverage;
+  plans_resolve: typeof plans_resolve;
+  plans_validate: typeof plans_validate;
+  plans_periods: typeof plans_periods;
   coverage_load: typeof coverage_load;
   coverage_stats: typeof coverage_stats;
   streets_load: typeof streets_load;
@@ -440,6 +464,9 @@ export async function loadWasm(): Promise<WasmApi> {
     service_types_overview,
     service_type_detail,
     type_coverage,
+    plans_resolve,
+    plans_validate,
+    plans_periods,
     coverage_load,
     coverage_stats,
     streets_load,

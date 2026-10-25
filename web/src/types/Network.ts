@@ -3,6 +3,7 @@ import type { Anchor } from "./Anchor";
 import type { Block } from "./Block";
 import type { Pattern } from "./Pattern";
 import type { PatternSchedule } from "./PatternSchedule";
+import type { PlanMeta } from "./PlanMeta";
 import type { Route } from "./Route";
 import type { ServiceType } from "./ServiceType";
 import type { Stop } from "./Stop";
@@ -12,6 +13,11 @@ import type { Stop } from "./Stop";
  * canonical and per-entity sync falls out later.
  */
 export type Network = { name: string, 
+/**
+ * The service plan this document is: the versioning frame for
+ * service changes. Defaults to unversioned.
+ */
+plan: PlanMeta, 
 /**
  * The service-day time anchor every offset in the network is
  * measured from. Defaults to the noon-minus-12h convention.

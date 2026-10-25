@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 
-use transit_ops::{dispatch, network_to_gtfs, Request, Response};
+use transit_ops::{dispatch, network_to_gtfs, PlanInfo, Request, Response};
 use prost::Message;
 use transit_network::Schedule;
 use transit_rt::gtfs_rt as rt;
@@ -1155,6 +1155,67 @@ fn service_type_ops_expose_the_design_axis() {
     assert_eq!(coverage[0].service_type, "WK");
     assert!((coverage[0].served_pct - 150.0 / 180.0 * 100.0).abs() < 1e-6);
     assert!((coverage[0].frequent_pct - 100.0 / 180.0 * 100.0).abs() < 1e-6);
+}
+
+#[test]
+fn service_plan_chain_resolves_and_validates() {
+    // Service changes: agencies implement a few picks a year at
+    // defined dates. The chain is a first-class artifact concept —
+    // resolution ("which plan is in force") and validity, not
+    // GTFS's merged-feed mess.
+    let spring = PlanInfo {
+        id: "spring".into(),
+        name: "Spring 2026".into(),
+        effective_from: Some("2026-03-01".into()),
+    };
+    let fall = PlanInfo {
+        id: "fall".into(),
+        name: "Fall 2026".into(),
+        effective_from: Some("2026-09-07".into()),
+    };
+    let chain = vec![spring.clone(), fall.clone()];
+
+    let resolved = |date: &str| match dispatch(Request::PlansResolve { plans: chain.clone(), date: date.into() }).unwrap() {
+        Response::PlansResolve { plan } => plan,
+        _ => panic!("plans_resolve"),
+    };
+    assert_eq!(resolved("2026-01-01"), None, "no pick has taken effect yet");
+    assert_eq!(resolved("2026-06-01"), Some("spring".into()));
+    assert_eq!(resolved("2026-10-24"), Some("fall".into()), "the latest pick at or before the date wins");
+    // Unversioned imports never resolve.
+    let imported = PlanInfo { id: "".into(), name: "imported".into(), effective_from: None };
+    assert_eq!(
+        match dispatch(Request::PlansResolve { plans: vec![imported], date: "2026-10-24".into() }).unwrap() {
+            Response::PlansResolve { plan } => plan,
+            _ => panic!(),
+        },
+        None
+    );
+
+    // A valid chain has no issues; a broken one reports every one.
+    let issues = match dispatch(Request::PlansValidate { plans: chain }).unwrap() {
+        Response::PlansValidate { issues } => issues,
+        _ => panic!("plans_validate"),
+    };
+    assert!(issues.is_empty(), "{issues:?}");
+
+    let broken = vec![
+        PlanInfo { id: "spring".into(), name: "Spring".into(), effective_from: Some("2026-03-01".into()) },
+        PlanInfo { id: "spring".into(), name: "Spring dup".into(), effective_from: Some("2026-05-01".into()) },
+        PlanInfo { id: "undated".into(), name: "Undated".into(), effective_from: None },
+        PlanInfo { id: "same-day".into(), name: "Same day".into(), effective_from: Some("2026-03-01".into()) },
+    ];
+    let issues = match dispatch(Request::PlansValidate { plans: broken }).unwrap() {
+        Response::PlansValidate { issues } => issues,
+        _ => panic!("plans_validate"),
+    };
+    let kinds: Vec<String> = issues
+        .iter()
+        .map(|i| serde_json::to_value(i).unwrap()["kind"].as_str().unwrap().to_string())
+        .collect();
+    assert!(kinds.contains(&"duplicate_plan_id".to_string()), "{kinds:?}");
+    assert!(kinds.contains(&"plan_missing_effective_date".to_string()), "{kinds:?}");
+    assert!(kinds.contains(&"duplicate_effective_date".to_string()), "{kinds:?}");
 }
 
 #[test]

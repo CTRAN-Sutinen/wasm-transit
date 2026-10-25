@@ -97,6 +97,7 @@ fn dayset(index: u32) -> WeekdaySet {
 fn build_network(spec: &Spec) -> Network {
     let mut net = Network {
         name: "Generated".into(),
+        plan: Default::default(),
         anchor: Anchor::NoonMinusTwelve,
         stops: Default::default(),
         routes: Default::default(),

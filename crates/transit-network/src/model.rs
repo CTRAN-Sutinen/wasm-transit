@@ -66,6 +66,29 @@ pub mod iso_date {
     }
 }
 
+/// Same, optional: None serializes as null.
+pub mod iso_opt_date {
+    use chrono::NaiveDate;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(date: &Option<NaiveDate>, s: S) -> Result<S::Ok, S::Error> {
+        match date {
+            Some(d) => s.serialize_str(&d.format("%Y-%m-%d").to_string()),
+            None => s.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<NaiveDate>, D::Error> {
+        let raw: Option<String> = Option::deserialize(d)?;
+        match raw {
+            None => Ok(None),
+            Some(raw) => NaiveDate::parse_from_str(raw.trim(), "%Y-%m-%d")
+                .map(Some)
+                .map_err(|e| serde::de::Error::custom(format!("invalid date {raw:?}: {e}"))),
+        }
+    }
+}
+
 /// Where a service day's second zero sits. `NoonMinusTwelve` is the
 /// GTFS convention, adopted on its merits rather than for
 /// compatibility: no DST transition occurs near noon, so offsets
@@ -404,12 +427,39 @@ pub struct Layover {
     pub at: Option<StopId>,
 }
 
+/// The service-plan frame of a network document. Agencies implement
+/// a few service changes ("picks") a year at defined dates — the
+/// only times permanent stop/route changes are allowed — and each
+/// pick is one of these documents, effective from its service
+/// change date until superseded by the next. A document without
+/// plan metadata is unversioned (e.g. a fresh GTFS import).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct PlanMeta {
+    /// The plan's identity — the sync key (LWW per plan). Empty on
+    /// unversioned documents.
+    #[serde(default)]
+    pub id: String,
+    /// Display name ("Fall 2026 pick").
+    #[serde(default)]
+    pub name: String,
+    /// The service change date this plan takes effect, "YYYY-MM-DD".
+    /// None on unversioned documents; a plan in a chain must have one.
+    #[serde(default, with = "iso_opt_date", skip_serializing_if = "Option::is_none")]
+    #[ts(type = "string | null")]
+    pub effective_from: Option<NaiveDate>,
+}
+
 /// The authored network document. BTreeMap-keyed so serialization is
 /// canonical and per-entity sync falls out later.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Network {
     pub name: String,
+    /// The service plan this document is: the versioning frame for
+    /// service changes. Defaults to unversioned.
+    #[serde(default)]
+    pub plan: PlanMeta,
     /// The service-day time anchor every offset in the network is
     /// measured from. Defaults to the noon-minus-12h convention.
     #[serde(default)]

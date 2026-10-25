@@ -18,7 +18,7 @@
 /// materialization live in the artifact (transit-ops), this file only
 /// moves documents across the seam.
 
-import { app, getNetworkDoc, setNetworkDoc } from "./state.svelte";
+import { app, getNetworkDoc, setNetworkDoc, getAllPlans, getActivePlanId, putPlan, setActivePlan, removePlan as removePlanFromStore } from "./state.svelte";
 import type { CoverageStats } from "./types/CoverageStats";
 import type { DayState } from "./types/DayState";
 import type { HeadwayBand } from "./types/HeadwayBand";
@@ -26,12 +26,16 @@ import type { ImportNote } from "./types/ImportNote";
 import type { Mode } from "./types/Mode";
 import type { Network } from "./types/Network";
 import type { NetworkStats } from "./types/NetworkStats";
+import type { PlanInfo } from "./types/PlanInfo";
+import { pushEdits, serviceDate } from "./actions";
 
 export type EntityKind = "stop" | "route" | "pattern" | "schedule" | "service_type" | "block";
 
-/// One planner screen. The workspace is a stack: overview at the
-/// root, every drill-down pushes, Back pops. Plain data.
+/// One planner screen. The workspace is a stack: the PLAN CHAIN at
+/// the root (service changes are the frame everything else lives
+/// in), overview per active plan, drill-downs push, Back pops.
 export type PlannerScreen =
+  | { view: "plans" }
   | { view: "overview" }
   | { view: "document" }
   | { view: "routes" }
@@ -49,7 +53,6 @@ export type PlannerScreen =
 
 export type Focus = { lines: number[][][]; points: number[][] };
 export type DayName = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
-import { pushEdits } from "./actions";
 
 // ---------------------------------------------------------------
 // time helpers — service-day times, hours may pass 24
@@ -163,6 +166,108 @@ export function refreshCoverage(): void {
   refreshAnalysis();
 }
 
+// ---------------------------------------------------------------
+// service plans — the chain: forks, picks, and the frame of
+// everything else in the workspace
+// ---------------------------------------------------------------
+
+function newStoreKey(): string {
+  return `plan-${crypto.randomUUID ? crypto.randomUUID() : Date.now()}`;
+}
+
+function newPlanId(): string {
+  return crypto.randomUUID ? crypto.randomUUID() : `plan-${Date.now()}`;
+}
+
+/** Chain metadata of every stored plan — only framed plans (with a
+ * plan identity) participate in the chain ops. */
+function planInfos(): PlanInfo[] {
+  return Object.values(getAllPlans())
+    .filter((d) => d.plan?.id)
+    .map((d) => ({ id: d.plan.id, name: d.plan.name, effective_from: d.plan.effective_from ?? null }));
+}
+
+/** Refresh the chain view from the artifact: the plan in force
+ * today, each pick's governing period, and chain issues. Cheap —
+ * run on workspace entry and every plan CRUD. */
+export function refreshPlanChain(): void {
+  if (!app.wasm) return;
+  const infos = planInfos();
+  try {
+    app.planChain = {
+      inForce: app.wasm.plans_resolve(infos, serviceDate()),
+      periods: app.wasm.plans_periods(infos),
+      issues: app.wasm.plans_validate(infos),
+    };
+  } catch (e) {
+    console.warn("plan chain refresh failed:", e);
+  }
+}
+
+/** The service-change workflow: fork a plan into the NEXT pick. The
+ * fork carries the whole world it changes — permanent stop/route
+ * changes are only made at picks — with fresh plan metadata. */
+export function forkPlan(fromKey: string, name: string, effectiveFrom: string): void {
+  const src = getAllPlans()[fromKey];
+  if (!src) {
+    app.status = "Fork needs a source plan.";
+    return;
+  }
+  if (!name.trim() || !effectiveFrom) {
+    app.status = "A new pick needs a name and an effective date.";
+    return;
+  }
+  const doc = structuredClone(src);
+  doc.plan = { id: newPlanId(), name: name.trim(), effective_from: effectiveFrom };
+  const key = `plan-${doc.plan.id}`;
+  putPlan(key, doc);
+  setActivePlan(key);
+  app.plannerStack = [{ view: "plans" }, { view: "overview" }];
+  app.plannerMapUp = true;
+  app.plannerSelection = null;
+  app.plannerFocus = null;
+  setDoc(doc, `pick "${doc.plan.name}"`, { validateNow: true });
+  refreshPlanChain();
+  app.status =
+    `Forked into "${doc.plan.name}" (effective ${effectiveFrom}) — the pick date is a ` +
+    "target; it can move until it's real. Structure changes live here.";
+}
+
+/** Open a plan: it becomes the active document the whole workspace
+ * operates on. */
+export function switchPlan(key: string): void {
+  if (!getAllPlans()[key]) return;
+  setActivePlan(key);
+  app.plannerStack = [{ view: "plans" }, { view: "overview" }];
+  app.plannerMapUp = true;
+  app.plannerSelection = null;
+  app.plannerFocus = null;
+  validateNetwork();
+  refreshAnalysis();
+  refreshPlanChain();
+}
+
+/** Remove a plan from the set (the workspace root's delete). */
+export function deletePlan(key: string): void {
+  removePlanFromStore(key);
+  app.plannerSelection = null;
+  app.plannerFocus = null;
+  refreshPlanChain();
+  app.status = "Plan removed from the set.";
+}
+
+/** Frame the ACTIVE document as a pick: name and effective date
+ * (the target service change date). Framing assigns the sync
+ * identity. Dates are targets — they move during planning. */
+export function updatePlanMeta({ name, effectiveFrom }: { name?: string; effectiveFrom?: string | null }): void {
+  mutateNetwork((d) => {
+    if (!d.plan.id) d.plan.id = newPlanId();
+    if (name !== undefined) d.plan.name = name;
+    if (effectiveFrom !== undefined) d.plan.effective_from = effectiveFrom === "" ? null : effectiveFrom;
+  });
+  refreshPlanChain();
+}
+
 /** "12 min headway" / "—" for nullable headway stats. */
 export function fmtHeadwaySafe(secs: number | null | undefined): string {
   if (secs == null) return "—";
@@ -195,8 +300,20 @@ export async function deriveFromFeed(): Promise<void> {
     if (!app.wasm) return;
     const { network: net, notes } = app.wasm.network_import(app.gtfs.feedId());
     app.networkNotes = notes;
+    // The derived document is a plan in the set — unversioned until
+    // the planner frames it (gives it a pick date). The chain is the
+    // workspace root; the plan set outlives every session.
+    net.plan = { id: "", name: "", effective_from: null };
+    const key = newStoreKey();
+    putPlan(key, net);
+    setActivePlan(key);
+    app.plannerStack = [{ view: "plans" }, { view: "overview" }];
+    app.plannerMapUp = true;
+    app.plannerSelection = null;
+    app.plannerFocus = null;
     setDoc(net, "derived from loaded feed", { validateNow: true });
-    app.status = `Derived a network from the loaded feed (${Object.keys(net.patterns).length} patterns, ${Object.keys(net.schedules).length} schedules) — edit it, then load it into the app.`;
+    refreshPlanChain();
+    app.status = `Derived a network from the loaded feed (${Object.keys(net.patterns).length} patterns, ${Object.keys(net.schedules).length} schedules) — frame it as a pick, edit it, then load it into the app.`;
   } catch (e) {
     app.status = `Error: ${e?.message ?? e}`;
   }
@@ -210,7 +327,18 @@ export function loadNetworkText(text: string, label: string): boolean {
     app.status = `Not valid JSON: ${e.message}`;
     return false;
   }
+  // An opened document becomes a plan in the set (its own plan
+  // metadata rides along inside the document).
+  if (!doc.plan) doc.plan = { id: "", name: "", effective_from: null };
+  const key = doc.plan.id ? `plan-${doc.plan.id}` : newStoreKey();
+  putPlan(key, doc);
+  setActivePlan(key);
+  app.plannerStack = [{ view: "plans" }, { view: "overview" }];
+  app.plannerMapUp = true;
+  app.plannerSelection = null;
+  app.plannerFocus = null;
   setDoc(doc, label, { validateNow: true });
+  refreshPlanChain();
   const n = app.networkIssues.length;
   app.status =
     n === 0

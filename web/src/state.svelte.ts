@@ -15,6 +15,8 @@ import type { Network } from "./types/Network";
 import type { NetworkError } from "./types/NetworkError";
 import type { ServiceTypeDetail } from "./types/ServiceTypeDetail";
 import type { ServiceTypeSummary } from "./types/ServiceTypeSummary";
+import type { PlanIssue } from "./types/PlanIssue";
+import type { PlanPeriod } from "./types/PlanPeriod";
 import type { TypeCoverage } from "./types/TypeCoverage";
 import type { RtOverview } from "./types/RtOverview";
 import type { TripLineFeature } from "./types/TripLineFeature";
@@ -24,6 +26,7 @@ import type { GtfsHandle, WasmApi } from "./wasm";
 import type { PlanFeature } from "./actions";
 import type { StreetPosition } from "./types/StreetPosition";
 import type { Streets } from "./streets";
+import { get as idbGet, set as idbSet } from "idb-keyval";
 
 /// The diversion editor's form state (UI only — the edit document
 /// below is the persisted truth).
@@ -127,6 +130,9 @@ export type AppState = {
   // types; the type's own day mapping is a detail inside its screen.
   typeOverview: ServiceTypeSummary[],
   serviceTypeDetail: ServiceTypeDetail | null,
+  // The service-plan chain view, from the artifact's plans ops: the
+  // plan in force today, each plan's governing period, chain issues.
+  planChain: { inForce: string | null; periods: PlanPeriod[]; issues: PlanIssue[] },
   // Population coverage per service type (null: no layer imported).
   typeCoverage: TypeCoverage[] | null,
   // The imported population layer handle (GeoJSON points; the
@@ -224,18 +230,89 @@ export function setEditDocument(next: unknown): void {
   editDocument = sanitizeEdits(next);
 }
 
-/// The authored network document (transit-network `Network`) — same
+/// The authored network documents (transit-network `Network`) — same
 /// discipline as the edit document: JS-owned, plain data, wholesale
-/// replacement. wasm only ever sees it as an argument to
-/// `network_validate` / `network_load`; the materialized feed it
-/// registers is a derived view. Deliberately not persisted yet —
-/// planner sync is a separate (future) concern.
-let networkDoc = $state.raw<Network | null>(null);
+/// replacement. A **service plan** is one of these documents framed
+/// by its `plan` metadata (identity, name, effective date); the plan
+/// set is keyed by a store id (the sync identity inside the document
+/// is `plan.id` — empty on unversioned imports). wasm only ever sees
+/// a document as an op argument; materialized feeds are derived
+/// views. Persisted to IndexedDB (plans survive reloads — service
+/// changes span weeks).
+let plans = $state.raw<Record<string, Network>>({});
+let activePlanId = $state.raw<string>("");
+
 export function getNetworkDoc(): Network | null {
-  return networkDoc;
+  return activePlanId ? plans[activePlanId] ?? null : null;
 }
+
 export function setNetworkDoc(next: Network | null): void {
-  networkDoc = next;
+  if (!next) return;
+  if (!activePlanId) {
+    // Safety: a document without an active plan still needs a home.
+    activePlanId = `plan-${crypto.randomUUID()}`;
+    localStorage.setItem(ACTIVE_PLAN_KEY, activePlanId);
+  }
+  plans = { ...plans, [activePlanId]: next };
+  void persistPlans();
+}
+
+export function getAllPlans(): Record<string, Network> {
+  return plans;
+}
+
+export function getActivePlanId(): string {
+  return activePlanId;
+}
+
+export function putPlan(id: string, doc: Network): void {
+  plans = { ...plans, [id]: doc };
+  void persistPlans();
+}
+
+export function setActivePlan(id: string): void {
+  activePlanId = id;
+  localStorage.setItem(ACTIVE_PLAN_KEY, id);
+}
+
+export function removePlan(id: string): void {
+  const { [id]: _drop, ...rest } = plans;
+  plans = rest;
+  if (activePlanId === id) {
+    activePlanId = "";
+    localStorage.removeItem(ACTIVE_PLAN_KEY);
+  }
+  void persistPlans();
+}
+
+const PLANS_KEY = "transit:plans";
+const ACTIVE_PLAN_KEY = "transit:active-plan";
+let plansWrite: Promise<unknown> = Promise.resolve();
+
+/** Persist the plan set — serialized writes, one pending at a time
+ * (the same discipline as the edit document's flushPersist). */
+function persistPlans(): void {
+  plansWrite = plansWrite
+    .then(() => idbSet(PLANS_KEY, plans))
+    .catch((e) => console.warn("plan persistence failed:", e));
+}
+
+/** Restore the plan set on startup (documents cross IN from
+ * IndexedDB; JS owns them, so a shape guard keeps stale builds from
+ * wedging the workspace). */
+export async function restorePlans(): Promise<void> {
+  try {
+    const stored = await idbGet(PLANS_KEY);
+    if (stored && typeof stored === "object") {
+      plans = stored as Record<string, Network>;
+    }
+    const active = localStorage.getItem(ACTIVE_PLAN_KEY);
+    if (active && plans[active]) {
+      activePlanId = active;
+    }
+  } catch (e) {
+    console.warn("plan restore failed:", e);
+  }
 }
 
 /// The imported street network (dispatcher detour authoring) — same
@@ -292,9 +369,10 @@ export const app = $state<AppState>({
 
   networkIssues: [],
   networkNotes: [],
-  plannerStack: [{ view: "overview" }] as PlannerScreen[],
+  plannerStack: [{ view: "plans" }] as PlannerScreen[],
   typeOverview: [],
   serviceTypeDetail: null,
+  planChain: { inForce: null, periods: [], issues: [] },
   typeCoverage: null,
   popLayer: null,
   popUrl: "",

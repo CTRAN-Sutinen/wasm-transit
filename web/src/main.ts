@@ -17,7 +17,7 @@ declare global {
     __map: unknown;
   }
 }
-import { app, setEditDocument } from "./state.svelte";
+import { app, setEditDocument, restorePlans } from "./state.svelte";
 import { loadGtfsBytes, FEED_KEY, EDITS_KEY, saveSettings, setNowOverride, flushPersist, syncEdits } from "./actions";
 
 app.wasm = await loadWasm();
@@ -49,6 +49,7 @@ try {
   app.vpPolling = !!settings.vpPolling && !!settings.vpUrl;
   app.persona = (localStorage.getItem("transit:persona") ?? "rider") as "rider";
 
+  await restorePlans();
   const edits = await get(EDITS_KEY);
   if (Array.isArray(edits)) setEditDocument(edits);
 

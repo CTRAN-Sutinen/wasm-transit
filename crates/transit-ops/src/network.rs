@@ -351,6 +351,9 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
             .first()
             .map(|a| a.agency_name.clone())
             .unwrap_or_else(|| "Imported network".into()),
+        // A GTFS import is unversioned until the planner frames it
+        // as a pick: `plan` defaults to no identity, no date.
+        plan: Default::default(),
         anchor: Anchor::NoonMinusTwelve,
         stops: Default::default(),
         routes: Default::default(),

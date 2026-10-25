@@ -14,3 +14,5 @@ playwright-report
 
 # Basemap extract — regenerate with `just basemap` (~94 MB at z15)
 web/public/basemap.pmtiles
+
+mutants.out/

@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 9fdcfd0239b1c7f2fbe6ed784592a341d4b1d103fc839eebd1e839d0e110cc1a # shrinks to plans = [PlanInfo { id: "", name: "Plan ", effective_from: None }, PlanInfo { id: "unversioned", name: "Plan unversioned", effective_from: None }]
+cc d504e322f2b70b6acd4975a4a4bd4749f2779c6fc67275eae8aa6556937947d5 # shrinks to plans = [PlanInfo { id: "", name: "Plan ", effective_from: None }, PlanInfo { id: "", name: "Plan ", effective_from: None }, PlanInfo { id: "p0", name: "Plan p0", effective_from: Some("2026-06-18") }, PlanInfo { id: "p1", name: "Plan p1", effective_from: Some("2026-06-18") }]

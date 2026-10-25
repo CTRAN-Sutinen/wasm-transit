@@ -5,13 +5,15 @@
   /// screen — Back pops. The menu jumps to the authoring collections.
   /// All numbers come from the artifact's analysis ops; this file
   /// only renders them.
-  import { app, getNetworkDoc } from "../state.svelte";
+  import { app, getNetworkDoc, getAllPlans, getActivePlanId } from "../state.svelte";
   import {
     deriveFromFeed, materializeNetwork, validateNetwork, loadNetworkText,
     loadNetworkFile, exportNetworkText, downloadNetwork, selectEntity,
     addStop, addRoute, addPattern, addServiceType, addSchedule, addBlock,
-    plannerBack, plannerGo, togglePlannerMap,
+    plannerBack, plannerGo, togglePlannerMap, forkPlan, switchPlan,
+    deletePlan, updatePlanMeta, refreshPlanChain, refreshAnalysis,
   } from "../planner";
+  import { serviceDate } from "../actions";
   import type { PlannerScreen } from "../planner";
   import RouteForm from "./RouteForm.svelte";
   import StopForm from "./StopForm.svelte";
@@ -23,12 +25,38 @@
   const doc = $derived(getNetworkDoc());
   const stack = $derived(app.plannerStack);
   const screen = $derived(stack[stack.length - 1]);
+  const allPlans = $derived(getAllPlans());
+  const activeKey = $derived(getActivePlanId());
+
+  // The chain view and the analysis refresh when the workspace
+  // opens (plan CRUD refreshes the chain itself; edits refresh the
+  // analysis through setDoc).
+  $effect(() => {
+    if (app.persona === "planner") {
+      refreshPlanChain();
+      if (getNetworkDoc()) refreshAnalysis();
+    }
+  });
+
+  // The fork form: "from" preselects the in-force plan.
+  let forkFrom = $state("");
+  let forkName = $state("");
+  let forkDate = $state("");
+  $effect(() => {
+    if (!forkFrom && app.planChain.inForce) {
+      const framed = Object.entries(getAllPlans()).find(
+        ([, d]) => d.plan?.id === app.planChain.inForce,
+      );
+      if (framed) forkFrom = framed[0];
+    }
+  });
 
   let filter = $state("");
   const q = $derived(filter.trim().toLowerCase());
   const matches = (s: string): boolean => !q || s.toLowerCase().includes(q);
 
   const navItems: { view: PlannerScreen["view"]; label: string }[] = [
+    { view: "plans", label: "Plans" },
     { view: "overview", label: "Overview" },
     { view: "routes", label: "Routes" },
     { view: "stops", label: "Stops" },
@@ -56,12 +84,112 @@
   </button>
 </nav>
 
-{#if !doc}
+{#if screen.view === "plans"}
+  <section>
+    <h2>Service plans</h2>
+    <p class="muted">
+      Agencies implement a few picks a year at defined dates — the only
+      times permanent stop/route changes are allowed. Every plan below
+      is a whole document (structure + schedules + runcut); the plan in
+      force today is resolved by the artifact. Pick dates are targets:
+      they move until they're real.
+    </p>
+
+    {#if app.planChain.issues.length > 0}
+      <ul class="issues">
+        {#each app.planChain.issues as issue (JSON.stringify(issue))}
+          <li><code>{issue.kind.replaceAll("_", " ")}</code> {JSON.stringify(
+            Object.fromEntries(Object.entries(issue).filter(([k]) => k !== "kind")),
+          )}</li>
+        {/each}
+      </ul>
+    {/if}
+
+    {#if Object.keys(allPlans).length > 0}
+      <div class="table-scroll">
+        <table class="stat-table">
+          <thead>
+            <tr><th>plan</th><th>effective</th><th>period</th><th>status</th></tr>
+          </thead>
+          <tbody>
+            {#each Object.entries(allPlans).sort(([a], [b]) => (a < b ? -1 : 1)) as [key, p] (key)}
+              {@const meta = p.plan}
+              {@const period = meta?.id ? app.planChain.periods.find((q) => q.id === meta.id) : null}
+              {@const today = serviceDate()}
+              {@const status =
+                !meta?.effective_from ? "unversioned"
+                : app.planChain.inForce === meta.id ? "in force"
+                : meta.effective_from > today ? "upcoming"
+                : "superseded"}
+              <tr class:active-row={key === activeKey}>
+                <td>
+                  <button class="link" aria-label={`Open plan ${meta?.name || p.name}`}
+                          onclick={() => switchPlan(key)}>
+                    <strong>{meta?.name || p.name || key}</strong>
+                  </button>
+                </td>
+                <td>{meta?.effective_from ?? "—"}</td>
+                <td>
+                  {#if period}{period.effective_from} → {period.until ?? "open"}{:else}—{/if}
+                </td>
+                <td>
+                  <span class="chip {status === 'in force' ? 'ok' : 'svc'}">{status}</span>
+                  {#if key === activeKey}<span class="chip svc">active</span>{/if}
+                </td>
+                <td>
+                  <button class="link" aria-label={`Fork plan ${meta?.name || key}`}
+                          onclick={() => { forkFrom = key; }}>Fork</button>
+                  <button class="link" aria-label={`Remove plan ${meta?.name || key}`}
+                          onclick={() => deletePlan(key)}>remove</button>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+
+      <h4>New pick from an existing plan</h4>
+      <p class="ent-row">
+        <label>from
+          <select aria-label="Fork source plan" bind:value={forkFrom}>
+            {#each Object.keys(allPlans) as key (key)}
+              <option value={key}>{allPlans[key].plan?.name || allPlans[key].name || key}</option>
+            {/each}
+          </select>
+        </label>
+      </p>
+      <p class="ent-row">
+        <label>name
+          <input aria-label="New pick name" bind:value={forkName} placeholder="Fall 2026 pick">
+        </label>
+        <label>effective
+          <input type="date" aria-label="New pick effective date" bind:value={forkDate}>
+        </label>
+      </p>
+      <p>
+        <button class="primary" onclick={() => { forkPlan(forkFrom, forkName, forkDate); forkName = ""; forkDate = ""; }}>
+          Fork into the next pick
+        </button>
+      </p>
+    {:else}
+      <p class="muted">
+        No plans yet. A planner works off an existing network: load a
+        GTFS feed in the Rider or Dispatcher view, then derive the
+        first plan from it here.
+      </p>
+      <p>
+        <button class="primary" onclick={deriveFromFeed} disabled={!app.gtfs}>
+          Derive from loaded feed
+        </button>
+      </p>
+    {/if}
+  </section>
+{:else if !doc}
   <section>
     <h2>Network document</h2>
     <p class="muted">
-      A planner works off an existing network: load a GTFS feed in
-      the Rider or Dispatcher view, then derive the document from it here.
+      No active plan — open or fork one on the Plans screen, or
+      derive a network from the loaded feed.
     </p>
     <p>
       <button class="primary" onclick={deriveFromFeed} disabled={!app.gtfs}>
@@ -255,6 +383,23 @@
 {:else if screen.view === "document"}
   <section>
     <h2>Network document</h2>
+    <h4>Plan frame</h4>
+    <p class="ent-row">
+      <label>pick name
+        <input aria-label="Plan name" value={doc.plan?.name}
+               onchange={(e) => updatePlanMeta({ name: e.currentTarget.value })}>
+      </label>
+      <label>effective
+        <input type="date" aria-label="Plan effective date" value={doc.plan?.effective_from ?? ""}
+               onchange={(e) => updatePlanMeta({ effectiveFrom: e.currentTarget.value })}>
+      </label>
+    </p>
+    {#if !doc.plan?.effective_from}
+      <p class="muted">
+        Unversioned — set an effective date to frame this document as a
+        pick in the chain. Dates are targets; they move until they're real.
+      </p>
+    {/if}
     <p class="chips">
       <span class="chip">{app.networkLabel}</span>
       <span class="chip svc">{Object.keys(doc.stops).length} stops</span>
