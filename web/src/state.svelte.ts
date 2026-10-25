@@ -9,13 +9,17 @@
 
 import type { EditRecord } from "./types/EditRecord";
 import type { EditReport } from "./types/EditReport";
+import type { ImportNote } from "./types/ImportNote";
 import type { Itinerary } from "./types/Itinerary";
 import type { Network } from "./types/Network";
 import type { NetworkError } from "./types/NetworkError";
+import type { ServiceTypeDetail } from "./types/ServiceTypeDetail";
+import type { ServiceTypeSummary } from "./types/ServiceTypeSummary";
+import type { TypeCoverage } from "./types/TypeCoverage";
 import type { RtOverview } from "./types/RtOverview";
 import type { TripLineFeature } from "./types/TripLineFeature";
 import type { VehicleView } from "./types/VehicleView";
-import type { EntityKind, Focus } from "./planner";
+import type { EntityKind, Focus, PlannerScreen } from "./planner";
 import type { GtfsHandle, WasmApi } from "./wasm";
 import type { PlanFeature } from "./actions";
 import type { StreetPosition } from "./types/StreetPosition";
@@ -108,6 +112,31 @@ export type AppState = {
   // Network authoring (planner persona). Issues come back from the
   // artifact (`network_validate`): typed, whole-list, never thrown.
   networkIssues: NetworkError[],
+  // Resolutions the artifact's import applied to the last derived
+  // document (dropped block trips, unusable transfer points, …) —
+  // reported, never silent. Cleared when a document is loaded from
+  // JSON (documents carry their own state; notes describe a feed).
+  networkNotes: ImportNote[],
+  // The planner's workspace is a screen stack: overview at the
+  // root, drill-downs push, Back pops. Plain data — nothing here is
+  // ever proxied deeply, and the stack is UI-only (never synced).
+  plannerStack: PlannerScreen[],
+  // The planner's DESIGN axis, from the artifact: every service
+  // type's numbers on its representative day (and the type being
+  // drilled into, expanded). No calendar dates — planners design
+  // types; the type's own day mapping is a detail inside its screen.
+  typeOverview: ServiceTypeSummary[],
+  serviceTypeDetail: ServiceTypeDetail | null,
+  // Population coverage per service type (null: no layer imported).
+  typeCoverage: TypeCoverage[] | null,
+  // The imported population layer handle (GeoJSON points; the
+  // artifact keeps the data under layer_id).
+  popLayer: { layer_id: number; points: number; pop_field: string; total_pop: number; label: string } | null,
+  popUrl: string,
+  // The map is a view, not a fixture: data screens (lists, document)
+  // hide it and take the full width; entity screens bring it back
+  // for framing. Manual toggle overrides the per-screen default.
+  plannerMapUp: boolean,
   networkLabel: string,
   // Drill-down: the entity the planner is focused on, and what the
   // map should frame for it (plain data, MapView just draws it).
@@ -262,6 +291,14 @@ export const app = $state<AppState>({
   cachedFeed: null,
 
   networkIssues: [],
+  networkNotes: [],
+  plannerStack: [{ view: "overview" }] as PlannerScreen[],
+  typeOverview: [],
+  serviceTypeDetail: null,
+  typeCoverage: null,
+  popLayer: null,
+  popUrl: "",
+  plannerMapUp: true,
   networkLabel: "",
   plannerSelection: null,
   plannerFocus: null,

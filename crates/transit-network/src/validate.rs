@@ -6,7 +6,7 @@
 //! `validate` gates on the first. `Ok(())` is the contract
 //! `materialize` relies on: it cannot fail on a validated network.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::error::NetworkError;
 use crate::materialize::{trip_arrival_end_secs, trip_starts};
@@ -113,12 +113,30 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
         }
     }
 
-    // --- Calendars ------------------------------------------------
-    for (calendar_id, calendar) in &network.calendars {
-        for (i, r) in calendar.ranges.iter().enumerate() {
+    // --- Transfer points ---------------------------------------------
+    // A transfer flag is composed intent: what matters is the routes
+    // meeting across the stop's WALKING GROUP (see [`walking_group`]
+    // — transfers happen across a street or down a block, not only
+    // at one pin). Fewer than two routes in the group means the
+    // flag is meaningless.
+    {
+        let index = stop_route_index(network);
+        for (stop_id, stop) in &network.stops {
+            if !stop.transfer {
+                continue;
+            }
+            if routes_meeting_at(network, &index, stop_id).len() < 2 {
+                issues.push(NetworkError::TransferPointWithoutConnections { stop: stop_id.clone() });
+            }
+        }
+    }
+
+    // --- Service types ----------------------------------------------
+    for (service_type_id, service_type) in &network.service_types {
+        for (i, r) in service_type.rule.ranges.iter().enumerate() {
             if r.start > r.end {
                 issues.push(NetworkError::BadDateRange {
-                    calendar: calendar_id.clone(),
+                    service_type: service_type_id.clone(),
                     index: i,
                 });
             }
@@ -126,54 +144,54 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
     }
 
     // --- Services --------------------------------------------------
-    for (service_id, service) in &network.services {
+    for (schedule_id, service) in &network.schedules {
         if network.patterns.get(&service.pattern).is_none() {
             issues.push(NetworkError::UnknownPattern {
-                service: service_id.clone(),
+                schedule: schedule_id.clone(),
                 pattern: service.pattern.clone(),
             });
         }
-        if network.calendars.get(&service.calendar).is_none() {
-            issues.push(NetworkError::UnknownCalendar {
-                service: service_id.clone(),
-                calendar: service.calendar.clone(),
+        if network.service_types.get(&service.service_type).is_none() {
+            issues.push(NetworkError::UnknownServiceType {
+                schedule: schedule_id.clone(),
+                service_type: service.service_type.clone(),
             });
         }
         match &service.schedule {
             Schedule::HeadwayBands { bands } => {
                 if bands.is_empty() {
                     issues.push(NetworkError::EmptySchedule {
-                        service: service_id.clone(),
+                        schedule: schedule_id.clone(),
                     });
                 }
                 for (bi, band) in bands.iter().enumerate() {
                     if band.headway_secs == 0 {
                         issues.push(NetworkError::ZeroHeadway {
-                            service: service_id.clone(),
+                            schedule: schedule_id.clone(),
                             band: bi,
                         });
                     }
                     if band.start_secs >= band.end_secs {
                         issues.push(NetworkError::EmptyHeadwayBand {
-                            service: service_id.clone(),
+                            schedule: schedule_id.clone(),
                             band: bi,
                         });
                     }
                 }
                 if overlapping(&bands.iter().map(|b| (b.start_secs, b.end_secs)).collect::<Vec<_>>()) {
                     issues.push(NetworkError::OverlappingHeadwayBands {
-                        service: service_id.clone(),
+                        schedule: schedule_id.clone(),
                     });
                 }
             }
             Schedule::ExactTimes { starts } => {
                 if starts.is_empty() {
                     issues.push(NetworkError::EmptySchedule {
-                        service: service_id.clone(),
+                        schedule: schedule_id.clone(),
                     });
                 } else if starts.windows(2).any(|w| w[1] <= w[0]) {
                     issues.push(NetworkError::UnsortedExactTimes {
-                        service: service_id.clone(),
+                        schedule: schedule_id.clone(),
                     });
                 }
             }
@@ -185,7 +203,7 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
             for start in trip_starts(&service.schedule) {
                 if pattern.profile_for(start).is_none() {
                     issues.push(NetworkError::TripOutsideTimingProfiles {
-                        service: service_id.clone(),
+                        schedule: schedule_id.clone(),
                         pattern: service.pattern.clone(),
                         start_secs: start,
                     });
@@ -209,21 +227,21 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
             });
         }
         for t in &block.trips {
-            if network.services.get(&t.service).is_none() {
-                issues.push(NetworkError::UnknownBlockService {
+            if network.schedules.get(&t.schedule).is_none() {
+                issues.push(NetworkError::UnknownBlockSchedule {
                     block: block_id.clone(),
-                    service: t.service.clone(),
+                    schedule: t.schedule.clone(),
                 });
             }
-            match owner.get(&(t.service.clone(), t.start_secs)) {
+            match owner.get(&(t.schedule.clone(), t.start_secs)) {
                 Some(prev) => issues.push(NetworkError::DuplicateBlockTrip {
-                    service: t.service.clone(),
+                    schedule: t.schedule.clone(),
                     start_secs: t.start_secs,
                     a: prev.clone(),
                     b: block_id.clone(),
                 }),
                 None => {
-                    owner.insert((t.service.clone(), t.start_secs), block_id.clone());
+                    owner.insert((t.schedule.clone(), t.start_secs), block_id.clone());
                 }
             }
         }
@@ -247,7 +265,7 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
         // connection — arrive before the next trip departs, with the
         // layovers in between accounted for.
         for i in 0..block.trips.len().saturating_sub(1) {
-            let Ok(arrival) = trip_arrival_end_secs(network, &block.trips[i].service, block.trips[i].start_secs)
+            let Ok(arrival) = trip_arrival_end_secs(network, &block.trips[i].schedule, block.trips[i].start_secs)
             else {
                 continue; // broken refs are already flagged above
             };
@@ -280,6 +298,59 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
 /// First-issue gate: `Ok` iff the network is valid.
 pub fn validate(network: &Network) -> Result<(), NetworkError> {
     network.validate()
+}
+
+/// The walking group of a stop: itself, its siblings sharing a
+/// parent, its children, and its parent. The places a rider at this
+/// stop can walk to for a connection — transfers happen across a
+/// street or down a block, not only at one pin. Parents are how
+/// GTFS models transfer centers; the walking group is the model's
+/// word for the same reality.
+pub fn walking_group(network: &Network, stop_id: &str) -> BTreeMap<String, ()> {
+    let mut group: BTreeMap<String, ()> = BTreeMap::new();
+    let Some(stop) = network.stops.get(stop_id) else {
+        return group;
+    };
+    for (id, s) in &network.stops {
+        let in_group = id == stop_id
+            || (stop.parent.is_some() && s.parent == stop.parent)
+            || s.parent.as_deref() == Some(stop_id)
+            || stop.parent.as_deref() == Some(id.as_str());
+        if in_group {
+            group.insert(id.clone(), ());
+        }
+    }
+    group
+}
+
+/// stop → routes serving it, across every pattern. The base index
+/// for transfer-point composition.
+pub fn stop_route_index(network: &Network) -> BTreeMap<String, BTreeSet<String>> {
+    let mut index: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for pattern in network.patterns.values() {
+        for ps in &pattern.stops {
+            index
+                .entry(ps.stop.clone())
+                .or_default()
+                .insert(pattern.route.clone());
+        }
+    }
+    index
+}
+
+/// The routes meeting at a stop, pooled across its walking group.
+pub fn routes_meeting_at(
+    network: &Network,
+    index: &BTreeMap<String, BTreeSet<String>>,
+    stop_id: &str,
+) -> BTreeSet<String> {
+    let mut routes: BTreeSet<String> = BTreeSet::new();
+    for id in walking_group(network, stop_id).keys() {
+        if let Some(rs) = index.get(id) {
+            routes.extend(rs.iter().cloned());
+        }
+    }
+    routes
 }
 
 /// Do any of the (start, end) ranges overlap? Sort by start; any pair

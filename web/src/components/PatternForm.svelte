@@ -2,9 +2,9 @@
   import { app, getNetworkDoc } from "../state.svelte";
   import {
     updatePattern, removePattern, addPatternStop, removePatternStop,
-    movePatternStop, setPatternStop, togglePatternTimepoint,
+    setPatternStop, togglePatternTimepoint,
     addTimingProfile, removeTimingProfile, setTimingProfileField, setTimepointTime,
-    clearSelection, fmtHHMMSS, parseHHMMSS,
+    plannerBack, fmtHHMMSS, parseHHMMSS,
   } from "../planner";
   import Combobox from "./Combobox.svelte";
 
@@ -61,15 +61,14 @@
         </label>
         <input aria-label={`Distance at position ${i + 1} (m)`} type="number" step="100" min="0" value={s.distance_m}
                onchange={(e) => setPatternStop(id, i, { distance_m: Number(e.currentTarget.value) })}>
-        <button aria-label={`Move stop ${i + 1} up`} disabled={i <= 1}
-                onclick={() => movePatternStop(id, i, -1)}>↑</button>
-        <button aria-label={`Move stop ${i + 1} down`} disabled={i === 0 || i >= pattern.stops.length - 2}
-                onclick={() => movePatternStop(id, i, 1)}>↓</button>
         <button aria-label={`Remove stop ${i + 1}`} disabled={i === 0 || i === pattern.stops.length - 1}
                 onclick={() => removePatternStop(id, i)}>remove</button>
       </li>
     {/each}
   </ul>
+  <!-- No reordering buttons, on purpose: the stop sequence is
+       geometry. Stops are added in order along the road; once the
+       alignment exists, the sequence is baked in by the path. -->
   <p class="ent-row">
     <Combobox label="Stop to add" placeholder="stop…" options={stopOptions} bind:value={addStopId} />
     <button disabled={!addStopId} onclick={() => { addPatternStop(id, addStopId); addStopId = ""; }}>
@@ -108,7 +107,7 @@
   <p>
     <button onclick={() => addTimingProfile(id)}>Add timing profile</button>
     <button aria-label="Remove this pattern"
-            onclick={() => { removePattern(id); clearSelection(); }}>Remove pattern</button>
+            onclick={() => { removePattern(id); plannerBack(); }}>Remove pattern</button>
   </p>
 {:else}
   <p class="muted">Pattern not found (removed?).</p>

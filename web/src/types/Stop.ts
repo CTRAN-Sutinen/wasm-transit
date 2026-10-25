@@ -4,4 +4,12 @@
  * A stop as a planner authors it: one name, one location, optional
  * parent (platform-in-station groupings).
  */
-export type Stop = { name: string, lat: number, lon: number, parent?: string | null, };
+export type Stop = { name: string, lat: number, lon: number, parent?: string | null, 
+/**
+ * A designated transfer point: where the network intends riders
+ * to change vehicles. Authored intent, not a badge — the flag
+ * only means something composed with the routes that meet there
+ * (validation requires at least two; the analysis ops measure
+ * the timed connections it enables).
+ */
+transfer: boolean, };

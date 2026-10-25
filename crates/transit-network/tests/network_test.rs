@@ -6,7 +6,7 @@
 use chrono::NaiveDate;
 use transit_network::{
     validation_issues, Anchor, Block, CalendarException, CalendarRule, DateRange, DayState,
-    Layover, Mode, Network, NetworkError, Pattern, PatternStop, Route, Schedule, Service,
+    Layover, Mode, Network, NetworkError, Pattern, PatternSchedule, PatternStop, Route, Schedule, ServiceType,
     HeadwayBand, TimingProfile, TripRef, WeekdaySet,
 };
 
@@ -23,6 +23,7 @@ fn stop(id: &str, lat: f64, lon: f64) -> (String, transit_network::Stop) {
             lat,
             lon,
             parent: None,
+            transfer: false,
         },
     )
 }
@@ -82,24 +83,27 @@ pub(crate) fn valid_network() -> Network {
         )]
         .into_iter()
         .collect(),
-        calendars: [(
+        service_types: [(
             "weekday".into(),
-            CalendarRule {
-                days: WeekdaySet::weekdays(),
-                ranges: vec![DateRange {
-                    start: date(2026, 1, 1),
-                    end: date(2026, 12, 31),
-                }],
-                exceptions: vec![],
+            ServiceType {
+                name: "Weekday".into(),
+                rule: CalendarRule {
+                    days: WeekdaySet::weekdays(),
+                    ranges: vec![DateRange {
+                        start: date(2026, 1, 1),
+                        end: date(2026, 12, 31),
+                    }],
+                    exceptions: vec![],
+                },
             },
         )]
         .into_iter()
         .collect(),
-        services: [(
+        schedules: [(
             "5-weekday".into(),
-            Service {
+            PatternSchedule {
                 pattern: "5-inbound".into(),
-                calendar: "weekday".into(),
+                service_type: "weekday".into(),
                 schedule: Schedule::ExactTimes {
                     starts: vec![7 * 3600, 8 * 3600, 25 * 3600 + 1800],
                 },
@@ -112,11 +116,11 @@ pub(crate) fn valid_network() -> Network {
             Block {
                 trips: vec![
                     TripRef {
-                        service: "5-weekday".into(),
+                        schedule: "5-weekday".into(),
                         start_secs: 7 * 3600,
                     },
                     TripRef {
-                        service: "5-weekday".into(),
+                        schedule: "5-weekday".into(),
                         start_secs: 8 * 3600,
                     },
                 ],
@@ -247,16 +251,16 @@ fn rejects_broken_references() {
         NetworkError::UnknownRoute { .. }
     ));
     assert!(matches!(
-        defect(|n| n.services.get_mut("5-weekday").unwrap().pattern = "ghost".into()),
+        defect(|n| n.schedules.get_mut("5-weekday").unwrap().pattern = "ghost".into()),
         NetworkError::UnknownPattern { .. }
     ));
     assert!(matches!(
-        defect(|n| n.services.get_mut("5-weekday").unwrap().calendar = "ghost".into()),
-        NetworkError::UnknownCalendar { .. }
+        defect(|n| n.schedules.get_mut("5-weekday").unwrap().service_type = "ghost".into()),
+        NetworkError::UnknownServiceType { .. }
     ));
     assert!(matches!(
-        defect(|n| n.blocks.get_mut("b1").unwrap().trips[0].service = "ghost".into()),
-        NetworkError::UnknownBlockService { .. }
+        defect(|n| n.blocks.get_mut("b1").unwrap().trips[0].schedule = "ghost".into()),
+        NetworkError::UnknownBlockSchedule { .. }
     ));
     assert!(matches!(
         defect(|n| n.blocks.get_mut("b1").unwrap().layovers[0].at = Some("ghost".into())),
@@ -310,20 +314,20 @@ fn rejects_broken_pattern_structure() {
 fn rejects_broken_service_structure() {
     use NetworkError::*;
     assert!(matches!(defect(|n| {
-        n.services.get_mut("5-weekday").unwrap().schedule = Schedule::ExactTimes { starts: vec![] };
+        n.schedules.get_mut("5-weekday").unwrap().schedule = Schedule::ExactTimes { starts: vec![] };
     }), EmptySchedule { .. }));
     assert!(matches!(defect(|n| {
-        n.services.get_mut("5-weekday").unwrap().schedule = Schedule::HeadwayBands {
+        n.schedules.get_mut("5-weekday").unwrap().schedule = Schedule::HeadwayBands {
             bands: vec![HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 0 }],
         };
     }), ZeroHeadway { .. }));
     assert!(matches!(defect(|n| {
-        n.services.get_mut("5-weekday").unwrap().schedule = Schedule::HeadwayBands {
+        n.schedules.get_mut("5-weekday").unwrap().schedule = Schedule::HeadwayBands {
             bands: vec![HeadwayBand { start_secs: 3600, end_secs: 3600, headway_secs: 300 }],
         };
     }), EmptyHeadwayBand { .. }));
     assert!(matches!(defect(|n| {
-        n.services.get_mut("5-weekday").unwrap().schedule = Schedule::HeadwayBands {
+        n.schedules.get_mut("5-weekday").unwrap().schedule = Schedule::HeadwayBands {
             bands: vec![
                 HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 300 },
                 HeadwayBand { start_secs: 1800, end_secs: 7200, headway_secs: 300 },
@@ -331,7 +335,7 @@ fn rejects_broken_service_structure() {
         };
     }), OverlappingHeadwayBands { .. }));
     assert!(matches!(defect(|n| {
-        n.services.get_mut("5-weekday").unwrap().schedule =
+        n.schedules.get_mut("5-weekday").unwrap().schedule =
             Schedule::ExactTimes { starts: vec![8 * 3600, 7 * 3600] };
     }), UnsortedExactTimes { .. }));
     // Trip outside every timing profile.
@@ -339,7 +343,7 @@ fn rejects_broken_service_structure() {
         n.patterns.get_mut("5-inbound").unwrap().timing[0].end_secs = 6 * 3600;
     }), TripOutsideTimingProfiles { .. }));
     assert!(matches!(defect(|n| {
-        n.calendars.get_mut("weekday").unwrap().ranges[0].start = date(2027, 1, 1);
+        n.service_types.get_mut("weekday").unwrap().rule.ranges[0].start = date(2027, 1, 1);
     }), BadDateRange { .. }));
 }
 
@@ -367,7 +371,7 @@ fn rejects_broken_runcut() {
     // The same trip in two blocks.
     assert!(matches!(defect(|n| {
         n.blocks.insert("b2".into(), Block {
-            trips: vec![TripRef { service: "5-weekday".into(), start_secs: 8 * 3600 }],
+            trips: vec![TripRef { schedule: "5-weekday".into(), start_secs: 8 * 3600 }],
             layovers: vec![],
         });
     }), DuplicateBlockTrip { .. }));
@@ -382,18 +386,79 @@ fn materialization_is_total_on_invalid_networks() {
     assert!(transit_network::materialize(&net, date(2026, 10, 23)).is_err());
 
     let mut net = valid_network();
-    net.services.get_mut("5-weekday").unwrap().calendar = "ghost".into();
+    net.schedules.get_mut("5-weekday").unwrap().service_type = "ghost".into();
     assert!(matches!(
         transit_network::materialize(&net, date(2026, 10, 23)),
-        Err(NetworkError::UnknownCalendar { .. })
+        Err(NetworkError::UnknownServiceType { .. })
     ));
 
     let mut net = valid_network();
     net.blocks.insert("b".into(), Block {
-        trips: vec![TripRef { service: "ghost".into(), start_secs: 0 }],
+        trips: vec![TripRef { schedule: "ghost".into(), start_secs: 0 }],
         layovers: vec![],
     });
     assert!(transit_network::validation_issues(&net)
         .iter()
-        .any(|e| matches!(e, NetworkError::UnknownBlockService { .. })));
+        .any(|e| matches!(e, NetworkError::UnknownBlockSchedule { .. })));
+}
+
+#[test]
+fn transfer_point_requires_two_routes_across_its_walking_group() {
+    // The flag is composed intent: flagged on a stop whose group is
+    // served by one route only, it is meaningless.
+    let mut net = valid_network();
+    net.stops.get_mut("B").unwrap().transfer = true;
+    assert!(matches!(
+        net.validate(),
+        Err(NetworkError::TransferPointWithoutConnections { stop }) if stop == "B"
+    ));
+
+    // A second route meeting across the street — a sibling stop
+    // sharing B's parent station — makes the flag compose: the
+    // walking group, not the pin, is the unit.
+    let mut net = valid_network();
+    net.stops.insert("STN".into(), transit_network::Stop {
+        name: "Transfer Center".into(),
+        lat: 45.01, lon: -122.701,
+        parent: None,
+        transfer: false,
+    });
+    let b2 = transit_network::Stop {
+        name: "Stop B across the street".into(),
+        lat: 45.0101, lon: -122.701,
+        parent: Some("STN".into()),
+        transfer: false,
+    };
+    net.stops.insert("B2".into(), b2.clone());
+    let mut b = net.stops.get_mut("B").unwrap();
+    b.parent = Some("STN".into());
+    b.transfer = true;
+    net.routes.insert("7".into(), Route {
+        name: "7-L St".into(),
+        mode: Mode::Bus,
+        color: None,
+    });
+    net.patterns.insert("7-inbound".into(), Pattern {
+        route: "7".into(),
+        name: "7 inbound".into(),
+        path: None,
+        stops: vec![
+            PatternStop { stop: "B2".into(), timepoint: true, distance_m: 0.0 },
+            PatternStop { stop: "A".into(), timepoint: true, distance_m: 900.0 },
+        ],
+        timing: vec![TimingProfile {
+            start_secs: 0,
+            end_secs: 30 * 3600,
+            at_timepoints: vec![0, 600],
+        }],
+    });
+    assert!(net.validate().is_ok(), "two routes across the walking group compose: {:?}", validation_issues(&net));
+
+    // The helpers say the same thing: the group is B, B2, STN; the
+    // routes meeting there are 5 and 7.
+    let group = transit_network::walking_group(&net, "B");
+    assert_eq!(group.len(), 3, "walking group: {:?}", group.keys().collect::<Vec<_>>());
+    let index = transit_network::stop_route_index(&net);
+    let meeting = transit_network::routes_meeting_at(&net, &index, "B");
+    assert!(meeting.contains("5") && meeting.contains("7"), "{meeting:?}");
 }

@@ -37,7 +37,9 @@ pub use materialize::{
 };
 pub use model::{
     Anchor, Block, CalendarException, CalendarRule, Coord, DateRange, DayState, HeadwayBand, Layover,
-    Mode, Network, Pattern, PatternStop, Route, Schedule, Service, Stop, TimingProfile, TripRef,
-    WeekdaySet,
+    Mode, Network, Pattern, PatternSchedule, PatternStop, Route, Schedule, ScheduleId, ServiceTypeId,
+    ServiceType, Stop, TimingProfile, TripRef, WeekdaySet,
 };
-pub use validate::{validate, validation_issues};
+pub use validate::{
+    routes_meeting_at, stop_route_index, validate, validation_issues, walking_group,
+};

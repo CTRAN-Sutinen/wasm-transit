@@ -10,9 +10,16 @@ body {
 
 /* One shell: sidebar (persona workflow) + map, side by side. The map
    never remounts on a persona switch — only the sidebar's content
-   changes. */
+   changes. When the planner is on a data screen (map hidden), the
+   sidebar takes the whole width: one laptop screen, no fighting. */
 .app-shell { display: grid; grid-template-columns: minmax(360px, 440px) 1fr; height: 100%; }
 .map-side { position: relative; height: 100%; }
+.map-side.hidden { display: none; }
+/* With the map gone the rail is the whole app: one track, full
+   width. (A nested minmax here was invalid CSS once — the rule
+   dropped silently, the dead 1fr column stayed, and data screens
+   rendered as a 440px rail next to a black void.) */
+.app-shell:has(.map-side.hidden) { grid-template-columns: 1fr; }
 
 /* The map fills its side; overlays (plan overlay, planner drawer)
    float over it. */
@@ -68,21 +75,6 @@ body {
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   cursor: pointer;
-}
-.ds-panel {
-  position: fixed;
-  right: 12px;
-  bottom: 88px;
-  z-index: 2;
-  width: min(400px, calc(100% - 24px));
-  max-height: min(70vh, 640px);
-  overflow-y: auto;
-  padding: 0.75rem 1rem 1.25rem;
-  border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, Canvas 90%, transparent);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
 }
 .ds-panel.hidden { display: none; }
 .ds-panel h2 { font-size: 1.05rem; margin: 0; }
@@ -190,6 +182,53 @@ table { border-collapse: collapse; width: 100%; }
    .table-scroll wrapper instead of wrapping its cells. */
 td, th { padding: 0.25rem 0.4rem; text-align: left; border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent); font-size: 0.92rem; white-space: nowrap; }
 .table-scroll { overflow-x: auto; }
+
+/* The planner workspace: screen menu + back button at the top of the
+   rail; scan tables below. */
+.planner-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  margin: 0.4rem 0 0.2rem;
+}
+.planner-nav .chip { cursor: pointer; }
+.planner-nav .chip.active {
+  border-color: color-mix(in srgb, currentColor 55%, transparent);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+.stat-table { width: 100%; border-collapse: collapse; }
+.stat-table th {
+  text-align: left;
+  font-weight: 600;
+  opacity: 0.75;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+}
+.stat-table td, .stat-table th { padding: 0.25rem 0.5rem 0.25rem 0; }
+
+/* Data sources is a modal, not a floating panel — it takes the
+   screen deliberately and never overlaps the rails. */
+.ds-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  background: color-mix(in srgb, black 35%, transparent);
+}
+.ds-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  width: min(560px, calc(100% - 24px));
+  max-height: min(80vh, 720px);
+  overflow-y: auto;
+  padding: 0.75rem 1rem 1.25rem;
+  border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  border-radius: 12px;
+  background: Canvas;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.35);
+}
 
 code { background: rgba(127,127,127,.15); padding: 0.05rem 0.3rem; border-radius: 4px; font-size: 0.85em; }
 .muted { opacity: 0.65; font-size: 0.9rem; }

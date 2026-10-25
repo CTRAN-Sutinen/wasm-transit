@@ -11,19 +11,25 @@
 /// outcomes are `{"ok": ...}` or `{"error": ...}`.
 
 import wasmUrl from "../pkg/transit_wasm.wasm?url";
+import type { CoverageStats } from "./types/CoverageStats";
 import type { Departure } from "./types/Departure";
 import type { EditRecord } from "./types/EditRecord";
 import type { EditReport } from "./types/EditReport";
 import type { FeatureCollection } from "./types/FeatureCollection";
 import type { FeedInfo } from "./types/FeedInfo";
 import type { FeedSummary } from "./types/FeedSummary";
+import type { ImportNote } from "./types/ImportNote";
 import type { Itinerary } from "./types/Itinerary";
 import type { Network } from "./types/Network";
 import type { NetworkError } from "./types/NetworkError";
+import type { NetworkStats } from "./types/NetworkStats";
 import type { BlockSummary } from "./types/BlockSummary";
 import type { BlockTrip } from "./types/BlockTrip";
 import type { RtOverview } from "./types/RtOverview";
 import type { RouteSummary } from "./types/RouteSummary";
+import type { ServiceTypeDetail } from "./types/ServiceTypeDetail";
+import type { ServiceTypeSummary } from "./types/ServiceTypeSummary";
+import type { TypeCoverage } from "./types/TypeCoverage";
 import type { StopFeature } from "./types/StopFeature";
 import type { StopSummary } from "./types/StopSummary";
 import type { StreetPoint } from "./types/StreetPoint";
@@ -34,6 +40,7 @@ import type { TripLineFeature } from "./types/TripLineFeature";
 const OP_LOAD_FEED = 0;
 const OP_DECODE_RT = 1;
 const OP_STREETS_LOAD = 2;
+const OP_COVERAGE_LOAD = 3;
 
 /// The flat C ABI the artifact exports.
 type WasmExports = {
@@ -315,9 +322,91 @@ export function network_validate(network: Network): NetworkError[] {
 
 /// Infer an authored network document from a loaded feed — the
 /// planner's bootstrap path. Deterministic: the same feed bytes give
-/// the same document everywhere.
-export function network_import(feedId: number): Network {
-  return (invoke({ op: "network_import", feed_id: feedId }) as { network: Network }).network;
+/// the same document everywhere. The notes list every resolution the
+/// inference applied (reported, never silent).
+export function network_import(feedId: number): { network: Network; notes: ImportNote[] } {
+  return invoke({ op: "network_import", feed_id: feedId }) as {
+    network: Network;
+    notes: ImportNote[];
+  };
+}
+
+/// The planner's analysis on one service date: trips, spans,
+/// headways at the network, route, and stop levels — plus the
+/// composed transfer-point view. Best-effort on a mid-edit document.
+export function network_stats(network: Network, date: string): NetworkStats {
+  return (invoke({ op: "network_stats", network, date }) as { stats: NetworkStats }).stats;
+}
+
+/// The planner's DESIGN axis: every service type's numbers, each on
+/// its own representative day.
+export function service_types_overview(network: Network): ServiceTypeSummary[] {
+  return (invoke({ op: "service_types_overview", network }) as { service_types: ServiceTypeSummary[] })
+    .service_types;
+}
+
+/// One service type expanded on its representative day: routes,
+/// stops, schedules, totals — the drill-down.
+export function service_type_detail(network: Network, serviceType: string): ServiceTypeDetail {
+  return (invoke({ op: "service_type_detail", network, service_type: serviceType }) as {
+    detail: ServiceTypeDetail;
+  }).detail;
+}
+
+/// Population coverage per service type, each on its representative
+/// day.
+export function type_coverage(
+  network: Network,
+  layerId: number,
+  radiusM: number,
+  frequentSecs: number,
+  minDepartures: number | null,
+): TypeCoverage[] {
+  return (
+    invoke({
+      op: "type_coverage",
+      network,
+      layer_id: layerId,
+      radius_m: radiusM,
+      frequent_secs: frequentSecs,
+      min_departures: minDepartures,
+    }) as { coverage: TypeCoverage[] }
+  ).coverage;
+}
+
+export type CoverageLayer = {
+  layer_id: number;
+  points: number;
+  pop_field: string;
+  total_pop: number;
+};
+
+/// Parse and register a population layer (GeoJSON points; the
+/// population property auto-detected from the common spellings).
+export function coverage_load(bytes: Uint8Array): CoverageLayer {
+  return invokeBytes(OP_COVERAGE_LOAD, bytes) as CoverageLayer;
+}
+
+/// Population coverage of a network document on a service date.
+export function coverage_stats(
+  network: Network,
+  date: string,
+  layerId: number,
+  radiusM: number,
+  frequentSecs: number,
+  minDepartures: number | null,
+): CoverageStats {
+  return (
+    invoke({
+      op: "coverage_stats",
+      network,
+      date,
+      layer_id: layerId,
+      radius_m: radiusM,
+      frequent_secs: frequentSecs,
+      min_departures: minDepartures,
+    }) as { stats: CoverageStats }
+  ).stats;
 }
 
 /// The API surface `loadWasm()` hands back — the whole artifact
@@ -327,6 +416,12 @@ export type WasmApi = {
   decode_rt: typeof decode_rt;
   network_validate: typeof network_validate;
   network_import: typeof network_import;
+  network_stats: typeof network_stats;
+  service_types_overview: typeof service_types_overview;
+  service_type_detail: typeof service_type_detail;
+  type_coverage: typeof type_coverage;
+  coverage_load: typeof coverage_load;
+  coverage_stats: typeof coverage_stats;
   streets_load: typeof streets_load;
   street_snap: typeof street_snap;
   street_route: typeof street_route;
@@ -341,6 +436,12 @@ export async function loadWasm(): Promise<WasmApi> {
     decode_rt,
     network_validate,
     network_import,
+    network_stats,
+    service_types_overview,
+    service_type_detail,
+    type_coverage,
+    coverage_load,
+    coverage_stats,
     streets_load,
     street_snap,
     street_route,

@@ -29,8 +29,8 @@ use crate::error::NetworkError;
 pub type StopId = String;
 pub type RouteId = String;
 pub type PatternId = String;
-pub type CalendarId = String;
-pub type ServiceId = String;
+pub type ServiceTypeId = String;
+pub type ScheduleId = String;
 pub type BlockId = String;
 
 /// A WGS84 position. Authored geometry (a pattern's alignment) is
@@ -95,6 +95,13 @@ pub struct Stop {
     pub lon: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<StopId>,
+    /// A designated transfer point: where the network intends riders
+    /// to change vehicles. Authored intent, not a badge — the flag
+    /// only means something composed with the routes that meet there
+    /// (validation requires at least two; the analysis ops measure
+    /// the timed connections it enables).
+    #[serde(default)]
+    pub transfer: bool,
 }
 
 /// A route as a planner authors it: one display name (GTFS's
@@ -195,8 +202,22 @@ impl Pattern {
     }
 }
 
-/// Which days a service runs on, as authored rules rather than GTFS
-/// exception rows: weekday flags plus date ranges, with explicit
+/// A service type: the service identifier planners design —
+/// Weekday, Saturday, Sunday, a holiday — linked to the days it
+/// runs by its calendar rule. This, not the day-of-month, is the
+/// axis planners design on (GTFS calls it service_id).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ServiceType {
+    /// Display name ("Weekday", "Saturday service", …).
+    pub name: String,
+    /// The days it runs: weekday flags plus date ranges, with
+    /// explicit per-date exceptions that always win.
+    pub rule: CalendarRule,
+}
+
+/// Which days a service type runs on, as authored rules rather than
+/// GTFS exception rows: weekday flags plus date ranges, with explicit
 /// per-date exceptions that always win.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -340,13 +361,16 @@ pub struct HeadwayBand {
     pub headway_secs: u32,
 }
 
-/// A scheduled service: this pattern, on this calendar, at these
-/// times. Everything RAPTOR and dispatch consume derives from this.
+/// One pattern's trips under one service type: this pattern, on this
+/// service, at these times. Everything RAPTOR and dispatch consume
+/// derives from these. (The name matters: a *service* is the
+/// service type — the day-level design; this is its per-pattern
+/// schedule.)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct Service {
+pub struct PatternSchedule {
     pub pattern: PatternId,
-    pub calendar: CalendarId,
+    pub service_type: ServiceTypeId,
     pub schedule: Schedule,
 }
 
@@ -360,11 +384,11 @@ pub struct Block {
 }
 
 /// A block's reference to a trip — trips being derived values, the
-/// (service, start) pair *is* the trip's identity.
+/// (schedule, start) pair *is* the trip's identity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct TripRef {
-    pub service: ServiceId,
+    pub schedule: ScheduleId,
     pub start_secs: u32,
 }
 
@@ -393,8 +417,10 @@ pub struct Network {
     pub stops: BTreeMap<StopId, Stop>,
     pub routes: BTreeMap<RouteId, Route>,
     pub patterns: BTreeMap<PatternId, Pattern>,
-    pub calendars: BTreeMap<CalendarId, CalendarRule>,
-    pub services: BTreeMap<ServiceId, Service>,
+    /// The service types: what planners design and link to days.
+    pub service_types: BTreeMap<ServiceTypeId, ServiceType>,
+    /// The schedules: one pattern's trips under one service type.
+    pub schedules: BTreeMap<ScheduleId, PatternSchedule>,
     pub blocks: BTreeMap<BlockId, Block>,
 }
 

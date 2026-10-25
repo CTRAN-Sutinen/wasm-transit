@@ -13,7 +13,11 @@
 //!   rows and block rows carry the planner's own keys);
 //! * the calendar becomes explicit per-date rows (one `added` entry
 //!   per running date): the derived equivalent of an exception-only
-//!   feed, exact for any authored rule including Added exceptions.
+//!   feed, exact for any authored rule including Added exceptions;
+//! * transfer-point flags are authored model state with no single
+//!   stop in the derived view to hang them on (GTFS declares
+//!   transfers pairwise): they do not cross into the derived feed —
+//!   the planner's document round-trips them.
 //!
 //! Shapes: a pattern's authored `path` becomes a `shapes.txt` entry
 //! keyed by the pattern id, and every trip the pattern materializes
@@ -24,12 +28,15 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::{Duration, NaiveDate};
 
+use ts_rs::TS;
+use serde::Serialize;
+
 use transit_core::{
     Agency, CalendarDate, FeedInfo, Gtfs, Route, ServiceCalendar, ShapePoint, Stop, StopTime, Trip,
 };
 use transit_network::{
     materialize_service, Anchor, Block, CalendarException, CalendarRule, Coord, DateRange, DayState,
-    Mode, Network, Pattern, PatternStop, Schedule, Service, TimingProfile, TripRef, WeekdaySet,
+    Mode, Network, Pattern, PatternSchedule, PatternStop, Schedule, ServiceType, TimingProfile, TripRef, WeekdaySet,
 };
 
 use crate::OpError;
@@ -95,7 +102,7 @@ pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, OpError> {
     let mut block_of: BTreeMap<(String, u32), String> = BTreeMap::new();
     for (block_id, block) in &net.blocks {
         for trip in &block.trips {
-            block_of.insert((trip.service.clone(), trip.start_secs), block_id.clone());
+            block_of.insert((trip.schedule.clone(), trip.start_secs), block_id.clone());
         }
     }
 
@@ -129,24 +136,24 @@ pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, OpError> {
         })
         .collect();
 
-    for (service_id, service) in &net.services {
-        // Calendar: explicit running dates, exact for any rule.
-        if let Some(rule) = net.calendars.get(&service.calendar) {
-            for date in running_dates(rule) {
+    for (schedule_id, schedule) in &net.schedules {
+        // Service type → explicit running dates, exact for any rule.
+        if let Some(service_type) = net.service_types.get(&schedule.service_type) {
+            for date in running_dates(&service_type.rule) {
                 calendar_dates.push(CalendarDate {
-                    service_id: service_id.clone(),
+                    service_id: schedule_id.clone(),
                     date,
                     exception_type: 1,
                 });
             }
         }
-        for trip in materialize_service(net, service_id).map_err(|e| OpError::new(e.to_string()))? {
-            let trip_id = format!("{service_id}@{}", trip.start_secs);
+        for trip in materialize_service(net, schedule_id).map_err(|e| OpError::new(e.to_string()))? {
+            let trip_id = format!("{schedule_id}@{}", trip.start_secs);
             trips.insert(
                 trip_id.clone(),
                 Trip {
                     route_id: trip.route.clone(),
-                    service_id: service_id.clone(),
+                    service_id: schedule_id.clone(),
                     trip_id: trip_id.clone(),
                     trip_headsign: net
                         .patterns
@@ -154,7 +161,7 @@ pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, OpError> {
                         .map(|p| p.name.clone()),
                     direction_id: None,
                     block_id: block_of
-                        .get(&(service_id.clone(), trip.start_secs))
+                        .get(&(schedule_id.clone(), trip.start_secs))
                         .cloned(),
                     // The pattern's authored alignment, when there is
                     // one; None keeps the stop-to-stop fallback.
@@ -197,6 +204,9 @@ pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, OpError> {
         services,
         shapes,
         feed_info,
+        // transfers: the derived view carries none — transfer-point
+        // flags are authored state (see the module docs).
+        Vec::new(),
     ))
 }
 
@@ -246,19 +256,80 @@ fn gtfs_route_type(mode: Mode) -> u8 {
 // network the agency already runs).
 // ---------------------------------------------------------------------
 
+/// One resolution the import applied to a shape the model cannot
+/// represent as-is. Resolutions are **reported, never silent** — the
+/// planner needs to see what the bootstrap did to their feed.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[ts(export)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ImportNote {
+    /// The same derived trip was claimed by two blocks (two buses
+    /// running the same trip); the lowest block id won.
+    DuplicateBlockTrip {
+        schedule: String,
+        start_secs: u32,
+        kept_block: String,
+        dropped_block: String,
+    },
+    /// Two trips of one block depart at the same second — one
+    /// vehicle cannot; the first by sort order stayed.
+    SameSecondBlockTrips {
+        block: String,
+        start_secs: u32,
+        dropped_schedule: String,
+    },
+    /// A trip of this block departs before the previous trip ends —
+    /// the source data is operationally wrong; the impossible
+    /// continuation was dropped.
+    InfeasibleBlockChain {
+        block: String,
+        arrival_secs: u32,
+        start_secs: u32,
+        dropped_schedule: String,
+    },
+    /// Trips the model cannot represent at all, aggregated by
+    /// reason (single-stop shuttles, no first-departure time,
+    /// serving stops without coordinates).
+    DroppedTrips {
+        single_stop: u32,
+        no_departure: u32,
+        missing_stop_coords: u32,
+    },
+    /// A transfers.txt row marks a stop whose walking group is
+    /// served by fewer than two routes — the feed's intent cannot
+    /// compose; the flag is reported, not applied.
+    UnusableTransferPoint { stop: String },
+}
+
+/// What `gtfs_to_network` hands back: the document plus the notes
+/// describing every resolution it applied.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[ts(export)]
+pub struct ImportOutcome {
+    pub network: Network,
+    pub notes: Vec<ImportNote>,
+}
+
 /// Infer a [`Network`] from a parsed feed. Deliberately lossy, in
-/// documented ways:
+/// documented ways (every loss that touches the planner's data is
+/// reported in [`ImportOutcome::notes`], never silent):
 ///
 /// * trips cluster into patterns by (route, direction, stop
-///   sequence); the cluster's earliest trip provides the pattern's
-///   single timing profile, so run-time variation between trips of
-///   one pattern is not preserved;
+///   sequence); the cluster's shortest-running trip provides the
+///   pattern's single timing profile, so run-time variation between
+///   trips of one pattern is not preserved (shortest, not earliest,
+///   so materialized arrivals never overshoot any real trip's and
+///   block chains stay feasible);
 /// * every stop becomes a timepoint — exact times, no interpolation;
 /// * stop distances are fabricated (index × 500 m): GTFS has none;
 /// * single-stop trips and trips without a first departure are
 ///   dropped (the model requires two stops and a start);
 /// * blocks keep their trip chains but carry no layovers (GTFS has
-///   no layover data — the planner authors those);
+///   no layover data — the planner authors those); derived trips
+///   claimed by two blocks and same-second trips of one block are
+///   spec-legal but unrepresentable (the model's block chains are
+///   strictly increasing) — the import keeps the first in
+///   deterministic order and drops the rest;
 /// * the pattern's alignment comes from the member trips' richest
 ///   `shapes.txt` polyline (ties: lowest trip id) — variation between
 ///   trips of one pattern is not preserved;
@@ -269,7 +340,11 @@ fn gtfs_route_type(mode: Mode) -> u8 {
 ///
 /// Deterministic: every iteration is sorted, so the same feed yields
 /// the same document on every host.
-pub fn gtfs_to_network(gtfs: &Gtfs) -> Network {
+pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
+    let mut notes: Vec<ImportNote> = Vec::new();
+    let mut dropped_single_stop = 0u32;
+    let mut dropped_no_departure = 0u32;
+    let mut dropped_missing_stop_coords = 0u32;
     let mut net = Network {
         name: gtfs
             .agencies
@@ -280,8 +355,8 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> Network {
         stops: Default::default(),
         routes: Default::default(),
         patterns: Default::default(),
-        calendars: Default::default(),
-        services: Default::default(),
+        service_types: Default::default(),
+        schedules: Default::default(),
         blocks: Default::default(),
     };
 
@@ -298,6 +373,7 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> Network {
                 lat,
                 lon,
                 parent: s.parent_station.clone(),
+                transfer: false,
             },
         );
     }
@@ -333,12 +409,15 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> Network {
         let trip = &gtfs.trips[trip_id];
         let Some(sts) = gtfs.trip_stop_times(trip_id) else { continue };
         if sts.len() < 2 {
+            dropped_single_stop += 1;
             continue; // the model requires two stops; single-stop
         } // trips (e.g. one-stop shuttles) cannot be represented
         if sts.iter().any(|st| !net.stops.contains_key(&st.stop_id)) {
+            dropped_missing_stop_coords += 1;
             continue; // serves a stop the import dropped (no coords)
         }
         let Some(start) = sts[0].departure_time.or(sts[0].arrival_time) else {
+            dropped_no_departure += 1;
             continue;
         };
         let mut times = Vec::with_capacity(sts.len());
@@ -395,12 +474,17 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> Network {
         let pattern_id = format!("pat-{route_id}-{dir}-{index}");
         *index += 1;
 
-        // The earliest trip's times become the profile (min by start,
-        // ties by trip id — deterministic).
-        let earliest = members
+        // The cluster's shortest-running trip provides the profile:
+        // its last timepoint is the earliest end-of-trip arrival any
+        // member can make, so block connections that hold in the
+        // source feed still hold after the lossy collapse to one
+        // runtime per pattern (a representative with a longer runtime
+        // would push modeled arrivals past the next trip's start).
+        // Ties: earliest start, then trip id — deterministic.
+        let repr = members
             .iter()
             .map(|&i| &kept[i])
-            .min_by_key(|t| (t.start_secs, t.trip_id))
+            .min_by_key(|t| (t.times.last().copied().unwrap_or(0), t.start_secs, t.trip_id))
             .expect("clusters are non-empty");
         let last_stop_name = seq
             .last()
@@ -456,7 +540,7 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> Network {
                 timing: vec![TimingProfile {
                     start_secs: 0,
                     end_secs: day_end,
-                    at_timepoints: earliest.times.clone(),
+                    at_timepoints: repr.times.clone(),
                 }],
             },
         );
@@ -473,12 +557,18 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> Network {
                 .or_default()
                 .push(kept[i].start_secs);
         }
-        for (sid, starts) in by_service {
-            net.services.insert(
+        for (sid, mut starts) in by_service {
+            // The model requires exact-times starts sorted and
+            // unique (trip identity is (service, start)); members
+            // arrive in trip-id order, and real feeds even carry
+            // duplicate starts.
+            starts.sort_unstable();
+            starts.dedup();
+            net.schedules.insert(
                 format!("{sid}:{pattern_id}"),
-                Service {
+                PatternSchedule {
                     pattern: pattern_id.clone(),
-                    calendar: sid.to_string(),
+                    service_type: sid.to_string(),
                     schedule: Schedule::ExactTimes { starts },
                 },
             );
@@ -487,7 +577,7 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> Network {
 
     // Calendars for every referenced service key, in id order. Block
     // trips reference the same service keys, so nothing is missed.
-    let sids: BTreeSet<String> = net.services.values().map(|s| s.calendar.clone()).collect();
+    let sids: BTreeSet<String> = net.schedules.values().map(|s| s.service_type.clone()).collect();
     for sid in &sids {
         let mut days = WeekdaySet::none();
         let mut ranges = Vec::new();
@@ -515,32 +605,135 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> Network {
             })
             .collect();
         exceptions.sort_by_key(|e| e.date);
-        net.calendars.insert(
+        net.service_types.insert(
             sid.clone(),
-            CalendarRule { days, ranges, exceptions },
+            ServiceType { name: sid.clone(), rule: CalendarRule { days, ranges, exceptions } },
         );
     }
 
     // Runcut: trip chains per block_id, chronological, no layovers.
+    // Three shapes a spec-valid feed can still carry cannot be
+    // represented as-is — the model's trip identity is (service,
+    // start), its block chains are strictly increasing, and its
+    // feasibility check is a hard invariant — so the import resolves
+    // them, dropping the offender in deterministic order:
+    //   * the same derived trip claimed by two blocks (two buses
+    //     running the same trip) — the lowest block id wins;
+    //   * two trips of one block at the same second (one vehicle
+    //     cannot);
+    //   * a trip departing before the previous trip of its block
+    //     ends (the source data is operationally wrong; only a
+    //     GENUINE source error can fire — modeled arrivals use the
+    //     pattern's shortest runtime, so they never overshoot a
+    //     real arrival).
+    // Without this the law "import is valid by construction" fails
+    // on legal feeds (the import proptest catches it).
     let mut blocks: BTreeMap<&str, Vec<&Kept>> = BTreeMap::new();
     for t in &kept {
         if let Some(b) = &t.block_id {
             blocks.entry(b.as_str()).or_default().push(t);
         }
     }
+    let mut claimed: BTreeMap<(String, u32), String> = BTreeMap::new();
     for (bid, trips) in blocks {
         let mut refs: Vec<TripRef> = trips
             .iter()
             .map(|t| TripRef {
-                service: format!("{}:{}", t.service_id, t.pattern_id),
+                schedule: format!("{}:{}", t.service_id, t.pattern_id),
                 start_secs: t.start_secs,
             })
             .collect();
-        refs.sort_by(|a, b| a.start_secs.cmp(&b.start_secs).then_with(|| a.service.cmp(&b.service)));
-        net.blocks.insert(bid.to_string(), Block { trips: refs, layovers: Vec::new() });
+        refs.sort_by(|a, b| a.start_secs.cmp(&b.start_secs).then_with(|| a.schedule.cmp(&b.schedule)));
+        let mut chain: Vec<TripRef> = Vec::with_capacity(refs.len());
+        for r in refs {
+            if chain.last().is_some_and(|last| last.start_secs == r.start_secs) {
+                notes.push(ImportNote::SameSecondBlockTrips {
+                    block: bid.to_string(),
+                    start_secs: r.start_secs,
+                    dropped_schedule: r.schedule.clone(),
+                });
+                continue; // one vehicle cannot run two trips at once
+            }
+            if let Some(kept_block) = claimed_clash(&claimed, &r) {
+                notes.push(ImportNote::DuplicateBlockTrip {
+                    schedule: r.schedule.clone(),
+                    start_secs: r.start_secs,
+                    kept_block: kept_block,
+                    dropped_block: bid.to_string(),
+                });
+                continue; // this derived trip already belongs to a block
+            }
+            if let Some(last) = chain.last() {
+                if let Ok(arrival) =
+                    transit_network::trip_arrival_end_secs(&net, &last.schedule, last.start_secs)
+                {
+                    if arrival > r.start_secs {
+                        notes.push(ImportNote::InfeasibleBlockChain {
+                            block: bid.to_string(),
+                            arrival_secs: arrival,
+                            start_secs: r.start_secs,
+                            dropped_schedule: r.schedule.clone(),
+                        });
+                        continue; // departs before the vehicle arrives: impossible
+                    }
+                }
+            }
+            claimed.insert((r.schedule.clone(), r.start_secs), bid.to_string());
+            chain.push(r);
+        }
+        // A block whose every trip was a duplicate is not inserted:
+        // the model has no empty blocks.
+        if chain.is_empty() {
+            continue;
+        }
+        net.blocks.insert(bid.to_string(), Block { trips: chain, layovers: Vec::new() });
     }
 
-    net
+    // Transfer points: transfers.txt declares them (pairs; transfer
+    // type 3 is "not possible" and never marks). The model keeps
+    // the intent as a stop flag, but a flag only composes when at
+    // least two routes meet across the stop's walking group —
+    // otherwise it is reported, not applied, so the
+    // valid-by-construction law holds (validation would reject it).
+    {
+        let index = transit_network::stop_route_index(&net);
+        let transfer_stop_ids: BTreeSet<&str> = gtfs
+            .transfers
+            .iter()
+            .filter(|t| t.transfer_type != Some(3))
+            .flat_map(|t| [t.from_stop_id.as_str(), t.to_stop_id.as_str()])
+            .collect();
+        for stop_id in transfer_stop_ids {
+            if !net.stops.contains_key(stop_id) {
+                continue; // row references a stop the import dropped
+            }
+            let composes = transit_network::routes_meeting_at(&net, &index, stop_id).len() >= 2;
+            if composes {
+                net.stops.get_mut(stop_id).expect("checked above").transfer = true;
+            } else {
+                notes.push(ImportNote::UnusableTransferPoint { stop: stop_id.to_string() });
+            }
+        }
+    }
+
+    if dropped_single_stop + dropped_no_departure + dropped_missing_stop_coords > 0 {
+        notes.push(ImportNote::DroppedTrips {
+            single_stop: dropped_single_stop,
+            no_departure: dropped_no_departure,
+            missing_stop_coords: dropped_missing_stop_coords,
+        });
+    }
+    ImportOutcome { network: net, notes }
+}
+
+/// The block that already claimed this derived trip, if any.
+fn claimed_clash(
+    claimed: &BTreeMap<(String, u32), String>,
+    r: &TripRef,
+) -> Option<String> {
+    claimed
+        .get(&(r.schedule.clone(), r.start_secs))
+        .cloned()
 }
 
 /// Reverse of the derived-view route table: GTFS codes → model modes.

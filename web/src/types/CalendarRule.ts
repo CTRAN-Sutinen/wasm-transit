@@ -4,8 +4,8 @@ import type { DateRange } from "./DateRange";
 import type { WeekdaySet } from "./WeekdaySet";
 
 /**
- * Which days a service runs on, as authored rules rather than GTFS
- * exception rows: weekday flags plus date ranges, with explicit
+ * Which days a service type runs on, as authored rules rather than
+ * GTFS exception rows: weekday flags plus date ranges, with explicit
  * per-date exceptions that always win.
  */
 export type CalendarRule = { days: WeekdaySet, 

@@ -2,9 +2,9 @@
   "name": "Planner Network",
   "anchor": "noon_minus_twelve",
   "stops": {
-    "A": { "name": "Main & 1st", "lat": 45.5, "lon": -73.5 },
-    "B": { "name": "Main & 2nd", "lat": 45.51, "lon": -73.51 },
-    "C": { "name": "Main & 3rd", "lat": 45.52, "lon": -73.52 }
+    "A": { "name": "Main & 1st", "lat": 45.5, "lon": -73.5, "transfer": false },
+    "B": { "name": "Main & 2nd", "lat": 45.51, "lon": -73.51, "transfer": false },
+    "C": { "name": "Main & 3rd", "lat": 45.52, "lon": -73.52, "transfer": false }
   },
   "routes": {
     "10": { "name": "Route 10", "mode": "bus" }
@@ -23,25 +23,28 @@
       ]
     }
   },
-  "calendars": {
+  "service_types": {
     "weekday": {
-      "days": { "mon": true, "tue": true, "wed": true, "thu": true, "fri": true, "sat": false, "sun": false },
-      "ranges": [ { "start": "2026-01-01", "end": "2026-12-31" } ],
-      "exceptions": [ { "date": "2026-11-26", "state": "removed" } ]
+      "name": "Weekday",
+      "rule": {
+        "days": { "mon": true, "tue": true, "wed": true, "thu": true, "fri": true, "sat": false, "sun": false },
+        "ranges": [ { "start": "2026-01-01", "end": "2026-12-31" } ],
+        "exceptions": [ { "date": "2026-11-26", "state": "removed" } ]
+      }
     }
   },
-  "services": {
+  "schedules": {
     "10-weekday": {
       "pattern": "10-inbound",
-      "calendar": "weekday",
+      "service_type": "weekday",
       "schedule": { "kind": "exact_times", "starts": [28800, 30600, 91800] }
     }
   },
   "blocks": {
     "400": {
       "trips": [
-        { "service": "10-weekday", "start_secs": 28800 },
-        { "service": "10-weekday", "start_secs": 30600 }
+        { "schedule": "10-weekday", "start_secs": 28800 },
+        { "schedule": "10-weekday", "start_secs": 30600 }
       ],
       "layovers": [ { "after_trip": 0, "secs": 900, "at": "C" } ]
     }

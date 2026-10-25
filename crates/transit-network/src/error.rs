@@ -26,14 +26,14 @@ pub enum NetworkError {
     #[error("pattern {pattern} references unknown route {route}")]
     UnknownRoute { pattern: String, route: String },
 
-    #[error("service {service} references unknown pattern {pattern}")]
-    UnknownPattern { service: String, pattern: String },
+    #[error("schedule {schedule} references unknown pattern {pattern}")]
+    UnknownPattern { schedule: String, pattern: String },
 
-    #[error("service {service} references unknown calendar {calendar}")]
-    UnknownCalendar { service: String, calendar: String },
+    #[error("schedule {schedule} references unknown service type {service_type}")]
+    UnknownServiceType { schedule: String, service_type: String },
 
-    #[error("block {block} references unknown service {service}")]
-    UnknownBlockService { block: String, service: String },
+    #[error("block {block} references unknown schedule {schedule}")]
+    UnknownBlockSchedule { block: String, schedule: String },
 
     #[error("layover in block {block} references unknown stop {stop}")]
     UnknownLayoverStop { block: String, stop: String },
@@ -78,24 +78,24 @@ pub enum NetworkError {
     // -----------------------------------------------------------------
     // Service structure
     // -----------------------------------------------------------------
-    #[error("service {service} has an empty schedule")]
-    EmptySchedule { service: String },
+    #[error("schedule {schedule} has an empty schedule")]
+    EmptySchedule { schedule: String },
 
-    #[error("service {service} headway band {band} must have positive headway")]
-    ZeroHeadway { service: String, band: usize },
+    #[error("schedule {schedule} headway band {band} must have positive headway")]
+    ZeroHeadway { schedule: String, band: usize },
 
-    #[error("service {service} headway band {band} has start >= end")]
-    EmptyHeadwayBand { service: String, band: usize },
+    #[error("schedule {schedule} headway band {band} has start >= end")]
+    EmptyHeadwayBand { schedule: String, band: usize },
 
-    #[error("service {service} headway bands overlap")]
-    OverlappingHeadwayBands { service: String },
+    #[error("schedule {schedule} headway bands overlap")]
+    OverlappingHeadwayBands { schedule: String },
 
-    #[error("service {service} exact times must be sorted and unique")]
-    UnsortedExactTimes { service: String },
+    #[error("schedule {schedule} exact times must be sorted and unique")]
+    UnsortedExactTimes { schedule: String },
 
-    #[error("service {service} trip at {start_secs} falls outside every timing profile of pattern {pattern}")]
+    #[error("schedule {schedule} trip at {start_secs} falls outside every timing profile of pattern {pattern}")]
     TripOutsideTimingProfiles {
-        service: String,
+        schedule: String,
         pattern: String,
         start_secs: u32,
     },
@@ -103,8 +103,14 @@ pub enum NetworkError {
     // -----------------------------------------------------------------
     // Calendar structure
     // -----------------------------------------------------------------
-    #[error("calendar {calendar} range {index} has start after end")]
-    BadDateRange { calendar: String, index: usize },
+    #[error("service type {service_type} range {index} has start after end")]
+    BadDateRange { service_type: String, index: usize },
+
+    // -----------------------------------------------------------------
+    // Transfer points
+    // -----------------------------------------------------------------
+    #[error("stop {stop} is flagged as a transfer point but fewer than two routes meet across its walking group")]
+    TransferPointWithoutConnections { stop: String },
 
     // -----------------------------------------------------------------
     // Runcut structure
@@ -129,9 +135,9 @@ pub enum NetworkError {
     #[error("block {block} layover after trip {after_trip} does not fit before the next trip")]
     LayoverInfeasible { block: String, after_trip: usize },
 
-    #[error("trip {service}@{start_secs} appears in both block {a} and block {b}")]
+    #[error("trip {schedule}@{start_secs} appears in both block {a} and block {b}")]
     DuplicateBlockTrip {
-        service: String,
+        schedule: String,
         start_secs: u32,
         a: String,
         b: String,
@@ -141,8 +147,8 @@ pub enum NetworkError {
     // Materialization (total function: these fire only on networks
     // that failed validation)
     // -----------------------------------------------------------------
-    #[error("unknown service {service}")]
-    UnknownService { service: String },
+    #[error("unknown schedule {schedule}")]
+    UnknownSchedule { schedule: String },
 
     #[error("no timing profile of pattern {pattern} covers a trip starting at {start_secs}")]
     NoProfileForTrip { pattern: String, start_secs: u32 },

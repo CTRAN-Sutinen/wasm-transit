@@ -19,12 +19,33 @@
 /// moves documents across the seam.
 
 import { app, getNetworkDoc, setNetworkDoc } from "./state.svelte";
+import type { CoverageStats } from "./types/CoverageStats";
 import type { DayState } from "./types/DayState";
 import type { HeadwayBand } from "./types/HeadwayBand";
+import type { ImportNote } from "./types/ImportNote";
 import type { Mode } from "./types/Mode";
 import type { Network } from "./types/Network";
+import type { NetworkStats } from "./types/NetworkStats";
 
-export type EntityKind = "stop" | "route" | "pattern" | "service" | "calendar" | "block";
+export type EntityKind = "stop" | "route" | "pattern" | "schedule" | "service_type" | "block";
+
+/// One planner screen. The workspace is a stack: overview at the
+/// root, every drill-down pushes, Back pops. Plain data.
+export type PlannerScreen =
+  | { view: "overview" }
+  | { view: "document" }
+  | { view: "routes" }
+  | { view: "stops" }
+  | { view: "patterns" }
+  | { view: "schedules" }
+  | { view: "service_types" }
+  | { view: "blocks" }
+  | { view: "route"; id: string }
+  | { view: "stop"; id: string }
+  | { view: "pattern"; id: string }
+  | { view: "schedule"; id: string }
+  | { view: "service_type"; id: string }
+  | { view: "block"; id: string };
 
 export type Focus = { lines: number[][][]; points: number[][] };
 export type DayName = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
@@ -83,6 +104,78 @@ function setDoc(next: Network, label: string, { validateNow = false } = {}): voi
   } else {
     validateNetworkSoon();
   }
+  refreshAnalysisSoon();
+}
+
+// ---------------------------------------------------------------
+// analysis — the planner's design axis, answered by the artifact
+// ---------------------------------------------------------------
+
+/** Coverage analysis parameters (presentation choices; the artifact
+ * takes them as op arguments): within 400 m of a stop is "served";
+ * headways at or under 15 minutes are "frequent". */
+const COVERAGE_RADIUS_M = 400;
+const FREQUENT_HEADWAY_SECS = 15 * 60;
+
+let analysisTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Whole-document analysis is real work in the artifact on a real
+ * feed — debounce it like validation, one beat after the last edit. */
+function refreshAnalysisSoon(): void {
+  if (analysisTimer !== null) clearTimeout(analysisTimer);
+  analysisTimer = setTimeout(refreshAnalysis, 250);
+}
+
+/** Recompute the planner's views: the service-type overview, per-type
+ * coverage (when a population layer is loaded), and the drilled-in
+ * type's detail. Best-effort: analysis never blocks authoring. */
+export function refreshAnalysis(): void {
+  const doc = getNetworkDoc();
+  if (!doc || !app.wasm) {
+    app.typeOverview = [];
+    app.serviceTypeDetail = null;
+    app.typeCoverage = null;
+    return;
+  }
+  try {
+    app.typeOverview = app.wasm.service_types_overview(doc);
+    app.typeCoverage = app.popLayer
+      ? app.wasm.type_coverage(
+          doc, app.popLayer.layer_id,
+          COVERAGE_RADIUS_M, FREQUENT_HEADWAY_SECS, null,
+        )
+      : null;
+    const top = app.plannerStack[app.plannerStack.length - 1];
+    app.serviceTypeDetail =
+      top && top.view === "service_type" && "id" in top
+        ? app.wasm.service_type_detail(doc, top.id)
+        : null;
+  } catch (e) {
+    console.warn("analysis failed:", e);
+    app.typeOverview = [];
+    app.serviceTypeDetail = null;
+    app.typeCoverage = null;
+  }
+}
+
+/** Recompute coverage after a population layer import/clear. */
+export function refreshCoverage(): void {
+  refreshAnalysis();
+}
+
+/** "12 min headway" / "—" for nullable headway stats. */
+export function fmtHeadwaySafe(secs: number | null | undefined): string {
+  if (secs == null) return "—";
+  return `${Math.round(secs / 60)} min headway`;
+}
+
+/** Trip count of a schedule (exact times: starts; bands: expanded). */
+export function scheduleTripCount(schedule: { kind: string; starts?: number[]; bands?: { start_secs: number; end_secs: number; headway_secs: number }[] }): number {
+  if (schedule.kind === "exact_times") return schedule.starts?.length ?? 0;
+  return (schedule.bands ?? []).reduce(
+    (n, b) => n + (b.headway_secs > 0 ? Math.ceil((b.end_secs - b.start_secs) / b.headway_secs) : 0),
+    0,
+  );
 }
 
 /** The planner's bootstrap: infer a network document from the feed
@@ -100,9 +193,10 @@ export async function deriveFromFeed(): Promise<void> {
   await new Promise((r) => setTimeout(r, 30));
   try {
     if (!app.wasm) return;
-    const net = app.wasm.network_import(app.gtfs.feedId());
+    const { network: net, notes } = app.wasm.network_import(app.gtfs.feedId());
+    app.networkNotes = notes;
     setDoc(net, "derived from loaded feed", { validateNow: true });
-    app.status = `Derived a network from the loaded feed (${Object.keys(net.patterns).length} patterns, ${Object.keys(net.services).length} services) — edit it, then load it into the app.`;
+    app.status = `Derived a network from the loaded feed (${Object.keys(net.patterns).length} patterns, ${Object.keys(net.schedules).length} schedules) — edit it, then load it into the app.`;
   } catch (e) {
     app.status = `Error: ${e?.message ?? e}`;
   }
@@ -202,17 +296,22 @@ export function addStop(): void {
   const i = Object.keys(doc?.stops ?? {}).length + 1;
   const id = nextId(doc?.stops, "s");
   mutateNetwork((d) => {
-    d.stops[id] = { name: `Stop ${i}`, lat: 45.52, lon: -122.68 };
+    d.stops[id] = { name: `Stop ${i}`, lat: 45.52, lon: -122.68, transfer: false };
   });
+  selectEntity("stop", id); // creation opens the editor: set metadata now
 }
 
-export function updateStop(id: string, { name, lat, lon }: { name?: string; lat?: number; lon?: number }): void {
+export function updateStop(
+  id: string,
+  { name, lat, lon, transfer }: { name?: string; lat?: number; lon?: number; transfer?: boolean },
+): void {
   mutateNetwork((d) => {
     const s = d.stops[id];
     if (!s) return;
     if (name !== undefined) s.name = name;
     if (lat !== undefined && !Number.isNaN(lat)) s.lat = lat;
     if (lon !== undefined && !Number.isNaN(lon)) s.lon = lon;
+    if (transfer !== undefined) s.transfer = transfer;
   });
 }
 
@@ -237,6 +336,9 @@ export function addRoute(): void {
   mutateNetwork((d) => {
     d.routes[id] = { name: `Route ${i}`, mode: "bus" };
   });
+  // Creation opens the detail screen: set the metadata now, in
+  // context, not from a faceless list.
+  selectEntity("route", id);
 }
 
 export function updateRoute(id: string, { name, mode }: { name?: string; mode?: Mode }): void {
@@ -256,11 +358,11 @@ export function removeRoute(id: string): void {
 
 // --- patterns ---------------------------------------------------
 
-export function addPattern(): void {
+export function addPattern(routeId?: string): void {
   const doc = getNetworkDoc();
   if (!doc) return;
-  const routeId = Object.keys(doc.routes ?? {}).sort()[0];
-  if (!routeId) {
+  const targetRoute = routeId ?? Object.keys(doc.routes ?? {}).sort()[0];
+  if (!targetRoute) {
     app.status = "Add a route first.";
     return;
   }
@@ -272,7 +374,7 @@ export function addPattern(): void {
   const id = nextId(doc.patterns, "pat");
   mutateNetwork((d) => {
     d.patterns[id] = {
-      route: routeId,
+      route: targetRoute,
       name: `Pattern ${Object.keys(d.patterns).length + 1}`,
       stops: [
         { stop: stopIds[0], timepoint: true, distance_m: 0 },
@@ -281,6 +383,7 @@ export function addPattern(): void {
       timing: [{ start_secs: 0, end_secs: 30 * 3600, at_timepoints: [0, 600] }],
     };
   });
+  selectEntity("pattern", id);
 }
 
 export function updatePattern(id: string, { name, route }: { name?: string; route?: string }): void {
@@ -312,7 +415,9 @@ export function addPatternStop(patternId: string, stopId: string): void {
 }
 
 /** Middle stops only — the first and last are timepoints by model
- * invariant and the UI keeps them fixed. */
+ * invariant and the UI keeps them fixed. (No reordering: the stop
+ * sequence is geometry — added in order along the road, baked in by
+ * the alignment once it exists.) */
 export function removePatternStop(patternId: string, index: number): void {
   mutateNetwork((d) => {
     const p = d.patterns[patternId];
@@ -324,17 +429,6 @@ export function removePatternStop(patternId: string, index: number): void {
     if (wasTimepoint) {
       for (const prof of p.timing) prof.at_timepoints.splice(before, 1);
     }
-  });
-}
-
-export function movePatternStop(patternId: string, index: number, dir: number): void {
-  mutateNetwork((d) => {
-    const p = d.patterns[patternId];
-    if (!p) return;
-    const j = index + dir;
-    if (index <= 0 || j <= 0 || index >= p.stops.length - 1 || j >= p.stops.length - 1) return;
-    const [row] = p.stops.splice(index, 1);
-    p.stops.splice(j, 0, row);
   });
 }
 
@@ -419,151 +513,164 @@ export function dayNames(): DayName[] {
   return DAYS;
 }
 
-export function addCalendar(): void {
+export function addServiceType(): void {
   const doc = getNetworkDoc();
-  const id = nextId(doc?.calendars, "cal");
+  const id = nextId(doc?.service_types, "cal");
   mutateNetwork((d) => {
-    d.calendars[id] = {
-      days: { mon: true, tue: true, wed: true, thu: true, fri: true, sat: false, sun: false },
-      ranges: [{ start: "2026-01-01", end: "2026-12-31" }],
-      exceptions: [],
+    d.service_types[id] = {
+      name: `Service type ${id}`,
+      rule: {
+        days: { mon: true, tue: true, wed: true, thu: true, fri: true, sat: false, sun: false },
+        ranges: [{ start: "2026-01-01", end: "2026-12-31" }],
+        exceptions: [],
+      },
     };
   });
+  selectEntity("service_type", id);
 }
 
-export function toggleCalendarDay(id: string, day: DayName): void {
+export function toggleServiceTypeDay(id: string, day: DayName): void {
   mutateNetwork((d) => {
-    const c = d.calendars[id];
-    if (c) c.days[day] = !c.days[day];
+    const st = d.service_types[id];
+    if (st) st.rule.days[day] = !st.rule.days[day];
   });
 }
 
-export function setCalendarRange(id: string, index: number, { start, end }: { start?: string; end?: string }): void {
+export function setServiceTypeRange(id: string, index: number, { start, end }: { start?: string; end?: string }): void {
   mutateNetwork((d) => {
-    const r = d.calendars[id]?.ranges[index];
+    const r = d.service_types[id]?.rule.ranges[index];
     if (!r) return;
     if (start) r.start = start;
     if (end) r.end = end;
   });
 }
 
-export function addCalendarRange(id: string): void {
+export function addServiceTypeRange(id: string): void {
   mutateNetwork((d) => {
-    const c = d.calendars[id];
-    if (!c) return;
-    const last = c.ranges[c.ranges.length - 1];
+    const st = d.service_types[id];
+    if (!st) return;
+    const last = st.rule.ranges[st.rule.ranges.length - 1];
     if (last) {
-      c.ranges.push({ start: last.end, end: last.end });
+        st.rule.ranges.push({ start: last.end, end: last.end });
     } else {
-      c.ranges.push({ start: "2026-01-01", end: "2026-12-31" });
+        st.rule.ranges.push({ start: "2026-01-01", end: "2026-12-31" });
     }
   });
 }
 
-export function removeCalendarRange(id: string, index: number): void {
+export function removeServiceTypeRange(id: string, index: number): void {
   mutateNetwork((d) => {
-    d.calendars[id]?.ranges.splice(index, 1);
+    d.service_types[id]?.rule.ranges.splice(index, 1);
   });
 }
 
-export function addCalendarException(id: string, date: string, state: DayState): void {
+export function addServiceTypeException(id: string, date: string, state: DayState): void {
   if (!date) return;
   mutateNetwork((d) => {
-    const c = d.calendars[id];
-    if (!c) return;
-    const existing = c.exceptions.find((e) => e.date === date);
+    const st = d.service_types[id];
+    if (!st) return;
+    const existing = st.rule.exceptions.find((e) => e.date === date);
     if (existing) existing.state = state;
-    else c.exceptions.push({ date, state });
-    c.exceptions.sort((a, b) => (a.date < b.date ? -1 : 1));
+    else st.rule.exceptions.push({ date, state });
+    st.rule.exceptions.sort((a, b) => (a.date < b.date ? -1 : 1));
   });
 }
 
-export function removeCalendarException(id: string, date: string): void {
+export function removeServiceTypeException(id: string, date: string): void {
   mutateNetwork((d) => {
-    const c = d.calendars[id];
-    if (!c) return;
-    c.exceptions = c.exceptions.filter((e) => e.date !== date);
+    const st = d.service_types[id];
+    if (!st) return;
+    st.rule.exceptions = st.rule.exceptions.filter((e) => e.date !== date);
   });
 }
 
-export function removeCalendar(id: string): void {
+export function removeServiceType(id: string): void {
   mutateNetwork((d) => {
-    delete d.calendars[id];
+    delete d.service_types[id];
   });
 }
 
-// --- services ---------------------------------------------------
+export function updateServiceType(id: string, { name }: { name?: string }): void {
+  mutateNetwork((d) => {
+    const st = d.service_types[id];
+    if (!st) return;
+    if (name !== undefined) st.name = name;
+  });
+}
 
-export function addService(): void {
+// --- schedules (one pattern's trips under one service type) ---
+
+export function addSchedule(): void {
   const doc = getNetworkDoc();
   if (!doc) return;
   const patternId = Object.keys(doc.patterns ?? {}).sort()[0];
-  const calendarId = Object.keys(doc.calendars ?? {}).sort()[0];
-  if (!patternId || !calendarId) {
-    app.status = "Add a pattern and a calendar first.";
+  const typeId = Object.keys(doc.service_types ?? {}).sort()[0];
+  if (!patternId || !typeId) {
+    app.status = "Add a pattern and a service type first.";
     return;
   }
-  const id = nextId(doc.services, "svc");
+  const id = nextId(doc.schedules, "svc");
   mutateNetwork((d) => {
-    d.services[id] = {
+    d.schedules[id] = {
       pattern: patternId,
-      calendar: calendarId,
+      service_type: typeId,
       schedule: { kind: "exact_times", starts: [8 * 3600] },
     };
   });
+  selectEntity("schedule", id);
 }
 
-export function setServiceRefs(id: string, { pattern, calendar }: { pattern?: string; calendar?: string }): void {
+export function setScheduleRefs(id: string, { pattern, service_type }: { pattern?: string; service_type?: string }): void {
   mutateNetwork((d) => {
-    const s = d.services[id];
+    const s = d.schedules[id];
     if (!s) return;
     if (pattern) s.pattern = pattern;
-    if (calendar) s.calendar = calendar;
+    if (service_type) s.service_type = service_type;
   });
 }
 
-export function removeService(id: string): void {
+export function removeSchedule(id: string): void {
   mutateNetwork((d) => {
-    delete d.services[id];
+    delete d.schedules[id];
   });
 }
 
 /** Replace an exact-times service's trip starts (sorted, unique). */
-export function setServiceStarts(serviceId: string, starts: number[]): void {
+export function setScheduleStarts(scheduleId: string, starts: number[]): void {
   const clean = [...new Set(starts)].sort((a, b) => a - b);
   mutateNetwork((d) => {
-    const svc = d.services[serviceId];
+    const svc = d.schedules[scheduleId];
     if (svc) svc.schedule = { kind: "exact_times", starts: clean };
   });
 }
 
-export function addServiceStart(serviceId: string): void {
+export function addScheduleStart(scheduleId: string): void {
   const doc = getNetworkDoc();
-  const starts = (doc?.services?.[serviceId]?.schedule as { starts?: number[] } | undefined)?.starts;
+  const starts = (doc?.schedules?.[scheduleId]?.schedule as { starts?: number[] } | undefined)?.starts;
   if (!starts) return;
   const last = starts.length ? starts[starts.length - 1] : 6 * 3600;
-  setServiceStarts(serviceId, [...starts, Math.min(last + 600, 47 * 3600)]);
+  setScheduleStarts(scheduleId, [...starts, Math.min(last + 600, 47 * 3600)]);
 }
 
-export function removeServiceStart(serviceId: string, index: number): void {
+export function removeScheduleStart(scheduleId: string, index: number): void {
   const doc = getNetworkDoc();
-  const starts = (doc?.services?.[serviceId]?.schedule as { starts?: number[] } | undefined)?.starts;
+  const starts = (doc?.schedules?.[scheduleId]?.schedule as { starts?: number[] } | undefined)?.starts;
   if (!starts || starts.length <= 1) return;
-  setServiceStarts(serviceId, starts.filter((_, i) => i !== index));
+  setScheduleStarts(scheduleId, starts.filter((_, i) => i !== index));
 }
 
 /** Set one field of one headway band. */
-export function setBandField(serviceId: string, index: number, field: string, value: number): void {
+export function setBandField(scheduleId: string, index: number, field: string, value: number): void {
   mutateNetwork((d) => {
-    const svc = d.services[serviceId];
+    const svc = d.schedules[scheduleId];
     if (svc?.schedule?.kind !== "headway_bands" || !svc.schedule.bands[index]) return;
     (svc.schedule.bands[index] as HeadwayBand)[field as keyof HeadwayBand] = value as never;
   });
 }
 
-export function addBand(serviceId: string): void {
+export function addBand(scheduleId: string): void {
   mutateNetwork((d) => {
-    const svc = d.services[serviceId];
+    const svc = d.schedules[scheduleId];
     if (svc?.schedule?.kind !== "headway_bands") return;
     const bands = svc.schedule.bands;
     const last = bands[bands.length - 1];
@@ -572,9 +679,9 @@ export function addBand(serviceId: string): void {
   });
 }
 
-export function removeBand(serviceId: string, index: number): void {
+export function removeBand(scheduleId: string, index: number): void {
   mutateNetwork((d) => {
-    const svc = d.services[serviceId];
+    const svc = d.schedules[scheduleId];
     if (svc?.schedule?.kind !== "headway_bands" || svc.schedule.bands.length <= 1) return;
     svc.schedule.bands.splice(index, 1);
   });
@@ -588,6 +695,7 @@ export function addBlock(): void {
   mutateNetwork((d) => {
     d.blocks[id] = { trips: [], layovers: [] };
   });
+  selectEntity("block", id);
 }
 
 export function removeBlock(id: string): void {
@@ -596,16 +704,16 @@ export function removeBlock(id: string): void {
   });
 }
 
-export function addBlockTrip(blockId: string, serviceId: string, startSecs: number | null): void {
-  if (!serviceId || startSecs === null) {
-    app.status = "Pick a service and a valid start time first.";
+export function addBlockTrip(blockId: string, scheduleId: string, startSecs: number | null): void {
+  if (!scheduleId || startSecs === null) {
+    app.status = "Pick a schedule and a valid start time first.";
     return;
   }
   mutateNetwork((d) => {
     const b = d.blocks[blockId];
     if (!b) return;
-    b.trips.push({ service: serviceId, start_secs: startSecs });
-    b.trips.sort((a, c) => a.start_secs - c.start_secs || (a.service < c.service ? -1 : 1));
+    b.trips.push({ schedule: scheduleId, start_secs: startSecs });
+    b.trips.sort((a, c) => a.start_secs - c.start_secs || (a.schedule < c.schedule ? -1 : 1));
     // Layovers after the (possibly moved) last trip are meaningless.
     b.layovers = b.layovers.filter((l) => l.after_trip + 1 < b.trips.length);
   });
@@ -669,9 +777,24 @@ function focusFor(doc: Network | null, kind: EntityKind, id: string): Focus | nu
   if (kind === "pattern") {
     return { lines: patternLines(doc, id), points: patternCoords(doc, id) };
   }
-  if (kind === "service") {
-    const pattern = doc.services?.[id]?.pattern ?? null;
+  if (kind === "schedule") {
+    const pattern = doc.schedules?.[id]?.pattern ?? null;
     return { lines: patternLines(doc, pattern), points: patternCoords(doc, pattern) };
+  }
+  if (kind === "service_type") {
+    // The type's whole network: every pattern scheduled under it.
+    const lines: number[][][] = [];
+    const points: number[][] = [];
+    const patternIds = new Set(
+      Object.values(doc.schedules ?? {})
+        .filter((s) => s.service_type === id)
+        .map((s) => s.pattern),
+    );
+    for (const pid of patternIds) {
+      lines.push(...patternLines(doc, pid));
+      points.push(...patternCoords(doc, pid));
+    }
+    return { lines, points };
   }
   if (kind === "route") {
     const lines: number[][][] = [];
@@ -690,10 +813,73 @@ function focusFor(doc: Network | null, kind: EntityKind, id: string): Focus | nu
   return null; // calendars and blocks have no geometry
 }
 
-/** Drill into one entity: opens its editor and frames it on the map. */
+/** Drill into one entity: push its screen and frame it on the map. */
 export function selectEntity(kind: EntityKind, id: string): void {
-  app.plannerSelection = id ? { kind, id } : null;
+  if (!id) return;
+  const screen: PlannerScreen = { view: kind, id } as PlannerScreen;
+  plannerNavigate(screen);
   app.plannerFocus = focusFor(getNetworkDoc(), kind, id);
+}
+
+/** Push a screen onto the stack. Data screens hide the map (one
+ * laptop screen: tables get the width); entity screens bring it
+ * back for framing. */
+export function plannerNavigate(screen: PlannerScreen): void {
+  app.plannerStack = [...app.plannerStack, screen];
+  app.plannerMapUp = screenHasMap(screen);
+  syncSelection();
+  if (screen.view === "service_type") refreshAnalysisSoon(); // drill-down detail
+}
+
+/** Pop one screen (the Back button). */
+export function plannerBack(): void {
+  if (app.plannerStack.length <= 1) return;
+  app.plannerStack = app.plannerStack.slice(0, -1);
+  const top = app.plannerStack[app.plannerStack.length - 1];
+  app.plannerMapUp = screenHasMap(top);
+  syncSelection();
+  if (top.view === "service_type") refreshAnalysisSoon();
+}
+
+/** Jump to a screen from the menu — a fresh stack rooted there. */
+export function plannerGo(view: PlannerScreen["view"]): void {
+  app.plannerStack = [{ view: "overview" }, { view } as PlannerScreen];
+  app.plannerMapUp = screenHasMap(app.plannerStack[app.plannerStack.length - 1]);
+  syncSelection();
+}
+
+/** Back to the overview (the root). */
+export function plannerHome(): void {
+  app.plannerStack = [{ view: "overview" }];
+  app.plannerMapUp = true;
+  syncSelection();
+}
+
+/** Manual map toggle — the per-screen default is a default. */
+export function togglePlannerMap(): void {
+  app.plannerMapUp = !app.plannerMapUp;
+}
+
+function screenHasMap(screen: PlannerScreen): boolean {
+  // The map is a view: entity screens and the service-type day view
+  // frame things on it; pure data screens give the rail the width.
+  return (
+    screen.view === "overview" ||
+    screen.view === "route" ||
+    screen.view === "stop" ||
+    screen.view === "pattern" ||
+    screen.view === "schedule" ||
+    screen.view === "service_type"
+  );
+}
+
+/** Keep plannerSelection (what forms read) equal to the entity on
+ * top of the stack, and clear the map focus when it is gone. */
+function syncSelection(): void {
+  const top = app.plannerStack[app.plannerStack.length - 1];
+  const kind = ["route", "stop", "pattern", "schedule", "service_type", "block"].includes(top.view);
+  app.plannerSelection =
+    kind && "id" in top ? { kind: top.view as EntityKind, id: top.id } : null;
 }
 
 /** Clear focus (persona switch away, or a removed entity). */

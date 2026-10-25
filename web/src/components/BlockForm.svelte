@@ -2,18 +2,18 @@
   import { app, getNetworkDoc } from "../state.svelte";
   import {
     removeBlock, addBlockTrip, removeBlockTrip, setBlockLayover,
-    clearSelection, fmtHHMMSS, parseHHMMSS,
+    plannerBack, fmtHHMMSS, parseHHMMSS,
   } from "../planner";
   import Combobox from "./Combobox.svelte";
 
   const doc = $derived(getNetworkDoc());
   const id = $derived(app.plannerSelection?.kind === "block" ? app.plannerSelection.id : "");
   const block = $derived(id ? doc?.blocks?.[id] ?? null : null);
-  const serviceOptions = $derived(
-    doc ? Object.keys(doc.services ?? {}).sort().map((s) => ({ value: s, label: s })) : [],
+  const scheduleOptions = $derived(
+    doc ? Object.keys(doc.schedules ?? {}).sort().map((s) => ({ value: s, label: s })) : [],
   );
 
-  let addServiceId = $state("");
+  let addScheduleId = $state("");
   let addTime = $state("");
 
   const layoverOf = (afterTrip: number) => block?.layovers.find((l) => l.after_trip === afterTrip);
@@ -25,17 +25,17 @@
     {#each block.trips as trip, i (i)}
       <li>
         <code>{i + 1}</code>
-        <span class="muted">{trip.service}</span>
+        <span class="muted">{trip.schedule}</span>
         <span class="time">{fmtHHMMSS(trip.start_secs)}</span>
         <button aria-label={`Remove trip ${i + 1}`} onclick={() => removeBlockTrip(id, i)}>remove</button>
       </li>
     {/each}
   </ul>
   <p class="ent-row">
-    <Combobox label="Service to add" options={serviceOptions} bind:value={addServiceId} />
+    <Combobox label="Schedule to add" options={scheduleOptions} bind:value={addScheduleId} />
     <input aria-label="Start time to add" placeholder="HH:MM:SS" bind:value={addTime}>
-    <button disabled={!addServiceId || parseHHMMSS(addTime) === null}
-            onclick={() => { addBlockTrip(id, addServiceId, parseHHMMSS(addTime)); addTime = ""; }}>
+    <button disabled={!addScheduleId || parseHHMMSS(addTime) === null}
+            onclick={() => { addBlockTrip(id, addScheduleId, parseHHMMSS(addTime)); addTime = ""; }}>
       Add trip
     </button>
   </p>
@@ -61,7 +61,7 @@
     </ul>
   {/if}
   <p><button aria-label="Remove this block"
-             onclick={() => { removeBlock(id); clearSelection(); }}>Remove block</button></p>
+             onclick={() => { removeBlock(id); plannerBack(); }}>Remove block</button></p>
 {:else}
   <p class="muted">Block not found (removed?).</p>
 {/if}

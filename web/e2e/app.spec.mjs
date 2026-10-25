@@ -708,21 +708,42 @@ test("planner authors a network and the rider uses it", async ({ page }) => {
   await page.getByRole("button", { name: "Derive from loaded feed" }).click();
   await expect(page.getByText("valid", { exact: true })).toBeVisible();
 
-  // Drill into the service: the overview rail selects it, its editor
-  // opens in the drawer, and the map frames the pattern.
-  await page.getByRole("button", { name: "Open service WK:pat-10-0-0" }).click();
-  await expect(page.locator(".planner-drawer")).toBeVisible();
+  // The service type screen shows the type's WHOLE day — routes,
+  // schedules, stops — and frames the type's network on the map
+  // (every pattern scheduled under it).
+  await page.getByRole("button", { name: "Open service type WK" }).click();
+  await expect(page.getByRole("heading", { name: /Service type/ })).toBeVisible();
+  await expect(page.getByText("Routes running")).toBeVisible();
+  await expect(page.getByText("Schedules (3)")).toBeVisible();
+  await expect(page.locator(".map-side")).toBeVisible();
   await expect
     .poll(async () => (await mapData(page, "planner")).features.length)
     .toBeGreaterThan(0);
+
+  // Pure data screens (Document) hide the map and the rail takes the
+  // whole width — no dead column next to it (regression: an invalid
+  // grid rule left the shell two-tracked, rendering a black void
+  // beside the rail).
+  await page.getByRole("button", { name: "Document" }).click();
+  await expect(page.locator(".map-side")).toBeHidden();
+  const railWidth = await page.locator(".sidebar").evaluate((el) => el.getBoundingClientRect().width);
+  expect(railWidth, "the rail absorbs the hidden map's width").toBeGreaterThan(700);
+
+  // The workspace is a screen stack: menu → Schedules, drill into the
+  // schedule, the editor is a screen in the rail (Back pops it).
+  await page.getByRole("button", { name: "Schedules" }).click();
+  await page.getByRole("button", { name: "Open schedule WK:pat-10-0-0" }).click();
+  await expect(page.getByRole("heading", { name: /Schedule/ })).toBeVisible();
 
   // Move route 10's 08:00 trip (t10) five minutes later.
   const firstStart = page.locator(".trip-start").first();
   await firstStart.fill("08:05:00");
   await firstStart.blur();
-  await expect(page.getByText("valid", { exact: true })).toBeVisible();
 
-  // Materialize: the app's active feed is now the authored network.
+  // Materialize from the Document screen: the app's active feed is
+  // now the authored network.
+  await page.getByRole("button", { name: "Document" }).click();
+  await expect(page.getByText("valid", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Load into app" }).click();
   await expect(page.getByText(/Materialized/)).toBeVisible();
 

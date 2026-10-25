@@ -18,7 +18,7 @@ use proptest::prelude::*;
 use transit_network::{
     materialize, trip_arrival_end_secs, validation_issues, Anchor, Block, CalendarException,
     CalendarRule, DateRange, DayState, HeadwayBand, Layover, Mode, Network, Pattern, PatternStop,
-    Route, Schedule, Service, TimingProfile, TripRef, WeekdaySet,
+    Route, Schedule, PatternSchedule, ServiceType, TimingProfile, TripRef, WeekdaySet,
 };
 
 const YEAR_START: NaiveDate = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
@@ -101,8 +101,8 @@ fn build_network(spec: &Spec) -> Network {
         stops: Default::default(),
         routes: Default::default(),
         patterns: Default::default(),
-        calendars: Default::default(),
-        services: Default::default(),
+        service_types: Default::default(),
+        schedules: Default::default(),
         blocks: Default::default(),
     };
     for i in 0..spec.n_stops {
@@ -113,6 +113,7 @@ fn build_network(spec: &Spec) -> Network {
                 lat: 45.0 + i as f64 * 0.01,
                 lon: -122.7 + i as f64 * 0.005,
                 parent: None,
+                transfer: false,
             },
         );
     }
@@ -168,9 +169,11 @@ fn build_network(spec: &Spec) -> Network {
         );
     }
 
-    net.calendars.insert(
+    net.service_types.insert(
         "cal".into(),
-        CalendarRule {
+        ServiceType {
+            name: "cal".into(),
+            rule: CalendarRule {
             days: dayset(spec.dayset),
             ranges: vec![DateRange {
                 start: YEAR_START,
@@ -183,6 +186,7 @@ fn build_network(spec: &Spec) -> Network {
                 }]
             } else {
                 vec![]
+            },
             },
         },
     );
@@ -204,11 +208,11 @@ fn build_network(spec: &Spec) -> Network {
                 starts: vec![7 * 3600 + i * 300, 8 * 3600 + i * 300, 9 * 3600 + i * 300],
             }
         };
-        net.services.insert(
+        net.schedules.insert(
             format!("svc{i}"),
-            Service {
+            PatternSchedule {
                 pattern,
-                calendar: "cal".into(),
+                service_type: "cal".into(),
                 schedule,
             },
         );
@@ -217,7 +221,7 @@ fn build_network(spec: &Spec) -> Network {
     if spec.with_block {
         // Two consecutive trips of svc0, layover sized to fit — and
         // only if the running time even allows the connection.
-        if let Some(service) = net.services.get("svc0") {
+        if let Some(service) = net.schedules.get("svc0") {
             let starts = transit_network::trip_starts(&service.schedule);
             if starts.len() >= 2 {
                 if let Ok(arrival) = trip_arrival_end_secs(&net, "svc0", starts[0]) {
@@ -236,11 +240,11 @@ fn build_network(spec: &Spec) -> Network {
                             Block {
                                 trips: vec![
                                     TripRef {
-                                        service: "svc0".into(),
+                                        schedule: "svc0".into(),
                                         start_secs: starts[0],
                                     },
                                     TripRef {
-                                        service: "svc0".into(),
+                                        schedule: "svc0".into(),
                                         start_secs: starts[1],
                                     },
                                 ],
@@ -289,8 +293,8 @@ fn oracle_runs_on(rule: &CalendarRule, date: NaiveDate) -> bool {
 }
 
 /// Oracle trip starts: count-then-index instead of accumulate.
-fn oracle_starts(service: &Service) -> Vec<u32> {
-    match &service.schedule {
+fn oracle_starts(schedule: &PatternSchedule) -> Vec<u32> {
+    match &schedule.schedule {
         Schedule::HeadwayBands { bands } => {
             let mut out = Vec::new();
             for band in bands {
@@ -351,9 +355,9 @@ fn oracle_stop_times(pattern: &Pattern, start: u32) -> Vec<(String, u32, u32)> {
 /// compare with `materialize`.
 fn oracle_materialize(net: &Network, date: NaiveDate) -> Vec<(String, String, u32, Vec<(String, u32, u32)>)> {
     let mut out = Vec::new();
-    for (service_id, service) in &net.services {
-        let rule = &net.calendars[&service.calendar];
-        if !oracle_runs_on(rule, date) {
+    for (service_id, service) in &net.schedules {
+        let rule = &net.service_types[&service.service_type];
+        if !oracle_runs_on(&rule.rule, date) {
             continue;
         }
         let pattern = &net.patterns[&service.pattern];
@@ -411,8 +415,8 @@ proptest! {
             let got = materialize(&net, date).unwrap();
             let expected = oracle_materialize(&net, date);
             prop_assert_eq!(got.len(), expected.len(), "trip count on {:?}", date);
-            for (trip, (service, route, start, stop_times)) in got.iter().zip(&expected) {
-                prop_assert_eq!(&trip.service, service);
+            for (trip, (schedule, route, start, stop_times)) in got.iter().zip(&expected) {
+                prop_assert_eq!(trip.schedule.as_str(), schedule.as_str());
                 prop_assert_eq!(&trip.route, route);
                 prop_assert_eq!(trip.start_secs, *start);
                 prop_assert_eq!(trip.stop_times.len(), stop_times.len());
@@ -429,10 +433,10 @@ proptest! {
     /// full year, exceptions included.
     #[test]
     fn calendar_runs_on_matches_brute_force(net in net_strategy()) {
-        let rule = &net.calendars["cal"];
+        let rule = &net.service_types["cal"];
         for day in 0..365 {
             let date = YEAR_START + Duration::days(day);
-            prop_assert_eq!(rule.runs_on(date), oracle_runs_on(rule, date));
+            prop_assert_eq!(rule.rule.runs_on(date), oracle_runs_on(&rule.rule, date));
         }
     }
 
@@ -447,8 +451,8 @@ proptest! {
         prop_assert!(!validation_issues(&broken).is_empty());
 
         let mut broken = net.clone();
-        if let Some((_, service)) = broken.services.iter_mut().next() {
-            service.calendar = "ghost-calendar".into();
+        if let Some((_, schedule)) = broken.schedules.iter_mut().next() {
+            schedule.service_type = "ghost-service-type".into();
         }
         prop_assert!(!validation_issues(&broken).is_empty());
 
@@ -459,10 +463,10 @@ proptest! {
         prop_assert!(!validation_issues(&broken).is_empty());
 
         let mut broken = net.clone();
-        if let Some((_, service)) = broken.services.iter_mut().next() {
-            if let Schedule::HeadwayBands { bands } = &mut service.schedule {
+        if let Some((_, schedule)) = broken.schedules.iter_mut().next() {
+            if let Schedule::HeadwayBands { bands } = &mut schedule.schedule {
                 bands[0].headway_secs = 0;
-            } else if let Schedule::ExactTimes { starts } = &mut service.schedule {
+            } else if let Schedule::ExactTimes { starts } = &mut schedule.schedule {
                 starts[0] = 31 * 3600; // outside every timing profile
             }
         }
@@ -481,8 +485,8 @@ proptest! {
         let _ = materialize(&broken, date);
 
         let mut broken = net.clone();
-        if let Some((_, service)) = broken.services.iter_mut().next() {
-            service.pattern = "ghost-pattern".into();
+        if let Some((_, schedule)) = broken.schedules.iter_mut().next() {
+            schedule.pattern = "ghost-pattern".into();
         }
         let _ = materialize(&broken, date);
     }

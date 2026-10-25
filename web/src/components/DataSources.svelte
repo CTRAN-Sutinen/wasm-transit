@@ -3,22 +3,23 @@
   import {
     dropFile, loadGtfsFromUrl, clearCachedFeed,
     importStreetsFile, loadStreetsFromUrl, clearStreets,
+    importPopulationFile, loadPopulationFromUrl, clearPopulation,
     loadRtFromUrl, loadVpFromUrl,
   } from "../actions";
+  import { refreshCoverage } from "../planner";
 
-  // App config, not workflow: loading a feed and importing a street
-  // network happen once. The panel opens by itself when nothing is
-  // loaded yet and closes itself when a feed lands; afterwards it is
-  // on demand (fab bottom-right). Hidden by CSS, not {#if} — the
-  // inputs stay attached so tests (and drag-drop) work regardless.
+  // App config, not workflow: loading a feed and importing reference
+  // layers happen once. A MODAL, not a floating panel — it never
+  // fights the persona rails for pixels (one laptop screen). Opens
+  // by itself when nothing is loaded yet; afterwards on demand.
   let open = $state(!app.gtfs && !app.cachedFeed);
   let dragActive = $state(false);
   let fileInput: HTMLInputElement; // bind:this target
   let streetsInput: HTMLInputElement; // bind:this target
+  let popInput: HTMLInputElement; // bind:this target
 
-  // A feed load or IndexedDB restore closes the panel — loading is
-  // one-time setup, not part of the daily rider/dispatcher/planner
-  // workflow. Reopening after that is a deliberate act.
+  // A feed load or IndexedDB restore closes the modal — loading is
+  // one-time setup, not part of the daily workflow.
   $effect(() => {
     if (app.gtfs) open = false;
   });
@@ -33,11 +34,35 @@
     if (file) await importStreetsFile(file);
     input.value = ""; // same file can be re-imported after an edit
   }
+
+  async function onPopFile(ev: Event): Promise<void> {
+    const input = ev.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (file) {
+      await importPopulationFile(file);
+      refreshCoverage();
+    }
+    input.value = "";
+  }
+
+  async function onPopUrl(): Promise<void> {
+    await loadPopulationFromUrl();
+    refreshCoverage();
+  }
+
+  function clearPop(): void {
+    clearPopulation();
+    refreshCoverage();
+  }
 </script>
 
+{#if open}
+  <div class="ds-backdrop" onclick={() => (open = false)}></div>
+{/if}
 <button class="ds-fab" onclick={() => (open = !open)}>Data sources</button>
 
-<aside class="ds-panel" class:hidden={!open} id="data-sources">
+<aside class="ds-panel" class:hidden={!open} id="data-sources" role="dialog"
+       aria-modal={open ? "true" : "false"} aria-label="Data sources">
   <header class="panel-header">
     <h2>Data sources</h2>
     <button class="link" onclick={() => (open = false)}>Close</button>
@@ -108,6 +133,42 @@
     <p>
       <span class="chip svc" title="Detour clicks snap to street segments and stops">
         {getStreets()?.segmentCount} street segments — snapping on
+      </span>
+      <span class="muted">not persisted — re-imported per session</span>
+    </p>
+  {/if}
+
+  <h3>Population layer</h3>
+  <p class="muted">
+    Census block centroids (GeoJSON points with a population property)
+    drive the planner's coverage analysis. The population field is
+    auto-detected (POP, POPULATION, …).
+  </p>
+  <p>
+    <input
+      type="file"
+      id="population-file"
+      accept=".geojson,.json,application/geo+json"
+      hidden
+      bind:this={popInput}
+      onchange={onPopFile}
+    >
+    <button onclick={() => popInput.click()}>Import population layer (GeoJSON)</button>
+    {#if app.popLayer}
+      <button class="link" onclick={clearPop}>clear</button>
+    {/if}
+  </p>
+  <p>
+    <label for="population-url">Population layer URL:</label><br>
+    <input type="url" id="population-url" size="45" bind:value={app.popUrl}
+           placeholder="https://portal.example/…/blocks.geojson">
+    <button onclick={onPopUrl}>Import layer</button>
+  </p>
+  {#if app.popLayer}
+    <p>
+      <span class="chip svc">
+        {app.popLayer.points.toLocaleString()} points ·
+        {Math.round(app.popLayer.total_pop).toLocaleString()} people ({app.popLayer.pop_field})
       </span>
       <span class="muted">not persisted — re-imported per session</span>
     </p>

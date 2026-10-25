@@ -12,7 +12,7 @@ use serde::de::DeserializeOwned;
 
 use crate::calendar::ServiceCalendar;
 use crate::error::{GtfsError, Result};
-use crate::model::{Agency, Calendar, CalendarDate, FeedInfo, Route, ShapePoint, Stop, StopTime, Trip};
+use crate::model::{Agency, Calendar, CalendarDate, FeedInfo, Route, ShapePoint, Stop, StopTime, Transfer, Trip};
 use crate::time::parse_time;
 use crate::Gtfs;
 
@@ -146,6 +146,14 @@ pub fn from_zip_bytes(bytes: &[u8]) -> Result<Gtfs> {
         points.sort_by_key(|p| p.shape_pt_sequence);
     }
 
+    // transfers.txt is optional: declared transfers between stops.
+    // Kept faithful (pairs and types); the authored network derives
+    // its transfer-point flags from these.
+    let transfers: Vec<Transfer> = match read_member(&mut archive, "transfers.txt")? {
+        Some(text) => parse_csv("transfers.txt", &text)?,
+        None => Vec::new(),
+    };
+
     // Convert raw stop times: string times -> seconds since service-day
     // midnight.
     let mut stop_times = Vec::with_capacity(raw_stop_times.len());
@@ -218,6 +226,7 @@ pub fn from_zip_bytes(bytes: &[u8]) -> Result<Gtfs> {
         stop_times_by_trip,
         blocks,
         shapes,
+        transfers,
         feed_info,
     })
 }

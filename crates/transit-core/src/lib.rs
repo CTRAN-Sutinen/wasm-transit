@@ -14,7 +14,7 @@ pub mod time;
 pub use calendar::ServiceCalendar;
 pub use diversion::{apply_diversions, affected_trips, validate_diversion, DetourPoint, Diversion};
 pub use error::{GtfsError, Result};
-pub use model::{route_type_name, Agency, BlockSummary, BlockTrip, Calendar, CalendarDate, Departure, FeedInfo, FeedSummary, Route, RouteSummary, ShapePoint, Stop, StopSummary, StopTime, Trip};
+pub use model::{route_type_name, Agency, BlockSummary, BlockTrip, Calendar, CalendarDate, Departure, FeedInfo, FeedSummary, Route, RouteSummary, ShapePoint, Stop, StopSummary, StopTime, Transfer, Trip};
 pub use time::{fmt_time, parse_time};
 
 use std::collections::HashMap;
@@ -44,6 +44,9 @@ pub struct Gtfs {
     blocks: HashMap<String, Vec<String>>,
     /// shape_id → points in sequence order.
     pub shapes: HashMap<String, Vec<ShapePoint>>,
+    /// `transfers.txt` rows, when the feed provides the file (empty
+    /// otherwise). Kept faithful; consumers derive policy.
+    pub transfers: Vec<Transfer>,
     /// `feed_info.txt` metadata, when the feed provides it.
     pub feed_info: Option<FeedInfo>,
 }
@@ -67,6 +70,7 @@ impl Gtfs {
         services: ServiceCalendar,
         shapes: HashMap<String, Vec<ShapePoint>>,
         feed_info: Option<FeedInfo>,
+        transfers: Vec<Transfer>,
     ) -> Gtfs {
         let mut gtfs = Gtfs {
             agencies,
@@ -79,6 +83,7 @@ impl Gtfs {
             stop_times_by_trip: HashMap::new(),
             blocks: HashMap::new(),
             shapes,
+            transfers,
             feed_info,
         };
         gtfs.rebuild_indexes();

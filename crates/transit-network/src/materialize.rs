@@ -30,7 +30,7 @@ use crate::model::{Network, Pattern, Schedule};
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct MaterializedTrip {
-    pub service: String,
+    pub schedule: String,
     pub route: String,
     pub pattern: String,
     /// Seconds after the service-day anchor (see `Network::anchor`).
@@ -79,14 +79,14 @@ pub fn trip_starts(schedule: &Schedule) -> Vec<u32> {
 /// feasibility against. On a validated network this cannot fail.
 pub fn trip_arrival_end_secs(
     network: &Network,
-    service_id: &str,
+    schedule_id: &str,
     start_secs: u32,
 ) -> Result<u32, NetworkError> {
-    let service = network.services.get(service_id).ok_or_else(|| NetworkError::UnknownService {
-        service: service_id.to_string(),
+    let service = network.schedules.get(schedule_id).ok_or_else(|| NetworkError::UnknownSchedule {
+        schedule: schedule_id.to_string(),
     })?;
     let pattern = network.patterns.get(&service.pattern).ok_or_else(|| NetworkError::UnknownPattern {
-        service: service_id.to_string(),
+        schedule: schedule_id.to_string(),
         pattern: service.pattern.clone(),
     })?;
     let profile = pattern
@@ -112,19 +112,19 @@ pub fn trip_arrival_end_secs(
 /// the derived-feed view. On a validated network it cannot fail.
 pub fn materialize_service(
     network: &Network,
-    service_id: &str,
+    schedule_id: &str,
 ) -> Result<Vec<MaterializedTrip>, NetworkError> {
     let service = network
-        .services
-        .get(service_id)
-        .ok_or_else(|| NetworkError::UnknownService {
-            service: service_id.to_string(),
+        .schedules
+        .get(schedule_id)
+        .ok_or_else(|| NetworkError::UnknownSchedule {
+            schedule: schedule_id.to_string(),
         })?;
     let pattern = network
         .patterns
         .get(&service.pattern)
         .ok_or_else(|| NetworkError::UnknownPattern {
-            service: service_id.to_string(),
+            schedule: schedule_id.to_string(),
             pattern: service.pattern.clone(),
         })?;
     if network.routes.get(&pattern.route).is_none() {
@@ -136,7 +136,7 @@ pub fn materialize_service(
     let mut trips = Vec::new();
     for start in trip_starts(&service.schedule) {
         trips.push(MaterializedTrip {
-            service: service_id.to_string(),
+            schedule: schedule_id.to_string(),
             route: pattern.route.clone(),
             pattern: service.pattern.clone(),
             start_secs: start,
@@ -153,23 +153,23 @@ pub fn materialize(
     date: NaiveDate,
 ) -> Result<Vec<MaterializedTrip>, NetworkError> {
     let mut trips = Vec::new();
-    for (service_id, service) in &network.services {
-        let calendar = network
-            .calendars
-            .get(&service.calendar)
-            .ok_or_else(|| NetworkError::UnknownCalendar {
-                service: service_id.clone(),
-                calendar: service.calendar.clone(),
+    for (schedule_id, service) in &network.schedules {
+        let service_type = network
+            .service_types
+            .get(&service.service_type)
+            .ok_or_else(|| NetworkError::UnknownServiceType {
+                schedule: schedule_id.clone(),
+                service_type: service.service_type.clone(),
             })?;
-        if !calendar.runs_on(date) {
+        if !service_type.rule.runs_on(date) {
             continue;
         }
-        trips.extend(materialize_service(network, service_id)?);
+        trips.extend(materialize_service(network, schedule_id)?);
     }
     trips.sort_by(|a, b| {
         a.start_secs
             .cmp(&b.start_secs)
-            .then_with(|| a.service.cmp(&b.service))
+            .then_with(|| a.schedule.cmp(&b.schedule))
     });
     Ok(trips)
 }

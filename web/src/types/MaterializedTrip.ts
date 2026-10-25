@@ -4,7 +4,7 @@ import type { StopTime } from "./StopTime";
 /**
  * One derived trip for one service date.
  */
-export type MaterializedTrip = { service: string, route: string, pattern: string, 
+export type MaterializedTrip = { schedule: string, route: string, pattern: string, 
 /**
  * Seconds after the service-day anchor (see `Network::anchor`).
  */

@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc b144c8b5152c7b3ccc3b513964c9d6d9a258e37f3f9462dd7776d502f1253ef5 # shrinks to trips = [GenTrip { id: "a", route: 0, service: 0, block: Some(1), start_slot: 22, stops: [0, 1], leg_min: 11 }, GenTrip { id: "a", route: 0, service: 0, block: None, start_slot: 0, stops: [0, 1], leg_min: 1 }]
+cc 634d584412cc01ce639333a9fafb181b55a9bd688bfa05a6c8ed7c06440e1c12 # shrinks to trips = [GenTrip { route: 0, service: 0, block: Some(0), start_slot: 49, stops: [0, 1], leg_min: 1 }, GenTrip { route: 0, service: 0, block: Some(0), start_slot: 44, stops: [0, 1, 2], leg_min: 26 }]

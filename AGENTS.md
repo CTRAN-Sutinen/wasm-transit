@@ -34,10 +34,13 @@ go module fetches are fine.
 transit-core    GTFS codec: model, zip/CSV parse, calendar, queries,
                 diversion patching. Pure, no I/O.
 transit-network The authored network model (planner authority):
-                patterns, timing profiles, calendar rules, services,
-                runcut. Trips are DERIVED (`materialize`) — trips are
-                never stored. GTFS is a codec at the boundary, not the
-                model; no GTFS types leak in here.
+                patterns, timing profiles, service types (the
+                service identifier, linked to days by its calendar
+                rule), pattern schedules (one pattern's trips under
+                one service type), runcut. Trips are DERIVED
+                (`materialize`) — trips are never stored. GTFS is a
+                codec at the boundary, not the model; no GTFS types
+                leak in here.
 transit-router  RAPTOR earliest-arrival planning.
 transit-rt      prost types from the official GTFS-rt proto.
 transit-sync   THE sync document: EditRecord, FeedManifest, EditReport,

@@ -206,6 +206,19 @@ pub struct ShapePoint {
     pub shape_dist_traveled: Option<f64>,
 }
 
+/// `transfers.txt` — one row per declared transfer between stops.
+/// Kept faithfully at the codec layer (route pairs, timed windows);
+/// the authored model derives its transfer-point flag from these.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Transfer {
+    pub from_stop_id: String,
+    pub to_stop_id: String,
+    #[serde(default)]
+    pub transfer_type: Option<u8>,
+    #[serde(default)]
+    pub min_transfer_time: Option<u32>,
+}
+
 /// One upcoming departure at a stop, joined across stop_times → trips →
 /// routes. Returned by [`crate::Gtfs::next_departures`].
 #[derive(Debug, Clone, Serialize, TS)]

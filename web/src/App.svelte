@@ -8,7 +8,6 @@
   import PlanOverlay from "./components/PlanOverlay.svelte";
   import DiversionPanel from "./components/DiversionPanel.svelte";
   import PlannerRail from "./components/PlannerRail.svelte";
-  import PlannerDrawer from "./components/PlannerDrawer.svelte";
   import PersonaTabs from "./components/PersonaTabs.svelte";
   import { app } from "./state.svelte.js";
   import { loadRtFromUrl, loadVpFromUrl, saveSettings } from "./actions";
@@ -89,12 +88,8 @@
     {/if}
   </aside>
 
-  <div class="map-side">
+  <div class="map-side" class:hidden={app.persona === "planner" && !app.plannerMapUp}>
     <MapView />
-
-    {#if app.persona === "planner"}
-      <PlannerDrawer />
-    {/if}
 
     <PlanOverlay />
   </div>

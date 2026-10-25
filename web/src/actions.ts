@@ -519,6 +519,72 @@ export function clearStreets(): void {
   app.status = "Street network cleared — detour clicks snap to stops only.";
 }
 
+// ------------------------------------------------------------------
+// Population layer (planner coverage analysis). Census block
+// centroids as GeoJSON points with a population property — the
+// same standing as the street network: app config, reference data,
+// re-imported per session. The artifact owns the points under
+// layer_id; coverage runs against the planner's document.
+// ------------------------------------------------------------------
+
+export async function importPopulationFile(file: File): Promise<void> {
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    await installPopulation(bytes, file.name);
+  } catch (e) {
+    app.status = `Population layer import failed: ${(e as Error).message}`;
+    console.warn("population import failed:", e);
+  }
+}
+
+export async function loadPopulationFromUrl(): Promise<void> {
+  if (!app.popUrl) {
+    app.status = "Enter a population layer URL first.";
+    return;
+  }
+  try {
+    const features: unknown[] = [];
+    for (let offset = 0; ; offset += features.length) {
+      if (offset > 2_000_000) {
+        throw new Error("over 2M features — the service may be ignoring resultOffset");
+      }
+      const page = new URL(app.popUrl, location.href);
+      page.searchParams.set("resultOffset", String(offset));
+      page.searchParams.set("resultCount", "2000");
+      app.status = `Downloading population layer — ${features.length} features so far...`;
+      const bytes = await fetchBytes(proxied(page.toString()));
+      const json = JSON.parse(new TextDecoder().decode(bytes));
+      const pageFeatures = (json as { features?: unknown[] })?.features;
+      if (!Array.isArray(pageFeatures)) {
+        throw new Error("not a GeoJSON FeatureCollection (is the URL a direct geojson endpoint?)");
+      }
+      features.push(...pageFeatures);
+      const more = (json as { properties?: { exceededTransferLimit?: boolean } })
+        ?.properties?.exceededTransferLimit === true;
+      if (!more || pageFeatures.length === 0) break;
+    }
+    const bytes = new TextEncoder().encode(JSON.stringify({ type: "FeatureCollection", features }));
+    await installPopulation(bytes, app.popUrl);
+  } catch (e) {
+    app.status = `Population layer import failed: ${(e as Error).message}`;
+    console.warn("population import failed:", e);
+  }
+}
+
+export function clearPopulation(): void {
+  app.popLayer = null;
+  app.status = "Population layer cleared — coverage analysis is off until one is imported.";
+}
+
+async function installPopulation(bytes: Uint8Array, label: string): Promise<void> {
+  if (!app.wasm) return;
+  const handle = app.wasm.coverage_load(bytes);
+  app.popLayer = { ...handle, label };
+  app.status =
+    `Population layer loaded (${label}) — ${handle.points} points, field "${handle.pop_field}", ` +
+    `${Math.round(handle.total_pop).toLocaleString()} people. Coverage analysis is on.`;
+}
+
 async function installStreets(geojson: unknown, label: string): Promise<void> {
   if (!app.wasm) return;
   try {

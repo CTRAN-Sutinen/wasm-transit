@@ -2,6 +2,6 @@
 
 /**
  * A block's reference to a trip — trips being derived values, the
- * (service, start) pair *is* the trip's identity.
+ * (schedule, start) pair *is* the trip's identity.
  */
-export type TripRef = { service: string, start_secs: number, };
+export type TripRef = { schedule: string, start_secs: number, };

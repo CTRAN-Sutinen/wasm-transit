@@ -333,6 +333,7 @@ fn clone_feed(base: &Gtfs) -> Gtfs {
         stop_times_by_trip: HashMap::new(),
         blocks: HashMap::new(),
         shapes: base.shapes.clone(),
+        transfers: base.transfers.clone(),
         feed_info: base.feed_info.clone(),
     }
 }
