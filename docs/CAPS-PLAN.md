@@ -147,11 +147,128 @@ revenue hours, span, transfer points. It renders `network_stats`
 through cap-analysis like the rest of the planner's numbers — the
 degraded state is already handled by the bus.
 
+## 6. UI/agent coherence — user-declared assembly and the projection artifacts
+
+**Why this unit.** The thesis is "ship capabilities to match the
+user," but the UI currently presumes what the user needs: screens
+PULL capabilities (`ensure(["analysis"])` lives in a component).
+The agent side hand-assembles a harness every session — the
+founding session's three improvisations (bootstrap script,
+hash-copying, summarizer) were harness-building without a harness
+artifact, and items 3 and 4 are proto-harness features seen through
+an op-shaped frame. This unit makes both sides assemblies over
+the same catalog, declared by their consumer.
+
+**The anchoring chain — one writer per plane.** The UX hierarchy
+maps onto the bus mechanically, and the manifest is the anchor:
+it is the only artifact both surfaces consume (agents read
+purpose/op_docs; the UI pins hashes through the resolver).
+
+```
+Strategy   the user's selection     (user-authored, host state)
+Scope      the capability manifest  (capability author)
+Structure  the document DAG         (capability author)
+Skeleton   sections + preferences   (UI author — the UI manifest)
+Surface    typed renderers          (UI author)
+```
+
+Coherence, stated once: a human and an agent can ask the same
+question and get the same bytes, because both invoke the same ops
+on the same hash-addressed documents through the same manifest.
+
+**Decisions (argued out — hold these):**
+
+- **Selection is host-side and user-authored.** The user declares
+  their needs; personas become suggestions, not the source of
+  truth. The developer's job shrinks to authoring a total catalog
+  and a total rendering; the user's selection picks the subset.
+- **Sections probe, they don't require.** A section declares the
+  ops it could render, ordered by preference, and renders the
+  maximal subset the assembled set satisfies — progressive
+  enhancement at the capability layer. Probe resolves each need
+  to one of three states: **unassembled** (never selected; the
+  store is the fix), **starved** (assembled, no suitable document
+  present; a data flow is the fix), **ready**. Starved and
+  unassembled are different affordances, not one "degraded".
+- **The UI manifest is a separate, host-side artifact** (op →
+  `render` | `flow:...`, section preferences, labels). It does
+  NOT live in the capability manifest — UI structure is a view,
+  and views own their own structure ("the map is a view, not a
+  fixture"). There is NO `agent_only` flag and NO manifest→UI
+  coverage gate: an op with no UI entry is legal (agent compute,
+  plumbing awaiting a flow). The assertion runs in the other
+  direction — **referential integrity**: a UI manifest entry
+  naming an unknown op fails the build (shape drift is already
+  caught by the generated response types). Coverage runs as a
+  DIAGNOSTIC (the unmapped-ops list — standing input to the
+  UI-gap queue); diagnostics are measurements, regressions are
+  assertions.
+- **The UI manifest is itself a document in the store**
+  (hash-chained, produced_by, rollback): a UI customization by
+  an agent or user is inspectable, diffable, reversible. It fails
+  SOFT: entries naming unknown ops/renderers degrade loudly at
+  load instead of crashing. The law that keeps it from becoming a
+  homebrew UI framework: **the manifest may choose among existing
+  things — ops, renderers, labels, order — never describe new
+  behavior.** No conditionals, no computed values. Test for any
+  proposed field: could an unknown value degrade gracefully?
+- **The agent side is the same anatomy.** A harness is a
+  projection whose renderer is JSON and a shell: assembly (which
+  capabilities), projection (which ops, with what shaping flags),
+  flow (result references — item 3), budget (the wall-clock
+  guard), eventually authz (policy checked against a harness,
+  where cap-authz wants to attach). Harnesses are EPHEMERAL task
+  state, unlike the persistent UI projection. Harnesses are
+  discovered, then crystallized: a recurring session
+  improvisation graduates from finding → runner feature → data.
+  Do NOT pre-build a harness framework.
+
+**PoC stages (each independently landable):**
+
+1. `web/src/selection.svelte.ts`: the user's chosen capability
+   ids, IndexedDB-persisted, defaulting to everything in the
+   manifest (nobody's experience changes day one). The resolver
+   consults it: deselected = never assembled. The catalog stays
+   visible even to users who want nothing from it.
+2. Store surface in the DataSources modal: checkbox list over
+   manifest capabilities (id, purpose, hash, status). Proves the
+   convergence claim — purpose written as a pitch to agents
+   reads as a pitch to users. Toggling analysis off behaves as
+   `forgetCapability` does today.
+3. One probe-based section: convert the network overview's
+   numbers (the cap-analysis consumer) from pull to probe.
+   Acceptance: the section's code names OPS, not capabilities —
+   if it still says `ensure(["analysis"])`, the direction didn't
+   flip. Toggle analysis → the section degrades in place and
+   authoring flows on the same screen never notice; starved is
+   exerciseable with no network document loaded.
+4. The UI manifest + gates: the host-side op → render | flow
+   map; a caps-smoke assertion that UI manifest ops ⊆ manifest
+   ops; the unmapped-ops diagnostic printed by the check.
+   Validate the assertion by planting a divergence (an entry
+   naming a nonexistent op) and watching it fail. e2e: extend
+   `web/e2e/caps.spec.mjs` (store toggle → degrade → recover).
+
+**Not in this unit:** persona presets (selection replaces them),
+question-shaped preference abstractions (flat op lists until a
+second analysis capability exists), any harness framework in
+caps-run.
+
+**First customers.** Item 5's day-summary screen is the first op
+rendered through the probe path; item 4's shaping flags are the
+first projection-level choice an agent makes in a harness.
+
 ## Standing queue (after this unit)
 
 - **Registry search** as a derived artifact: embed purpose +
   op_docs + worked examples; ranking carries evidence (laws,
-  provenance) so "known good" is part of relevance.
+  provenance) so "known good" is part of relevance. Endpoint of
+  this road: an agent that browses the catalog and assembles its
+  own harness for the task at hand — the agent-side store.
+- **caps-run harness as data** (assembly/projection/flow/budget,
+  per item 6's anatomy) — when the same session improvisation
+  recurs, crystallize it; until then, improvisations are
+  findings, not framework.
 - **Fuel metering** in the runner (wasmtime) once it may point at
   untrusted registry entries; the wall-clock worker guard is the
   stopgap.
