@@ -22,7 +22,6 @@ pub mod plans;
 pub mod rt;
 pub mod state;
 
-pub use analysis::{CoverageStats, NetworkStats, PopLayer, RouteStats, StopStats};
 pub use plans::{PlanInfo, PlanIssue};
 pub use geojson::{
     FeatureCollection, LineGeometry, PointGeometry, StopFeature, StopProps, TripLineFeature,
@@ -60,54 +59,14 @@ pub enum Request {
     /// Validate an authored network document without loading it.
     /// Returns every issue — the authoring UI's feedback loop.
     NetworkValidate { network: transit_network::Network },
-    /// The planner's analysis on one service date: trips, spans,
-    /// headways at the network, route, and stop levels. Best-effort
-    /// on a mid-edit document (broken services are skipped —
-    /// validation is the gate that blocks; this never is).
-    NetworkStats {
-        network: transit_network::Network,
-        date: String,
-    },
-    /// The planner's DESIGN axis: every service type's numbers, each
-    /// on its own representative day (the first date its rule runs).
-    /// Not a calendar date in sight — planners design types.
-    ServiceTypesOverview { network: transit_network::Network },
-    /// One service type expanded on its representative day: routes,
-    /// stops, schedules, totals — the drill-down.
-    ServiceTypeDetail {
-        network: transit_network::Network,
-        service_type: String,
-    },
-    /// Population coverage per service type, each measured on its
-    /// representative day: "what share of the population does
-    /// WEEKDAY service cover? Saturday service?"
-    TypeCoverage {
-        network: transit_network::Network,
-        layer_id: u32,
-        radius_m: f64,
-        frequent_secs: u32,
-        min_departures: Option<u32>,
-    },
     /// Parse a population layer (GeoJSON points with a population
-    /// property) and register it in the layer registry. `pop_field`
-    /// names the property; `None` tries the common candidates.
+    /// property) for the UI's import handle. `pop_field` names the
+    /// property; `None` tries the common candidates. Parse-only —
+    /// coverage computation lives in the analysis capability
+    /// (cap-analysis), which registers layers by content hash.
     CoverageLoad {
         bytes: Vec<u8>,
         pop_field: Option<String>,
-    },
-    /// Population coverage of a network document on a service date:
-    /// the share of the layer's population within `radius_m` of a
-    /// stop with service, and the share near frequent service
-    /// (typical headway ≤ `frequent_secs`, at least `min_departures`
-    /// visits — default 6 — so a two-trip pocket cannot read as
-    /// frequent).
-    CoverageStats {
-        network: transit_network::Network,
-        date: String,
-        layer_id: u32,
-        radius_m: f64,
-        frequent_secs: u32,
-        min_departures: Option<u32>,
     },
     /// Infer an authored network document from a loaded feed — the
     /// planner's bootstrap path: the network the agency already runs,
@@ -241,17 +200,11 @@ pub enum Response {
     PlansResolve { plan: Option<String> },
     PlansValidate { issues: Vec<PlanIssue> },
     PlansPeriods { periods: Vec<plans::PlanPeriod> },
-    NetworkStats { stats: NetworkStats },
-    ServiceTypesOverview { service_types: Vec<analysis::ServiceTypeSummary> },
-    ServiceTypeDetail { detail: analysis::ServiceTypeDetail },
-    TypeCoverage { coverage: Vec<analysis::TypeCoverage> },
     CoverageLoad {
-        layer_id: u32,
         points: u32,
         pop_field: String,
         total_pop: f64,
     },
-    CoverageStats { stats: CoverageStats },
     NetworkImport { network: transit_network::Network, notes: Vec<ImportNote> },
     NetworkLoad { feed_id: u32, summary: transit_core::FeedSummary },
     Summary { summary: transit_core::FeedSummary },
@@ -333,56 +286,13 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
         Request::PlansPeriods { plans } => Ok(Response::PlansPeriods {
             periods: plans::periods(&plans),
         }),
-        Request::NetworkStats { network, date } => {
-            let parsed = parse_date(&date)?;
-            Ok(Response::NetworkStats {
-                stats: analysis::network_stats(&network, parsed),
-            })
-        }
-        Request::ServiceTypesOverview { network } => Ok(Response::ServiceTypesOverview {
-            service_types: analysis::service_type_overview(&network),
-        }),
-        Request::ServiceTypeDetail { network, service_type } => {
-            let detail = analysis::service_type_detail(&network, &service_type)
-                .map_err(OpError::new)?;
-            Ok(Response::ServiceTypeDetail { detail })
-        }
-        Request::TypeCoverage { network, layer_id, radius_m, frequent_secs, min_departures } => {
-            state::with_layer(layer_id, |layer| {
-                Ok(Response::TypeCoverage {
-                    coverage: analysis::type_coverage(
-                        &network,
-                        layer,
-                        radius_m,
-                        frequent_secs,
-                        min_departures.unwrap_or(6),
-                    ),
-                })
-            })
-        }
         Request::CoverageLoad { bytes, pop_field } => {
             let layer = analysis::parse_pop_layer(&bytes, pop_field.as_deref())
                 .map_err(OpError::new)?;
             let points = layer.points.len() as u32;
             let total_pop = layer.points.iter().map(|p| p.pop).sum();
             let pop_field = layer.pop_field.clone();
-            let layer_id = state::register_layer(layer);
-            Ok(Response::CoverageLoad { layer_id, points, pop_field, total_pop })
-        }
-        Request::CoverageStats { network, date, layer_id, radius_m, frequent_secs, min_departures } => {
-            let parsed = parse_date(&date)?;
-            state::with_layer(layer_id, |layer| {
-                Ok(Response::CoverageStats {
-                    stats: analysis::coverage(
-                        &network,
-                        parsed,
-                        layer,
-                        radius_m,
-                        frequent_secs,
-                        min_departures.unwrap_or(6),
-                    ),
-                })
-            })
+            Ok(Response::CoverageLoad { points, pop_field, total_pop })
         }
         Request::NetworkImport { feed_id } => state::with_feed(feed_id, |f| {
             let outcome = network::gtfs_to_network(&f.gtfs);

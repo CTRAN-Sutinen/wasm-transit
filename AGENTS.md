@@ -68,6 +68,12 @@ transit-network The authored network model (planner authority):
                 picks a year at defined dates; empty identity =
                 unversioned (a fresh import).
 transit-router  RAPTOR earliest-arrival planning.
+transit-analysis Planner analysis over an authored network document:
+                stats, service-type overview/detail, population
+                coverage. A LIBRARY shared by transit-ops (parse-only
+                coverage handle) and the cap-analysis module — the
+                extraction pattern: crate boundary first, capability
+                wrapper second, monolith deletion last.
 transit-rt      prost types from the official GTFS-rt proto.
 transit-sync   THE sync document: EditRecord, FeedManifest, EditReport,
                 pure validation/merge logic. Shared by every host.
@@ -102,12 +108,19 @@ transit-ops     dispatch(Request) -> Response: the host-agnostic seam
 transit-wasm    THE artifact: flat import-free C ABI over dispatch.
                 No wasm-bindgen — do not reintroduce host glue.
 
-**The capability bus (PoC, alongside the monolith):** horizontal
-capability modules assembled per user from a manifest — the thesis
-is "ship capabilities to match the user," so capability bytes differ
-per user while the DOCUMENT and the contracts stay identical
-everywhere. The monolith remains the deployed artifact until the bus
-graduates.
+**The capability bus (graduating):** horizontal capability modules
+assembled per user from a manifest — the thesis is "ship capabilities
+to match the user," so capability bytes differ per user while the
+DOCUMENT and the contracts stay identical everywhere. The first
+extraction is DONE: analysis (stats, service types, coverage) lives in
+`transit-analysis` — a library shared by cap-analysis (the module,
+hash-keyed document registries) and transit-ops — and its ops are
+DELETED from the monolith; the planner UI reads numbers through the
+bus and degrades loudly (authoring continues, numbers off) when the
+capability cannot assemble. Future extractions follow the same
+three-stage shape: crate boundary first, capability wrapper second,
+monolith op deletion last. The monolith remains the deployed artifact
+for everything not yet extracted.
 
 ```
 cap-abi         The seam crate: the flat C ABI as a macro (every
@@ -131,6 +144,12 @@ cap-gtfs        The gtfs capability: GTFS zip → content-hash feed
 cap-router      The router capability: RAPTOR over a feed document
                 gtfs produced — a pure-function capability; it
                 writes nothing.
+cap-analysis    The analysis capability: planner numbers (stats,
+                service types, coverage) over hash-keyed network and
+                population-layer registries. The domain code lives
+                in the shared transit-analysis library — the first
+                extraction where a monolith op family is DELETED
+                (the planner UI has no monolith fallback for it).
 web/src/        capabilities.svelte.ts: the resolver — manifest
                 validation, demand-driven load, byte verification
                 against pinned hashes, per-capability degradation,

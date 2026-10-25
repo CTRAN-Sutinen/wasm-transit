@@ -34,30 +34,31 @@
       },
       "purpose": "Read a GTFS static zip: parse it into a hash-addressed feed registry and answer schedule questions (departures at a stop, stop lists). Assemble for any user who needs to know when service runs. Also owns the watchlist document (the rider's saved stops) and its v1→v2 migration.",
       "op_docs": {
-        "load_watchlist": {
-          "description": "Register a watchlist document (version-tagged JSON) under its content hash.",
+        "stops": {
+          "description": "Stop list for UI pickers, first N by id.",
           "example": {
             "request": {
-              "document": {
-                "stops": [
-                  {
-                    "id": "A",
-                    "label": "home"
-                  },
-                  {
-                    "id": "B",
-                    "label": "work"
-                  }
-                ],
-                "version": "v2"
-              },
-              "op": "load_watchlist"
+              "feed_hash": "sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2",
+              "limit": 3,
+              "op": "stops"
             },
             "response": {
               "ok": {
-                "op": "load_watchlist",
-                "version": 2,
-                "watchlist_hash": "sha256:<of the document>"
+                "op": "stops",
+                "stops": [
+                  {
+                    "name": "Main & 1st",
+                    "stop_id": "A"
+                  },
+                  {
+                    "name": "Main & 2nd",
+                    "stop_id": "B"
+                  },
+                  {
+                    "name": "Main & 3rd",
+                    "stop_id": "C"
+                  }
+                ]
               }
             }
           }
@@ -106,35 +107,6 @@
                   }
                 ],
                 "op": "departures"
-              }
-            }
-          }
-        },
-        "stops": {
-          "description": "Stop list for UI pickers, first N by id.",
-          "example": {
-            "request": {
-              "feed_hash": "sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2",
-              "limit": 3,
-              "op": "stops"
-            },
-            "response": {
-              "ok": {
-                "op": "stops",
-                "stops": [
-                  {
-                    "name": "Main & 1st",
-                    "stop_id": "A"
-                  },
-                  {
-                    "name": "Main & 2nd",
-                    "stop_id": "B"
-                  },
-                  {
-                    "name": "Main & 3rd",
-                    "stop_id": "C"
-                  }
-                ]
               }
             }
           }
@@ -191,6 +163,34 @@
                     "label": "work"
                   }
                 ]
+              }
+            }
+          }
+        },
+        "load_watchlist": {
+          "description": "Register a watchlist document (version-tagged JSON) under its content hash.",
+          "example": {
+            "request": {
+              "document": {
+                "stops": [
+                  {
+                    "id": "A",
+                    "label": "home"
+                  },
+                  {
+                    "id": "B",
+                    "label": "work"
+                  }
+                ],
+                "version": "v2"
+              },
+              "op": "load_watchlist"
+            },
+            "response": {
+              "ok": {
+                "op": "load_watchlist",
+                "version": 2,
+                "watchlist_hash": "sha256:<of the document>"
               }
             }
           }
@@ -311,20 +311,12 @@
       "migrates": {},
       "purpose": "Planner analysis over an authored network document: network/route/stop stats, per-service-type overview and detail, population coverage. The first capability extracted from the monolith — the domain code lives in the shared transit-analysis library. Assemble for planners; riders never download it. Documents are hash-addressed (load once, query by hash — never per-op document serialization).",
       "op_docs": {
-        "network_stats": {
-          "description": "The network's numbers on one service date: trips, spans, revenue hours, per-route and per-stop activity, headways.",
-          "example": null
-        },
         "load_population_layer": {
           "description": "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried).",
           "example": null
         },
-        "service_type_detail": {
-          "description": "One service type expanded on its representative day: routes, stops, schedules, totals.",
-          "example": null
-        },
-        "load_network": {
-          "description": "Register an authored network document (the planner's JSON document) under its content hash; idempotent.",
+        "network_stats": {
+          "description": "The network's numbers on one service date: trips, spans, revenue hours, per-route and per-stop activity, headways.",
           "example": null
         },
         "type_coverage": {
@@ -333,6 +325,14 @@
         },
         "service_types_overview": {
           "description": "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight.",
+          "example": null
+        },
+        "load_network": {
+          "description": "Register an authored network document (the planner's JSON document) under its content hash; idempotent.",
+          "example": null
+        },
+        "service_type_detail": {
+          "description": "One service type expanded on its representative day: routes, stops, schedules, totals.",
           "example": null
         }
       }

@@ -139,41 +139,6 @@ pub fn with_streets<R>(
     f(net)
 }
 
-// ---------------------------------------------------------------------
-// Population layers: a third parallel registry. Population data is
-// app config for the planner's coverage analysis (reference
-// demographics), the same standing as street networks — it outlives
-// feeds and never mixes with feed state.
-// ---------------------------------------------------------------------
-
-fn layers_registry() -> &'static Mutex<BTreeMap<u32, crate::analysis::PopLayer>> {
-    static REGISTRY: OnceLock<Mutex<BTreeMap<u32, crate::analysis::PopLayer>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(BTreeMap::new()))
-}
-
-/// Register a parsed population layer; returns its id.
-pub fn register_layer(layer: crate::analysis::PopLayer) -> u32 {
-    static NEXT: AtomicU32 = AtomicU32::new(0);
-    let id = NEXT.fetch_add(1, Ordering::Relaxed);
-    layers_registry()
-        .lock()
-        .expect("layer registry poisoned")
-        .insert(id, layer);
-    id
-}
-
-/// Borrow a population layer for one op. Unknown ids are an `OpError`.
-pub fn with_layer<R>(
-    layer_id: u32,
-    f: impl FnOnce(&crate::analysis::PopLayer) -> Result<R, OpError>,
-) -> Result<R, OpError> {
-    let registry = layers_registry().lock().expect("layer registry poisoned");
-    let layer = registry
-        .get(&layer_id)
-        .ok_or_else(|| OpError::new(format!("unknown layer_id {layer_id}")))?;
-    f(layer)
-}
-
 /// Register a parsed feed; returns its id.
 pub fn register_feed(gtfs: Gtfs) -> u32 {
     let id = next_feed_id();

@@ -139,7 +139,7 @@ export type AppState = {
   // artifact keeps the data under layer_id). The BYTES stay too —
   // content-addressed registration for the analysis capability
   // (the bus path registers layers by hash; the monolith by id).
-  popLayer: { layer_id: number; points: number; pop_field: string; total_pop: number; label: string } | null,
+  popLayer: { points: number; pop_field: string; total_pop: number; label: string } | null,
   popLayerBytes: Uint8Array | null,
   popUrl: string,
   // The map is a view, not a fixture: data screens (lists, document)

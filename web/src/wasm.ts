@@ -11,7 +11,6 @@
 /// outcomes are `{"ok": ...}` or `{"error": ...}`.
 
 import wasmUrl from "../pkg/transit_wasm.wasm?url";
-import type { CoverageStats } from "./types/CoverageStats";
 import type { Departure } from "./types/Departure";
 import type { EditRecord } from "./types/EditRecord";
 import type { EditReport } from "./types/EditReport";
@@ -22,17 +21,13 @@ import type { ImportNote } from "./types/ImportNote";
 import type { Itinerary } from "./types/Itinerary";
 import type { Network } from "./types/Network";
 import type { NetworkError } from "./types/NetworkError";
-import type { NetworkStats } from "./types/NetworkStats";
 import type { BlockSummary } from "./types/BlockSummary";
 import type { BlockTrip } from "./types/BlockTrip";
 import type { RtOverview } from "./types/RtOverview";
 import type { RouteSummary } from "./types/RouteSummary";
-import type { ServiceTypeDetail } from "./types/ServiceTypeDetail";
-import type { ServiceTypeSummary } from "./types/ServiceTypeSummary";
 import type { PlanInfo } from "./types/PlanInfo";
 import type { PlanIssue } from "./types/PlanIssue";
 import type { PlanPeriod } from "./types/PlanPeriod";
-import type { TypeCoverage } from "./types/TypeCoverage";
 import type { StopFeature } from "./types/StopFeature";
 import type { StopSummary } from "./types/StopSummary";
 import type { StreetPoint } from "./types/StreetPoint";
@@ -334,49 +329,6 @@ export function network_import(feedId: number): { network: Network; notes: Impor
   };
 }
 
-/// The planner's analysis on one service date: trips, spans,
-/// headways at the network, route, and stop levels — plus the
-/// composed transfer-point view. Best-effort on a mid-edit document.
-export function network_stats(network: Network, date: string): NetworkStats {
-  return (invoke({ op: "network_stats", network, date }) as { stats: NetworkStats }).stats;
-}
-
-/// The planner's DESIGN axis: every service type's numbers, each on
-/// its own representative day.
-export function service_types_overview(network: Network): ServiceTypeSummary[] {
-  return (invoke({ op: "service_types_overview", network }) as { service_types: ServiceTypeSummary[] })
-    .service_types;
-}
-
-/// One service type expanded on its representative day: routes,
-/// stops, schedules, totals — the drill-down.
-export function service_type_detail(network: Network, serviceType: string): ServiceTypeDetail {
-  return (invoke({ op: "service_type_detail", network, service_type: serviceType }) as {
-    detail: ServiceTypeDetail;
-  }).detail;
-}
-
-/// Population coverage per service type, each on its representative
-/// day.
-export function type_coverage(
-  network: Network,
-  layerId: number,
-  radiusM: number,
-  frequentSecs: number,
-  minDepartures: number | null,
-): TypeCoverage[] {
-  return (
-    invoke({
-      op: "type_coverage",
-      network,
-      layer_id: layerId,
-      radius_m: radiusM,
-      frequent_secs: frequentSecs,
-      min_departures: minDepartures,
-    }) as { coverage: TypeCoverage[] }
-  ).coverage;
-}
-
 /// Which service plan is in force on a date (the latest pick at or
 /// before it; unversioned plans never resolve).
 export function plans_resolve(plans: PlanInfo[], date: string): string | null {
@@ -396,38 +348,17 @@ export function plans_periods(plans: PlanInfo[]): PlanPeriod[] {
 }
 
 export type CoverageLayer = {
-  layer_id: number;
   points: number;
   pop_field: string;
   total_pop: number;
 };
 
-/// Parse and register a population layer (GeoJSON points; the
-/// population property auto-detected from the common spellings).
+/// Parse a population layer (GeoJSON points; the population property
+/// auto-detected from the common spellings) for the import handle.
+/// Parse-only: coverage computation lives in the analysis capability
+/// (cap-analysis), which registers layers by content hash.
 export function coverage_load(bytes: Uint8Array): CoverageLayer {
   return invokeBytes(OP_COVERAGE_LOAD, bytes) as CoverageLayer;
-}
-
-/// Population coverage of a network document on a service date.
-export function coverage_stats(
-  network: Network,
-  date: string,
-  layerId: number,
-  radiusM: number,
-  frequentSecs: number,
-  minDepartures: number | null,
-): CoverageStats {
-  return (
-    invoke({
-      op: "coverage_stats",
-      network,
-      date,
-      layer_id: layerId,
-      radius_m: radiusM,
-      frequent_secs: frequentSecs,
-      min_departures: minDepartures,
-    }) as { stats: CoverageStats }
-  ).stats;
 }
 
 /// The API surface `loadWasm()` hands back — the whole artifact
@@ -437,15 +368,10 @@ export type WasmApi = {
   decode_rt: typeof decode_rt;
   network_validate: typeof network_validate;
   network_import: typeof network_import;
-  network_stats: typeof network_stats;
-  service_types_overview: typeof service_types_overview;
-  service_type_detail: typeof service_type_detail;
-  type_coverage: typeof type_coverage;
   plans_resolve: typeof plans_resolve;
   plans_validate: typeof plans_validate;
   plans_periods: typeof plans_periods;
   coverage_load: typeof coverage_load;
-  coverage_stats: typeof coverage_stats;
   streets_load: typeof streets_load;
   street_snap: typeof street_snap;
   street_route: typeof street_route;
@@ -460,15 +386,10 @@ export async function loadWasm(): Promise<WasmApi> {
     decode_rt,
     network_validate,
     network_import,
-    network_stats,
-    service_types_overview,
-    service_type_detail,
-    type_coverage,
     plans_resolve,
     plans_validate,
     plans_periods,
     coverage_load,
-    coverage_stats,
     streets_load,
     street_snap,
     street_route,

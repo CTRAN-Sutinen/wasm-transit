@@ -150,11 +150,11 @@ function refreshAnalysisSoon(): void {
  * coverage (when a population layer is loaded), and the drilled-in
  * type's detail. Best-effort: analysis never blocks authoring.
  *
- * Stage B: the numbers come from the ANALYSIS CAPABILITY when the
- * bus assembles it (the same domain code, extracted), with the
- * monolith ops as the fallback. Either path, the same artifact
- * semantics — the capability registers the document once per edit
- * and queries by hash; the monolith re-serializes per call. */
+ * Stage C: the numbers come from the ANALYSIS CAPABILITY — the ops
+ * are deleted from the monolith. The capability registers the
+ * document once per edit and queries by hash; when it cannot
+ * assemble (offline, stale manifest), the planner degrades to
+ * authoring-without-numbers and says so — never silently. */
 export async function refreshAnalysis(): Promise<void> {
   const doc = getNetworkDoc();
   const seq = ++analysisSeq;
@@ -168,59 +168,42 @@ export async function refreshAnalysis(): Promise<void> {
     return;
   }
 
-  // The bus path: the analysis capability, documents by hash.
   try {
     const networkHash = await ensureAnalysisNetwork(doc);
-    if (networkHash && seq === analysisSeq) {
-      const module = await analysisModule();
-      if (module) {
-        const analysis = analysisCap(module);
-        const top = app.plannerStack[app.plannerStack.length - 1];
-        app.typeOverview = analysis.serviceTypesOverview(networkHash);
-        if (app.popLayer && app.popLayerBytes) {
-          const layerHash = await ensureAnalysisLayer(app.popLayerBytes);
-          if (layerHash) {
-            app.typeCoverage = analysis.typeCoverage(
-              networkHash,
-              layerHash,
-              COVERAGE_RADIUS_M,
-              FREQUENT_HEADWAY_SECS,
-              MIN_DEPARTURES,
-            );
-          } else {
-            app.typeCoverage = null;
-          }
-        } else {
-          app.typeCoverage = null;
-        }
-        app.serviceTypeDetail =
-          top && top.view === "service_type" && "id" in top
-            ? analysis.serviceTypeDetail(networkHash, top.id)
-            : null;
-        analysisPath = "bus";
-        return;
-      }
+    if (seq !== analysisSeq) return;
+    if (!networkHash) {
+      // The capability did not assemble: numbers are off, authoring
+      // continues. Degrade loudly, per capability.
+      clearViews();
+      analysisPath = null;
+      app.status = "Analysis capability unavailable — planner numbers are off until it loads.";
+      return;
     }
-  } catch (e) {
-    console.warn("analysis via capability failed, falling back:", e);
-  }
-  if (seq !== analysisSeq) return;
-
-  // The monolith fallback — identical semantics, per-call documents.
-  try {
-    app.typeOverview = app.wasm.service_types_overview(doc);
-    app.typeCoverage = app.popLayer
-      ? app.wasm.type_coverage(
-          doc, app.popLayer.layer_id,
-          COVERAGE_RADIUS_M, FREQUENT_HEADWAY_SECS, null,
-        )
-      : null;
+    const module = await analysisModule();
+    if (!module || seq !== analysisSeq) return;
+    const analysis = analysisCap(module);
     const top = app.plannerStack[app.plannerStack.length - 1];
+    app.typeOverview = analysis.serviceTypesOverview(networkHash);
+    if (app.popLayer && app.popLayerBytes) {
+      const layerHash = await ensureAnalysisLayer(app.popLayerBytes);
+      if (seq !== analysisSeq) return;
+      app.typeCoverage = layerHash
+        ? analysis.typeCoverage(
+            networkHash,
+            layerHash,
+            COVERAGE_RADIUS_M,
+            FREQUENT_HEADWAY_SECS,
+            MIN_DEPARTURES,
+          )
+        : null;
+    } else {
+      app.typeCoverage = null;
+    }
     app.serviceTypeDetail =
       top && top.view === "service_type" && "id" in top
-        ? app.wasm.service_type_detail(doc, top.id)
+        ? analysis.serviceTypeDetail(networkHash, top.id)
         : null;
-    analysisPath = "monolith";
+    analysisPath = "bus";
   } catch (e) {
     console.warn("analysis failed:", e);
     clearViews();

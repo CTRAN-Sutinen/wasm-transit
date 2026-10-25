@@ -839,10 +839,10 @@ fn network_stats_reports_route_and_stop_activity() {
     // duplicate-start dedup (t1/t3 share 08:00), two patterns, three
     // stops, every stop on route 10.
     let network = import_production();
-    let stats = match dispatch(Request::NetworkStats { network, date: DATE.into() }).unwrap() {
-        Response::NetworkStats { stats } => stats,
-        _ => panic!("network_stats"),
-    };
+    // The analysis ops moved to the capability (cap-analysis); the
+    // semantics are tested at the library seam now — same functions.
+    let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
+    let stats = transit_ops::analysis::network_stats(&network, date);
     assert_eq!(stats.date, DATE);
     assert_eq!(stats.trips, 4); // t9, t1, t5 (dedup), t7
     assert_eq!(stats.active_routes, 1);
@@ -896,34 +896,25 @@ fn pop_layer_geojson() -> Vec<u8> {
 fn coverage_loads_and_measures_service_quality() {
     // The planner's opening questions, answered by the artifact:
     // what share of the population is near service, and what share
-    // is near frequent service. Stop A runs 4 visits hourly (that
-    // IS the frequent bar here: frequent_secs 3600, ≥4 visits);
-    // stop C runs 3 — served, not frequent; the far point neither.
-    let layer_id = match dispatch(Request::CoverageLoad { bytes: pop_layer_geojson(), pop_field: None })
+    // is near frequent service. coverage_load is the monolith's
+    // parse-only handle; the measurement is the analysis library
+    // (the capability's domain).
+    let handle = match dispatch(Request::CoverageLoad { bytes: pop_layer_geojson(), pop_field: None })
         .unwrap()
     {
-        Response::CoverageLoad { layer_id, points, pop_field, total_pop } => {
+        Response::CoverageLoad { points, pop_field, total_pop } => {
             assert_eq!(points, 3);
             assert_eq!(pop_field, "POP");
             assert!((total_pop - 180.0).abs() < 1e-9);
-            layer_id
         }
         _ => panic!("coverage_load"),
     };
+    let _ = handle;
     let network = import_production();
-    let stats = match dispatch(Request::CoverageStats {
-        network,
-        date: DATE.into(),
-        layer_id,
-        radius_m: 400.0,
-        frequent_secs: 3600,
-        min_departures: Some(4),
-    })
-    .unwrap()
-    {
-        Response::CoverageStats { stats } => stats,
-        _ => panic!("coverage_stats"),
-    };
+    let layer =
+        transit_ops::analysis::parse_pop_layer(&pop_layer_geojson(), None).expect("layer parses");
+    let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
+    let stats = transit_ops::analysis::coverage(&network, date, &layer, 400.0, 3600, 4);
     assert_eq!(stats.served_stops, 3);
     // Frequent bar: typical headway ≤ 3600 s on ≥ 4 visits. Stop A:
     // starts 06:00/08:00/08:22/09:00 → 3600 s exactly, qualifies.
@@ -934,18 +925,6 @@ fn coverage_loads_and_measures_service_quality() {
     assert!((stats.served_pct - 150.0 / 180.0 * 100.0).abs() < 1e-6);
     // Only the point near A (frequent); C is served but not frequent.
     assert!((stats.frequent_pct - 100.0 / 180.0 * 100.0).abs() < 1e-6);
-
-    // Unknown layer ids are an error, not a panic.
-    let network = import_production();
-    assert!(dispatch(Request::CoverageStats {
-        network,
-        date: DATE.into(),
-        layer_id: layer_id + 100,
-        radius_m: 400.0,
-        frequent_secs: 3600,
-        min_departures: Some(4),
-    })
-    .is_err());
 }
 
 /// A feed carrying all four resolution shapes: an infeasible block
@@ -1078,10 +1057,9 @@ fn import_flags_transfer_points_and_reports_unusable_ones() {
     // (N1, N2, STN) pools both routes, and the day's schedule gives
     // route 10 → 20 a usable timed connection (arrive 08:10,
     // depart 08:20 — 10 minutes, inside the 1–15 min window).
-    let stats = match dispatch(Request::NetworkStats { network, date: DATE.into() }).unwrap() {
-        Response::NetworkStats { stats } => stats,
-        _ => panic!("network_stats"),
-    };
+    // (Library seam: the analysis ops live in cap-analysis now.)
+    let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
+    let stats = transit_ops::analysis::network_stats(&network, date);
     assert_eq!(stats.transfer_stops, 2);
     let n1 = stats.stops.iter().find(|s| s.stop_id == "N1").expect("N1");
     assert!(n1.transfer);
@@ -1097,12 +1075,10 @@ fn service_type_ops_expose_the_design_axis() {
     // The planner designs SERVICE TYPES, not calendar dates: the
     // overview lists every type on its representative day, the
     // detail expands one type into everything that runs under it.
+    // (Library seam: the analysis ops live in cap-analysis now.)
     let network = import_production();
 
-    let types = match dispatch(Request::ServiceTypesOverview { network: network.clone() }).unwrap() {
-        Response::ServiceTypesOverview { service_types } => service_types,
-        _ => panic!("service_types_overview"),
-    };
+    let types = transit_ops::analysis::service_type_overview(&network);
     assert_eq!(types.len(), 1, "one service key (WK) in the fixture");
     assert_eq!(types[0].service_type, "WK");
     assert_eq!(types[0].date, "2026-01-01", "first date the rule runs (a Thursday)");
@@ -1111,15 +1087,7 @@ fn service_type_ops_expose_the_design_axis() {
     assert_eq!(types[0].active_stops, 3);
     assert!((types[0].revenue_hours - 4200.0 / 3600.0).abs() < 1e-9);
 
-    let detail = match dispatch(Request::ServiceTypeDetail {
-        network: network.clone(),
-        service_type: "WK".into(),
-    })
-    .unwrap()
-    {
-        Response::ServiceTypeDetail { detail } => detail,
-        _ => panic!("service_type_detail"),
-    };
+    let detail = transit_ops::analysis::service_type_detail(&network, "WK").expect("detail");
     assert_eq!(detail.trips, 4);
     assert_eq!(detail.routes.len(), 1, "route 10 runs; zero-trip routes filtered out");
     assert_eq!(detail.routes[0].typical_headway_secs, Some(4260));
@@ -1133,24 +1101,9 @@ fn service_type_ops_expose_the_design_axis() {
     assert_eq!(schedule_trips["WK:pat-10-0-0"], 1);
 
     // Coverage per service type: same layer, WK on its day.
-    let layer_id = match dispatch(Request::CoverageLoad { bytes: pop_layer_geojson(), pop_field: None })
-        .unwrap()
-    {
-        Response::CoverageLoad { layer_id, .. } => layer_id,
-        _ => panic!("coverage_load"),
-    };
-    let coverage = match dispatch(Request::TypeCoverage {
-        network,
-        layer_id,
-        radius_m: 400.0,
-        frequent_secs: 3600,
-        min_departures: Some(4),
-    })
-    .unwrap()
-    {
-        Response::TypeCoverage { coverage } => coverage,
-        _ => panic!("type_coverage"),
-    };
+    let layer =
+        transit_ops::analysis::parse_pop_layer(&pop_layer_geojson(), None).expect("layer parses");
+    let coverage = transit_ops::analysis::type_coverage(&network, &layer, 400.0, 3600, 4);
     assert_eq!(coverage.len(), 1);
     assert_eq!(coverage[0].service_type, "WK");
     assert!((coverage[0].served_pct - 150.0 / 180.0 * 100.0).abs() < 1e-6);

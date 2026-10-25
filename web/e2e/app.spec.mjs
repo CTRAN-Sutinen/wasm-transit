@@ -692,6 +692,24 @@ test("persona tabs split the workflows", async ({ page }) => {
   expect(sameMap).toBe(true);
 });
 
+// Stage C: the analysis ops are DELETED from the monolith — the
+// planner's numbers exist only through the capability. When the
+// module cannot assemble, the planner degrades loudly (authoring
+// continues, numbers are off) — the bus's per-capability degradation,
+// now load-bearing for a real screen.
+test("planner degrades when the analysis capability cannot assemble", async ({ page }) => {
+  await page.route(/caps\/analysis-.*\.wasm/, (route) => route.abort());
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+  await switchPersona(page, "Planner");
+  await page.getByRole("button", { name: "Derive from loaded feed" }).click();
+  await expect(page.getByText("valid", { exact: true })).toBeVisible();
+  // Numbers are off — loudly, not silently; authoring continues.
+  await expect(page.getByText(/Analysis capability unavailable/)).toBeVisible();
+  expect(await page.evaluate(() => window.__analysisPath())).toBeNull();
+});
+
 test("planner authors a network and the rider uses it", async ({ page }) => {
   await page.goto("/");
   await waitForMap(page);
