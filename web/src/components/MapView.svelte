@@ -8,8 +8,8 @@
   import { PMTiles, Protocol } from "pmtiles";
   import { layers as basemapLayers, namedFlavor } from "@protomaps/basemaps";
   import { app, getEditDocument, getStreets } from "../state.svelte";
-  import { selectStop, setDiversionAnchor, addDetourPoint } from "../actions";
-  import { snapToStreet } from "../streets";
+  import { selectStop, setDiversionAnchor, addDetourSlice } from "../actions";
+  import type { StreetPosition } from "../types/StreetPosition";
 
   maplibregl.setWorkerUrl(workerUrl);
 
@@ -90,26 +90,59 @@
   /// Snap radius in pixels: forgiving, but not fighting the drawer.
   const SNAP_PX = 14;
 
-  /// A detour-drawing click, snapped to the nearest street segment or
-  /// stop within a few pixels; the raw position when nothing is close.
-  function snapClick(e: maplibregl.MapMouseEvent): { lat: number; lon: number } {
-    let best: { lat: number; lon: number } | null = null;
-    let bestPx = SNAP_PX;
-    const consider = (lat: number, lon: number): void => {
-      const p = map.project([lon, lat]);
-      const d = Math.hypot(p.x - e.point.x, p.y - e.point.y);
-      if (d <= bestPx) {
-        bestPx = d;
-        best = { lat, lon };
-      }
-    };
+  /// One waypoint step of the detour trace. The waypoint lands on the
+  /// nearest street or stop within a few pixels (raw otherwise); the
+  /// path from the previous waypoint is ROUTED along the street
+  /// graph inside the artifact, so the committed trace is street
+  /// geometry — not freehand chords. Falls back to a straight line
+  /// when no street network is imported or no route exists.
+  function commitWaypoint(e: maplibregl.MapMouseEvent): void {
     const streets = getStreets();
-    if (streets) {
-      const hit = snapToStreet(streets.network, e.lngLat.lat, e.lngLat.lng);
-      if (hit) consider(hit.lat, hit.lon);
+    // The artifact snaps; JS owns pixels (thresholds are visual).
+    const streetPos = streets && app.wasm
+      ? app.wasm.street_snap(streets.streetsId, e.lngLat.lat, e.lngLat.lng)
+      : null;
+    const pxOf = (lat: number, lon: number): number => {
+      const p = map.project([lon, lat]);
+      return Math.hypot(p.x - e.point.x, p.y - e.point.y);
+    };
+    const streetPx = streetPos ? pxOf(streetPos.lat, streetPos.lon) : Infinity;
+
+    // Nearest stop within the threshold.
+    let stop: { lat: number; lon: number } | null = null;
+    let stopPx = SNAP_PX;
+    for (const [lat, lon] of stopPts) {
+      const px = pxOf(lat, lon);
+      if (px <= stopPx) {
+        stopPx = px;
+        stop = { lat, lon };
+      }
     }
-    for (const [lat, lon] of stopPts) consider(lat, lon);
-    return best ?? { lat: e.lngLat.lat, lon: e.lngLat.lng };
+
+    if (stop && stopPx <= streetPx) {
+      // A stop waypoint: commit the stop exactly; route onward from
+      // the street beneath it when there is one.
+      const anchor = streets && app.wasm
+        ? app.wasm.street_snap(streets.streetsId, stop.lat, stop.lon)
+        : null;
+      addDetourSlice([[stop.lat, stop.lon]], anchor);
+      return;
+    }
+    if (streetPos && streetPx <= SNAP_PX && streets && app.wasm) {
+      const prev: StreetPosition | null =
+        app.diversionDraft?.slices.at(-1)?.endPos ?? null;
+      const routed = prev
+        ? app.wasm.street_route(streets.streetsId, prev, streetPos)
+        : [];
+      if (routed.length) {
+        addDetourSlice(routed.map((p) => [p.lat, p.lon] as [number, number]), streetPos);
+        return;
+      }
+      if (prev) app.status = "No street path found — using a direct line.";
+      addDetourSlice([[streetPos.lat, streetPos.lon]], streetPos);
+      return;
+    }
+    addDetourSlice([[e.lngLat.lat, e.lngLat.lng]], null);
   }
 
   onMount(() => {
@@ -253,16 +286,33 @@
           },
         });
 
-        // Detour drawing mode: clicks append vertices — snapped to
-        // streets (when imported) and stops within a few pixels, so
-        // the drawn detour follows real geometry instead of raw
-        // clicks. The stop layers below still get their own click
-        // events first.
-        map.on("click", (e) => {
+        // Detour drawing: waypoints. A click places one waypoint; a
+        // drag places them every ~30 px along the stroke. Each step
+        // routes along the street graph (see commitWaypoint). Panning
+        // is off while the trace mode is armed — Done drawing
+        // re-enables it (the effect below owns the toggle).
+        let drawingStroke = false;
+        let lastWaypointPx: [number, number] | null = null;
+        map.on("mousedown", (e) => {
           if (!app.drawingDetour) return;
-          const { lat, lon } = snapClick(e);
-          addDetourPoint(lat, lon);
+          drawingStroke = true;
+          commitWaypoint(e);
+          lastWaypointPx = [e.point.x, e.point.y];
         });
+        map.on("mousemove", (e) => {
+          if (!drawingStroke || !lastWaypointPx) return;
+          // 30 px between waypoints: routing makes denser sampling
+          // pointless, and each step is a cheap graph search.
+          if (Math.hypot(e.point.x - lastWaypointPx[0], e.point.y - lastWaypointPx[1]) < 30) return;
+          commitWaypoint(e);
+          lastWaypointPx = [e.point.x, e.point.y];
+        });
+        const endStroke = (): void => {
+          drawingStroke = false;
+          lastWaypointPx = null;
+        };
+        map.on("mouseup", endStroke);
+        map.on("dragend", endStroke);
 
         map.on("click", "stops-base", (e) => {
           const stopId = (e.features?.[0]?.properties as Record<string, string> | undefined)?.stop_id;
@@ -322,6 +372,19 @@
   $effect(() => {
     if (!mapLoaded) return;
     src("route-context").setData(app.routeContext ?? EMPTY_FC);
+  });
+
+  // Stroke mode: the map becomes a drawing surface — no panning
+  // (distinguish stroke from pan), crosshair cursor.
+  $effect(() => {
+    if (!mapLoaded) return;
+    if (app.drawingDetour) {
+      map.dragPan.disable();
+      map.getCanvas().style.cursor = "crosshair";
+    } else {
+      map.dragPan.enable();
+      map.getCanvas().style.cursor = "";
+    }
   });
 
   $effect(() => {

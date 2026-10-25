@@ -107,7 +107,7 @@
   {#if getStreets()}
     <p>
       <span class="chip svc" title="Detour clicks snap to street segments and stops">
-        {getStreets()?.network.segmentCount} street segments — snapping on
+        {getStreets()?.segmentCount} street segments — snapping on
       </span>
       <span class="muted">not persisted — re-imported per session</span>
     </p>

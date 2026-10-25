@@ -487,7 +487,7 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> Network {
 
     // Calendars for every referenced service key, in id order. Block
     // trips reference the same service keys, so nothing is missed.
-    let mut sids: BTreeSet<String> = net.services.values().map(|s| s.calendar.clone()).collect();
+    let sids: BTreeSet<String> = net.services.values().map(|s| s.calendar.clone()).collect();
     for sid in &sids {
         let mut days = WeekdaySet::none();
         let mut ranges = Vec::new();

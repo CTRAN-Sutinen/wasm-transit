@@ -1,0 +1,11 @@
+[package]
+name = "transit-streets"
+description = "Street networks for detour authoring: GeoJSON to routing graph, snapping, shortest-path routing. Pure and stateless — the query-only module of the artifact."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+ts-rs = { workspace = true }

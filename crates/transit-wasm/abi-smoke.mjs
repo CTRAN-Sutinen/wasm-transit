@@ -130,6 +130,27 @@ assert(ghost && ghost.properties.trip_id === "t30" && ghost.geometry.coordinates
 const ghostNone = invoke({ op: "route_path_geojson", feed_id: feedId, route_id: "missing", direction_id: null, date: DATE }).feature;
 assert(ghostNone === null, "route ghost: unknown route is null");
 
+// Street ops: bytes in once through the bulk ABI, then snap/route
+// queries as JSON. The Elbow route follows street geometry, not the
+// diagonal.
+const OP_STREETS_LOAD = 2;
+const elbow = new TextEncoder().encode(JSON.stringify({
+  type: "FeatureCollection",
+  features: [{
+    type: "Feature",
+    geometry: { type: "LineString", coordinates: [[-73.5030, 45.5040], [-73.5080, 45.5040], [-73.5080, 45.5090]] },
+  }],
+}));
+const loaded = invokeBytes(OP_STREETS_LOAD, elbow);
+assert(loaded.segments === 2 && loaded.nodes === 3, "streets_load: Elbow graph via ABI");
+const posA = invoke({ op: "street_snap", streets_id: loaded.streets_id, lat: 45.5040, lon: -73.5030 }).position;
+const posB = invoke({ op: "street_snap", streets_id: loaded.streets_id, lat: 45.5080, lon: -73.5080 }).position;
+assert(posA && posB, "street_snap via ABI");
+const streetRoute = invoke({ op: "street_route", streets_id: loaded.streets_id, from: posA, to: posB }).points;
+assert(streetRoute.length === 2 &&
+  Math.abs(streetRoute[0].lat - 45.5040) < 1e-9 && Math.abs(streetRoute[0].lon + 73.5080) < 1e-9,
+  "street_route: the corner, not the diagonal, via ABI");
+
 // feed_info op (the manifest's version source).
 const info = invoke({ op: "feed_info", feed_id: feedId }).info;
 assert(info && info.feed_version === "2026.10.1", "feed_info surfaces the artifact version");

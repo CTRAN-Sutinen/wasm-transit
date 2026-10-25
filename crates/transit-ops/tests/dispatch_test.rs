@@ -749,3 +749,51 @@ fn imported_alignment_survives_materialization() {
     let bare = derived.trips.get("WK:pat-20-0-0@30000").expect("t20 derived trip");
     assert_eq!(bare.shape_id, None);
 }
+
+#[test]
+fn street_ops_snap_and_route_through_the_seam() {
+    // The detour-authoring street ops: bytes in once, then pure
+    // queries against the artifact's streets registry. The Elbow
+    // route must follow street geometry, not the diagonal.
+    let elbow = br#"{"type":"FeatureCollection","features":[{"type":"Feature","geometry":
+      {"type":"LineString","coordinates":[[-73.5030,45.5040],[-73.5080,45.5040],[-73.5080,45.5090]]}}]}"#;
+    let (streets_id, segments, nodes) =
+        match dispatch(Request::StreetsLoad { bytes: elbow.to_vec() }).unwrap() {
+            Response::StreetsLoad { streets_id, segments, nodes } => (streets_id, segments, nodes),
+            _ => panic!("streets_load"),
+        };
+    assert_eq!(segments, 2);
+    assert_eq!(nodes, 3);
+
+    let a = match dispatch(Request::StreetSnap { streets_id, lat: 45.5040, lon: -73.5030 }).unwrap() {
+        Response::StreetSnap { position: Some(p) } => p,
+        _ => panic!("street_snap a"),
+    };
+    assert_eq!(a.seg, 0);
+    assert!((a.t - 0.0).abs() < 1e-9, "the start vertex: {a:?}");
+
+    let b = match dispatch(Request::StreetSnap { streets_id, lat: 45.5080, lon: -73.5080 }).unwrap() {
+        Response::StreetSnap { position: Some(p) } => p,
+        _ => panic!("street_snap b"),
+    };
+    assert_eq!(b.seg, 1);
+
+    match dispatch(Request::StreetRoute { streets_id, from: a, to: b }).unwrap() {
+        Response::StreetRoute { points } => {
+            assert_eq!(points.len(), 2, "corner + endpoint: {points:?}");
+            assert!((points[0].lat - 45.5040).abs() < 1e-9
+                && (points[0].lon + 73.5080).abs() < 1e-9,
+                "the corner is committed, not the diagonal: {points:?}");
+        }
+        _ => panic!("street_route"),
+    }
+
+    // Unknown registry ids are errors; disconnected parts do not
+    // route; the JSON form round-trips the seam.
+    assert!(dispatch(Request::StreetSnap { streets_id: 999, lat: 0.0, lon: 0.0 }).is_err());
+    let json = format!(
+        r#"{{"op":"street_snap","streets_id":{streets_id},"lat":45.5040,"lon":-73.5030}}"#
+    );
+    let outcome = transit_ops::dispatch_json(&json);
+    assert!(outcome.contains(r#""ok":{"op":"street_snap""#), "{outcome}");
+}

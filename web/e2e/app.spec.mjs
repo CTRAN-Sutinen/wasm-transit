@@ -253,20 +253,45 @@ test("diversion ripple shows as a tight block layover", async ({ page }) => {
   await expect(blocks.getByText("4 min")).toBeVisible();
 });
 
-test("detour drawing snaps to an imported street network", async ({ page }) => {
-  // Slow by nature: loading the feed flies the camera from the
-  // basemap's initial view across the country to the stops.
-  test.setTimeout(90_000);
+test("street network import paginates ArcGIS-style queries", async ({ page }) => {
   await page.goto("/");
   await waitForMap(page);
-  await loadFeed(page);
-  await switchPersona(page, "Dispatcher");
 
-  // Pixel-precise clicks need the camera settled on the feed's stops:
-  // loading the feed fires a fitBounds whose flight (from the local
-  // basemap's initial view) lasts seconds, and clicks mid-flight land
-  // at meaningless lngLats.
-  await switchPersona(page, "Dispatcher");
+  // The /rt proxy, mocked as an ArcGIS FeatureServer: page 1 is
+  // flagged exceededTransferLimit, page 2 (resultOffset advanced)
+  // ends the sequence. One street segment per page.
+  let requests = 0;
+  await page.route(/\/rt\?url=/, (route) => {
+    requests += 1;
+    const url = new URL(route.request().url());
+    const target = decodeURIComponent(url.searchParams.get("url"));
+    const offset = new URL(target).searchParams.get("resultOffset") ?? "0";
+    const line = (lon, lat, dlon, dlat) => ({
+      type: "Feature",
+      properties: {},
+      geometry: { type: "LineString", coordinates: [[lon, lat], [lon + dlon, lat + dlat]] },
+    });
+    return route.fulfill({
+      json: Number(offset) === 0
+        ? { type: "FeatureCollection", properties: { exceededTransferLimit: true }, features: [line(-73.5, 45.5, 0.01, 0.01)] }
+        : { type: "FeatureCollection", properties: {}, features: [line(-73.6, 45.6, 0.01, 0.01)] },
+    });
+  });
+
+  // No feed needed: streets are app config, loadable on their own.
+  await page.fill("#streets-url", "https://portal.example/roads/FeatureServer/0/query?where=1%3D1&f=geojson");
+  await page.getByRole("button", { name: "Import", exact: true }).click();
+
+  await expect(page.getByText("2 street segments — snapping on")).toBeVisible();
+  expect(requests).toBe(2);
+  expect((await mapData(page, "streets")).features.length).toBe(2);
+});
+
+/// Wait until the camera has settled on the fixture feed's stops:
+/// loading the feed fires a fitBounds whose flight (from the local
+/// basemap's initial view) lasts seconds, and pixel-precise clicks
+/// mid-flight land at meaningless lngLats.
+async function settleOnStops(page) {
   await page.waitForFunction(
     () => {
       const map = window.__map;
@@ -279,6 +304,17 @@ test("detour drawing snaps to an imported street network", async ({ page }) => {
     },
     null, { timeout: 30_000 },
   );
+}
+
+test("detour drawing snaps to an imported street network", async ({ page }) => {
+  // Slow by nature: loading the feed flies the camera from the
+  // basemap's initial view across the country to the stops.
+  test.setTimeout(90_000);
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+  await switchPersona(page, "Dispatcher");
+  await settleOnStops(page);
 
   await page.getByRole("button", { name: "New diversion" }).click();
 
@@ -289,16 +325,17 @@ test("detour drawing snaps to an imported street network", async ({ page }) => {
   expect(ghost.length).toBe(1);
   expect(ghost[0].geometry.coordinates.length).toBe(3);
 
-  // Import the street network: Side St (2 segments) + Nowhere Rd (1).
-  // The config panel auto-closed when the feed loaded, but its inputs
-  // stay attached — the import works regardless.
+  // Import the street network: Side St (2 segments) + Nowhere Rd (1)
+  // + Elbow Ln (2). The config panel auto-closed when the feed
+  // loaded, but its inputs stay attached — the import works
+  // regardless.
   await page.locator("#streets-file").setInputFiles(path.join(fixtures, "streets.geojson"));
   await expect(
     page.locator(".diversion-editor").getByText("snapping on"),
   ).toBeVisible();
-  expect((await mapData(page, "streets")).features.length).toBe(2);
+  expect((await mapData(page, "streets")).features.length).toBe(3);
 
-  await page.getByRole("button", { name: "Draw detour on map" }).click();
+  await page.getByRole("button", { name: "Trace path on map" }).click();
 
   // Point-segment distance in degrees (planar is fine at this scale).
   const distToSeg = (lon, lat, a, b) => {
@@ -350,6 +387,81 @@ test("detour drawing snaps to an imported street network", async ({ page }) => {
   const [rawLon, rawLat] = drawn[1].geometry.coordinates;
   expect(rawLon).toBeCloseTo(rawFar.lng, 7);
   expect(rawLat).toBeCloseTo(rawFar.lat, 7);
+
+  // A drag along the street places waypoints every ~30 px; each step
+  // ROUTES along the graph, so the trace commits Side St's own
+  // vertices — including v1 (-73.5060, 45.5100), crossed mid-stroke.
+  const start = await page.evaluate(() => {
+    const p = window.__map.project([-73.5025, 45.5065]); // mid first segment
+    return { x: Math.round(p.x), y: Math.round(p.y) };
+  });
+  const end = await page.evaluate(() => {
+    const p = window.__map.project([-73.5095, 45.5135]); // mid second segment
+    return { x: Math.round(p.x), y: Math.round(p.y) };
+  });
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) {
+    await page.mouse.move(
+      Math.round(start.x + (end.x - start.x) * (i / 6)),
+      Math.round(start.y + (end.y - start.y) * (i / 6)),
+    );
+  }
+  await page.mouse.up();
+  const stroked = (await mapData(page, "detour-draft")).features.filter(
+    (f) => f.geometry.type === "Point",
+  );
+  expect(stroked.length).toBeGreaterThan(4); // 2 clicks + routed waypoints
+  const v1 = stroked.some((f) =>
+    Math.hypot(f.geometry.coordinates[0] + 73.5060, f.geometry.coordinates[1] - 45.5100) < 1e-6
+  );
+  expect(v1).toBe(true); // the trace follows street geometry, not chords
+  // Undo reverts the last routed step (its whole geometry).
+  const before = stroked.length;
+  await page.getByRole("button", { name: "Undo" }).click();
+  const undone = (await mapData(page, "detour-draft")).features.filter(
+    (f) => f.geometry.type === "Point",
+  );
+  expect(undone.length).toBeLessThan(before);
+});
+
+test("detour trace routes along the street graph, not straight lines", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+  await switchPersona(page, "Dispatcher");
+  await settleOnStops(page);
+
+  await page.getByRole("button", { name: "New diversion" }).click();
+  await page.locator("#streets-file").setInputFiles(path.join(fixtures, "streets.geojson"));
+  await page.getByRole("button", { name: "Trace path on map" }).click();
+
+  // Two waypoints around Elbow Ln's corner: start (-73.5030, 45.5040)
+  // → corner (-73.5080, 45.5040) → end (-73.5080, 45.5090). A
+  // straight-line trace would cut the diagonal; the routed trace
+  // must commit the corner vertex exactly.
+  const clickAt = (lonLat) =>
+    page.evaluate(([lon, lat]) => {
+      const p = window.__map.project([lon, lat]);
+      return { x: Math.round(p.x), y: Math.round(p.y) };
+    }, lonLat);
+  const e1 = await clickAt([-73.5030, 45.5040]);
+  const e2 = await clickAt([-73.5080, 45.5080]);
+  await page.mouse.click(e1.x, e1.y);
+  await page.mouse.click(e2.x, e2.y);
+
+  const drawn = (await mapData(page, "detour-draft")).features.filter(
+    (f) => f.geometry.type === "Point",
+  );
+  expect(drawn.length).toBe(3); // start, corner, end — no diagonal
+  // The routed path is street geometry: the corner, then the
+  // endpoint (the exact snapped position of a whole-pixel click,
+  // hence 1e-5 tolerance rather than exactness).
+  expect(drawn[1].geometry.coordinates[0]).toBeCloseTo(-73.5080, 5);
+  expect(drawn[1].geometry.coordinates[1]).toBeCloseTo(45.5040, 5);
+  expect(drawn[2].geometry.coordinates[0]).toBeCloseTo(-73.5080, 5);
+  expect(drawn[2].geometry.coordinates[1]).toBeCloseTo(45.5080, 5);
 });
 
 test("diversion syncs to the server and back", async ({ page }) => {

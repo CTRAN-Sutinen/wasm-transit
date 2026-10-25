@@ -1,9 +1,11 @@
 import { app, getEditDocument, setEditDocument, setStreets, type DiversionDraft } from "./state.svelte";
 import { get as idbGet, set as idbSet, del as idbDel } from "idb-keyval";
+import { streets_load } from "./wasm";
 import type { EditRecord } from "./types/EditRecord";
 import type { Itinerary } from "./types/Itinerary";
 import type { LineGeometry } from "./types/LineGeometry";
-import { buildStreetNetwork } from "./streets";
+import type { StreetPosition } from "./types/StreetPosition";
+import type { Streets } from "./streets";
 
 /// One drawn plan feature (transit leg or walk segment). MapView
 /// consumes these; the geometry is GeoJSON.
@@ -363,7 +365,8 @@ export function startDiversion(): void {
     addedMins: 5,
     start: today,
     end: today,
-    detour: [], // [[lat, lon], ...] as drawn on the map
+    slices: [],
+    detour: [], // flattened slices — the record field
   };
   app.pickingAnchor = "first";
 }
@@ -401,8 +404,37 @@ export function addDetourPoint(lat: number, lon: number): void {
   app.diversionDraft?.detour.push([lat, lon]);
 }
 
+/// Commit one waypoint step of the trace: the routed geometry plus
+/// the graph position it ends at (so the next step routes from
+/// there). Consecutive duplicates are dropped — routing can return
+/// the previous endpoint.
+export function addDetourSlice(points: [number, number][], endPos: StreetPosition | null): void {
+  const draft = app.diversionDraft;
+  if (!draft) return;
+  const committed: [number, number][] = [];
+  for (const pt of points) {
+    const last = committed[committed.length - 1] ?? draft.detour[draft.detour.length - 1];
+    if (last && Math.abs(last[0] - pt[0]) < 1e-12 && Math.abs(last[1] - pt[1]) < 1e-12) continue;
+    committed.push(pt);
+  }
+  if (!committed.length) return;
+  draft.slices.push({ points: committed, endPos });
+  draft.detour.push(...committed);
+}
+
+/// Revert the last waypoint step (its whole routed geometry).
+export function undoDetourSlice(): void {
+  const draft = app.diversionDraft;
+  if (!draft?.slices.length) return;
+  const slice = draft.slices.pop()!;
+  draft.detour.splice(draft.detour.length - slice.points.length, slice.points.length);
+}
+
 export function clearDetour(): void {
-  if (app.diversionDraft) app.diversionDraft.detour = [];
+  if (app.diversionDraft) {
+    app.diversionDraft.detour = [];
+    app.diversionDraft.slices = [];
+  }
 }
 
 export function toggleDrawing(): void {
@@ -423,13 +455,35 @@ export async function importStreetsFile(file: File): Promise<void> {
 }
 
 /// Same, from a URL (through the /rt proxy — open data portals
-/// rarely send CORS headers).
+/// rarely send CORS headers). Paginates ArcGIS-style queries: when a
+/// page comes back flagged `exceededTransferLimit`, the next page is
+/// requested with `resultOffset`/`resultCount` until the service is
+/// drained. Static .geojson files ignore the params and never set
+/// the flag, so they load in exactly one request as before.
 export async function loadStreetsFromUrl(): Promise<void> {
   if (!app.streetsUrl) { app.status = "Enter a street network URL first."; return; }
   try {
-    app.status = `Downloading ${app.streetsUrl}...`;
-    const bytes = await fetchBytes(proxied(app.streetsUrl));
-    await installStreets(JSON.parse(new TextDecoder().decode(bytes)), app.streetsUrl);
+    const features: unknown[] = [];
+    for (let offset = 0; ; offset += features.length) {
+      if (offset > 2_000_000) {
+        throw new Error("over 2M features — the service may be ignoring resultOffset");
+      }
+      const page = new URL(app.streetsUrl, location.href);
+      page.searchParams.set("resultOffset", String(offset));
+      page.searchParams.set("resultCount", "2000");
+      app.status = `Downloading street network — ${features.length} features so far...`;
+      const bytes = await fetchBytes(proxied(page.toString()));
+      const json = JSON.parse(new TextDecoder().decode(bytes));
+      const pageFeatures = (json as { features?: unknown[] })?.features;
+      if (!Array.isArray(pageFeatures)) {
+        throw new Error("not a GeoJSON FeatureCollection (is the URL a direct geojson endpoint?)");
+      }
+      features.push(...pageFeatures);
+      const more = (json as { properties?: { exceededTransferLimit?: boolean } })
+        ?.properties?.exceededTransferLimit === true;
+      if (!more || pageFeatures.length === 0) break;
+    }
+    await installStreets({ type: "FeatureCollection", features }, app.streetsUrl);
   } catch (e) {
     app.status = `Street import failed: ${(e as Error).message}`;
     console.warn("street import failed:", e);
@@ -442,13 +496,24 @@ export function clearStreets(): void {
 }
 
 async function installStreets(geojson: unknown, label: string): Promise<void> {
-  const streets = buildStreetNetwork(geojson);
-  if (!streets) {
-    app.status = "No line features in that file — expected GeoJSON with LineString/MultiLineString geometries.";
-    return;
+  if (!app.wasm) return;
+  try {
+    // The artifact owns the routing graph; bytes cross once.
+    const bytes = new TextEncoder().encode(JSON.stringify(geojson));
+    const handle = app.wasm.streets_load(bytes);
+    const streets: Streets = {
+      streetsId: handle.streets_id,
+      geojson: geojson as { type: "FeatureCollection"; features: unknown[] },
+      segmentCount: handle.segments,
+    };
+    setStreets(streets);
+    app.status = `Street network loaded (${label}) — ${handle.segments} segments; detour clicks snap to streets and stops.`;
+  } catch (e) {
+    // wasm validates the GeoJSON: no lines, malformed JSON — surface
+    // the artifact's message.
+    app.status = `Street import failed: ${(e as Error).message}`;
+    console.warn("street import failed:", e);
   }
-  setStreets(streets);
-  app.status = `Street network loaded (${label}) — ${streets.network.segmentCount} segments; detour clicks snap to streets and stops.`;
 }
 
 export function applyDiversion(): void {

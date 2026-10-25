@@ -828,6 +828,7 @@ dependencies = [
  "transit-network",
  "transit-router",
  "transit-rt",
+ "transit-streets",
  "transit-sync",
  "ts-rs",
  "zip",
@@ -855,6 +856,15 @@ dependencies = [
  "prost-build",
  "protoc-bin-vendored",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "transit-streets"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ts-rs",
 ]
 
 [[package]]

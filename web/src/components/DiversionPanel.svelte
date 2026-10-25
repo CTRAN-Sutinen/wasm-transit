@@ -2,9 +2,10 @@
   import { app, getEditDocument, getStreets } from "../state.svelte";
   import {
     startDiversion, cancelDiversion, setDiversionAnchor, toggleSkipped,
-    applyDiversion, toggleDiversion, toggleDrawing, clearDetour, syncEdits,
-    serviceDate,
+    applyDiversion, toggleDiversion, toggleDrawing, clearDetour,
+    undoDetourSlice, syncEdits, serviceDate,
   } from "../actions";
+  import { pathLengthMeters } from "../streets";
 
   const routes = $derived(app.gtfs ? app.gtfs.routes() : []);
   const draft = $derived(app.diversionDraft);
@@ -75,6 +76,15 @@
     }
     const dir = d.directionId === "" ? null : Number(d.directionId);
     app.routeContext = app.gtfs.route_path_geojson(routeId, dir, serviceDate());
+  });
+
+  // The drawn path's length — the number to reason about when
+  // authoring the added time.
+  const drawnLength = $derived.by(() => {
+    const pts = app.diversionDraft?.detour ?? [];
+    if (pts.length < 2) return null;
+    const m = pathLengthMeters(pts);
+    return m >= 950 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
   });
 </script>
 
@@ -178,20 +188,32 @@
         <input type="date" id="div-end" bind:value={draft.end}>
       </p>
 
+      <p class="muted">
+        Trace the reroute: click (or drag) waypoints — the path routes along the
+        imported street network between them and snaps to stops. It becomes the
+        alignment the vehicle follows between the anchor stops; serving comes
+        from the anchors and skip flags, the schedule effect from added time.
+      </p>
       <p>
         <button class:primary={app.drawingDetour} onclick={toggleDrawing}>
-          {app.drawingDetour ? "Done drawing" : "Draw detour on map"}
+          {app.drawingDetour ? "Done tracing" : "Trace path on map"}
         </button>
+        {#if app.drawingDetour}
+          <span class="chip svc">click or drag waypoints — panning is off</span>
+        {/if}
         {#if draft.detour.length}
-          <span class="muted">{draft.detour.length} points</span>
+          <span class="muted">
+            {draft.detour.length} points{#if drawnLength} · {drawnLength}{/if}
+          </span>
+          <button class="link" onclick={undoDetourSlice}>Undo</button>
           <button class="link" onclick={clearDetour}>Clear</button>
         {/if}
         {#if getStreets()}
-          <span class="chip svc" title="Clicks snap to the imported street geometry and stops">
+          <span class="chip svc" title="Points snap to the imported street geometry and stops">
             snapping on
           </span>
-        {:else}
-          <span class="muted">clicks snap to stops only — streets: Data sources</span>
+        {:else if !app.drawingDetour}
+          <span class="muted">points snap to stops only — streets: Data sources</span>
         {/if}
       </p>
 

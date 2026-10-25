@@ -41,6 +41,10 @@ transit-router  RAPTOR earliest-arrival planning.
 transit-rt      prost types from the official GTFS-rt proto.
 transit-sync   THE sync document: EditRecord, FeedManifest, EditReport,
                 pure validation/merge logic. Shared by every host.
+transit-streets Street routing graph for detour authoring: GeoJSON in,
+                snap (nearest street position) + shortest-path route
+                out. Pure reference geometry — its own registry at the
+                seam (streets_id keyed), never mixed with feed state.
 transit-ops     dispatch(Request) -> Response: the host-agnostic seam
                 + per-feed registry (feed_id keyed). The network
                 codec lives in src/network.rs, both directions:
@@ -48,7 +52,8 @@ transit-ops     dispatch(Request) -> Response: the host-agnostic seam
                 (the planner's bootstrap — a planner works off an
                 existing network), network_validate reports every
                 issue, network_load materializes a document into the
-                same registry a parsed zip lands in.
+                same registry a parsed zip lands in. Streets ops here
+                too: streets_load / street_snap / street_route.
 transit-wasm    THE artifact: flat import-free C ABI over dispatch.
                 No wasm-bindgen — do not reintroduce host glue.
 server/         Go + wazero host: scaffolding only (HTTP, manifest,
@@ -114,7 +119,12 @@ web/            Svelte 5 runes + Vite. Two skeletons: Rider /
 - **Add new operations at the transit-ops seam**: extend
   `Request`/`Response` (serde-tagged; JSON form is `{"op": ...}`),
   implement in `dispatch`, expose in each host (wasm.js method, Go
-  helper). Response payloads must be typed serde structs.
+  helper). Response payloads must be typed serde structs. Response
+  FIELD names are snake_case (the serde default) — a TS cast with a
+  camelCase field name compiles and typechecks fine but reads
+  `undefined` at runtime, which `JSON.stringify` then drops so the
+  next request fails with a cryptic serde "missing field" error
+  (this shipped once: `streets_id` vs `streetsId`).
 - **Native tests first**: logic tests belong in the crate that owns
   the logic (`transit-ops/tests/dispatch_test.rs` runs the real seam
   without wasm). Property tests use *independent oracles* — see

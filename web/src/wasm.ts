@@ -26,11 +26,14 @@ import type { RtOverview } from "./types/RtOverview";
 import type { RouteSummary } from "./types/RouteSummary";
 import type { StopFeature } from "./types/StopFeature";
 import type { StopSummary } from "./types/StopSummary";
+import type { StreetPoint } from "./types/StreetPoint";
+import type { StreetPosition } from "./types/StreetPosition";
 import type { TripLineFeature } from "./types/TripLineFeature";
 
 // Op codes for the bulk-bytes ABI (transit_ops::OP_LOAD_FEED etc.).
 const OP_LOAD_FEED = 0;
 const OP_DECODE_RT = 1;
+const OP_STREETS_LOAD = 2;
 
 /// The flat C ABI the artifact exports.
 type WasmExports = {
@@ -259,6 +262,47 @@ export function decode_rt(bytes: Uint8Array): RtOverview {
   return (invokeBytes(OP_DECODE_RT, bytes) as { overview: RtOverview }).overview;
 }
 
+// ---------------------------------------------------------------
+// Street networks (detour authoring). Pure queries against the
+// artifact's streets registry: bytes in once, snap/route after.
+// ---------------------------------------------------------------
+
+export type StreetsHandle = {
+  streets_id: number;
+  segments: number;
+  nodes: number;
+};
+
+export function streets_load(bytes: Uint8Array): StreetsHandle {
+  return invokeBytes(OP_STREETS_LOAD, bytes) as StreetsHandle;
+}
+
+export function street_snap(streetsId: number, lat: number, lon: number): StreetPosition | null {
+  return (
+    invoke({
+      op: "street_snap",
+      streets_id: streetsId,
+      lat,
+      lon,
+    }) as { position: StreetPosition | null }
+  ).position ?? null;
+}
+
+export function street_route(
+  streetsId: number,
+  from: StreetPosition,
+  to: StreetPosition,
+): StreetPoint[] {
+  return (
+    invoke({
+      op: "street_route",
+      streets_id: streetsId,
+      from,
+      to,
+    }) as { points: StreetPoint[] }
+  ).points;
+}
+
 /// Validate an authored network document without loading it — every
 /// issue comes back for the authoring UI. Never throws.
 export function network_validate(network: Network): NetworkError[] {
@@ -279,11 +323,22 @@ export type WasmApi = {
   decode_rt: typeof decode_rt;
   network_validate: typeof network_validate;
   network_import: typeof network_import;
+  streets_load: typeof streets_load;
+  street_snap: typeof street_snap;
+  street_route: typeof street_route;
 };
 
 /// The entry point main.js awaits: instantiate the artifact, then
 /// hand back the API surface the app expects.
 export async function loadWasm(): Promise<WasmApi> {
   await instantiate();
-  return { GtfsHandle, decode_rt, network_validate, network_import };
+  return {
+    GtfsHandle,
+    decode_rt,
+    network_validate,
+    network_import,
+    streets_load,
+    street_snap,
+    street_route,
+  };
 }

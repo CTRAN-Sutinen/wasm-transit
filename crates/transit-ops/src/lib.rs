@@ -128,6 +128,20 @@ pub enum Request {
     /// Replace the whole edit document; returns per-record validation
     /// reports. Invalid records are reported, not rejected.
     SetDiversions { feed_id: u32, records: Vec<EditRecord> },
+    /// Load a street network (GeoJSON lines) for detour authoring;
+    /// returns its id. Street data is reference geometry, keyed by
+    /// its own registry — it never mixes with feed state.
+    StreetsLoad { bytes: Vec<u8> },
+    /// The nearest street position to a point (within the snap
+    /// neighborhood), or null when no street is close.
+    StreetSnap { streets_id: u32, lat: f64, lon: f64 },
+    /// The street geometry between two positions (shortest path).
+    /// Empty when the positions sit on disconnected parts.
+    StreetRoute {
+        streets_id: u32,
+        from: transit_streets::StreetPosition,
+        to: transit_streets::StreetPosition,
+    },
     /// Decode a GTFS-rt protobuf payload into the overview view.
     DecodeRt { bytes: Vec<u8> },
     /// `feed_info.txt` metadata of a feed (version, publisher), when
@@ -179,6 +193,9 @@ pub enum Response {
         baseline: Option<transit_router::Itinerary>,
     },
     SetDiversions { reports: Vec<transit_sync::EditReport> },
+    StreetsLoad { streets_id: u32, segments: u32, nodes: u32 },
+    StreetSnap { position: Option<transit_streets::StreetPosition> },
+    StreetRoute { points: Vec<transit_streets::StreetPoint> },
     DecodeRt { overview: RtOverview },
     FeedInfo { info: Option<transit_core::FeedInfo> },
     DropFeed {},
@@ -366,6 +383,24 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
                 Ok(Response::PlanTripCompare { active, baseline })
             })
         }
+        Request::StreetsLoad { bytes } => {
+            let net = transit_streets::StreetNetwork::parse(&bytes)
+                .map_err(|e| OpError::new(format!("street network: {}", e.0)))?;
+            let segments = net.segment_count();
+            let nodes = net.node_count();
+            let streets_id = state::register_streets(net);
+            Ok(Response::StreetsLoad { streets_id, segments, nodes })
+        }
+        Request::StreetSnap { streets_id, lat, lon } => state::with_streets(streets_id, |net| {
+            Ok(Response::StreetSnap { position: net.snap(lat, lon) })
+        }),
+        Request::StreetRoute { streets_id, from, to } => {
+            state::with_streets(streets_id, |net| {
+                Ok(Response::StreetRoute {
+                    points: net.route(from, to).unwrap_or_default(),
+                })
+            })
+        }
         Request::SetDiversions { feed_id, records } => state::with_feed(feed_id, |f| {
             let reports = transit_sync::report_all(&f.gtfs, &records);
             f.edits = records;
@@ -392,11 +427,12 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
     }
 }
 
-/// Binary-op codes for [`dispatch_bytes`] — the two ops whose payloads
-/// are megabytes of raw bytes (feed zips, rt protobuf), where a JSON
-/// array of numbers would be absurd.
+/// Binary-op codes for [`dispatch_bytes`] — the ops whose payloads
+/// are megabytes of raw bytes (feed zips, rt protobuf, street
+/// GeoJSON), where a JSON array of numbers would be absurd.
 pub const OP_LOAD_FEED: u32 = 0;
 pub const OP_DECODE_RT: u32 = 1;
+pub const OP_STREETS_LOAD: u32 = 2;
 
 /// Outcome shape: `{"ok": <Response>}` on success, `{"error": "<msg>"}`
 /// on failure — one tagged wrapper, so hosts have exactly two paths.
@@ -426,12 +462,13 @@ pub fn dispatch_json(input: &str) -> String {
     }
 }
 
-/// Bytes-op form of the seam for [`OP_LOAD_FEED`] / [`OP_DECODE_RT`].
-/// Same outcome shape as [`dispatch_json`].
+/// Bytes-op form of the seam for [`OP_LOAD_FEED`] / [`OP_DECODE_RT`]
+/// / [`OP_STREETS_LOAD`]. Same outcome shape as [`dispatch_json`].
 pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
     let req = match op {
         OP_LOAD_FEED => Request::LoadFeed { bytes: bytes.to_vec() },
         OP_DECODE_RT => Request::DecodeRt { bytes: bytes.to_vec() },
+        OP_STREETS_LOAD => Request::StreetsLoad { bytes: bytes.to_vec() },
         other => {
             return dispatch_json_outcome(Err(OpError::new(format!(
                 "unknown bytes op code {other}"

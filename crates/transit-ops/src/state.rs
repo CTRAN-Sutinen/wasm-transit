@@ -15,6 +15,7 @@ use chrono::NaiveDate;
 
 use transit_core::Gtfs;
 use transit_router::RouterNetwork;
+use transit_streets::StreetNetwork;
 use transit_sync::EditRecord;
 
 use crate::OpError;
@@ -100,6 +101,42 @@ fn registry() -> &'static Mutex<Registry> {
 fn next_feed_id() -> u32 {
     static NEXT: AtomicU32 = AtomicU32::new(0);
     NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+// ---------------------------------------------------------------------
+// Street networks: a second, parallel registry. Street data is app
+// config (reference geometry for detour authoring), not feed state —
+// it outlives feeds and never mixes with them.
+// ---------------------------------------------------------------------
+
+fn streets_registry() -> &'static Mutex<BTreeMap<u32, StreetNetwork>> {
+    static REGISTRY: OnceLock<Mutex<BTreeMap<u32, StreetNetwork>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(BTreeMap::new()))
+}
+
+/// Register a parsed street network; returns its id.
+pub fn register_streets(net: StreetNetwork) -> u32 {
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    let id = NEXT.fetch_add(1, Ordering::Relaxed);
+    streets_registry()
+        .lock()
+        .expect("streets registry poisoned")
+        .insert(id, net);
+    id
+}
+
+/// Borrow a street network for one op. Unknown ids are an `OpError`.
+pub fn with_streets<R>(
+    streets_id: u32,
+    f: impl FnOnce(&StreetNetwork) -> Result<R, OpError>,
+) -> Result<R, OpError> {
+    let registry = streets_registry()
+        .lock()
+        .expect("streets registry poisoned");
+    let net = registry
+        .get(&streets_id)
+        .ok_or_else(|| OpError::new(format!("unknown streets_id {streets_id}")))?;
+    f(net)
 }
 
 /// Register a parsed feed; returns its id.

@@ -18,10 +18,20 @@ import type { VehicleView } from "./types/VehicleView";
 import type { EntityKind, Focus } from "./planner";
 import type { GtfsHandle, WasmApi } from "./wasm";
 import type { PlanFeature } from "./actions";
+import type { StreetPosition } from "./types/StreetPosition";
 import type { Streets } from "./streets";
 
 /// The diversion editor's form state (UI only — the edit document
 /// below is the persisted truth).
+export type DetourSlice = {
+  /// The routed geometry of one waypoint step, as [lat, lon] points.
+  points: [number, number][];
+  /// The street position the trace ends at — where the next step
+  /// routes from (the artifact's graph address). Null when the slice
+  /// ends off-street (a stop, a raw corner): the next step falls
+  /// back to a straight line.
+  endPos: StreetPosition | null;
+};
 export type DiversionDraft = {
   routeId: string;
   directionId: string; // "" = any, "0"/"1" filter
@@ -31,7 +41,11 @@ export type DiversionDraft = {
   addedMins: number;
   start: string;
   end: string;
-  detour: [number, number][]; // as drawn on the map
+  /// The committed trace, one entry per waypoint step. `detour` below
+  /// is the flattened view (the record field); slices stay so Undo
+  /// reverts whole steps.
+  slices: DetourSlice[];
+  detour: [number, number][]; // flattened slices, as synced
 };
 
 export type AppState = {
@@ -129,11 +143,12 @@ export function setNetworkDoc(next: Network | null): void {
   networkDoc = next;
 }
 
-/// The imported street network (dispatcher detour snapping) — same
-/// discipline: plain data, wholesale replacement. Never proxied
-/// (extracts can be tens of MB) and not persisted: it is reference
-/// data the dispatcher re-imports, not authored state worth cloning
-/// into IndexedDB.
+/// The imported street network (dispatcher detour authoring) — same
+/// discipline: plain data, wholesale replacement. The routing graph
+/// lives in the artifact (`streetsId`); this holds only the wasm
+/// handle and the display copy. Never proxied (extracts can be tens
+/// of MB) and not persisted: reference data, re-imported per
+/// session.
 let streets = $state.raw<Streets | null>(null);
 export function getStreets(): Streets | null {
   return streets;

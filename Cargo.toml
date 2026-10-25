@@ -6,6 +6,7 @@ members = [
     "crates/transit-ops",
     "crates/transit-router",
     "crates/transit-rt",
+    "crates/transit-streets",
     "crates/transit-sync",
     "crates/transit-wasm",
 ]

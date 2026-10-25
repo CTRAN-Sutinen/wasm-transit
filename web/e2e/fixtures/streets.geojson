@@ -23,6 +23,18 @@
           [-73.6100, 45.6100]
         ]
       }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Elbow Ln" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-73.5030, 45.5040],
+          [-73.5080, 45.5040],
+          [-73.5080, 45.5090]
+        ]
+      }
     }
   ]
 }
