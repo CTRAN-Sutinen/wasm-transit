@@ -6,18 +6,22 @@
 //! spec file — regenerate by touching the proto.
 //!
 //! [`overview`] turns the decoded `FeedMessage` into the flat view every
-//! host shows (delays, vehicles) — shared between the cap-rt capability
-//! module and any host that holds the bytes.
+//! host shows (delays, vehicles). [`progress`] is the JOIN: realtime
+//! delays against the static schedule — one trip's predicted times and
+//! the ranked "what's late now" view — shared between the cap-rt
+//! capability and any host that holds both documents.
 
 pub mod gtfs_rt {
     include!(concat!(env!("OUT_DIR"), "/transit_realtime.rs"));
 }
 
 pub mod overview;
+pub mod progress;
 
 pub use overview::{
     decode_overview, RtOverview, StopUpdateView, TripUpdateView, VehicleView,
 };
+pub use progress::{trip_progress, late_trips, LateTrip, ProgressStop, TripProgress};
 
 use prost::Message;
 

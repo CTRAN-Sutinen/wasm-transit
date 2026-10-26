@@ -292,6 +292,12 @@ pub struct FeedSummary {
 pub struct StopSummary {
     pub stop_id: String,
     pub name: String,
+    /// The parent station, when this stop is a bay — the flag the
+    /// station board keys off (a stop with a parent, or with
+    /// children, pools; a plain stop stays per-stop so diverted
+    /// views stay exact).
+    #[serde(default)]
+    pub parent_station: Option<String>,
 }
 
 /// Minimal route info for UI pickers.

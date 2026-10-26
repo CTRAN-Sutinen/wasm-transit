@@ -28,7 +28,7 @@ import type { Mode } from "./types/Mode";
 import type { Network } from "./types/Network";
 import type { NetworkStats } from "./types/NetworkStats";
 import type { PlanInfo } from "./types/PlanInfo";
-import { pushEdits, serviceDate, FEED_KEY } from "./actions";
+import { pushEdits, serviceDate, FEED_KEY, setFeedBytes } from "./actions";
 import { get as idbGet } from "idb-keyval";
 import {
   ensureAnalysisNetwork,
@@ -500,6 +500,7 @@ export async function materializeNetwork(): Promise<void> {
     }
     const { feedHash, zipB64 } = networkCap(module).export(networkHash);
     const bytes = base64Decode(zipB64);
+    setFeedBytes(bytes); // the bus reads the same document the monolith parses
     app.gtfs = app.wasm.GtfsHandle.load(bytes);
     app.selectedStop = null;
     app.selectedTripId = null;

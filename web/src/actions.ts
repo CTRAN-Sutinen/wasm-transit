@@ -59,6 +59,17 @@ async function cacheFeed(label: string, bytes: Uint8Array): Promise<void> {
 
 export { FEED_KEY };
 
+/// The raw bytes of the ACTIVE feed, held for the bus: capability
+/// modules (the station board) address the same document the
+/// monolith holds. Wholesale-replaced with the feed, never mutated.
+let activeFeedBytes: Uint8Array | null = null;
+export function setFeedBytes(bytes: Uint8Array): void {
+  activeFeedBytes = bytes;
+}
+export function feedBytes(): Uint8Array | null {
+  return activeFeedBytes;
+}
+
 // ---------------------------------------------------------------
 // clock helpers: JS owns time, wasm receives explicit values
 // ---------------------------------------------------------------
@@ -113,6 +124,7 @@ function error(e: any): void {
 
 export async function loadGtfsBytes(bytes: Uint8Array, label: string): Promise<void> {
   if (!app.wasm) throw new Error("wasm not loaded");
+  setFeedBytes(bytes); // the bus reads the same document the monolith parses
   app.gtfs = app.wasm.GtfsHandle.load(bytes); // all parsing in wasm
   app.selectedStop = null;
   app.selectedTripId = null;

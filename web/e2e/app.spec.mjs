@@ -358,6 +358,18 @@ test("comboboxes search, and blocks scope to the service day", async ({ page }) 
   const rows = page.locator("section:has(h2:text('Departures')) tbody tr");
   await expect(rows).toHaveCount(1, { timeout: 10_000 }); // t30 at C: 08:45
 
+  // A STATION PIN answers the station board: the parent has no
+  // trips of its own, so the per-stop path is empty and the board
+  // falls back to the gtfs capability's pooled station_departures —
+  // both bays' departures, each row tagged with its bay.
+  await stopBox.click();
+  await stopBox.fill("Main Station");
+  await page.getByRole("option", { name: /Main Station\s*STN/ }).click();
+  await expect(rows).toHaveCount(4, { timeout: 10_000 }); // t40 + t41, both bays
+  await expect(page.getByText(/Station board/)).toBeVisible();
+  await expect(page.locator("section:has(h2:text('Departures'))")).toContainText("SA");
+  await expect(page.locator("section:has(h2:text('Departures'))")).toContainText("SB");
+
   // Dispatcher: Friday runs both blocks — B1 (weekday service) and
   // B2 (the Friday-only holiday trip). The picker offers exactly
   // those, with that day's trip counts.

@@ -10,6 +10,8 @@ prost = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 ts-rs = { workspace = true }
+# The progress join: rt delays against the static schedule.
+transit-core = { path = "../transit-core" }
 
 [dev-dependencies]
 proptest = "1"

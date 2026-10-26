@@ -334,6 +334,30 @@ const OP_LOAD_FEED = 0;
 
 export type GtfsLoadFeed = { feedHash: string; summary: FeedSummary };
 
+const gtfsFeeds: Record<string, Map<string, string>> = {};
+
+/// The current gtfs module, if the bus assembled one.
+export async function gtfsModule(): Promise<CapModule | null> {
+  const modules = await ensure(["gtfs"]);
+  return modules.gtfs ?? null;
+}
+
+/// Register the active feed in cap-gtfs, memoized by the bytes'
+/// content hash — the station board's fallback queries it by hash.
+/// THE MODULE IS THE HASH AUTHORITY (its returned feed_hash is the
+/// identity; the memo key is only the host's "did I already load
+/// these bytes" check).
+export async function ensureGtfsFeed(bytes: Uint8Array): Promise<string | null> {
+  const module = await gtfsModule();
+  if (!module) return null;
+  const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
+  const memo = (gtfsFeeds[module.cap.id] ??= new Map());
+  if (!memo.has(memoKey)) {
+    memo.set(memoKey, gtfsCap(module).loadFeed(bytes).feedHash);
+  }
+  return memo.get(memoKey) ?? null;
+}
+
 export function gtfsCap(module: CapModule) {
   return {
     loadFeed(bytes: Uint8Array): GtfsLoadFeed {
@@ -358,6 +382,26 @@ export function gtfsCap(module: CapModule) {
         from_secs: fromSecs,
         limit,
       } as GtfsRequest) as Extract<GtfsResponse, { op: "departures" }>;
+      return resp.departures;
+    },
+    /// The STATION BOARD: departures pooled over the stop's walking
+    /// group (a station pin's bays), each row tagged with its
+    /// concrete stop.
+    stationDepartures(
+      feedHash: string,
+      stopId: string,
+      date: string,
+      fromSecs: number,
+      limit: number,
+    ): Departure[] {
+      const resp = module.invoke({
+        op: "station_departures",
+        feed_hash: feedHash,
+        stop_id: stopId,
+        date,
+        from_secs: fromSecs,
+        limit,
+      } as GtfsRequest) as Extract<GtfsResponse, { op: "station_departures" }>;
       return resp.departures;
     },
     stops(feedHash: string, limit: number): StopSummary[] {

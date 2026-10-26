@@ -311,3 +311,27 @@ fn dispatch_reads_answer_on_the_fixture() {
     assert_eq!(info.feed_version.as_deref(), Some("2026.10.1"));
     assert_eq!(info.feed_publisher_name.as_deref(), Some("Test Transit"));
 }
+
+/// Stop names by id — the join hosts otherwise do by hand when a
+/// view (like rt's) carries ids a human reads as names.
+#[test]
+fn stops_by_ids_answers_names() {
+    let bytes = fixture_zip();
+    let feed_hash = match dispatch(cap_gtfs::Request::LoadFeed { bytes }) {
+        cap_gtfs::Response::LoadFeed { feed_hash, .. } => feed_hash,
+        _ => panic!("load"),
+    };
+    let stops = match dispatch(cap_gtfs::Request::StopsByIds {
+        feed_hash,
+        ids: vec!["B".into(), "ghost".into(), "STN".into(), "A".into()],
+    }) {
+        cap_gtfs::Response::StopsByIds { stops } => stops,
+        _ => panic!("stops_by_ids"),
+    };
+    // Unknown ids are omitted — the caller asked for names — and the
+    // answer keeps the request's order.
+    assert_eq!(
+        stops.iter().map(|s| (s.stop_id.as_str(), s.name.as_str())).collect::<Vec<_>>(),
+        vec![("B", "Main & 2nd"), ("STN", "Main Station"), ("A", "Main & 1st")],
+    );
+}

@@ -3,4 +3,11 @@
 /**
  * Minimal stop info for UI lists.
  */
-export type StopSummary = { stop_id: string, name: string, };
+export type StopSummary = { stop_id: string, name: string, 
+/**
+ * The parent station, when this stop is a bay — the flag the
+ * station board keys off (a stop with a parent, or with
+ * children, pools; a plain stop stays per-stop so diverted
+ * views stay exact).
+ */
+parent_station: string | null, };

@@ -193,6 +193,8 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
+ "sha2",
+ "transit-core",
  "transit-rt",
  "ts-rs",
 ]
@@ -1036,6 +1038,7 @@ dependencies = [
  "protoc-bin-vendored",
  "serde",
  "thiserror 1.0.69",
+ "transit-core",
  "ts-rs",
 ]
 

@@ -32,7 +32,9 @@ just caps                  # capability modules + regenerate the manifest (PoC b
 just registry              # publish the capability registry (gates → blobs + evidence)
 node tools/caps-run.mjs    # the agent runner: caps-run list | tools <cap> | <cap> --op ...
                            # --op values support $refs ($load.feed_hash,
-                           # $import.network_hash, $1) into prior results
+                           # $import.network_hash, $1) into prior results,
+                           # plus $TODAY/$NOW_SECS (the host's clock) and
+                           # --load [N:]FILE for second bulk ops
 just test                  # host-side tests only (Rust + ABI smokes + Go -race)
 just e2e                   # browser e2e (builds first)
 just check                 # test + e2e — the full gate
@@ -93,10 +95,12 @@ transit-analysis Planner analysis over an authored network document:
                 coverage handle) and the cap-analysis module — the
                 extraction pattern: crate boundary first, capability
                 wrapper second, monolith deletion last.
-transit-rt      prost types from the official GTFS-rt proto, plus the
-                OVERVIEW view (delays, vehicles) over them — a
-                LIBRARY shared by cap-rt and any host that holds the
-                bytes.
+transit-rt      prost types from the official GTFS-rt proto, the
+                OVERVIEW view (delays, vehicles) over them, and the
+                PROGRESS join (one trip's predicted times; the
+                ranked late view with the DELAYED-BUT-DARK flag) —
+                LIBRARIES shared by cap-rt and any host that holds
+                the bytes (and, for the join, the static feed).
 transit-sync   THE sync document: EditRecord, FeedManifest, EditReport,
                 pure validation/merge logic. Shared by every host.
 transit-streets Street routing graph for detour authoring: GeoJSON in,
@@ -200,11 +204,18 @@ cap-network     The network codec capability: load_feed (zip bytes →
 cap-rt          The realtime capability: decode — a GTFS-rt protobuf
                 payload (bulk-bytes op 0, the ephemeral bytes an
                 agency serves every few seconds) into the overview
-                view (delays per trip/stop, live vehicles). A PURE
-                DECODER: it writes nothing, and the monolith keeps
-                no copy (decode_rt is deleted; the ABI smoke pins the
-                retired op). Assembles for riders and dispatchers
-                alike.
+                view (delays per trip/stop, live vehicles), each
+                snapshot registered under its content hash; and the
+                SCHEDULE JOIN the dispatcher actually asks for:
+                load_feed (bulk op 1, the SAME feed identity
+                cap-gtfs returns — the manifest's rt → gtfs edge),
+                trip_progress (one trip's scheduled/delay/predicted
+                board), late_trips (ranked, with the DELAYED-BUT-
+                DARK flag and vp_hash for agencies that serve the
+                two feeds separately — C-TRAN does). The monolith
+                keeps no rt copy (decode_rt is deleted; the ABI
+                smoke pins the retired op). Assembles for riders
+                and dispatchers alike.
 web/src/        capabilities.svelte.ts: the resolver — manifest
                 validation, demand-driven load, byte verification
                 against pinned hashes, per-capability degradation,

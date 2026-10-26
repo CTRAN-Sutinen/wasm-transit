@@ -58,7 +58,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "gtfs",
         file: "cap_gtfs.wasm",
-        ops: &["load_feed", "departures", "station_departures", "stops", "active_services", "blocks", "block_trips", "feed_info", "load_watchlist", "migrate_watchlist", "watchlist_board"],
+        ops: &["load_feed", "departures", "station_departures", "stops", "stops_by_ids", "active_services", "blocks", "block_trips", "feed_info", "load_watchlist", "migrate_watchlist", "watchlist_board"],
         consumes: &[],
         speaks: &[("feed", &[1]), ("watchlist", &[1, 2])],
         migrates: &[("watchlist", &[(1, 2)])],
@@ -68,6 +68,7 @@ const MODULES: &[ModuleSpec] = &[
             ("departures", "Upcoming departures at one stop on a service date, schedule only (GTFS-rt is another capability). The stop's own board — a station pin answers nothing here; see station_departures."),
             ("station_departures", "Upcoming departures POOLED over a stop's walking group — the station board. A station (Fisher's Landing, Main Station) answers no departures of its own: the bays carry the trips, and this op unions the whole group (the stop, its parent, siblings sharing that parent, the parent's children), merged by time, each row tagged with its concrete bay. Any member of the group answers the same board."),
             ("stops", "Stop list for UI pickers, first N by id."),
+            ("stops_by_ids", "Stop names by id, in the request's order — the join hosts otherwise do by hand when a view (like rt's) carries ids a human reads as names. Unknown ids are omitted."),
             ("active_services", "Service keys running on a date — often several at once (regular patterns plus exception-added services). The dispatcher's first question: what is running today?"),
             ("blocks", "All blocks in the feed; with `date`, only the blocks RUNNING that day, with that day's trip counts — the vehicle picker shows buses in service, not parked buses. A block is one vehicle's trip chain."),
             ("block_trips", "One block's trip chain on a service date: where the vehicle starts, where it ends, the layover between trips. Unknown blocks answer empty, never error."),
@@ -109,15 +110,20 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "rt",
         file: "cap_rt.wasm",
-        ops: &["decode"],
-        consumes: &[],
+        ops: &["decode", "load_feed", "trip_progress", "late_trips"],
+        consumes: &[("feed", "gtfs")],
         // The gtfs-rt payload: an ephemeral document (polled every
-        // few seconds), versioned by the protobuf schema it speaks.
-        speaks: &[("gtfs_rt", &[1])],
+        // few seconds), versioned by the protobuf schema it speaks;
+        // the static feed it joins against is the SAME document gtfs
+        // serves (one zip, one identity).
+        speaks: &[("gtfs_rt", &[1]), ("feed", &[1])],
         migrates: &[],
-        purpose: "Realtime decoding: turn a GTFS-rt protobuf payload (trip updates, vehicle positions — the bytes an agency serves every few seconds) into the flat view hosts show (delays per trip/stop, live vehicles for the map). The third capability extracted from the monolith — the decoder lives in the shared transit-rt library, and the monolith keeps no copy. Assemble for riders (live boards) and dispatchers (the operation view) alike.",
+        purpose: "Realtime decoding and the schedule join: turn a GTFS-rt protobuf payload (trip updates, vehicle positions) into the flat view hosts show, and answer the dispatcher's joined questions — one trip's predicted times, the ranked what's-late-now view with the delayed-but-dark flag. The third capability extracted from the monolith; the domain code lives in the shared transit-rt library. Assemble for riders (live boards) and dispatchers (the operation view) alike.",
         op_docs: &[
-            ("decode", "Decode a GTFS-rt protobuf payload into the overview: entity counts, trip updates with per-stop delays, and vehicle positions (id, label, lat/lon, bearing, trip). Bulk-bytes op 0; pass the raw protobuf to transit_invoke_bytes. Garbage bytes are an error outcome, never a trap."),
+            ("decode", "Decode a GTFS-rt protobuf payload into the overview (entity counts, trip updates with per-stop delays, vehicle positions), and register the snapshot under its content hash — idempotent, the same bytes are the same snapshot — so trip_progress/late_trips can address it. Bulk-bytes op 0. Garbage bytes are an error outcome, never a trap."),
+            ("load_feed", "Register the STATIC feed the schedule joins come from — the same GTFS zip bytes gtfs loads, the same content-hash identity (assert equality at the host). Bulk-bytes op 1."),
+            ("trip_progress", "One trip's joined board: every scheduled stop with the live delay and the PREDICTED time (schedule + delay) — the dispatcher's most-asked question in one op. A trip the snapshot does not mention answers from the schedule alone; a trip the feed does not carry answers null."),
+            ("late_trips", "The ranked what's-late-now view: every trip whose worst stop delay reaches min_delay_secs, worst first, each carrying the vehicle's label and position when one names it — and the DELAYED-BUT-DARK flag (has_position false) when none does. vp_hash names the VehiclePositions snapshot (agencies serve it as a SEPARATE feed — C-TRAN does); omit it for combined feeds."),
         ],
     },
     ModuleSpec {
@@ -369,6 +375,34 @@ fn fixture_gtfs() -> Option<transit_core::Gtfs> {
     transit_core::Gtfs::from_zip_bytes(&bytes).ok()
 }
 
+/// The rt join examples' context: the fixture feed and the e2e rt
+/// payload, both parsed through the shared libraries.
+struct RtExampleContext {
+    feed: transit_core::Gtfs,
+    overview: transit_rt::RtOverview,
+    feed_hash: String,
+    rt_hash: String,
+}
+
+fn rt_example_context() -> Option<RtExampleContext> {
+    let feed = fixture_gtfs()?;
+    let payload = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../web/e2e/fixtures/sample-rt.pb"
+    ))
+    .ok()?;
+    let overview = transit_rt::decode_overview(&payload).ok()?;
+    let feed_hash = format!("sha256:{:x}", Sha256::digest(
+        std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../web/e2e/fixtures/sample-gtfs.zip"
+        ))
+        .ok()?,
+    ));
+    let rt_hash = format!("sha256:{:x}", Sha256::digest(&payload));
+    Some(RtExampleContext { feed, overview, feed_hash, rt_hash })
+}
+
 /// Worked examples — the corpus-as-context idea: an agent reads these
 /// to learn the shapes. Requests carry the REAL feed hash computed
 /// above; responses carry the fixture's known answers.
@@ -610,8 +644,42 @@ fn example_for(
                     "coverage": transit_analysis::type_coverage(&ctx.derived_network(), &layer, 500.0, 3600, 2) } }),
             )
         }
+        // The rt join examples compute REAL answers over the fixture
+        // pair (sample-gtfs.zip + sample-rt.pb): t10 +120 s at A /
+        // +180 s at B, one vehicle on t10 — the joined board and the
+        // ranked view through the same shared library the module
+        // dispatches through.
+        ("rt", "trip_progress") => {
+            let ctx = rt_example_context()?;
+            (
+                json!({ "op": "trip_progress", "feed_hash": ctx.feed_hash,
+                    "rt_hash": ctx.rt_hash, "trip_id": "t10" }),
+                json!({ "ok": { "op": "trip_progress",
+                    "progress": transit_rt::trip_progress(&ctx.feed, &ctx.overview, "t10") } }),
+            )
+        }
+        ("rt", "late_trips") => {
+            let ctx = rt_example_context()?;
+            (
+                json!({ "op": "late_trips", "feed_hash": ctx.feed_hash,
+                    "rt_hash": ctx.rt_hash, "min_delay_secs": 60,
+                    "vp_hash": null }),
+                json!({ "ok": { "op": "late_trips",
+                    "trips": transit_rt::late_trips(&ctx.feed, &ctx.overview, None, 60) } }),
+            )
+        }
+        ("gtfs", "stops_by_ids") => {
+            let gtfs = fixture_gtfs()?;
+            (
+                json!({ "op": "stops_by_ids", "feed_hash": feed_hash, "ids": ["A", "STN"] }),
+                json!({ "ok": { "op": "stops_by_ids", "stops": [
+                    { "stop_id": "A", "name": gtfs.stops.get("A").map(|s| s.stop_name.clone()) },
+                    { "stop_id": "STN", "name": gtfs.stops.get("STN").map(|s| s.stop_name.clone()) },
+                ] } }),
+            )
+        }
         // Bulk-bytes ops have no JSON request example (the payload is
-        // the raw zip); the description carries the contract.
+        // the raw zip/protobuf); the description carries the contract.
         (_, "load_feed") => return None,
         (_, "load_population_layer") => return None,
         _ => return None,

@@ -25,7 +25,7 @@
     {
       "name": "route_stop_sequence",
       "request": "{\"op\":\"route_stop_sequence\",\"feed_id\":$FEED,\"route_id\":\"10\",\"direction_id\":null}",
-      "expect": "{\"ok\":{\"op\":\"route_stop_sequence\",\"stops\":[{\"stop_id\":\"A\",\"name\":\"Main & 1st\"},{\"stop_id\":\"C\",\"name\":\"Main & 3rd\"},{\"stop_id\":\"B\",\"name\":\"Main & 2nd\"}]}}"
+      "expect": "{\"ok\":{\"op\":\"route_stop_sequence\",\"stops\":[{\"stop_id\":\"A\",\"name\":\"Main & 1st\",\"parent_station\":null},{\"stop_id\":\"C\",\"name\":\"Main & 3rd\",\"parent_station\":null},{\"stop_id\":\"B\",\"name\":\"Main & 2nd\",\"parent_station\":null}]}}"
     },
     {
       "name": "departures_base",

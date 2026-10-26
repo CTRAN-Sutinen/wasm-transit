@@ -133,36 +133,91 @@ where the bus answers them:
   20:00:39 arrival at bay 9001 was computable ONLY by
   hand-joining the station board and the rt delay across two
   sessions.
+- **UI-mirror session (2026-10-25 evening, the live dev instance
+  through a /tmp Playwright spec — same four questions, same
+  feeds):**
+  * the STATION BOARD gap is real for humans: picking
+    "Fisher's Landing Transit Center" (the station pin) rendered
+    an EMPTY board. DONE (2026-10-25, the fallback wiring): the
+    board keeps its per-stop path (diversion-patched, monolith)
+    and, when that path answers nothing at a STATION-LIKE stop
+    (a parent pin or a bay — `StopSummary` now carries
+    `parent_station` so the UI stops guessing), falls back to
+    cap-gtfs's `station_departures` through the bus — rows tagged
+    with the concrete bay, honestly noted as the station board.
+    Plain stops NEVER pool (a diverted-away stop must show its
+    emptiness, not its base schedule — the diversion e2e caught
+    exactly that flaw in the first cut, before the gate). DECISION
+    (user, 2026-10-25) for where the board ends up: **realtime
+    first, schedule as the fallback** — predictions are the primary
+    display, schedule rows appear where no live data covers a
+    trip. That sets the bus board's shape: a predictions-first
+    join op (cap-rt owns the join machinery — a `stop_board` op
+    over feed + snapshot, station pooling riding along), with the
+    diversion question folded into it rather than solved around
+    it. Not urgent — it lands with the dispatcher rewire unit.
+  * the UI is AHEAD of the CLI on delays: the departure board
+    joins live rt delays onto its rows in presentation — the
+    exact join the CLI must hand-craft. That is the strongest
+    argument yet for `trip_progress`: the answer's shape is
+    already proven on screen, the op just has to exist so both
+    surfaces (and agents) get it in one call.
+  * the block panel's `tight`/`overlap` connection flags are
+    presentation over `layover_secs` today — fine, but when
+    `trip_progress` lands, the same flag belongs IN the op where
+    every surface gets it.
+  * the feed's identity has NO surface: `feed_version` /
+    publisher never render (the op answers on the bus; the UI
+    shows only counts). Fold into the dispatcher UI rewire.
+  * caveat, stated honestly: the UI's blocks/board answers run
+    through the MONOLITH, not the bus — the Stage C rewire
+    (BlocksPanel, board, block picker through
+    capabilities.svelte.ts) is what makes the mirror literal.
 - **"Is my bus on time? Where is it?"** — was `decode_rt`,
-  monolith-only; DONE as cap-rt (item 1b). Remaining rt gap: the
-  overview carries per-stop delays and vehicle positions, but a
-  dispatcher asking "which trips are LATE right now, ranked" gets
-  only the raw views — the UI joins; an agent joining by hand is
-  the item-3 shape again (chain decode → a ranked answer is host
-  work today).
-- **"When does trip X actually reach stop Y?"** — the most-asked
-  dispatch question, and NOTHING answers it on the bus (or in the
-  monolith): rt gives the delay, the static feed holds the
-  schedule, and no op joins them. A `trip_progress` op (one trip's
-  remaining stops: scheduled, delay, predicted — static + rt in one
-  response) is the right-shape fix; it needs rt to consume the feed
-  document (the registry edge the manifest can carry).
-- **Stop names by id** — the rt view carries stop ids; a dispatcher
-  reads names. A `stops_by_ids` (or an include shape on `stops`)
-  answers; today the host pulls 901 rows and joins.
+  monolith-only; DONE as cap-rt (item 1b). The ranked follow-up is
+  DONE too: `late_trips` ranks by worst stop delay, carries the
+  vehicle's label and position, and raises the DELAYED-BUT-DARK
+  flag when no position names the trip. The live dogfood caught a
+  real design flaw the fixture gates missed: C-TRAN serves
+  TripUpdates and VehiclePositions as SEPARATE feeds, so positions
+  looked up in the delays snapshot alone marked every late trip
+  dark — the op gained `vp_hash` (the positions snapshot, omitted
+  for combined feeds), and the split-feed law is a permanent test.
+  Per-route fleet patterns read straight off the ranked list
+  (route 050's five late trips).
+- **"When does trip X actually reach stop Y?"** — was the
+  most-asked dispatch question, and NOTHING answered it on the bus
+  (or in the monolith): rt gives the delay, the static feed holds
+  the schedule, and no op joined them. DONE (2026-10-25): cap-rt
+  gained `load_feed` (bulk op 1 — the SAME feed document identity
+  gtfs returns; the manifest carries the registry edge rt → gtfs)
+  and `trip_progress` (every scheduled stop with the live delay
+  and the PREDICTED time in one answer; a trip the snapshot does
+  not mention answers from the schedule alone). The join lives in
+  the shared transit-rt library (`progress.rs`). Dogfooded live:
+  the 092's board, one op.
+- **Stop names by id** — DONE: cap-gtfs `stops_by_ids` (request
+  order, unknown ids omitted). No more pulling 901 rows and
+  joining by hand.
 - **"Which feed is this? What version?"** — was monolith-only;
   DONE as part of the dispatch reads (`feed_info` on cap-gtfs,
   dogfooded: C-TRAN answers its own version on the bus).
 - **Stop search** — `stops` returns first N by id; finding Fisher's
   bays means pulling the whole list and grepping client-side. An
   `include`/query shape on `stops` (or a `find_stops` op) is the
-  item-4 pattern applied to gtfs.
+  item-4 pattern applied to gtfs. OPEN (the last read-shaping gap
+  in 1c's ledger).
 - **Cross-session chaining** — the session hand-copied feed hashes
   into every invocation (item 3, again — daily, not occasional).
+  OPEN: a `--save`/`--op-from` runner pair or a session document
+  store; today the analysis flow still embeds the derived document
+  in a request file.
 - **The clock** — hosts own the clock, so every op takes explicit
   dates; the runner has no `$TODAY` (an agent computing "today" by
-  hand is fine once, drifts twice). A runner-side `$TODAY` (and
-  `$NOW_SECS`) placeholder is cheap honesty.
+  hand is fine once, drifts twice). DONE: `$TODAY` and `$NOW_SECS`
+  resolve host-side in the worker (with `--load [N:]FILE` for
+  modules with a second bulk op — cap-rt's feed join); the
+  `just test` gate exercises `$TODAY` on every run.
 
 ## 2. Parent stations answer zero departures (cap-gtfs) — DONE (2026-10-25)
 
@@ -398,7 +453,6 @@ first projection-level choice an agent makes in a harness.
 - **Fuel metering** in the runner (wasmtime) once it may point at
   untrusted registry entries; the wall-clock worker guard is the
   stopgap.
-- **caps tools → MCP facade** (generated; optional interop).
 - **Sync persistence** on blobs + pointers (see the persistence
   discussions: migrate-at-receive, pointer CAS, one writer per
   prefix).

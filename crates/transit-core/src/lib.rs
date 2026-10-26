@@ -174,7 +174,11 @@ impl Gtfs {
             if out.last().map(|s| s.stop_id.as_str()) == Some(stop.stop_id.as_str()) {
                 continue;
             }
-            out.push(StopSummary { stop_id: stop.stop_id.clone(), name: stop.stop_name.clone() });
+            out.push(StopSummary {
+                stop_id: stop.stop_id.clone(),
+                name: stop.stop_name.clone(),
+                parent_station: stop.parent_station.clone(),
+            });
         }
         out
     }
@@ -201,7 +205,11 @@ impl Gtfs {
         let mut list: Vec<StopSummary> = self
             .stops
             .values()
-            .map(|s| StopSummary { stop_id: s.stop_id.clone(), name: s.stop_name.clone() })
+            .map(|s| StopSummary {
+                stop_id: s.stop_id.clone(),
+                name: s.stop_name.clone(),
+                parent_station: s.parent_station.clone(),
+            })
             .collect();
         list.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.stop_id.cmp(&b.stop_id)));
         list

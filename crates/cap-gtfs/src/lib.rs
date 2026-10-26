@@ -139,6 +139,12 @@ pub enum Request {
     },
     /// Stop list for UI pickers: the first `limit` stops by id.
     Stops { feed_hash: String, limit: u32 },
+    /// Stop names by id — the join hosts otherwise do by hand when
+    /// a view (like rt's) carries ids a human reads as names.
+    /// Unknown ids are omitted (the caller asked for names, and
+    /// silence is the honest answer for an id the feed does not
+    /// carry).
+    StopsByIds { feed_hash: String, ids: Vec<String> },
     /// Service keys running on a date — often several at once
     /// (regular patterns plus exception-added services). The
     /// dispatcher's first question: what is running today?
@@ -180,6 +186,7 @@ pub enum Response {
     Departures { departures: Vec<transit_core::Departure> },
     StationDepartures { departures: Vec<transit_core::Departure> },
     Stops { stops: Vec<StopSummary> },
+    StopsByIds { stops: Vec<StopSummary> },
     ActiveServices { services: Vec<String> },
     Blocks { blocks: Vec<transit_core::BlockSummary> },
     BlockTrips { trips: Vec<transit_core::BlockTrip> },
@@ -324,6 +331,19 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::Stops {
                 stops: feed.stop_summaries().into_iter().take(limit as usize).collect(),
             })
+        }),
+        Request::StopsByIds { feed_hash, ids } => with_feed(&feed_hash, |feed| {
+            let mut out = Vec::with_capacity(ids.len());
+            for id in &ids {
+                if let Some(stop) = feed.stops.get(id) {
+                    out.push(StopSummary {
+                        stop_id: stop.stop_id.clone(),
+                        name: stop.stop_name.clone(),
+                        parent_station: stop.parent_station.clone(),
+                    });
+                }
+            }
+            Ok(Response::StopsByIds { stops: out })
         }),
         Request::ActiveServices { feed_hash, date } => {
             let parsed = parse_date(&date)?;

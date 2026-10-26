@@ -431,4 +431,46 @@ assert(vehicle.label === "4201", "the vehicle label (the bus number) survives de
 const garbage = rt.raw({ op: "decode", bytes: [0xff, 0xff] });
 assert(garbage.error && /decode/.test(garbage.error), "garbage bytes are an error outcome, never a trap");
 
+// The join: the SAME feed bytes into cap-rt (bulk op 1) must agree
+// with cap-gtfs on the identity — four capabilities, one feed — and
+// the joined ops answer over the fixture pair (t10 +120/+180, one
+// vehicle).
+const loadedRt = rt.invokeBytes(1, feed);
+assert(loadedRt.op === "load_feed", "rt load_feed answers on bulk op 1");
+assert(
+  loadedRt.feed_hash === loadedGtfs.feed_hash,
+  "cap-rt agrees with cap-gtfs on the feed identity (the manifest's registry edge)",
+);
+const snapshot = rt.invokeBytes(0, readFileSync(path.join(here, "../../web/e2e/fixtures/sample-rt.pb")));
+assert(snapshot.rt_hash.startsWith("sha256:"), "decode registers the snapshot under its content hash");
+const progress = rt.invoke({
+  op: "trip_progress",
+  feed_hash: loadedRt.feed_hash,
+  rt_hash: snapshot.rt_hash,
+  trip_id: "t10",
+});
+assert(progress.progress && progress.progress.stops.length === 2, "t10's joined board has both stops");
+assert(
+  progress.progress.stops[0].predicted_departure === 28800 + 120,
+  "t10's predicted departure at A is 08:02 (schedule + delay)",
+);
+const late = rt.invoke({
+  op: "late_trips",
+  feed_hash: loadedRt.feed_hash,
+  rt_hash: snapshot.rt_hash,
+  min_delay_secs: 60,
+});
+assert(late.trips.length === 1 && late.trips[0].trip_id === "t10", "the ranked view finds the late trip");
+assert(late.trips[0].vehicle_label === "4201" && late.trips[0].has_position, "its bus is named and visible");
+const unknownJoin = rt.raw({ op: "trip_progress", feed_hash: "sha256:missing", rt_hash: decoded.rt_hash, trip_id: "t10" });
+assert(unknownJoin.error && unknownJoin.error.includes("unknown feed"), "unknown hashes error, never panic");
+
+// Stop names by id — the join the rt views otherwise force onto the
+// host (ids in, names out, request order, unknown omitted).
+const named = gtfs.invoke({ op: "stops_by_ids", feed_hash: loadedGtfs.feed_hash, ids: ["SA", "ghost", "A"] });
+assert(
+  named.stops.length === 2 && named.stops[0].stop_id === "SA" && named.stops[0].name === "Main Station: Bay A",
+  "stops_by_ids answers names, omitting unknown ids",
+);
+
 console.log("capability modules: ABI smoke ok");

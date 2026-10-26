@@ -93,11 +93,19 @@ test: caps
       --op '{"op":"block_trips","feed_hash":"$load.feed_hash","block_id":"B1","date":"2026-10-23"}' \
       --op '{"op":"feed_info","feed_hash":"$load.feed_hash"}' \
       | grep -q '"layover_secs":600'
-    # The realtime capability's gate: the fixture payload decodes on
-    # the bulk seam with its known delay — the dispatch leg, one
-    # command an agent or dispatcher runs.
-    node tools/caps-run.mjs rt --load web/e2e/fixtures/sample-rt.pb \
-      | grep -q '"departure_delay":120'
+    # The realtime capability's gate: the dispatch leg as a JOIN — the
+    # fixture feed on bulk op 1, the fixture payload on op 0, and the
+    # dispatcher's most-asked question answered in one op (t10's
+    # predicted departure at A: 08:00 + 120 s).
+    node tools/caps-run.mjs rt --load 1:web/public/caps/sample-gtfs.zip \
+      --load web/e2e/fixtures/sample-rt.pb \
+      --op '{"op":"trip_progress","feed_hash":"$1.feed_hash","rt_hash":"$2.rt_hash","trip_id":"t10"}' \
+      | grep -q '"predicted_departure":28920'
+    # The clock: $TODAY resolves host-side (the runner is the host) —
+    # a valid date must answer, whatever day the gate runs on.
+    node tools/caps-run.mjs gtfs --load web/public/caps/sample-gtfs.zip \
+      --op '{"op":"active_services","feed_hash":"$load.feed_hash","date":"$TODAY"}' \
+      | grep -q '"op":"active_services"'
     # -race: the artifact is one non-reentrant instance; the host must
     # serialize invokes (see server/race_test.go — the gate watches it).
     cd server && go test -race ./...

@@ -14,9 +14,11 @@
 //   caps-run <capability> [--load FILE]... [--op '<json>|@FILE']...
 //          [--timeout MS]               run a session
 //
-// --load sends the file's bytes on bulk op 0 (feeds, layers, rt
-// payloads). --op invokes one JSON op; repeatable; '@FILE' reads the
-// JSON from a file. Results print as JSON, one per line, in order.
+// --load [N:]FILE sends the file's bytes on bulk op N (default 0 —
+// feeds, layers; a module with a second bulk op spells it, e.g.
+// cap-rt's `--load 1:feed.zip` loads the static feed for joins).
+// --op invokes one JSON op; repeatable; '@FILE' reads the JSON from
+// a file. Results print as JSON, one per line, in order.
 //
 // Result references: a string value that starts with "$" resolves
 // against the session's PRIOR results before invoking — no
@@ -27,6 +29,10 @@
 // The rest of the reference is a dotted path into the result
 // (numeric segments index arrays). A reference must be the whole
 // string value; unresolvable references fail the session loudly.
+//
+// The clock (the HOST owns it — dates never cross as magic):
+//   $TODAY             the host's local date, "YYYY-MM-DD"
+//   $NOW_SECS          the host's local seconds since midnight
 
 import { createHash } from "node:crypto";
 import { parentPort, workerData, isMainThread } from "node:worker_threads";
@@ -115,13 +121,24 @@ async function runSession() {
   };
 
   const results = [];
-  for (const file of loads) {
+  for (const load of loads) {
+    const match = /^(\d+):(.+)$/.exec(load);
+    const op = match ? Number(match[1]) : 0;
+    const file = match ? match[2] : load;
     const payload = readFileSync(file);
-    results.push({ load: file, ...invokeBytes(0, payload) });
+    results.push({ load: file, ...invokeBytes(op, payload) });
   }
-  // Result references ($load.x, $import.x, $1.x): resolved against
-  // the session's prior results, in the worker, BEFORE the bytes
-  // cross the ABI — the agent never hand-copies a hash.
+  // The clock: the HOST owns it, so $TODAY / $NOW_SECS resolve to the
+  // host's here-and-now before the ops ever see them. Result
+  // references ($load.x, $import.x, $1.x) resolve against the
+  // session's prior results — both BEFORE the bytes cross the ABI,
+  // so the agent never hand-copies a hash or computes a date.
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const clockRefs = {
+    $TODAY: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+    $NOW_SECS: String(now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()),
+  };
   const resolveRef = (ref) => {
     const m = /^\$(load|\d+|[a-z_][a-z0-9_]*)(?:\.([a-zA-Z0-9_.]*))?$/.exec(ref);
     if (!m) throw new Error(`bad result reference ${JSON.stringify(ref)}: expected $<load|op|N>.<path>`);
@@ -153,7 +170,11 @@ async function runSession() {
     return current;
   };
   const resolveRefs = (value) => {
-    if (typeof value === "string" && value.startsWith("$")) return resolveRef(value);
+    if (typeof value === "string") {
+      if (clockRefs[value] !== undefined) return clockRefs[value];
+      if (value.startsWith("$")) return resolveRef(value);
+      return value;
+    }
     if (Array.isArray(value)) return value.map(resolveRefs);
     if (value !== null && typeof value === "object") {
       for (const key of Object.keys(value)) value[key] = resolveRefs(value[key]);
