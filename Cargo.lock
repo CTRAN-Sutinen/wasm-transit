@@ -120,8 +120,10 @@ dependencies = [
  "transit-analysis",
  "transit-codec",
  "transit-core",
+ "transit-dispatch",
  "transit-network",
  "transit-rt",
+ "transit-sync",
  "ts-rs",
 ]
 
@@ -141,6 +143,23 @@ dependencies = [
  "transit-network",
  "ts-rs",
  "zip",
+]
+
+[[package]]
+name = "cap-dispatch"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2",
+ "transit-codec",
+ "transit-core",
+ "transit-dispatch",
+ "transit-network",
+ "transit-sync",
+ "ts-rs",
 ]
 
 [[package]]
@@ -978,8 +997,21 @@ dependencies = [
  "proptest",
  "serde",
  "thiserror 1.0.69",
+ "transit-sync",
  "ts-rs",
  "zip",
+]
+
+[[package]]
+name = "transit-dispatch"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "transit-network",
+ "transit-sync",
+ "ts-rs",
 ]
 
 [[package]]
@@ -1060,7 +1092,6 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
- "transit-core",
  "ts-rs",
  "zip",
 ]

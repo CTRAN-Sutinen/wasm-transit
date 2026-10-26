@@ -10,7 +10,36 @@
   import PlannerRail from "./components/PlannerRail.svelte";
   import PersonaTabs from "./components/PersonaTabs.svelte";
   import { app } from "./state.svelte.js";
-  import { loadRtFromUrl, loadVpFromUrl, saveSettings } from "./actions";
+  import { loadRtFromUrl, loadVpFromUrl, saveSettings, feedBytes } from "./actions";
+  import { ensureGtfsFeed, gtfsCap, gtfsModule } from "./capabilities.svelte";
+  import type { FeedInfo } from "./types/FeedInfo";
+
+  // The feed's IDENTITY (publisher, version) — the question a
+  // dispatcher asks first, answered through the BUS (cap-gtfs); the
+  // monolith has no copy. Decoration-grade: absent when the
+  // capability cannot assemble.
+  let feedInfo = $state<FeedInfo | null>(null);
+  let infoSeq = 0;
+  $effect(() => {
+    void app.feedEpoch;
+    const seq = ++infoSeq;
+    const bytes = feedBytes();
+    if (!app.gtfs || !bytes) {
+      feedInfo = null;
+      return;
+    }
+    void (async () => {
+      try {
+        const feedHash = await ensureGtfsFeed(bytes);
+        if (seq !== infoSeq || !feedHash) return;
+        const module = await gtfsModule();
+        if (!module || seq !== infoSeq) return;
+        feedInfo = gtfsCap(module).feedInfo(feedHash);
+      } catch {
+        if (seq === infoSeq) feedInfo = null;
+      }
+    })();
+  });
 
   // One shell, one persistent map. The sidebar carries the persona
   // (tabs + workflow); the map never remounts on a persona switch —
@@ -68,6 +97,9 @@
     {#if summary}
       <p class="feed-line">
         {summary.stops} stops · {summary.routes} routes · {summary.trips} trips · {summary.stop_times} stop times
+        {#if feedInfo && (feedInfo.feed_publisher_name || feedInfo.feed_version)}
+          · {feedInfo.feed_publisher_name ?? ""}{#if feedInfo.feed_version} {feedInfo.feed_version}{/if}
+        {/if}
       </p>
     {/if}
 

@@ -15,8 +15,10 @@ members = [
     "crates/cap-router",
     "crates/cap-analysis",
     "crates/cap-network",
+    "crates/cap-dispatch",
     "crates/cap-rt",
     "crates/transit-analysis",
+    "crates/transit-dispatch",
 ]
 
 [workspace.package]

@@ -39,6 +39,9 @@ import type { ServiceTypeDetail } from "./types/ServiceTypeDetail";
 import type { ServiceTypeSummary } from "./types/ServiceTypeSummary";
 import type { TypeCoverage } from "./types/TypeCoverage";
 import type { Departure } from "./types/Departure";
+import type { BlockSummary } from "./types/BlockSummary";
+import type { BlockTrip } from "./types/BlockTrip";
+import type { FeedInfo } from "./types/FeedInfo";
 import type { FeedSummary } from "./types/FeedSummary";
 import type { Itinerary } from "./types/Itinerary";
 import type { StopSummary } from "./types/StopSummary";
@@ -403,6 +406,44 @@ export function gtfsCap(module: CapModule) {
         limit,
       } as GtfsRequest) as Extract<GtfsResponse, { op: "station_departures" }>;
       return resp.departures;
+    },
+    /// Service keys running on a date — the dispatcher's first
+    /// question.
+    activeServices(feedHash: string, date: string): string[] {
+      const resp = module.invoke({
+        op: "active_services",
+        feed_hash: feedHash,
+        date,
+      } as GtfsRequest) as Extract<GtfsResponse, { op: "active_services" }>;
+      return resp.services;
+    },
+    /// The day's blocks (vehicles in service), with that day's trip
+    /// counts; no date lists every block in the feed.
+    blocks(feedHash: string, date: string | null): BlockSummary[] {
+      const resp = module.invoke({
+        op: "blocks",
+        feed_hash: feedHash,
+        date,
+      } as GtfsRequest) as Extract<GtfsResponse, { op: "blocks" }>;
+      return resp.blocks;
+    },
+    /// One block's trip chain on a service date.
+    blockTrips(feedHash: string, blockId: string, date: string): BlockTrip[] {
+      const resp = module.invoke({
+        op: "block_trips",
+        feed_hash: feedHash,
+        block_id: blockId,
+        date,
+      } as GtfsRequest) as Extract<GtfsResponse, { op: "block_trips" }>;
+      return resp.trips;
+    },
+    /// The feed's own identity (version, publisher).
+    feedInfo(feedHash: string): FeedInfo | null {
+      const resp = module.invoke({
+        op: "feed_info",
+        feed_hash: feedHash,
+      } as GtfsRequest) as Extract<GtfsResponse, { op: "feed_info" }>;
+      return resp.info;
     },
     stops(feedHash: string, limit: number): StopSummary[] {
       const resp = module.invoke({

@@ -1,0 +1,25 @@
+[package]
+name = "cap-dispatch"
+description = "The dispatch capability: the operator view over the NETWORK document (the core data model — GTFS is a serialization spec for external data sharing) plus the operator edit document. The board, the station board, and one block's chain: the materialized day, patched in force. Model-native end to end — the domain code lives in the shared transit-dispatch library."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]  # rlib: integration tests link the crate natively
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+chrono = { workspace = true }
+ts-rs = { workspace = true }
+transit-network = { path = "../transit-network" }
+transit-sync = { path = "../transit-sync" }
+transit-dispatch = { path = "../transit-dispatch" }
+cap-abi = { path = "../cap-abi" }
+
+[dev-dependencies]
+transit-codec = { path = "../transit-codec" }
+transit-core = { path = "../transit-core" }
+sha2 = { workspace = true }

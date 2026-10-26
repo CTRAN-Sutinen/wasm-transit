@@ -100,13 +100,11 @@ func TestArtifactRoundTrip(t *testing.T) {
 		t.Fatalf("load_feed: %v", err)
 	}
 
-	// The manifest's version field: parsed by the artifact, not Go.
-	info, err := host.FeedInfo(ctx, feedID)
-	if err != nil {
-		t.Fatalf("feed_info: %v", err)
-	}
-	if info == nil || info.FeedVersion == nil || *info.FeedVersion != "2026.10.1" {
-		t.Fatalf("feed_info version: %+v", info)
+	// The manifest's version field: the host reads the feed's own
+	// feed_info.txt row (one boundary CSV field — the artifact owns
+	// the format, the host owns files).
+	if v := feedInfoVersion(fixtureZip(t)); v != "2026.10.1" {
+		t.Fatalf("feed_info version: %q", v)
 	}
 
 	// Baseline board matches the fixture's known schedule.

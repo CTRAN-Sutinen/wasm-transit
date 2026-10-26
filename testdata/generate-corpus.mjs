@@ -54,8 +54,6 @@ const feedIdPlaceholder = "$FEED";
 // and an error outcome. Requests are written with $FEED placeholders.
 const steps = [
   { name: "summary", request: `{"op":"summary","feed_id":${feedIdPlaceholder}}` },
-  { name: "feed_info", request: `{"op":"feed_info","feed_id":${feedIdPlaceholder}}` },
-  { name: "active_services", request: `{"op":"active_services","feed_id":${feedIdPlaceholder},"date":"2026-10-23"}` },
   {
     name: "route_stop_sequence",
     request: `{"op":"route_stop_sequence","feed_id":${feedIdPlaceholder},"route_id":"10","direction_id":null}`,
@@ -88,6 +86,9 @@ const steps = [
     name: "trip_path_geojson",
     request: `{"op":"trip_path_geojson","feed_id":${feedIdPlaceholder},"trip_id":"t10","date":"2026-10-23"}`,
   },
+  // The one dispatch read still monolith-backed: the chain's layovers
+  // ripple with diversions (this step runs AFTER the diversion is
+  // set — it pins the ripple). Moves to the bus with diversions.
   {
     name: "block_trips",
     request: `{"op":"block_trips","feed_id":${feedIdPlaceholder},"block_id":"B1","date":"2026-10-23"}`,

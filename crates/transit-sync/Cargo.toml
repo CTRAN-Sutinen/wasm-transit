@@ -10,7 +10,6 @@ serde = { workspace = true }
 ts-rs = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
-transit-core = { path = "../transit-core" }
 
 [dev-dependencies]
 proptest = "1"

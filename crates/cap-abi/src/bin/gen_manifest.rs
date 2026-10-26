@@ -145,6 +145,25 @@ const MODULES: &[ModuleSpec] = &[
             ("type_coverage", "Population coverage per service type against a hash-addressed layer: what share of the population each type serves, and serves frequently."),
         ],
     },
+    ModuleSpec {
+        id: "dispatch",
+        file: "cap_dispatch.wasm",
+        ops: &["load_network", "load_edits", "departures", "station_departures", "block_trips"],
+        // The network document is produced by the network capability;
+        // the operator edit document is the dispatcher's own
+        // (host-owned, wholesale-replaced — the sync contract).
+        consumes: &[("network", "network")],
+        speaks: &[("network", &[1]), ("operator_edits", &[1])],
+        migrates: &[],
+        purpose: "The dispatcher's operation view over the NETWORK document (the core data model — GTFS is a serialization spec for external data sharing, and dispatch never reads serialization) plus the operator edit document. The board, the station board (walking-group pooling), and the authored block chain with the layover ripple: the materialized day, patched with the in-force edits. Model-native end to end; the domain code lives in the shared transit-dispatch library.",
+        op_docs: &[
+            ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth."),
+            ("load_edits", "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change."),
+            ("departures", "The board at one stop on a service date: the network's materialized day — trips as their (schedule, start) identity, model vocabulary — with the in-force edits applied when edits_hash names a registered document (schedule-only when omitted). The stop's own board; a station pin answers nothing here, see station_departures."),
+            ("station_departures", "The STATION board: departures pooled over the stop's WALKING GROUP (the model's own transfer-group concept — the stop, its parent, siblings sharing that parent, the parent's children). A station pin answers no departures of its own; its bays carry the trips. Each row carries its concrete stop_id, so the caller sees which bay a departure leaves from."),
+            ("block_trips", "One block's chain on a service date: the AUTHORED runcut (the model's blocks carry layovers GTFS never had), materialized for the day, with the in-force edits applied — a diverted trip ending later eats into the vehicle's next layover, and layover_remaining_secs goes negative when the connection is eaten. Trips of the chain that do not run on the date stay in view, marked. Unknown blocks answer empty, never error."),
+        ],
+    },
 ];
 
 fn main() {
@@ -171,6 +190,17 @@ fn main() {
     // zip — both through the shared transit-codec library, so the
     // examples are exactly what the module returns and cannot drift.
     let net_ctx = network_example_context(&feed_bytes);
+
+    // The dispatch runner gate's document: the load_network request
+    // for the REAL fixture-derived network (the same bytes the
+    // examples and the smoke use — the document cannot drift from
+    // the module that owns it).
+    if let Some(ctx) = net_ctx.as_ref() {
+        let request = serde_json::json!({ "op": "load_network", "network": ctx.derived });
+        let json = serde_json::to_string_pretty(&request).expect("request serializes");
+        fs::write(dist.join("sample-network-load.json"), json + "\n")
+            .expect("write the dispatch sample document");
+    }
 
     let mut capabilities = Vec::with_capacity(MODULES.len());
     for module in MODULES {
@@ -678,6 +708,64 @@ fn example_for(
                 ] } }),
             )
         }
+        // The dispatch examples compute REAL answers over the
+        // fixture-derived document through the same shared library
+        // the module dispatches through: the board, the station
+        // board, the authored chain, and the edit reports.
+        ("dispatch", "load_network") => {
+            let ctx = net?;
+            (
+                json!({ "op": "load_network", "network": ctx.derived }),
+                json!({ "ok": { "op": "load_network", "network_hash": ctx.network_hash } }),
+            )
+        }
+        ("dispatch", "load_edits") => {
+            let ctx = net?;
+            let records = dispatch_fixture_edits();
+            let reports = transit_dispatch::report_against_network(ctx.derived_network(), &records);
+            let edits_hash = format!("sha256:{:x}", Sha256::digest(
+                serde_json::to_string(&records).expect("records serialize").as_bytes(),
+            ));
+            (
+                json!({ "op": "load_edits", "network_hash": ctx.network_hash, "records": records }),
+                json!({ "ok": { "op": "load_edits", "edits_hash": edits_hash, "reports": reports } }),
+            )
+        }
+        ("dispatch", "departures") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+            let day = transit_network::materialize(ctx.derived_network(), date).expect("fixture day");
+            (
+                json!({ "op": "departures", "network_hash": ctx.network_hash,
+                    "stop_id": "A", "date": "2026-10-23", "from_secs": 25200, "limit": 5 }),
+                json!({ "ok": { "op": "departures",
+                    "departures": transit_dispatch::board(ctx.derived_network(), &day, "A", 25200, 5) } }),
+            )
+        }
+        ("dispatch", "station_departures") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+            let day = transit_network::materialize(ctx.derived_network(), date).expect("fixture day");
+            (
+                json!({ "op": "station_departures", "network_hash": ctx.network_hash,
+                    "stop_id": "STN", "date": "2026-10-23", "from_secs": 25200, "limit": 10 }),
+                json!({ "ok": { "op": "station_departures",
+                    "departures": transit_dispatch::station_board(ctx.derived_network(), &day, "STN", 25200, 10) } }),
+            )
+        }
+        ("dispatch", "block_trips") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+            let records = dispatch_fixture_edits();
+            let day = transit_dispatch::effective_day(ctx.derived_network(), date, &records)
+                .expect("fixture day");
+            (
+                json!({ "op": "block_trips", "network_hash": ctx.network_hash,
+                    "edits_hash": "<of the loaded edit document>", "block_id": "B1", "date": "2026-10-23" }),
+                json!({ "ok": { "op": "block_trips",
+                    "trips": transit_dispatch::block_chain(ctx.derived_network(), &day, "B1") } }),
+            )
+        }
         // Bulk-bytes ops have no JSON request example (the payload is
         // the raw zip/protobuf); the description carries the contract.
         (_, "load_feed") => return None,
@@ -685,4 +773,28 @@ fn example_for(
         _ => return None,
     };
     Some(OpExample { request, response })
+}
+
+/// The dispatch examples' edit document: the fixture diversion
+/// (route 10 keeps A→B, skips C, +300 s on the fixture Friday).
+fn dispatch_fixture_edits() -> Vec<transit_sync::EditRecord> {
+    let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+    vec![transit_sync::EditRecord {
+        id: "e1".into(),
+        diversion: transit_sync::Diversion {
+            id: "d1".into(),
+            route_id: "10".into(),
+            direction_id: None,
+            first_kept_stop: "A".into(),
+            last_kept_stop: "B".into(),
+            skipped_stops: vec!["C".into()],
+            detour: None,
+            added_secs: 300,
+            start_date: date,
+            end_date: date,
+        },
+        status: transit_sync::EditStatus::Accepted,
+        rev: 1,
+        updated_at: 1,
+    }]
 }

@@ -122,32 +122,6 @@ func (h *WasmHost) DropFeed(ctx context.Context, feedID uint32) error {
 	return h.Invoke(ctx, map[string]any{"op": "drop_feed", "feed_id": feedID}, &struct{}{})
 }
 
-// FeedInfo asks the artifact for the parsed feed_info.txt.
-func (h *WasmHost) FeedInfo(ctx context.Context, feedID uint32) (*FeedInfo, error) {
-	raw, err := h.call(ctx, h.invoke, mustMarshal(map[string]any{
-		"op": "feed_info", "feed_id": feedID,
-	}))
-	if err != nil {
-		return nil, err
-	}
-	var resp struct {
-		Info *FeedInfo `json:"info"`
-	}
-	if err := h.decode(raw, &resp); err != nil {
-		return nil, err
-	}
-	return resp.Info, nil
-}
-
-// FeedInfo mirrors transit-core's parsed feed_info.txt.
-type FeedInfo struct {
-	FeedID           *string `json:"feed_id"`
-	FeedVersion      *string `json:"feed_version"`
-	FeedPublisherName *string `json:"feed_publisher_name"`
-	FeedPublisherURL *string `json:"feed_publisher_url"`
-	FeedLang         *string `json:"feed_lang"`
-}
-
 // call stages `payload` at an allocated pointer, calls `fn` (with an
 // optional leading extra arg for the bytes-op code), reads the
 // length-prefixed result, frees both buffers, and returns the payload

@@ -1,0 +1,16 @@
+[package]
+name = "transit-dispatch"
+description = "The operator's day, model-native: operator edits patched over the MATERIALIZED day, the board and the station board over the model's walking groups, and the authored block chain with its layover ripple. The shared library behind cap-dispatch — the monolith's departures/block_trips shape, rebuilt over the network document instead of a GTFS registry."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+ts-rs = { workspace = true }
+chrono = { workspace = true }
+transit-network = { path = "../transit-network" }
+transit-sync = { path = "../transit-sync" }
+
+[dev-dependencies]
+serde_json = { workspace = true }

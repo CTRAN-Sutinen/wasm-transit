@@ -145,22 +145,10 @@ export class GtfsHandle {
     }) as { departures: Departure[] }).departures;
   }
 
-  active_services(date: string): string[] {
-    return (invoke({
-      op: "active_services",
-      feed_id: this.#feedId,
-      date,
-    }) as { services: string[] }).services;
-  }
-
-  /// Blocks, optionally scoped to a service date: with `date`, only
-  /// blocks running that day, with that day's trip counts.
-  blocks(date?: string): BlockSummary[] {
-    return (invoke({ op: "blocks", feed_id: this.#feedId, date: date ?? null }) as {
-      blocks: BlockSummary[];
-    }).blocks;
-  }
-
+  /// One block's trip chain on a service date — STILL monolith-backed
+  /// deliberately: the chain's layovers ripple with diversions (the
+  /// dispatcher's connection-health read), and the diversion document
+  /// has no bus home yet. It moves when diversions do.
   block_trips(blockId: string, date: string): BlockTrip[] {
     return (invoke({
       op: "block_trips",

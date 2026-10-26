@@ -28,85 +28,44 @@
 //! matches how the rest of the crate queries (departures, plans and
 //! blocks all take a date).
 
-use ts_rs::TS;
 use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+
+use transit_sync::{DetourPoint, Diversion, EditRecord, EditReport};
 
 use crate::model::ShapePoint;
 use crate::{Gtfs, GtfsError, Result};
 
-/// Serialize/deserialize dates on the JS boundary as "YYYY-MM-DD",
-/// matching the string format every other wasm entry point takes.
-mod iso_date {
-    use super::*;
-    use serde::{Deserializer, Serializer};
+/// The edit-document types (Diversion, DetourPoint) live in
+/// transit-sync — the dispatcher's own document contract, not the
+/// GTFS codec. This module is the FEED-side patch path the monolith
+/// still serves: validate an edit against a parsed feed, and produce
+/// the patched per-date copy. It dies with set_diversions.
 
-    pub fn serialize<S: Serializer>(
-        date: &NaiveDate,
-        s: S,
-    ) -> std::result::Result<S::Ok, S::Error> {
-        s.serialize_str(&date.format("%Y-%m-%d").to_string())
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        d: D,
-    ) -> std::result::Result<NaiveDate, D::Error> {
-        let raw = String::deserialize(d)?;
-        NaiveDate::parse_from_str(&raw, "%Y-%m-%d")
-            .map_err(|e| serde::de::Error::custom(format!("invalid date {raw:?}: {e}")))
-    }
-}
-
-/// One vertex of a drawn detour polyline.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct DetourPoint {
-    pub lat: f64,
-    pub lon: f64,
-}
-
-/// One operator edit, serializable so the UI can persist it next to
-/// the feed bytes and replay it after a reload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct Diversion {
-    pub id: String,
-    pub route_id: String,
-    /// `None` = both directions.
-    #[serde(default)]
-    pub direction_id: Option<u8>,
-    /// Board/anchor points on the normal alignment: the detour happens
-    /// between them, and they stay served.
-    pub first_kept_stop: String,
-    pub last_kept_stop: String,
-    /// Interior stops no longer served (must not include the anchors).
-    #[serde(default)]
-    pub skipped_stops: Vec<String>,
-    /// Drawn detour polyline; `None` = alignment unchanged (skip only).
-    #[serde(default)]
-    pub detour: Option<Vec<DetourPoint>>,
-    /// Extra running time through the detour, applied from the last
-    /// anchor onward.
-    #[serde(default)]
-    pub added_secs: u32,
-    #[serde(with = "iso_date")]
-    #[ts(type = "string")]
-    pub start_date: NaiveDate,
-    #[serde(with = "iso_date")]
-    #[ts(type = "string")]
-    pub end_date: NaiveDate,
-}
-
-impl Diversion {
-    /// Is this edit in force on `date`?
-    pub fn covers(&self, date: NaiveDate) -> bool {
-        self.start_date <= date && date <= self.end_date
+/// Validate one record against a feed. Pure: same feed + same
+/// record always yields the same report, on any platform.
+pub fn report(gtfs: &Gtfs, record: &EditRecord) -> EditReport {
+    let diversion = &record.diversion;
+    match validate_diversion(gtfs, diversion) {
+        Err(e) => EditReport {
+            id: record.id.clone(),
+            valid: false,
+            error: Some(e.to_string()),
+            affected_trips: 0,
+        },
+        Ok(()) => EditReport {
+            id: record.id.clone(),
+            valid: true,
+            error: None,
+            affected_trips: affected_trips(gtfs, diversion).len(),
+        },
     }
 }
 
-/// UI-facing view of one stored diversion lives in transit-sync
-/// (`EditReport`): it is sync/protocol surface, not GTFS domain.
+/// Validate a whole document: one report per record, input order.
+pub fn report_all(gtfs: &Gtfs, records: &[EditRecord]) -> Vec<EditReport> {
+    records.iter().map(|r| report(gtfs, r)).collect()
+}
 
 /// Reject diversions that could never apply: unknown route or stops,
 /// degenerate anchors, anchors in the skip list, inverted dates, or a

@@ -24,7 +24,7 @@ wasm:
 caps:
     #!/usr/bin/env bash
     set -e
-    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt --target wasm32-unknown-unknown
+    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt -p cap-dispatch --target wasm32-unknown-unknown
     cargo run --quiet -p cap-abi --bin gen-manifest
 
 # Publish the registry: gates first (the records report them), then
@@ -106,6 +106,52 @@ test: caps
     node tools/caps-run.mjs gtfs --load web/public/caps/sample-gtfs.zip \
       --op '{"op":"active_services","feed_hash":"$load.feed_hash","date":"$TODAY"}' \
       | grep -q '"op":"active_services"'
+    # The dispatch capability's gate: the operator view over the
+    # NETWORK document, one chained session — document, board,
+    # edits, and the layover ripple (the connection-health read).
+    node tools/caps-run.mjs dispatch \
+      --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"departures","network_hash":"$load_network.network_hash","stop_id":"A","date":"2026-10-23","from_secs":25200,"limit":10}' \
+      --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
+      --op '{"op":"block_trips","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","block_id":"B1","date":"2026-10-23"}' \
+      | grep -q '"layover_remaining_secs":300'
+    # ARCHITECTURE GATES — the two laws as assertions (CAPS-PLAN
+    # item 7, spelled out in crates/AGENTS.md), because prose does
+    # not enforce:
+    #   1. the NETWORK is the core data model; GTFS is a serialization
+    #      spec for external data sharing. Model-side capabilities do
+    #      not depend on the GTFS layer, and the boundary codec's
+    #      whole-calendar expansion never leaves the codec's homes.
+    #   2. nobody reinvents the monolith inside a module.
+    # Law 1a: model-side capabilities (and their shared libraries) do
+    # not depend on the GTFS layer (transit-core = the GTFS-shaped
+    # layer, transit-codec = the boundary codec) in [dependencies].
+    # Dev-dependencies may build fixture documents through the codec —
+    # tests compose over real documents; production code does not.
+    # Sanctioned consumers: cap-gtfs, cap-network, cap-router (the
+    # feed-consuming planner), cap-rt (external rt joining external
+    # ids).
+    for crate in cap-analysis cap-dispatch transit-analysis transit-dispatch; do
+        for dep in transit-core transit-codec; do
+            if awk '/^\[dev-dependencies\]/{exit} /^'"$dep"' =/{found=1} END{exit !found}' "crates/$crate/Cargo.toml" 2>/dev/null; then
+                echo "ARCH FAIL: $crate depends on $dep — the network is the core model; compose over the network document (crates/AGENTS.md, CAPS-PLAN item 7)"; exit 1
+            fi
+        done
+    done
+    # Law 1b: whole-calendar expansion (network_to_gtfs) is the
+    # codec's export path — sanctioned only in the codec's homes and
+    # the dying monolith's own code. A hit anywhere else is the
+    # monolith rebuilt with new clothes.
+    violations=$(grep -rl "network_to_gtfs" crates --include="*.rs" \
+        | grep -v "crates/transit-codec/" \
+        | grep -v "crates/cap-network/" \
+        | grep -v "crates/cap-abi/" \
+        | grep -v "crates/transit-ops/" || true)
+    if [ -n "$violations" ]; then
+        echo "ARCH FAIL: network_to_gtfs outside the codec's homes (CAPS-PLAN item 7 — no whole-calendar expansion in capabilities):"
+        echo "$violations"
+        exit 1
+    fi
     # -race: the artifact is one non-reentrant instance; the host must
     # serialize invokes (see server/race_test.go — the gate watches it).
     cd server && go test -race ./...

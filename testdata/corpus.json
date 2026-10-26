@@ -13,16 +13,6 @@
       "expect": "{\"ok\":{\"op\":\"summary\",\"summary\":{\"agencies\":1,\"routes\":3,\"stops\":6,\"trips\":7,\"stop_times\":14}}}"
     },
     {
-      "name": "feed_info",
-      "request": "{\"op\":\"feed_info\",\"feed_id\":$FEED}",
-      "expect": "{\"ok\":{\"op\":\"feed_info\",\"info\":{\"feed_id\":null,\"feed_version\":\"2026.10.1\",\"feed_publisher_name\":\"Test Transit\",\"feed_publisher_url\":\"https://example.com\",\"feed_lang\":\"en\"}}}"
-    },
-    {
-      "name": "active_services",
-      "request": "{\"op\":\"active_services\",\"feed_id\":$FEED,\"date\":\"2026-10-23\"}",
-      "expect": "{\"ok\":{\"op\":\"active_services\",\"services\":[\"HOL\",\"WK\"]}}"
-    },
-    {
       "name": "route_stop_sequence",
       "request": "{\"op\":\"route_stop_sequence\",\"feed_id\":$FEED,\"route_id\":\"10\",\"direction_id\":null}",
       "expect": "{\"ok\":{\"op\":\"route_stop_sequence\",\"stops\":[{\"stop_id\":\"A\",\"name\":\"Main & 1st\",\"parent_station\":null},{\"stop_id\":\"C\",\"name\":\"Main & 3rd\",\"parent_station\":null},{\"stop_id\":\"B\",\"name\":\"Main & 2nd\",\"parent_station\":null}]}}"

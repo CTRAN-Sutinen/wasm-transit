@@ -12,6 +12,7 @@ csv = { workspace = true }
 zip = { workspace = true }
 chrono = { workspace = true }
 thiserror = { workspace = true }
+transit-sync = { path = "../transit-sync" }
 
 [dev-dependencies]
 proptest = "1"

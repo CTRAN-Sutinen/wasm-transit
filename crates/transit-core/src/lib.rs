@@ -15,7 +15,11 @@ pub mod time;
 pub mod write;
 
 pub use calendar::ServiceCalendar;
-pub use diversion::{apply_diversions, affected_trips, validate_diversion, DetourPoint, Diversion};
+pub use diversion::{affected_trips, apply_diversions, report, report_all, validate_diversion};
+// The edit-document types live in transit-sync (the dispatcher's own
+// document contract); re-exported so the monolith's remaining feed
+// path reads transit_core::Diversion unchanged.
+pub use transit_sync::{DetourPoint, Diversion};
 pub use error::{GtfsError, Result};
 pub use model::{route_type_name, Agency, BlockSummary, BlockTrip, Calendar, CalendarDate, Departure, FeedInfo, FeedSummary, Route, RouteSummary, ShapePoint, Stop, StopSummary, StopTime, Transfer, Trip};
 pub use time::{fmt_time, parse_time};

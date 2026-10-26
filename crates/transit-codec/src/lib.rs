@@ -44,6 +44,7 @@ use transit_core::{
 use transit_network::{
     materialize_service, Anchor, Block, CalendarException, CalendarRule, Coord, DateRange, DayState,
     Mode, Network, Pattern, PatternSchedule, PatternStop, Schedule, ServiceType, TimingProfile, TripRef, WeekdaySet,
+    Layover,
 };
 
 
@@ -330,8 +331,10 @@ pub struct ImportOutcome {
 /// * stop distances are fabricated (index × 500 m): GTFS has none;
 /// * single-stop trips and trips without a first departure are
 ///   dropped (the model requires two stops and a start);
-/// * blocks keep their trip chains but carry no layovers (GTFS has
-///   no layover data — the planner authors those); derived trips
+/// * blocks keep their trip chains; GTFS has no layover data, so the
+///   import infers each layover from the observed gap between the
+///   previous trip's end and the next trip's start (the planner
+///   re-authors them from there); derived trips
 ///   claimed by two blocks and same-second trips of one block are
 ///   spec-legal but unrepresentable (the model's block chains are
 ///   strictly increasing) — the import keeps the first in
@@ -620,7 +623,10 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
         );
     }
 
-    // Runcut: trip chains per block_id, chronological, no layovers.
+    // Runcut: trip chains per block_id, chronological, layovers
+    // inferred from the observed end→start gaps (GTFS has no layover
+    // data; the observed gap is the honest bootstrap — the planner
+    // re-authors from there).
     // Three shapes a spec-valid feed can still carry cannot be
     // represented as-is — the model's trip identity is (service,
     // start), its block chains are strictly increasing, and its
@@ -654,6 +660,7 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
             .collect();
         refs.sort_by(|a, b| a.start_secs.cmp(&b.start_secs).then_with(|| a.schedule.cmp(&b.schedule)));
         let mut chain: Vec<TripRef> = Vec::with_capacity(refs.len());
+        let mut layovers: Vec<Layover> = Vec::new();
         for r in refs {
             if chain.last().is_some_and(|last| last.start_secs == r.start_secs) {
                 notes.push(ImportNote::SameSecondBlockTrips {
@@ -685,6 +692,22 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
                         });
                         continue; // departs before the vehicle arrives: impossible
                     }
+                    // The observed gap becomes the layover (GTFS has
+                    // no layover data; the import bootstraps it and
+                    // the planner re-authors from there). Exactly
+                    // feasible by construction — the model's
+                    // LayoverInfeasible law holds with equality.
+                    let at = net
+                        .schedules
+                        .get(&last.schedule)
+                        .and_then(|s| net.patterns.get(&s.pattern))
+                        .and_then(|p| p.stops.last())
+                        .map(|ps| ps.stop.clone());
+                    layovers.push(Layover {
+                        after_trip: chain.len() - 1,
+                        secs: r.start_secs - arrival,
+                        at,
+                    });
                 }
             }
             claimed.insert((r.schedule.clone(), r.start_secs), bid.to_string());
@@ -695,7 +718,7 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
         if chain.is_empty() {
             continue;
         }
-        net.blocks.insert(bid.to_string(), Block { trips: chain, layovers: Vec::new() });
+        net.blocks.insert(bid.to_string(), Block { trips: chain, layovers });
     }
 
     // Transfer points: transfers.txt declares them (pairs; transfer

@@ -12,7 +12,7 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "bfde95d8fcbf8cfd7778d5738c4c448f92b0ed9b"
+    "source_commit": "232d63c713af9153aa58fbf3576d634efbc62e2a"
   },
   "hash": "sha256:95d696e1e2ada93a4b3e7b648bc49b6e9dd0f576a943cd5f82d98c8e735cba63",
   "id": "analysis",
@@ -27,7 +27,13 @@
             "anchor": "noon_minus_twelve",
             "blocks": {
               "B1": {
-                "layovers": [],
+                "layovers": [
+                  {
+                    "after_trip": 0,
+                    "at": "B",
+                    "secs": 600
+                  }
+                ],
                 "trips": [
                   {
                     "schedule": "WK:pat-10-0-0",
@@ -375,7 +381,7 @@
         },
         "response": {
           "ok": {
-            "network_hash": "sha256:9a19c76cca6a54cdf4fdc54a5a57c8d684ffe8a79e89298d065a58454a709f4b",
+            "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
             "op": "load_network"
           }
         }
@@ -393,7 +399,7 @@
           "include_routes": false,
           "include_service_types": false,
           "include_stops": false,
-          "network_hash": "sha256:9a19c76cca6a54cdf4fdc54a5a57c8d684ffe8a79e89298d065a58454a709f4b",
+          "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
           "op": "network_stats"
         },
         "response": {
@@ -420,7 +426,7 @@
       "description": "One service type expanded on its representative day: routes, stops, schedules, totals.",
       "example": {
         "request": {
-          "network_hash": "sha256:9a19c76cca6a54cdf4fdc54a5a57c8d684ffe8a79e89298d065a58454a709f4b",
+          "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
           "op": "service_type_detail",
           "service_type": "WK"
         },
@@ -569,7 +575,7 @@
       "description": "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight.",
       "example": {
         "request": {
-          "network_hash": "sha256:9a19c76cca6a54cdf4fdc54a5a57c8d684ffe8a79e89298d065a58454a709f4b",
+          "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
           "op": "service_types_overview"
         },
         "response": {
@@ -606,7 +612,7 @@
           "frequent_secs": 3600,
           "layer_hash": "sha256:d6d611354ba7ed666e7cd0491fa2559d647ffda253fd905ead37d4e1cf890ca2",
           "min_departures": 2,
-          "network_hash": "sha256:9a19c76cca6a54cdf4fdc54a5a57c8d684ffe8a79e89298d065a58454a709f4b",
+          "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
           "op": "type_coverage",
           "radius_m": 500
         },

@@ -3,8 +3,9 @@
 This doc is the plan for the flagged work from the C-TRAN dogfood
 session (2026-10-25) and the standing capability-bus queue. It is
 written to be picked up cold, in a different session, by a different
-agent. Read AGENTS.md first — especially the capability-bus section
-and the dogfood-QA expectation. The bus's own state:
+agent. Read AGENTS.md first, then docs/CAPABILITIES.md (the bus
+rules and the dogfood-QA rules) and crates/AGENTS.md (the two
+laws). The bus's own state:
 
 - **Done**: cap-abi (ABI macro + manifest contract + compose-time
   validator + `gen-manifest`, which also publishes `registry/`),
@@ -17,8 +18,9 @@ and the dogfood-QA expectation. The bus's own state:
   (web/src/capabilities.svelte.ts), the registry (`registry/`,
   published by `just registry`), and the agent runner
   (`tools/caps-run.mjs`).
-- **The pattern for every extraction** (AGENTS.md): crate boundary
-  first, capability wrapper second, monolith op deletion last.
+- **The pattern for every extraction** (crates/AGENTS.md): crate
+  boundary first, capability wrapper second, monolith op deletion
+  last.
 - **The QA feed**: `testdata/ctran-gtfs.zip` — the real C-TRAN
   GTFS. NOT COMMITTED (licensed agency data; fetch from
   c-tran.com). The dogfood session that used it found four real
@@ -119,10 +121,18 @@ where the bus answers them:
   on the bus, gated (caps-smoke + a chained runner session in
   `just test`), and dogfooded live: C-TRAN Sunday = two service
   keys, 41 vehicles scheduled, and the +6:39 route-092 bus's
-  whole 15-hour block chain with layovers, hash-free. REMAINS:
-  the monolith keeps its copies until the dispatcher UI
-  (BlocksPanel, the block picker) rewires through the bus —
-  that deletion is the extraction's Stage C.
+  whole 15-hour block chain with layovers, hash-free. STAGE C DONE
+  (2026-10-25): BlocksPanel and the block picker, the board's
+  service-key chips, and the feed-identity line (publisher ·
+  version, in the feed header) all answer through cap-gtfs via the
+  resolver, degrading loudly per capability; the monolith's four
+  ops (active_services, blocks, block_trips, feed_info) are
+  DELETED — the corpus steps and the ABI smoke pin every
+  retirement, and the dispatcher-degrades e2e proves the rider
+  board beside it never notices. The monolith's remaining rider/
+  dispatcher surface (departures-with-diversions, stops, routes,
+  geojson, planning) waits on the stop_board join op (the
+  realtime-first decision below).
 - **Tonight's second session (2026-10-25 evening) found:**
   two late trips with delays but NO vehicle report (a fact a
   dispatcher acts on — an op that surfaces "delayed but
@@ -438,6 +448,95 @@ caps-run.
 **First customers.** Item 5's day-summary screen is the first op
 rendered through the probe path; item 4's shaping flags are the
 first projection-level choice an agent makes in a harness.
+
+## 7. cap-dispatch — the operator view over the NETWORK (IN
+PROGRESS: the model-native rework landed 2026-10-25; the riding
+items below are NOT done)
+
+**The two laws, stated after the first cut (user, 2026-10-25):**
+
+1. **GTFS is a serialization spec for external data sharing.** The
+   NETWORK is the core data model. Capabilities compose over the
+   network document by hash. Nothing more gets "put in GTFS" —
+   cap-gtfs is the boundary codec (parse, export, primitive
+   boundary queries) and its charter is CLOSED. The edit document
+   (`Diversion`) moved to transit-sync — the dispatcher's own
+   document contract — out of the GTFS codec crate; transit-core
+   re-exports it for the dying feed-side patch path only.
+2. **Do not reinvent the monolith inside modules.** The deconstruction
+   this plan documents is wasted if each capability re-erects the
+   same architecture with hash-keyed registries.
+
+**Both laws are now ENFORCED** (see `crates/AGENTS.md`, the short
+directive file): the justfile `test` recipe asserts them —
+model-side capabilities and their libraries (cap-analysis,
+cap-dispatch, transit-analysis, transit-dispatch) may not depend on
+transit-core/transit-codec in [dependencies], and
+`network_to_gtfs` may not appear outside the codec's homes. The
+first cut's shape (whole-calendar expansion → GTFS registry →
+date-keyed effective caches → GTFS-shaped rows) is now
+structurally impossible: cap-dispatch holds no GTFS layer at all.
+
+**What landed (the rework):**
+
+- **transit-dispatch** — the shared library (the extraction
+  pattern's crate boundary): `patch_day` (skip/shift over
+  MATERIALIZED stop times — the day, never the calendar),
+  `report_against_network` (edit validation in model vocabulary),
+  `board` / `station_board` (the second pools over the model's own
+  walking groups), `block_chain` (the AUTHORED runcut with the
+  layover ripple: `layover_remaining_secs` goes negative when a
+  connection is eaten), `effective_day` (materialize + patch, per
+  call — no cache anywhere). Model-native ts-rs rows
+  (BoardDeparture, BlockChainTrip). Law tests in
+  `tests/dispatch_laws_test.rs`.
+- **cap-dispatch** — the thin module over it: load_network /
+  load_edits / departures / station_departures / block_trips,
+  model-native responses, manifest + registry + op docs + worked
+  examples (computed through the same library), smoke composition
+  (the network capability's imported document loads into dispatch
+  and the identities agree), runner gate (a chained session ending
+  on the ripple).
+- **The import authors layovers**: gtfs_to_network now infers each
+  layover from the observed end→start gap (exactly feasible by
+  construction — the model's LayoverInfeasible law holds with
+  equality). Imported chains ripple; the fixture's B1 carries its
+  600 s layover as model state.
+
+**Dogfooded on C-TRAN (the mandatory real-data session):** the
+Fisher's Landing station board answers over the real Sunday
+service (bays tagged, real destinations); block `3-SUN8006` is a
+real 18-trip 012/080 interline with inferred layovers at named
+bays; a detour on route 012 validated against the network (96
+trips touched), rippled exactly the 5 route-012-dir-0 legs of the
+chain, and surfaced one connection under 60 s remaining. No
+truncation at real payload size.
+
+**Findings from the dogfood (routed, not scripted):**
+
+- **Cross-capability document handoff is a runner gap.** The
+  session needed the network document from a `network` import
+  session loaded into a `dispatch` session — today that takes a
+  scratch wrap step. The runner should carry documents across
+  sessions (e.g. `--op` file refs against a prior result's
+  document, or a `--save FILE` on a result). Until then this
+  stays a hand-carried step, which is exactly the friction the
+  runner exists to remove.
+
+**Riding with this unit (still open):**
+
+- the import emits a TRIP-ID MAP document (agency rt trip ids ↔
+  derived ids) so cap-rt's joins stay external-id-honest — rt is
+  external data too, keyed by the agency's ids, and the model
+  mints its own;
+- the UI board and blocks rewire to dispatch
+  (`network_hash + edits_hash + date`), and the monolith's
+  `departures` / `block_trips` ops then die (`set_diversions` dies
+  when geojson/planning move — they are the last diversion
+  consumers);
+- `block_trips` is the one op the e2e already proved is
+  diversion-entangled (the tight/overlap connection-health ripple
+  — a real dispatcher feature, not test decoration).
 
 ## Standing queue (after this unit)
 

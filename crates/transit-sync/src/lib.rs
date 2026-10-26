@@ -20,7 +20,78 @@
 use ts_rs::TS;
 use serde::{Deserialize, Serialize};
 
-use transit_core::{Diversion, Gtfs};
+/// One vertex of a drawn detour polyline.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DetourPoint {
+    pub lat: f64,
+    pub lon: f64,
+}
+
+/// One operator edit, serializable so the UI can persist it next to
+/// the feed bytes and replay it after a reload. The edit document is
+/// THE DISPATCHER'S OWN — it lives here, in the sync contract, not in
+/// the GTFS codec (GTFS is a serialization spec for external data
+/// sharing; this document never crosses that boundary). Its fields
+/// reference routes and stops by the ids the network model carries.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Diversion {
+    pub id: String,
+    pub route_id: String,
+    /// `None` = both directions. (GTFS's direction_id, kept for the
+    /// boundary path; the model matches patterns, not directions.)
+    #[serde(default)]
+    pub direction_id: Option<u8>,
+    /// Board/anchor points on the normal alignment: the detour happens
+    /// between them, and they stay served.
+    pub first_kept_stop: String,
+    pub last_kept_stop: String,
+    /// Interior stops no longer served (must not include the anchors).
+    #[serde(default)]
+    pub skipped_stops: Vec<String>,
+    /// Drawn detour polyline; `None` = alignment unchanged (skip only).
+    #[serde(default)]
+    pub detour: Option<Vec<DetourPoint>>,
+    /// Extra running time through the detour, applied from the last
+    /// anchor onward.
+    #[serde(default)]
+    pub added_secs: u32,
+    #[serde(with = "iso_date")]
+    #[ts(type = "string")]
+    pub start_date: chrono::NaiveDate,
+    #[serde(with = "iso_date")]
+    #[ts(type = "string")]
+    pub end_date: chrono::NaiveDate,
+}
+
+impl Diversion {
+    /// Is this edit in force on `date`?
+    pub fn covers(&self, date: chrono::NaiveDate) -> bool {
+        self.start_date <= date && date <= self.end_date
+    }
+}
+
+/// Serialize/deserialize dates on the JS boundary as "YYYY-MM-DD",
+/// matching the string format every wasm entry point takes.
+mod iso_date {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        date: &chrono::NaiveDate,
+        s: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        s.serialize_str(&date.format("%Y-%m-%d").to_string())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        d: D,
+    ) -> std::result::Result<chrono::NaiveDate, D::Error> {
+        let raw = String::deserialize(d)?;
+        chrono::NaiveDate::parse_from_str(&raw, "%Y-%m-%d")
+            .map_err(|e| serde::de::Error::custom(format!("invalid date {raw:?}: {e}")))
+    }
+}
 
 /// Lifecycle of an edit record. `retired` is the tombstone: the record
 /// stays in the document (sync needs to see the deletion), but it is
@@ -67,10 +138,12 @@ pub struct EditRecord {
     pub updated_at: u64,
 }
 
-/// Validation result for one record against a feed artifact — what a
-/// client needs after pushing a document (or what a server would
-/// return from a validation endpoint). The record itself is display
-/// data; the report only carries what requires the feed.
+/// Validation result for one record — what a client needs after
+/// pushing a document (or what a server would return from a
+/// validation endpoint). The record itself is display data; the
+/// report only carries the verdict. Feed-side validation (against a
+/// parsed GTFS feed) lives in transit-core; the model-native verdict
+/// (against an authored network document) lives in transit-dispatch.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct EditReport {
@@ -81,31 +154,6 @@ pub struct EditReport {
     pub error: Option<String>,
     /// How many trips the edit touches (0 = no-op even when valid).
     pub affected_trips: usize,
-}
-
-/// Validate one record against a feed. Pure: same feed + same record
-/// always yields the same report, on any platform.
-pub fn report(gtfs: &Gtfs, record: &EditRecord) -> EditReport {
-    let diversion = &record.diversion;
-    match transit_core::validate_diversion(gtfs, diversion) {
-        Err(e) => EditReport {
-            id: record.id.clone(),
-            valid: false,
-            error: Some(e.to_string()),
-            affected_trips: 0,
-        },
-        Ok(()) => EditReport {
-            id: record.id.clone(),
-            valid: true,
-            error: None,
-            affected_trips: transit_core::affected_trips(gtfs, diversion).len(),
-        },
-    }
-}
-
-/// Validate a whole document: one report per record, input order.
-pub fn report_all(gtfs: &Gtfs, records: &[EditRecord]) -> Vec<EditReport> {
-    records.iter().map(|r| report(gtfs, r)).collect()
 }
 
 /// The authority pointer: which feed artifact is current, published by

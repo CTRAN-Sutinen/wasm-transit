@@ -1,0 +1,419 @@
+//! transit-dispatch — the operator's day, in model vocabulary.
+//!
+//! The dispatcher's questions (what leaves this stop, what does this
+//! bay's wall board say, what is this vehicle's chain of work today)
+//! are answered over the NETWORK document — never over a GTFS
+//! expansion. The day is [`transit_network::materialize`] applied to
+//! one service date; operator edits (the dispatcher's own document,
+//! transit-sync) PATCH that materialized day. There is no derived
+//! registry and no date-keyed effective cache: a day is computed per
+//! call, and it is cheap because it is one day, not a calendar.
+//!
+//! Everything here is pure and total. Times are seconds after the
+//! service-day anchor; values past 86400 are legitimate after-midnight
+//! trips.
+
+use chrono::NaiveDate;
+use ts_rs::TS;
+
+use transit_network::{
+    materialize, trip_starts, MaterializedTrip, Network, StopTime,
+};
+use transit_sync::{Diversion, EditRecord, EditReport};
+
+/// One row on a departure board. Model vocabulary: the trip is its
+/// (schedule, start) identity, the stop is the CONCRETE stop the row
+/// leaves from (the bay, on a pooled station board), and the
+/// destination is the trip's final stop.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct BoardDeparture {
+    pub schedule: String,
+    pub start_secs: u32,
+    pub route: String,
+    pub route_name: String,
+    pub pattern: String,
+    /// The concrete stop this row leaves from — on a station board,
+    /// WHICH BAY matters to a dispatcher.
+    pub stop: String,
+    /// Seconds after the service-day anchor (past-86400 values are
+    /// after-midnight trips, not errors).
+    pub departure_secs: u32,
+    /// The trip's final stop's name — where this bus is going.
+    pub destination: String,
+}
+
+/// One trip in a block's chain for a service date: the AUTHORED runcut
+/// (blocks and layovers are model state GTFS never had), materialized
+/// for the day, with the operator-edit ripple made visible — a
+/// diverted trip that ends later eats into its next layover.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct BlockChainTrip {
+    pub schedule: String,
+    pub start_secs: u32,
+    pub route: String,
+    pub route_name: String,
+    pub pattern: String,
+    /// Whether this trip of the block runs on the date. A trip that
+    /// does not run is still part of the authored chain (the vehicle's
+    /// work is authored, not observed) — the dispatcher sees the hole.
+    pub runs: bool,
+    pub first_stop: String,
+    pub last_stop: String,
+    /// The trip's end (last arrival), EFFECTIVE for the date: after
+    /// the day's operator edits. `None` when the trip does not run.
+    pub end_secs: Option<u32>,
+    /// The authored layover following this trip, when the runcut
+    /// places one there.
+    pub layover_after_secs: Option<u32>,
+    /// The layover that REMAINS after this trip absorbed the day's
+    /// edits: authored layover minus the trip's delay. Negative means
+    /// the next trip starts late — the connection-health ripple.
+    /// `None` when there is no layover or the trip does not run.
+    pub layover_remaining_secs: Option<i64>,
+}
+
+// ---------------------------------------------------------------------
+// Patching the materialized day with operator edits
+// ---------------------------------------------------------------------
+
+/// Apply operator edits to a materialized day, producing a NEW day —
+/// the input is never mutated. Semantics per matching trip (matching
+/// is the model's: same route, both anchors present in order — the
+/// model has no GTFS direction; the pattern IS the direction):
+///
+/// * *Skip*: interior stops listed in `skipped_stops` lose their
+///   stop times (the stop loses service, reported nowhere silently).
+/// * *Shift*: every stop time from the last anchor onward moves
+///   later by `added_secs` — the detour's running time.
+///
+/// The detour polyline is DRAWING, not schedule: the host renders it
+/// on the map directly from the document. Shapes are a GTFS
+/// serialization concern and do not exist here.
+///
+/// Edits apply in the order given; each trip can absorb several.
+pub fn patch_day(day: &[MaterializedTrip], diversions: &[Diversion]) -> Vec<MaterializedTrip> {
+    let mut out = day.to_vec();
+    for d in diversions {
+        for trip in &mut out {
+            if trip.route != d.route_id {
+                continue;
+            }
+            patch_trip(trip, d);
+        }
+    }
+    out
+}
+
+fn patch_trip(trip: &mut MaterializedTrip, d: &Diversion) {
+    let Some((p0, p1)) = anchor_positions(&trip.stop_times, d) else {
+        return;
+    };
+    // Skip interior stops between the anchors.
+    trip.stop_times = std::mem::take(&mut trip.stop_times)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, st)| {
+            let interior = i > p0 && i < p1;
+            if interior && d.skipped_stops.iter().any(|s| s == &st.stop) {
+                None
+            } else {
+                Some(st)
+            }
+        })
+        .collect();
+    // The detour's running time lands on the last anchor's arrival
+    // and everything after it. Anchors may have moved if an earlier
+    // edit removed stops; re-locate them.
+    if d.added_secs > 0 {
+        if let Some((_, p1)) = anchor_positions(&trip.stop_times, d) {
+            for st in &mut trip.stop_times[p1..] {
+                st.arrival_secs += d.added_secs;
+                st.departure_secs += d.added_secs;
+            }
+        }
+    }
+}
+
+/// Anchor positions in a trip's stop times: first occurrence of each
+/// anchor, in order. `None` = this trip is not affected.
+fn anchor_positions(stop_times: &[StopTime], d: &Diversion) -> Option<(usize, usize)> {
+    let p0 = stop_times.iter().position(|st| st.stop == d.first_kept_stop)?;
+    let p1 = stop_times[p0 + 1..]
+        .iter()
+        .position(|st| st.stop == d.last_kept_stop)
+        .map(|p| p + p0 + 1)?;
+    Some((p0, p1))
+}
+
+// ---------------------------------------------------------------------
+// Validation: the edit document against the NETWORK
+// ---------------------------------------------------------------------
+
+/// Validate one record against an authored network document and
+/// count the trips it would touch (over every schedule whose pattern
+/// matches — no date, no calendar expansion). Pure and total.
+pub fn report_against_network(network: &Network, records: &[EditRecord]) -> Vec<EditReport> {
+    records
+        .iter()
+        .map(|record| {
+            let d = &record.diversion;
+            match validate_against_network(network, d) {
+                Err(error) => EditReport {
+                    id: record.id.clone(),
+                    valid: false,
+                    error: Some(error),
+                    affected_trips: 0,
+                },
+                Ok(()) => EditReport {
+                    id: record.id.clone(),
+                    valid: true,
+                    error: None,
+                    affected_trips: affected_trips(network, d),
+                },
+            }
+        })
+        .collect()
+}
+
+fn validate_against_network(network: &Network, d: &Diversion) -> Result<(), String> {
+    if !network.routes.contains_key(&d.route_id) {
+        return Err(format!("unknown route {}", d.route_id));
+    }
+    for stop in [&d.first_kept_stop, &d.last_kept_stop] {
+        if !network.stops.contains_key(stop) {
+            return Err(format!("unknown anchor stop {stop}"));
+        }
+    }
+    if d.first_kept_stop == d.last_kept_stop {
+        return Err("anchor stops must differ".into());
+    }
+    for skipped in &d.skipped_stops {
+        if !network.stops.contains_key(skipped) {
+            return Err(format!("unknown skipped stop {skipped}"));
+        }
+        if skipped == &d.first_kept_stop || skipped == &d.last_kept_stop {
+            return Err("skipped stops must not include an anchor".into());
+        }
+    }
+    if d.start_date > d.end_date {
+        return Err("start date is after end date".into());
+    }
+    if let Some(detour) = &d.detour {
+        if detour.len() < 2 {
+            return Err("a detour needs at least two points".into());
+        }
+        if detour.iter().any(|p| !p.lat.is_finite() || !p.lon.is_finite()) {
+            return Err("detour contains non-finite coordinates".into());
+        }
+    }
+    Ok(())
+}
+
+/// How many derived trips the edit touches: every schedule of the
+/// route whose pattern carries both anchors in order, expanded.
+fn affected_trips(network: &Network, d: &Diversion) -> usize {
+    network
+        .schedules
+        .values()
+        .filter(|schedule| {
+            network
+                .patterns
+                .get(&schedule.pattern)
+                .is_some_and(|pattern| pattern_matches(pattern, d))
+        })
+        .map(|schedule| trip_starts(&schedule.schedule).len())
+        .sum()
+}
+
+fn pattern_matches(pattern: &transit_network::Pattern, d: &Diversion) -> bool {
+    if pattern.route != d.route_id {
+        return false;
+    }
+    let stops = &pattern.stops;
+    let Some(p0) = stops.iter().position(|ps| ps.stop == d.first_kept_stop) else {
+        return false;
+    };
+    stops[p0 + 1..].iter().any(|ps| ps.stop == d.last_kept_stop)
+}
+
+// ---------------------------------------------------------------------
+// Boards
+// ---------------------------------------------------------------------
+
+/// The board at one stop: every visit the day's (patched) trips make
+/// to that stop, from `from_secs` on, soonest first. A stop a trip
+/// passes twice appears twice — both visits are service.
+pub fn board(
+    network: &Network,
+    day: &[MaterializedTrip],
+    stop_id: &str,
+    from_secs: u32,
+    limit: usize,
+) -> Vec<BoardDeparture> {
+    board_over(network, day, &[stop_id.to_string()], from_secs, limit)
+}
+
+/// The STATION board: the same board pooled over the stop's WALKING
+/// GROUP (the model's own transfer-group concept — the stop, its
+/// parent, siblings sharing that parent, the parent's children). A
+/// station pin answers no departures of its own; its bays carry the
+/// trips, and each row names its concrete stop.
+pub fn station_board(
+    network: &Network,
+    day: &[MaterializedTrip],
+    stop_id: &str,
+    from_secs: u32,
+    limit: usize,
+) -> Vec<BoardDeparture> {
+    let group: Vec<String> = transit_network::walking_group(network, stop_id)
+        .into_keys()
+        .collect();
+    board_over(network, day, &group, from_secs, limit)
+}
+
+fn board_over(
+    network: &Network,
+    day: &[MaterializedTrip],
+    stops: &[String],
+    from_secs: u32,
+    limit: usize,
+) -> Vec<BoardDeparture> {
+    let mut rows = Vec::new();
+    for trip in day {
+        for st in &trip.stop_times {
+            if !stops.iter().any(|s| s == &st.stop) || st.departure_secs < from_secs {
+                continue;
+            }
+            rows.push(BoardDeparture {
+                schedule: trip.schedule.clone(),
+                start_secs: trip.start_secs,
+                route: trip.route.clone(),
+                route_name: route_name(network, &trip.route),
+                pattern: trip.pattern.clone(),
+                stop: st.stop.clone(),
+                departure_secs: st.departure_secs,
+                destination: stop_name(network, trip.stop_times.last().map(|s| s.stop.as_str())),
+            });
+        }
+    }
+    rows.sort_by(|a, b| {
+        a.departure_secs
+            .cmp(&b.departure_secs)
+            .then_with(|| a.schedule.cmp(&b.schedule))
+            .then_with(|| a.start_secs.cmp(&b.start_secs))
+    });
+    rows.truncate(limit);
+    rows
+}
+
+fn route_name(network: &Network, route: &str) -> String {
+    network.routes.get(route).map(|r| r.name.clone()).unwrap_or_else(|| route.to_string())
+}
+
+fn stop_name(network: &Network, stop: Option<&str>) -> String {
+    stop.map(|id| {
+        network.stops.get(id).map(|s| s.name.clone()).unwrap_or_else(|| id.to_string())
+    })
+    .unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------
+// The authored block chain
+// ---------------------------------------------------------------------
+
+/// One block's chain for a service date: the AUTHORED trips in
+/// order (the runcut is model state), each materialized for the day
+/// when it runs, with the operator-edit ripple on the layovers.
+/// Unknown blocks answer empty, never error.
+pub fn block_chain(
+    network: &Network,
+    day: &[MaterializedTrip],
+    block_id: &str,
+) -> Vec<BlockChainTrip> {
+    let Some(block) = network.blocks.get(block_id) else {
+        return Vec::new();
+    };
+    let mut rows = Vec::with_capacity(block.trips.len());
+    for (index, trip_ref) in block.trips.iter().enumerate() {
+        // The trip's identity is (schedule, start); find it in the
+        // day. Runs = its service type runs on the date.
+        let runs = day
+            .iter()
+            .find(|t| t.schedule == trip_ref.schedule && t.start_secs == trip_ref.start_secs);
+        let layover = block
+            .layovers
+            .iter()
+            .find(|l| l.after_trip == index)
+            .map(|l| l.secs);
+        let row = match runs {
+            Some(trip) => {
+                let effective_end =
+                    trip.stop_times.last().map(|st| st.arrival_secs.max(st.departure_secs));
+                // The authored end from the schedule itself — what
+                // the layover was authored against.
+                let authored_end = transit_network::trip_arrival_end_secs(
+                    network,
+                    &trip_ref.schedule,
+                    trip_ref.start_secs,
+                )
+                .ok();
+                let delay = match (effective_end, authored_end) {
+                    (Some(e), Some(a)) => e as i64 - a as i64,
+                    _ => 0,
+                };
+                let layover_remaining = layover.map(|secs| secs as i64 - delay);
+                BlockChainTrip {
+                    schedule: trip_ref.schedule.clone(),
+                    start_secs: trip_ref.start_secs,
+                    route: trip.route.clone(),
+                    route_name: route_name(network, &trip.route),
+                    pattern: trip.pattern.clone(),
+                    runs: true,
+                    first_stop: trip
+                        .stop_times
+                        .first()
+                        .map(|st| st.stop.clone())
+                        .unwrap_or_default(),
+                    last_stop: trip
+                        .stop_times
+                        .last()
+                        .map(|st| st.stop.clone())
+                        .unwrap_or_default(),
+                    end_secs: effective_end,
+                    layover_after_secs: layover,
+                    layover_remaining_secs: layover_remaining,
+                }
+            }
+            None => BlockChainTrip {
+                schedule: trip_ref.schedule.clone(),
+                start_secs: trip_ref.start_secs,
+                route: String::new(),
+                route_name: String::new(),
+                pattern: String::new(),
+                runs: false,
+                first_stop: String::new(),
+                last_stop: String::new(),
+                end_secs: None,
+                layover_after_secs: layover,
+                layover_remaining_secs: None,
+            },
+        };
+        rows.push(row);
+    }
+    rows
+}
+
+/// Convenience: the effective day for a date — materialized, then
+/// patched with the edits in force on that date. What every dispatch
+/// view starts from.
+pub fn effective_day(
+    network: &Network,
+    date: NaiveDate,
+    records: &[EditRecord],
+) -> Result<Vec<MaterializedTrip>, transit_network::NetworkError> {
+    let day = materialize(network, date)?;
+    let diversions = transit_sync::in_force_on(records, date);
+    Ok(patch_day(&day, &diversions))
+}

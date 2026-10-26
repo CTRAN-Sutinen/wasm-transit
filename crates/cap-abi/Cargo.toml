@@ -23,6 +23,11 @@ transit-analysis = { path = "../transit-analysis" }
 chrono = { workspace = true }
 # …and the rt capability's example decodes the real e2e payload.
 transit-rt = { path = "../transit-rt" }
+# …and the dispatch capability's examples compute REAL answers over
+# the fixture-derived document (boards, chains, edit reports)
+# through the same shared library the module dispatches through.
+transit-sync = { path = "../transit-sync" }
+transit-dispatch = { path = "../transit-dispatch" }
 
 [dev-dependencies]
 proptest = "1"

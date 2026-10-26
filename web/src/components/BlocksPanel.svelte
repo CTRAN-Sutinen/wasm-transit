@@ -1,21 +1,61 @@
 <script lang="ts">
   import { app } from "../state.svelte";
-  import { refreshNow, serviceDate } from "../actions";
+  import { refreshNow, serviceDate, feedBytes } from "../actions";
+  import { ensureGtfsFeed, gtfsCap, gtfsModule } from "../capabilities.svelte";
+  import type { BlockSummary } from "../types/BlockSummary";
   import Combobox from "./Combobox.svelte";
 
-  // Only the blocks running on the service day — a parked bus is not
-  // a pickable block (the artifact scopes the list; trip counts are
-  // that day's).
-  const blocks = $derived.by(() => {
+  // The dispatcher's core view answers through the BUS (cap-gtfs) —
+  // the monolith's op is deleted, this is the only blocks view. Only
+  // the blocks running on the service day (a parked bus is not a
+  // pickable block; trip counts are that day's). Async with race
+  // guards; when the capability cannot assemble the view is OFF and
+  // says so — never silently.
+  let blocks = $state<BlockSummary[]>([]);
+  let blocksOff = $state(false);
+  let blocksSeq = 0;
+  $effect(() => {
     void app.clock; // the service day can roll over
-    void app.feedEpoch;
-    return app.gtfs ? app.gtfs.blocks(serviceDate()) : [];
+    void app.feedEpoch; // the effective feed changed (reload, materialize)
+    const date = serviceDate();
+    const seq = ++blocksSeq;
+    const bytes = feedBytes();
+    if (!app.gtfs || !bytes) {
+      blocks = [];
+      return;
+    }
+    void (async () => {
+      try {
+        const feedHash = await ensureGtfsFeed(bytes);
+        if (seq !== blocksSeq) return;
+        if (!feedHash) {
+          blocks = [];
+          blocksOff = true;
+          app.status =
+            "gtfs capability unavailable — the blocks view is off until it loads (the capability bus did not assemble).";
+          return;
+        }
+        const module = await gtfsModule();
+        if (!module || seq !== blocksSeq) return;
+        blocksOff = false;
+        blocks = gtfsCap(module).blocks(feedHash, date);
+      } catch {
+        if (seq === blocksSeq) blocks = [];
+      }
+    })();
   });
+
   const options = $derived(
     blocks.map((b) => ({ value: b.block_id, label: b.block_id, sub: `${b.trip_count} trips` })),
   );
   let selectedBlock = $state("");
 
+  // One block's chain — MONOLITH-backed deliberately: the chain's
+  // layovers ripple with diversions (t10 diverted +6 min shrinks the
+  // next layover, flagged tight/overlap — the dispatcher's
+  // connection-health read), and the diversion document has no bus
+  // home yet. The chain moves to the bus with diversions; the blocks
+  // LIST above is already bus-side.
   const chain = $derived.by(() => {
     void app.clock; // time moved
     void app.feedEpoch; // the effective feed changed (edits, reload)
@@ -85,5 +125,13 @@
     </table>
   </div>
   <p class="muted">{chain.length} trips on {serviceDate()} — schedule only.</p>
+</section>
+{:else if blocksOff}
+<section>
+  <h2>Blocks</h2>
+  <p class="muted">
+    The blocks view needs the gtfs capability; it did not assemble, so
+    the view is off. Authoring and boards elsewhere are unaffected.
+  </p>
 </section>
 {/if}

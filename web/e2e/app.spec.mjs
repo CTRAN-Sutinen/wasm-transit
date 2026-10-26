@@ -723,6 +723,30 @@ test("planner degrades when the analysis capability cannot assemble", async ({ p
   expect(await page.evaluate(() => window.__analysisPath())).toBeNull();
 });
 
+// The dispatch reads moved to the bus: BlocksPanel (the dispatcher's
+// primary screen) answers through cap-gtfs, and when the module
+// cannot assemble the view is OFF and says so — the rider board
+// (still monolith-backed) keeps working beside it.
+test("dispatcher degrades when the gtfs capability cannot assemble", async ({ page }) => {
+  await page.route(/caps\/gtfs-.*\.wasm/, (route) => route.abort());
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+  await switchPersona(page, "Dispatcher");
+  await expect(
+    page
+      .getByText(/blocks view needs the gtfs capability|gtfs capability unavailable/)
+      .first(),
+  ).toBeVisible({ timeout: 10_000 });
+  // The rider board beside it still answers (per-stop, monolith):
+  // the assembly degrades per capability, never wholesale.
+  await switchPersona(page, "Rider");
+  await comboPick(page, "Stop", "Main & 1st");
+  await expect(
+    page.locator("section:has(h2:text('Departures')) tbody tr"),
+  ).toHaveCount(3, { timeout: 10_000 });
+});
+
 // Stage B of the SECOND extraction (the codec): bootstrap, validation
 // and the publish path live in the NETWORK CAPABILITY — the monolith
 // has no copy. When the module cannot assemble, every one of them

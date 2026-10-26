@@ -137,13 +137,14 @@ export async function loadGtfsBytes(bytes: Uint8Array, label: string): Promise<v
   // and derived views re-derive.
   pushEdits();
   // Diagnostics: proves which wasm queries actually answer in-browser.
+  // (The blocks count moved to the bus — the dispatcher's BlocksPanel
+  // is where that query answers now.)
   const stops = app.gtfs.stops();
-  const blocks = app.gtfs.blocks();
   const features = app.gtfs.stops_geojson().features.length;
-  console.log("gtfs loaded:", { stops: stops.length, blocks: blocks.length, geoFeatures: features });
+  console.log("gtfs loaded:", { stops: stops.length, geoFeatures: features });
   await cacheFeed(label, bytes.slice());
   app.status =
-    `Loaded ${label} — stops: ${stops.length}, blocks: ${blocks.length}, map features: ${features}.` +
+    `Loaded ${label} — stops: ${stops.length}, map features: ${features}.` +
     " Everything below is running client-side.";
 }
 

@@ -9,8 +9,11 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -143,9 +146,9 @@ func (s *server) handleProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 // Manifest pins the authoritative schedule artifact and the wasm
-// artifact that validates it. `feed_version` comes from the artifact
-// itself — the server asks the module to parse feed_info.txt rather
-// than duplicating GTFS knowledge in the host.
+// artifact that validates it. `feed_version` is read from the
+// feed's own feed_info.txt by the host (the host owns files and
+// I/O; the artifact owns the format's domain).
 type Manifest struct {
 	FeedHash     string  `json:"feed_hash"` // "sha256:<hex>" of the GTFS zip
 	FeedVersion  *string `json:"feed_version,omitempty"`
@@ -166,7 +169,7 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		manifest.FeedHash = feed.hash
-		if v := feed.Version(r.Context(), s.wasm); v != "" {
+		if v := feed.Version(); v != "" {
 			manifest.FeedVersion = &v
 		}
 	}
@@ -202,14 +205,42 @@ type loadedFeed struct {
 func (l *loadedFeed) Hash() string  { return l.hash }
 func (l *loadedFeed) Bytes() []byte { return l.bytes }
 
-// Version asks the artifact to parse feed_info.txt. Empty when the
-// feed has no version — the host never duplicates GTFS knowledge.
-func (l *loadedFeed) Version(ctx context.Context, host *WasmHost) string {
-	info, err := host.FeedInfo(ctx, l.feedID)
-	if err != nil || info == nil || info.FeedVersion == nil {
+// Version reads the feed's own feed_info.txt row — one boundary
+// CSV field, the host's own I/O (the host owns files; the artifact
+// owns domain). Empty when the feed carries no version.
+func (l *loadedFeed) Version() string {
+	return feedInfoVersion(l.bytes)
+}
+
+// feedInfoVersion pulls feed_version out of feed_info.txt in the
+// zip. Nothing else about GTFS is known here — the artifact owns
+// the format; the host reads one metadata field.
+func feedInfoVersion(zipBytes []byte) string {
+	zr, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if err != nil {
 		return ""
 	}
-	return *info.FeedVersion
+	for _, f := range zr.File {
+		if f.Name != "feed_info.txt" {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return ""
+		}
+		defer rc.Close()
+		rows, err := csv.NewReader(rc).ReadAll()
+		if err != nil || len(rows) < 2 {
+			return ""
+		}
+		for i, col := range rows[0] {
+			if col == "feed_version" && i < len(rows[1]) {
+				return rows[1][i]
+			}
+		}
+		return ""
+	}
+	return ""
 }
 
 // fileFeed reads the GTFS artifact from disk, caching by mtime so a

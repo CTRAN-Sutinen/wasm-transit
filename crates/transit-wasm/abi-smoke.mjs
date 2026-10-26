@@ -151,9 +151,16 @@ assert(streetRoute.length === 2 &&
   Math.abs(streetRoute[0].lat - 45.5040) < 1e-9 && Math.abs(streetRoute[0].lon + 73.5080) < 1e-9,
   "street_route: the corner, not the diagonal, via ABI");
 
-// feed_info op (the manifest's version source).
-const info = invoke({ op: "feed_info", feed_id: feedId }).info;
-assert(info && info.feed_version === "2026.10.1", "feed_info surfaces the artifact version");
+// The dispatch-read ops (active_services, blocks, block_trips,
+// feed_info) are RETIRED — cap-gtfs owns them; the smoke pins the
+// retirement through the standard outcome, never a trap.
+{
+  for (const retired of ["active_services", "blocks", "feed_info"]) {
+    const outcome = JSON.parse(rawInvoke(JSON.stringify({ op: retired, feed_id: feedId })));
+    assert(outcome.error && /unknown variant/.test(outcome.error),
+      `the retired ${retired} op errors through the standard outcome`);
+  }
+}
 
 // Retire = tombstone.
 invoke({ op: "set_diversions", feed_id: feedId, records: [record({ status: "retired", rev: 2 })] });
@@ -224,7 +231,7 @@ assert(second.feed_id !== feedId, "registry assigns distinct feed ids");
     const want = step.expect.replaceAll("$FEED", feedToken);
     assert(got === want, `corpus step ${step.name} diverges`);
   }
-  assert(corpus.steps.length >= 14, "corpus has the full step set");
+  assert(corpus.steps.length >= 11, "corpus has the full step set");
 }
 
 console.log("smoke passed");

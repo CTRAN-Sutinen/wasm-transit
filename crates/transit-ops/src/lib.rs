@@ -80,16 +80,15 @@ pub enum Request {
         from_secs: u32,
         limit: u32,
     },
-    /// Service keys running on a date (often several).
-    ActiveServices { feed_id: u32, date: String },
-    /// All blocks in the feed. With `date`: only the blocks running
-    /// that day, with that day's trip counts — the dispatcher's
-    /// block picker shows vehicles in service, not parked buses.
-    Blocks { feed_id: u32, date: Option<String> },
-    /// The trip chain of one block on a service date.
-    BlockTrips { feed_id: u32, block_id: String, date: String },
     /// All stops as a GeoJSON FeatureCollection.
     StopsGeojson { feed_id: u32 },
+    /// The trip chain of one block on a service date. STILL HERE
+    /// deliberately: this is the one dispatch read whose answer is
+    /// DIVERSION-ENTANGLED (the chain's layovers ripple when a
+    /// diverted trip ends later — the dispatcher's connection-health
+    /// read). It moves to the bus with the diversion document;
+    /// the other dispatch reads are already cap-gtfs's.
+    BlockTrips { feed_id: u32, block_id: String, date: String },
     /// One trip's path as a GeoJSON LineString Feature (date scopes
     /// operator edits: diverted trips draw patched shapes).
     TripPathGeojson { feed_id: u32, trip_id: String, date: String },
@@ -150,9 +149,6 @@ pub enum Request {
         from: transit_streets::StreetPosition,
         to: transit_streets::StreetPosition,
     },
-    /// `feed_info.txt` metadata of a feed (version, publisher), when
-    /// the feed provides the file.
-    FeedInfo { feed_id: u32 },
     /// Release a feed and its caches. Hosts use this when a
     /// republished artifact replaces the one they pinned.
     DropFeed { feed_id: u32 },
@@ -190,8 +186,6 @@ pub enum Response {
     Routes { routes: Vec<transit_core::RouteSummary> },
     RouteStopSequence { stops: Vec<transit_core::StopSummary> },
     Departures { departures: Vec<transit_core::Departure> },
-    ActiveServices { services: Vec<String> },
-    Blocks { blocks: Vec<transit_core::BlockSummary> },
     BlockTrips { trips: Vec<transit_core::BlockTrip> },
     StopsGeojson { collection: FeatureCollection },
     TripPathGeojson { feature: Option<TripLineFeature> },
@@ -207,7 +201,6 @@ pub enum Response {
     StreetsLoad { streets_id: u32, segments: u32, nodes: u32 },
     StreetSnap { position: Option<transit_streets::StreetPosition> },
     StreetRoute { points: Vec<transit_streets::StreetPoint> },
-    FeedInfo { info: Option<transit_core::FeedInfo> },
     DropFeed {},
     SyncEdits { records: Vec<EditRecord>, reports: Vec<transit_sync::EditReport> },
 }
@@ -293,19 +286,6 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
                 Ok(Response::Departures { departures })
             })
         }
-        Request::ActiveServices { feed_id, date } => {
-            let parsed = parse_date(&date)?;
-            state::with_feed(feed_id, |f| {
-                Ok(Response::ActiveServices { services: f.gtfs.active_services(parsed) })
-            })
-        }
-        Request::Blocks { feed_id, date } => state::with_feed(feed_id, |f| {
-            let blocks = match date {
-                Some(d) => f.gtfs.blocks_on(parse_date(&d)?),
-                None => f.gtfs.blocks(),
-            };
-            Ok(Response::Blocks { blocks })
-        }),
         Request::BlockTrips { feed_id, block_id, date } => {
             let parsed = parse_date(&date)?;
             state::with_feed(feed_id, |f| {
@@ -419,13 +399,10 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
             })
         }
         Request::SetDiversions { feed_id, records } => state::with_feed(feed_id, |f| {
-            let reports = transit_sync::report_all(&f.gtfs, &records);
+            let reports = transit_core::report_all(&f.gtfs, &records);
             f.edits = records;
             f.invalidate();
             Ok(Response::SetDiversions { reports })
-        }),
-        Request::FeedInfo { feed_id } => state::with_feed(feed_id, |f| {
-            Ok(Response::FeedInfo { info: f.gtfs.feed_info.clone() })
         }),
         Request::DropFeed { feed_id } => {
             state::drop_feed(feed_id);
@@ -435,7 +412,7 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
             let records = transit_sync::submit(transit_sync::merge(&client, &server), now_ms);
             let reports = match feed_id {
                 Some(feed_id) => state::with_feed(feed_id, |f| {
-                    Ok(transit_sync::report_all(&f.gtfs, &records))
+                    Ok(transit_core::report_all(&f.gtfs, &records))
                 })?,
                 None => Vec::new(),
             };

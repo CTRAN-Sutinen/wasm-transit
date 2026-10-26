@@ -1,0 +1,607 @@
+{
+  "blob": "blobs/d56fbbdd987d5f061072a6f15ed3507fda16b20e8c85de733faeed0cde73ac81.wasm",
+  "bytes": 497084,
+  "consumes": {
+    "network": "network"
+  },
+  "evidence": {
+    "dirty_tree": true,
+    "gates": [
+      "cargo test (workspace, includes the capability law suites)",
+      "node crates/cap-abi/caps-smoke.mjs (ABI + composition + context)"
+    ],
+    "recipe": "just registry",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "source_commit": "232d63c713af9153aa58fbf3576d634efbc62e2a"
+  },
+  "hash": "sha256:d56fbbdd987d5f061072a6f15ed3507fda16b20e8c85de733faeed0cde73ac81",
+  "id": "dispatch",
+  "kernel": 1,
+  "migrates": {},
+  "op_docs": {
+    "block_trips": {
+      "description": "One block's chain on a service date: the AUTHORED runcut (the model's blocks carry layovers GTFS never had), materialized for the day, with the in-force edits applied — a diverted trip ending later eats into the vehicle's next layover, and layover_remaining_secs goes negative when the connection is eaten. Trips of the chain that do not run on the date stay in view, marked. Unknown blocks answer empty, never error.",
+      "example": {
+        "request": {
+          "block_id": "B1",
+          "date": "2026-10-23",
+          "edits_hash": "<of the loaded edit document>",
+          "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+          "op": "block_trips"
+        },
+        "response": {
+          "ok": {
+            "op": "block_trips",
+            "trips": [
+              {
+                "end_secs": 29700,
+                "first_stop": "A",
+                "last_stop": "B",
+                "layover_after_secs": 600,
+                "layover_remaining_secs": 300,
+                "pattern": "pat-10-0-0",
+                "route": "10",
+                "route_name": "10",
+                "runs": true,
+                "schedule": "WK:pat-10-0-0",
+                "start_secs": 28800
+              },
+              {
+                "end_secs": 30600,
+                "first_stop": "A",
+                "last_stop": "B",
+                "layover_after_secs": null,
+                "layover_remaining_secs": null,
+                "pattern": "pat-20-0-0",
+                "route": "20",
+                "route_name": "20",
+                "runs": true,
+                "schedule": "WK:pat-20-0-0",
+                "start_secs": 30000
+              }
+            ]
+          }
+        }
+      }
+    },
+    "departures": {
+      "description": "The board at one stop on a service date: the network's materialized day — trips as their (schedule, start) identity, model vocabulary — with the in-force edits applied when edits_hash names a registered document (schedule-only when omitted). The stop's own board; a station pin answers nothing here, see station_departures.",
+      "example": {
+        "request": {
+          "date": "2026-10-23",
+          "from_secs": 25200,
+          "limit": 5,
+          "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+          "op": "departures",
+          "stop_id": "A"
+        },
+        "response": {
+          "ok": {
+            "departures": [
+              {
+                "departure_secs": 28800,
+                "destination": "Main & 2nd",
+                "pattern": "pat-10-0-0",
+                "route": "10",
+                "route_name": "10",
+                "schedule": "WK:pat-10-0-0",
+                "start_secs": 28800,
+                "stop": "A"
+              },
+              {
+                "departure_secs": 30000,
+                "destination": "Main & 2nd",
+                "pattern": "pat-20-0-0",
+                "route": "20",
+                "route_name": "20",
+                "schedule": "WK:pat-20-0-0",
+                "start_secs": 30000,
+                "stop": "A"
+              },
+              {
+                "departure_secs": 31200,
+                "destination": "Main & 2nd",
+                "pattern": "pat-10-0-1",
+                "route": "10",
+                "route_name": "10",
+                "schedule": "WK:pat-10-0-1",
+                "start_secs": 31200,
+                "stop": "A"
+              }
+            ],
+            "op": "departures"
+          }
+        }
+      }
+    },
+    "load_edits": {
+      "description": "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change.",
+      "example": {
+        "request": {
+          "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+          "op": "load_edits",
+          "records": [
+            {
+              "diversion": {
+                "added_secs": 300,
+                "detour": null,
+                "direction_id": null,
+                "end_date": "2026-10-23",
+                "first_kept_stop": "A",
+                "id": "d1",
+                "last_kept_stop": "B",
+                "route_id": "10",
+                "skipped_stops": [
+                  "C"
+                ],
+                "start_date": "2026-10-23"
+              },
+              "id": "e1",
+              "rev": 1,
+              "status": "accepted",
+              "updated_at": 1
+            }
+          ]
+        },
+        "response": {
+          "ok": {
+            "edits_hash": "sha256:4ab45b2ef7edc302f64bb7d6bd1b4ef49cc5d1afc8a3b3a2af56726b29f9e233",
+            "op": "load_edits",
+            "reports": [
+              {
+                "affected_trips": 3,
+                "error": null,
+                "id": "e1",
+                "valid": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    "load_network": {
+      "description": "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth.",
+      "example": {
+        "request": {
+          "network": {
+            "anchor": "noon_minus_twelve",
+            "blocks": {
+              "B1": {
+                "layovers": [
+                  {
+                    "after_trip": 0,
+                    "at": "B",
+                    "secs": 600
+                  }
+                ],
+                "trips": [
+                  {
+                    "schedule": "WK:pat-10-0-0",
+                    "start_secs": 28800
+                  },
+                  {
+                    "schedule": "WK:pat-20-0-0",
+                    "start_secs": 30000
+                  }
+                ]
+              }
+            },
+            "name": "Test Transit",
+            "patterns": {
+              "pat-10-0-0": {
+                "name": "10 → Main & 2nd",
+                "path": [
+                  {
+                    "lat": 45.4,
+                    "lon": -73.4
+                  },
+                  {
+                    "lat": 45.45,
+                    "lon": -73.45
+                  },
+                  {
+                    "lat": 45.5,
+                    "lon": -73.5
+                  },
+                  {
+                    "lat": 45.505,
+                    "lon": -73.505
+                  },
+                  {
+                    "lat": 45.51,
+                    "lon": -73.51
+                  }
+                ],
+                "route": "10",
+                "stops": [
+                  {
+                    "distance_m": 0.0,
+                    "stop": "A",
+                    "timepoint": true
+                  },
+                  {
+                    "distance_m": 500.0,
+                    "stop": "B",
+                    "timepoint": true
+                  }
+                ],
+                "timing": [
+                  {
+                    "at_timepoints": [
+                      0,
+                      600
+                    ],
+                    "end_secs": 108000,
+                    "start_secs": 0
+                  }
+                ]
+              },
+              "pat-10-0-1": {
+                "name": "10 → Main & 2nd",
+                "route": "10",
+                "stops": [
+                  {
+                    "distance_m": 0.0,
+                    "stop": "A",
+                    "timepoint": true
+                  },
+                  {
+                    "distance_m": 500.0,
+                    "stop": "C",
+                    "timepoint": true
+                  },
+                  {
+                    "distance_m": 1000.0,
+                    "stop": "B",
+                    "timepoint": true
+                  }
+                ],
+                "timing": [
+                  {
+                    "at_timepoints": [
+                      0,
+                      300,
+                      600
+                    ],
+                    "end_secs": 108000,
+                    "start_secs": 0
+                  }
+                ]
+              },
+              "pat-20-0-0": {
+                "name": "20 → Main & 2nd",
+                "route": "20",
+                "stops": [
+                  {
+                    "distance_m": 0.0,
+                    "stop": "A",
+                    "timepoint": true
+                  },
+                  {
+                    "distance_m": 500.0,
+                    "stop": "B",
+                    "timepoint": true
+                  }
+                ],
+                "timing": [
+                  {
+                    "at_timepoints": [
+                      0,
+                      600
+                    ],
+                    "end_secs": 108000,
+                    "start_secs": 0
+                  }
+                ]
+              },
+              "pat-40-0-0": {
+                "name": "40 → Main Station: Bay B",
+                "route": "40",
+                "stops": [
+                  {
+                    "distance_m": 0.0,
+                    "stop": "SA",
+                    "timepoint": true
+                  },
+                  {
+                    "distance_m": 500.0,
+                    "stop": "SB",
+                    "timepoint": true
+                  }
+                ],
+                "timing": [
+                  {
+                    "at_timepoints": [
+                      0,
+                      300
+                    ],
+                    "end_secs": 108000,
+                    "start_secs": 0
+                  }
+                ]
+              },
+              "pat-40-1-0": {
+                "name": "40 → Main Station: Bay A",
+                "route": "40",
+                "stops": [
+                  {
+                    "distance_m": 0.0,
+                    "stop": "SB",
+                    "timepoint": true
+                  },
+                  {
+                    "distance_m": 500.0,
+                    "stop": "SA",
+                    "timepoint": true
+                  }
+                ],
+                "timing": [
+                  {
+                    "at_timepoints": [
+                      0,
+                      300
+                    ],
+                    "end_secs": 108000,
+                    "start_secs": 0
+                  }
+                ]
+              }
+            },
+            "plan": {
+              "id": "",
+              "name": ""
+            },
+            "routes": {
+              "10": {
+                "mode": "bus",
+                "name": "10"
+              },
+              "20": {
+                "mode": "bus",
+                "name": "20"
+              },
+              "40": {
+                "mode": "bus",
+                "name": "40"
+              }
+            },
+            "schedules": {
+              "SUN:pat-10-0-0": {
+                "pattern": "pat-10-0-0",
+                "schedule": {
+                  "kind": "exact_times",
+                  "starts": [
+                    32400
+                  ]
+                },
+                "service_type": "SUN"
+              },
+              "WK:pat-10-0-0": {
+                "pattern": "pat-10-0-0",
+                "schedule": {
+                  "kind": "exact_times",
+                  "starts": [
+                    28800
+                  ]
+                },
+                "service_type": "WK"
+              },
+              "WK:pat-10-0-1": {
+                "pattern": "pat-10-0-1",
+                "schedule": {
+                  "kind": "exact_times",
+                  "starts": [
+                    31200
+                  ]
+                },
+                "service_type": "WK"
+              },
+              "WK:pat-20-0-0": {
+                "pattern": "pat-20-0-0",
+                "schedule": {
+                  "kind": "exact_times",
+                  "starts": [
+                    30000
+                  ]
+                },
+                "service_type": "WK"
+              },
+              "WK:pat-40-0-0": {
+                "pattern": "pat-40-0-0",
+                "schedule": {
+                  "kind": "exact_times",
+                  "starts": [
+                    29700
+                  ]
+                },
+                "service_type": "WK"
+              },
+              "WK:pat-40-1-0": {
+                "pattern": "pat-40-1-0",
+                "schedule": {
+                  "kind": "exact_times",
+                  "starts": [
+                    30900
+                  ]
+                },
+                "service_type": "WK"
+              }
+            },
+            "service_types": {
+              "SUN": {
+                "name": "SUN",
+                "rule": {
+                  "days": {
+                    "fri": false,
+                    "mon": false,
+                    "sat": false,
+                    "sun": true,
+                    "thu": false,
+                    "tue": false,
+                    "wed": false
+                  },
+                  "exceptions": [],
+                  "ranges": [
+                    {
+                      "end": "2026-12-31",
+                      "start": "2026-01-01"
+                    }
+                  ]
+                }
+              },
+              "WK": {
+                "name": "WK",
+                "rule": {
+                  "days": {
+                    "fri": true,
+                    "mon": true,
+                    "sat": false,
+                    "sun": false,
+                    "thu": true,
+                    "tue": true,
+                    "wed": true
+                  },
+                  "exceptions": [
+                    {
+                      "date": "2026-10-29",
+                      "state": "removed"
+                    }
+                  ],
+                  "ranges": [
+                    {
+                      "end": "2026-12-31",
+                      "start": "2026-01-01"
+                    }
+                  ]
+                }
+              }
+            },
+            "stops": {
+              "A": {
+                "lat": 45.5,
+                "lon": -73.5,
+                "name": "Main & 1st",
+                "transfer": false
+              },
+              "B": {
+                "lat": 45.51,
+                "lon": -73.51,
+                "name": "Main & 2nd",
+                "transfer": false
+              },
+              "C": {
+                "lat": 45.52,
+                "lon": -73.52,
+                "name": "Main & 3rd",
+                "transfer": false
+              },
+              "SA": {
+                "lat": 45.515,
+                "lon": -73.5155,
+                "name": "Main Station: Bay A",
+                "parent": "STN",
+                "transfer": false
+              },
+              "SB": {
+                "lat": 45.515,
+                "lon": -73.5145,
+                "name": "Main Station: Bay B",
+                "parent": "STN",
+                "transfer": false
+              },
+              "STN": {
+                "lat": 45.515,
+                "lon": -73.515,
+                "name": "Main Station",
+                "transfer": false
+              }
+            }
+          },
+          "op": "load_network"
+        },
+        "response": {
+          "ok": {
+            "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+            "op": "load_network"
+          }
+        }
+      }
+    },
+    "station_departures": {
+      "description": "The STATION board: departures pooled over the stop's WALKING GROUP (the model's own transfer-group concept — the stop, its parent, siblings sharing that parent, the parent's children). A station pin answers no departures of its own; its bays carry the trips. Each row carries its concrete stop_id, so the caller sees which bay a departure leaves from.",
+      "example": {
+        "request": {
+          "date": "2026-10-23",
+          "from_secs": 25200,
+          "limit": 10,
+          "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+          "op": "station_departures",
+          "stop_id": "STN"
+        },
+        "response": {
+          "ok": {
+            "departures": [
+              {
+                "departure_secs": 29700,
+                "destination": "Main Station: Bay B",
+                "pattern": "pat-40-0-0",
+                "route": "40",
+                "route_name": "40",
+                "schedule": "WK:pat-40-0-0",
+                "start_secs": 29700,
+                "stop": "SA"
+              },
+              {
+                "departure_secs": 30000,
+                "destination": "Main Station: Bay B",
+                "pattern": "pat-40-0-0",
+                "route": "40",
+                "route_name": "40",
+                "schedule": "WK:pat-40-0-0",
+                "start_secs": 29700,
+                "stop": "SB"
+              },
+              {
+                "departure_secs": 30900,
+                "destination": "Main Station: Bay A",
+                "pattern": "pat-40-1-0",
+                "route": "40",
+                "route_name": "40",
+                "schedule": "WK:pat-40-1-0",
+                "start_secs": 30900,
+                "stop": "SB"
+              },
+              {
+                "departure_secs": 31200,
+                "destination": "Main Station: Bay A",
+                "pattern": "pat-40-1-0",
+                "route": "40",
+                "route_name": "40",
+                "schedule": "WK:pat-40-1-0",
+                "start_secs": 30900,
+                "stop": "SA"
+              }
+            ],
+            "op": "station_departures"
+          }
+        }
+      }
+    }
+  },
+  "ops": [
+    "load_network",
+    "load_edits",
+    "departures",
+    "station_departures",
+    "block_trips"
+  ],
+  "purpose": "The dispatcher's operation view over the NETWORK document (the core data model — GTFS is a serialization spec for external data sharing, and dispatch never reads serialization) plus the operator edit document. The board, the station board (walking-group pooling), and the authored block chain with the layover ripple: the materialized day, patched with the in-force edits. Model-native end to end; the domain code lives in the shared transit-dispatch library.",
+  "speaks": {
+    "network": [
+      1
+    ],
+    "operator_edits": [
+      1
+    ]
+  }
+}

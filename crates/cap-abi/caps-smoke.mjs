@@ -473,4 +473,127 @@ assert(
   "stops_by_ids answers names, omitting unknown ids",
 );
 
+// The dispatch flow — the operator view over the NETWORK document:
+// model-native end to end (the module holds no GTFS layer at all —
+// the arch gate in `just test` enforces that). The composition law:
+// the SAME document import produced, loaded into dispatch, and the
+// identity agrees — one document, one truth, no expansion.
+assert(byId.dispatch, "manifest advertises the dispatch capability");
+assert(
+  byId.dispatch.consumes.network === "network",
+  "dispatch declares its registry edge: it consumes network documents",
+);
+const dispatch = shell(loadModule(byId.dispatch));
+const loadedDispatchNet = dispatch.invoke({ op: "load_network", network: imported.network });
+assert(
+  loadedDispatchNet.network_hash === imported.network_hash,
+  "dispatch agrees with the network capability on the document identity",
+);
+const dispatchBoard = dispatch.invoke({
+  op: "departures",
+  network_hash: loadedDispatchNet.network_hash,
+  stop_id: "A",
+  date: DATE,
+  from_secs: 25200,
+  limit: 10,
+});
+assert(dispatchBoard.departures.length >= 3, "the materialized board answers at A");
+assert(
+  dispatchBoard.departures.every((r) => r.schedule && r.route_name && r.stop === "A"),
+  "board rows speak model vocabulary (schedule, start, concrete stop)",
+);
+const stationBoard = dispatch.invoke({
+  op: "station_departures",
+  network_hash: loadedDispatchNet.network_hash,
+  stop_id: "STN",
+  date: DATE,
+  from_secs: 0,
+  limit: 10,
+});
+assert(
+  stationBoard.departures.length === 4 &&
+    stationBoard.departures.every((r) => r.stop === "SA" || r.stop === "SB"),
+  "the station pin answers its bays' pooled board, rows tagged with the bay",
+);
+// The authored runcut: the import inferred the layovers from the
+// observed gaps — the chain carries them, and the edit ripples.
+const dispatchChain = dispatch.invoke({
+  op: "block_trips",
+  network_hash: loadedDispatchNet.network_hash,
+  block_id: "B1",
+  date: DATE,
+});
+assert(dispatchChain.trips.length === 2, "the authored chain answers");
+assert(dispatchChain.trips[0].layover_after_secs === 600, "the layover is model state (600 s)");
+assert(dispatchChain.trips[0].layover_remaining_secs === 600, "no edits: the layover stands");
+const dispatchEdits = dispatch.invoke({
+  op: "load_edits",
+  network_hash: loadedDispatchNet.network_hash,
+  records: [
+    {
+      id: "e1",
+      diversion: {
+        id: "d1",
+        route_id: "10",
+        direction_id: null,
+        first_kept_stop: "A",
+        last_kept_stop: "B",
+        skipped_stops: ["C"],
+        detour: null,
+        added_secs: 300,
+        start_date: DATE,
+        end_date: DATE,
+      },
+      status: "accepted",
+      rev: 1,
+      updated_at: 1,
+    },
+  ],
+});
+assert(
+  dispatchEdits.reports.length === 1 && dispatchEdits.reports[0].valid,
+  "the edit validates against the network (reported, never rejected)",
+);
+const ripped = dispatch.invoke({
+  op: "block_trips",
+  network_hash: loadedDispatchNet.network_hash,
+  edits_hash: dispatchEdits.edits_hash,
+  block_id: "B1",
+  date: DATE,
+});
+assert(
+  ripped.trips[0].layover_remaining_secs === 300,
+  "the diverted end eats the layover (600 - 300) — the connection-health ripple",
+);
+const brokenEdit = dispatch.invoke({
+  op: "load_edits",
+  network_hash: loadedDispatchNet.network_hash,
+  records: [
+    {
+      id: "e2",
+      diversion: {
+        id: "d2",
+        route_id: "ghost",
+        direction_id: null,
+        first_kept_stop: "A",
+        last_kept_stop: "B",
+        skipped_stops: [],
+        detour: null,
+        added_secs: 60,
+        start_date: DATE,
+        end_date: DATE,
+      },
+      status: "accepted",
+      rev: 1,
+      updated_at: 1,
+    },
+  ],
+});
+assert(
+  brokenEdit.reports[0].valid === false,
+  "an edit against an unknown route is reported invalid, never rejected",
+);
+const unknownDispatch = dispatch.raw({ op: "departures", network_hash: "sha256:missing", stop_id: "A", date: DATE, from_secs: 0, limit: 5 });
+assert(unknownDispatch.error && unknownDispatch.error.includes("unknown network"), "unknown hashes error, never panic");
+
 console.log("capability modules: ABI smoke ok");

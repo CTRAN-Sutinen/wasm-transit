@@ -7,7 +7,34 @@
 
   const stops = $derived(app.gtfs ? app.gtfs.stops().slice(0, 2000) : []);
   const stopOptions = $derived(stops.map((s) => ({ value: s.stop_id, label: s.name, sub: s.stop_id })));
-  const services = $derived(app.gtfs ? app.gtfs.active_services(serviceDate()) : []);
+
+  // Service keys running today — through the BUS (the monolith's op
+  // is deleted). Decoration-grade: when the capability cannot
+  // assemble the chips simply do not render (the board's rows are
+  // unaffected).
+  let services = $state<string[]>([]);
+  let servicesSeq = 0;
+  $effect(() => {
+    void app.clock;
+    const date = serviceDate();
+    const seq = ++servicesSeq;
+    const bytes = feedBytes();
+    if (!app.gtfs || !bytes) {
+      services = [];
+      return;
+    }
+    void (async () => {
+      try {
+        const feedHash = await ensureGtfsFeed(bytes);
+        if (seq !== servicesSeq || !feedHash) return;
+        const module = await gtfsModule();
+        if (!module || seq !== servicesSeq) return;
+        services = gtfsCap(module).activeServices(feedHash, date);
+      } catch {
+        if (seq === servicesSeq) services = [];
+      }
+    })();
+  });
 
   /// trip_id → { byStop: Map(stop_id → delay), worst: delay }
   /// Joined from the GTFS-rt trip updates, when a feed is loaded.

@@ -275,46 +275,6 @@ fn geojson_ops_return_typed_features() {
 }
 
 #[test]
-fn blocks_op_lists_all_blocks_or_only_the_days() {
-    let feed_id = load();
-
-    // Without a date: every block in the feed, full trip counts.
-    let Response::Blocks { blocks } = dispatch(Request::Blocks { feed_id, date: None }).unwrap() else {
-        panic!("expected Blocks response");
-    };
-    let ids: Vec<(&str, usize)> = blocks
-        .iter()
-        .map(|b| (b.block_id.as_str(), b.trip_count))
-        .collect();
-    assert_eq!(ids, vec![("B1", 2), ("B2", 1)]);
-
-    // With Friday's date: both run (B1's WK trips, B2's holiday trip).
-    let Response::Blocks { blocks } =
-        dispatch(Request::Blocks { feed_id, date: Some(DATE.into()) }).unwrap() else {
-            panic!("expected Blocks response");
-        };
-    let ids: Vec<(&str, usize)> = blocks
-        .iter()
-        .map(|b| (b.block_id.as_str(), b.trip_count))
-        .collect();
-    assert_eq!(ids, vec![("B1", 2), ("B2", 1)]);
-
-    // Sunday: WK is off and the holiday is Friday-only — every bus is
-    // parked, so the picker has nothing to offer.
-    let Response::Blocks { blocks } = dispatch(Request::Blocks {
-        feed_id,
-        date: Some("2026-10-25".into()),
-    })
-    .unwrap() else {
-        panic!("expected Blocks response");
-    };
-    assert!(blocks.is_empty());
-
-    // A bad date is an error, not a panic.
-    assert!(dispatch(Request::Blocks { feed_id, date: Some("2026-13-99".into()) }).is_err());
-}
-
-#[test]
 fn request_serializes_as_tagged_json() {
     // The protocol has a textual form for hosts that want one —
     // serde-tagged enums make the "op" naming rule explicit.
@@ -361,12 +321,17 @@ fn dispatch_json_round_trips_the_seam() {
     assert_eq!(deps.as_array().unwrap().len(), 4);
     assert_eq!(deps[1]["trip_id"], "t10");
 
-    // The feed_info op surfaces artifact metadata for the manifest.
-    let outcome = transit_ops::dispatch_json(
-        &serde_json::json!({ "op": "feed_info", "feed_id": feed_id }).to_string(),
-    );
-    let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
-    assert_eq!(parsed["ok"]["info"]["feed_version"], "2026.10.1");
+    // The retired dispatch-read ops (active_services, blocks,
+    // block_trips, feed_info — cap-gtfs owns them now) error through
+    // the standard outcome, never trap.
+    for retired in ["active_services", "blocks", "feed_info"] {
+        let outcome = transit_ops::dispatch_json(&format!(r#"{{"op":"{retired}","feed_id":{feed_id}}}"#));
+        let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
+        assert!(
+            parsed["error"].as_str().unwrap().contains("unknown variant"),
+            "{retired} must be retired: {outcome}"
+        );
+    }
 
     // Errors come back as {"error": ...}, not panics.
     let outcome = transit_ops::dispatch_json(
@@ -479,19 +444,6 @@ fn network_document_drives_the_whole_op_surface() {
     };
     assert_eq!((summary.stops, summary.routes, summary.trips, summary.stop_times), (3, 1, 3, 9));
 
-    // The calendar rule (weekday, minus 2026-11-26) becomes explicit
-    // running dates: Friday 2026-10-23 runs, the removed day doesn't.
-    let services = match dispatch(Request::ActiveServices { feed_id, date: "2026-10-23".into() }).unwrap() {
-        Response::ActiveServices { services } => services,
-        _ => panic!("active_services"),
-    };
-    assert_eq!(services, vec!["10-weekday".to_string()]);
-    let none = match dispatch(Request::ActiveServices { feed_id, date: "2026-11-26".into() }).unwrap() {
-        Response::ActiveServices { services } => services,
-        _ => panic!("active_services"),
-    };
-    assert!(none.is_empty(), "the Removed exception date has no service");
-
     // Departures at A: the derived trip ids are "<service>@<start>".
     let deps = match dispatch(Request::Departures {
         feed_id,
@@ -522,23 +474,6 @@ fn network_document_drives_the_whole_op_surface() {
         _ => panic!("departures"),
     };
     assert_eq!(deps_b[0].departure_time, Some(28800 + 300));
-
-    // The runcut: block 400 chains both trips. The derived view shows
-    // the realized gap (20 min: 15 min authored layover + 5 min run
-    // slack) — the authored layover minimum is a constraint, not a
-    // time, and GTFS-shaped views can only carry the gap.
-    let block = match dispatch(Request::BlockTrips {
-        feed_id,
-        block_id: "400".into(),
-        date: "2026-10-23".into(),
-    })
-    .unwrap()
-    {
-        Response::BlockTrips { trips } => trips,
-        _ => panic!("block_trips"),
-    };
-    assert_eq!(block.len(), 2);
-    assert_eq!(block[1].layover_secs, Some(1200));
 
     // Planning: A→C on the planner's own document, 1 leg.
     let plan = match dispatch(Request::PlanTrip {
@@ -615,7 +550,13 @@ fn network_import_infers_a_valid_document_from_a_feed() {
     assert_eq!(block.trips.len(), 2);
     assert_eq!(block.trips[0].start_secs, 8 * 3600);
     assert_eq!(block.trips[0].schedule, "WK:pat-10-0-0");
-    assert!(block.layovers.is_empty(), "GTFS carries no layover data");
+    // GTFS carries no layover data; the import infers each layover
+    // from the observed end→start gap (t10 ends 08:10, t20 starts
+    // 08:20 — exactly feasible, the model's law holds with
+    // equality). The planner re-authors from there.
+    assert_eq!(block.layovers.len(), 1, "the observed gap becomes the layover");
+    assert_eq!(block.layovers[0].after_trip, 0);
+    assert_eq!(block.layovers[0].secs, 600);
 }
 
 /// A production-shaped feed (see the regression tests below): trip

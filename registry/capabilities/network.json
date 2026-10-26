@@ -1,6 +1,6 @@
 {
-  "blob": "blobs/4325718ac28c27145ac53b5d09dc764bffb5c2c319f548c1280129d25d27d575.wasm",
-  "bytes": 1040440,
+  "blob": "blobs/60f8cf179ae1b33bfe5f1513f89b40e32ee3f8adc8aa21abc3b214b15d7f6f32.wasm",
+  "bytes": 1041237,
   "consumes": {},
   "evidence": {
     "dirty_tree": true,
@@ -10,9 +10,9 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "bfde95d8fcbf8cfd7778d5738c4c448f92b0ed9b"
+    "source_commit": "232d63c713af9153aa58fbf3576d634efbc62e2a"
   },
-  "hash": "sha256:4325718ac28c27145ac53b5d09dc764bffb5c2c319f548c1280129d25d27d575",
+  "hash": "sha256:60f8cf179ae1b33bfe5f1513f89b40e32ee3f8adc8aa21abc3b214b15d7f6f32",
   "id": "network",
   "kernel": 1,
   "migrates": {},
@@ -21,7 +21,7 @@
       "description": "The publish path: materialize a registered document into a GTFS zip (deterministic bytes) and return it base64-encoded under the content hash of those bytes — the same identity any capability returns for the same bytes. Invalid documents are refused.",
       "example": {
         "request": {
-          "network_hash": "sha256:9a19c76cca6a54cdf4fdc54a5a57c8d684ffe8a79e89298d065a58454a709f4b",
+          "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
           "op": "export"
         },
         "response": {
@@ -53,7 +53,13 @@
               "anchor": "noon_minus_twelve",
               "blocks": {
                 "B1": {
-                  "layovers": [],
+                  "layovers": [
+                    {
+                      "after_trip": 0,
+                      "at": "B",
+                      "secs": 600
+                    }
+                  ],
                   "trips": [
                     {
                       "schedule": "WK:pat-10-0-0",
@@ -397,7 +403,7 @@
                 }
               }
             },
-            "network_hash": "sha256:9a19c76cca6a54cdf4fdc54a5a57c8d684ffe8a79e89298d065a58454a709f4b",
+            "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
             "notes": [
               {
                 "kind": "dropped_trips",
@@ -419,7 +425,13 @@
             "anchor": "noon_minus_twelve",
             "blocks": {
               "B1": {
-                "layovers": [],
+                "layovers": [
+                  {
+                    "after_trip": 0,
+                    "at": "B",
+                    "secs": 600
+                  }
+                ],
                 "trips": [
                   {
                     "schedule": "WK:pat-10-0-0",
@@ -767,7 +779,7 @@
         },
         "response": {
           "ok": {
-            "network_hash": "sha256:9a19c76cca6a54cdf4fdc54a5a57c8d684ffe8a79e89298d065a58454a709f4b",
+            "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
             "op": "load_document"
           }
         }
@@ -781,7 +793,7 @@
       "description": "Every issue of a registered document — the authoring UI's feedback loop, the whole list, never thrown.",
       "example": {
         "request": {
-          "network_hash": "sha256:9a19c76cca6a54cdf4fdc54a5a57c8d684ffe8a79e89298d065a58454a709f4b",
+          "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
           "op": "validate"
         },
         "response": {

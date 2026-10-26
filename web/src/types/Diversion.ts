@@ -3,11 +3,16 @@ import type { DetourPoint } from "./DetourPoint";
 
 /**
  * One operator edit, serializable so the UI can persist it next to
- * the feed bytes and replay it after a reload.
+ * the feed bytes and replay it after a reload. The edit document is
+ * THE DISPATCHER'S OWN — it lives here, in the sync contract, not in
+ * the GTFS codec (GTFS is a serialization spec for external data
+ * sharing; this document never crosses that boundary). Its fields
+ * reference routes and stops by the ids the network model carries.
  */
 export type Diversion = { id: string, route_id: string, 
 /**
- * `None` = both directions.
+ * `None` = both directions. (GTFS's direction_id, kept for the
+ * boundary path; the model matches patterns, not directions.)
  */
 direction_id: number | null, 
 /**
