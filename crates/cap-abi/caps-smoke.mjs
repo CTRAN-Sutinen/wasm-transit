@@ -340,4 +340,21 @@ assert(refused.error && refused.error.includes("invalid network"), "export refus
 const unknownFeed = network.raw({ op: "import", feed_hash: "sha256:missing" });
 assert(unknownFeed.error && unknownFeed.error.includes("unknown feed"), "unknown hashes error, never panic");
 
+// The realtime flow — the third capability extracted from the
+// monolith: protobuf bytes in on the bulk seam, delays and vehicles
+// out. A pure decoder; garbage bytes error, never trap.
+const rt = shell(loadModule(byId.rt));
+const rtPayload = readFileSync(path.join(here, "../../web/e2e/fixtures/sample-rt.pb"));
+const decoded = rt.invokeBytes(0, rtPayload);
+assert(decoded.op === "decode", "rt decode answers on the bulk-bytes seam");
+assert(decoded.overview.trip_updates === 1, "one trip update in the fixture");
+assert(decoded.overview.vehicles === 1, "one vehicle in the fixture");
+const trip = decoded.overview.trips[0];
+assert(trip.trip_id === "t10", "the delayed trip is t10");
+assert(trip.stop_updates[0].departure_delay === 120, "t10 is +120 s at A");
+const vehicle = decoded.overview.vehicle_positions[0];
+assert(vehicle.label === "4201", "the vehicle label (the bus number) survives decode");
+const garbage = rt.raw({ op: "decode", bytes: [0xff, 0xff] });
+assert(garbage.error && /decode/.test(garbage.error), "garbage bytes are an error outcome, never a trap");
+
 console.log("capability modules: ABI smoke ok");

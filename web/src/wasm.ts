@@ -21,7 +21,6 @@ import type { Itinerary } from "./types/Itinerary";
 import type { Network } from "./types/Network";
 import type { BlockSummary } from "./types/BlockSummary";
 import type { BlockTrip } from "./types/BlockTrip";
-import type { RtOverview } from "./types/RtOverview";
 import type { RouteSummary } from "./types/RouteSummary";
 import type { PlanInfo } from "./types/PlanInfo";
 import type { PlanIssue } from "./types/PlanIssue";
@@ -34,7 +33,6 @@ import type { TripLineFeature } from "./types/TripLineFeature";
 
 // Op codes for the bulk-bytes ABI (transit_ops::OP_LOAD_FEED etc.).
 const OP_LOAD_FEED = 0;
-const OP_DECODE_RT = 1;
 const OP_STREETS_LOAD = 2;
 const OP_COVERAGE_LOAD = 3;
 
@@ -256,10 +254,6 @@ export class GtfsHandle {
   }
 }
 
-export function decode_rt(bytes: Uint8Array): RtOverview {
-  return (invokeBytes(OP_DECODE_RT, bytes) as { overview: RtOverview }).overview;
-}
-
 // ---------------------------------------------------------------
 // Street networks (detour authoring). Pure queries against the
 // artifact's streets registry: bytes in once, snap/route after.
@@ -337,7 +331,6 @@ export function coverage_load(bytes: Uint8Array): CoverageLayer {
 /// boundary in one type.
 export type WasmApi = {
   GtfsHandle: typeof GtfsHandle;
-  decode_rt: typeof decode_rt;
   plans_resolve: typeof plans_resolve;
   plans_validate: typeof plans_validate;
   plans_periods: typeof plans_periods;
@@ -353,7 +346,6 @@ export async function loadWasm(): Promise<WasmApi> {
   await instantiate();
   return {
     GtfsHandle,
-    decode_rt,
     plans_resolve,
     plans_validate,
     plans_periods,

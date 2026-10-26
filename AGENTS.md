@@ -91,7 +91,10 @@ transit-analysis Planner analysis over an authored network document:
                 coverage handle) and the cap-analysis module — the
                 extraction pattern: crate boundary first, capability
                 wrapper second, monolith deletion last.
-transit-rt      prost types from the official GTFS-rt proto.
+transit-rt      prost types from the official GTFS-rt proto, plus the
+                OVERVIEW view (delays, vehicles) over them — a
+                LIBRARY shared by cap-rt and any host that holds the
+                bytes.
 transit-sync   THE sync document: EditRecord, FeedManifest, EditReport,
                 pure validation/merge logic. Shared by every host.
 transit-streets Street routing graph for detour authoring: GeoJSON in,
@@ -110,7 +113,7 @@ transit-ops     dispatch(Request) -> Response: the host-agnostic seam
                 monolith keeps shrinking; the corpus and the ABI
                 smoke pin the deletions). What remains: the parsed-
                 feed op surface (departures, planning, blocks,
-                geojson, rt, streets, sync), the plans chain in
+                geojson, streets, sync), the plans chain in
                 src/plans.rs (plans_resolve / plans_validate /
                 plans_periods — cross-document domain logic, the
                 same standing as transit-sync's merge), and the
@@ -122,9 +125,10 @@ transit-wasm    THE artifact: flat import-free C ABI over dispatch.
 **The capability bus (graduating):** horizontal capability modules
 assembled per user from a manifest — the thesis is "ship capabilities
 to match the user," so capability bytes differ per user while the
-DOCUMENT and the contracts stay identical everywhere. Two extractions
-are DONE, both by the same three-stage shape (crate boundary first,
-capability wrapper second, monolith op deletion last):
+DOCUMENT and the contracts stay identical everywhere. Three
+extractions are DONE, all by the same three-stage shape (crate
+boundary first, capability wrapper second, monolith op deletion
+last):
 * analysis (stats, service types, coverage) lives in
   `transit-analysis`, shared by cap-analysis (the module, hash-keyed
   document registries) and transit-ops — the planner UI reads numbers
@@ -134,9 +138,15 @@ capability wrapper second, monolith op deletion last):
   and transit-ops's tests — the planner's bootstrap (derive), the
   authoring feedback loop (validate), and the publish path
   (export → deterministic GTFS zip bytes → LoadFeed) all cross the
-  bus; the planner persona no longer needs the monolith for them.
+  bus; the planner persona no longer needs the monolith for them;
+* the realtime decoder lives in `transit-rt` (the overview view over
+  the prost types), shared by cap-rt and every host — the rider's
+  live board and the dispatcher's vehicle map decode through the bus
+  (cap-rt is a pure decoder over ephemeral payloads; the monolith
+  keeps no copy).
 Future extractions follow the same shape. The monolith remains the
-deployed artifact for everything not yet extracted.
+deployed artifact for everything not yet extracted (blocks, active
+services, the plans chain, streets, sync).
 
 ```
 cap-abi         The seam crate: the flat C ABI as a macro (every
@@ -179,6 +189,14 @@ cap-network     The network codec capability: load_feed (zip bytes →
                 library — the monolith keeps no copy; the planner
                 persona's bootstrap, validation, and materialize
                 cross the bus and degrade loudly without it.
+cap-rt          The realtime capability: decode — a GTFS-rt protobuf
+                payload (bulk-bytes op 0, the ephemeral bytes an
+                agency serves every few seconds) into the overview
+                view (delays per trip/stop, live vehicles). A PURE
+                DECODER: it writes nothing, and the monolith keeps
+                no copy (decode_rt is deleted; the ABI smoke pins the
+                retired op). Assembles for riders and dispatchers
+                alike.
 web/src/        capabilities.svelte.ts: the resolver — manifest
                 validation, demand-driven load, byte verification
                 against pinned hashes, per-capability degradation,
@@ -302,6 +320,10 @@ web/            Svelte 5 runes + Vite, TypeScript end to end. ONE
 
 ## Conventions and gotchas
 
+- **Git is the user's** — never commit, push, stash, or otherwise
+  move refs. Do the work, leave the tree dirty (staged files are
+  fine to inspect via `git status`/`git diff`), and report what
+  changed; the user handles every git action.
 - **The frontend is TypeScript, end to end** — every type that
   crosses the wasm boundary is GENERATED (`just types`, refreshed by
   `just test`): ts-rs derives on the model crates emit

@@ -8,6 +8,8 @@ license.workspace = true
 [dependencies]
 prost = { workspace = true }
 thiserror = { workspace = true }
+serde = { workspace = true }
+ts-rs = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"

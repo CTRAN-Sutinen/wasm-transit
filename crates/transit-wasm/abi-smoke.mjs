@@ -186,6 +186,9 @@ assert(second.feed_id !== feedId, "registry assigns distinct feed ids");
   const outcome = JSON.parse(rawInvoke(JSON.stringify({ op: "network_import", feed_id: feedId })));
   assert(outcome.error && /unknown variant|invalid request/.test(outcome.error),
     "the retired network op errors through the standard outcome");
+  const rt = JSON.parse(rawInvoke(JSON.stringify({ op: "decode_rt", bytes: [] })));
+  assert(rt.error && /unknown variant|invalid request/.test(rt.error),
+    "the retired rt op errors through the standard outcome (cap-rt owns the decoder)");
 }
 
 // Non-UTF-8 request payloads: an error outcome, never a trap.

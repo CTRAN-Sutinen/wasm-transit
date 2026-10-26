@@ -19,7 +19,6 @@ pub use transit_analysis as analysis; // the analysis module moved to its own cr
 pub use transit_codec as codec; // the network codec moved to its own crate — the bus shares it as a library
 pub mod geojson;
 pub mod plans;
-pub mod rt;
 pub mod state;
 
 pub use plans::{PlanInfo, PlanIssue};
@@ -27,7 +26,6 @@ pub use geojson::{
     FeatureCollection, LineGeometry, PointGeometry, StopFeature, StopProps, TripLineFeature,
     TripProps,
 };
-pub use rt::{RtOverview, StopUpdateView, TripUpdateView, VehicleView};
 pub use state::FeedState;
 
 use ts_rs::TS;
@@ -152,8 +150,6 @@ pub enum Request {
         from: transit_streets::StreetPosition,
         to: transit_streets::StreetPosition,
     },
-    /// Decode a GTFS-rt protobuf payload into the overview view.
-    DecodeRt { bytes: Vec<u8> },
     /// `feed_info.txt` metadata of a feed (version, publisher), when
     /// the feed provides the file.
     FeedInfo { feed_id: u32 },
@@ -211,7 +207,6 @@ pub enum Response {
     StreetsLoad { streets_id: u32, segments: u32, nodes: u32 },
     StreetSnap { position: Option<transit_streets::StreetPosition> },
     StreetRoute { points: Vec<transit_streets::StreetPoint> },
-    DecodeRt { overview: RtOverview },
     FeedInfo { info: Option<transit_core::FeedInfo> },
     DropFeed {},
     SyncEdits { records: Vec<EditRecord>, reports: Vec<transit_sync::EditReport> },
@@ -272,9 +267,6 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
             let total_pop = layer.points.iter().map(|p| p.pop).sum();
             let pop_field = layer.pop_field.clone();
             Ok(Response::CoverageLoad { points, pop_field, total_pop })
-        }
-        Request::DecodeRt { bytes } => {
-            Ok(Response::DecodeRt { overview: rt::decode_rt_overview(&bytes)? })
         }
         Request::Summary { feed_id } => {
             state::with_feed(feed_id, |f| Ok(Response::Summary { summary: f.gtfs.summary() }))
@@ -453,10 +445,10 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
 }
 
 /// Binary-op codes for [`dispatch_bytes`] — the ops whose payloads
-/// are megabytes of raw bytes (feed zips, rt protobuf, street
-/// GeoJSON), where a JSON array of numbers would be absurd.
+/// are megabytes of raw bytes (feed zips, street GeoJSON), where a
+/// JSON array of numbers would be absurd. (The rt protobuf payload
+/// moved to the cap-rt capability with its decoder.)
 pub const OP_LOAD_FEED: u32 = 0;
-pub const OP_DECODE_RT: u32 = 1;
 pub const OP_STREETS_LOAD: u32 = 2;
 pub const OP_COVERAGE_LOAD: u32 = 3;
 
@@ -488,12 +480,11 @@ pub fn dispatch_json(input: &str) -> String {
     }
 }
 
-/// Bytes-op form of the seam for [`OP_LOAD_FEED`] / [`OP_DECODE_RT`]
-/// / [`OP_STREETS_LOAD`]. Same outcome shape as [`dispatch_json`].
+/// Bytes-op form of the seam for [`OP_LOAD_FEED`] /
+/// [`OP_STREETS_LOAD`]. Same outcome shape as [`dispatch_json`].
 pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
     let req = match op {
         OP_LOAD_FEED => Request::LoadFeed { bytes: bytes.to_vec() },
-        OP_DECODE_RT => Request::DecodeRt { bytes: bytes.to_vec() },
         OP_STREETS_LOAD => Request::StreetsLoad { bytes: bytes.to_vec() },
         OP_COVERAGE_LOAD => Request::CoverageLoad { bytes: bytes.to_vec(), pop_field: None },
         other => {

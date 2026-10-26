@@ -79,6 +79,75 @@ between `caps-run` invocations and building a request file with the
 that a session's whole flow is capability-side the need is daily,
 not occasional.
 
+## 1b. Extract the realtime decoder (cap-rt) — DONE (2026-10-25)
+
+Found in the dispatcher dogfood session (below): the dispatcher's
+live view — delays, vehicles — was monolith-only, so the dispatcher
+persona could not be assembled at all. Landed per the standard
+pattern: `transit-rt` (the overview view over the prost types, the
+shared library), `cap-rt` (`decode`, bulk-bytes op 0, a pure decoder
+over ephemeral payloads), the monolith's `decode_rt` DELETED (the
+ABI smoke pins the retired op). The web rider/dispatcher rt flows
+(load, poll, vehicle map, delayed board) cross the bus and degrade
+loudly (schedule times stay, last good positions stay, the status
+says the capability is off). gen-manifest decodes the REAL e2e
+fixture payload for the worked example; the runner gate loads the
+fixture on the bulk seam and greps the known +120 s delay.
+Real-data dogfood: the C-TRAN TripUpdates + VehiclePositions feeds
+decoded through `caps-run rt --load` (see the dispatcher session
+below). The RT feed URLs are NOT committed (agency data policy
+mirrors the static feed; fetch from gtfs-rt.c-tran.org).
+
+## 1c. Dispatcher dogfood session findings (2026-10-25, C-TRAN)
+
+A dispatcher session through `caps-run` alone. The questions and
+where the bus answers them:
+
+- **"What leaves Fisher's Landing today?"** — the parent stop (106)
+  answers ZERO departures; the nine bays answer everything
+  (item 2, reproduced live). A dispatcher must poll ten ids and
+  merge by hand. The watchlist IS a workaround (a v2 document with
+  the bays + `watchlist_board` = a one-call multi-stop board), but a
+  dispatcher should not have to build a document to see a station.
+- **"What service runs today? Which blocks are out? What trips does
+  block X run?"** — `active_services`, `blocks` (with date), and
+  `block_trips` exist ONLY in the monolith. No capability answers
+  them: the dispatcher persona cannot be assembled for its core
+  work (the vehicle/block view is the dispatcher's primary screen).
+  The next dispatch extraction should be a dispatch READ capability
+  over the feed: `active_services`, `blocks`, `block_trips` (the
+  monolith ops move, the artifact shrinks a third time).
+- **"Is my bus on time? Where is it?"** — was `decode_rt`,
+  monolith-only; DONE as cap-rt (item 1b). Remaining rt gap: the
+  overview carries per-stop delays and vehicle positions, but a
+  dispatcher asking "which trips are LATE right now, ranked" gets
+  only the raw views — the UI joins; an agent joining by hand is
+  the item-3 shape again (chain decode → a ranked answer is host
+  work today).
+- **"When does trip X actually reach stop Y?"** — the most-asked
+  dispatch question, and NOTHING answers it on the bus (or in the
+  monolith): rt gives the delay, the static feed holds the
+  schedule, and no op joins them. A `trip_progress` op (one trip's
+  remaining stops: scheduled, delay, predicted — static + rt in one
+  response) is the right-shape fix; it needs rt to consume the feed
+  document (the registry edge the manifest can carry).
+- **Stop names by id** — the rt view carries stop ids; a dispatcher
+  reads names. A `stops_by_ids` (or an include shape on `stops`)
+  answers; today the host pulls 901 rows and joins.
+- **"Which feed is this? What version?"** — `feed_info` exists only
+  in the monolith; small, but the identity question a dispatcher
+  asks first. Fold into the dispatch read capability.
+- **Stop search** — `stops` returns first N by id; finding Fisher's
+  bays means pulling the whole list and grepping client-side. An
+  `include`/query shape on `stops` (or a `find_stops` op) is the
+  item-4 pattern applied to gtfs.
+- **Cross-session chaining** — the session hand-copied feed hashes
+  into every invocation (item 3, again — daily, not occasional).
+- **The clock** — hosts own the clock, so every op takes explicit
+  dates; the runner has no `$TODAY` (an agent computing "today" by
+  hand is fine once, drifts twice). A runner-side `$TODAY` (and
+  `$NOW_SECS`) placeholder is cheap honesty.
+
 ## 2. Parent stations answer zero departures (cap-gtfs)
 
 **Finding.** `caps run gtfs --op '{departures, stop_id: "106"}'`

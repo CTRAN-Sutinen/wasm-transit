@@ -5,14 +5,19 @@
 //! `proto/` in this crate). Decoding is therefore always in sync with the
 //! spec file — regenerate by touching the proto.
 //!
-//! This crate deliberately does nothing else: turning a decoded
-//! `FeedMessage` into *meaning* (e.g. "this trip is 3 minutes late at
-//! stop A") is the job of the layer that also knows the static feed —
-//! see transit-wasm / transit-core.
+//! [`overview`] turns the decoded `FeedMessage` into the flat view every
+//! host shows (delays, vehicles) — shared between the cap-rt capability
+//! module and any host that holds the bytes.
 
 pub mod gtfs_rt {
     include!(concat!(env!("OUT_DIR"), "/transit_realtime.rs"));
 }
+
+pub mod overview;
+
+pub use overview::{
+    decode_overview, RtOverview, StopUpdateView, TripUpdateView, VehicleView,
+};
 
 use prost::Message;
 

@@ -28,6 +28,9 @@ import type { Request as AnalysisRequest } from "./types/cap_analysis/Request";
 import type { Response as AnalysisResponse } from "./types/cap_analysis/Response";
 import type { Request as NetworkCapRequest } from "./types/cap_network/Request";
 import type { Response as NetworkCapResponse } from "./types/cap_network/Response";
+import type { Request as RtCapRequest } from "./types/cap_rt/Request";
+import type { Response as RtCapResponse } from "./types/cap_rt/Response";
+import type { RtOverview } from "./types/RtOverview";
 import type { Network } from "./types/Network";
 import type { NetworkError } from "./types/NetworkError";
 import type { ImportNote } from "./types/ImportNote";
@@ -71,8 +74,9 @@ class CapModule {
       | GtfsRequest
       | RouterRequest
       | AnalysisRequest
-      | NetworkCapRequest,
-  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse {
+      | NetworkCapRequest
+      | RtCapRequest,
+  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | RtCapResponse {
     const wasm = this.#exports;
     const payload = new TextEncoder().encode(JSON.stringify(request));
     const ptr = wasm.transit_alloc(payload.length);
@@ -83,13 +87,14 @@ class CapModule {
       | GtfsResponse
       | RouterResponse
       | AnalysisResponse
-      | NetworkCapResponse;
+      | NetworkCapResponse
+      | RtCapResponse;
   }
 
   invokeBytes(
     op: number,
     bytes: Uint8Array,
-  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse {
+  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | RtCapResponse {
     const wasm = this.#exports;
     const ptr = wasm.transit_alloc(bytes.length);
     new Uint8Array(wasm.memory.buffer, ptr, bytes.length).set(bytes);
@@ -99,7 +104,8 @@ class CapModule {
       | GtfsResponse
       | RouterResponse
       | AnalysisResponse
-      | NetworkCapResponse;
+      | NetworkCapResponse
+      | RtCapResponse;
   }
 
   #read(outPtr: number): unknown {
@@ -648,4 +654,32 @@ export function base64Decode(text: string): Uint8Array {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
+}
+
+// ---------------------------------------------------------------------
+// The realtime capability — the third REAL capability extracted from
+// the monolith (the decoder): live delays and vehicles from GTFS-rt
+// protobuf bytes. A pure decoder over ephemeral payloads; when it
+// cannot assemble, live data is off and the app says so (the board
+// keeps its schedule times, the map keeps its last good positions).
+// ---------------------------------------------------------------------
+
+const OP_RT_DECODE = 0;
+
+export function rtCap(module: CapModule) {
+  return {
+    decode(bytes: Uint8Array): RtOverview {
+      const resp = module.invokeBytes(OP_RT_DECODE, bytes) as Extract<
+        RtCapResponse,
+        { op: "decode" }
+      >;
+      return resp.overview;
+    },
+  };
+}
+
+/// The current realtime module, if the bus assembled one.
+export async function rtModule(): Promise<CapModule | null> {
+  const modules = await ensure(["rt"]);
+  return modules.rt ?? null;
 }

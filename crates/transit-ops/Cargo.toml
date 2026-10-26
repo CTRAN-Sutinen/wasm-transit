@@ -13,7 +13,6 @@ chrono = { workspace = true }
 prost = { workspace = true }
 transit-core = { path = "../transit-core" }
 transit-router = { path = "../transit-router" }
-transit-rt = { path = "../transit-rt" }
 transit-streets = { path = "../transit-streets" }
 transit-sync = { path = "../transit-sync" }
 transit-network = { path = "../transit-network" }
@@ -23,3 +22,6 @@ transit-codec = { path = "../transit-codec" }
 [dev-dependencies]
 proptest = "1"
 zip = { workspace = true }
+# The panic-fuzz layer still decodes raw bytes directly (the decode op
+# itself moved to cap-rt with its decoder).
+transit-rt = { path = "../transit-rt" }

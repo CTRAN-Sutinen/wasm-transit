@@ -1,0 +1,85 @@
+{
+  "blob": "blobs/3308042d1437a2cc623f4db3912509f9fe2418a5468c2315ff21f0bef4d11135.wasm",
+  "bytes": 196627,
+  "consumes": {},
+  "evidence": {
+    "dirty_tree": true,
+    "gates": [
+      "cargo test (workspace, includes the capability law suites)",
+      "node crates/cap-abi/caps-smoke.mjs (ABI + composition + context)"
+    ],
+    "recipe": "just registry",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "source_commit": "69c51c2922f7715455b2141955c7764e61757489"
+  },
+  "hash": "sha256:3308042d1437a2cc623f4db3912509f9fe2418a5468c2315ff21f0bef4d11135",
+  "id": "rt",
+  "kernel": 1,
+  "migrates": {},
+  "op_docs": {
+    "decode": {
+      "description": "Decode a GTFS-rt protobuf payload into the overview: entity counts, trip updates with per-stop delays, and vehicle positions (id, label, lat/lon, bearing, trip). Bulk-bytes op 0; pass the raw protobuf to transit_invoke_bytes. Garbage bytes are an error outcome, never a trap.",
+      "example": {
+        "request": {
+          "bytes": "<the raw GTFS-rt protobuf — bulk-bytes op 0>",
+          "op": "decode"
+        },
+        "response": {
+          "ok": {
+            "op": "decode",
+            "overview": {
+              "alerts": 0,
+              "entities": 2,
+              "gtfs_realtime_version": "2.0",
+              "timestamp": 1728000000,
+              "trip_updates": 1,
+              "trips": [
+                {
+                  "route_id": "10",
+                  "stop_updates": [
+                    {
+                      "arrival_delay": null,
+                      "departure_delay": 120,
+                      "stop_id": "A",
+                      "stop_sequence": 1
+                    },
+                    {
+                      "arrival_delay": 180,
+                      "departure_delay": null,
+                      "stop_id": "B",
+                      "stop_sequence": 2
+                    }
+                  ],
+                  "trip_id": "t10"
+                }
+              ],
+              "vehicle_positions": [
+                {
+                  "bearing": 90.0,
+                  "entity_id": "vp-1",
+                  "label": "4201",
+                  "lat": 45.439998626708984,
+                  "lon": -73.44000244140625,
+                  "route_id": null,
+                  "stop_id": "A",
+                  "trip_id": "t10",
+                  "vehicle_id": "4201"
+                }
+              ],
+              "vehicles": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "ops": [
+    "decode"
+  ],
+  "purpose": "Realtime decoding: turn a GTFS-rt protobuf payload (trip updates, vehicle positions — the bytes an agency serves every few seconds) into the flat view hosts show (delays per trip/stop, live vehicles for the map). The third capability extracted from the monolith — the decoder lives in the shared transit-rt library, and the monolith keeps no copy. Assemble for riders (live boards) and dispatchers (the operation view) alike.",
+  "speaks": {
+    "gtfs_rt": [
+      1
+    ]
+  }
+}

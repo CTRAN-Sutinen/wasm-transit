@@ -1,6 +1,7 @@
-//! Browser/server-friendly view of a decoded GTFS-rt feed: header,
-//! entity counts by type, trip updates (delays), and live vehicles.
-//! Serialization target of [`crate::Request::DecodeRt`].
+//! Host-friendly view of a decoded GTFS-rt feed: header, entity
+//! counts by type, trip updates (delays), and live vehicles — the
+//! serialization target of cap-rt's `decode` op, shared with every
+//! host that wants meaning out of the protobuf bytes.
 
 use ts_rs::TS;
 use serde::Serialize;
@@ -63,8 +64,8 @@ pub struct RtOverview {
 const MAX_TRIPS_SHOWN: usize = 1000;
 
 /// Decode a GTFS-rt protobuf payload into the overview view.
-pub fn decode_rt_overview(bytes: &[u8]) -> Result<RtOverview, crate::OpError> {
-    let msg = transit_rt::decode(bytes).map_err(|e| crate::OpError::new(e.to_string()))?;
+pub fn decode_overview(bytes: &[u8]) -> Result<RtOverview, String> {
+    let msg = crate::decode(bytes).map_err(|e| e.to_string())?;
 
     // gtfs-realtime.proto is proto2: `required` fields (header, and the
     // TripDescriptor inside a TripUpdate) are plain values in prost.

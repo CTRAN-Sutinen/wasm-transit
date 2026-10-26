@@ -119,6 +119,7 @@ dependencies = [
  "transit-codec",
  "transit-core",
  "transit-network",
+ "transit-rt",
  "ts-rs",
 ]
 
@@ -179,6 +180,18 @@ dependencies = [
  "sha2",
  "transit-core",
  "transit-router",
+ "ts-rs",
+]
+
+[[package]]
+name = "cap-rt"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "prost",
+ "serde",
+ "serde_json",
+ "transit-rt",
  "ts-rs",
 ]
 
@@ -1019,7 +1032,9 @@ dependencies = [
  "prost",
  "prost-build",
  "protoc-bin-vendored",
+ "serde",
  "thiserror 1.0.69",
+ "ts-rs",
 ]
 
 [[package]]

@@ -15,6 +15,7 @@ members = [
     "crates/cap-router",
     "crates/cap-analysis",
     "crates/cap-network",
+    "crates/cap-rt",
     "crates/transit-analysis",
 ]
 

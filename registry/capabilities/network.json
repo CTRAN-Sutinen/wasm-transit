@@ -10,7 +10,7 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "a500a4f8acf535bf366cc89c79da54d1714581e4"
+    "source_commit": "69c51c2922f7715455b2141955c7764e61757489"
   },
   "hash": "sha256:ad7d18d5fdd6cf08eb8b2276a5e758186c23789bc078af973f9118d9774d8aa3",
   "id": "network",

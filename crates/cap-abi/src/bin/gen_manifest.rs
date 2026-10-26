@@ -103,6 +103,20 @@ const MODULES: &[ModuleSpec] = &[
         ],
     },
     ModuleSpec {
+        id: "rt",
+        file: "cap_rt.wasm",
+        ops: &["decode"],
+        consumes: &[],
+        // The gtfs-rt payload: an ephemeral document (polled every
+        // few seconds), versioned by the protobuf schema it speaks.
+        speaks: &[("gtfs_rt", &[1])],
+        migrates: &[],
+        purpose: "Realtime decoding: turn a GTFS-rt protobuf payload (trip updates, vehicle positions — the bytes an agency serves every few seconds) into the flat view hosts show (delays per trip/stop, live vehicles for the map). The third capability extracted from the monolith — the decoder lives in the shared transit-rt library, and the monolith keeps no copy. Assemble for riders (live boards) and dispatchers (the operation view) alike.",
+        op_docs: &[
+            ("decode", "Decode a GTFS-rt protobuf payload into the overview: entity counts, trip updates with per-stop delays, and vehicle positions (id, label, lat/lon, bearing, trip). Bulk-bytes op 0; pass the raw protobuf to transit_invoke_bytes. Garbage bytes are an error outcome, never a trap."),
+        ],
+    },
+    ModuleSpec {
         id: "analysis",
         file: "cap_analysis.wasm",
         ops: &["load_network", "load_population_layer", "network_stats", "service_types_overview", "service_type_detail", "type_coverage"],
@@ -440,6 +454,17 @@ fn example_for(
                 json!({ "op": "export", "network_hash": ctx.network_hash }),
                 json!({ "ok": { "op": "export", "feed_hash": ctx.export_feed_hash,
                     "summary": ctx.export_summary, "zip_b64": ctx.zip_b64 } }),
+            )
+        }
+        // The realtime example decodes the REAL e2e fixture payload —
+        // the same bytes the browser tests replay.
+        ("rt", "decode") => {
+            let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-rt.pb");
+            let bytes = std::fs::read(fixture).expect("rt fixture exists");
+            let overview = transit_rt::decode_overview(&bytes).expect("fixture decodes");
+            (
+                json!({ "op": "decode", "bytes": "<the raw GTFS-rt protobuf — bulk-bytes op 0>" }),
+                json!({ "ok": { "op": "decode", "overview": overview } }),
             )
         }
         // Bulk-bytes ops have no JSON request example (the payload is

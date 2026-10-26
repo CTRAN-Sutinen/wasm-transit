@@ -16,6 +16,8 @@ ts-rs = { workspace = true }
 transit-core = { path = "../transit-core" }
 transit-network = { path = "../transit-network" }
 transit-codec = { path = "../transit-codec" }
+# …and the rt capability's example decodes the real e2e payload.
+transit-rt = { path = "../transit-rt" }
 
 [dev-dependencies]
 proptest = "1"

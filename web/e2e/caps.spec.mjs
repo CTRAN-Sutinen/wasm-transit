@@ -39,6 +39,9 @@ test("the manifest assembles both capabilities", async ({ page }) => {
   // And the second (the codec): bootstrap and publish through the bus.
   await expect(panel.getByTestId("cap-network")).toContainText("ready");
   await expect(panel).toContainText("network");
+  // And the third (the realtime decoder): the dispatch leg assembles.
+  await expect(panel.getByTestId("cap-rt")).toContainText("ready");
+  await expect(panel).toContainText("rt");
 });
 
 test("the composition runs across two modules", async ({ page }) => {

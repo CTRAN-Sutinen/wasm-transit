@@ -8,7 +8,6 @@ use transit_codec::{gtfs_to_network, network_to_gtfs};
 use transit_ops::{dispatch, PlanInfo, Request, Response};
 use prost::Message;
 use transit_network::Schedule;
-use transit_rt::gtfs_rt as rt;
 use transit_sync::{EditRecord, EditStatus};
 
 const DATE: &str = "2026-10-23"; // Friday: WK + HOL both run
@@ -273,77 +272,6 @@ fn geojson_ops_return_typed_features() {
         Response::RoutePathGeojson { feature } => assert!(feature.is_none()),
         _ => panic!(),
     }
-}
-
-#[test]
-fn decode_rt_reports_delays_and_vehicles() {
-    // A minimal GTFS-rt feed, encoded here with the same generated
-    // prost types the decoder uses: t10 delayed +120 s at A, plus one
-    // vehicle on t10.
-    let msg = rt::FeedMessage {
-        header: rt::FeedHeader {
-            gtfs_realtime_version: "2.0".into(),
-            timestamp: Some(1_796_000_000),
-            ..Default::default()
-        },
-        entity: vec![
-            rt::FeedEntity {
-                id: "tu1".into(),
-                trip_update: Some(rt::TripUpdate {
-                    trip: rt::TripDescriptor { trip_id: Some("t10".into()), ..Default::default() },
-                    stop_time_update: vec![rt::trip_update::StopTimeUpdate {
-                        stop_id: Some("A".into()),
-                        departure: Some(rt::trip_update::StopTimeEvent { delay: Some(120), ..Default::default() }),
-                        ..Default::default()
-                    }],
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-            rt::FeedEntity {
-                id: "vp1".into(),
-                vehicle: Some(rt::VehiclePosition {
-                    trip: Some(rt::TripDescriptor { trip_id: Some("t10".into()), ..Default::default() }),
-                    position: Some(rt::Position {
-                        latitude: 45.44,
-                        longitude: -73.44,
-                        bearing: Some(90.0),
-                        ..Default::default()
-                    }),
-                    stop_id: Some("A".into()),
-                    // The descriptor carries the bus number: internal
-                    // id and the rider-visible label.
-                    vehicle: Some(rt::VehicleDescriptor {
-                        id: Some("4201".into()),
-                        label: Some("4201".into()),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-        ],
-    };
-    let bytes = msg.encode_to_vec();
-
-    match dispatch(Request::DecodeRt { bytes }).unwrap() {
-        Response::DecodeRt { overview } => {
-            assert_eq!(overview.gtfs_realtime_version.as_deref(), Some("2.0"));
-            assert_eq!(overview.trip_updates, 1);
-            assert_eq!(overview.vehicles, 1);
-            assert_eq!(overview.trips[0].trip_id.as_deref(), Some("t10"));
-            assert_eq!(overview.trips[0].stop_updates[0].departure_delay, Some(120));
-            // Position lat/lon are f32 on the wire (GTFS-rt spec).
-            assert_eq!(overview.vehicle_positions[0].lat, 45.44f32 as f64);
-            assert_eq!(overview.vehicle_positions[0].stop_id.as_deref(), Some("A"));
-            assert_eq!(overview.vehicle_positions[0].vehicle_id.as_deref(), Some("4201"));
-            assert_eq!(overview.vehicle_positions[0].label.as_deref(), Some("4201"));
-        }
-        _ => panic!(),
-    }
-
-    // Garbage bytes decode to an error, not a panic.
-    assert!(dispatch(Request::DecodeRt { bytes: vec![0xff, 0xff] }).is_err());
 }
 
 #[test]

@@ -1,6 +1,7 @@
 import { app, getEditDocument, setEditDocument, setStreets, type DiversionDraft } from "./state.svelte";
 import { get as idbGet, set as idbSet, del as idbDel } from "idb-keyval";
 import { streets_load } from "./wasm";
+import { rtCap, rtModule } from "./capabilities.svelte";
 import type { EditRecord } from "./types/EditRecord";
 import type { Itinerary } from "./types/Itinerary";
 import type { LineGeometry } from "./types/LineGeometry";
@@ -150,8 +151,16 @@ export async function loadGtfsFromUrl(): Promise<void> {
 }
 
 export async function loadRtBytes(bytes: Uint8Array): Promise<void> {
-  if (!app.wasm) return;
-  app.rtOverview = app.wasm.decode_rt(bytes);
+  // The decoder lives in the REALTIME CAPABILITY (the monolith keeps
+  // no copy); the bytes are awaited before crossing into wasm — a
+  // Promise in a &[u8] slot silently decodes as an empty buffer.
+  const module = await rtModule();
+  if (!module) {
+    app.status =
+      "Realtime capability unavailable — live times are off until it loads (the capability bus did not assemble).";
+    return;
+  }
+  app.rtOverview = rtCap(module).decode(bytes);
   // Only a combined feed carries vehicles; a pure TripUpdates feed must
   // not touch the vehicle dots (they belong to the VP feed / last good
   // positions).
@@ -170,8 +179,13 @@ export async function loadRtFromUrl(): Promise<void> {
 export async function loadVpFromUrl(): Promise<void> {
   if (!app.vpUrl) { app.status = "Enter a vehicle positions URL first."; return; }
   try {
-    if (!app.wasm) return;
-    const rt = app.wasm.decode_rt(await fetchBytes(proxied(app.vpUrl)));
+    const module = await rtModule();
+    if (!module) {
+      app.status =
+        "Realtime capability unavailable — vehicle positions are off until it loads (the capability bus did not assemble).";
+      return;
+    }
+    const rt = rtCap(module).decode(await fetchBytes(proxied(app.vpUrl)));
     app.vehicles = rt.vehicle_positions ?? [];
     app.status = `Vehicle positions loaded: ${app.vehicles.length} vehicles on the map.`;
   } catch (e) { error(e); } // keep the last good positions on the map

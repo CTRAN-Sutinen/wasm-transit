@@ -3,8 +3,8 @@
   "capabilities": [
     {
       "id": "gtfs",
-      "hash": "sha256:b0bf03c19026ea3d30c8547881507649e76215b92db84c07068501d55d25269b",
-      "url": "caps/gtfs-b0bf03c19026ea3d30c8547881507649e76215b92db84c07068501d55d25269b.wasm",
+      "hash": "sha256:f3e9d92232d92d43a5635b82196d6751970809af15b19743b98e37120edcbfc9",
+      "url": "caps/gtfs-f3e9d92232d92d43a5635b82196d6751970809af15b19743b98e37120edcbfc9.wasm",
       "bytes": 543295,
       "ops": [
         "load_feed",
@@ -90,10 +90,6 @@
             }
           }
         },
-        "load_feed": {
-          "description": "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
-          "example": null
-        },
         "departures": {
           "description": "Upcoming departures at one stop on a service date, schedule only (GTFS-rt is another capability).",
           "example": {
@@ -166,6 +162,10 @@
               }
             }
           }
+        },
+        "load_feed": {
+          "description": "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
+          "example": null
         },
         "load_watchlist": {
           "description": "Register a watchlist document (version-tagged JSON) under its content hash.",
@@ -256,6 +256,10 @@
       "migrates": {},
       "purpose": "Earliest-arrival trip planning (RAPTOR) over a feed document the gtfs capability produced. Assemble for users who need directions, not just departure times. Reads documents by content hash; writes nothing.",
       "op_docs": {
+        "load_feed": {
+          "description": "Register a GTFS zip under its content hash (the same document identity gtfs returns — assert equality at the host). Bulk-bytes op 0.",
+          "example": null
+        },
         "plan": {
           "description": "Earliest-arrival itinerary from stop to stop at a departure time; null itinerary = unreachable within max_legs.",
           "example": {
@@ -282,10 +286,6 @@
               }
             }
           }
-        },
-        "load_feed": {
-          "description": "Register a GTFS zip under its content hash (the same document identity gtfs returns — assert equality at the host). Bulk-bytes op 0.",
-          "example": null
         }
       }
     },
@@ -313,272 +313,6 @@
       "migrates": {},
       "purpose": "The network codec: infer an authored network document from a GTFS feed (the planner's bootstrap — patterns, service types, blocks, reported resolutions) and export one back to GTFS zip bytes (the publish path). The second capability extracted from the monolith — the codec lives in the shared transit-codec library, and the monolith keeps no copy. Assemble for planners: it is how a planner's session starts and how it publishes.",
       "op_docs": {
-        "load_document": {
-          "description": "Register an authored network document (the planner's JSON document) under its content hash; idempotent.",
-          "example": {
-            "request": {
-              "network": {
-                "anchor": "noon_minus_twelve",
-                "blocks": {
-                  "B1": {
-                    "layovers": [],
-                    "trips": [
-                      {
-                        "schedule": "WK:pat-10-0-0",
-                        "start_secs": 28800
-                      },
-                      {
-                        "schedule": "WK:pat-20-0-0",
-                        "start_secs": 30000
-                      }
-                    ]
-                  }
-                },
-                "name": "Test Transit",
-                "patterns": {
-                  "pat-10-0-0": {
-                    "name": "10 → Main & 2nd",
-                    "path": [
-                      {
-                        "lat": 45.4,
-                        "lon": -73.4
-                      },
-                      {
-                        "lat": 45.45,
-                        "lon": -73.45
-                      },
-                      {
-                        "lat": 45.5,
-                        "lon": -73.5
-                      },
-                      {
-                        "lat": 45.505,
-                        "lon": -73.505
-                      },
-                      {
-                        "lat": 45.51,
-                        "lon": -73.51
-                      }
-                    ],
-                    "route": "10",
-                    "stops": [
-                      {
-                        "distance_m": 0.0,
-                        "stop": "A",
-                        "timepoint": true
-                      },
-                      {
-                        "distance_m": 500.0,
-                        "stop": "B",
-                        "timepoint": true
-                      }
-                    ],
-                    "timing": [
-                      {
-                        "at_timepoints": [
-                          0,
-                          600
-                        ],
-                        "end_secs": 108000,
-                        "start_secs": 0
-                      }
-                    ]
-                  },
-                  "pat-10-0-1": {
-                    "name": "10 → Main & 2nd",
-                    "route": "10",
-                    "stops": [
-                      {
-                        "distance_m": 0.0,
-                        "stop": "A",
-                        "timepoint": true
-                      },
-                      {
-                        "distance_m": 500.0,
-                        "stop": "C",
-                        "timepoint": true
-                      },
-                      {
-                        "distance_m": 1000.0,
-                        "stop": "B",
-                        "timepoint": true
-                      }
-                    ],
-                    "timing": [
-                      {
-                        "at_timepoints": [
-                          0,
-                          300,
-                          600
-                        ],
-                        "end_secs": 108000,
-                        "start_secs": 0
-                      }
-                    ]
-                  },
-                  "pat-20-0-0": {
-                    "name": "20 → Main & 2nd",
-                    "route": "20",
-                    "stops": [
-                      {
-                        "distance_m": 0.0,
-                        "stop": "A",
-                        "timepoint": true
-                      },
-                      {
-                        "distance_m": 500.0,
-                        "stop": "B",
-                        "timepoint": true
-                      }
-                    ],
-                    "timing": [
-                      {
-                        "at_timepoints": [
-                          0,
-                          600
-                        ],
-                        "end_secs": 108000,
-                        "start_secs": 0
-                      }
-                    ]
-                  }
-                },
-                "plan": {
-                  "id": "",
-                  "name": ""
-                },
-                "routes": {
-                  "10": {
-                    "mode": "bus",
-                    "name": "10"
-                  },
-                  "20": {
-                    "mode": "bus",
-                    "name": "20"
-                  }
-                },
-                "schedules": {
-                  "SUN:pat-10-0-0": {
-                    "pattern": "pat-10-0-0",
-                    "schedule": {
-                      "kind": "exact_times",
-                      "starts": [
-                        32400
-                      ]
-                    },
-                    "service_type": "SUN"
-                  },
-                  "WK:pat-10-0-0": {
-                    "pattern": "pat-10-0-0",
-                    "schedule": {
-                      "kind": "exact_times",
-                      "starts": [
-                        28800
-                      ]
-                    },
-                    "service_type": "WK"
-                  },
-                  "WK:pat-10-0-1": {
-                    "pattern": "pat-10-0-1",
-                    "schedule": {
-                      "kind": "exact_times",
-                      "starts": [
-                        31200
-                      ]
-                    },
-                    "service_type": "WK"
-                  },
-                  "WK:pat-20-0-0": {
-                    "pattern": "pat-20-0-0",
-                    "schedule": {
-                      "kind": "exact_times",
-                      "starts": [
-                        30000
-                      ]
-                    },
-                    "service_type": "WK"
-                  }
-                },
-                "service_types": {
-                  "SUN": {
-                    "name": "SUN",
-                    "rule": {
-                      "days": {
-                        "fri": false,
-                        "mon": false,
-                        "sat": false,
-                        "sun": true,
-                        "thu": false,
-                        "tue": false,
-                        "wed": false
-                      },
-                      "exceptions": [],
-                      "ranges": [
-                        {
-                          "end": "2026-12-31",
-                          "start": "2026-01-01"
-                        }
-                      ]
-                    }
-                  },
-                  "WK": {
-                    "name": "WK",
-                    "rule": {
-                      "days": {
-                        "fri": true,
-                        "mon": true,
-                        "sat": false,
-                        "sun": false,
-                        "thu": true,
-                        "tue": true,
-                        "wed": true
-                      },
-                      "exceptions": [
-                        {
-                          "date": "2026-10-29",
-                          "state": "removed"
-                        }
-                      ],
-                      "ranges": [
-                        {
-                          "end": "2026-12-31",
-                          "start": "2026-01-01"
-                        }
-                      ]
-                    }
-                  }
-                },
-                "stops": {
-                  "A": {
-                    "lat": 45.5,
-                    "lon": -73.5,
-                    "name": "Main & 1st",
-                    "transfer": false
-                  },
-                  "B": {
-                    "lat": 45.51,
-                    "lon": -73.51,
-                    "name": "Main & 2nd",
-                    "transfer": false
-                  },
-                  "C": {
-                    "lat": 45.52,
-                    "lon": -73.52,
-                    "name": "Main & 3rd",
-                    "transfer": false
-                  }
-                }
-              },
-              "op": "load_document"
-            },
-            "response": {
-              "ok": {
-                "network_hash": "sha256:3f4ddb3b158998b4135c584a9a042839f3e18d34c9662037613fe07fb23145be",
-                "op": "load_document"
-              }
-            }
-          }
-        },
         "validate": {
           "description": "Every issue of a registered document — the authoring UI's feedback loop, the whole list, never thrown.",
           "example": {
@@ -590,29 +324,6 @@
               "ok": {
                 "issues": [],
                 "op": "validate"
-              }
-            }
-          }
-        },
-        "export": {
-          "description": "The publish path: materialize a registered document into a GTFS zip (deterministic bytes) and return it base64-encoded under the content hash of those bytes — the same identity any capability returns for the same bytes. Invalid documents are refused.",
-          "example": {
-            "request": {
-              "network_hash": "sha256:3f4ddb3b158998b4135c584a9a042839f3e18d34c9662037613fe07fb23145be",
-              "op": "export"
-            },
-            "response": {
-              "ok": {
-                "feed_hash": "sha256:deecda0285ba1cc7b450147aeb2a8c613077b451fc0633d2138d5266ad885b2e",
-                "op": "export",
-                "summary": {
-                  "agencies": 1,
-                  "routes": 2,
-                  "stop_times": 9,
-                  "stops": 3,
-                  "trips": 4
-                },
-                "zip_b64": "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"
               }
             }
           }
@@ -892,9 +603,372 @@
             }
           }
         },
+        "export": {
+          "description": "The publish path: materialize a registered document into a GTFS zip (deterministic bytes) and return it base64-encoded under the content hash of those bytes — the same identity any capability returns for the same bytes. Invalid documents are refused.",
+          "example": {
+            "request": {
+              "network_hash": "sha256:3f4ddb3b158998b4135c584a9a042839f3e18d34c9662037613fe07fb23145be",
+              "op": "export"
+            },
+            "response": {
+              "ok": {
+                "feed_hash": "sha256:deecda0285ba1cc7b450147aeb2a8c613077b451fc0633d2138d5266ad885b2e",
+                "op": "export",
+                "summary": {
+                  "agencies": 1,
+                  "routes": 2,
+                  "stop_times": 9,
+                  "stops": 3,
+                  "trips": 4
+                },
+                "zip_b64": "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"
+              }
+            }
+          }
+        },
         "load_feed": {
           "description": "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
           "example": null
+        },
+        "load_document": {
+          "description": "Register an authored network document (the planner's JSON document) under its content hash; idempotent.",
+          "example": {
+            "request": {
+              "network": {
+                "anchor": "noon_minus_twelve",
+                "blocks": {
+                  "B1": {
+                    "layovers": [],
+                    "trips": [
+                      {
+                        "schedule": "WK:pat-10-0-0",
+                        "start_secs": 28800
+                      },
+                      {
+                        "schedule": "WK:pat-20-0-0",
+                        "start_secs": 30000
+                      }
+                    ]
+                  }
+                },
+                "name": "Test Transit",
+                "patterns": {
+                  "pat-10-0-0": {
+                    "name": "10 → Main & 2nd",
+                    "path": [
+                      {
+                        "lat": 45.4,
+                        "lon": -73.4
+                      },
+                      {
+                        "lat": 45.45,
+                        "lon": -73.45
+                      },
+                      {
+                        "lat": 45.5,
+                        "lon": -73.5
+                      },
+                      {
+                        "lat": 45.505,
+                        "lon": -73.505
+                      },
+                      {
+                        "lat": 45.51,
+                        "lon": -73.51
+                      }
+                    ],
+                    "route": "10",
+                    "stops": [
+                      {
+                        "distance_m": 0.0,
+                        "stop": "A",
+                        "timepoint": true
+                      },
+                      {
+                        "distance_m": 500.0,
+                        "stop": "B",
+                        "timepoint": true
+                      }
+                    ],
+                    "timing": [
+                      {
+                        "at_timepoints": [
+                          0,
+                          600
+                        ],
+                        "end_secs": 108000,
+                        "start_secs": 0
+                      }
+                    ]
+                  },
+                  "pat-10-0-1": {
+                    "name": "10 → Main & 2nd",
+                    "route": "10",
+                    "stops": [
+                      {
+                        "distance_m": 0.0,
+                        "stop": "A",
+                        "timepoint": true
+                      },
+                      {
+                        "distance_m": 500.0,
+                        "stop": "C",
+                        "timepoint": true
+                      },
+                      {
+                        "distance_m": 1000.0,
+                        "stop": "B",
+                        "timepoint": true
+                      }
+                    ],
+                    "timing": [
+                      {
+                        "at_timepoints": [
+                          0,
+                          300,
+                          600
+                        ],
+                        "end_secs": 108000,
+                        "start_secs": 0
+                      }
+                    ]
+                  },
+                  "pat-20-0-0": {
+                    "name": "20 → Main & 2nd",
+                    "route": "20",
+                    "stops": [
+                      {
+                        "distance_m": 0.0,
+                        "stop": "A",
+                        "timepoint": true
+                      },
+                      {
+                        "distance_m": 500.0,
+                        "stop": "B",
+                        "timepoint": true
+                      }
+                    ],
+                    "timing": [
+                      {
+                        "at_timepoints": [
+                          0,
+                          600
+                        ],
+                        "end_secs": 108000,
+                        "start_secs": 0
+                      }
+                    ]
+                  }
+                },
+                "plan": {
+                  "id": "",
+                  "name": ""
+                },
+                "routes": {
+                  "10": {
+                    "mode": "bus",
+                    "name": "10"
+                  },
+                  "20": {
+                    "mode": "bus",
+                    "name": "20"
+                  }
+                },
+                "schedules": {
+                  "SUN:pat-10-0-0": {
+                    "pattern": "pat-10-0-0",
+                    "schedule": {
+                      "kind": "exact_times",
+                      "starts": [
+                        32400
+                      ]
+                    },
+                    "service_type": "SUN"
+                  },
+                  "WK:pat-10-0-0": {
+                    "pattern": "pat-10-0-0",
+                    "schedule": {
+                      "kind": "exact_times",
+                      "starts": [
+                        28800
+                      ]
+                    },
+                    "service_type": "WK"
+                  },
+                  "WK:pat-10-0-1": {
+                    "pattern": "pat-10-0-1",
+                    "schedule": {
+                      "kind": "exact_times",
+                      "starts": [
+                        31200
+                      ]
+                    },
+                    "service_type": "WK"
+                  },
+                  "WK:pat-20-0-0": {
+                    "pattern": "pat-20-0-0",
+                    "schedule": {
+                      "kind": "exact_times",
+                      "starts": [
+                        30000
+                      ]
+                    },
+                    "service_type": "WK"
+                  }
+                },
+                "service_types": {
+                  "SUN": {
+                    "name": "SUN",
+                    "rule": {
+                      "days": {
+                        "fri": false,
+                        "mon": false,
+                        "sat": false,
+                        "sun": true,
+                        "thu": false,
+                        "tue": false,
+                        "wed": false
+                      },
+                      "exceptions": [],
+                      "ranges": [
+                        {
+                          "end": "2026-12-31",
+                          "start": "2026-01-01"
+                        }
+                      ]
+                    }
+                  },
+                  "WK": {
+                    "name": "WK",
+                    "rule": {
+                      "days": {
+                        "fri": true,
+                        "mon": true,
+                        "sat": false,
+                        "sun": false,
+                        "thu": true,
+                        "tue": true,
+                        "wed": true
+                      },
+                      "exceptions": [
+                        {
+                          "date": "2026-10-29",
+                          "state": "removed"
+                        }
+                      ],
+                      "ranges": [
+                        {
+                          "end": "2026-12-31",
+                          "start": "2026-01-01"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "stops": {
+                  "A": {
+                    "lat": 45.5,
+                    "lon": -73.5,
+                    "name": "Main & 1st",
+                    "transfer": false
+                  },
+                  "B": {
+                    "lat": 45.51,
+                    "lon": -73.51,
+                    "name": "Main & 2nd",
+                    "transfer": false
+                  },
+                  "C": {
+                    "lat": 45.52,
+                    "lon": -73.52,
+                    "name": "Main & 3rd",
+                    "transfer": false
+                  }
+                }
+              },
+              "op": "load_document"
+            },
+            "response": {
+              "ok": {
+                "network_hash": "sha256:3f4ddb3b158998b4135c584a9a042839f3e18d34c9662037613fe07fb23145be",
+                "op": "load_document"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "rt",
+      "hash": "sha256:3308042d1437a2cc623f4db3912509f9fe2418a5468c2315ff21f0bef4d11135",
+      "url": "caps/rt-3308042d1437a2cc623f4db3912509f9fe2418a5468c2315ff21f0bef4d11135.wasm",
+      "bytes": 196627,
+      "ops": [
+        "decode"
+      ],
+      "consumes": {},
+      "speaks": {
+        "gtfs_rt": [
+          1
+        ]
+      },
+      "migrates": {},
+      "purpose": "Realtime decoding: turn a GTFS-rt protobuf payload (trip updates, vehicle positions — the bytes an agency serves every few seconds) into the flat view hosts show (delays per trip/stop, live vehicles for the map). The third capability extracted from the monolith — the decoder lives in the shared transit-rt library, and the monolith keeps no copy. Assemble for riders (live boards) and dispatchers (the operation view) alike.",
+      "op_docs": {
+        "decode": {
+          "description": "Decode a GTFS-rt protobuf payload into the overview: entity counts, trip updates with per-stop delays, and vehicle positions (id, label, lat/lon, bearing, trip). Bulk-bytes op 0; pass the raw protobuf to transit_invoke_bytes. Garbage bytes are an error outcome, never a trap.",
+          "example": {
+            "request": {
+              "bytes": "<the raw GTFS-rt protobuf — bulk-bytes op 0>",
+              "op": "decode"
+            },
+            "response": {
+              "ok": {
+                "op": "decode",
+                "overview": {
+                  "alerts": 0,
+                  "entities": 2,
+                  "gtfs_realtime_version": "2.0",
+                  "timestamp": 1728000000,
+                  "trip_updates": 1,
+                  "trips": [
+                    {
+                      "route_id": "10",
+                      "stop_updates": [
+                        {
+                          "arrival_delay": null,
+                          "departure_delay": 120,
+                          "stop_id": "A",
+                          "stop_sequence": 1
+                        },
+                        {
+                          "arrival_delay": 180,
+                          "departure_delay": null,
+                          "stop_id": "B",
+                          "stop_sequence": 2
+                        }
+                      ],
+                      "trip_id": "t10"
+                    }
+                  ],
+                  "vehicle_positions": [
+                    {
+                      "bearing": 90.0,
+                      "entity_id": "vp-1",
+                      "label": "4201",
+                      "lat": 45.439998626708984,
+                      "lon": -73.44000244140625,
+                      "route_id": null,
+                      "stop_id": "A",
+                      "trip_id": "t10",
+                      "vehicle_id": "4201"
+                    }
+                  ],
+                  "vehicles": 1
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -922,20 +996,16 @@
       "migrates": {},
       "purpose": "Planner analysis over an authored network document: network/route/stop stats, per-service-type overview and detail, population coverage. The first capability extracted from the monolith — the domain code lives in the shared transit-analysis library. Assemble for planners; riders never download it. Documents are hash-addressed (load once, query by hash — never per-op document serialization).",
       "op_docs": {
+        "load_population_layer": {
+          "description": "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried).",
+          "example": null
+        },
         "service_type_detail": {
           "description": "One service type expanded on its representative day: routes, stops, schedules, totals.",
           "example": null
         },
-        "network_stats": {
-          "description": "The network's numbers on one service date: trips, spans, revenue hours, per-route and per-stop activity, headways.",
-          "example": null
-        },
         "type_coverage": {
           "description": "Population coverage per service type against a hash-addressed layer: what share of the population each type serves, and serves frequently.",
-          "example": null
-        },
-        "load_population_layer": {
-          "description": "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried).",
           "example": null
         },
         "load_network": {
@@ -944,6 +1014,10 @@
         },
         "service_types_overview": {
           "description": "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight.",
+          "example": null
+        },
+        "network_stats": {
+          "description": "The network's numbers on one service date: trips, spans, revenue hours, per-route and per-stop activity, headways.",
           "example": null
         }
       }

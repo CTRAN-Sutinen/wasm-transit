@@ -3,7 +3,7 @@ import { mount } from "svelte";
 import "maplibre-gl/dist/maplibre-gl.css";
 // The wasm artifact has zero imports — the wrapper (src/wasm.js)
 // fetches it and instantiates it directly, then exposes the same
-// GtfsHandle/decode_rt API the app speaks.
+// GtfsHandle API the app speaks (the rt decoder lives in cap-rt).
 import { loadWasm } from "./wasm";
 import { get } from "idb-keyval";
 import App from "./App.svelte";

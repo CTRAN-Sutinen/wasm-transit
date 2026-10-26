@@ -24,7 +24,7 @@ wasm:
 caps:
     #!/usr/bin/env bash
     set -e
-    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network --target wasm32-unknown-unknown
+    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt --target wasm32-unknown-unknown
     cargo run --quiet -p cap-abi --bin gen-manifest
 
 # Publish the registry: gates first (the records report them), then
@@ -81,6 +81,11 @@ test: caps
     # (the never-silent law, one layer up).
     node tools/caps-run.mjs network --load web/public/caps/sample-gtfs.zip \
       --op '{"op":"import","feed_hash":"sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2"}' | grep -q '"kind":"dropped_trips"'
+    # The realtime capability's gate: the fixture payload decodes on
+    # the bulk seam with its known delay — the dispatch leg, one
+    # command an agent or dispatcher runs.
+    node tools/caps-run.mjs rt --load web/e2e/fixtures/sample-rt.pb \
+      | grep -q '"departure_delay":120'
     # -race: the artifact is one non-reentrant instance; the host must
     # serialize invokes (see server/race_test.go — the gate watches it).
     cd server && go test -race ./...

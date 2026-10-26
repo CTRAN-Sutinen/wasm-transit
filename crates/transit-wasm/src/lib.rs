@@ -22,8 +22,9 @@
 //!   [`Request`](`transit_ops::Request`) (JSON) in; a result buffer
 //!   out.
 //! * `transit_invoke_bytes(op, ptr, len) -> ptr` — the bulk-payload
-//!   form (feed zips, rt protobuf), where JSON arrays of numbers
-//!   would be absurd. Op codes: 0 = load_feed, 1 = decode_rt.
+//!   form (feed zips, street GeoJSON), where JSON arrays of numbers
+//!   would be absurd. Op codes: 0 = load_feed. (The rt protobuf
+//!   payload moved to the cap-rt capability with its decoder.)
 //!
 //! Result buffers are `[u32 little-endian length][payload]`; the host
 //! reads the length, copies the payload, then frees the buffer with
