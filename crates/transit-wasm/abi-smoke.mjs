@@ -85,7 +85,7 @@ function rawInvokeBytes(op, payload) {
 
 const feed = invokeBytes(OP_LOAD_FEED, readFileSync(FIXTURE));
 const feedId = feed.feed_id;
-assert(feed.summary.stops === 3, "load_feed registers and summarizes");
+assert(feed.summary.stops === 6, "load_feed registers and summarizes");
 
 const boardAt = (stop) =>
   invoke({ op: "departures", feed_id: feedId, stop_id: stop, date: DATE, from_secs: 0, limit: 10 })
@@ -121,7 +121,7 @@ assert(cmp.active.arrival_hhmmss === "08:15:00" && cmp.baseline.arrival_hhmmss =
 
 // GeoJSON comes back as plain data.
 const stops = invoke({ op: "stops_geojson", feed_id: feedId }).collection;
-assert(stops.type === "FeatureCollection" && stops.features.length === 3, "typed geojson collection");
+assert(stops.type === "FeatureCollection" && stops.features.length === 6, "typed geojson collection");
 const trip = invoke({ op: "trip_path_geojson", feed_id: feedId, trip_id: "t10", date: DATE }).feature;
 assert(trip && trip.geometry.coordinates.length === 5, "full trip path via ABI (5-point shape)");
 const ghost = invoke({ op: "route_path_geojson", feed_id: feedId, route_id: "10", direction_id: null, date: DATE }).feature;

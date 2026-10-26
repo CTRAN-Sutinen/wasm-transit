@@ -191,6 +191,7 @@ export async function refreshAnalysis(): Promise<void> {
   const seq = ++analysisSeq;
   const clearViews = () => {
     app.typeOverview = [];
+    app.dayStats = null;
     app.serviceTypeDetail = null;
     app.typeCoverage = null;
   };
@@ -215,6 +216,10 @@ export async function refreshAnalysis(): Promise<void> {
     const analysis = analysisCap(module);
     const top = app.plannerStack[app.plannerStack.length - 1];
     app.typeOverview = analysis.serviceTypesOverview(networkHash);
+    // The day-shape header: the picked day's numbers (the
+    // "what does a Wednesday look like" question — dead UI surface
+    // until this screen existed).
+    app.dayStats = analysis.networkStats(networkHash, app.plannerDay || serviceDate());
     if (app.popLayer && app.popLayerBytes) {
       const layerHash = await ensureAnalysisLayer(app.popLayerBytes);
       if (seq !== analysisSeq) return;

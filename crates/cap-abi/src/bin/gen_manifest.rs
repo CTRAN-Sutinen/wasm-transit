@@ -16,7 +16,6 @@
 //! must be provably coherent, and the generation is the first
 //! consumer of that proof.
 
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -59,15 +58,20 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "gtfs",
         file: "cap_gtfs.wasm",
-        ops: &["load_feed", "departures", "stops", "load_watchlist", "migrate_watchlist", "watchlist_board"],
+        ops: &["load_feed", "departures", "station_departures", "stops", "active_services", "blocks", "block_trips", "feed_info", "load_watchlist", "migrate_watchlist", "watchlist_board"],
         consumes: &[],
         speaks: &[("feed", &[1]), ("watchlist", &[1, 2])],
         migrates: &[("watchlist", &[(1, 2)])],
         purpose: "Read a GTFS static zip: parse it into a hash-addressed feed registry and answer schedule questions (departures at a stop, stop lists). Assemble for any user who needs to know when service runs. Also owns the watchlist document (the rider's saved stops) and its v1→v2 migration.",
         op_docs: &[
             ("load_feed", "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes."),
-            ("departures", "Upcoming departures at one stop on a service date, schedule only (GTFS-rt is another capability)."),
+            ("departures", "Upcoming departures at one stop on a service date, schedule only (GTFS-rt is another capability). The stop's own board — a station pin answers nothing here; see station_departures."),
+            ("station_departures", "Upcoming departures POOLED over a stop's walking group — the station board. A station (Fisher's Landing, Main Station) answers no departures of its own: the bays carry the trips, and this op unions the whole group (the stop, its parent, siblings sharing that parent, the parent's children), merged by time, each row tagged with its concrete bay. Any member of the group answers the same board."),
             ("stops", "Stop list for UI pickers, first N by id."),
+            ("active_services", "Service keys running on a date — often several at once (regular patterns plus exception-added services). The dispatcher's first question: what is running today?"),
+            ("blocks", "All blocks in the feed; with `date`, only the blocks RUNNING that day, with that day's trip counts — the vehicle picker shows buses in service, not parked buses. A block is one vehicle's trip chain."),
+            ("block_trips", "One block's trip chain on a service date: where the vehicle starts, where it ends, the layover between trips. Unknown blocks answer empty, never error."),
+            ("feed_info", "The feed's own metadata (version, publisher), when the feed provides feed_info.txt — the identity question a dispatcher asks first: which feed am I dispatching?"),
             ("load_watchlist", "Register a watchlist document (version-tagged JSON) under its content hash."),
             ("migrate_watchlist", "Migrate a version-1 watchlist to version 2: label = note, colors dropped and reported. Pure and deterministic; the caller keeps the old bytes."),
             ("watchlist_board", "Each watched stop's upcoming departures, labelled per the watchlist's version."),
@@ -129,7 +133,7 @@ const MODULES: &[ModuleSpec] = &[
         op_docs: &[
             ("load_network", "Register an authored network document (the planner's JSON document, produced or derived by the network capability) under its content hash; idempotent."),
             ("load_population_layer", "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried)."),
-            ("network_stats", "The network's numbers on one service date: trips, spans, revenue hours, per-route and per-stop activity, headways."),
+            ("network_stats", "The network's numbers on one service date: trips, spans, revenue hours, transfer points, per-route and per-stop activity, headways. include_routes/include_stops/include_service_types (default true) shape the response: false empties the corresponding lists — the day-shape question answers in under a KiB."),
             ("service_types_overview", "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight."),
             ("service_type_detail", "One service type expanded on its representative day: routes, stops, schedules, totals."),
             ("type_coverage", "Population coverage per service type against a hash-addressed layer: what share of the population each type serves, and serves frequently."),
@@ -317,12 +321,21 @@ fn publish_registry(root: &Path, manifest: &CapManifest) {
 /// document (canonical hash — the module's formula), and its
 /// exported zip (content hash of the deterministic bytes).
 struct NetworkExampleContext {
+    /// The typed derived document — the analysis examples compute
+    /// real answers over it.
+    network: transit_network::Network,
     derived: serde_json::Value,
     notes: serde_json::Value,
     network_hash: String,
     export_feed_hash: String,
     export_summary: serde_json::Value,
     zip_b64: String,
+}
+
+impl NetworkExampleContext {
+    fn derived_network(&self) -> &transit_network::Network {
+        &self.network
+    }
 }
 
 fn network_example_context(feed_bytes: &[u8]) -> Option<NetworkExampleContext> {
@@ -338,6 +351,7 @@ fn network_example_context(feed_bytes: &[u8]) -> Option<NetworkExampleContext> {
     let export_feed_hash = format!("sha256:{:x}", Sha256::digest(&zip));
     let zip_b64 = transit_core::write::base64_encode(&zip);
     Some(NetworkExampleContext {
+        network: outcome.network,
         derived,
         notes,
         network_hash,
@@ -345,6 +359,14 @@ fn network_example_context(feed_bytes: &[u8]) -> Option<NetworkExampleContext> {
         export_summary,
         zip_b64,
     })
+}
+
+/// The parsed e2e fixture feed (for the gtfs capability's dispatch
+/// read examples — real answers, same library the module uses).
+fn fixture_gtfs() -> Option<transit_core::Gtfs> {
+    let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-gtfs.zip");
+    let bytes = std::fs::read(fixture).ok()?;
+    transit_core::Gtfs::from_zip_bytes(&bytes).ok()
 }
 
 /// Worked examples — the corpus-as-context idea: an agent reads these
@@ -378,6 +400,64 @@ fn example_for(
                 ] }
             }),
         ),
+        ("gtfs", "station_departures") => (
+            json!({
+                "op": "station_departures",
+                "feed_hash": feed_hash,
+                "stop_id": "STN",
+                "date": "2026-10-23",
+                "from_secs": 25200,
+                "limit": 5
+            }),
+            json!({ "ok": { "op": "station_departures", "departures": [
+                { "stop_id": "SA", "trip_id": "t40", "route_id": "40", "route_name": "40",
+                  "service_id": "WK", "headsign": "Bay B", "block_id": null,
+                  "departure_time": 29700, "departure_time_hhmmss": "08:15:00", "stop_sequence": 1 },
+                { "stop_id": "SB", "trip_id": "t40", "route_id": "40", "route_name": "40",
+                  "service_id": "WK", "headsign": "Bay B", "block_id": null,
+                  "departure_time": 30000, "departure_time_hhmmss": "08:20:00", "stop_sequence": 2 },
+                { "stop_id": "SB", "trip_id": "t41", "route_id": "40", "route_name": "40",
+                  "service_id": "WK", "headsign": "Bay A", "block_id": null,
+                  "departure_time": 30600, "departure_time_hhmmss": "08:35:00", "stop_sequence": 1 },
+                { "stop_id": "SA", "trip_id": "t41", "route_id": "40", "route_name": "40",
+                  "service_id": "WK", "headsign": "Bay A", "block_id": null,
+                  "departure_time": 31200, "departure_time_hhmmss": "08:40:00", "stop_sequence": 2 }
+            ] } }),
+        ),
+        // The dispatch reads' examples compute REAL answers over the
+        // fixture through the same transit-core library the module
+        // dispatches through.
+        ("gtfs", "active_services") => {
+            let gtfs = fixture_gtfs()?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+            (
+                json!({ "op": "active_services", "feed_hash": feed_hash, "date": "2026-10-23" }),
+                json!({ "ok": { "op": "active_services", "services": gtfs.active_services(date) } }),
+            )
+        }
+        ("gtfs", "blocks") => {
+            let gtfs = fixture_gtfs()?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+            (
+                json!({ "op": "blocks", "feed_hash": feed_hash, "date": "2026-10-23" }),
+                json!({ "ok": { "op": "blocks", "blocks": gtfs.blocks_on(date) } }),
+            )
+        }
+        ("gtfs", "block_trips") => {
+            let gtfs = fixture_gtfs()?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+            (
+                json!({ "op": "block_trips", "feed_hash": feed_hash, "block_id": "B1", "date": "2026-10-23" }),
+                json!({ "ok": { "op": "block_trips", "trips": gtfs.block_trips("B1", date) } }),
+            )
+        }
+        ("gtfs", "feed_info") => {
+            let gtfs = fixture_gtfs()?;
+            (
+                json!({ "op": "feed_info", "feed_hash": feed_hash }),
+                json!({ "ok": { "op": "feed_info", "info": gtfs.feed_info } }),
+            )
+        }
         ("gtfs", "stops") => (
             json!({ "op": "stops", "feed_hash": feed_hash, "limit": 3 }),
             json!({ "ok": { "op": "stops", "stops": [
@@ -467,9 +547,73 @@ fn example_for(
                 json!({ "ok": { "op": "decode", "overview": overview } }),
             )
         }
+        // The analysis examples carry REAL answers over the fixture-
+        // derived document (the same shared library the module
+        // dispatches through), so the worked examples cannot drift.
+        ("analysis", "load_network") => {
+            let ctx = net?;
+            (
+                json!({ "op": "load_network", "network": ctx.derived }),
+                json!({ "ok": { "op": "load_network", "network_hash": ctx.network_hash } }),
+            )
+        }
+        ("analysis", "network_stats") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 1, 5).unwrap();
+            let mut stats = transit_analysis::network_stats(&ctx.derived_network(), date);
+            // The example ASKS the day-shape question: no routes, no
+            // stops, no service types inline — the query-shaping
+            // flags in the flesh.
+            let routes = std::mem::take(&mut stats.routes);
+            let stops = std::mem::take(&mut stats.stops);
+            let service_types = std::mem::take(&mut stats.service_types);
+            let response = json!({ "ok": { "op": "network_stats", "stats": stats } });
+            let _ = (routes, stops, service_types);
+            (
+                json!({ "op": "network_stats", "network_hash": ctx.network_hash,
+                    "date": "2026-01-05", "include_routes": false, "include_stops": false, "include_service_types": false }),
+                response,
+            )
+        }
+        ("analysis", "service_types_overview") => {
+            let ctx = net?;
+            (
+                json!({ "op": "service_types_overview", "network_hash": ctx.network_hash }),
+                json!({ "ok": { "op": "service_types_overview",
+                    "service_types": transit_analysis::service_type_overview(&ctx.derived_network()) } }),
+            )
+        }
+        ("analysis", "service_type_detail") => {
+            let ctx = net?;
+            let detail = transit_analysis::service_type_detail(&ctx.derived_network(), "WK")
+                .expect("WK exists in the fixture-derived document");
+            (
+                json!({ "op": "service_type_detail", "network_hash": ctx.network_hash, "service_type": "WK" }),
+                json!({ "ok": { "op": "service_type_detail", "detail": detail } }),
+            )
+        }
+        ("analysis", "type_coverage") => {
+            let ctx = net?;
+            // The same two-point layer the caps smoke uses: one point
+            // at a stop (served), one far away — coverage is 50%.
+            let layer_json = r#"{"type":"FeatureCollection","features":[
+                {"type":"Feature","properties":{"pop":500},"geometry":{"type":"Point","coordinates":[-73.5,45.5]}},
+                {"type":"Feature","properties":{"pop":500},"geometry":{"type":"Point","coordinates":[-74.0,46.0]}}
+            ]}"#;
+            let layer = transit_analysis::parse_pop_layer(layer_json.as_bytes(), None)
+                .expect("layer parses");
+            let layer_hash = format!("sha256:{:x}", Sha256::digest(layer_json.as_bytes()));
+            (
+                json!({ "op": "type_coverage", "network_hash": ctx.network_hash,
+                    "layer_hash": layer_hash, "radius_m": 500, "frequent_secs": 3600, "min_departures": 2 }),
+                json!({ "ok": { "op": "type_coverage",
+                    "coverage": transit_analysis::type_coverage(&ctx.derived_network(), &layer, 500.0, 3600, 2) } }),
+            )
+        }
         // Bulk-bytes ops have no JSON request example (the payload is
         // the raw zip); the description carries the contract.
         (_, "load_feed") => return None,
+        (_, "load_population_layer") => return None,
         _ => return None,
     };
     Some(OpExample { request, response })

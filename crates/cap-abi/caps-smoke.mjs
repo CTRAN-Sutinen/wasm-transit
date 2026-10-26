@@ -136,6 +136,80 @@ assert(
   `gtfs departures at A on ${DATE}: ${departures.departures.length}`,
 );
 
+// The station board: a station pin answers the union of its bays
+// (the walking-group pooling), each row tagged with its concrete bay.
+const station = gtfs.invoke({
+  op: "station_departures",
+  feed_hash: loadedGtfs.feed_hash,
+  stop_id: "STN",
+  date: DATE,
+  from_secs: 7 * 3600,
+  limit: 10,
+});
+assert(
+  station.departures.length === 4,
+  `the station board pools the bays: ${station.departures.length}`,
+);
+assert(
+  station.departures.every((d) => d.stop_id === "SA" || d.stop_id === "SB"),
+  "station rows are tagged with the concrete bay",
+);
+const sameFromBay = gtfs.invoke({
+  op: "station_departures",
+  feed_hash: loadedGtfs.feed_hash,
+  stop_id: "SA",
+  date: DATE,
+  from_secs: 7 * 3600,
+  limit: 10,
+});
+assert(
+  sameFromBay.departures.length === 4,
+  "any member of the walking group answers the same board",
+);
+
+// The dispatch reads — the dispatcher session's top finding, now on
+// the bus: what runs today, which blocks (vehicles) are out, one
+// block's chain, and the feed's identity.
+const services = gtfs.invoke({
+  op: "active_services",
+  feed_hash: loadedGtfs.feed_hash,
+  date: DATE,
+});
+assert(
+  services.services.length === 2,
+  `two service keys run on ${DATE} (WK plus the HOL addition): ${services.services}`,
+);
+const blocks = gtfs.invoke({ op: "blocks", feed_hash: loadedGtfs.feed_hash, date: DATE });
+assert(blocks.blocks.length === 2, "the day's blocks: both B1 and B2 run");
+const blockless = gtfs.raw({ op: "blocks", feed_hash: loadedGtfs.feed_hash, date: "2026-10-24" });
+assert(blockless.ok && blockless.ok.blocks.length === 0, "a no-service day has no blocks out");
+const chain = gtfs.invoke({
+  op: "block_trips",
+  feed_hash: loadedGtfs.feed_hash,
+  block_id: "B1",
+  date: DATE,
+});
+assert(
+  chain.trips.length === 2 && chain.trips[0].trip_id === "t10" && chain.trips[1].trip_id === "t20",
+  "B1 chains t10 → t20 with the layover between",
+);
+assert(
+  chain.trips[1].layover_secs === 600,
+  `the layover is the realized gap (t10 ends 08:10, t20 starts 08:20): ${chain.trips[1].layover_secs}`,
+);
+const ghostBlock = gtfs.invoke({
+  op: "block_trips",
+  feed_hash: loadedGtfs.feed_hash,
+  block_id: "missing",
+  date: DATE,
+});
+assert(ghostBlock.trips.length === 0, "an unknown block answers empty, never panics");
+const info = gtfs.invoke({ op: "feed_info", feed_hash: loadedGtfs.feed_hash });
+assert(
+  info.info && info.info.feed_version === "2026.10.1",
+  "the feed answers its own identity (version, publisher)",
+);
+
 const plan = router.invoke({
   op: "plan",
   feed_hash: loadedRouter.feed_hash,
@@ -293,8 +367,8 @@ assert(
 );
 const imported = network.invoke({ op: "import", feed_hash: loadedNetCap.feed_hash });
 assert(
-  imported.network && Object.keys(imported.network.stops).length === 3,
-  "import infers the fixture feed (3 stops)",
+  imported.network && Object.keys(imported.network.stops).length === 6,
+  "import infers the fixture feed (6 stops, station pin included)",
 );
 assert(
   imported.network_hash.startsWith("sha256:"),

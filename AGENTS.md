@@ -31,6 +31,8 @@ just build / just wasm     # frontend+artifact / artifact only
 just caps                  # capability modules + regenerate the manifest (PoC bus)
 just registry              # publish the capability registry (gates → blobs + evidence)
 node tools/caps-run.mjs    # the agent runner: caps-run list | tools <cap> | <cap> --op ...
+                           # --op values support $refs ($load.feed_hash,
+                           # $import.network_hash, $1) into prior results
 just test                  # host-side tests only (Rust + ABI smokes + Go -race)
 just e2e                   # browser e2e (builds first)
 just check                 # test + e2e — the full gate
@@ -162,11 +164,17 @@ cap-abi         The seam crate: the flat C ABI as a macro (every
                 every advertised op is documented (undocumented ops
                 fail the build — agent context cannot drift).
 cap-gtfs        The gtfs capability: GTFS zip → content-hash feed
-                registry, departures/stops queries, and the watchlist
-                document (v1/v2) with its v1→v2 migration — pure,
-                deterministic, loss REPORTED (MigrationNotes, never
-                silent; identity-preservation is a property law —
-                migrations never touch the sync key space).
+                registry, departures/stops queries, the dispatch
+                reads (active_services, blocks with the day view,
+                block_trips, feed_info — the dispatcher persona's
+                core view; the monolith keeps its copies until the
+                UI rewires), station_departures (the walking-group
+                station board — a station pin's bays pooled, rows
+                tagged), and the watchlist document (v1/v2) with its
+                v1→v2 migration — pure, deterministic, loss REPORTED
+                (MigrationNotes, never silent; identity-preservation
+                is a property law — migrations never touch the sync
+                key space).
 cap-router      The router capability: RAPTOR over a feed document
                 gtfs produced — a pure-function capability; it
                 writes nothing.

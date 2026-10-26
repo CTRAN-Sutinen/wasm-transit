@@ -13,6 +13,7 @@ import type { ImportNote } from "./types/ImportNote";
 import type { Itinerary } from "./types/Itinerary";
 import type { Network } from "./types/Network";
 import type { NetworkError } from "./types/NetworkError";
+import type { NetworkStats } from "./types/NetworkStats";
 import type { ServiceTypeDetail } from "./types/ServiceTypeDetail";
 import type { ServiceTypeSummary } from "./types/ServiceTypeSummary";
 import type { PlanIssue } from "./types/PlanIssue";
@@ -134,6 +135,13 @@ export type AppState = {
   // drilled into, expanded). No calendar dates — planners design
   // types; the type's own day mapping is a detail inside its screen.
   typeOverview: ServiceTypeSummary[],
+  // The day-shape numbers on the planner's picked day (the
+  // day-summary header of the overview screen): trips, routes,
+  // stops, revenue hours, span, transfer points — network_stats
+  // through cap-analysis, off when the capability cannot assemble.
+  dayStats: NetworkStats | null,
+  // The day the planner is inspecting (the day-summary date picker).
+  plannerDay: string,
   serviceTypeDetail: ServiceTypeDetail | null,
   // The service-plan chain view, from the artifact's plans ops: the
   // plan in force today, each plan's governing period, chain issues.
@@ -380,6 +388,9 @@ export const app = $state<AppState>({
   networkNotes: [],
   plannerStack: [{ view: "plans" }] as PlannerScreen[],
   typeOverview: [],
+  dayStats: null,
+  // Today by default; JS owns the clock, the planner moves the day.
+  plannerDay: "",
   serviceTypeDetail: null,
   planChain: { inForce: null, periods: [], issues: [] },
   typeCoverage: null,

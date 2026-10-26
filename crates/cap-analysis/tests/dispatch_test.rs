@@ -144,6 +144,9 @@ proptest! {
         let stats = cap_analysis::dispatch(cap_analysis::Request::NetworkStats {
             network_hash: network_hash.clone(),
             date: "2026-01-05".into(),
+            include_routes: true,
+            include_stops: true,
+            include_service_types: true,
         })
         .expect("stats");
         let cap_analysis::Response::NetworkStats { stats } = stats else { panic!("stats") };
@@ -197,6 +200,9 @@ fn unknown_hashes_are_errors_not_panics() {
     let err = cap_analysis::dispatch(cap_analysis::Request::NetworkStats {
         network_hash: "sha256:missing".into(),
         date: "2026-01-05".into(),
+        include_routes: true,
+        include_stops: true,
+        include_service_types: true,
     })
     .expect_err("unknown hash");
     assert!(err.contains("unknown network"));
@@ -219,8 +225,60 @@ fn json_seam_round_trips_the_tagged_form() {
         "op": "network_stats", "network_hash": hash, "date": "2026-01-05",
     }).to_string())).unwrap();
     assert!(stats["ok"]["stats"]["trips"].as_u64().unwrap() >= 1);
+    // Omitted flags default TRUE (the UI's shape is unchanged).
+    assert!(stats["ok"]["stats"]["routes"].as_array().unwrap().len() >= 1);
 
     let bad: serde_json::Value =
         serde_json::from_str(&cap_analysis::dispatch_json(r#"{"op": "nope"}"#)).unwrap();
     assert!(bad["error"].as_str().unwrap().contains("invalid request"));
+}
+
+/// The query-shaping law (the founding dogfood session's 199 KiB
+/// answer to a five-number question): `include_routes` /
+/// `include_stops` false empty the corresponding lists while every
+/// summary number stays — the day-shape question answers in under a
+/// KiB, and the defaults keep the UI's full payload.
+#[test]
+fn include_flags_shape_the_stats_response() {
+    let net = network(&[GenTrip {
+        route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5,
+    }]);
+    let loaded = cap_analysis::dispatch(cap_analysis::Request::LoadNetwork { network: net })
+        .expect("load");
+    let cap_analysis::Response::LoadNetwork { network_hash } = loaded else { panic!("load") };
+
+    let shaped = cap_analysis::dispatch(cap_analysis::Request::NetworkStats {
+        network_hash: network_hash.clone(),
+        date: "2026-01-05".into(),
+        include_routes: false,
+        include_stops: false,
+        include_service_types: false,
+    })
+    .expect("stats");
+    let cap_analysis::Response::NetworkStats { stats: lean } = shaped else { panic!("stats") };
+
+    let full = cap_analysis::dispatch(cap_analysis::Request::NetworkStats {
+        network_hash,
+        date: "2026-01-05".into(),
+        include_routes: true,
+        include_stops: true,
+        include_service_types: true,
+    })
+    .expect("stats");
+    let cap_analysis::Response::NetworkStats { stats: rich } = full else { panic!("stats") };
+
+    assert!(lean.routes.is_empty() && lean.stops.is_empty(), "the lists empty on request");
+    assert!(lean.service_types.is_empty(), "the design axis empties on request too");
+    assert!(!rich.routes.is_empty() && !rich.stops.is_empty(), "defaults keep the UI's payload");
+    // Every summary number is identical — shaping drops bulk, never
+    // meaning.
+    assert_eq!(lean.trips, rich.trips);
+    assert_eq!(lean.active_routes, rich.active_routes);
+    assert_eq!(lean.active_stops, rich.active_stops);
+    assert_eq!(lean.revenue_hours, rich.revenue_hours);
+    assert_eq!(lean.transfer_stops, rich.transfer_stops);
+    // And the wire shows it: the lean answer is smaller.
+    let lean_json = serde_json::to_string(&lean).unwrap();
+    let rich_json = serde_json::to_string(&rich).unwrap();
+    assert!(lean_json.len() < rich_json.len(), "lean {} vs rich {}", lean_json.len(), rich_json.len());
 }

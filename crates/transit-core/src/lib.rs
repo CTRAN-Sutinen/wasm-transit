@@ -214,6 +214,34 @@ impl Gtfs {
         Some(indices.iter().map(|&i| self.stop_times[i as usize].clone()).collect())
     }
 
+    /// The WALKING GROUP of a stop: the stop, its parent station,
+    /// every sibling sharing that parent, and the parent's own
+    /// children — the group transfers compose over, and the group a
+    /// station's departures pool across (a station pin answers no
+    /// departures of its own; its bays carry the trips). Same
+    /// definition transit-network's transfer points use.
+    pub fn walking_group(&self, stop_id: &str) -> Vec<String> {
+        let mut group = std::collections::BTreeSet::from([stop_id.to_string()]);
+        let Some(stop) = self.stops.get(stop_id) else {
+            return group.into_iter().collect();
+        };
+        if let Some(parent) = &stop.parent_station {
+            group.insert(parent.clone());
+            for (id, sibling) in &self.stops {
+                if sibling.parent_station.as_deref() == Some(parent.as_str()) {
+                    group.insert(id.clone());
+                }
+            }
+        }
+        // A parent asked about directly: its children are the bays.
+        for (id, child) in &self.stops {
+            if child.parent_station.as_deref() == Some(stop_id) {
+                group.insert(id.clone());
+            }
+        }
+        group.into_iter().collect()
+    }
+
     /// Upcoming departures at a stop on a given service date.
     ///
     /// `from_secs` is seconds since midnight of `date` (see [`time`]);
@@ -501,4 +529,31 @@ pub(crate) fn nearest_shape_point(points: &[ShapePoint], target: (f64, f64)) -> 
         }
     }
     best
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The walking group law: any member answers for the whole
+    /// group (the parent, a bay, a sibling — same set), and unknown
+    /// stops are just themselves.
+    #[test]
+    fn walking_group_is_the_station_pin_plus_bays() {
+        let bytes = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../web/e2e/fixtures/sample-gtfs.zip"
+        ))
+        .expect("fixture exists");
+        let gtfs = Gtfs::from_zip_bytes(&bytes).expect("fixture parses");
+        let stn = gtfs.walking_group("STN");
+        assert_eq!(stn, vec!["SA".to_string(), "SB".to_string(), "STN".to_string()]);
+        // A bay answers the same group as the parent (idempotent in
+        // every direction).
+        assert_eq!(gtfs.walking_group("SA"), stn);
+        assert_eq!(gtfs.walking_group("SB"), stn);
+        // A plain stop is its own group.
+        assert_eq!(gtfs.walking_group("A"), vec!["A".to_string()]);
+        assert_eq!(gtfs.walking_group("missing"), vec!["missing".to_string()]);
+    }
 }

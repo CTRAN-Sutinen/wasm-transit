@@ -123,8 +123,37 @@ pub enum Request {
         from_secs: u32,
         limit: u32,
     },
+    /// Upcoming departures POOLED over a stop's WALKING GROUP — the
+    /// station board: the stop, its parent, siblings sharing that
+    /// parent, and the parent's children. A station pin (Fisher's
+    /// Landing, Main Station) answers no departures of its own; the
+    /// bays carry the trips. Each row carries its concrete stop_id,
+    /// so callers see which bay a departure leaves from. Any member
+    /// of the group answers the same board.
+    StationDepartures {
+        feed_hash: String,
+        stop_id: String,
+        date: String,
+        from_secs: u32,
+        limit: u32,
+    },
     /// Stop list for UI pickers: the first `limit` stops by id.
     Stops { feed_hash: String, limit: u32 },
+    /// Service keys running on a date — often several at once
+    /// (regular patterns plus exception-added services). The
+    /// dispatcher's first question: what is running today?
+    ActiveServices { feed_hash: String, date: String },
+    /// All blocks in the feed; with `date`, only the blocks RUNNING
+    /// that day, with that day's trip counts — the vehicle picker
+    /// shows buses in service, not parked buses.
+    Blocks { feed_hash: String, date: Option<String> },
+    /// One block's trip chain on a service date: where the vehicle
+    /// starts, where it ends, the layover between trips — the
+    /// dispatcher's block view.
+    BlockTrips { feed_hash: String, block_id: String, date: String },
+    /// `feed_info.txt` metadata (version, publisher) — the identity
+    /// question a dispatcher asks first: which feed am I dispatching?
+    FeedInfo { feed_hash: String },
     /// Register a watchlist document under its content hash
     /// (idempotent by hash, like feeds).
     LoadWatchlist { document: Watchlist },
@@ -149,7 +178,12 @@ pub enum Request {
 pub enum Response {
     LoadFeed { feed_hash: String, summary: FeedSummary },
     Departures { departures: Vec<transit_core::Departure> },
+    StationDepartures { departures: Vec<transit_core::Departure> },
     Stops { stops: Vec<StopSummary> },
+    ActiveServices { services: Vec<String> },
+    Blocks { blocks: Vec<transit_core::BlockSummary> },
+    BlockTrips { trips: Vec<transit_core::BlockTrip> },
+    FeedInfo { info: Option<transit_core::FeedInfo> },
     LoadWatchlist { watchlist_hash: String, version: u32 },
     MigratedWatchlist { document: Watchlist, notes: Vec<MigrationNote> },
     WatchlistBoard { stops: Vec<WatchBoardStop> },
@@ -271,10 +305,47 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 })
             })
         }
+        Request::StationDepartures { feed_hash, stop_id, date, from_secs, limit } => {
+            let parsed = parse_date(&date)?;
+            with_feed(&feed_hash, |feed| {
+                // Pool every walking-group member's board, merged by
+                // time — the union the station's dispatcher reads off
+                // the wall, each row tagged with its concrete bay.
+                let mut pooled: Vec<transit_core::Departure> = Vec::new();
+                for member in feed.walking_group(&stop_id) {
+                    pooled.extend(feed.next_departures(&member, parsed, from_secs, usize::MAX));
+                }
+                pooled.sort_by_key(|d| (d.departure_time.unwrap_or(0), d.trip_id.clone()));
+                pooled.truncate(limit as usize);
+                Ok(Response::StationDepartures { departures: pooled })
+            })
+        }
         Request::Stops { feed_hash, limit } => with_feed(&feed_hash, |feed| {
             Ok(Response::Stops {
                 stops: feed.stop_summaries().into_iter().take(limit as usize).collect(),
             })
+        }),
+        Request::ActiveServices { feed_hash, date } => {
+            let parsed = parse_date(&date)?;
+            with_feed(&feed_hash, |feed| {
+                Ok(Response::ActiveServices { services: feed.active_services(parsed) })
+            })
+        }
+        Request::Blocks { feed_hash, date } => with_feed(&feed_hash, |feed| {
+            let blocks = match date {
+                Some(d) => feed.blocks_on(parse_date(&d)?),
+                None => feed.blocks(),
+            };
+            Ok(Response::Blocks { blocks })
+        }),
+        Request::BlockTrips { feed_hash, block_id, date } => {
+            let parsed = parse_date(&date)?;
+            with_feed(&feed_hash, |feed| {
+                Ok(Response::BlockTrips { trips: feed.block_trips(&block_id, parsed) })
+            })
+        }
+        Request::FeedInfo { feed_hash } => with_feed(&feed_hash, |feed| {
+            Ok(Response::FeedInfo { info: feed.feed_info.clone() })
         }),
         Request::LoadWatchlist { document } => load_watchlist(&document),
         Request::MigrateWatchlist { document } => {

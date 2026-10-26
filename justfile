@@ -66,21 +66,33 @@ types:
 # into crates/*/bindings).
 test: caps
     #!/usr/bin/env bash
+    set -e
     export TS_RS_EXPORT_DIR="$PWD/web/src/types"
     cargo test
     node crates/transit-wasm/abi-smoke.mjs
     node crates/cap-abi/caps-smoke.mjs
-    # The agent runner, gated: pull gtfs by its pinned hash and ask a
-    # question — the fixture's feed hash is stable, so a fixture or
-    # registry change fails here (the corpus spirit, one layer up).
+    # The agent runner, gated with chained sessions — every op
+    # references its documents through $load/$op result references
+    # (no hand-copied hashes; the runner resolves them in-session).
     node tools/caps-run.mjs gtfs --load web/public/caps/sample-gtfs.zip \
-      --op '{"op":"stops","feed_hash":"sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2","limit":2}' | grep -q '"stop_id":"A"'
-    # The network capability's gate: the same session an agent (or a
-    # planner) dogfoods — load the feed by its pinned hash, import
-    # (bootstrap), and the dropped single-stop trip must be REPORTED
-    # (the never-silent law, one layer up).
+      --op '{"op":"stops","feed_hash":"$load.feed_hash","limit":2}' | grep -q '"stop_id":"A"'
+    # The station board: the parent pin answers the union of its bays
+    # (walking-group pooling) — and the reference chain keeps it
+    # hash-free.
+    node tools/caps-run.mjs gtfs --load web/public/caps/sample-gtfs.zip \
+      --op '{"op":"station_departures","feed_hash":"$load.feed_hash","stop_id":"STN","date":"2026-10-23","from_secs":25200,"limit":10}' \
+      | grep -q '"stop_id":"SA"'
+    # The network capability's gate: load → import, chained; the
+    # dropped single-stop trip must be REPORTED (never silent).
     node tools/caps-run.mjs network --load web/public/caps/sample-gtfs.zip \
-      --op '{"op":"import","feed_hash":"sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2"}' | grep -q '"kind":"dropped_trips"'
+      --op '{"op":"import","feed_hash":"$load.feed_hash"}' | grep -q '"kind":"dropped_trips"'
+    # The dispatch reads' gate: today's keys, the day's blocks, one
+    # block's chain, and the feed's identity — one session, chained.
+    node tools/caps-run.mjs gtfs --load web/public/caps/sample-gtfs.zip \
+      --op '{"op":"active_services","feed_hash":"$load.feed_hash","date":"2026-10-23"}' \
+      --op '{"op":"block_trips","feed_hash":"$load.feed_hash","block_id":"B1","date":"2026-10-23"}' \
+      --op '{"op":"feed_info","feed_hash":"$load.feed_hash"}' \
+      | grep -q '"layover_secs":600'
     # The realtime capability's gate: the fixture payload decodes on
     # the bulk seam with its known delay — the dispatch leg, one
     # command an agent or dispatcher runs.

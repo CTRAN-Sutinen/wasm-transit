@@ -33,6 +33,7 @@ import type { Response as RtCapResponse } from "./types/cap_rt/Response";
 import type { RtOverview } from "./types/RtOverview";
 import type { Network } from "./types/Network";
 import type { NetworkError } from "./types/NetworkError";
+import type { NetworkStats } from "./types/NetworkStats";
 import type { ImportNote } from "./types/ImportNote";
 import type { ServiceTypeDetail } from "./types/ServiceTypeDetail";
 import type { ServiceTypeSummary } from "./types/ServiceTypeSummary";
@@ -443,6 +444,19 @@ const OP_LOAD_LAYER = 0;
 
 export function analysisCap(module: CapModule) {
   return {
+    networkStats(networkHash: string, date: string): NetworkStats {
+      const resp = module.invoke({
+        op: "network_stats",
+        network_hash: networkHash,
+        date,
+        // The day-summary surface wants the numbers; the screens
+        // below carry the routes/stops detail.
+        include_routes: false,
+        include_stops: false,
+        include_service_types: false,
+      } as AnalysisRequest) as Extract<AnalysisResponse, { op: "network_stats" }>;
+      return resp.stats;
+    },
     serviceTypesOverview(networkHash: string): ServiceTypeSummary[] {
       const resp = module.invoke({
         op: "service_types_overview",

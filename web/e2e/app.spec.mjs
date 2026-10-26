@@ -97,17 +97,18 @@ test("loading a feed populates summary, board and map", async ({ page }) => {
   await loadFeed(page);
 
   // compact feed line (the persona split retired the summary table)
-  await expect(page.locator(".feed-line")).toContainText("5 trips");
+  await expect(page.locator(".feed-line")).toContainText("7 trips");
 
   // departures render for the first stop once selected
   await comboPick(page, "Stop", "Main & 1st");
   const rows = page.locator("section:has(h2:text('Departures')) tbody tr");
   await expect(rows).toHaveCount(3, { timeout: 10_000 });
 
-  // stops are drawn on the map
+  // stops are drawn on the map (the station pin and its two bays
+  // included — the fixture models the parent/child shape)
   await expect
     .poll(async () => (await mapData(page, "stops")).features.length)
-    .toBe(3);
+    .toBe(6);
 });
 
 test("clicking a departure draws the trip path", async ({ page }) => {
@@ -170,7 +171,7 @@ test("refresh restores the feed from local cache", async ({ page }) => {
 
   await page.reload();
   await expect(page.getByText(/Restored/)).toBeVisible({ timeout: 10_000 });
-  await expect(page.locator(".feed-line")).toContainText("5 trips");
+  await expect(page.locator(".feed-line")).toContainText("7 trips");
 });
 
 test("realtime feed colors delays and vehicles", async ({ page }) => {
@@ -350,7 +351,7 @@ test("comboboxes search, and blocks scope to the service day", async ({ page }) 
   // debounce lets the list settle), picking re-targets the board.
   const stopBox = page.getByRole("combobox", { name: "Stop", exact: true });
   await stopBox.click();
-  await expect(page.getByRole("option")).toHaveCount(3);
+  await expect(page.getByRole("option")).toHaveCount(6);
   await stopBox.fill("3rd");
   await expect(page.getByRole("option")).toHaveCount(1);
   await page.getByRole("option", { name: /^Main & 3rd/ }).click();
@@ -768,13 +769,22 @@ test("planner authors a network and the rider uses it", async ({ page }) => {
     .poll(async () => page.evaluate(() => window.__analysisPath()))
     .toBe("bus");
 
+  // The day summary — network_stats finally has a screen (dead UI
+  // surface its whole life): the picked day's shape on one line.
+  // Friday 2026-10-23: five trips, three routes, five stops served.
+  await expect(page.getByText("5 trips", { exact: true })).toBeVisible();
+  await expect(page.getByText("3 routes", { exact: true })).toBeVisible();
+  await expect(page.getByText("5 stops", { exact: true })).toBeVisible();
+  await expect(page.getByText(/0\.7 revenue hours/)).toBeVisible();
+  await expect(page.getByText(/span 08:00:00–08:50:00/)).toBeVisible();
+
   // The service type screen shows the type's WHOLE day — routes,
   // schedules, stops — and frames the type's network on the map
   // (every pattern scheduled under it).
   await page.getByRole("button", { name: "Open service type WK" }).click();
   await expect(page.getByRole("heading", { name: /Service type/ })).toBeVisible();
   await expect(page.getByText("Routes running")).toBeVisible();
-  await expect(page.getByText("Schedules (3)")).toBeVisible();
+  await expect(page.getByText("Schedules (5)")).toBeVisible();
   await expect(page.locator(".map-side")).toBeVisible();
   await expect
     .poll(async () => (await mapData(page, "planner")).features.length)

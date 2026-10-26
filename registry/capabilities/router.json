@@ -1,6 +1,6 @@
 {
-  "blob": "blobs/44742ee914e2f2343bb4f325294579c535df6f95f0f7c9e7842435ed75d61686.wasm",
-  "bytes": 518793,
+  "blob": "blobs/3e3fd171ee91cc374c40c00e6adb90164b2ef4a5e2e7b01a530b7b229dfb2595.wasm",
+  "bytes": 517376,
   "consumes": {
     "feed": "gtfs"
   },
@@ -12,9 +12,9 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "69c51c2922f7715455b2141955c7764e61757489"
+    "source_commit": "d5907b77f44006e4a84dfd9a33a48c438697ee07"
   },
-  "hash": "sha256:44742ee914e2f2343bb4f325294579c535df6f95f0f7c9e7842435ed75d61686",
+  "hash": "sha256:3e3fd171ee91cc374c40c00e6adb90164b2ef4a5e2e7b01a530b7b229dfb2595",
   "id": "router",
   "kernel": 1,
   "migrates": {},
@@ -29,7 +29,7 @@
         "request": {
           "date": "2026-10-23",
           "depart_secs": 25200,
-          "feed_hash": "sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2",
+          "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
           "from": "A",
           "max_legs": 4,
           "op": "plan",

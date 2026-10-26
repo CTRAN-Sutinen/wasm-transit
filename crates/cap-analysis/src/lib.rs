@@ -42,8 +42,21 @@ pub enum Request {
     /// Register a population layer (GeoJSON points) under its
     /// content hash.
     LoadPopulationLayer { bytes: Vec<u8>, pop_field: Option<String> },
-    /// The network's numbers on one service date.
-    NetworkStats { network_hash: String, date: String },
+    /// The network's numbers on one service date. The optional
+    /// include flags shape the response: the UI wants every route
+    /// and stop inline; an agent asking the day-shape question wants
+    /// five numbers, not 199 KiB. Both default TRUE (the UI's shape
+    /// is unchanged); `false` empties the corresponding list.
+    NetworkStats {
+        network_hash: String,
+        date: String,
+        #[serde(default = "default_true")]
+        include_routes: bool,
+        #[serde(default = "default_true")]
+        include_stops: bool,
+        #[serde(default = "default_true")]
+        include_service_types: bool,
+    },
     /// Every service type's numbers, each on its representative day —
     /// the planner's design axis.
     ServiceTypesOverview { network_hash: String },
@@ -86,6 +99,10 @@ fn layers() -> &'static Mutex<HashMap<String, Arc<PopLayer>>> {
 
 fn content_hash(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn network_hash(network: &Network) -> Result<String, String> {
@@ -150,10 +167,25 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .insert(hash.clone(), Arc::new(layer));
             Ok(Response::LoadPopulationLayer { layer_hash: hash, points })
         }
-        Request::NetworkStats { network_hash, date } => {
+        Request::NetworkStats { network_hash, date, include_routes, include_stops, include_service_types } => {
             let parsed = parse_date(&date)?;
             with_network(&network_hash, |network| {
-                Ok(Response::NetworkStats { stats: network_stats(network, parsed) })
+                let mut stats = network_stats(network, parsed);
+                // Query shaping: the flags right-size the response AT
+                // the op (the founding dogfood session read a 199 KiB
+                // answer to a five-number question through a
+                // hand-rolled summarizer — the missing piece was this
+                // parameter, not a script).
+                if !include_routes {
+                    stats.routes.clear();
+                }
+                if !include_stops {
+                    stats.stops.clear();
+                }
+                if !include_service_types {
+                    stats.service_types.clear();
+                }
+                Ok(Response::NetworkStats { stats })
             })
         }
         Request::ServiceTypesOverview { network_hash } => with_network(&network_hash, |network| {

@@ -5,12 +5,12 @@
     {
       "name": "load_fixture",
       "bytes_op": 0,
-      "expect": "{\"ok\":{\"op\":\"load_feed\",\"feed_id\":$FEED,\"summary\":{\"agencies\":1,\"routes\":2,\"stops\":3,\"trips\":5,\"stop_times\":10}}}"
+      "expect": "{\"ok\":{\"op\":\"load_feed\",\"feed_id\":$FEED,\"summary\":{\"agencies\":1,\"routes\":3,\"stops\":6,\"trips\":7,\"stop_times\":14}}}"
     },
     {
       "name": "summary",
       "request": "{\"op\":\"summary\",\"feed_id\":$FEED}",
-      "expect": "{\"ok\":{\"op\":\"summary\",\"summary\":{\"agencies\":1,\"routes\":2,\"stops\":3,\"trips\":5,\"stop_times\":10}}}"
+      "expect": "{\"ok\":{\"op\":\"summary\",\"summary\":{\"agencies\":1,\"routes\":3,\"stops\":6,\"trips\":7,\"stop_times\":14}}}"
     },
     {
       "name": "feed_info",
@@ -55,7 +55,7 @@
     {
       "name": "stops_geojson",
       "request": "{\"op\":\"stops_geojson\",\"feed_id\":$FEED}",
-      "expect": "{\"ok\":{\"op\":\"stops_geojson\",\"collection\":{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-73.5,45.5]},\"properties\":{\"stop_id\":\"A\",\"name\":\"Main & 1st\",\"code\":null}},{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-73.51,45.51]},\"properties\":{\"stop_id\":\"B\",\"name\":\"Main & 2nd\",\"code\":null}},{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-73.52,45.52]},\"properties\":{\"stop_id\":\"C\",\"name\":\"Main & 3rd\",\"code\":null}}]}}}"
+      "expect": "{\"ok\":{\"op\":\"stops_geojson\",\"collection\":{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-73.5,45.5]},\"properties\":{\"stop_id\":\"A\",\"name\":\"Main & 1st\",\"code\":null}},{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-73.51,45.51]},\"properties\":{\"stop_id\":\"B\",\"name\":\"Main & 2nd\",\"code\":null}},{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-73.52,45.52]},\"properties\":{\"stop_id\":\"C\",\"name\":\"Main & 3rd\",\"code\":null}},{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-73.5155,45.515]},\"properties\":{\"stop_id\":\"SA\",\"name\":\"Main Station: Bay A\",\"code\":null}},{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-73.5145,45.515]},\"properties\":{\"stop_id\":\"SB\",\"name\":\"Main Station: Bay B\",\"code\":null}},{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-73.515,45.515]},\"properties\":{\"stop_id\":\"STN\",\"name\":\"Main Station\",\"code\":null}}]}}}"
     },
     {
       "name": "trip_path_geojson",

@@ -16,6 +16,11 @@ ts-rs = { workspace = true }
 transit-core = { path = "../transit-core" }
 transit-network = { path = "../transit-network" }
 transit-codec = { path = "../transit-codec" }
+# …and the analysis capability's examples compute REAL answers over
+# the fixture-derived document through the same library the module
+# dispatches through.
+transit-analysis = { path = "../transit-analysis" }
+chrono = { workspace = true }
 # …and the rt capability's example decodes the real e2e payload.
 transit-rt = { path = "../transit-rt" }
 

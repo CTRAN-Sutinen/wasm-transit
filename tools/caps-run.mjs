@@ -14,9 +14,19 @@
 //   caps-run <capability> [--load FILE]... [--op '<json>|@FILE']...
 //          [--timeout MS]               run a session
 //
-// --load sends the file's bytes on bulk op 0 (feeds, layers).
-// --op invokes one JSON op; repeatable; '@FILE' reads the JSON from
-// a file. Results print as JSON, one per line, in order.
+// --load sends the file's bytes on bulk op 0 (feeds, layers, rt
+// payloads). --op invokes one JSON op; repeatable; '@FILE' reads the
+// JSON from a file. Results print as JSON, one per line, in order.
+//
+// Result references: a string value that starts with "$" resolves
+// against the session's PRIOR results before invoking — no
+// hand-copying hashes between ops:
+//   $load.feed_hash    the last --load result ("load" op)
+//   $import.network_hash  the last prior result tagged op:"import"
+//   $1.feed_hash       the 1st result overall (loads included)
+// The rest of the reference is a dotted path into the result
+// (numeric segments index arrays). A reference must be the whole
+// string value; unresolvable references fail the session loudly.
 
 import { createHash } from "node:crypto";
 import { parentPort, workerData, isMainThread } from "node:worker_threads";
@@ -109,11 +119,53 @@ async function runSession() {
     const payload = readFileSync(file);
     results.push({ load: file, ...invokeBytes(0, payload) });
   }
+  // Result references ($load.x, $import.x, $1.x): resolved against
+  // the session's prior results, in the worker, BEFORE the bytes
+  // cross the ABI — the agent never hand-copies a hash.
+  const resolveRef = (ref) => {
+    const m = /^\$(load|\d+|[a-z_][a-z0-9_]*)(?:\.([a-zA-Z0-9_.]*))?$/.exec(ref);
+    if (!m) throw new Error(`bad result reference ${JSON.stringify(ref)}: expected $<load|op|N>.<path>`);
+    const [, base, path] = m;
+    let current;
+    if (base === "load") {
+      current = [...results].reverse().find((r) => r.load !== undefined);
+      if (!current) throw new Error(`reference ${ref}: no --load result to resolve against`);
+    } else if (/^\d+$/.test(base)) {
+      current = results[Number(base) - 1];
+      if (!current) throw new Error(`reference ${ref}: no result ${base} (the session has ${results.length})`);
+    } else {
+      current = [...results].reverse().find((r) => r.ok?.op === base);
+      if (!current) throw new Error(`reference ${ref}: no prior result tagged op:"${base}"`);
+    }
+    // References resolve into the result's ok payload — the document
+    // the session prints and the agent reads (the outcome wrapper is
+    // transport, not content).
+    current = current.ok ?? current;
+    for (const segment of (path ?? "").split(".").filter((s) => s.length)) {
+      if (current === null || current === undefined) {
+        throw new Error(`reference ${ref}: path leaves the result at segment "${segment}"`);
+      }
+      current = current[segment];
+    }
+    if (current === null || current === undefined) {
+      throw new Error(`reference ${ref}: resolves to nothing`);
+    }
+    return current;
+  };
+  const resolveRefs = (value) => {
+    if (typeof value === "string" && value.startsWith("$")) return resolveRef(value);
+    if (Array.isArray(value)) return value.map(resolveRefs);
+    if (value !== null && typeof value === "object") {
+      for (const key of Object.keys(value)) value[key] = resolveRefs(value[key]);
+      return value;
+    }
+    return value;
+  };
   for (const op of ops) {
     const request = op.startsWith("@")
       ? JSON.parse(readFileSync(op.slice(1), "utf8"))
       : JSON.parse(op);
-    results.push(invoke(request));
+    results.push(invoke(resolveRefs(request)));
   }
   parentPort.postMessage({ ok: results });
 }

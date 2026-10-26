@@ -1,6 +1,6 @@
 {
-  "blob": "blobs/f3e9d92232d92d43a5635b82196d6751970809af15b19743b98e37120edcbfc9.wasm",
-  "bytes": 543295,
+  "blob": "blobs/85dea6d97c3d9059d3f819251360bae12bcfb3b9210ee09f456f0c8034070ea4.wasm",
+  "bytes": 616889,
   "consumes": {},
   "evidence": {
     "dirty_tree": true,
@@ -10,9 +10,9 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "69c51c2922f7715455b2141955c7764e61757489"
+    "source_commit": "d5907b77f44006e4a84dfd9a33a48c438697ee07"
   },
-  "hash": "sha256:f3e9d92232d92d43a5635b82196d6751970809af15b19743b98e37120edcbfc9",
+  "hash": "sha256:85dea6d97c3d9059d3f819251360bae12bcfb3b9210ee09f456f0c8034070ea4",
   "id": "gtfs",
   "kernel": 1,
   "migrates": {
@@ -24,12 +24,106 @@
     ]
   },
   "op_docs": {
-    "departures": {
-      "description": "Upcoming departures at one stop on a service date, schedule only (GTFS-rt is another capability).",
+    "active_services": {
+      "description": "Service keys running on a date — often several at once (regular patterns plus exception-added services). The dispatcher's first question: what is running today?",
       "example": {
         "request": {
           "date": "2026-10-23",
-          "feed_hash": "sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2",
+          "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
+          "op": "active_services"
+        },
+        "response": {
+          "ok": {
+            "op": "active_services",
+            "services": [
+              "HOL",
+              "WK"
+            ]
+          }
+        }
+      }
+    },
+    "block_trips": {
+      "description": "One block's trip chain on a service date: where the vehicle starts, where it ends, the layover between trips. Unknown blocks answer empty, never error.",
+      "example": {
+        "request": {
+          "block_id": "B1",
+          "date": "2026-10-23",
+          "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
+          "op": "block_trips"
+        },
+        "response": {
+          "ok": {
+            "op": "block_trips",
+            "trips": [
+              {
+                "end_time": 29400,
+                "end_time_hhmmss": "08:10:00",
+                "first_stop_id": "A",
+                "first_stop_name": "Main & 1st",
+                "headsign": "Downtown",
+                "last_stop_id": "B",
+                "last_stop_name": "Main & 2nd",
+                "layover_secs": null,
+                "route_id": "10",
+                "route_name": "10",
+                "service_id": "WK",
+                "start_time": 28800,
+                "start_time_hhmmss": "08:00:00",
+                "trip_id": "t10"
+              },
+              {
+                "end_time": 30600,
+                "end_time_hhmmss": "08:30:00",
+                "first_stop_id": "A",
+                "first_stop_name": "Main & 1st",
+                "headsign": "Downtown",
+                "last_stop_id": "B",
+                "last_stop_name": "Main & 2nd",
+                "layover_secs": 600,
+                "route_id": "20",
+                "route_name": "20",
+                "service_id": "WK",
+                "start_time": 30000,
+                "start_time_hhmmss": "08:20:00",
+                "trip_id": "t20"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "blocks": {
+      "description": "All blocks in the feed; with `date`, only the blocks RUNNING that day, with that day's trip counts — the vehicle picker shows buses in service, not parked buses. A block is one vehicle's trip chain.",
+      "example": {
+        "request": {
+          "date": "2026-10-23",
+          "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
+          "op": "blocks"
+        },
+        "response": {
+          "ok": {
+            "blocks": [
+              {
+                "block_id": "B1",
+                "trip_count": 2
+              },
+              {
+                "block_id": "B2",
+                "trip_count": 1
+              }
+            ],
+            "op": "blocks"
+          }
+        }
+      }
+    },
+    "departures": {
+      "description": "Upcoming departures at one stop on a service date, schedule only (GTFS-rt is another capability). The stop's own board — a station pin answers nothing here; see station_departures.",
+      "example": {
+        "request": {
+          "date": "2026-10-23",
+          "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
           "from_secs": 25200,
           "limit": 5,
           "op": "departures",
@@ -64,6 +158,27 @@
               }
             ],
             "op": "departures"
+          }
+        }
+      }
+    },
+    "feed_info": {
+      "description": "The feed's own metadata (version, publisher), when the feed provides feed_info.txt — the identity question a dispatcher asks first: which feed am I dispatching?",
+      "example": {
+        "request": {
+          "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
+          "op": "feed_info"
+        },
+        "response": {
+          "ok": {
+            "info": {
+              "feed_id": null,
+              "feed_lang": "en",
+              "feed_publisher_name": "Test Transit",
+              "feed_publisher_url": "https://example.com",
+              "feed_version": "2026.10.1"
+            },
+            "op": "feed_info"
           }
         }
       }
@@ -139,11 +254,79 @@
         }
       }
     },
+    "station_departures": {
+      "description": "Upcoming departures POOLED over a stop's walking group — the station board. A station (Fisher's Landing, Main Station) answers no departures of its own: the bays carry the trips, and this op unions the whole group (the stop, its parent, siblings sharing that parent, the parent's children), merged by time, each row tagged with its concrete bay. Any member of the group answers the same board.",
+      "example": {
+        "request": {
+          "date": "2026-10-23",
+          "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
+          "from_secs": 25200,
+          "limit": 5,
+          "op": "station_departures",
+          "stop_id": "STN"
+        },
+        "response": {
+          "ok": {
+            "departures": [
+              {
+                "block_id": null,
+                "departure_time": 29700,
+                "departure_time_hhmmss": "08:15:00",
+                "headsign": "Bay B",
+                "route_id": "40",
+                "route_name": "40",
+                "service_id": "WK",
+                "stop_id": "SA",
+                "stop_sequence": 1,
+                "trip_id": "t40"
+              },
+              {
+                "block_id": null,
+                "departure_time": 30000,
+                "departure_time_hhmmss": "08:20:00",
+                "headsign": "Bay B",
+                "route_id": "40",
+                "route_name": "40",
+                "service_id": "WK",
+                "stop_id": "SB",
+                "stop_sequence": 2,
+                "trip_id": "t40"
+              },
+              {
+                "block_id": null,
+                "departure_time": 30600,
+                "departure_time_hhmmss": "08:35:00",
+                "headsign": "Bay A",
+                "route_id": "40",
+                "route_name": "40",
+                "service_id": "WK",
+                "stop_id": "SB",
+                "stop_sequence": 1,
+                "trip_id": "t41"
+              },
+              {
+                "block_id": null,
+                "departure_time": 31200,
+                "departure_time_hhmmss": "08:40:00",
+                "headsign": "Bay A",
+                "route_id": "40",
+                "route_name": "40",
+                "service_id": "WK",
+                "stop_id": "SA",
+                "stop_sequence": 2,
+                "trip_id": "t41"
+              }
+            ],
+            "op": "station_departures"
+          }
+        }
+      }
+    },
     "stops": {
       "description": "Stop list for UI pickers, first N by id.",
       "example": {
         "request": {
-          "feed_hash": "sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2",
+          "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
           "limit": 3,
           "op": "stops"
         },
@@ -173,7 +356,7 @@
       "example": {
         "request": {
           "date": "2026-10-23",
-          "feed_hash": "sha256:d87f14e29e498e9e6587448f38ddcfa289df7e9aefbd98d96290beaf57f2f4e2",
+          "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
           "from_secs": 25200,
           "limit": 3,
           "op": "watchlist_board",
@@ -228,7 +411,12 @@
   "ops": [
     "load_feed",
     "departures",
+    "station_departures",
     "stops",
+    "active_services",
+    "blocks",
+    "block_trips",
+    "feed_info",
     "load_watchlist",
     "migrate_watchlist",
     "watchlist_board"

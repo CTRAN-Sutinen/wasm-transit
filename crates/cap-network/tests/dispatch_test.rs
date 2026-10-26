@@ -26,7 +26,7 @@ fn load_fixture() -> (String, transit_core::FeedSummary) {
 fn load_feed_registers_under_the_content_hash() {
     let (hash, summary) = load_fixture();
     assert_eq!(hash, format!("sha256:{:x}", sha2::Sha256::digest(FIXTURE)));
-    assert_eq!(summary.stops, 3);
+    assert_eq!(summary.stops, 6, "A, B, C, the station pin, two bays");
     // Idempotent: the same bytes load to the same hash.
     let (again, _) = load_fixture();
     assert_eq!(again, hash);
@@ -43,8 +43,8 @@ fn import_infers_and_registers_the_document() {
     // Valid by construction — the codec's law.
     assert!(network.validate().is_ok(),
         "inferred document must validate: {:?}", transit_network::validation_issues(&network));
-    assert_eq!(network.stops.len(), 3);
-    assert_eq!(network.patterns.len(), 3);
+    assert_eq!(network.stops.len(), 6, "A, B, C, the station pin, two bays");
+    assert_eq!(network.patterns.len(), 5, "10 both ways, 20, the shuttle both ways");
     // The fixture's single-stop trip is a REPORTED loss, never silent.
     assert!(!notes.is_empty(), "the dropped single-stop trip is reported: {notes:?}");
 

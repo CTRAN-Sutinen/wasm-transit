@@ -110,13 +110,29 @@ where the bus answers them:
   the bays + `watchlist_board` = a one-call multi-stop board), but a
   dispatcher should not have to build a document to see a station.
 - **"What service runs today? Which blocks are out? What trips does
-  block X run?"** — `active_services`, `blocks` (with date), and
-  `block_trips` exist ONLY in the monolith. No capability answers
-  them: the dispatcher persona cannot be assembled for its core
-  work (the vehicle/block view is the dispatcher's primary screen).
-  The next dispatch extraction should be a dispatch READ capability
-  over the feed: `active_services`, `blocks`, `block_trips` (the
-  monolith ops move, the artifact shrinks a third time).
+  block X run?"** — was the dispatcher persona's core gap:
+  `active_services`, `blocks` (with date), and `block_trips`
+  existed ONLY in the monolith. DONE as the dispatch reads on
+  cap-gtfs (2026-10-25): all four ops (`active_services`,
+  `blocks`, `block_trips`, `feed_info` — the domain code already
+  lived in transit-core, so it was a Stage-B-only extraction) are
+  on the bus, gated (caps-smoke + a chained runner session in
+  `just test`), and dogfooded live: C-TRAN Sunday = two service
+  keys, 41 vehicles scheduled, and the +6:39 route-092 bus's
+  whole 15-hour block chain with layovers, hash-free. REMAINS:
+  the monolith keeps its copies until the dispatcher UI
+  (BlocksPanel, the block picker) rewires through the bus —
+  that deletion is the extraction's Stage C.
+- **Tonight's second session (2026-10-25 evening) found:**
+  two late trips with delays but NO vehicle report (a fact a
+  dispatcher acts on — an op that surfaces "delayed but
+  dark" vehicles would make it checkable); route 050 with five
+  of six buses late (the fleet-level pattern, again — a
+  per-route delay roll-up op is the shaping fix); and the
+  trip_progress gap confirmed exactly: the 092's predicted
+  20:00:39 arrival at bay 9001 was computable ONLY by
+  hand-joining the station board and the rt delay across two
+  sessions.
 - **"Is my bus on time? Where is it?"** — was `decode_rt`,
   monolith-only; DONE as cap-rt (item 1b). Remaining rt gap: the
   overview carries per-stop delays and vehicle positions, but a
@@ -134,9 +150,9 @@ where the bus answers them:
 - **Stop names by id** — the rt view carries stop ids; a dispatcher
   reads names. A `stops_by_ids` (or an include shape on `stops`)
   answers; today the host pulls 901 rows and joins.
-- **"Which feed is this? What version?"** — `feed_info` exists only
-  in the monolith; small, but the identity question a dispatcher
-  asks first. Fold into the dispatch read capability.
+- **"Which feed is this? What version?"** — was monolith-only;
+  DONE as part of the dispatch reads (`feed_info` on cap-gtfs,
+  dogfooded: C-TRAN answers its own version on the bus).
 - **Stop search** — `stops` returns first N by id; finding Fisher's
   bays means pulling the whole list and grepping client-side. An
   `include`/query shape on `stops` (or a `find_stops` op) is the
@@ -148,7 +164,26 @@ where the bus answers them:
   hand is fine once, drifts twice). A runner-side `$TODAY` (and
   `$NOW_SECS`) placeholder is cheap honesty.
 
-## 2. Parent stations answer zero departures (cap-gtfs)
+## 2. Parent stations answer zero departures (cap-gtfs) — DONE (2026-10-25)
+
+Landed as a NEW OP (the deliberate choice: `departures` stays the
+per-stop board — a bay query is precise and the watchlist pins bays
+on purpose; a station query is a different question):
+`station_departures` pools the walking group (the stop, its parent,
+siblings sharing that parent, the parent's children — the same
+group definition transfer points compose over), merged by time,
+each row tagged with its concrete bay; ANY member of the group
+answers the same board. The group query lives in transit-core
+(`Gtfs::walking_group`) — shared by the capability and the manifest
+generator. The e2e fixture grew a station pin + two bays with a
+shuttle route (the ripple: counts, corpus, planner-derive
+expectations — all regenerated). Tests: the union oracle (the pooled
+board IS the sorted union of per-stop departures over the group,
+computed independently), limit-after-merge, plain-stop identity, the
+transit-core group law. Dogfood: C-TRAN stop 106 answers the union
+of its bays, each row tagged (`$load.feed_hash` chained, no
+hand-copied hashes). The UI wiring (rider/dispatcher board at a
+station) remains open — noted under item 5's follow-up below.
 
 **Finding.** `caps run gtfs --op '{departures, stop_id: "106"}'`
 (Fisher's Landing Transit Center) returns EMPTY. The bays (9000+)
@@ -168,53 +203,75 @@ UI has the same gap either way.
 pooling, a dispatch test, and the C-TRAN repro: stop 106 must
 return the union of its bays.
 
-## 3. Runner ergonomics: result references (caps-run)
+## 3. Runner ergonomics: result references (caps-run) — DONE (2026-10-25)
 
 **Finding.** Chained ops need a hash only the PREVIOUS op's output
 contains. Every placeholder-hash mistake costs a full document
 load (2.5 MB zip, seconds) — twice in one founding session, and
 twice again in the cap-network dogfood (import → analysis → export
-chains by `network_hash`; see item 1's findings).
+chains by `network_hash`).
 
-**What.** `--op` values support references into prior results:
-`{"feed_hash": "$load.feed_hash"}` resolves against the session's
-load results (and `$1`, `$2` for prior ops — `$import.network_hash`
-is the network flow's everyday shape). Implement in the
-worker before invoking. Tests: extend the `just test` runner line
-to a chained two-op session that uses `$load.feed_hash`.
+Landed in the worker (resolved BEFORE the bytes cross the ABI):
+`$load.<path>` (the last --load result), `$<opname>.<path>` (the
+last result tagged with that op — `$import.network_hash` is the
+network flow's everyday shape), `$N.<path>` (the Nth result,
+loads included); dotted paths, numeric segments index arrays;
+references resolve into the `ok` payload (the document the session
+prints); unresolvable references fail the session loudly. The
+`just test` gates are chained sessions now — every feed hash in
+the gates was replaced by `$load.feed_hash`, so the gates verify
+the runner's reference resolution on every run. Syntax documented
+in the runner header. REMAINING (the dispatcher session's
+finding): `$TODAY`/`$NOW_SECS` placeholders (hosts own the clock,
+and an agent computing "today" by hand drifts), and cross-session
+chaining (the C-TRAN analysis session still embeds the derived
+document in a request file — a `--save`/`--op-from` runner pair
+or a session document store would close it).
 
-## 4. Query shaping on analysis ops (cap-analysis)
+## 4. Query shaping on analysis ops (cap-analysis) — DONE (2026-10-25)
 
 **Finding.** `network_stats` on C-TRAN returns 199 KiB — every
 route and every stop inline — for a question whose answer is five
 numbers. The UI wants the full payload; an agent wants the summary.
 
-**What.** Add optional include flags (`include_routes`,
-`include_stops`, defaulting true so the UI is unchanged) or a
-`level` enum (`summary | routes | stops | full`). Generate the TS
-bindings; document in op_docs; extend the worked examples (the
-registry currently has `example: null` for every analysis op —
-fill those in while here; the gtfs/router examples proved their
-worth in this session).
+Landed as include flags (`include_routes`, `include_stops`,
+`include_service_types` — all default TRUE, so the UI's payload is
+unchanged; `false` empties the corresponding list while every
+summary number stays). The shaping law is tested (empty lists on
+request, identical summaries, lean < rich on the wire). TS bindings
+regenerated; op_docs carry the flags; the worked example ASKS the
+day-shape question (all flags false). And the analysis ops' worked
+examples are filled in — every one computed from the REAL
+fixture-derived document through the shared transit-analysis
+library at generation time, so they cannot drift (load_network,
+network_stats, service_types_overview, service_type_detail,
+type_coverage; load_population_layer is bulk-bytes, description
+carries the contract). Dogfood acceptance on the real C-TRAN
+network: the Wednesday day-shape answer is **249 bytes** (was
+199 KiB).
 
-**Dogfood acceptance.** `caps run analysis --op '{network_stats,
-...}'` answers the day-shape question in under a KiB.
-
-## 5. The day-shape question deserves a screen (web)
+## 5. The day-shape question deserves a screen (web) — DONE (2026-10-25)
 
 **Finding (product-level).** The dogfood session answered "what
 does a Wednesday look like?" in one op: 1,773 trips, 29 routes,
 886 stops, 646.5 revenue hours, span 4:17–25:10. The web planner
-has NO screen that answers this — the `network_stats` op was dead
+had NO screen that answers this — the `network_stats` op was dead
 UI surface for its entire life (never called from web/src), while
-the CLI found it in one command. The interface now affords
-questions the UI doesn't ask.
+the CLI found it in one command.
 
-**What.** A planner "day summary" surface (network overview
-header or its own screen): date picker → trips, routes, stops,
-revenue hours, span, transfer points. It renders `network_stats`
-through cap-analysis like the rest of the planner's numbers — the
-degraded state is already handled by the bus.
+Landed as the day-summary header of the planner's overview screen:
+a date picker (defaults to today — JS owns the clock) and the
+picked day's shape on one line of chips — trips, routes, stops,
+revenue hours, span, transfer points — rendered through
+`analysisCap.networkStats` (the shaped form: lists off, summary
+numbers only) like the rest of the planner's numbers. The empty
+day is an honest message ("no service runs"), and the degraded
+state is the bus's: no capability, no numbers, and the screen says
+so. e2e pins the fixture's day (5 trips / 3 routes / 5 stops /
+0.7 revenue hours / span 08:00:00–08:50:00). FOLLOW-UP (from
+item 2): the rider/dispatcher board should surface
+`station_departures` when the selected stop is a station pin —
+the capability answers it, the UI still queries per-stop.
 
 ## 6. UI/agent coherence — user-declared assembly and the projection artifacts
 

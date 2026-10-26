@@ -11,7 +11,7 @@
     loadNetworkFile, exportNetworkText, downloadNetwork, selectEntity,
     addStop, addRoute, addPattern, addServiceType, addSchedule, addBlock,
     plannerBack, plannerGo, togglePlannerMap, forkPlan, switchPlan,
-    deletePlan, updatePlanMeta, refreshPlanChain, refreshAnalysis,
+    deletePlan, updatePlanMeta, refreshPlanChain, refreshAnalysis, fmtHHMMSS,
   } from "../planner";
   import { serviceDate } from "../actions";
   import type { PlannerScreen } from "../planner";
@@ -200,6 +200,46 @@
 {:else if screen.view === "overview"}
   <section>
     <h2>Network analysis</h2>
+
+    {#if app.dayStats}
+      <div class="day-summary">
+        <p class="chips">
+          <label class="muted">
+            day
+            <input
+              type="date"
+              value={app.plannerDay}
+              onchange={(e) => {
+                app.plannerDay = e.currentTarget.value;
+                refreshAnalysis();
+              }}
+            />
+          </label>
+          <span class="chip svc">{app.dayStats.trips} trips</span>
+          <span class="chip svc">{app.dayStats.active_routes} routes</span>
+          <span class="chip svc">{app.dayStats.active_stops} stops</span>
+          <span class="chip svc" title="sum of trip runtimes, hours">
+            {app.dayStats.revenue_hours.toFixed(1)} revenue hours
+          </span>
+          {#if app.dayStats.first_start_secs !== null && app.dayStats.last_arrival_secs !== null}
+            <span class="chip svc">
+              span {fmtHHMMSS(app.dayStats.first_start_secs)}–{fmtHHMMSS(app.dayStats.last_arrival_secs)}
+            </span>
+          {/if}
+          {#if app.dayStats.transfer_stops > 0}
+            <span class="chip svc">{app.dayStats.transfer_stops} transfer points</span>
+          {/if}
+        </p>
+        {#if app.dayStats.trips === 0}
+          <p class="muted">No service runs on {app.dayStats.date} — the day's calendar is empty.</p>
+        {/if}
+      </div>
+    {:else}
+      <p class="muted">
+        The day summary needs the analysis capability; when it does not
+        assemble, authoring continues without numbers.
+      </p>
+    {/if}
 
     {#if app.typeCoverage && app.typeCoverage.length > 0}
       <p class="chips">
