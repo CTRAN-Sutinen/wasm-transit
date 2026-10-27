@@ -103,7 +103,7 @@ transit-streets  street graph for detour authoring (snap, route)
 transit-ops      the monolith seam: dispatch(Request) -> Response + feed registry
 transit-wasm     THE artifact: flat import-free C ABI over dispatch
 cap-abi          the capability seam (ABI macro, manifest, validator, gen-manifest)
-cap-gtfs cap-router cap-analysis cap-network cap-rt cap-dispatch cap-streets
+cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-streets
                  the capability modules (docs/ARCHITECTURE.md, bus section)
 server/          Go + wazero host — scaffolding, never a domain decision
 web/             Svelte 5 + Vite frontend (docs/ARCHITECTURE.md, web section)

@@ -147,7 +147,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "cap-dispatch"
+name = "cap-board"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "chrono",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "transit-codec",
+ "transit-core",
+ "transit-dispatch",
+ "transit-network",
+ "transit-sync",
+ "ts-rs",
+]
+
+[[package]]
+name = "cap-calendar"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
@@ -168,8 +186,6 @@ name = "cap-gtfs"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
- "chrono",
- "proptest",
  "serde",
  "serde_json",
  "sha2",
@@ -216,6 +232,23 @@ dependencies = [
  "sha2",
  "transit-core",
  "transit-rt",
+ "ts-rs",
+]
+
+[[package]]
+name = "cap-runcut"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2",
+ "transit-codec",
+ "transit-core",
+ "transit-dispatch",
+ "transit-network",
+ "transit-sync",
  "ts-rs",
 ]
 

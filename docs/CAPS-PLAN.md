@@ -50,12 +50,16 @@ LANDED:
   — the split-feed law is a permanent test because the dogfood
   caught it).
 - **the dispatch reads** (active_services, blocks, feed_info,
-  stops_by_ids) → cap-gtfs. Monolith ops deleted (ABI smoke +
-  corpus pin the retirements); the blocks list / chips / feed
-  header read the bus (app.spec); dogfooded (C-TRAN Sunday: two
-  service keys, 41 vehicles, the 092's 15-hour chain).
+  stops_by_ids) → cap-gtfs at extraction time. Monolith ops deleted
+  (ABI smoke + corpus pin the retirements); the blocks list / chips
+  / feed header read the bus (app.spec); dogfooded (C-TRAN Sunday:
+  two service keys, 41 vehicles, the 092's 15-hour chain). U2
+  moved the day-grade reads to the need modules (below): blocks →
+  cap-runcut, active_services → cap-calendar.
 - **the DAY VIEWS** (departures, station_departures, block_trips
-  with the layover ripple) → transit-dispatch / cap-dispatch.
+  with the layover ripple) → transit-dispatch / cap-dispatch at
+  extraction time — the module dissolved in U2 into the need
+  modules (below).
   Monolith ops deleted (ABI smoke + the corpus step-set pin);
   the board and chains answer `network_hash + edits_hash + date`
   through the resolver, the rt-delay and click-through joins go
@@ -76,6 +80,36 @@ LANDED:
   COUNTY_GEOJSON), which needs the licensed county export — the
   first dogfood session on it re-pins this line.
 
+- **U2, the need cut of the day views** — cap-dispatch was a
+  persona ("the operator's day") and cap-gtfs answered day
+  questions over the feed beside it; both dissolved per
+  docs/PLAN.md's criteria. cap-board (when does service leave this
+  stop — departures, station_departures, the WATCHLIST moved from
+  cap-gtfs with its v1→v2 migration), cap-runcut (what does this
+  vehicle do today — the day's blocks list, one block's chain
+  with the ripple), cap-calendar (which service keys run today —
+  from the effective day). cap-gtfs keeps only the feed document
+  (load_feed, stops, stops_by_ids, feed_info); its feed-side day
+  reads died as duplicates (criterion 6), pinned by cap-gtfs's
+  dispatch test (the retired ops answer as request errors) and
+  caps-smoke's retirement loop. ON THE BUS: the three modules'
+  dispatch tests, caps-smoke's board/runcut/calendar flows, the
+  justfile runner gates (board: station + watchlist chained;
+  runcut: blocks → edits → ripple; calendar: $TODAY), and the
+  manifest (9 capabilities, compose-time self-validation). UI
+  READS THE BUS: DepartureBoard rows through cap-board, chips
+  through cap-calendar, BlocksPanel list + chain through
+  cap-runcut, the demo composition feed → network → board →
+  router (caps.spec: assembly, composition, degrade; app.spec:
+  the board, station board, blocks scoping, both degrade specs —
+  runcut and board, not gtfs/dispatch). NOT dogfooded: the
+  C-TRAN board/chains dogfood above predates the cut — the first
+  real-data session through cap-board/cap-runcut/cap-calendar
+  re-pins this line. Model-native honesty note: the fixture's HOL
+  key (its single trip dropped at import) does not appear in
+  calendar's answer, and B2 (same reason) is not offered by the
+  blocks list — the honest holes, pinned by the module tests.
+
 Infrastructure, DONE (pinned by the same `just check` the
 gates run in): cap-abi (the undocumented-ops law and the
 manifest's compose-time self-validation), the resolver
@@ -93,14 +127,20 @@ re-authors from there) and reports every resolution — never
 silent; diversions produce patched copies (the base feed is
 immutable); retire = tombstone.
 
-OPEN — the units of `docs/PLAN.md`: U2 the day/dispatch split,
-U3 pickers + feed line, U4 coverage, U5 planning, U6 the map
-view, U7 sync + plans (U1 cap-streets is landed above). The rider
-planner still plans through the monolith (U5); the map still
-draws through the monolith's geojson ops (U6); `set_diversions`
-is still the edit-document plumbing for both.
+OPEN — the units of `docs/PLAN.md`: U3 the network directory +
+the feed line (cap-directory — NEW, the pickers are model
+questions), U4
+coverage, U5 planning, U6 the map view, U7 sync + plans, U8 the
+GTFS substrate retires (U1 cap-streets and U2 the need cut are
+landed above). The rider planner still plans through the monolith
+(U5); the map still draws through the monolith's geojson ops (U6);
+`set_diversions` is still the edit-document plumbing for both.
+transit-core is deprecated as of this cut — its day answers lost
+their last bus callers, and the crate itself folds into the codec
+in U8.
 
 ## Open findings (routed, never scripted)
+
 
 - **Cross-session chaining in caps-run** — a session needs a
   document a PREVIOUS session imported (`--save` / `--op-from`, or

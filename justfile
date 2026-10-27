@@ -24,7 +24,7 @@ wasm:
 caps:
     #!/usr/bin/env bash
     set -e
-    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt -p cap-dispatch -p cap-streets --target wasm32-unknown-unknown
+    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt -p cap-board -p cap-runcut -p cap-calendar -p cap-streets --target wasm32-unknown-unknown
     cargo run --quiet -p cap-abi --bin gen-manifest
 
 # Publish the registry: gates first (the records report them), then
@@ -76,23 +76,25 @@ test: caps
     # (no hand-copied hashes; the runner resolves them in-session).
     node tools/caps-run.mjs gtfs --load web/public/caps/sample-gtfs.zip \
       --op '{"op":"stops","feed_hash":"$load.feed_hash","limit":2}' | grep -q '"stop_id":"A"'
-    # The station board: the parent pin answers the union of its bays
-    # (walking-group pooling) — and the reference chain keeps it
-    # hash-free.
-    node tools/caps-run.mjs gtfs --load web/public/caps/sample-gtfs.zip \
-      --op '{"op":"station_departures","feed_hash":"$load.feed_hash","stop_id":"STN","date":"2026-10-23","from_secs":25200,"limit":10}' \
-      | grep -q '"stop_id":"SA"'
+    # The board capability's gate: the station pin answers the union
+    # of its bays (walking-group pooling), and the personal board
+    # chains its watchlist document — all references chained, no
+    # hand-copied hashes.
+    node tools/caps-run.mjs board \
+      --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"station_departures","network_hash":"$load_network.network_hash","stop_id":"STN","date":"2026-10-23","from_secs":25200,"limit":10}' \
+      --op '{"op":"load_watchlist","document":{"version":"v2","stops":[{"id":"A","label":"home"}]}}' \
+      --op '{"op":"watchlist_board","watchlist_hash":"$load_watchlist.watchlist_hash","network_hash":"$load_network.network_hash","date":"2026-10-23","from_secs":25200,"limit":3}' \
+      | grep -q '"label":"home"'
     # The network capability's gate: load → import, chained; the
     # dropped single-stop trip must be REPORTED (never silent).
     node tools/caps-run.mjs network --load web/public/caps/sample-gtfs.zip \
       --op '{"op":"import","feed_hash":"$load.feed_hash"}' | grep -q '"kind":"dropped_trips"'
-    # The dispatch reads' gate: today's keys, the day's blocks, one
-    # block's chain, and the feed's identity — one session, chained.
+    # The feed's identity — the feed document capability's one
+    # question.
     node tools/caps-run.mjs gtfs --load web/public/caps/sample-gtfs.zip \
-      --op '{"op":"active_services","feed_hash":"$load.feed_hash","date":"2026-10-23"}' \
-      --op '{"op":"block_trips","feed_hash":"$load.feed_hash","block_id":"B1","date":"2026-10-23"}' \
       --op '{"op":"feed_info","feed_hash":"$load.feed_hash"}' \
-      | grep -q '"layover_secs":600'
+      | grep -q '"feed_version":"2026.10.1"'
     # The realtime capability's gate: the dispatch leg as a JOIN — the
     # fixture feed on bulk op 1, the fixture payload on op 0, and the
     # dispatcher's most-asked question answered in one op (t10's
@@ -103,15 +105,16 @@ test: caps
       | grep -q '"predicted_departure":28920'
     # The clock: $TODAY resolves host-side (the runner is the host) —
     # a valid date must answer, whatever day the gate runs on.
-    node tools/caps-run.mjs gtfs --load web/public/caps/sample-gtfs.zip \
-      --op '{"op":"active_services","feed_hash":"$load.feed_hash","date":"$TODAY"}' \
-      | grep -q '"op":"active_services"'
-    # The dispatch capability's gate: the operator view over the
-    # NETWORK document, one chained session — document, board,
-    # edits, and the layover ripple (the connection-health read).
-    node tools/caps-run.mjs dispatch \
+    node tools/caps-run.mjs calendar \
       --op @web/public/caps/sample-network-load.json \
-      --op '{"op":"departures","network_hash":"$load_network.network_hash","stop_id":"A","date":"2026-10-23","from_secs":25200,"limit":10}' \
+      --op '{"op":"active_services","network_hash":"$load_network.network_hash","date":"$TODAY"}' \
+      | grep -q '"op":"active_services"'
+    # The runcut capability's gate: the day's blocks (the index) into
+    # one block's chain (the detail), with the edit ripple chained in
+    # session (the connection-health read: 600 − 300).
+    node tools/caps-run.mjs runcut \
+      --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"blocks","network_hash":"$load_network.network_hash","date":"2026-10-23"}' \
       --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
       --op '{"op":"block_trips","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","block_id":"B1","date":"2026-10-23"}' \
       | grep -q '"layover_remaining_secs":300'
@@ -140,7 +143,7 @@ test: caps
     # Sanctioned consumers: cap-gtfs, cap-network, cap-router (the
     # feed-consuming planner), cap-rt (external rt joining external
     # ids).
-    for crate in cap-analysis cap-dispatch transit-analysis transit-dispatch; do
+    for crate in cap-analysis cap-board cap-runcut cap-calendar transit-analysis transit-dispatch; do
         for dep in transit-core transit-codec; do
             if awk '/^\[dev-dependencies\]/{exit} /^'"$dep"' =/{found=1} END{exit !found}' "crates/$crate/Cargo.toml" 2>/dev/null; then
                 echo "ARCH FAIL: $crate depends on $dep — the network is the core model; compose over the network document (crates/AGENTS.md, Law 1)"; exit 1

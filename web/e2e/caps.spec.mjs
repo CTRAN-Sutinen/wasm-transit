@@ -3,10 +3,11 @@
 // promises, exercised in the browser against the hash-pinned
 // manifest the build generated.
 //
-//   1. The manifest loads; both capabilities assemble (ready).
-//   2. The composition runs: the same feed bytes into two modules,
-//      hashes asserted equal at the host, departures via gtfs,
-//      a plan via router.
+//   1. The manifest loads; every capability assembles (ready).
+//   2. The composition runs: the feed bytes into gtfs, the same
+//      bytes into the network capability, the derived document into
+//      board (identities asserted at the host), departures via
+//      board, a plan via router.
 //   3. Degraded assembly: with the router module unfetchable, the
 //      resolver marks it unavailable and the gtfs half still serves —
 //      the app degrades per capability, never wholesale.
@@ -46,6 +47,14 @@ test("the manifest assembles both capabilities", async ({ page }) => {
   // the bus now — the monolith street ops are gone.
   await expect(panel.getByTestId("cap-streets")).toContainText("ready");
   await expect(panel).toContainText("streets");
+  // And the need cut of the day views (U2): the board, the runcut,
+  // and the calendar — one question each, "dispatch" dissolved.
+  await expect(panel.getByTestId("cap-board")).toContainText("ready");
+  await expect(panel).toContainText("board");
+  await expect(panel.getByTestId("cap-runcut")).toContainText("ready");
+  await expect(panel).toContainText("runcut");
+  await expect(panel.getByTestId("cap-calendar")).toContainText("ready");
+  await expect(panel).toContainText("calendar");
 });
 
 test("the composition runs across two modules", async ({ page }) => {
@@ -55,7 +64,8 @@ test("the composition runs across two modules", async ({ page }) => {
   await expect(page.getByTestId("caps-result")).toContainText("Composition ok");
   // The composition moment: hash handoff asserted, not assumed.
   await expect(page.getByTestId("caps-panel")).toContainText("hash handoff");
-  // Departures through gtfs, the plan through router — 08:10 arrival.
+  // Departures through board (over the network document), the plan
+  // through router — 08:10 arrival.
   await expect(page.getByTestId("caps-panel")).toContainText("departures");
   await expect(page.getByTestId("caps-panel")).toContainText("08:10");
 });
@@ -67,7 +77,7 @@ test("a missing capability degrades the assembly, not the app", async ({ page })
   await expect(page.getByTestId("caps-result")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("caps-result")).toContainText("capability unavailable");
   await expect(page.getByTestId("caps-panel")).toContainText("unavailable");
-  // The gtfs half ran: departures served before planning was skipped.
+  // The day half ran: departures served before planning was skipped.
   await expect(page.getByTestId("caps-panel")).toContainText("departures");
   // And the failed fetch did not poison the resolver: the error is
   // recorded, the status speaks.

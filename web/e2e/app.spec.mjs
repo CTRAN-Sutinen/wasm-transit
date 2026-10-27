@@ -360,7 +360,7 @@ test("comboboxes search, and blocks scope to the service day", async ({ page }) 
 
   // A STATION PIN answers the station board: the parent has no
   // trips of its own, so the per-stop path is empty and the board
-  // falls back to cap-dispatch's pooled station_departures —
+  // falls back to cap-board's pooled station_departures —
   // both bays' departures, each row tagged with its bay.
   await stopBox.click();
   await stopBox.fill("Main Station");
@@ -370,24 +370,18 @@ test("comboboxes search, and blocks scope to the service day", async ({ page }) 
   await expect(page.locator("section:has(h2:text('Departures'))")).toContainText("SA");
   await expect(page.locator("section:has(h2:text('Departures'))")).toContainText("SB");
 
-  // Dispatcher: Friday runs both blocks — B1 (weekday service) and
-  // B2 (the Friday-only holiday trip). The picker offers exactly
-  // those, with that day's trip counts.
+  // The runcut view is model-native: B2's only trip (t12) is
+  // single-stop — the model cannot represent it, the import drops it
+  // (and reports it in its notes) — so the day's blocks list does
+  // not offer B2 at all. The honest hole, never a silent blank:
+  // the picker offers exactly the vehicles with authored trips
+  // running, with that day's counts.
   await switchPersona(page, "Dispatcher");
   const blockBox = page.getByRole("combobox", { name: "Block", exact: true });
   await blockBox.click();
-  // Opening pre-fills the search with the selection (B1); clear it to
-  // see every block running today.
   await blockBox.fill("");
   await expect(page.getByRole("option", { name: /^B1/ })).toBeVisible();
-  await expect(page.getByRole("option")).toHaveCount(2);
-  await page.getByRole("option", { name: /^B2/ }).click();
-  // B2's only trip (t12) is single-stop — the model cannot represent
-  // it, the import drops it (and reports it in its notes), so the
-  // chain view says so honestly. The feed-side list still shows the
-  // block ran; the model-native chain is the honest hole, never a
-  // silent blank.
-  await expect(page.getByText(/No authored chain for this block/)).toBeVisible();
+  await expect(page.getByRole("option")).toHaveCount(1);
 
   // Saturday: WK is off and the holiday was Friday-only — every bus
   // is parked, so there is nothing to pick and no table to show.
@@ -728,25 +722,26 @@ test("planner degrades when the analysis capability cannot assemble", async ({ p
   expect(await page.evaluate(() => window.__analysisPath())).toBeNull();
 });
 
-// The dispatch reads moved to the bus: BlocksPanel (the dispatcher's
-// primary screen) answers through cap-gtfs, and when the module
-// cannot assemble the view is OFF and says so. The rider board beside
-// it reads cap-dispatch (network + dispatch modules — not gtfs), so
-// it keeps answering: the assembly degrades per capability, never
+// The runcut reads moved to the bus: BlocksPanel (the blocks list and
+// one block's chain) answers through cap-runcut over the network
+// document — it no longer needs the gtfs capability at all. When the
+// runcut module cannot assemble the view is OFF and says so; the
+// rider board beside it reads cap-board (a different module), so it
+// keeps answering: the assembly degrades per capability, never
 // wholesale.
-test("dispatcher degrades when the gtfs capability cannot assemble", async ({ page }) => {
-  await page.route(/caps\/gtfs-.*\.wasm/, (route) => route.abort());
+test("the blocks view degrades when the runcut capability cannot assemble", async ({ page }) => {
+  await page.route(/caps\/runcut-.*\.wasm/, (route) => route.abort());
   await page.goto("/");
   await waitForMap(page);
   await loadFeed(page);
   await switchPersona(page, "Dispatcher");
   await expect(
     page
-      .getByText(/blocks view needs the gtfs capability|gtfs capability unavailable/)
+      .getByText(/blocks view needs the runcut capability|runcut capability unavailable/)
       .first(),
   ).toBeVisible({ timeout: 10_000 });
-  // The rider board beside it still answers — through cap-dispatch,
-  // which composes over cap-network, not cap-gtfs.
+  // The rider board beside it still answers — through cap-board,
+  // which composes over cap-network, not cap-runcut.
   await switchPersona(page, "Rider");
   await comboPick(page, "Stop", "Main & 1st");
   await expect(
@@ -754,18 +749,18 @@ test("dispatcher degrades when the gtfs capability cannot assemble", async ({ pa
   ).toHaveCount(3, { timeout: 10_000 });
 });
 
-// The board's own dependencies: the day views answer through
-// cap-dispatch over the network document, so when those modules
-// cannot assemble the board is OFF and says so — the monolith op
-// is deleted, there is no fallback to silently serve instead.
-test("the board degrades when the dispatch capability cannot assemble", async ({ page }) => {
-  await page.route(/caps\/(network|dispatch)-.*\.wasm/, (route) => route.abort());
+// The board's own dependencies: the day view answers through cap-board
+// over the network document, so when those modules cannot assemble the
+// board is OFF and says so — the monolith op is deleted, there is no
+// fallback to silently serve instead.
+test("the board degrades when the board capability cannot assemble", async ({ page }) => {
+  await page.route(/caps\/(network|board)-.*\.wasm/, (route) => route.abort());
   await page.goto("/");
   await waitForMap(page);
   await loadFeed(page);
   await switchPersona(page, "Rider");
   await comboPick(page, "Stop", "Main & 1st");
-  await expect(page.getByText(/board needs the network and dispatch/)).toBeVisible({
+  await expect(page.getByText(/board needs the network and board/)).toBeVisible({
     timeout: 10_000,
   });
   await expect(page.locator("section:has(h2:text('Departures')) tbody tr")).toHaveCount(0);

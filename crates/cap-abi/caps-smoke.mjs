@@ -99,15 +99,16 @@ for (const cap of manifest.capabilities) {
   assert(Object.keys(cap.speaks).length > 0, `capability ${cap.id} declares the documents it speaks`);
 }
 
-// Compatibility documentation: gtfs speaks both watchlist versions
-// and provides the 1→2 migration; the validator accepted it.
+// Compatibility documentation: the board capability speaks both
+// watchlist versions and provides the 1→2 migration; the validator
+// accepted it.
 assert(
-  byId.gtfs.speaks.watchlist.includes(1) && byId.gtfs.speaks.watchlist.includes(2),
-  "gtfs speaks watchlist v1 and v2",
+  byId.board.speaks.watchlist.includes(1) && byId.board.speaks.watchlist.includes(2),
+  "board speaks watchlist v1 and v2",
 );
 assert(
-  byId.gtfs.migrates.watchlist.some((m) => m.from === 1 && m.to === 2),
-  "gtfs migrates watchlist 1→2",
+  byId.board.migrates.watchlist.some((m) => m.from === 1 && m.to === 2),
+  "board migrates watchlist 1→2",
 );
 
 // The composition: the same feed bytes into both modules, and the
@@ -123,92 +124,20 @@ assert(
   "both capabilities agree on the document identity (" + loadedGtfs.feed_hash.slice(0, 19) + "…)",
 );
 
-const departures = gtfs.invoke({
-  op: "departures",
-  feed_hash: loadedGtfs.feed_hash,
-  stop_id: "A",
-  date: DATE,
-  from_secs: 7 * 3600,
-  limit: 10,
-});
-assert(
-  departures.departures.length === 3,
-  `gtfs departures at A on ${DATE}: ${departures.departures.length}`,
-);
-
-// The station board: a station pin answers the union of its bays
-// (the walking-group pooling), each row tagged with its concrete bay.
-const station = gtfs.invoke({
-  op: "station_departures",
-  feed_hash: loadedGtfs.feed_hash,
-  stop_id: "STN",
-  date: DATE,
-  from_secs: 7 * 3600,
-  limit: 10,
-});
-assert(
-  station.departures.length === 4,
-  `the station board pools the bays: ${station.departures.length}`,
-);
-assert(
-  station.departures.every((d) => d.stop_id === "SA" || d.stop_id === "SB"),
-  "station rows are tagged with the concrete bay",
-);
-const sameFromBay = gtfs.invoke({
-  op: "station_departures",
-  feed_hash: loadedGtfs.feed_hash,
-  stop_id: "SA",
-  date: DATE,
-  from_secs: 7 * 3600,
-  limit: 10,
-});
-assert(
-  sameFromBay.departures.length === 4,
-  "any member of the walking group answers the same board",
-);
-
-// The dispatch reads — the dispatcher session's top finding, now on
-// the bus: what runs today, which blocks (vehicles) are out, one
-// block's chain, and the feed's identity.
-const services = gtfs.invoke({
-  op: "active_services",
-  feed_hash: loadedGtfs.feed_hash,
-  date: DATE,
-});
-assert(
-  services.services.length === 2,
-  `two service keys run on ${DATE} (WK plus the HOL addition): ${services.services}`,
-);
-const blocks = gtfs.invoke({ op: "blocks", feed_hash: loadedGtfs.feed_hash, date: DATE });
-assert(blocks.blocks.length === 2, "the day's blocks: both B1 and B2 run");
-const blockless = gtfs.raw({ op: "blocks", feed_hash: loadedGtfs.feed_hash, date: "2026-10-24" });
-assert(blockless.ok && blockless.ok.blocks.length === 0, "a no-service day has no blocks out");
-const chain = gtfs.invoke({
-  op: "block_trips",
-  feed_hash: loadedGtfs.feed_hash,
-  block_id: "B1",
-  date: DATE,
-});
-assert(
-  chain.trips.length === 2 && chain.trips[0].trip_id === "t10" && chain.trips[1].trip_id === "t20",
-  "B1 chains t10 → t20 with the layover between",
-);
-assert(
-  chain.trips[1].layover_secs === 600,
-  `the layover is the realized gap (t10 ends 08:10, t20 starts 08:20): ${chain.trips[1].layover_secs}`,
-);
-const ghostBlock = gtfs.invoke({
-  op: "block_trips",
-  feed_hash: loadedGtfs.feed_hash,
-  block_id: "missing",
-  date: DATE,
-});
-assert(ghostBlock.trips.length === 0, "an unknown block answers empty, never panics");
+// The feed's identity and its names — the feed document capability's
+// whole surface. The day views are NOT here (one question, one
+// answer on the bus); the retired ops must answer as request
+// errors, never silently serve.
 const info = gtfs.invoke({ op: "feed_info", feed_hash: loadedGtfs.feed_hash });
 assert(
   info.info && info.info.feed_version === "2026.10.1",
   "the feed answers its own identity (version, publisher)",
 );
+const retiredOps = ["departures", "station_departures", "active_services", "blocks", "block_trips"];
+for (const op of retiredOps) {
+  const gone = gtfs.raw({ op, feed_hash: loadedGtfs.feed_hash });
+  assert(gone.error && gone.error.includes("invalid request"), `${op} is retired on gtfs`);
+}
 
 const plan = router.invoke({
   op: "plan",
@@ -227,53 +156,11 @@ assert(
 const bad = router.raw({ op: "nope" });
 assert(bad.error && bad.error.includes("invalid request"), "unknown ops error, never panic");
 const missing = gtfs.raw({
-  op: "departures",
+  op: "stops",
   feed_hash: "sha256:missing",
-  stop_id: "A",
-  date: DATE,
-  from_secs: 0,
   limit: 1,
 });
 assert(missing.error && missing.error.includes("unknown feed"), "unknown hashes error, never panic");
-
-// The migration flow through the ABI: v1 in, v2 out, loss REPORTED,
-// both versions query the board.
-const v1 = {
-  version: "v1",
-  stops: [
-    { id: "A", note: "home", color: "blue" },
-    { id: "B", note: "work" },
-  ],
-};
-const migrated = gtfs.invoke({ op: "migrate_watchlist", document: v1 });
-assert(migrated.document.version === "v2", "migration produces v2");
-assert(migrated.document.stops[0].label === "home", "label = note");
-assert(
-  migrated.notes.length === 1 &&
-    migrated.notes[0].kind === "dropped_field" &&
-    migrated.notes[0].field === "color" &&
-    migrated.notes[0].count === 1,
-  "the dropped color is reported — never silent",
-);
-const again = gtfs.raw({ op: "migrate_watchlist", document: migrated.document });
-assert(again.error && again.error.includes("already version 2"), "re-migrating v2 errors, not panics");
-
-for (const document of [v1, migrated.document]) {
-  const loaded = gtfs.invoke({ op: "load_watchlist", document });
-  const board = gtfs.invoke({
-    op: "watchlist_board",
-    watchlist_hash: loaded.watchlist_hash,
-    feed_hash: loadedGtfs.feed_hash,
-    date: DATE,
-    from_secs: 7 * 3600,
-    limit: 3,
-  });
-  assert(board.stops.length === 2, `board answers at ${document.version}`);
-  assert(
-    board.stops.every((s) => s.departures.length >= 0),
-    `board departures at ${document.version}`,
-  );
-}
 
 // The analysis flow — the first REAL capability extracted from the
 // monolith: a network document in by content hash, planner numbers
@@ -473,62 +360,129 @@ assert(
   "stops_by_ids answers names, omitting unknown ids",
 );
 
-// The dispatch flow — the operator view over the NETWORK document:
-// model-native end to end (the module holds no GTFS layer at all —
-// the arch gate in `just test` enforces that). The composition law:
-// the SAME document import produced, loaded into dispatch, and the
-// identity agrees — one document, one truth, no expansion.
-assert(byId.dispatch, "manifest advertises the dispatch capability");
+// The day-view capabilities — the need cut of the day views over
+// the SAME network document the import produced (model-native end
+// to end; the arch gate in `just test` enforces that). The
+// composition law: one document into every capability that needs
+// it, identities agree — one document, one truth, no expansion.
+assert(byId.board && byId.runcut && byId.calendar, "manifest advertises board, runcut, and calendar");
 assert(
-  byId.dispatch.consumes.network === "network",
-  "dispatch declares its registry edge: it consumes network documents",
+  byId.board.consumes.network === "network",
+  "board declares its registry edge: it consumes network documents",
 );
-const dispatch = shell(loadModule(byId.dispatch));
-const loadedDispatchNet = dispatch.invoke({ op: "load_network", network: imported.network });
 assert(
-  loadedDispatchNet.network_hash === imported.network_hash,
-  "dispatch agrees with the network capability on the document identity",
+  byId.runcut.consumes.network === "network",
+  "runcut declares its registry edge: it consumes network documents",
 );
-const dispatchBoard = dispatch.invoke({
+assert(
+  byId.calendar.consumes.network === "network",
+  "calendar declares its registry edge: it consumes network documents",
+);
+const board = shell(loadModule(byId.board));
+const runcut = shell(loadModule(byId.runcut));
+const calendar = shell(loadModule(byId.calendar));
+const loadedBoardNet = board.invoke({ op: "load_network", network: imported.network });
+const loadedRuncutNet = runcut.invoke({ op: "load_network", network: imported.network });
+const loadedCalendarNet = calendar.invoke({ op: "load_network", network: imported.network });
+assert(
+  loadedBoardNet.network_hash === loadedRuncutNet.network_hash &&
+    loadedRuncutNet.network_hash === loadedCalendarNet.network_hash &&
+    loadedCalendarNet.network_hash === imported.network_hash,
+  "board, runcut, and calendar agree with the network capability on the document identity",
+);
+
+// THE BOARD — when does service leave this stop?
+const boardRows = board.invoke({
   op: "departures",
-  network_hash: loadedDispatchNet.network_hash,
+  network_hash: loadedBoardNet.network_hash,
   stop_id: "A",
   date: DATE,
   from_secs: 25200,
   limit: 10,
 });
-assert(dispatchBoard.departures.length >= 3, "the materialized board answers at A");
+assert(boardRows.departures.length >= 3, "the materialized board answers at A");
 assert(
-  dispatchBoard.departures.every((r) => r.schedule && r.route_name && r.stop === "A"),
+  boardRows.departures.every((r) => r.schedule && r.route_name && r.stop === "A"),
   "board rows speak model vocabulary (schedule, start, concrete stop)",
 );
-const stationBoard = dispatch.invoke({
+const stationRows = board.invoke({
   op: "station_departures",
-  network_hash: loadedDispatchNet.network_hash,
+  network_hash: loadedBoardNet.network_hash,
   stop_id: "STN",
   date: DATE,
   from_secs: 0,
   limit: 10,
 });
 assert(
-  stationBoard.departures.length === 4 &&
-    stationBoard.departures.every((r) => r.stop === "SA" || r.stop === "SB"),
+  stationRows.departures.length === 4 &&
+    stationRows.departures.every((r) => r.stop === "SA" || r.stop === "SB"),
   "the station pin answers its bays' pooled board, rows tagged with the bay",
 );
-// The authored runcut: the import inferred the layovers from the
-// observed gaps — the chain carries them, and the edit ripples.
-const dispatchChain = dispatch.invoke({
+
+// The personal board — the watchlist document, migrated with its
+// loss reported, both versions querying over the network.
+const v1 = {
+  version: "v1",
+  stops: [
+    { id: "A", note: "home", color: "blue" },
+    { id: "B", note: "work" },
+  ],
+};
+const migrated = board.invoke({ op: "migrate_watchlist", document: v1 });
+assert(migrated.document.version === "v2", "migration produces v2");
+assert(migrated.document.stops[0].label === "home", "label = note");
+assert(
+  migrated.notes.length === 1 &&
+    migrated.notes[0].kind === "dropped_field" &&
+    migrated.notes[0].field === "color" &&
+    migrated.notes[0].count === 1,
+  "the dropped color is reported — never silent",
+);
+const againMigrate = board.raw({ op: "migrate_watchlist", document: migrated.document });
+assert(againMigrate.error && againMigrate.error.includes("already version 2"), "re-migrating v2 errors, not panics");
+for (const document of [v1, migrated.document]) {
+  const loaded = board.invoke({ op: "load_watchlist", document });
+  const watch = board.invoke({
+    op: "watchlist_board",
+    watchlist_hash: loaded.watchlist_hash,
+    network_hash: loadedBoardNet.network_hash,
+    date: DATE,
+    from_secs: 25200,
+    limit: 3,
+  });
+  assert(watch.stops.length === 2, `the personal board answers at ${document.version}`);
+  assert(
+    watch.stops.every((s) => s.departures.every((d) => d.schedule)),
+    `the personal board's rows are model-native at ${document.version}`,
+  );
+}
+
+// THE RUNCUT — what does this vehicle do today? The day's blocks
+// list (the index) into one block's chain (the detail), with the
+// edit ripple.
+const daysBlocks = runcut.invoke({
+  op: "blocks",
+  network_hash: loadedRuncutNet.network_hash,
+  date: DATE,
+});
+assert(
+  daysBlocks.blocks.length === 1 && daysBlocks.blocks[0].block_id === "B1",
+  "the day's blocks: B1 alone (B2's only trip is single-stop — the import drops it; the honest hole)",
+);
+const parkedDay = runcut.raw({ op: "blocks", network_hash: loadedRuncutNet.network_hash, date: "2026-10-24" });
+assert(parkedDay.ok && parkedDay.ok.blocks.length === 0, "a no-service day has no blocks out");
+const runcutChain = runcut.invoke({
   op: "block_trips",
-  network_hash: loadedDispatchNet.network_hash,
+  network_hash: loadedRuncutNet.network_hash,
   block_id: "B1",
   date: DATE,
 });
-assert(dispatchChain.trips.length === 2, "the authored chain answers");
-assert(dispatchChain.trips[0].layover_after_secs === 600, "the layover is model state (600 s)");
-assert(dispatchChain.trips[0].layover_remaining_secs === 600, "no edits: the layover stands");
-const dispatchEdits = dispatch.invoke({
+assert(runcutChain.trips.length === 2, "the authored chain answers");
+assert(runcutChain.trips[0].layover_after_secs === 600, "the layover is model state (600 s)");
+assert(runcutChain.trips[0].layover_remaining_secs === 600, "no edits: the layover stands");
+const runcutEdits = runcut.invoke({
   op: "load_edits",
-  network_hash: loadedDispatchNet.network_hash,
+  network_hash: loadedRuncutNet.network_hash,
   records: [
     {
       id: "e1",
@@ -551,23 +505,23 @@ const dispatchEdits = dispatch.invoke({
   ],
 });
 assert(
-  dispatchEdits.reports.length === 1 && dispatchEdits.reports[0].valid,
+  runcutEdits.reports.length === 1 && runcutEdits.reports[0].valid,
   "the edit validates against the network (reported, never rejected)",
 );
-const ripped = dispatch.invoke({
+const rippedChain = runcut.invoke({
   op: "block_trips",
-  network_hash: loadedDispatchNet.network_hash,
-  edits_hash: dispatchEdits.edits_hash,
+  network_hash: loadedRuncutNet.network_hash,
+  edits_hash: runcutEdits.edits_hash,
   block_id: "B1",
   date: DATE,
 });
 assert(
-  ripped.trips[0].layover_remaining_secs === 300,
+  rippedChain.trips[0].layover_remaining_secs === 300,
   "the diverted end eats the layover (600 - 300) — the connection-health ripple",
 );
-const brokenEdit = dispatch.invoke({
+const brokenEdit = runcut.invoke({
   op: "load_edits",
-  network_hash: loadedDispatchNet.network_hash,
+  network_hash: loadedRuncutNet.network_hash,
   records: [
     {
       id: "e2",
@@ -593,8 +547,29 @@ assert(
   brokenEdit.reports[0].valid === false,
   "an edit against an unknown route is reported invalid, never rejected",
 );
-const unknownDispatch = dispatch.raw({ op: "departures", network_hash: "sha256:missing", stop_id: "A", date: DATE, from_secs: 0, limit: 5 });
-assert(unknownDispatch.error && unknownDispatch.error.includes("unknown network"), "unknown hashes error, never panic");
+
+// THE CALENDAR — which service keys run today? From the effective
+// day: HOL's calendar exception runs, but its only trip never made
+// it into the model — the honest answer is WK alone.
+const keys = calendar.invoke({
+  op: "active_services",
+  network_hash: loadedCalendarNet.network_hash,
+  date: DATE,
+});
+assert(
+  keys.services.length === 1 && keys.services[0] === "WK",
+  "the effective day answers: WK runs, HOL's unrepresentable trip does not resurrect it",
+);
+const keysEmpty = calendar.invoke({
+  op: "active_services",
+  network_hash: loadedCalendarNet.network_hash,
+  date: "2026-10-24",
+});
+assert(keysEmpty.services.length === 0, "a no-service day answers empty, never errors");
+
+// Unknown hashes error, never panic — every day-view seam.
+const unknownBoard = board.raw({ op: "departures", network_hash: "sha256:missing", stop_id: "A", date: DATE, from_secs: 0, limit: 5 });
+assert(unknownBoard.error && unknownBoard.error.includes("unknown network"), "unknown hashes error, never panic");
 
 // The street flow — the detour editor's capability: GeoJSON bytes
 // in on the bulk seam (the e2e street fixture), registered under

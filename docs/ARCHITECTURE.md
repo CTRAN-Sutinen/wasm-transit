@@ -57,17 +57,18 @@ transit-analysis Planner analysis over an authored network document:
                 stats, service-type overview/detail, population
                 coverage. A LIBRARY shared by transit-ops (parse-only
                 coverage handle) and the cap-analysis module.
-transit-dispatch The operator's DAY, model-native: patch_day (skip/
-                shift over MATERIALIZED stop times — the day, never
-                the calendar), edit validation against the NETWORK,
-                the board and station board (walking-group pooling),
-                the AUTHORED block chain with the layover ripple
-                (layover_remaining_secs goes negative when a
-                connection is eaten). A LIBRARY shared by the
-                cap-dispatch module — the monolith's board and
-                block-chain ops are deleted, the UI reads them here.
-                Holds no GTFS layer (the justfile arch gate enforces
-                it).
+transit-dispatch The materialized day's views, model-native: patch_day
+                (skip/shift over MATERIALIZED stop times — the day,
+                never the calendar), edit validation against the
+                NETWORK, the board and station board (walking-group
+                pooling), the day's blocks list, the service keys
+                running on a date, and the AUTHORED block chain with
+                the layover ripple (layover_remaining_secs goes
+                negative when a connection is eaten). A LIBRARY
+                shared by the cap-board, cap-runcut, and cap-calendar
+                modules — the monolith's day-view ops are deleted,
+                the UI reads them here. Holds no GTFS layer (the
+                justfile arch gate enforces it).
 transit-rt      prost types from the official GTFS-rt proto, the
                 OVERVIEW view (delays, vehicles) over them, and the
                 PROGRESS join (one trip's predicted times; the
@@ -91,8 +92,9 @@ transit-ops     dispatch(Request) -> Response: the host-agnostic seam
                 (active_services / blocks / block_trips / feed_info)
                 AND the day views (departures / block_trips) are
                 DELETED — they live in cap-network, cap-analysis,
-                cap-rt, cap-gtfs, and cap-dispatch over the shared
-                libraries; the board and block chains read the bus.
+                cap-rt, and the day-view capabilities (cap-board,
+                cap-runcut, cap-calendar) over the shared libraries;
+                the board and block chains read the bus.
                 What remains: the parsed-feed op surface the map and
                 the planner still need (stops, routes, route/stop
                 sequences, geojson, planning — all date-scoped by
@@ -174,18 +176,17 @@ cap-abi         The seam crate: the flat C ABI as a macro (every
                 Also caps-smoke.mjs: Node ABI smoke + the law that
                 every advertised op is documented (undocumented ops
                 fail the build — agent context cannot drift).
-cap-gtfs        The gtfs capability: GTFS zip → content-hash feed
-                registry, departures/stops queries, the dispatch
-                reads (active_services, blocks, block_trips,
-                feed_info, stops_by_ids), station_departures (the
-                walking-group station board — a station pin's bays
-                pooled, rows tagged), and the watchlist document
-                (v1/v2) with its v1→v2 migration — pure,
-                deterministic, loss REPORTED (MigrationNotes, never
-                silent; identity-preservation is a property law —
-                migrations never touch the sync key space).
-                CHARTER CLOSED: parse, export, primitive boundary
-                queries — nothing more goes "in GTFS."
+cap-gtfs        The feed-document capability: GTFS zip →
+                content-hash feed registry, the reads only the feed
+                itself carries (feed_info — the identity question,
+                stops / stops_by_ids — the pickers and the names
+                join). The day views and the watchlist are NOT here:
+                the day answers over the NETWORK document (cap-board,
+                cap-runcut, cap-calendar — one question, one answer
+                on the bus), and the watchlist moved to cap-board
+                with the board question it parameterizes. CHARTER
+                CLOSED: parse, export, primitive boundary queries —
+                nothing more goes "in GTFS."
 cap-router      The router capability: RAPTOR earliest-arrival
                 planning. Today it plans over a feed document
                 (cap-gtfs produces it) — a TRANSITIONAL exception
@@ -223,25 +224,48 @@ cap-rt          The realtime capability: decode — a GTFS-rt protobuf
                 board), late_trips (ranked, with the DELAYED-BUT-
                 DARK flag and vp_hash for agencies that serve the
                 two feeds separately — C-TRAN does).
-cap-dispatch    The dispatch capability: the operator view over the
-                NETWORK document (load_network — the same identity
-                cap-network's import produces) plus the OPERATOR
-                EDIT document (load_edits — the dispatcher's own,
-                validated per record against the network, invalid
-                records REPORTED never rejected). departures /
-                station_departures / block_trips answer over ONE
+cap-board       The board capability — ONE QUESTION: when does
+                service leave this stop? (at a stop, a station's
+                pooled bays, or a personal saved set — the WATCHLIST
+                document, v1/v2, migrated here: a personal
+                multi-stop board is the same question parameterized
+                by a personal document). load_network / load_edits
+                (validated per record against the network, invalid
+                records REPORTED never rejected) then departures /
+                station_departures / load_watchlist /
+                migrate_watchlist / watchlist_board over ONE
                 MATERIALIZED DAY (materialize(net, date), patched
                 with the in-force edits — no derived registry, no
-                GTFS expansion, no effective cache; a day is
-                computed per call and a day is cheap). The chain is
-                the AUTHORED runcut with the layover ripple. The
+                GTFS expansion, no effective cache; a day is computed
+                per call and a day is cheap). The domain code lives
+                in the shared transit-dispatch library; no GTFS
+                layer (arch gate). The UI's departure board answers
+                through this module — the rt-delay / click-through
+                join goes through cap-network's trip_map.
+cap-runcut      The runcut capability — ONE QUESTION: what does
+                this vehicle do today? The day's blocks LIST (the
+                index facet: vehicles out, with that day's running
+                trip counts; a block whose every trip is
+                unrepresentable or skipped is not offered — the
+                honest hole) and one block's chain (the detail
+                facet: the AUTHORED runcut with the layover ripple,
+                layover_remaining_secs going negative when a
+                connection is eaten). Same document set as cap-board
+                (load_network / load_edits + the day views); the
                 domain code lives in the shared transit-dispatch
-                library; the module holds no GTFS layer (arch
-                gate). Model-native responses. The UI's departure
-                board and block chains answer through this module —
-                the monolith's day-view ops are deleted, and the
-                rt-delay / click-through join goes through
-                cap-network's trip_map.
+                library; no GTFS layer (arch gate). The UI's blocks
+                panel answers through this module. Replaces the
+                dissolved cap-dispatch — a module named for a role
+                is the monolith rebuilt sideways (docs/PLAN.md's
+                criteria).
+cap-calendar    The calendar capability — ONE QUESTION: which
+                service keys run today? active_services over the
+                EFFECTIVE day (a key whose every trip is skipped or
+                unrepresentable is not running, however its calendar
+                reads — the same honesty as the runcut view's empty
+                hole). Same document set (load_network / load_edits
+                plumbing); the domain code lives in the shared
+                transit-dispatch library; no GTFS layer (arch gate).
 cap-streets    The street-graph capability: the detour editor's need,
                 atomically. load_streets (bulk-bytes op 0) parses a
                 street-network GeoJSON into the routing graph and

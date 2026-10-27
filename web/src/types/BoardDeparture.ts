@@ -9,7 +9,7 @@
 export type BoardDeparture = { schedule: string, start_secs: number, route: string, route_name: string, pattern: string, 
 /**
  * The concrete stop this row leaves from — on a station board,
- * WHICH BAY matters to a dispatcher.
+ * WHICH BAY a pooled row leaves from matters to the reader.
  */
 stop: string, 
 /**

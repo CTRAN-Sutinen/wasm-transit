@@ -2,14 +2,14 @@
   import { app, getEditDocument } from "../state.svelte";
   import { selectStop, showTrip, refreshNow, serviceDate, secondsSinceMidnight, feedBytes } from "../actions";
   import {
-    ensureGtfsFeed,
-    gtfsCap,
-    gtfsModule,
-    dispatchModule,
-    dispatchCap,
-    ensureDispatchBoarding,
-    ensureDispatchEdits,
-    type DispatchBoarding,
+    boardCap,
+    boardModule,
+    ensureBoardBoarding,
+    ensureBoardEdits,
+    calendarCap,
+    calendarModule,
+    ensureCalendarNetwork,
+    type Boarding,
   } from "../capabilities.svelte";
   import type { BoardDeparture } from "../types/BoardDeparture";
   import Combobox from "./Combobox.svelte";
@@ -17,7 +17,7 @@
   const stops = $derived(app.gtfs ? app.gtfs.stops().slice(0, 2000) : []);
   const stopOptions = $derived(stops.map((s) => ({ value: s.stop_id, label: s.name, sub: s.stop_id })));
 
-  // Service keys running today — through the BUS (the monolith's op
+  // Service keys running today — through the BUS (the calendar
   // is deleted). Decoration-grade: when the capability cannot
   // assemble the chips simply do not render (the board's rows are
   // unaffected).
@@ -34,11 +34,11 @@
     }
     void (async () => {
       try {
-        const feedHash = await ensureGtfsFeed(bytes);
-        if (seq !== servicesSeq || !feedHash) return;
-        const module = await gtfsModule();
+        const networkHash = await ensureCalendarNetwork(bytes);
+        if (seq !== servicesSeq || !networkHash) return;
+        const module = await calendarModule();
         if (!module || seq !== servicesSeq) return;
-        services = gtfsCap(module).activeServices(feedHash, date);
+        services = calendarCap(module).activeServices(networkHash, date);
       } catch {
         if (seq === servicesSeq) services = [];
       }
@@ -69,7 +69,7 @@
 
   // -----------------------------------------------------------------
   // THE BOARD, through the capability bus: the loaded feed boards
-  // into cap-dispatch (network document + trip-id map), the edit
+  // into cap-board (network document + trip-id map), the edit
   // document registers against it, and the day's rows answer from
   // the module — diversion-patched, model-native ((schedule,
   // start) identity, concrete stop, final-stop destination). A
@@ -94,9 +94,9 @@
       return;
     }
     void (async () => {
-      let boarding: DispatchBoarding | null = null;
+      let boarding: Boarding | null = null;
       try {
-        boarding = await ensureDispatchBoarding(bytes);
+        boarding = await ensureBoardBoarding(bytes);
         if (seq !== boardSeq) return;
         if (!boarding) {
           board = null;
@@ -125,15 +125,15 @@
               agencyTripIds: ids,
             };
           });
-        const editsHash = await ensureDispatchEdits(
+        const editsHash = await ensureBoardEdits(
           boarding.networkHash,
           getEditDocument(),
         );
         if (seq !== boardSeq) return;
-        const module = await dispatchModule();
+        const module = await boardModule();
         if (!module || seq !== boardSeq) return;
         const date = serviceDate();
-        const cap = dispatchCap(module);
+        const cap = boardCap(module);
         let rows = cap.departures(
           boarding.networkHash,
           editsHash,
@@ -240,7 +240,7 @@
     {/if}
   {:else if boardOff && app.selectedStop}
     <p class="muted">
-      The board needs the network and dispatch capabilities; the bus
+      The board needs the network and board capabilities; the bus
       did not assemble them, so the board is off. Other views are
       unaffected.
     </p>

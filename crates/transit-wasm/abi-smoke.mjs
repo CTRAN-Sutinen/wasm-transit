@@ -88,7 +88,7 @@ const feedId = feed.feed_id;
 assert(feed.summary.stops === 6, "load_feed registers and summarizes");
 
 // The whole edit-document flow through JSON. The board op is
-// RETIRED (cap-dispatch owns the day views); the effective feed
+// RETIRED (the day-view capabilities own the day views); the effective feed
 // pins through the surviving reads: plan compare and the geojson
 // paths, both date-scoped by the edit document.
 const record = (over = {}) => ({
@@ -145,7 +145,7 @@ assert(ghostNone === null, "route ghost: unknown route is null");
 
 // The dispatch-read ops (active_services, blocks, block_trips,
 // feed_info, departures) are RETIRED — cap-gtfs owns the reads and
-// cap-dispatch owns the day views; the smoke pins every retirement
+// the day-view capabilities own the day views; the smoke pins every retirement
 // through the standard outcome, never a trap.
 {
   for (const retired of ["active_services", "blocks", "feed_info", "departures", "block_trips"]) {
@@ -227,7 +227,7 @@ assert(second.feed_id !== feedId, "registry assigns distinct feed ids");
     assert(got === want, `corpus step ${step.name} diverges`);
   }
   // The step set, pinned exactly: the board and block-chain steps
-  // are gone (cap-dispatch owns the day views), and the diversion's
+  // are gone (the day-view capabilities own the day views), and the diversion's
   // effect pins through plan_trip_compare and trip_path_geojson.
   const wantSteps = [
     "load_fixture", "summary", "route_stop_sequence", "set_diversions_draft",

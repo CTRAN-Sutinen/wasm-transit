@@ -1,0 +1,24 @@
+[package]
+name = "cap-calendar"
+description = "The calendar capability: which service keys run on a date — answered from the effective day over the NETWORK document (a key whose every trip is skipped or unrepresentable is not running, however its calendar reads). Model-native end to end, the domain code lives in the shared transit-dispatch library."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]  # rlib: integration tests link the crate natively
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+chrono = { workspace = true }
+ts-rs = { workspace = true }
+transit-network = { path = "../transit-network" }
+transit-sync = { path = "../transit-sync" }
+transit-dispatch = { path = "../transit-dispatch" }
+cap-abi = { path = "../cap-abi" }
+
+[dev-dependencies]
+transit-codec = { path = "../transit-codec" }
+transit-core = { path = "../transit-core" }

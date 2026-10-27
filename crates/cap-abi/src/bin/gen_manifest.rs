@@ -58,24 +58,16 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "gtfs",
         file: "cap_gtfs.wasm",
-        ops: &["load_feed", "departures", "station_departures", "stops", "stops_by_ids", "active_services", "blocks", "block_trips", "feed_info", "load_watchlist", "migrate_watchlist", "watchlist_board"],
+        ops: &["load_feed", "stops", "stops_by_ids", "feed_info"],
         consumes: &[],
-        speaks: &[("feed", &[1]), ("watchlist", &[1, 2])],
-        migrates: &[("watchlist", &[(1, 2)])],
-        purpose: "Read a GTFS static zip: parse it into a hash-addressed feed registry and answer schedule questions (departures at a stop, stop lists). Assemble for any user who needs to know when service runs. Also owns the watchlist document (the rider's saved stops) and its v1→v2 migration.",
+        speaks: &[("feed", &[1])],
+        migrates: &[],
+        purpose: "The FEED document: parse a GTFS static zip into a hash-addressed feed registry and answer the reads only the feed itself carries — its identity (feed_info), its stop names (the join hosts otherwise do by hand), and the stop list for pickers. The day views are NOT here: they answer over the NETWORK document (the board, runcut, and calendar capabilities — one question, one answer on the bus). Assemble for any user who touches raw feed bytes; it has no ops that author anything.",
         op_docs: &[
             ("load_feed", "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes."),
-            ("departures", "Upcoming departures at one stop on a service date, schedule only (GTFS-rt is another capability). The stop's own board — a station pin answers nothing here; see station_departures."),
-            ("station_departures", "Upcoming departures POOLED over a stop's walking group — the station board. A station (Fisher's Landing, Main Station) answers no departures of its own: the bays carry the trips, and this op unions the whole group (the stop, its parent, siblings sharing that parent, the parent's children), merged by time, each row tagged with its concrete bay. Any member of the group answers the same board."),
             ("stops", "Stop list for UI pickers, first N by id."),
             ("stops_by_ids", "Stop names by id, in the request's order — the join hosts otherwise do by hand when a view (like rt's) carries ids a human reads as names. Unknown ids are omitted."),
-            ("active_services", "Service keys running on a date — often several at once (regular patterns plus exception-added services). The dispatcher's first question: what is running today?"),
-            ("blocks", "All blocks in the feed; with `date`, only the blocks RUNNING that day, with that day's trip counts — the vehicle picker shows buses in service, not parked buses. A block is one vehicle's trip chain."),
-            ("block_trips", "One block's trip chain on a service date: where the vehicle starts, where it ends, the layover between trips. Unknown blocks answer empty, never error."),
-            ("feed_info", "The feed's own metadata (version, publisher), when the feed provides feed_info.txt — the identity question a dispatcher asks first: which feed am I dispatching?"),
-            ("load_watchlist", "Register a watchlist document (version-tagged JSON) under its content hash."),
-            ("migrate_watchlist", "Migrate a version-1 watchlist to version 2: label = note, colors dropped and reported. Pure and deterministic; the caller keeps the old bytes."),
-            ("watchlist_board", "Each watched stop's upcoming departures, labelled per the watchlist's version."),
+            ("feed_info", "The feed's own metadata (version, publisher), when the feed provides feed_info.txt — the identity question: which feed is this?"),
         ],
     },
     ModuleSpec {
@@ -147,22 +139,60 @@ const MODULES: &[ModuleSpec] = &[
         ],
     },
     ModuleSpec {
-        id: "dispatch",
-        file: "cap_dispatch.wasm",
-        ops: &["load_network", "load_edits", "departures", "station_departures", "block_trips"],
+        id: "board",
+        file: "cap_board.wasm",
+        ops: &["load_network", "load_edits", "departures", "station_departures", "load_watchlist", "migrate_watchlist", "watchlist_board"],
         // The network document is produced by the network capability;
-        // the operator edit document is the dispatcher's own
-        // (host-owned, wholesale-replaced — the sync contract).
+        // the operator edit document is host-owned (wholesale-replaced
+        // — the sync contract); the watchlist is the PERSONAL document
+        // this capability owns (versioned, migrated here).
         consumes: &[("network", "network")],
-        speaks: &[("network", &[1]), ("operator_edits", &[1])],
-        migrates: &[],
-        purpose: "The dispatcher's operation view over the NETWORK document (the core data model — GTFS is a serialization spec for external data sharing, and dispatch never reads serialization) plus the operator edit document. The board, the station board (walking-group pooling), and the authored block chain with the layover ripple: the materialized day, patched with the in-force edits. Model-native end to end; the domain code lives in the shared transit-dispatch library.",
+        speaks: &[("network", &[1]), ("operator_edits", &[1]), ("watchlist", &[1, 2])],
+        migrates: &[("watchlist", &[(1, 2)])],
+        purpose: "The board: when does service leave this stop — at a stop, a station's pooled bays, or a personal saved set (the watchlist document, the same question parameterized by a personal document). Every answer is the materialized day over the NETWORK document, patched with the in-force edits. Model-native end to end; the domain code lives in the shared transit-dispatch library. Assemble for anyone who reads a departure board.",
         op_docs: &[
             ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth."),
             ("load_edits", "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change."),
             ("departures", "The board at one stop on a service date: the network's materialized day — trips as their (schedule, start) identity, model vocabulary — with the in-force edits applied when edits_hash names a registered document (schedule-only when omitted). The stop's own board; a station pin answers nothing here, see station_departures."),
             ("station_departures", "The STATION board: departures pooled over the stop's WALKING GROUP (the model's own transfer-group concept — the stop, its parent, siblings sharing that parent, the parent's children). A station pin answers no departures of its own; its bays carry the trips. Each row carries its concrete stop_id, so the caller sees which bay a departure leaves from."),
+            ("load_watchlist", "Register a watchlist document (the personal saved-set, version-tagged JSON) under its content hash."),
+            ("migrate_watchlist", "Migrate a version-1 watchlist to version 2: label = note, colors dropped and reported. Pure and deterministic; the caller keeps the old bytes — migrations never destroy."),
+            ("watchlist_board", "The board for a watchlist: each watched stop's departures on a service date, labelled per the document's version — the same question the per-stop board answers, parameterized by the personal document. Edits apply in force like every board."),
+        ],
+    },
+    ModuleSpec {
+        id: "runcut",
+        file: "cap_runcut.wasm",
+        ops: &["load_network", "load_edits", "blocks", "block_trips"],
+        // The network document is produced by the network capability;
+        // the operator edit document is host-owned (wholesale-replaced
+        // — the sync contract).
+        consumes: &[("network", "network")],
+        speaks: &[("network", &[1]), ("operator_edits", &[1])],
+        migrates: &[],
+        purpose: "The runcut: what does this vehicle do today — the day's blocks list (which vehicles are out, with that day's running trip counts) and one block's authored chain with the layover ripple (a diverted trip ending later eats into the vehicle's next layover). Blocks and layovers are model state GTFS never had. The materialized day over the NETWORK document, patched with the in-force edits; the domain code lives in the shared transit-dispatch library.",
+        op_docs: &[
+            ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth."),
+            ("load_edits", "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change."),
+            ("blocks", "The day's blocks: every authored block with at least one trip running on the date, with that day's running trip counts — a block whose every trip is off is a vehicle still in the garage, not offered. With edits in force, skipped trips leave the count (and a block whose every trip is skipped leaves the list)."),
             ("block_trips", "One block's chain on a service date: the AUTHORED runcut (the model's blocks carry layovers GTFS never had), materialized for the day, with the in-force edits applied — a diverted trip ending later eats into the vehicle's next layover, and layover_remaining_secs goes negative when the connection is eaten. Trips of the chain that do not run on the date stay in view, marked. Unknown blocks answer empty, never error."),
+        ],
+    },
+    ModuleSpec {
+        id: "calendar",
+        file: "cap_calendar.wasm",
+        ops: &["load_network", "load_edits", "active_services"],
+        // The network document is produced by the network capability;
+        // the operator edit document is host-owned (wholesale-replaced
+        // — the sync contract).
+        consumes: &[("network", "network")],
+        speaks: &[("network", &[1]), ("operator_edits", &[1])],
+        migrates: &[],
+        purpose: "The calendar: which service keys run on a date — often several at once (a regular pattern plus an exception-added service). The answer comes from the EFFECTIVE day, not the calendar rules alone: a key whose every trip is skipped by edits, or was never representable in the model, is not running however its calendar reads. The materialized day over the NETWORK document; the domain code lives in the shared transit-dispatch library.",
+        op_docs: &[
+            ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth."),
+            ("load_edits", "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change."),
+            ("active_services", "The service keys running on a date: the distinct service types the effective day's trips run under, sorted. Schedule-only when edits_hash is omitted. The day's first question — what is running today?"),
         ],
     },
     ModuleSpec {
@@ -210,10 +240,11 @@ fn main() {
     // examples are exactly what the module returns and cannot drift.
     let net_ctx = network_example_context(&feed_bytes);
 
-    // The dispatch runner gate's document: the load_network request
+    // The day-view runner gates' document: the load_network request
     // for the REAL fixture-derived network (the same bytes the
     // examples and the smoke use — the document cannot drift from
-    // the module that owns it).
+    // the module that owns it). Every JSON-document capability's
+    // gate (board, runcut, calendar) chains from it.
     if let Some(ctx) = net_ctx.as_ref() {
         let request = serde_json::json!({ "op": "load_network", "network": ctx.derived });
         let json = serde_json::to_string_pretty(&request).expect("request serializes");
@@ -490,77 +521,6 @@ fn example_for(
 ) -> Option<OpExample> {
     use serde_json::json;
     let (request, response) = match (capability, op) {
-        ("gtfs", "departures") => (
-            json!({
-                "op": "departures",
-                "feed_hash": feed_hash,
-                "stop_id": "A",
-                "date": "2026-10-23",
-                "from_secs": 25200,
-                "limit": 5
-            }),
-            json!({
-                "ok": { "op": "departures", "departures": [
-                    { "stop_id": "A", "trip_id": "t10", "route_id": "10", "route_name": "10",
-                      "service_id": "WK", "headsign": null, "block_id": "B1",
-                      "departure_time": 28800, "departure_time_hhmmss": "08:00:00", "stop_sequence": 1 },
-                    { "stop_id": "A", "trip_id": "t20", "route_id": "20", "route_name": "20",
-                      "service_id": "WK", "headsign": null, "block_id": "B1",
-                      "departure_time": 30000, "departure_time_hhmmss": "08:20:00", "stop_sequence": 1 }
-                ] }
-            }),
-        ),
-        ("gtfs", "station_departures") => (
-            json!({
-                "op": "station_departures",
-                "feed_hash": feed_hash,
-                "stop_id": "STN",
-                "date": "2026-10-23",
-                "from_secs": 25200,
-                "limit": 5
-            }),
-            json!({ "ok": { "op": "station_departures", "departures": [
-                { "stop_id": "SA", "trip_id": "t40", "route_id": "40", "route_name": "40",
-                  "service_id": "WK", "headsign": "Bay B", "block_id": null,
-                  "departure_time": 29700, "departure_time_hhmmss": "08:15:00", "stop_sequence": 1 },
-                { "stop_id": "SB", "trip_id": "t40", "route_id": "40", "route_name": "40",
-                  "service_id": "WK", "headsign": "Bay B", "block_id": null,
-                  "departure_time": 30000, "departure_time_hhmmss": "08:20:00", "stop_sequence": 2 },
-                { "stop_id": "SB", "trip_id": "t41", "route_id": "40", "route_name": "40",
-                  "service_id": "WK", "headsign": "Bay A", "block_id": null,
-                  "departure_time": 30600, "departure_time_hhmmss": "08:35:00", "stop_sequence": 1 },
-                { "stop_id": "SA", "trip_id": "t41", "route_id": "40", "route_name": "40",
-                  "service_id": "WK", "headsign": "Bay A", "block_id": null,
-                  "departure_time": 31200, "departure_time_hhmmss": "08:40:00", "stop_sequence": 2 }
-            ] } }),
-        ),
-        // The dispatch reads' examples compute REAL answers over the
-        // fixture through the same transit-core library the module
-        // dispatches through.
-        ("gtfs", "active_services") => {
-            let gtfs = fixture_gtfs()?;
-            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
-            (
-                json!({ "op": "active_services", "feed_hash": feed_hash, "date": "2026-10-23" }),
-                json!({ "ok": { "op": "active_services", "services": gtfs.active_services(date) } }),
-            )
-        }
-        ("gtfs", "blocks") => {
-            let gtfs = fixture_gtfs()?;
-            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
-            (
-                json!({ "op": "blocks", "feed_hash": feed_hash, "date": "2026-10-23" }),
-                json!({ "ok": { "op": "blocks", "blocks": gtfs.blocks_on(date) } }),
-            )
-        }
-        ("gtfs", "block_trips") => {
-            let gtfs = fixture_gtfs()?;
-            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
-            (
-                json!({ "op": "block_trips", "feed_hash": feed_hash, "block_id": "B1", "date": "2026-10-23" }),
-                json!({ "ok": { "op": "block_trips", "trips": gtfs.block_trips("B1", date) } }),
-            )
-        }
         ("gtfs", "feed_info") => {
             let gtfs = fixture_gtfs()?;
             (
@@ -574,36 +534,6 @@ fn example_for(
                 { "stop_id": "A", "name": "Main & 1st" },
                 { "stop_id": "B", "name": "Main & 2nd" },
                 { "stop_id": "C", "name": "Main & 3rd" }
-            ] } }),
-        ),
-        ("gtfs", "load_watchlist") => (
-            json!({ "op": "load_watchlist", "document": { "version": "v2", "stops": [
-                { "id": "A", "label": "home" }, { "id": "B", "label": "work" }
-            ] } }),
-            json!({ "ok": { "op": "load_watchlist", "version": 2, "watchlist_hash": "sha256:<of the document>" } }),
-        ),
-        ("gtfs", "migrate_watchlist") => (
-            json!({ "op": "migrate_watchlist", "document": { "version": "v1", "stops": [
-                { "id": "A", "note": "home", "color": "blue" }
-            ] } }),
-            json!({ "ok": { "op": "migrated_watchlist", "document": { "version": "v2", "stops": [
-                { "id": "A", "label": "home" }
-            ] }, "notes": [ { "kind": "dropped_field", "field": "color", "count": 1 } ] } }),
-        ),
-        ("gtfs", "watchlist_board") => (
-            json!({ "op": "watchlist_board", "watchlist_hash": "sha256:<of the document>",
-                    "feed_hash": feed_hash, "date": "2026-10-23", "from_secs": 25200, "limit": 3 }),
-            json!({ "ok": { "op": "watchlist_board", "stops": [
-                { "id": "A", "label": "home", "departures": [
-                    { "stop_id": "A", "trip_id": "t10", "route_id": "10", "route_name": "10",
-                      "service_id": "WK", "headsign": null, "block_id": "B1",
-                      "departure_time": 28800, "departure_time_hhmmss": "08:00:00", "stop_sequence": 1 }
-                ] },
-                { "id": "B", "label": "work", "departures": [
-                    { "stop_id": "B", "trip_id": "t12", "route_id": "20", "route_name": "20",
-                      "service_id": "HOL", "headsign": "Extra run", "block_id": "B2",
-                      "departure_time": 27000, "departure_time_hhmmss": "07:30:00", "stop_sequence": 1 }
-                ] }
             ] } }),
         ),
         ("router", "plan") => (
@@ -761,18 +691,20 @@ fn example_for(
                 ] } }),
             )
         }
-        // The dispatch examples compute REAL answers over the
-        // fixture-derived document through the same shared library
-        // the module dispatches through: the board, the station
-        // board, the authored chain, and the edit reports.
-        ("dispatch", "load_network") => {
+        // The day-view capabilities' examples compute REAL answers
+        // over the fixture-derived document through the same shared
+        // library the modules dispatch through (the board, the
+        // station board, the watchlist board, the day's blocks, the
+        // authored chain, and the service keys) — so the worked
+        // examples cannot drift.
+        ("board", "load_network") => {
             let ctx = net?;
             (
                 json!({ "op": "load_network", "network": ctx.derived }),
                 json!({ "ok": { "op": "load_network", "network_hash": ctx.network_hash } }),
             )
         }
-        ("dispatch", "load_edits") => {
+        ("board", "load_edits") => {
             let ctx = net?;
             let records = dispatch_fixture_edits();
             let reports = transit_dispatch::report_against_network(ctx.derived_network(), &records);
@@ -784,7 +716,7 @@ fn example_for(
                 json!({ "ok": { "op": "load_edits", "edits_hash": edits_hash, "reports": reports } }),
             )
         }
-        ("dispatch", "departures") => {
+        ("board", "departures") => {
             let ctx = net?;
             let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
             let day = transit_network::materialize(ctx.derived_network(), date).expect("fixture day");
@@ -795,7 +727,7 @@ fn example_for(
                     "departures": transit_dispatch::board(ctx.derived_network(), &day, "A", 25200, 5) } }),
             )
         }
-        ("dispatch", "station_departures") => {
+        ("board", "station_departures") => {
             let ctx = net?;
             let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
             let day = transit_network::materialize(ctx.derived_network(), date).expect("fixture day");
@@ -806,7 +738,65 @@ fn example_for(
                     "departures": transit_dispatch::station_board(ctx.derived_network(), &day, "STN", 25200, 10) } }),
             )
         }
-        ("dispatch", "block_trips") => {
+        ("board", "load_watchlist") => (
+            json!({ "op": "load_watchlist", "document": { "version": "v2", "stops": [
+                { "id": "A", "label": "home" }, { "id": "B", "label": "work" }
+            ] } }),
+            json!({ "ok": { "op": "load_watchlist", "version": 2, "watchlist_hash": "sha256:<of the document>" } }),
+        ),
+        ("board", "migrate_watchlist") => (
+            json!({ "op": "migrate_watchlist", "document": { "version": "v1", "stops": [
+                { "id": "A", "note": "home", "color": "blue" }
+            ] } }),
+            json!({ "ok": { "op": "migrated_watchlist", "document": { "version": "v2", "stops": [
+                { "id": "A", "label": "home" }
+            ] }, "notes": [ { "kind": "dropped_field", "field": "color", "count": 1 } ] } }),
+        ),
+        ("board", "watchlist_board") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+            let day = transit_network::materialize(ctx.derived_network(), date).expect("fixture day");
+            let network = ctx.derived_network();
+            let rows = |stop: &str| transit_dispatch::board(&network, &day, stop, 25200, 3);
+            (
+                json!({ "op": "watchlist_board", "watchlist_hash": "sha256:<of the document>",
+                    "network_hash": ctx.network_hash, "date": "2026-10-23", "from_secs": 25200, "limit": 3 }),
+                json!({ "ok": { "op": "watchlist_board", "stops": [
+                    { "id": "A", "label": "home", "departures": rows("A") },
+                    { "id": "B", "label": "work", "departures": rows("B") }
+                ] } }),
+            )
+        }
+        ("runcut", "load_network") => {
+            let ctx = net?;
+            (
+                json!({ "op": "load_network", "network": ctx.derived }),
+                json!({ "ok": { "op": "load_network", "network_hash": ctx.network_hash } }),
+            )
+        }
+        ("runcut", "load_edits") => {
+            let ctx = net?;
+            let records = dispatch_fixture_edits();
+            let reports = transit_dispatch::report_against_network(ctx.derived_network(), &records);
+            let edits_hash = format!("sha256:{:x}", Sha256::digest(
+                serde_json::to_string(&records).expect("records serialize").as_bytes(),
+            ));
+            (
+                json!({ "op": "load_edits", "network_hash": ctx.network_hash, "records": records }),
+                json!({ "ok": { "op": "load_edits", "edits_hash": edits_hash, "reports": reports } }),
+            )
+        }
+        ("runcut", "blocks") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+            let day = transit_network::materialize(ctx.derived_network(), date).expect("fixture day");
+            (
+                json!({ "op": "blocks", "network_hash": ctx.network_hash, "date": "2026-10-23" }),
+                json!({ "ok": { "op": "blocks",
+                    "blocks": transit_dispatch::day_blocks(ctx.derived_network(), &day) } }),
+            )
+        }
+        ("runcut", "block_trips") => {
             let ctx = net?;
             let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
             let records = dispatch_fixture_edits();
@@ -819,9 +809,35 @@ fn example_for(
                     "trips": transit_dispatch::block_chain(ctx.derived_network(), &day, "B1") } }),
             )
         }
-        // The street capability's examples compute REAL answers over
-        // the e2e street fixture through the same shared library the
-        // module dispatches through: the Elbow corner snap and route.
+        ("calendar", "load_network") => {
+            let ctx = net?;
+            (
+                json!({ "op": "load_network", "network": ctx.derived }),
+                json!({ "ok": { "op": "load_network", "network_hash": ctx.network_hash } }),
+            )
+        }
+        ("calendar", "load_edits") => {
+            let ctx = net?;
+            let records = dispatch_fixture_edits();
+            let reports = transit_dispatch::report_against_network(ctx.derived_network(), &records);
+            let edits_hash = format!("sha256:{:x}", Sha256::digest(
+                serde_json::to_string(&records).expect("records serialize").as_bytes(),
+            ));
+            (
+                json!({ "op": "load_edits", "network_hash": ctx.network_hash, "records": records }),
+                json!({ "ok": { "op": "load_edits", "edits_hash": edits_hash, "reports": reports } }),
+            )
+        }
+        ("calendar", "active_services") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+            let day = transit_network::materialize(ctx.derived_network(), date).expect("fixture day");
+            (
+                json!({ "op": "active_services", "network_hash": ctx.network_hash, "date": "2026-10-23" }),
+                json!({ "ok": { "op": "active_services",
+                    "services": transit_dispatch::active_services(ctx.derived_network(), &day) } }),
+            )
+        }
         ("streets", "snap") => {
             let ctx = streets_example_context()?;
             (

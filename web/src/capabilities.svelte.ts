@@ -19,17 +19,21 @@ import type { Capability } from "./types/cap_abi/Capability";
 
 import type { Request as GtfsRequest } from "./types/cap_gtfs/Request";
 import type { Response as GtfsResponse } from "./types/cap_gtfs/Response";
-import type { Watchlist } from "./types/cap_gtfs/Watchlist";
-import type { MigrationNote } from "./types/cap_gtfs/MigrationNote";
-import type { WatchBoardStop } from "./types/cap_gtfs/WatchBoardStop";
+import type { Request as BoardCapRequest } from "./types/cap_board/Request";
+import type { Response as BoardCapResponse } from "./types/cap_board/Response";
+import type { Request as RuncutCapRequest } from "./types/cap_runcut/Request";
+import type { Response as RuncutCapResponse } from "./types/cap_runcut/Response";
+import type { Request as CalendarCapRequest } from "./types/cap_calendar/Request";
+import type { Response as CalendarCapResponse } from "./types/cap_calendar/Response";
+import type { Watchlist } from "./types/cap_board/Watchlist";
+import type { MigrationNote } from "./types/cap_board/MigrationNote";
+import type { WatchBoardStop } from "./types/cap_board/WatchBoardStop";
 import type { Request as RouterRequest } from "./types/cap_router/Request";
 import type { Response as RouterResponse } from "./types/cap_router/Response";
 import type { Request as AnalysisRequest } from "./types/cap_analysis/Request";
 import type { Response as AnalysisResponse } from "./types/cap_analysis/Response";
 import type { Request as NetworkCapRequest } from "./types/cap_network/Request";
 import type { Response as NetworkCapResponse } from "./types/cap_network/Response";
-import type { Request as DispatchCapRequest } from "./types/cap_dispatch/Request";
-import type { Response as DispatchCapResponse } from "./types/cap_dispatch/Response";
 import type { Request as RtCapRequest } from "./types/cap_rt/Request";
 import type { Response as RtCapResponse } from "./types/cap_rt/Response";
 import type { Request as StreetsCapRequest } from "./types/cap_streets/Request";
@@ -40,6 +44,7 @@ import type { StreetPosition } from "./types/StreetPosition";
 import type { TripIdMap } from "./types/TripIdMap";
 import type { BoardDeparture } from "./types/BoardDeparture";
 import type { BlockChainTrip } from "./types/BlockChainTrip";
+import type { DayBlock } from "./types/DayBlock";
 import type { EditRecord } from "./types/EditRecord";
 import type { EditReport } from "./types/EditReport";
 import type { Network } from "./types/Network";
@@ -49,9 +54,6 @@ import type { ImportNote } from "./types/ImportNote";
 import type { ServiceTypeDetail } from "./types/ServiceTypeDetail";
 import type { ServiceTypeSummary } from "./types/ServiceTypeSummary";
 import type { TypeCoverage } from "./types/TypeCoverage";
-import type { Departure } from "./types/Departure";
-import type { BlockSummary } from "./types/BlockSummary";
-import type { BlockTrip } from "./types/BlockTrip";
 import type { FeedInfo } from "./types/FeedInfo";
 import type { FeedSummary } from "./types/FeedSummary";
 import type { Itinerary } from "./types/Itinerary";
@@ -90,10 +92,12 @@ class CapModule {
       | RouterRequest
       | AnalysisRequest
       | NetworkCapRequest
-      | DispatchCapRequest
+      | BoardCapRequest
+      | RuncutCapRequest
+      | CalendarCapRequest
       | RtCapRequest
       | StreetsCapRequest,
-  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | DispatchCapResponse | RtCapResponse | StreetsCapResponse {
+  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | BoardCapResponse | RuncutCapResponse | CalendarCapResponse | RtCapResponse | StreetsCapResponse {
     const wasm = this.#exports;
     const payload = new TextEncoder().encode(JSON.stringify(request));
     const ptr = wasm.transit_alloc(payload.length);
@@ -105,7 +109,9 @@ class CapModule {
       | RouterResponse
       | AnalysisResponse
       | NetworkCapResponse
-      | DispatchCapResponse
+      | BoardCapResponse
+      | RuncutCapResponse
+      | CalendarCapResponse
       | RtCapResponse
       | StreetsCapResponse;
   }
@@ -386,81 +392,6 @@ export function gtfsCap(module: CapModule) {
       >;
       return { feedHash: resp.feed_hash, summary: resp.summary };
     },
-    departures(
-      feedHash: string,
-      stopId: string,
-      date: string,
-      fromSecs: number,
-      limit: number,
-    ): Departure[] {
-      const resp = module.invoke({
-        op: "departures",
-        feed_hash: feedHash,
-        stop_id: stopId,
-        date,
-        from_secs: fromSecs,
-        limit,
-      } as GtfsRequest) as Extract<GtfsResponse, { op: "departures" }>;
-      return resp.departures;
-    },
-    /// The STATION BOARD: departures pooled over the stop's walking
-    /// group (a station pin's bays), each row tagged with its
-    /// concrete stop.
-    stationDepartures(
-      feedHash: string,
-      stopId: string,
-      date: string,
-      fromSecs: number,
-      limit: number,
-    ): Departure[] {
-      const resp = module.invoke({
-        op: "station_departures",
-        feed_hash: feedHash,
-        stop_id: stopId,
-        date,
-        from_secs: fromSecs,
-        limit,
-      } as GtfsRequest) as Extract<GtfsResponse, { op: "station_departures" }>;
-      return resp.departures;
-    },
-    /// Service keys running on a date — the dispatcher's first
-    /// question.
-    activeServices(feedHash: string, date: string): string[] {
-      const resp = module.invoke({
-        op: "active_services",
-        feed_hash: feedHash,
-        date,
-      } as GtfsRequest) as Extract<GtfsResponse, { op: "active_services" }>;
-      return resp.services;
-    },
-    /// The day's blocks (vehicles in service), with that day's trip
-    /// counts; no date lists every block in the feed.
-    blocks(feedHash: string, date: string | null): BlockSummary[] {
-      const resp = module.invoke({
-        op: "blocks",
-        feed_hash: feedHash,
-        date,
-      } as GtfsRequest) as Extract<GtfsResponse, { op: "blocks" }>;
-      return resp.blocks;
-    },
-    /// One block's trip chain on a service date.
-    blockTrips(feedHash: string, blockId: string, date: string): BlockTrip[] {
-      const resp = module.invoke({
-        op: "block_trips",
-        feed_hash: feedHash,
-        block_id: blockId,
-        date,
-      } as GtfsRequest) as Extract<GtfsResponse, { op: "block_trips" }>;
-      return resp.trips;
-    },
-    /// The feed's own identity (version, publisher).
-    feedInfo(feedHash: string): FeedInfo | null {
-      const resp = module.invoke({
-        op: "feed_info",
-        feed_hash: feedHash,
-      } as GtfsRequest) as Extract<GtfsResponse, { op: "feed_info" }>;
-      return resp.info;
-    },
     stops(feedHash: string, limit: number): StopSummary[] {
       const resp = module.invoke({
         op: "stops",
@@ -469,36 +400,21 @@ export function gtfsCap(module: CapModule) {
       } as GtfsRequest) as Extract<GtfsResponse, { op: "stops" }>;
       return resp.stops;
     },
-    loadWatchlist(document: Watchlist): { watchlistHash: string; version: number } {
+    stopsByIds(feedHash: string, ids: string[]): StopSummary[] {
       const resp = module.invoke({
-        op: "load_watchlist",
-        document,
-      } as GtfsRequest) as Extract<GtfsResponse, { op: "load_watchlist" }>;
-      return { watchlistHash: resp.watchlist_hash, version: resp.version };
-    },
-    migrateWatchlist(document: Watchlist): { document: Watchlist; notes: MigrationNote[] } {
-      const resp = module.invoke({
-        op: "migrate_watchlist",
-        document,
-      } as GtfsRequest) as Extract<GtfsResponse, { op: "migrated_watchlist" }>;
-      return { document: resp.document, notes: resp.notes };
-    },
-    watchlistBoard(
-      watchlistHash: string,
-      feedHash: string,
-      date: string,
-      fromSecs: number,
-      limit: number,
-    ): WatchBoardStop[] {
-      const resp = module.invoke({
-        op: "watchlist_board",
-        watchlist_hash: watchlistHash,
+        op: "stops_by_ids",
         feed_hash: feedHash,
-        date,
-        from_secs: fromSecs,
-        limit,
-      } as GtfsRequest) as Extract<GtfsResponse, { op: "watchlist_board" }>;
+        ids,
+      } as GtfsRequest) as Extract<GtfsResponse, { op: "stops_by_ids" }>;
       return resp.stops;
+    },
+    /// The feed's own identity (version, publisher).
+    feedInfo(feedHash: string): FeedInfo | null {
+      const resp = module.invoke({
+        op: "feed_info",
+        feed_hash: feedHash,
+      } as GtfsRequest) as Extract<GtfsResponse, { op: "feed_info" }>;
+      return resp.info;
     },
   };
 }
@@ -515,8 +431,8 @@ export async function migrateWatchlistForward(
   const current = currentDocument("watchlist");
   if (!module || !current) return { error: "no watchlist or capability loaded" };
   const document = JSON.parse(current.bytes) as Watchlist;
-  const gtfs = gtfsCap(module);
-  const { document: migrated, notes } = gtfs.migrateWatchlist(document);
+  const board = boardCap(module);
+  const { document: migrated, notes } = board.migrateWatchlist(document);
   const canonical = JSON.stringify(migrated);
   const hash = await hashDocument(canonical);
   const entry = (documents.kinds["watchlist"] ??= { records: {}, current: null });
@@ -809,25 +725,30 @@ export async function rtModule(): Promise<CapModule | null> {
 }
 
 // ---------------------------------------------------------------------
-// The dispatch capability — the operator day view over the NETWORK
-// (the core data model) plus the OPERATOR EDIT document. The board
-// and the block chains answer here, diversion-rippled; when the
-// assembly cannot form, the views that need it degrade loudly.
-//
-// The boarding chain (feed → import → dispatch) is the bus's
-// composition law in miniature: the feed loads into cap-network,
-// import produces the network document, and the SAME document loads
-// into cap-dispatch — whose returned hash is asserted equal to the
-// import's. One document, one truth, checked at the host.
+// The day-view capabilities — the need cut of the day views, each one
+// question over the NETWORK document (the core data model) plus the
+// OPERATOR EDIT document:
+//   * board   — when does service leave this stop? (a stop, a
+//     station's pooled bays, a personal saved set: the watchlist)
+//   * runcut  — what does this vehicle do today? (the day's blocks
+//     list, one block's chain with the layover ripple)
+//   * calendar— which service keys run today? (from the effective day)
+// When an assembly cannot form, the views that need it degrade
+// loudly. The boarding chain (feed → import → day-view module) is
+// the bus's composition law in miniature: the feed loads into
+// cap-network, import produces the network document, and the SAME
+// document loads into each day-view module — whose returned hash is
+// asserted equal to the import's. One document, one truth, checked
+// at the host.
 // ---------------------------------------------------------------------
 
-export function dispatchCap(module: CapModule) {
+export function boardCap(module: CapModule) {
   return {
     loadNetwork(network: Network): string {
       const resp = module.invoke({
         op: "load_network",
         network,
-      } as DispatchCapRequest) as Extract<DispatchCapResponse, { op: "load_network" }>;
+      } as BoardCapRequest) as Extract<BoardCapResponse, { op: "load_network" }>;
       return resp.network_hash;
     },
     loadEdits(
@@ -838,7 +759,7 @@ export function dispatchCap(module: CapModule) {
         op: "load_edits",
         network_hash: networkHash,
         records,
-      } as DispatchCapRequest) as Extract<DispatchCapResponse, { op: "load_edits" }>;
+      } as BoardCapRequest) as Extract<BoardCapResponse, { op: "load_edits" }>;
       return { editsHash: resp.edits_hash, reports: resp.reports };
     },
     departures(
@@ -857,7 +778,7 @@ export function dispatchCap(module: CapModule) {
         date,
         from_secs: fromSecs,
         limit,
-      } as DispatchCapRequest) as Extract<DispatchCapResponse, { op: "departures" }>;
+      } as BoardCapRequest) as Extract<BoardCapResponse, { op: "departures" }>;
       return resp.departures;
     },
     stationDepartures(
@@ -876,9 +797,78 @@ export function dispatchCap(module: CapModule) {
         date,
         from_secs: fromSecs,
         limit,
-      } as DispatchCapRequest) as Extract<DispatchCapResponse, { op: "station_departures" }>;
+      } as BoardCapRequest) as Extract<BoardCapResponse, { op: "station_departures" }>;
       return resp.departures;
     },
+    loadWatchlist(document: Watchlist): { watchlistHash: string; version: number } {
+      const resp = module.invoke({
+        op: "load_watchlist",
+        document,
+      } as BoardCapRequest) as Extract<BoardCapResponse, { op: "load_watchlist" }>;
+      return { watchlistHash: resp.watchlist_hash, version: resp.version };
+    },
+    migrateWatchlist(document: Watchlist): { document: Watchlist; notes: MigrationNote[] } {
+      const resp = module.invoke({
+        op: "migrate_watchlist",
+        document,
+      } as BoardCapRequest) as Extract<BoardCapResponse, { op: "migrated_watchlist" }>;
+      return { document: resp.document, notes: resp.notes };
+    },
+    watchlistBoard(
+      watchlistHash: string,
+      networkHash: string,
+      editsHash: string | null,
+      date: string,
+      fromSecs: number,
+      limit: number,
+    ): WatchBoardStop[] {
+      const resp = module.invoke({
+        op: "watchlist_board",
+        watchlist_hash: watchlistHash,
+        network_hash: networkHash,
+        edits_hash: editsHash,
+        date,
+        from_secs: fromSecs,
+        limit,
+      } as BoardCapRequest) as Extract<BoardCapResponse, { op: "watchlist_board" }>;
+      return resp.stops;
+    },
+  };
+}
+
+export function runcutCap(module: CapModule) {
+  return {
+    loadNetwork(network: Network): string {
+      const resp = module.invoke({
+        op: "load_network",
+        network,
+      } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "load_network" }>;
+      return resp.network_hash;
+    },
+    loadEdits(
+      networkHash: string,
+      records: EditRecord[],
+    ): { editsHash: string; reports: EditReport[] } {
+      const resp = module.invoke({
+        op: "load_edits",
+        network_hash: networkHash,
+        records,
+      } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "load_edits" }>;
+      return { editsHash: resp.edits_hash, reports: resp.reports };
+    },
+    /// The day's blocks list — the index facet (vehicles out, with
+    /// that day's running trip counts).
+    blocks(networkHash: string, editsHash: string | null, date: string): DayBlock[] {
+      const resp = module.invoke({
+        op: "blocks",
+        network_hash: networkHash,
+        edits_hash: editsHash,
+        date,
+      } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "blocks" }>;
+      return resp.blocks;
+    },
+    /// One block's authored chain with the layover ripple — the
+    /// detail facet.
     blockTrips(
       networkHash: string,
       editsHash: string | null,
@@ -891,88 +881,164 @@ export function dispatchCap(module: CapModule) {
         edits_hash: editsHash,
         block_id: blockId,
         date,
-      } as DispatchCapRequest) as Extract<DispatchCapResponse, { op: "block_trips" }>;
+      } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "block_trips" }>;
       return resp.trips;
     },
   };
 }
 
-/// The current dispatch module, if the bus assembled one.
-export async function dispatchModule(): Promise<CapModule | null> {
-  const modules = await ensure(["dispatch"]);
-  return modules.dispatch ?? null;
+export function calendarCap(module: CapModule) {
+  return {
+    loadNetwork(network: Network): string {
+      const resp = module.invoke({
+        op: "load_network",
+        network,
+      } as CalendarCapRequest) as Extract<CalendarCapResponse, { op: "load_network" }>;
+      return resp.network_hash;
+    },
+    /// The service keys running on a date — from the effective day
+    /// (schedule-only when no edit document is registered).
+    activeServices(networkHash: string, date: string): string[] {
+      const resp = module.invoke({
+        op: "active_services",
+        network_hash: networkHash,
+        date,
+      } as CalendarCapRequest) as Extract<CalendarCapResponse, { op: "active_services" }>;
+      return resp.services;
+    },
+  };
 }
 
-/// Everything the board and the block chains need from a loaded
-/// feed: the derived network document (by hash, loaded in
-/// cap-dispatch) and the import's trip-id map (the join rt delays
-/// and click-throughs are keyed by — rt and the feed's own ops
-/// speak the AGENCY's ids, the model mints its own).
-export type DispatchBoarding = {
+/// The current board module, if the bus assembled one.
+export async function boardModule(): Promise<CapModule | null> {
+  const modules = await ensure(["board"]);
+  return modules.board ?? null;
+}
+
+/// The current runcut module, if the bus assembled one.
+export async function runcutModule(): Promise<CapModule | null> {
+  const modules = await ensure(["runcut"]);
+  return modules.runcut ?? null;
+}
+
+/// The current calendar module, if the bus assembled one.
+export async function calendarModule(): Promise<CapModule | null> {
+  const modules = await ensure(["calendar"]);
+  return modules.calendar ?? null;
+}
+
+/// Everything a day view needs from a loaded feed: the derived
+/// network document (by hash, loaded in the day-view module) and the
+/// import's trip-id map (the join rt delays and click-throughs are
+/// keyed by — rt and the feed's own ops speak the AGENCY's ids, the
+/// model mints its own).
+export type Boarding = {
   feedHash: string;
   networkHash: string;
   tripMap: TripIdMap;
 };
 
-const dispatchBoardings = new Map<string, Promise<DispatchBoarding | null>>();
-
-/// Board the loaded feed into the dispatch capability: load the
-/// bytes into cap-network, import the network document, load that
-/// SAME document into cap-dispatch (identities asserted equal), and
-/// carry the trip-id map. Memoized by the feed bytes' content hash —
-/// the import runs once per feed per session, never per query.
-export function ensureDispatchBoarding(bytes: Uint8Array): Promise<DispatchBoarding | null> {
-  const load = async (): Promise<DispatchBoarding | null> => {
+/// Board the loaded feed into one of the day-view modules (board,
+/// runcut — the modules that answer with trip-level vocabulary):
+/// load the bytes into cap-network, import the network document,
+/// load that SAME document into the module (identities asserted
+/// equal), and carry the trip-id map. Memoized by (module, feed)
+/// — the import runs once per feed per module per session, never
+/// per query.
+function boardings(capId: "board" | "runcut") {
+  const memo = new Map<string, Promise<Boarding | null>>();
+  return async function ensureBoarding(bytes: Uint8Array): Promise<Boarding | null> {
     const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
-    const memo = dispatchBoardings.get(memoKey);
-    if (memo) return memo;
+    const hit = memo.get(memoKey);
+    if (hit) return hit;
     const boarding = (async () => {
-      const modules = await ensure(["network", "dispatch"]);
+      const modules = await ensure(["network", capId]);
       const network = modules.network;
-      const dispatch = modules.dispatch;
-      if (!network || !dispatch) return null;
+      const cap = modules[capId];
+      if (!network || !cap) return null;
       const feedHash = networkCap(network).loadFeed(bytes).feedHash;
       const imported = networkCap(network).import(feedHash);
       const map = networkCap(network).tripMap(imported.networkHash);
       if (!map) return null; // an imported network always has one
-      const dispatchHash = dispatchCap(dispatch).loadNetwork(imported.network);
-      if (dispatchHash !== imported.networkHash) {
+      const loaders = { board: boardCap, runcut: runcutCap } as const;
+      const loadedHash = loaders[capId](cap).loadNetwork(imported.network);
+      if (loadedHash !== imported.networkHash) {
         throw new Error(
-          `network identity disagrees across capabilities: ${dispatchHash} != ${imported.networkHash}`,
+          `network identity disagrees across capabilities: ${loadedHash} != ${imported.networkHash}`,
         );
       }
       return { feedHash, networkHash: imported.networkHash, tripMap: map };
     })();
-    boarding.catch(() => dispatchBoardings.delete(memoKey));
-    dispatchBoardings.set(memoKey, boarding);
+    boarding.catch(() => memo.delete(memoKey));
+    memo.set(memoKey, boarding);
     return boarding;
   };
-  return load();
 }
 
-const dispatchEdits = new Map<string, Promise<string | null>>();
+export const ensureBoardBoarding = boardings("board");
+export const ensureRuncutBoarding = boardings("runcut");
 
-/// Register the operator edit document against a boarded network,
-/// memoized by (network, document) — the edits document crosses the
-/// seam once per change, not once per query. An EMPTY document is
-/// schedule-only: no load, null hash (the day views' contract).
-export function ensureDispatchEdits(
-  networkHash: string,
-  records: EditRecord[],
-): Promise<string | null> {
-  if (records.length === 0) return Promise.resolve(null);
-  const memoKey = networkHash + "\n" + JSON.stringify(records);
-  const memo = dispatchEdits.get(memoKey);
+const calendarNetworks = new Map<string, Promise<string | null>>();
+
+/// Load the imported network document into the calendar module
+/// (the chips-grade read: service keys by date), memoized by feed
+/// bytes — the document crosses the seam once per feed.
+export async function ensureCalendarNetwork(bytes: Uint8Array): Promise<string | null> {
+  const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
+  const memo = calendarNetworks.get(memoKey);
   if (memo) return memo;
   const load = (async () => {
-    const module = await dispatchModule();
-    if (!module) return null;
-    return dispatchCap(module).loadEdits(networkHash, records).editsHash;
+    const modules = await ensure(["network", "calendar"]);
+    const network = modules.network;
+    const calendar = modules.calendar;
+    if (!network || !calendar) return null;
+    const feedHash = networkCap(network).loadFeed(bytes).feedHash;
+    const imported = networkCap(network).import(feedHash);
+    const loadedHash = calendarCap(calendar).loadNetwork(imported.network);
+    if (loadedHash !== imported.networkHash) {
+      throw new Error(
+        `network identity disagrees across capabilities: ${loadedHash} != ${imported.networkHash}`,
+      );
+    }
+    return imported.networkHash;
   })();
-  load.catch(() => dispatchEdits.delete(memoKey));
-  dispatchEdits.set(memoKey, load);
+  load.catch(() => calendarNetworks.delete(memoKey));
+  calendarNetworks.set(memoKey, load);
   return load;
 }
+
+/// Register the operator edit document against a boarded network, in
+/// a given day-view module, memoized by (module, network, document)
+/// — the edits document crosses the seam once per change, not once
+/// per query. An EMPTY document is schedule-only: no load, null hash
+/// (the day views' contract).
+function editsRegistry(
+  capId: "board" | "runcut",
+  moduleOf: () => Promise<CapModule | null>,
+) {
+  const memo = new Map<string, Promise<string | null>>();
+  return function ensureEdits(
+    networkHash: string,
+    records: EditRecord[],
+  ): Promise<string | null> {
+    if (records.length === 0) return Promise.resolve(null);
+    const memoKey = capId + "\n" + networkHash + "\n" + JSON.stringify(records);
+    const hit = memo.get(memoKey);
+    if (hit) return hit;
+    const load = (async () => {
+      const module = await moduleOf();
+      if (!module) return null;
+      const loaders = { board: boardCap, runcut: runcutCap } as const;
+      return loaders[capId](module).loadEdits(networkHash, records).editsHash;
+    })();
+    load.catch(() => memo.delete(memoKey));
+    memo.set(memoKey, load);
+    return load;
+  };
+}
+
+export const ensureBoardEdits = editsRegistry("board", boardModule);
+export const ensureRuncutEdits = editsRegistry("runcut", runcutModule);
 
 // ---------------------------------------------------------------------
 // The streets capability — the detour editor's street graph (the

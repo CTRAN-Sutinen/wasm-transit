@@ -1,6 +1,6 @@
 [package]
 name = "cap-gtfs"
-description = "The gtfs capability: parse a GTFS zip into a content-hash-keyed feed registry and query departures and stops. A horizontal capability module — assembled per user, never one-size-fits-all."
+description = "The gtfs capability: the FEED document — parse a GTFS zip into a content-hash-keyed feed registry and answer the reads only the feed itself carries (identity, stop names, the stop list for pickers). A horizontal capability module — assembled per user, never one-size-fits-all."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,10 +12,6 @@ crate-type = ["cdylib", "rlib"]  # rlib: integration tests link the crate native
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-chrono = { workspace = true }
 ts-rs = { workspace = true }
 transit-core = { path = "../transit-core" }
 cap-abi = { path = "../cap-abi" }
-
-[dev-dependencies]
-proptest = "1"

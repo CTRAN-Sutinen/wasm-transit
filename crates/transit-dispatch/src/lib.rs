@@ -1,17 +1,23 @@
-//! transit-dispatch — the operator's day, in model vocabulary.
+//! transit-dispatch — the materialized day's views, in model
+//! vocabulary.
 //!
-//! The dispatcher's questions (what leaves this stop, what does this
-//! bay's wall board say, what is this vehicle's chain of work today)
-//! are answered over the NETWORK document — never over a GTFS
-//! expansion. The day is [`transit_network::materialize`] applied to
-//! one service date; operator edits (the dispatcher's own document,
-//! transit-sync) PATCH that materialized day. There is no derived
-//! registry and no date-keyed effective cache: a day is computed per
-//! call, and it is cheap because it is one day, not a calendar.
+//! The day's questions (when service leaves a stop, what one
+//! vehicle's chain of work is, which vehicles and service keys
+//! are out) are answered over the NETWORK document — never over a
+//! GTFS expansion. The day is [`transit_network::materialize`]
+//! applied to one service date; operator edits (their own
+//! document, transit-sync) PATCH that materialized day. There is
+//! no derived registry and no date-keyed effective cache: a day is
+//! computed per call, and it is cheap because it is one day, not
+//! a calendar.
 //!
-//! Everything here is pure and total. Times are seconds after the
-//! service-day anchor; values past 86400 are legitimate after-midnight
-//! trips.
+//! This is shared domain code, off the wire: several capabilities
+//! (the board, the runcut, the calendar — `docs/PLAN.md`) sit over
+//! the same library. Everything here is pure and total. Times are
+//! seconds after the service-day anchor; values past 86400 are
+//! legitimate after-midnight trips.
+
+use std::collections::BTreeSet;
 
 use chrono::NaiveDate;
 use ts_rs::TS;
@@ -34,7 +40,7 @@ pub struct BoardDeparture {
     pub route_name: String,
     pub pattern: String,
     /// The concrete stop this row leaves from — on a station board,
-    /// WHICH BAY matters to a dispatcher.
+    /// WHICH BAY a pooled row leaves from matters to the reader.
     pub stop: String,
     /// Seconds after the service-day anchor (past-86400 values are
     /// after-midnight trips, not errors).
@@ -57,7 +63,7 @@ pub struct BlockChainTrip {
     pub pattern: String,
     /// Whether this trip of the block runs on the date. A trip that
     /// does not run is still part of the authored chain (the vehicle's
-    /// work is authored, not observed) — the dispatcher sees the hole.
+    /// work is authored, not observed) — the reader sees the hole.
     pub runs: bool,
     pub first_stop: String,
     pub last_stop: String,
@@ -416,4 +422,55 @@ pub fn effective_day(
     let day = materialize(network, date)?;
     let diversions = transit_sync::in_force_on(records, date);
     Ok(patch_day(&day, &diversions))
+}
+
+// ---------------------------------------------------------------------
+// The day's fleet and service keys
+// ---------------------------------------------------------------------
+
+/// One block out on the service day: the vehicle's id and how many
+/// of its authored trips run.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct DayBlock {
+    pub block_id: String,
+    /// How many of the block's authored trips run on the date.
+    pub trip_count: u32,
+}
+
+/// The day's blocks: every authored block with at least one trip in
+/// the (effective) day, with that day's running trip counts, sorted
+/// by block id. A block whose every trip is off that day is a
+/// vehicle still in the garage — a picker of today's blocks must not
+/// offer it.
+pub fn day_blocks(network: &Network, day: &[MaterializedTrip]) -> Vec<DayBlock> {
+    let mut out = Vec::new();
+    for (block_id, block) in &network.blocks {
+        let count = block
+            .trips
+            .iter()
+            .filter(|t| {
+                day.iter().any(|d| d.schedule == t.schedule && d.start_secs == t.start_secs)
+            })
+            .count();
+        if count > 0 {
+            out.push(DayBlock { block_id: block_id.clone(), trip_count: count as u32 });
+        }
+    }
+    out
+}
+
+/// The service keys running on a date: the distinct service types the
+/// (effective) day's trips run under, sorted — the day's first
+/// first question, answered from the day itself. A key whose every
+/// trip is skipped by edits (or was never representable in the
+/// model) is not running, however its calendar reads.
+pub fn active_services(network: &Network, day: &[MaterializedTrip]) -> Vec<String> {
+    let mut keys: BTreeSet<&str> = BTreeSet::new();
+    for trip in day {
+        if let Some(schedule) = network.schedules.get(&trip.schedule) {
+            keys.insert(schedule.service_type.as_str());
+        }
+    }
+    keys.into_iter().map(String::from).collect()
 }

@@ -1,0 +1,200 @@
+//! cap-calendar — the calendar capability.
+//!
+//! One question: **which service keys run on this date?** — often
+//! several at once (a regular pattern plus an exception-added
+//! service). The answer comes from the EFFECTIVE day, not the
+//! calendar rules alone: a key whose every trip is skipped by
+//! edits (or was never representable in the model) is not running,
+//! however its calendar reads — the same honesty as the runcut
+//! view's empty hole.
+//!
+//! The day is `materialize(net, date)`, patched with the edits in
+//! force on that date. No derived registry, no GTFS expansion, no
+//! date-keyed cache: a day is computed per call, and a day is
+//! cheap. The domain code lives in the shared transit-dispatch
+//! library; this module is the seam.
+//!
+//! Documents are content-addressed like everywhere on the bus:
+//! * **network** — the same identity cap-network's import produces
+//!   and cap-analysis consumes (the module is the hash authority);
+//! * **edits** — the operator edit document, wholesale-replaced by
+//!   the host, validated per record against the NETWORK at load
+//!   (invalid records are REPORTED, not rejected — the sync
+//!   contract).
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
+
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use ts_rs::TS;
+use transit_network::Network;
+
+/// One operation call. Tagged like every capability's seam.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "cap_calendar/")]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum Request {
+    /// Register the NETWORK document under its content hash
+    /// (idempotent by hash) — the same document identity
+    /// cap-network's import produces and cap-analysis consumes.
+    LoadNetwork { network: Network },
+    /// Register the OPERATOR EDIT document against a loaded network,
+    /// validated per record AGAINST THE NETWORK (model vocabulary —
+    /// no feed is expanded): the response carries the reports
+    /// (invalid records are REPORTED, not rejected) and the
+    /// document's content hash, which the day views address.
+    /// Wholesale replacement, like the host-owned store: the whole
+    /// document is pushed on every change.
+    LoadEdits {
+        network_hash: String,
+        records: Vec<transit_sync::EditRecord>,
+    },
+    /// The service keys running on a date: the distinct service types
+    /// the effective day's trips run under, sorted. Schedule-only
+    /// when `edits_hash` is omitted.
+    ActiveServices {
+        network_hash: String,
+        #[serde(default)]
+        edits_hash: Option<String>,
+        date: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "cap_calendar/")]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum Response {
+    LoadNetwork { network_hash: String },
+    LoadEdits {
+        edits_hash: String,
+        reports: Vec<transit_sync::EditReport>,
+    },
+    ActiveServices { services: Vec<String> },
+}
+
+/// Networks by content hash (canonical serialization).
+fn networks() -> &'static Mutex<HashMap<String, Arc<Network>>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Network>>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Operator edit documents by content hash (canonical serialization).
+fn edits() -> &'static Mutex<HashMap<String, Arc<Vec<transit_sync::EditRecord>>>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Vec<transit_sync::EditRecord>>>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn content_hash(bytes: &[u8]) -> String {
+    format!("sha256:{:x}", Sha256::digest(bytes))
+}
+
+fn canonical_hash<T: Serialize>(value: &T) -> Result<String, String> {
+    let canonical =
+        serde_json::to_string(value).map_err(|e| format!("document does not serialize: {e}"))?;
+    Ok(content_hash(canonical.as_bytes()))
+}
+
+fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
+    networks()
+        .lock()
+        .expect("network registry lock")
+        .get(network_hash)
+        .cloned()
+        .ok_or_else(|| format!("unknown network {network_hash}: load_network first"))
+}
+
+fn edits_arc(edits_hash: &str) -> Result<Arc<Vec<transit_sync::EditRecord>>, String> {
+    edits()
+        .lock()
+        .expect("edits registry lock")
+        .get(edits_hash)
+        .cloned()
+        .ok_or_else(|| format!("unknown edits {edits_hash}: load_edits first"))
+}
+
+fn parse_date(date: &str) -> Result<chrono::NaiveDate, String> {
+    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map_err(|e| format!("invalid date {date:?}: {e}"))
+}
+
+/// One effective day: the network materialized for the date, patched
+/// with the edits in force on it. Computed per call — no cache, no
+/// calendar expansion, one date.
+fn effective_day(
+    network_hash: &str,
+    edits_hash: Option<&str>,
+    date_str: &str,
+) -> Result<Vec<transit_network::MaterializedTrip>, String> {
+    // The request's own fields validate before any registry lookup —
+    // a garbage date is a caller error, not a missing-document error.
+    let date = parse_date(date_str)?;
+    let network = network_arc(network_hash)?;
+    let records = match edits_hash {
+        Some(hash) => edits_arc(hash)?,
+        None => Arc::new(Vec::new()),
+    };
+    transit_dispatch::effective_day(&network, date, &records)
+        .map_err(|e| format!("the network does not materialize: {e}"))
+}
+
+/// The typed dispatch (native hosts call this directly). Failures
+/// are `{"error": ...}`, never panics — a total seam.
+pub fn dispatch(request: Request) -> Result<Response, String> {
+    match request {
+        Request::LoadNetwork { network } => {
+            let hash = canonical_hash(&network)?;
+            networks()
+                .lock()
+                .expect("network registry lock")
+                .entry(hash.clone())
+                .or_insert_with(|| Arc::new(network));
+            Ok(Response::LoadNetwork { network_hash: hash })
+        }
+        Request::LoadEdits { network_hash, records } => {
+            // Validation is against the NETWORK — model vocabulary;
+            // no feed is expanded to answer it.
+            let network = network_arc(&network_hash)?;
+            let reports = transit_dispatch::report_against_network(&network, &records);
+            let hash = canonical_hash(&records)?;
+            edits()
+                .lock()
+                .expect("edits registry lock")
+                .insert(hash.clone(), Arc::new(records));
+            Ok(Response::LoadEdits { edits_hash: hash, reports })
+        }
+        Request::ActiveServices { network_hash, edits_hash, date } => {
+let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = network_arc(&network_hash)?;
+            Ok(Response::ActiveServices {
+                services: transit_dispatch::active_services(&network, &day),
+            })
+        }
+    }
+}
+
+/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
+/// out — byte-compatible with every other capability module.
+pub fn dispatch_json(text: &str) -> String {
+    let outcome = match serde_json::from_str::<Request>(text) {
+        Ok(request) => match dispatch(request) {
+            Ok(response) => serde_json::json!({ "ok": response }),
+            Err(error) => serde_json::json!({ "error": error }),
+        },
+        Err(error) => serde_json::json!({ "error": format!("invalid request: {error}") }),
+    };
+    serde_json::to_string(&outcome).expect("dispatch outcomes serialize")
+}
+
+/// The calendar module takes JSON documents (network, edits) — no
+/// bulk-bytes op exists; the seam answers honestly instead of
+/// silently ignoring one.
+pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
+    serde_json::json!({ "error": format!("unknown bulk op {op}: calendar takes JSON documents (load_network / load_edits)") })
+        .to_string()
+}
+
+cap_abi::capability! {
+    json: dispatch_json,
+    bytes: dispatch_bytes,
+}

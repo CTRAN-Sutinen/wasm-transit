@@ -1,0 +1,24 @@
+[package]
+name = "cap-runcut"
+description = "The runcut capability: what does this vehicle do today — the day's blocks list (which vehicles are out) and one block's authored chain with the layover ripple. The materialized day over the NETWORK document, patched with the edits in force; model-native end to end, the domain code lives in the shared transit-dispatch library."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]  # rlib: integration tests link the crate natively
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+chrono = { workspace = true }
+ts-rs = { workspace = true }
+transit-network = { path = "../transit-network" }
+transit-sync = { path = "../transit-sync" }
+transit-dispatch = { path = "../transit-dispatch" }
+cap-abi = { path = "../cap-abi" }
+
+[dev-dependencies]
+transit-codec = { path = "../transit-codec" }
+transit-core = { path = "../transit-core" }

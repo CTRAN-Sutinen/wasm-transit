@@ -1,0 +1,25 @@
+[package]
+name = "cap-board"
+description = "The board capability: when does service leave this stop — at a stop, a station's pooled bays, or a personal saved set (the watchlist document). The materialized day over the NETWORK document, patched with the edits in force; model-native end to end, the domain code lives in the shared transit-dispatch library."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]  # rlib: integration tests link the crate natively
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+chrono = { workspace = true }
+ts-rs = { workspace = true }
+transit-network = { path = "../transit-network" }
+transit-sync = { path = "../transit-sync" }
+transit-dispatch = { path = "../transit-dispatch" }
+cap-abi = { path = "../cap-abi" }
+
+[dev-dependencies]
+transit-codec = { path = "../transit-codec" }
+transit-core = { path = "../transit-core" }
+proptest = "1"

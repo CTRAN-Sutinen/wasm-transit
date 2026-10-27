@@ -1,16 +1,21 @@
 <script lang="ts">
-  /// The capability-bus demo: load the manifest, assemble gtfs +
-  /// router, and run the composition — the same feed bytes into two
-  /// independent modules, hashes asserted equal at the host, then a
-  /// plan through one and departures through the other. Partial
-  /// assemblies degrade per capability: with router unavailable the
-  /// gtfs half still runs, and the statuses say so.
+  /// The capability-bus demo: load the manifest, assemble the
+  /// composition, and run it — the feed bytes into gtfs (identity),
+  /// the SAME bytes into the network capability (the document), the
+  /// SAME document into board (the day view), hashes asserted equal
+  /// at the host at every hop, then a plan through router over the
+  /// feed. Partial assemblies degrade per capability: with router
+  /// unavailable the feed/document/board half still runs, and the
+  /// statuses say so.
   import {
     caps,
     ensure,
     loadManifest,
     gtfsCap,
     routerCap,
+    boardCap,
+    boardModule,
+    ensureBoardBoarding,
     assertSameDocument,
     forgetCapability,
     restoreDocuments,
@@ -21,7 +26,7 @@
     migrateWatchlistForward,
     type GtfsLoadFeed,
   } from "../capabilities.svelte";
-  import type { Watchlist } from "../types/cap_gtfs/Watchlist";
+  import type { Watchlist } from "../types/cap_board/Watchlist";
 
   const DATE = "2026-10-23"; // the fixture's loaded Friday
   const DEPART = 7 * 3600;
@@ -87,18 +92,6 @@
     await run();
   }
 
-  async function gtfsModule() {
-    const modules = await ensure(["gtfs"]);
-    if (!modules.gtfs) throw new Error("gtfs capability unavailable");
-    return gtfsCap(modules.gtfs);
-  }
-
-  async function feedHash(): Promise<string> {
-    const gtfs = await gtfsModule();
-    const bytes = new Uint8Array(await (await fetch("caps/sample-gtfs.zip")).arrayBuffer());
-    return gtfs.loadFeed(bytes).feedHash;
-  }
-
   async function seedV1(): Promise<void> {
     docSteps = [];
     board = [];
@@ -119,11 +112,21 @@
         docMessage = "seed the watchlist first";
         return;
       }
-      const gtfs = await gtfsModule();
-      const feed = await feedHash();
+      const bytes = new Uint8Array(await (await fetch("caps/sample-gtfs.zip")).arrayBuffer());
+      const boarding = await ensureBoardBoarding(bytes);
+      if (!boarding) {
+        docMessage = "board capability unavailable";
+        return;
+      }
+      const module = await boardModule();
+      if (!module) {
+        docMessage = "board capability unavailable";
+        return;
+      }
       const document = JSON.parse(current.bytes) as Watchlist;
-      const { watchlistHash } = gtfs.loadWatchlist(document);
-      const stops = gtfs.watchlistBoard(watchlistHash, feed, DATE, DEPART, 3);
+      const cap = boardCap(module);
+      const { watchlistHash } = cap.loadWatchlist(document);
+      const stops = cap.watchlistBoard(watchlistHash, boarding.networkHash, null, DATE, DEPART, 3);
       board = stops.map((s) => ({ id: s.id, label: s.label, count: s.departures.length }));
       docSteps.push({
         label: `board @ v${current.version}`,
@@ -137,7 +140,7 @@
 
   async function migrateForward(): Promise<void> {
     docSteps = [];
-    const outcome = await migrateWatchlistForward("gtfs");
+    const outcome = await migrateWatchlistForward("board");
     if ("error" in outcome) {
       docMessage = outcome.error;
       return;
@@ -179,9 +182,10 @@
     try {
       const bytes = new Uint8Array(await (await fetch("caps/sample-gtfs.zip")).arrayBuffer());
 
-      const modules = await ensure(["gtfs", "router"]);
+      const modules = await ensure(["gtfs", "router", "network", "board"]);
       const gtfs = modules.gtfs ? gtfsCap(modules.gtfs) : null;
       const router = modules.router ? routerCap(modules.router) : null;
+      const board = modules.board ? boardCap(modules.board) : null;
 
       if (!gtfs) {
         steps.push({ label: "gtfs capability", detail: "unavailable", ok: false });
@@ -194,9 +198,23 @@
         ok: true,
       });
 
-      const departures = gtfs.departures(loadedGtfs.feedHash, "A", DATE, DEPART, 5);
+      // The document chain: the same bytes into the network
+      // capability, the derived document into the board — identity
+      // asserted at every hop, never assumed.
+      const boarding = await ensureBoardBoarding(bytes);
+      if (!board || !boarding) {
+        steps.push({ label: "board capability", detail: "unavailable", ok: false });
+        return;
+      }
       steps.push({
-        label: "gtfs.departures",
+        label: "hash handoff",
+        detail: `${boarding.networkHash.slice(0, 19)}… network document == import's == board's`,
+        ok: true,
+      });
+
+      const departures = board.departures(boarding.networkHash, null, "A", DATE, DEPART, 5);
+      steps.push({
+        label: "board.departures",
         detail: `${departures.length} departures at A from ${fmtTime(DEPART)}`,
         ok: true,
       });
@@ -204,15 +222,15 @@
       if (!router) {
         steps.push({
           label: "router capability",
-          detail: "unavailable — the assembly degraded to its gtfs half",
+          detail: "unavailable — the assembly degraded to its day half",
           ok: false,
         });
         result = `${departures.length} departures served; planning skipped (capability unavailable).`;
         return;
       }
       const loadedRouter = router.loadFeed(bytes);
-      // The composition moment: two modules, one document, identity
-      // asserted — never assumed.
+      // The composition moment: the SAME bytes, a THIRD registry,
+      // identity asserted — never assumed.
       assertSameDocument(loadedGtfs, loadedRouter);
       steps.push({
         label: "hash handoff",
@@ -229,7 +247,7 @@
         ok: true,
       });
       result = plan
-        ? `Composition ok: ${departures.length} departures via gtfs, arrival ${plan.arrival_hhmmss} via router — one document, two capabilities.`
+        ? `Composition ok: ${departures.length} departures via board, arrival ${plan.arrival_hhmmss} via router — one feed, one network document, four capabilities.`
         : "Composition ok; the pair is unreachable on this date.";
     } catch (error) {
       steps.push({

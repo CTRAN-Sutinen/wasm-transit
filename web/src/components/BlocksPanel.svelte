@@ -2,24 +2,24 @@
   import { app, getEditDocument } from "../state.svelte";
   import { refreshNow, serviceDate, feedBytes } from "../actions";
   import {
-    ensureGtfsFeed,
-    gtfsCap,
-    gtfsModule,
-    dispatchModule,
-    dispatchCap,
-    ensureDispatchBoarding,
-    ensureDispatchEdits,
+    runcutCap,
+    runcutModule,
+    ensureRuncutBoarding,
+    ensureRuncutEdits,
   } from "../capabilities.svelte";
-  import type { BlockSummary } from "../types/BlockSummary";
+  import type { DayBlock } from "../types/DayBlock";
   import type { BlockChainTrip } from "../types/BlockChainTrip";
   import Combobox from "./Combobox.svelte";
 
-  // The blocks LIST answers through cap-gtfs (the monolith's op is
-  // deleted). Only the blocks running on the service day (a parked
-  // bus is not a pickable block; trip counts are that day's). Async
-  // with race guards; when the capability cannot assemble the view
-  // is OFF and says so — never silently.
-  let blocks = $state<BlockSummary[]>([]);
+  // The blocks LIST answers through cap-runcut — the runcut
+  // capability's index facet (the monolith's op is deleted). Only
+  // the blocks with authored trips running on the service day (a
+  // parked bus is not a pickable block; trip counts are that day's;
+  // a block whose only trips were unrepresentable in the model is
+  // not offered — the honest hole). Async with race guards; when the
+  // capability cannot assemble the view is OFF and says so — never
+  // silently.
+  let blocks = $state<DayBlock[]>([]);
   let blocksOff = $state(false);
   let blocksSeq = 0;
   $effect(() => {
@@ -34,19 +34,21 @@
     }
     void (async () => {
       try {
-        const feedHash = await ensureGtfsFeed(bytes);
+        const boarding = await ensureRuncutBoarding(bytes);
         if (seq !== blocksSeq) return;
-        if (!feedHash) {
+        if (!boarding) {
           blocks = [];
           blocksOff = true;
           app.status =
-            "gtfs capability unavailable — the blocks view is off until it loads (the capability bus did not assemble).";
+            "runcut capability unavailable — the blocks view is off until it loads (the capability bus did not assemble).";
           return;
         }
-        const module = await gtfsModule();
+        const editsHash = await ensureRuncutEdits(boarding.networkHash, getEditDocument());
+        if (seq !== blocksSeq) return;
+        const module = await runcutModule();
         if (!module || seq !== blocksSeq) return;
         blocksOff = false;
-        blocks = gtfsCap(module).blocks(feedHash, date);
+        blocks = runcutCap(module).blocks(boarding.networkHash, editsHash, date);
       } catch {
         if (seq === blocksSeq) blocks = [];
       }
@@ -59,7 +61,7 @@
   let selectedBlock = $state("");
 
   // -----------------------------------------------------------------
-  // ONE BLOCK'S CHAIN — through cap-dispatch: the AUTHORED runcut
+  // ONE BLOCK'S CHAIN — through cap-runcut: the AUTHORED runcut
   // (the model's blocks carry layovers GTFS never had), materialized
   // for the day with the operator edits applied. The ripple is IN
   // the answer: layover_remaining_secs is the authored layover minus
@@ -80,23 +82,23 @@
     if (!blockId || !app.gtfs || !bytes) return;
     void (async () => {
       try {
-        const boarding = await ensureDispatchBoarding(bytes);
+        const boarding = await ensureRuncutBoarding(bytes);
         if (seq !== chainSeq || !boarding) {
           if (seq === chainSeq) chainOff = !boarding;
           return;
         }
-        const editsHash = await ensureDispatchEdits(boarding.networkHash, getEditDocument());
+        const editsHash = await ensureRuncutEdits(boarding.networkHash, getEditDocument());
         if (seq !== chainSeq) return;
-        const module = await dispatchModule();
+        const module = await runcutModule();
         if (!module || seq !== chainSeq) return;
-        const trips = dispatchCap(module).blockTrips(
+        const trips = runcutCap(module).blockTrips(
           boarding.networkHash,
           editsHash,
           blockId,
           serviceDate(),
         );
-        // Agency ids for the trip column — the dispatcher's radio
-        // vocabulary, joined through the import's trip-id map.
+        // Agency ids for the trip column — the radio's vocabulary,
+        // joined through the import's trip-id map.
         const agency = new Map(
           boarding.tripMap.entries.map((e) => [`${e.schedule}@${e.start_secs}`, e.agency_trip_ids]),
         );
@@ -158,7 +160,7 @@
   </p>
   {#if chainOff}
     <p class="muted">
-      The chain needs the network and dispatch capabilities; the bus
+      The chain needs the network and runcut capabilities; the bus
       did not assemble them, so the chain is off.
     </p>
   {:else if chain.length}
@@ -197,7 +199,7 @@
 <section>
   <h2>Blocks</h2>
   <p class="muted">
-    The blocks view needs the gtfs capability; it did not assemble, so
+    The blocks view needs the runcut capability; it did not assemble, so
     the view is off. Authoring and boards elsewhere are unaffected.
   </p>
 </section>
