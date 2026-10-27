@@ -50,6 +50,18 @@ holds the gotchas, Rust/wasm/ops and frontend alike.
 - `#[profile.release]` in the root Cargo.toml is tuned for module
   size (opt-level "s", LTO, panic=abort, strip). Measure before
   changing it.
+- **A whole document never decodes through the tagged `Request`
+  envelope.** `#[serde(tag = "op")]` is internally tagged: serde
+  buffers the ENTIRE input into a generic tree before it knows the
+  variant, then decodes again from the tree. On the C-TRAN network
+  (2.7 MB) that peaks at ~19 MB against 2.3 MB for a direct parse —
+  and wasm linear memory never shrinks, so the peak is a permanent
+  per-module tab cost. The network registers through
+  `cap_abi::load_network_json` / the kernel bulk op (the variant is
+  `#[serde(skip_deserializing)]`; ts-rs warns that it ignores that
+  attribute, which is intended — the variant stays in the TS
+  types). `load_edits` / `load_live` still take the envelope: fine
+  at their sizes, the same fix if they grow.
 
 ## Frontend
 

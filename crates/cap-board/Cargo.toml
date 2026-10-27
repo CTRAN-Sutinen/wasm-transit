@@ -11,7 +11,6 @@ crate-type = ["cdylib", "rlib"]  # rlib: integration tests link the crate native
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
 chrono = { workspace = true }
 ts-rs = { workspace = true }
 transit-network = { path = "../transit-network" }
@@ -22,6 +21,7 @@ transit-live = { path = "../transit-live" }
 cap-abi = { path = "../cap-abi" }
 
 [dev-dependencies]
+sha2 = { workspace = true }
 transit-codec = { path = "../transit-codec" }
 transit-core = { path = "../transit-core" }
 proptest = "1"

@@ -11,10 +11,10 @@ crate-type = ["cdylib", "rlib"]  # rlib: integration tests link the crate native
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
 ts-rs = { workspace = true }
 transit-network = { path = "../transit-network" }
 cap-abi = { path = "../cap-abi" }
 
 [dev-dependencies]
+sha2 = { workspace = true }
 chrono = { workspace = true }

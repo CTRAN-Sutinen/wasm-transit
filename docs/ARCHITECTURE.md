@@ -273,6 +273,13 @@ cap-abi         The seam crate: the flat C ABI as a macro (every
                 tested; gen-manifest self-validizes before writing),
                 and gen-manifest (the capability set as code; the
                 manifest diff IS the reviewable assembly change).
+                The kernel registration lives here too: bulk op 256
+                (OP_LOAD_NETWORK — the bare network document on
+                transit_invoke_bytes, parsed straight into the
+                model; the JSON load_network routes to the same
+                parse via load_network_json) and canonical_hash,
+                the one identity formula (streamed into the
+                digest, never a second copy of the document).
                 Also caps-smoke.mjs: Node ABI smoke + the law that
                 every advertised op is documented (undocumented ops
                 fail the build — agent context cannot drift).
@@ -446,6 +453,11 @@ cap-streets    The street-graph capability: the detour editor's need,
   identity (JS JSON.stringify differs from the module's canonical
   serde bytes in float formatting; query with the hash the module
   returned).
+- Bulk op numbers: a capability's own number from 0 (feeds,
+  layers, rt payloads); kernel ops number from 256 and mean the same
+  thing in every module that answers them. Every network consumer
+  answers 256, and the browser host registers networks only that
+  way (`CapModule.loadNetwork`, the document encoded once).
 - One Request enum per capability is the whole surface (networks
   are minted only by cap-author's apply and cap-network's import —
   readers have no authoring ops by construction).

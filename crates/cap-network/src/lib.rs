@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use cap_abi::content_hash;
 use ts_rs::TS;
 use transit_codec::{gtfs_to_network, network_to_gtfs, ImportNote, ImportOutcome, TripIdMap};
 use transit_core::FeedSummary;
@@ -52,6 +52,10 @@ pub enum Request {
     /// Register an authored network document under its content hash
     /// (idempotent by hash). The authoring UI's entry point; every
     /// later op addresses the document by the returned hash.
+    /// Decoded by `cap_abi::load_network_json` on either lane, never
+    /// through the tagged envelope (whose buffered decode would cost
+    /// ~8× the document in peak memory and a second decoder).
+    #[serde(skip_deserializing)]
     LoadNetwork { network: Network },
     /// Every issue of a registered document — the authoring UI's
     /// feedback loop, the whole list, never thrown.
@@ -114,14 +118,8 @@ fn trip_maps() -> &'static Mutex<HashMap<String, Arc<TripIdMap>>> {
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn content_hash(bytes: &[u8]) -> String {
-    format!("sha256:{:x}", Sha256::digest(bytes))
-}
-
 fn network_hash(network: &Network) -> Result<String, String> {
-    let canonical =
-        serde_json::to_string(network).map_err(|e| format!("network does not serialize: {e}"))?;
-    Ok(content_hash(canonical.as_bytes()))
+    cap_abi::canonical_hash(network)
 }
 
 fn register_network(network: Network) -> Result<String, String> {
@@ -242,6 +240,9 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
 /// out — byte-compatible with the monolith and every other
 /// capability module.
 pub fn dispatch_json(text: &str) -> String {
+    if let Some(answer) = cap_abi::load_network_json(text, |doc| dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc)) {
+        return answer;
+    }
     let outcome = match serde_json::from_str::<Request>(text) {
         Ok(request) => match dispatch(request) {
             Ok(response) => serde_json::json!({ "ok": response }),
@@ -259,6 +260,11 @@ pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
             Ok(response) => serde_json::json!({ "ok": response }),
             Err(error) => serde_json::json!({ "error": error }),
         },
+        cap_abi::OP_LOAD_NETWORK => {
+            return cap_abi::outcome(
+                cap_abi::parse_document(bytes).and_then(|network| dispatch(Request::LoadNetwork { network })),
+            )
+        }
         other => serde_json::json!({ "error": format!("unknown bulk op {other}") }),
     };
     serde_json::to_string(&outcome).expect("dispatch outcomes serialize")

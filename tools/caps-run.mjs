@@ -17,7 +17,9 @@
 //
 // --load [N:]FILE sends the file's bytes on bulk op N (default 0 —
 // feeds, layers; a module with a second bulk op spells it, e.g.
-// cap-rt's `--load 1:feed.zip` loads the static feed for joins).
+// cap-rt's `--load 1:feed.zip` loads the static feed for joins;
+// `--load 256:network.json` registers a network document on the
+// kernel op any network consumer answers).
 // --op invokes one JSON op; repeatable; '@FILE' reads the JSON from
 // a file. Steps run in COMMAND-LINE ORDER, loads and ops alike;
 // results print as JSON, one per line, in that order.

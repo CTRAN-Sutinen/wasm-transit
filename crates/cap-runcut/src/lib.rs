@@ -28,8 +28,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
+use cap_abi::canonical_hash;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use ts_rs::TS;
 use transit_dispatch::{BlockChainTrip, DayBlock};
 use transit_network::Network;
@@ -42,6 +42,10 @@ pub enum Request {
     /// Register the NETWORK document under its content hash
     /// (idempotent by hash) — the same document identity
     /// cap-network's import produces and cap-analysis consumes.
+    /// Decoded by `cap_abi::load_network_json` on either lane, never
+    /// through the tagged envelope (whose buffered decode would cost
+    /// ~8× the document in peak memory and a second decoder).
+    #[serde(skip_deserializing)]
     LoadNetwork { network: Network },
     /// Register the OPERATOR EDIT document against a loaded network,
     /// validated per record AGAINST THE NETWORK (model vocabulary —
@@ -138,16 +142,6 @@ fn networks() -> &'static Mutex<HashMap<String, Arc<Network>>> {
 fn edits() -> &'static Mutex<HashMap<String, Arc<Vec<transit_sync::EditRecord>>>> {
     static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Vec<transit_sync::EditRecord>>>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn content_hash(bytes: &[u8]) -> String {
-    format!("sha256:{:x}", Sha256::digest(bytes))
-}
-
-fn canonical_hash<T: Serialize>(value: &T) -> Result<String, String> {
-    let canonical =
-        serde_json::to_string(value).map_err(|e| format!("document does not serialize: {e}"))?;
-    Ok(content_hash(canonical.as_bytes()))
 }
 
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
@@ -254,6 +248,9 @@ let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
 /// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
 /// out — byte-compatible with every other capability module.
 pub fn dispatch_json(text: &str) -> String {
+    if let Some(answer) = cap_abi::load_network_json(text, |doc| dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc)) {
+        return answer;
+    }
     let outcome = match serde_json::from_str::<Request>(text) {
         Ok(request) => match dispatch(request) {
             Ok(response) => serde_json::json!({ "ok": response }),
@@ -267,9 +264,13 @@ pub fn dispatch_json(text: &str) -> String {
 /// The runcut module takes JSON documents (network, edits) — no
 /// bulk-bytes op exists; the seam answers honestly instead of
 /// silently ignoring one.
-pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    serde_json::json!({ "error": format!("unknown bulk op {op}: runcut takes JSON documents (load_network / load_edits)") })
-        .to_string()
+pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
+    match op {
+        cap_abi::OP_LOAD_NETWORK => cap_abi::outcome(
+            cap_abi::parse_document(bytes).and_then(|network| dispatch(Request::LoadNetwork { network })),
+        ),
+        _ => serde_json::json!({ "error": format!("unknown bulk op {op}: runcut answers the kernel's load_network bulk op; edits travel as JSON (load_edits)") }).to_string(),
+    }
 }
 
 cap_abi::capability! {

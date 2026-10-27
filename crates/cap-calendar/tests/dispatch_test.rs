@@ -205,3 +205,19 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
     let bad = dispatch_bytes(0, b"whatever");
     assert!(bad.contains("unknown bulk op"), "the module takes JSON documents: {bad}");
 }
+
+#[test]
+fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
+    // The bare document on the kernel's bulk op — parsed straight into
+    // the model, no request envelope — answers exactly what the JSON
+    // op answers; garbage bytes are an error outcome, never a trap.
+    let doc = include_str!("../../../testdata/network.json");
+    let via_json: serde_json::Value =
+        serde_json::from_str(&cap_calendar::dispatch_json(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
+    let via_bytes: serde_json::Value =
+        serde_json::from_str(&cap_calendar::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
+    assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
+    assert_eq!(via_bytes, via_json);
+    let bad = cap_calendar::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
+    assert!(bad.contains("invalid document"), "{bad}");
+}

@@ -418,7 +418,38 @@ sync-persistence design (pointer CAS, the store reflog) remains
 the host discipline's (`docs/PLAN.md`), never a unit's to design
 in passing.
 
+- **The kernel registration op (2026-10-27)** — every network
+  consumer (analysis, author, board, calendar, directory, divert,
+  network, router, runcut) registers the bare document on bulk op
+  256, parsed straight into the model; the JSON load_network takes
+  the same parse, and the nine copies of the hash formula are one
+  streamed `cap_abi::canonical_hash`. ON THE BUS: cap-abi
+  `kernel_test` (streamed hash ≡ the serialization's hash,
+  property-tested — no identity changed), each consumer's
+  `the_kernel_bulk_op_registers_the_same_identity_as_load_network`
+  dispatch test, caps-smoke's kernel-bulk-op flow. UI READS IT:
+  every `*Cap.loadNetwork` in capabilities.svelte.ts goes through
+  `CapModule.loadNetwork` (`just e2e`, 31 specs). DOGFOODED:
+  caps-run `router --load 256:` on the C-TRAN network (same hash,
+  `sha256:bceda1be…`, a 6-leg plan off it); a Chromium measurement
+  over C-TRAN took each consumer's wasm memory from 22.1 MB to
+  5.8–8.4 MB and registration from ~595 to ~300 ms per module at 4×
+  CPU throttle.
+
 ## Open findings (routed, never scripted)
+
+- **Runtime cost has no gate** — the registration numbers above
+  came from a scratch Chromium bench (8 modules over C-TRAN:
+  per-module linear memory, per-op ms at 1× and 4× throttle). A
+  ratchet spec (memory per consumer after load_network, ms per
+  registration) belongs in `web/e2e`; without it the next envelope
+  regression is invisible.
+- **What registration still costs** — ~300 ms per module at 4×:
+  the direct parse plus the canonical re-hash every module repeats
+  for the document the import already hashed, all on the main
+  thread (no Worker). cap-author is +77 KiB from the change: its
+  `apply` edits carry network sub-types, so it keeps the buffered
+  decoder beside the direct one.
 
 
 - **Cross-session chaining in caps-run** — within a session,

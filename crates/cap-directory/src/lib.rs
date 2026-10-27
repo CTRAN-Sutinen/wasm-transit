@@ -19,7 +19,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use ts_rs::TS;
 use transit_network::Network;
 
@@ -82,6 +81,10 @@ pub enum Request {
     /// Register the NETWORK document under its content hash
     /// (idempotent by hash) — the same document identity
     /// cap-network's import produces and cap-analysis consumes.
+    /// Decoded by `cap_abi::load_network_json` on either lane, never
+    /// through the tagged envelope (whose buffered decode would cost
+    /// ~8× the document in peak memory and a second decoder).
+    #[serde(skip_deserializing)]
     LoadNetwork { network: Network },
     /// The stop list, name-sorted (the pickers' shape): every stop
     /// with its walking-group structure. `query` narrows it the way
@@ -153,10 +156,6 @@ fn networks() -> &'static Mutex<HashMap<String, Arc<Network>>> {
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn content_hash(bytes: &[u8]) -> String {
-    format!("sha256:{:x}", Sha256::digest(bytes))
-}
-
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
     networks()
         .lock()
@@ -182,9 +181,7 @@ fn directory_stop(network: &Network, id: &str) -> Option<DirectoryStop> {
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::LoadNetwork { network } => {
-            let canonical =
-                serde_json::to_string(&network).map_err(|e| format!("document does not serialize: {e}"))?;
-            let hash = content_hash(canonical.as_bytes());
+            let hash = cap_abi::canonical_hash(&network)?;
             networks()
                 .lock()
                 .expect("network registry lock")
@@ -285,6 +282,9 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
 /// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
 /// out — byte-compatible with every other capability module.
 pub fn dispatch_json(text: &str) -> String {
+    if let Some(answer) = cap_abi::load_network_json(text, |doc| dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc)) {
+        return answer;
+    }
     let outcome = match serde_json::from_str::<Request>(text) {
         Ok(request) => match dispatch(request) {
             Ok(response) => serde_json::json!({ "ok": response }),
@@ -298,9 +298,13 @@ pub fn dispatch_json(text: &str) -> String {
 /// The directory module takes a JSON document (the network) — no
 /// bulk-bytes op exists; the seam answers honestly instead of
 /// silently ignoring one.
-pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
-    serde_json::json!({ "error": format!("unknown bulk op {op}: directory takes JSON documents (load_network)") })
-        .to_string()
+pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
+    match op {
+        cap_abi::OP_LOAD_NETWORK => cap_abi::outcome(
+            cap_abi::parse_document(bytes).and_then(|network| dispatch(Request::LoadNetwork { network })),
+        ),
+        _ => serde_json::json!({ "error": format!("unknown bulk op {op}: directory answers only the kernel's load_network bulk op") }).to_string(),
+    }
 }
 
 cap_abi::capability! {

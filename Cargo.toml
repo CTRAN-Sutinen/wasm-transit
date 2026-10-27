@@ -41,7 +41,7 @@ serde = { version = "1", features = ["derive"] }
 # parser is 1 ULP off on some values — this bit real coordinates).
 # Every JSON boundary (dispatch ABI, sync documents, manifests)
 # relies on it.
-serde_json = { version = "1", features = ["float_roundtrip"] }
+serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
 csv = "1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 chrono = { version = "0.4", default-features = false, features = ["std"] }

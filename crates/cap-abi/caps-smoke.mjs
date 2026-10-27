@@ -1056,4 +1056,23 @@ assert(stored.records.length === 1 && stored.dropped === 1, "a stored document d
 const unready = divert.raw({ op: "propose", network_hash: divertNet.network_hash, draft: divertDraft, records: [], record_id: "x", now_ms: 1 });
 assert(unready.error && unready.error.includes("first stop"), "an unready draft is refused, naming why");
 
+
+// THE KERNEL BULK OP — every network consumer registers the bare
+// document on transit_invoke_bytes op 256 (no request envelope),
+// answering the import's identity; garbage is an error, never a trap.
+const OP_LOAD_NETWORK = 256;
+const networkBytes = Buffer.from(JSON.stringify(imported.network));
+for (const id of ["network", "analysis", "board", "runcut", "calendar", "router", "directory", "author", "divert"]) {
+  const fresh = shell(loadModule(byId[id]));
+  const viaBytes = fresh.invokeBytes(OP_LOAD_NETWORK, networkBytes);
+  assert(viaBytes.network_hash === imported.network_hash, `${id} answers the kernel's load_network bulk op with the import's identity`);
+  let refused = null;
+  try {
+    fresh.invokeBytes(OP_LOAD_NETWORK, Buffer.from("{not a network"));
+  } catch (error) {
+    refused = String(error);
+  }
+  assert(refused?.includes("invalid document"), `${id} refuses a garbage document on the bulk op`);
+}
+
 console.log("capability modules: ABI smoke ok");

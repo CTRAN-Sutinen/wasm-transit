@@ -106,6 +106,23 @@ export type CapStatus = "unavailable" | "loading" | "ready";
 
 const KERNEL_VERSION = 1;
 
+/// The kernel's bulk op (`cap_abi::OP_LOAD_NETWORK`): the bare network
+/// document's JSON bytes on `transit_invoke_bytes`.
+const OP_LOAD_NETWORK = 256;
+
+/// A network document's JSON bytes, encoded once per document however
+/// many modules register it. Documents are wholesale-replaced, never
+/// mutated, so the object itself is the cache key.
+const networkBytesCache = new WeakMap<Network, Uint8Array<ArrayBuffer>>();
+function networkBytes(network: Network): Uint8Array<ArrayBuffer> {
+  let bytes = networkBytesCache.get(network);
+  if (!bytes) {
+    bytes = new TextEncoder().encode(JSON.stringify(network));
+    networkBytesCache.set(network, bytes);
+  }
+  return bytes;
+}
+
 /// One loaded capability module: the bytes were fetched, verified
 /// against the manifest's hash, and instantiated. Nothing else.
 class CapModule {
@@ -172,6 +189,17 @@ class CapModule {
       | NetworkCapResponse
       | RtCapResponse
       | StreetsCapResponse;
+  }
+
+  /// Register a network document on the kernel's bulk op — every
+  /// network consumer answers it alike, with the same hash, and the
+  /// bare document skips the request envelope's decode peak.
+  loadNetwork(network: Network): string {
+    const resp = this.invokeBytes(OP_LOAD_NETWORK, networkBytes(network)) as Extract<
+      NetworkCapResponse,
+      { op: "load_network" }
+    >;
+    return resp.network_hash;
   }
 
   #read(outPtr: number): unknown {
@@ -541,15 +569,9 @@ export function analysisCap(module: CapModule) {
 export async function ensureAnalysisNetwork(document: Network): Promise<string | null> {
   const module = await analysisModule();
   if (!module) return null;
-  const memoKey = await hashDocument(JSON.stringify(document));
+  const memoKey = await contentHash(networkBytes(document));
   const memo = (analysisNetworks[module.cap.id] ??= new Map());
-  if (!memo.has(memoKey)) {
-    const resp = module.invoke({
-      op: "load_network",
-      network: document,
-    } as AnalysisRequest) as Extract<AnalysisResponse, { op: "load_network" }>;
-    memo.set(memoKey, resp.network_hash);
-  }
+  if (!memo.has(memoKey)) memo.set(memoKey, module.loadNetwork(document));
   return memo.get(memoKey) ?? null;
 }
 
@@ -599,11 +621,7 @@ export async function analysisModule(): Promise<CapModule | null> {
 export function routerCap(module: CapModule) {
   return {
     loadNetwork(document: Network): string {
-      const resp = module.invoke({
-        op: "load_network",
-        network: document,
-      } as RouterRequest) as Extract<RouterResponse, { op: "load_network" }>;
-      return resp.network_hash;
+      return module.loadNetwork(document);
     },
     loadEdits(
       networkHash: string,
@@ -725,11 +743,7 @@ export function networkCap(module: CapModule) {
       };
     },
     loadDocument(network: Network): string {
-      const resp = module.invoke({
-        op: "load_network",
-        network,
-      } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "load_network" }>;
-      return resp.network_hash;
+      return module.loadNetwork(network);
     },
     validate(networkHash: string): NetworkError[] {
       const resp = module.invoke({
@@ -781,7 +795,7 @@ const networkDocuments: Record<string, Map<string, string>> = {};
 export async function ensureNetworkDocument(document: Network): Promise<string | null> {
   const module = await networkModule();
   if (!module) return null;
-  const memoKey = await hashDocument(JSON.stringify(document));
+  const memoKey = await contentHash(networkBytes(document));
   const memo = (networkDocuments[module.cap.id] ??= new Map());
   if (!memo.has(memoKey)) {
     memo.set(memoKey, networkCap(module).loadDocument(document));
@@ -878,11 +892,7 @@ export async function rtModule(): Promise<CapModule | null> {
 export function boardCap(module: CapModule) {
   return {
     loadNetwork(network: Network): string {
-      const resp = module.invoke({
-        op: "load_network",
-        network,
-      } as BoardCapRequest) as Extract<BoardCapResponse, { op: "load_network" }>;
-      return resp.network_hash;
+      return module.loadNetwork(network);
     },
     loadEdits(
       networkHash: string,
@@ -966,11 +976,7 @@ export function boardCap(module: CapModule) {
 export function runcutCap(module: CapModule) {
   return {
     loadNetwork(network: Network): string {
-      const resp = module.invoke({
-        op: "load_network",
-        network,
-      } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "load_network" }>;
-      return resp.network_hash;
+      return module.loadNetwork(network);
     },
     loadEdits(
       networkHash: string,
@@ -1049,11 +1055,7 @@ export function runcutCap(module: CapModule) {
 export function calendarCap(module: CapModule) {
   return {
     loadNetwork(network: Network): string {
-      const resp = module.invoke({
-        op: "load_network",
-        network,
-      } as CalendarCapRequest) as Extract<CalendarCapResponse, { op: "load_network" }>;
-      return resp.network_hash;
+      return module.loadNetwork(network);
     },
     /// The service keys running on a date — from the effective day
     /// (schedule-only when no edit document is registered).
@@ -1268,11 +1270,7 @@ export const ensureRouterEdits = editsRegistry("router", routerModule);
 export function directoryCap(module: CapModule) {
   return {
     loadNetwork(network: Network): string {
-      const resp = module.invoke({
-        op: "load_network",
-        network,
-      } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "load_network" }>;
-      return resp.network_hash;
+      return module.loadNetwork(network);
     },
     stops(networkHash: string, limit: number | null): DirectoryStop[] {
       const resp = module.invoke({
@@ -1603,11 +1601,7 @@ export type Applied = {
 export function authorCap(module: CapModule) {
   return {
     loadNetwork(network: Network): string {
-      const resp = module.invoke({ op: "load_network", network } as AuthorCapRequest) as Extract<
-        AuthorCapResponse,
-        { op: "load_network" }
-      >;
-      return resp.network_hash;
+      return module.loadNetwork(network);
     },
     /// Apply edits atomically to a registered document: the next
     /// document (registered under its own hash) and what it is.
@@ -1645,8 +1639,7 @@ export function divertCap(module: CapModule) {
   const call = <K extends DivertCapResponse["op"]>(req: DivertCapRequest) =>
     module.invoke(req) as Extract<DivertCapResponse, { op: K }>;
   return {
-    loadNetwork: (network: Network): string =>
-      call<"load_network">({ op: "load_network", network }).network_hash,
+    loadNetwork: (network: Network): string => module.loadNetwork(network),
     draft: (networkHash: string, draft: DiversionDraft): DraftView =>
       call<"draft">({ op: "draft", network_hash: networkHash, draft }).view,
     list: (networkHash: string, records: EditRecord[]): DiversionRow[] =>
