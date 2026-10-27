@@ -259,6 +259,74 @@ persistence. None of it blocks a unit — but U7 places ops and
 never persistence: pointer CAS and the reflog are this
 section's, carried by the standing queue.
 
+## The web cleanup — parity (2026-10-27)
+
+**Parity is the invariant:** an agent (caps-run), the Go server,
+and the browser a human uses run the SAME ops and get the SAME
+bytes. Any answer the browser computes in TypeScript is an answer
+the other two hosts cannot give — so `web/` holds host glue (I/O,
+fetch and pagination, IndexedDB, the clock, settings, polling, the
+sync POST, the capability resolver) and RENDER components (props
+in, events out, formatting), and nothing else. A join, fallback,
+threshold, record builder, or geometry rule in TypeScript is a
+parity break, however small; the existing ones are the debt
+below, and they are the pattern a reader copies — so the debt
+shrinks unit by unit and a ratchet keeps it from growing.
+
+Two rulings (user, 2026-10-27):
+
+- **The live document.** cap-rt answers "what is live" in MODEL
+  vocabulary: an rt snapshot plus the import's trip map resolve
+  into a kernel document of delays per derived trip and stop,
+  addressed by hash; cap-board consumes it by hash for the board
+  ("when does service leave this stop", live). The agency's trip
+  ids resolve INSIDE the op, never in a host. Thresholds (the
+  on-time window) are op parameters.
+- **Geometry is a model answer.** "What path does this trip take
+  today" (diversions, the authored alignment, the ridden segment
+  of an itinerary leg) answers in an op; `web/` only draws the
+  GeoJSON it is handed.
+
+The units (each lands op-first — library, capability, tests,
+caps-smoke, a runner gate — then deletes the TypeScript):
+
+- **W0 the ratchet.** `just test` fails on (a) a component
+  (`web/src/components/*`, `App.svelte`) importing the capability
+  resolver and (b) a read of raw rt `stop_updates` outside the
+  generated types — each against an allowlist that may only
+  shrink (a listed file that no longer violates must leave the
+  list).
+- **W1 live data.** The three hand joins of rt delays
+  (DepartureBoard, RtPanel, MapView's bus colors — with three
+  different on-time windows), RtPanel's re-ranked late list
+  (`late_trips` answers it), the board's station fallback, and
+  the agency-id join (board, BlocksPanel, `showTrip`). Into: the
+  live document (cap-rt), `stop_board` (cap-board).
+- **W2 authoring.** planner.ts's mutation functions (stops,
+  routes, patterns, timing profiles, bands, service types,
+  schedules, blocks, `nextId`, the `retimeScheduleStart` mirror)
+  edit cloned documents in place. Into: cap-author `apply`
+  (new NetworkEdit kinds where the vocabulary lacks them).
+- **W3 operator edit records.** `applyDiversion`'s hand-built
+  record (ids, rev, defaults, minutes → seconds),
+  `toggleDiversion`'s tombstone, `cloneEdits`, `sanitizeEdits`'
+  hand mirror of serde defaults, the editor's auto-skip of the
+  interior stops and its longest-pattern pick, the detour slice
+  dedupe. Into: cap-sync over transit-sync (which owns
+  EditRecord).
+- **W4 geometry.** mapview.ts (`tripLine`, `tripSegment`,
+  `followsPattern`, the nearest-vertex slice), planner.ts
+  `focusFor`, actions.ts `buildItineraryFeatures`. Into: geometry
+  ops on the modules that own the day (runcut) and the plan
+  (router).
+- **W5 planner numbers and search.** RouteForm's visits and
+  schedule grouping, `scheduleTripCount`, PlannerRail's entity
+  search (cap-directory's `query`), `planTrip`'s plan-vs-compare
+  branch and its notices. Into: directory, analysis, router ops.
+- **W6 render-only components.** Every component takes props
+  and emits events; the host layer is the single op caller (the
+  engine's choke point, above) and W0's allowlists reach empty.
+
 ## The finish line
 
 U7's placement left the monolith no permanent residents:

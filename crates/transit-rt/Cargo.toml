@@ -12,6 +12,10 @@ serde = { workspace = true }
 ts-rs = { workspace = true }
 # The progress join: rt delays against the static schedule.
 transit-core = { path = "../transit-core" }
+# The live document: the snapshot resolved into model vocabulary
+# through the import's trip-id map (codec state, at the boundary).
+transit-codec = { path = "../transit-codec" }
+transit-live = { path = "../transit-live" }
 
 [dev-dependencies]
 proptest = "1"

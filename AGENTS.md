@@ -67,10 +67,11 @@ node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op .
                            # --as NAME names a result; $refs ($name.x, $load.x,
                            # $op.x, $N.path) + $TODAY/$NOW_SECS (a number);
                            # --load [N:]FILE for bulk ops; --op @FILE for big JSON
-just test                  # host-side tests (Rust + smokes + runner gates + Go -race)
+just test                  # host-side tests (Rust + smokes + runner gates + web parity
+                           # ratchets + Go -race)
 just e2e                   # browser e2e (builds first)
 just check                 # test + e2e — the full gate
-just types                 # regenerate TS bindings only
+just types                 # regenerate TS bindings (gitignored; build runs it)
 just serve [feed.zip ["Publisher"]]   # sync server on :8080
 just dev                   # vite hot reload + server alongside
 just fixtures              # regenerate the e2e GTFS fixture
@@ -99,6 +100,7 @@ transit-analysis planner analysis library (stats, service types, coverage)
 transit-dispatch the operator's day library (patched materialized day, boards,
                  authored block chains with the layover ripple)
 transit-rt       GTFS-rt prost types + overview/progress join libraries
+transit-live     THE live document (rt in model vocabulary, the on-time window — pure)
 transit-sync     THE sync document (EditRecord, Diversion, merge — pure)
 transit-plans    THE service-plan chain (resolve, periods, validity — pure, derived)
 transit-streets  street graph for detour authoring (snap, route)
@@ -142,8 +144,14 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
 
 - **Git is the user's** — never commit, push, stash, or otherwise
   move refs. Do the work, leave the tree, report what changed.
-- The TS bindings are GENERATED (`just types`; commit the diff) —
-  the TS contract IS the modules' contract.
+- The TS bindings are GENERATED and gitignored (`just types`, run
+  by `just build`; never hand-edit, never commit) — Rust is the
+  source of truth, the manifest's computed examples the readable
+  wire contract.
+- **Parity**: the browser, caps-run, and the Go server run the
+  same ops and get the same bytes — `web/` is host glue plus
+  render components, never answers (`docs/PLAN.md`, the web
+  cleanup; ratcheted in `just test`).
 - New ops go through the extraction pattern (crate boundary
   first, capability wrapper second): the monolith that ops were
   extracted FROM is gone, so a new op is a library + a capability

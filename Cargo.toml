@@ -9,6 +9,7 @@ members = [
     "crates/transit-streets",
     "crates/transit-sync",
     "crates/transit-plans",
+    "crates/transit-live",
     "crates/cap-abi",
     "crates/cap-gtfs",
     "crates/cap-router",

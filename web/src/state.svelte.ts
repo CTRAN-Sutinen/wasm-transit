@@ -20,7 +20,8 @@ import type { PlanIssue } from "./types/cap_plans/PlanIssue";
 import type { PlanPeriod } from "./types/cap_plans/PlanPeriod";
 import type { TypeCoverage } from "./types/TypeCoverage";
 import type { RtOverview } from "./types/RtOverview";
-import type { VehicleView } from "./types/VehicleView";
+import type { StopBoard } from "./types/StopBoard";
+import type { Live } from "./capabilities.svelte";
 import type { EntityKind, Focus, PlannerScreen } from "./planner";
 import type { LineFeature } from "./mapview";
 import type { PlanFeature } from "./actions";
@@ -74,7 +75,8 @@ export type AppState = {
   // Whether a feed is loaded (the bytes live with the host; every
   // read answers through the capability bus).
   feedLoaded: boolean,
-  selectedTripId: string | null,
+  // The selected derived trip, "schedule@start" (the model's identity).
+  selectedTrip: string | null,
   tripFeature: LineFeature | null, // the selected trip's line (the host view builds it)
 
   // Validation reports for the edit document (the day views
@@ -82,9 +84,22 @@ export type AppState = {
   // id. Replaced wholesale on every push.
   editReports: EditReport[],
 
-  // GTFS-rt
-  rtOverview: RtOverview | null, // decode_rt() result (delays panel)
-  vehicles: VehicleView[], // last good vehicle positions (map dots)
+  // GTFS-rt. The snapshots live in the rt capability by hash; the
+  // LIVE DOCUMENT is its answer in model vocabulary (delays per
+  // derived trip, vehicles with their status, the status summary) —
+  // every live view renders from it, none re-joins rt.
+  rtOverview: RtOverview | null, // the trip-updates payload's decode (alerts count)
+  rtHash: string | null, // trip-updates snapshot, as cap-rt registered it
+  vpHash: string | null, // vehicle-positions snapshot (a separate feed)
+  live: Live | null,
+
+  // The board at the selected stop — cap-board's whole answer
+  // (pooling, realtime-first order, row status); off when the bus
+  // cannot assemble it.
+  board: StopBoard | null,
+  boardOff: boolean,
+  // Service keys running today (cap-calendar; decoration-grade).
+  activeServices: string[],
 
   // Trip planning (RAPTOR)
   plan: Itinerary | null,
@@ -354,13 +369,19 @@ export const app = $state<AppState>({
   clock: 0,
   feedEpoch: 0,
   feedLoaded: false,
-  selectedTripId: null,
+  selectedTrip: null,
   tripFeature: null,
 
   editReports: [],
 
   rtOverview: null,
-  vehicles: [],
+  rtHash: null,
+  vpHash: null,
+  live: null,
+
+  board: null,
+  boardOff: false,
+  activeServices: [],
 
   plan: null,
   planNotice: null,

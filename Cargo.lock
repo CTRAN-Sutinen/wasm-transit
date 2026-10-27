@@ -121,6 +121,7 @@ dependencies = [
  "transit-codec",
  "transit-core",
  "transit-dispatch",
+ "transit-live",
  "transit-network",
  "transit-plans",
  "transit-router",
@@ -174,6 +175,7 @@ dependencies = [
  "transit-codec",
  "transit-core",
  "transit-dispatch",
+ "transit-live",
  "transit-network",
  "transit-sync",
  "ts-rs",
@@ -275,7 +277,9 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "transit-codec",
  "transit-core",
+ "transit-live",
  "transit-rt",
  "ts-rs",
 ]
@@ -1113,8 +1117,18 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "transit-live",
  "transit-network",
  "transit-sync",
+ "ts-rs",
+]
+
+[[package]]
+name = "transit-live"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
  "ts-rs",
 ]
 
@@ -1165,7 +1179,9 @@ dependencies = [
  "protoc-bin-vendored",
  "serde",
  "thiserror 1.0.69",
+ "transit-codec",
  "transit-core",
+ "transit-live",
  "ts-rs",
 ]
 

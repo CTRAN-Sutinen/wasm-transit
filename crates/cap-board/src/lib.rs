@@ -1,8 +1,10 @@
 //! cap-board — the board capability.
 //!
 //! One question: **when does service leave this stop?** — asked at
-//! three granularities: one stop, a station's POOLED bays (the
-//! model's own walking-group concept), and a personal saved set
+//! three granularities: one stop (a station pin or bay with nothing
+//! of its own answers its POOLED walking group — the model's own
+//! concept), realtime-first when a LIVE document is supplied, and a
+//! personal saved set
 //! (the WATCHLIST document, version-tagged and migrated here — a
 //! personal multi-stop board is the same question parameterized by
 //! a personal document).
@@ -21,6 +23,9 @@
 //!   the host, validated per record against the NETWORK at load
 //!   (invalid records are REPORTED, not rejected — the sync
 //!   contract);
+//! * **live** — THE live document (transit-live), minted by cap-rt
+//!   from an rt snapshot in model vocabulary; the board reads its
+//!   predictions and classifies under its window — no host joins rt;
 //! * **watchlist** — the personal document (v1 notes + colors,
 //!   v2 labels; the migration maps note → label and reports the
 //!   dropped color).
@@ -31,7 +36,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ts_rs::TS;
-use transit_dispatch::BoardDeparture;
+use transit_dispatch::{BoardDeparture, StopBoard};
+use transit_live::LiveDay;
 use transit_network::Network;
 
 // ---------------------------------------------------------------------
@@ -129,32 +135,31 @@ pub enum Request {
         network_hash: String,
         records: Vec<transit_sync::EditRecord>,
     },
-    /// The board at one stop on a service date: the materialized day,
-    /// with the in-force edits applied when `edits_hash` names a
-    /// registered edit document (schedule-only when omitted).
-    Departures {
+    /// Register a LIVE document (minted by cap-rt's `live`) under its
+    /// content hash — the same identity cap-rt answered (assert at
+    /// the host). Ephemeral like the snapshot it came from.
+    LoadLive { live: LiveDay },
+    /// THE board at one stop on a service date — when does service
+    /// leave here: the materialized day with the in-force edits
+    /// (`edits_hash`), realtime-first when `live_hash` names a live
+    /// document (rows ordered by when the bus actually leaves; a late
+    /// bus scheduled before `from_secs` that has not left is still
+    /// on the board; each row carries its expected time, delay, and
+    /// status). A stop with nothing of its own that belongs to a
+    /// walking group (a station pin, a bay) answers the group's
+    /// board, `pooled`, each row naming its bay.
+    StopBoard {
         network_hash: String,
         #[serde(default)]
+        #[ts(optional)]
         edits_hash: Option<String>,
         stop_id: String,
         date: String,
         from_secs: u32,
         limit: u32,
-    },
-    /// The STATION board: the same day pooled over the stop's WALKING
-    /// GROUP (the stop, its parent, siblings sharing that parent,
-    /// the parent's children — the model's own transfer-group
-    /// concept). A station pin answers no departures of its own;
-    /// its bays carry the trips. Each row carries its concrete
-    /// stop_id, so callers see which bay a departure leaves from.
-    StationDepartures {
-        network_hash: String,
         #[serde(default)]
-        edits_hash: Option<String>,
-        stop_id: String,
-        date: String,
-        from_secs: u32,
-        limit: u32,
+        #[ts(optional)]
+        live_hash: Option<String>,
     },
     /// Register a watchlist document under its content hash
     /// (idempotent by hash, like every document on the bus).
@@ -187,8 +192,8 @@ pub enum Response {
         edits_hash: String,
         reports: Vec<transit_sync::EditReport>,
     },
-    Departures { departures: Vec<BoardDeparture> },
-    StationDepartures { departures: Vec<BoardDeparture> },
+    LoadLive { live_hash: String },
+    StopBoard { board: StopBoard },
     LoadWatchlist { watchlist_hash: String, version: u32 },
     MigratedWatchlist { document: Watchlist, notes: Vec<MigrationNote> },
     WatchlistBoard { stops: Vec<WatchBoardStop> },
@@ -204,6 +209,21 @@ fn networks() -> &'static Mutex<HashMap<String, Arc<Network>>> {
 fn edits() -> &'static Mutex<HashMap<String, Arc<Vec<transit_sync::EditRecord>>>> {
     static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Vec<transit_sync::EditRecord>>>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Live documents by content hash (canonical serialization).
+fn lives() -> &'static Mutex<HashMap<String, Arc<LiveDay>>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<LiveDay>>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn live_arc(live_hash: &str) -> Result<Arc<LiveDay>, String> {
+    lives()
+        .lock()
+        .expect("live registry lock")
+        .get(live_hash)
+        .cloned()
+        .ok_or_else(|| format!("unknown live document {live_hash}: load_live first"))
 }
 
 /// Watchlist documents by content hash (canonical serialization).
@@ -345,24 +365,17 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .insert(hash.clone(), Arc::new(records));
             Ok(Response::LoadEdits { edits_hash: hash, reports })
         }
-        Request::Departures { network_hash, edits_hash, stop_id, date, from_secs, limit } => {
-let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
-            let network = network_arc(&network_hash)?;
-            Ok(Response::Departures {
-                departures: transit_dispatch::board(&network, &day, &stop_id, from_secs, limit as usize),
-            })
+        Request::LoadLive { live } => {
+            let hash = canonical_hash(&live)?;
+            lives().lock().expect("live registry lock").entry(hash.clone()).or_insert_with(|| Arc::new(live));
+            Ok(Response::LoadLive { live_hash: hash })
         }
-        Request::StationDepartures { network_hash, edits_hash, stop_id, date, from_secs, limit } => {
-let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
+        Request::StopBoard { network_hash, edits_hash, stop_id, date, from_secs, limit, live_hash } => {
+            let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
-            Ok(Response::StationDepartures {
-                departures: transit_dispatch::station_board(
-                    &network,
-                    &day,
-                    &stop_id,
-                    from_secs,
-                    limit as usize,
-                ),
+            let live = live_hash.as_deref().map(live_arc).transpose()?;
+            Ok(Response::StopBoard {
+                board: transit_dispatch::stop_board(&network, &day, &stop_id, from_secs, limit as usize, live.as_deref()),
             })
         }
         Request::LoadWatchlist { document } => load_watchlist(&document),

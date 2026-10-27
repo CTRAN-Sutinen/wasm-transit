@@ -323,3 +323,78 @@ fn unknown_hashes_are_errors_not_panics() {
     .unwrap_err();
     assert!(err.contains("unknown rt snapshot"), "{err}");
 }
+
+/// THE live document through the seam, over the real fixture pair:
+/// the snapshot resolves through the import's trip map into derived
+/// trips, statuses classify under the window the request names, and
+/// the summary is the status panel's whole answer.
+#[test]
+fn live_resolves_the_snapshot_into_model_vocabulary() {
+    let feed = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
+    let gtfs = transit_core::Gtfs::from_zip_bytes(feed).unwrap();
+    let trip_map = transit_codec::gtfs_to_network(&gtfs).trip_map;
+    let cap_rt::Response::LoadFeed { feed_hash, .. } =
+        cap_rt::dispatch(cap_rt::Request::LoadFeed { bytes: feed.to_vec() }).unwrap()
+    else {
+        panic!("load_feed")
+    };
+    let cap_rt::Response::Decode { rt_hash, .. } = cap_rt::dispatch(cap_rt::Request::Decode {
+        bytes: include_bytes!("../../../web/e2e/fixtures/sample-rt.pb").to_vec(),
+    })
+    .unwrap() else {
+        panic!("decode")
+    };
+    let cap_rt::Response::LoadTripMap { trip_map_hash } =
+        cap_rt::dispatch(cap_rt::Request::LoadTripMap { trip_map: trip_map.clone() }).unwrap()
+    else {
+        panic!("load_trip_map")
+    };
+
+    let live = |window| {
+        cap_rt::dispatch(cap_rt::Request::Live {
+            feed_hash: feed_hash.clone(),
+            rt_hash: Some(rt_hash.clone()),
+            vp_hash: None,
+            trip_map_hash: trip_map_hash.clone(),
+            window,
+            late_limit: None,
+        })
+    };
+    let cap_rt::Response::Live { live_hash, live: day, summary } = live(None).unwrap() else { panic!("live") };
+    let canonical = serde_json::to_string(&day).unwrap();
+    assert_eq!(live_hash, format!("sha256:{:x}", <sha2::Sha256 as sha2::Digest>::digest(canonical.as_bytes())), "the module is the hash authority");
+    let t10 = trip_map.entries.iter().find(|e| e.agency_trip_ids.iter().any(|id| id == "t10")).unwrap();
+    assert!(day.trips.iter().any(|t| t.schedule == t10.schedule && t.start_secs == t10.start_secs));
+    assert_eq!(summary.vehicles, 1);
+    assert_eq!(summary.counts.late, 1, "+180 s is late under the default window");
+    assert_eq!(summary.late[0].delay_secs, 180);
+    assert!(!summary.late_are_predictions);
+
+    // The window is the caller's policy: five seconds late is very late.
+    let strict = transit_live::OnTimeWindow { early_secs: None, late_secs: 0, very_late_secs: 5 };
+    let cap_rt::Response::Live { summary, .. } = live(Some(strict)).unwrap() else { panic!("live") };
+    assert_eq!(summary.counts.very_late, 1);
+
+    // No snapshot at all is a request error; an unknown map is a
+    // missing-document error.
+    let err = cap_rt::dispatch(cap_rt::Request::Live {
+        feed_hash: feed_hash.clone(),
+        rt_hash: None,
+        vp_hash: None,
+        trip_map_hash: trip_map_hash.clone(),
+        window: None,
+        late_limit: None,
+    })
+    .unwrap_err();
+    assert!(err.contains("needs a snapshot"), "{err}");
+    let err = cap_rt::dispatch(cap_rt::Request::Live {
+        feed_hash,
+        rt_hash: Some(rt_hash),
+        vp_hash: None,
+        trip_map_hash: "sha256:missing".into(),
+        window: None,
+        late_limit: None,
+    })
+    .unwrap_err();
+    assert!(err.contains("unknown trip map"), "{err}");
+}

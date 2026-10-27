@@ -26,7 +26,10 @@ pub struct ProgressStop {
     pub stop_sequence: u32,
     pub scheduled_arrival: Option<u32>,
     pub scheduled_departure: Option<u32>,
-    /// Seconds of delay; positive = late, negative = early.
+    /// Seconds of delay; positive = late, negative = early. A stop
+    /// with no update of its own carries the last stated delay
+    /// upstream of it (the GTFS-rt propagation rule); null before
+    /// the first update.
     pub arrival_delay: Option<i32>,
     pub departure_delay: Option<i32>,
     /// Schedule + delay, clamped at 0 — when this vehicle should
@@ -96,6 +99,11 @@ pub fn trip_progress(gtfs: &Gtfs, overview: &RtOverview, trip_id: &str) -> Optio
 
     let mut stops = Vec::with_capacity(rows.len());
     let mut worst = 0i32;
+    // The last delay the feed stated, carried downstream: GTFS-rt
+    // propagates a stop's delay to the following stops that have no
+    // update of their own. Stops before the first update stay
+    // unknown (null), never zero.
+    let mut carried: Option<i32> = None;
     for row in &rows {
         // Pair by sequence first (the spec's own key); fall back to
         // stop id for feeds that omit stop_sequence in rt.
@@ -104,8 +112,13 @@ pub fn trip_progress(gtfs: &Gtfs, overview: &RtOverview, trip_id: &str) -> Optio
                 s.stop_sequence == Some(row.stop_sequence) || s.stop_id.as_deref() == Some(row.stop_id.as_str())
             })
         });
-        let arrival_delay = upd.and_then(|s| s.arrival_delay);
-        let departure_delay = upd.and_then(|s| s.departure_delay);
+        let (arrival_delay, departure_delay) = match upd {
+            Some(s) => (s.arrival_delay, s.departure_delay),
+            None => (carried, carried),
+        };
+        if let Some(d) = departure_delay.or(arrival_delay) {
+            carried = Some(d);
+        }
         let stop_worst = arrival_delay.max(departure_delay).unwrap_or(0);
         worst = worst.max(stop_worst);
         stops.push(ProgressStop {

@@ -72,8 +72,12 @@ transit-analysis Planner analysis over an authored network document:
 transit-dispatch The materialized day's views, model-native: patch_day
                 (skip/shift over MATERIALIZED stop times — the day,
                 never the calendar), edit validation against the
-                NETWORK, the board and station board (walking-group
-                pooling), the day's blocks list, the service keys
+                NETWORK, THE board (stop_board: walking-group
+                pooling for a stop with nothing of its own,
+                realtime-first over the live document — rows
+                ordered by when the bus actually leaves, each with
+                its expected time, delay, and status), the day's
+                blocks list, the service keys
                 running on a date, and the AUTHORED block chain with
                 the layover ripple (layover_remaining_secs goes
                 negative when a connection is eaten). A LIBRARY
@@ -85,7 +89,19 @@ transit-rt      prost types from the official GTFS-rt proto, the
                 PROGRESS join (one trip's predicted times; the
                 ranked late view with the DELAYED-BUT-DARK flag) —
                 LIBRARIES shared by cap-rt and any host that holds
-                the bytes (and, for the join, the static feed).
+                the bytes (and, for the join, the static feed) —
+                and the BOUNDARY RESOLUTION (live_day): a snapshot
+                plus the static feed plus the import's trip map →
+                THE live document, the one place agency trip ids
+                meet the model.
+transit-live    THE live document: one rt moment in model vocabulary
+                (delays per derived trip and stop, vehicles on
+                derived trips, every status classified under the
+                on-time window the document records — one window,
+                never a threshold per view), the classification
+                rule, and the status summary. Pure data; no GTFS
+                layer (arch gate). Minted by cap-rt, read by
+                cap-board — no host computes a delay.
 transit-sync   THE sync document: EditRecord, FeedManifest, EditReport,
                 the Diversion edit document (THE DISPATCHER'S OWN —
                 it lives in the sync contract, not the GTFS codec),
@@ -163,7 +179,9 @@ File ownership:
 - `src/mapview.ts` is the map's view code — HOST code over model
   documents (the network document's stops and authored alignments,
   the directory's stop list, the effective day via cap-runcut's
-  trip detail): the map is a VIEW, not a capability.
+  trip detail). Ruled a parity break: geometry is a model answer
+  and moves into ops (`docs/PLAN.md`, the web cleanup, W4) —
+  `web/` will only draw the GeoJSON it is handed.
 - `src/capabilities.svelte.ts` is the bus resolver — the ONLY wasm
   loader (components never see the ABI): manifest
   validation, demand-driven load, byte verification against pinned
@@ -254,13 +272,19 @@ cap-rt          The realtime capability: decode — a GTFS-rt protobuf
                 load_feed (bulk op 1, the SAME feed identity
                 cap-gtfs returns — the manifest's rt → gtfs edge),
                 trip_progress (one trip's scheduled/delay/predicted
-                board), late_trips (ranked, with the DELAYED-BUT-
+                board; a stop the update skips carries the last
+                stated delay, GTFS-rt's propagation rule), late_trips (ranked, with the DELAYED-BUT-
                 DARK flag and vp_hash for agencies that serve the
                 two feeds separately — C-TRAN does). Dark is judged
                 per BLOCK: a delay propagated to a block's next trip
                 while its bus runs the trip before is a located
                 vehicle (position_trip_id names the trip it is on;
-                vehicle_id rides beside the label).
+                vehicle_id rides beside the label). load_trip_map +
+                live mint THE LIVE DOCUMENT (transit-live) from the
+                trip-updates and/or vehicle-positions snapshots, with
+                the summary a status panel reads (vehicles by
+                status, the late list) — the browser's live views
+                render it; none joins rt.
 cap-board       The board capability — ONE QUESTION: when does
                 service leave this stop? (at a stop, a station's
                 pooled bays, or a personal saved set — the WATCHLIST
@@ -268,8 +292,10 @@ cap-board       The board capability — ONE QUESTION: when does
                 multi-stop board is the same question parameterized
                 by a personal document). load_network / load_edits
                 (validated per record against the network, invalid
-                records REPORTED never rejected) then departures /
-                station_departures / load_watchlist /
+                records REPORTED never rejected) / load_live (cap-rt's
+                live document, by hash) then stop_board (THE board:
+                pooling, realtime-first order, row status — the
+                module's answer, never the host's) / load_watchlist /
                 migrate_watchlist / watchlist_board (a trip's FINAL
                 visit is an arrival, never a row) over ONE
                 MATERIALIZED DAY (materialize(net, date), patched
@@ -277,9 +303,9 @@ cap-board       The board capability — ONE QUESTION: when does
                 GTFS expansion, no effective cache; a day is computed
                 per call and a day is cheap). The domain code lives
                 in the shared transit-dispatch library; no GTFS
-                layer (arch gate). The UI's departure board answers
-                through this module — the rt-delay / click-through
-                join goes through cap-network's trip_map.
+                layer (arch gate). The UI's departure board renders
+                stop_board's answer; rows carry the derived trip's
+                identity, so the click-through needs no agency join.
 cap-runcut      The runcut capability — ONE QUESTION: what does
                 this vehicle do today? The day's blocks LIST (the
                 index facet: vehicles out, with that day's running

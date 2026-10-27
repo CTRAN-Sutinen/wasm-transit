@@ -9,7 +9,9 @@
 //! host shows (delays, vehicles). [`progress`] is the JOIN: realtime
 //! delays against the static schedule — one trip's predicted times and
 //! the ranked "what's late now" view — shared between the cap-rt
-//! capability and any host that holds both documents.
+//! capability and any host that holds both documents. [`live`]
+//! resolves a snapshot into THE live document (transit-live): model
+//! vocabulary, so model-side consumers never re-join rt by hand.
 
 pub mod gtfs_rt {
     include!(concat!(env!("OUT_DIR"), "/transit_realtime.rs"));
@@ -17,11 +19,13 @@ pub mod gtfs_rt {
 
 pub mod overview;
 pub mod progress;
+pub mod live;
 
 pub use overview::{
     decode_overview, RtOverview, StopUpdateView, TripUpdateView, VehicleView,
 };
 pub use progress::{trip_progress, late_trips, LateTrip, ProgressStop, TripProgress};
+pub use live::live_day;
 
 use prost::Message;
 

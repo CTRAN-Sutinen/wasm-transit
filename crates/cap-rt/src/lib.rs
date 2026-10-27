@@ -25,6 +25,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+use transit_codec::TripIdMap;
+use transit_live::{LiveDay, LiveSummary, OnTimeWindow};
 use transit_rt::{LateTrip, RtOverview, TripProgress};
 
 /// The bulk-bytes op codes: 0 decodes an rt payload (the runner's
@@ -70,6 +72,35 @@ pub enum Request {
         vp_hash: Option<String>,
         min_delay_secs: i32,
     },
+    /// Register the import's TRIP-ID MAP (cap-network `trip_map`)
+    /// under its content hash — the join from agency trip ids to
+    /// derived trips that `live` resolves through.
+    LoadTripMap { trip_map: TripIdMap },
+    /// THE LIVE DOCUMENT: one rt moment resolved into model
+    /// vocabulary — delays per derived trip and stop (propagated
+    /// downstream), vehicles on their derived trips, every status
+    /// classified under `window` (recorded in the document), plus the
+    /// summary a status panel reads (vehicles by status, the late
+    /// list worst first — late trips when there are no positions).
+    /// `rt_hash` names trip updates, `vp_hash` vehicle positions;
+    /// a combined feed passes only `rt_hash`. At least one.
+    Live {
+        feed_hash: String,
+        #[serde(default)]
+        #[ts(optional)]
+        rt_hash: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        vp_hash: Option<String>,
+        trip_map_hash: String,
+        #[serde(default)]
+        #[ts(optional)]
+        window: Option<OnTimeWindow>,
+        /// Late-list length (default 15).
+        #[serde(default)]
+        #[ts(optional)]
+        late_limit: Option<u32>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -80,6 +111,28 @@ pub enum Response {
     LoadFeed { feed_hash: String, summary: transit_core::FeedSummary },
     TripProgress { progress: Option<TripProgress> },
     LateTrips { trips: Vec<LateTrip> },
+    LoadTripMap { trip_map_hash: String },
+    Live { live_hash: String, live: LiveDay, summary: LiveSummary },
+}
+
+/// Trip-id maps by canonical content hash.
+fn trip_maps() -> &'static Mutex<HashMap<String, Arc<TripIdMap>>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<TripIdMap>>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn canonical_hash<T: Serialize>(value: &T) -> Result<String, String> {
+    let canonical = serde_json::to_string(value).map_err(|e| format!("document does not serialize: {e}"))?;
+    Ok(content_hash(canonical.as_bytes()))
+}
+
+fn trip_map_arc(hash: &str) -> Result<Arc<TripIdMap>, String> {
+    trip_maps()
+        .lock()
+        .expect("trip map registry lock")
+        .get(hash)
+        .cloned()
+        .ok_or_else(|| format!("unknown trip map {hash}: load_trip_map first"))
 }
 
 /// Static feeds by content hash of the zip bytes (the SAME identity
@@ -177,6 +230,23 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::LateTrips {
                 trips: transit_rt::late_trips(&feed, &snapshot, positions.as_deref(), min_delay_secs),
             })
+        }
+        Request::LoadTripMap { trip_map } => {
+            let hash = canonical_hash(&trip_map)?;
+            trip_maps().lock().expect("trip map registry lock").entry(hash.clone()).or_insert_with(|| Arc::new(trip_map));
+            Ok(Response::LoadTripMap { trip_map_hash: hash })
+        }
+        Request::Live { feed_hash, rt_hash, vp_hash, trip_map_hash, window, late_limit } => {
+            if rt_hash.is_none() && vp_hash.is_none() {
+                return Err("live needs a snapshot: rt_hash (trip updates) and/or vp_hash (vehicle positions)".into());
+            }
+            let feed = feed_arc(&feed_hash)?;
+            let map = trip_map_arc(&trip_map_hash)?;
+            let delays = rt_hash.as_deref().map(snapshot_arc).transpose()?;
+            let positions = vp_hash.as_deref().map(snapshot_arc).transpose()?;
+            let live = transit_rt::live_day(&feed, delays.as_deref(), positions.as_deref(), &map, window.unwrap_or_default());
+            let summary = transit_live::summarize(&live, late_limit.unwrap_or(15) as usize);
+            Ok(Response::Live { live_hash: canonical_hash(&live)?, live, summary })
         }
     }
 }

@@ -11,6 +11,8 @@ ts-rs = { workspace = true }
 chrono = { workspace = true }
 transit-network = { path = "../transit-network" }
 transit-sync = { path = "../transit-sync" }
+# The live document (model vocabulary) the realtime-first board reads.
+transit-live = { path = "../transit-live" }
 
 [dev-dependencies]
 serde_json = { workspace = true }

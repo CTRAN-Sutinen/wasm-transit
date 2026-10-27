@@ -465,43 +465,60 @@ const badRouter = router.raw({ op: "nope" });
 assert(badRouter.error && badRouter.error.includes("invalid request"), "unknown ops error, never panic");
 
 // THE BOARD — when does service leave this stop?
-const boardRows = board.invoke({
-  op: "departures",
-  network_hash: loadedBoardNet.network_hash,
-  stop_id: "A",
-  date: DATE,
-  from_secs: 25200,
-  limit: 10,
-});
-assert(boardRows.departures.length >= 3, "the materialized board answers at A");
+const stopBoard = (stop_id, from_secs, live_hash) =>
+  board.invoke({
+    op: "stop_board",
+    network_hash: loadedBoardNet.network_hash,
+    stop_id,
+    date: DATE,
+    from_secs,
+    limit: 10,
+    ...(live_hash ? { live_hash } : {}),
+  }).board;
+const atA = stopBoard("A", 25200);
+assert(atA.rows.length >= 3 && !atA.pooled && !atA.live, "the materialized board answers at A, schedule-only");
 assert(
-  boardRows.departures.every((r) => r.schedule && r.route_name && r.stop === "A"),
-  "board rows speak model vocabulary (schedule, start, concrete stop)",
+  atA.rows.every((r) => r.schedule && r.route_name && r.stop === "A" && r.status === "no_prediction"),
+  "board rows speak model vocabulary (schedule, start, concrete stop); no live data, no prediction",
 );
-const stationRows = board.invoke({
-  op: "station_departures",
-  network_hash: loadedBoardNet.network_hash,
-  stop_id: "STN",
-  date: DATE,
-  from_secs: 0,
-  limit: 10,
-});
+const atStation = stopBoard("STN", 0);
 assert(
-  stationRows.departures.length === 2 &&
-    stationRows.departures.map((r) => r.stop).join() === "SA,SB",
+  atStation.pooled && atStation.rows.map((r) => r.stop).join() === "SA,SB",
   "the station pin answers its bays' pooled board (t40 leaves SA, t41 leaves SB), rows tagged with the bay",
 );
 // An arrival is not a departure: every fixture trip through B ends
-// there, so B's board is empty (QAF-29).
-const atB = board.invoke({
-  op: "departures",
-  network_hash: loadedBoardNet.network_hash,
-  stop_id: "B",
-  date: DATE,
-  from_secs: 0,
-  limit: 10,
+// there, so B's board is empty (QAF-29) — and B is a plain stop, so
+// it never pools.
+const atB = stopBoard("B", 0);
+assert(atB.rows.length === 0 && !atB.pooled, "trips terminating at B never appear on B's board");
+
+// THE LIVE DOCUMENT — rt → board by hash: the snapshot resolves
+// through the import's trip map into model vocabulary in cap-rt; the
+// board reads it. No host joins rt (the parity rule).
+const tripMap = network.invoke({ op: "trip_map", network_hash: imported.network_hash }).map;
+const loadedMap = rt.invoke({ op: "load_trip_map", trip_map: tripMap });
+const live = rt.invoke({
+  op: "live",
+  feed_hash: loadedRt.feed_hash,
+  rt_hash: snapshot.rt_hash,
+  trip_map_hash: loadedMap.trip_map_hash,
 });
-assert(atB.departures.length === 0, "trips terminating at B never appear on B's board");
+assert(live.live.unmatched_trips === 0 && live.live.trips.length === 1, "t10 resolves into its derived trip");
+assert(
+  live.summary.counts.late === 1 && live.summary.late[0].label === "4201" && live.summary.late[0].delay_secs === 180,
+  "the summary names the late bus (+180 s is late under the default window)",
+);
+const loadedLive = board.invoke({ op: "load_live", live: live.live });
+assert(loadedLive.live_hash === live.live_hash, "board and rt agree on the live document's identity");
+// 08:01 at A: t10 left the schedule at 08:00 but is +120 s — still to come.
+const liveA = stopBoard("A", 28860, loadedLive.live_hash);
+const t10Row = liveA.rows.find((r) => r.expected_secs != null);
+assert(
+  liveA.live && t10Row && t10Row.expected_secs === 28800 + 120 && t10Row.delay_secs === 120 && t10Row.status === "late",
+  "the realtime-first board keeps the late bus, expected 08:02",
+);
+const noSnapshot = rt.raw({ op: "live", feed_hash: loadedRt.feed_hash, trip_map_hash: loadedMap.trip_map_hash });
+assert(noSnapshot.error && noSnapshot.error.includes("needs a snapshot"), "live without a snapshot is a request error");
 
 // The personal board — the watchlist document, migrated with its
 // loss reported, both versions querying over the network.
@@ -753,7 +770,7 @@ const ghostRoute = dir.invoke({
 assert(ghostRoute.patterns.length === 0, "an unknown route answers empty, never an error");
 
 // Unknown hashes error, never panic — every day-view seam.
-const unknownBoard = board.raw({ op: "departures", network_hash: "sha256:missing", stop_id: "A", date: DATE, from_secs: 0, limit: 5 });
+const unknownBoard = board.raw({ op: "stop_board", network_hash: "sha256:missing", stop_id: "A", date: DATE, from_secs: 0, limit: 5 });
 assert(unknownBoard.error && unknownBoard.error.includes("unknown network"), "unknown hashes error, never panic");
 
 // The street flow — the detour editor's capability: GeoJSON bytes

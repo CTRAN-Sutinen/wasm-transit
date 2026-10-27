@@ -26,7 +26,14 @@ Every change lands with tests at the layer that owns the logic.
    extend it for bus-visible changes; capability law tests
    (migration laws, validator mutation law, the dispatch
    diversion laws) follow expectation 1.
-5. **Dogfood on real data**: capability work touching feeds or
+5. **Web parity ratchets** (`just test`, "WEB GATES"): components
+   never import the capability resolver, and no host code reads
+   raw rt `stop_updates` — each against an allowlist that only
+   shrinks (`docs/PLAN.md`, the web cleanup). Logic a view needs
+   lands as an op with expectations 1–2, never in TypeScript; a
+   unit that empties an allowlist entry removes it in the same
+   change.
+6. **Dogfood on real data**: capability work touching feeds or
    payload size runs a `caps-run` session against the C-TRAN feed
    before it is done — fixture-scale gates do not catch real-data
    defects.

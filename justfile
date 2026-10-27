@@ -45,16 +45,21 @@ registry:
     just caps
 
 # Build everything the server serves: artifact + frontend (web/dist).
-# Type-checks first — the TS layer is part of the gate.
-build:
+# Regenerates the TS bindings, then type-checks — the TS layer is
+# part of the gate, checked against the contract as the Rust stands.
+build: types
     cd web && npm run typecheck
     cd web && npm run build
 
 # Regenerate web/src/types/*.ts from the Rust model (ts-rs). The TS
-# contract is generated, never hand-written; regenerate after model
-# changes and commit the diff like any other artifact.
+# contract is generated, never hand-written, and never committed
+# (gitignored). The directory is wiped first: a type deleted from the
+# Rust must not linger as a stale file the frontend still compiles
+# against.
 types:
     #!/usr/bin/env bash
+    set -e
+    rm -rf web/src/types
     export TS_RS_EXPORT_DIR="$PWD/web/src/types"
     cargo test --workspace export_bindings >/dev/null
     echo "$(ls web/src/types | wc -l) type files in web/src/types"
@@ -95,7 +100,7 @@ test: caps
     # hand-copied hashes.
     node tools/caps-run.mjs board \
       --op @web/public/caps/sample-network-load.json \
-      --op '{"op":"station_departures","network_hash":"$load_network.network_hash","stop_id":"STN","date":"2026-10-23","from_secs":25200,"limit":10}' \
+      --op '{"op":"stop_board","network_hash":"$load_network.network_hash","stop_id":"STN","date":"2026-10-23","from_secs":25200,"limit":10}' \
       --op '{"op":"load_watchlist","document":{"version":"v2","stops":[{"id":"A","label":"home"}]}}' \
       --op '{"op":"watchlist_board","watchlist_hash":"$load_watchlist.watchlist_hash","network_hash":"$load_network.network_hash","date":"2026-10-23","from_secs":25200,"limit":3}' \
       | grep -q '"label":"home"'
@@ -130,8 +135,23 @@ test: caps
     node tools/caps-run.mjs network --load web/public/caps/sample-gtfs.zip \
       --as net --op '{"op":"import","feed_hash":"$load.feed_hash"}' \
       --cap board --as board_net --op '{"op":"load_network","network":"$net.network"}' \
-      --op '{"op":"departures","network_hash":"$board_net.network_hash","stop_id":"A","date":"$TODAY","from_secs":"$NOW_SECS","limit":1}' \
-      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const id = (n) => r.find((x) => x.as === n).ok.network_hash; if (id("net") !== id("board_net") || r.at(-1).ok?.op !== "departures") process.exit(1)'
+      --op '{"op":"stop_board","network_hash":"$board_net.network_hash","stop_id":"A","date":"$TODAY","from_secs":"$NOW_SECS","limit":1}' \
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const id = (n) => r.find((x) => x.as === n).ok.network_hash; if (id("net") !== id("board_net") || r.at(-1).ok?.op !== "stop_board") process.exit(1)'
+    # The live board — the parity chain every host runs (browser,
+    # runner, server): import → trip map → cap-rt resolves the rt
+    # snapshot into THE live document → the board reads it by hash.
+    # 08:01 at A: t10 (08:00, +120 s) is still to come, expected 08:02.
+    node tools/caps-run.mjs network --as feed --load web/public/caps/sample-gtfs.zip \
+      --as net --op '{"op":"import","feed_hash":"$feed.feed_hash"}' \
+      --as map --op '{"op":"trip_map","network_hash":"$net.network_hash"}' \
+      --cap rt --as rtfeed --load 1:web/public/caps/sample-gtfs.zip \
+      --as snap --load web/e2e/fixtures/sample-rt.pb \
+      --as rtmap --op '{"op":"load_trip_map","trip_map":"$map.map"}' \
+      --as live --op '{"op":"live","feed_hash":"$rtfeed.feed_hash","rt_hash":"$snap.rt_hash","trip_map_hash":"$rtmap.trip_map_hash"}' \
+      --cap board --as bnet --op '{"op":"load_network","network":"$net.network"}' \
+      --as blive --op '{"op":"load_live","live":"$live.live"}' \
+      --op '{"op":"stop_board","network_hash":"$bnet.network_hash","stop_id":"A","date":"2026-10-23","from_secs":28860,"limit":3,"live_hash":"$blive.live_hash"}' \
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const row = r.at(-1).ok.board.rows.find((x) => x.expected_secs != null); if (ok("live").live_hash !== ok("blive").live_hash || !row || row.expected_secs !== 28920 || row.status !== "late") process.exit(1)'
     # The runcut capability's gate: the day's blocks (the index) into
     # one block's chain (the detail), with the edit ripple chained in
     # session (the connection-health read: 600 − 300).
@@ -206,7 +226,7 @@ test: caps
     # Sanctioned consumers: cap-gtfs, cap-network, cap-rt (external
     # rt joining external ids). The router left the feed in U5 — it
     # plans over the network document and the effective day.
-    for crate in cap-analysis cap-board cap-runcut cap-calendar cap-directory cap-sync cap-plans cap-author transit-analysis transit-dispatch; do
+    for crate in cap-analysis cap-board cap-runcut cap-calendar cap-directory cap-sync cap-plans cap-author transit-analysis transit-dispatch transit-live; do
         for dep in transit-core transit-codec; do
             if awk '/^\[dev-dependencies\]/{exit} /^'"$dep"' =/{found=1} END{exit !found}' "crates/$crate/Cargo.toml" 2>/dev/null; then
                 echo "ARCH FAIL: $crate depends on $dep — the network is the core model; compose over the network document (crates/AGENTS.md, Law 1)"; exit 1
@@ -226,6 +246,36 @@ test: caps
         echo "$violations"
         exit 1
     fi
+    # WEB GATES — parity (docs/PLAN.md, "The web cleanup"): the
+    # browser runs the same ops as caps-run and the Go server, so
+    # web/ holds host glue and render components, never answers.
+    # Ratchets: each allowlist names today's violators and may only
+    # SHRINK — a new violator fails, and so does a listed file that
+    # no longer violates (take it off the list in the same change).
+    ratchet() { # name, allowlist (space-separated), violators
+        local name="$1" allowed=" $2 " found="$3" f
+        for f in $found; do
+            if [[ "$allowed" != *" $f "* ]]; then
+                echo "WEB GATE FAIL ($name): $f — $4 (docs/PLAN.md, the web cleanup)"; exit 1
+            fi
+        done
+        for f in $2; do
+            if [[ " $found " != *" $f "* ]]; then
+                echo "WEB GATE FAIL ($name): $f no longer violates — remove it from the allowlist"; exit 1
+            fi
+        done
+    }
+    # W0a: components never call the bus — the host layer does.
+    ratchet resolver-in-components \
+        "web/src/App.svelte web/src/components/BlocksPanel.svelte web/src/components/CapabilityDemo.svelte web/src/components/DiversionPanel.svelte web/src/components/MapView.svelte web/src/components/TripPlanner.svelte" \
+        "$(grep -l 'capabilities\.svelte' web/src/App.svelte web/src/components/*.svelte | tr '\n' ' ')" \
+        "a component imports the capability resolver; take node values as props"
+    # W0b: no host-side rt join — delays come from cap-rt's live
+    # document (the allowlist reached empty with W1: a hard gate now).
+    ratchet rt-join-in-web \
+        "" \
+        "$(grep -rl 'stop_updates' web/src --include='*.ts' --include='*.svelte' | grep -v '^web/src/types/' | sort | tr '\n' ' ')" \
+        "reads raw rt stop_updates; the live join is cap-rt's"
     # -race: the artifact is one non-reentrant instance; the host must
     # serialize invokes (see server/race_test.go — the gate watches it).
     cd server && go test -race ./...
@@ -284,7 +334,7 @@ serve feed="" publisher="" addr="127.0.0.1:8080":
 
 # Frontend dev loop: vite with hot reload on :5173 (proxies /rt),
 # with the sync server alongside on :8080 (logs: /tmp/transit-server.log).
-dev:
+dev: caps types
     #!/usr/bin/env bash
     set -e
     (cd server && go build -o /tmp/transit-server . && \

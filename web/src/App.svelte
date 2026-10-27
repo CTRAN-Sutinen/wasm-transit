@@ -10,8 +10,8 @@
   import PlannerRail from "./components/PlannerRail.svelte";
   import PersonaTabs from "./components/PersonaTabs.svelte";
   import { app } from "./state.svelte.js";
-  import { loadRtFromUrl, loadVpFromUrl, saveSettings, feedBytes } from "./actions";
-  import { ensureGtfsFeed, gtfsCap, gtfsModule, ensureFeedSummary, ensureDirectory } from "./capabilities.svelte";
+  import { loadRtFromUrl, loadVpFromUrl, saveSettings, feedBytes, refreshBoard, refreshServices, selectStop, refreshNow, showTrip } from "./actions";
+  import { ensureGtfsFeed, gtfsCap, gtfsModule, ensureFeedSummary, ensureDirectory, directory } from "./capabilities.svelte";
   import type { FeedInfo } from "./types/FeedInfo";
   import type { FeedSummary } from "./types/FeedSummary";
 
@@ -53,6 +53,25 @@
       }
     })();
   });
+
+  // The board and the day's service keys are the bus's answers; the
+  // host re-asks when what they depend on moves (the stop, time, the
+  // effective day, the live document) and the components only draw.
+  $effect(() => {
+    void app.selectedStop;
+    void app.clock;
+    void app.feedEpoch;
+    void app.live;
+    refreshBoard();
+  });
+  $effect(() => {
+    void app.clock;
+    void app.feedEpoch;
+    refreshServices();
+  });
+  const stopOptions = $derived(
+    directory.stops.slice(0, 2000).map((s) => ({ value: s.stop_id, label: s.name, sub: s.stop_id })),
+  );
 
   // One shell, one persistent map. The sidebar carries the persona
   // (tabs + workflow); the map never remounts on a persona switch —
@@ -118,7 +137,17 @@
       <PlannerRail />
     {:else if app.feedLoaded}
       {#if app.persona === "rider"}
-        <DepartureBoard />
+        <DepartureBoard
+          stop={app.selectedStop}
+          {stopOptions}
+          board={app.board}
+          off={app.boardOff}
+          services={app.activeServices}
+          selected={app.selectedTrip}
+          onstop={selectStop}
+          onrefresh={refreshNow}
+          onselect={showTrip}
+        />
         <TripPlanner />
       {:else}
         <BlocksPanel />
@@ -126,8 +155,8 @@
       {/if}
     {/if}
 
-    {#if app.persona !== "planner" && app.rtOverview}
-      <RtPanel />
+    {#if app.persona !== "planner" && (app.rtOverview || app.live)}
+      <RtPanel summary={app.live?.summary ?? null} alerts={app.rtOverview?.alerts ?? 0} />
     {/if}
   </aside>
 

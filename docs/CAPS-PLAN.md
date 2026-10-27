@@ -311,6 +311,26 @@ day-shape answer is the dogfood record).
     DOGFOODED; the map draws merged walks through their via stops
     (no e2e pins that drawing).
 
+- **The web cleanup (2026-10-27)** — parity: `web/` is host glue
+  plus render components (`docs/PLAN.md`, the web cleanup).
+  * W0 the ratchet: LANDED (`just test` WEB GATES — components
+    importing the resolver, against a shrinking allowlist; raw rt
+    `stop_updates` in web/, a hard gate since W1 emptied it).
+  * W1 live data: ON THE BUS — the live document (transit-live
+    live_test; transit-rt live_test over the fixture pair), cap-rt
+    `load_trip_map` / `live` and cap-board `load_live` /
+    `stop_board` (dispatch tests, dispatch_laws_test realtime-
+    first and pooling laws, caps-smoke, the justfile live-board
+    gate); `departures` / `station_departures` retired (one board
+    on the bus). UI READS THE BUS: the departure board, RtPanel,
+    and the map's bus colors render the live document and
+    stop_board's answer (app.spec "realtime feed colors delays and
+    vehicles"; the board, station, and diversion specs).
+    DOGFOODED (QA-FINDINGS, "Session 2026-10-27 (live board)").
+    NOT done in W1: BlocksPanel still joins agency trip ids through
+    the trip map for its trip column; the map still names routes
+    by a directory lookup.
+
 Model facts that hold everywhere: the import infers block
 layovers from observed end→start gaps (GTFS has none; the planner
 re-authors from there) and reports every resolution — never
@@ -342,11 +362,6 @@ in passing.
   fine for a UI (fetched once per boarding), heavy for an agent
   asking "which derived trip is agency id 757797?". Shape it when
   an agent session actually needs it.
-- **stop_board — the realtime-first board** (user decision
-  2026-10-25): predictions are the primary display, schedule rows
-  appear where no live data covers a trip; station pooling rides
-  along in the join op, and the diversion question folds into it.
-  Not urgent — cap-rt owns the join machinery when it lands.
 
 ## Standing queue (after the units)
 
@@ -360,6 +375,10 @@ in passing.
   dogfood debt: the U1–U4 re-pin sessions are journal replays of
   the C-TRAN session, not hand-run scripts.
 - **Wire-time assembly (the mechanism the thesis depends on):**
+  assemblies are per NEED and reassemble per request; the persona
+  tabs (rider / dispatcher / planner) are a proof-of-concept cut,
+  neither exhaustive nor the right cuts — no layout, manifest, or
+  registry entry is ever keyed to a persona.
   user-declared selection (`web/src/selection.svelte.ts`,
   IndexedDB-persisted, defaulting to the whole manifest), the
   store surface in the DataSources modal, probe-based sections

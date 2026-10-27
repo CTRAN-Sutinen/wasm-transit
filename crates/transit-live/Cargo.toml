@@ -1,0 +1,13 @@
+[package]
+name = "transit-live"
+description = "THE live document: GTFS-rt answers resolved into model vocabulary — delays per derived trip and stop, vehicles on derived trips, and the on-time window that classifies them. Pure data plus the classification rule; cap-rt mints it, the day views (cap-board) consume it by hash."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

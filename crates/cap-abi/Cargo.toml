@@ -23,6 +23,8 @@ transit-analysis = { path = "../transit-analysis" }
 chrono = { workspace = true }
 # …and the rt capability's example decodes the real e2e payload.
 transit-rt = { path = "../transit-rt" }
+# …and the live document (the rt → board edge) is computed the same way.
+transit-live = { path = "../transit-live" }
 # …and the dispatch capability's examples compute REAL answers over
 # the fixture-derived document (boards, chains, edit reports)
 # through the same shared library the module dispatches through.

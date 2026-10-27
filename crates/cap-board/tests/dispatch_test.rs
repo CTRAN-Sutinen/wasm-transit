@@ -65,20 +65,25 @@ fn load_edits(network_hash: &str, records: Vec<EditRecord>) -> (String, Vec<tran
     }
 }
 
-fn departures(network_hash: &str, edits_hash: Option<String>, stop_id: &str) -> Vec<transit_dispatch::BoardDeparture> {
-    match dispatch(Request::Departures {
+fn stop_board(network_hash: &str, edits_hash: Option<String>, stop_id: &str, from_secs: u32, live_hash: Option<String>) -> transit_dispatch::StopBoard {
+    match dispatch(Request::StopBoard {
         network_hash: network_hash.into(),
         edits_hash,
         stop_id: stop_id.into(),
         date: DATE.into(),
-        from_secs: 0,
+        from_secs,
         limit: 20,
+        live_hash,
     })
     .unwrap()
     {
-        Response::Departures { departures } => departures,
-        _ => panic!("departures"),
+        Response::StopBoard { board } => board,
+        _ => panic!("stop_board"),
     }
+}
+
+fn departures(network_hash: &str, edits_hash: Option<String>, stop_id: &str) -> Vec<transit_dispatch::BoardDeparture> {
+    stop_board(network_hash, edits_hash, stop_id, 0, None).rows.into_iter().map(|r| r.departure).collect()
 }
 
 #[test]
@@ -152,42 +157,74 @@ fn the_board_is_the_materialized_day_model_vocabulary() {
 #[test]
 fn the_station_board_pools_the_walking_group() {
     let network_hash = load_network();
-    // The station pin answers its bays' board (the fixture's
-    // shuttle), rows tagged with the concrete bay.
-    let pooled = match dispatch(Request::StationDepartures {
-        network_hash: network_hash.clone(),
-        edits_hash: None,
-        stop_id: "STN".into(),
-        date: DATE.into(),
-        from_secs: 0,
-        limit: 10,
-    })
-    .unwrap()
-    {
-        Response::StationDepartures { departures } => departures,
-        _ => panic!("station_departures"),
-    };
+    // The station pin has nothing of its own: it answers its bays'
+    // board (the fixture's shuttle), pooled, rows tagged with the bay.
+    let pin = stop_board(&network_hash, None, "STN", 0, None);
+    assert!(pin.pooled);
     // t40 departs SA (ends SB), t41 departs SB (ends SA): one
     // departure per bay — the terminating visits are not rows.
-    assert_eq!(pooled.len(), 2, "t40 at SA, t41 at SB: {pooled:?}");
-    let bays: Vec<&str> = pooled.iter().map(|d| d.stop.as_str()).collect();
+    let bays: Vec<&str> = pin.rows.iter().map(|r| r.departure.stop.as_str()).collect();
     assert_eq!(bays, vec!["SA", "SB"], "rows name their bay, soonest first");
 
-    // Any member answers the same board.
-    let from_bay = match dispatch(Request::StationDepartures {
+    // A bay with departures of its own answers itself, unpooled.
+    let bay = stop_board(&network_hash, None, "SA", 0, None);
+    assert!(!bay.pooled);
+    assert!(bay.rows.iter().all(|r| r.departure.stop == "SA"));
+}
+
+/// The realtime-first board over a LIVE document: the late bus
+/// scheduled before `from_secs` is still to come, with its expected
+/// time, delay, and status — the module classifies, no host does.
+#[test]
+fn the_board_reads_a_live_document() {
+    use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
+    let network_hash = load_network();
+    let row = departures(&network_hash, None, "A").into_iter().find(|d| d.route == "10").unwrap();
+    let live = LiveDay {
+        window: OnTimeWindow::default(),
+        trips: vec![LiveTrip {
+            schedule: row.schedule.clone(),
+            start_secs: row.start_secs,
+            agency_trip_id: "t10".into(),
+            route: Some("10".into()),
+            worst_delay_secs: Some(180),
+            status: LiveStatus::Late,
+            stops: vec![LiveStop {
+                stop: "A".into(),
+                scheduled_departure: Some(row.departure_secs),
+                arrival_delay: None,
+                departure_delay: Some(120),
+                predicted_departure: Some(row.departure_secs + 120),
+            }],
+        }],
+        vehicles: vec![],
+        unmatched_trips: 0,
+    };
+    let live_hash = match dispatch(Request::LoadLive { live: live.clone() }).unwrap() {
+        Response::LoadLive { live_hash } => live_hash,
+        _ => panic!("load_live"),
+    };
+    let canonical = serde_json::to_string(&live).unwrap();
+    assert_eq!(live_hash, format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes())));
+
+    let board = stop_board(&network_hash, None, "A", row.departure_secs + 60, Some(live_hash));
+    assert!(board.live);
+    let late = board.rows.iter().find(|r| r.departure.schedule == row.schedule).expect("the late bus is still to come");
+    assert_eq!(late.expected_secs, Some(row.departure_secs + 120));
+    assert_eq!(late.delay_secs, Some(120));
+    assert_eq!(late.status, LiveStatus::Late);
+
+    let err = dispatch(Request::StopBoard {
         network_hash,
         edits_hash: None,
-        stop_id: "SA".into(),
+        stop_id: "A".into(),
         date: DATE.into(),
         from_secs: 0,
-        limit: 10,
+        limit: 5,
+        live_hash: Some("sha256:missing".into()),
     })
-    .unwrap()
-    {
-        Response::StationDepartures { departures } => departures,
-        _ => panic!("station_departures"),
-    };
-    assert_eq!(from_bay, pooled);
+    .unwrap_err();
+    assert!(err.contains("unknown live document"), "{err}");
 }
 
 #[test]
@@ -309,13 +346,14 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
     assert!(err.contains("unknown network"), "{err}");
 
     let network_hash = load_network();
-    let err = dispatch(Request::Departures {
+    let err = dispatch(Request::StopBoard {
         network_hash,
         edits_hash: Some("sha256:missing".into()),
         stop_id: "A".into(),
         date: DATE.into(),
         from_secs: 0,
         limit: 5,
+        live_hash: None,
     })
     .unwrap_err();
     assert!(err.contains("unknown edits"), "{err}");
@@ -333,7 +371,7 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
 
     let bad = dispatch_json(r#"{"op":"nope"}"#);
     assert!(bad.contains("invalid request"), "{bad}");
-    let bad = dispatch_json(r#"{"op":"departures","network_hash":"sha256:x","stop_id":"A","date":"2026-13-99","from_secs":0,"limit":5}"#);
+    let bad = dispatch_json(r#"{"op":"stop_board","network_hash":"sha256:x","stop_id":"A","date":"2026-13-99","from_secs":0,"limit":5}"#);
     assert!(bad.contains("invalid date"), "{bad}");
     let bad = dispatch_json(&serde_json::json!({"op": "load_watchlist", "document": {"version": "v3", "stops": []}}).to_string());
     assert!(bad.contains("invalid request"), "an unknown document version is a request error: {bad}");

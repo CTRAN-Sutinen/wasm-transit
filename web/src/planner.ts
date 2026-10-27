@@ -28,7 +28,7 @@ import type { Mode } from "./types/Mode";
 import type { Network } from "./types/Network";
 import type { NetworkStats } from "./types/NetworkStats";
 import type { PlanInfo } from "./types/cap_plans/PlanInfo";
-import { pushEdits, serviceDate, FEED_KEY, setFeedBytes } from "./actions";
+import { pushEdits, serviceDate, FEED_KEY, setFeedBytes, refreshLive } from "./actions";
 import { get as idbGet } from "idb-keyval";
 import {
   ensureAnalysisNetwork,
@@ -510,12 +510,13 @@ export async function materializeNetwork(): Promise<void> {
     setFeedBytes(bytes); // the bus reads this document everywhere
     app.feedLoaded = true;
     app.selectedStop = null;
-    app.selectedTripId = null;
+    app.selectedTrip = null;
     app.tripFeature = null;
     app.plan = null;
     app.planBaseline = null;
     app.planNotice = null;
     pushEdits();
+    void refreshLive(); // the new feed's trip map: live re-resolves
     app.status = `Materialized "${doc.name}" — the Rider and Dispatcher views now run on the authored network (published GTFS ${feedHash.slice(0, 19)}…).`;
   } catch (e) {
     app.status = `Error: ${e?.message ?? e}`;

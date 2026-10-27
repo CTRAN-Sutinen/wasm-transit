@@ -695,3 +695,33 @@ the 006 service change authored through cap-author (same document
 hash as the hand edit, warned for the pick period and its three
 unassigned schedules), windowed coverage, a merged 591 s walk, and
 a 20.06 km road route. The statuses above name their pins.
+
+## Session 2026-10-27 (live board) — C-TRAN, the parity chain
+
+One session, the chain every host now runs (the browser renders
+it; `docs/PLAN.md`, the web cleanup, W1): import → trip_map →
+cap-rt `load_trip_map` + `live` over the TripUpdates and
+VehiclePositions snapshots fetched at 12:22 PDT → board
+`load_live` → `stop_board` at Fisher's Landing (stop found through
+directory `stops` query "fisher landing"). The live document
+resolved 162 trips, 0 unmatched, 62 buses (34 on time, 21 late,
+5 very late, 2 no prediction); its identity agreed across rt and
+board. The station pin answered pooled and realtime-first: route
+080, scheduled 12:28, expected 12:35:45, very late, sorted after
+the buses due before it.
+
+- **QAF-48 DATA GAP** — C-TRAN's vehicle labels are empty, so the
+  late list names buses by their internal vehicle id
+  ("CTRAN2269"). The fallback is honest; whether that id is what
+  a dispatcher calls the bus is an agency question.
+  Pin: the session's `live` summary `late[0].label`.
+  Status: open (agency question).
+- **QAF-49 OP GAP** — the live document is 388 KB per snapshot on
+  C-TRAN (every stop of every predicted trip, downstream of the
+  first update), re-minted every poll, and each module keeps every
+  registered document for the session (the snapshot registries
+  already did). Fine at 30 s polling for a session; unbounded for
+  a long-running host.
+  Pin: `JSON.stringify(live).length` in the session.
+  Status: open (registry eviction is the host discipline's —
+  `docs/PLAN.md`; shaping waits for a consumer that needs it).

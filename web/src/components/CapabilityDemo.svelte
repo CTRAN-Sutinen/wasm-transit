@@ -212,9 +212,9 @@
         ok: true,
       });
 
-      const departures = board.departures(boarding.networkHash, null, "A", DATE, DEPART, 5);
+      const departures = board.stopBoard(boarding.networkHash, null, "A", DATE, DEPART, 5, null).rows;
       steps.push({
-        label: "board.departures",
+        label: "board.stop_board",
         detail: `${departures.length} departures at A from ${fmtTime(DEPART)}`,
         ok: true,
       });

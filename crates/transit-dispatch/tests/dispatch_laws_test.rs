@@ -19,7 +19,8 @@
 //!    reported, never rejected.
 
 use chrono::NaiveDate;
-use transit_dispatch::{block_chain, board, effective_day, patch_day, report_against_network, station_board};
+use transit_dispatch::{block_chain, board, effective_day, patch_day, report_against_network, station_board, stop_board};
+use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
 use transit_network::{
     Block, CalendarRule, DateRange, Layover, MaterializedTrip, Network, Pattern, PatternSchedule,
     PatternStop, Route, Schedule, ServiceType, Stop, TimingProfile, TripRef, WeekdaySet,
@@ -326,6 +327,91 @@ fn the_station_board_pools_the_walking_group() {
     let mut sorted = times.clone();
     sorted.sort();
     assert_eq!(times, sorted);
+}
+
+fn live_at(schedule: &str, start: u32, stop: &str, scheduled: u32, delay: i32) -> LiveDay {
+    LiveDay {
+        window: OnTimeWindow::default(),
+        trips: vec![LiveTrip {
+            schedule: schedule.into(),
+            start_secs: start,
+            agency_trip_id: "agency".into(),
+            route: None,
+            worst_delay_secs: Some(delay),
+            status: LiveStatus::Late,
+            stops: vec![LiveStop {
+                stop: stop.into(),
+                scheduled_departure: Some(scheduled),
+                arrival_delay: Some(delay),
+                departure_delay: Some(delay),
+                predicted_departure: Some((scheduled as i32 + delay) as u32),
+            }],
+        }],
+        vehicles: vec![],
+        unmatched_trips: 0,
+    }
+}
+
+#[test]
+fn the_board_is_realtime_first() {
+    let net = network();
+    let day = transit_network::materialize(&net, date()).unwrap();
+
+    // Schedule only: the same rows as the plain board, no predictions.
+    let plain = stop_board(&net, &day, "A", 0, 10, None);
+    assert!(!plain.live && !plain.pooled);
+    assert_eq!(plain.rows.iter().map(|r| r.departure.clone()).collect::<Vec<_>>(), board(&net, &day, "A", 0, 10));
+    assert!(plain.rows.iter().all(|r| r.status == LiveStatus::NoPrediction && r.expected_secs.is_none()));
+
+    // s10 leaves A at 08:00; live says +240. At 08:01 the late bus is
+    // still to come — on the board, expected 08:04, late.
+    let live = live_at("s10", 28_800, "A", 28_800, 240);
+    let late = stop_board(&net, &day, "A", 28_860, 10, Some(&live));
+    let r = late.rows.iter().find(|r| r.departure.schedule == "s10").expect("the late bus is still to come");
+    assert_eq!((r.expected_secs, r.delay_secs, r.status), (Some(29_040), Some(240), LiveStatus::Late));
+    assert!(late.live);
+    // Once it has left (08:05), it is gone.
+    assert!(stop_board(&net, &day, "A", 29_100, 10, Some(&live)).rows.iter().all(|r| r.departure.schedule != "s10"));
+
+    // An early bus that already left is not on the board.
+    let early = live_at("s10", 28_800, "A", 28_800, -120);
+    assert!(stop_board(&net, &day, "A", 28_740, 10, Some(&early)).rows.iter().all(|r| r.departure.schedule != "s10"));
+
+    // Ordered by when buses actually leave: s20 reaches A at 08:50
+    // on time; s10 delayed to 09:00 sorts after it.
+    let very_late = live_at("s10", 28_800, "A", 28_800, 3_600);
+    let order: Vec<_> = stop_board(&net, &day, "A", 0, 10, Some(&very_late))
+        .rows
+        .iter()
+        .map(|r| r.departure.schedule.clone())
+        .collect();
+    assert_eq!(order, vec!["s10"], "route 20 ends at A — only s10 departs A");
+    let at_c: Vec<_> = stop_board(&net, &day, "C", 0, 10, Some(&live_at("s10", 28_800, "C", 29_400, 3_600)))
+        .rows
+        .iter()
+        .map(|r| (r.departure.schedule.clone(), r.status))
+        .collect();
+    assert_eq!(
+        at_c,
+        vec![("s20".to_string(), LiveStatus::NoPrediction), ("s10".to_string(), LiveStatus::VeryLate)],
+        "a bus an hour late sorts after the on-time one"
+    );
+}
+
+#[test]
+fn the_board_pools_only_a_walking_group() {
+    let net = network();
+    let day = transit_network::materialize(&net, date()).unwrap();
+    // The station pin has nothing of its own: its bays answer, pooled.
+    let pin = stop_board(&net, &day, "STN", 0, 10, None);
+    assert!(pin.pooled);
+    assert_eq!(pin.rows.len(), 2);
+    assert!(pin.rows.iter().all(|r| r.departure.stop == "SA"));
+    // A bay with departures of its own answers itself, unpooled.
+    assert!(!stop_board(&net, &day, "SA", 0, 10, None).pooled);
+    // A plain stop with nothing left shows its emptiness, never a pool.
+    let empty = stop_board(&net, &day, "B", 40_000, 10, None);
+    assert!(empty.rows.is_empty() && !empty.pooled);
 }
 
 #[test]

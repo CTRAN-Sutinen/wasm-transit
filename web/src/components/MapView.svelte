@@ -12,6 +12,7 @@
   import { streetsSnap, streetsRoute, directory } from "../capabilities.svelte";
   import { stopsFeatures } from "../mapview";
   import type { StreetPosition } from "../types/StreetPosition";
+  import type { LiveStatus } from "../types/LiveStatus";
 
   maplibregl.setWorkerUrl(workerUrl);
 
@@ -331,11 +332,13 @@
           layout: {
             "icon-image": ["concat",
               ["case", ["==", ["get", "bearing"], null], "busq-", "bus-"],
-              ["case",
-                ["==", ["get", "delay"], null], "888888",
-                ["<=", ["get", "delay"], 60], "109648",
-                ["<=", ["get", "delay"], 300], "e6a23c",
-                "d02b2b",
+              // Color by the status cap-rt classified (the live
+              // document's window) — the map holds no thresholds.
+              ["match", ["get", "status"],
+                "on_time", "109648",
+                ["early", "late"], "e6a23c",
+                "very_late", "d02b2b",
+                "888888",
               ],
             ],
             "icon-rotate": ["coalesce", ["get", "bearing"], 0],
@@ -473,10 +476,10 @@
           const p = e.features?.[0]?.properties as VehicleProps | undefined;
           if (!p) return;
           vehiclePopup?.popup.remove();
-          const key = String(p.vehicle_id || p.trip_id || "");
+          const key = String(p.key ?? "");
           // Anchor at the vehicle's true position (the icon's anchor),
           // not wherever inside the icon the click landed.
-          const v = app.vehicles.find((x) => String(x.vehicle_id || x.trip_id || "") === key);
+          const v = app.live?.live.vehicles.find((x) => x.key === key);
           const popup = new maplibregl.Popup({ offset: 10, maxWidth: "260px" })
             .setLngLat(v ? [v.lon, v.lat] : e.lngLat)
             .setDOMContent(vehiclePopupContent(p))
@@ -613,10 +616,16 @@
     delayLabel.textContent = "Delay";
     const delayValue = document.createElement("span");
     const delay = p.delay == null ? null : Number(p.delay);
-    delayValue.className = delay == null ? "delay none"
-      : delay <= 0 ? "delay on" : delay <= 300 ? "delay late" : "delay verylate";
-    delayValue.textContent = delay == null ? "no prediction" : delay <= 0 ? "on time"
-      : `+${Math.round(delay / 60)} min late`;
+    const min = Math.round(Math.abs(delay ?? 0) / 60);
+    const [cls, text] = {
+      no_prediction: ["none", "no prediction"],
+      on_time: ["on", "on time"],
+      early: ["late", `${min} min early`],
+      late: ["late", `+${min} min late`],
+      very_late: ["verylate", `+${min} min late`],
+    }[String(p.status) as LiveStatus] ?? ["none", "no prediction"];
+    delayValue.className = `delay ${cls}`;
+    delayValue.textContent = text;
     delayRow.append(delayLabel, document.createTextNode(" "), delayValue);
     content.append(delayRow);
     if (p.vehicle_id) row("Vehicle", String(p.vehicle_id));
@@ -625,41 +634,30 @@
 
   $effect(() => {
     if (!mapLoaded) return;
-    // Buses signal their lateness by color: join the vehicle's trip_id
-    // against the GTFS-rt trip updates (worst known delay for the
-    // trip, and the route when the vehicle's own descriptor omits
-    // it — common in real feeds).
-    const tripInfo = new Map<string, { delay: number; routeId: string }>();
-    for (const t of app.rtOverview?.trips ?? []) {
-      if (!t.trip_id) continue;
-      let worst = null;
-      for (const s of t.stop_updates ?? []) {
-        const d = s.departure_delay ?? s.arrival_delay;
-        if (d != null) worst = worst == null ? d : Math.max(worst, d);
-      }
-      if (worst != null) tripInfo.set(t.trip_id, { delay: worst, routeId: t.route_id ?? "" });
-    }
+    // Buses signal their lateness by color — cap-rt's live document
+    // carries each vehicle's derived trip, delay, and status; the map
+    // only draws (and names the route from the directory).
     const routeShort = new Map<string, string>();
     for (const r of directory.routes) routeShort.set(r.route_id, r.name);
-    const features = app.vehicles.map((v) => {
+    const features = (app.live?.live.vehicles ?? []).map((v) => {
       // The rider-visible bus number, and the small label on the map:
       // route badge · bus number (falling back to what exists).
-      const info = v.trip_id ? tripInfo.get(v.trip_id) : undefined;
       const busNo = v.label ?? v.vehicle_id;
-      const routeName = routeShort.get(v.route_id ?? info?.routeId ?? "");
-      const parts = [routeName, busNo].filter(Boolean);
+      const parts = [routeShort.get(v.route ?? ""), busNo].filter(Boolean);
       return {
         type: "Feature",
         geometry: { type: "Point", coordinates: [v.lon, v.lat] },
         properties: {
-          trip_id: v.trip_id ?? "",
-          route_id: v.route_id ?? info?.routeId ?? "",
-          delay: v.trip_id ? (tripInfo.get(v.trip_id)?.delay ?? null) : null,
+          key: v.key,
+          trip_id: v.agency_trip_id ?? "",
+          route_id: v.route ?? "",
+          delay: v.delay_secs,
+          status: v.status,
           bearing: v.bearing ?? null,
-          stop_id: v.stop_id ?? "",
+          stop_id: v.next_stop ?? "",
           vehicle_id: v.vehicle_id ?? "",
           label: v.label ?? "",
-          label_text: parts.length ? parts.join(" · ") : (v.trip_id ?? ""),
+          label_text: parts.length ? parts.join(" · ") : (v.agency_trip_id ?? ""),
         },
       };
     });
@@ -669,7 +667,7 @@
     // left the feed takes its popup with it.
     if (vehiclePopup) {
       const open = vehiclePopup;
-      const f = features.find((x) => String(x.properties.vehicle_id || x.properties.trip_id) === open.key);
+      const f = features.find((x) => x.properties.key === open.key);
       if (f) {
         open.popup.setLngLat(f.geometry.coordinates as [number, number]);
         open.popup.setDOMContent(vehiclePopupContent(f.properties));

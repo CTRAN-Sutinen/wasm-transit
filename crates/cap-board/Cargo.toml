@@ -17,6 +17,8 @@ ts-rs = { workspace = true }
 transit-network = { path = "../transit-network" }
 transit-sync = { path = "../transit-sync" }
 transit-dispatch = { path = "../transit-dispatch" }
+# The live document (minted by cap-rt) the realtime-first board reads.
+transit-live = { path = "../transit-live" }
 cap-abi = { path = "../cap-abi" }
 
 [dev-dependencies]

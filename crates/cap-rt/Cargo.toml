@@ -15,8 +15,13 @@ sha2 = { workspace = true }
 ts-rs = { workspace = true }
 transit-core = { path = "../transit-core" }
 transit-rt = { path = "../transit-rt" }
+# The live document: minted here from the snapshot, the feed, and
+# the import's trip-id map (codec state at the boundary).
+transit-codec = { path = "../transit-codec" }
+transit-live = { path = "../transit-live" }
 cap-abi = { path = "../cap-abi" }
 
 [dev-dependencies]
+sha2 = { workspace = true }
 prost = { workspace = true }
 serde_json = { workspace = true }

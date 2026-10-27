@@ -27,7 +27,13 @@ testdata/CTRANTrapezeRoads_*.geojson
 registry/
 web/public/caps/
 
+# The TS bindings (ts-rs), generated from the Rust model by `just
+# types` (which `just build` runs first) and by every cargo test run.
+# Rust is the source of truth; the manifest's computed op examples are
+# the readable wire contract.
+web/src/types/
+
 # ts-rs scatter: bindings land here when cargo runs without
-# TS_RS_EXPORT_DIR. .cargo/config.toml now points every run at
-# web/src/types (the committed contract), so these never come back.
+# TS_RS_EXPORT_DIR. .cargo/config.toml points every run at
+# web/src/types, so these never come back.
 crates/*/bindings/

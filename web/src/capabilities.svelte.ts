@@ -54,7 +54,9 @@ import type { RtOverview } from "./types/RtOverview";
 import type { StreetPoint } from "./types/StreetPoint";
 import type { StreetPosition } from "./types/StreetPosition";
 import type { TripIdMap } from "./types/TripIdMap";
-import type { BoardDeparture } from "./types/BoardDeparture";
+import type { StopBoard } from "./types/StopBoard";
+import type { LiveDay } from "./types/LiveDay";
+import type { LiveSummary } from "./types/LiveSummary";
 import type { BlockChainTrip } from "./types/BlockChainTrip";
 import type { DayBlock } from "./types/DayBlock";
 import type { TripStopView } from "./types/TripStopView";
@@ -168,7 +170,7 @@ class CapModule {
 
 /// sha256 of bytes as "sha256:<hex>" — the manifest's format, same
 /// formula the generator and the Rust side use.
-async function contentHash(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+export async function contentHash(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
   return "sha256:" + hex;
@@ -765,15 +767,46 @@ export function base64Decode(text: string): Uint8Array {
 // ---------------------------------------------------------------------
 
 const OP_RT_DECODE = 0;
+const OP_RT_LOAD_FEED = 1;
+
+export type Live = { liveHash: string; live: LiveDay; summary: LiveSummary };
 
 export function rtCap(module: CapModule) {
   return {
-    decode(bytes: Uint8Array): RtOverview {
+    /// Decode a payload; the module registers the snapshot under
+    /// `rtHash` for `live` to address.
+    decode(bytes: Uint8Array): { overview: RtOverview; rtHash: string } {
       const resp = module.invokeBytes(OP_RT_DECODE, bytes) as Extract<
         RtCapResponse,
         { op: "decode" }
       >;
-      return resp.overview;
+      return { overview: resp.overview, rtHash: resp.rt_hash };
+    },
+    loadFeed(bytes: Uint8Array): string {
+      const resp = module.invokeBytes(OP_RT_LOAD_FEED, bytes) as Extract<
+        RtCapResponse,
+        { op: "load_feed" }
+      >;
+      return resp.feed_hash;
+    },
+    loadTripMap(tripMap: TripIdMap): string {
+      const resp = module.invoke({ op: "load_trip_map", trip_map: tripMap } as RtCapRequest) as Extract<
+        RtCapResponse,
+        { op: "load_trip_map" }
+      >;
+      return resp.trip_map_hash;
+    },
+    /// THE live document: the snapshot(s) resolved into model
+    /// vocabulary, classified under the module's default window.
+    live(feedHash: string, rtHash: string | null, vpHash: string | null, tripMapHash: string): Live {
+      const resp = module.invoke({
+        op: "live",
+        feed_hash: feedHash,
+        rt_hash: rtHash ?? undefined,
+        vp_hash: vpHash ?? undefined,
+        trip_map_hash: tripMapHash,
+      } as RtCapRequest) as Extract<RtCapResponse, { op: "live" }>;
+      return { liveHash: resp.live_hash, live: resp.live, summary: resp.summary };
     },
   };
 }
@@ -822,43 +855,37 @@ export function boardCap(module: CapModule) {
       } as BoardCapRequest) as Extract<BoardCapResponse, { op: "load_edits" }>;
       return { editsHash: resp.edits_hash, reports: resp.reports };
     },
-    departures(
-      networkHash: string,
-      editsHash: string | null,
-      stopId: string,
-      date: string,
-      fromSecs: number,
-      limit: number,
-    ): BoardDeparture[] {
-      const resp = module.invoke({
-        op: "departures",
-        network_hash: networkHash,
-        edits_hash: editsHash,
-        stop_id: stopId,
-        date,
-        from_secs: fromSecs,
-        limit,
-      } as BoardCapRequest) as Extract<BoardCapResponse, { op: "departures" }>;
-      return resp.departures;
+    /// Register a live document (cap-rt's `live`) — the same
+    /// identity rt answered.
+    loadLive(live: LiveDay): string {
+      const resp = module.invoke({ op: "load_live", live } as BoardCapRequest) as Extract<
+        BoardCapResponse,
+        { op: "load_live" }
+      >;
+      return resp.live_hash;
     },
-    stationDepartures(
+    /// THE board at a stop — pooling, realtime-first ordering, and
+    /// each row's status are the module's answer, never the host's.
+    stopBoard(
       networkHash: string,
       editsHash: string | null,
       stopId: string,
       date: string,
       fromSecs: number,
       limit: number,
-    ): BoardDeparture[] {
+      liveHash: string | null,
+    ): StopBoard {
       const resp = module.invoke({
-        op: "station_departures",
+        op: "stop_board",
         network_hash: networkHash,
-        edits_hash: editsHash,
+        edits_hash: editsHash ?? undefined,
         stop_id: stopId,
         date,
         from_secs: fromSecs,
         limit,
-      } as BoardCapRequest) as Extract<BoardCapResponse, { op: "station_departures" }>;
-      return resp.departures;
+        live_hash: liveHash ?? undefined,
+      } as BoardCapRequest) as Extract<BoardCapResponse, { op: "stop_board" }>;
+      return resp.board;
     },
     loadWatchlist(document: Watchlist): { watchlistHash: string; version: number } {
       const resp = module.invoke({

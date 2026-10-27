@@ -25,6 +25,7 @@ use ts_rs::TS;
 use transit_network::{
     materialize, trip_starts, MaterializedTrip, Network, StopTime,
 };
+use transit_live::{classify, LiveDay, LiveStatus};
 use transit_sync::{Diversion, EditRecord, EditReport};
 
 /// One row on a departure board. Model vocabulary: the trip is its
@@ -280,6 +281,106 @@ pub fn station_board(
         .into_keys()
         .collect();
     board_over(network, day, &group, from_secs, limit)
+}
+
+/// One row of THE board: the departure, and what live data says
+/// about it — the expected departure, the delay against the board's
+/// own (patched) time, and its status under the live document's
+/// window. Schedule-only rows say `no_prediction`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct BoardRow {
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub departure: BoardDeparture,
+    pub expected_secs: Option<u32>,
+    pub delay_secs: Option<i32>,
+    pub status: LiveStatus,
+}
+
+/// The board at a stop, answered whole.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct StopBoard {
+    pub rows: Vec<BoardRow>,
+    /// The stop had nothing of its own and is part of a walking
+    /// group: the rows are the group's, each naming its bay.
+    pub pooled: bool,
+    /// A live document fed this answer.
+    pub live: bool,
+}
+
+/// Live delays never reach back further than this when looking for
+/// late buses still to come (a 3-hour delay is a data fault).
+const MAX_LOOKBACK_SECS: u32 = 3 * 3600;
+
+/// THE board — when does service leave this stop — realtime-first.
+/// Every departure of the day's (patched) trips from the stop, ordered
+/// by when it will actually leave: a late bus scheduled before
+/// `from_secs` that has not left yet is on the board; an early one
+/// that already left is not. A stop with nothing of its own that
+/// belongs to a walking group (a station pin, a bay) answers its
+/// group's board instead — a plain stop never pools, so a diverted-
+/// away stop shows its emptiness.
+pub fn stop_board(
+    network: &Network,
+    day: &[MaterializedTrip],
+    stop_id: &str,
+    from_secs: u32,
+    limit: usize,
+    live: Option<&LiveDay>,
+) -> StopBoard {
+    let rows = live_rows(network, day, &[stop_id.to_string()], from_secs, limit, live);
+    if !rows.is_empty() {
+        return StopBoard { rows, pooled: false, live: live.is_some() };
+    }
+    let group: Vec<String> = transit_network::walking_group(network, stop_id).into_keys().collect();
+    if group.len() < 2 {
+        return StopBoard { rows, pooled: false, live: live.is_some() };
+    }
+    StopBoard {
+        rows: live_rows(network, day, &group, from_secs, limit, live),
+        pooled: true,
+        live: live.is_some(),
+    }
+}
+
+fn live_rows(
+    network: &Network,
+    day: &[MaterializedTrip],
+    stops: &[String],
+    from_secs: u32,
+    limit: usize,
+    live: Option<&LiveDay>,
+) -> Vec<BoardRow> {
+    let window = live.map(|l| l.window).unwrap_or_default();
+    let lookback = live
+        .into_iter()
+        .flat_map(|l| l.trips.iter().flat_map(|t| t.stops.iter()))
+        .filter_map(|s| Some(s.predicted_departure?.saturating_sub(s.scheduled_departure?)))
+        .max()
+        .unwrap_or(0)
+        .min(MAX_LOOKBACK_SECS);
+    let mut rows: Vec<BoardRow> = board_over(network, day, stops, from_secs.saturating_sub(lookback), usize::MAX)
+        .into_iter()
+        .map(|d| {
+            let expected = live
+                .and_then(|l| l.visit(&d.schedule, d.start_secs, &d.stop, d.departure_secs))
+                .and_then(|v| v.predicted_departure);
+            let delay = expected.map(|e| e as i32 - d.departure_secs as i32);
+            BoardRow { status: classify(delay, &window), expected_secs: expected, delay_secs: delay, departure: d }
+        })
+        .filter(|r| r.expected_secs.unwrap_or(r.departure.departure_secs) >= from_secs)
+        .collect();
+    rows.sort_by(|a, b| {
+        let at = |r: &BoardRow| r.expected_secs.unwrap_or(r.departure.departure_secs);
+        at(a)
+            .cmp(&at(b))
+            .then_with(|| a.departure.schedule.cmp(&b.departure.schedule))
+            .then_with(|| a.departure.start_secs.cmp(&b.departure.start_secs))
+    });
+    rows.truncate(limit);
+    rows
 }
 
 fn board_over(

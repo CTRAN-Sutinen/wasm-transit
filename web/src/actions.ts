@@ -1,6 +1,6 @@
 import { app, getEditDocument, setEditDocument, setStreets, type DiversionDraft } from "./state.svelte";
 import { get as idbGet, set as idbSet, del as idbDel } from "idb-keyval";
-import { ensureAnalysisLayer, ensureEditReports, importedNetworkDocument, ensureRuncutBoarding, ensureRuncutEdits, ensureRouterBoarding, ensureRouterEdits, ensureStreets, runcutCap, runcutModule, routerCap, routerModule, rtCap, rtModule } from "./capabilities.svelte";
+import { ensureAnalysisLayer, ensureEditReports, importedNetworkDocument, ensureRuncutBoarding, ensureRuncutEdits, ensureRouterBoarding, ensureRouterEdits, ensureStreets, runcutCap, runcutModule, routerCap, routerModule, rtCap, rtModule, boardCap, boardModule, ensureBoardBoarding, ensureBoardEdits, calendarCap, calendarModule, ensureCalendarNetwork, contentHash } from "./capabilities.svelte";
 import { stopPointOf, tripLine, tripSegment, type MapPoint } from "./mapview";
 import type { EditRecord } from "./types/EditRecord";
 import type { Itinerary } from "./types/Itinerary";
@@ -126,7 +126,7 @@ export async function loadGtfsBytes(bytes: Uint8Array, label: string): Promise<v
   setFeedBytes(bytes); // the bus reads this document everywhere
   app.feedLoaded = true;
   app.selectedStop = null;
-  app.selectedTripId = null;
+  app.selectedTrip = null;
   app.tripFeature = null;
   app.plan = null;
   app.planBaseline = null;
@@ -135,6 +135,8 @@ export async function loadGtfsBytes(bytes: Uint8Array, label: string): Promise<v
   // revalidate every record against the new document and derived
   // views re-derive.
   pushEdits();
+  // A new feed is a new trip map: the live document re-resolves.
+  void refreshLive();
   await cacheFeed(label, bytes.slice());
   app.status = `Loaded ${label}.` + " Everything below is running client-side.";
 }
@@ -155,22 +157,20 @@ export async function loadGtfsFromUrl(): Promise<void> {
 }
 
 export async function loadRtBytes(bytes: Uint8Array): Promise<void> {
-  // The decoder lives in the REALTIME CAPABILITY (the monolith keeps
-  // no copy); the bytes are awaited before crossing into wasm — a
-  // Promise in a &[u8] slot silently decodes as an empty buffer.
+  // The decoder lives in the REALTIME CAPABILITY; the bytes are
+  // awaited before crossing into wasm — a Promise in a &[u8] slot
+  // silently decodes as an empty buffer. The module registers the
+  // snapshot; the live document is its answer over it.
   const module = await rtModule();
   if (!module) {
     app.status =
       "Realtime capability unavailable — live times are off until it loads (the capability bus did not assemble).";
     return;
   }
-  app.rtOverview = rtCap(module).decode(bytes);
-  // Only a combined feed carries vehicles; a pure TripUpdates feed must
-  // not touch the vehicle dots (they belong to the VP feed / last good
-  // positions).
-  if (app.rtOverview.vehicle_positions?.length) {
-    app.vehicles = app.rtOverview.vehicle_positions;
-  }
+  const { overview, rtHash } = rtCap(module).decode(bytes);
+  app.rtOverview = overview;
+  app.rtHash = rtHash;
+  await refreshLive();
 }
 
 export async function loadRtFromUrl(): Promise<void> {
@@ -189,10 +189,132 @@ export async function loadVpFromUrl(): Promise<void> {
         "Realtime capability unavailable — vehicle positions are off until it loads (the capability bus did not assemble).";
       return;
     }
-    const rt = rtCap(module).decode(await fetchBytes(proxied(app.vpUrl)));
-    app.vehicles = rt.vehicle_positions ?? [];
-    app.status = `Vehicle positions loaded: ${app.vehicles.length} vehicles on the map.`;
+    app.vpHash = rtCap(module).decode(await fetchBytes(proxied(app.vpUrl))).rtHash;
+    await refreshLive();
+    app.status = `Vehicle positions loaded: ${app.live?.summary.vehicles ?? 0} vehicles on the map.`;
   } catch (e) { error(e); } // keep the last good positions on the map
+}
+
+// ---------------------------------------------------------------
+// the live document — cap-rt's answer, never a host join
+// ---------------------------------------------------------------
+
+/// Registrations per rt module instance (a module dropped and
+/// re-fetched starts empty): the feed and the trip map, by their
+/// own identities.
+const rtRegistrations = new WeakMap<object, Map<string, string>>();
+let liveSeq = 0;
+
+/// Ask cap-rt for THE live document over the current snapshots: the
+/// feed's trip map (from the board's boarding — the import already
+/// ran) resolves agency ids into derived trips inside the module.
+/// Keeps the last good document when the bus cannot answer.
+export async function refreshLive(): Promise<void> {
+  const seq = ++liveSeq;
+  const bytes = feedBytes();
+  if (!bytes || (!app.rtHash && !app.vpHash)) {
+    app.live = null;
+    return;
+  }
+  try {
+    const [module, boarding] = await Promise.all([rtModule(), ensureBoardBoarding(bytes)]);
+    if (seq !== liveSeq || !module || !boarding) return;
+    const cap = rtCap(module);
+    let seen = rtRegistrations.get(module);
+    if (!seen) rtRegistrations.set(module, (seen = new Map()));
+    const feedKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
+    const feedHash = seen.get(feedKey) ?? cap.loadFeed(bytes);
+    seen.set(feedKey, feedHash);
+    const mapKey = `map:${boarding.networkHash}`;
+    const tripMapHash = seen.get(mapKey) ?? cap.loadTripMap(boarding.tripMap);
+    seen.set(mapKey, tripMapHash);
+    if (seq !== liveSeq) return;
+    app.live = cap.live(feedHash, app.rtHash, app.vpHash, tripMapHash);
+  } catch (e) {
+    console.warn("live document failed:", e);
+  }
+}
+
+// ---------------------------------------------------------------
+// the board — cap-board's answer at the selected stop
+// ---------------------------------------------------------------
+
+const boardLives = new WeakMap<object, Set<string>>();
+let boardSeq = 0;
+
+/// Ask cap-board for the selected stop's board: the edit document
+/// registered, the live document (when there is one) registered by
+/// hash, and the module answers whole — pooling, realtime-first
+/// order, each row's status. Off (and saying so) when the bus cannot
+/// assemble it.
+export async function refreshBoard(): Promise<void> {
+  const seq = ++boardSeq;
+  const stop = app.selectedStop;
+  const bytes = feedBytes();
+  const live = app.live;
+  const records = getEditDocument();
+  const date = serviceDate();
+  const fromSecs = secondsSinceMidnight();
+  if (!stop || !app.feedLoaded || !bytes) {
+    app.board = null;
+    app.boardOff = false;
+    return;
+  }
+  try {
+    const boarding = await ensureBoardBoarding(bytes);
+    const editsHash = boarding ? await ensureBoardEdits(boarding.networkHash, records) : null;
+    const module = boarding ? await boardModule() : null;
+    if (seq !== boardSeq) return;
+    if (!boarding || !module) {
+      app.board = null;
+      app.boardOff = true;
+      return;
+    }
+    const cap = boardCap(module);
+    let liveHash: string | null = null;
+    if (live) {
+      let loaded = boardLives.get(module);
+      if (!loaded) boardLives.set(module, (loaded = new Set()));
+      if (!loaded.has(live.liveHash)) {
+        const hash = cap.loadLive(live.live);
+        if (hash !== live.liveHash) {
+          throw new Error(`live identity disagrees across capabilities: ${hash} != ${live.liveHash}`);
+        }
+        loaded.add(hash);
+      }
+      liveHash = live.liveHash;
+    }
+    app.board = cap.stopBoard(boarding.networkHash, editsHash, stop, date, fromSecs, 15, liveHash);
+    app.boardOff = false;
+  } catch (e) {
+    console.warn("board failed:", e);
+    if (seq === boardSeq) {
+      app.board = null;
+      app.boardOff = true;
+    }
+  }
+}
+
+let servicesSeq = 0;
+
+/// The service keys running today (cap-calendar) — decoration: empty
+/// when the capability cannot assemble.
+export async function refreshServices(): Promise<void> {
+  const seq = ++servicesSeq;
+  const bytes = feedBytes();
+  const date = serviceDate();
+  if (!app.feedLoaded || !bytes) {
+    app.activeServices = [];
+    return;
+  }
+  try {
+    const networkHash = await ensureCalendarNetwork(bytes);
+    const module = networkHash ? await calendarModule() : null;
+    if (seq !== servicesSeq) return;
+    app.activeServices = networkHash && module ? calendarCap(module).activeServices(networkHash, date) : [];
+  } catch {
+    if (seq === servicesSeq) app.activeServices = [];
+  }
 }
 
 export async function dropFile(file: File): Promise<void> {
@@ -214,35 +336,39 @@ export function selectStop(stopId: string): void {
   app.clock = Date.now(); // re-derive the departure board
 }
 
-export async function showTrip(tripId: string): Promise<void> {
+/// A derived trip's selection key — the model's identity.
+export function tripKey(trip: { schedule: string; start_secs: number }): string {
+  return `${trip.schedule}@${trip.start_secs}`;
+}
+
+export async function showTrip(trip: { schedule: string; start_secs: number }): Promise<void> {
+  const key = tripKey(trip);
   // Clicking the selected row again deselects: the route line always
   // has a way off the map.
-  if (app.selectedTripId === tripId) {
+  if (app.selectedTrip === key) {
     clearTrip();
     return;
   }
-  app.selectedTripId = tripId;
+  app.selectedTrip = key;
   const bytes = feedBytes();
   if (!bytes) return;
   try {
-    // Click-through: the agency's trip id joins to the derived trip
-    // through the import's trip map, the day view answers the
-    // trip's EFFECTIVE stops (operator edits apply), and the map is
-    // the host's view over both — nothing in wasm draws.
+    // Click-through: the day view answers the trip's EFFECTIVE stops
+    // (operator edits apply), and the map is the host's view over
+    // them — nothing in wasm draws.
     const boarding = await ensureRuncutBoarding(bytes);
     const net = await importedNetworkDocument(bytes);
     const module = boarding ? await runcutModule() : null;
-    const entry = boarding?.tripMap.entries.find((e) => e.agency_trip_ids.includes(tripId));
-    if (!boarding || !net || !module || !entry) {
+    if (!boarding || !net || !module) {
       // No geometry -> clear the path, but never wipe other state.
       app.tripFeature = null;
       return;
     }
     const editsHash = await ensureRuncutEdits(boarding.networkHash, getEditDocument());
     const stops = runcutCap(module).tripStops(
-      boarding.networkHash, editsHash, entry.schedule, entry.start_secs, serviceDate());
-    const patternId = net.schedules[entry.schedule]?.pattern ?? "";
-    app.tripFeature = tripLine(net, patternId, stops, { trip: tripId });
+      boarding.networkHash, editsHash, trip.schedule, trip.start_secs, serviceDate());
+    const patternId = net.schedules[trip.schedule]?.pattern ?? "";
+    app.tripFeature = tripLine(net, patternId, stops, { trip: key });
   } catch (e) {
     app.tripFeature = null;
     error(e);
@@ -251,7 +377,7 @@ export async function showTrip(tripId: string): Promise<void> {
 
 /** Deselect the board's trip: the highlighted row and its map line. */
 export function clearTrip(): void {
-  app.selectedTripId = null;
+  app.selectedTrip = null;
   app.tripFeature = null;
 }
 
