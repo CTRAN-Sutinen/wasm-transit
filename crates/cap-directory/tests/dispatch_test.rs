@@ -12,7 +12,8 @@
 //!    omitted;
 //! 4. the route list is name-sorted with the model's modes;
 //! 5. a route's stop sequences are its PATTERNS, ordered stops with
-//!    resolved names — the model's directions;
+//!    resolved names (route_detail groups them by direction, the
+//!    timetable runs across one direction's patterns);
 //! 6. unknown hashes and unknown routes are honest errors and
 //!    empty answers, never panics.
 
@@ -237,6 +238,23 @@ fn the_planners_lists_are_directory_answers() {
     };
     assert!(!detail.patterns.is_empty() && !detail.stops.is_empty());
     assert!(detail.pattern_trips_by_type.iter().flat_map(|g| &g.pattern_trips).all(|s| s.trips.unwrap_or(0) > 0));
+    // The timetable of its first direction under its first service
+    // type: every trip, by start, one time per column.
+    let direction = detail.directions[0].direction.clone();
+    let service_type = detail.pattern_trips_by_type[0].service_type.clone();
+    let request = Request::Timetable { network_hash: hash.clone(), route_id: "10".into(), direction, service_type };
+    let table = match dispatch(request).unwrap() {
+        Response::Timetable { timetable } => timetable.expect("the direction and type exist"),
+        _ => panic!("timetable"),
+    };
+    assert!(!table.trips.is_empty());
+    assert!(table.trips.windows(2).all(|w| w[0].start_secs <= w[1].start_secs), "rows by start");
+    assert!(table.trips.iter().all(|t| t.times.len() == table.stops.len()));
+    let unknown = Request::Timetable { network_hash: hash.clone(), route_id: "10".into(), direction: Some("ghost".into()), service_type: String::new() };
+    match dispatch(unknown).unwrap() {
+        Response::Timetable { timetable } => assert!(timetable.is_none()),
+        _ => panic!("timetable"),
+    }
     match dispatch(Request::RouteDetail { network_hash: hash.clone(), route_id: "nope".into() }).unwrap() {
         Response::RouteDetail { detail } => assert!(detail.is_none()),
         _ => panic!("route_detail"),

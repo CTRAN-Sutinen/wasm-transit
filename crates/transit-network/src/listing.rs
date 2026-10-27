@@ -5,13 +5,19 @@
 //! stop's, the routes whose patterns visit it. The trip
 //! count is `trip_starts` — the same expansion materialize runs, so
 //! a list never promises a trip the day does not have.
+//!
+//! And the planner's TIMETABLE: one route, one direction, one service
+//! type — every trip of the direction's patterns (bay and short-turn
+//! variants together), one row per trip, one column per stop in the
+//! route's order. Rows are `materialize_service`'s trips, so the
+//! timetable is the day the model runs, never a second derivation.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::geometry::EntityKind;
-use crate::materialize::trip_starts;
-use crate::model::Network;
+use crate::materialize::{materialize_service, trip_starts};
+use crate::model::{Departures, Network};
 
 /// One entity as a list shows it. `context` is what places it (a
 /// pattern's route, a schedule's pattern and service type); `trips`
@@ -37,14 +43,84 @@ pub struct PatternTripsGroup {
 }
 
 /// A route's composition: its patterns, the stops they visit (first
-/// visit order, pattern by pattern), and its schedules by service
-/// type (the design axis).
+/// visit order, pattern by pattern), its pattern trips by service
+/// type (the design axis), and its patterns by direction (what a
+/// timetable is asked for).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct RouteDetail {
     pub patterns: Vec<EntityRow>,
     pub stops: Vec<EntityRow>,
     pub pattern_trips_by_type: Vec<PatternTripsGroup>,
+    pub directions: Vec<DirectionGroup>,
+}
+
+/// One direction's patterns on a route. `direction` is `None` for the
+/// patterns placed in none (listed last, when there are any).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DirectionGroup {
+    pub direction: Option<String>,
+    pub name: String,
+    pub patterns: Vec<EntityRow>,
+}
+
+/// A timetable: one route, one direction, one service type.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Timetable {
+    pub route: String,
+    pub route_name: String,
+    pub direction: Option<String>,
+    pub direction_name: String,
+    pub service_type: String,
+    pub service_type_name: String,
+    /// The columns: every stop the direction's patterns visit, in
+    /// route order (a variant's stops sit where it leaves and rejoins
+    /// the others).
+    pub stops: Vec<TimetableStop>,
+    /// The direction's patterns under this service type, most trips
+    /// first — the legend a row's `pattern` points into.
+    pub patterns: Vec<TimetablePattern>,
+    /// Every trip, by start (then pattern trips id).
+    pub trips: Vec<TimetableTrip>,
+}
+
+/// One timetable column.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct TimetableStop {
+    pub stop: String,
+    pub name: String,
+    /// A timepoint on some pattern visiting it (a public timetable's
+    /// columns are its timepoints).
+    pub timepoint: bool,
+}
+
+/// One pattern in a timetable, with the pattern trips that run it
+/// under the service type.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct TimetablePattern {
+    pub pattern: String,
+    pub name: String,
+    pub pattern_trips: Vec<String>,
+    pub trips: u32,
+    /// Some of its trips come from headway bands, not exact times.
+    pub headway: bool,
+}
+
+/// One trip: its identity (pattern trips, start), its pattern, the
+/// block carrying it, and its departure at each column (`None` where
+/// its pattern does not stop).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct TimetableTrip {
+    pub pattern_trips: String,
+    pub start_secs: u32,
+    pub pattern: String,
+    pub block: Option<String>,
+    pub times: Vec<Option<u32>>,
 }
 
 /// A stop's composition: the routes whose patterns visit it.
@@ -144,10 +220,142 @@ pub fn route_detail(network: &Network, route: &str) -> Option<RouteDetail> {
             pattern_trips,
         })
         .collect();
+    let named = network.routes[route].directions.iter().map(|(id, d)| (Some(id.clone()), d.name.clone()));
+    let directions = named
+        .chain(std::iter::once((None, "No direction".to_string())))
+        .filter_map(|(direction, name)| {
+            let patterns: Vec<EntityRow> = pattern_ids
+                .iter()
+                .filter(|pid| network.patterns[**pid].direction == direction)
+                .map(|pid| pattern_row(network, pid))
+                .collect();
+            (direction.is_some() || !patterns.is_empty()).then_some(DirectionGroup { direction, name, patterns })
+        })
+        .collect();
     Some(RouteDetail {
         patterns: pattern_ids.iter().map(|pid| pattern_row(network, pid)).collect(),
         stops,
         pattern_trips_by_type,
+        directions,
+    })
+}
+
+/// The timetable of `route` in `direction` (`None`: its patterns in
+/// no direction) under `service_type`. `None` for an unknown route,
+/// direction or service type. A pattern whose trips cannot
+/// materialize (an invalid document mid-edit) contributes none —
+/// validation names it.
+pub fn timetable(network: &Network, route: &str, direction: Option<&str>, service_type: &str) -> Option<Timetable> {
+    let r = network.routes.get(route)?;
+    let direction_name = match direction {
+        Some(d) => r.directions.get(d)?.name.clone(),
+        None => "No direction".to_string(),
+    };
+    let service = network.service_types.get(service_type)?;
+
+    // The direction's patterns under the type, with their trips.
+    let mut by_pattern: std::collections::BTreeMap<&str, (Vec<String>, Vec<crate::MaterializedTrip>, bool)> =
+        Default::default();
+    for (id, pt) in &network.pattern_trips {
+        let Some(p) = network.patterns.get(&pt.pattern) else { continue };
+        if pt.service_type != service_type || p.route != route || p.direction.as_deref() != direction {
+            continue;
+        }
+        let entry = by_pattern.entry(pt.pattern.as_str()).or_default();
+        entry.0.push(id.clone());
+        entry.1.extend(materialize_service(network, id).unwrap_or_default());
+        entry.2 |= matches!(pt.departures, Departures::HeadwayBands { .. });
+    }
+    let mut order: Vec<&str> = by_pattern.keys().copied().collect();
+    order.sort_by(|a, b| by_pattern[b].1.len().cmp(&by_pattern[a].1.len()).then(a.cmp(b)));
+
+    // Columns: the busiest pattern's stops, then each other pattern's
+    // stops slotted in after the last stop it shares (greedy, so the
+    // columns are a supersequence of every pattern's stops).
+    let mut columns: Vec<&str> = Vec::new();
+    for pid in &order {
+        let mut at: Option<usize> = None;
+        for ps in &network.patterns[*pid].stops {
+            let from = at.map_or(0, |i| i + 1);
+            at = Some(match columns[from..].iter().position(|c| *c == ps.stop) {
+                Some(i) => from + i,
+                None => {
+                    columns.insert(from, ps.stop.as_str());
+                    from
+                }
+            });
+        }
+    }
+    let embed = |pid: &str| -> Vec<usize> {
+        let mut next = 0;
+        network.patterns[pid]
+            .stops
+            .iter()
+            .map(|ps| {
+                let i = next + columns[next..].iter().position(|c| *c == ps.stop).expect("columns embed every pattern");
+                next = i + 1;
+                i
+            })
+            .collect()
+    };
+
+    let block_of: std::collections::HashMap<(&str, u32), &str> = network
+        .blocks
+        .iter()
+        .flat_map(|(bid, b)| b.trips.iter().map(move |t| ((t.pattern_trips.as_str(), t.start_secs), bid.as_str())))
+        .collect();
+    let mut trips: Vec<TimetableTrip> = Vec::new();
+    for pid in &order {
+        let slots = embed(pid);
+        for trip in &by_pattern[pid].1 {
+            let mut times = vec![None; columns.len()];
+            for (st, &col) in trip.stop_times.iter().zip(&slots) {
+                times[col] = Some(st.departure_secs);
+            }
+            trips.push(TimetableTrip {
+                block: block_of.get(&(trip.pattern_trips.as_str(), trip.start_secs)).map(|b| b.to_string()),
+                pattern_trips: trip.pattern_trips.clone(),
+                start_secs: trip.start_secs,
+                pattern: trip.pattern.clone(),
+                times,
+            });
+        }
+    }
+    trips.sort_by(|a, b| a.start_secs.cmp(&b.start_secs).then_with(|| a.pattern_trips.cmp(&b.pattern_trips)));
+
+    let stops = columns
+        .iter()
+        .map(|stop| TimetableStop {
+            stop: stop.to_string(),
+            name: network.stops.get(*stop).map_or(stop.to_string(), |s| s.name.clone()),
+            timepoint: order
+                .iter()
+                .any(|pid| network.patterns[*pid].stops.iter().any(|ps| ps.stop == *stop && ps.timepoint)),
+        })
+        .collect();
+    let patterns = order
+        .iter()
+        .map(|pid| {
+            let (ids, ts, headway) = &by_pattern[pid];
+            TimetablePattern {
+                pattern: pid.to_string(),
+                name: network.patterns[*pid].name.clone(),
+                pattern_trips: ids.clone(),
+                trips: ts.len() as u32,
+                headway: *headway,
+            }
+        })
+        .collect();
+    Some(Timetable {
+        route: route.to_string(),
+        route_name: r.name.clone(),
+        direction: direction.map(str::to_string),
+        direction_name,
+        service_type: service_type.to_string(),
+        service_type_name: service.name.clone(),
+        stops,
+        patterns,
+        trips,
     })
 }
 

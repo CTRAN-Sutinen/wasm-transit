@@ -1,7 +1,10 @@
 //! The planner's lists: rows per kind narrowed by every query term,
 //! and a route's composition — its trip counts the materialized day's.
 
-use transit_network::{entity_rows, route_detail, stop_detail, EntityKind, HeadwayBand, Network, Departures};
+use transit_network::{
+    apply_edits, entity_rows, route_detail, stop_detail, timetable, Departures, EntityKind, HeadwayBand, Network,
+    NetworkEdit, PatternTrips,
+};
 
 fn network() -> Network {
     serde_json::from_str(include_str!("../../../testdata/network.json")).unwrap()
@@ -57,4 +60,82 @@ fn trip_counts_are_the_days_trips() {
         ],
     };
     assert_eq!(entity_rows(&net, EntityKind::PatternTrips, "")[0].trips, Some(3));
+}
+
+/// Route 10 in direction "in" (To Downtown): the committed pattern
+/// A·B·C plus a bay variant A·B·D that leaves at B, on the weekday
+/// type every 30 minutes 09:00–10:00.
+fn with_a_bay_variant() -> Network {
+    let net = network();
+    let mut variant = net.patterns["10-inbound"].clone();
+    variant.name = "10 inbound to Bay D".into();
+    variant.stops[2].stop = "D".into();
+    let mut bay = net.stops["C"].clone();
+    bay.name = "Bay D".into();
+    apply_edits(
+        &net,
+        &[
+            NetworkEdit::UpsertStop { id: "D".into(), stop: bay },
+            NetworkEdit::SetDirection { route: "10".into(), id: "in".into(), name: "To Downtown".into() },
+            NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: None, direction: Some("in".into()) },
+            NetworkEdit::UpsertPattern { id: "10-bay".into(), pattern: variant },
+            NetworkEdit::UpsertPatternTrips {
+                id: "10-bay-weekday".into(),
+                pattern_trips: PatternTrips {
+                    pattern: "10-bay".into(),
+                    service_type: "weekday".into(),
+                    departures: Departures::HeadwayBands {
+                        bands: vec![HeadwayBand { start_secs: 32_400, end_secs: 36_000, headway_secs: 1800 }],
+                    },
+                },
+            },
+        ],
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_route_lists_its_patterns_by_direction() {
+    let net = with_a_bay_variant();
+    let dirs = route_detail(&net, "10").unwrap().directions;
+    assert_eq!(dirs.len(), 2, "the named direction, then the patterns in none");
+    assert_eq!((dirs[0].direction.as_deref(), dirs[0].name.as_str()), (Some("in"), "To Downtown"));
+    assert_eq!(dirs[0].patterns.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["10-inbound"]);
+    assert_eq!((dirs[1].direction.as_deref(), dirs[1].patterns[0].id.as_str()), (None, "10-bay"));
+    // With every pattern placed, no "No direction" group appears.
+    assert_eq!(route_detail(&network(), "10").unwrap().directions.len(), 1);
+}
+
+#[test]
+fn a_timetable_is_one_direction_on_one_service_type_across_its_patterns() {
+    let net = apply_edits(
+        &with_a_bay_variant(),
+        &[NetworkEdit::UpdatePattern { id: "10-bay".into(), name: None, route: None, direction: Some("in".into()) }],
+    )
+    .unwrap();
+    let t = timetable(&net, "10", Some("in"), "weekday").unwrap();
+    assert_eq!((t.direction_name.as_str(), t.service_type_name.as_str()), ("To Downtown", "Weekday"));
+    // The variant's bay sits where it leaves the others.
+    assert_eq!(t.stops.iter().map(|s| s.stop.as_str()).collect::<Vec<_>>(), ["A", "B", "D", "C"]);
+    assert_eq!(t.stops.iter().map(|s| s.timepoint).collect::<Vec<_>>(), [true, false, true, true]);
+    // Legend: most trips first; the bands are marked.
+    let legend: Vec<_> = t.patterns.iter().map(|p| (p.pattern.as_str(), p.trips, p.headway)).collect();
+    assert_eq!(legend, [("10-inbound", 3, false), ("10-bay", 2, true)]);
+    // Rows by start, each with its identity, block and times.
+    let rows: Vec<_> = t.trips.iter().map(|r| (r.start_secs, r.pattern.as_str(), r.block.as_deref())).collect();
+    assert_eq!(
+        rows,
+        [(28_800, "10-inbound", Some("400")), (30_600, "10-inbound", Some("400")), (32_400, "10-bay", None),
+         (34_200, "10-bay", None), (91_800, "10-inbound", None)]
+    );
+    assert_eq!(t.trips[0].times, [Some(28_800), Some(29_100), None, Some(29_400)]);
+    assert_eq!(t.trips[2].times, [Some(32_400), Some(32_700), Some(33_000), None]);
+
+    // The patterns in no direction are their own timetable; an
+    // unknown route, direction or type is no timetable.
+    assert!(timetable(&net, "10", None, "weekday").unwrap().trips.is_empty());
+    assert_eq!(timetable(&with_a_bay_variant(), "10", None, "weekday").unwrap().trips.len(), 2);
+    assert!(timetable(&net, "10", Some("out"), "weekday").is_none());
+    assert!(timetable(&net, "ghost", Some("in"), "weekday").is_none());
+    assert!(timetable(&net, "10", Some("in"), "ghost").is_none());
 }

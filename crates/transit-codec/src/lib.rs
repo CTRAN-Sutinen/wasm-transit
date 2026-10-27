@@ -40,7 +40,7 @@ use transit_core::{
 };
 use transit_network::{
     materialize_service, Anchor, Block, CalendarException, CalendarRule, Coord, DateRange, DayState,
-    Mode, Network, Pattern, PatternTrips, PatternStop, Departures, ServiceType, TimingProfile, TripRef, WeekdaySet,
+    Direction, Mode, Network, Pattern, PatternTrips, PatternStop, Departures, ServiceType, TimingProfile, TripRef, WeekdaySet,
     Layover,
 };
 
@@ -140,6 +140,26 @@ pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, String> {
         })
         .collect();
 
+    // GTFS's direction_id is binary. Directions "0" and "1" (what an
+    // import names them) export as themselves; any other id takes a
+    // free one in id order, and a route's third direction exports
+    // without one.
+    let direction_of = |pattern: &str| {
+        let p = net.patterns.get(pattern)?;
+        let id = p.direction.as_ref()?;
+        let route = net.routes.get(&p.route)?;
+        let literal = |k: &str| match k {
+            "0" => Some(0u8),
+            "1" => Some(1u8),
+            _ => None,
+        };
+        let code = literal(id).or_else(|| {
+            let mut free = [0u8, 1].into_iter().filter(|c| !route.directions.keys().any(|k| literal(k) == Some(*c)));
+            let rank = route.directions.keys().filter(|k| literal(k).is_none()).position(|k| k == id)?;
+            free.nth(rank)
+        })?;
+        Some((code, &route.directions[id]))
+    };
     for (pattern_trips_id, pattern_trips) in &net.pattern_trips {
         // Service type → explicit running dates, exact for any rule.
         if let Some(service_type) = net.service_types.get(&pattern_trips.service_type) {
@@ -159,11 +179,13 @@ pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, String> {
                     route_id: trip.route.clone(),
                     service_id: pattern_trips_id.clone(),
                     trip_id: trip_id.clone(),
-                    trip_headsign: net
-                        .patterns
-                        .get(&trip.pattern)
-                        .map(|p| p.name.clone()),
-                    direction_id: None,
+                    // A directed pattern's trips are signed with the
+                    // direction's name (what a rider reads, and what
+                    // the import names the direction from).
+                    trip_headsign: direction_of(&trip.pattern)
+                        .map(|(_, d)| d.name.clone())
+                        .or_else(|| net.patterns.get(&trip.pattern).map(|p| p.name.clone())),
+                    direction_id: direction_of(&trip.pattern).map(|(code, _)| code),
                     block_id: block_of
                         .get(&(pattern_trips_id.clone(), trip.start_secs))
                         .cloned(),
@@ -361,6 +383,11 @@ pub struct ImportOutcome {
 /// documented ways (every loss that touches the planner's data is
 /// reported in [`ImportOutcome::notes`], never silent):
 ///
+/// * GTFS direction_id becomes the route's directions ("0", "1"),
+///   each named by its trips' most common headsign, else "To" its
+///   most common terminal; a pattern of trips without one is placed
+///   in none (the export signs directed trips with the direction's
+///   name, so the names survive the round trip);
 /// * trips cluster into patterns by (route, direction, stop
 ///   sequence); the cluster's shortest-running trip provides the
 ///   pattern's single timing profile, so run-time variation between
@@ -433,6 +460,7 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
         net.routes.insert(
             id.clone(),
             transit_network::Route {
+                directions: Default::default(),
                 name: r.display_name(),
                 mode: mode_from_gtfs_type(r.route_type),
                 color: r.route_color.clone(),
@@ -577,6 +605,7 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
         net.patterns.insert(
             pattern_id.clone(),
             Pattern {
+                direction: (dir != "n").then(|| dir.clone()),
                 route: route_id.clone(),
                 name: format!("{route_name} → {last_stop_name}"),
                 path,
@@ -624,6 +653,43 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
                     departures: Departures::ExactTimes { starts },
                 },
             );
+        }
+    }
+
+    // The directions the clusters ran in, each named by its trips'
+    // most common headsign (else "To" its most common terminal).
+    // Ties: the lexicographically first — deterministic.
+    let mut headsigns: BTreeMap<(String, String), BTreeMap<String, usize>> = BTreeMap::new();
+    let mut terminals: BTreeMap<(String, String), BTreeMap<String, usize>> = BTreeMap::new();
+    for ((route_id, dir, seq), members) in &clusters {
+        if dir == "n" {
+            continue;
+        }
+        let key = (route_id.clone(), dir.clone());
+        let terminal = seq
+            .last()
+            .map(|s| gtfs.stops.get(s).map(|s| s.stop_name.clone()).unwrap_or_else(|| s.clone()))
+            .unwrap_or_default();
+        *terminals.entry(key.clone()).or_default().entry(terminal).or_default() += members.len();
+        let signs = headsigns.entry(key).or_default();
+        for &i in members {
+            if let Some(h) = gtfs.trips.get(kept[i].trip_id).and_then(|t| t.trip_headsign.as_deref()) {
+                if !h.is_empty() {
+                    *signs.entry(h.to_string()).or_default() += 1;
+                }
+            }
+        }
+    }
+    let most = |counts: &BTreeMap<String, usize>| {
+        counts.iter().max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0))).map(|(k, _)| k.clone())
+    };
+    for (key @ (route_id, dir), ends) in &terminals {
+        let name = headsigns
+            .get(key)
+            .and_then(&most)
+            .unwrap_or_else(|| format!("To {}", most(ends).unwrap_or_default()));
+        if let Some(route) = net.routes.get_mut(route_id) {
+            route.directions.insert(dir.clone(), Direction { name });
         }
     }
 

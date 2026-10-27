@@ -452,14 +452,36 @@ day-shape answer is the dogfood record).
   caps-smoke, the runner gates, e2e); testdata/network.json uses the
   new names. The original app's on-screen labels still say
   "Schedule"; it is the demoted UI.
-  * Next, decided with the user and not started: Direction in the
-    model (route → direction → pattern; the import keeps GTFS
-    direction_id instead of dropping it); a derived TIMETABLE op
-    (route + direction + service type, across patterns — bay
-    variants are background); change gestures at timetable level
-    (frequency by period, span, running time by period, stops on a
-    pattern); a baseline-vs-proposal diff op (QAF-20); then the
-    service-design UI rebuilt on them.
+  * Next, decided with the user: Direction in the model and the
+    TIMETABLE op are landed (the entry below); not started —
+    change gestures at timetable level (frequency by period, span,
+    running time by period, stops on a pattern); a
+    baseline-vs-proposal diff op (QAF-20); then the service-design
+    UI rebuilt on them.
+
+- **Directions and the timetable (2026-10-27)**: a route runs in
+  named directions (`Route.directions`) and a pattern in at most
+  one (`Pattern.direction`; validation's `unknown_direction`); the
+  gestures `set_direction` / `remove_direction` (refused while a
+  pattern runs in it) and `update_pattern {direction}`. The import
+  keeps GTFS direction_id, naming each direction from its trips'
+  headsigns; the export writes both back. The directory answers
+  patterns by direction (`route_detail.directions`) and the
+  planner's timetable (`timetable`: route + direction + service
+  type, every trip across the direction's patterns). ON THE BUS:
+  transit-network `gesture_test`
+  `a_pattern_runs_in_one_of_its_routes_directions`, `listing_test`
+  `a_timetable_is_one_direction_on_one_service_type_across_its_patterns`
+  and `a_route_lists_its_patterns_by_direction`; transit-codec
+  `codec_prop_test` (the generator now draws direction_id and
+  headsigns; the fixpoint fails with direction_id dropped on export)
+  and `import_regression_test`
+  `directions_are_named_from_headsigns_and_survive_the_round_trip`;
+  cap-directory `dispatch_test`; caps-smoke ("a timetable is every
+  trip of one direction on one service type"); the directory runner
+  gate in `just test`. DOGFOODED: QA-FINDINGS "Session 2026-10-27
+  (directions and the timetable)" (019 inbound: 25 trips over the
+  Bay C / E / J patterns). No UI reads it yet.
 
 Model facts that hold everywhere: the import infers block
 layovers from observed end→start gaps (GTFS has none; the planner

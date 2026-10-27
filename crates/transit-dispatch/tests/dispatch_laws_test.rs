@@ -49,6 +49,7 @@ fn timepoint(id: &str, distance_m: f64) -> PatternStop {
 
 fn pattern(route: &str, stops: Vec<PatternStop>, at_timepoints: Vec<u32>) -> Pattern {
     Pattern {
+        direction: None,
         route: route.into(),
         name: format!("route {route}"),
         path: None,
@@ -71,9 +72,9 @@ fn network() -> Network {
     stops.insert("SB".to_string(), stop("SB", "Bay B", Some("STN")));
 
     let mut routes = std::collections::BTreeMap::new();
-    routes.insert("10".to_string(), Route { name: "10".into(), mode: transit_network::Mode::Bus, color: None });
-    routes.insert("20".to_string(), Route { name: "20".into(), mode: transit_network::Mode::Bus, color: None });
-    routes.insert("40".to_string(), Route { name: "Circulator".into(), mode: transit_network::Mode::Bus, color: None });
+    routes.insert("10".to_string(), Route { name: "10".into(), mode: transit_network::Mode::Bus, color: None, directions: Default::default() });
+    routes.insert("20".to_string(), Route { name: "20".into(), mode: transit_network::Mode::Bus, color: None, directions: Default::default() });
+    routes.insert("40".to_string(), Route { name: "Circulator".into(), mode: transit_network::Mode::Bus, color: None, directions: Default::default() });
 
     let mut patterns = std::collections::BTreeMap::new();
     patterns.insert(

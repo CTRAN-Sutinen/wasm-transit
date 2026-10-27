@@ -45,6 +45,7 @@ pub(crate) fn valid_network() -> Network {
         routes: [(
             "5".into(),
             Route {
+                directions: Default::default(),
                 name: "5-K Ave".into(),
                 mode: Mode::Bus,
                 color: None,
@@ -55,6 +56,7 @@ pub(crate) fn valid_network() -> Network {
         patterns: [(
             "5-inbound".into(),
             Pattern {
+                direction: None,
                 route: "5".into(),
                 name: "5 inbound".into(),
                 path: None,
@@ -443,11 +445,13 @@ fn transfer_point_requires_two_routes_across_its_walking_group() {
     b.parent = Some("STN".into());
     b.transfer = true;
     net.routes.insert("7".into(), Route {
+        directions: Default::default(),
         name: "7-L St".into(),
         mode: Mode::Bus,
         color: None,
     });
     net.patterns.insert("7-inbound".into(), Pattern {
+        direction: None,
         route: "7".into(),
         name: "7 inbound".into(),
         path: None,

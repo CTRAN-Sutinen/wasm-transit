@@ -36,6 +36,7 @@ pub type PatternId = String;
 pub type ServiceTypeId = String;
 pub type PatternTripsId = String;
 pub type BlockId = String;
+pub type DirectionId = String;
 
 /// A WGS84 position. Authored geometry (a pattern's alignment) is
 /// model data — `lat` first, matching `Stop`'s field order. (GeoJSON
@@ -140,6 +141,20 @@ pub struct Route {
     pub mode: Mode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    /// The ways the route runs, by id, each named the way the planner
+    /// says it ("To Downtown", "Northbound"). A pattern belongs to at
+    /// most one; a timetable is one direction on one service type.
+    /// Empty (omitted) for a route nobody has split into directions.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(optional, as = "Option<BTreeMap<DirectionId, Direction>>")]
+    pub directions: BTreeMap<DirectionId, Direction>,
+}
+
+/// One direction of a route, as a planner names it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Direction {
+    pub name: String,
 }
 
 /// Vehicle modes as a domain concept, not GTFS's numeric codes.
@@ -200,6 +215,11 @@ impl TimingProfile {
 #[ts(export)]
 pub struct Pattern {
     pub route: RouteId,
+    /// Which of the route's [`Route::directions`] this pattern runs
+    /// in; `None` (omitted) when the route has none or the pattern is
+    /// not yet placed. Bay and short-turn variants share a direction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<DirectionId>,
     /// Human-facing description, e.g. "5-K Ave to Downtown via MLK".
     pub name: String,
     /// The alignment the pattern follows on the ground, if authored.

@@ -31,11 +31,22 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
 
     // --- Patterns ------------------------------------------------
     for (pattern_id, pattern) in &network.patterns {
-        if network.routes.get(&pattern.route).is_none() {
-            issues.push(NetworkError::UnknownRoute {
+        match network.routes.get(&pattern.route) {
+            None => issues.push(NetworkError::UnknownRoute {
                 pattern: pattern_id.clone(),
                 route: pattern.route.clone(),
-            });
+            }),
+            Some(route) => {
+                if let Some(direction) = &pattern.direction {
+                    if !route.directions.contains_key(direction) {
+                        issues.push(NetworkError::UnknownDirection {
+                            pattern: pattern_id.clone(),
+                            route: pattern.route.clone(),
+                            direction: direction.clone(),
+                        });
+                    }
+                }
+            }
         }
         if pattern.stops.len() < 2 {
             issues.push(NetworkError::PatternTooShort {

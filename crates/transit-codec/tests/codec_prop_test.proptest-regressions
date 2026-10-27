@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc e4d34174942c55f74e4d93a91ed1a3d3bf920d8757396585e899fff85eb72ed1 # shrinks to trips = [GenTrip { route: 0, service: 0, block: None, start_slot: 0, stops: [0, 1], leg_min: 1 }]
+cc 9f3a84736af79dfa35a4c5f61947466dd08be014944177c9acf9e40b86a847c4 # shrinks to trips = [GenTrip { route: 0, service: 0, block: None, start_slot: 0, stops: [0, 1], leg_min: 1, direction: Some(0), headsign: None }, GenTrip { route: 0, service: 0, block: None, start_slot: 0, stops: [0, 1], leg_min: 2, direction: None, headsign: None }]

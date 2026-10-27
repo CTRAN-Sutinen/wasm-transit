@@ -910,3 +910,35 @@ Mirror check: every question above is one op on the CLI and one
 panel in the workbench. Questions the runner answers that this
 layout does not place: `network_stats` on a calendar date, the
 board, and the router.
+
+## Session 2026-10-27 (directions and the timetable) — C-TRAN
+
+Feed `sha256:aa8dbc62833237d75496b6ec04c2a45fe10ca2a957f63d63b51ddaae85a7dc4f`
+(version 20260913-20270109), network
+`sha256:89631f1ad4cf722721d347e2d9b7c379bd015fdc1be9aed2618e1956b60a65de`
+(the import now keeps direction_id, so the hash moved from
+`bceda1be…`), capabilities from the working tree after 86ec2bd.
+One `caps-run` pass: network `import`, then directory
+`route_detail` and `timetable` on route 019.
+
+- Which ways does 019 run? `route_detail` `directions`: "0" WSU
+  Vancouver (one pattern) and "1" 99th Street Transit Center (the
+  Bay C / E / H / J patterns), named from the trips' headsigns.
+- What is 019's weekday timetable inbound? `timetable` 019 "1"
+  1-WKDY: 25 trips over three patterns (Bay C 14, Bay E 10, Bay J
+  1; Bay H runs nothing on 1-WKDY), 14 columns with the three bays
+  last, each trip timed only at its own bay, blocks attached.
+  Outbound: 25 trips, one pattern, 13 columns.
+
+- **QAF-56 DATA GAP** — the import discards the feed's timepoint
+  flags. C-TRAN marks 25 712 of 117 667 stop times as timepoints
+  (`stop_times.timepoint`), but every imported stop is a timepoint,
+  so the 019 timetable answers 13 of 13 and 14 of 14 columns as
+  timepoints. A public timetable shows the feed's timepoints only.
+  The feed also publishes `shape_dist_traveled`, while the import
+  fabricates index × 500 m. Keeping the flags means
+  non-timepoint times are interpolated by distance, so real
+  distances must come with them or the materialized times move.
+  Pin: the `timetable` call above (`stops[].timepoint`) against
+  `stop_times.txt`'s timepoint column.
+  Status: open.

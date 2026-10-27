@@ -205,8 +205,54 @@ fn field_updates_check_their_references() {
     assert_eq!(next.stops["A"].name, "Main & 1st");
     assert_eq!(next.stops["A"].lat, net.stops["A"].lat, "a non-finite coordinate is ignored, never stored");
     assert!(next.stops["A"].transfer);
-    assert!(refused(&net, NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: Some("ghost".into()) }).contains("unknown route"));
+    assert!(refused(&net, NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: Some("ghost".into()), direction: None }).contains("unknown route"));
     assert!(refused(&net, NetworkEdit::SetPatternTripsRefs { id: "10-weekday".into(), pattern: Some("ghost".into()), service_type: None }).contains("unknown pattern"));
+}
+
+#[test]
+fn a_pattern_runs_in_one_of_its_routes_directions() {
+    let net = network();
+    let placed = apply(
+        &net,
+        vec![
+            NetworkEdit::SetDirection { route: "10".into(), id: "in".into(), name: "To C".into() },
+            NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: None, direction: Some("in".into()) },
+            NetworkEdit::SetDirection { route: "10".into(), id: "in".into(), name: "To Downtown".into() },
+        ],
+    );
+    assert_eq!(placed.routes["10"].directions["in"].name, "To Downtown", "setting an existing id renames it");
+    assert_eq!(placed.patterns["10-inbound"].direction.as_deref(), Some("in"));
+    assert!(transit_network::validation_issues(&placed).is_empty());
+
+    // Only a direction the route has; never one in use.
+    assert!(refused(&net, NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: None, direction: Some("in".into()) })
+        .contains("route 10 has no direction in"));
+    assert!(refused(&placed, NetworkEdit::RemoveDirection { route: "10".into(), id: "in".into() }).contains("carries pattern 10-inbound"));
+    let cleared = apply(
+        &placed,
+        vec![
+            NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: None, direction: Some(String::new()) },
+            NetworkEdit::RemoveDirection { route: "10".into(), id: "in".into() },
+        ],
+    );
+    assert_eq!(cleared.patterns["10-inbound"].direction, None, "\"\" leaves the pattern in no direction");
+    assert!(cleared.routes["10"].directions.is_empty());
+
+    // Direction ids are per route: moving routes leaves the pattern
+    // in none, unless the same edit places it.
+    let two = apply(&placed, vec![NetworkEdit::AddRoute { id: Some("20".into()) }]);
+    let moved = apply(&two, vec![NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: Some("20".into()), direction: None }]);
+    assert_eq!(moved.patterns["10-inbound"].direction, None);
+    assert!(refused(&two, NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: Some("20".into()), direction: Some("in".into()) })
+        .contains("route 20 has no direction in"));
+
+    // An upsert can still strand one — validation names it.
+    let mut route = placed.routes["10"].clone();
+    route.directions.clear();
+    let stranded = apply(&placed, vec![NetworkEdit::UpsertRoute { id: "10".into(), route }]);
+    assert!(transit_network::validation_issues(&stranded)
+        .iter()
+        .any(|i| matches!(i, transit_network::NetworkError::UnknownDirection { direction, .. } if direction == "in")));
 }
 
 #[test]

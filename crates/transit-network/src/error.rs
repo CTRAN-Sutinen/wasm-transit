@@ -26,6 +26,9 @@ pub enum NetworkError {
     #[error("pattern {pattern} references unknown route {route}")]
     UnknownRoute { pattern: String, route: String },
 
+    #[error("pattern {pattern} runs in direction {direction}, which route {route} does not have")]
+    UnknownDirection { pattern: String, route: String, direction: String },
+
     #[error("pattern trips {pattern_trips} reference unknown pattern {pattern}")]
     UnknownPattern { pattern_trips: String, pattern: String },
 

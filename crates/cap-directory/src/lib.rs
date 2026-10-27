@@ -4,13 +4,15 @@
 //! their walking-group structure), the routes, and one route's
 //! patterns with their ordered stops (list → detail). The pickers
 //! and the names join read here; they are MODEL questions, never
-//! feed reads. Patterns are the model's directions: a route's
+//! feed reads. A route runs in directions, and each direction's
 //! stop sequences are its patterns, each with its own ordered
 //! stops — that is what a diversion editor anchors against — and
 //! where each entity is on the map (focus). The planner's lists ask
 //! here too: rows of any kind narrowed by a filter (entities), and a
-//! route's composition with each schedule's trip count (route_detail),
-//! a stop's serving routes (stop_detail).
+//! route's composition with each pattern trips' trip count and its
+//! patterns by direction (route_detail), a stop's serving routes
+//! (stop_detail), and the timetable — one route, one direction, one
+//! service type, every trip across the direction's patterns.
 //!
 //! Documents are content-addressed like everywhere on the bus:
 //! * **network** — the same identity cap-network's import produces
@@ -138,6 +140,19 @@ pub enum Request {
     /// One stop's composition: the routes whose patterns visit it, in
     /// id order. Null for an unknown stop.
     StopDetail { network_hash: String, stop_id: String },
+    /// The planner's timetable: one route, one direction (null: its
+    /// patterns in no direction), one service type — every trip of
+    /// the direction's patterns, one row per trip by start, one
+    /// column per stop in route order. Null for an unknown route,
+    /// direction or service type.
+    Timetable {
+        network_hash: String,
+        route_id: String,
+        #[serde(default)]
+        #[ts(optional)]
+        direction: Option<String>,
+        service_type: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -153,6 +168,7 @@ pub enum Response {
     Entities { rows: Vec<transit_network::EntityRow> },
     RouteDetail { detail: Option<transit_network::RouteDetail> },
     StopDetail { detail: Option<transit_network::StopDetail> },
+    Timetable { timetable: Option<transit_network::Timetable> },
 }
 
 /// Networks by content hash (canonical serialization).
@@ -284,6 +300,12 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::StopDetail { network_hash, stop_id } => {
             let network = network_arc(&network_hash)?;
             Ok(Response::StopDetail { detail: transit_network::stop_detail(&network, &stop_id) })
+        }
+        Request::Timetable { network_hash, route_id, direction, service_type } => {
+            let network = network_arc(&network_hash)?;
+            Ok(Response::Timetable {
+                timetable: transit_network::timetable(&network, &route_id, direction.as_deref(), &service_type),
+            })
         }
     }
 }

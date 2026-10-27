@@ -16,12 +16,15 @@ holds the gotchas, Rust/wasm/ops and frontend alike.
   must be typed serde structs.
 - **Model vocabulary is planner vocabulary, not GTFS's**: a
   `ServiceType` IS the service (the GTFS service_id — the day-linked
-  design unit); `PatternTrips` are one pattern's departures under a
+  design unit); a route runs in named `Direction`s and a pattern in
+  at most one (GTFS's binary direction_id is only the codec's
+  encoding of them); `PatternTrips` are one pattern's departures under a
   service type (`Departures`: exact starts or headway bands), and a
   derived trip's identity is `(pattern_trips, start_secs)`; a
   `Network` document is a service plan. "Schedule" is NOT a model
   word: to a planner a schedule or timetable is a route's direction
-  under one service type across all its patterns, so the model never
+  under one service type across all its patterns — that is the
+  derived `Timetable` (directory `timetable`) — so the model never
   names the per-pattern list that way (renamed 2026-10-27; documents
   written before still read, through serde aliases). Do not rename
   these back toward GTFS's calendar/service words.

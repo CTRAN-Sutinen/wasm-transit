@@ -28,7 +28,7 @@ use chrono::NaiveDate;
 
 use crate::model::{
     Block, CalendarException, CalendarRule, DateRange, DayState, HeadwayBand, Layover, Mode, Network, Pattern,
-    PatternTrips, PatternStop, PlanMeta, Route, Departures, ServiceType, Stop, TimingProfile, TripRef, WeekdaySet,
+    Direction, PatternTrips, PatternStop, PlanMeta, Route, Departures, ServiceType, Stop, TimingProfile, TripRef, WeekdaySet,
 };
 
 /// One change to a network document. Upserts insert or replace the
@@ -165,6 +165,10 @@ pub enum NetworkEdit {
         #[ts(optional)]
         mode: Option<Mode>,
     },
+    /// A pattern's fields. `direction` names one of its route's
+    /// directions ("" leaves it in none); moving the pattern to
+    /// another `route` leaves it in none unless `direction` places it
+    /// there in the same edit (direction ids are per route).
     UpdatePattern {
         id: String,
         #[serde(default)]
@@ -173,7 +177,14 @@ pub enum NetworkEdit {
         #[serde(default)]
         #[ts(optional)]
         route: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        direction: Option<String>,
     },
+    /// Add a direction to a route, or rename one.
+    SetDirection { route: String, id: String, name: String },
+    /// Refused while a pattern runs in the direction.
+    RemoveDirection { route: String, id: String },
     UpdateServiceType { id: String, name: String },
     SetPatternTripsRefs {
         id: String,
@@ -543,7 +554,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
         NetworkEdit::AddRoute { id } => {
             let id = mint(&net.routes, id, "r", "route")?;
             let name = format!("Route {}", net.routes.len() + 1);
-            net.routes.insert(id.clone(), Route { name, mode: Mode::Bus, color: None });
+            net.routes.insert(id.clone(), Route { name, mode: Mode::Bus, color: None, directions: Default::default() });
             created("route", &id)
         }
         NetworkEdit::AddPattern { id, route } => {
@@ -565,6 +576,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             net.patterns.insert(
                 id.clone(),
                 Pattern {
+                    direction: None,
                     route,
                     name,
                     path: None,
@@ -642,17 +654,56 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             }
             None
         }
-        NetworkEdit::UpdatePattern { id, name, route } => {
+        NetworkEdit::UpdatePattern { id, name, route, direction } => {
             if let Some(r) = route {
                 exists(net.routes.contains_key(r), "route", r)?;
+            }
+            let route_id = match (route, net.patterns.get(id)) {
+                (Some(r), _) => r.clone(),
+                (None, Some(p)) => p.route.clone(),
+                (None, None) => return Err(format!("unknown pattern {id}")),
+            };
+            if let Some(d) = direction.as_deref().filter(|d| !d.is_empty()) {
+                let has = net.routes.get(&route_id).is_some_and(|r| r.directions.contains_key(d));
+                if !has {
+                    return Err(format!("route {route_id} has no direction {d}"));
+                }
             }
             let pattern = get_mut(&mut net.patterns, id, "pattern")?;
             if let Some(name) = name {
                 pattern.name = name.clone();
             }
             if let Some(route) = route {
+                if &pattern.route != route {
+                    pattern.direction = None;
+                }
                 pattern.route = route.clone();
             }
+            if let Some(d) = direction {
+                pattern.direction = (!d.is_empty()).then(|| d.clone());
+            }
+            None
+        }
+        NetworkEdit::SetDirection { route, id, name } => {
+            if id.is_empty() {
+                return Err("a direction needs an id".into());
+            }
+            get_mut(&mut net.routes, route, "route")?
+                .directions
+                .insert(id.clone(), Direction { name: name.clone() });
+            None
+        }
+        NetworkEdit::RemoveDirection { route, id } => {
+            exists(net.routes.contains_key(route), "route", route)?;
+            exists(net.routes[route].directions.contains_key(id), "direction", id)?;
+            if let Some((p, _)) = net
+                .patterns
+                .iter()
+                .find(|(_, p)| &p.route == route && p.direction.as_ref() == Some(id))
+            {
+                return Err(format!("direction {id} of route {route} carries pattern {p}"));
+            }
+            get_mut(&mut net.routes, route, "route")?.directions.remove(id);
             None
         }
         NetworkEdit::UpdateServiceType { id, name } => {

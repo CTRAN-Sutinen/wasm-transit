@@ -121,6 +121,7 @@ fn build_network(spec: &Spec) -> Network {
     net.routes.insert(
         "r0".into(),
         Route {
+            directions: Default::default(),
             name: "Route 0".into(),
             mode: Mode::Bus,
             color: None,
@@ -157,6 +158,7 @@ fn build_network(spec: &Spec) -> Network {
         net.patterns.insert(
             format!("p{j}"),
             Pattern {
+                direction: None,
                 route: "r0".into(),
                 name: format!("Pattern {j}"),
                 path: None,

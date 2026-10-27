@@ -770,8 +770,8 @@ assert(keysEmpty.services.length === 0, "a no-service day answers empty, never e
 // THE DIRECTORY — what exists in the network. The pickers and the
 // names join are MODEL questions: the stop list (name-sorted, with
 // the walking-group structure), the route list, and a route's
-// PATTERNS with their ordered stops (the model's directions — what
-// a diversion editor anchors against).
+// PATTERNS with their ordered stops (what a diversion editor anchors
+// against), grouped by the route's directions.
 assert(byId.directory, "manifest advertises the directory capability");
 assert(
   byId.directory.consumes.network === "network",
@@ -847,6 +847,24 @@ assert(
   "schedules grouped by service type, each with the trips it runs",
 );
 assert(dir.invoke({ op: "route_detail", network_hash: loadedDirNet.network_hash, route_id: "missing" }).detail === null, "an unknown route has no composition");
+// The import keeps GTFS direction_id: route 10's patterns all run in
+// direction "0", and its timetable on WK is every trip of them, by
+// start, one time per column (null where a pattern does not stop).
+assert(
+  routeDetail.directions.length === 1 && routeDetail.directions[0].direction === "0" &&
+    routeDetail.directions[0].patterns.length === routeDetail.patterns.length,
+  "a route lists its patterns by direction",
+);
+const table = dir.invoke({ op: "timetable", network_hash: loadedDirNet.network_hash, route_id: "10", direction: "0", service_type: "WK" }).timetable;
+assert(
+  table.trips.length > 0 && table.trips.every((t) => t.times.length === table.stops.length) &&
+    table.trips.every((t, i, all) => i === 0 || all[i - 1].start_secs <= t.start_secs),
+  "a timetable is every trip of one direction on one service type, by start",
+);
+assert(
+  dir.invoke({ op: "timetable", network_hash: loadedDirNet.network_hash, route_id: "10", direction: "9", service_type: "WK" }).timetable === null,
+  "an unknown direction has no timetable",
+);
 const stopDetail = dir.invoke({ op: "stop_detail", network_hash: loadedDirNet.network_hash, stop_id: "A" }).detail;
 assert(stopDetail.routes.some((r) => r.id === "10"), "a stop lists the routes whose patterns visit it");
 assert(dir.invoke({ op: "stop_detail", network_hash: loadedDirNet.network_hash, stop_id: "missing" }).detail === null, "an unknown stop has no composition");

@@ -23,6 +23,10 @@ transit-core    GTFS codec: model, zip/CSV parse, calendar, queries,
                 with set_diversions (U6) — only report_all remains,
                 behind the sync seam's feed-scoped validation.
 transit-network The authored network model (planner authority):
+                routes and their DIRECTIONS (`Route.directions`,
+                each named; a pattern runs in at most one —
+                `Pattern.direction`, validated against its route;
+                bay and short-turn variants share one),
                 patterns, timing profiles, service types (the
                 service identifier, linked to days by its calendar
                 rule), pattern trips (`PatternTrips`: one pattern's
@@ -60,9 +64,16 @@ transit-network The authored network model (planner authority):
                 planner's LISTS live here too (`listing.rs`): rows
                 of any kind narrowed by every filter term, and a
                 route's composition (patterns, the stops they
-                visit, pattern trips by service type) — each entry's
-                trip count is `trip_starts`, the materialized day's
-                own expansion — and a stop's serving routes.
+                visit, pattern trips by service type, patterns by
+                direction) — each entry's trip count is
+                `trip_starts`, the materialized day's own
+                expansion — a stop's serving routes, and the
+                planner's TIMETABLE (`timetable`: one route, one
+                direction, one service type — every trip of the
+                direction's patterns by start, one column per stop
+                in route order, a variant's stops slotted where it
+                leaves the others; rows are `materialize_service`'s
+                trips, never a second derivation).
 transit-router  RAPTOR earliest-arrival planning over the network
                 model's materialized day (patterns grouped by actual
                 stop sequence — an edited trip rides its own
@@ -82,6 +93,12 @@ transit-codec   The network codec, both directions: a network document
                 layover from the observed end→start gap (exactly
                 feasible — the model's LayoverInfeasible law holds
                 with equality); the planner re-authors from there.
+                GTFS direction_id becomes the route's directions
+                ("0"/"1"), named by the trips' most common headsign
+                (else "To" the commonest terminal); the export
+                signs directed trips with the direction's name and
+                writes direction_id back, so both survive the round
+                trip (the codec fixpoint law covers them).
                 A LIBRARY under cap-network — the extraction
                 pattern: crate boundary first, capability wrapper
                 second. The C-TRAN import regressions live in its
@@ -538,9 +555,9 @@ cap-directory   The directory capability — ONE QUESTION: what
                 picker's typing does), the names join (stops_by_ids, moved from
                 cap-gtfs — one question, one answer), the route list
                 (the model's closed mode set), and one route's
-                PATTERNS with their ordered stops — the model's
-                directions, what the diversion editor anchors
-                against (the GTFS direction select is gone; the
+                PATTERNS with their ordered stops — what the
+                diversion editor anchors against (the GTFS
+                direction select is gone; the
                 pattern pick replaced it, and new edit records carry
                 direction_id null — the documented both-directions
                 case the model never matched on). The pickers are
@@ -552,8 +569,11 @@ cap-directory   The directory capability — ONE QUESTION: what
                 entities, route_detail, and stop_detail answer the
                 planner's lists (filtered rows per kind — the forms'
                 pickers and the Document counts too; a route's
-                composition with trip counts; a stop's serving
-                routes) — the planner computes no number.
+                composition with trip counts and its patterns by
+                direction; a stop's serving routes), and timetable
+                answers the planner's timetable (route + direction
+                + service type, across the direction's patterns) —
+                the planner computes no number.
 cap-streets    The street-graph capability: the detour editor's need,
                 atomically. load_streets (bulk-bytes op 0) parses a
                 street-network GeoJSON into the routing graph and

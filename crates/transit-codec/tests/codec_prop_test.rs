@@ -34,6 +34,11 @@ struct GenTrip {
     start_slot: u16,
     stops: Vec<u8>,
     leg_min: u8,
+    /// GTFS direction_id (or none), and a headsign from a small pool
+    /// (or none) — mixed within a direction, so the naming tie-break
+    /// and the no-headsign fallback both run.
+    direction: Option<u8>,
+    headsign: Option<u8>,
 }
 
 fn gen_trip() -> impl Strategy<Value = GenTrip> {
@@ -44,8 +49,10 @@ fn gen_trip() -> impl Strategy<Value = GenTrip> {
         0u16..96,
         proptest::collection::vec(0u8..6, 2..=4),
         1u8..30,
+        proptest::option::of(0u8..2),
+        proptest::option::of(0u8..3),
     )
-        .prop_map(|(route, service, block, start_slot, stops, leg_min)| {
+        .prop_map(|(route, service, block, start_slot, stops, leg_min, direction, headsign)| {
             let mut seq: Vec<u8> = stops
                 .into_iter()
                 .collect::<std::collections::BTreeSet<_>>()
@@ -54,7 +61,7 @@ fn gen_trip() -> impl Strategy<Value = GenTrip> {
             if seq.len() < 2 {
                 seq = vec![0, 1];
             }
-            GenTrip { route, service, block, start_slot, stops: seq, leg_min }
+            GenTrip { route, service, block, start_slot, stops: seq, leg_min, direction, headsign }
         })
 }
 
@@ -78,14 +85,16 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
     }
     add(&mut w, "stops.txt", &stops);
 
-    let mut trips_txt = String::from("route_id,service_id,trip_id,block_id");
+    let mut trips_txt = String::from("route_id,service_id,trip_id,block_id,direction_id,trip_headsign");
     for (i, t) in trips.iter().enumerate() {
         trips_txt.push_str(&format!(
-            "\n{},{},{},{}",
+            "\n{},{},{},{},{},{}",
             t.route,
             t.service,
             format!("t{i}"),
-            t.block.map(|b| b.to_string()).unwrap_or_default()
+            t.block.map(|b| b.to_string()).unwrap_or_default(),
+            t.direction.map(|d| d.to_string()).unwrap_or_default(),
+            t.headsign.map(|h| format!("Sign {h}")).unwrap_or_default()
         ));
     }
     add(&mut w, "trips.txt", &trips_txt);

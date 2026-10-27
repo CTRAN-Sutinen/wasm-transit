@@ -403,3 +403,47 @@ fn imported_alignment_survives_materialization() {
     let bare = derived.trips.get("WK:pat-20-0-0@30000").expect("t20 derived trip");
     assert_eq!(bare.shape_id, None);
 }
+
+/// GTFS direction_id survives the import as the route's directions,
+/// each named by its trips' most common headsign (else "To" its most
+/// common terminal); a trip without one places its pattern in none.
+/// The export signs directed trips with the direction's name.
+#[test]
+fn directions_are_named_from_headsigns_and_survive_the_round_trip() {
+    let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let opts = zip::write::SimpleFileOptions::default();
+    let add = |w: &mut zip::ZipWriter<std::io::Cursor<Vec<u8>>>, name: &str, body: &str| {
+        w.start_file(name, opts).unwrap();
+        w.write_all(body.as_bytes()).unwrap();
+    };
+    add(&mut w, "agency.txt", "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n");
+    add(&mut w, "routes.txt", "route_id,agency_id,route_short_name,route_type\n10,1,10,3\n");
+    add(&mut w, "stops.txt", "stop_id,stop_name,stop_lat,stop_lon\nA,Mall,45.500,-73.500\nB,Downtown,45.510,-73.510\nC,Bay C,45.511,-73.511\n");
+    add(
+        &mut w,
+        "trips.txt",
+        "route_id,service_id,trip_id,direction_id,trip_headsign\n10,WK,t1,0,Downtown\n10,WK,t2,0,Downtown\n10,WK,t3,0,Downtown via C\n10,WK,t4,1,\n10,WK,t5,,\n",
+    );
+    add(
+        &mut w,
+        "stop_times.txt",
+        "trip_id,arrival_time,departure_time,stop_id,stop_sequence\nt1,08:00:00,08:00:00,A,1\nt1,08:10:00,08:10:00,B,2\nt2,09:00:00,09:00:00,A,1\nt2,09:10:00,09:10:00,B,2\nt3,10:00:00,10:00:00,A,1\nt3,10:12:00,10:12:00,C,2\nt4,08:30:00,08:30:00,B,1\nt4,08:40:00,08:40:00,A,2\nt5,11:00:00,11:00:00,A,1\nt5,11:10:00,11:10:00,B,2\n",
+    );
+    add(&mut w, "calendar.txt", "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nWK,1,1,1,1,1,0,0,20260101,20261231\n");
+    let bytes = w.finish().unwrap().into_inner();
+    let gtfs = transit_core::Gtfs::from_zip_bytes(&bytes).expect("feed parses");
+    let net = gtfs_to_network(&gtfs).network;
+
+    let dirs = &net.routes["10"].directions;
+    assert_eq!(dirs.keys().collect::<Vec<_>>(), ["0", "1"]);
+    assert_eq!(dirs["0"].name, "Downtown", "the most common headsign; the bay variant shares the direction");
+    assert_eq!(dirs["1"].name, "To Mall", "no headsign: the terminal names it");
+    let in_dir = |d: Option<&str>| net.patterns.values().filter(|p| p.direction.as_deref() == d).count();
+    assert_eq!((in_dir(Some("0")), in_dir(Some("1")), in_dir(None)), (2, 1, 1));
+    assert!(transit_network::validation_issues(&net).is_empty());
+
+    let out = network_to_gtfs(&net).expect("exports");
+    let again = gtfs_to_network(&out).network;
+    assert_eq!(again.routes, net.routes, "directions and their names survive");
+    assert_eq!(again.patterns, net.patterns);
+}

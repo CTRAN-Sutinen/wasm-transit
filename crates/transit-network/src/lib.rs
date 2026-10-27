@@ -37,14 +37,17 @@ pub mod validate;
 pub use edit::{apply_edits, apply_edits_reporting, CreatedEntity, Day, EditError, NetworkEdit};
 pub use error::{NetworkError, NetworkWarning};
 pub use geometry::{entity_focus, pattern_alignment, pattern_stop_points, stop_point, stops_line, EntityFocus, EntityKind};
-pub use listing::{entity_rows, route_detail, stop_detail, EntityRow, RouteDetail, PatternTripsGroup, StopDetail};
+pub use listing::{
+    entity_rows, route_detail, stop_detail, timetable, DirectionGroup, EntityRow, PatternTripsGroup, RouteDetail,
+    StopDetail, Timetable, TimetablePattern, TimetableStop, TimetableTrip,
+};
 pub use materialize::{
     materialize, materialize_service, trip_arrival_end_secs, trip_starts, MaterializedTrip,
     StopTime,
 };
 pub use model::{
     Anchor, Block, CalendarException, CalendarRule, Coord, DateRange, DayState, HeadwayBand, Layover,
-    Mode, Network, Pattern, PatternTrips, PatternStop, PlanMeta, Route, Departures, PatternTripsId,
+    Direction, DirectionId, Mode, Network, Pattern, PatternTrips, PatternStop, PlanMeta, Route, Departures, PatternTripsId,
     ServiceTypeId, ServiceType, Stop, TimingProfile, TripRef, WeekdaySet,
 };
 pub use validate::{
