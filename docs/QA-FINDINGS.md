@@ -725,3 +725,17 @@ the buses due before it.
   Pin: `JSON.stringify(live).length` in the session.
   Status: open (registry eviction is the host discipline's —
   `docs/PLAN.md`; shaping waits for a consumer that needs it).
+
+## Session 2026-10-27 (authoring gestures) — C-TRAN
+
+The browser's planner now authors through cap-author (`docs/PLAN.md`,
+the web cleanup, W2). One session over the imported C-TRAN network:
+directory `route_stop_sequence` for route 019, then author `apply`
+with `add_stop` (lat/lon given) and `insert_pattern_stop` into route
+019's first pattern. The stop was minted `s1` and reported in
+`created`; it landed before the last stop, halfway along the last
+leg (5750 m), as a non-timepoint; the timing profile stayed aligned;
+no issues. One apply on C-TRAN costs about 220 ms in the runner
+(validation, the canonical hash, and the 2.7 MB document across the
+seam) — click-grade for the browser, which takes the issues from the
+apply answer instead of validating twice.

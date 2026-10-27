@@ -32,7 +32,7 @@ pub mod materialize;
 pub mod model;
 pub mod validate;
 
-pub use edit::{apply_edits, EditError, NetworkEdit};
+pub use edit::{apply_edits, apply_edits_reporting, CreatedEntity, Day, EditError, NetworkEdit};
 pub use error::{NetworkError, NetworkWarning};
 pub use materialize::{
     materialize, materialize_service, trip_arrival_end_secs, trip_starts, MaterializedTrip,

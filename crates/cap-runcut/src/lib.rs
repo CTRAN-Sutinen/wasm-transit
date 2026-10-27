@@ -77,6 +77,11 @@ pub enum Request {
         edits_hash: Option<String>,
         block_id: String,
         date: String,
+        /// Under this many seconds left, a layover is TIGHT (the
+        /// dispatcher's policy; default 300).
+        #[serde(default)]
+        #[ts(optional)]
+        tight_layover_secs: Option<u32>,
     },
     /// One derived trip's stops on a service date — the day's trip
     /// detail, EFFECTIVE (a diverted trip answers its patched
@@ -208,11 +213,16 @@ let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
             Ok(Response::Blocks { blocks: transit_dispatch::day_blocks(&network, &day) })
         }
-        Request::BlockTrips { network_hash, edits_hash, block_id, date } => {
+        Request::BlockTrips { network_hash, edits_hash, block_id, date, tight_layover_secs } => {
 let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
             Ok(Response::BlockTrips {
-                trips: transit_dispatch::block_chain(&network, &day, &block_id),
+                trips: transit_dispatch::block_chain(
+                    &network,
+                    &day,
+                    &block_id,
+                    tight_layover_secs.unwrap_or(transit_dispatch::TIGHT_LAYOVER_SECS),
+                ),
                 block_id,
             })
         }

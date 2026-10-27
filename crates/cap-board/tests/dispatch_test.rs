@@ -187,6 +187,7 @@ fn the_board_reads_a_live_document() {
             start_secs: row.start_secs,
             agency_trip_id: "t10".into(),
             route: Some("10".into()),
+            route_name: Some("10".into()),
             worst_delay_secs: Some(180),
             status: LiveStatus::Late,
             stops: vec![LiveStop {

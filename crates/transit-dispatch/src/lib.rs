@@ -79,6 +79,35 @@ pub struct BlockChainTrip {
     /// the next trip starts late — the connection-health ripple.
     /// `None` when there is no layover or the trip does not run.
     pub layover_remaining_secs: Option<i64>,
+    /// The connection's health, classified under the caller's tight
+    /// threshold: overlap (the delay ate the whole layover — the next
+    /// trip starts late), tight (under the threshold), ok. `None`
+    /// exactly when `layover_remaining_secs` is.
+    pub layover_health: Option<LayoverHealth>,
+}
+
+/// A layover's health — the dispatcher's connection read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum LayoverHealth {
+    Ok,
+    Tight,
+    Overlap,
+}
+
+/// The default tight-layover threshold: under five minutes left.
+pub const TIGHT_LAYOVER_SECS: u32 = 300;
+
+/// Classify a remaining layover under a tight threshold.
+pub fn layover_health(remaining_secs: i64, tight_secs: u32) -> LayoverHealth {
+    if remaining_secs < 0 {
+        LayoverHealth::Overlap
+    } else if remaining_secs < tight_secs as i64 {
+        LayoverHealth::Tight
+    } else {
+        LayoverHealth::Ok
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -443,6 +472,7 @@ pub fn block_chain(
     network: &Network,
     day: &[MaterializedTrip],
     block_id: &str,
+    tight_secs: u32,
 ) -> Vec<BlockChainTrip> {
     let Some(block) = network.blocks.get(block_id) else {
         return Vec::new();
@@ -496,6 +526,7 @@ pub fn block_chain(
                     end_secs: effective_end,
                     layover_after_secs: layover,
                     layover_remaining_secs: layover_remaining,
+                    layover_health: layover_remaining.map(|r| layover_health(r, tight_secs)),
                 }
             }
             None => BlockChainTrip {
@@ -510,6 +541,7 @@ pub fn block_chain(
                 end_secs: None,
                 layover_after_secs: layover,
                 layover_remaining_secs: None,
+                layover_health: None,
             },
         };
         rows.push(row);

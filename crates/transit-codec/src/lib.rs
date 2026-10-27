@@ -334,6 +334,18 @@ pub struct TripIdMap {
     pub entries: Vec<TripIdEntry>,
 }
 
+impl TripIdMap {
+    /// The agency trip ids behind one derived trip — empty when the
+    /// trip is not in the map (authored after the import).
+    pub fn agency_ids(&self, schedule: &str, start_secs: u32) -> Vec<String> {
+        self.entries
+            .iter()
+            .find(|e| e.schedule == schedule && e.start_secs == start_secs)
+            .map(|e| e.agency_trip_ids.clone())
+            .unwrap_or_default()
+    }
+}
+
 /// What `gtfs_to_network` hands back: the document, the notes
 /// describing every resolution the import applied, and the trip-id
 /// map joining the agency's trip ids to the derived trips.

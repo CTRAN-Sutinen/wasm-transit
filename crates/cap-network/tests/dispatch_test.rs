@@ -58,6 +58,22 @@ fn trip_map_joins_the_agency_ids_to_the_derived_trips() {
     for id in &agency {
         assert!(kept.contains(id), "the map invented an id: {id}");
     }
+
+    // Shaped to a question, in the order asked: a mapped trip's ids,
+    // and an empty list for a trip the import never saw.
+    let first = &map.entries[0];
+    let network_hash = match dispatch(Request::Import { feed_hash: load_fixture().0 }).unwrap() {
+        Response::Import { network_hash, .. } => network_hash,
+        _ => panic!("import"),
+    };
+    let asked = vec![
+        transit_network::TripRef { schedule: "ghost".into(), start_secs: 0 },
+        transit_network::TripRef { schedule: first.schedule.clone(), start_secs: first.start_secs },
+    ];
+    match dispatch(Request::AgencyTripIds { network_hash, trips: asked }).unwrap() {
+        Response::AgencyTripIds { ids } => assert_eq!(ids, vec![vec![], first.agency_trip_ids.clone()]),
+        _ => panic!("agency_trip_ids"),
+    }
     for e in &map.entries {
         assert!(
             !e.agency_trip_ids.is_empty(),

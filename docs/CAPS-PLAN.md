@@ -304,9 +304,8 @@ day-shape answer is the dogfood record).
     The browser does not show warnings yet.
   * Authoring, cap-author (QAF-39, QAF-47): ON THE BUS (edit_test,
     dispatch_test, caps-smoke, justfile author gate), DOGFOODED
-    (the 006 change through `apply`). NOT UI-reads-the-bus: the
-    browser's planner still mutates host-side and mirrors
-    `retime_trip` in web/src/planner.ts until it rewires.
+    (the 006 change through `apply`). UI READS THE BUS since W2
+    (below).
   * Small op gaps (QAF-13, QAF-34, QAF-35, QAF-37): ON THE BUS,
     DOGFOODED; the map draws merged walks through their via stops
     (no e2e pins that drawing).
@@ -327,9 +326,26 @@ day-shape answer is the dogfood record).
     stop_board's answer (app.spec "realtime feed colors delays and
     vehicles"; the board, station, and diversion specs).
     DOGFOODED (QA-FINDINGS, "Session 2026-10-27 (live board)").
-    NOT done in W1: BlocksPanel still joins agency trip ids through
-    the trip map for its trip column; the map still names routes
-    by a directory lookup.
+    The live document names routes (route_name, from the feed the
+    import named them by). The blocks view's trip column reads
+    cap-network `agency_trip_ids` and its connection flags read
+    cap-runcut's `layover_health` (dispatch_laws_test, cap-network
+    and cap-runcut dispatch tests, caps-smoke; app.spec blocks
+    specs). W1 is DONE.
+  * W2 authoring: ON THE BUS — the gesture vocabulary (transit-
+    network gesture_test: minting, timing alignment, sorted starts,
+    block order and layovers, calendars, field-wise plan frame;
+    cap-author dispatch_test `created`; caps-smoke). UI READS THE
+    BUS: every planner change is a NetworkEdit through cap-author
+    (app.spec "planner authors a network" — the retime and the
+    minted stop; "service plans frame service changes" — field-wise
+    plan frame, a fork waits for edits in flight). DOGFOODED
+    (QA-FINDINGS, "Session 2026-10-27 (authoring gestures)"). The
+    W0 ratchet forbids clone-and-mutate in web/ (empty allowlist).
+    The browser's `retime_trip` mirror is gone.
+  * W6, early: DepartureBoard, RtPanel, and BlocksPanel are render-
+    only (props in, events out; the host makes the op calls) — off
+    the W0 allowlist.
 
 Model facts that hold everywhere: the import infers block
 layovers from observed end→start gaps (GTFS has none; the planner
@@ -358,9 +374,10 @@ in passing.
   re-imports (a session document store, or the journal). An
   import's response also prints the whole document — 2.7 MB on
   C-TRAN — into the agent's context; a shaping flag belongs here.
-- **Trip-map shaping** — the full map is 539.6 KiB on C-TRAN;
-  fine for a UI (fetched once per boarding), heavy for an agent
-  asking "which derived trip is agency id 757797?". Shape it when
+- **Trip-map shaping** — the full map is 539.6 KiB on C-TRAN.
+  The forward question (derived trips → agency ids) is shaped:
+  cap-network `agency_trip_ids`. The reverse ("which derived trip
+  is agency id 757797?") still needs the whole map; shape it when
   an agent session actually needs it.
 
 ## Standing queue (after the units)

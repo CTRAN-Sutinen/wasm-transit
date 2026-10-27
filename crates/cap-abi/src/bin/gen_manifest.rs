@@ -86,7 +86,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "network",
         file: "cap_network.wasm",
-        ops: &["load_feed", "import", "load_network", "validate", "export", "trip_map"],
+        ops: &["load_feed", "import", "load_network", "validate", "export", "trip_map", "agency_trip_ids"],
         consumes: &[],
         speaks: &[("feed", &[1]), ("network", &[1]), ("trip_map", &[1])],
         migrates: &[],
@@ -98,6 +98,7 @@ const MODULES: &[ModuleSpec] = &[
             ("validate", "Every issue of a registered document — the authoring UI's feedback loop, the whole list, never thrown. issues gate (export refuses an invalid document; a block trip its schedule does not run is one — the runcut and the publish path would disagree). warnings never gate: they name what validity lets through — trips no block carries (unassigned_trips, once the document has a runcut) and a versioned plan with no service in its first week (no_service_in_plan_period: the calendars a fork inherited end before its pick date)."),
             ("export", "The publish path: materialize a registered document into a GTFS zip (deterministic bytes) and return it base64-encoded under the content hash of those bytes — the same identity any capability returns for the same bytes. Invalid documents are refused."),
             ("trip_map", "The import's trip-id map for a network: every derived trip ((schedule, start_secs) — the model's identity) joined to the agency trip ids it came from. This is the join rt data and the source feed's ops are keyed by — rt feeds speak the AGENCY's ids, the model mints its own. None for a network that was not inferred from a feed (an authored document has no agency ids)."),
+            ("agency_trip_ids", "The trip map SHAPED to a question: the agency trip ids behind specific derived trips ({schedule, start_secs}), one list per trip in the order asked — empty for a trip the import never saw. What the radio calls a block's trips, without shipping the whole map (539 KiB on C-TRAN). Errors for a network with no map (an authored document has no agency ids)."),
         ],
     },
     ModuleSpec {
@@ -181,7 +182,7 @@ const MODULES: &[ModuleSpec] = &[
             ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth."),
             ("load_edits", "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change."),
             ("blocks", "The day's blocks: every authored block with at least one trip running on the date, with that day's running trip counts — a block whose every trip is off is a vehicle still in the garage, not offered. With edits in force, skipped trips leave the count (and a block whose every trip is skipped leaves the list)."),
-            ("block_trips", "One block's chain on a service date: the AUTHORED runcut (the model's blocks carry layovers GTFS never had), materialized for the day, with the in-force edits applied — a diverted trip ending later eats into the vehicle's next layover, and layover_remaining_secs goes negative when the connection is eaten. Trips of the chain that do not run on the date stay in view, marked. The answer carries the block_id it is for (many block_trips results group by the answer, never by request order). Unknown blocks answer empty, never error."),
+            ("block_trips", "One block's chain on a service date: the AUTHORED runcut (the model's blocks carry layovers GTFS never had), materialized for the day, with the in-force edits applied — a diverted trip ending later eats into the vehicle's next layover, and layover_remaining_secs goes negative when the connection is eaten. Each row's layover_health classifies the connection: overlap (negative — the next trip starts late), tight (under tight_layover_secs, default 300), ok. Trips of the chain that do not run on the date stay in view, marked. The answer carries the block_id it is for (many block_trips results group by the answer, never by request order). Unknown blocks answer empty, never error."),
             ("trip_stops", "One derived trip's stops on a service date — the day's trip detail, EFFECTIVE (a diverted trip answers its patched sequence). The map's click-through reads this; the answer carries no geometry (stops carry coordinates in the network document — the map is the host's view, not the module's). A trip that does not run answers empty, never an error."),
         ],
     },
@@ -262,7 +263,7 @@ const MODULES: &[ModuleSpec] = &[
         purpose: "Authoring: what does this network become after these edits? A change — retime a schedule, add a stop, extend a calendar, fork the plan into the next pick — is a list of typed edits applied atomically to a registered NETWORK document. The answer is the next document under its content hash (registered: chain the next change on it), with its validation issues and warnings — the authoring loop in one op. The last document is never touched (the host wholesale-replaces its copy); removals refuse while anything references the entity. The edit vocabulary lives in transit-network. Assemble for anyone who changes a network: a planner's UI, a script, an agent.",
         op_docs: &[
             ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same identity every model-side capability returns."),
-            ("apply", "Apply `edits` in order, atomically, to the registered document: set_plan (fork / stamp a pick — {plan:{id,name,effective_from}}), set_name, retime_trip (move one exact-times trip {schedule, from_secs, to_secs} — the blocks carrying it move with it, so a retime never strands the runcut), and upsert_* / remove_* for stop, route, pattern, service_type, schedule, block (upserts replace the whole entity under its id: read it from the document, change it, send it back). One edit that cannot apply (an unknown id; a removal of something still referenced — a stop a pattern visits, a schedule a block carries) rejects the whole change as an error naming the edit's position. The answer: the next network_hash (already registered), the document itself, its issues (gate export) and warnings (never gate: unassigned trips, a pick with no service in its period)."),
+            ("apply", "Apply `edits` in order, atomically, to the registered document: set_plan (fork / stamp a pick — {plan:{id,name,effective_from}}), set_name, retime_trip (move one exact-times trip {schedule, from_secs, to_secs} — the blocks carrying it move with it, so a retime never strands the runcut), upsert_* / remove_* for stop, route, pattern, service_type, schedule, block (upserts replace the whole entity under its id: read it from the document, change it, send it back), and the GESTURES — one edit per thing a planner does, each carrying its coherence rule: add_stop / add_route / add_pattern / add_service_type {from} / add_schedule / add_block (id minted when omitted — first free s1, r1, pat1, cal1, svc1, b1 — and reported in `created`); update_stop / update_route / update_pattern / update_service_type / set_schedule_refs (field-wise, references checked); insert_pattern_stop (before the last stop, halfway along the last leg, non-timepoint), remove_pattern_stop / toggle_timepoint (middle visits only; every timing profile stays aligned — a new timepoint takes its neighbours' midpoint), set_pattern_stop, add_timing_profile / remove_timing_profile (one always stays) / set_timing_profile / set_timepoint_time; toggle_service_day {day: mon..sun}, add_service_range / set_service_range / remove_service_range, set_service_exception (one per date, date order) / remove_service_exception; set_starts (sorted, unique) / add_start (+10 min) / remove_start (one always stays), set_band / add_band / remove_band; add_block_trip (time order; stale layovers pruned) / remove_block_trip / set_layover {after_trip, secs | null} (only between two trips). An out-of-range index or a missing reference is a named error, never a silent no-op. One edit that cannot apply (an unknown id; a removal of something still referenced — a stop a pattern visits, a schedule a block carries) rejects the whole change as an error naming the edit's position. The answer: the next network_hash (already registered), the document itself, its issues (gate export) and warnings (never gate: unassigned trips, a pick with no service in its period), and `created` ({kind, id} per entity the change made)."),
         ],
     },
     ModuleSpec {
@@ -690,6 +691,16 @@ fn example_for(
                     "summary": ctx.export_summary, "zip_b64": ctx.zip_b64 } }),
             )
         }
+        ("network", "agency_trip_ids") => {
+            let ctx = net?;
+            let map: transit_codec::TripIdMap = serde_json::from_value(ctx.trip_map.clone()).ok()?;
+            let first = map.entries.first()?;
+            (
+                json!({ "op": "agency_trip_ids", "network_hash": ctx.network_hash,
+                    "trips": [{ "schedule": first.schedule, "start_secs": first.start_secs }] }),
+                json!({ "ok": { "op": "agency_trip_ids", "ids": [first.agency_trip_ids] } }),
+            )
+        }
         ("network", "trip_map") => {
             let ctx = net?;
             (
@@ -921,7 +932,7 @@ fn example_for(
                 json!({ "op": "block_trips", "network_hash": ctx.network_hash,
                     "edits_hash": "<of the loaded edit document>", "block_id": "B1", "date": "2026-10-23" }),
                 json!({ "ok": { "op": "block_trips", "block_id": "B1",
-                    "trips": transit_dispatch::block_chain(ctx.derived_network(), &day, "B1") } }),
+                    "trips": transit_dispatch::block_chain(ctx.derived_network(), &day, "B1", transit_dispatch::TIGHT_LAYOVER_SECS) } }),
             )
         }
         ("runcut", "trip_stops") => {
@@ -1103,8 +1114,8 @@ fn example_for(
                     name: "Fall 2026".into(),
                     effective_from: chrono::NaiveDate::from_ymd_opt(2026, 10, 19),
                 },
-            }];
-            let next = transit_network::apply_edits(ctx.derived_network(), &edits).ok()?;
+            }, transit_network::NetworkEdit::AddStop { id: None, lat: Some(45.5), lon: Some(-73.5) }];
+            let (next, created) = transit_network::apply_edits_reporting(ctx.derived_network(), &edits).ok()?;
             let canonical = serde_json::to_string(&next).ok()?;
             (
                 json!({ "op": "apply", "network_hash": ctx.network_hash, "edits": edits }),
@@ -1112,7 +1123,8 @@ fn example_for(
                     "network_hash": format!("sha256:{:x}", Sha256::digest(canonical.as_bytes())),
                     "network": next,
                     "issues": transit_network::validation_issues(&next),
-                    "warnings": transit_network::validation_warnings(&next) } }),
+                    "warnings": transit_network::validation_warnings(&next),
+                    "created": created } }),
             )
         }
         ("plans", "resolve") => {

@@ -21,6 +21,8 @@ import type { PlanPeriod } from "./types/cap_plans/PlanPeriod";
 import type { TypeCoverage } from "./types/TypeCoverage";
 import type { RtOverview } from "./types/RtOverview";
 import type { StopBoard } from "./types/StopBoard";
+import type { DayBlock } from "./types/DayBlock";
+import type { BlockChainTrip } from "./types/BlockChainTrip";
 import type { Live } from "./capabilities.svelte";
 import type { EntityKind, Focus, PlannerScreen } from "./planner";
 import type { LineFeature } from "./mapview";
@@ -100,6 +102,14 @@ export type AppState = {
   boardOff: boolean,
   // Service keys running today (cap-calendar; decoration-grade).
   activeServices: string[],
+
+  // The day's blocks (cap-runcut) and the selected block's chain,
+  // each row with its agency trip ids (cap-network, in row order).
+  blocks: DayBlock[],
+  blocksOff: boolean,
+  selectedBlock: string,
+  blockChain: { trips: BlockChainTrip[]; agencyTripIds: string[][] } | null,
+  chainOff: boolean,
 
   // Trip planning (RAPTOR)
   plan: Itinerary | null,
@@ -382,6 +392,12 @@ export const app = $state<AppState>({
   board: null,
   boardOff: false,
   activeServices: [],
+
+  blocks: [],
+  blocksOff: false,
+  selectedBlock: "",
+  blockChain: null,
+  chainOff: false,
 
   plan: null,
   planNotice: null,

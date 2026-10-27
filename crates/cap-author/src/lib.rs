@@ -49,6 +49,9 @@ pub enum Response {
         network: Network,
         issues: Vec<NetworkError>,
         warnings: Vec<NetworkWarning>,
+        /// What the change created, with the ids it was given (minted
+        /// when the edit named none) — what an authoring host opens.
+        created: Vec<transit_network::CreatedEntity>,
     },
 }
 
@@ -86,11 +89,12 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::LoadNetwork { network } => Ok(Response::LoadNetwork { network_hash: register(network)? }),
         Request::Apply { network_hash, edits } => {
             let current = network_arc(&network_hash)?;
-            let next = transit_network::apply_edits(&current, &edits).map_err(|e| e.to_string())?;
+            let (next, created) =
+                transit_network::apply_edits_reporting(&current, &edits).map_err(|e| e.to_string())?;
             let issues = transit_network::validation_issues(&next);
             let warnings = transit_network::validation_warnings(&next);
             let network_hash = register(next.clone())?;
-            Ok(Response::Apply { network_hash, network: next, issues, warnings })
+            Ok(Response::Apply { network_hash, network: next, issues, warnings, created })
         }
     }
 }

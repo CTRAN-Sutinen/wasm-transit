@@ -145,6 +145,7 @@ fn the_block_chain_ripples_under_the_edit() {
         edits_hash: None,
         block_id: "B1".into(),
         date: DATE.into(),
+        tight_layover_secs: None,
     })
     .unwrap()
     {
@@ -165,6 +166,7 @@ fn the_block_chain_ripples_under_the_edit() {
         edits_hash: None,
         block_id: "missing".into(),
         date: DATE.into(),
+        tight_layover_secs: None,
     })
     .unwrap()
     {
@@ -181,6 +183,7 @@ fn the_block_chain_ripples_under_the_edit() {
         edits_hash: Some(edits_hash),
         block_id: "B1".into(),
         date: DATE.into(),
+        tight_layover_secs: None,
     })
     .unwrap()
     {
@@ -324,6 +327,7 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
         edits_hash: Some("sha256:missing".into()),
         block_id: "B1".into(),
         date: DATE.into(),
+        tight_layover_secs: None,
     })
     .unwrap_err();
     assert!(err.contains("unknown edits"), "{err}");

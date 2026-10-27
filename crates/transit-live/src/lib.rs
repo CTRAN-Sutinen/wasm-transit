@@ -98,6 +98,8 @@ pub struct LiveTrip {
     /// label dispatchers know, never a join key.
     pub agency_trip_id: String,
     pub route: Option<String>,
+    /// The route's name as the network names it.
+    pub route_name: Option<String>,
     /// The worst delay the snapshot states anywhere on the trip —
     /// the trip's headline lateness.
     pub worst_delay_secs: Option<i32>,
@@ -118,6 +120,8 @@ pub struct LiveVehicle {
     pub lon: f64,
     pub bearing: Option<f32>,
     pub route: Option<String>,
+    /// The route's name as the network names it.
+    pub route_name: Option<String>,
     /// The stop the vehicle is at or heading to.
     pub next_stop: Option<String>,
     /// The derived trip it runs — absent when the rt trip does not
@@ -173,6 +177,7 @@ pub struct StatusCounts {
 pub struct LateEntry {
     pub key: String,
     pub route: Option<String>,
+    pub route_name: Option<String>,
     /// The bus number, when a vehicle is out on it.
     pub label: Option<String>,
     pub agency_trip_id: Option<String>,
@@ -218,6 +223,7 @@ pub fn summarize(day: &LiveDay, limit: usize) -> LiveSummary {
             .map(|t| LateEntry {
                 key: format!("{}@{}", t.schedule, t.start_secs),
                 route: t.route.clone(),
+                route_name: t.route_name.clone(),
                 label: None,
                 agency_trip_id: Some(t.agency_trip_id.clone()),
                 schedule: Some(t.schedule.clone()),
@@ -233,6 +239,7 @@ pub fn summarize(day: &LiveDay, limit: usize) -> LiveSummary {
             .map(|v| LateEntry {
                 key: v.key.clone(),
                 route: v.route.clone(),
+                route_name: v.route_name.clone(),
                 label: v.label.clone().or_else(|| v.vehicle_id.clone()),
                 agency_trip_id: v.agency_trip_id.clone(),
                 schedule: v.schedule.clone(),

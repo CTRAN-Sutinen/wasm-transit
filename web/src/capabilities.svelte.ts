@@ -32,6 +32,11 @@ import type { Response as PlansCapResponse } from "./types/cap_plans/Response";
 import type { PlanInfo } from "./types/cap_plans/PlanInfo";
 import type { PlanIssue } from "./types/cap_plans/PlanIssue";
 import type { PlanPeriod } from "./types/cap_plans/PlanPeriod";
+import type { Request as AuthorCapRequest } from "./types/cap_author/Request";
+import type { Response as AuthorCapResponse } from "./types/cap_author/Response";
+import type { NetworkEdit } from "./types/NetworkEdit";
+import type { NetworkWarning } from "./types/NetworkWarning";
+import type { CreatedEntity } from "./types/CreatedEntity";
 import type { Request as SyncCapRequest } from "./types/cap_sync/Request";
 import type { Response as SyncCapResponse } from "./types/cap_sync/Response";
 import type { DirectoryStop } from "./types/cap_directory/DirectoryStop";
@@ -114,8 +119,9 @@ class CapModule {
       | RtCapRequest
       | StreetsCapRequest
       | PlansCapRequest
-      | SyncCapRequest,
-  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | BoardCapResponse | RuncutCapResponse | CalendarCapResponse | DirectoryCapResponse | RtCapResponse | StreetsCapResponse | PlansCapResponse | SyncCapResponse {
+      | SyncCapRequest
+      | AuthorCapRequest,
+  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | BoardCapResponse | RuncutCapResponse | CalendarCapResponse | DirectoryCapResponse | RtCapResponse | StreetsCapResponse | PlansCapResponse | SyncCapResponse | AuthorCapResponse {
     const wasm = this.#exports;
     const payload = new TextEncoder().encode(JSON.stringify(request));
     const ptr = wasm.transit_alloc(payload.length);
@@ -134,7 +140,8 @@ class CapModule {
       | RtCapResponse
       | StreetsCapResponse
       | PlansCapResponse
-      | SyncCapResponse;
+      | SyncCapResponse
+      | AuthorCapResponse;
   }
 
   invokeBytes(
@@ -716,6 +723,15 @@ export function networkCap(module: CapModule) {
     },
     /// The import's trip-id map: derived (schedule, start) ↔ agency
     /// trip ids. None for an authored (non-imported) network.
+    /// The agency trip ids behind derived trips, in the order asked.
+    agencyTripIds(networkHash: string, trips: { schedule: string; start_secs: number }[]): string[][] {
+      const resp = module.invoke({
+        op: "agency_trip_ids",
+        network_hash: networkHash,
+        trips,
+      } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "agency_trip_ids" }>;
+      return resp.ids;
+    },
     tripMap(networkHash: string): TripIdMap | null {
       const resp = module.invoke({
         op: "trip_map",
@@ -1479,6 +1495,55 @@ export function plansCap(module: CapModule) {
 }
 
 /// The current plans module, if the bus assembled one.
+// ---------------------------------------------------------------------
+// The authoring capability — every change to a network document is a
+// list of NetworkEdits applied by cap-author: the gestures carry the
+// model's coherence rules (aligned timing, sorted starts, layovers
+// between trips, minted ids), so the browser, the runner, and the
+// server author the same document from the same edits.
+// ---------------------------------------------------------------------
+
+export type Applied = {
+  networkHash: string;
+  network: Network;
+  issues: NetworkError[];
+  warnings: NetworkWarning[];
+  created: CreatedEntity[];
+};
+
+export function authorCap(module: CapModule) {
+  return {
+    loadNetwork(network: Network): string {
+      const resp = module.invoke({ op: "load_network", network } as AuthorCapRequest) as Extract<
+        AuthorCapResponse,
+        { op: "load_network" }
+      >;
+      return resp.network_hash;
+    },
+    /// Apply edits atomically to a registered document: the next
+    /// document (registered under its own hash) and what it is.
+    apply(networkHash: string, edits: NetworkEdit[]): Applied {
+      const resp = module.invoke({ op: "apply", network_hash: networkHash, edits } as AuthorCapRequest) as Extract<
+        AuthorCapResponse,
+        { op: "apply" }
+      >;
+      return {
+        networkHash: resp.network_hash,
+        network: resp.network,
+        issues: resp.issues,
+        warnings: resp.warnings,
+        created: resp.created,
+      };
+    },
+  };
+}
+
+/// The current authoring module, if the bus assembled one.
+export async function authorModule(): Promise<CapModule | null> {
+  const modules = await ensure(["author"]);
+  return modules.author ?? null;
+}
+
 export async function plansModule(): Promise<CapModule | null> {
   const modules = await ensure(["plans"]);
   return modules.plans ?? null;

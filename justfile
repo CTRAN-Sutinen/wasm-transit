@@ -267,7 +267,7 @@ test: caps
     }
     # W0a: components never call the bus — the host layer does.
     ratchet resolver-in-components \
-        "web/src/App.svelte web/src/components/BlocksPanel.svelte web/src/components/CapabilityDemo.svelte web/src/components/DiversionPanel.svelte web/src/components/MapView.svelte web/src/components/TripPlanner.svelte" \
+        "web/src/App.svelte web/src/components/CapabilityDemo.svelte web/src/components/DiversionPanel.svelte web/src/components/MapView.svelte web/src/components/TripPlanner.svelte" \
         "$(grep -l 'capabilities\.svelte' web/src/App.svelte web/src/components/*.svelte | tr '\n' ' ')" \
         "a component imports the capability resolver; take node values as props"
     # W0b: no host-side rt join — delays come from cap-rt's live
@@ -276,6 +276,12 @@ test: caps
         "" \
         "$(grep -rl 'stop_updates' web/src --include='*.ts' --include='*.svelte' | grep -v '^web/src/types/' | sort | tr '\n' ' ')" \
         "reads raw rt stop_updates; the live join is cap-rt's"
+    # W0c: no clone-and-mutate of documents in web/ — every change to
+    # a network document is a NetworkEdit through cap-author (W2).
+    ratchet clone-and-mutate \
+        "" \
+        "$(grep -rl 'structuredClone' web/src --include='*.ts' --include='*.svelte' | grep -v '^web/src/types/' | sort | tr '\n' ' ')" \
+        "clones a document to mutate it; send NetworkEdits through cap-author"
     # -race: the artifact is one non-reentrant instance; the host must
     # serialize invokes (see server/race_test.go — the gate watches it).
     cd server && go test -race ./...

@@ -41,7 +41,7 @@ fn changes_chain_by_hash_and_report_the_result() {
     let base = load(network());
     // Fork into a pick dated after the calendar ends: applied, and
     // the warning says the pick governs a period with no service.
-    let Response::Apply { network_hash: pick, network, issues, warnings } = apply(
+    let Response::Apply { network_hash: pick, network, issues, warnings, created } = apply(
         &base,
         vec![NetworkEdit::SetPlan {
             plan: PlanMeta {
@@ -55,6 +55,7 @@ fn changes_chain_by_hash_and_report_the_result() {
         panic!("apply")
     };
     assert_ne!(pick, base, "a change is a new document");
+    assert!(created.is_empty(), "a plan frame creates nothing");
     assert_eq!(network.plan.id, "spring");
     assert!(issues.is_empty());
     // (The 25:30 trip was never in block 400: unassigned, warned.)
@@ -111,4 +112,28 @@ fn refusals_and_garbage_are_errors_not_panics() {
     assert!(out.contains(r#""op":"apply""#) && out.contains(r#""name":"Renamed""#), "{out}");
     assert!(dispatch_json("not json").contains("invalid request"));
     assert!(dispatch_bytes(0, b"x").contains("unknown bulk op"));
+}
+
+/// A gesture through the seam: the minted id comes back in `created`,
+/// and the next change chains on the answered hash.
+#[test]
+fn gestures_report_what_they_created() {
+    let base = load(network());
+    let Response::Apply { network_hash, created, .. } =
+        apply(&base, vec![NetworkEdit::AddStop { id: None, lat: None, lon: None }]).unwrap()
+    else {
+        panic!("apply")
+    };
+    assert_eq!(created.len(), 1);
+    assert_eq!((created[0].kind.as_str(), created[0].id.as_str()), ("stop", "s1"));
+    let Response::Apply { network, .. } = apply(
+        &network_hash,
+        vec![NetworkEdit::UpdateStop { id: "s1".into(), name: Some("Depot".into()), lat: None, lon: None, transfer: None }],
+    )
+    .unwrap() else {
+        panic!("apply")
+    };
+    assert_eq!(network.stops["s1"].name, "Depot");
+    let err = apply(&network_hash, vec![NetworkEdit::RemoveStart { schedule: "ghost".into(), index: 0 }]).unwrap_err();
+    assert!(err.contains("edit 0") && err.contains("unknown schedule"), "{err}");
 }

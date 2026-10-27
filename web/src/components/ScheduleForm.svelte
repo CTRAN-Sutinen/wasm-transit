@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { HeadwayBand } from "../types/HeadwayBand";
   import { app, getNetworkDoc } from "../state.svelte";
   import {
     setScheduleRefs, removeSchedule, retimeScheduleStart, addScheduleStart,
@@ -42,7 +43,7 @@
     retimeScheduleStart(id, from, secs);
   }
 
-  function updateBand(index: number, field: string, text: string, asMinutes = false) {
+  function updateBand(index: number, field: keyof HeadwayBand, text: string, asMinutes = false) {
     const secs = asMinutes ? Math.round(Number(text) * 60) : parseHHMMSS(text);
     if (secs === null || Number.isNaN(secs) || secs < 0) {
       app.status = `Not a valid ${field === "headway_secs" ? "headway" : "time"}: "${text}"`;

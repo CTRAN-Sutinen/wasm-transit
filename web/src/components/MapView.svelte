@@ -635,15 +635,13 @@
   $effect(() => {
     if (!mapLoaded) return;
     // Buses signal their lateness by color — cap-rt's live document
-    // carries each vehicle's derived trip, delay, and status; the map
-    // only draws (and names the route from the directory).
-    const routeShort = new Map<string, string>();
-    for (const r of directory.routes) routeShort.set(r.route_id, r.name);
+    // carries each vehicle's derived trip, route name, delay, and
+    // status; the map only draws.
     const features = (app.live?.live.vehicles ?? []).map((v) => {
       // The rider-visible bus number, and the small label on the map:
       // route badge · bus number (falling back to what exists).
       const busNo = v.label ?? v.vehicle_id;
-      const parts = [routeShort.get(v.route ?? ""), busNo].filter(Boolean);
+      const parts = [v.route_name, busNo].filter(Boolean);
       return {
         type: "Feature",
         geometry: { type: "Point", coordinates: [v.lon, v.lat] },

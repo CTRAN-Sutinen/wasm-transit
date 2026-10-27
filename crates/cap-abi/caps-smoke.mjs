@@ -620,6 +620,28 @@ assert(
   rippedChain.trips[0].layover_remaining_secs === 300,
   "the diverted end eats the layover (600 - 300) — the connection-health ripple",
 );
+const tightChain = runcut.invoke({
+  op: "block_trips",
+  network_hash: loadedRuncutNet.network_hash,
+  edits_hash: runcutEdits.edits_hash,
+  block_id: "B1",
+  date: DATE,
+  tight_layover_secs: 600,
+});
+assert(
+  rippedChain.trips[0].layover_health === "ok" && tightChain.trips[0].layover_health === "tight",
+  "the module classifies the connection under the caller's tight threshold",
+);
+// What the radio calls those trips: the trip map shaped to the rows.
+const agencyIds = network.invoke({
+  op: "agency_trip_ids",
+  network_hash: imported.network_hash,
+  trips: rippedChain.trips.map((t) => ({ schedule: t.schedule, start_secs: t.start_secs })),
+});
+assert(
+  agencyIds.ids.length === rippedChain.trips.length && agencyIds.ids[0].includes("t10"),
+  "agency ids answer in row order (B1 starts with t10)",
+);
 // The trip detail — the map's click-through question (the answer
 // carries no geometry; the host's view code holds the coordinates):
 // one derived trip's EFFECTIVE stops, patched by the same edits.
@@ -914,5 +936,34 @@ const firstStop = Object.keys(imported.network.stops).find((id) =>
 );
 const refusedEdit = author.raw({ op: "apply", network_hash: authorNet.network_hash, edits: [{ edit: "remove_stop", id: firstStop }] });
 assert(refusedEdit.error && refusedEdit.error.includes("edit 0"), "a referenced stop is never hard-deleted out from under a pattern");
+// The gestures carry the model's rules: a minted id comes back in
+// `created`, and a new timepoint keeps every timing profile aligned.
+const gestured = author.invoke({
+  op: "apply",
+  network_hash: authorNet.network_hash,
+  edits: [{ edit: "add_stop", lat: 45.5, lon: -73.5 }, { edit: "add_route" }],
+});
+assert(
+  gestured.created.map((c) => `${c.kind}:${c.id}`).join() === "stop:s1,route:r1",
+  "creation mints the first free ids and reports them",
+);
+// Insert a visit (a non-timepoint, before the last stop), then make
+// it a timepoint: every profile gains its time.
+const [patternId, pattern] = Object.entries(gestured.network.patterns)[0];
+const inserted = pattern.stops.length - 1; // where the new visit lands
+const toggled = author.invoke({
+  op: "apply",
+  network_hash: gestured.network_hash,
+  edits: [
+    { edit: "insert_pattern_stop", pattern: patternId, stop: "s1" },
+    { edit: "toggle_timepoint", pattern: patternId, index: inserted },
+  ],
+}).network.patterns[patternId];
+const timepoints = toggled.stops.filter((st) => st.timepoint).length;
+assert(
+  toggled.stops[inserted].stop === "s1" && toggled.stops[inserted].timepoint &&
+    toggled.timing.every((t) => t.at_timepoints.length === timepoints),
+  "a new timepoint keeps every timing profile aligned",
+);
 
 console.log("capability modules: ABI smoke ok");

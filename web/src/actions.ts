@@ -1,6 +1,6 @@
 import { app, getEditDocument, setEditDocument, setStreets, type DiversionDraft } from "./state.svelte";
 import { get as idbGet, set as idbSet, del as idbDel } from "idb-keyval";
-import { ensureAnalysisLayer, ensureEditReports, importedNetworkDocument, ensureRuncutBoarding, ensureRuncutEdits, ensureRouterBoarding, ensureRouterEdits, ensureStreets, runcutCap, runcutModule, routerCap, routerModule, rtCap, rtModule, boardCap, boardModule, ensureBoardBoarding, ensureBoardEdits, calendarCap, calendarModule, ensureCalendarNetwork, contentHash } from "./capabilities.svelte";
+import { ensureAnalysisLayer, ensureEditReports, importedNetworkDocument, ensureRuncutBoarding, ensureRuncutEdits, ensureRouterBoarding, ensureRouterEdits, ensureStreets, runcutCap, runcutModule, routerCap, routerModule, rtCap, rtModule, boardCap, boardModule, ensureBoardBoarding, ensureBoardEdits, calendarCap, calendarModule, ensureCalendarNetwork, contentHash, networkCap, networkModule } from "./capabilities.svelte";
 import { stopPointOf, tripLine, tripSegment, type MapPoint } from "./mapview";
 import type { EditRecord } from "./types/EditRecord";
 import type { Itinerary } from "./types/Itinerary";
@@ -291,6 +291,79 @@ export async function refreshBoard(): Promise<void> {
     if (seq === boardSeq) {
       app.board = null;
       app.boardOff = true;
+    }
+  }
+}
+
+let blocksSeq = 0;
+
+/// The day's blocks (cap-runcut's index facet): only blocks with
+/// authored trips running that day. Keeps a valid selection,
+/// defaulting to the first block.
+export async function refreshBlocks(): Promise<void> {
+  const seq = ++blocksSeq;
+  const bytes = feedBytes();
+  const records = getEditDocument();
+  const date = serviceDate();
+  if (!app.feedLoaded || !bytes) {
+    app.blocks = [];
+    return;
+  }
+  try {
+    const boarding = await ensureRuncutBoarding(bytes);
+    const editsHash = boarding ? await ensureRuncutEdits(boarding.networkHash, records) : null;
+    const module = boarding ? await runcutModule() : null;
+    if (seq !== blocksSeq) return;
+    if (!boarding || !module) {
+      app.blocks = [];
+      app.blocksOff = true;
+      app.status =
+        "runcut capability unavailable — the blocks view is off until it loads (the capability bus did not assemble).";
+      return;
+    }
+    app.blocks = runcutCap(module).blocks(boarding.networkHash, editsHash, date);
+    app.blocksOff = false;
+    if (!app.blocks.some((b) => b.block_id === app.selectedBlock)) {
+      app.selectedBlock = app.blocks[0]?.block_id ?? "";
+    }
+  } catch {
+    if (seq === blocksSeq) app.blocks = [];
+  }
+}
+
+let chainSeq = 0;
+
+/// The selected block's chain (cap-runcut — the layover ripple and
+/// its health are the module's) with the agency trip ids the radio
+/// uses (cap-network's trip map, shaped to the rows).
+export async function refreshBlockChain(): Promise<void> {
+  const seq = ++chainSeq;
+  const blockId = app.selectedBlock;
+  const bytes = feedBytes();
+  const records = getEditDocument();
+  const date = serviceDate();
+  if (!blockId || !app.feedLoaded || !bytes) {
+    app.blockChain = null;
+    return;
+  }
+  try {
+    const boarding = await ensureRuncutBoarding(bytes);
+    const editsHash = boarding ? await ensureRuncutEdits(boarding.networkHash, records) : null;
+    const [module, network] = boarding ? await Promise.all([runcutModule(), networkModule()]) : [null, null];
+    if (seq !== chainSeq) return;
+    if (!boarding || !module) {
+      app.blockChain = null;
+      app.chainOff = true;
+      return;
+    }
+    const trips = runcutCap(module).blockTrips(boarding.networkHash, editsHash, blockId, date);
+    const agencyTripIds = network ? networkCap(network).agencyTripIds(boarding.networkHash, trips) : trips.map(() => []);
+    app.blockChain = { trips, agencyTripIds };
+    app.chainOff = false;
+  } catch {
+    if (seq === chainSeq) {
+      app.blockChain = null;
+      app.chainOff = true;
     }
   }
 }

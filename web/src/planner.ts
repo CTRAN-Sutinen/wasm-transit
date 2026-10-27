@@ -8,8 +8,9 @@
 ///   source → deriveFromFeed (GTFS is the bootstrap), loadNetworkText/
 ///            loadNetworkFile (round-tripping documents)
 ///   check  → validate (issues from the artifact, never throws)
-///   edit   → one mutation path: mutateNetwork clones, edits,
-///            replaces, revalidates — every entity CRUD below it
+///   edit   → NetworkEdits through the authoring capability
+///            (cap-author `apply`): the gestures carry the rules,
+///            this file adopts the answer — it never edits a document
 ///   apply  → materializeNetwork (registers a derived feed; the
 ///            Rider/Dispatcher views then run on the authored network)
 ///
@@ -40,7 +41,12 @@ import {
   networkCap,
   base64Decode,
   plansChain,
+  authorCap,
+  authorModule,
+  type Applied,
 } from "./capabilities.svelte";
+import type { NetworkEdit } from "./types/NetworkEdit";
+import type { CreatedEntity } from "./types/CreatedEntity";
 
 export type EntityKind = "stop" | "route" | "pattern" | "schedule" | "service_type" | "block";
 
@@ -301,7 +307,7 @@ export async function refreshPlanChain(): Promise<void> {
 /** The service-change workflow: fork a plan into the NEXT pick. The
  * fork carries the whole world it changes — permanent stop/route
  * changes are only made at picks — with fresh plan metadata. */
-export function forkPlan(fromKey: string, name: string, effectiveFrom: string): void {
+export async function forkPlan(fromKey: string, name: string, effectiveFrom: string): Promise<void> {
   const src = getAllPlans()[fromKey];
   if (!src) {
     app.status = "Fork needs a source plan.";
@@ -311,8 +317,17 @@ export function forkPlan(fromKey: string, name: string, effectiveFrom: string): 
     app.status = "A new pick needs a name and an effective date.";
     return;
   }
-  const doc = structuredClone(src);
-  doc.plan = { id: newPlanId(), name: name.trim(), effective_from: effectiveFrom };
+  // Edits still in flight belong to the source: fork what they made.
+  await editChain;
+  const source = getAllPlans()[fromKey] ?? src;
+  // The fork is the source document under a new plan frame — a
+  // set_plan edit; the host mints the sync identity (ids from
+  // randomness are the host's, never a module's).
+  const applied = await applyTo(source, [
+    { edit: "set_plan", plan: { id: newPlanId(), name: name.trim(), effective_from: effectiveFrom } },
+  ]);
+  if (!applied) return;
+  const doc = applied.network;
   const key = `plan-${doc.plan.id}`;
   putPlan(key, doc);
   setActivePlan(key);
@@ -353,12 +368,18 @@ export function deletePlan(key: string): void {
 /** Frame the ACTIVE document as a pick: name and effective date
  * (the target service change date). Framing assigns the sync
  * identity. Dates are targets — they move during planning. */
-export function updatePlanMeta({ name, effectiveFrom }: { name?: string; effectiveFrom?: string | null }): void {
-  mutateNetwork((d) => {
-    if (!d.plan.id) d.plan.id = newPlanId();
-    if (name !== undefined) d.plan.name = name;
-    if (effectiveFrom !== undefined) d.plan.effective_from = effectiveFrom === "" ? null : effectiveFrom;
-  });
+export async function updatePlanMeta({ name, effectiveFrom }: { name?: string; effectiveFrom?: string | null }): Promise<void> {
+  // Field-wise, in order: the model merges (update_plan), so quick
+  // successive changes never overwrite each other. The host mints the
+  // identity an unversioned plan is stamped with.
+  await edit([
+    {
+      edit: "update_plan",
+      name,
+      effective_from: effectiveFrom === undefined ? undefined : effectiveFrom ?? "",
+      id: newPlanId(),
+    },
+  ]);
   refreshPlanChain();
 }
 
@@ -524,53 +545,88 @@ export async function materializeNetwork(): Promise<void> {
 }
 
 // ---------------------------------------------------------------
-// editing — one mutation path: clone → edit → replace → revalidate
+// editing — every change is a list of NetworkEdits applied by the
+// AUTHORING CAPABILITY (cap-author). The gestures carry the model's
+// coherence rules (timing aligned with timepoints, starts sorted and
+// unique, layovers only between trips, minted ids) — the browser,
+// the runner, and the server author the same document from the same
+// edits. This file sends edits and adopts the answer; it never
+// changes a document itself.
 // ---------------------------------------------------------------
 
-export function mutateNetwork(fn: (doc: Network) => void): void {
-  const doc = structuredClone(getNetworkDoc());
-  if (!doc) return;
-  fn(doc);
-  setDoc(doc, app.networkLabel);
+/** Documents registered in the authoring module, by identity —
+ * per module instance (a module re-fetched starts empty). */
+const authored = new WeakMap<object, WeakMap<Network, string>>();
+
+async function applyTo(doc: Network, edits: NetworkEdit[]): Promise<Applied | null> {
+  const module = await authorModule();
+  if (!module) {
+    app.status = "Authoring capability unavailable — edits are off until it loads (the capability bus did not assemble).";
+    return null;
+  }
+  const cap = authorCap(module);
+  let hashes = authored.get(module);
+  if (!hashes) authored.set(module, (hashes = new WeakMap()));
+  const hash = hashes.get(doc) ?? cap.loadNetwork(doc);
+  try {
+    const applied = cap.apply(hash, edits);
+    hashes.set(applied.network, applied.networkHash);
+    return applied;
+  } catch (e) {
+    app.status = `Edit refused: ${(e as Error).message}`;
+    return null;
+  }
 }
 
-function nextId(map: Record<string, unknown> | undefined | null, prefix: string): string {
-  if (!map) return `${prefix}1`;
-  let n = 1;
-  while (Object.prototype.hasOwnProperty.call(map, `${prefix}${n}`)) n++;
-  return `${prefix}${n}`;
+/** Edits apply in the order they are made: each change chains on the
+ * document the previous one answered. */
+let editChain: Promise<unknown> = Promise.resolve();
+
+/** Apply edits to the plan that was ACTIVE when they were made (a
+ * change lands on its own plan even if the planner has moved on)
+ * and adopt the answer — the issues come with it (no second
+ * validation pass). Resolves to what the change created. */
+export function edit(edits: NetworkEdit[]): Promise<CreatedEntity[]> {
+  const key = getActivePlanId();
+  const run = editChain.then(async () => {
+    const doc = getAllPlans()[key];
+    if (!doc) return [];
+    const applied = await applyTo(doc, edits);
+    if (!applied) return [];
+    putPlan(key, applied.network);
+    if (getActivePlanId() === key) {
+      app.networkIssues = applied.issues;
+      app.networkValidationOff = false;
+      validatePath = "bus";
+      refreshAnalysisSoon();
+    }
+    return applied.created;
+  });
+  editChain = run.catch(() => undefined);
+  return run;
+}
+
+/** Create, then open the new entity's editor (set metadata in context). */
+async function create(kind: EntityKind, gesture: NetworkEdit): Promise<void> {
+  const [made] = await edit([gesture]);
+  if (made) selectEntity(kind, made.id);
 }
 
 // --- stops ------------------------------------------------------
 
 export function addStop(): void {
-  const doc = getNetworkDoc();
-  const i = Object.keys(doc?.stops ?? {}).length + 1;
-  const id = nextId(doc?.stops, "s");
-  mutateNetwork((d) => {
-    d.stops[id] = { name: `Stop ${i}`, lat: 45.52, lon: -122.68, transfer: false };
-  });
-  selectEntity("stop", id); // creation opens the editor: set metadata now
+  void create("stop", { edit: "add_stop" });
 }
 
 export function updateStop(
   id: string,
   { name, lat, lon, transfer }: { name?: string; lat?: number; lon?: number; transfer?: boolean },
 ): void {
-  mutateNetwork((d) => {
-    const s = d.stops[id];
-    if (!s) return;
-    if (name !== undefined) s.name = name;
-    if (lat !== undefined && !Number.isNaN(lat)) s.lat = lat;
-    if (lon !== undefined && !Number.isNaN(lon)) s.lon = lon;
-    if (transfer !== undefined) s.transfer = transfer;
-  });
+  void edit([{ edit: "update_stop", id, name, lat, lon, transfer }]);
 }
 
 export function removeStop(id: string): void {
-  mutateNetwork((d) => {
-    delete d.stops[id];
-  });
+  void edit([{ edit: "remove_stop", id }]);
 }
 
 // --- routes -----------------------------------------------------
@@ -582,179 +638,65 @@ export function modes(): Mode[] {
 }
 
 export function addRoute(): void {
-  const doc = getNetworkDoc();
-  const i = Object.keys(doc?.routes ?? {}).length + 1;
-  const id = nextId(doc?.routes, "r");
-  mutateNetwork((d) => {
-    d.routes[id] = { name: `Route ${i}`, mode: "bus" };
-  });
-  // Creation opens the detail screen: set the metadata now, in
-  // context, not from a faceless list.
-  selectEntity("route", id);
+  void create("route", { edit: "add_route" });
 }
 
 export function updateRoute(id: string, { name, mode }: { name?: string; mode?: Mode }): void {
-  mutateNetwork((d) => {
-    const r = d.routes[id];
-    if (!r) return;
-    if (name !== undefined) r.name = name;
-    if (mode !== undefined) r.mode = mode;
-  });
+  void edit([{ edit: "update_route", id, name, mode }]);
 }
 
 export function removeRoute(id: string): void {
-  mutateNetwork((d) => {
-    delete d.routes[id];
-  });
+  void edit([{ edit: "remove_route", id }]);
 }
 
 // --- patterns ---------------------------------------------------
 
 export function addPattern(routeId?: string): void {
-  const doc = getNetworkDoc();
-  if (!doc) return;
-  const targetRoute = routeId ?? Object.keys(doc.routes ?? {}).sort()[0];
-  if (!targetRoute) {
-    app.status = "Add a route first.";
-    return;
-  }
-  const stopIds = Object.keys(doc.stops ?? {}).sort();
-  if (stopIds.length < 1) {
-    app.status = "Add stops first.";
-    return;
-  }
-  const id = nextId(doc.patterns, "pat");
-  mutateNetwork((d) => {
-    d.patterns[id] = {
-      route: targetRoute,
-      name: `Pattern ${Object.keys(d.patterns).length + 1}`,
-      stops: [
-        { stop: stopIds[0], timepoint: true, distance_m: 0 },
-        { stop: stopIds[1 % stopIds.length], timepoint: true, distance_m: 500 },
-      ],
-      timing: [{ start_secs: 0, end_secs: 30 * 3600, at_timepoints: [0, 600] }],
-    };
-  });
-  selectEntity("pattern", id);
+  void create("pattern", { edit: "add_pattern", route: routeId });
 }
 
 export function updatePattern(id: string, { name, route }: { name?: string; route?: string }): void {
-  mutateNetwork((d) => {
-    const p = d.patterns[id];
-    if (!p) return;
-    if (name !== undefined) p.name = name;
-    if (route !== undefined) p.route = route;
-  });
+  void edit([{ edit: "update_pattern", id, name, route }]);
 }
 
 export function removePattern(id: string): void {
-  mutateNetwork((d) => {
-    delete d.patterns[id];
-  });
+  void edit([{ edit: "remove_pattern", id }]);
 }
 
-/** Insert a stop visit before the pattern's last stop (endpoints stay
- * endpoints; non-timepoint, so timing vectors are untouched). */
 export function addPatternStop(patternId: string, stopId: string): void {
-  mutateNetwork((d) => {
-    const p = d.patterns[patternId];
-    if (!p || !stopId || p.stops.length < 2) return;
-    const last = p.stops[p.stops.length - 1];
-    const before = p.stops[p.stops.length - 2];
-    const distance = (before.distance_m + last.distance_m) / 2;
-    p.stops.splice(p.stops.length - 1, 0, { stop: stopId, timepoint: false, distance_m: distance });
-  });
+  if (!stopId) return;
+  void edit([{ edit: "insert_pattern_stop", pattern: patternId, stop: stopId }]);
 }
 
-/** Middle stops only — the first and last are timepoints by model
- * invariant and the UI keeps them fixed. (No reordering: the stop
- * sequence is geometry — added in order along the road, baked in by
- * the alignment once it exists.) */
 export function removePatternStop(patternId: string, index: number): void {
-  mutateNetwork((d) => {
-    const p = d.patterns[patternId];
-    if (!p) return;
-    if (index <= 0 || index >= p.stops.length - 1) return;
-    const wasTimepoint = p.stops[index].timepoint;
-    const before = p.stops.slice(0, index).filter((s) => s.timepoint).length;
-    p.stops.splice(index, 1);
-    if (wasTimepoint) {
-      for (const prof of p.timing) prof.at_timepoints.splice(before, 1);
-    }
-  });
+  void edit([{ edit: "remove_pattern_stop", pattern: patternId, index }]);
 }
 
 export function setPatternStop(patternId: string, index: number, { stop, distance_m }: { stop?: string; distance_m?: number }): void {
-  mutateNetwork((d) => {
-    const row = d.patterns[patternId]?.stops[index];
-    if (!row) return;
-    if (stop !== undefined) row.stop = stop;
-    if (distance_m !== undefined && !Number.isNaN(distance_m)) row.distance_m = distance_m;
-  });
+  void edit([{ edit: "set_pattern_stop", pattern: patternId, index, stop, distance_m }]);
 }
 
-/** Toggle a middle stop's timepoint flag, keeping every timing
- * profile's vector aligned (insert a midpoint / drop the entry). */
 export function togglePatternTimepoint(patternId: string, index: number): void {
-  mutateNetwork((d) => {
-    const p = d.patterns[patternId];
-    if (!p) return;
-    if (index <= 0 || index >= p.stops.length - 1) return; // endpoints stay
-    const row = p.stops[index];
-    const pos = p.stops.slice(0, index).filter((s) => s.timepoint).length;
-    const turningOff = row.timepoint;
-    row.timepoint = !row.timepoint;
-    for (const prof of p.timing) {
-      if (turningOff) {
-        prof.at_timepoints.splice(pos, 1);
-      } else {
-        const prev = pos > 0 ? prof.at_timepoints[pos - 1] : 0;
-        const next = pos < prof.at_timepoints.length ? prof.at_timepoints[pos] : prev;
-        prof.at_timepoints.splice(pos, 0, Math.round((prev + next) / 2));
-      }
-    }
-  });
+  void edit([{ edit: "toggle_timepoint", pattern: patternId, index }]);
 }
 
 // --- timing profiles --------------------------------------------
 
 export function addTimingProfile(patternId: string): void {
-  mutateNetwork((d) => {
-    const p = d.patterns[patternId];
-    if (!p) return;
-    const last = p.timing[p.timing.length - 1];
-    const start = last ? last.end_secs : 0;
-    p.timing.push({
-      start_secs: start,
-      end_secs: start + 6 * 3600,
-      at_timepoints: last ? [...last.at_timepoints] : [0],
-    });
-  });
+  void edit([{ edit: "add_timing_profile", pattern: patternId }]);
 }
 
 export function removeTimingProfile(patternId: string, index: number): void {
-  mutateNetwork((d) => {
-    const p = d.patterns[patternId];
-    if (!p || p.timing.length <= 1) return;
-    p.timing.splice(index, 1);
-  });
+  void edit([{ edit: "remove_timing_profile", pattern: patternId, index }]);
 }
 
 export function setTimingProfileField(patternId: string, index: number, { start_secs, end_secs }: { start_secs?: number | null; end_secs?: number | null }): void {
-  mutateNetwork((d) => {
-    const prof = d.patterns[patternId]?.timing[index];
-    if (!prof) return;
-    if (start_secs !== undefined && start_secs !== null) prof.start_secs = start_secs;
-    if (end_secs !== undefined && end_secs !== null) prof.end_secs = end_secs;
-  });
+  void edit([{ edit: "set_timing_profile", pattern: patternId, index, start_secs: start_secs ?? undefined, end_secs: end_secs ?? undefined }]);
 }
 
 export function setTimepointTime(patternId: string, profileIndex: number, timepointIndex: number, secs: number | null): void {
-  mutateNetwork((d) => {
-    const prof = d.patterns[patternId]?.timing[profileIndex];
-    if (!prof || timepointIndex >= prof.at_timepoints.length || secs === null) return;
-    prof.at_timepoints[timepointIndex] = secs;
-  });
+  if (secs === null) return; // an unparsed field is not a change
+  void edit([{ edit: "set_timepoint_time", pattern: patternId, profile: profileIndex, timepoint: timepointIndex, secs }]);
 }
 
 // --- calendars --------------------------------------------------
@@ -766,217 +708,99 @@ export function dayNames(): DayName[] {
 }
 
 export function addServiceType(): void {
-  const doc = getNetworkDoc();
-  const id = nextId(doc?.service_types, "cal");
-  mutateNetwork((d) => {
-    d.service_types[id] = {
-      name: `Service type ${id}`,
-      rule: {
-        days: { mon: true, tue: true, wed: true, thu: true, fri: true, sat: false, sun: false },
-        ranges: [{ start: "2026-01-01", end: "2026-12-31" }],
-        exceptions: [],
-      },
-    };
-  });
-  selectEntity("service_type", id);
+  // The host owns the clock: a new type runs a year from the day the
+  // planner is looking at.
+  void create("service_type", { edit: "add_service_type", from: app.plannerDay || serviceDate() });
 }
 
 export function toggleServiceTypeDay(id: string, day: DayName): void {
-  mutateNetwork((d) => {
-    const st = d.service_types[id];
-    if (st) st.rule.days[day] = !st.rule.days[day];
-  });
+  void edit([{ edit: "toggle_service_day", id, day }]);
 }
 
 export function setServiceTypeRange(id: string, index: number, { start, end }: { start?: string; end?: string }): void {
-  mutateNetwork((d) => {
-    const r = d.service_types[id]?.rule.ranges[index];
-    if (!r) return;
-    if (start) r.start = start;
-    if (end) r.end = end;
-  });
+  void edit([{ edit: "set_service_range", id, index, start: start || undefined, end: end || undefined }]);
 }
 
 export function addServiceTypeRange(id: string): void {
-  mutateNetwork((d) => {
-    const st = d.service_types[id];
-    if (!st) return;
-    const last = st.rule.ranges[st.rule.ranges.length - 1];
-    if (last) {
-        st.rule.ranges.push({ start: last.end, end: last.end });
-    } else {
-        st.rule.ranges.push({ start: "2026-01-01", end: "2026-12-31" });
-    }
-  });
+  void edit([{ edit: "add_service_range", id }]);
 }
 
 export function removeServiceTypeRange(id: string, index: number): void {
-  mutateNetwork((d) => {
-    d.service_types[id]?.rule.ranges.splice(index, 1);
-  });
+  void edit([{ edit: "remove_service_range", id, index }]);
 }
 
 export function addServiceTypeException(id: string, date: string, state: DayState): void {
   if (!date) return;
-  mutateNetwork((d) => {
-    const st = d.service_types[id];
-    if (!st) return;
-    const existing = st.rule.exceptions.find((e) => e.date === date);
-    if (existing) existing.state = state;
-    else st.rule.exceptions.push({ date, state });
-    st.rule.exceptions.sort((a, b) => (a.date < b.date ? -1 : 1));
-  });
+  void edit([{ edit: "set_service_exception", id, date, state }]);
 }
 
 export function removeServiceTypeException(id: string, date: string): void {
-  mutateNetwork((d) => {
-    const st = d.service_types[id];
-    if (!st) return;
-    st.rule.exceptions = st.rule.exceptions.filter((e) => e.date !== date);
-  });
+  void edit([{ edit: "remove_service_exception", id, date }]);
 }
 
 export function removeServiceType(id: string): void {
-  mutateNetwork((d) => {
-    delete d.service_types[id];
-  });
+  void edit([{ edit: "remove_service_type", id }]);
 }
 
 export function updateServiceType(id: string, { name }: { name?: string }): void {
-  mutateNetwork((d) => {
-    const st = d.service_types[id];
-    if (!st) return;
-    if (name !== undefined) st.name = name;
-  });
+  if (name === undefined) return;
+  void edit([{ edit: "update_service_type", id, name }]);
 }
 
 // --- schedules (one pattern's trips under one service type) ---
 
 export function addSchedule(): void {
-  const doc = getNetworkDoc();
-  if (!doc) return;
-  const patternId = Object.keys(doc.patterns ?? {}).sort()[0];
-  const typeId = Object.keys(doc.service_types ?? {}).sort()[0];
-  if (!patternId || !typeId) {
-    app.status = "Add a pattern and a service type first.";
-    return;
-  }
-  const id = nextId(doc.schedules, "svc");
-  mutateNetwork((d) => {
-    d.schedules[id] = {
-      pattern: patternId,
-      service_type: typeId,
-      schedule: { kind: "exact_times", starts: [8 * 3600] },
-    };
-  });
-  selectEntity("schedule", id);
+  void create("schedule", { edit: "add_schedule" });
 }
 
 export function setScheduleRefs(id: string, { pattern, service_type }: { pattern?: string; service_type?: string }): void {
-  mutateNetwork((d) => {
-    const s = d.schedules[id];
-    if (!s) return;
-    if (pattern) s.pattern = pattern;
-    if (service_type) s.service_type = service_type;
-  });
+  void edit([{ edit: "set_schedule_refs", id, pattern: pattern || undefined, service_type: service_type || undefined }]);
 }
 
 export function removeSchedule(id: string): void {
-  mutateNetwork((d) => {
-    delete d.schedules[id];
-  });
+  void edit([{ edit: "remove_schedule", id }]);
 }
 
-/** Replace an exact-times service's trip starts (sorted, unique). */
 export function setScheduleStarts(scheduleId: string, starts: number[]): void {
-  const clean = [...new Set(starts)].sort((a, b) => a - b);
-  mutateNetwork((d) => {
-    const svc = d.schedules[scheduleId];
-    if (svc) svc.schedule = { kind: "exact_times", starts: clean };
-  });
+  void edit([{ edit: "set_starts", schedule: scheduleId, starts }]);
 }
 
-/** Move one trip of an exact-times service. The trip's identity is
- * (schedule, start), so the blocks carrying it move with it — a
- * retime never strands the runcut. This mirrors transit-network's
- * `retime_trip` edit (cap-author's `apply`), the rule's home, until
- * the planner's mutations move onto the bus. */
+/** Move one trip of an exact-times schedule — cap-author's
+ * `retime_trip` carries the blocks along (a retime never strands the
+ * runcut). */
 export function retimeScheduleStart(scheduleId: string, fromSecs: number, toSecs: number): void {
-  mutateNetwork((d) => {
-    const svc = d.schedules[scheduleId];
-    if (!svc || svc.schedule.kind !== "exact_times") return;
-    const starts = svc.schedule.starts;
-    if (!starts.includes(fromSecs) || (fromSecs !== toSecs && starts.includes(toSecs))) return;
-    svc.schedule = {
-      kind: "exact_times",
-      starts: starts.map((s) => (s === fromSecs ? toSecs : s)).sort((a, b) => a - b),
-    };
-    for (const block of Object.values(d.blocks ?? {})) {
-      for (const trip of block.trips) {
-        if (trip.schedule === scheduleId && trip.start_secs === fromSecs) trip.start_secs = toSecs;
-      }
-    }
-  });
+  void edit([{ edit: "retime_trip", schedule: scheduleId, from_secs: fromSecs, to_secs: toSecs }]);
 }
 
 export function addScheduleStart(scheduleId: string): void {
-  const doc = getNetworkDoc();
-  const starts = (doc?.schedules?.[scheduleId]?.schedule as { starts?: number[] } | undefined)?.starts;
-  if (!starts) return;
-  const last = starts.length ? starts[starts.length - 1] : 6 * 3600;
-  setScheduleStarts(scheduleId, [...starts, Math.min(last + 600, 47 * 3600)]);
+  void edit([{ edit: "add_start", schedule: scheduleId }]);
 }
 
 export function removeScheduleStart(scheduleId: string, index: number): void {
-  const doc = getNetworkDoc();
-  const starts = (doc?.schedules?.[scheduleId]?.schedule as { starts?: number[] } | undefined)?.starts;
-  if (!starts || starts.length <= 1) return;
-  setScheduleStarts(scheduleId, starts.filter((_, i) => i !== index));
+  void edit([{ edit: "remove_start", schedule: scheduleId, index }]);
 }
 
 /** Set one field of one headway band. */
-export function setBandField(scheduleId: string, index: number, field: string, value: number): void {
-  mutateNetwork((d) => {
-    const svc = d.schedules[scheduleId];
-    if (svc?.schedule?.kind !== "headway_bands" || !svc.schedule.bands[index]) return;
-    (svc.schedule.bands[index] as HeadwayBand)[field as keyof HeadwayBand] = value as never;
-  });
+export function setBandField(scheduleId: string, index: number, field: keyof HeadwayBand, value: number): void {
+  void edit([{ edit: "set_band", schedule: scheduleId, index, [field]: value }]);
 }
 
 export function addBand(scheduleId: string): void {
-  mutateNetwork((d) => {
-    const svc = d.schedules[scheduleId];
-    if (svc?.schedule?.kind !== "headway_bands") return;
-    const bands = svc.schedule.bands;
-    const last = bands[bands.length - 1];
-    const start = last ? last.end_secs : 6 * 3600;
-    bands.push({ start_secs: start, end_secs: start + 3 * 3600, headway_secs: 900 });
-  });
+  void edit([{ edit: "add_band", schedule: scheduleId }]);
 }
 
 export function removeBand(scheduleId: string, index: number): void {
-  mutateNetwork((d) => {
-    const svc = d.schedules[scheduleId];
-    if (svc?.schedule?.kind !== "headway_bands" || svc.schedule.bands.length <= 1) return;
-    svc.schedule.bands.splice(index, 1);
-  });
+  void edit([{ edit: "remove_band", schedule: scheduleId, index }]);
 }
 
 // --- blocks (the runcut) ----------------------------------------
 
 export function addBlock(): void {
-  const doc = getNetworkDoc();
-  const id = nextId(doc?.blocks, "b");
-  mutateNetwork((d) => {
-    d.blocks[id] = { trips: [], layovers: [] };
-  });
-  selectEntity("block", id);
+  void create("block", { edit: "add_block" });
 }
 
 export function removeBlock(id: string): void {
-  mutateNetwork((d) => {
-    delete d.blocks[id];
-  });
+  void edit([{ edit: "remove_block", id }]);
 }
 
 export function addBlockTrip(blockId: string, scheduleId: string, startSecs: number | null): void {
@@ -984,38 +808,15 @@ export function addBlockTrip(blockId: string, scheduleId: string, startSecs: num
     app.status = "Pick a schedule and a valid start time first.";
     return;
   }
-  mutateNetwork((d) => {
-    const b = d.blocks[blockId];
-    if (!b) return;
-    b.trips.push({ schedule: scheduleId, start_secs: startSecs });
-    b.trips.sort((a, c) => a.start_secs - c.start_secs || (a.schedule < c.schedule ? -1 : 1));
-    // Layovers after the (possibly moved) last trip are meaningless.
-    b.layovers = b.layovers.filter((l) => l.after_trip + 1 < b.trips.length);
-  });
+  void edit([{ edit: "add_block_trip", block: blockId, trip: { schedule: scheduleId, start_secs: startSecs } }]);
 }
 
 export function removeBlockTrip(blockId: string, index: number): void {
-  mutateNetwork((d) => {
-    const b = d.blocks[blockId];
-    if (!b) return;
-    b.trips.splice(index, 1);
-    b.layovers = b.layovers.filter((l) => l.after_trip + 1 < b.trips.length);
-  });
+  void edit([{ edit: "remove_block_trip", block: blockId, index }]);
 }
 
 export function setBlockLayover(blockId: string, afterTrip: number, secs: number | null): void {
-  mutateNetwork((d) => {
-    const b = d.blocks[blockId];
-    if (!b || afterTrip + 1 >= b.trips.length) return;
-    const existing = b.layovers.find((l) => l.after_trip === afterTrip);
-    if (secs === null) {
-      b.layovers = b.layovers.filter((l) => l.after_trip !== afterTrip);
-    } else if (existing) {
-      existing.secs = secs;
-    } else {
-      b.layovers.push({ after_trip: afterTrip, secs, at: null });
-    }
-  });
+  void edit([{ edit: "set_layover", block: blockId, after_trip: afterTrip, secs }]);
 }
 
 // ---------------------------------------------------------------

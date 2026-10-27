@@ -19,7 +19,7 @@
 //!    reported, never rejected.
 
 use chrono::NaiveDate;
-use transit_dispatch::{block_chain, board, effective_day, patch_day, report_against_network, station_board, stop_board};
+use transit_dispatch::{block_chain, layover_health, LayoverHealth, TIGHT_LAYOVER_SECS, board, effective_day, patch_day, report_against_network, station_board, stop_board};
 use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
 use transit_network::{
     Block, CalendarRule, DateRange, Layover, MaterializedTrip, Network, Pattern, PatternSchedule,
@@ -337,6 +337,7 @@ fn live_at(schedule: &str, start: u32, stop: &str, scheduled: u32, delay: i32) -
             start_secs: start,
             agency_trip_id: "agency".into(),
             route: None,
+            route_name: None,
             worst_delay_secs: Some(delay),
             status: LiveStatus::Late,
             stops: vec![LiveStop {
@@ -418,11 +419,13 @@ fn the_board_pools_only_a_walking_group() {
 fn the_block_chain_is_the_authored_runcut_with_the_ripple() {
     let net = network();
     let schedule_day = transit_network::materialize(&net, date()).unwrap();
-    let chain = block_chain(&net, &schedule_day, "B1");
+    let chain = block_chain(&net, &schedule_day, "B1", TIGHT_LAYOVER_SECS);
     assert_eq!(chain.len(), 2, "the authored chain, in order");
     assert_eq!(chain[0].schedule, "s10");
     assert_eq!(chain[0].layover_after_secs, Some(600), "the authored layover");
     assert_eq!(chain[0].layover_remaining_secs, Some(600), "no edits: the layover stands");
+    assert_eq!(chain[0].layover_health, Some(LayoverHealth::Ok));
+    assert_eq!(chain[1].layover_health, None, "no layover after the last trip, no health");
     assert_eq!(chain[1].start_secs, 30_600);
     assert!(chain.iter().all(|t| t.runs), "everything runs on the fixture Friday");
 
@@ -430,23 +433,28 @@ fn the_block_chain_is_the_authored_runcut_with_the_ripple() {
     // has 4 minutes left (the connection-health read).
     let records = vec![record(EditStatus::Accepted, 300)];
     let day = effective_day(&net, date(), &records).unwrap();
-    let ripped = block_chain(&net, &day, "B1");
+    let ripped = block_chain(&net, &day, "B1", TIGHT_LAYOVER_SECS);
     assert_eq!(ripped[0].end_secs, Some(28_800 + 1200 + 300), "the effective end");
     assert_eq!(ripped[0].layover_remaining_secs, Some(300), "the diverted end eats the layover (600 - 300)");
+    assert_eq!(ripped[0].layover_health, Some(LayoverHealth::Ok), "300 s left is not under the 300 s threshold");
+    // The threshold is the caller's policy.
+    assert_eq!(block_chain(&net, &day, "B1", 301)[0].layover_health, Some(LayoverHealth::Tight));
 
     // A connection eaten outright goes negative — the dispatcher's
     // alarm, not a silent clamp.
     let eaten = vec![record(EditStatus::Accepted, 900)];
     let day = effective_day(&net, date(), &eaten).unwrap();
-    let chain = block_chain(&net, &day, "B1");
+    let chain = block_chain(&net, &day, "B1", TIGHT_LAYOVER_SECS);
     assert_eq!(chain[0].layover_remaining_secs, Some(-300), "an eaten connection is negative");
+    assert_eq!(chain[0].layover_health, Some(LayoverHealth::Overlap));
+    assert_eq!(layover_health(0, 300), LayoverHealth::Tight, "zero left is tight, not overlap");
 
     // Unknown blocks answer empty, never error.
-    assert!(block_chain(&net, &day, "nope").is_empty());
+    assert!(block_chain(&net, &day, "nope", TIGHT_LAYOVER_SECS).is_empty());
 
     // A trip of the chain that does not run on the date stays in the
     // chain, marked — the authored work, the hole visible.
-    let b2 = block_chain(&net, &schedule_day, "B2");
+    let b2 = block_chain(&net, &schedule_day, "B2", TIGHT_LAYOVER_SECS);
     assert!(b2[0].runs, "s10 runs on the Friday");
     assert!(!b2[1].runs, "the Sunday schedule does not");
     assert_eq!(b2[1].end_secs, None);

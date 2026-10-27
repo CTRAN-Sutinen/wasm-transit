@@ -69,6 +69,12 @@ pub enum Request {
     /// not inferred from a feed (an authored document has no agency
     /// ids — the honest answer, never a silent empty map).
     TripMap { network_hash: String },
+    /// The agency trip ids behind specific derived trips — the
+    /// trip map SHAPED to a question ("what does the radio call these
+    /// trips?"), answered in the order asked: one list per trip,
+    /// empty for a trip the import never saw. Errors for a network
+    /// with no map (authored documents have no agency ids).
+    AgencyTripIds { network_hash: String, trips: Vec<transit_network::TripRef> },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -84,6 +90,7 @@ pub enum Response {
     Validate { issues: Vec<transit_network::NetworkError>, warnings: Vec<transit_network::NetworkWarning> },
     Export { feed_hash: String, summary: FeedSummary, zip_b64: String },
     TripMap { map: Option<TripIdMap> },
+    AgencyTripIds { ids: Vec<Vec<String>> },
 }
 
 /// Feeds by content hash of the zip bytes.
@@ -215,6 +222,18 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .get(&network_hash)
                 .cloned();
             Ok(Response::TripMap { map: map.map(|m| (*m).clone()) })
+        }
+        Request::AgencyTripIds { network_hash, trips } => {
+            network_arc(&network_hash)?;
+            let map = trip_maps()
+                .lock()
+                .expect("trip-map registry lock")
+                .get(&network_hash)
+                .cloned()
+                .ok_or_else(|| format!("network {network_hash} has no trip map: it was not imported from a feed"))?;
+            Ok(Response::AgencyTripIds {
+                ids: trips.iter().map(|t| map.agency_ids(&t.schedule, t.start_secs)).collect(),
+            })
         }
     }
 }

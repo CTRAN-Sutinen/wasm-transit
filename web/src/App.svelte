@@ -10,7 +10,7 @@
   import PlannerRail from "./components/PlannerRail.svelte";
   import PersonaTabs from "./components/PersonaTabs.svelte";
   import { app } from "./state.svelte.js";
-  import { loadRtFromUrl, loadVpFromUrl, saveSettings, feedBytes, refreshBoard, refreshServices, selectStop, refreshNow, showTrip } from "./actions";
+  import { loadRtFromUrl, loadVpFromUrl, saveSettings, feedBytes, refreshBoard, refreshServices, refreshBlocks, refreshBlockChain, selectStop, refreshNow, showTrip, serviceDate } from "./actions";
   import { ensureGtfsFeed, gtfsCap, gtfsModule, ensureFeedSummary, ensureDirectory, directory } from "./capabilities.svelte";
   import type { FeedInfo } from "./types/FeedInfo";
   import type { FeedSummary } from "./types/FeedSummary";
@@ -68,6 +68,17 @@
     void app.clock;
     void app.feedEpoch;
     refreshServices();
+    refreshBlocks();
+  });
+  $effect(() => {
+    void app.selectedBlock;
+    void app.clock;
+    void app.feedEpoch;
+    refreshBlockChain();
+  });
+  const today = $derived.by(() => {
+    void app.clock; // the service day can roll over
+    return serviceDate();
   });
   const stopOptions = $derived(
     directory.stops.slice(0, 2000).map((s) => ({ value: s.stop_id, label: s.name, sub: s.stop_id })),
@@ -150,7 +161,15 @@
         />
         <TripPlanner />
       {:else}
-        <BlocksPanel />
+        <BlocksPanel
+          blocks={app.blocks}
+          off={app.blocksOff}
+          selected={app.selectedBlock}
+          chain={app.blockChain}
+          chainOff={app.chainOff}
+          date={today}
+          onselect={(id) => (app.selectedBlock = id)}
+        />
         <DiversionPanel />
       {/if}
     {/if}

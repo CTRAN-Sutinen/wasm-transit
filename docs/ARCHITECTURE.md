@@ -39,7 +39,12 @@ transit-network The authored network model (planner authority):
                 unversioned (a fresh import). AUTHORING lives here
                 too (`edit.rs`): typed, atomic `NetworkEdit`s
                 answer the NEXT document (never mutating the last);
-                removals refuse while referenced. Validation
+                removals refuse while referenced. Two levels:
+                entity upserts/removes, and GESTURES — one edit per
+                thing a planner does, each carrying its coherence
+                rule (timing aligned with timepoints, starts sorted
+                and unique, layovers only between trips, ids minted
+                and reported, the plan frame merged field-wise). Validation
                 answers issues (gate: a block trip its schedule
                 does not run is one) and WARNINGS that never gate
                 (unassigned trips; a pick with no service in its
@@ -139,9 +144,10 @@ cap-author      The authoring capability: what does this network
                 atomic) answers the next document under its hash,
                 registered for the next change, with its issues
                 and warnings. transit-network's edit module is the
-                library. On the bus for every host; the browser's
-                planner still mutates host-side (web/src/planner.ts)
-                until it rewires onto this module.
+                library; `created` names the entities a change made.
+                Every host authors through it — the browser's
+                planner included (web/src/planner.ts sends edits and
+                adopts the answer; it never edits a document).
 
 Every module is the raw rustc output with the same four flat
 exports (no wasm-bindgen — do not reintroduce host glue).
@@ -191,8 +197,10 @@ File ownership:
   IndexedDB-persisted). CapabilityDemo.svelte is the visible story
   (assembly, hash handoff, degraded state, migrate/rollback) in the
   DataSources modal.
-- `src/planner.ts` owns authoring mutations (clone → edit →
-  replace → revalidate) and the screen stack.
+- `src/planner.ts` sends the planner's changes to cap-author as
+  NetworkEdits (in order, each landing on the plan it was made
+  against) and adopts the answered document; it also owns the
+  screen stack.
 - `src/state.svelte.ts` owns the documents (edit document, plan
   set — both IndexedDB-persisted, wholesale-replaced).
 - MapView owns all map state (`window.__map`).
@@ -261,8 +269,11 @@ cap-network     The network codec capability: load_feed (zip bytes →
                 trip_map (the import's trip-id map: derived
                 (schedule, start) ↔ agency trip ids — the join rt
                 data and the feed's own ids are keyed by; None for
-                an authored network, the honest answer). The domain
-                code lives in the shared transit-codec library.
+                an authored network, the honest answer), and
+                agency_trip_ids (the map shaped to a question: the
+                agency ids behind given derived trips, in the order
+                asked). The domain code lives in the shared
+                transit-codec library.
 cap-rt          The realtime capability: decode — a GTFS-rt protobuf
                 payload (bulk-bytes op 0, the ephemeral bytes an
                 agency serves every few seconds) into the overview
@@ -314,7 +325,9 @@ cap-runcut      The runcut capability — ONE QUESTION: what does
                 honest hole) and one block's chain (the detail
                 facet: the AUTHORED runcut with the layover ripple,
                 layover_remaining_secs going negative when a
-                connection is eaten) and one derived trip's EFFECTIVE
+                connection is eaten, and layover_health classifying
+                it — overlap / tight / ok under the caller's
+                tight_layover_secs) and one derived trip's EFFECTIVE
                 stops on the date (the trip detail facet the map's
                 click-through reads — the answer carries no geometry,
                 the host's view code draws). Same document set as

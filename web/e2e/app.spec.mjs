@@ -908,6 +908,14 @@ test("planner authors a network and the rider uses it", async ({ page }) => {
   await page.locator("#plan-time").fill("07:30");
   await page.getByRole("button", { name: "Plan trip" }).click();
   await expect(page.locator(".plan-overlay").getByText("08:05", { exact: true })).toBeVisible();
+
+  // Creation is a gesture the AUTHORING CAPABILITY applies: the id is
+  // minted in the module (the first free s<n>), reported back, and
+  // the new stop's editor opens on it.
+  await switchPersona(page, "Planner");
+  await page.getByRole("button", { name: "Stops" }).click();
+  await page.getByRole("button", { name: "Add stop" }).click();
+  await expect(page.getByRole("heading", { name: "Stop s1" })).toBeVisible();
 });
 
 test("a malformed saved record cannot wedge apply and retire", async ({ page }) => {

@@ -34,6 +34,7 @@ fn a_snapshot_resolves_into_derived_trips() {
     assert_eq!(bus.schedule.as_deref(), Some(t10.schedule.as_str()));
     assert_eq!(bus.delay_secs, Some(180));
     assert_eq!(bus.status, LiveStatus::Late);
+    assert_eq!(bus.route_name.as_deref(), Some("10"), "named as the model names the route");
 
     // A tighter window reclassifies — the policy is an input.
     let strict = OnTimeWindow { early_secs: None, late_secs: 60, very_late_secs: 120 };

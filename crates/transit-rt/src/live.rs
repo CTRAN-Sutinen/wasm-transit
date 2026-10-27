@@ -40,6 +40,9 @@ pub fn live_day(
     let mut unmatched_trips = 0u32;
     let mut worst_by_agency: HashMap<&str, Option<i32>> = HashMap::new();
     let mut route_by_agency: HashMap<&str, Option<String>> = HashMap::new();
+    // The import names a route by its GTFS display name — the same
+    // name the model carries, answered from the feed in hand.
+    let route_name = |route: &Option<String>| route.as_deref().and_then(|r| gtfs.routes.get(r)).map(|r| r.display_name());
     if let Some(delays) = delays {
         for update in &delays.trips {
             let Some(trip_id) = update.trip_id.as_deref() else { continue };
@@ -57,6 +60,7 @@ pub fn live_day(
                 schedule: schedule.to_string(),
                 start_secs,
                 agency_trip_id: trip_id.to_string(),
+                route_name: route_name(&route),
                 route,
                 worst_delay_secs: worst,
                 status: classify(worst, &window),
@@ -98,6 +102,7 @@ pub fn live_day(
                         lat: v.lat,
                         lon: v.lon,
                         bearing: v.bearing,
+                        route_name: route_name(&route),
                         route,
                         next_stop: v.stop_id.clone(),
                         schedule: resolved.map(|(s, _)| s.to_string()),
