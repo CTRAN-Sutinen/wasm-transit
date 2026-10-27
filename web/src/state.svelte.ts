@@ -25,6 +25,8 @@ import type { DayBlock } from "./types/DayBlock";
 import type { BlockChainTrip } from "./types/BlockChainTrip";
 import type { DraftView } from "./types/DraftView";
 import type { DiversionRow } from "./types/DiversionRow";
+import type { EntityRow } from "./types/EntityRow";
+import type { RouteDetail } from "./types/RouteDetail";
 import type { Live } from "./capabilities.svelte";
 import type { EntityKind, Focus, PlannerScreen } from "./planner";
 import type { LineFeature } from "./mapview";
@@ -195,6 +197,12 @@ export type AppState = {
   // map should frame for it (plain data, MapView just draws it).
   plannerSelection: { kind: EntityKind; id: string } | null,
   plannerFocus: Focus | null,
+  // The planner's lists, as cap-directory answers them: the rows of
+  // the list screen on top (tagged with the kind they list, so a
+  // screen never renders another's answer) and the selected route's
+  // composition (tagged with its route).
+  plannerRows: { kind: EntityKind; rows: EntityRow[] } | null,
+  routeDetail: { routeId: string; detail: RouteDetail | null } | null,
 };
 
 /// The sync document (transit-sync `EditRecord[]`) — **owned here**.
@@ -382,4 +390,6 @@ export const app = $state<AppState>({
   networkLabel: "",
   plannerSelection: null,
   plannerFocus: null,
+  plannerRows: null,
+  routeDetail: null,
 });

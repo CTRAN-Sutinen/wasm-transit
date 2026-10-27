@@ -44,7 +44,7 @@ import {
   plansChain,
   authorCap,
   authorModule,
-  planEntityFocus,
+  planEntityFocus, planEntities, planRouteDetail,
   type Applied,
 } from "./capabilities.svelte";
 import type { NetworkEdit } from "./types/NetworkEdit";
@@ -390,15 +390,6 @@ export async function updatePlanMeta({ name, effectiveFrom }: { name?: string; e
 export function fmtHeadwaySafe(secs: number | null | undefined): string {
   if (secs == null) return "—";
   return `${Math.round(secs / 60)} min headway`;
-}
-
-/** Trip count of a schedule (exact times: starts; bands: expanded). */
-export function scheduleTripCount(schedule: { kind: string; starts?: number[]; bands?: { start_secs: number; end_secs: number; headway_secs: number }[] }): number {
-  if (schedule.kind === "exact_times") return schedule.starts?.length ?? 0;
-  return (schedule.bands ?? []).reduce(
-    (n, b) => n + (b.headway_secs > 0 ? Math.ceil((b.end_secs - b.start_secs) / b.headway_secs) : 0),
-    0,
-  );
 }
 
 /** The planner's bootstrap: infer a network document from the feed
@@ -855,6 +846,37 @@ async function frameEntity(kind: EntityKind, id: string): Promise<void> {
     app.plannerFocus = focus ? { lines: focus.lines.map(lonLat), points: lonLat(focus.points) } : null;
   } catch (e) {
     console.warn("focus failed:", e);
+  }
+}
+
+let rowsSeq = 0;
+/// The list screen's rows: cap-directory answers every entity of the
+/// kind over the active plan, narrowed by the filter's terms. The
+/// latest request wins.
+export async function refreshPlannerRows(kind: EntityKind, query: string): Promise<void> {
+  const seq = ++rowsSeq;
+  const doc = getNetworkDoc();
+  if (!doc) return;
+  try {
+    const rows = await planEntities(doc, kind, query);
+    if (seq === rowsSeq) app.plannerRows = { kind, rows };
+  } catch (e) {
+    console.warn("entity list failed:", e);
+  }
+}
+
+let detailSeq = 0;
+/// The selected route's composition (its patterns, the stops they
+/// visit, its schedules by service type with their trip counts).
+export async function refreshRouteDetail(routeId: string): Promise<void> {
+  const seq = ++detailSeq;
+  const doc = getNetworkDoc();
+  if (!doc || !routeId) return;
+  try {
+    const detail = await planRouteDetail(doc, routeId);
+    if (seq === detailSeq) app.routeDetail = { routeId, detail };
+  } catch (e) {
+    console.warn("route detail failed:", e);
   }
 }
 

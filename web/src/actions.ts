@@ -465,12 +465,6 @@ function hhmmssToSecs(hhmm: string | null): number {
   return h * 3600 + m * 60 + s;
 }
 
-function fmtClock(secs: number): string {
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
 export async function planTrip(fromStopId: string, toStopId: string, departTime: string): Promise<void> {
   if (!fromStopId || !toStopId) {
     app.planNotice = "Pick a from and a to stop first.";
@@ -493,28 +487,15 @@ export async function planTrip(fromStopId: string, toStopId: string, departTime:
       app.planNotice = "Planning needs the router capability — the assembly is unavailable.";
       return;
     }
-    const router = routerCap(module);
-    const date = serviceDate();
+    // One op whether or not edits exist: with edits in force it
+    // plans both worlds (the delta), and its notice says what the
+    // rider is told when the active world has no trip.
     const editsHash = await ensureRouterEdits(boarding.networkHash, getEditDocument());
-    if (editsHash) {
-      // With edits in force, plan both worlds and show the delta.
-      const cmp = router.planCompare(boarding.networkHash, editsHash, fromStopId, toStopId, date, depart, 6);
-      app.plan = cmp.active ?? null;
-      app.planBaseline = cmp.baseline ?? null;
-      if (!cmp.active && cmp.baseline) {
-        app.planNotice =
-          `No trip found while the diversion is active — ` +
-          `without it you would arrive ${fmtClock(cmp.baseline.arrival_secs)}.`;
-      } else {
-        app.planNotice = cmp.active ? null : "No trip found within 6 legs — try a different time or closer stops.";
-      }
-    } else {
-      app.plan = router.plan(boarding.networkHash, null, fromStopId, toStopId, date, depart, 6);
-      app.planBaseline = null;
-      app.planNotice = app.plan
-        ? null
-        : "No trip found within 6 legs — try a different time or closer stops.";
-    }
+    const cmp = routerCap(module).planCompare(
+      boarding.networkHash, editsHash, fromStopId, toStopId, serviceDate(), depart, 6);
+    app.plan = cmp.active;
+    app.planBaseline = cmp.baseline;
+    app.planNotice = cmp.notice;
     // A new plan is the focus now — the previously selected trip's
     // line would fight the itinerary for the same pixels.
     clearTrip();

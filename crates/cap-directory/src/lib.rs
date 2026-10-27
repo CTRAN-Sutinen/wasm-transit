@@ -7,7 +7,9 @@
 //! feed reads. Patterns are the model's directions: a route's
 //! stop sequences are its patterns, each with its own ordered
 //! stops — that is what a diversion editor anchors against — and
-//! where each entity is on the map (focus).
+//! where each entity is on the map (focus). The planner's lists ask
+//! here too: rows of any kind narrowed by a filter (entities), and a
+//! route's composition with each schedule's trip count (route_detail).
 //!
 //! Documents are content-addressed like everywhere on the bus:
 //! * **network** — the same identity cap-network's import produces
@@ -112,6 +114,23 @@ pub enum Request {
     /// its point; a schedule its pattern; a route, a service type, or a
     /// block every pattern it runs. Null for an unknown id.
     Focus { network_hash: String, kind: transit_network::EntityKind, id: String },
+    /// Every entity of one kind, in id order, narrowed the way a
+    /// filter box's typing does (every term in the name or the id,
+    /// case-insensitive): what places it (a pattern's route, a
+    /// schedule's pattern and service type) and the trips a schedule
+    /// runs or a block chains.
+    Entities {
+        network_hash: String,
+        kind: transit_network::EntityKind,
+        #[serde(default)]
+        #[ts(optional)]
+        query: Option<String>,
+    },
+    /// One route's composition: its patterns, the stops they visit,
+    /// and its schedules grouped by service type, each with the trips
+    /// it runs (the materialized day's count). Null for an unknown
+    /// route.
+    RouteDetail { network_hash: String, route_id: String },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -124,6 +143,8 @@ pub enum Response {
     Routes { routes: Vec<DirectoryRoute> },
     RouteStopSequence { patterns: Vec<PatternStops> },
     Focus { focus: Option<transit_network::EntityFocus> },
+    Entities { rows: Vec<transit_network::EntityRow> },
+    RouteDetail { detail: Option<transit_network::RouteDetail> },
 }
 
 /// Networks by content hash (canonical serialization).
@@ -247,6 +268,16 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::Focus { network_hash, kind, id } => {
             let network = network_arc(&network_hash)?;
             Ok(Response::Focus { focus: transit_network::entity_focus(&network, kind, &id) })
+        }
+        Request::Entities { network_hash, kind, query } => {
+            let network = network_arc(&network_hash)?;
+            Ok(Response::Entities {
+                rows: transit_network::entity_rows(&network, kind, query.as_deref().unwrap_or("")),
+            })
+        }
+        Request::RouteDetail { network_hash, route_id } => {
+            let network = network_arc(&network_hash)?;
+            Ok(Response::RouteDetail { detail: transit_network::route_detail(&network, &route_id) })
         }
     }
 }

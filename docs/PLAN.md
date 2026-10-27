@@ -327,7 +327,10 @@ caps-smoke, a runner gate — then deletes the TypeScript):
 - **W5 planner numbers and search.** RouteForm's visits and
   schedule grouping, `scheduleTripCount`, PlannerRail's entity
   search (cap-directory's `query`), `planTrip`'s plan-vs-compare
-  branch and its notices. Into: directory, analysis, router ops.
+  branch and its notices. Into: cap-directory `entities` and
+  `route_detail` (transit-network's listing — trip counts are
+  `trip_starts`), cap-router `plan_compare`'s notice (one op
+  whether or not edits exist). No analysis op was needed.
 - **W6 render-only components.** Every component takes props
   and emits events; the host layer is the single op caller (the
   engine's choke point, above) and W0's allowlists reach empty.

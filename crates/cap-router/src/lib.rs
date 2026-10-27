@@ -60,8 +60,11 @@ pub enum Request {
     },
     /// The diversion delta: the same plan over the patched day
     /// (active) and the unpatched materialization (baseline). The
-    /// baseline is `None` when no edit is in force on the date —
-    /// there is no second world to compare against.
+    /// baseline is `None` when no edit is in force on the date (or
+    /// no edits hash is given) — there is no second world to compare
+    /// against. The notice is what the rider is told when the active
+    /// world has no trip: what the diversion cost them, or that none
+    /// exists within `max_legs`. One op whether or not edits exist.
     PlanCompare {
         network_hash: String,
         #[serde(default)]
@@ -99,6 +102,7 @@ pub enum Response {
     PlanCompare {
         active: Option<transit_router::Itinerary>,
         baseline: Option<transit_router::Itinerary>,
+        notice: Option<String>,
     },
     /// One path per leg, in leg order (empty when a leg's stops are
     /// unknown to the network).
@@ -293,7 +297,8 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 }
                 None => None,
             };
-            Ok(Response::PlanCompare { active, baseline })
+            let notice = transit_router::plan_notice(active.as_ref(), baseline.as_ref(), max_legs.max(1));
+            Ok(Response::PlanCompare { active, baseline, notice })
         }
     }
 }

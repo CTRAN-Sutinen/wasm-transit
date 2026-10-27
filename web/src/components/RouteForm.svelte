@@ -1,45 +1,17 @@
 <script lang="ts">
   import { app, getNetworkDoc } from "../state.svelte";
-  import { updateRoute, removeRoute, addPattern, selectEntity, plannerBack, scheduleTripCount } from "../planner";
+  import { updateRoute, removeRoute, addPattern, selectEntity, plannerBack, refreshRouteDetail } from "../planner";
 
   const doc = $derived(getNetworkDoc());
   const id = $derived(app.plannerSelection?.kind === "route" ? app.plannerSelection.id : "");
   const route = $derived(id ? doc?.routes?.[id] ?? null : null);
-  const patternIds: string[] = $derived.by(() =>
-    doc ? Object.entries(doc.patterns ?? {}).filter(([, p]) => p.route === id).map(([pid]) => pid) : [],
-  );
-  // The stops this route's patterns visit — the composed place list.
-  const stopRows = $derived.by(() => {
-    if (!doc) return [];
-    const visits = new Set<string>();
-    for (const pid of patternIds) {
-      for (const ps of doc.patterns[pid]?.stops ?? []) visits.add(ps.stop);
-    }
-    return [...visits].map((sid) => ({
-      sid,
-      name: doc.stops[sid]?.name ?? sid,
-      transfer: doc.stops[sid]?.transfer ?? false,
-    }));
+  // The composition (patterns, the stops they visit, schedules by
+  // service type with their trip counts) is cap-directory's answer,
+  // re-asked whenever the document changes.
+  $effect(() => {
+    if (doc && id) void refreshRouteDetail(id);
   });
-  // This route's schedules, grouped by service type — the design
-  // axis, straight from the document.
-  const schedulesByType = $derived.by(() => {
-    if (!doc) return [];
-    const groups = new Map<string, { sid: string; trips: number }[]>();
-    for (const [sid, s] of Object.entries(doc.schedules)) {
-      if (!patternIds.includes(s.pattern)) continue;
-      const list = groups.get(s.service_type) ?? [];
-      list.push({ sid, trips: scheduleTripCount(s.schedule) });
-      groups.set(s.service_type, list);
-    }
-    return [...groups.entries()]
-      .sort(([a], [b]) => (a < b ? -1 : 1))
-      .map(([tid, schedules]) => ({
-        tid,
-        name: doc.service_types[tid]?.name ?? tid,
-        schedules,
-      }));
-  });
+  const detail = $derived(app.routeDetail?.routeId === id ? app.routeDetail.detail : null);
 </script>
 
 {#if route}
@@ -59,36 +31,36 @@
     </p>
 
     <h4>Schedules by service type</h4>
-    {#each schedulesByType as group (group.tid)}
+    {#each detail?.schedules_by_type ?? [] as group (group.service_type)}
       <p class="chips">
-        <button class="chip" aria-label={`Open service type ${group.tid}`}
-                onclick={() => selectEntity("service_type", group.tid)}>{group.name}</button>
-        {#each group.schedules as s (s.sid)}
-          <button class="chip svc" aria-label={`Open schedule ${s.sid}`}
-                  onclick={() => selectEntity("schedule", s.sid)}>{s.trips} trips</button>
+        <button class="chip" aria-label={`Open service type ${group.service_type}`}
+                onclick={() => selectEntity("service_type", group.service_type)}>{group.name}</button>
+        {#each group.schedules as s (s.id)}
+          <button class="chip svc" aria-label={`Open schedule ${s.id}`}
+                  onclick={() => selectEntity("schedule", s.id)}>{s.trips} trips</button>
         {/each}
       </p>
     {:else}
       <p class="muted">no schedules yet — add one from a service type or pattern</p>
     {/each}
 
-    <h4>Patterns ({patternIds.length})</h4>
+    <h4>Patterns ({detail?.patterns.length ?? 0})</h4>
     <ul class="rail-items">
-      {#each patternIds as pid (pid)}
+      {#each detail?.patterns ?? [] as p (p.id)}
         <li>
-          <button class="rail-item" aria-label={`Open pattern ${pid}`}
-                  onclick={() => selectEntity("pattern", pid)}>{doc?.patterns?.[pid]?.name ?? pid}</button>
+          <button class="rail-item" aria-label={`Open pattern ${p.id}`}
+                  onclick={() => selectEntity("pattern", p.id)}>{p.name}</button>
         </li>
       {/each}
     </ul>
     <p><button onclick={() => addPattern(id)}>Add pattern on this route</button></p>
 
-    <h4>Stops ({stopRows.length})</h4>
+    <h4>Stops ({detail?.stops.length ?? 0})</h4>
     <ul class="rail-items">
-      {#each stopRows as row (row.sid)}
+      {#each detail?.stops ?? [] as row (row.id)}
         <li>
-          <button class="rail-item" aria-label={`Open stop ${row.sid}`}
-                  onclick={() => selectEntity("stop", row.sid)}>
+          <button class="rail-item" aria-label={`Open stop ${row.id}`}
+                  onclick={() => selectEntity("stop", row.id)}>
             {row.name}
             {#if row.transfer} <span class="chip svc">transfer</span>{/if}
           </button>

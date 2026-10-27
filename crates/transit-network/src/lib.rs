@@ -29,6 +29,7 @@
 pub mod edit;
 pub mod error;
 pub mod geometry;
+pub mod listing;
 pub mod materialize;
 pub mod model;
 pub mod validate;
@@ -36,6 +37,7 @@ pub mod validate;
 pub use edit::{apply_edits, apply_edits_reporting, CreatedEntity, Day, EditError, NetworkEdit};
 pub use error::{NetworkError, NetworkWarning};
 pub use geometry::{entity_focus, pattern_alignment, pattern_stop_points, stop_point, stops_line, EntityFocus, EntityKind};
+pub use listing::{entity_rows, route_detail, EntityRow, RouteDetail, ScheduleGroup};
 pub use materialize::{
     materialize, materialize_service, trip_arrival_end_secs, trip_starts, MaterializedTrip,
     StopTime,

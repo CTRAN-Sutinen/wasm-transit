@@ -10,7 +10,7 @@
 use std::io::Write;
 
 use chrono::NaiveDate;
-use transit_router::{earliest_arrival, Leg, RouterNetwork};
+use transit_router::{earliest_arrival, plan_notice, Leg, RouterNetwork};
 
 #[path = "prop_support.rs"]
 mod support;
@@ -117,6 +117,20 @@ fn unreachable_and_trivial_queries() {
 
     // Unknown stops are errors, not empty plans.
     assert!(earliest_arrival(&net, "ZZZ", "A", 8 * 3600, 4).is_err());
+}
+
+#[test]
+fn a_compared_plan_tells_the_rider_what_it_cost() {
+    let net = router(&fixture_zip());
+    let found = earliest_arrival(&net, "A", "B", 8 * 3600, 4).expect("query").expect("A -> B runs");
+    assert_eq!(plan_notice(Some(&found), None, 6), None);
+    assert_eq!(plan_notice(Some(&found), Some(&found), 6), None);
+    let lost = plan_notice(None, Some(&found), 6).unwrap();
+    assert!(lost.ends_with(&format!("arrive {}.", &found.arrival_hhmmss[..5])), "{lost}");
+    assert_eq!(
+        plan_notice(None, None, 6).as_deref(),
+        Some("No trip found within 6 legs — try a different time or closer stops.")
+    );
 }
 
 #[test]

@@ -160,9 +160,10 @@ fn compare_answers_the_diversion_delta() {
         max_legs: 4,
     })
     .expect("compare dispatch");
-    let cap_router::Response::PlanCompare { active, baseline } = cmp else {
+    let cap_router::Response::PlanCompare { active, baseline, notice } = cmp else {
         panic!("compare")
     };
+    assert_eq!(notice, None, "a found trip needs no notice");
     // The diversion adds 300 s to route 10's kept segment: the
     // patched day arrives 08:15; the unpatched one 08:10.
     assert_eq!(active.expect("active plan").arrival_secs, 8 * 3600 + 15 * 60);
@@ -180,11 +181,27 @@ fn compare_answers_the_diversion_delta() {
         max_legs: 4,
     })
     .expect("compare dispatch");
-    let cap_router::Response::PlanCompare { active, baseline } = plain else {
+    let cap_router::Response::PlanCompare { active, baseline, .. } = plain else {
         panic!("compare")
     };
     assert!(active.is_some(), "the plan itself still answers");
     assert!(baseline.is_none(), "no edits in force, no baseline");
+
+    // Too late for any trip: the notice says so, legs named.
+    let late = cap_router::dispatch(cap_router::Request::PlanCompare {
+        network_hash: load_network(),
+        edits_hash: None,
+        from: "A".into(),
+        to: "B".into(),
+        date: DATE.into(),
+        depart_secs: 40 * 3600,
+        max_legs: 4,
+    })
+    .expect("compare dispatch");
+    let cap_router::Response::PlanCompare { active: None, notice: Some(notice), .. } = late else {
+        panic!("an unreachable plan carries its notice")
+    };
+    assert!(notice.contains("within 4 legs"), "{notice}");
 }
 
 #[test]

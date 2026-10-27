@@ -80,7 +80,7 @@ const MODULES: &[ModuleSpec] = &[
             ("load_network", "Register the network document under its content hash (the same identity the network capability's import produces and every day view consumes; idempotent)."),
             ("load_edits", "Register the operator edit document against a loaded network, validated per record against it; the answer carries the reports and the document's hash. Wholesale replacement, like the host-owned store."),
             ("plan", "Earliest-arrival itinerary from stop to stop at a departure time over the materialized day (edits applied when edits_hash names a registered document); null itinerary = unreachable within max_legs. The legs speak model vocabulary: the derived trip identity is (schedule, start_secs)."),
-            ("plan_compare", "The diversion delta: the same plan over the patched day (active) and the unpatched materialization (baseline, null when no edit is in force on the date)."),
+            ("plan_compare", "The diversion delta: the same plan over the patched day (active) and the unpatched materialization (baseline, null when no edit is in force on the date or no edits_hash is given), with the rider's notice when active is null — the arrival the diversion cost, or no trip within max_legs. One op whether or not edits exist."),
             ("itinerary_paths", "Where an itinerary runs, one path per leg ({kind: transit | walk, path: [{lat, lon}]}) over the same effective day it was planned on (pass the same edits_hash): a transit leg's RIDDEN segment — its trip's authored alignment sliced between the board and alight stops while the trip follows its pattern, its patched stops when diverted, a straight line as the last resort — and a walk through the stops it passes. Send the itinerary plan answered. The map draws the paths; it computes none."),
         ],
     },
@@ -208,12 +208,12 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "directory",
         file: "cap_directory.wasm",
-        ops: &["load_network", "stops", "stops_by_ids", "routes", "route_stop_sequence", "focus"],
+        ops: &["load_network", "stops", "stops_by_ids", "routes", "route_stop_sequence", "focus", "entities", "route_detail"],
         // The network document is produced by the network capability.
         consumes: &[("network", "network")],
         speaks: &[("network", &[1])],
         migrates: &[],
-        purpose: "The directory: what exists in the network — the stops (with their walking-group structure), the routes, one route's patterns with their ordered stops (list to detail). The pickers and the names join read here; they are MODEL questions, never feed reads. Patterns are the model's directions: a route's stop sequences are its patterns, each with its own ordered stops — what a diversion editor anchors against.",
+        purpose: "The directory: what exists in the network — the stops (with their walking-group structure), the routes, one route's patterns with their ordered stops (list to detail). The pickers and the names join read here; they are MODEL questions, never feed reads. Patterns are the model's directions: a route's stop sequences are its patterns, each with its own ordered stops — what a diversion editor anchors against. The planner's lists ask here too: rows of any kind narrowed by a filter, a route's composition with each schedule's trip count, and where an entity is on the map.",
         op_docs: &[
             ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth."),
             ("stops", "The stop list, name-sorted (the pickers' shape): every stop with its coords, its parent (the flag the station board keys off), and its transfer flag. query narrows it the way a picker's typing does — every whitespace-separated term must appear in the name or the stop id, case-insensitive (\"fisher landing\" finds Fisher's Landing and its bays). limit truncates after the sort; omit it for the whole list — a silently truncated directory would be a lie."),
@@ -221,6 +221,8 @@ const MODULES: &[ModuleSpec] = &[
             ("routes", "The route list, name-sorted: every route with its mode (the model's closed set, not GTFS's numeric codes) and its authored color when there is one."),
             ("route_stop_sequence", "One route's patterns with their ordered stops — the model's directions. An unknown route answers empty, never an error."),
             ("focus", "Where one entity is on the map ({kind: stop | route | pattern | schedule | service_type | block, id}): its lines (each pattern's authored alignment, else its stops joined) and the stops it serves. A stop is its point; a schedule its pattern; a route, a service type, or a block every pattern it runs. Null for an unknown id."),
+            ("entities", "Every entity of one kind ({kind: stop | route | pattern | schedule | service_type | block}), in id order, narrowed by an optional query the way a filter box's typing does (every whitespace-separated term in the name or the id, case-insensitive). Each row: id, name, context (a pattern's route; a schedule's pattern · service type), transfer (stops), trips (a schedule's materialized trip count; a block's chained trips)."),
+            ("route_detail", "One route's composition: its patterns, the stops they visit (first-visit order), and its schedules grouped by service type, each with the trips it runs (the same expansion the materialized day runs). Null for an unknown route."),
         ],
     },
     ModuleSpec {
@@ -677,7 +679,7 @@ fn example_for(
                 json!({ "op": "plan_compare", "network_hash": ctx.network_hash,
                         "edits_hash": edits_hash, "from": "A", "to": "B",
                         "date": "2026-10-23", "depart_secs": 25200, "max_legs": 4 }),
-                json!({ "ok": { "op": "plan_compare", "active": active, "baseline": baseline } }),
+                json!({ "ok": { "op": "plan_compare", "active": active, "baseline": baseline, "notice": null } }),
             )
         }
         ("router", "itinerary_paths") => {
@@ -1118,6 +1120,22 @@ fn example_for(
                 json!({ "op": "focus", "network_hash": ctx.network_hash, "kind": "route", "id": "10" }),
                 json!({ "ok": { "op": "focus",
                     "focus": transit_network::entity_focus(ctx.derived_network(), transit_network::EntityKind::Route, "10") } }),
+            )
+        }
+        ("directory", "entities") => {
+            let ctx = net?;
+            (
+                json!({ "op": "entities", "network_hash": ctx.network_hash, "kind": "schedule", "query": "wk" }),
+                json!({ "ok": { "op": "entities",
+                    "rows": transit_network::entity_rows(ctx.derived_network(), transit_network::EntityKind::Schedule, "wk") } }),
+            )
+        }
+        ("directory", "route_detail") => {
+            let ctx = net?;
+            (
+                json!({ "op": "route_detail", "network_hash": ctx.network_hash, "route_id": "10" }),
+                json!({ "ok": { "op": "route_detail",
+                    "detail": transit_network::route_detail(ctx.derived_network(), "10") } }),
             )
         }
         ("directory", "route_stop_sequence") => {

@@ -42,6 +42,8 @@ import type { DraftView } from "./types/DraftView";
 import type { Coord } from "./types/Coord";
 import type { EntityFocus } from "./types/EntityFocus";
 import type { EntityKind } from "./types/EntityKind";
+import type { EntityRow } from "./types/EntityRow";
+import type { RouteDetail } from "./types/RouteDetail";
 import type { LegPath } from "./types/LegPath";
 import type { NetworkEdit } from "./types/NetworkEdit";
 import type { NetworkWarning } from "./types/NetworkWarning";
@@ -643,7 +645,7 @@ export function routerCap(module: CapModule) {
       date: string,
       departSecs: number,
       maxLegs: number,
-    ): { active: Itinerary | null; baseline: Itinerary | null } {
+    ): { active: Itinerary | null; baseline: Itinerary | null; notice: string | null } {
       const resp = module.invoke({
         op: "plan_compare",
         network_hash: networkHash,
@@ -654,7 +656,7 @@ export function routerCap(module: CapModule) {
         depart_secs: departSecs,
         max_legs: maxLegs,
       } as RouterRequest) as Extract<RouterResponse, { op: "plan_compare" }>;
-      return { active: resp.active, baseline: resp.baseline };
+      return { active: resp.active, baseline: resp.baseline, notice: resp.notice };
     },
     /// Where an itinerary runs, one path per leg, over the effective
     /// day it was planned on (the same edits hash).
@@ -1315,22 +1317,59 @@ export function directoryCap(module: CapModule) {
       } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "focus" }>;
       return resp.focus;
     },
+    /// Every entity of one kind, narrowed by a filter's terms.
+    entities(networkHash: string, kind: EntityKind, query: string): EntityRow[] {
+      const resp = module.invoke({
+        op: "entities",
+        network_hash: networkHash,
+        kind,
+        query,
+      } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "entities" }>;
+      return resp.rows;
+    },
+    /// One route's composition: patterns, stops, schedules by type.
+    routeDetail(networkHash: string, routeId: string): RouteDetail | null {
+      const resp = module.invoke({
+        op: "route_detail",
+        network_hash: networkHash,
+        route_id: routeId,
+      } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "route_detail" }>;
+      return resp.detail;
+    },
   };
 }
 
-/// Where an entity of a PLAN document is (the planner's drill-down):
-/// the document registered in the directory module once per version.
-const focusHashes = new WeakMap<Network, string>();
-export async function planEntityFocus(doc: Network, kind: EntityKind, id: string): Promise<EntityFocus | null> {
+/// The directory over a PLAN document (the planner's lists and
+/// drill-down): the document registered once per version.
+const planHashes = new WeakMap<Network, string>();
+async function planDirectory(doc: Network): Promise<{ dir: ReturnType<typeof directoryCap>; hash: string } | null> {
   const module = await directoryModule();
   if (!module) return null;
   const dir = directoryCap(module);
-  let hash = focusHashes.get(doc);
+  let hash = planHashes.get(doc);
   if (!hash) {
     hash = dir.loadNetwork(doc);
-    focusHashes.set(doc, hash);
+    planHashes.set(doc, hash);
   }
-  return dir.focus(hash, kind, id);
+  return { dir, hash };
+}
+
+/// Where an entity of a plan document is on the map.
+export async function planEntityFocus(doc: Network, kind: EntityKind, id: string): Promise<EntityFocus | null> {
+  const plan = await planDirectory(doc);
+  return plan ? plan.dir.focus(plan.hash, kind, id) : null;
+}
+
+/// A plan document's rows of one kind, narrowed by a filter.
+export async function planEntities(doc: Network, kind: EntityKind, query: string): Promise<EntityRow[]> {
+  const plan = await planDirectory(doc);
+  return plan ? plan.dir.entities(plan.hash, kind, query) : [];
+}
+
+/// A plan document's route composition.
+export async function planRouteDetail(doc: Network, routeId: string): Promise<RouteDetail | null> {
+  const plan = await planDirectory(doc);
+  return plan ? plan.dir.routeDetail(plan.hash, routeId) : null;
 }
 
 /// The current directory module, if the bus assembled one.

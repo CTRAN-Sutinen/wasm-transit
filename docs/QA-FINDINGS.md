@@ -783,3 +783,26 @@ alignment points through `itinerary_paths`.
   alignment from the last anchor.
   Pin: the session's `trip_path` with the edits hash (10 points).
   Status: open.
+
+## Session 2026-10-27 (planner lists) — C-TRAN
+
+The planner's numbers and search now come from the bus
+(`docs/PLAN.md`, the web cleanup, W5). One runner session over the
+imported C-TRAN network (about 1.9 s including the import):
+directory `route_detail` for route 019 listed its 5 patterns, the 26
+stops they visit, and its schedules under 7 service types (weekday
+25/14/10/1 trips, Saturday 12/2/1/9, Sunday 12/7/4/1, and the
+imported one-day types). `entities` found "fisher landing" as the
+transit center and its bays, listed route 019's 22 schedules each
+placed by pattern and service type, and the 324 blocks chaining 6273
+trips. Router `plan_compare` without an edits hash answered the
+9014 → 3701 plan (arrives 08:34, no notice); leaving at 25:00 it
+answered no trip with the notice naming the six legs searched.
+
+The browser's old trip count (bands: ceil(span / headway) per band)
+disagreed with the materialized day wherever bands overlap (counted
+twice) or a band runs backwards (counted negative). C-TRAN's 426
+imported schedules are all exact times with no repeated start, so
+the imported data never showed it; an authored headway schedule
+would have. Fixed by the move (listing_test
+`trip_counts_are_the_days_trips`), so no finding is opened.

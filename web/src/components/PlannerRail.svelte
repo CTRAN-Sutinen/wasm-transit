@@ -12,9 +12,10 @@
     addStop, addRoute, addPattern, addServiceType, addSchedule, addBlock,
     plannerBack, plannerGo, togglePlannerMap, forkPlan, switchPlan,
     deletePlan, updatePlanMeta, refreshPlanChain, refreshAnalysis, fmtHHMMSS,
+    refreshPlannerRows,
   } from "../planner";
   import { serviceDate } from "../actions";
-  import type { PlannerScreen } from "../planner";
+  import type { EntityKind, PlannerScreen } from "../planner";
   import RouteForm from "./RouteForm.svelte";
   import StopForm from "./StopForm.svelte";
   import PatternForm from "./PatternForm.svelte";
@@ -51,9 +52,19 @@
     }
   });
 
+  // The list screens render cap-directory's rows: every entity of
+  // the screen's kind, narrowed by the filter's terms — re-asked on
+  // every document, screen, or filter change.
   let filter = $state("");
-  const q = $derived(filter.trim().toLowerCase());
-  const matches = (s: string): boolean => !q || s.toLowerCase().includes(q);
+  const listKinds: Partial<Record<PlannerScreen["view"], EntityKind>> = {
+    routes: "route", stops: "stop", patterns: "pattern",
+    schedules: "schedule", service_types: "service_type", blocks: "block",
+  };
+  const listKind = $derived(listKinds[screen.view] ?? null);
+  $effect(() => {
+    if (doc && listKind) void refreshPlannerRows(listKind, filter);
+  });
+  const rows = $derived(listKind && app.plannerRows?.kind === listKind ? app.plannerRows.rows : []);
 
   const navItems: { view: PlannerScreen["view"]; label: string }[] = [
     { view: "plans", label: "Plans" },
@@ -77,7 +88,7 @@
   {/if}
   {#each navItems as item (item.view)}
     <button class="chip" class:active={screen.view === item.view}
-            onclick={() => plannerGo(item.view)}>{item.label}</button>
+            onclick={() => { filter = ""; plannerGo(item.view); }}>{item.label}</button>
   {/each}
   <button class="chip" onclick={togglePlannerMap}>
     {app.plannerMapUp ? "Hide map" : "Show map"}
@@ -331,11 +342,11 @@
     <h2>Routes</h2>
     <p><input aria-label="Filter routes" placeholder="filter routes…" bind:value={filter}></p>
     <ul class="rail-items">
-      {#each Object.entries(doc.routes).filter(([id, r]) => matches(id + " " + r.name)) as [id, r] (id)}
+      {#each rows as r (r.id)}
         <li>
-          <button class="rail-item" aria-label={`Open route ${id}`}
-                  onclick={() => selectEntity("route", id)}>
-            {r.name} <span class="muted">({id})</span>
+          <button class="rail-item" aria-label={`Open route ${r.id}`}
+                  onclick={() => selectEntity("route", r.id)}>
+            {r.name} <span class="muted">({r.id})</span>
           </button>
         </li>
       {/each}
@@ -347,10 +358,10 @@
     <h2>Stops</h2>
     <p><input aria-label="Filter stops" placeholder="filter stops…" bind:value={filter}></p>
     <ul class="rail-items">
-      {#each Object.entries(doc.stops).filter(([id, s]) => matches(id + " " + s.name)) as [id, s] (id)}
+      {#each rows as s (s.id)}
         <li>
-          <button class="rail-item" aria-label={`Open stop ${id}`}
-                  onclick={() => selectEntity("stop", id)}>
+          <button class="rail-item" aria-label={`Open stop ${s.id}`}
+                  onclick={() => selectEntity("stop", s.id)}>
             {s.name}
             {#if s.transfer} <span class="chip svc">transfer</span>{/if}
           </button>
@@ -364,11 +375,11 @@
     <h2>Patterns</h2>
     <p><input aria-label="Filter patterns" placeholder="filter patterns…" bind:value={filter}></p>
     <ul class="rail-items">
-      {#each Object.entries(doc.patterns).filter(([id, p]) => matches(id + " " + p.name)) as [id, p] (id)}
+      {#each rows as p (p.id)}
         <li>
-          <button class="rail-item" aria-label={`Open pattern ${id}`}
-                  onclick={() => selectEntity("pattern", id)}>
-            {p.name} <span class="muted">({doc.routes[p.route]?.name ?? p.route})</span>
+          <button class="rail-item" aria-label={`Open pattern ${p.id}`}
+                  onclick={() => selectEntity("pattern", p.id)}>
+            {p.name} <span class="muted">({p.context})</span>
           </button>
         </li>
       {/each}
@@ -380,11 +391,11 @@
     <h2>Schedules</h2>
     <p><input aria-label="Filter schedules" placeholder="filter schedules…" bind:value={filter}></p>
     <ul class="rail-items">
-      {#each Object.entries(doc.schedules).filter(([id]) => matches(id)) as [id, s] (id)}
+      {#each rows as s (s.id)}
         <li>
-          <button class="rail-item" aria-label={`Open schedule ${id}`}
-                  onclick={() => selectEntity("schedule", id)}>
-            {id}
+          <button class="rail-item" aria-label={`Open schedule ${s.id}`}
+                  onclick={() => selectEntity("schedule", s.id)}>
+            {s.id} <span class="muted">({s.context} · {s.trips} trips)</span>
           </button>
         </li>
       {/each}
@@ -395,11 +406,11 @@
   <section>
     <h2>Service types</h2>
     <ul class="rail-items">
-      {#each Object.entries(doc.service_types).sort(([a], [b]) => (a < b ? -1 : 1)) as [id, t] (id)}
+      {#each rows as t (t.id)}
         <li>
-          <button class="rail-item" aria-label={`Open service type ${id}`}
-                  onclick={() => selectEntity("service_type", id)}>
-            {t.name} <span class="muted">({id})</span>
+          <button class="rail-item" aria-label={`Open service type ${t.id}`}
+                  onclick={() => selectEntity("service_type", t.id)}>
+            {t.name} <span class="muted">({t.id})</span>
           </button>
         </li>
       {/each}
@@ -411,11 +422,11 @@
     <h2>Blocks</h2>
     <p><input aria-label="Filter blocks" placeholder="filter blocks…" bind:value={filter}></p>
     <ul class="rail-items">
-      {#each Object.entries(doc.blocks).filter(([id]) => matches(id)) as [id, b] (id)}
+      {#each rows as b (b.id)}
         <li>
-          <button class="rail-item" aria-label={`Open block ${id}`}
-                  onclick={() => selectEntity("block", id)}>
-            {id} <span class="muted">({b.trips.length} trips)</span>
+          <button class="rail-item" aria-label={`Open block ${b.id}`}
+                  onclick={() => selectEntity("block", b.id)}>
+            {b.id} <span class="muted">({b.trips} trips)</span>
           </button>
         </li>
       {/each}

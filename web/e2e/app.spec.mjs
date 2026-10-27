@@ -874,6 +874,20 @@ test("planner authors a network and the rider uses it", async ({ page }) => {
   const railWidth = await page.locator(".sidebar").evaluate((el) => el.getBoundingClientRect().width);
   expect(railWidth, "the rail absorbs the hidden map's width").toBeGreaterThan(700);
 
+  // The list screens and the route screen are cap-directory answers
+  // (W5): the filter narrows by every term; the route lists its
+  // patterns, the stops they visit, and its schedules by service
+  // type with each one's trip count.
+  await page.getByRole("button", { name: "Stops", exact: true }).click();
+  await page.getByLabel("Filter stops").fill("main 2nd");
+  await expect(page.getByRole("button", { name: /^Open stop / })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Open stop B" })).toBeVisible();
+  await page.getByRole("button", { name: "Routes", exact: true }).click();
+  await page.getByRole("button", { name: "Open route 10" }).click();
+  await expect(page.getByText("Patterns (2)")).toBeVisible();
+  await expect(page.getByText("Stops (3)")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open schedule WK:pat-10-0-1" })).toHaveText("1 trips");
+
   // The workspace is a screen stack: menu → Schedules, drill into the
   // schedule, the editor is a screen in the rail (Back pops it).
   await page.getByRole("button", { name: "Schedules" }).click();

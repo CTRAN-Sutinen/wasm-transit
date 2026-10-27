@@ -471,6 +471,21 @@ assert(
     compare.baseline && compare.baseline.arrival_hhmmss === "08:10:00",
   "the diversion delta: 08:15 against the unpatched 08:10",
 );
+assert(compare.notice === null, "a found trip carries no notice");
+const tooLate = router.invoke({
+  op: "plan_compare",
+  network_hash: loadedRouterNet.network_hash,
+  edits_hash: null,
+  from: "A",
+  to: "B",
+  date: DATE,
+  depart_secs: 40 * 3600,
+  max_legs: 6,
+});
+assert(
+  tooLate.active === null && tooLate.baseline === null && tooLate.notice.includes("within 6 legs"),
+  "no trip and no second world: the notice names the legs searched",
+);
 const badRouter = router.raw({ op: "nope" });
 assert(badRouter.error && badRouter.error.includes("invalid request"), "unknown ops error, never panic");
 
@@ -816,6 +831,22 @@ assert(ghostRoute.patterns.length === 0, "an unknown route answers empty, never 
 const routeFocus = dir.invoke({ op: "focus", network_hash: loadedDirNet.network_hash, kind: "route", id: "10" }).focus;
 assert(routeFocus.lines.length === 2 && routeFocus.points.length === 5, "a route frames every pattern it runs");
 assert(dir.invoke({ op: "focus", network_hash: loadedDirNet.network_hash, kind: "stop", id: "missing" }).focus === null, "an unknown entity frames nothing");
+const entities = (kind, query) => dir.invoke({ op: "entities", network_hash: loadedDirNet.network_hash, kind, query }).rows;
+assert(entities("stop").length === 6, "the planner's stop list is every stop");
+assert(entities("stop", "MAIN 2nd").map((r) => r.id).join(",") === "B", "every term narrows, case-insensitive");
+assert(entities("pattern", "pat-10").every((r) => r.context === "10"), "a pattern is placed by its route");
+const routeDetail = dir.invoke({ op: "route_detail", network_hash: loadedDirNet.network_hash, route_id: "10" }).detail;
+assert(routeDetail.patterns.length === 2, "route 10's composition lists both patterns");
+assert(
+  routeDetail.stops.map((r) => r.id).join(",") === "A,B,C",
+  "the stops its patterns visit, first-visit order",
+);
+assert(
+  routeDetail.schedules_by_type.map((g) => g.service_type).join(",") === "SUN,WK" &&
+    routeDetail.schedules_by_type.flatMap((g) => g.schedules).every((sc) => sc.trips > 0),
+  "schedules grouped by service type, each with the trips it runs",
+);
+assert(dir.invoke({ op: "route_detail", network_hash: loadedDirNet.network_hash, route_id: "missing" }).detail === null, "an unknown route has no composition");
 
 // Unknown hashes error, never panic — every day-view seam.
 const unknownBoard = board.raw({ op: "stop_board", network_hash: "sha256:missing", stop_id: "A", date: DATE, from_secs: 0, limit: 5 });

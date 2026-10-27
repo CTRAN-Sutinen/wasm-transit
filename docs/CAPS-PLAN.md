@@ -377,6 +377,25 @@ day-shape answer is the dogfood record).
     DOGFOODED (QA-FINDINGS, "Session 2026-10-27 (geometry)";
     QAF-50 open). A block's drill-down now frames its patterns
     (it framed nothing before).
+  * W5 planner numbers and search: ON THE BUS — transit-network
+    listing_test (rows narrowed by every term, a route's
+    composition, trip counts that are the materialized day's even
+    where bands overlap); transit-router raptor_test
+    `a_compared_plan_tells_the_rider_what_it_cost`; cap-directory
+    `entities` and `route_detail`, cap-router `plan_compare`'s
+    notice (dispatch tests, caps-smoke, the justfile planner-lists
+    gate — one chained session over both). UI READS THE BUS: the
+    planner's list screens and the route screen render cap-
+    directory's rows; the trip planner calls `plan_compare` alone
+    and shows its notice (app.spec "planner authors a network" —
+    the stop filter and the route's composition; "unplannable trip
+    gives inline feedback"; "diversion reroutes the schedule…" —
+    the arrival the diversion cost). DOGFOODED (QA-FINDINGS,
+    "Session 2026-10-27 (planner lists)"). `scheduleTripCount`,
+    RouteForm's visit and grouping code, the rail's filters, and
+    the plan-or-compare branch are gone from web/. The schedule
+    list now shows each schedule's pattern, service type, and trip
+    count; a menu jump clears the list filter.
   * W6, early: DepartureBoard, RtPanel, BlocksPanel, and (with W3)
     DiversionPanel are render-only (props in, events out; the host
     makes the op calls) — off the W0 allowlist.

@@ -23,7 +23,7 @@ pub mod network;
 pub mod raptor;
 
 pub use network::{Footpath, Pattern, PatternTrip, RouterNetwork, StopNode};
-pub use raptor::{earliest_arrival, Itinerary, Leg};
+pub use raptor::{earliest_arrival, plan_notice, Itinerary, Leg};
 
 use thiserror::Error;
 

@@ -85,6 +85,23 @@ pub struct Itinerary {
     pub legs: Vec<Leg>,
 }
 
+/// What a rider is told about a compared plan: nothing when the
+/// diverted world has a trip; when only the undiverted one does, the
+/// arrival the diversion cost them; otherwise that no trip exists
+/// within the legs searched.
+pub fn plan_notice(active: Option<&Itinerary>, baseline: Option<&Itinerary>, max_legs: u32) -> Option<String> {
+    match (active, baseline) {
+        (Some(_), _) => None,
+        (None, Some(base)) => Some(format!(
+            "No trip found while the diversion is active — without it you would arrive {}.",
+            &fmt_time(base.arrival_secs)[..5]
+        )),
+        (None, None) => Some(format!(
+            "No trip found within {max_legs} legs — try a different time or closer stops."
+        )),
+    }
+}
+
 /// How `tau[k][s]` was improved — the reconstruction pointers.
 /// `Unset` is the initial value ("no label yet").
 #[derive(Debug, Clone, Copy)]
