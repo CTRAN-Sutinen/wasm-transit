@@ -24,7 +24,7 @@ wasm:
 caps:
     #!/usr/bin/env bash
     set -e
-    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt -p cap-board -p cap-runcut -p cap-calendar -p cap-streets --target wasm32-unknown-unknown
+    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt -p cap-board -p cap-runcut -p cap-calendar -p cap-directory -p cap-streets --target wasm32-unknown-unknown
     cargo run --quiet -p cap-abi --bin gen-manifest
 
 # Publish the registry: gates first (the records report them), then
@@ -74,8 +74,16 @@ test: caps
     # The agent runner, gated with chained sessions — every op
     # references its documents through $load/$op result references
     # (no hand-copied hashes; the runner resolves them in-session).
-    node tools/caps-run.mjs gtfs --load web/public/caps/sample-gtfs.zip \
-      --op '{"op":"stops","feed_hash":"$load.feed_hash","limit":2}' | grep -q '"stop_id":"A"'
+    # The directory capability's gate: the pickers' one question over
+    # the network document, one chained session — stops, the names
+    # join, routes, and route 10's patterns (the model's directions).
+    node tools/caps-run.mjs directory \
+      --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"stops","network_hash":"$load_network.network_hash","limit":2}' \
+      --op '{"op":"stops_by_ids","network_hash":"$load_network.network_hash","ids":["A","ghost","STN"]}' \
+      --op '{"op":"routes","network_hash":"$load_network.network_hash"}' \
+      --op '{"op":"route_stop_sequence","network_hash":"$load_network.network_hash","route_id":"10"}' \
+      | grep -q '"stop_id":"A"'
     # The board capability's gate: the station pin answers the union
     # of its bays (walking-group pooling), and the personal board
     # chains its watchlist document — all references chained, no
@@ -143,7 +151,7 @@ test: caps
     # Sanctioned consumers: cap-gtfs, cap-network, cap-router (the
     # feed-consuming planner), cap-rt (external rt joining external
     # ids).
-    for crate in cap-analysis cap-board cap-runcut cap-calendar transit-analysis transit-dispatch; do
+    for crate in cap-analysis cap-board cap-runcut cap-calendar cap-directory transit-analysis transit-dispatch; do
         for dep in transit-core transit-codec; do
             if awk '/^\[dev-dependencies\]/{exit} /^'"$dep"' =/{found=1} END{exit !found}' "crates/$crate/Cargo.toml" 2>/dev/null; then
                 echo "ARCH FAIL: $crate depends on $dep — the network is the core model; compose over the network document (crates/AGENTS.md, Law 1)"; exit 1

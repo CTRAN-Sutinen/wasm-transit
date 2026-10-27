@@ -3,9 +3,10 @@
 //! content-hash registry gets explicit laws: same bytes, same hash,
 //! one entry (idempotence); different bytes, different hashes; and
 //! the registry is addressed by hash, so a query for an unknown hash
-//! is an error, never a panic. The day views are NOT here — they
-//! answer over the NETWORK document (cap-board / cap-runcut /
-//! cap-calendar; one question, one answer on the bus).
+//! is an error, never a panic. The day views AND the directory
+//! questions (pickers, names join) are NOT here — they answer over
+//! the NETWORK document (cap-board / cap-runcut / cap-calendar /
+//! cap-directory; one question, one answer on the bus).
 
 use std::io::Read;
 
@@ -57,28 +58,9 @@ fn loading_the_same_bytes_is_idempotent() {
 }
 
 #[test]
-fn stops_lists_by_hash() {
-    let bytes = fixture_zip();
-    let feed_hash = match dispatch(cap_gtfs::Request::LoadFeed { bytes }) {
-        cap_gtfs::Response::LoadFeed { feed_hash, .. } => feed_hash,
-        _ => panic!("load"),
-    };
-    let cap_gtfs::Response::Stops { stops } = dispatch(cap_gtfs::Request::Stops {
-        feed_hash,
-        limit: 2,
-    })
-    else {
-        panic!("stops response");
-    };
-    assert_eq!(stops.len(), 2);
-    assert_eq!(stops[0].stop_id, "A");
-}
-
-#[test]
 fn unknown_hash_and_bad_input_are_errors_not_panics() {
-    let err = cap_gtfs::dispatch(cap_gtfs::Request::Stops {
+    let err = cap_gtfs::dispatch(cap_gtfs::Request::FeedInfo {
         feed_hash: "sha256:deadbeef".into(),
-        limit: 5,
     })
     .expect_err("unknown hash must error");
     assert!(err.contains("unknown feed"));
@@ -103,7 +85,15 @@ fn json_seam_round_trips_the_tagged_form() {
 
     // The retired day ops answer as REQUEST errors — the module no
     // longer speaks them, and the seam says so honestly.
-    for retired in ["departures", "blocks", "active_services", "block_trips", "watchlist_board"] {
+    for retired in [
+        "departures",
+        "blocks",
+        "active_services",
+        "block_trips",
+        "watchlist_board",
+        "stops",
+        "stops_by_ids",
+    ] {
         let bad: serde_json::Value = serde_json::from_str(&cap_gtfs::dispatch_json(
             &serde_json::json!({ "op": retired, "feed_hash": "sha256:x" }).to_string(),
         ))
@@ -141,26 +131,3 @@ fn feed_info_answers_the_feeds_identity() {
     assert_eq!(info.feed_publisher_name.as_deref(), Some("Test Transit"));
 }
 
-/// Stop names by id — the join hosts otherwise do by hand when a
-/// view (like rt's) carries ids a human reads as names.
-#[test]
-fn stops_by_ids_answers_names() {
-    let bytes = fixture_zip();
-    let feed_hash = match dispatch(cap_gtfs::Request::LoadFeed { bytes }) {
-        cap_gtfs::Response::LoadFeed { feed_hash, .. } => feed_hash,
-        _ => panic!("load"),
-    };
-    let stops = match dispatch(cap_gtfs::Request::StopsByIds {
-        feed_hash,
-        ids: vec!["B".into(), "ghost".into(), "STN".into(), "A".into()],
-    }) {
-        cap_gtfs::Response::StopsByIds { stops } => stops,
-        _ => panic!("stops_by_ids"),
-    };
-    // Unknown ids are omitted — the caller asked for names — and the
-    // answer keeps the request's order.
-    assert_eq!(
-        stops.iter().map(|s| (s.stop_id.as_str(), s.name.as_str())).collect::<Vec<_>>(),
-        vec![("B", "Main & 2nd"), ("STN", "Main Station"), ("A", "Main & 1st")],
-    );
-}

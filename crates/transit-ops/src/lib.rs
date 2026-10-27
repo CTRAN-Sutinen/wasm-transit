@@ -62,16 +62,6 @@ pub enum Request {
         bytes: Vec<u8>,
         pop_field: Option<String>,
     },
-    /// Entity counts of a feed.
-    Summary { feed_id: u32 },
-    /// Name-sorted `[{ stop_id, name }]` for UI pickers.
-    Stops { feed_id: u32 },
-    /// Name-sorted route list for pickers.
-    Routes { feed_id: u32 },
-    /// The stop pattern of a route (+direction) as served by its
-    /// longest matching trip: what the diversion editor anchors
-    /// against.
-    RouteStopSequence { feed_id: u32, route_id: String, direction_id: Option<u8> },
     /// All stops as a GeoJSON FeatureCollection.
     StopsGeojson { feed_id: u32 },
     /// One trip's path as a GeoJSON LineString Feature (date scopes
@@ -152,10 +142,6 @@ pub enum Response {
         pop_field: String,
         total_pop: f64,
     },
-    Summary { summary: transit_core::FeedSummary },
-    Stops { stops: Vec<transit_core::StopSummary> },
-    Routes { routes: Vec<transit_core::RouteSummary> },
-    RouteStopSequence { stops: Vec<transit_core::StopSummary> },
     StopsGeojson { collection: FeatureCollection },
     TripPathGeojson { feature: Option<TripLineFeature> },
     RoutePathGeojson { feature: Option<TripLineFeature> },
@@ -226,22 +212,6 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
             let total_pop = layer.points.iter().map(|p| p.pop).sum();
             let pop_field = layer.pop_field.clone();
             Ok(Response::CoverageLoad { points, pop_field, total_pop })
-        }
-        Request::Summary { feed_id } => {
-            state::with_feed(feed_id, |f| Ok(Response::Summary { summary: f.gtfs.summary() }))
-        }
-        Request::Stops { feed_id } => state::with_feed(feed_id, |f| {
-            Ok(Response::Stops { stops: f.gtfs.stop_summaries() })
-        }),
-        Request::Routes { feed_id } => state::with_feed(feed_id, |f| {
-            Ok(Response::Routes { routes: f.gtfs.route_summaries() })
-        }),
-        Request::RouteStopSequence { feed_id, route_id, direction_id } => {
-            state::with_feed(feed_id, |f| {
-                Ok(Response::RouteStopSequence {
-                    stops: f.gtfs.route_stop_sequence(&route_id, direction_id),
-                })
-            })
         }
         Request::StopsGeojson { feed_id } => state::with_feed(feed_id, |f| {
             Ok(Response::StopsGeojson { collection: geojson::stops_geojson(&f.gtfs) })

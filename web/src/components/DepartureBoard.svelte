@@ -9,12 +9,16 @@
     calendarCap,
     calendarModule,
     ensureCalendarNetwork,
+    directory,
     type Boarding,
   } from "../capabilities.svelte";
   import type { BoardDeparture } from "../types/BoardDeparture";
   import Combobox from "./Combobox.svelte";
 
-  const stops = $derived(app.gtfs ? app.gtfs.stops().slice(0, 2000) : []);
+  // The directory's stop list — what exists in the network (the
+  // pickers are model questions; the monolith op is deleted, and
+  // the feed-side answer died with it — one question, one answer).
+  const stops = $derived(directory.stops.slice(0, 2000));
   const stopOptions = $derived(stops.map((s) => ({ value: s.stop_id, label: s.name, sub: s.stop_id })));
 
   // Service keys running today — through the BUS (the calendar
@@ -149,8 +153,7 @@
         // emptiness, not its base schedule.
         const sel = stops.find((s) => s.stop_id === stop);
         const stationLike =
-          !!sel &&
-          (sel.parent_station != null || stops.some((s) => s.parent_station === stop));
+          !!sel && (sel.parent != null || stops.some((s) => s.parent === stop));
         if (rows.length === 0 && stationLike) {
           rows = cap.stationDepartures(
             boarding.networkHash,

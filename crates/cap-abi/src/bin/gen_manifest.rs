@@ -58,15 +58,13 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "gtfs",
         file: "cap_gtfs.wasm",
-        ops: &["load_feed", "stops", "stops_by_ids", "feed_info"],
+        ops: &["load_feed", "feed_info"],
         consumes: &[],
         speaks: &[("feed", &[1])],
         migrates: &[],
-        purpose: "The FEED document: parse a GTFS static zip into a hash-addressed feed registry and answer the reads only the feed itself carries — its identity (feed_info), its stop names (the join hosts otherwise do by hand), and the stop list for pickers. The day views are NOT here: they answer over the NETWORK document (the board, runcut, and calendar capabilities — one question, one answer on the bus). Assemble for any user who touches raw feed bytes; it has no ops that author anything.",
+        purpose: "The FEED document: parse a GTFS static zip into a content-hash-keyed feed registry and answer the feed's own questions — what it contains at a glance (load_feed returns the summary) and its identity (feed_info.txt: version, publisher). The day views and the directory questions (pickers, names join) are NOT here: they answer over the NETWORK document (the board, runcut, calendar, and directory capabilities — one question, one answer on the bus). It has no ops that author anything.",
         op_docs: &[
-            ("load_feed", "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes."),
-            ("stops", "Stop list for UI pickers, first N by id."),
-            ("stops_by_ids", "Stop names by id, in the request's order — the join hosts otherwise do by hand when a view (like rt's) carries ids a human reads as names. Unknown ids are omitted."),
+            ("load_feed", "Register a GTFS zip under its content hash (idempotent). The response carries the feed's summary — stops, routes, trips, stop_times — the at-a-glance read the feed line shows. Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes."),
             ("feed_info", "The feed's own metadata (version, publisher), when the feed provides feed_info.txt — the identity question: which feed is this?"),
         ],
     },
@@ -193,6 +191,23 @@ const MODULES: &[ModuleSpec] = &[
             ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth."),
             ("load_edits", "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change."),
             ("active_services", "The service keys running on a date: the distinct service types the effective day's trips run under, sorted. Schedule-only when edits_hash is omitted. The day's first question — what is running today?"),
+        ],
+    },
+    ModuleSpec {
+        id: "directory",
+        file: "cap_directory.wasm",
+        ops: &["load_network", "stops", "stops_by_ids", "routes", "route_stop_sequence"],
+        // The network document is produced by the network capability.
+        consumes: &[("network", "network")],
+        speaks: &[("network", &[1])],
+        migrates: &[],
+        purpose: "The directory: what exists in the network — the stops (with their walking-group structure), the routes, one route's patterns with their ordered stops (list to detail). The pickers and the names join read here; they are MODEL questions, never feed reads. Patterns are the model's directions: a route's stop sequences are its patterns, each with its own ordered stops — what a diversion editor anchors against.",
+        op_docs: &[
+            ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth."),
+            ("stops", "The stop list, name-sorted (the pickers' shape): every stop with its coords, its parent (the flag the station board keys off), and its transfer flag. limit truncates after the sort; omit it for the whole list — a silently truncated directory would be a lie."),
+            ("stops_by_ids", "Stops by id, in the request's order — the names join hosts otherwise do by hand when a view (like rt's) carries ids a human reads as names. Unknown ids are omitted."),
+            ("routes", "The route list, name-sorted: every route with its mode (the model's closed set, not GTFS's numeric codes) and its authored color when there is one."),
+            ("route_stop_sequence", "One route's patterns with their ordered stops — the model's directions. An unknown route answers empty, never an error."),
         ],
     },
     ModuleSpec {
@@ -528,14 +543,6 @@ fn example_for(
                 json!({ "ok": { "op": "feed_info", "info": gtfs.feed_info } }),
             )
         }
-        ("gtfs", "stops") => (
-            json!({ "op": "stops", "feed_hash": feed_hash, "limit": 3 }),
-            json!({ "ok": { "op": "stops", "stops": [
-                { "stop_id": "A", "name": "Main & 1st" },
-                { "stop_id": "B", "name": "Main & 2nd" },
-                { "stop_id": "C", "name": "Main & 3rd" }
-            ] } }),
-        ),
         ("router", "plan") => (
             json!({ "op": "plan", "feed_hash": feed_hash, "from": "A", "to": "B",
                     "date": "2026-10-23", "depart_secs": 25200, "max_legs": 4 }),
@@ -681,22 +688,6 @@ fn example_for(
                     "trips": transit_rt::late_trips(&ctx.feed, &ctx.overview, None, 60) } }),
             )
         }
-        ("gtfs", "stops_by_ids") => {
-            let gtfs = fixture_gtfs()?;
-            (
-                json!({ "op": "stops_by_ids", "feed_hash": feed_hash, "ids": ["A", "STN"] }),
-                json!({ "ok": { "op": "stops_by_ids", "stops": [
-                    { "stop_id": "A", "name": gtfs.stops.get("A").map(|s| s.stop_name.clone()) },
-                    { "stop_id": "STN", "name": gtfs.stops.get("STN").map(|s| s.stop_name.clone()) },
-                ] } }),
-            )
-        }
-        // The day-view capabilities' examples compute REAL answers
-        // over the fixture-derived document through the same shared
-        // library the modules dispatch through (the board, the
-        // station board, the watchlist board, the day's blocks, the
-        // authored chain, and the service keys) — so the worked
-        // examples cannot drift.
         ("board", "load_network") => {
             let ctx = net?;
             (
@@ -836,6 +827,86 @@ fn example_for(
                 json!({ "op": "active_services", "network_hash": ctx.network_hash, "date": "2026-10-23" }),
                 json!({ "ok": { "op": "active_services",
                     "services": transit_dispatch::active_services(ctx.derived_network(), &day) } }),
+            )
+        }
+        // The directory's examples compute REAL answers over the
+        // fixture-derived document — the stop list with its walking
+        // group, the route list, and route 10's patterns (the direct
+        // run and the via-C run) — through the same document the
+        // module addresses, so the worked examples cannot drift.
+        ("directory", "load_network") => {
+            let ctx = net?;
+            (
+                json!({ "op": "load_network", "network": ctx.derived }),
+                json!({ "ok": { "op": "load_network", "network_hash": ctx.network_hash } }),
+            )
+        }
+        ("directory", "stops") => {
+            let ctx = net?;
+            let network = ctx.derived_network();
+            let mut stops: Vec<serde_json::Value> = network
+                .stops
+                .keys()
+                .map(|id| {
+                    let s = &network.stops[id];
+                    json!({ "stop_id": id, "name": s.name, "lat": s.lat, "lon": s.lon,
+                        "parent": s.parent, "transfer": s.transfer })
+                })
+                .collect();
+            stops.sort_by(|a, b| {
+                a["name"].as_str().cmp(&b["name"].as_str())
+                    .then(a["stop_id"].as_str().cmp(&b["stop_id"].as_str()))
+            });
+            (
+                json!({ "op": "stops", "network_hash": ctx.network_hash, "limit": 3 }),
+                json!({ "ok": { "op": "stops", "stops": stops.into_iter().take(3).collect::<Vec<_>>() } }),
+            )
+        }
+        ("directory", "stops_by_ids") => {
+            let ctx = net?;
+            let network = ctx.derived_network();
+            let pick = |id: &str| network.stops.get(id).map(|s| json!({
+                "stop_id": id, "name": s.name, "lat": s.lat, "lon": s.lon,
+                "parent": s.parent, "transfer": s.transfer }));
+            (
+                json!({ "op": "stops_by_ids", "network_hash": ctx.network_hash, "ids": ["A", "ghost", "STN"] }),
+                json!({ "ok": { "op": "stops_by_ids", "stops": [
+                    pick("A").expect("A exists"), pick("STN").expect("STN exists"),
+                ] } }),
+            )
+        }
+        ("directory", "routes") => {
+            let ctx = net?;
+            let network = ctx.derived_network();
+            let mut routes: Vec<serde_json::Value> = network
+                .routes
+                .iter()
+                .map(|(id, r)| json!({ "route_id": id, "name": r.name, "mode": r.mode, "color": r.color }))
+                .collect();
+            routes.sort_by(|a, b| {
+                a["name"].as_str().cmp(&b["name"].as_str())
+                    .then(a["route_id"].as_str().cmp(&b["route_id"].as_str()))
+            });
+            (
+                json!({ "op": "routes", "network_hash": ctx.network_hash }),
+                json!({ "ok": { "op": "routes", "routes": routes } }),
+            )
+        }
+        ("directory", "route_stop_sequence") => {
+            let ctx = net?;
+            let network = ctx.derived_network();
+            let patterns: Vec<serde_json::Value> = network
+                .patterns
+                .iter()
+                .filter(|(_, p)| p.route == "10")
+                .map(|(id, p)| json!({ "pattern": id, "name": p.name, "stops": p.stops.iter().map(|ps| json!({
+                    "stop_id": ps.stop,
+                    "name": network.stops.get(&ps.stop).map(|s| s.name.clone()).unwrap_or_else(|| ps.stop.clone()),
+                })).collect::<Vec<_>>() }))
+                .collect();
+            (
+                json!({ "op": "route_stop_sequence", "network_hash": ctx.network_hash, "route_id": "10" }),
+                json!({ "ok": { "op": "route_stop_sequence", "patterns": patterns } }),
             )
         }
         ("streets", "snap") => {

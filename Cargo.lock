@@ -182,6 +182,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cap-directory"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "serde",
+ "serde_json",
+ "sha2",
+ "transit-codec",
+ "transit-core",
+ "transit-network",
+ "ts-rs",
+]
+
+[[package]]
 name = "cap-gtfs"
 version = "0.1.0"
 dependencies = [

@@ -1,6 +1,6 @@
 {
-  "blob": "blobs/bf3a3614aa2a783f3f7018fceff0982d0194fd34bc06eda3511587d27700289e.wasm",
-  "bytes": 481528,
+  "blob": "blobs/e9ece0d062f4ad22032ff2da411c5a3e9cfbc0c4a94374c06a01869c8a9ee2ca.wasm",
+  "bytes": 458419,
   "consumes": {},
   "evidence": {
     "dirty_tree": true,
@@ -10,9 +10,9 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "2002599479faf0a25c71e89fbe869ef21462beaa"
+    "source_commit": "b74089f6ffd99b29c2d5eb8775f0848ab24d4cb8"
   },
-  "hash": "sha256:bf3a3614aa2a783f3f7018fceff0982d0194fd34bc06eda3511587d27700289e",
+  "hash": "sha256:e9ece0d062f4ad22032ff2da411c5a3e9cfbc0c4a94374c06a01869c8a9ee2ca",
   "id": "gtfs",
   "kernel": 1,
   "migrates": {},
@@ -39,74 +39,15 @@
       }
     },
     "load_feed": {
-      "description": "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
+      "description": "Register a GTFS zip under its content hash (idempotent). The response carries the feed's summary — stops, routes, trips, stop_times — the at-a-glance read the feed line shows. Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
       "example": null
-    },
-    "stops": {
-      "description": "Stop list for UI pickers, first N by id.",
-      "example": {
-        "request": {
-          "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
-          "limit": 3,
-          "op": "stops"
-        },
-        "response": {
-          "ok": {
-            "op": "stops",
-            "stops": [
-              {
-                "name": "Main & 1st",
-                "stop_id": "A"
-              },
-              {
-                "name": "Main & 2nd",
-                "stop_id": "B"
-              },
-              {
-                "name": "Main & 3rd",
-                "stop_id": "C"
-              }
-            ]
-          }
-        }
-      }
-    },
-    "stops_by_ids": {
-      "description": "Stop names by id, in the request's order — the join hosts otherwise do by hand when a view (like rt's) carries ids a human reads as names. Unknown ids are omitted.",
-      "example": {
-        "request": {
-          "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
-          "ids": [
-            "A",
-            "STN"
-          ],
-          "op": "stops_by_ids"
-        },
-        "response": {
-          "ok": {
-            "op": "stops_by_ids",
-            "stops": [
-              {
-                "name": "Main & 1st",
-                "stop_id": "A"
-              },
-              {
-                "name": "Main Station",
-                "stop_id": "STN"
-              }
-            ]
-          }
-        }
-      }
     }
   },
   "ops": [
     "load_feed",
-    "stops",
-    "stops_by_ids",
     "feed_info"
   ],
-  "purpose": "The FEED document: parse a GTFS static zip into a hash-addressed feed registry and answer the reads only the feed itself carries — its identity (feed_info), its stop names (the join hosts otherwise do by hand), and the stop list for pickers. The day views are NOT here: they answer over the NETWORK document (the board, runcut, and calendar capabilities — one question, one answer on the bus). Assemble for any user who touches raw feed bytes; it has no ops that author anything.",
+  "purpose": "The FEED document: parse a GTFS static zip into a content-hash-keyed feed registry and answer the feed's own questions — what it contains at a glance (load_feed returns the summary) and its identity (feed_info.txt: version, publisher). The day views and the directory questions (pickers, names join) are NOT here: they answer over the NETWORK document (the board, runcut, calendar, and directory capabilities — one question, one answer on the bus). It has no ops that author anything.",
   "speaks": {
     "feed": [
       1

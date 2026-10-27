@@ -2,15 +2,16 @@
 //!
 //! One subject: the FEED document. Parse a GTFS static zip, hold
 //! it in a registry keyed by the CONTENT HASH of the input bytes,
-//! and answer the reads only the feed itself carries — its
-//! identity (`feed_info.txt`), its stop names (the join hosts
-//! otherwise do by hand), and the stop list for pickers. It has
-//! no ops that author anything — "only planners write networks,
-//! everything else imports" is enforced by the Request enum, not
-//! by convention — and no day views: the day answers over the
-//! NETWORK document (cap-board, cap-runcut, cap-calendar; the
-//! bus's one-answer law — a duplicate feed-side answer is
-//! deleted, not kept).
+//! and answer the feed's own questions: what it contains at a
+//! glance (`load_feed` returns the summary) and its identity
+//! (`feed_info.txt` — version, publisher). It has no ops that
+//! author anything — "only planners write networks, everything
+//! else imports" is enforced by the Request enum, not by
+//! convention — and no day views, no pickers, no names join:
+//! those are MODEL questions and answer over the NETWORK document
+//! (cap-board / cap-runcut / cap-calendar for the day,
+//! cap-directory for what exists — the bus's one-answer law: a
+//! duplicate feed-side answer is deleted, not kept).
 //!
 //! The hash-keyed registry is the bus's core seam: capabilities
 //! compose through documents addressed by content hash, so the
@@ -30,7 +31,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ts_rs::TS;
-use transit_core::{FeedSummary, StopSummary};
+use transit_core::FeedSummary;
 
 /// The bulk-bytes op code (the only op that takes raw feed bytes).
 pub const OP_LOAD_FEED: u32 = 0;
@@ -45,14 +46,6 @@ pub enum Request {
     /// content hash. Loading the same bytes twice is idempotent —
     /// same hash, same registry entry.
     LoadFeed { bytes: Vec<u8> },
-    /// Stop list for UI pickers: the first `limit` stops by id.
-    Stops { feed_hash: String, limit: u32 },
-    /// Stop names by id — the join hosts otherwise do by hand when
-    /// a view (like rt's) carries ids a human reads as names.
-    /// Unknown ids are omitted (the caller asked for names, and
-    /// silence is the honest answer for an id the feed does not
-    /// carry).
-    StopsByIds { feed_hash: String, ids: Vec<String> },
     /// `feed_info.txt` metadata (version, publisher) — the identity
     /// question: which feed is this?
     FeedInfo { feed_hash: String },
@@ -63,8 +56,6 @@ pub enum Request {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     LoadFeed { feed_hash: String, summary: FeedSummary },
-    Stops { stops: Vec<StopSummary> },
-    StopsByIds { stops: Vec<StopSummary> },
     FeedInfo { info: Option<transit_core::FeedInfo> },
 }
 
@@ -119,24 +110,6 @@ fn load_feed(bytes: &[u8]) -> Result<Response, String> {
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::LoadFeed { bytes } => load_feed(&bytes),
-        Request::Stops { feed_hash, limit } => with_feed(&feed_hash, |feed| {
-            Ok(Response::Stops {
-                stops: feed.stop_summaries().into_iter().take(limit as usize).collect(),
-            })
-        }),
-        Request::StopsByIds { feed_hash, ids } => with_feed(&feed_hash, |feed| {
-            let mut out = Vec::with_capacity(ids.len());
-            for id in &ids {
-                if let Some(stop) = feed.stops.get(id) {
-                    out.push(StopSummary {
-                        stop_id: stop.stop_id.clone(),
-                        name: stop.stop_name.clone(),
-                        parent_station: stop.parent_station.clone(),
-                    });
-                }
-            }
-            Ok(Response::StopsByIds { stops: out })
-        }),
         Request::FeedInfo { feed_hash } => with_feed(&feed_hash, |feed| {
             Ok(Response::FeedInfo { info: feed.feed_info.clone() })
         }),

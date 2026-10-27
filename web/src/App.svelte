@@ -11,14 +11,17 @@
   import PersonaTabs from "./components/PersonaTabs.svelte";
   import { app } from "./state.svelte.js";
   import { loadRtFromUrl, loadVpFromUrl, saveSettings, feedBytes } from "./actions";
-  import { ensureGtfsFeed, gtfsCap, gtfsModule } from "./capabilities.svelte";
+  import { ensureGtfsFeed, gtfsCap, gtfsModule, ensureFeedSummary, ensureDirectory } from "./capabilities.svelte";
   import type { FeedInfo } from "./types/FeedInfo";
+  import type { FeedSummary } from "./types/FeedSummary";
 
-  // The feed's IDENTITY (publisher, version) — the question a
-  // dispatcher asks first, answered through the BUS (cap-gtfs); the
-  // monolith has no copy. Decoration-grade: absent when the
-  // capability cannot assemble.
+  // The feed's OWN reads — identity (publisher, version) and the
+  // at-a-glance summary (what it contains) — answered through the
+  // BUS (cap-gtfs's load_feed / feed_info); the monolith has no
+  // copy. Decoration-grade: absent when the capability cannot
+  // assemble.
   let feedInfo = $state<FeedInfo | null>(null);
+  let summary = $state<FeedSummary | null>(null);
   let infoSeq = 0;
   $effect(() => {
     void app.feedEpoch;
@@ -26,17 +29,27 @@
     const bytes = feedBytes();
     if (!app.gtfs || !bytes) {
       feedInfo = null;
+      summary = null;
       return;
     }
     void (async () => {
       try {
+        // The directory primes here too (memoized — every picker,
+        // name lookup, and the diversion editor share the load).
+        await ensureDirectory(bytes);
+        if (seq !== infoSeq) return;
+        summary = await ensureFeedSummary(bytes);
+        if (seq !== infoSeq) return;
         const feedHash = await ensureGtfsFeed(bytes);
         if (seq !== infoSeq || !feedHash) return;
         const module = await gtfsModule();
         if (!module || seq !== infoSeq) return;
         feedInfo = gtfsCap(module).feedInfo(feedHash);
       } catch {
-        if (seq === infoSeq) feedInfo = null;
+        if (seq === infoSeq) {
+          feedInfo = null;
+          summary = null;
+        }
       }
     })();
   });
@@ -47,8 +60,6 @@
   // the map is the whole point (rider following a trip, dispatcher
   // mid-trace).
   let panelOpen = $state(localStorage.getItem("transit:panel-open") !== "closed");
-
-  const summary = $derived(app.gtfs ? app.gtfs.summary() : null);
 
   function togglePanel() {
     panelOpen = !panelOpen;

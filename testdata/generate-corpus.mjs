@@ -53,11 +53,10 @@ const feedIdPlaceholder = "$FEED";
 // The corpus: one op per response shape, plus the edit-document flow
 // and an error outcome. Requests are written with $FEED placeholders.
 const steps = [
-  { name: "summary", request: `{"op":"summary","feed_id":${feedIdPlaceholder}}` },
-  {
-    name: "route_stop_sequence",
-    request: `{"op":"route_stop_sequence","feed_id":${feedIdPlaceholder},"route_id":"10","direction_id":null}`,
-  },
+  // The picker and summary ops are RETIRED (the directory owns what
+  // exists; the feed line reads the gtfs capability's load_feed) —
+  // the corpus step-set pins their absence, and the diversion's
+  // effect pins through the surviving date-scoped reads.
   {
     name: "set_diversions_draft",
     request: `{"op":"set_diversions","feed_id":${feedIdPlaceholder},"records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"draft","rev":1,"updated_at":1}]}`,
@@ -86,7 +85,7 @@ const steps = [
   // out of the monolith with the codec: cap-network owns it now,
   // and its module tests hold the "a planner's document drives the
   // same ops" proof (export → zip → parse → the same op surface).
-  { name: "unknown_feed_errors", request: `{"op":"summary","feed_id":999}` },
+  { name: "unknown_feed_errors", request: `{"op":"stops_geojson","feed_id":999}` },
 ];
 
 // Load the fixture (first feed in a fresh instance: id 0), then capture

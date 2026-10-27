@@ -133,7 +133,15 @@ assert(
   info.info && info.info.feed_version === "2026.10.1",
   "the feed answers its own identity (version, publisher)",
 );
-const retiredOps = ["departures", "station_departures", "active_services", "blocks", "block_trips"];
+const retiredOps = [
+  "departures",
+  "station_departures",
+  "active_services",
+  "blocks",
+  "block_trips",
+  "stops",
+  "stops_by_ids",
+];
 for (const op of retiredOps) {
   const gone = gtfs.raw({ op, feed_hash: loadedGtfs.feed_hash });
   assert(gone.error && gone.error.includes("invalid request"), `${op} is retired on gtfs`);
@@ -156,9 +164,8 @@ assert(
 const bad = router.raw({ op: "nope" });
 assert(bad.error && bad.error.includes("invalid request"), "unknown ops error, never panic");
 const missing = gtfs.raw({
-  op: "stops",
+  op: "feed_info",
   feed_hash: "sha256:missing",
-  limit: 1,
 });
 assert(missing.error && missing.error.includes("unknown feed"), "unknown hashes error, never panic");
 
@@ -352,13 +359,9 @@ assert(late.trips[0].vehicle_label === "4201" && late.trips[0].has_position, "it
 const unknownJoin = rt.raw({ op: "trip_progress", feed_hash: "sha256:missing", rt_hash: decoded.rt_hash, trip_id: "t10" });
 assert(unknownJoin.error && unknownJoin.error.includes("unknown feed"), "unknown hashes error, never panic");
 
-// Stop names by id — the join the rt views otherwise force onto the
-// host (ids in, names out, request order, unknown omitted).
-const named = gtfs.invoke({ op: "stops_by_ids", feed_hash: loadedGtfs.feed_hash, ids: ["SA", "ghost", "A"] });
-assert(
-  named.stops.length === 2 && named.stops[0].stop_id === "SA" && named.stops[0].name === "Main Station: Bay A",
-  "stops_by_ids answers names, omitting unknown ids",
-);
+// The names join (stops_by_ids) moved to the directory with the
+// stop list it belongs to — the flow below pins it; the retired gtfs
+// op is pinned in the retirement loop above.
 
 // The day-view capabilities — the need cut of the day views over
 // the SAME network document the import produced (model-native end
@@ -566,6 +569,68 @@ const keysEmpty = calendar.invoke({
   date: "2026-10-24",
 });
 assert(keysEmpty.services.length === 0, "a no-service day answers empty, never errors");
+
+// THE DIRECTORY — what exists in the network. The pickers and the
+// names join are MODEL questions: the stop list (name-sorted, with
+// the walking-group structure), the route list, and a route's
+// PATTERNS with their ordered stops (the model's directions — what
+// a diversion editor anchors against).
+assert(byId.directory, "manifest advertises the directory capability");
+assert(
+  byId.directory.consumes.network === "network",
+  "directory declares its registry edge: it consumes network documents",
+);
+const dir = shell(loadModule(byId.directory));
+const loadedDirNet = dir.invoke({ op: "load_network", network: imported.network });
+assert(
+  loadedDirNet.network_hash === imported.network_hash,
+  "directory agrees with the network capability on the document identity",
+);
+const dirStops = dir.invoke({ op: "stops", network_hash: loadedDirNet.network_hash, limit: null });
+assert(dirStops.stops.length === 6, "the directory lists every stop");
+const byStop = Object.fromEntries(dirStops.stops.map((st) => [st.stop_id, st]));
+assert(byStop.SA.parent === "STN" && byStop.SB.parent === "STN", "the bays carry their parent");
+assert(byStop.STN.parent == null, "the station pin carries none");
+const names = dirStops.stops.map((st) => st.name);
+assert(
+  names.every((n, i) => i === 0 || names[i - 1] <= n),
+  "the stop list is name-sorted (the pickers' shape)",
+);
+const dirNames = dir.invoke({
+  op: "stops_by_ids",
+  network_hash: loadedDirNet.network_hash,
+  ids: ["B", "ghost", "STN"],
+});
+assert(
+  dirNames.stops.map((st) => st.stop_id).join(",") === "B,STN",
+  "the names join answers in request order, unknown ids omitted",
+);
+const dirRoutes = dir.invoke({ op: "routes", network_hash: loadedDirNet.network_hash });
+assert(dirRoutes.routes.some((r) => r.route_id === "10"), "the route list carries route 10");
+assert(
+  dirRoutes.routes.every((r) => r.mode === "bus"),
+  "the model's mode set, not GTFS's numeric codes",
+);
+const dirPatterns = dir.invoke({
+  op: "route_stop_sequence",
+  network_hash: loadedDirNet.network_hash,
+  route_id: "10",
+});
+assert(
+  dirPatterns.patterns.length === 2,
+  "route 10's stop sequences are its patterns: the direct run and the via-C run",
+);
+const longest = dirPatterns.patterns.reduce((a, b) => (b.stops.length > a.stops.length ? b : a));
+assert(
+  longest.stops.map((st) => st.stop_id).join(",") === "A,C,B",
+  "the longest pattern carries the skippable interior (A→C→B)",
+);
+const ghostRoute = dir.invoke({
+  op: "route_stop_sequence",
+  network_hash: loadedDirNet.network_hash,
+  route_id: "missing",
+});
+assert(ghostRoute.patterns.length === 0, "an unknown route answers empty, never an error");
 
 // Unknown hashes error, never panic — every day-view seam.
 const unknownBoard = board.raw({ op: "departures", network_hash: "sha256:missing", stop_id: "A", date: DATE, from_secs: 0, limit: 5 });

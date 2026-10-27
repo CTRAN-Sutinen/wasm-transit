@@ -14,15 +14,12 @@ import wasmUrl from "../pkg/transit_wasm.wasm?url";
 import type { EditRecord } from "./types/EditRecord";
 import type { EditReport } from "./types/EditReport";
 import type { FeatureCollection } from "./types/FeatureCollection";
-import type { FeedSummary } from "./types/FeedSummary";
 import type { Itinerary } from "./types/Itinerary";
 import type { Network } from "./types/Network";
-import type { RouteSummary } from "./types/RouteSummary";
 import type { PlanInfo } from "./types/PlanInfo";
 import type { PlanIssue } from "./types/PlanIssue";
 import type { PlanPeriod } from "./types/PlanPeriod";
 import type { StopFeature } from "./types/StopFeature";
-import type { StopSummary } from "./types/StopSummary";
 import type { TripLineFeature } from "./types/TripLineFeature";
 
 // Op codes for the bulk-bytes ABI (transit_ops::OP_LOAD_FEED etc.).
@@ -106,27 +103,10 @@ export class GtfsHandle {
     return new GtfsHandle(resp.feed_id);
   }
 
-  summary(): FeedSummary {
-    return (invoke({ op: "summary", feed_id: this.#feedId }) as { summary: FeedSummary }).summary;
-  }
-
-  stops(): StopSummary[] {
-    return (invoke({ op: "stops", feed_id: this.#feedId }) as { stops: StopSummary[] }).stops;
-  }
-
-  routes(): RouteSummary[] {
-    return (invoke({ op: "routes", feed_id: this.#feedId }) as { routes: RouteSummary[] }).routes;
-  }
-
-  route_stop_sequence(routeId: string, directionId: number | null): StopSummary[] {
-    return (invoke({
-      op: "route_stop_sequence",
-      feed_id: this.#feedId,
-      route_id: routeId,
-      direction_id: directionId,
-    }) as { stops: StopSummary[] }).stops;
-  }
-
+  // The summary / stops / routes / route_stop_sequence ops are
+  // RETIRED on the monolith: the feed line reads the gtfs
+  // capability's load_feed summary, and the directory owns what
+  // exists (stops, routes, patterns) over the network document.
   stops_geojson(): FeatureCollection {
     return (invoke({ op: "stops_geojson", feed_id: this.#feedId }) as { collection: FeatureCollection }).collection;
   }

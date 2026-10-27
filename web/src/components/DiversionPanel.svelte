@@ -6,11 +6,13 @@
     undoDetourSlice, syncEdits, serviceDate,
   } from "../actions";
   import { pathLengthMeters } from "../streets";
+  import { directory, directoryRoutePatterns } from "../capabilities.svelte";
   import Combobox from "./Combobox.svelte";
 
-  const routes = $derived(app.gtfs ? app.gtfs.routes() : []);
+  // The directory's route list — model questions, never feed reads.
+  const routes = $derived(directory.routes);
   const routeOptions = $derived(
-    routes.map((r) => ({ value: r.route_id, label: r.name, sub: r.route_type })),
+    routes.map((r) => ({ value: r.route_id, label: r.name, sub: r.mode })),
   );
   const draft = $derived(app.diversionDraft);
   // Retired records (tombstones) are hidden until asked for.
@@ -28,17 +30,30 @@
   });
   const stopName = $derived.by(() => {
     const m = new Map();
-    if (app.gtfs) for (const s of app.gtfs.stops()) m.set(s.stop_id, s.name);
+    for (const s of directory.stops) m.set(s.stop_id, s.name);
     return m;
   });
 
   const reportOf = (id: string) => app.editReports.find((r) => r.id === id);
 
-  // The pattern the anchors are picked from: the route's longest trip.
+  // The route's PATTERNS — the model's directions. The anchors are
+  // picked from the selected pattern; the default is the longest
+  // (the one with the most skippable interior).
+  const patterns = $derived.by(() => {
+    if (!draft?.routeId) return [];
+    return directoryRoutePatterns(draft.routeId);
+  });
+  $effect(() => {
+    const d = draft;
+    if (!d?.routeId) return;
+    const list = patterns;
+    if (!list.length || (d.patternId && list.some((p) => p.pattern === d.patternId))) return;
+    const longest = list.reduce((a, b) => (b.stops.length > a.stops.length ? b : a));
+    d.patternId = longest.pattern;
+  });
   const sequence = $derived.by(() => {
-    if (!draft?.routeId || !app.gtfs) return [];
-    const dir = draft.directionId === "" ? null : Number(draft.directionId);
-    return app.gtfs.route_stop_sequence(draft.routeId, dir);
+    if (!draft?.routeId || !draft.patternId) return [];
+    return patterns.find((p) => p.pattern === draft.patternId)?.stops ?? [];
   });
 
   // Positions of the anchors within that pattern.
@@ -81,8 +96,9 @@
       app.routeContext = null;
       return;
     }
-    const dir = d.directionId === "" ? null : Number(d.directionId);
-    app.routeContext = app.gtfs.route_path_geojson(routeId, dir, serviceDate());
+    // The pattern owns the anchor truth; the ghost draws the
+    // representative alignment (the map view's op retires in U6).
+    app.routeContext = app.gtfs.route_path_geojson(routeId, null, serviceDate());
   });
 
   // The drawn path's length — the number to reason about when
@@ -187,11 +203,11 @@ The draft itself is untouched: Done (or Apply) still owns it. -->
           options={routeOptions}
           bind:value={draft.routeId}
         />
-        <label for="div-dir">Direction</label>
-        <select id="div-dir" bind:value={draft.directionId}>
-          <option value="">any</option>
-          <option value="0">0</option>
-          <option value="1">1</option>
+        <label for="div-pattern">Pattern</label>
+        <select id="div-pattern" bind:value={draft.patternId}>
+          {#each patterns as p (p.pattern)}
+            <option value={p.pattern}>{p.name} ({p.stops.length} stops)</option>
+          {/each}
         </select>
       </p>
 

@@ -42,7 +42,7 @@ export type DetourSlice = {
 };
 export type DiversionDraft = {
   routeId: string;
-  directionId: string; // "" = any, "0"/"1" filter
+  patternId: string; // the model's direction: the pattern anchored against
   firstKept: string;
   lastKept: string;
   skipped: Set<string>;

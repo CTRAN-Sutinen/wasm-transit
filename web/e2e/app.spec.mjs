@@ -749,12 +749,14 @@ test("the blocks view degrades when the runcut capability cannot assemble", asyn
   ).toHaveCount(3, { timeout: 10_000 });
 });
 
-// The board's own dependencies: the day view answers through cap-board
-// over the network document, so when those modules cannot assemble the
-// board is OFF and says so — the monolith op is deleted, there is no
+// The board's own dependency: the day view answers through cap-board
+// over the network document. The network module itself stays
+// assembled (the directory reads it for the pickers — a different
+// capability, unaffected), so the stop picker works while the board
+// is OFF and says so — the monolith op is deleted, there is no
 // fallback to silently serve instead.
 test("the board degrades when the board capability cannot assemble", async ({ page }) => {
-  await page.route(/caps\/(network|board)-.*\.wasm/, (route) => route.abort());
+  await page.route(/caps\/board-.*\.wasm/, (route) => route.abort());
   await page.goto("/");
   await waitForMap(page);
   await loadFeed(page);

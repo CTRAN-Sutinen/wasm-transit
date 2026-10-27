@@ -163,7 +163,7 @@ assert(cmpBase.active.arrival_hhmmss === "08:10:00" && cmpBase.baseline === null
 
 // Error outcomes, not traps.
 const errOutcome = (() => {
-  const payload = Buffer.from(JSON.stringify({ op: "summary", feed_id: 99 }));
+  const payload = Buffer.from(JSON.stringify({ op: "stops_geojson", feed_id: 99 }));
   const ptr = transit_alloc(payload.length);
   new Uint8Array(memory.buffer, ptr, payload.length).set(payload);
   const outPtr = transit_invoke(ptr, payload.length);
@@ -174,6 +174,15 @@ const errOutcome = (() => {
   return o;
 })();
 assert(errOutcome.error && errOutcome.error.includes("unknown feed_id"), "unknown feed: error outcome");
+
+// The picker and summary ops are RETIRED on the monolith (the
+// directory owns what exists; the feed line reads the gtfs
+// capability's load_feed): every retired op errors with the
+// unknown-variant outcome, never traps, never silently serves.
+for (const retired of ["summary", "stops", "routes", "route_stop_sequence"]) {
+  const o = JSON.parse(rawInvoke(JSON.stringify({ op: retired, feed_id: 0, route_id: "10", direction_id: null })));
+  assert(o.error && o.error.includes("unknown variant"), retired + " is retired: " + JSON.stringify(o));
+}
 
 // A second registry entry: multiple feeds coexist in one instance.
 const second = invokeBytes(OP_LOAD_FEED, readFileSync(FIXTURE));
@@ -227,10 +236,13 @@ assert(second.feed_id !== feedId, "registry assigns distinct feed ids");
     assert(got === want, `corpus step ${step.name} diverges`);
   }
   // The step set, pinned exactly: the board and block-chain steps
-  // are gone (the day-view capabilities own the day views), and the diversion's
-  // effect pins through plan_trip_compare and trip_path_geojson.
+  // are gone (the day-view capabilities own the day views), and so
+  // are the picker and summary steps (the directory owns what
+  // exists; the feed line reads the gtfs capability's load_feed) —
+  // the diversion's effect pins through plan_trip_compare and
+  // trip_path_geojson.
   const wantSteps = [
-    "load_fixture", "summary", "route_stop_sequence", "set_diversions_draft",
+    "load_fixture", "set_diversions_draft",
     "plan_trip_compare", "stops_geojson", "trip_path_geojson",
     "sync_edits_deterministic", "unknown_feed_errors",
   ];

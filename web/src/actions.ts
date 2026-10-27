@@ -136,14 +136,13 @@ export async function loadGtfsBytes(bytes: Uint8Array, label: string): Promise<v
   // and derived views re-derive.
   pushEdits();
   // Diagnostics: proves which wasm queries actually answer in-browser.
-  // (The blocks count moved to the bus — the dispatcher's BlocksPanel
-  // is where that query answers now.)
-  const stops = app.gtfs.stops();
+  // (The stop list answers through the directory capability now;
+  // the stops_geojson draw is the map view's, until U6.)
   const features = app.gtfs.stops_geojson().features.length;
-  console.log("gtfs loaded:", { stops: stops.length, geoFeatures: features });
+  console.log("gtfs loaded:", { geoFeatures: features });
   await cacheFeed(label, bytes.slice());
   app.status =
-    `Loaded ${label} — stops: ${stops.length}, map features: ${features}.` +
+    `Loaded ${label} — map features: ${features}.` +
     " Everything below is running client-side.";
 }
 
@@ -408,7 +407,7 @@ export function startDiversion(): void {
   const today = serviceDate();
   app.diversionDraft = {
     routeId: "",
-    directionId: "", // "" = any, "0"/"1" filter
+    patternId: "", // the pattern anchored against (the model's direction)
     firstKept: "",
     lastKept: "",
     skipped: new Set(),
@@ -652,7 +651,10 @@ export function applyDiversion(): void {
     diversion: {
       id: `div-${draft.routeId}-${Date.now()}`, // domain id; sync id is above
       route_id: draft.routeId,
-      direction_id: draft.directionId === "" ? null : Number(draft.directionId),
+      // The pattern owns the anchor truth; GTFS's direction_id is
+      // feed vocabulary the model never matched on (None = both
+      // directions, the document's documented default).
+      direction_id: null,
       first_kept_stop: draft.firstKept,
       last_kept_stop: draft.lastKept,
       skipped_stops: [...draft.skipped],

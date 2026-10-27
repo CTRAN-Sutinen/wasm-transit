@@ -55,6 +55,10 @@ test("the manifest assembles both capabilities", async ({ page }) => {
   await expect(panel).toContainText("runcut");
   await expect(panel.getByTestId("cap-calendar")).toContainText("ready");
   await expect(panel).toContainText("calendar");
+  // And the directory (U3): what exists in the network — the pickers
+  // are model questions, never feed reads.
+  await expect(panel.getByTestId("cap-directory")).toContainText("ready");
+  await expect(panel).toContainText("directory");
 });
 
 test("the composition runs across two modules", async ({ page }) => {

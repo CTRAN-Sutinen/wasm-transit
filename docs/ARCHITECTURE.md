@@ -96,10 +96,10 @@ transit-ops     dispatch(Request) -> Response: the host-agnostic seam
                 cap-runcut, cap-calendar) over the shared libraries;
                 the board and block chains read the bus.
                 What remains: the parsed-feed op surface the map and
-                the planner still need (stops, routes, route/stop
-                sequences, geojson, planning — all date-scoped by
-                the edit document via set_diversions, the last
-                diversion consumer), the plans chain in src/plans.rs
+                the planner still need (geojson, planning — all
+                date-scoped by the edit document via
+                set_diversions, the last diversion consumer), the
+                plans chain in src/plans.rs
                 (plans_resolve / plans_validate / plans_periods —
                 cross-document domain logic, the same standing as
                 transit-sync's merge), and the parse-only coverage
@@ -177,14 +177,15 @@ cap-abi         The seam crate: the flat C ABI as a macro (every
                 every advertised op is documented (undocumented ops
                 fail the build — agent context cannot drift).
 cap-gtfs        The feed-document capability: GTFS zip →
-                content-hash feed registry, the reads only the feed
-                itself carries (feed_info — the identity question,
-                stops / stops_by_ids — the pickers and the names
-                join). The day views and the watchlist are NOT here:
-                the day answers over the NETWORK document (cap-board,
-                cap-runcut, cap-calendar — one question, one answer
-                on the bus), and the watchlist moved to cap-board
-                with the board question it parameterizes. CHARTER
+                content-hash feed registry, and the feed's OWN
+                questions only — what it contains at a glance
+                (load_feed's summary) and its identity (feed_info).
+                The day views, the watchlist, the pickers, and the
+                names join are NOT here: they answer over the NETWORK
+                document (cap-board / cap-runcut / cap-calendar /
+                cap-directory — one question, one answer on the bus).
+                Parse + identity alone; the GTFS substrate itself
+                retires in U8 (it folds into transit-codec). CHARTER
                 CLOSED: parse, export, primitive boundary queries —
                 nothing more goes "in GTFS."
 cap-router      The router capability: RAPTOR earliest-arrival
@@ -266,6 +267,23 @@ cap-calendar    The calendar capability — ONE QUESTION: which
                 hole). Same document set (load_network / load_edits
                 plumbing); the domain code lives in the shared
                 transit-dispatch library; no GTFS layer (arch gate).
+cap-directory   The directory capability — ONE QUESTION: what
+                exists in the network? The stop list (name-sorted,
+                with the walking-group structure the station board
+                keys on), the names join (stops_by_ids, moved from
+                cap-gtfs — one question, one answer), the route list
+                (the model's closed mode set), and one route's
+                PATTERNS with their ordered stops — the model's
+                directions, what the diversion editor anchors
+                against (the GTFS direction select is gone; the
+                pattern pick replaced it, and new edit records carry
+                direction_id null — the documented both-directions
+                case the model never matched on). The pickers are
+                model questions, never feed reads; the UI's
+                comboboxes and the map's name lookups read this
+                module. Replaces the monolith's stops / routes /
+                route_stop_sequence / summary (the feed line reads
+                cap-gtfs's load_feed summary + feed_info).
 cap-streets    The street-graph capability: the detour editor's need,
                 atomically. load_streets (bulk-bytes op 0) parses a
                 street-network GeoJSON into the routing graph and

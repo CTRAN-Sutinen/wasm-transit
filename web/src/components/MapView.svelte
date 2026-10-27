@@ -9,7 +9,7 @@
   import { layers as basemapLayers, namedFlavor } from "@protomaps/basemaps";
   import { app, getEditDocument, getStreets } from "../state.svelte";
   import { selectStop, setDiversionAnchor, addDetourSlice } from "../actions";
-  import { streetsSnap, streetsRoute } from "../capabilities.svelte";
+  import { streetsSnap, streetsRoute, directory } from "../capabilities.svelte";
   import type { StreetPosition } from "../types/StreetPosition";
 
   maplibregl.setWorkerUrl(workerUrl);
@@ -601,7 +601,7 @@
     }
     if (p.trip_id) row("Trip", String(p.trip_id));
     const stopName = p.stop_id
-      ? (app.gtfs?.stops().find((s) => s.stop_id === p.stop_id)?.name ?? String(p.stop_id))
+      ? (directory.stops.find((s) => s.stop_id === p.stop_id)?.name ?? String(p.stop_id))
       : undefined;
     if (stopName) row("Next stop", stopName);
     const delayRow = document.createElement("div");
@@ -636,7 +636,7 @@
       if (worst != null) tripInfo.set(t.trip_id, { delay: worst, routeId: t.route_id ?? "" });
     }
     const routeShort = new Map<string, string>();
-    if (app.gtfs) for (const r of app.gtfs.routes()) routeShort.set(r.route_id, r.name);
+    for (const r of directory.routes) routeShort.set(r.route_id, r.name);
     const features = app.vehicles.map((v) => {
       // The rider-visible bus number, and the small label on the map:
       // route badge · bus number (falling back to what exists).

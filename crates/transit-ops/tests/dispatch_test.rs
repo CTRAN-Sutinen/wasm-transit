@@ -115,13 +115,15 @@ fn effective_route_vertices(feed_id: u32, route_id: &str) -> usize {
 
 #[test]
 fn load_registers_and_summarizes() {
-    let feed_id = load();
-    match dispatch(Request::Summary { feed_id }).unwrap() {
-        Response::Summary { summary } => assert_eq!(summary.stop_times, 10),
-        _ => panic!(),
-    }
+    // The summary op is RETIRED (the feed line reads the gtfs
+    // capability's load_feed; the directory owns the pickers) —
+    // the load itself still summarizes.
+    let Response::LoadFeed { summary, .. } = dispatch(Request::LoadFeed { bytes: fixture_zip() }).unwrap() else {
+        panic!("load")
+    };
+    assert_eq!(summary.stop_times, 10);
     // Unknown feed ids are an error, not a panic.
-    assert!(dispatch(Request::Summary { feed_id: feed_id + 100 }).is_err());
+    assert!(dispatch(Request::StopsGeojson { feed_id: 99 + 100 }).is_err());
 }
 
 #[test]
@@ -303,20 +305,31 @@ fn dispatch_json_round_trips_the_seam() {
     // Rust ABI (browser, Go server) actually take.
     let outcome = transit_ops::dispatch_json(
         &serde_json::json!({
-            "op": "stops",
+            "op": "stops_geojson",
             "feed_id": feed_id,
         })
         .to_string(),
     );
     let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
     assert!(parsed.get("ok").is_some(), "successful outcome wraps ok: {outcome}");
-    assert_eq!(parsed["ok"]["stops"].as_array().unwrap().len(), 3);
+    assert!(parsed["ok"]["collection"].is_object(), "the map view's op answers: {outcome}");
 
-    // The retired dispatch-read ops (active_services, blocks,
-    // block_trips, feed_info, departures — the gtfs and dispatch
-    // capabilities own them now) error through the standard
+    // The retired ops (the dispatch reads and the day views on the
+    // day-view capabilities; summary, stops, routes,
+    // route_stop_sequence on the gtfs capability's load_feed
+    // summary and the directory) error through the standard
     // outcome, never trap.
-    for retired in ["active_services", "blocks", "feed_info", "departures", "block_trips"] {
+    for retired in [
+        "active_services",
+        "blocks",
+        "feed_info",
+        "departures",
+        "block_trips",
+        "summary",
+        "stops",
+        "routes",
+        "route_stop_sequence",
+    ] {
         let outcome = transit_ops::dispatch_json(&format!(r#"{{"op":"{retired}","feed_id":{feed_id}}}"#));
         let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
         assert!(
@@ -327,7 +340,7 @@ fn dispatch_json_round_trips_the_seam() {
 
     // Errors come back as {"error": ...}, not panics.
     let outcome = transit_ops::dispatch_json(
-        &serde_json::json!({ "op": "stops", "feed_id": 99 }).to_string(),
+        &serde_json::json!({ "op": "stops_geojson", "feed_id": 99 }).to_string(),
     );
     let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
     assert!(parsed["error"].as_str().unwrap().contains("unknown feed_id"));
@@ -429,11 +442,15 @@ fn network_load() -> u32 {
 fn network_document_drives_the_whole_op_surface() {
     let feed_id = network_load();
 
-    // Summary: 3 stops, 1 route, 3 trips, 9 stop_times.
-    let summary = match dispatch(Request::Summary { feed_id }).unwrap() {
-        Response::Summary { summary } => summary,
-        _ => panic!("summary"),
-    };
+    // The summary op is retired; the load itself summarizes:
+    // 3 stops, 1 route, 3 trips, 9 stop_times.
+    let net: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
+    let gtfs = network_to_gtfs(&net).expect("fixture network materializes");
+    let summary =
+        match dispatch(Request::LoadFeed { bytes: transit_core::write::to_zip_bytes(&gtfs) }).unwrap() {
+            Response::LoadFeed { summary, .. } => summary,
+            _ => panic!("load"),
+        };
     assert_eq!((summary.stops, summary.routes, summary.trips, summary.stop_times), (3, 1, 3, 9));
 
     // The derived trip ids are "<service>@<start>" and mid-pattern

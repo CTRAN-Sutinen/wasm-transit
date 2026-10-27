@@ -25,6 +25,11 @@ import type { Request as RuncutCapRequest } from "./types/cap_runcut/Request";
 import type { Response as RuncutCapResponse } from "./types/cap_runcut/Response";
 import type { Request as CalendarCapRequest } from "./types/cap_calendar/Request";
 import type { Response as CalendarCapResponse } from "./types/cap_calendar/Response";
+import type { Request as DirectoryCapRequest } from "./types/cap_directory/Request";
+import type { Response as DirectoryCapResponse } from "./types/cap_directory/Response";
+import type { DirectoryStop } from "./types/cap_directory/DirectoryStop";
+import type { DirectoryRoute } from "./types/cap_directory/DirectoryRoute";
+import type { PatternStops } from "./types/cap_directory/PatternStops";
 import type { Watchlist } from "./types/cap_board/Watchlist";
 import type { MigrationNote } from "./types/cap_board/MigrationNote";
 import type { WatchBoardStop } from "./types/cap_board/WatchBoardStop";
@@ -95,9 +100,10 @@ class CapModule {
       | BoardCapRequest
       | RuncutCapRequest
       | CalendarCapRequest
+      | DirectoryCapRequest
       | RtCapRequest
       | StreetsCapRequest,
-  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | BoardCapResponse | RuncutCapResponse | CalendarCapResponse | RtCapResponse | StreetsCapResponse {
+  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | BoardCapResponse | RuncutCapResponse | CalendarCapResponse | DirectoryCapResponse | RtCapResponse | StreetsCapResponse {
     const wasm = this.#exports;
     const payload = new TextEncoder().encode(JSON.stringify(request));
     const ptr = wasm.transit_alloc(payload.length);
@@ -112,6 +118,7 @@ class CapModule {
       | BoardCapResponse
       | RuncutCapResponse
       | CalendarCapResponse
+      | DirectoryCapResponse
       | RtCapResponse
       | StreetsCapResponse;
   }
@@ -391,22 +398,6 @@ export function gtfsCap(module: CapModule) {
         { op: "load_feed" }
       >;
       return { feedHash: resp.feed_hash, summary: resp.summary };
-    },
-    stops(feedHash: string, limit: number): StopSummary[] {
-      const resp = module.invoke({
-        op: "stops",
-        feed_hash: feedHash,
-        limit,
-      } as GtfsRequest) as Extract<GtfsResponse, { op: "stops" }>;
-      return resp.stops;
-    },
-    stopsByIds(feedHash: string, ids: string[]): StopSummary[] {
-      const resp = module.invoke({
-        op: "stops_by_ids",
-        feed_hash: feedHash,
-        ids,
-      } as GtfsRequest) as Extract<GtfsResponse, { op: "stops_by_ids" }>;
-      return resp.stops;
     },
     /// The feed's own identity (version, publisher).
     feedInfo(feedHash: string): FeedInfo | null {
@@ -1041,6 +1032,139 @@ export const ensureBoardEdits = editsRegistry("board", boardModule);
 export const ensureRuncutEdits = editsRegistry("runcut", runcutModule);
 
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// The directory capability — what exists in the network: the stops
+// (with their walking-group structure), the routes, one route's
+// patterns with their ordered stops (list → detail). The pickers and
+// the names join read here — MODEL questions, never feed reads
+// (the feed line reads the gtfs capability's load_feed summary).
+// ---------------------------------------------------------------------
+
+export function directoryCap(module: CapModule) {
+  return {
+    loadNetwork(network: Network): string {
+      const resp = module.invoke({
+        op: "load_network",
+        network,
+      } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "load_network" }>;
+      return resp.network_hash;
+    },
+    stops(networkHash: string, limit: number | null): DirectoryStop[] {
+      const resp = module.invoke({
+        op: "stops",
+        network_hash: networkHash,
+        limit,
+      } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "stops" }>;
+      return resp.stops;
+    },
+    stopsByIds(networkHash: string, ids: string[]): DirectoryStop[] {
+      const resp = module.invoke({
+        op: "stops_by_ids",
+        network_hash: networkHash,
+        ids,
+      } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "stops_by_ids" }>;
+      return resp.stops;
+    },
+    routes(networkHash: string): DirectoryRoute[] {
+      const resp = module.invoke({
+        op: "routes",
+        network_hash: networkHash,
+      } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "routes" }>;
+      return resp.routes;
+    },
+    /// One route's patterns with their ordered stops — the model's
+    /// directions, what the diversion editor anchors against.
+    routeStopSequence(networkHash: string, routeId: string): PatternStops[] {
+      const resp = module.invoke({
+        op: "route_stop_sequence",
+        network_hash: networkHash,
+        route_id: routeId,
+      } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "route_stop_sequence" }>;
+      return resp.patterns;
+    },
+  };
+}
+
+/// The current directory module, if the bus assembled one.
+export async function directoryModule(): Promise<CapModule | null> {
+  const modules = await ensure(["directory"]);
+  return modules.directory ?? null;
+}
+
+/// The loaded directory's answers, held in host state so pickers and
+/// name lookups read synchronously (the module loads once per feed;
+/// views key on the reactive fields).
+export const directory = $state({
+  networkHash: null as string | null,
+  stops: [] as DirectoryStop[],
+  routes: [] as DirectoryRoute[],
+});
+
+const directoryLoads = new Map<string, Promise<boolean>>();
+
+/// Load the imported network document into the directory module and
+/// pull its lists into host state — memoized by the feed bytes'
+/// content hash, so concurrent views share one load.
+export function ensureDirectory(bytes: Uint8Array): Promise<boolean> {
+  const load = async (): Promise<boolean> => {
+    const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
+    const memo = directoryLoads.get(memoKey);
+    if (memo) return memo;
+    const run = (async () => {
+      const modules = await ensure(["network", "directory"]);
+      const network = modules.network;
+      const dir = modules.directory;
+      if (!network || !dir) return false;
+      const feedHash = networkCap(network).loadFeed(bytes).feedHash;
+      const imported = networkCap(network).import(feedHash);
+      const loadedHash = directoryCap(dir).loadNetwork(imported.network);
+      if (loadedHash !== imported.networkHash) {
+        throw new Error(
+          `network identity disagrees across capabilities: ${loadedHash} != ${imported.networkHash}`,
+        );
+      }
+      directory.networkHash = imported.networkHash;
+      directory.stops = directoryCap(dir).stops(imported.networkHash, null);
+      directory.routes = directoryCap(dir).routes(imported.networkHash);
+      return true;
+    })();
+    run.catch(() => directoryLoads.delete(memoKey));
+    directoryLoads.set(memoKey, run);
+    return run;
+  };
+  return load();
+}
+
+/// The per-route drill-down, synchronous (the module is loaded by the
+/// time a route is picked — ensureDirectory ran for the pickers).
+export function directoryRoutePatterns(routeId: string): PatternStops[] {
+  if (!directory.networkHash) return [];
+  const module = caps.modules["directory"];
+  if (!module) return [];
+  return directoryCap(module).routeStopSequence(directory.networkHash, routeId);
+}
+
+/// The feed line's summary — the feed document's own read (what it
+/// contains at a glance), through the gtfs capability's load_feed.
+const feedSummaries = new Map<string, Promise<FeedSummary | null>>();
+
+export function ensureFeedSummary(bytes: Uint8Array): Promise<FeedSummary | null> {
+  const load = async (): Promise<FeedSummary | null> => {
+    const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
+    const memo = feedSummaries.get(memoKey);
+    if (memo) return memo;
+    const run = (async () => {
+      const module = await gtfsModule();
+      if (!module) return null;
+      return gtfsCap(module).loadFeed(bytes).summary;
+    })();
+    run.catch(() => feedSummaries.delete(memoKey));
+    feedSummaries.set(memoKey, run);
+    return run;
+  };
+  return load();
+}
+
 // The streets capability — the detour editor's street graph (the
 // first unit of the monolith decomposition, U1): a GeoJSON street
 // network registers under its content hash, then pure snap/route

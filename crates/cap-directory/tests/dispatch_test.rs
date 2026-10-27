@@ -1,0 +1,170 @@
+//! Native dispatch tests for the directory capability — the seam
+//! without wasm, over the REAL fixture-derived network (the same
+//! document cap-network's import produces from the e2e zip). The
+//! laws:
+//!
+//! 1. the network document's identity is the module's canonical
+//!    serialization (the same identity every network-consuming
+//!    module returns);
+//! 2. the stop list is name-sorted and carries the walking-group
+//!    structure (the parent flag the station board keys off);
+//! 3. the names join answers in the request's order, unknown ids
+//!    omitted;
+//! 4. the route list is name-sorted with the model's modes;
+//! 5. a route's stop sequences are its PATTERNS, ordered stops with
+//!    resolved names — the model's directions;
+//! 6. unknown hashes and unknown routes are honest errors and
+//!    empty answers, never panics.
+
+use cap_directory::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
+use sha2::Digest;
+use transit_network::Network;
+
+const FIXTURE: &[u8] = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
+
+/// The fixture-derived network document (import is the codec — the
+/// boundary; this module composes over the document it produces).
+fn derived_network() -> Network {
+    let gtfs = transit_core::Gtfs::from_zip_bytes(FIXTURE).expect("fixture parses");
+    transit_codec::gtfs_to_network(&gtfs).network
+}
+
+fn load_network() -> String {
+    match dispatch(Request::LoadNetwork { network: derived_network() }).unwrap() {
+        Response::LoadNetwork { network_hash } => network_hash,
+        _ => panic!("load_network"),
+    }
+}
+
+fn stops(limit: Option<u32>) -> Vec<cap_directory::DirectoryStop> {
+    match dispatch(Request::Stops { network_hash: load_network(), limit }).unwrap() {
+        Response::Stops { stops } => stops,
+        _ => panic!("stops"),
+    }
+}
+
+#[test]
+fn the_network_identity_is_the_modules_canonical_serialization() {
+    let hash = load_network();
+    // The same formula every network-consuming module uses: the
+    // canonical serde bytes hashed. One document, one truth.
+    let canonical = serde_json::to_string(&derived_network()).unwrap();
+    let expect = format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes()));
+    assert_eq!(hash, expect);
+    // Idempotent: the same document loads to the same hash.
+    assert_eq!(load_network(), hash);
+}
+
+#[test]
+fn the_stop_list_is_name_sorted_and_carries_the_walking_group() {
+    let all = stops(None);
+    assert_eq!(all.len(), 6, "A, B, C, the station pin, two bays");
+
+    // Name-sorted (the pickers' shape), ties by id — a total order.
+    let names: Vec<&str> = all.iter().map(|s| s.name.as_str()).collect();
+    let mut sorted = names.clone();
+    sorted.sort();
+    assert_eq!(names, sorted, "{names:?}");
+
+    // The walking-group structure survives: the bays carry their
+    // parent, the pin carries none.
+    let by_id = |id: &str| all.iter().find(|s| s.stop_id == id).unwrap_or_else(|| panic!("{id}"));
+    assert_eq!(by_id("SA").parent.as_deref(), Some("STN"));
+    assert_eq!(by_id("SB").parent.as_deref(), Some("STN"));
+    assert_eq!(by_id("STN").parent, None);
+    assert_eq!(by_id("A").name, "Main & 1st");
+
+    // The limit truncates AFTER the sort, never silently the list.
+    let two = stops(Some(2));
+    assert_eq!(two.len(), 2);
+    assert_eq!(two[0].stop_id, all[0].stop_id);
+}
+
+#[test]
+fn the_names_join_answers_in_request_order() {
+    let result = match dispatch(Request::StopsByIds {
+        network_hash: load_network(),
+        ids: vec!["B".into(), "ghost".into(), "STN".into(), "A".into()],
+    })
+    .unwrap()
+    {
+        Response::StopsByIds { stops } => stops,
+        _ => panic!("stops_by_ids"),
+    };
+    // Unknown ids are omitted — the caller asked for stops — and
+    // the answer keeps the request's order.
+    assert_eq!(
+        result.iter().map(|s| (s.stop_id.as_str(), s.name.as_str())).collect::<Vec<_>>(),
+        vec![("B", "Main & 2nd"), ("STN", "Main Station"), ("A", "Main & 1st")],
+    );
+}
+
+#[test]
+fn the_route_list_is_name_sorted_with_model_modes() {
+    let routes = match dispatch(Request::Routes { network_hash: load_network() }).unwrap() {
+        Response::Routes { routes } => routes,
+        _ => panic!("routes"),
+    };
+    assert!(routes.len() >= 3, "the fixture carries routes 10, 20, 40: {routes:?}");
+    let names: Vec<&str> = routes.iter().map(|r| r.name.as_str()).collect();
+    let mut sorted = names.clone();
+    sorted.sort();
+    assert_eq!(names, sorted, "{names:?}");
+    assert!(
+        routes.iter().all(|r| r.mode == transit_network::Mode::Bus),
+        "the fixture's routes are buses: {routes:?}"
+    );
+    assert!(routes.iter().any(|r| r.route_id == "10"));
+}
+
+/// A route's stop sequences are its PATTERNS — the model's
+/// directions. Route 10 carries two in the fixture (the direct
+/// A→B run and the A→C→B run), and the LONGEST is the one with the
+/// skippable interior the diversion editor anchors against.
+#[test]
+fn a_routes_stop_sequences_are_its_patterns() {
+    let patterns = match dispatch(Request::RouteStopSequence {
+        network_hash: load_network(),
+        route_id: "10".into(),
+    })
+    .unwrap()
+    {
+        Response::RouteStopSequence { patterns } => patterns,
+        _ => panic!("route_stop_sequence"),
+    };
+    assert_eq!(patterns.len(), 2, "the direct run and the via-C run: {patterns:?}");
+    let longest = patterns.iter().max_by_key(|p| p.stops.len()).unwrap();
+    let ids: Vec<&str> = longest.stops.iter().map(|s| s.stop_id.as_str()).collect();
+    assert!(ids.contains(&"A") && ids.contains(&"B") && ids.contains(&"C"), "{ids:?}");
+    // The interior stop sits between the anchors — the editor's
+    // skippable middle (the diversion e2e's contract).
+    let pos = |id: &str| ids.iter().position(|s| *s == id).unwrap();
+    assert!(pos("A") < pos("C") && pos("C") < pos("B"), "C is interior on the longest pattern");
+    // Names are resolved: the rows a human reads.
+    assert!(longest.stops.iter().all(|s| !s.name.is_empty()));
+
+    // An unknown route answers empty, never an error.
+    let ghost = match dispatch(Request::RouteStopSequence {
+        network_hash: load_network(),
+        route_id: "missing".into(),
+    })
+    .unwrap()
+    {
+        Response::RouteStopSequence { patterns } => patterns,
+        _ => panic!("route_stop_sequence"),
+    };
+    assert!(ghost.is_empty());
+}
+
+#[test]
+fn unknown_hashes_and_garbage_are_errors_not_panics() {
+    let err = dispatch(Request::Stops { network_hash: "sha256:missing".into(), limit: None }).unwrap_err();
+    assert!(err.contains("unknown network"), "{err}");
+
+    let bad = dispatch_json(r#"{"op":"nope"}"#);
+    assert!(bad.contains("invalid request"), "{bad}");
+    let bad = dispatch_json(r#"{"op":"stops","network_hash":"sha256:x","limit":"lots"}"#);
+    assert!(bad.contains("invalid request"), "a non-numeric limit is a request error: {bad}");
+    let bad = dispatch_bytes(0, b"whatever");
+    assert!(bad.contains("unknown bulk op"), "the module takes JSON documents: {bad}");
+}

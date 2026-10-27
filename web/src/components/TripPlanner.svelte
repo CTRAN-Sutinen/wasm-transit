@@ -1,13 +1,15 @@
 <script lang="ts">
   import { app } from "../state.svelte";
   import { planTrip } from "../actions";
+  import { directory } from "../capabilities.svelte";
   import Combobox from "./Combobox.svelte";
 
   let from = $state("");
   let to = $state("");
   let departTime = $state("");
 
-  const stops = $derived(app.gtfs ? app.gtfs.stops().slice(0, 2000) : []);
+  // The directory's stop list — model questions, never feed reads.
+  const stops = $derived(directory.stops.slice(0, 2000));
   const stopOptions = $derived(stops.map((s) => ({ value: s.stop_id, label: s.name, sub: s.stop_id })));
 </script>
 

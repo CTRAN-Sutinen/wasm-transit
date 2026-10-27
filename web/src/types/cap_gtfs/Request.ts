@@ -4,4 +4,4 @@
  * One operation call. Tagged like the monolith's seam: the serde form
  * is `{"op": "<name>", ...fields}`.
  */
-export type Request = { "op": "load_feed", bytes: Array<number>, } | { "op": "stops", feed_hash: string, limit: number, } | { "op": "stops_by_ids", feed_hash: string, ids: Array<string>, } | { "op": "feed_info", feed_hash: string, };
+export type Request = { "op": "load_feed", bytes: Array<number>, } | { "op": "feed_info", feed_hash: string, };

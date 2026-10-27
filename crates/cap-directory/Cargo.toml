@@ -1,0 +1,21 @@
+[package]
+name = "cap-directory"
+description = "The directory capability: what exists in the network — the stops (with their walking-group structure), the routes, one route's patterns with their ordered stops (list to detail, the pickers' and the names join's one question). Model-native over the NETWORK document; the pickers are model questions, never feed reads."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]  # rlib: integration tests link the crate natively
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+ts-rs = { workspace = true }
+transit-network = { path = "../transit-network" }
+cap-abi = { path = "../cap-abi" }
+
+[dev-dependencies]
+transit-codec = { path = "../transit-codec" }
+transit-core = { path = "../transit-core" }

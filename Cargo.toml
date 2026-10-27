@@ -18,6 +18,7 @@ members = [
     "crates/cap-board",
     "crates/cap-runcut",
     "crates/cap-calendar",
+    "crates/cap-directory",
     "crates/cap-rt",
     "crates/cap-streets",
     "crates/transit-analysis",

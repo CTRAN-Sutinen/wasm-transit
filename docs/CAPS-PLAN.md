@@ -110,6 +110,32 @@ LANDED:
   calendar's answer, and B2 (same reason) is not offered by the
   blocks list — the honest holes, pinned by the module tests.
 
+- **U3, the network directory + the feed line** — the pickers
+  were model questions answering over the feed; the criteria moved
+  them. cap-directory (ONE question: what exists in the network?):
+  stops (name-sorted, walking-group structure), stops_by_ids (the
+  names join, moved from cap-gtfs), routes (the model's mode set),
+  route_stop_sequence (a route's PATTERNS with ordered stops — the
+  model's directions; the diversion editor picks a pattern now,
+  and new edit records carry direction_id null, the documented
+  both-directions case). Monolith ops deleted: stops, routes,
+  route_stop_sequence, summary (ABI smoke pins every retirement;
+  the corpus step-set dropped the picker/summary steps and the
+  unknown-feed step moved to stops_geojson); the feed line reads
+  cap-gtfs's load_feed summary + feed_info (already on the bus).
+  cap-gtfs ends the unit as parse + identity alone. ON THE BUS:
+  cap-directory's dispatch test, caps-smoke's directory flow, the
+  justfile runner gate (one chained session: load → stops →
+  names join → routes → patterns), the manifest (10 capabilities,
+  compose-time self-validation). UI READS THE BUS: the comboboxes
+  (DepartureBoard, TripPlanner, DiversionPanel routes), the map's
+  name lookups, the diversion anchors, and the feed line —
+  primed once per feed (caps.spec: cap-directory assembles;
+  app.spec: the picker/combobox specs, the feed line, the
+  diversion flow with the pattern default preserving the longest
+  anchor sequence). NOT dogfooded: the first real-data session
+  through the directory re-pins this line.
+
 Infrastructure, DONE (pinned by the same `just check` the
 gates run in): cap-abi (the undocumented-ops law and the
 manifest's compose-time self-validation), the resolver
@@ -127,9 +153,7 @@ re-authors from there) and reports every resolution — never
 silent; diversions produce patched copies (the base feed is
 immutable); retire = tombstone.
 
-OPEN — the units of `docs/PLAN.md`: U3 the network directory +
-the feed line (cap-directory — NEW, the pickers are model
-questions), U4
+OPEN — the units of `docs/PLAN.md`: U4
 coverage, U5 planning, U6 the map view, U7 sync + plans, U8 the
 GTFS substrate retires (U1 cap-streets and U2 the need cut are
 landed above). The rider planner still plans through the monolith

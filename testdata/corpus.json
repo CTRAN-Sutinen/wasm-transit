@@ -8,16 +8,6 @@
       "expect": "{\"ok\":{\"op\":\"load_feed\",\"feed_id\":$FEED,\"summary\":{\"agencies\":1,\"routes\":3,\"stops\":6,\"trips\":7,\"stop_times\":14}}}"
     },
     {
-      "name": "summary",
-      "request": "{\"op\":\"summary\",\"feed_id\":$FEED}",
-      "expect": "{\"ok\":{\"op\":\"summary\",\"summary\":{\"agencies\":1,\"routes\":3,\"stops\":6,\"trips\":7,\"stop_times\":14}}}"
-    },
-    {
-      "name": "route_stop_sequence",
-      "request": "{\"op\":\"route_stop_sequence\",\"feed_id\":$FEED,\"route_id\":\"10\",\"direction_id\":null}",
-      "expect": "{\"ok\":{\"op\":\"route_stop_sequence\",\"stops\":[{\"stop_id\":\"A\",\"name\":\"Main & 1st\",\"parent_station\":null},{\"stop_id\":\"C\",\"name\":\"Main & 3rd\",\"parent_station\":null},{\"stop_id\":\"B\",\"name\":\"Main & 2nd\",\"parent_station\":null}]}}"
-    },
-    {
       "name": "set_diversions_draft",
       "request": "{\"op\":\"set_diversions\",\"feed_id\":$FEED,\"records\":[{\"id\":\"e1\",\"diversion\":{\"id\":\"d1\",\"route_id\":\"10\",\"direction_id\":null,\"first_kept_stop\":\"A\",\"last_kept_stop\":\"B\",\"skipped_stops\":[\"C\"],\"detour\":null,\"added_secs\":300,\"start_date\":\"2026-10-23\",\"end_date\":\"2026-10-23\"},\"status\":\"draft\",\"rev\":1,\"updated_at\":1}]}",
       "expect": "{\"ok\":{\"op\":\"set_diversions\",\"reports\":[{\"id\":\"e1\",\"valid\":true,\"error\":null,\"affected_trips\":3}]}}"
@@ -44,7 +34,7 @@
     },
     {
       "name": "unknown_feed_errors",
-      "request": "{\"op\":\"summary\",\"feed_id\":999}",
+      "request": "{\"op\":\"stops_geojson\",\"feed_id\":999}",
       "expect": "{\"error\":\"unknown feed_id 999\"}"
     }
   ]
