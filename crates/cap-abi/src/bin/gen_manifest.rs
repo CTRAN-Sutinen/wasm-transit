@@ -267,6 +267,27 @@ const MODULES: &[ModuleSpec] = &[
         ],
     },
     ModuleSpec {
+        id: "divert",
+        file: "cap_divert.wasm",
+        ops: &["load_network", "draft", "list", "propose", "retire", "restore", "sanitize"],
+        // A draft is answered over the network the codec's import
+        // produces; the answers are next states of the host-owned
+        // operator edit document.
+        consumes: &[("network", "network")],
+        speaks: &[("network", &[1]), ("operator_edits", &[1])],
+        migrates: &[],
+        purpose: "Diversion authoring: what does this diversion draft amount to? A dispatcher's draft — a route, the pattern anchored against, two kept stops, the interior stops the detour still serves, a traced path, added minutes, dates — is answered over the NETWORK document (the route's patterns and the default, each stop's role, the skips in effect, the alignment the detour is drawn against, the traced path and its length, and the problems keeping it from being a record). propose, retire, and restore answer the edit document's next state under the envelope rules (rev bumped, host clock stamped; retirement is the tombstone); sanitize reads a stored edit document under the current schema. The host owns the documents, the clock, and the record ids. Converging two documents is the sync capability's question; validating records against the network is every day view's load_edits. Assemble for anyone who authors diversions: a dispatcher's UI, a script, an agent.",
+        op_docs: &[
+            ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same identity every model-side capability returns."),
+            ("draft", "The editor's view of a draft: the route's patterns ({pattern, name, stop_count}), the pattern in effect (the draft's when it is the route's, else the longest), every visit with its role (first_kept / last_kept / interior / outside — the anchors are the first visit of the first kept stop and the first visit of the last kept stop after it) and whether it is skipped (an interior stop not in served_stops), the skips the record would carry, the pattern's alignment (authored path, else stop-to-stop), the traced slices flattened (repeated points dropped) with their length in metres, and problems (empty = ready). Total: a draft naming what the network lacks answers problems, never an error."),
+            ("list", "The edit document's rows as the dispatcher's list shows them, in document order: route, anchor, and skipped-stop names resolved over the network (an id the network lacks shows as itself), status and in_force (retired is the tombstone), added seconds, whether a detour is drawn, the dates."),
+            ("propose", "The edit document with the draft proposed as record_id: a new id appends a draft at rev 1, a known id is replaced whole with its rev bumped (its domain id kept); now_ms stamped. The record: the anchors, the skips in effect, the detour when the trace has two points or more, added_mins rounded to seconds, the dates. A draft with problems is refused, naming them."),
+            ("retire", "The edit document with record_id retired — the tombstone (the record stays so sync carries the deletion), rev bumped, now_ms stamped. Retiring a retired record answers the same document. An unknown id is an error."),
+            ("restore", "The edit document with record_id back in force as a draft (the next sync re-submits it), rev bumped, now_ms stamped. Restoring an in-force record answers the same document."),
+            ("sanitize", "Read a stored edit document (a cache, a server response, a file): the records that parse under the current schema — defaults filled for fields added since they were written — and how many were dropped. Anything but an array is an empty document."),
+        ],
+    },
+    ModuleSpec {
         id: "plans",
         file: "cap_plans.wasm",
         ops: &["resolve", "validate", "periods"],
@@ -1127,6 +1148,66 @@ fn example_for(
                     "created": created } }),
             )
         }
+        // Diversion-authoring examples run the REAL draft through the
+        // shared libraries over the fixture network: route 10 anchored
+        // end to end on its default pattern.
+        ("divert", "load_network") => {
+            let ctx = net?;
+            (
+                json!({ "op": "load_network", "network": ctx.derived }),
+                json!({ "ok": { "op": "load_network", "network_hash": ctx.network_hash } }),
+            )
+        }
+        ("divert", "draft") => {
+            let ctx = net?;
+            let draft = divert_example_draft(ctx.derived_network())?;
+            (
+                json!({ "op": "draft", "network_hash": ctx.network_hash, "draft": draft }),
+                json!({ "ok": { "op": "draft", "view": transit_dispatch::draft_view(ctx.derived_network(), &draft) } }),
+            )
+        }
+        ("divert", "list") => {
+            let ctx = net?;
+            let records = dispatch_fixture_edits();
+            (
+                json!({ "op": "list", "network_hash": ctx.network_hash, "records": records }),
+                json!({ "ok": { "op": "list", "rows": transit_dispatch::diversion_rows(ctx.derived_network(), &records) } }),
+            )
+        }
+        ("divert", "propose") => {
+            let ctx = net?;
+            let draft = divert_example_draft(ctx.derived_network())?;
+            let now_ms: u64 = 1_770_000_000_000;
+            let diversion = transit_dispatch::diversion_of(ctx.derived_network(), &draft, &format!("div-10-{now_ms}")).ok()?;
+            (
+                json!({ "op": "propose", "network_hash": ctx.network_hash, "draft": draft, "records": [], "record_id": "e2", "now_ms": now_ms }),
+                json!({ "ok": { "op": "propose", "records": transit_sync::propose(&[], "e2", diversion, now_ms) } }),
+            )
+        }
+        ("divert", op @ ("retire" | "restore")) => {
+            let mut records = dispatch_fixture_edits();
+            if op == "restore" {
+                records = transit_sync::set_retired(&records, "e1", true, 1_770_000_000_000).ok()?;
+            }
+            let now_ms: u64 = 1_770_000_060_000;
+            let next = transit_sync::set_retired(&records, "e1", op == "retire", now_ms).ok()?;
+            (
+                json!({ "op": op, "records": records, "record_id": "e1", "now_ms": now_ms }),
+                json!({ "ok": { "op": op, "records": next } }),
+            )
+        }
+        ("divert", "sanitize") => {
+            let mut old = serde_json::to_value(&dispatch_fixture_edits()[0]).ok()?;
+            for field in ["direction_id", "skipped_stops", "detour", "added_secs"] {
+                old["diversion"].as_object_mut()?.remove(field);
+            }
+            let stored = json!([old, { "id": "e3", "status": "draft" }]);
+            let (records, dropped) = transit_sync::sanitize(&stored);
+            (
+                json!({ "op": "sanitize", "records": stored }),
+                json!({ "ok": { "op": "sanitize", "records": records, "dropped": dropped } }),
+            )
+        }
         ("plans", "resolve") => {
             let plan_set = fixture_plan_set();
             let plan = transit_plans::resolve(
@@ -1183,6 +1264,26 @@ fn fixture_plan_set() -> Vec<transit_plans::PlanInfo> {
 
 /// The dispatch examples' edit document: the fixture diversion
 /// (route 10 keeps A→B, skips C, +300 s on the fixture Friday).
+/// The divert examples' draft: route 10 kept end to end on its
+/// default pattern, five minutes added, on the fixture Friday.
+fn divert_example_draft(network: &transit_network::Network) -> Option<transit_dispatch::DiversionDraft> {
+    let mut draft = transit_dispatch::DiversionDraft {
+        route_id: "10".into(),
+        pattern: None,
+        first_kept_stop: None,
+        last_kept_stop: None,
+        served_stops: vec![],
+        slices: vec![],
+        added_mins: 5.0,
+        start_date: "2026-10-23".into(),
+        end_date: "2026-10-23".into(),
+    };
+    let stops = transit_dispatch::draft_view(network, &draft).stops;
+    draft.first_kept_stop = Some(stops.first()?.stop_id.clone());
+    draft.last_kept_stop = Some(stops.last()?.stop_id.clone());
+    Some(draft)
+}
+
 fn dispatch_fixture_edits() -> Vec<transit_sync::EditRecord> {
     let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
     vec![transit_sync::EditRecord {

@@ -98,14 +98,14 @@ transit-codec   the network codec: GTFS ⇄ network document (import/export)
 transit-router  RAPTOR earliest-arrival planning over the network model's materialized day
 transit-analysis planner analysis library (stats, service types, coverage)
 transit-dispatch the operator's day library (patched materialized day, boards,
-                 authored block chains with the layover ripple)
+                 authored block chains with the layover ripple, diversion drafts)
 transit-rt       GTFS-rt prost types + overview/progress join libraries
 transit-live     THE live document (rt in model vocabulary, the on-time window — pure)
-transit-sync     THE sync document (EditRecord, Diversion, merge — pure)
+transit-sync     THE sync document (EditRecord, Diversion, merge, the record envelope — pure)
 transit-plans    THE service-plan chain (resolve, periods, validity — pure, derived)
 transit-streets  street graph for detour authoring (snap, route)
 cap-abi          the capability seam (ABI macro, manifest, validator, gen-manifest)
-cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-plans cap-author
+cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-plans cap-author cap-divert
                  the capability modules (docs/ARCHITECTURE.md, bus section)
 server/          Go + wazero host over cap-sync — scaffolding, never a domain decision
 web/             Svelte 5 + Vite frontend (docs/ARCHITECTURE.md, web section)

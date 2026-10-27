@@ -213,6 +213,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cap-divert"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "serde",
+ "serde_json",
+ "sha2",
+ "transit-dispatch",
+ "transit-network",
+ "transit-sync",
+ "ts-rs",
+]
+
+[[package]]
 name = "cap-gtfs"
 version = "0.1.0"
 dependencies = [

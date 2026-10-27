@@ -252,6 +252,72 @@ pub fn submit(records: Vec<EditRecord>, now_ms: u64) -> Vec<EditRecord> {
         .collect()
 }
 
+// ---------------------------------------------------------------------
+// Authoring the edit document: the envelope rules every writer follows
+// ---------------------------------------------------------------------
+
+/// Propose a diversion: the next document with `record_id` carrying
+/// `diversion` as a draft, stamped `now_ms`. A new id appends at rev 1;
+/// an existing id is replaced whole (LWW per record — the record is
+/// the unit) with its rev bumped. The input is never mutated.
+pub fn propose(records: &[EditRecord], record_id: &str, diversion: Diversion, now_ms: u64) -> Vec<EditRecord> {
+    let mut next = records.to_vec();
+    match next.iter_mut().find(|r| r.id == record_id) {
+        Some(r) => {
+            r.diversion = diversion;
+            r.status = EditStatus::Draft;
+            r.rev += 1;
+            r.updated_at = now_ms;
+        }
+        None => next.push(EditRecord {
+            id: record_id.to_string(),
+            diversion,
+            status: EditStatus::Draft,
+            rev: 1,
+            updated_at: now_ms,
+        }),
+    }
+    next
+}
+
+/// Retire (`retired: true` — the tombstone) or restore (back to a
+/// draft, so the next sync re-submits it) one record: the next
+/// document with its rev bumped and `now_ms` stamped. Retiring a
+/// retired record, or restoring an in-force one, is a no-op answer
+/// (the same document — no rev churn). An unknown id is an error.
+pub fn set_retired(records: &[EditRecord], record_id: &str, retired: bool, now_ms: u64) -> Result<Vec<EditRecord>, String> {
+    let mut next = records.to_vec();
+    let r = next
+        .iter_mut()
+        .find(|r| r.id == record_id)
+        .ok_or_else(|| format!("unknown edit record {record_id}"))?;
+    if (r.status == EditStatus::Retired) != retired {
+        r.status = if retired { EditStatus::Retired } else { EditStatus::Draft };
+        r.rev += 1;
+        r.updated_at = now_ms;
+    }
+    Ok(next)
+}
+
+/// Read a stored edit document (IndexedDB, a server response, a file):
+/// every record that deserializes under the CURRENT schema — serde
+/// fills the defaults a record from before a field existed lacks —
+/// and how many did not. A malformed record is dropped and counted,
+/// never allowed to wedge the document; anything but an array is an
+/// empty document with nothing dropped.
+pub fn sanitize(document: &serde_json::Value) -> (Vec<EditRecord>, usize) {
+    let Some(items) = document.as_array() else { return (Vec::new(), 0) };
+    let mut kept = Vec::new();
+    let mut dropped = 0;
+    for item in items {
+        match serde_json::from_value::<EditRecord>(item.clone()) {
+            Ok(r) if r.diversion.detour.iter().flatten().all(|p| p.lat.is_finite() && p.lon.is_finite()) => kept.push(r),
+            _ => dropped += 1,
+        }
+    }
+    (kept, dropped)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,6 +354,48 @@ mod tests {
         assert_eq!(back.id, rec.id);
         assert_eq!(back.status, EditStatus::Accepted);
         assert_eq!(back.diversion.first_kept_stop, "s0");
+    }
+
+    #[test]
+    fn propose_appends_new_ids_and_replaces_known_ones() {
+        let base = vec![record(EditStatus::Accepted)];
+        let next = propose(&base, "e2", base[0].diversion.clone(), 2_000);
+        assert_eq!(next.len(), 2);
+        assert_eq!((next[1].rev, next[1].status, next[1].updated_at), (1, EditStatus::Draft, 2_000));
+        let mut changed = base[0].diversion.clone();
+        changed.added_secs = 120;
+        let again = propose(&next, &base[0].id, changed, 3_000);
+        assert_eq!(again.len(), 2);
+        assert_eq!((again[0].rev, again[0].status, again[0].diversion.added_secs), (2, EditStatus::Draft, 120));
+        assert_eq!(base[0].rev, 1, "the input is never mutated");
+    }
+
+    #[test]
+    fn retire_and_restore_bump_the_envelope_once() {
+        let base = vec![record(EditStatus::Submitted)];
+        let retired = set_retired(&base, &base[0].id, true, 2_000).unwrap();
+        assert_eq!((retired[0].status, retired[0].rev, retired[0].updated_at), (EditStatus::Retired, 2, 2_000));
+        assert_eq!(set_retired(&retired, &base[0].id, true, 3_000).unwrap(), retired, "no rev churn");
+        let restored = set_retired(&retired, &base[0].id, false, 4_000).unwrap();
+        assert_eq!((restored[0].status, restored[0].rev), (EditStatus::Draft, 3));
+        assert!(set_retired(&base, "nope", true, 1).is_err());
+    }
+
+    #[test]
+    fn sanitize_fills_defaults_and_drops_what_does_not_parse() {
+        let good = serde_json::to_value(record(EditStatus::Draft)).unwrap();
+        let mut old = good.clone();
+        let d = old["diversion"].as_object_mut().unwrap();
+        for f in ["direction_id", "skipped_stops", "detour", "added_secs"] {
+            d.remove(f);
+        }
+        let mut bad_date = good.clone();
+        bad_date["diversion"]["start_date"] = "soon".into();
+        let doc = serde_json::json!([good, old, bad_date, {"id": "x"}, 7]);
+        let (kept, dropped) = sanitize(&doc);
+        assert_eq!((kept.len(), dropped), (2, 3));
+        assert_eq!(kept[1].diversion.added_secs, 0, "a record from before the field existed");
+        assert_eq!(sanitize(&serde_json::json!({"not": "an array"})), (vec![], 0));
     }
 
     #[test]

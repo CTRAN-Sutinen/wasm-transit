@@ -739,3 +739,22 @@ no issues. One apply on C-TRAN costs about 220 ms in the runner
 (validation, the canonical hash, and the 2.7 MB document across the
 seam) — click-grade for the browser, which takes the issues from the
 apply answer instead of validating twice.
+
+## Session 2026-10-27 (diversion authoring) — C-TRAN
+
+The browser's diversion editor now answers through cap-divert
+(`docs/PLAN.md`, the web cleanup, W3). One runner session over the
+imported C-TRAN network: divert `load_network`, then `draft` for
+route 019 alone (five patterns; the default is pat-019-0-0, the
+longest at 13 stops; a 227-point authored alignment; the one problem
+"pick the first stop the diversion keeps"), then anchored at Hwy 99
+10600 Block → Tenney Rd at Fred Meyer serving Hwy 99 & 122nd St:
+three of the four interior stops skipped, a two-slice trace with a
+repeated joint flattened to 3 points (941 m), no problems. `propose`
+built the record (240 s added, domain id `div-019-<now>`), `list`
+named it, `retire` tombstoned it at rev 2, and board `load_edits`
+validated it against the same network: valid, 77 trips affected. A
+`draft` call costs about 1 ms on C-TRAN (50 calls in 55 ms) — cheap
+enough to re-ask on every form change; the one-time cost is
+registering the 2.7 MB network, which the browser memoizes per
+document. No new findings.

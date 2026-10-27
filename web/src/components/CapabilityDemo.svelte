@@ -54,19 +54,18 @@
   $effect(() => {
     // The panel DECLARES its needs; the resolver assembles
     // demand-driven. Statuses render from resolver state alone.
-    if (!caps.manifest) {
-      loadManifest()
-        .then((manifest) =>
-          ensure(manifest.capabilities.map((c) => c.id)),
-        )
-        .catch((error: unknown) => {
-          steps.push({
-            label: "manifest",
-            detail: error instanceof Error ? error.message : String(error),
-            ok: false,
-          });
+    // (ensure is memoized: a manifest another need already loaded —
+    // the bootstrap reads the edit document through cap-divert — still
+    // assembles everything here.)
+    (caps.manifest ? Promise.resolve(caps.manifest) : loadManifest())
+      .then((manifest) => ensure(manifest.capabilities.map((c) => c.id)))
+      .catch((error: unknown) => {
+        steps.push({
+          label: "manifest",
+          detail: error instanceof Error ? error.message : String(error),
+          ok: false,
         });
-    }
+      });
     restoreDocuments();
   });
 

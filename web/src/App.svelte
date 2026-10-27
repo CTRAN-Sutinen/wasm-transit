@@ -10,7 +10,7 @@
   import PlannerRail from "./components/PlannerRail.svelte";
   import PersonaTabs from "./components/PersonaTabs.svelte";
   import { app } from "./state.svelte.js";
-  import { loadRtFromUrl, loadVpFromUrl, saveSettings, feedBytes, refreshBoard, refreshServices, refreshBlocks, refreshBlockChain, selectStop, refreshNow, showTrip, serviceDate } from "./actions";
+  import { loadRtFromUrl, loadVpFromUrl, saveSettings, feedBytes, refreshBoard, refreshServices, refreshBlocks, refreshBlockChain, refreshDiversionView, selectStop, refreshNow, showTrip, serviceDate } from "./actions";
   import { ensureGtfsFeed, gtfsCap, gtfsModule, ensureFeedSummary, ensureDirectory, directory } from "./capabilities.svelte";
   import type { FeedInfo } from "./types/FeedInfo";
   import type { FeedSummary } from "./types/FeedSummary";
@@ -75,6 +75,13 @@
     void app.clock;
     void app.feedEpoch;
     refreshBlockChain();
+  });
+  // The diversion draft's view: re-asked on every change to what the
+  // dispatcher entered (a deep read) and on a new feed.
+  $effect(() => {
+    void app.feedEpoch;
+    void JSON.stringify(app.diversionDraft);
+    refreshDiversionView();
   });
   const today = $derived.by(() => {
     void app.clock; // the service day can roll over
@@ -170,7 +177,12 @@
           date={today}
           onselect={(id) => (app.selectedBlock = id)}
         />
-        <DiversionPanel />
+        <DiversionPanel
+          routes={directory.routes}
+          rows={app.diversionRows}
+          reports={app.editReports}
+          view={app.diversionView}
+        />
       {/if}
     {/if}
 

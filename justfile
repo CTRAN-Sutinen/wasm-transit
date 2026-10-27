@@ -27,7 +27,7 @@ default:
 caps:
     #!/usr/bin/env bash
     set -e
-    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt -p cap-board -p cap-runcut -p cap-calendar -p cap-directory -p cap-streets -p cap-sync -p cap-plans -p cap-author --target wasm32-unknown-unknown
+    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt -p cap-board -p cap-runcut -p cap-calendar -p cap-directory -p cap-streets -p cap-sync -p cap-plans -p cap-author -p cap-divert --target wasm32-unknown-unknown
     cargo run --quiet -p cap-abi --bin gen-manifest
     mkdir -p web/pkg
     cp target/wasm32-unknown-unknown/release/cap_sync.wasm web/pkg/cap_sync.wasm
@@ -210,6 +210,16 @@ test: caps
       --cap calendar --op '{"op":"load_network","network":"$pick.network"}' \
       --op '{"op":"active_services","network_hash":"$pick.network_hash","date":"2026-10-23"}' \
       | grep -q '"services":\["WK"\]'
+    # The diversion-authoring capability's gate: a draft anchored end
+    # to end on route 10's default pattern, proposed into an empty
+    # edit document, and the answered document validated by the board
+    # in the same session — the record the browser's editor writes.
+    node tools/caps-run.mjs divert \
+      --op @web/public/caps/sample-network-load.json \
+      --as prop --op '{"op":"propose","network_hash":"$load_network.network_hash","draft":{"route_id":"10","pattern":"pat-10-0-1","first_kept_stop":"A","last_kept_stop":"B","served_stops":[],"slices":[],"added_mins":5,"start_date":"2026-10-23","end_date":"2026-10-23"},"records":[],"record_id":"e1","now_ms":1000}' \
+      --cap board --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":"$prop.records"}' \
+      | grep -q '"valid":true'
     # ARCHITECTURE GATES — the laws as assertions (spelled out in
     # crates/AGENTS.md), because prose does
     # not enforce:
@@ -226,7 +236,7 @@ test: caps
     # Sanctioned consumers: cap-gtfs, cap-network, cap-rt (external
     # rt joining external ids). The router left the feed in U5 — it
     # plans over the network document and the effective day.
-    for crate in cap-analysis cap-board cap-runcut cap-calendar cap-directory cap-sync cap-plans cap-author transit-analysis transit-dispatch transit-live; do
+    for crate in cap-analysis cap-board cap-runcut cap-calendar cap-directory cap-sync cap-plans cap-author cap-divert transit-analysis transit-dispatch transit-live; do
         for dep in transit-core transit-codec; do
             if awk '/^\[dev-dependencies\]/{exit} /^'"$dep"' =/{found=1} END{exit !found}' "crates/$crate/Cargo.toml" 2>/dev/null; then
                 echo "ARCH FAIL: $crate depends on $dep — the network is the core model; compose over the network document (crates/AGENTS.md, Law 1)"; exit 1
@@ -267,7 +277,7 @@ test: caps
     }
     # W0a: components never call the bus — the host layer does.
     ratchet resolver-in-components \
-        "web/src/App.svelte web/src/components/CapabilityDemo.svelte web/src/components/DiversionPanel.svelte web/src/components/MapView.svelte web/src/components/TripPlanner.svelte" \
+        "web/src/App.svelte web/src/components/CapabilityDemo.svelte web/src/components/MapView.svelte web/src/components/TripPlanner.svelte" \
         "$(grep -l 'capabilities\.svelte' web/src/App.svelte web/src/components/*.svelte | tr '\n' ' ')" \
         "a component imports the capability resolver; take node values as props"
     # W0b: no host-side rt join — delays come from cap-rt's live

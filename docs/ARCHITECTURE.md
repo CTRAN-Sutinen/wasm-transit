@@ -85,9 +85,16 @@ transit-dispatch The materialized day's views, model-native: patch_day
                 blocks list, the service keys
                 running on a date, and the AUTHORED block chain with
                 the layover ripple (layover_remaining_secs goes
-                negative when a connection is eaten). A LIBRARY
-                shared by the cap-board, cap-runcut, and cap-calendar
-                modules; the UI reads them here. Holds no GTFS
+                negative when a connection is eaten), and the
+                DIVERSION EDITOR over the network (divert.rs: a
+                draft's view — the route's patterns and the longest
+                as default, each visit's role, the interior skipped
+                unless served, the alignment, the flattened trace
+                and its length, the problems — the record a ready
+                draft becomes, and the edit document's named rows).
+                A LIBRARY shared by the cap-board, cap-runcut,
+                cap-calendar, and cap-divert modules; the UI reads
+                them here. Holds no GTFS
                 layer (the justfile arch gate enforces it).
 transit-rt      prost types from the official GTFS-rt proto, the
                 OVERVIEW view (delays, vehicles) over them, and the
@@ -112,8 +119,13 @@ transit-sync   THE sync document: EditRecord, FeedManifest, EditReport,
                 it lives in the sync contract, not the GTFS codec),
                 pure validation/merge logic (merge is a
                 property-tested semilattice; submit transitions
-                drafts with the host-passed clock). Shared by every
-                host — cap-sync is the seam the Go server calls.
+                drafts with the host-passed clock), and the record
+                envelope every writer follows (propose: rev 1 or
+                bumped; set_retired: the tombstone and restore;
+                sanitize: a stored document read under the current
+                schema, the unparseable dropped and counted). Shared
+                by every host — cap-sync is the seam the Go server
+                calls, cap-divert the authoring seam.
 transit-plans  THE service-plan chain: resolve (which pick is in
                 force), periods (each member's governing window),
                 validate (chain invariants) over the plan set's
@@ -148,6 +160,16 @@ cap-author      The authoring capability: what does this network
                 Every host authors through it — the browser's
                 planner included (web/src/planner.ts sends edits and
                 adopts the answer; it never edits a document).
+cap-divert      The diversion-authoring capability: what does this
+                diversion draft amount to over the network (draft —
+                the editor's whole view; list — the edit document's
+                rows, names resolved), and what is the edit document
+                after propose / retire / restore (the envelope rules)
+                — plus sanitize for stored copies. A separate need
+                from cap-sync's converge step (the Go server hosts
+                that one without a network). The host passes the
+                clock and the record ids; the browser's diversion
+                editor is a render component over these answers.
 
 Every module is the raw rustc output with the same four flat
 exports (no wasm-bindgen — do not reintroduce host glue).
@@ -202,7 +224,10 @@ File ownership:
   against) and adopts the answered document; it also owns the
   screen stack.
 - `src/state.svelte.ts` owns the documents (edit document, plan
-  set — both IndexedDB-persisted, wholesale-replaced).
+  set — both IndexedDB-persisted, wholesale-replaced). Every next
+  edit document is an answer (cap-divert propose / retire /
+  restore, cap-sync's converge); a stored or synced copy is read
+  through cap-divert's `sanitize` (`actions.readEdits`).
 - MapView owns all map state (`window.__map`).
 
 Frontend conventions and gotchas: `docs/CONVENTIONS.md`.

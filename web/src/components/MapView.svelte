@@ -194,11 +194,11 @@
   /// confirms.
   function previewSegment(e: maplibregl.MapMouseEvent): void {
     const draft = app.diversionDraft;
-    if (!draft?.detour.length) {
+    const lastPt = draft?.slices.at(-1)?.points.at(-1);
+    if (!draft || !lastPt) {
       src("detour-preview").setData(EMPTY_FC);
       return;
     }
-    const lastPt = draft.detour[draft.detour.length - 1];
     const target = resolveWaypoint(e);
     if (!target) {
       src("detour-preview").setData(EMPTY_FC);
@@ -711,8 +711,9 @@
   // layers.)
   $effect(() => {
     if (!mapLoaded) return;
-    const pts = app.persona === "dispatcher" ? app.diversionDraft?.detour : undefined;
-    const features: any[] = (pts ?? []).map(([lat, lon]: [number, number]) => ({
+    // cap-divert's flattened trace (the draft view).
+    const pts = app.persona === "dispatcher" && app.diversionDraft ? app.diversionView?.detour : undefined;
+    const features: any[] = (pts ?? []).map(({ lat, lon }) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: [lon, lat] },
       properties: {},
@@ -720,7 +721,7 @@
     if (pts && pts.length >= 2) {
       features.push({
         type: "Feature",
-        geometry: { type: "LineString", coordinates: pts.map(([lat, lon]: [number, number]) => [lon, lat] as [number, number]) },
+        geometry: { type: "LineString", coordinates: pts.map(({ lat, lon }) => [lon, lat] as [number, number]) },
         properties: {},
       });
     }

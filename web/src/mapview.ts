@@ -93,26 +93,6 @@ function dedupe(points: MapPoint[]): MapPoint[] {
   return out;
 }
 
-/// The pattern's AUTHORED alignment, stop-to-stop when no path is
-/// authored — the diversion editor's ghost (the alignment the
-/// anchors are picked against; the pattern owns the anchor truth).
-export function patternLine(
-  net: Network,
-  patternId: string,
-  props: Record<string, string | number | null>,
-): LineFeature | null {
-  const path = patternPath(net, patternId);
-  if (path) return lineOf(path, props);
-  const pattern = net.patterns[patternId];
-  if (!pattern) return null;
-  const pts = dedupe(
-    pattern.stops
-      .map((ps) => stopPointOf(net, ps.stop))
-      .filter((p): p is MapPoint => p !== null),
-  );
-  return pts.length >= 2 ? lineOf(pts, props) : null;
-}
-
 function lineOf(points: MapPoint[], props: Record<string, string | number | null>): LineFeature {
   return {
     type: "Feature",

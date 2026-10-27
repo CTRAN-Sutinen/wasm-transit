@@ -312,8 +312,11 @@ caps-smoke, a runner gate — then deletes the TypeScript):
   `toggleDiversion`'s tombstone, `cloneEdits`, `sanitizeEdits`'
   hand mirror of serde defaults, the editor's auto-skip of the
   interior stops and its longest-pattern pick, the detour slice
-  dedupe. Into: cap-sync over transit-sync (which owns
-  EditRecord).
+  dedupe. Into: cap-divert (ruled 2026-10-27: authoring a
+  diversion is its own need — the draft needs the network, and
+  cap-sync stays the converge step the Go server hosts without
+  one) over transit-dispatch (the draft over the network) and
+  transit-sync (the record envelope).
 - **W4 geometry.** mapview.ts (`tripLine`, `tripSegment`,
   `followsPattern`, the nearest-vertex slice), planner.ts
   `focusFor`, actions.ts `buildItineraryFeatures`. Into: geometry

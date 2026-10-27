@@ -23,6 +23,8 @@ import type { RtOverview } from "./types/RtOverview";
 import type { StopBoard } from "./types/StopBoard";
 import type { DayBlock } from "./types/DayBlock";
 import type { BlockChainTrip } from "./types/BlockChainTrip";
+import type { DraftView } from "./types/DraftView";
+import type { DiversionRow } from "./types/DiversionRow";
 import type { Live } from "./capabilities.svelte";
 import type { EntityKind, Focus, PlannerScreen } from "./planner";
 import type { LineFeature } from "./mapview";
@@ -42,20 +44,22 @@ export type DetourSlice = {
   /// back to a straight line.
   endPos: StreetPosition | null;
 };
+/// What the dispatcher has entered — cap-divert's `draft` answers what
+/// it amounts to (app.diversionView): the default pattern, the stops
+/// skipped, the flattened trace, whether it is ready.
 export type DiversionDraft = {
   routeId: string;
-  patternId: string; // the model's direction: the pattern anchored against
+  patternId: string; // the pattern anchored against; "" = cap-divert's default
   firstKept: string;
   lastKept: string;
-  skipped: Set<string>;
+  /// Interior stops the detour still serves (every other one is skipped).
+  served: string[];
   addedMins: number;
   start: string;
   end: string;
-  /// The committed trace, one entry per waypoint step. `detour` below
-  /// is the flattened view (the record field); slices stay so Undo
-  /// reverts whole steps.
+  /// The committed trace, one entry per waypoint step (Undo reverts
+  /// whole steps).
   slices: DetourSlice[];
-  detour: [number, number][]; // flattened slices, as synced
 };
 
 export type AppState = {
@@ -119,6 +123,9 @@ export type AppState = {
 
   // Diversion editor form (see DiversionDraft)
   diversionDraft: DiversionDraft | null,
+  // cap-divert's answers: the draft's view, the edit document's rows.
+  diversionView: DraftView | null,
+  diversionRows: DiversionRow[],
   pickingAnchor: "first" | "last" | null, // stop clicks set anchors
   drawingDetour: boolean, // map clicks append detour vertices
   // The selected route's alignment (route_path_geojson) — the ghost
@@ -201,73 +208,10 @@ export function getEditDocument(): EditRecord[] {
   return editDocument;
 }
 
-/// Shape guard for records crossing IN from outside: the persisted
-/// document and sync responses were written by older builds (and the
-/// server treats documents as opaque JSON). One malformed entry
-/// must not wedge every later mutation — `cloneEdits` throws on a
-/// missing `diversion`, silently killing Apply and Retire (this
-/// shipped: a stale IndexedDB document made the dispatcher's buttons
-/// dead). Mirrors the artifact's serde shape: fields with
-/// `#[serde(default)]` are filled when absent, records missing
-/// REQUIRED fields are dropped (with a status line saying so).
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const STATUSES = new Set(["draft", "submitted", "accepted", "retired"]);
-
-function looksLikeRecord(r: unknown): r is EditRecord {
-  if (typeof r !== "object" || r === null) return false;
-  const rec = r as Record<string, unknown>;
-  if (typeof rec.id !== "string" || !STATUSES.has(String(rec.status))) return false;
-  if (typeof rec.rev !== "number" || typeof rec.updated_at !== "number") return false;
-  const d = rec.diversion as Record<string, unknown> | undefined;
-  if (typeof d !== "object" || d === null) return false;
-  for (const f of ["id", "route_id", "first_kept_stop", "last_kept_stop"]) {
-    if (typeof d[f] !== "string") return false;
-  }
-  if (!ISO_DATE.test(String(d.start_date)) || !ISO_DATE.test(String(d.end_date))) return false;
-  // A detour must be a polyline of numeric [lat, lon] objects — junk
-  // here is exactly what serde would reject, wedging set_diversions.
-  if (d.detour != null) {
-    if (!Array.isArray(d.detour)) return false;
-    for (const p of d.detour) {
-      const pt = p as Record<string, unknown>;
-      if (typeof pt?.lat !== "number" || typeof pt?.lon !== "number"
-        || !Number.isFinite(pt.lat) || !Number.isFinite(pt.lon)) return false;
-    }
-  }
-  return true;
-}
-
-export function sanitizeEdits(input: unknown): EditRecord[] {
-  if (!Array.isArray(input)) return [];
-  const kept: EditRecord[] = [];
-  let dropped = 0;
-  for (const r of input) {
-    if (!looksLikeRecord(r)) {
-      dropped++;
-      continue;
-    }
-    kept.push({
-      ...r,
-      diversion: {
-        ...r.diversion,
-        // serde defaults, filled so a record from before the field
-        // existed still validates in the artifact.
-        direction_id: r.diversion.direction_id ?? null,
-        skipped_stops: r.diversion.skipped_stops ?? [],
-        detour: r.diversion.detour ?? null,
-        added_secs: r.diversion.added_secs ?? 0,
-      },
-    });
-  }
-  if (dropped > 0) {
-    app.status = `Dropped ${dropped} malformed edit record(s) from the saved document — they were not valid under the current schema.`;
-    console.warn(`dropped ${dropped} malformed edit record(s)`);
-  }
-  return kept;
-}
-
-export function setEditDocument(next: unknown): void {
-  editDocument = sanitizeEdits(next);
+/// Adopt a document cap-divert or cap-sync answered (a stored copy
+/// is read through cap-divert's `sanitize` first — actions.readEdits).
+export function setEditDocument(next: EditRecord[]): void {
+  editDocument = next;
 }
 
 /// The authored network documents (transit-network `Network`) — same
@@ -405,6 +349,8 @@ export const app = $state<AppState>({
   itineraryFeatures: [],
 
   diversionDraft: null,
+  diversionView: null,
+  diversionRows: [],
   pickingAnchor: null,
   drawingDetour: false,
   routeContext: null,

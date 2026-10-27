@@ -1,8 +1,9 @@
 import { app, getEditDocument, setEditDocument, setStreets, type DiversionDraft } from "./state.svelte";
 import { get as idbGet, set as idbSet, del as idbDel } from "idb-keyval";
-import { ensureAnalysisLayer, ensureEditReports, importedNetworkDocument, ensureRuncutBoarding, ensureRuncutEdits, ensureRouterBoarding, ensureRouterEdits, ensureStreets, runcutCap, runcutModule, routerCap, routerModule, rtCap, rtModule, boardCap, boardModule, ensureBoardBoarding, ensureBoardEdits, calendarCap, calendarModule, ensureCalendarNetwork, contentHash, networkCap, networkModule } from "./capabilities.svelte";
+import { ensureAnalysisLayer, ensureEditReports, importedNetworkDocument, ensureRuncutBoarding, ensureRuncutEdits, ensureRouterBoarding, ensureRouterEdits, ensureStreets, runcutCap, runcutModule, routerCap, routerModule, rtCap, rtModule, boardCap, boardModule, ensureBoardBoarding, ensureBoardEdits, calendarCap, calendarModule, ensureCalendarNetwork, contentHash, networkCap, networkModule, divertModule, divertCap, divertOverFeed } from "./capabilities.svelte";
 import { stopPointOf, tripLine, tripSegment, type MapPoint } from "./mapview";
 import type { EditRecord } from "./types/EditRecord";
+import type { DiversionDraft as DraftDoc } from "./types/DiversionDraft";
 import type { Itinerary } from "./types/Itinerary";
 import type { StreetPosition } from "./types/StreetPosition";
 import type { Streets } from "./streets";
@@ -576,25 +577,14 @@ async function buildItineraryFeatures(plan: Itinerary | null): Promise<PlanFeatu
 // ---------------------------------------------------------------
 // operator edits (the sync document)
 //
-// One mutation path: mutateEdits(fn) is the ONLY code that changes
-// the document or wasm's view of it. It (1) clones the current
-// records, (2) lets fn transform the copy, (3) adopts it wholesale,
-// (4) pushes it to wasm (which validates each record and drops its
-// derived caches), (5) bumps feedEpoch so derived views re-query, and
-// (6) schedules one debounced persist. Call sites cannot forget a
-// step because there are no steps.
+// Every next document is an answer: cap-divert proposes, retires and
+// restores (the envelope rules — rev, stamp, tombstone), cap-sync
+// converges. adoptEdits(next) is the ONLY path that installs one: it
+// (1) adopts it wholesale, (2) schedules one debounced persist, and
+// (3) pushEdits: revalidates it through the day views (which drop
+// their derived caches), bumps feedEpoch so derived views re-query,
+// and re-reads the list rows. The host passes the clock and the record ids.
 // ---------------------------------------------------------------
-
-function cloneEdits(edits: EditRecord[]): EditRecord[] {
-  return edits.map((r) => ({
-    ...r,
-    diversion: {
-      ...r.diversion,
-      skipped_stops: [...(r.diversion.skipped_stops ?? [])],
-      detour: r.diversion.detour ? r.diversion.detour.map((p) => ({ ...p })) : null,
-    },
-  }));
-}
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingWrite: Promise<void> | null = null;
@@ -630,6 +620,7 @@ export async function pushEdits(): Promise<void> {
   try {
     const reports = await ensureEditReports(bytes, getEditDocument());
     app.editReports = reports ?? [];
+    await refreshDiversionRows();
   } catch (e) {
     error(e);
     return;
@@ -637,18 +628,36 @@ export async function pushEdits(): Promise<void> {
   app.feedEpoch++;
 }
 
-export function mutateEdits(fn: (edits: EditRecord[]) => void): void {
-  // Never silent: a wedged document reads as dead buttons otherwise
-  // (Apply and Retire both go through here).
-  try {
-    const next = cloneEdits(getEditDocument());
-    fn(next);
-    setEditDocument(next);
-    pushEdits();
-    schedulePersist();
-  } catch (e) {
-    error(e);
+export function adoptEdits(next: EditRecord[]): Promise<void> {
+  setEditDocument(next);
+  schedulePersist();
+  return pushEdits();
+}
+
+/** Read a stored edit document (IndexedDB, a server response) through
+ * cap-divert's `sanitize`: the records valid under the current schema,
+ * defaults filled; what does not parse is dropped, and said so. */
+export async function readEdits(stored: unknown): Promise<EditRecord[]> {
+  const module = await divertModule();
+  if (!module) {
+    app.status = "The stored edit document needs the divert capability to read — it did not assemble.";
+    return [];
   }
+  const { records, dropped } = divertCap(module).sanitize(stored);
+  if (dropped > 0) {
+    app.status = `Dropped ${dropped} malformed edit record(s) from the saved document — they were not valid under the current schema.`;
+    console.warn(`dropped ${dropped} malformed edit record(s)`);
+  }
+  return records;
+}
+
+/** The dispatcher's list: the edit document's rows, names resolved by
+ * cap-divert over the imported network. */
+export async function refreshDiversionRows(): Promise<void> {
+  const bytes = feedBytes();
+  const records = getEditDocument();
+  const over = bytes && records.length ? await divertOverFeed(bytes) : null;
+  app.diversionRows = over ? over.divert.list(over.networkHash, records) : [];
 }
 
 export function startDiversion(): void {
@@ -658,18 +667,19 @@ export function startDiversion(): void {
     patternId: "", // the pattern anchored against (the model's direction)
     firstKept: "",
     lastKept: "",
-    skipped: new Set(),
+    served: [],
     addedMins: 5,
     start: today,
     end: today,
     slices: [],
-    detour: [], // flattened slices — the record field
   };
   app.pickingAnchor = "first";
 }
 
 export function cancelDiversion(): void {
   app.diversionDraft = null;
+  app.diversionView = null;
+  app.routeContext = null;
   app.pickingAnchor = null;
   app.drawingDetour = false;
 }
@@ -690,48 +700,33 @@ export function setDiversionAnchor(stopId: string): void {
   }
 }
 
-export function toggleSkipped(stopId: string): void {
-  const skipped = app.diversionDraft?.skipped;
-  if (!skipped) return;
-  if (skipped.has(stopId)) skipped.delete(stopId);
-  else skipped.add(stopId);
-}
-
-export function addDetourPoint(lat: number, lon: number): void {
-  app.diversionDraft?.detour.push([lat, lon]);
+/** Skip ↔ serve one interior stop (cap-divert skips every interior
+ * stop the draft does not list as served). */
+export function toggleServed(stopId: string): void {
+  const draft = app.diversionDraft;
+  if (!draft) return;
+  draft.served = draft.served.includes(stopId)
+    ? draft.served.filter((s) => s !== stopId)
+    : [...draft.served, stopId];
 }
 
 /// Commit one waypoint step of the trace: the routed geometry plus
 /// the graph position it ends at (so the next step routes from
-/// there). Consecutive duplicates are dropped — routing can return
-/// the previous endpoint.
+/// there). cap-divert flattens the steps.
 export function addDetourSlice(points: [number, number][], endPos: StreetPosition | null): void {
-  const draft = app.diversionDraft;
-  if (!draft) return;
-  const committed: [number, number][] = [];
-  for (const pt of points) {
-    const last = committed[committed.length - 1] ?? draft.detour[draft.detour.length - 1];
-    if (last && Math.abs(last[0] - pt[0]) < 1e-12 && Math.abs(last[1] - pt[1]) < 1e-12) continue;
-    committed.push(pt);
-  }
-  if (!committed.length) return;
-  draft.slices.push({ points: committed, endPos });
-  draft.detour.push(...committed);
+  if (!points.length) return;
+  app.diversionDraft?.slices.push({ points, endPos });
 }
 
 /// Revert the last waypoint step (its whole routed geometry).
 export function undoDetourSlice(): void {
   const draft = app.diversionDraft;
   if (!draft?.slices.length) return;
-  const slice = draft.slices.pop()!;
-  draft.detour.splice(draft.detour.length - slice.points.length, slice.points.length);
+  draft.slices.pop();
 }
 
 export function clearDetour(): void {
-  if (app.diversionDraft) {
-    app.diversionDraft.detour = [];
-    app.diversionDraft.slices = [];
-  }
+  if (app.diversionDraft) app.diversionDraft.slices = [];
 }
 
 export function toggleDrawing(): void {
@@ -897,45 +892,79 @@ async function installStreets(geojson: unknown, label: string): Promise<void> {
   }
 }
 
-export async function applyDiversion(): Promise<void> {
-  const draft: DiversionDraft | null = app.diversionDraft;
-  if (!draft) return;
-  if (!draft.routeId || !draft.firstKept || !draft.lastKept) {
-    app.status = "Diversion needs a route and both anchor stops.";
+/// The draft as cap-divert reads it.
+function draftDoc(d: DiversionDraft): DraftDoc {
+  return {
+    route_id: d.routeId,
+    pattern: d.patternId || undefined,
+    first_kept_stop: d.firstKept || undefined,
+    last_kept_stop: d.lastKept || undefined,
+    served_stops: d.served,
+    slices: d.slices.map((s) => s.points.map(([lat, lon]) => ({ lat, lon }))),
+    added_mins: Number(d.addedMins),
+    start_date: d.start,
+    end_date: d.end,
+  };
+}
+
+let draftSeq = 0;
+/** What the draft amounts to — cap-divert's view (the default pattern,
+ * each stop's role, the skips, the flattened trace, the problems) and
+ * the alignment ghost the map draws. The latest call wins. */
+export async function refreshDiversionView(): Promise<void> {
+  const draft = app.diversionDraft;
+  const seq = ++draftSeq;
+  const bytes = feedBytes();
+  if (!draft || !bytes) {
+    app.diversionView = null;
+    app.routeContext = null;
     return;
   }
-  const record: EditRecord = {
-    id: crypto.randomUUID ? crypto.randomUUID() : `edit-${Date.now()}`,
-    diversion: {
-      id: `div-${draft.routeId}-${Date.now()}`, // domain id; sync id is above
-      route_id: draft.routeId,
-      // The pattern owns the anchor truth; GTFS's direction_id is
-      // feed vocabulary the model never matched on (None = both
-      // directions, the document's documented default).
-      direction_id: null,
-      first_kept_stop: draft.firstKept,
-      last_kept_stop: draft.lastKept,
-      skipped_stops: [...draft.skipped],
-      detour: draft.detour.length >= 2 ? draft.detour.map(([lat, lon]) => ({ lat, lon })) : null,
-      added_secs: Math.round(Number(draft.addedMins) * 60),
-      start_date: draft.start,
-      end_date: draft.end,
-    },
-    status: "draft",
-    rev: 1,
-    updated_at: Date.now(),
-  };
-  mutateEdits((edits) => {
-    const i = edits.findIndex((e) => e.id === record.id);
-    if (i >= 0) edits[i] = record;
-    else edits.push(record);
-  });
+  const doc = draftDoc(draft);
+  try {
+    const over = await divertOverFeed(bytes);
+    if (seq !== draftSeq) return;
+    if (!over) {
+      app.status = "The diversion editor needs the divert and network capabilities — the assembly is unavailable.";
+      return;
+    }
+    const view = over.divert.draft(over.networkHash, doc);
+    app.diversionView = view;
+    app.routeContext = view.alignment.length
+      ? {
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: view.alignment.map((c) => [c.lon, c.lat]) },
+          properties: { route: draft.routeId },
+        }
+      : null;
+  } catch (e) {
+    error(e);
+  }
+}
+
+export async function applyDiversion(): Promise<void> {
+  const draft: DiversionDraft | null = app.diversionDraft;
+  const bytes = feedBytes();
+  if (!draft || !bytes) return;
+  const over = await divertOverFeed(bytes);
+  if (!over) {
+    app.status = "Applying a diversion needs the divert capability — it did not assemble.";
+    return;
+  }
+  const recordId = crypto.randomUUID ? crypto.randomUUID() : `edit-${Date.now()}`;
+  let next: EditRecord[];
+  try {
+    next = over.divert.propose(over.networkHash, draftDoc(draft), getEditDocument(), recordId, Date.now());
+  } catch (e) {
+    app.status = `Diversion not applied: ${(e as Error).message}.`;
+    return;
+  }
+  adoptEdits(next);
   // The validation is the day views' load_edits (reported, never
   // rejected) — awaited here so the status speaks the record's own
   // report, not the previous document's.
-  const bytes = feedBytes();
-  const reports = bytes ? ((await ensureEditReports(bytes, getEditDocument())) ?? []) : [];
-  const report = reports.find((r) => r.id === record.id);
+  const reports = (await ensureEditReports(bytes, getEditDocument())) ?? [];
+  const report = reports.find((r) => r.id === recordId);
   app.status = !report || !report.valid
     ? `Diversion saved but invalid: ${report?.error ?? "unknown error"}.`
     : report.affected_trips === 0
@@ -944,17 +973,21 @@ export async function applyDiversion(): Promise<void> {
   cancelDiversion();
 }
 
-/** In force <-> retired. Retiring is the sync tombstone: the record
- * stays in the document (a future server needs to see the deletion);
- * the UI greys it out and un-retiring is always possible. */
-export function toggleDiversion(id: string): void {
-  mutateEdits((edits) => {
-    const edit = edits.find((e) => e.id === id);
-    if (!edit) return;
-    edit.status = edit.status === "retired" ? "draft" : "retired";
-    edit.rev += 1;
-    edit.updated_at = Date.now();
-  });
+/** Retire (the sync tombstone: the record stays so replicas see the
+ * deletion) or restore one record — cap-divert's envelope rules. */
+export async function setDiversionRetired(id: string, retired: boolean): Promise<void> {
+  try {
+    const module = await divertModule();
+    if (!module) {
+      app.status = "Retiring a diversion needs the divert capability — it did not assemble.";
+      return;
+    }
+    const divert = divertCap(module);
+    const records = getEditDocument();
+    adoptEdits(retired ? divert.retire(records, id, Date.now()) : divert.restore(records, id, Date.now()));
+  } catch (e) {
+    error(e);
+  }
 }
 
 // ---------------------------------------------------------------
@@ -979,13 +1012,11 @@ export async function syncEdits({ quiet = false }: { quiet?: boolean } = {}): Pr
       return;
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const merged = await res.json();
+    const merged = await readEdits(await res.json());
     // Adopt: wholesale replace, revalidate through wasm, persist.
-    setEditDocument(merged);
-    pushEdits();
-    schedulePersist();
+    await adoptEdits(merged);
     if (!quiet) {
-      const inForce = merged.filter((r: EditRecord) => r.status !== "retired").length;
+      const inForce = app.diversionRows.filter((r) => r.in_force).length;
       app.status = `Synced with server — ${merged.length} edit record(s), ${inForce} in force.`;
     }
   } catch (e) {

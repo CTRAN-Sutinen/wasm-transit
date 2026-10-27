@@ -1,0 +1,19 @@
+[package]
+name = "cap-divert"
+description = "The diversion-authoring capability: what does this diversion draft amount to over the network, and what is the edit document after proposing, retiring, or restoring a record? The editor's rules (the default pattern, the stops between the anchors skipped unless served, the traced path flattened, the record and its envelope) answered once for a UI, a script, and an agent."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]  # rlib: integration tests link the crate natively
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+ts-rs = { workspace = true }
+transit-network = { path = "../transit-network" }
+transit-sync = { path = "../transit-sync" }
+transit-dispatch = { path = "../transit-dispatch" }
+cap-abi = { path = "../cap-abi" }

@@ -1,120 +1,47 @@
 <script lang="ts">
-  import { app, getEditDocument, getStreets } from "../state.svelte";
+  /// The diversion editor — a RENDER component over cap-divert's
+  /// answers: the edit document's rows (names resolved), the draft's
+  /// view (the route's patterns and the default, each stop's role and
+  /// skip, the flattened trace and its length, the problems), and the
+  /// day views' validation reports. The form writes what the
+  /// dispatcher entered into the draft; every rule is the module's.
+  import { app, getStreets } from "../state.svelte";
   import {
-    startDiversion, cancelDiversion, setDiversionAnchor, toggleSkipped,
-    applyDiversion, toggleDiversion, toggleDrawing, clearDetour,
-    undoDetourSlice, syncEdits, serviceDate, feedBytes,
+    startDiversion, cancelDiversion, setDiversionAnchor, toggleServed,
+    applyDiversion, setDiversionRetired, toggleDrawing, clearDetour,
+    undoDetourSlice, syncEdits,
   } from "../actions";
-  import { pathLengthMeters } from "../streets";
-  import { directory, directoryRoutePatterns, importedNetworkDocument } from "../capabilities.svelte";
-  import { patternLine } from "../mapview";
+  import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
+  import type { DiversionRow } from "../types/DiversionRow";
+  import type { DraftView } from "../types/DraftView";
+  import type { EditReport } from "../types/EditReport";
   import Combobox from "./Combobox.svelte";
 
-  // The directory's route list — model questions, never feed reads.
-  const routes = $derived(directory.routes);
+  let {
+    routes,
+    rows,
+    reports,
+    view,
+  }: {
+    routes: DirectoryRoute[];
+    rows: DiversionRow[];
+    reports: EditReport[];
+    view: DraftView | null;
+  } = $props();
+
   const routeOptions = $derived(
     routes.map((r) => ({ value: r.route_id, label: r.name, sub: r.mode })),
   );
   const draft = $derived(app.diversionDraft);
   // Retired records (tombstones) are hidden until asked for.
   let showRetired = $state(false);
-  // The document: transit-sync EditRecords (id, diversion, status,
-  // rev, updated_at). Display is derived here; truth lives in the doc.
-  const records = $derived(getEditDocument());
-  const activeRecords = $derived(records.filter((d) => d.status !== "retired"));
-  const retiredRecords = $derived(records.filter((d) => d.status === "retired"));
+  const activeRows = $derived(rows.filter((r) => r.in_force));
+  const retiredRows = $derived(rows.filter((r) => !r.in_force));
+  const reportOf = (id: string) => reports.find((r) => r.id === id);
 
-  const routeName = $derived.by(() => {
-    const m = new Map();
-    for (const r of routes) m.set(r.route_id, r.name);
-    return m;
-  });
-  const stopName = $derived.by(() => {
-    const m = new Map();
-    for (const s of directory.stops) m.set(s.stop_id, s.name);
-    return m;
-  });
-
-  const reportOf = (id: string) => app.editReports.find((r) => r.id === id);
-
-  // The route's PATTERNS — the model's directions. The anchors are
-  // picked from the selected pattern; the default is the longest
-  // (the one with the most skippable interior).
-  const patterns = $derived.by(() => {
-    if (!draft?.routeId) return [];
-    return directoryRoutePatterns(draft.routeId);
-  });
-  $effect(() => {
-    const d = draft;
-    if (!d?.routeId) return;
-    const list = patterns;
-    if (!list.length || (d.patternId && list.some((p) => p.pattern === d.patternId))) return;
-    const longest = list.reduce((a, b) => (b.stops.length > a.stops.length ? b : a));
-    d.patternId = longest.pattern;
-  });
-  const sequence = $derived.by(() => {
-    if (!draft?.routeId || !draft.patternId) return [];
-    return patterns.find((p) => p.pattern === draft.patternId)?.stops ?? [];
-  });
-
-  // Positions of the anchors within that pattern.
-  const firstPos = $derived(sequence.findIndex((s) => s.stop_id === draft?.firstKept));
-  const lastPos = $derived(sequence.findIndex((s) => s.stop_id === draft?.lastKept));
-
-  // Stops strictly between the anchors: the skippable interior.
-  const interior = $derived.by(() => {
-    if (firstPos < 0 || lastPos <= firstPos) return [];
-    return sequence.slice(firstPos + 1, lastPos);
-  });
-
-  // Interior stops are skipped by default (a detour usually bypasses
-  // them); when anchors change, stale skips are pruned.
-  $effect(() => {
-    const d = draft;
-    if (!d) return;
-    const ids = interior.map((s) => s.stop_id);
-    if (d.firstKept && d.lastKept && ids.length && d.skipped.size === 0) {
-      for (const id of ids) d.skipped.add(id);
-    }
-    for (const id of [...d.skipped]) {
-      if (!ids.includes(id)) d.skipped.delete(id);
-    }
-  });
-
-  function isInterior(stopId: string) {
-    return interior.some((s) => s.stop_id === stopId);
-  }
-
-  // Route ghost: once a route is picked, show where it runs — the
-  // selected pattern's AUTHORED alignment (the network document's
-  // path, stop-to-stop when none is authored), the line the detour
-  // is drawn against. The pattern owns the anchor truth; the map is
-  // the host's view (the feed-side geojson op retired in U6).
-  $effect(() => {
-    void app.feedEpoch;
-    const d = app.diversionDraft;
-    const routeId = d?.routeId;
-    if (!d || !routeId) {
-      app.routeContext = null;
-      return;
-    }
-    void (async () => {
-      const bytes = feedBytes();
-      const net = bytes ? await importedNetworkDocument(bytes) : null;
-      const patternId = d.patternId;
-      app.routeContext =
-        net && patternId ? patternLine(net, patternId, { route: routeId }) : null;
-    })();
-  });
-
-  // The drawn path's length — the number to reason about when
-  // authoring the added time.
-  const drawnLength = $derived.by(() => {
-    const pts = app.diversionDraft?.detour ?? [];
-    if (pts.length < 2) return null;
-    const m = pathLengthMeters(pts);
+  function fmtLength(m: number) {
     return m >= 950 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
-  });
+  }
 </script>
 
 <!-- ESC exits tracing mode — the reflex every drawing tool has.
@@ -137,30 +64,29 @@ The draft itself is untouched: Done (or Apply) still owns it. -->
   Pruning tombstones is a sync-document lifecycle decision (the
   server's, after a grace window past a record's own dates), never
   a feed-artifact one: the feed is a codec, not the data model. -->
-  {#if records.length}
+  {#if rows.length}
     <ul class="diversion-list">
-      {#each activeRecords as d (d.id)}
-        {@const rep = reportOf(d.id)}
+      {#each activeRows as d (d.record_id)}
+        {@const rep = reportOf(d.record_id)}
         <li>
           <label class="chip diversion-chip">
             <input
               type="checkbox"
               checked
-              onchange={() => toggleDiversion(d.id)}
+              onchange={() => setDiversionRetired(d.record_id, true)}
               title="In force — uncheck to retire"
             >
-            <strong>{routeName.get(d.diversion.route_id) ?? d.diversion.route_id}</strong>
-            {stopName.get(d.diversion.first_kept_stop) ?? d.diversion.first_kept_stop}
-            → {stopName.get(d.diversion.last_kept_stop) ?? d.diversion.last_kept_stop}
-            {#if d.diversion.skipped_stops.length}
+            <strong>{d.route_name}</strong>
+            {d.first_kept_name} → {d.last_kept_name}
+            {#if d.skipped_names.length}
               <span class="chip bad" title="stops no longer served">
-                skips {d.diversion.skipped_stops.map((s) => stopName.get(s) ?? s).join(", ")}
+                skips {d.skipped_names.join(", ")}
               </span>
             {/if}
-            {#if d.diversion.added_secs}+{Math.round(d.diversion.added_secs / 60)} min{/if}
-            {#if d.diversion.detour?.length}<span class="chip svc">detour drawn</span>{/if}
+            {#if d.added_secs}+{Math.round(d.added_secs / 60)} min{/if}
+            {#if d.detour_drawn}<span class="chip svc">detour drawn</span>{/if}
             <span class="muted">
-              {d.diversion.start_date} → {d.diversion.end_date}
+              {d.start_date} → {d.end_date}
               · {rep?.affected_trips ?? "?"} trips · {d.status}
             </span>
             {#if rep && !rep.valid}
@@ -170,18 +96,17 @@ The draft itself is untouched: Done (or Apply) still owns it. -->
         </li>
       {/each}
       {#if showRetired}
-        {#each retiredRecords as d (d.id)}
+        {#each retiredRows as d (d.record_id)}
           <li class="inactive">
             <label class="chip diversion-chip">
               <input
                 type="checkbox"
-                onchange={() => toggleDiversion(d.id)}
+                onchange={() => setDiversionRetired(d.record_id, false)}
                 title="Retired (sync tombstone) — check to restore"
               >
-              <strong>{routeName.get(d.diversion.route_id) ?? d.diversion.route_id}</strong>
-              {stopName.get(d.diversion.first_kept_stop) ?? d.diversion.first_kept_stop}
-              → {stopName.get(d.diversion.last_kept_stop) ?? d.diversion.last_kept_stop}
-              {#if d.diversion.added_secs}+{Math.round(d.diversion.added_secs / 60)} min{/if}
+              <strong>{d.route_name}</strong>
+              {d.first_kept_name} → {d.last_kept_name}
+              {#if d.added_secs}+{Math.round(d.added_secs / 60)} min{/if}
               <span class="muted">retired — restore by checking</span>
             </label>
           </li>
@@ -190,9 +115,9 @@ The draft itself is untouched: Done (or Apply) still owns it. -->
     </ul>
     <p class="muted">
       Unchecking retires an edit (a sync tombstone — it leaves this list).
-      {#if retiredRecords.length}
+      {#if retiredRows.length}
         <button class="link" onclick={() => (showRetired = !showRetired)}>
-          {showRetired ? "Hide" : "Show"} {retiredRecords.length} retired
+          {showRetired ? "Hide" : "Show"} {retiredRows.length} retired
         </button>
       {/if}
     </p>
@@ -210,35 +135,41 @@ The draft itself is untouched: Done (or Apply) still owns it. -->
           bind:value={draft.routeId}
         />
         <label for="div-pattern">Pattern</label>
-        <select id="div-pattern" bind:value={draft.patternId}>
-          {#each patterns as p (p.pattern)}
-            <option value={p.pattern}>{p.name} ({p.stops.length} stops)</option>
+        <select
+          id="div-pattern"
+          value={view?.pattern ?? ""}
+          onchange={(e) => draft && (draft.patternId = e.currentTarget.value)}
+        >
+          {#each view?.patterns ?? [] as p (p.pattern)}
+            <option value={p.pattern}>{p.name} ({p.stop_count} stops)</option>
           {/each}
         </select>
       </p>
 
-      {#if sequence.length}
+      {#if view?.stops.length}
         {#if !draft.firstKept}
           <p class="muted">Click the first stop the diversion keeps:</p>
         {:else if !draft.lastKept}
           <p class="muted">Now the last kept stop (on the list or the map):</p>
+        {:else if view.problems.length}
+          <p class="muted"><span class="chip bad">{view.problems.join("; ")}</span></p>
         {:else}
           <p class="muted">Anchors set. Interior stops can be un-skipped if the detour still serves them.</p>
         {/if}
         <ol class="stop-seq">
-          {#each sequence as s, i (s.stop_id)}
+          {#each view.stops as s (s.index)}
             <li
-              class:anchor-first={i === firstPos}
-              class:anchor-last={i === lastPos}
-              class:skipped={draft.skipped.has(s.stop_id)}
+              class:anchor-first={s.role === "first_kept"}
+              class:anchor-last={s.role === "last_kept"}
+              class:skipped={s.skipped}
             >
               <button class="link" onclick={() => setDiversionAnchor(s.stop_id)}>{s.name}</button>
-              {#if isInterior(s.stop_id)}
+              {#if s.role === "interior"}
                 <label class="chip">
                   <input
                     type="checkbox"
-                    checked={draft.skipped.has(s.stop_id)}
-                    onchange={() => toggleSkipped(s.stop_id)}
+                    checked={s.skipped}
+                    onchange={() => toggleServed(s.stop_id)}
                   >
                   skip
                 </label>
@@ -271,9 +202,9 @@ The draft itself is untouched: Done (or Apply) still owns it. -->
         {#if app.drawingDetour}
           <span class="chip svc">click confirms · drag pans</span>
         {/if}
-        {#if draft.detour.length}
+        {#if draft.slices.length}
           <span class="muted">
-            {draft.detour.length} points{#if drawnLength} · {drawnLength}{/if}
+            {view?.detour.length ?? 0} points{#if view && view.detour.length >= 2} · {fmtLength(view.detour_length_m)}{/if}
           </span>
           <button class="link" onclick={undoDetourSlice}>Undo</button>
           <button class="link" onclick={clearDetour}>Clear</button>

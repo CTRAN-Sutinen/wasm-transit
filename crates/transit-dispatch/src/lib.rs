@@ -17,6 +17,9 @@
 //! seconds after the service-day anchor; values past 86400 are
 //! legitimate after-midnight trips.
 
+pub mod divert;
+pub use divert::{diversion_of, diversion_rows, draft_view, DiversionDraft, DiversionRow, DraftPattern, DraftStop, DraftStopRole, DraftView};
+
 use std::collections::BTreeSet;
 
 use chrono::NaiveDate;

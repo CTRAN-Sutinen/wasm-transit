@@ -966,4 +966,37 @@ assert(
   "a new timepoint keeps every timing profile aligned",
 );
 
+// The diversion-authoring flow — what does this draft amount to:
+// the default pattern, the interior skipped unless served, the
+// record proposed then retired then restored (the envelope rules),
+// and a stored document read under the current schema.
+assert(byId.divert, "manifest advertises the divert capability");
+const divert = shell(loadModule(byId.divert));
+const divertNet = divert.invoke({ op: "load_network", network: imported.network });
+assert(divertNet.network_hash === imported.network_hash, "divert agrees on the imported document's identity");
+const divertDraft = { route_id: "10", served_stops: [], slices: [], added_mins: 5, start_date: DATE, end_date: DATE };
+const blank = divert.invoke({ op: "draft", network_hash: divertNet.network_hash, draft: divertDraft }).view;
+assert(blank.pattern && blank.stops.length >= 3 && blank.problems.length === 1, "a route alone answers the default pattern and what is missing");
+const ends = { first_kept_stop: blank.stops[0].stop_id, last_kept_stop: blank.stops.at(-1).stop_id };
+const anchored = divert.invoke({ op: "draft", network_hash: divertNet.network_hash, draft: { ...divertDraft, ...ends } }).view;
+assert(
+  anchored.problems.length === 0 && anchored.skipped_stops.length === blank.stops.length - 2,
+  "the stops between the anchors are skipped unless served",
+);
+const proposed = divert.invoke({
+  op: "propose", network_hash: divertNet.network_hash, draft: { ...divertDraft, ...ends },
+  records: [], record_id: "e9", now_ms: 5000,
+}).records;
+assert(proposed.length === 1 && proposed[0].status === "draft" && proposed[0].diversion.added_secs === 300, "propose builds the record");
+const rows = divert.invoke({ op: "list", network_hash: divertNet.network_hash, records: proposed }).rows;
+assert(rows.length === 1 && rows[0].in_force && rows[0].skipped_names.length === anchored.skipped_stops.length, "the list names the records");
+const retiredDoc = divert.invoke({ op: "retire", records: proposed, record_id: "e9", now_ms: 6000 }).records;
+assert(retiredDoc[0].status === "retired" && retiredDoc[0].rev === 2, "retire is the tombstone, rev bumped");
+const restoredDoc = divert.invoke({ op: "restore", records: retiredDoc, record_id: "e9", now_ms: 7000 }).records;
+assert(restoredDoc[0].status === "draft" && restoredDoc[0].rev === 3, "restore puts it back in force");
+const stored = divert.invoke({ op: "sanitize", records: [restoredDoc[0], { id: "junk" }] });
+assert(stored.records.length === 1 && stored.dropped === 1, "a stored document drops what does not parse");
+const unready = divert.raw({ op: "propose", network_hash: divertNet.network_hash, draft: divertDraft, records: [], record_id: "x", now_ms: 1 });
+assert(unready.error && unready.error.includes("first stop"), "an unready draft is refused, naming why");
+
 console.log("capability modules: ABI smoke ok");

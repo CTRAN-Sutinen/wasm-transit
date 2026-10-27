@@ -21,7 +21,7 @@ declare global {
 }
 import { app, setEditDocument, restorePlans } from "./state.svelte";
 import { analysisPath } from "./planner";
-import { loadGtfsBytes, FEED_KEY, EDITS_KEY, saveSettings, setNowOverride, flushPersist, syncEdits } from "./actions";
+import { loadGtfsBytes, FEED_KEY, EDITS_KEY, saveSettings, setNowOverride, flushPersist, syncEdits, readEdits } from "./actions";
 import { forgetCapability } from "./capabilities.svelte";
 
 app.status = "capability bus ready";
@@ -56,7 +56,7 @@ try {
 
   await restorePlans();
   const edits = await get(EDITS_KEY);
-  if (Array.isArray(edits)) setEditDocument(edits);
+  if (edits !== undefined) setEditDocument(await readEdits(edits));
 
   const cached = await get(FEED_KEY);
   if (cached) {

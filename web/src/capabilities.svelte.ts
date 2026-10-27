@@ -34,6 +34,11 @@ import type { PlanIssue } from "./types/cap_plans/PlanIssue";
 import type { PlanPeriod } from "./types/cap_plans/PlanPeriod";
 import type { Request as AuthorCapRequest } from "./types/cap_author/Request";
 import type { Response as AuthorCapResponse } from "./types/cap_author/Response";
+import type { Request as DivertCapRequest } from "./types/cap_divert/Request";
+import type { Response as DivertCapResponse } from "./types/cap_divert/Response";
+import type { DiversionDraft } from "./types/DiversionDraft";
+import type { DiversionRow } from "./types/DiversionRow";
+import type { DraftView } from "./types/DraftView";
 import type { NetworkEdit } from "./types/NetworkEdit";
 import type { NetworkWarning } from "./types/NetworkWarning";
 import type { CreatedEntity } from "./types/CreatedEntity";
@@ -120,8 +125,9 @@ class CapModule {
       | StreetsCapRequest
       | PlansCapRequest
       | SyncCapRequest
-      | AuthorCapRequest,
-  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | BoardCapResponse | RuncutCapResponse | CalendarCapResponse | DirectoryCapResponse | RtCapResponse | StreetsCapResponse | PlansCapResponse | SyncCapResponse | AuthorCapResponse {
+      | AuthorCapRequest
+      | DivertCapRequest,
+  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | BoardCapResponse | RuncutCapResponse | CalendarCapResponse | DirectoryCapResponse | RtCapResponse | StreetsCapResponse | PlansCapResponse | SyncCapResponse | AuthorCapResponse | DivertCapResponse {
     const wasm = this.#exports;
     const payload = new TextEncoder().encode(JSON.stringify(request));
     const ptr = wasm.transit_alloc(payload.length);
@@ -1542,6 +1548,61 @@ export function authorCap(module: CapModule) {
 export async function authorModule(): Promise<CapModule | null> {
   const modules = await ensure(["author"]);
   return modules.author ?? null;
+}
+
+// ---------------------------------------------------------------------
+// The diversion-authoring capability — the editor's draft answered
+// over the network (default pattern, interior skips, alignment,
+// traced path), the dispatcher's list, and the edit document's next
+// states (propose / retire / restore; sanitize for stored copies).
+// The host passes the clock and the record ids.
+// ---------------------------------------------------------------------
+
+export function divertCap(module: CapModule) {
+  const call = <K extends DivertCapResponse["op"]>(req: DivertCapRequest) =>
+    module.invoke(req) as Extract<DivertCapResponse, { op: K }>;
+  return {
+    loadNetwork: (network: Network): string =>
+      call<"load_network">({ op: "load_network", network }).network_hash,
+    draft: (networkHash: string, draft: DiversionDraft): DraftView =>
+      call<"draft">({ op: "draft", network_hash: networkHash, draft }).view,
+    list: (networkHash: string, records: EditRecord[]): DiversionRow[] =>
+      call<"list">({ op: "list", network_hash: networkHash, records }).rows,
+    propose: (networkHash: string, draft: DiversionDraft, records: EditRecord[], recordId: string, nowMs: number): EditRecord[] =>
+      call<"propose">({ op: "propose", network_hash: networkHash, draft, records, record_id: recordId, now_ms: nowMs }).records,
+    retire: (records: EditRecord[], recordId: string, nowMs: number): EditRecord[] =>
+      call<"retire">({ op: "retire", records, record_id: recordId, now_ms: nowMs }).records,
+    restore: (records: EditRecord[], recordId: string, nowMs: number): EditRecord[] =>
+      call<"restore">({ op: "restore", records, record_id: recordId, now_ms: nowMs }).records,
+    sanitize: (records: unknown): { records: EditRecord[]; dropped: number } => {
+      const resp = call<"sanitize">({ op: "sanitize", records });
+      return { records: resp.records, dropped: resp.dropped };
+    },
+  };
+}
+
+/// The diversion-authoring module, if the bus assembled one.
+export async function divertModule(): Promise<CapModule | null> {
+  const modules = await ensure(["divert"]);
+  return modules.divert ?? null;
+}
+
+/// The imported network registered in the divert module — the base
+/// network every diversion is authored against. Memoized per document
+/// (registration serializes the whole network).
+const divertHashes = new WeakMap<Network, string>();
+export async function divertOverFeed(
+  bytes: Uint8Array,
+): Promise<{ divert: ReturnType<typeof divertCap>; networkHash: string } | null> {
+  const [module, network] = await Promise.all([divertModule(), importedNetworkDocument(bytes)]);
+  if (!module || !network) return null;
+  const divert = divertCap(module);
+  let networkHash = divertHashes.get(network);
+  if (!networkHash) {
+    networkHash = divert.loadNetwork(network);
+    divertHashes.set(network, networkHash);
+  }
+  return { divert, networkHash };
 }
 
 export async function plansModule(): Promise<CapModule | null> {

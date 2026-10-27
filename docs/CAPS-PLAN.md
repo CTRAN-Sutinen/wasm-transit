@@ -124,10 +124,11 @@ LANDED:
   cap-directory's dispatch test, caps-smoke's directory flow, the
   justfile runner gate (one chained session: load → stops →
   names join → routes → patterns), the manifest (compose-time
-  self-validation; 13 capabilities today),
+  self-validation; 14 capabilities today),
   compose-time self-validation). UI READS THE BUS: the comboboxes
   (DepartureBoard, TripPlanner, DiversionPanel routes), the map's
-  name lookups, the diversion anchors, and the feed line —
+  name lookups, the diversion anchors (cap-divert's draft view
+  since W3), and the feed line —
   primed once per feed (caps.spec: cap-directory assembles;
   app.spec: the picker/combobox specs, the feed line, the
   diversion flow with the pattern default preserving the longest
@@ -343,9 +344,28 @@ day-shape answer is the dogfood record).
     (QA-FINDINGS, "Session 2026-10-27 (authoring gestures)"). The
     W0 ratchet forbids clone-and-mutate in web/ (empty allowlist).
     The browser's `retime_trip` mirror is gone.
-  * W6, early: DepartureBoard, RtPanel, and BlocksPanel are render-
-    only (props in, events out; the host makes the op calls) — off
-    the W0 allowlist.
+  * W3 operator edit records: ON THE BUS — cap-divert (transit-
+    dispatch divert_test: the default pattern, interior skipped
+    unless served, a revisited anchor never skipped, problems not
+    errors, the flattened trace, the named rows; transit-sync
+    envelope tests: propose, retire/restore without rev churn,
+    sanitize; cap-divert dispatch_test; caps-smoke divert flow;
+    the justfile divert gate — propose then board load_edits).
+    UI READS THE BUS: the diversion editor renders cap-divert's
+    draft view and list rows; Apply, Retire, Restore, and every
+    stored or synced edit document go through its ops (app.spec
+    "diversion reroutes the schedule…", "detour trace routes
+    along the street graph…", "diversion syncs to the server and
+    back", "a malformed saved record cannot wedge apply and
+    retire"). DOGFOODED (QA-FINDINGS, "Session 2026-10-27
+    (diversion authoring)"). The editor's longest-pattern pick,
+    auto-skip, record builder, tombstone, slice dedupe, and the
+    serde-defaults mirror are gone from web/; skips are now
+    "every interior stop not served", so unchecking every skip
+    no longer re-skips them all.
+  * W6, early: DepartureBoard, RtPanel, BlocksPanel, and (with W3)
+    DiversionPanel are render-only (props in, events out; the host
+    makes the op calls) — off the W0 allowlist.
 
 Model facts that hold everywhere: the import infers block
 layovers from observed end→start gaps (GTFS has none; the planner

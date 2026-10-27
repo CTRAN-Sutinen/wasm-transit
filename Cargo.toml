@@ -24,6 +24,7 @@ members = [
     "crates/cap-sync",
     "crates/cap-plans",
     "crates/cap-author",
+    "crates/cap-divert",
     "crates/transit-analysis",
     "crates/transit-dispatch",
 ]
