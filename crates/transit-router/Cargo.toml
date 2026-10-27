@@ -1,17 +1,22 @@
 [package]
 name = "transit-router"
-description = "Earliest-arrival trip planning over GTFS (RAPTOR) — pure algorithm, no I/O"
+description = "Earliest-arrival trip planning over the network model (RAPTOR) — pure algorithm, no I/O"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-transit-core = { path = "../transit-core" }
+transit-network = { path = "../transit-network" }
 chrono = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 ts-rs = { workspace = true }
 
 [dev-dependencies]
+# Tests compose over real documents: fixture feeds go through the
+# codec's import (the sanctioned dev-only path) and the model's own
+# materialize — never the GTFS substrate in production code.
+transit-core = { path = "../transit-core" }
+transit-codec = { path = "../transit-codec" }
 proptest = "1"
 zip = { workspace = true }

@@ -83,7 +83,7 @@ const byId = Object.fromEntries(manifest.capabilities.map((c) => [c.id, c]));
 assert(manifest.kernel === 1, "manifest speaks kernel v1");
 assert(byId.gtfs && byId.router, "manifest advertises gtfs and router");
 assert(byId.network, "manifest advertises the network capability");
-assert(byId.router.consumes.feed === "gtfs", "router declares its registry edge");
+assert(byId.router.consumes.network === "network", "router declares its registry edge: it consumes network documents");
 assert(byId.analysis.consumes.network === "network", "analysis consumes networks from the network capability");
 
 // Agent context: every capability states its purpose and documents
@@ -111,18 +111,14 @@ assert(
   "board migrates watchlist 1→2",
 );
 
-// The composition: the same feed bytes into both modules, and the
-// content hashes they return agree.
+// The feed document capability — parse + identity alone. The day
+// views and planning are NOT here (one question, one answer on the
+// bus; planning joins the network-document composition below); the
+// retired ops must answer as request errors, never silently serve.
 const gtfs = shell(loadModule(byId.gtfs));
-const router = shell(loadModule(byId.router));
 
 const loadedGtfs = gtfs.invokeBytes(0, feed);
 assert(loadedGtfs.op === "load_feed", "gtfs load_feed answers on the bulk-bytes seam");
-const loadedRouter = router.invokeBytes(0, feed);
-assert(
-  loadedGtfs.feed_hash === loadedRouter.feed_hash,
-  "both capabilities agree on the document identity (" + loadedGtfs.feed_hash.slice(0, 19) + "…)",
-);
 
 // The feed's identity and its names — the feed document capability's
 // whole surface. The day views are NOT here (one question, one
@@ -147,21 +143,7 @@ for (const op of retiredOps) {
   assert(gone.error && gone.error.includes("invalid request"), `${op} is retired on gtfs`);
 }
 
-const plan = router.invoke({
-  op: "plan",
-  feed_hash: loadedRouter.feed_hash,
-  from: "A",
-  to: "B",
-  date: DATE,
-  depart_secs: 7 * 3600,
-  max_legs: 4,
-});
-assert(
-  plan.itinerary && plan.itinerary.arrival_secs === 8 * 3600 + 600,
-  "router plans A → B: arrive 08:10",
-);
-
-const bad = router.raw({ op: "nope" });
+const bad = gtfs.raw({ op: "nope" });
 assert(bad.error && bad.error.includes("invalid request"), "unknown ops error, never panic");
 const missing = gtfs.raw({
   op: "feed_info",
@@ -398,6 +380,74 @@ assert(
     loadedCalendarNet.network_hash === imported.network_hash,
   "board, runcut, and calendar agree with the network capability on the document identity",
 );
+
+// THE ROUTER — planning over the same document (the planner left the
+// feed behind: the graph is the materialized day, and the diversion
+// delta is the unpatched day one materialization apart).
+const router = shell(loadModule(byId.router));
+const loadedRouterNet = router.invoke({ op: "load_network", network: imported.network });
+assert(
+  loadedRouterNet.network_hash === imported.network_hash,
+  "router agrees with the network capability on the document identity",
+);
+const plan = router.invoke({
+  op: "plan",
+  network_hash: loadedRouterNet.network_hash,
+  from: "A",
+  to: "B",
+  date: DATE,
+  depart_secs: 7 * 3600,
+  max_legs: 4,
+});
+assert(
+  plan.itinerary && plan.itinerary.arrival_secs === 8 * 3600 + 600,
+  "router plans A → B over the materialized day: arrive 08:10",
+);
+const routerEdits = router.invoke({
+  op: "load_edits",
+  network_hash: loadedRouterNet.network_hash,
+  records: [
+    {
+      id: "e1",
+      diversion: {
+        id: "d1",
+        route_id: "10",
+        direction_id: null,
+        first_kept_stop: "A",
+        last_kept_stop: "B",
+        skipped_stops: ["C"],
+        detour: null,
+        added_secs: 300,
+        start_date: DATE,
+        end_date: DATE,
+      },
+      status: "accepted",
+      rev: 1,
+      updated_at: 1,
+    },
+  ],
+});
+assert(
+  routerEdits.reports.length === 1 && routerEdits.reports[0].valid,
+  "the edit validates against the network (reported, never rejected)",
+);
+const compare = router.invoke({
+  op: "plan_compare",
+  network_hash: loadedRouterNet.network_hash,
+  edits_hash: routerEdits.edits_hash,
+  from: "A",
+  to: "B",
+  date: DATE,
+  depart_secs: 7 * 3600,
+  max_legs: 4,
+});
+assert(
+  compare.active && compare.active.arrival_hhmmss === "08:15:00" &&
+    compare.baseline && compare.baseline.arrival_hhmmss === "08:10:00",
+  "the diversion delta: 08:15 against the unpatched 08:10",
+);
+const badRouter = router.raw({ op: "nope" });
+assert(badRouter.error && badRouter.error.includes("invalid request"), "unknown ops error, never panic");
 
 // THE BOARD — when does service leave this stop?
 const boardRows = board.invoke({

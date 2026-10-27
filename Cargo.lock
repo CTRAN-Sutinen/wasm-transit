@@ -122,6 +122,7 @@ dependencies = [
  "transit-core",
  "transit-dispatch",
  "transit-network",
+ "transit-router",
  "transit-rt",
  "transit-streets",
  "transit-sync",
@@ -230,8 +231,12 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "transit-codec",
  "transit-core",
+ "transit-dispatch",
+ "transit-network",
  "transit-router",
+ "transit-sync",
  "ts-rs",
 ]
 
@@ -1099,7 +1104,6 @@ dependencies = [
  "transit-codec",
  "transit-core",
  "transit-network",
- "transit-router",
  "transit-rt",
  "transit-sync",
  "ts-rs",
@@ -1114,7 +1118,9 @@ dependencies = [
  "proptest",
  "serde",
  "thiserror 1.0.69",
+ "transit-codec",
  "transit-core",
+ "transit-network",
  "ts-rs",
  "zip",
 ]

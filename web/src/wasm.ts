@@ -14,7 +14,6 @@ import wasmUrl from "../pkg/transit_wasm.wasm?url";
 import type { EditRecord } from "./types/EditRecord";
 import type { EditReport } from "./types/EditReport";
 import type { FeatureCollection } from "./types/FeatureCollection";
-import type { Itinerary } from "./types/Itinerary";
 import type { Network } from "./types/Network";
 import type { PlanInfo } from "./types/PlanInfo";
 import type { PlanIssue } from "./types/PlanIssue";
@@ -148,37 +147,6 @@ export class GtfsHandle {
       feed_id: this.#feedId,
       stop_id: stopId,
     }) as { feature: StopFeature | null }).feature ?? null;
-  }
-
-  plan_trip(from: string, to: string, date: string, departSecs: number, maxLegs: number): Itinerary | null {
-    return (invoke({
-      op: "plan_trip",
-      feed_id: this.#feedId,
-      from,
-      to,
-      date,
-      depart_secs: departSecs,
-      max_legs: maxLegs,
-    }) as { itinerary: Itinerary | null }).itinerary ?? null;
-  }
-
-  plan_trip_compare(
-    from: string,
-    to: string,
-    date: string,
-    departSecs: number,
-    maxLegs: number,
-  ): { active: Itinerary | null; baseline: Itinerary | null } {
-    const resp = invoke({
-      op: "plan_trip_compare",
-      feed_id: this.#feedId,
-      from,
-      to,
-      date,
-      depart_secs: departSecs,
-      max_legs: maxLegs,
-    }) as { active: Itinerary | null; baseline: Itinerary | null };
-    return { active: resp.active ?? null, baseline: resp.baseline ?? null };
   }
 
   set_diversions(records: EditRecord[]): EditReport[] {

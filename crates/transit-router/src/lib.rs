@@ -1,4 +1,5 @@
-//! transit-router — earliest-arrival trip planning over GTFS.
+//! transit-router — earliest-arrival trip planning over the network
+//! model.
 //!
 //! Implements RAPTOR (Round-Based Public Transit Optimized Routing,
 //! Delling et al. 2012) in its simplest form: given an origin stop, a
@@ -6,14 +7,16 @@
 //! every stop using at most `k` transit legs, then reconstruct the
 //! itinerary that achieves it.
 //!
-//! The crate is deliberately pure: it consumes a `transit_core::Gtfs`
-//! plus a date, builds a routing network, answers queries. No I/O, no
-//! clocks — callers pass times as seconds since service-day midnight,
-//! matching `transit_core::time`.
+//! The crate is deliberately pure: it consumes the network document
+//! plus a MATERIALIZED DAY (the model's own trips — plain or
+//! effective, the caller's composition), builds a routing network,
+//! answers queries. No I/O, no clocks, no calendars — times are
+//! seconds since service-day midnight, matching every other seam.
 //!
 //! Layout:
-//! * [`network`] — GTFS → routing network: trip patterns, per-pattern
-//!   time arrays, footpath graph.
+//! * [`network`] — the model's day → routing network: trip patterns
+//!   (grouped by actual stop sequence, so edited trips ride their
+//!   own patterns), per-pattern time arrays, footpath graph.
 //! * [`raptor`] — the round-based search and itinerary reconstruction.
 
 pub mod network;

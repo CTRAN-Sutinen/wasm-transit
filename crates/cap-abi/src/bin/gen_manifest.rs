@@ -71,14 +71,16 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "router",
         file: "cap_router.wasm",
-        ops: &["load_feed", "plan"],
-        consumes: &[("feed", "gtfs")],
-        speaks: &[("feed", &[1])],
+        ops: &["load_network", "load_edits", "plan", "plan_compare"],
+        consumes: &[("network", "network")],
+        speaks: &[("network", &[1])],
         migrates: &[],
-        purpose: "Earliest-arrival trip planning (RAPTOR) over a feed document the gtfs capability produced. Assemble for users who need directions, not just departure times. Reads documents by content hash; writes nothing.",
+        purpose: "Earliest-arrival trip planning (RAPTOR) over the NETWORK document and the effective day — the model's materialized trips, patched with the edits in force (the same transit-dispatch composition every day view starts from). The diversion delta is the compare facet: the unpatched day, one materialization apart. Assemble for users who need directions, not just departure times. Documents are hash-addressed; writes nothing.",
         op_docs: &[
-            ("load_feed", "Register a GTFS zip under its content hash (the same document identity gtfs returns — assert equality at the host). Bulk-bytes op 0."),
-            ("plan", "Earliest-arrival itinerary from stop to stop at a departure time; null itinerary = unreachable within max_legs."),
+            ("load_network", "Register the network document under its content hash (the same identity the network capability's import produces and every day view consumes; idempotent)."),
+            ("load_edits", "Register the operator edit document against a loaded network, validated per record against it; the answer carries the reports and the document's hash. Wholesale replacement, like the host-owned store."),
+            ("plan", "Earliest-arrival itinerary from stop to stop at a departure time over the materialized day (edits applied when edits_hash names a registered document); null itinerary = unreachable within max_legs. The legs speak model vocabulary: the derived trip identity is (schedule, start_secs)."),
+            ("plan_compare", "The diversion delta: the same plan over the patched day (active) and the unpatched materialization (baseline, null when no edit is in force on the date)."),
         ],
     },
     ModuleSpec {
@@ -543,13 +545,51 @@ fn example_for(
                 json!({ "ok": { "op": "feed_info", "info": gtfs.feed_info } }),
             )
         }
-        ("router", "plan") => (
-            json!({ "op": "plan", "feed_hash": feed_hash, "from": "A", "to": "B",
-                    "date": "2026-10-23", "depart_secs": 25200, "max_legs": 4 }),
-            json!({ "ok": { "op": "plan", "itinerary": { "from_stop_id": "A", "to_stop_id": "B",
-                "depart_secs": 28800, "arrival_secs": 29400, "arrival_hhmmss": "08:10:00",
-                "legs": [] } } }),
-        ),
+        // The router's examples compute REAL answers over the
+        // fixture-derived document — the same composition the module
+        // dispatches through (materialize, patch, build, query).
+        ("router", "plan") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).expect("fixture date");
+            let network = ctx.derived_network();
+            let day = transit_network::materialize(network, date).expect("fixture materializes");
+            let graph = transit_router::RouterNetwork::build_from_day(network, &day, date);
+            let itinerary = transit_router::earliest_arrival(&graph, "A", "B", 25200, 4)
+                .expect("query")
+                .expect("A→B reachable on the fixture Friday");
+            (
+                json!({ "op": "plan", "network_hash": ctx.network_hash, "from": "A", "to": "B",
+                        "date": "2026-10-23", "depart_secs": 25200, "max_legs": 4 }),
+                json!({ "ok": { "op": "plan", "itinerary": itinerary } }),
+            )
+        }
+        ("router", "plan_compare") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).expect("fixture date");
+            let network = ctx.derived_network();
+            let records = dispatch_fixture_edits();
+            // The edits document's hash, computed the way the module
+            // does: sha256 of the canonical serialization.
+            let canonical = serde_json::to_string(&records).expect("records serialize");
+            let edits_hash = format!("sha256:{:x}", Sha256::digest(canonical.as_bytes()));
+            let patched =
+                transit_dispatch::effective_day(network, date, &records).expect("patched day");
+            let active_graph = transit_router::RouterNetwork::build_from_day(network, &patched, date);
+            let active = transit_router::earliest_arrival(&active_graph, "A", "B", 25200, 4)
+                .expect("query")
+                .expect("A→B reachable while the diversion runs");
+            let base_day = transit_network::materialize(network, date).expect("baseline day");
+            let base_graph = transit_router::RouterNetwork::build_from_day(network, &base_day, date);
+            let baseline = transit_router::earliest_arrival(&base_graph, "A", "B", 25200, 4)
+                .expect("query")
+                .expect("A→B reachable on the unpatched day");
+            (
+                json!({ "op": "plan_compare", "network_hash": ctx.network_hash,
+                        "edits_hash": edits_hash, "from": "A", "to": "B",
+                        "date": "2026-10-23", "depart_secs": 25200, "max_legs": 4 }),
+                json!({ "ok": { "op": "plan_compare", "active": active, "baseline": baseline } }),
+            )
+        }
         // The network capability's examples carry the REAL derived
         // document and exported zip of the fixture — computed by the
         // same shared library the module dispatches through.

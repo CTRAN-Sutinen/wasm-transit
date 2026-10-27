@@ -10,10 +10,18 @@
 use std::io::Write;
 
 use chrono::NaiveDate;
-use transit_core::Gtfs;
 use transit_router::{earliest_arrival, Leg, RouterNetwork};
 
+#[path = "prop_support.rs"]
+mod support;
+use support::model_day;
+
 const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
+
+fn router(zip: &[u8]) -> RouterNetwork {
+    let (network, day) = model_day(zip, DATE);
+    RouterNetwork::build_from_day(&network, &day, DATE)
+}
 
 fn fixture_zip() -> Vec<u8> {
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -41,8 +49,7 @@ fn fixture_zip() -> Vec<u8> {
 
 #[test]
 fn transfers_beat_later_direct_trips() {
-    let gtfs = Gtfs::from_zip_bytes(&fixture_zip()).expect("parse");
-    let net = RouterNetwork::build(&gtfs, DATE);
+    let net = router(&fixture_zip());
     let it = earliest_arrival(&net, "A", "C", 7 * 3600 + 30 * 60, 3)
         .expect("query")
         .expect("A -> C reachable");
@@ -50,16 +57,20 @@ fn transfers_beat_later_direct_trips() {
     assert_eq!(it.arrival_hhmmss, "08:30:00"); // t1 + t2, not t0's 09:10
     assert_eq!(it.legs.len(), 2, "two transit legs");
     match &it.legs[0] {
-        Leg::Transit { trip_id, board_stop_id, alight_stop_id, .. } => {
-            assert_eq!(trip_id, "t1");
+        Leg::Transit { schedule, start_secs, route_id, board_stop_id, alight_stop_id, .. } => {
+            // The derived trip's identity: (schedule, start_secs) —
+            // the key every day view and the codec's trip-id map
+            // agree on (t1 departs A at 08:00).
+            assert_eq!(*start_secs, 8 * 3600);
+            assert!(schedule.contains(&route_id[..]), "the schedule names its pattern");
             assert_eq!(board_stop_id, "A");
             assert_eq!(alight_stop_id, "B");
         }
         other => panic!("expected transit leg, got {other:?}"),
     }
     match &it.legs[1] {
-        Leg::Transit { trip_id, board_stop_id, alight_stop_id, .. } => {
-            assert_eq!(trip_id, "t2");
+        Leg::Transit { start_secs, board_stop_id, alight_stop_id, .. } => {
+            assert_eq!(*start_secs, 8 * 3600 + 20 * 60);
             assert_eq!(board_stop_id, "B");
             assert_eq!(alight_stop_id, "C");
         }
@@ -69,8 +80,7 @@ fn transfers_beat_later_direct_trips() {
 
 #[test]
 fn walking_extends_the_plan() {
-    let gtfs = Gtfs::from_zip_bytes(&fixture_zip()).expect("parse");
-    let net = RouterNetwork::build(&gtfs, DATE);
+    let net = router(&fixture_zip());
     let it = earliest_arrival(&net, "A", "D", 7 * 3600 + 30 * 60, 3)
         .expect("query")
         .expect("A -> D reachable via walk from C");
@@ -92,8 +102,7 @@ fn walking_extends_the_plan() {
 
 #[test]
 fn unreachable_and_trivial_queries() {
-    let gtfs = Gtfs::from_zip_bytes(&fixture_zip()).expect("parse");
-    let net = RouterNetwork::build(&gtfs, DATE);
+    let net = router(&fixture_zip());
 
     // D has no transit and nothing walks anywhere useful from it.
     let plan = earliest_arrival(&net, "D", "A", 8 * 3600, 4).expect("query");
@@ -129,12 +138,20 @@ fn calendar_filters_trips_from_the_network() {
         "trip_id,arrival_time,departure_time,stop_id,stop_sequence\nt1,08:00:00,08:00:00,A,1\nt1,08:10:00,08:10:00,B,2\n");
     let bytes = w.finish().unwrap().into_inner();
 
-    let gtfs = Gtfs::from_zip_bytes(&bytes).expect("parse");
-    let friday = RouterNetwork::build(&gtfs, NaiveDate::from_ymd_opt(2026, 10, 23).unwrap());
+    // Calendar filtering is the model's materialize (the day carries
+    // only the trips whose service runs); the router rides the day
+    // it is handed.
+    let friday = {
+        let (network, day) = model_day(&bytes, NaiveDate::from_ymd_opt(2026, 10, 23).unwrap());
+        RouterNetwork::build_from_day(&network, &day, NaiveDate::from_ymd_opt(2026, 10, 23).unwrap())
+    };
     assert!(earliest_arrival(&friday, "A", "B", 0, 4).expect("q").is_none(),
         "trip does not run on Friday");
 
-    let sunday = RouterNetwork::build(&gtfs, NaiveDate::from_ymd_opt(2026, 10, 25).unwrap());
+    let sunday = {
+        let (network, day) = model_day(&bytes, NaiveDate::from_ymd_opt(2026, 10, 25).unwrap());
+        RouterNetwork::build_from_day(&network, &day, NaiveDate::from_ymd_opt(2026, 10, 25).unwrap())
+    };
     let it = earliest_arrival(&sunday, "A", "B", 0, 4).expect("q").expect("runs Sunday");
     assert_eq!(it.arrival_hhmmss, "08:10:00");
 }

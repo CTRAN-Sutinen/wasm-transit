@@ -14,18 +14,9 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 use chrono::NaiveDate;
 
 use transit_core::Gtfs;
-use transit_router::RouterNetwork;
 use transit_sync::EditRecord;
 
 use crate::OpError;
-
-/// The routing networks for one service date: the effective network
-/// (edits applied) and, built lazily on first comparison, the baseline
-/// network (base feed) for before/after plans.
-pub struct RouterCache {
-    pub effective: RouterNetwork,
-    pub baseline: Option<RouterNetwork>,
-}
 
 /// Everything one loaded feed carries: the immutable artifact, the
 /// pushed edit document (a materialized view of the caller's
@@ -33,9 +24,6 @@ pub struct RouterCache {
 /// caching rules; the logic is unchanged, only its home moved.
 pub struct FeedState {
     pub gtfs: Gtfs,
-    /// Routing networks for one service date (keyed by its
-    /// "YYYY-MM-DD" string).
-    pub router: Option<(String, RouterCache)>,
     /// The pushed edit document (order preserved).
     pub edits: Vec<EditRecord>,
     /// Patched feed for the last date-scoped query; only Some when
@@ -53,7 +41,6 @@ impl FeedState {
     pub fn invalidate(&mut self) {
         // Any edit change makes every derived structure stale.
         self.effective = None;
-        self.router = None;
     }
 
     /// Run `f` against the effective feed for `date_str` — the base
@@ -77,17 +64,6 @@ impl FeedState {
         let (_, patched) = self.effective.as_ref().expect("patched feed just built");
         Ok(f(patched))
     }
-
-    /// Make sure the router cache holds the networks for `date_str`.
-    pub fn ensure_router(&mut self, date_str: &str) -> Result<(), OpError> {
-        if self.router.as_ref().is_some_and(|(key, _)| key == date_str) {
-            return Ok(());
-        }
-        let date = crate::parse_date(date_str)?;
-        let net = self.with_effective(date_str, |gtfs| RouterNetwork::build(gtfs, date))?;
-        self.router = Some((date_str.to_string(), RouterCache { effective: net, baseline: None }));
-        Ok(())
-    }
 }
 
 type Registry = BTreeMap<u32, FeedState>;
@@ -107,7 +83,7 @@ pub fn register_feed(gtfs: Gtfs) -> u32 {
     let id = next_feed_id();
     registry().lock().expect("feed registry poisoned").insert(
         id,
-        FeedState { gtfs, router: None, edits: Vec::new(), effective: None },
+        FeedState { gtfs, edits: Vec::new(), effective: None },
     );
     id
 }

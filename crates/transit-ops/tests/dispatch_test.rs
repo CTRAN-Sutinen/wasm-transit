@@ -148,45 +148,14 @@ fn edit_document_flow_matches_the_wasm_smoke() {
     // The effective ghost reflects the edit: C is skipped, so t30's
     // path draws A → B (2 vertices) — the same fact the retired
     // board op asserted as "C loses service", on a surviving read.
+    // (The plan-compare delta this test once pinned here — 08:15
+    // active vs 08:10 baseline, no baseline once retired — moved to
+    // cap-router's dispatch test with the op.)
     assert_eq!(effective_route_vertices(feed_id, "10"), 2);
 
-    // Plan compare: diverted arrival vs baseline.
-    match dispatch(Request::PlanTripCompare {
-        feed_id,
-        from: "A".into(),
-        to: "B".into(),
-        date: DATE.into(),
-        depart_secs: 27000,
-        max_legs: 6,
-    })
-    .unwrap()
-    {
-        Response::PlanTripCompare { active, baseline } => {
-            assert_eq!(active.as_ref().unwrap().arrival_hhmmss, "08:15:00");
-            assert_eq!(baseline.as_ref().unwrap().arrival_hhmmss, "08:10:00");
-        }
-        _ => panic!(),
-    }
-
-    // Retire: tombstone, base behavior, no baseline in the compare.
+    // Retire: tombstone, base behavior.
     dispatch(Request::SetDiversions { feed_id, records: vec![record(EditStatus::Retired, 2)] }).unwrap();
     assert_eq!(effective_route_vertices(feed_id, "10"), base_ghost);
-    match dispatch(Request::PlanTripCompare {
-        feed_id,
-        from: "A".into(),
-        to: "B".into(),
-        date: DATE.into(),
-        depart_secs: 27000,
-        max_legs: 6,
-    })
-    .unwrap()
-    {
-        Response::PlanTripCompare { active, baseline } => {
-            assert!(baseline.is_none(), "no baseline when nothing is in force");
-            assert_eq!(active.as_ref().unwrap().arrival_hhmmss, "08:10:00");
-        }
-        _ => panic!(),
-    }
 }
 
 #[test]
@@ -431,18 +400,15 @@ fn sync_edits_merges_submits_and_reports() {
 /// two-trip block.
 const NETWORK_DOC: &str = include_str!("../../../testdata/network.json");
 
-fn network_load() -> u32 {
-    let net: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
-    let gtfs = network_to_gtfs(&net).expect("fixture network materializes");
-    transit_ops::state::register_feed(gtfs)
-}
-
 #[test]
-fn network_document_drives_the_whole_op_surface() {
-    let feed_id = network_load();
-
+fn network_document_loads_like_any_feed() {
     // The summary op is retired; the load itself summarizes:
-    // 3 stops, 1 route, 3 trips, 9 stop_times.
+    // 3 stops, 1 route, 3 trips, 9 stop_times. (The planner's legs
+    // this test once pinned — derived trip ids "<service>@<start>",
+    // mid-pattern interpolation — are pinned at their owning layers:
+    // the codec's export naming in its prop tests, interpolation in
+    // transit-network's materialize tests. Planning itself is
+    // cap-router's now.)
     let net: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
     let gtfs = network_to_gtfs(&net).expect("fixture network materializes");
     let summary =
@@ -451,59 +417,6 @@ fn network_document_drives_the_whole_op_surface() {
             _ => panic!("load"),
         };
     assert_eq!((summary.stops, summary.routes, summary.trips, summary.stop_times), (3, 1, 3, 9));
-
-    // The derived trip ids are "<service>@<start>" and mid-pattern
-    // stops interpolate. The board op is retired (cap-dispatch owns
-    // it); both conventions still pin here through the planner's
-    // legs over the same derived feed.
-    let plan_b = match dispatch(Request::PlanTrip {
-        feed_id,
-        from: "A".into(),
-        to: "B".into(),
-        date: "2026-10-23".into(),
-        depart_secs: 28800,
-        max_legs: 3,
-    })
-    .unwrap()
-    {
-        Response::PlanTrip { itinerary } => itinerary,
-        _ => panic!("plan_trip"),
-    };
-    let legs_b = plan_b.expect("A→B is plannable").legs;
-    assert_eq!(legs_b.len(), 1);
-    match &legs_b[0] {
-        transit_router::Leg::Transit { trip_id, alight_secs, .. } => {
-            assert_eq!(trip_id, "10-weekday@28800");
-            // Interpolation: B (midpoint of a 600s run) is 5 minutes in.
-            assert_eq!(*alight_secs, 28800 + 300);
-        }
-        leg => panic!("expected a transit leg, got {leg:?}"),
-    }
-
-    // Planning: A→C on the planner's own document, 1 leg.
-    let plan = match dispatch(Request::PlanTrip {
-        feed_id,
-        from: "A".into(),
-        to: "C".into(),
-        date: "2026-10-23".into(),
-        depart_secs: 28800,
-        max_legs: 3,
-    })
-    .unwrap()
-    {
-        Response::PlanTrip { itinerary } => itinerary,
-        _ => panic!("plan_trip"),
-    };
-    let itinerary = plan.expect("A→C is plannable");
-    assert_eq!(itinerary.legs.len(), 1);
-    match &itinerary.legs[0] {
-        transit_router::Leg::Transit { trip_id, alight_secs, .. } => {
-            assert_eq!(trip_id, "10-weekday@28800");
-            // C is a timepoint: the full 600s run.
-            assert_eq!(*alight_secs, 28800 + 600);
-        }
-        leg => panic!("expected a transit leg, got {leg:?}"),
-    }
 }
 
 #[test]

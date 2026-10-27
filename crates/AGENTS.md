@@ -17,9 +17,10 @@ serialization.
   capabilities compose over the NETWORK document (+ its day
   views) — presenting composition over the feed as an option,
   a trade-off, or an open question is the law broken in prose.
-  cap-router reads the feed today as a TRANSITIONAL exception
-  (the Stage-B-era shape); U5 in docs/PLAN.md retires it. No new
-  feed-composing code, and no plan may reopen the question.
+  (cap-router read the feed as a transitional, Stage-B-era
+  exception; U5 retired it — the router plans over the network
+  document and the effective day.) No new feed-composing code,
+  and no plan may reopen the question.
 - Capabilities compose over the network document, addressed by
   content hash. The module is the hash authority.
 - Operator edits, rt joins, analysis, dispatch views: all work in

@@ -1,6 +1,6 @@
 [package]
 name = "cap-router"
-description = "The router capability: earliest-arrival planning over a GTFS feed keyed by content hash. A pure-function capability — it consumes the feed document the gtfs capability produces, and answers nothing else."
+description = "The router capability: earliest-arrival planning over the NETWORK document and the effective day (the model's materialized trips, patched with the edits in force). The diversion delta is the compare facet: the unpatched day, one materialization apart."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,15 +12,19 @@ crate-type = ["cdylib", "rlib"]  # rlib: integration tests link the crate native
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-ts-rs = { workspace = true }
 chrono = { workspace = true }
-transit-core = { path = "../transit-core" }
+ts-rs = { workspace = true }
+transit-network = { path = "../transit-network" }
+transit-sync = { path = "../transit-sync" }
+transit-dispatch = { path = "../transit-dispatch" }
 transit-router = { path = "../transit-router" }
 cap-abi = { path = "../cap-abi" }
 
 [dev-dependencies]
-# The composition law: the document hash is sha256 of the content —
-# the same format the gtfs capability and the manifest use. (Linking
-# cap-gtfs here would collide the two modules' #[no_mangle] ABI
-# exports, so the law is asserted against the hash directly.)
+# The composition law: the document hash is sha256 of the canonical
+# serialization — the same format every capability and the manifest
+# use. Fixture documents come through the codec's import (the
+# sanctioned dev-only path).
 sha2 = { workspace = true }
+transit-codec = { path = "../transit-codec" }
+transit-core = { path = "../transit-core" }

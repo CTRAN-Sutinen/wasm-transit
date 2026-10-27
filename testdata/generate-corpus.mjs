@@ -61,14 +61,11 @@ const steps = [
     name: "set_diversions_draft",
     request: `{"op":"set_diversions","feed_id":${feedIdPlaceholder},"records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"draft","rev":1,"updated_at":1}]}`,
   },
-  // The board op is RETIRED (cap-dispatch owns the day views); the
-  // diversion's effect pins through the surviving date-scoped reads
-  // that run after this step: plan_trip_compare and
+  // The board and planning ops are RETIRED (cap-dispatch owns the day
+  // views; cap-router owns planning, over the network document and
+  // the effective day); the diversion's effect pins through the
+  // surviving date-scoped reads that run after this step:
   // trip_path_geojson below.
-  {
-    name: "plan_trip_compare",
-    request: `{"op":"plan_trip_compare","feed_id":${feedIdPlaceholder},"from":"A","to":"B","date":"2026-10-23","depart_secs":27000,"max_legs":6}`,
-  },
   {
     name: "stops_geojson",
     request: `{"op":"stops_geojson","feed_id":${feedIdPlaceholder}}`,

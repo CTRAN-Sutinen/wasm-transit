@@ -1,4 +1,5 @@
-//! Building the routing network from a parsed GTFS feed.
+//! Building the routing network from the network model's materialized
+//! day.
 //!
 //! RAPTOR does not work on individual trips — it boards *trip
 //! patterns*: groups of trips that visit the same stop sequence in the
@@ -6,15 +7,18 @@
 //! pattern, trips are time-ordered, which turns "earliest trip I can
 //! board at stop S after time T" into one binary search.
 //!
-//! The network is built for one service date: only trips whose service
-//! runs that day are included (via transit-core's calendar), so the
-//! per-pattern trip arrays contain exactly the boardable trips.
+//! The network is built for one service date over the materialized
+//! day (the model's own trips — materialized, and patched with the
+//! day's edits when the caller composed an effective day). Grouping
+//! is by ACTUAL stop sequence: an edited trip that skips stops no
+//! longer shares its authored pattern's sequence and must not ride
+//! the authored pattern's array.
 
 use std::collections::HashMap;
 
 use chrono::NaiveDate;
 
-use transit_core::Gtfs;
+use transit_network::{MaterializedTrip, Network};
 
 /// Default footpath radius in meters.
 pub const WALK_RADIUS_M: f64 = 300.0;
@@ -51,12 +55,18 @@ pub struct Pattern {
 
 /// One trip of a pattern, with times aligned to `Pattern::stop_positions`.
 ///
-/// `departures`/`arrivals` are seconds since service-day midnight.
-/// Missing GTFS times are filled: departures forward-fill, arrivals
-/// backward-fill, so every position has usable values.
+/// `departures`/`arrivals` are seconds since service-day midnight
+/// (the model's anchor; past-86400 values are after-midnight trips,
+/// not errors). Materialized times are complete — the model
+/// interpolates non-timepoints at materialize time, so there is
+/// nothing to fill here.
 #[derive(Debug, Clone)]
 pub struct PatternTrip {
-    pub trip_id: String,
+    /// The derived trip's identity: its schedule and start. The model
+    /// names no trips; (schedule, start_secs) is the key every day
+    /// view and the codec's trip-id map agree on.
+    pub schedule: String,
+    pub start_secs: u32,
     pub route_id: String,
     pub route_name: String,
     pub headsign: Option<String>,
@@ -64,8 +74,9 @@ pub struct PatternTrip {
     pub arrivals: Vec<u32>,
 }
 
-/// The routing network for one feed on one date. Fields are public for
-/// read-only use (tests, tooling); treat them as immutable.
+/// The routing network for one network document on one date. Fields
+/// are public for read-only use (tests, tooling); treat them as
+/// immutable.
 #[derive(Debug, Clone)]
 pub struct RouterNetwork {
     pub date: NaiveDate,
@@ -83,49 +94,47 @@ impl RouterNetwork {
         self.stop_index.get(stop_id).copied()
     }
 
-    /// Build the network for `date`. Trips not running that day (per
-    /// the calendar) are excluded; so are trips whose stop times are
-    /// unusable (no first departure / last arrival) or that reference
-    /// unknown stops.
-    pub fn build(gtfs: &Gtfs, date: NaiveDate) -> RouterNetwork {
-        // Stops first: index every stop, remember coordinates for the
-        // footpath graph.
-        let mut stops: Vec<StopNode> = Vec::with_capacity(gtfs.stops.len());
-        let mut stop_index: HashMap<String, u32> = HashMap::with_capacity(gtfs.stops.len());
-        let mut coords: Vec<Option<(f64, f64)>> = Vec::with_capacity(gtfs.stops.len());
-        for stop in gtfs.stops.values() {
+    /// Build the network for `date` over a materialized day. The day
+    /// is the caller's composition: plain `materialize` for a
+    /// schedule-only day, `effective_day` for the day with the edits
+    /// in force — the router never expands calendars or applies
+    /// patches itself (Law 2: one composition, not per-module
+    /// reimplementations). Trips whose stop sequence references
+    /// unknown stops are skipped, never an error.
+    pub fn build_from_day(
+        network: &Network,
+        day: &[MaterializedTrip],
+        date: NaiveDate,
+    ) -> RouterNetwork {
+        // Stops first, from the network document (BTreeMap order —
+        // deterministic): index every stop, remember coordinates for
+        // the footpath graph.
+        let mut stops: Vec<StopNode> = Vec::with_capacity(network.stops.len());
+        let mut stop_index: HashMap<String, u32> = HashMap::with_capacity(network.stops.len());
+        let mut coords: Vec<Option<(f64, f64)>> = Vec::with_capacity(network.stops.len());
+        for (stop_id, stop) in &network.stops {
             let idx = stops.len() as u32;
             stops.push(StopNode {
-                stop_id: stop.stop_id.clone(),
-                stop_name: stop.stop_name.clone(),
+                stop_id: stop_id.clone(),
+                stop_name: stop.name.clone(),
                 footpaths: Vec::new(),
             });
-            coords.push(match (stop.stop_lat, stop.stop_lon) {
-                (Some(lat), Some(lon)) => Some((lat, lon)),
-                _ => None,
-            });
-            stop_index.insert(stop.stop_id.clone(), idx);
+            coords.push(Some((stop.lat, stop.lon)));
+            stop_index.insert(stop_id.clone(), idx);
         }
 
-        // Group trips into patterns keyed by their stop sequence.
+        // Group trips into patterns keyed by their stop sequence —
+        // the ACTUAL sequence (an edited trip that skips stops is its
+        // own pattern), resolved to stop indices.
         let mut pattern_map: HashMap<Vec<u32>, Vec<PatternTrip>> = HashMap::new();
-        for trip in gtfs.trips.values() {
-            if !gtfs.services.is_active(&trip.service_id, date) {
+        for trip in day {
+            if trip.stop_times.len() < 2 {
                 continue;
             }
-            let Some(stop_times) = gtfs.trip_stop_times(&trip.trip_id) else {
-                continue;
-            };
-            if stop_times.len() < 2 {
-                continue;
-            }
-
-            // Resolve stop indices for the whole sequence; bail on
-            // unknown stops.
-            let mut positions: Vec<u32> = Vec::with_capacity(stop_times.len());
+            let mut positions: Vec<u32> = Vec::with_capacity(trip.stop_times.len());
             let mut all_known = true;
-            for st in &stop_times {
-                match stop_index.get(&st.stop_id) {
+            for st in &trip.stop_times {
+                match stop_index.get(&st.stop) {
                     Some(&i) => positions.push(i),
                     None => {
                         all_known = false;
@@ -137,41 +146,23 @@ impl RouterNetwork {
                 continue;
             }
 
-            let n = stop_times.len();
-            // Fill missing times: departures forward, arrivals backward.
-            let mut departures = vec![u32::MAX; n];
-            let mut prev = u32::MAX;
-            for (i, st) in stop_times.iter().enumerate() {
-                let dep = st.departure_time.or(st.arrival_time).unwrap_or(prev);
-                departures[i] = dep;
-                prev = dep;
-            }
-            let mut arrivals = vec![u32::MAX; n];
-            let mut next = u32::MAX;
-            for (i, st) in stop_times.iter().enumerate().rev() {
-                let arr = st.arrival_time.or(st.departure_time).unwrap_or(next);
-                arrivals[i] = arr;
-                next = arr;
-            }
-            // First departure and last arrival are the minimum needed to
-            // ride a trip meaningfully.
-            if departures[0] == u32::MAX || arrivals[n - 1] == u32::MAX {
-                continue;
-            }
-
-            let route_name = gtfs
+            let route_name = network
                 .routes
-                .get(&trip.route_id)
-                .map(|r| r.display_name())
-                .unwrap_or_else(|| trip.route_id.clone());
+                .get(&trip.route)
+                .map(|r| r.name.clone())
+                .unwrap_or_else(|| trip.route.clone());
+            // The authored pattern's name is the human-facing
+            // description of where these trips go.
+            let headsign = network.patterns.get(&trip.pattern).map(|p| p.name.clone());
 
             pattern_map.entry(positions).or_default().push(PatternTrip {
-                trip_id: trip.trip_id.clone(),
-                route_id: trip.route_id.clone(),
+                schedule: trip.schedule.clone(),
+                start_secs: trip.start_secs,
+                route_id: trip.route.clone(),
                 route_name,
-                headsign: trip.trip_headsign.clone(),
-                departures,
-                arrivals,
+                headsign,
+                departures: trip.stop_times.iter().map(|st| st.departure_secs).collect(),
+                arrivals: trip.stop_times.iter().map(|st| st.arrival_secs).collect(),
             });
         }
 

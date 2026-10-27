@@ -36,7 +36,10 @@ transit-network The authored network model (planner authority):
                 name, effective_from) — agencies implement a few
                 picks a year at defined dates; empty identity =
                 unversioned (a fresh import).
-transit-router  RAPTOR earliest-arrival planning.
+transit-router  RAPTOR earliest-arrival planning over the network
+                model's materialized day (patterns grouped by actual
+                stop sequence — an edited trip rides its own
+                pattern); GTFS-free since U5.
 transit-codec   The network codec, both directions: a network document
                 expanded into the derived-feed view (the publish
                 path) and a GTFS feed inferred into an authored
@@ -90,17 +93,17 @@ transit-streets Street routing graph for detour authoring: GeoJSON in,
 transit-ops     dispatch(Request) -> Response: the host-agnostic seam
                 + per-feed registry (feed_id keyed). The codec ops,
                 analysis ops, rt decode, the dispatch reads
-                (active_services / blocks / block_trips / feed_info)
-                AND the day views (departures / block_trips) are
+                (active_services / blocks / block_trips / feed_info),
+                the day views (departures / block_trips) AND the
+                planning ops (plan_trip / plan_trip_compare) are
                 DELETED — they live in cap-network, cap-analysis,
-                cap-rt, and the day-view capabilities (cap-board,
-                cap-runcut, cap-calendar) over the shared libraries;
-                the board and block chains read the bus.
-                What remains: the parsed-feed op surface the map and
-                the planner still need (geojson, planning — all
-                date-scoped by the edit document via
-                set_diversions, the last diversion consumer) and
-                the plans chain in src/plans.rs
+                cap-rt, the day-view capabilities (cap-board,
+                cap-runcut, cap-calendar), and cap-router; the
+                board, chains, and plans read the bus.
+                What remains: the parsed-feed op surface the map
+                still needs (geojson, all date-scoped by the edit
+                document via set_diversions, the last diversion
+                consumer) and the plans chain in src/plans.rs
                 (plans_resolve / plans_validate / plans_periods —
                 cross-document domain logic, the same standing as
                 transit-sync's merge). The street ops are DELETED —
@@ -192,11 +195,14 @@ cap-gtfs        The feed-document capability: GTFS zip →
                 CLOSED: parse, export, primitive boundary queries —
                 nothing more goes "in GTFS."
 cap-router      The router capability: RAPTOR earliest-arrival
-                planning. Today it plans over a feed document
-                (cap-gtfs produces it) — a TRANSITIONAL exception
-                to Law 1; U5 moves it onto the network document +
-                the effective day. A pure-function capability; it
-                writes nothing.
+                planning over the NETWORK document and the
+                effective day — the model's materialized trips,
+                patched with the edits in force (the same
+                transit-dispatch composition every day view starts
+                from), the RAPTOR graph cached per (network, edits,
+                date). The compare facet is the diversion delta:
+                the unpatched day, one materialization apart. A
+                pure-function capability; it writes nothing.
 cap-analysis    The analysis capability: planner numbers (stats,
                 service types, coverage) over hash-keyed network and
                 population-layer registries. The domain code lives

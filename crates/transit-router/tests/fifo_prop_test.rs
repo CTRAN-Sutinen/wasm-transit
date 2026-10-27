@@ -14,12 +14,11 @@
 use chrono::NaiveDate;
 use proptest::collection::vec;
 use proptest::prelude::*;
-use transit_core::Gtfs;
 use transit_router::{earliest_arrival, RouterNetwork};
 
 #[path = "prop_support.rs"]
 mod support;
-use support::{build_zip, TripSpec};
+use support::{build_zip, model_day, TripSpec};
 
 const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
 const MAX_LEGS: usize = 12;
@@ -56,8 +55,8 @@ proptest! {
     fn later_departures_never_arrive_earlier(
         (n_stops, trips, from, to, depart, later) in feed(),
     ) {
-        let gtfs = Gtfs::from_zip_bytes(&build_zip(n_stops, &trips)).expect("parse");
-        let net = RouterNetwork::build(&gtfs, DATE);
+        let (network, day) = model_day(&build_zip(n_stops, &trips), DATE);
+        let net = RouterNetwork::build_from_day(&network, &day, DATE);
         let early = earliest_arrival(&net, &format!("s{from}"), &format!("s{to}"), depart, MAX_LEGS).expect("valid query");
         let late = earliest_arrival(&net, &format!("s{from}"), &format!("s{to}"), depart + later, MAX_LEGS).expect("valid query");
 

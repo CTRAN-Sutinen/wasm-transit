@@ -1,8 +1,9 @@
 import { app, getEditDocument, setEditDocument, setStreets, type DiversionDraft } from "./state.svelte";
 import { get as idbGet, set as idbSet, del as idbDel } from "idb-keyval";
-import { ensureAnalysisLayer, ensureStreets, rtCap, rtModule } from "./capabilities.svelte";
+import { ensureAnalysisLayer, ensureRouterBoarding, ensureRouterEdits, ensureStreets, routerCap, routerModule, rtCap, rtModule } from "./capabilities.svelte";
 import type { EditRecord } from "./types/EditRecord";
 import type { Itinerary } from "./types/Itinerary";
+import type { TripIdMap } from "./types/TripIdMap";
 import type { LineGeometry } from "./types/LineGeometry";
 import type { StreetPosition } from "./types/StreetPosition";
 import type { Streets } from "./streets";
@@ -260,20 +261,34 @@ function fmtClock(secs: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-export function planTrip(fromStopId: string, toStopId: string, departTime: string): void {
-  if (!app.gtfs) return;
+export async function planTrip(fromStopId: string, toStopId: string, departTime: string): Promise<void> {
   if (!fromStopId || !toStopId) {
     app.planNotice = "Pick a from and a to stop first.";
     return;
   }
+  const bytes = feedBytes();
+  if (!bytes) return;
   try {
     const depart = departTime
       ? hhmmssToSecs(departTime)
       : secondsSinceMidnight();
-    const anyActive = getEditDocument().some((e) => e.status !== "retired");
-    if (anyActive) {
+    // The router capability plans over the NETWORK document derived
+    // from the loaded feed (the monolith's plan ops are retired —
+    // U5). The boarding carries the trip-id map: the legs speak the
+    // model's derived identity, the map still draws by the agency
+    // trip ids (U6 takes the map).
+    const boarding = await ensureRouterBoarding(bytes);
+    const module = boarding ? await routerModule() : null;
+    if (!module || !boarding) {
+      app.planNotice = "Planning needs the router capability — the assembly is unavailable.";
+      return;
+    }
+    const router = routerCap(module);
+    const date = serviceDate();
+    const editsHash = await ensureRouterEdits(boarding.networkHash, getEditDocument());
+    if (editsHash) {
       // With edits in force, plan both worlds and show the delta.
-      const cmp = app.gtfs.plan_trip_compare(fromStopId, toStopId, serviceDate(), depart, 6);
+      const cmp = router.planCompare(boarding.networkHash, editsHash, fromStopId, toStopId, date, depart, 6);
       app.plan = cmp.active ?? null;
       app.planBaseline = cmp.baseline ?? null;
       if (!cmp.active && cmp.baseline) {
@@ -284,7 +299,7 @@ export function planTrip(fromStopId: string, toStopId: string, departTime: strin
         app.planNotice = cmp.active ? null : "No trip found within 6 legs — try a different time or closer stops.";
       }
     } else {
-      app.plan = app.gtfs.plan_trip(fromStopId, toStopId, serviceDate(), depart, 6);
+      app.plan = router.plan(boarding.networkHash, null, fromStopId, toStopId, date, depart, 6);
       app.planBaseline = null;
       app.planNotice = app.plan
         ? null
@@ -293,21 +308,32 @@ export function planTrip(fromStopId: string, toStopId: string, departTime: strin
     // A new plan is the focus now — the previously selected trip's
     // line would fight the itinerary for the same pixels.
     clearTrip();
-    app.itineraryFeatures = buildItineraryFeatures(app.plan);
+    app.itineraryFeatures = buildItineraryFeatures(app.plan, boarding.tripMap);
   } catch (e) {
     app.planNotice = `Planning failed: ${e.message}`;
     error(e);
   }
 }
 
-function buildItineraryFeatures(plan: Itinerary | null): PlanFeature[] {
+/// The agency trip id a derived leg rode, via the import's trip-id
+/// map — the model names trips (schedule, start_secs) and the map
+/// still draws by the agency's ids (U6 takes the map).
+function agencyTripId(map: TripIdMap, schedule: string, startSecs: number): string | null {
+  const entry = map.entries.find((e) => e.schedule === schedule && e.start_secs === startSecs);
+  return entry?.agency_trip_ids[0] ?? null;
+}
+
+function buildItineraryFeatures(plan: Itinerary | null, tripMap: TripIdMap): PlanFeature[] {
   if (!plan || !app.gtfs) return [];
   const features: PlanFeature[] = [];
   for (const leg of plan.legs) {
     if (leg.type === "transit") {
       // The ridden segment only — the full route would be confusing.
-      const path = app.gtfs.trip_segment_geojson(
-        leg.trip_id, leg.board_stop_id, leg.alight_stop_id, serviceDate());
+      const tripId = agencyTripId(tripMap, leg.schedule, leg.start_secs);
+      const path = tripId
+        ? app.gtfs.trip_segment_geojson(
+            tripId, leg.board_stop_id, leg.alight_stop_id, serviceDate())
+        : null;
       if (path) {
         features.push({ type: "Feature", geometry: path.geometry, properties: { kind: "transit" } });
       }

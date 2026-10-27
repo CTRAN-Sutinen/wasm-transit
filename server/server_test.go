@@ -138,27 +138,12 @@ func TestArtifactRoundTrip(t *testing.T) {
 
 	// The effective ghost reflects the edit: C is skipped, so t30's
 	// path draws A → B (2 vertices) — the same fact the retired board op
-	// asserted as "C loses service".
+	// asserted as "C loses service". (The plan-compare delta this
+	// once pinned — 08:15 active vs 08:10 baseline — moved to
+	// cap-router's dispatch test with the op: the router plans over
+	// the network document and the effective day.)
 	if got := routeGhostVertices(t, host, feedID, "10"); got != 2 {
 		t.Fatalf("effective path vertices: %d", got)
-	}
-
-	var cmp struct {
-		Active struct {
-			Arrival string `json:"arrival_hhmmss"`
-		} `json:"active"`
-		Baseline struct {
-			Arrival string `json:"arrival_hhmmss"`
-		} `json:"baseline"`
-	}
-	if err := host.Invoke(ctx, map[string]any{
-		"op": "plan_trip_compare", "feed_id": feedID,
-		"from": "A", "to": "B", "date": date, "depart_secs": 27000, "max_legs": 6,
-	}, &cmp); err != nil {
-		t.Fatalf("plan_trip_compare: %v", err)
-	}
-	if cmp.Active.Arrival != "08:15:00" || cmp.Baseline.Arrival != "08:10:00" {
-		t.Fatalf("compare: active %s baseline %s", cmp.Active.Arrival, cmp.Baseline.Arrival)
 	}
 
 	// Retire = tombstone; DropFeed releases the registry entry.
@@ -179,7 +164,7 @@ func TestArtifactRoundTrip(t *testing.T) {
 	if err := host.DropFeed(ctx, feedID); err != nil {
 		t.Fatalf("drop_feed: %v", err)
 	}
-	err = host.Invoke(ctx, map[string]any{"op": "summary", "feed_id": feedID}, &struct{}{})
+	err = host.Invoke(ctx, map[string]any{"op": "stops_geojson", "feed_id": feedID}, &struct{}{})
 	if err == nil || !strings.Contains(err.Error(), "unknown feed_id") {
 		t.Fatalf("dropped feed must error, got %v", err)
 	}

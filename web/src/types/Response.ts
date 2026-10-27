@@ -3,7 +3,6 @@ import type { EditRecord } from "./EditRecord";
 import type { EditReport } from "./EditReport";
 import type { FeatureCollection } from "./FeatureCollection";
 import type { FeedSummary } from "./FeedSummary";
-import type { Itinerary } from "./Itinerary";
 import type { PlanIssue } from "./PlanIssue";
 import type { PlanPeriod } from "./PlanPeriod";
 import type { StopFeature } from "./StopFeature";
@@ -12,4 +11,4 @@ import type { TripLineFeature } from "./TripLineFeature";
 /**
  * The result of one operation. Same tagging as [`Request`].
  */
-export type Response = { "op": "load_feed", feed_id: number, summary: FeedSummary, } | { "op": "plans_resolve", plan: string | null, } | { "op": "plans_validate", issues: Array<PlanIssue>, } | { "op": "plans_periods", periods: Array<PlanPeriod>, } | { "op": "stops_geojson", collection: FeatureCollection, } | { "op": "trip_path_geojson", feature: TripLineFeature | null, } | { "op": "route_path_geojson", feature: TripLineFeature | null, } | { "op": "trip_segment_geojson", feature: TripLineFeature | null, } | { "op": "stop_point", feature: StopFeature | null, } | { "op": "plan_trip", itinerary: Itinerary | null, } | { "op": "plan_trip_compare", active: Itinerary | null, baseline: Itinerary | null, } | { "op": "set_diversions", reports: Array<EditReport>, } | { "op": "drop_feed", } | { "op": "sync_edits", records: Array<EditRecord>, reports: Array<EditReport>, };
+export type Response = { "op": "load_feed", feed_id: number, summary: FeedSummary, } | { "op": "plans_resolve", plan: string | null, } | { "op": "plans_validate", issues: Array<PlanIssue>, } | { "op": "plans_periods", periods: Array<PlanPeriod>, } | { "op": "stops_geojson", collection: FeatureCollection, } | { "op": "trip_path_geojson", feature: TripLineFeature | null, } | { "op": "route_path_geojson", feature: TripLineFeature | null, } | { "op": "trip_segment_geojson", feature: TripLineFeature | null, } | { "op": "stop_point", feature: StopFeature | null, } | { "op": "set_diversions", reports: Array<EditReport>, } | { "op": "drop_feed", } | { "op": "sync_edits", records: Array<EditRecord>, reports: Array<EditReport>, };

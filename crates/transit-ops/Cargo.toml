@@ -12,7 +12,6 @@ serde_json = { workspace = true }
 chrono = { workspace = true }
 prost = { workspace = true }
 transit-core = { path = "../transit-core" }
-transit-router = { path = "../transit-router" }
 transit-sync = { path = "../transit-sync" }
 transit-network = { path = "../transit-network" }
 transit-analysis = { path = "../transit-analysis" }

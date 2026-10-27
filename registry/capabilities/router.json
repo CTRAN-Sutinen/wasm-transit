@@ -1,8 +1,8 @@
 {
-  "blob": "blobs/2b5190b338851a8f7f33986095a19c3e6544939ecfd617517d3b886f25813e08.wasm",
-  "bytes": 518943,
+  "blob": "blobs/a3b7d8a7c7c8d2328e1db1b72af2b22e41144230aa554cf7303c3cc933024390.wasm",
+  "bytes": 524578,
   "consumes": {
-    "feed": "gtfs"
+    "network": "network"
   },
   "evidence": {
     "dirty_tree": true,
@@ -12,26 +12,30 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "15ee6cf515fda63524c77336cb72ffb6fcf8c39c"
+    "source_commit": "47755dbaab66a02f2894728484273311c7a44ba1"
   },
-  "hash": "sha256:2b5190b338851a8f7f33986095a19c3e6544939ecfd617517d3b886f25813e08",
+  "hash": "sha256:a3b7d8a7c7c8d2328e1db1b72af2b22e41144230aa554cf7303c3cc933024390",
   "id": "router",
   "kernel": 1,
   "migrates": {},
   "op_docs": {
-    "load_feed": {
-      "description": "Register a GTFS zip under its content hash (the same document identity gtfs returns — assert equality at the host). Bulk-bytes op 0.",
+    "load_edits": {
+      "description": "Register the operator edit document against a loaded network, validated per record against it; the answer carries the reports and the document's hash. Wholesale replacement, like the host-owned store.",
+      "example": null
+    },
+    "load_network": {
+      "description": "Register the network document under its content hash (the same identity the network capability's import produces and every day view consumes; idempotent).",
       "example": null
     },
     "plan": {
-      "description": "Earliest-arrival itinerary from stop to stop at a departure time; null itinerary = unreachable within max_legs.",
+      "description": "Earliest-arrival itinerary from stop to stop at a departure time over the materialized day (edits applied when edits_hash names a registered document); null itinerary = unreachable within max_legs. The legs speak model vocabulary: the derived trip identity is (schedule, start_secs).",
       "example": {
         "request": {
           "date": "2026-10-23",
           "depart_secs": 25200,
-          "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
           "from": "A",
           "max_legs": 4,
+          "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
           "op": "plan",
           "to": "B"
         },
@@ -40,24 +44,119 @@
             "itinerary": {
               "arrival_hhmmss": "08:10:00",
               "arrival_secs": 29400,
-              "depart_secs": 28800,
+              "depart_secs": 25200,
               "from_stop_id": "A",
-              "legs": [],
-              "to_stop_id": "B"
+              "from_stop_name": "Main & 1st",
+              "legs": [
+                {
+                  "alight_hhmmss": "08:10:00",
+                  "alight_secs": 29400,
+                  "alight_stop_id": "B",
+                  "alight_stop_name": "Main & 2nd",
+                  "board_hhmmss": "08:00:00",
+                  "board_secs": 28800,
+                  "board_stop_id": "A",
+                  "board_stop_name": "Main & 1st",
+                  "headsign": "10 → Main & 2nd",
+                  "route_id": "10",
+                  "route_name": "10",
+                  "schedule": "WK:pat-10-0-0",
+                  "start_secs": 28800,
+                  "type": "transit"
+                }
+              ],
+              "to_stop_id": "B",
+              "to_stop_name": "Main & 2nd"
             },
             "op": "plan"
+          }
+        }
+      }
+    },
+    "plan_compare": {
+      "description": "The diversion delta: the same plan over the patched day (active) and the unpatched materialization (baseline, null when no edit is in force on the date).",
+      "example": {
+        "request": {
+          "date": "2026-10-23",
+          "depart_secs": 25200,
+          "edits_hash": "sha256:4ab45b2ef7edc302f64bb7d6bd1b4ef49cc5d1afc8a3b3a2af56726b29f9e233",
+          "from": "A",
+          "max_legs": 4,
+          "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+          "op": "plan_compare",
+          "to": "B"
+        },
+        "response": {
+          "ok": {
+            "active": {
+              "arrival_hhmmss": "08:15:00",
+              "arrival_secs": 29700,
+              "depart_secs": 25200,
+              "from_stop_id": "A",
+              "from_stop_name": "Main & 1st",
+              "legs": [
+                {
+                  "alight_hhmmss": "08:15:00",
+                  "alight_secs": 29700,
+                  "alight_stop_id": "B",
+                  "alight_stop_name": "Main & 2nd",
+                  "board_hhmmss": "08:00:00",
+                  "board_secs": 28800,
+                  "board_stop_id": "A",
+                  "board_stop_name": "Main & 1st",
+                  "headsign": "10 → Main & 2nd",
+                  "route_id": "10",
+                  "route_name": "10",
+                  "schedule": "WK:pat-10-0-0",
+                  "start_secs": 28800,
+                  "type": "transit"
+                }
+              ],
+              "to_stop_id": "B",
+              "to_stop_name": "Main & 2nd"
+            },
+            "baseline": {
+              "arrival_hhmmss": "08:10:00",
+              "arrival_secs": 29400,
+              "depart_secs": 25200,
+              "from_stop_id": "A",
+              "from_stop_name": "Main & 1st",
+              "legs": [
+                {
+                  "alight_hhmmss": "08:10:00",
+                  "alight_secs": 29400,
+                  "alight_stop_id": "B",
+                  "alight_stop_name": "Main & 2nd",
+                  "board_hhmmss": "08:00:00",
+                  "board_secs": 28800,
+                  "board_stop_id": "A",
+                  "board_stop_name": "Main & 1st",
+                  "headsign": "10 → Main & 2nd",
+                  "route_id": "10",
+                  "route_name": "10",
+                  "schedule": "WK:pat-10-0-0",
+                  "start_secs": 28800,
+                  "type": "transit"
+                }
+              ],
+              "to_stop_id": "B",
+              "to_stop_name": "Main & 2nd"
+            },
+            "op": "plan_compare"
           }
         }
       }
     }
   },
   "ops": [
-    "load_feed",
-    "plan"
+    "load_network",
+    "load_edits",
+    "plan",
+    "plan_compare"
   ],
-  "purpose": "Earliest-arrival trip planning (RAPTOR) over a feed document the gtfs capability produced. Assemble for users who need directions, not just departure times. Reads documents by content hash; writes nothing.",
+  "purpose": "Earliest-arrival trip planning (RAPTOR) over the NETWORK document and the effective day — the model's materialized trips, patched with the edits in force (the same transit-dispatch composition every day view starts from). The diversion delta is the compare facet: the unpatched day, one materialization apart. Assemble for users who need directions, not just departure times. Documents are hash-addressed; writes nothing.",
   "speaks": {
-    "feed": [
+    "network": [
       1
     ]
   }

@@ -157,6 +157,46 @@ LANDED:
   population-layer import spec). NOT dogfooded: the first
   real-data session with a census layer re-pins this line.
 
+- **U5, planning** — the router's feed-document input was a
+  Stage-B-era shape, not an option to weigh: planning composes
+  over the NETWORK document and the EFFECTIVE DAY like every
+  model-side capability. transit-router builds from the model now
+  (`build_from_day` over the materialized day — patterns grouped
+  by ACTUAL stop sequence, so an edited trip that skips stops
+  rides its own pattern; the GTFS shape is gone, the crate is
+  GTFS-free, `fmt_time` inlined ahead of U8) and the derived trip
+  identity is `(schedule, start_secs)` — the key the codec's
+  trip-id map and every day view already agree on (the legs carry
+  it; the map joins through the trip map until U6 takes it).
+  cap-router speaks the bus document currency: load_network /
+  load_edits / plan / plan_compare, answered by hash pair + date,
+  the RAPTOR graph cached per (network, edits, date); the compare
+  facet is the diversion delta — the unpatched day, one
+  materialization apart, baseline honestly null when no edit is
+  in force. Monolith ops deleted: plan_trip, plan_trip_compare
+  (ABI smoke pins both retirements; the corpus step-set dropped
+  the plan_trip_compare step; the Go round-trip dropped its
+  compare block — the delta facts live in cap-router's dispatch
+  test: 08:15 active vs 08:10 baseline) and the feed state's
+  router cache died with them. ON THE BUS: transit-router's
+  raptor/oracle/FIFO suites over the model day, cap-router's
+  dispatch test (identity law, plan, the diversion delta, the
+  no-baseline case, honest bulk-op error), caps-smoke's router
+  flow (document identity agreement with cap-network, plan, the
+  delta), the justfile runner gate (one chained session:
+  load → plan → load_edits → compare), and the manifest (router
+  consumes network; plan/plan_compare carry REAL computed
+  examples from the fixture). UI READS THE BUS: the rider planner
+  boards the loaded feed through cap-network's import
+  (ensureRouterBoarding) and plans/compares by hash — the
+  itinerary's drawn segment joins the legs' derived identity to
+  the agency trip ids through the trip map; the demo composition
+  routes through the same boarding (caps.spec: the composition
+  and degrade specs; app.spec: the planner, segment, and
+  diversion-delta specs — 31 Playwright tests). NOT dogfooded:
+  the first real-data plan session through cap-router re-pins
+  this line.
+
 Infrastructure, DONE (pinned by the same `just check` the
 gates run in): cap-abi (the undocumented-ops law and the
 manifest's compose-time self-validation), the resolver
@@ -174,15 +214,15 @@ re-authors from there) and reports every resolution — never
 silent; diversions produce patched copies (the base feed is
 immutable); retire = tombstone.
 
-OPEN — the units of `docs/PLAN.md`: U5
-planning, U6 the map view, U7 sync + plans, U8 the
-GTFS substrate retires (U1 cap-streets, U2 the need cut, U3 the
-directory + feed line, and U4 coverage are landed above). The rider
-planner still plans through the monolith (U5); the map still draws
-through the monolith's geojson ops (U6); `set_diversions` is still
-the edit-document plumbing for both. transit-core is deprecated as
-of this cut — its day answers lost their last bus callers, and
-the crate itself folds into the codec in U8.
+OPEN — the units of `docs/PLAN.md`: U6 the map
+view, U7 sync + plans, U8 the GTFS substrate retires (U1
+cap-streets, U2 the need cut, U3 the directory + feed line, U4
+coverage, and U5 planning are landed above). The map still draws
+through the monolith's geojson ops (U6); `set_diversions` is
+still the edit-document plumbing for them — the last consumer.
+transit-core is deprecated as of this cut — its day answers lost
+their last bus callers, and the crate itself folds into the codec
+in U8.
 
 ## Open findings (routed, never scripted)
 

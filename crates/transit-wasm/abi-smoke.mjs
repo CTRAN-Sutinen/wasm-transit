@@ -106,10 +106,6 @@ const reports = invoke({ op: "set_diversions", feed_id: feedId, records: [record
 assert(reports.length === 1 && reports[0].valid && reports[0].affected_trips === 3,
   "reports validate and count trips");
 
-const cmp = invoke({ op: "plan_trip_compare", feed_id: feedId, from: "A", to: "B", date: DATE, depart_secs: 27000, max_legs: 6 });
-assert(cmp.active.arrival_hhmmss === "08:15:00" && cmp.baseline.arrival_hhmmss === "08:10:00",
-  "plan compare: 08:15 vs 08:10");
-
 // GeoJSON comes back as plain data.
 const stops = invoke({ op: "stops_geojson", feed_id: feedId }).collection;
 assert(stops.type === "FeatureCollection" && stops.features.length === 6, "typed geojson collection");
@@ -145,10 +141,12 @@ assert(ghostNone === null, "route ghost: unknown route is null");
 
 // The dispatch-read ops (active_services, blocks, block_trips,
 // feed_info, departures) are RETIRED — cap-gtfs owns the reads and
-// the day-view capabilities own the day views; the smoke pins every retirement
-// through the standard outcome, never a trap.
+// the day-view capabilities own the day views — and so are the
+// planning ops (cap-router plans over the network document and the
+// effective day, diversion delta included); the smoke pins every
+// retirement through the standard outcome, never a trap.
 {
-  for (const retired of ["active_services", "blocks", "feed_info", "departures", "block_trips"]) {
+  for (const retired of ["active_services", "blocks", "feed_info", "departures", "block_trips", "plan_trip", "plan_trip_compare"]) {
     const outcome = JSON.parse(rawInvoke(JSON.stringify({ op: retired, feed_id: feedId })));
     assert(outcome.error && /unknown variant/.test(outcome.error),
       `the retired ${retired} op errors through the standard outcome`);
@@ -157,9 +155,9 @@ assert(ghostNone === null, "route ghost: unknown route is null");
 
 // Retire = tombstone.
 invoke({ op: "set_diversions", feed_id: feedId, records: [record({ status: "retired", rev: 2 })] });
-const cmpBase = invoke({ op: "plan_trip_compare", feed_id: feedId, from: "A", to: "B", date: DATE, depart_secs: 27000, max_legs: 6 });
-assert(cmpBase.active.arrival_hhmmss === "08:10:00" && cmpBase.baseline === null,
-  "retired records never apply");
+const ghostBase = invoke({ op: "route_path_geojson", feed_id: feedId, route_id: "10", direction_id: null, date: DATE }).feature;
+assert(ghostBase && ghostBase.geometry.coordinates.length === 3,
+  "retired records never apply (C is back on the alignment)");
 
 // Error outcomes, not traps.
 const errOutcome = (() => {
@@ -250,14 +248,15 @@ assert(second.feed_id !== feedId, "registry assigns distinct feed ids");
     assert(got === want, `corpus step ${step.name} diverges`);
   }
   // The step set, pinned exactly: the board and block-chain steps
-  // are gone (the day-view capabilities own the day views), and so
-  // are the picker and summary steps (the directory owns what
-  // exists; the feed line reads the gtfs capability's load_feed) —
-  // the diversion's effect pins through plan_trip_compare and
-  // trip_path_geojson.
+  // are gone (the day-view capabilities own the day views), so are
+  // the picker and summary steps (the directory owns what exists;
+  // the feed line reads the gtfs capability's load_feed), and so is
+  // the plan-compare step (cap-router plans over the network
+  // document and the effective day) — the diversion's effect pins
+  // through trip_path_geojson.
   const wantSteps = [
     "load_fixture", "set_diversions_draft",
-    "plan_trip_compare", "stops_geojson", "trip_path_geojson",
+    "stops_geojson", "trip_path_geojson",
     "sync_edits_deterministic", "unknown_feed_errors",
   ];
   assert(

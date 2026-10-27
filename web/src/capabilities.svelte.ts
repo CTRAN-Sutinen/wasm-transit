@@ -565,15 +565,27 @@ export async function analysisModule(): Promise<CapModule | null> {
 
 export function routerCap(module: CapModule) {
   return {
-    loadFeed(bytes: Uint8Array): GtfsLoadFeed {
-      const resp = module.invokeBytes(OP_LOAD_FEED, bytes) as Extract<
-        RouterResponse,
-        { op: "load_feed" }
-      >;
-      return { feedHash: resp.feed_hash, summary: resp.summary };
+    loadNetwork(document: Network): string {
+      const resp = module.invoke({
+        op: "load_network",
+        network: document,
+      } as RouterRequest) as Extract<RouterResponse, { op: "load_network" }>;
+      return resp.network_hash;
+    },
+    loadEdits(
+      networkHash: string,
+      records: EditRecord[],
+    ): { editsHash: string; reports: EditReport[] } {
+      const resp = module.invoke({
+        op: "load_edits",
+        network_hash: networkHash,
+        records,
+      } as RouterRequest) as Extract<RouterResponse, { op: "load_edits" }>;
+      return { editsHash: resp.edits_hash, reports: resp.reports };
     },
     plan(
-      feedHash: string,
+      networkHash: string,
+      editsHash: string | null,
       from: string,
       to: string,
       date: string,
@@ -582,7 +594,8 @@ export function routerCap(module: CapModule) {
     ): Itinerary | null {
       const resp = module.invoke({
         op: "plan",
-        feed_hash: feedHash,
+        network_hash: networkHash,
+        edits_hash: editsHash,
         from,
         to,
         date,
@@ -591,7 +604,34 @@ export function routerCap(module: CapModule) {
       } as RouterRequest) as Extract<RouterResponse, { op: "plan" }>;
       return resp.itinerary;
     },
+    planCompare(
+      networkHash: string,
+      editsHash: string | null,
+      from: string,
+      to: string,
+      date: string,
+      departSecs: number,
+      maxLegs: number,
+    ): { active: Itinerary | null; baseline: Itinerary | null } {
+      const resp = module.invoke({
+        op: "plan_compare",
+        network_hash: networkHash,
+        edits_hash: editsHash,
+        from,
+        to,
+        date,
+        depart_secs: departSecs,
+        max_legs: maxLegs,
+      } as RouterRequest) as Extract<RouterResponse, { op: "plan_compare" }>;
+      return { active: resp.active, baseline: resp.baseline };
+    },
   };
+}
+
+/// The current router module, if the bus assembled one.
+export async function routerModule(): Promise<CapModule | null> {
+  const modules = await ensure(["router"]);
+  return modules.router ?? null;
 }
 
 /// The composition law, host-side: load the same document bytes into
@@ -946,14 +986,14 @@ export type Boarding = {
   tripMap: TripIdMap;
 };
 
-/// Board the loaded feed into one of the day-view modules (board,
-/// runcut — the modules that answer with trip-level vocabulary):
-/// load the bytes into cap-network, import the network document,
-/// load that SAME document into the module (identities asserted
-/// equal), and carry the trip-id map. Memoized by (module, feed)
-/// — the import runs once per feed per module per session, never
-/// per query.
-function boardings(capId: "board" | "runcut") {
+/// Board the loaded feed into a day-view or planning module (board,
+/// runcut, router — the modules that answer with trip-level
+/// vocabulary): load the bytes into cap-network, import the network
+/// document, load that SAME document into the module (identities
+/// asserted equal), and carry the trip-id map. Memoized by (module,
+/// feed) — the import runs once per feed per module per session,
+/// never per query.
+function boardings(capId: "board" | "runcut" | "router") {
   const memo = new Map<string, Promise<Boarding | null>>();
   return async function ensureBoarding(bytes: Uint8Array): Promise<Boarding | null> {
     const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
@@ -968,7 +1008,7 @@ function boardings(capId: "board" | "runcut") {
       const imported = networkCap(network).import(feedHash);
       const map = networkCap(network).tripMap(imported.networkHash);
       if (!map) return null; // an imported network always has one
-      const loaders = { board: boardCap, runcut: runcutCap } as const;
+      const loaders = { board: boardCap, runcut: runcutCap, router: routerCap } as const;
       const loadedHash = loaders[capId](cap).loadNetwork(imported.network);
       if (loadedHash !== imported.networkHash) {
         throw new Error(
@@ -985,6 +1025,7 @@ function boardings(capId: "board" | "runcut") {
 
 export const ensureBoardBoarding = boardings("board");
 export const ensureRuncutBoarding = boardings("runcut");
+export const ensureRouterBoarding = boardings("router");
 
 const calendarNetworks = new Map<string, Promise<string | null>>();
 
@@ -1016,12 +1057,12 @@ export async function ensureCalendarNetwork(bytes: Uint8Array): Promise<string |
 }
 
 /// Register the operator edit document against a boarded network, in
-/// a given day-view module, memoized by (module, network, document)
-/// — the edits document crosses the seam once per change, not once
-/// per query. An EMPTY document is schedule-only: no load, null hash
-/// (the day views' contract).
+/// a given day-view or planning module, memoized by (module,
+/// network, document) — the edits document crosses the seam once per
+/// change, not once per query. An EMPTY document is schedule-only:
+/// no load, null hash (the day views' contract).
 function editsRegistry(
-  capId: "board" | "runcut",
+  capId: "board" | "runcut" | "router",
   moduleOf: () => Promise<CapModule | null>,
 ) {
   const memo = new Map<string, Promise<string | null>>();
@@ -1036,7 +1077,7 @@ function editsRegistry(
     const load = (async () => {
       const module = await moduleOf();
       if (!module) return null;
-      const loaders = { board: boardCap, runcut: runcutCap } as const;
+      const loaders = { board: boardCap, runcut: runcutCap, router: routerCap } as const;
       return loaders[capId](module).loadEdits(networkHash, records).editsHash;
     })();
     load.catch(() => memo.delete(memoKey));
@@ -1047,6 +1088,7 @@ function editsRegistry(
 
 export const ensureBoardEdits = editsRegistry("board", boardModule);
 export const ensureRuncutEdits = editsRegistry("runcut", runcutModule);
+export const ensureRouterEdits = editsRegistry("router", routerModule);
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------

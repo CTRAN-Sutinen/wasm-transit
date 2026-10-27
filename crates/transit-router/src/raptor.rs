@@ -23,6 +23,16 @@ use crate::{Result, RouterError};
 
 const INF: u32 = u32::MAX;
 
+/// Seconds since service-day midnight as "HH:MM:SS" — hours
+/// unbounded (past-86400 values are after-midnight trips, the
+/// GTFS reading everywhere on the bus).
+fn fmt_time(secs: u32) -> String {
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    format!("{h:02}:{m:02}:{s:02}")
+}
+
 /// One leg of a planned itinerary. Internally tagged for JSON
 /// serialization: `{"type": "transit", ...}` / `{"type": "walk", ...}`.
 #[derive(Debug, Clone, Serialize, TS)]
@@ -37,7 +47,11 @@ pub enum Leg {
         walk_secs: u32,
     },
     Transit {
-        trip_id: String,
+        /// The derived trip's identity: its schedule and start. The
+        /// model names no trips; (schedule, start_secs) is the key
+        /// every day view and the codec's trip-id map agree on.
+        schedule: String,
+        start_secs: u32,
         route_id: String,
         route_name: String,
         headsign: Option<String>,
@@ -111,7 +125,7 @@ pub fn earliest_arrival(
             to_stop_name: net.stops[to].stop_name.clone(),
             depart_secs,
             arrival_secs: depart_secs,
-            arrival_hhmmss: transit_core::fmt_time(depart_secs),
+            arrival_hhmmss: fmt_time(depart_secs),
             legs: Vec::new(),
         }));
     }
@@ -288,18 +302,19 @@ pub fn earliest_arrival(
                 let pt = &pat.trips[trip];
                 let board_stop = pat.stop_positions[board_pos] as usize;
                 legs_rev.push(Leg::Transit {
-                    trip_id: pt.trip_id.clone(),
+                    schedule: pt.schedule.clone(),
+                    start_secs: pt.start_secs,
                     route_id: pt.route_id.clone(),
                     route_name: pt.route_name.clone(),
                     headsign: pt.headsign.clone(),
                     board_stop_id: net.stops[board_stop].stop_id.clone(),
                     board_stop_name: net.stops[board_stop].stop_name.clone(),
                     board_secs: pt.departures[board_pos],
-                    board_hhmmss: transit_core::fmt_time(pt.departures[board_pos]),
+                    board_hhmmss: fmt_time(pt.departures[board_pos]),
                     alight_stop_id: net.stops[stop].stop_id.clone(),
                     alight_stop_name: net.stops[stop].stop_name.clone(),
                     alight_secs: pt.arrivals[alight_pos],
-                    alight_hhmmss: transit_core::fmt_time(pt.arrivals[alight_pos]),
+                    alight_hhmmss: fmt_time(pt.arrivals[alight_pos]),
                 });
                 stop = board_stop;
                 // The boarding used tau[k-1] at the board stop.
@@ -330,7 +345,7 @@ pub fn earliest_arrival(
         to_stop_name: net.stops[to].stop_name.clone(),
         depart_secs,
         arrival_secs: arrival,
-        arrival_hhmmss: transit_core::fmt_time(arrival),
+        arrival_hhmmss: fmt_time(arrival),
         legs: legs_rev,
     }))
 }

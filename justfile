@@ -126,6 +126,15 @@ test: caps
       --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
       --op '{"op":"block_trips","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","block_id":"B1","date":"2026-10-23"}' \
       | grep -q '"layover_remaining_secs":300'
+    # The router capability's gate: planning over the network document
+    # — the plan, then the diversion delta (compare) chained on the
+    # same edits document (08:15 against the unpatched 08:10).
+    node tools/caps-run.mjs router \
+      --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"plan","network_hash":"$load_network.network_hash","from":"A","to":"B","date":"2026-10-23","depart_secs":25200,"max_legs":4}' \
+      --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
+      --op '{"op":"plan_compare","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","from":"A","to":"B","date":"2026-10-23","depart_secs":25200,"max_legs":4}' \
+      | grep -q '"arrival_hhmmss":"08:15:00"'
     # The street capability's gate: the detour editor's need, one
     # chained session — the street fixture on bulk op 0, two snaps,
     # and the route between them (the Elbow corner, not the diagonal:
@@ -148,9 +157,9 @@ test: caps
     # layer, transit-codec = the boundary codec) in [dependencies].
     # Dev-dependencies may build fixture documents through the codec —
     # tests compose over real documents; production code does not.
-    # Sanctioned consumers: cap-gtfs, cap-network, cap-router (the
-    # feed-consuming planner), cap-rt (external rt joining external
-    # ids).
+    # Sanctioned consumers: cap-gtfs, cap-network, cap-rt (external
+    # rt joining external ids). The router left the feed in U5 — it
+    # plans over the network document and the effective day.
     for crate in cap-analysis cap-board cap-runcut cap-calendar cap-directory transit-analysis transit-dispatch; do
         for dep in transit-core transit-codec; do
             if awk '/^\[dev-dependencies\]/{exit} /^'"$dep"' =/{found=1} END{exit !found}' "crates/$crate/Cargo.toml" 2>/dev/null; then

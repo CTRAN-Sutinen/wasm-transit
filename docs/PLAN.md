@@ -78,7 +78,6 @@ required, only honesty about the need each op serves:
 
 | monolith op(s) | the need | home | unit |
 |---|---|---|---|
-| plan_trip, plan_trip_compare | plan a trip, with the diversion delta | cap-router — onto the NETWORK + the effective day (its feed-document input is a Stage-B-era shape, not an option to weigh; the compare is the baseline facet — the unpatched day, one materialization apart) | U5 |
 | stops_geojson, stop_point, trip_path_geojson, route_path_geojson, trip_segment_geojson | draw the map | the HOST's view code over model documents — patterns carry paths, stops carry coords, the edit document carries detour polylines, the trip map carries click-throughs. The map is a VIEW, not a cap. | U6 |
 | set_diversions | plumbing: apply the edit document to the remaining feed-side reads | none — it dies when U5 + U6 are done (the last consumers) | — |
 | sync_edits | sync the edit document (LWW merge, the sync protocol) | transit-sync is the library; the open question is placement only: cap-sync vs permanent seam resident | U7 |

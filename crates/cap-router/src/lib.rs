@@ -1,21 +1,20 @@
 //! cap-router — the trip-planning capability module.
 //!
-//! A PURE-FUNCTION capability in the capability bus: it holds no
-//! domain state of its own beyond a feed registry keyed by content
-//! hash (the same document currency the gtfs capability produces),
-//! builds the RAPTOR network lazily per service date, and answers
-//! earliest-arrival queries. It cannot author anything; it cannot
-//! even list departures — a rider whose bundle stops at "know when
-//! the bus comes" ships gtfs and never downloads this module's
-//! planning code, and a planner whose bundle adds it pays for it
-//! once, in a separately cached, separately hashed module.
+//! Planning composes over the NETWORK document and the EFFECTIVE
+//! DAY, like every model-side capability: the network registers
+//! under its content hash (the same identity cap-network's import
+//! produces and every day view consumes), the edit document
+//! registers the same way, and a plan answers by hash pair + date.
+//! The day itself is transit-dispatch's composition — materialize,
+//! then patch with the edits in force — never a private calendar
+//! expansion (Law 2). The RAPTOR graph is built lazily per
+//! (network, edits, date) and cached; a rider whose bundle stops at
+//! "know when the bus comes" ships gtfs/board and never downloads
+//! this module's planning code.
 //!
-//! Composition happens in the host: JS loads the same feed bytes
-//! here and into cap-gtfs, asserts the returned content hashes are
-//! equal, and the two capabilities agree on the document's identity
-//! without ever sharing memory. The ABI is the monolith's flat C
-//! ABI (via `cap_abi::capability!`); TS types land in
-//! `types/cap_router/`.
+//! The compare facet is the diversion delta: the same query over
+//! the patched day and the unpatched one — one materialization
+//! apart, no second document.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -24,23 +23,49 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ts_rs::TS;
-use transit_core::FeedSummary;
-
-/// The bulk-bytes op code.
-pub const OP_LOAD_FEED: u32 = 0;
+use transit_network::Network;
+use transit_sync::EditRecord;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_router/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// Parse a GTFS zip from raw bytes; registers the feed under its
-    /// content hash (idempotent — same bytes, same hash).
-    LoadFeed { bytes: Vec<u8> },
+    /// Register the NETWORK document under its content hash
+    /// (idempotent by hash) — the same document identity
+    /// cap-network's import produces and every day view consumes.
+    LoadNetwork { network: Network },
+    /// Register the OPERATOR EDIT document against a loaded
+    /// network, validated per record AGAINST THE NETWORK; the
+    /// response carries the reports and the document's content
+    /// hash, which plans address. Wholesale replacement, like the
+    /// host-owned store.
+    LoadEdits {
+        network_hash: String,
+        records: Vec<EditRecord>,
+    },
     /// Earliest-arrival plan from `from` to `to`, leaving at
-    /// `depart_secs` on `date`. `None` in the response means
+    /// `depart_secs` on `date` — over the materialized day, with
+    /// the in-force edits applied when `edits_hash` names a
+    /// registered edit document. `None` in the response means
     /// unreachable within `max_legs`.
     Plan {
-        feed_hash: String,
+        network_hash: String,
+        #[serde(default)]
+        edits_hash: Option<String>,
+        from: String,
+        to: String,
+        date: String,
+        depart_secs: u32,
+        max_legs: u32,
+    },
+    /// The diversion delta: the same plan over the patched day
+    /// (active) and the unpatched materialization (baseline). The
+    /// baseline is `None` when no edit is in force on the date —
+    /// there is no second world to compare against.
+    PlanCompare {
+        network_hash: String,
+        #[serde(default)]
+        edits_hash: Option<String>,
         from: String,
         to: String,
         date: String,
@@ -53,28 +78,64 @@ pub enum Request {
 #[ts(export, export_to = "cap_router/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    LoadFeed { feed_hash: String, summary: FeedSummary },
+    LoadNetwork { network_hash: String },
+    LoadEdits {
+        edits_hash: String,
+        reports: Vec<transit_sync::EditReport>,
+    },
     Plan { itinerary: Option<transit_router::Itinerary> },
+    PlanCompare {
+        active: Option<transit_router::Itinerary>,
+        baseline: Option<transit_router::Itinerary>,
+    },
 }
 
-/// One registry entry: the parsed feed plus RAPTOR networks built
-/// lazily per service date (the router graph is date-dependent —
-/// active services decide which trips exist).
-struct RouterEntry {
-    feed: Arc<transit_core::Gtfs>,
-    networks: HashMap<NaiveDate, Arc<transit_router::RouterNetwork>>,
-}
-
-fn registry() -> &'static Mutex<HashMap<String, RouterEntry>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, RouterEntry>>> = OnceLock::new();
+/// Networks by content hash (canonical serialization).
+fn networks() -> &'static Mutex<HashMap<String, Arc<Network>>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Network>>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// "sha256:<hex>" — the same content-hash format as the gtfs
-/// capability and the manifest.
+/// Edit documents by content hash (canonical serialization).
+fn edits() -> &'static Mutex<HashMap<String, Arc<Vec<EditRecord>>>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Vec<EditRecord>>>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// RAPTOR graphs by (network, edits, date), built on first use —
+/// the graph is a pure function of the day, so it caches per day.
+fn graphs() -> &'static Mutex<HashMap<(String, Option<String>, NaiveDate), Arc<transit_router::RouterNetwork>>> {
+    static GRAPHS: OnceLock<Mutex<HashMap<(String, Option<String>, NaiveDate), Arc<transit_router::RouterNetwork>>>> =
+        OnceLock::new();
+    GRAPHS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn content_hash(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    format!("sha256:{:x}", digest)
+    format!("sha256:{:x}", Sha256::digest(bytes))
+}
+
+fn canonical_hash<T: Serialize>(value: &T) -> Result<String, String> {
+    let canonical =
+        serde_json::to_string(value).map_err(|e| format!("document does not serialize: {e}"))?;
+    Ok(content_hash(canonical.as_bytes()))
+}
+
+fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
+    networks()
+        .lock()
+        .expect("network registry lock")
+        .get(network_hash)
+        .cloned()
+        .ok_or_else(|| format!("unknown network {network_hash}: load_network first"))
+}
+
+fn edits_arc(edits_hash: &str) -> Result<Arc<Vec<EditRecord>>, String> {
+    edits()
+        .lock()
+        .expect("edits registry lock")
+        .get(edits_hash)
+        .cloned()
+        .ok_or_else(|| format!("unknown edits {edits_hash}: load_edits first"))
 }
 
 fn parse_date(date: &str) -> Result<NaiveDate, String> {
@@ -82,59 +143,113 @@ fn parse_date(date: &str) -> Result<NaiveDate, String> {
         .map_err(|e| format!("invalid date {date:?}: {e}"))
 }
 
-fn load_feed(bytes: &[u8]) -> Result<Response, String> {
-    let hash = content_hash(bytes);
-    {
-        let guard = registry().lock().expect("registry lock");
-        if let Some(entry) = guard.get(&hash) {
-            return Ok(Response::LoadFeed {
-                feed_hash: hash,
-                summary: entry.feed.summary(),
-            });
-        }
+/// One effective day: the network materialized for the date,
+/// patched with the edits in force on it — transit-dispatch's one
+/// composition, never a private expansion.
+fn effective_day(
+    network: &Network,
+    records: &[EditRecord],
+    date: NaiveDate,
+) -> Result<Vec<transit_network::MaterializedTrip>, String> {
+    transit_dispatch::effective_day(network, date, records)
+        .map_err(|e| format!("the network does not materialize: {e}"))
+}
+
+/// The RAPTOR graph for (network, edits, date), built on first use.
+fn graph(
+    network_hash: &str,
+    edits_hash: Option<&str>,
+    date_str: &str,
+) -> Result<Arc<transit_router::RouterNetwork>, String> {
+    // The request's own fields validate before any registry lookup —
+    // a garbage date is a caller error, not a missing-document error.
+    let date = parse_date(date_str)?;
+    let network = network_arc(network_hash)?;
+    let records = match edits_hash {
+        Some(hash) => edits_arc(hash)?,
+        None => Arc::new(Vec::new()),
+    };
+    let key = (network_hash.to_string(), edits_hash.map(str::to_string), date);
+    let mut graphs = graphs().lock().expect("graph cache lock");
+    if let Some(cached) = graphs.get(&key) {
+        return Ok(cached.clone());
     }
-    let feed =
-        transit_core::Gtfs::from_zip_bytes(bytes).map_err(|e| format!("parse: {e}"))?;
-    let summary = feed.summary();
-    registry().lock().expect("registry lock").insert(
-        hash.clone(),
-        RouterEntry { feed: Arc::new(feed), networks: HashMap::new() },
-    );
-    Ok(Response::LoadFeed { feed_hash: hash, summary })
+    let day = effective_day(&network, &records, date)?;
+    let built = Arc::new(transit_router::RouterNetwork::build_from_day(&network, &day, date));
+    graphs.insert(key, built.clone());
+    Ok(built)
 }
 
-/// The network for (feed, date), built on first use and cached.
-fn network(feed_hash: &str, date: NaiveDate) -> Result<Arc<transit_router::RouterNetwork>, String> {
-    let mut guard = registry().lock().expect("registry lock");
-    let entry = guard
-        .get_mut(feed_hash)
-        .ok_or_else(|| format!("unknown feed {feed_hash}: load_feed first"))?;
-    let net = entry
-        .networks
-        .entry(date)
-        .or_insert_with(|| Arc::new(transit_router::RouterNetwork::build(&entry.feed, date)))
-        .clone();
-    Ok(net)
-}
-
-/// The typed dispatch (native hosts call this directly).
+/// The typed dispatch (native hosts call this directly). Failures
+/// are `{\"error\": ...}`, never panics.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
-        Request::LoadFeed { bytes } => load_feed(&bytes),
-        Request::Plan { feed_hash, from, to, date, depart_secs, max_legs } => {
-            let parsed = parse_date(&date)?;
-            let net = network(&feed_hash, parsed)?;
-            let legs = max_legs.max(1) as usize;
-            let itinerary = transit_router::earliest_arrival(&net, &from, &to, depart_secs, legs)
-                .map_err(|e| e.to_string())?;
+        Request::LoadNetwork { network } => {
+            let hash = canonical_hash(&network)?;
+            networks()
+                .lock()
+                .expect("network registry lock")
+                .entry(hash.clone())
+                .or_insert_with(|| Arc::new(network));
+            Ok(Response::LoadNetwork { network_hash: hash })
+        }
+        Request::LoadEdits { network_hash, records } => {
+            // Validation is against the NETWORK — model vocabulary.
+            let network = network_arc(&network_hash)?;
+            let reports = transit_dispatch::report_against_network(&network, &records);
+            let hash = canonical_hash(&records)?;
+            edits()
+                .lock()
+                .expect("edits registry lock")
+                .insert(hash.clone(), Arc::new(records));
+            Ok(Response::LoadEdits { edits_hash: hash, reports })
+        }
+        Request::Plan { network_hash, edits_hash, from, to, date, depart_secs, max_legs } => {
+            let net = graph(&network_hash, edits_hash.as_deref(), &date)?;
+            let itinerary = transit_router::earliest_arrival(
+                &net,
+                &from,
+                &to,
+                depart_secs,
+                max_legs.max(1) as usize,
+            )
+            .map_err(|e| e.to_string())?;
             Ok(Response::Plan { itinerary })
+        }
+        Request::PlanCompare { network_hash, edits_hash, from, to, date, depart_secs, max_legs } => {
+            // The request's own fields validate before any registry
+            // lookup, so both worlds fail identically on bad input.
+            let parsed = parse_date(&date)?;
+            let legs = max_legs.max(1) as usize;
+            let net = graph(&network_hash, edits_hash.as_deref(), &date)?;
+            let active = transit_router::earliest_arrival(&net, &from, &to, depart_secs, legs)
+                .map_err(|e| e.to_string())?;
+            // The baseline is the unpatched materialization — one
+            // materialization apart, never a second document.
+            let baseline = match edits_hash.as_deref() {
+                Some(hash) => {
+                    let network = network_arc(&network_hash)?;
+                    let records = edits_arc(hash)?;
+                    if transit_sync::in_force_on(&records, parsed).is_empty() {
+                        None
+                    } else {
+                        let day = transit_network::materialize(&network, parsed)
+                            .map_err(|e| format!("the network does not materialize: {e}"))?;
+                        let base = transit_router::RouterNetwork::build_from_day(&network, &day, parsed);
+                        transit_router::earliest_arrival(&base, &from, &to, depart_secs, legs)
+                            .map_err(|e| e.to_string())?
+                    }
+                }
+                None => None,
+            };
+            Ok(Response::PlanCompare { active, baseline })
         }
     }
 }
 
-/// The JSON seam: `{"op": ...}` in, `{"ok": ...}` /
-/// `{"error": ...}` out — byte-compatible with the monolith and with
-/// every other capability module.
+/// The JSON seam: `{\"op\": ...}` in, `{\"ok\": ...}` /
+/// `{\"error\": ...}` out — byte-compatible with every other
+/// capability module.
 pub fn dispatch_json(text: &str) -> String {
     let outcome = match serde_json::from_str::<Request>(text) {
         Ok(request) => match dispatch(request) {
@@ -146,16 +261,12 @@ pub fn dispatch_json(text: &str) -> String {
     serde_json::to_string(&outcome).expect("dispatch outcomes serialize")
 }
 
-/// The bulk-bytes seam: op 0 loads a feed zip.
-pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
-    let outcome = match op {
-        OP_LOAD_FEED => match load_feed(bytes) {
-            Ok(response) => serde_json::json!({ "ok": response }),
-            Err(error) => serde_json::json!({ "error": error }),
-        },
-        other => serde_json::json!({ "error": format!("unknown bulk op {other}") }),
-    };
-    serde_json::to_string(&outcome).expect("dispatch outcomes serialize")
+/// The router module takes JSON documents (network, edits) — no
+/// bulk-bytes op exists; the seam answers honestly instead of
+/// silently ignoring one.
+pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
+    serde_json::json!({ "error": format!("unknown bulk op {op}: router takes JSON documents (load_network / load_edits)") })
+        .to_string()
 }
 
 cap_abi::capability! {

@@ -16,7 +16,7 @@
     boardCap,
     boardModule,
     ensureBoardBoarding,
-    assertSameDocument,
+    ensureRouterBoarding,
     forgetCapability,
     restoreDocuments,
     putDocument,
@@ -219,7 +219,11 @@
         ok: true,
       });
 
-      if (!router) {
+      // The router plans over the SAME network document (derived by
+      // the import, loaded into its registry, identity asserted —
+      // never the feed bytes: the router left the feed in U5).
+      const routerBoarding = await ensureRouterBoarding(bytes);
+      if (!router || !routerBoarding) {
         steps.push({
           label: "router capability",
           detail: "unavailable — the assembly degraded to its day half",
@@ -228,17 +232,13 @@
         result = `${departures.length} departures served; planning skipped (capability unavailable).`;
         return;
       }
-      const loadedRouter = router.loadFeed(bytes);
-      // The composition moment: the SAME bytes, a THIRD registry,
-      // identity asserted — never assumed.
-      assertSameDocument(loadedGtfs, loadedRouter);
       steps.push({
         label: "hash handoff",
-        detail: `${loadedGtfs.feedHash.slice(0, 19)}… == ${loadedRouter.feedHash.slice(0, 19)}…`,
+        detail: `${routerBoarding.networkHash.slice(0, 19)}… network document == import's == router's`,
         ok: true,
       });
 
-      const plan = router.plan(loadedRouter.feedHash, "A", "B", DATE, DEPART, 4);
+      const plan = router.plan(routerBoarding.networkHash, null, "A", "B", DATE, DEPART, 4);
       steps.push({
         label: "router.plan",
         detail: plan

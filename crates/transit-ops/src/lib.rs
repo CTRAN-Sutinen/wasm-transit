@@ -10,8 +10,8 @@
 //! Ownership inside the module: feeds live in a registry keyed by
 //! `feed_id` (hosts never hold typed handles); the operator-edit
 //! document arrives whole via [`Request::SetDiversions`] and is
-//! validated per record; derived caches (effective feed, routing
-//! networks) are managed here and invalidated on any document change.
+//! validated per record; derived caches (the effective feed) are
+//! managed here and invalidated on any document change.
 //! Hosts own I/O, files, and the clock — ops receive dates as
 //! "YYYY-MM-DD" strings and times as seconds since midnight.
 
@@ -79,25 +79,6 @@ pub enum Request {
     },
     /// One stop as a GeoJSON point Feature (or null).
     StopPoint { feed_id: u32, stop_id: String },
-    /// Earliest-arrival plan against the effective feed.
-    PlanTrip {
-        feed_id: u32,
-        from: String,
-        to: String,
-        date: String,
-        depart_secs: u32,
-        max_legs: u32,
-    },
-    /// The plan twice: with in-force edits, and against the base feed
-    /// (baseline null when no edit covers the date).
-    PlanTripCompare {
-        feed_id: u32,
-        from: String,
-        to: String,
-        date: String,
-        depart_secs: u32,
-        max_legs: u32,
-    },
     /// Replace the whole edit document; returns per-record validation
     /// reports. Invalid records are reported, not rejected.
     SetDiversions { feed_id: u32, records: Vec<EditRecord> },
@@ -133,11 +114,6 @@ pub enum Response {
     RoutePathGeojson { feature: Option<TripLineFeature> },
     TripSegmentGeojson { feature: Option<TripLineFeature> },
     StopPoint { feature: Option<StopFeature> },
-    PlanTrip { itinerary: Option<transit_router::Itinerary> },
-    PlanTripCompare {
-        active: Option<transit_router::Itinerary>,
-        baseline: Option<transit_router::Itinerary>,
-    },
     SetDiversions { reports: Vec<transit_sync::EditReport> },
     DropFeed {},
     SyncEdits { records: Vec<EditRecord>, reports: Vec<transit_sync::EditReport> },
@@ -230,54 +206,6 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
         Request::StopPoint { feed_id, stop_id } => state::with_feed(feed_id, |f| {
             Ok(Response::StopPoint { feature: geojson::stop_point(&f.gtfs, &stop_id) })
         }),
-        Request::PlanTrip { feed_id, from, to, date, depart_secs, max_legs } => {
-            state::with_feed(feed_id, |f| {
-                f.ensure_router(&date)?; // parses and validates the date
-                let (_, cache) = f.router.as_ref().expect("router built");
-                let itinerary = transit_router::earliest_arrival(
-                    &cache.effective,
-                    &from,
-                    &to,
-                    depart_secs,
-                    max_legs.max(1) as usize,
-                )
-                .map_err(|e| OpError::new(e.to_string()))?;
-                Ok(Response::PlanTrip { itinerary })
-            })
-        }
-        Request::PlanTripCompare { feed_id, from, to, date, depart_secs, max_legs } => {
-            let parsed = parse_date(&date)?;
-            let legs = max_legs.max(1) as usize;
-            state::with_feed(feed_id, |f| {
-                f.ensure_router(&date)?;
-                let active = {
-                    let (_, cache) = f.router.as_ref().expect("router built");
-                    transit_router::earliest_arrival(
-                        &cache.effective, &from, &to, depart_secs, legs,
-                    )
-                    .map_err(|e| OpError::new(e.to_string()))?
-                };
-                let baseline = if f.applicable_diversions(parsed).is_empty() {
-                    None
-                } else {
-                    // Lazily build the base-feed network on first comparison.
-                    let (_, cache) = f.router.as_mut().expect("router built");
-                    if cache.baseline.is_none() {
-                        cache.baseline =
-                            Some(transit_router::RouterNetwork::build(&f.gtfs, parsed));
-                    }
-                    transit_router::earliest_arrival(
-                        cache.baseline.as_ref().expect("baseline network just built"),
-                        &from,
-                        &to,
-                        depart_secs,
-                        legs,
-                    )
-                    .map_err(|e| OpError::new(e.to_string()))?
-                };
-                Ok(Response::PlanTripCompare { active, baseline })
-            })
-        }
         Request::SetDiversions { feed_id, records } => state::with_feed(feed_id, |f| {
             let reports = transit_core::report_all(&f.gtfs, &records);
             f.edits = records;

@@ -1,11 +1,27 @@
 //! Shared fixture-building helpers for transit-router tests.
 use std::io::Write;
 
+use chrono::NaiveDate;
+
 #[derive(Debug, Clone)]
 pub struct TripSpec {
     pub stops: Vec<u32>,
     pub start: u32,
     pub step: u32,
+}
+
+/// A fixture feed through the sanctioned path: the codec's import
+/// (feed → network document), then the model's own materialize for
+/// the date — the same composition the capability performs, never
+/// the GTFS substrate in router code.
+pub fn model_day(
+    zip: &[u8],
+    date: NaiveDate,
+) -> (transit_network::Network, Vec<transit_network::MaterializedTrip>) {
+    let gtfs = transit_core::Gtfs::from_zip_bytes(zip).expect("parse");
+    let outcome = transit_codec::gtfs_to_network(&gtfs);
+    let day = transit_network::materialize(&outcome.network, date).expect("materialize");
+    (outcome.network, day)
 }
 
 /// Serialize a generated spec into a GTFS zip.

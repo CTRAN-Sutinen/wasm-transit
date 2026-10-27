@@ -10,12 +10,11 @@
 use chrono::NaiveDate;
 use proptest::collection::vec;
 use proptest::prelude::*;
-use transit_core::Gtfs;
 use transit_router::{earliest_arrival, Itinerary, Leg, RouterNetwork};
 
 #[path = "prop_support.rs"]
 mod support;
-use support::{build_zip, TripSpec};
+use support::{build_zip, model_day, TripSpec};
 
 const INF: u32 = u32::MAX;
 const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
@@ -110,8 +109,8 @@ proptest! {
     fn matches_oracle_and_reconstructs(
         (n_stops, trips, from, to, depart) in feed()
     ) {
-        let gtfs = Gtfs::from_zip_bytes(&build_zip(n_stops, &trips)).expect("generated feed parses");
-        let net = RouterNetwork::build(&gtfs, DATE);
+        let (network, day) = model_day(&build_zip(n_stops, &trips), DATE);
+        let net = RouterNetwork::build_from_day(&network, &day, DATE);
 
         // Resolve the generated stop numbers the same way RAPTOR does:
         // by id, not by index (network stop order is a HashMap artifact).
@@ -141,8 +140,8 @@ proptest! {
     /// Determinism: identical queries give identical answers.
     #[test]
     fn deterministic((n_stops, trips, from, to, depart) in feed()) {
-        let gtfs = Gtfs::from_zip_bytes(&build_zip(n_stops, &trips)).expect("parse");
-        let net = RouterNetwork::build(&gtfs, DATE);
+        let (network, day) = model_day(&build_zip(n_stops, &trips), DATE);
+        let net = RouterNetwork::build_from_day(&network, &day, DATE);
         let a = earliest_arrival(&net, &format!("s{from}"), &format!("s{to}"), depart, MAX_LEGS).unwrap();
         let b = earliest_arrival(&net, &format!("s{from}"), &format!("s{to}"), depart, MAX_LEGS).unwrap();
         prop_assert_eq!(a.map(|i| i.arrival_secs), b.map(|i| i.arrival_secs));
@@ -152,8 +151,8 @@ proptest! {
     /// early as with fewer.
     #[test]
     fn more_legs_never_hurt((n_stops, trips, from, to, depart) in feed()) {
-        let gtfs = Gtfs::from_zip_bytes(&build_zip(n_stops, &trips)).expect("parse");
-        let net = RouterNetwork::build(&gtfs, DATE);
+        let (network, day) = model_day(&build_zip(n_stops, &trips), DATE);
+        let net = RouterNetwork::build_from_day(&network, &day, DATE);
         let few = earliest_arrival(&net, &format!("s{from}"), &format!("s{to}"), depart, 1)
             .unwrap().map(|i| i.arrival_secs);
         let many = earliest_arrival(&net, &format!("s{from}"), &format!("s{to}"), depart, MAX_LEGS)
