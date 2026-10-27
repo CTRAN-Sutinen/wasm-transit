@@ -18,6 +18,8 @@
 //! legitimate after-midnight trips.
 
 pub mod divert;
+pub mod geometry;
+pub use geometry::{trip_path, trip_segment, LegKind, LegPath};
 pub use divert::{diversion_of, diversion_rows, draft_view, DiversionDraft, DiversionRow, DraftPattern, DraftStop, DraftStopRole, DraftView};
 
 use std::collections::BTreeSet;

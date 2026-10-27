@@ -758,3 +758,28 @@ validated it against the same network: valid, 77 trips affected. A
 enough to re-ask on every form change; the one-time cost is
 registering the 2.7 MB network, which the browser memoizes per
 document. No new findings.
+
+## Session 2026-10-27 (geometry) — C-TRAN
+
+The map's lines now come from the bus (`docs/PLAN.md`, the web
+cleanup, W4). One runner session over the imported C-TRAN network
+(about 0.9 s including the import): directory `focus` for route 019
+framed its five patterns with their authored shapes (227–246 points
+each, 61 stop points). cap-runcut `trip_path` for the 08:20 weekday
+trip on pat-019-0-0 drew the 227-point alignment. With the session's
+diversion loaded (Hwy 99 10600 Block → Tenney Rd at Fred Meyer, three
+stops skipped; load_edits valid, 77 trips), the same trip drew 10
+points, its kept stops joined. A router plan 9014 → 3701 (one 019
+leg, arriving 08:34) drew its ridden segment as 215 of the 227
+alignment points through `itinerary_paths`.
+
+- **QAF-50 OP GAP** — a diverted trip's line drops its authored
+  alignment for the WHOLE trip (straight lines between every kept
+  stop), not just between the anchors, and ignores the detour
+  polyline the dispatcher traced (the record carries it; the map
+  draws it as a separate layer). The browser drew the same before
+  W4 — the rule moved, it did not change. The better answer splices
+  the alignment up to the first anchor, the record's detour, and the
+  alignment from the last anchor.
+  Pin: the session's `trip_path` with the edits hash (10 points).
+  Status: open.

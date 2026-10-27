@@ -1,7 +1,7 @@
 import { app, getEditDocument, setEditDocument, setStreets, type DiversionDraft } from "./state.svelte";
 import { get as idbGet, set as idbSet, del as idbDel } from "idb-keyval";
-import { ensureAnalysisLayer, ensureEditReports, importedNetworkDocument, ensureRuncutBoarding, ensureRuncutEdits, ensureRouterBoarding, ensureRouterEdits, ensureStreets, runcutCap, runcutModule, routerCap, routerModule, rtCap, rtModule, boardCap, boardModule, ensureBoardBoarding, ensureBoardEdits, calendarCap, calendarModule, ensureCalendarNetwork, contentHash, networkCap, networkModule, divertModule, divertCap, divertOverFeed } from "./capabilities.svelte";
-import { stopPointOf, tripLine, tripSegment, type MapPoint } from "./mapview";
+import { ensureAnalysisLayer, ensureEditReports, ensureRuncutBoarding, ensureRuncutEdits, ensureRouterBoarding, ensureRouterEdits, ensureStreets, runcutCap, runcutModule, routerCap, routerModule, rtCap, rtModule, boardCap, boardModule, ensureBoardBoarding, ensureBoardEdits, calendarCap, calendarModule, ensureCalendarNetwork, contentHash, networkCap, networkModule, divertModule, divertCap, divertOverFeed } from "./capabilities.svelte";
+import { lineFeature, lonLat } from "./mapview";
 import type { EditRecord } from "./types/EditRecord";
 import type { DiversionDraft as DraftDoc } from "./types/DiversionDraft";
 import type { Itinerary } from "./types/Itinerary";
@@ -427,22 +427,19 @@ export async function showTrip(trip: { schedule: string; start_secs: number }): 
   const bytes = feedBytes();
   if (!bytes) return;
   try {
-    // Click-through: the day view answers the trip's EFFECTIVE stops
-    // (operator edits apply), and the map is the host's view over
-    // them — nothing in wasm draws.
+    // Click-through: cap-runcut answers the trip's line over the
+    // EFFECTIVE day (a diverted trip draws its diversion).
     const boarding = await ensureRuncutBoarding(bytes);
-    const net = await importedNetworkDocument(bytes);
     const module = boarding ? await runcutModule() : null;
-    if (!boarding || !net || !module) {
+    if (!boarding || !module) {
       // No geometry -> clear the path, but never wipe other state.
       app.tripFeature = null;
       return;
     }
     const editsHash = await ensureRuncutEdits(boarding.networkHash, getEditDocument());
-    const stops = runcutCap(module).tripStops(
+    const path = runcutCap(module).tripPath(
       boarding.networkHash, editsHash, trip.schedule, trip.start_secs, serviceDate());
-    const patternId = net.schedules[trip.schedule]?.pattern ?? "";
-    app.tripFeature = tripLine(net, patternId, stops, { trip: key });
+    app.tripFeature = lineFeature(path, { trip: key });
   } catch (e) {
     app.tripFeature = null;
     error(e);
@@ -528,50 +525,25 @@ export async function planTrip(fromStopId: string, toStopId: string, departTime:
   }
 }
 
-/// The plan's drawn features, over model documents: each transit
-/// leg rides its derived trip's EFFECTIVE stops (the day view
-/// answers), sliced to the ridden segment; walk legs draw stop to
-/// stop. The map is the host's view — nothing in wasm draws.
+/// The plan's drawn features: cap-router answers each leg's path over
+/// the day it planned on (a transit leg's ridden segment, a walk
+/// through its via stops); the host only shapes GeoJSON.
 async function buildItineraryFeatures(plan: Itinerary | null): Promise<PlanFeature[]> {
   if (!plan) return [];
   const bytes = feedBytes();
   if (!bytes) return [];
-  const net = await importedNetworkDocument(bytes);
-  const boarding = await ensureRuncutBoarding(bytes);
-  const module = boarding ? await runcutModule() : null;
-  if (!net || !boarding || !module) return [];
-  const editsHash = await ensureRuncutEdits(boarding.networkHash, getEditDocument());
-  const cap = runcutCap(module);
-  const date = serviceDate();
-  const features: PlanFeature[] = [];
-  for (const leg of plan.legs) {
-    if (leg.type === "transit") {
-      // The ridden segment only — the full route would be confusing.
-      const patternId = net.schedules[leg.schedule]?.pattern ?? "";
-      const stops = cap.tripStops(boarding.networkHash, editsHash, leg.schedule, leg.start_secs, date);
-      const coords = tripSegment(net, patternId, stops, leg.board_stop_id, leg.alight_stop_id);
-      if (coords && coords.length >= 2) {
-        features.push({
-          type: "Feature",
-          geometry: { type: "LineString", coordinates: coords },
-          properties: { kind: "transit" },
-        });
-      }
-    } else {
-      // A merged walk passes its via stops: draw through them.
-      const coords = [leg.from_stop_id, ...leg.via_stop_ids, leg.to_stop_id]
-        .map((id) => stopPointOf(net, id))
-        .filter((p): p is MapPoint => p !== null);
-      if (coords.length >= 2) {
-        features.push({
-          type: "Feature",
-          geometry: { type: "LineString", coordinates: coords },
-          properties: { kind: "walk" },
-        });
-      }
-    }
-  }
-  return features;
+  const boarding = await ensureRouterBoarding(bytes);
+  const module = boarding ? await routerModule() : null;
+  if (!boarding || !module) return [];
+  const editsHash = await ensureRouterEdits(boarding.networkHash, getEditDocument());
+  return routerCap(module)
+    .itineraryPaths(boarding.networkHash, editsHash, serviceDate(), plan)
+    .filter((leg) => leg.path.length >= 2)
+    .map((leg) => ({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: lonLat(leg.path) },
+      properties: { kind: leg.kind },
+    }));
 }
 
 // ---------------------------------------------------------------
@@ -930,13 +902,7 @@ export async function refreshDiversionView(): Promise<void> {
     }
     const view = over.divert.draft(over.networkHash, doc);
     app.diversionView = view;
-    app.routeContext = view.alignment.length
-      ? {
-          type: "Feature",
-          geometry: { type: "LineString", coordinates: view.alignment.map((c) => [c.lon, c.lat]) },
-          properties: { route: draft.routeId },
-        }
-      : null;
+    app.routeContext = lineFeature(view.alignment, { route: draft.routeId });
   } catch (e) {
     error(e);
   }

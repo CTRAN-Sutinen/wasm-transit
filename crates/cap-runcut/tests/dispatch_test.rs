@@ -339,3 +339,30 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
     let bad = dispatch_bytes(0, b"whatever");
     assert!(bad.contains("unknown bulk op"), "the module takes JSON documents: {bad}");
 }
+
+#[test]
+fn the_trip_line_is_the_effective_day_drawn() {
+    // The fixture authors no paths: a trip draws its stops joined,
+    // and a trip that does not run draws nothing.
+    let net = derived_network();
+    let network_hash = load_network();
+    let via_c = route10_schedule_of(&net, &["A", "C", "B"]);
+    let path = |start_secs: u32| match dispatch(Request::TripPath {
+        network_hash: network_hash.clone(),
+        edits_hash: None,
+        schedule: via_c.clone(),
+        start_secs,
+        date: DATE.into(),
+    })
+    .unwrap()
+    {
+        Response::TripPath { path } => path,
+        _ => panic!("trip_path"),
+    };
+    let first_start = match &net.schedules[&via_c].schedule {
+        transit_network::Schedule::ExactTimes { starts } => starts[0],
+        _ => panic!("fixture uses exact times"),
+    };
+    assert_eq!(path(first_start).len(), 3, "A, C, B joined");
+    assert!(path(1).is_empty());
+}

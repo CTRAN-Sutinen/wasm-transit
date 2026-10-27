@@ -320,8 +320,10 @@ caps-smoke, a runner gate — then deletes the TypeScript):
 - **W4 geometry.** mapview.ts (`tripLine`, `tripSegment`,
   `followsPattern`, the nearest-vertex slice), planner.ts
   `focusFor`, actions.ts `buildItineraryFeatures`. Into: geometry
-  ops on the modules that own the day (runcut) and the plan
-  (router).
+  ops on the modules that own the day (runcut `trip_path`), the
+  plan (router `itinerary_paths`), and what exists (directory
+  `focus`), over library geometry in transit-network (the
+  alignment contract) and transit-dispatch (the effective day).
 - **W5 planner numbers and search.** RouteForm's visits and
   schedule grouping, `scheduleTripCount`, PlannerRail's entity
   search (cap-directory's `query`), `planTrip`'s plan-vs-compare

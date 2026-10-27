@@ -39,6 +39,10 @@ import type { Response as DivertCapResponse } from "./types/cap_divert/Response"
 import type { DiversionDraft } from "./types/DiversionDraft";
 import type { DiversionRow } from "./types/DiversionRow";
 import type { DraftView } from "./types/DraftView";
+import type { Coord } from "./types/Coord";
+import type { EntityFocus } from "./types/EntityFocus";
+import type { EntityKind } from "./types/EntityKind";
+import type { LegPath } from "./types/LegPath";
 import type { NetworkEdit } from "./types/NetworkEdit";
 import type { NetworkWarning } from "./types/NetworkWarning";
 import type { CreatedEntity } from "./types/CreatedEntity";
@@ -652,6 +656,18 @@ export function routerCap(module: CapModule) {
       } as RouterRequest) as Extract<RouterResponse, { op: "plan_compare" }>;
       return { active: resp.active, baseline: resp.baseline };
     },
+    /// Where an itinerary runs, one path per leg, over the effective
+    /// day it was planned on (the same edits hash).
+    itineraryPaths(networkHash: string, editsHash: string | null, date: string, itinerary: Itinerary): LegPath[] {
+      const resp = module.invoke({
+        op: "itinerary_paths",
+        network_hash: networkHash,
+        edits_hash: editsHash,
+        date,
+        itinerary,
+      } as RouterRequest) as Extract<RouterResponse, { op: "itinerary_paths" }>;
+      return resp.paths;
+    },
   };
 }
 
@@ -994,8 +1010,7 @@ export function runcutCap(module: CapModule) {
       return resp.trips;
     },
     /// One derived trip's EFFECTIVE stops on the date — the trip
-    /// detail the map's click-through reads (the answer carries no
-    /// geometry; the network document holds the coordinates).
+    /// detail (its line is tripPath).
     tripStops(
       networkHash: string,
       editsHash: string | null,
@@ -1012,6 +1027,19 @@ export function runcutCap(module: CapModule) {
         date,
       } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "trip_stops" }>;
       return resp.stops;
+    },
+    /// One derived trip's line on the date, over the effective day (a
+    /// diverted trip draws its diversion).
+    tripPath(networkHash: string, editsHash: string | null, schedule: string, startSecs: number, date: string): Coord[] {
+      const resp = module.invoke({
+        op: "trip_path",
+        network_hash: networkHash,
+        edits_hash: editsHash,
+        schedule,
+        start_secs: startSecs,
+        date,
+      } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "trip_path" }>;
+      return resp.path;
     },
   };
 }
@@ -1277,7 +1305,32 @@ export function directoryCap(module: CapModule) {
       } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "route_stop_sequence" }>;
       return resp.patterns;
     },
+    /// Where one entity is on the map: its lines and stops.
+    focus(networkHash: string, kind: EntityKind, id: string): EntityFocus | null {
+      const resp = module.invoke({
+        op: "focus",
+        network_hash: networkHash,
+        kind,
+        id,
+      } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "focus" }>;
+      return resp.focus;
+    },
   };
+}
+
+/// Where an entity of a PLAN document is (the planner's drill-down):
+/// the document registered in the directory module once per version.
+const focusHashes = new WeakMap<Network, string>();
+export async function planEntityFocus(doc: Network, kind: EntityKind, id: string): Promise<EntityFocus | null> {
+  const module = await directoryModule();
+  if (!module) return null;
+  const dir = directoryCap(module);
+  let hash = focusHashes.get(doc);
+  if (!hash) {
+    hash = dir.loadNetwork(doc);
+    focusHashes.set(doc, hash);
+  }
+  return dir.focus(hash, kind, id);
 }
 
 /// The current directory module, if the bus assembled one.
@@ -1328,15 +1381,6 @@ export function ensureDirectory(bytes: Uint8Array): Promise<boolean> {
     return run;
   };
   return load();
-}
-
-/// The per-route drill-down, synchronous (the module is loaded by the
-/// time a route is picked — ensureDirectory ran for the pickers).
-export function directoryRoutePatterns(routeId: string): PatternStops[] {
-  if (!directory.networkHash) return [];
-  const module = caps.modules["directory"];
-  if (!module) return [];
-  return directoryCap(module).routeStopSequence(directory.networkHash, routeId);
 }
 
 /// The feed line's summary — the feed document's own read (what it

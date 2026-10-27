@@ -189,7 +189,7 @@ pub fn draft_view(network: &Network, draft: &DiversionDraft) -> DraftView {
         }
     }
 
-    let alignment = pattern.as_ref().map(|id| alignment_of(network, id)).unwrap_or_default();
+    let alignment = pattern.as_ref().map(|id| transit_network::pattern_alignment(network, id)).unwrap_or_default();
     let mut detour: Vec<DetourPoint> = Vec::new();
     for p in draft.slices.iter().flatten() {
         if detour.last().is_some_and(|q| (q.lat - p.lat).abs() < 1e-12 && (q.lon - p.lon).abs() < 1e-12) {
@@ -285,27 +285,6 @@ fn stop_name(network: &Network, stop: &str) -> String {
 
 fn parse_date(raw: &str) -> Option<chrono::NaiveDate> {
     chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d").ok()
-}
-
-/// The pattern's authored path when it has one (two points or more),
-/// else its stops joined in order, consecutive repeats dropped.
-fn alignment_of(network: &Network, pattern: &str) -> Vec<Coord> {
-    let Some(p) = network.patterns.get(pattern) else { return Vec::new() };
-    if let Some(path) = p.path.as_ref().filter(|path| path.len() >= 2) {
-        return path.clone();
-    }
-    let mut out: Vec<Coord> = Vec::new();
-    for ps in &p.stops {
-        let Some(s) = network.stops.get(&ps.stop) else { continue };
-        if out.last().is_some_and(|c| c.lat == s.lat && c.lon == s.lon) {
-            continue;
-        }
-        out.push(Coord { lat: s.lat, lon: s.lon });
-    }
-    if out.len() < 2 {
-        out.clear();
-    }
-    out
 }
 
 /// Path length in metres (equirectangular per leg — exact enough at

@@ -210,3 +210,33 @@ fn json_seam_round_trips_the_tagged_form() {
         serde_json::from_str(&cap_router::dispatch_bytes(0, b"{}")).unwrap();
     assert!(outcome["error"].as_str().unwrap().contains("unknown bulk op"));
 }
+
+#[test]
+fn an_itinerary_draws_its_ridden_segments() {
+    let hash = load_network();
+    let cap_router::Response::Plan { itinerary: Some(it) } = cap_router::dispatch(cap_router::Request::Plan {
+        network_hash: hash.clone(),
+        edits_hash: None,
+        from: "A".into(),
+        to: "B".into(),
+        date: DATE.into(),
+        depart_secs: 7 * 3600,
+        max_legs: 4,
+    })
+    .unwrap() else {
+        panic!("plan")
+    };
+    let legs = it.legs.len();
+    let cap_router::Response::ItineraryPaths { paths } = cap_router::dispatch(cap_router::Request::ItineraryPaths {
+        network_hash: hash,
+        edits_hash: None,
+        date: DATE.into(),
+        itinerary: it,
+    })
+    .unwrap() else {
+        panic!("itinerary_paths")
+    };
+    assert_eq!(paths.len(), legs, "one path per leg");
+    assert_eq!(paths[0].kind, transit_dispatch::LegKind::Transit);
+    assert!(paths[0].path.len() >= 2, "the ridden segment is a line");
+}

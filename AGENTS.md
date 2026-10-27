@@ -93,7 +93,8 @@ the monolith inside a module.
 ```
 transit-core     GTFS codec substrate (parse, calendar, deterministic zip write)
 transit-network  THE authored network model — trips are derived (materialize);
-                 authoring edits answer the next document (apply_edits)
+                 authoring edits answer the next document (apply_edits);
+                 where things are (pattern alignments, entity focus)
 transit-codec   the network codec: GTFS ⇄ network document (import/export)
 transit-router  RAPTOR earliest-arrival planning over the network model's materialized day
 transit-analysis planner analysis library (stats, service types, coverage)

@@ -16,7 +16,7 @@
 //!   rebuilt by following parents backward in time.
 
 use ts_rs::TS;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::network::RouterNetwork;
 use crate::{Result, RouterError};
@@ -35,7 +35,7 @@ fn fmt_time(secs: u32) -> String {
 
 /// One leg of a planned itinerary. Internally tagged for JSON
 /// serialization: `{"type": "transit", ...}` / `{"type": "walk", ...}`.
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Leg {
@@ -72,7 +72,7 @@ pub enum Leg {
 }
 
 /// A full plan: origin, destination, and legs in chronological order.
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Itinerary {
     pub from_stop_id: String,

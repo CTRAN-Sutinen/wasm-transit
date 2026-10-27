@@ -859,9 +859,11 @@ test("planner authors a network and the rider uses it", async ({ page }) => {
   await expect(page.getByText("Routes running")).toBeVisible();
   await expect(page.getByText("Schedules (5)")).toBeVisible();
   await expect(page.locator(".map-side")).toBeVisible();
+  // cap-directory's focus answers it: one line per pattern scheduled
+  // under WK (five), its stops as points.
   await expect
-    .poll(async () => (await mapData(page, "planner")).features.length)
-    .toBeGreaterThan(0);
+    .poll(async () => (await mapData(page, "planner")).features.filter((f) => f.properties.kind === "line").length)
+    .toBe(5);
 
   // Pure data screens (Document) hide the map and the rail takes the
   // whole width — no dead column next to it (regression: an invalid

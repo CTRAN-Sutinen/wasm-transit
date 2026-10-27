@@ -363,6 +363,20 @@ day-shape answer is the dogfood record).
     serde-defaults mirror are gone from web/; skips are now
     "every interior stop not served", so unchecking every skip
     no longer re-skips them all.
+  * W4 geometry: ON THE BUS — transit-network geometry_test (the
+    alignment contract, entity focus per kind), transit-dispatch
+    geometry_test (a trip on its pattern draws the alignment, a
+    diverted one its patched stops, the ridden segment sliced);
+    cap-runcut `trip_path`, cap-router `itinerary_paths`, and
+    cap-directory `focus` (dispatch tests, caps-smoke, the justfile
+    geometry gate — one chained session over all three). UI READS
+    THE BUS: the trip line, the itinerary, the planner drill-down,
+    and the diversion ghost draw op answers; mapview.ts only shapes
+    GeoJSON (app.spec itinerary and trip-line specs; "planner
+    authors a network" — the WK focus draws its five patterns).
+    DOGFOODED (QA-FINDINGS, "Session 2026-10-27 (geometry)";
+    QAF-50 open). A block's drill-down now frames its patterns
+    (it framed nothing before).
   * W6, early: DepartureBoard, RtPanel, BlocksPanel, and (with W3)
     DiversionPanel are render-only (props in, events out; the host
     makes the op calls) — off the W0 allowlist.

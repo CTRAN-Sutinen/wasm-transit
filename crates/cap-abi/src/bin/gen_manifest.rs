@@ -71,7 +71,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "router",
         file: "cap_router.wasm",
-        ops: &["load_network", "load_edits", "plan", "plan_compare"],
+        ops: &["load_network", "load_edits", "plan", "plan_compare", "itinerary_paths"],
         consumes: &[("network", "network")],
         speaks: &[("network", &[1])],
         migrates: &[],
@@ -81,6 +81,7 @@ const MODULES: &[ModuleSpec] = &[
             ("load_edits", "Register the operator edit document against a loaded network, validated per record against it; the answer carries the reports and the document's hash. Wholesale replacement, like the host-owned store."),
             ("plan", "Earliest-arrival itinerary from stop to stop at a departure time over the materialized day (edits applied when edits_hash names a registered document); null itinerary = unreachable within max_legs. The legs speak model vocabulary: the derived trip identity is (schedule, start_secs)."),
             ("plan_compare", "The diversion delta: the same plan over the patched day (active) and the unpatched materialization (baseline, null when no edit is in force on the date)."),
+            ("itinerary_paths", "Where an itinerary runs, one path per leg ({kind: transit | walk, path: [{lat, lon}]}) over the same effective day it was planned on (pass the same edits_hash): a transit leg's RIDDEN segment — its trip's authored alignment sliced between the board and alight stops while the trip follows its pattern, its patched stops when diverted, a straight line as the last resort — and a walk through the stops it passes. Send the itinerary plan answered. The map draws the paths; it computes none."),
         ],
     },
     ModuleSpec {
@@ -170,7 +171,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "runcut",
         file: "cap_runcut.wasm",
-        ops: &["load_network", "load_edits", "blocks", "block_trips", "trip_stops"],
+        ops: &["load_network", "load_edits", "blocks", "block_trips", "trip_stops", "trip_path"],
         // The network document is produced by the network capability;
         // the operator edit document is host-owned (wholesale-replaced
         // — the sync contract).
@@ -183,7 +184,8 @@ const MODULES: &[ModuleSpec] = &[
             ("load_edits", "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change."),
             ("blocks", "The day's blocks: every authored block with at least one trip running on the date, with that day's running trip counts — a block whose every trip is off is a vehicle still in the garage, not offered. With edits in force, skipped trips leave the count (and a block whose every trip is skipped leaves the list)."),
             ("block_trips", "One block's chain on a service date: the AUTHORED runcut (the model's blocks carry layovers GTFS never had), materialized for the day, with the in-force edits applied — a diverted trip ending later eats into the vehicle's next layover, and layover_remaining_secs goes negative when the connection is eaten. Each row's layover_health classifies the connection: overlap (negative — the next trip starts late), tight (under tight_layover_secs, default 300), ok. Trips of the chain that do not run on the date stay in view, marked. The answer carries the block_id it is for (many block_trips results group by the answer, never by request order). Unknown blocks answer empty, never error."),
-            ("trip_stops", "One derived trip's stops on a service date — the day's trip detail, EFFECTIVE (a diverted trip answers its patched sequence). The map's click-through reads this; the answer carries no geometry (stops carry coordinates in the network document — the map is the host's view, not the module's). A trip that does not run answers empty, never an error."),
+            ("trip_stops", "One derived trip's stops on a service date — the day's trip detail, EFFECTIVE (a diverted trip answers its patched sequence). The trip's line is trip_path. A trip that does not run answers empty, never an error."),
+            ("trip_path", "One derived trip's LINE on a service date ([{lat, lon}]), over the effective day: its pattern's authored alignment while the trip follows the pattern, its (patched) stops joined in order when it does not — a diverted trip draws its diversion. A trip that does not run answers an empty path, never an error."),
         ],
     },
     ModuleSpec {
@@ -206,7 +208,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "directory",
         file: "cap_directory.wasm",
-        ops: &["load_network", "stops", "stops_by_ids", "routes", "route_stop_sequence"],
+        ops: &["load_network", "stops", "stops_by_ids", "routes", "route_stop_sequence", "focus"],
         // The network document is produced by the network capability.
         consumes: &[("network", "network")],
         speaks: &[("network", &[1])],
@@ -218,6 +220,7 @@ const MODULES: &[ModuleSpec] = &[
             ("stops_by_ids", "Stops by id, in the request's order — the names join hosts otherwise do by hand when a view (like rt's) carries ids a human reads as names. Unknown ids are omitted."),
             ("routes", "The route list, name-sorted: every route with its mode (the model's closed set, not GTFS's numeric codes) and its authored color when there is one."),
             ("route_stop_sequence", "One route's patterns with their ordered stops — the model's directions. An unknown route answers empty, never an error."),
+            ("focus", "Where one entity is on the map ({kind: stop | route | pattern | schedule | service_type | block, id}): its lines (each pattern's authored alignment, else its stops joined) and the stops it serves. A stop is its point; a schedule its pattern; a route, a service type, or a block every pattern it runs. Null for an unknown id."),
         ],
     },
     ModuleSpec {
@@ -677,6 +680,31 @@ fn example_for(
                 json!({ "ok": { "op": "plan_compare", "active": active, "baseline": baseline } }),
             )
         }
+        ("router", "itinerary_paths") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).expect("fixture date");
+            let network = ctx.derived_network();
+            let day = transit_network::materialize(network, date).expect("fixture materializes");
+            let graph = transit_router::RouterNetwork::build_from_day(network, &day, date);
+            let itinerary = transit_router::earliest_arrival(&graph, "A", "B", 25200, 4).ok()??;
+            let paths: Vec<_> = itinerary
+                .legs
+                .iter()
+                .map(|leg| match leg {
+                    transit_router::Leg::Transit { schedule, start_secs, board_stop_id, alight_stop_id, .. } => {
+                        json!({ "kind": "transit", "path": transit_dispatch::trip_segment(network, &day, schedule, *start_secs, board_stop_id, alight_stop_id) })
+                    }
+                    transit_router::Leg::Walk { from_stop_id, via_stop_ids, to_stop_id, .. } => {
+                        let stops: Vec<&str> = std::iter::once(from_stop_id).chain(via_stop_ids).chain(std::iter::once(to_stop_id)).map(String::as_str).collect();
+                        json!({ "kind": "walk", "path": transit_network::stops_line(network, stops) })
+                    }
+                })
+                .collect();
+            (
+                json!({ "op": "itinerary_paths", "network_hash": ctx.network_hash, "date": "2026-10-23", "itinerary": itinerary }),
+                json!({ "ok": { "op": "itinerary_paths", "paths": paths } }),
+            )
+        }
         // The network capability's examples carry the REAL derived
         // document and exported zip of the fixture — computed by the
         // same shared library the module dispatches through.
@@ -977,6 +1005,21 @@ fn example_for(
                         ctx.derived_network(), &day, &trip.schedule, trip.start_secs) } }),
             )
         }
+        ("runcut", "trip_path") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+            let records = dispatch_fixture_edits();
+            let day = transit_dispatch::effective_day(ctx.derived_network(), date, &records).ok()?;
+            // The diverted 08:40 trip draws its patched stops (A→B).
+            let trip = day.iter().find(|t| t.stop_times.len() == 2 && t.start_secs == 8 * 3600 + 40 * 60)?;
+            (
+                json!({ "op": "trip_path", "network_hash": ctx.network_hash,
+                    "edits_hash": "<of the loaded edit document>",
+                    "schedule": trip.schedule, "start_secs": trip.start_secs, "date": "2026-10-23" }),
+                json!({ "ok": { "op": "trip_path",
+                    "path": transit_dispatch::trip_path(ctx.derived_network(), &day, &trip.schedule, trip.start_secs) } }),
+            )
+        }
         ("calendar", "load_network") => {
             let ctx = net?;
             (
@@ -1067,6 +1110,14 @@ fn example_for(
             (
                 json!({ "op": "routes", "network_hash": ctx.network_hash }),
                 json!({ "ok": { "op": "routes", "routes": routes } }),
+            )
+        }
+        ("directory", "focus") => {
+            let ctx = net?;
+            (
+                json!({ "op": "focus", "network_hash": ctx.network_hash, "kind": "route", "id": "10" }),
+                json!({ "ok": { "op": "focus",
+                    "focus": transit_network::entity_focus(ctx.derived_network(), transit_network::EntityKind::Route, "10") } }),
             )
         }
         ("directory", "route_stop_sequence") => {

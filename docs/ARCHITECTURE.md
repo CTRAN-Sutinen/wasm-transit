@@ -48,7 +48,12 @@ transit-network The authored network model (planner authority):
                 answers issues (gate: a block trip its schedule
                 does not run is one) and WARNINGS that never gate
                 (unassigned trips; a pick with no service in its
-                first week).
+                first week). GEOMETRY lives here too
+                (`geometry.rs`): a pattern's alignment (its authored
+                path, else its stops joined — the model's own
+                contract) and where an entity is (`entity_focus`: a
+                stop's point; the lines and stops of every pattern a
+                route, schedule, service type, or block runs).
 transit-router  RAPTOR earliest-arrival planning over the network
                 model's materialized day (patterns grouped by actual
                 stop sequence — an edited trip rides its own
@@ -91,7 +96,12 @@ transit-dispatch The materialized day's views, model-native: patch_day
                 as default, each visit's role, the interior skipped
                 unless served, the alignment, the flattened trace
                 and its length, the problems — the record a ready
-                draft becomes, and the edit document's named rows).
+                draft becomes, and the edit document's named rows),
+                and WHERE SERVICE RUNS TODAY (geometry.rs: a trip's
+                line over the effective day — the authored alignment
+                while it follows its pattern, its patched stops
+                joined when diverted — and the ridden segment, the
+                alignment sliced between two stops).
                 A LIBRARY shared by the cap-board, cap-runcut,
                 cap-calendar, and cap-divert modules; the UI reads
                 them here. Holds no GTFS
@@ -204,12 +214,11 @@ entity. There is no planner drawer.
 
 File ownership:
 
-- `src/mapview.ts` is the map's view code — HOST code over model
-  documents (the network document's stops and authored alignments,
-  the directory's stop list, the effective day via cap-runcut's
-  trip detail). Ruled a parity break: geometry is a model answer
-  and moves into ops (`docs/PLAN.md`, the web cleanup, W4) —
-  `web/` will only draw the GeoJSON it is handed.
+- `src/mapview.ts` only shapes GeoJSON: every line the map draws
+  is an answer from the bus (cap-runcut `trip_path`, cap-router
+  `itinerary_paths`, cap-directory `focus`, cap-divert's draft
+  alignment); it turns `[{lat, lon}]` into `[lon, lat]` and
+  computes no geometry (W4).
 - `src/capabilities.svelte.ts` is the bus resolver — the ONLY wasm
   loader (components never see the ABI): manifest
   validation, demand-driven load, byte verification against pinned
@@ -274,8 +283,11 @@ cap-router      The router capability: RAPTOR earliest-arrival
                 transit-dispatch composition every day view starts
                 from), the RAPTOR graph cached per (network, edits,
                 date). The compare facet is the diversion delta:
-                the unpatched day, one materialization apart. A
-                pure-function capability; it writes nothing.
+                the unpatched day, one materialization apart; the
+                itinerary_paths facet draws a plan's legs over the
+                same day (a transit leg's ridden segment, a walk
+                through its via stops). A pure-function capability;
+                it writes nothing.
 cap-analysis    The analysis capability: planner numbers (stats,
                 service types, coverage) over hash-keyed network and
                 population-layer registries. The domain code lives
@@ -353,9 +365,10 @@ cap-runcut      The runcut capability — ONE QUESTION: what does
                 connection is eaten, and layover_health classifying
                 it — overlap / tight / ok under the caller's
                 tight_layover_secs) and one derived trip's EFFECTIVE
-                stops on the date (the trip detail facet the map's
-                click-through reads — the answer carries no geometry,
-                the host's view code draws). Same document set as
+                stops on the date (the trip detail facet) and its
+                LINE (trip_path — what the map's click-through draws:
+                the authored alignment, or the diversion's patched
+                stops). Same document set as
                 cap-board
                 (load_network / load_edits + the day views); the
                 domain code lives in the shared transit-dispatch
@@ -388,7 +401,8 @@ cap-directory   The directory capability — ONE QUESTION: what
                 model questions, never feed reads; the UI's
                 comboboxes and the map's name lookups read this
                 module (the feed line reads cap-gtfs's load_feed
-                summary + feed_info).
+                summary + feed_info). focus answers where an entity
+                is on the map — the planner's drill-down frames it.
 cap-streets    The street-graph capability: the detour editor's need,
                 atomically. load_streets (bulk-bytes op 0) parses a
                 street-network GeoJSON into the routing graph and

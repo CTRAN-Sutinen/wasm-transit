@@ -6,7 +6,8 @@
 //! and the names join read here; they are MODEL questions, never
 //! feed reads. Patterns are the model's directions: a route's
 //! stop sequences are its patterns, each with its own ordered
-//! stops — that is what a diversion editor anchors against.
+//! stops — that is what a diversion editor anchors against — and
+//! where each entity is on the map (focus).
 //!
 //! Documents are content-addressed like everywhere on the bus:
 //! * **network** — the same identity cap-network's import produces
@@ -106,6 +107,11 @@ pub enum Request {
     /// One route's patterns with their ordered stops — the model's
     /// directions. An unknown route answers empty, never an error.
     RouteStopSequence { network_hash: String, route_id: String },
+    /// Where one entity is on the map: its lines (pattern alignments —
+    /// authored, else stop to stop) and the stops it serves. A stop is
+    /// its point; a schedule its pattern; a route, a service type, or a
+    /// block every pattern it runs. Null for an unknown id.
+    Focus { network_hash: String, kind: transit_network::EntityKind, id: String },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -117,6 +123,7 @@ pub enum Response {
     StopsByIds { stops: Vec<DirectoryStop> },
     Routes { routes: Vec<DirectoryRoute> },
     RouteStopSequence { patterns: Vec<PatternStops> },
+    Focus { focus: Option<transit_network::EntityFocus> },
 }
 
 /// Networks by content hash (canonical serialization).
@@ -236,6 +243,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 })
                 .collect();
             Ok(Response::RouteStopSequence { patterns })
+        }
+        Request::Focus { network_hash, kind, id } => {
+            let network = network_arc(&network_hash)?;
+            Ok(Response::Focus { focus: transit_network::entity_focus(&network, kind, &id) })
         }
     }
 }

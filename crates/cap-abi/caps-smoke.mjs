@@ -418,6 +418,16 @@ assert(
   plan.itinerary && plan.itinerary.arrival_secs === 8 * 3600 + 600,
   "router plans A → B over the materialized day: arrive 08:10",
 );
+const planPaths = router.invoke({
+  op: "itinerary_paths",
+  network_hash: loadedRouterNet.network_hash,
+  date: DATE,
+  itinerary: plan.itinerary,
+}).paths;
+assert(
+  planPaths.length === plan.itinerary.legs.length && planPaths[0].kind === "transit" && planPaths[0].path.length >= 2,
+  "an itinerary draws one path per leg, the ridden segment",
+);
 const routerEdits = router.invoke({
   op: "load_edits",
   network_hash: loadedRouterNet.network_hash,
@@ -642,9 +652,9 @@ assert(
   agencyIds.ids.length === rippedChain.trips.length && agencyIds.ids[0].includes("t10"),
   "agency ids answer in row order (B1 starts with t10)",
 );
-// The trip detail — the map's click-through question (the answer
-// carries no geometry; the host's view code holds the coordinates):
-// one derived trip's EFFECTIVE stops, patched by the same edits.
+// The trip detail — the map's click-through question: one derived
+// trip's EFFECTIVE stops, patched by the same edits (its line is
+// trip_path, below).
 const chainTrip = runcutChain.trips[0];
 const tripAuthored = runcut.invoke({
   op: "trip_stops",
@@ -681,6 +691,19 @@ const tripAbsent = runcut.invoke({
   date: DATE,
 });
 assert(tripAbsent.stops.length === 0, "a trip not in the day answers empty, never an error");
+const tripLine = runcut.invoke({
+  op: "trip_path",
+  network_hash: loadedRuncutNet.network_hash,
+  edits_hash: runcutEdits.edits_hash,
+  schedule: chainTrip.schedule,
+  start_secs: chainTrip.start_secs,
+  date: DATE,
+});
+assert(
+  JSON.stringify(tripLine.path) ===
+    JSON.stringify(imported.network.patterns[imported.network.schedules[chainTrip.schedule].pattern].path),
+  "a trip that follows its pattern draws the authored alignment",
+);
 const brokenEdit = runcut.invoke({
   op: "load_edits",
   network_hash: loadedRuncutNet.network_hash,
@@ -790,6 +813,9 @@ const ghostRoute = dir.invoke({
   route_id: "missing",
 });
 assert(ghostRoute.patterns.length === 0, "an unknown route answers empty, never an error");
+const routeFocus = dir.invoke({ op: "focus", network_hash: loadedDirNet.network_hash, kind: "route", id: "10" }).focus;
+assert(routeFocus.lines.length === 2 && routeFocus.points.length === 5, "a route frames every pattern it runs");
+assert(dir.invoke({ op: "focus", network_hash: loadedDirNet.network_hash, kind: "stop", id: "missing" }).focus === null, "an unknown entity frames nothing");
 
 // Unknown hashes error, never panic — every day-view seam.
 const unknownBoard = board.raw({ op: "stop_board", network_hash: "sha256:missing", stop_id: "A", date: DATE, from_secs: 0, limit: 5 });

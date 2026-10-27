@@ -30,6 +30,7 @@ import type { Network } from "./types/Network";
 import type { NetworkStats } from "./types/NetworkStats";
 import type { PlanInfo } from "./types/cap_plans/PlanInfo";
 import { pushEdits, serviceDate, FEED_KEY, setFeedBytes, refreshLive } from "./actions";
+import { lonLat } from "./mapview";
 import { get as idbGet } from "idb-keyval";
 import {
   ensureAnalysisNetwork,
@@ -43,12 +44,14 @@ import {
   plansChain,
   authorCap,
   authorModule,
+  planEntityFocus,
   type Applied,
 } from "./capabilities.svelte";
 import type { NetworkEdit } from "./types/NetworkEdit";
 import type { CreatedEntity } from "./types/CreatedEntity";
 
-export type EntityKind = "stop" | "route" | "pattern" | "schedule" | "service_type" | "block";
+export type { EntityKind } from "./types/EntityKind";
+import type { EntityKind } from "./types/EntityKind";
 
 /// One planner screen. The workspace is a stack: the PLAN CHAIN at
 /// the root (service changes are the frame everything else lives
@@ -334,7 +337,7 @@ export async function forkPlan(fromKey: string, name: string, effectiveFrom: str
   app.plannerStack = [{ view: "plans" }, { view: "overview" }];
   app.plannerMapUp = true;
   app.plannerSelection = null;
-  app.plannerFocus = null;
+  clearFocus();
   setDoc(doc, `pick "${doc.plan.name}"`, { validateNow: true });
   refreshPlanChain();
   app.status =
@@ -350,7 +353,7 @@ export function switchPlan(key: string): void {
   app.plannerStack = [{ view: "plans" }, { view: "overview" }];
   app.plannerMapUp = true;
   app.plannerSelection = null;
-  app.plannerFocus = null;
+  clearFocus();
   validateNetwork();
   refreshAnalysis();
   refreshPlanChain();
@@ -360,7 +363,7 @@ export function switchPlan(key: string): void {
 export function deletePlan(key: string): void {
   removePlanFromStore(key);
   app.plannerSelection = null;
-  app.plannerFocus = null;
+  clearFocus();
   refreshPlanChain();
   app.status = "Plan removed from the set.";
 }
@@ -441,7 +444,7 @@ export async function deriveFromFeed(): Promise<void> {
     app.plannerStack = [{ view: "plans" }, { view: "overview" }];
     app.plannerMapUp = true;
     app.plannerSelection = null;
-    app.plannerFocus = null;
+    clearFocus();
     setDoc(net, "derived from loaded feed", { validateNow: true });
     refreshPlanChain();
     app.status = `Derived a network from the loaded feed (${Object.keys(net.patterns).length} patterns, ${Object.keys(net.schedules).length} schedules) — frame it as a pick, edit it, then load it into the app.`;
@@ -467,7 +470,7 @@ export function loadNetworkText(text: string, label: string): boolean {
   app.plannerStack = [{ view: "plans" }, { view: "overview" }];
   app.plannerMapUp = true;
   app.plannerSelection = null;
-  app.plannerFocus = null;
+  clearFocus();
   setDoc(doc, label, { validateNow: true });
   refreshPlanChain();
   const n = app.networkIssues.length;
@@ -823,78 +826,36 @@ export function setBlockLayover(blockId: string, afterTrip: number, secs: number
 // drill-down: select an entity, focus the map on it
 // ---------------------------------------------------------------
 
-/// Ordered [lon, lat] of a pattern's stops (skips stops without
-/// coordinates).
-function patternCoords(doc: Network, patternId: string | undefined | null): number[][] {
-  const p = patternId ? doc?.patterns?.[patternId] : undefined;
-  if (!p) return [];
-  const out = [];
-  for (const s of p.stops) {
-    const stop = doc.stops?.[s.stop];
-    if (stop) out.push([stop.lon, stop.lat]);
-  }
-  return out;
-}
-
-/// The pattern's drawn alignment as [lon, lat] lines: the authored
-/// path when there is one, otherwise straight chords between its
-/// stops (the pre-shape rendering — still right for paths that never
-/// got one).
-function patternLines(doc: Network, patternId: string | undefined | null): number[][][] {
-  const p = patternId ? doc?.patterns?.[patternId] : undefined;
-  if (!p) return [];
-  if (p.path && p.path.length >= 2) return [p.path.map((c) => [c.lon, c.lat])];
-  const coords = patternCoords(doc, patternId);
-  return coords.length >= 2 ? [coords] : [];
-}
-
-function focusFor(doc: Network | null, kind: EntityKind, id: string): Focus | null {
-  if (!doc) return null;
-  if (kind === "pattern") {
-    return { lines: patternLines(doc, id), points: patternCoords(doc, id) };
-  }
-  if (kind === "schedule") {
-    const pattern = doc.schedules?.[id]?.pattern ?? null;
-    return { lines: patternLines(doc, pattern), points: patternCoords(doc, pattern) };
-  }
-  if (kind === "service_type") {
-    // The type's whole network: every pattern scheduled under it.
-    const lines: number[][][] = [];
-    const points: number[][] = [];
-    const patternIds = new Set(
-      Object.values(doc.schedules ?? {})
-        .filter((s) => s.service_type === id)
-        .map((s) => s.pattern),
-    );
-    for (const pid of patternIds) {
-      lines.push(...patternLines(doc, pid));
-      points.push(...patternCoords(doc, pid));
-    }
-    return { lines, points };
-  }
-  if (kind === "route") {
-    const lines: number[][][] = [];
-    const points: number[][] = [];
-    for (const [pid, p] of Object.entries(doc.patterns ?? {})) {
-      if (p.route !== id) continue;
-      lines.push(...patternLines(doc, pid));
-      points.push(...patternCoords(doc, pid));
-    }
-    return { lines, points };
-  }
-  if (kind === "stop") {
-    const s = doc.stops?.[id];
-    return s ? { lines: [], points: [[s.lon, s.lat]] } : null;
-  }
-  return null; // calendars and blocks have no geometry
-}
-
 /** Drill into one entity: push its screen and frame it on the map. */
 export function selectEntity(kind: EntityKind, id: string): void {
   if (!id) return;
   const screen: PlannerScreen = { view: kind, id } as PlannerScreen;
   plannerNavigate(screen);
-  app.plannerFocus = focusFor(getNetworkDoc(), kind, id);
+  void frameEntity(kind, id);
+}
+
+let focusSeq = 0;
+/// Unframe: also cancels a frame still in flight.
+function clearFocus(): void {
+  focusSeq++;
+  app.plannerFocus = null;
+}
+/// Frame an entity on the map: cap-directory answers where it is
+/// (its pattern alignments and stops) over the active plan; the
+/// host only reshapes the answer to GeoJSON order. The latest
+/// selection wins.
+async function frameEntity(kind: EntityKind, id: string): Promise<void> {
+  const seq = ++focusSeq;
+  const doc = getNetworkDoc();
+  app.plannerFocus = null;
+  if (!doc) return;
+  try {
+    const focus = await planEntityFocus(doc, kind, id);
+    if (seq !== focusSeq) return;
+    app.plannerFocus = focus ? { lines: focus.lines.map(lonLat), points: lonLat(focus.points) } : null;
+  } catch (e) {
+    console.warn("focus failed:", e);
+  }
 }
 
 /** Push a screen onto the stack. Data screens hide the map (one
@@ -961,5 +922,5 @@ function syncSelection(): void {
 /** Clear focus (persona switch away, or a removed entity). */
 export function clearSelection(): void {
   app.plannerSelection = null;
-  app.plannerFocus = null;
+  clearFocus();
 }

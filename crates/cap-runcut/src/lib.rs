@@ -86,12 +86,21 @@ pub enum Request {
     /// One derived trip's stops on a service date — the day's trip
     /// detail, EFFECTIVE (a diverted trip answers its patched
     /// sequence). The trip's identity is the model's: (schedule,
-    /// start_secs). The map's click-through reads this; the answer
-    /// carries no geometry (stops carry coordinates in the network
-    /// document — the map is the host's view, not the module's).
-    /// A trip that does not run on the date answers empty, never an
+    /// start_secs). Its line is `trip_path`. A trip that does not run on the date answers empty, never an
     /// error.
     TripStops {
+        network_hash: String,
+        #[serde(default)]
+        edits_hash: Option<String>,
+        schedule: String,
+        start_secs: u32,
+        date: String,
+    },
+    /// One derived trip's LINE on a service date, over the effective
+    /// day: its pattern's authored alignment while it follows the
+    /// pattern, its patched stops joined when diverted. A trip that
+    /// does not run on the date answers an empty path.
+    TripPath {
         network_hash: String,
         #[serde(default)]
         edits_hash: Option<String>,
@@ -116,6 +125,7 @@ pub enum Response {
     /// request order.
     BlockTrips { block_id: String, trips: Vec<BlockChainTrip> },
     TripStops { stops: Vec<transit_dispatch::TripStopView> },
+    TripPath { path: Vec<transit_network::Coord> },
 }
 
 /// Networks by content hash (canonical serialization).
@@ -232,6 +242,11 @@ let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             Ok(Response::TripStops {
                 stops: transit_dispatch::trip_stops(&network, &day, &schedule, start_secs),
             })
+        }
+        Request::TripPath { network_hash, edits_hash, schedule, start_secs, date } => {
+            let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = network_arc(&network_hash)?;
+            Ok(Response::TripPath { path: transit_dispatch::trip_path(&network, &day, &schedule, start_secs) })
         }
     }
 }

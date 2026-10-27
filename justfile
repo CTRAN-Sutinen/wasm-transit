@@ -161,6 +161,20 @@ test: caps
       --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
       --op '{"op":"block_trips","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","block_id":"B1","date":"2026-10-23"}' \
       | grep -q '"layover_remaining_secs":300'
+    # The map's geometry is answered, never computed by a host (W4):
+    # a plan's ridden segment (router), the diverted 08:40 trip drawn
+    # through its patched stops A→B (runcut), and a route framed by
+    # its two patterns (directory) — one chained session.
+    node tools/caps-run.mjs router \
+      --op @web/public/caps/sample-network-load.json \
+      --as plan --op '{"op":"plan","network_hash":"$load_network.network_hash","from":"A","to":"B","date":"2026-10-23","depart_secs":25200,"max_legs":4}' \
+      --op '{"op":"itinerary_paths","network_hash":"$load_network.network_hash","date":"2026-10-23","itinerary":"$plan.itinerary"}' \
+      --cap runcut --op @web/public/caps/sample-network-load.json \
+      --as edits --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
+      --as trip --op '{"op":"trip_path","network_hash":"$load_network.network_hash","edits_hash":"$edits.edits_hash","schedule":"WK:pat-10-0-1","start_secs":31200,"date":"2026-10-23"}' \
+      --cap directory --op @web/public/caps/sample-network-load.json \
+      --as focus --op '{"op":"focus","network_hash":"$load_network.network_hash","kind":"route","id":"10"}' \
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const legs = r.find((x) => x.ok?.op === "itinerary_paths").ok.paths; if (legs[0]?.kind !== "transit" || legs[0].path.length < 2 || ok("trip").path.length !== 2 || ok("focus").focus.lines.length !== 2) process.exit(1)'
     # The router capability's gate: planning over the network document
     # — the plan, then the diversion delta (compare) chained on the
     # same edits document (08:15 against the unpatched 08:10).

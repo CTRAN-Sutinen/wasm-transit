@@ -72,6 +72,18 @@ pub enum Request {
         depart_secs: u32,
         max_legs: u32,
     },
+    /// Where an itinerary runs, leg by leg, over the same effective
+    /// day it was planned on: a transit leg's RIDDEN segment (the
+    /// trip's alignment sliced between its board and alight stops
+    /// while it follows its pattern; its patched stops when diverted),
+    /// a walk through the stops it passes. The map draws the answer.
+    ItineraryPaths {
+        network_hash: String,
+        #[serde(default)]
+        edits_hash: Option<String>,
+        date: String,
+        itinerary: transit_router::Itinerary,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -88,6 +100,9 @@ pub enum Response {
         active: Option<transit_router::Itinerary>,
         baseline: Option<transit_router::Itinerary>,
     },
+    /// One path per leg, in leg order (empty when a leg's stops are
+    /// unknown to the network).
+    ItineraryPaths { paths: Vec<transit_dispatch::LegPath> },
 }
 
 /// Networks by content hash (canonical serialization).
@@ -215,6 +230,42 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             )
             .map_err(|e| e.to_string())?;
             Ok(Response::Plan { itinerary })
+        }
+        Request::ItineraryPaths { network_hash, edits_hash, date, itinerary } => {
+            let parsed = parse_date(&date)?;
+            let network = network_arc(&network_hash)?;
+            let records = match edits_hash.as_deref() {
+                Some(hash) => edits_arc(hash)?,
+                None => Arc::new(Vec::new()),
+            };
+            let day = effective_day(&network, &records, parsed)?;
+            let paths = itinerary
+                .legs
+                .iter()
+                .map(|leg| match leg {
+                    transit_router::Leg::Transit { schedule, start_secs, board_stop_id, alight_stop_id, .. } => {
+                        transit_dispatch::LegPath {
+                            kind: transit_dispatch::LegKind::Transit,
+                            path: transit_dispatch::trip_segment(
+                                &network, &day, schedule, *start_secs, board_stop_id, alight_stop_id,
+                            ),
+                        }
+                    }
+                    transit_router::Leg::Walk { from_stop_id, via_stop_ids, to_stop_id, .. } => {
+                        transit_dispatch::LegPath {
+                            kind: transit_dispatch::LegKind::Walk,
+                            path: transit_network::stops_line(
+                                &network,
+                                std::iter::once(from_stop_id)
+                                    .chain(via_stop_ids)
+                                    .chain(std::iter::once(to_stop_id))
+                                    .map(String::as_str),
+                            ),
+                        }
+                    }
+                })
+                .collect();
+            Ok(Response::ItineraryPaths { paths })
         }
         Request::PlanCompare { network_hash, edits_hash, from, to, date, depart_secs, max_legs } => {
             // The request's own fields validate before any registry

@@ -191,3 +191,22 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
     let bad = dispatch_bytes(0, b"whatever");
     assert!(bad.contains("unknown bulk op"), "the module takes JSON documents: {bad}");
 }
+
+#[test]
+fn focus_frames_an_entity_on_the_map() {
+    let hash = load_network();
+    let focus = |kind: transit_network::EntityKind, id: &str| match dispatch(Request::Focus {
+        network_hash: hash.clone(),
+        kind,
+        id: id.into(),
+    })
+    .unwrap()
+    {
+        Response::Focus { focus } => focus,
+        _ => panic!("focus"),
+    };
+    let route = focus(transit_network::EntityKind::Route, "10").expect("route 10 exists");
+    assert!(!route.lines.is_empty() && !route.points.is_empty());
+    assert_eq!(focus(transit_network::EntityKind::Stop, "A").unwrap().points.len(), 1);
+    assert!(focus(transit_network::EntityKind::Route, "nope").is_none());
+}
