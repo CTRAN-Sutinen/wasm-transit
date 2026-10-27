@@ -130,7 +130,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "analysis",
         file: "cap_analysis.wasm",
-        ops: &["load_network", "load_population_layer", "network_stats", "service_types_overview", "service_type_detail", "type_coverage"],
+        ops: &["load_network", "load_population_layer", "network_stats", "service_types_overview", "service_type_detail", "service_type_compare", "type_coverage"],
         // The network document is produced by the network capability —
         // the extraction this module's own docs once called "future".
         consumes: &[("network", "network")],
@@ -143,6 +143,7 @@ const MODULES: &[ModuleSpec] = &[
             ("network_stats", "The network's numbers on one service date: trips, spans, revenue hours, transfer points, per-route and per-stop activity, headways. Each route row carries its own revenue_hours (the per-route cost basis) and its headway as the MEDIAN gap between departures at its busiest stop (headway_stop says which) — arrivals never count. Every route of the document is a row, sorted by id: a route with no service on the date answers trips 0 and null spans (inactive routes are analysis too — filter on trips). include_routes/include_stops/include_service_types (default true) shape the response: false empties the corresponding lists — the day-shape question answers in under a KiB."),
             ("service_types_overview", "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight."),
             ("service_type_detail", "One service type expanded on its representative day: routes, stops, pattern trips, totals."),
+            ("service_type_compare", "What a change does: the proposal (network_hash) against its baseline (base_hash) under one service type, each on its own representative day — both sides' trips, revenue hours, and routes, then only the routes whose numbers changed (trips, span, typical headway, revenue hours, patterns, stops), each with its baseline and proposal row (null on the side that does not run it), and the count of unchanged routes. Both documents must be loaded."),
             ("type_coverage", "Population coverage per service type against a hash-addressed layer: what share of the population each type serves, and serves frequently. Frequency is the whole-day average headway unless `window` ({start_secs, end_secs}) is given — then a stop is frequent when the worst wait anywhere in the window (edges included, departures only, every route pooled) fits frequent_secs: the planner's \"every 15 minutes, 07:00–19:00\". A midday or peak improvement is visible only through a window."),
         ],
     },
@@ -223,7 +224,7 @@ const MODULES: &[ModuleSpec] = &[
             ("focus", "Where one entity is on the map ({kind: stop | route | pattern | pattern_trips | service_type | block, id}): its lines (each pattern's authored alignment, else its stops joined) and the stops it serves. A stop is its point; pattern trips their pattern; a route, a service type, or a block every pattern it runs. Null for an unknown id."),
             ("entities", "Every entity of one kind ({kind: stop | route | pattern | pattern_trips | service_type | block}), in id order, narrowed by an optional query the way a filter box's typing does (every whitespace-separated term in the name or the id, case-insensitive). Each row: id, name, context (a pattern's route; pattern trips' pattern · service type), transfer (stops), trips (pattern trips' materialized trip count; a block's chained trips)."),
             ("route_detail", "One route's composition: its patterns, the stops they visit (first-visit order), its pattern trips grouped by service type, each with the trips it runs (the same expansion the materialized day runs), and its patterns grouped by direction (the route's named directions in id order, then any patterns in none). Null for an unknown route."),
-            ("timetable", "The planner's timetable: one route, one `direction` (omitted or null: its patterns in no direction), one `service_type` — every trip of the direction's patterns (bay and short-turn variants together), one row per trip by start with its identity (pattern_trips, start_secs), pattern and block, and its departure at each column (null where its pattern does not stop); the columns are every stop those patterns visit, in route order, flagged when a timepoint; the legend lists the patterns most trips first, marking headway-band ones. Rows are the materialized day's trips. Null for an unknown route, direction or service type."),
+            ("timetable", "The planner's timetable: one route, one `direction` (omitted or null: its patterns in no direction), one `service_type` — every trip of the direction's patterns (bay and short-turn variants together), one row per trip by start with its identity (pattern_trips, start_secs), pattern and block, and its departure at each column (null where its pattern does not stop); the columns are every stop those patterns visit, in route order, flagged when a timepoint; the legend lists the patterns most trips first, marking headway-band ones. Rows are the materialized day's trips. With `compare_hash` (a loaded baseline) each trip is marked `added` when the baseline does not run it, and `removed` lists the baseline's trips this one no longer runs (a retimed trip is removed at its old start and added at its new — its identity is pattern_trips + start). Null for an unknown route, direction or service type."),
             ("stop_detail", "One stop's composition: the routes whose patterns visit it (id and name rows, id order). Null for an unknown stop."),
         ],
     },
@@ -815,6 +816,15 @@ fn example_for(
             (
                 json!({ "op": "service_type_detail", "network_hash": ctx.network_hash, "service_type": "WK" }),
                 json!({ "ok": { "op": "service_type_detail", "detail": detail } }),
+            )
+        }
+        ("analysis", "service_type_compare") => {
+            let ctx = net?;
+            let comparison = transit_analysis::service_type_compare(&ctx.derived_network(), &ctx.derived_network(), "WK")
+                .expect("WK exists in the fixture-derived document");
+            (
+                json!({ "op": "service_type_compare", "base_hash": ctx.network_hash, "network_hash": ctx.network_hash, "service_type": "WK" }),
+                json!({ "ok": { "op": "service_type_compare", "comparison": comparison } }),
             )
         }
         ("analysis", "type_coverage") => {

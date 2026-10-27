@@ -185,3 +185,38 @@ fn frequency_in_a_window_is_the_worst_wait() {
     assert!((c[0].served_pct - 150.0 / 180.0 * 100.0).abs() < 1e-6, "A and C both served");
     assert!((c[0].frequent_pct - on_a).abs() < 1e-6, "only A departs anything");
 }
+
+#[test]
+fn a_proposal_compares_route_by_route_against_its_baseline() {
+    // "What does this change do?": route 10 runs its last trip on to
+    // 21:00 every 3 h (12:00 … 21:00) — the only changed row.
+    let base = import_production();
+    let proposal = transit_network::apply_edits(
+        &base,
+        &[transit_network::NetworkEdit::SetSpan {
+            route: "10".into(),
+            direction: Some("0".into()),
+            service_type: "WK".into(),
+            first_secs: None,
+            last_secs: Some(21 * 3600),
+            headway_secs: Some(3 * 3600),
+        }],
+    )
+    .unwrap();
+    let cmp = transit_analysis::service_type_compare(&base, &proposal, "WK").unwrap();
+    assert_eq!((cmp.base.trips, cmp.base.routes), (4, 1));
+    assert!(cmp.proposal.trips > cmp.base.trips);
+    assert!(cmp.proposal.revenue_hours > cmp.base.revenue_hours);
+    assert_eq!(cmp.routes.len(), 1);
+    let row = &cmp.routes[0];
+    assert_eq!(row.route_id, "10");
+    assert_eq!(row.base.as_ref().unwrap().trips, 4);
+    assert_eq!(row.proposal.as_ref().unwrap().trips, cmp.proposal.trips);
+    assert_eq!(cmp.unchanged_routes, 0);
+
+    // A document against itself: nothing changed.
+    let same = transit_analysis::service_type_compare(&base, &base, "WK").unwrap();
+    assert!(same.routes.is_empty());
+    assert_eq!(same.unchanged_routes, 1);
+    assert!(transit_analysis::service_type_compare(&base, &proposal, "ghost").unwrap_err().contains("baseline"));
+}

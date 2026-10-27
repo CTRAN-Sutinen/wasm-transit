@@ -2,7 +2,7 @@
 //! and a route's composition — its trip counts the materialized day's.
 
 use transit_network::{
-    apply_edits, entity_rows, route_detail, stop_detail, timetable, Departures, EntityKind, HeadwayBand, Network,
+    apply_edits, entity_rows, route_detail, stop_detail, timetable, timetable_against, Departures, EntityKind, HeadwayBand, Network,
     NetworkEdit, PatternTrips,
 };
 
@@ -138,4 +138,28 @@ fn a_timetable_is_one_direction_on_one_service_type_across_its_patterns() {
     assert!(timetable(&net, "10", Some("out"), "weekday").is_none());
     assert!(timetable(&net, "ghost", Some("in"), "weekday").is_none());
     assert!(timetable(&net, "10", Some("in"), "ghost").is_none());
+}
+
+#[test]
+fn a_timetable_against_its_baseline_marks_what_changed() {
+    // Every 30 min 07:50–09:00: 08:00 and 08:30 move to 07:50 and
+    // 08:20 (removed at their old starts, added at the new), 08:50 is
+    // new, 25:30 is untouched.
+    let base = network();
+    let edit = NetworkEdit::SetHeadway {
+        route: "10".into(),
+        direction: None,
+        service_type: "weekday".into(),
+        from_secs: 28_200,
+        to_secs: 32_400,
+        headway_secs: 1800,
+        pattern: None,
+    };
+    let next = apply_edits(&base, &[edit]).unwrap();
+    let t = timetable_against(&next, &base, "10", None, "weekday").unwrap();
+    let marks: Vec<_> = t.trips.iter().map(|x| (x.start_secs, x.added)).collect();
+    assert_eq!(marks, [(28_200, true), (30_000, true), (31_800, true), (91_800, false)]);
+    assert_eq!(t.removed.iter().map(|r| r.start_secs).collect::<Vec<_>>(), [28_800, 30_600]);
+    let plain = timetable(&next, "10", None, "weekday").unwrap();
+    assert!(plain.trips.iter().all(|x| !x.added) && plain.removed.is_empty(), "no baseline, no marks");
 }

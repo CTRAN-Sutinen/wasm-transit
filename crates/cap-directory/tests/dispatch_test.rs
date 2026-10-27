@@ -242,7 +242,13 @@ fn the_planners_lists_are_directory_answers() {
     // type: every trip, by start, one time per column.
     let direction = detail.directions[0].direction.clone();
     let service_type = detail.pattern_trips_by_type[0].service_type.clone();
-    let request = Request::Timetable { network_hash: hash.clone(), route_id: "10".into(), direction, service_type };
+    let request = Request::Timetable {
+        network_hash: hash.clone(),
+        route_id: "10".into(),
+        direction: direction.clone(),
+        service_type: service_type.clone(),
+        compare_hash: None,
+    };
     let table = match dispatch(request).unwrap() {
         Response::Timetable { timetable } => timetable.expect("the direction and type exist"),
         _ => panic!("timetable"),
@@ -250,7 +256,13 @@ fn the_planners_lists_are_directory_answers() {
     assert!(!table.trips.is_empty());
     assert!(table.trips.windows(2).all(|w| w[0].start_secs <= w[1].start_secs), "rows by start");
     assert!(table.trips.iter().all(|t| t.times.len() == table.stops.len()));
-    let unknown = Request::Timetable { network_hash: hash.clone(), route_id: "10".into(), direction: Some("ghost".into()), service_type: String::new() };
+    // Against itself: nothing added, nothing removed.
+    let against = Request::Timetable { network_hash: hash.clone(), route_id: "10".into(), direction, service_type, compare_hash: Some(hash.clone()) };
+    match dispatch(against).unwrap() {
+        Response::Timetable { timetable: Some(t) } => assert!(t.trips.iter().all(|x| !x.added) && t.removed.is_empty()),
+        _ => panic!("timetable"),
+    }
+    let unknown = Request::Timetable { network_hash: hash.clone(), route_id: "10".into(), direction: Some("ghost".into()), service_type: String::new(), compare_hash: None };
     match dispatch(unknown).unwrap() {
         Response::Timetable { timetable } => assert!(timetable.is_none()),
         _ => panic!("timetable"),

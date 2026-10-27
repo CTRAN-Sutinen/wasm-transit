@@ -215,4 +215,14 @@ fn what_a_timetable_gesture_cannot_do_is_named() {
     };
     assert!(refused(&net, elsewhere).contains("has no direction out"));
     assert!(refused(&net, headway(9 * H, 8 * H, 600)).contains("window"));
+    // The committed pattern is timed until 30:00: no trip lands past it.
+    let late = NetworkEdit::SetSpan {
+        route: "10".into(),
+        direction: None,
+        service_type: "weekday".into(),
+        first_secs: None,
+        last_secs: Some(31 * H),
+        headway_secs: Some(H),
+    };
+    assert!(refused(&net, late).contains("has no timing profile covering"));
 }

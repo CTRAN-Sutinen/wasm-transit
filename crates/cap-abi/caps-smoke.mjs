@@ -1059,6 +1059,18 @@ assert(
   frequentTable.trips.map((t) => `${t.start_secs}:${t.pattern}`).join() === "28800:pat-10-0-0,30000:pat-10-0-0,31200:pat-10-0-1",
   "set_headway fills the window on the neighbour's pattern, and the timetable reads it",
 );
+const marked = dir.invoke({ op: "timetable", network_hash: frequentDir.network_hash, route_id: "10", direction: "0", service_type: "WK", compare_hash: loadedDirNet.network_hash }).timetable;
+assert(
+  marked.trips.map((t) => t.added).join() === "false,true,false" && marked.removed.length === 0,
+  "against its baseline, the timetable marks the added trip",
+);
+analysis.invoke({ op: "load_network", network: imported.network });
+const analysisFrequent = analysis.invoke({ op: "load_network", network: frequent.network });
+const compared = analysis.invoke({ op: "service_type_compare", base_hash: imported.network_hash, network_hash: analysisFrequent.network_hash, service_type: "WK" }).comparison;
+assert(
+  compared.proposal.trips === compared.base.trips + 1 && compared.routes.length === 1 && compared.routes[0].route_id === "10",
+  "the comparison names the one route the change touched",
+);
 
 // The diversion-authoring flow — what does this draft amount to:
 // the default pattern, the interior skipped unless served, the

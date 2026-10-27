@@ -44,6 +44,8 @@ import type { EntityFocus } from "./types/EntityFocus";
 import type { EntityKind } from "./types/EntityKind";
 import type { EntityRow } from "./types/EntityRow";
 import type { RouteDetail } from "./types/RouteDetail";
+import type { Timetable } from "./types/Timetable";
+import type { ServiceTypeComparison } from "./types/ServiceTypeComparison";
 import type { StopDetail } from "./types/StopDetail";
 import type { LegPath } from "./types/LegPath";
 import type { NetworkEdit } from "./types/NetworkEdit";
@@ -542,6 +544,16 @@ export function analysisCap(module: CapModule) {
         service_type: serviceType,
       } as AnalysisRequest) as Extract<AnalysisResponse, { op: "service_type_detail" }>;
       return resp.detail;
+    },
+    /// A proposal against its baseline under one service type.
+    serviceTypeCompare(baseHash: string, networkHash: string, serviceType: string): ServiceTypeComparison {
+      const resp = module.invoke({
+        op: "service_type_compare",
+        base_hash: baseHash,
+        network_hash: networkHash,
+        service_type: serviceType,
+      } as AnalysisRequest) as Extract<AnalysisResponse, { op: "service_type_compare" }>;
+      return resp.comparison;
     },
     typeCoverage(
       networkHash: string,
@@ -1335,6 +1347,26 @@ export function directoryCap(module: CapModule) {
         route_id: routeId,
       } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "route_detail" }>;
       return resp.detail;
+    },
+    /// The planner's timetable: one route, one direction (null: its
+    /// patterns in none), one service type; marked against a loaded
+    /// baseline when `compareHash` is given.
+    timetable(
+      networkHash: string,
+      routeId: string,
+      direction: string | null,
+      serviceType: string,
+      compareHash: string | null,
+    ): Timetable | null {
+      const resp = module.invoke({
+        op: "timetable",
+        network_hash: networkHash,
+        route_id: routeId,
+        direction,
+        service_type: serviceType,
+        compare_hash: compareHash ?? undefined,
+      } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "timetable" }>;
+      return resp.timetable;
     },
     /// One stop's composition: the routes whose patterns visit it.
     stopDetail(networkHash: string, stopId: string): StopDetail | null {

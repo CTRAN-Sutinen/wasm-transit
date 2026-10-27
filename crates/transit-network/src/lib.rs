@@ -39,8 +39,8 @@ pub use edit::{apply_edits, apply_edits_reporting, CreatedEntity, Day, EditError
 pub use error::{NetworkError, NetworkWarning};
 pub use geometry::{entity_focus, pattern_alignment, pattern_stop_points, stop_point, stops_line, EntityFocus, EntityKind};
 pub use listing::{
-    entity_rows, route_detail, stop_detail, timetable, DirectionGroup, EntityRow, PatternTripsGroup, RouteDetail,
-    StopDetail, Timetable, TimetablePattern, TimetableStop, TimetableTrip,
+    entity_rows, route_detail, stop_detail, timetable, timetable_against, DirectionGroup, EntityRow, PatternTripsGroup,
+    RemovedTrip, RouteDetail, StopDetail, Timetable, TimetablePattern, TimetableStop, TimetableTrip,
 };
 pub use materialize::{
     materialize, materialize_service, trip_arrival_end_secs, trip_starts, MaterializedTrip,

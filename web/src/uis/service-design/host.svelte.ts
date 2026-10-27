@@ -8,8 +8,10 @@
 /// The questions it answers, in the order they are asked (the
 /// 2026-10-27 service-design dogfood session, docs/QA-FINDINGS.md): which
 /// plan, what each service type costs and covers, which routes run
-/// under a type, what one route is and where it runs, what a change
-/// does to the type and the fleet.
+/// under a type, what one route is and where it runs, what one
+/// direction's timetable is, and what a timetable change does to the
+/// type against the baseline (the 2026-10-27 "proposing timetable
+/// changes" session).
 
 import { getAllPlans, getActivePlanId, putPlan, setActivePlan, restorePlans } from "../../state.svelte";
 import {
@@ -41,6 +43,8 @@ import type { NetworkEdit } from "../../types/NetworkEdit";
 import type { NetworkError } from "../../types/NetworkError";
 import type { NetworkWarning } from "../../types/NetworkWarning";
 import type { RouteDetail } from "../../types/RouteDetail";
+import type { ServiceTypeComparison } from "../../types/ServiceTypeComparison";
+import type { Timetable } from "../../types/Timetable";
 import type { ServiceTypeDetail } from "../../types/ServiceTypeDetail";
 import type { ServiceTypeSummary } from "../../types/ServiceTypeSummary";
 import type { TypeCoverage } from "../../types/TypeCoverage";
@@ -69,8 +73,10 @@ export const wb = $state({
   typeDetail: null as ServiceTypeDetail | null,
   selectedRoute: "",
   routeDetail: null as RouteDetail | null,
-  selectedSchedule: "",
-  starts: null as number[] | null,
+  selectedDirection: null as string | null,
+  timetable: null as Timetable | null,
+  selectedStop: "",
+  comparison: null as ServiceTypeComparison | null,
   blocks: [] as DayBlock[],
   selectedBlock: "",
   blockChain: null as { trips: BlockChainTrip[]; agencyTripIds: string[][] } | null,
@@ -233,6 +239,22 @@ async function refreshCompare(): Promise<void> {
   const doc = getAllPlans()[wb.compareKey];
   const analysis = await analysisModule();
   wb.compareTypes = doc && analysis ? analysisCap(analysis).serviceTypesOverview(hashIn(analysis, doc)) : [];
+  await refreshComparison();
+  await refreshTimetable();
+}
+
+/// What the active plan changes against the baseline under the
+/// selected type (none when either side lacks the type).
+async function refreshComparison(): Promise<void> {
+  const [doc, base] = [active(), getAllPlans()[wb.compareKey]];
+  const analysis = await analysisModule();
+  wb.comparison = null;
+  if (!doc || !base || !analysis || !wb.selectedType) return;
+  try {
+    wb.comparison = analysisCap(analysis).serviceTypeCompare(hashIn(analysis, base), hashIn(analysis, doc), wb.selectedType);
+  } catch {
+    wb.comparison = null;
+  }
 }
 
 export function setCoverageParams(params: CoverageParams): void {
@@ -270,6 +292,7 @@ async function refreshType(): Promise<void> {
   if (!doc || !wb.selectedType) return;
   const [analysis, runcut] = [await analysisModule(), await runcutModule()];
   wb.typeDetail = analysis ? analysisCap(analysis).serviceTypeDetail(hashIn(analysis, doc), wb.selectedType) : null;
+  await refreshComparison();
   const date = wb.typeDetail?.date;
   wb.blocks = runcut && date ? runcutCap(runcut).blocks(hashIn(runcut, doc), null, date) : [];
   if (!wb.blocks.some((b) => b.block_id === wb.selectedBlock)) {
@@ -287,25 +310,44 @@ export async function selectRoute(routeId: string): Promise<void> {
   if (!doc || !directory) return;
   const dir = directoryCap(directory);
   const hash = hashIn(directory, doc);
+  if (wb.selectedRoute !== routeId) wb.selectedStop = "";
   wb.selectedRoute = routeId;
   wb.routeDetail = dir.routeDetail(hash, routeId);
-  const stillThere = wb.routeDetail?.pattern_trips_by_type.some((g) => g.pattern_trips.some((s) => s.id === wb.selectedSchedule));
-  if (!stillThere) wb.selectedSchedule = "";
+  const directions = wb.routeDetail?.directions ?? [];
+  if (!directions.some((d) => d.direction === wb.selectedDirection)) {
+    wb.selectedDirection = directions[0]?.direction ?? null;
+  }
   await refreshFocus();
-  readStarts();
+  await refreshTimetable();
 }
 
-export async function selectSchedule(scheduleId: string): Promise<void> {
-  wb.selectedSchedule = scheduleId;
-  readStarts();
-  await refreshFocus();
+export async function selectDirection(direction: string | null): Promise<void> {
+  wb.selectedDirection = direction;
+  wb.selectedStop = "";
+  await refreshTimetable();
 }
 
-/// A schedule's departures as the document holds them (exact times
-/// only — a headway schedule's starts are its bands, not a list).
-function readStarts(): void {
-  const s = active()?.pattern_trips[wb.selectedSchedule]?.departures;
-  wb.starts = s?.kind === "exact_times" ? s.starts : null;
+export function selectStop(stopId: string): void {
+  wb.selectedStop = wb.selectedStop === stopId ? "" : stopId;
+}
+
+/// The selected direction's timetable under the selected type,
+/// marked against the baseline plan when there is one.
+async function refreshTimetable(): Promise<void> {
+  const [doc, base] = [active(), getAllPlans()[wb.compareKey]];
+  const directory = await directoryModule();
+  if (!doc || !directory || !wb.selectedRoute || !wb.selectedType) {
+    wb.timetable = null;
+    return;
+  }
+  const dir = directoryCap(directory);
+  wb.timetable = dir.timetable(
+    hashIn(directory, doc),
+    wb.selectedRoute,
+    wb.selectedDirection,
+    wb.selectedType,
+    base ? hashIn(directory, base) : null,
+  );
 }
 
 export async function selectBlock(blockId: string): Promise<void> {
@@ -330,11 +372,9 @@ async function refreshFocus(): Promise<void> {
   const directory = await directoryModule();
   const target: [EntityKind, string] | null = wb.selectedBlock
     ? ["block", wb.selectedBlock]
-    : wb.selectedSchedule
-      ? ["pattern_trips", wb.selectedSchedule]
-      : wb.selectedRoute
-        ? ["route", wb.selectedRoute]
-        : null;
+    : wb.selectedRoute
+      ? ["route", wb.selectedRoute]
+      : null;
   wb.focus = doc && directory && target ? directoryCap(directory).focus(hashIn(directory, doc), ...target) : null;
 }
 
@@ -376,3 +416,32 @@ export async function change(edits: NetworkEdit[]): Promise<void> {
   wb.warnings = applied.warnings;
   wb.issues = applied.issues;
 }
+
+// ---------------------------------------------------------------------
+// the timetable's gestures — stated against the selected route,
+// direction, and service type (cap-author owns every rule)
+// ---------------------------------------------------------------------
+
+/// The edits omit `direction` for the patterns in none.
+function direction(): string | undefined {
+  return wb.selectedDirection ?? undefined;
+}
+
+function where() {
+  return { route: wb.selectedRoute, direction: direction(), service_type: wb.selectedType };
+}
+
+export const gestures = {
+  headway: (from_secs: number, to_secs: number, headway_secs: number) =>
+    change([{ edit: "set_headway", ...where(), from_secs, to_secs, headway_secs }]),
+  span: (first_secs: number | null, last_secs: number | null) =>
+    change([{ edit: "set_span", ...where(), first_secs: first_secs ?? undefined, last_secs: last_secs ?? undefined }]),
+  running: (from_secs: number, to_secs: number, delta_secs: number) =>
+    change([{ edit: "adjust_running_time", route: wb.selectedRoute, direction: direction(), from_secs, to_secs, delta_secs }]),
+  insertStop: (stop: string, after: string) =>
+    change([{ edit: "insert_direction_stop", route: wb.selectedRoute, direction: direction(), stop, after }]),
+  removeStop: (stop: string) =>
+    change([{ edit: "remove_direction_stop", route: wb.selectedRoute, direction: direction(), stop }]).then(() => {
+      wb.selectedStop = "";
+    }),
+};

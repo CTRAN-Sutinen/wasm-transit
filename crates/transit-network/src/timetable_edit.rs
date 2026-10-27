@@ -16,7 +16,9 @@
 //!   is none); it is unassigned until a block takes it (the
 //!   `unassigned_trips` warning);
 //! * pattern trips a gesture empties are removed (the model keeps no
-//!   empty trip list).
+//!   empty trip list);
+//! * a trip never lands where its pattern has no timing profile (it
+//!   would not materialize) — that is a named refusal.
 //!
 //! Only exact-times trips are moved; a direction whose trips come from
 //! headway bands under the type is refused (edit its bands instead).
@@ -99,6 +101,19 @@ fn rewrite(
     removed: &[Trip],
     added: &[(String, u32)],
 ) -> Result<Option<CreatedEntity>, String> {
+    // A trip only runs where its pattern has timing: refuse a new or
+    // moved one no profile covers (it would not materialize).
+    let pattern_of = |pt: &str| net.pattern_trips.get(pt).map(|t| t.pattern.clone()).unwrap_or_default();
+    let landing = moves.iter().map(|((pt, _), to)| (pattern_of(pt), *to)).chain(added.iter().cloned());
+    for (pattern, start) in landing.collect::<Vec<_>>() {
+        if net.patterns.get(&pattern).and_then(|p| p.profile_for(start)).is_none() {
+            return Err(format!(
+                "pattern {pattern} has no timing profile covering {:02}:{:02} — extend its timing first",
+                start / 3600,
+                start % 3600 / 60
+            ));
+        }
+    }
     // Starts: take every moved and removed trip out, put moves back.
     let touched: BTreeSet<String> =
         moves.iter().map(|((pt, _), _)| pt.clone()).chain(removed.iter().map(|(pt, _)| pt.clone())).collect();

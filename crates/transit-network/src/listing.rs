@@ -84,6 +84,20 @@ pub struct Timetable {
     pub patterns: Vec<TimetablePattern>,
     /// Every trip, by start (then pattern trips id).
     pub trips: Vec<TimetableTrip>,
+    /// Asked against a baseline (`timetable_against`): the baseline's
+    /// trips this timetable no longer runs, by start. Empty otherwise.
+    pub removed: Vec<RemovedTrip>,
+}
+
+/// A baseline trip the proposal no longer runs (a retimed trip is
+/// removed at its old start and added at its new one: its identity is
+/// (pattern trips, start)).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct RemovedTrip {
+    pub pattern_trips: String,
+    pub start_secs: u32,
+    pub pattern: String,
 }
 
 /// One timetable column.
@@ -121,6 +135,8 @@ pub struct TimetableTrip {
     pub pattern: String,
     pub block: Option<String>,
     pub times: Vec<Option<u32>>,
+    /// Asked against a baseline: the baseline does not run this trip.
+    pub added: bool,
 }
 
 /// A stop's composition: the routes whose patterns visit it.
@@ -318,6 +334,7 @@ pub fn timetable(network: &Network, route: &str, direction: Option<&str>, servic
                 start_secs: trip.start_secs,
                 pattern: trip.pattern.clone(),
                 times,
+                added: false,
             });
         }
     }
@@ -356,7 +373,35 @@ pub fn timetable(network: &Network, route: &str, direction: Option<&str>, servic
         stops,
         patterns,
         trips,
+        removed: Vec::new(),
     })
+}
+
+/// The proposal's timetable marked against a baseline: each trip the
+/// baseline does not run is `added`, and the baseline's trips it no
+/// longer runs are `removed`. A baseline without this route,
+/// direction, or service type runs none of them.
+pub fn timetable_against(
+    network: &Network,
+    base: &Network,
+    route: &str,
+    direction: Option<&str>,
+    service_type: &str,
+) -> Option<Timetable> {
+    let mut t = timetable(network, route, direction, service_type)?;
+    let before = timetable(base, route, direction, service_type).map(|b| b.trips).unwrap_or_default();
+    let key = |pt: &str, s: u32| (pt.to_string(), s);
+    let now: std::collections::BTreeSet<_> = t.trips.iter().map(|x| key(&x.pattern_trips, x.start_secs)).collect();
+    let was: std::collections::BTreeSet<_> = before.iter().map(|x| key(&x.pattern_trips, x.start_secs)).collect();
+    for trip in &mut t.trips {
+        trip.added = !was.contains(&key(&trip.pattern_trips, trip.start_secs));
+    }
+    t.removed = before
+        .into_iter()
+        .filter(|x| !now.contains(&key(&x.pattern_trips, x.start_secs)))
+        .map(|x| RemovedTrip { pattern_trips: x.pattern_trips, start_secs: x.start_secs, pattern: x.pattern })
+        .collect();
+    Some(t)
 }
 
 /// The routes serving a stop, in id order; `None` for an unknown stop.

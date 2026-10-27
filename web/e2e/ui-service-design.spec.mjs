@@ -3,13 +3,17 @@
 // to right on one screen (docs/ARCHITECTURE.md, web section).
 //
 //   1. A feed becomes an unframed plan; its service types, a type's
-//      routes, a route's schedules, and where it runs all answer.
-//   2. The import is not changed in place: a schedule offers no
-//      gesture until the plan is forked.
-//   3. The fork takes the change (cap-author add_start), and the
-//      selected type reads against the baseline it came from — with
-//      the change's warnings (the new trip has no block).
-//   4. Coverage answers against a population layer.
+//      routes, a route's directions, and one direction's timetable
+//      (cap-directory `timetable`) all answer.
+//   2. The import is not changed in place: the timetable's changes are
+//      disabled until the plan is forked.
+//   3. The fork takes a timetable gesture (cap-author set_headway):
+//      the timetable marks the added trip against the baseline, the
+//      comparison (cap-analysis service_type_compare) names the route,
+//      and the warnings say the new trip has no block.
+//   4. A stop dropped from the direction leaves its column
+//      (remove_direction_stop).
+//   5. Coverage answers against a population layer.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -28,13 +32,12 @@ test("service design answers a plan, a fork, and its change", async ({ page }) =
 
   const routes = page.getByTestId("route-table");
   await routes.locator("tbody tr", { hasText: "10" }).first().click();
-  const card = page.getByTestId("route-card");
-  await expect(card).toContainText("Route 10");
-  await card.locator("details[open] button").first().click();
-
-  const schedule = page.getByTestId("schedule-change");
-  await expect(schedule).toContainText("Fork the import");
-  await expect(schedule.getByRole("button", { name: "+ trip" })).toHaveCount(0);
+  await expect(page.getByTestId("direction-tabs")).toContainText("Downtown");
+  const timetable = page.getByTestId("timetable");
+  await expect(timetable.locator("tbody tr")).toHaveCount(2);
+  const changes = page.getByTestId("timetable-change");
+  await expect(changes).toContainText("Fork the import");
+  await expect(page.getByTestId("change-headway").getByRole("button", { name: "Apply" })).toBeDisabled();
 
   await page.getByTestId("fork-name").fill("Spring");
   await page.getByTestId("fork-date").fill("2026-11-02");
@@ -42,13 +45,24 @@ test("service design answers a plan, a fork, and its change", async ({ page }) =
   await expect(page.getByTestId("plan-health")).toContainText("Forked");
   await expect(page.getByTestId("plan-bar")).toContainText("governs 2026-11-02");
 
-  await card.locator("details[open] button").first().click();
-  const before = await schedule.locator(".start").count();
-  await schedule.getByRole("button", { name: "+ trip" }).click();
-  await expect(schedule.locator(".start")).toHaveCount(before + 1);
+  // Every 20 min 08:00–09:00: 08:00 and 08:40 stay, 08:20 is new.
+  const headway = page.getByTestId("change-headway");
+  await headway.getByLabel("headway minutes").fill("20");
+  await headway.getByLabel("headway from").fill("08:00");
+  await headway.getByLabel("headway until").fill("09:00");
+  await headway.getByRole("button", { name: "Apply" }).click();
+  await expect(timetable.locator("tbody tr")).toHaveCount(3);
+  await expect(timetable.locator("tbody tr.added")).toHaveCount(1);
+  await expect(page.getByTestId("timetable-delta")).toContainText("1 added");
+  await expect(page.getByTestId("compare")).toContainText("2 → 3");
   await expect(page.getByTestId("plan-health")).toContainText("unassigned trips");
   await expect(page.getByTestId("type-vs")).toContainText("vs (unframed import)");
-  await expect(page.getByTestId("type-vs")).toContainText("→");
+
+  // Main & 3rd splits the two variants; dropping it leaves its column.
+  const columns = await timetable.locator("thead th").count();
+  await timetable.locator("thead th button", { hasText: "Main & 3rd" }).click();
+  await page.getByTestId("change-stops").getByRole("button", { name: "Drop it" }).click();
+  await expect(timetable.locator("thead th")).toHaveCount(columns - 1);
 
   const coverage = page.getByTestId("coverage");
   await coverage.locator("input[type=file]").setInputFiles(path.join(fixtures, "population.geojson"));
@@ -58,9 +72,8 @@ test("service design answers a plan, a fork, and its change", async ({ page }) =
 
 // A plan saved before the 2026-10-27 rename (`schedules` / `schedule`)
 // still reads: restore canonicalizes stored documents through
-// cap-author, so the trip list shows its starts instead of falling
-// through to the headway-band message (the regression a real browser
-// with older plans hit).
+// cap-author, so its trips are trips again — the regression a real
+// browser with older plans hit (every list read as headway bands).
 test("a plan stored under the old field names restores in the current shape", async ({ page }) => {
   const doc = JSON.parse(fs.readFileSync(path.join(fixtures, "../../../testdata/network.json"), "utf8"));
   const legacy = { ...doc, schedules: {}, blocks: {} };
@@ -90,8 +103,7 @@ test("a plan stored under the old field names restores in the current shape", as
   await page.reload();
 
   await page.getByTestId("route-table").locator("tbody tr").first().click();
-  await page.getByTestId("route-card").locator("details[open] button").first().click();
-  const trips = page.getByTestId("schedule-change");
-  await expect(trips.locator(".start")).not.toHaveCount(0);
-  await expect(trips).not.toContainText("Headway-band");
+  const timetable = page.getByTestId("timetable");
+  await expect(timetable.locator("tbody tr")).toHaveCount(3);
+  await expect(timetable.locator("tbody tr").first()).toContainText("08:00");
 });

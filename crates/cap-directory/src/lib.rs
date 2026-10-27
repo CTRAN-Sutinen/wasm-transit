@@ -152,6 +152,12 @@ pub enum Request {
         #[ts(optional)]
         direction: Option<String>,
         service_type: String,
+        /// A loaded baseline to mark the timetable against: trips it
+        /// does not run are `added`, its trips this one no longer runs
+        /// are `removed`.
+        #[serde(default)]
+        #[ts(optional)]
+        compare_hash: Option<String>,
     },
 }
 
@@ -301,11 +307,19 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let network = network_arc(&network_hash)?;
             Ok(Response::StopDetail { detail: transit_network::stop_detail(&network, &stop_id) })
         }
-        Request::Timetable { network_hash, route_id, direction, service_type } => {
+        Request::Timetable { network_hash, route_id, direction, service_type, compare_hash } => {
             let network = network_arc(&network_hash)?;
-            Ok(Response::Timetable {
-                timetable: transit_network::timetable(&network, &route_id, direction.as_deref(), &service_type),
-            })
+            let timetable = match compare_hash {
+                Some(base) => transit_network::timetable_against(
+                    &network,
+                    &*network_arc(&base)?,
+                    &route_id,
+                    direction.as_deref(),
+                    &service_type,
+                ),
+                None => transit_network::timetable(&network, &route_id, direction.as_deref(), &service_type),
+            };
+            Ok(Response::Timetable { timetable })
         }
     }
 }

@@ -220,6 +220,30 @@ fn unknown_hashes_are_errors_not_panics() {
 }
 
 #[test]
+fn a_network_compares_against_itself_as_unchanged() {
+    let net = network(&[GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
+    let hash = match cap_analysis::dispatch(cap_analysis::Request::LoadNetwork { network: net }).unwrap() {
+        cap_analysis::Response::LoadNetwork { network_hash } => network_hash,
+        _ => panic!("load_network"),
+    };
+    let service_type = "0".to_string();
+    let same = cap_analysis::Request::ServiceTypeCompare { base_hash: hash.clone(), network_hash: hash.clone(), service_type };
+    match cap_analysis::dispatch(same).unwrap() {
+        cap_analysis::Response::ServiceTypeCompare { comparison } => {
+            assert!(comparison.routes.is_empty());
+            assert_eq!(comparison.unchanged_routes, comparison.base.routes);
+        }
+        _ => panic!("service_type_compare"),
+    }
+    let unknown = cap_analysis::Request::ServiceTypeCompare {
+        base_hash: "sha256:missing".into(),
+        network_hash: hash,
+        service_type: "0".into(),
+    };
+    assert!(cap_analysis::dispatch(unknown).unwrap_err().contains("unknown network"));
+}
+
+#[test]
 fn json_seam_round_trips_the_tagged_form() {
     let request = serde_json::json!({
         "op": "load_network",

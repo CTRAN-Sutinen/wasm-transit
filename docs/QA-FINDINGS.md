@@ -356,7 +356,16 @@ cheap-win class), except QAF-28, which also needs the data axis.
   Pin: the fork comparison in session 1 was done by hand (analysis
   on both documents, runcut on both, jq for the delta); no op
   accepts two network hashes.
-  Status: open.
+  Status: open. The per-route and per-timetable halves are answered
+  (analysis `service_type_compare`, directory `timetable
+  {compare_hash}`; transit-analysis regression_test
+  `a_proposal_compares_route_by_route_against_its_baseline`,
+  transit-network listing_test
+  `a_timetable_against_its_baseline_marks_what_changed`, caps-smoke
+  "the comparison names the one route the change touched"; Session
+  2026-10-27 (the timetable UI)). Coverage deltas still take two
+  `type_coverage` answers, and the QAF-1 cross-cap check is not
+  part of it.
 - **QAF-21 OP GAP** — no revenue miles: `network_stats` answers
   hours, never miles, yet every cost model is per revenue hour AND
   per revenue mile, and patterns already carry `distance_m`.
@@ -1028,3 +1037,35 @@ Re-confirmed, not re-logged:
   more vehicles a proposal needs has no op.
 - QAF-20 (scenario diff). The deltas above are two full
   `service_type_detail` answers, compared by hand.
+
+## Session 2026-10-27 (the timetable UI) — C-TRAN
+
+The rebuilt service-design UI in Chromium (`/service-design.html`,
+the Go server with `-feed testdata/ctran-gtfs.zip`), driving the
+proposals of the session above on one fork ("Winter 2027",
+2027-01-10) against the unframed import, 1-WKDY:
+
+- A (019 inbound only, every 15 min 07:09–09:12): the timetable
+  answers "7 added, 3 gone (08:11 A, 08:41 A, 09:11 A)", and the
+  comparison 019 50 → 54 trips, 14.4 → 15.6 rev h; the plan bar
+  shows 3 issues (QAF-62) and 4 unassigned trips.
+- B (009 outbound, last 21:05): 3 added; the type 1425 → 1432 trips,
+  529.1 → 531.3 rev h.
+- C (006 to Columbia Shores, +3 min 15:00–18:00): 531.3 → 531.6 rev h
+  (the runner's +0.30).
+- D (drop Hwy 99 & 117th from 019 inbound): the column goes, 16 → 15.
+
+Import and first answers in about 1.9 s; no console errors. Every
+number is an op's answer (the runner's for the same edits).
+
+- **QAF-64 CONTRACT GAP** — a retimed trip reads as removed plus
+  added. A's `set_headway` moves 08:11, 08:41, and 09:11 two
+  minutes onto the clockface (with their blocks), but the
+  timetable's comparison answers them as "3 gone" and 3 of the 7
+  "added": the comparison is by trip identity (pattern trips,
+  start), and a retime changes the start. A planner reads "3 gone"
+  as service cut. Telling a move from a cut needs the edit's own
+  account (`apply` could report what it moved) or a match in the
+  comparison.
+  Pin: proposal A in the UI (`timetable-delta`).
+  Status: open.

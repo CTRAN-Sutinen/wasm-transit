@@ -185,6 +185,89 @@ pub fn service_type_detail(net: &Network, type_id: &str) -> Result<ServiceTypeDe
     })
 }
 
+/// A proposal against its baseline under one service type: both
+/// sides' numbers on their representative days, and the routes whose
+/// numbers changed (route id order) — a route only one side runs
+/// has `None` on the other. What a planner reads first when asking
+/// "what does this change do?".
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct ServiceTypeComparison {
+    pub service_type: String,
+    pub name: String,
+    pub base: ComparedTotals,
+    pub proposal: ComparedTotals,
+    pub routes: Vec<RouteChange>,
+    /// Routes running on both sides with the same numbers.
+    pub unchanged_routes: u32,
+}
+
+/// One side's totals under the service type.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct ComparedTotals {
+    pub date: String,
+    pub trips: u32,
+    pub revenue_hours: f64,
+    pub routes: u32,
+}
+
+/// One route whose numbers differ between the baseline and the
+/// proposal.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct RouteChange {
+    pub route_id: String,
+    pub name: String,
+    pub base: Option<RouteStats>,
+    pub proposal: Option<RouteStats>,
+}
+
+/// The comparison: errors when either side lacks the type or it runs
+/// on no date there.
+pub fn service_type_compare(base: &Network, proposal: &Network, type_id: &str) -> Result<ServiceTypeComparison, String> {
+    let b = service_type_detail(base, type_id).map_err(|e| format!("baseline: {e}"))?;
+    let p = service_type_detail(proposal, type_id).map_err(|e| format!("proposal: {e}"))?;
+    let same = |x: &RouteStats, y: &RouteStats| {
+        (x.name.as_str(), x.patterns, x.stops, x.trips, x.first_start_secs, x.last_arrival_secs, x.typical_headway_secs)
+            == (y.name.as_str(), y.patterns, y.stops, y.trips, y.first_start_secs, y.last_arrival_secs, y.typical_headway_secs)
+            && (x.revenue_hours - y.revenue_hours).abs() < 1e-9
+    };
+    let mut rows: BTreeMap<String, (Option<RouteStats>, Option<RouteStats>)> = BTreeMap::new();
+    for r in &b.routes {
+        rows.entry(r.route_id.clone()).or_default().0 = Some(r.clone());
+    }
+    for r in &p.routes {
+        rows.entry(r.route_id.clone()).or_default().1 = Some(r.clone());
+    }
+    let mut unchanged_routes = 0;
+    let mut routes = Vec::new();
+    for (route_id, (base, proposal)) in rows {
+        if let (Some(x), Some(y)) = (&base, &proposal) {
+            if same(x, y) {
+                unchanged_routes += 1;
+                continue;
+            }
+        }
+        let name = proposal.as_ref().or(base.as_ref()).map(|r| r.name.clone()).unwrap_or_default();
+        routes.push(RouteChange { route_id, name, base, proposal });
+    }
+    let totals = |d: &ServiceTypeDetail| ComparedTotals {
+        date: d.date.clone(),
+        trips: d.trips,
+        revenue_hours: d.revenue_hours,
+        routes: d.routes.len() as u32,
+    };
+    Ok(ServiceTypeComparison {
+        service_type: type_id.to_string(),
+        name: p.name.clone(),
+        base: totals(&b),
+        proposal: totals(&p),
+        routes,
+        unchanged_routes,
+    })
+}
+
 /// The overview table: every service type's numbers, each on its own
 /// representative day. This — not a calendar date — is the planner's
 /// design axis.

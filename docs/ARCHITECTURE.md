@@ -355,7 +355,12 @@ on every component a generated UI imports.
   selected type's baseline), CoverageTable (`type_coverage`, with
   its op parameters as inputs), RouteTable (`service_type_detail`
   routes), RouteCard (`route_detail`), ScheduleChange (one
-  pattern trips' starts with add and remove events), FocusMap (a
+  pattern trips' starts with add and remove events), DirectionTabs
+  (`route_detail` directions), TimetableGrid (directory `timetable`,
+  added rows and removed trips when asked against a baseline; a stop
+  column click is an event), TimetableChange (the timetable gestures'
+  forms: frequency, span, running time, stops — one event each),
+  CompareTable (analysis `service_type_compare`), FocusMap (a
   directory `focus` drawn and framed), BlocksPanel (runcut
   `blocks` / `block_trips`), DepartureBoard (`stop_board`), RtPanel
   (the live summary), TripPlanner (from, to, depart → `onplan`), and
@@ -394,8 +399,10 @@ its page (`vite.config.js`), and the picker's spec
 (`e2e/picker.spec.mjs`) checks one card per `ui.json`.
 
 The UIs today: `service-design` (`src/uis/service-design/`): the
-plan bar, then service types (cost, coverage, fleet), the routes
-under the type, and the route (map, composition, schedule change).
+plan bar, then service types (cost, the change against the
+baseline, coverage, fleet), the routes under the type, and the
+route — its directions, one direction's timetable marked against
+the baseline, the timetable gestures, and the map.
 Layouts are hand-placed Svelte; as layout documents they belong to
 wire-time assembly (`docs/CAPS-PLAN.md`, standing queue).
 

@@ -453,12 +453,13 @@ day-shape answer is the dogfood record).
   new names. The original app's on-screen labels still say
   "Schedule"; it is the demoted UI.
   * Next, decided with the user: Direction in the model, the
-    TIMETABLE op, and the timetable gestures are landed (the
-    entries below); not started — a baseline-vs-proposal diff op
-    (QAF-20); then the service-design UI rebuilt on them. Open
-    from proposing on C-TRAN: per-service-type running time
-    (QAF-61), recovery vs slack in layovers (QAF-62), branches
-    inside one GTFS direction (QAF-63), timepoints (QAF-56).
+    TIMETABLE op, the timetable gestures, the comparison, and the
+    service-design UI rebuilt on them are landed (the entries
+    below). Open from proposing on C-TRAN: per-service-type
+    running time (QAF-61), recovery vs slack in layovers (QAF-62),
+    branches inside one GTFS direction (QAF-63), timepoints
+    (QAF-56), a retime read as a cut (QAF-64), coverage deltas
+    (QAF-20).
 
 - **Directions and the timetable (2026-10-27)**: a route runs in
   named directions (`Route.directions`) and a pattern in at most
@@ -482,7 +483,9 @@ day-shape answer is the dogfood record).
   trip of one direction on one service type"); the directory runner
   gate in `just test`. DOGFOODED: QA-FINDINGS "Session 2026-10-27
   (directions and the timetable)" (019 inbound: 25 trips over the
-  Bay C / E / J patterns). No UI reads it yet.
+  Bay C / E / J patterns). UI READS IT: the service-design UI's
+  direction tabs and timetable (e2e ui-service-design, the entry
+  "The comparison and the timetable UI" below).
 
 - **The timetable gestures (2026-10-27)**: changes stated against a
   timetable (route + direction + service type), across every
@@ -500,7 +503,29 @@ day-shape answer is the dogfood record).
   the timetable reads it"). DOGFOODED: QA-FINDINGS "Session
   2026-10-27 (proposing timetable changes)" (four proposals, before
   and after: 2 + 2 + 37 edits + 15.7 KB → 2 + 2 + 1 + 251 bytes,
-  same numbers). No UI reads them yet.
+  same numbers).
+
+- **The comparison and the timetable UI (2026-10-27)**: analysis
+  `service_type_compare` (a proposal against its baseline under one
+  type: both totals, the changed routes) and directory `timetable
+  {compare_hash}` (trips marked `added`, baseline trips `removed`).
+  ON THE BUS: transit-analysis regression_test
+  `a_proposal_compares_route_by_route_against_its_baseline`,
+  cap-analysis dispatch_test
+  `a_network_compares_against_itself_as_unchanged`,
+  transit-network listing_test
+  `a_timetable_against_its_baseline_marks_what_changed`, caps-smoke
+  ("the comparison names the one route the change touched").
+  `set_span` / `set_headway` now refuse a trip no timing profile
+  covers (it would not materialize; found writing the comparison
+  test). UI READS IT: the service-design UI is rebuilt on the
+  timetable — direction tabs, the timetable marked against the
+  baseline, the gesture forms, the comparison table
+  (DirectionTabs, TimetableGrid, TimetableChange, CompareTable);
+  e2e ui-service-design "service design answers a plan, a fork, and
+  its change" (set_headway and remove_direction_stop through the
+  forms). DOGFOODED: QA-FINDINGS "Session 2026-10-27 (the timetable
+  UI)" (proposals A–D in Chromium, the runner's numbers).
 
 Model facts that hold everywhere: the import infers block
 layovers from observed end→start gaps (GTFS has none; the planner

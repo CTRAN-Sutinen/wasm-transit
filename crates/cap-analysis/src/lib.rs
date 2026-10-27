@@ -22,9 +22,9 @@ use serde::{Deserialize, Serialize};
 use cap_abi::content_hash;
 use ts_rs::TS;
 use transit_analysis::{
-    coverage, network_stats, parse_pop_layer, service_type_detail, service_type_overview,
-    type_coverage, CoverageWindow, NetworkStats, PopLayer, ServiceTypeDetail, ServiceTypeSummary,
-    TypeCoverage,
+    coverage, network_stats, parse_pop_layer, service_type_compare, service_type_detail, service_type_overview,
+    type_coverage, CoverageWindow, NetworkStats, PopLayer, ServiceTypeComparison, ServiceTypeDetail,
+    ServiceTypeSummary, TypeCoverage,
 };
 use transit_network::Network;
 
@@ -68,6 +68,10 @@ pub enum Request {
     ServiceTypesOverview { network_hash: String },
     /// One service type expanded on its representative day.
     ServiceTypeDetail { network_hash: String, service_type: String },
+    /// A proposal (`network_hash`) against its baseline (`base_hash`)
+    /// under one service type: both sides' totals and the routes
+    /// whose numbers changed.
+    ServiceTypeCompare { base_hash: String, network_hash: String, service_type: String },
     /// Population coverage per service type. `window` judges
     /// frequency inside a time window ("every 15 min 07:00–19:00":
     /// the worst wait in the window fits frequent_secs); omitted, it
@@ -98,6 +102,7 @@ pub enum Response {
     NetworkStats { stats: NetworkStats },
     ServiceTypesOverview { service_types: Vec<ServiceTypeSummary> },
     ServiceTypeDetail { detail: ServiceTypeDetail },
+    ServiceTypeCompare { comparison: ServiceTypeComparison },
     TypeCoverage { coverage: Vec<TypeCoverage> },
 }
 
@@ -213,6 +218,12 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                     .map_err(|e| format!("service type: {e}"))?;
                 Ok(Response::ServiceTypeDetail { detail })
             })
+        }
+        Request::ServiceTypeCompare { base_hash, network_hash, service_type } => {
+            let base = network_arc(&base_hash)?;
+            let proposal = network_arc(&network_hash)?;
+            let comparison = service_type_compare(&base, &proposal, &service_type)?;
+            Ok(Response::ServiceTypeCompare { comparison })
         }
         Request::TypeCoverage { network_hash, layer_hash, radius_m, frequent_secs, min_departures, window } => {
             let network_arc = network_arc(&network_hash)?;
