@@ -11,28 +11,40 @@
 //
 //   caps-run list                       capabilities + evidence
 //   caps-run tools <capability>         the tool catalog (op docs)
-//   caps-run <capability> [--load FILE]... [--op '<json>|@FILE']...
+//   caps-run <capability> [--cap ID] [--as NAME]
+//          [--load FILE]... [--op '<json>|@FILE']...
 //          [--timeout MS]               run a session
 //
 // --load [N:]FILE sends the file's bytes on bulk op N (default 0 —
 // feeds, layers; a module with a second bulk op spells it, e.g.
 // cap-rt's `--load 1:feed.zip` loads the static feed for joins).
 // --op invokes one JSON op; repeatable; '@FILE' reads the JSON from
-// a file. Results print as JSON, one per line, in order.
+// a file. Steps run in COMMAND-LINE ORDER, loads and ops alike;
+// results print as JSON, one per line, in that order.
+//
+// A session spans capabilities: --cap ID switches the capability
+// the following steps run against (each module is verified and
+// instantiated once per session). Documents cross by reference —
+// `"network":"$import.network"` hands the imported document to the
+// next capability, the same bytes, no file in between; assert the
+// identities agree like any host does.
 //
 // Result references: a string value that starts with "$" resolves
 // against the session's PRIOR results before invoking — no
 // hand-copying hashes between ops:
+//   $net.network_hash  the result named by `--as net` (names are the
+//                      stable address — they survive reordering)
 //   $load.feed_hash    the last --load result ("load" op)
 //   $import.network_hash  the last prior result tagged op:"import"
-//   $1.feed_hash       the 1st result overall (loads included)
+//   $1.feed_hash       the 1st result overall, in command-line order
 // The rest of the reference is a dotted path into the result
 // (numeric segments index arrays). A reference must be the whole
 // string value; unresolvable references fail the session loudly.
 //
 // The clock (the HOST owns it — dates never cross as magic):
 //   $TODAY             the host's local date, "YYYY-MM-DD"
-//   $NOW_SECS          the host's local seconds since midnight
+//   $NOW_SECS          the host's local seconds since midnight (a
+//                      number — the seconds fields are u32)
 
 import { createHash } from "node:crypto";
 import { parentPort, workerData, isMainThread } from "node:worker_threads";
@@ -58,23 +70,35 @@ function sha256(bytes) {
 function usage() {
   console.error(
     "usage: caps-run list | caps-run tools <capability> | " +
-      "caps-run <capability> [--load FILE]... [--op JSON|@FILE]... [--timeout MS]",
+      "caps-run <capability> [--cap ID] [--as NAME] [--load FILE]... [--op JSON|@FILE]... [--timeout MS]",
   );
   process.exit(2);
 }
 
 function parseArgs(argv) {
-  const out = { capability: null, loads: [], ops: [], timeout: 10_000 };
+  // Steps keep command-line order: each names the capability it runs
+  // against (the positional one until a --cap switches it) and the
+  // name a following --as gave it.
+  const out = { capability: null, steps: [], timeout: 10_000 };
+  let current = null;
+  let pendingName = null;
+  const step = (kind, value) => {
+    if (current === null) usage();
+    out.steps.push({ kind, value, capability: current, name: pendingName });
+    pendingName = null;
+  };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--load") out.loads.push(argv[++i]);
-    else if (arg === "--op") out.ops.push(argv[++i]);
+    if (arg === "--load") step("load", argv[++i]);
+    else if (arg === "--op") step("op", argv[++i]);
+    else if (arg === "--cap") current = argv[++i] ?? usage();
+    else if (arg === "--as") pendingName = argv[++i] ?? usage();
     else if (arg === "--timeout") out.timeout = Number(argv[++i]);
     else if (arg.startsWith("--")) usage();
-    else if (out.capability === null) out.capability = arg;
+    else if (out.capability === null) out.capability = current = arg;
     else usage();
   }
-  if (!out.capability) usage();
+  if (!out.capability || pendingName !== null) usage();
   return out;
 }
 
@@ -84,8 +108,9 @@ function parseArgs(argv) {
 // zero-import wasm sandbox is the other half).
 // -----------------------------------------------------------------
 
-async function runSession() {
-  const { capability, loads, ops } = workerData;
+// One verified, instantiated capability module: the bytes are checked
+// against the registry record's pin before anything runs.
+function instantiate(capability) {
   const record = capabilityRecord(capability);
   const bytes = readFileSync(join(REGISTRY, record.blob));
   const hash = sha256(bytes);
@@ -95,8 +120,7 @@ async function runSession() {
   const mod = new WebAssembly.Module(bytes);
   const imports = WebAssembly.Module.imports(mod);
   if (imports.length !== 0) throw new Error(`capability ${capability} has imports — refusing`);
-  const inst = new WebAssembly.Instance(mod, {});
-  const ex = inst.exports;
+  const ex = new WebAssembly.Instance(mod, {}).exports;
 
   const read = (outPtr) => {
     const len = new DataView(ex.memory.buffer).getUint32(outPtr, true);
@@ -104,30 +128,28 @@ async function runSession() {
     ex.transit_free(outPtr, len + 4);
     return outcome;
   };
-  const invokeBytes = (op, payload) => {
+  const call = (payload, enter) => {
     const ptr = ex.transit_alloc(payload.length);
     new Uint8Array(ex.memory.buffer, ptr, payload.length).set(payload);
-    const outPtr = ex.transit_invoke_bytes(op, ptr, payload.length);
+    const outPtr = enter(ptr, payload.length);
     ex.transit_free(ptr, payload.length);
     return read(outPtr);
   };
-  const invoke = (request) => {
-    const payload = Buffer.from(JSON.stringify(request));
-    const ptr = ex.transit_alloc(payload.length);
-    new Uint8Array(ex.memory.buffer, ptr, payload.length).set(payload);
-    const outPtr = ex.transit_invoke(ptr, payload.length);
-    ex.transit_free(ptr, payload.length);
-    return read(outPtr);
+  return {
+    invokeBytes: (op, payload) => call(payload, (ptr, len) => ex.transit_invoke_bytes(op, ptr, len)),
+    invoke: (request) => call(Buffer.from(JSON.stringify(request)), (ptr, len) => ex.transit_invoke(ptr, len)),
+  };
+}
+
+async function runSession() {
+  const { steps } = workerData;
+  const modules = new Map();
+  const moduleFor = (capability) => {
+    if (!modules.has(capability)) modules.set(capability, instantiate(capability));
+    return modules.get(capability);
   };
 
   const results = [];
-  for (const load of loads) {
-    const match = /^(\d+):(.+)$/.exec(load);
-    const op = match ? Number(match[1]) : 0;
-    const file = match ? match[2] : load;
-    const payload = readFileSync(file);
-    results.push({ load: file, ...invokeBytes(op, payload) });
-  }
   // The clock: the HOST owns it, so $TODAY / $NOW_SECS resolve to the
   // host's here-and-now before the ops ever see them. Result
   // references ($load.x, $import.x, $1.x) resolve against the
@@ -137,14 +159,17 @@ async function runSession() {
   const pad = (n) => String(n).padStart(2, "0");
   const clockRefs = {
     $TODAY: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
-    $NOW_SECS: String(now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()),
+    $NOW_SECS: now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds(),
   };
   const resolveRef = (ref) => {
-    const m = /^\$(load|\d+|[a-z_][a-z0-9_]*)(?:\.([a-zA-Z0-9_.]*))?$/.exec(ref);
-    if (!m) throw new Error(`bad result reference ${JSON.stringify(ref)}: expected $<load|op|N>.<path>`);
+    const m = /^\$(load|\d+|[a-zA-Z_][a-zA-Z0-9_]*)(?:\.([a-zA-Z0-9_.]*))?$/.exec(ref);
+    if (!m) throw new Error(`bad result reference ${JSON.stringify(ref)}: expected $<name|load|op|N>.<path>`);
     const [, base, path] = m;
     let current;
-    if (base === "load") {
+    const named = results.find((r) => r.as === base);
+    if (named) {
+      current = named;
+    } else if (base === "load") {
       current = [...results].reverse().find((r) => r.load !== undefined);
       if (!current) throw new Error(`reference ${ref}: no --load result to resolve against`);
     } else if (/^\d+$/.test(base)) {
@@ -182,11 +207,28 @@ async function runSession() {
     }
     return value;
   };
-  for (const op of ops) {
-    const request = op.startsWith("@")
-      ? JSON.parse(readFileSync(op.slice(1), "utf8"))
-      : JSON.parse(op);
-    results.push(invoke(resolveRefs(request)));
+  for (const step of steps) {
+    const module = moduleFor(step.capability);
+    let result;
+    if (step.kind === "load") {
+      const match = /^(\d+):(.+)$/.exec(step.value);
+      const op = match ? Number(match[1]) : 0;
+      const file = match ? match[2] : step.value;
+      result = { load: file, ...module.invokeBytes(op, readFileSync(file)) };
+    } else {
+      const request = step.value.startsWith("@")
+        ? JSON.parse(readFileSync(step.value.slice(1), "utf8"))
+        : JSON.parse(step.value);
+      result = module.invoke(resolveRefs(request));
+    }
+    // The capability rides on every line once a session spans more
+    // than one — the reader sees which module answered.
+    if (new Set(steps.map((s) => s.capability)).size > 1) result = { cap: step.capability, ...result };
+    if (step.name) {
+      if (results.some((r) => r.as === step.name)) throw new Error(`--as ${step.name}: the name is already taken`);
+      result = { as: step.name, ...result };
+    }
+    results.push(result);
   }
   parentPort.postMessage({ ok: results });
 }
@@ -216,11 +258,12 @@ export async function main(argv) {
     return 0;
   }
 
-  const { capability, loads, ops, timeout } = parseArgs(argv);
-  const record = capabilityRecord(capability);
+  const { steps, timeout } = parseArgs(argv);
+  // Unknown capabilities fail before the sandbox spins up.
+  for (const capability of new Set(steps.map((s) => s.capability))) capabilityRecord(capability);
   const { Worker } = await import("node:worker_threads");
   const worker = new Worker(new URL(import.meta.url), {
-    workerData: { capability, loads, ops },
+    workerData: { steps },
   });
 
   const outcome = await new Promise((resolve, reject) => {

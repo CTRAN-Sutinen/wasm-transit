@@ -4,4 +4,4 @@ import type { DayBlock } from "../DayBlock";
 import type { EditReport } from "../EditReport";
 import type { TripStopView } from "../TripStopView";
 
-export type Response = { "op": "load_network", network_hash: string, } | { "op": "load_edits", edits_hash: string, reports: Array<EditReport>, } | { "op": "blocks", blocks: Array<DayBlock>, } | { "op": "block_trips", trips: Array<BlockChainTrip>, } | { "op": "trip_stops", stops: Array<TripStopView>, };
+export type Response = { "op": "load_network", network_hash: string, } | { "op": "load_edits", edits_hash: string, reports: Array<EditReport>, } | { "op": "blocks", blocks: Array<DayBlock>, } | { "op": "block_trips", block_id: string, trips: Array<BlockChainTrip>, } | { "op": "trip_stops", stops: Array<TripStopView>, };

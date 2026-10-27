@@ -403,6 +403,15 @@ impl StreetNetwork {
     /// None when the positions sit on disconnected parts of the
     /// network — the caller falls back to a straight line.
     pub fn route(&self, from: StreetPosition, to: StreetPosition) -> Option<Vec<StreetPoint>> {
+        self.route_with_length(from, to).map(|(points, _)| points)
+    }
+
+    /// [`route`](Self::route) plus the path's length along the graph
+    /// in meters — from the `from` position itself (its walk to the
+    /// segment's exit counts) to the exact `to` position: the
+    /// shortest-path cost the search settled on, so "how far by
+    /// road?" is the router's own answer, never a host-side sum.
+    pub fn route_with_length(&self, from: StreetPosition, to: StreetPosition) -> Option<(Vec<StreetPoint>, f64)> {
         let from_dir = Dir::from_code(self.seg_dir[from.seg as usize]);
         let to_dir = Dir::from_code(self.seg_dir[to.seg as usize]);
 
@@ -417,7 +426,8 @@ impl StreetNetwork {
                 Dir::Backward => to.t <= from.t,
             };
             if reachable {
-                return Some(vec![StreetPoint { lat: to.lat, lon: to.lon }]);
+                let length = (to.t - from.t).abs() * self.seg_len[from.seg as usize];
+                return Some((vec![StreetPoint { lat: to.lat, lon: to.lon }], length));
             }
         }
 
@@ -525,6 +535,6 @@ impl StreetNetwork {
             })
             .collect();
         points.push(StreetPoint { lat: to.lat, lon: to.lon });
-        Some(points)
+        Some((points, best_cost))
     }
 }

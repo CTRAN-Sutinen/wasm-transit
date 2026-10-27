@@ -170,6 +170,14 @@ fn assert_itinerary_consistent(it: &Itinerary, depart: u32) {
     let mut t = depart;
     let mut place: Option<&str> = None;
     let mut legs = 0;
+    // A rider walks once between rides: consecutive footpaths are
+    // one merged leg (QAF-34), never two.
+    for pair in it.legs.windows(2) {
+        assert!(
+            !matches!(pair, [Leg::Walk { .. }, Leg::Walk { .. }]),
+            "two walk legs in a row: {pair:?}"
+        );
+    }
     for leg in &it.legs {
         match leg {
             Leg::Walk { from_stop_id, to_stop_id, walk_secs, .. } => {

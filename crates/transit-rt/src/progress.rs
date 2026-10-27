@@ -58,12 +58,21 @@ pub struct LateTrip {
     pub block_id: Option<String>,
     /// The worst delay at any stop of the trip.
     pub worst_delay_secs: i32,
-    /// The user-visible bus number, when a vehicle position names
-    /// this trip.
+    /// The located vehicle's internal id (VehicleDescriptor.id) —
+    /// agencies that leave `label` empty (C-TRAN does) still name
+    /// the bus here.
+    pub vehicle_id: Option<String>,
+    /// The user-visible bus number, when the located vehicle has one.
     pub vehicle_label: Option<String>,
     /// DELAYED BUT DARK: a delay exists but no vehicle position
-    /// names this trip — the dispatcher cannot see where it is.
+    /// names this trip OR any trip of its block — the dispatcher
+    /// cannot see where the bus is.
     pub has_position: bool,
+    /// The trip the located vehicle is actually running: this trip,
+    /// or another trip of the same block — a delay propagated to the
+    /// block's NEXT trip while the bus finishes the one before is a
+    /// late bus, not a dark one.
+    pub position_trip_id: Option<String>,
     pub lat: Option<f64>,
     pub lon: Option<f64>,
 }
@@ -121,8 +130,9 @@ pub fn trip_progress(gtfs: &Gtfs, overview: &RtOverview, trip_id: &str) -> Optio
 
 /// The ranked "what's late right now" view: every trip whose worst
 /// stop delay reaches `min_delay_secs`, worst first, each carrying
-/// the vehicle's position when one names the trip — and the
-/// DELAYED-BUT-DARK flag when none does.
+/// the vehicle's position when one names the trip (or, failing that,
+/// another trip of its block — the bus finishing the trip before) —
+/// and the DELAYED-BUT-DARK flag when none does.
 ///
 /// `positions` is the snapshot vehicles come from: agencies serve
 /// TripUpdates and VehiclePositions as SEPARATE feeds, so the
@@ -135,8 +145,20 @@ pub fn late_trips(
     min_delay_secs: i32,
 ) -> Vec<LateTrip> {
     let vehicles = positions.unwrap_or(delays).vehicle_positions.as_slice();
-    let position_of = |trip_id: &str| -> Option<&VehicleView> {
-        vehicles.iter().find(|v| v.trip_id.as_deref() == Some(trip_id))
+    // The trip's own vehicle first; failing that, the vehicle running
+    // another trip of the same block (the bus is out, finishing the
+    // trip before this one).
+    let position_of = |trip_id: &str, block_id: Option<&str>| -> Option<&VehicleView> {
+        vehicles.iter().find(|v| v.trip_id.as_deref() == Some(trip_id)).or_else(|| {
+            let block_id = block_id?;
+            vehicles.iter().find(|v| {
+                v.trip_id
+                    .as_deref()
+                    .and_then(|t| gtfs.trips.get(t))
+                    .and_then(|t| t.block_id.as_deref())
+                    == Some(block_id)
+            })
+        })
     };
 
     let mut late: Vec<LateTrip> = Vec::new();
@@ -152,14 +174,17 @@ pub fn late_trips(
             continue;
         }
         let trip = gtfs.trips.get(trip_id);
-        let vehicle = position_of(trip_id);
+        let block_id = trip.and_then(|t| t.block_id.clone());
+        let vehicle = position_of(trip_id, block_id.as_deref());
         late.push(LateTrip {
             trip_id: update.trip_id.clone(),
             route_id: update.route_id.clone().or_else(|| trip.map(|t| t.route_id.clone())),
-            block_id: trip.and_then(|t| t.block_id.clone()),
+            block_id,
             worst_delay_secs: worst,
+            vehicle_id: vehicle.and_then(|v| v.vehicle_id.clone()),
             vehicle_label: vehicle.and_then(|v| v.label.clone()),
             has_position: vehicle.is_some(),
+            position_trip_id: vehicle.and_then(|v| v.trip_id.clone()),
             lat: vehicle.map(|v| v.lat),
             lon: vehicle.map(|v| v.lon),
         });

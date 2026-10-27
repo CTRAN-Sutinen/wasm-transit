@@ -4,4 +4,4 @@ import type { Network } from "../Network";
 /**
  * One operation call. Tagged like every capability's seam.
  */
-export type Request = { "op": "load_network", network: Network, } | { "op": "stops", network_hash: string, limit: number | null, } | { "op": "stops_by_ids", network_hash: string, ids: Array<string>, } | { "op": "routes", network_hash: string, } | { "op": "route_stop_sequence", network_hash: string, route_id: string, };
+export type Request = { "op": "load_network", network: Network, } | { "op": "stops", network_hash: string, query?: string, limit: number | null, } | { "op": "stops_by_ids", network_hash: string, ids: Array<string>, } | { "op": "routes", network_hash: string, } | { "op": "route_stop_sequence", network_hash: string, route_id: string, };

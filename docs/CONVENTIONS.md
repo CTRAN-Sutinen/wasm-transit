@@ -57,9 +57,11 @@ holds the gotchas, Rust/wasm/ops and frontend alike.
   boundary is GENERATED (`just types`, refreshed by `just test`):
   ts-rs derives on the model crates emit `web/src/types/*.ts`;
   commit the diff like any generated artifact. The TS contract IS
-  the modules' contract. Plain `cargo test` scatters bindings into
-  `crates/*/bindings` — always set `TS_RS_EXPORT_DIR` (the justfile
-  does). `npm run typecheck` (svelte-check, wired into `just
+  the modules' contract. `.cargo/config.toml` pins
+  `TS_RS_EXPORT_DIR` to `web/src/types` for every cargo run, so a
+  plain `cargo test` regenerates the contract in place (without it,
+  ts-rs scatters bindings into `crates/*/bindings` — gitignored).
+  `npm run typecheck` (svelte-check, wired into `just
   build`) gates all of src/ — components carry `lang="ts"`, the
   runes modules are `.svelte.ts`. TypeScript is pinned to 6.x:
   svelte-check does not yet accept TS 7.

@@ -1,7 +1,7 @@
 import { app, getEditDocument, setEditDocument, setStreets, type DiversionDraft } from "./state.svelte";
 import { get as idbGet, set as idbSet, del as idbDel } from "idb-keyval";
 import { ensureAnalysisLayer, ensureEditReports, importedNetworkDocument, ensureRuncutBoarding, ensureRuncutEdits, ensureRouterBoarding, ensureRouterEdits, ensureStreets, runcutCap, runcutModule, routerCap, routerModule, rtCap, rtModule } from "./capabilities.svelte";
-import { stopPointOf, tripLine, tripSegment } from "./mapview";
+import { stopPointOf, tripLine, tripSegment, type MapPoint } from "./mapview";
 import type { EditRecord } from "./types/EditRecord";
 import type { Itinerary } from "./types/Itinerary";
 import type { StreetPosition } from "./types/StreetPosition";
@@ -358,12 +358,14 @@ async function buildItineraryFeatures(plan: Itinerary | null): Promise<PlanFeatu
         });
       }
     } else {
-      const from = stopPointOf(net, leg.from_stop_id);
-      const to = stopPointOf(net, leg.to_stop_id);
-      if (from && to) {
+      // A merged walk passes its via stops: draw through them.
+      const coords = [leg.from_stop_id, ...leg.via_stop_ids, leg.to_stop_id]
+        .map((id) => stopPointOf(net, id))
+        .filter((p): p is MapPoint => p !== null);
+      if (coords.length >= 2) {
         features.push({
           type: "Feature",
-          geometry: { type: "LineString", coordinates: [from, to] },
+          geometry: { type: "LineString", coordinates: coords },
           properties: { kind: "walk" },
         });
       }

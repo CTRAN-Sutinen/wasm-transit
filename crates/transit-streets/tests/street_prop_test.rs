@@ -475,6 +475,10 @@ proptest! {
                     close(total, cost, 1e-4 * (1.0 + cost)),
                     "routed {total} m, oracle says {cost} m"
                 );
+                // The reported length IS the search's cost: the
+                // oracle's shortest distance, not a re-sum.
+                let (_, length) = net.route_with_length(from, to).expect("same pair routes");
+                prop_assert!(close(length, cost, 1e-6 * (1.0 + cost)), "length {length} m, oracle {cost} m");
                 // Determinism: same instance, same answer.
                 prop_assert_eq!(net.route(from, to).map(|p| (p.len(), path_total_cost(from, &p))),
                                Some((path.len(), total)));

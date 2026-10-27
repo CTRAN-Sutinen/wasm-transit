@@ -44,7 +44,12 @@ clockface fork).
   (baseline 93 / 1773 — block `1-WKDY/316002` gone, `316001` keeps
   5 of 63 trips); `network.export` publishes 6273 trips with the
   retimed 942 on route 060.
-  Status: open.
+  Status: fixed (validate reports `unknown_block_trip` — a block trip
+  its schedule does not run; network_test `rejects_broken_runcut`,
+  prop_test mutation law; e2e app.spec "planner authors a network…"
+  now retimes earlier because the old later-retime was exactly this
+  desync, caught as layover_infeasible once the block reference moves
+  with the trip).
 - **QAF-2 DEFECT?** — `analysis.network_stats` is date-ambiguous:
   `stats.trips` and `stats.routes` answer the requested date, but
   `stats.service_types` answers all 13 types with representative-day
@@ -93,14 +98,18 @@ clockface fork).
   know to filter `trips > 0` (or the op should mark inactive).
   Pin: `network_stats` on 2026-10-31: route `002` answers
   `trips: 0, first_start_secs: null` alongside active routes.
-  Status: open.
+  Status: fixed (contract restated, not changed: zero-trip routes are
+  rows by design — `network_stats`'s op doc now says so: trips 0, null
+  spans, filter on trips).
 - **QAF-8 RUNNER GAP** — `$NOW_SECS` resolves as a string, but
   `board.departures` / `station_departures` want `from_secs: u32`:
   the clock ref cannot feed the numeric field it exists for.
   Pin: `caps-run board --op '{"op":"departures",...,
   "from_secs":"$NOW_SECS"}'` → `invalid type: string "80161",
   expected u32`.
-  Status: open.
+  Status: fixed (`$NOW_SECS` resolves to a number; justfile cross-
+  capability gate feeds it to `from_secs`; the 2026-10-27 re-pin
+  session (below)).
 - **QAF-9 DATA/MODEL** — `transfer_stops: 0` across the whole
   C-TRAN network while `station_departures` still pools bays
   through parent-based walking groups: authored transfers are
@@ -117,7 +126,13 @@ clockface fork).
   document (the registry pins bytes, sessions are stateless).
   Pin: this session rebuilt a 6.3 MB `load_network` op file by jq
   for analysis, runcut, board, calendar, and directory.
-  Status: open.
+  Status: fixed within a session (`--cap` switches capability mid-
+  session and documents cross by reference —
+  `"network":"$net.network"`; justfile cross-capability and author
+  gates; the 2026-10-27 re-pin session (below) ran rt → network →
+  board → directory with no file in between). Cross-SESSION
+  persistence stays open (sessions do not persist; CAPS-PLAN open
+  findings).
 
 ## Session 2026-10-26 (later) — C-TRAN, blocks-to-runs probe
 
@@ -170,7 +185,8 @@ future layer") — the cut below is host-side glue over 93
   Pin: this session's first cut collapsed all 93 results into one
   group until results were re-keyed by op order from the request
   list.
-  Status: open.
+  Status: fixed (`block_trips` answers its `block_id`; cap-runcut
+  dispatch_test).
 - **QAF-14 OP GAP** — no run view for the pick menu: cafeteria
   bidding needs each posted run identified by report time and
   place, pull time and place, platform, pay, pieces, and any
@@ -407,3 +423,275 @@ cheap-win class), except QAF-28, which also needs the data axis.
   Pin: the population session ran the only layer semantics the
   bus has; QAF-17's catalog carries the missing data axes.
   Status: open.
+
+## Session 2026-10-27 — C-TRAN, live dispatch + rider lens
+
+Feed `sha256:aa8dbc62833237d75496b6ec04c2a45fe10ca2a957f63d63b51ddaae85a7dc4f`
+(version 20260913-20270109), network
+`sha256:bceda1be054a37698560f11aa58d6e039314a97945e525a0697f766e9861e4fa`
+(the import reproduced session 1's hash a day later — deterministic),
+live rt from gtfs-rt.c-tran.org fetched 2026-10-27 08:43 PDT
+(TripUpdates 118 KB, VehiclePositions 63 entities), county roads
+`testdata/CTRANTrapezeRoads_*.geojson` (99 MB → 846,935 nodes /
+880,135 segments in ~12 s). Registry per `caps-run list`
+(source_commit fcf279a, dirty tree — one commit behind HEAD).
+Ops only; the one piece of glue was extracting the imported
+document into a `load_network` op file (QAF-10, reproduced). QAF-8
+reproduced (`$NOW_SECS` → `invalid type: string "31499"`); QAF-9
+reproduced (`transfer_stops: 0`).
+
+Answered through ops alone: today runs 1-WKDY + 1-WKDY/15 +
+1-WKDY/31 (1,777 trips = 1,425 + 4 + 348 from the representative-day
+overview — consistent across calendar, analysis); 6 trips ≥ 5 min
+late, worst route 164 trip 755768 at 23.8 min; block 311009's chain
+(inbound 164 to SW 5th & Morrison, 6 min layover, the late trip
+out); trip plans 99th St TC → SW 5th & Morrison (105, 09:07–09:40)
+and 99th St TC → Fisher's Landing (031 + walk + 030, arrive 09:59);
+a 164 diversion skipping SW 5th & Madison (+180 s) — 34 trips
+affected, plan_compare shows the 3-min rider delta; street snap of
+two TC bays within 6–7 m and a 513-point road route between them.
+
+- **QAF-29 DEFECT** — the boards list trips TERMINATING at the stop
+  as departures: a trip whose last stop is the board's stop answers
+  a row with `destination` = that stop. At a terminal half the rows
+  are buses that do not leave.
+  Pin: `board.departures` at 9008 from 31500 on 2026-10-27 — rows 1
+  and 3 are pat-164-0-0 with destination "Fisher's Landing Transit
+  Center: Bay I" at stop 9008; `board.station_departures` at 106
+  from 31500 — 5 of 8 rows (012, 080, 065, 092, 164) terminate at
+  the station.
+  Status: fixed (transit-dispatch `board_over` skips each trip's
+  final visit; law test `a_terminating_visit_is_not_a_departure`
+  (incl. a loop's terminal), cap-board dispatch_test, caps-smoke
+  "B's board is empty", e2e app.spec diversion + station specs; the
+  2026-10-27 re-pin session: the Fisher's Landing board lists only
+  buses leaving).
+- **QAF-30 DEFECT** — `rt.late_trips` flags DELAYED-BUT-DARK on a
+  block's NEXT trip while the vehicle is visibly running the trip
+  before it: the propagated prediction is ranked as a second late
+  trip with `has_position: false`.
+  Pin: live snapshot 08:43 — block 1-WKDY/311002 answers 755700
+  (has_position true, 370 s) AND 755720 (has_position false,
+  370 s); `trip_progress` shows 755720's first stop (5002, 33960)
+  is 755700's last stop at the same scheduled time.
+  Status: fixed (dark is judged per block: the block's located vehicle
+  counts, `position_trip_id` names the trip it is on; cap-rt
+  dispatch_test block law; the 2026-10-27 re-pin session (below):
+  755771 located as CTRAN4024 on 755755, 0 of 12 late rows dark).
+- **QAF-31 OP GAP** — no live ripple: `runcut.block_trips` ripples
+  EDITS through layovers but not rt delay — "will this late bus
+  make its next trip?" is host arithmetic over trip_progress +
+  block_trips. Distinct from QAF-26 (recovery as a planning
+  ratio); this is the dispatcher's live question.
+  Pin: block 1-WKDY/311002, 755720 +370 s against its 600 s
+  layover before the 078 at 36600 — answered by hand (230 s left).
+  Status: open.
+- **QAF-32 OP GAP** — the board has no live overlay: the late 164
+  (755768, +1429 s) shows on schedule at Fisher's Landing. Putting
+  delay on a board row is a three-cap host join (board row
+  (schedule, start) → network.trip_map → rt) — domain logic the UI
+  carries host-side today.
+  Pin: `board.station_departures` at 106 lists pat-164-0-0 at
+  32100; `rt.late_trips` has it at +1429 s; no op joins them.
+  Status: open.
+- **QAF-33 OP GAP** — vehicle identity drops out: C-TRAN's
+  VehiclePositions carry `vehicle_id` (CTRAN2266…) with `label`
+  null, and `late_trips` answers only `vehicle_label` — every row
+  is `null`, so "which bus?" is unanswerable from the late view.
+  Pin: live snapshot 08:43 — decode overview shows vehicle_id on
+  all positions; late_trips' 6 rows all `vehicle_label: null`.
+  Status: fixed (`late_trips` answers `vehicle_id` beside the label;
+  cap-rt dispatch_test; the 2026-10-27 re-pin session (below): every
+  row names its CTRAN#### id).
+- **QAF-34 DEFECT?** — router walks chain stop-to-stop and are not
+  merged: consecutive walk legs are reported separately and route
+  through intermediate stops instead of direct.
+  Pin: `router.plan` 110 → 106 at 31500 — three consecutive walk
+  legs 2013 → 6156 → 6154 → 632 (591 s); `plan_compare` 5005 → 106
+  with the e-5th diversion walks 5005 → 6212 → 5002 (322 s) rather
+  than along 5th Ave.
+  Status: fixed (consecutive walks merge into one leg, intermediate
+  stops kept as `via_stop_ids`, the map draws through them; transit-
+  router prop_test "no two walk legs in a row"; the 2026-10-27 re-pin
+  session (below): 110 → 106 walks 2013 → 632 once, 591 s via 6156,
+  6154). The chaining itself stays: footpaths reach 300 m, longer
+  walks are chains.
+- **QAF-35 OP GAP** — no stop search: `directory.stops` is the
+  whole name-sorted list (890 rows); "where is Vancouver Mall?" is
+  a scan of the list host-side. The pickers' question at agent
+  scale is a query, not a list.
+  Pin: this session found Fisher's Landing's parent (106) only
+  because `stops_by_ids` happened to return it as a bay's parent.
+  Status: fixed (`directory.stops` takes `query`: every term in name
+  or id, case-insensitive; cap-directory dispatch_test; the 2026-10-27
+  re-pin session (below): "fisher landing" → 106 + nine bays).
+- **QAF-36 OP GAP** — the edit document is diversions only: no
+  trip cancellation, no trip-level delay/hold, no vehicle swap. The
+  dispatcher's first reaction to a 24-minute-late trip (cancel or
+  cover it) has no vocabulary.
+  Pin: EditRecord carries exactly one payload, `diversion`; the
+  session's intended action (cancel 755768) could not be authored.
+  Status: open (model question — a new edit kind is a sync-document
+  change).
+- **QAF-37 OP GAP** — `streets.route` answers points only: no
+  length, so "how far by road?" is a host-side sum; and the path
+  starts at a graph node (~23 m from the snapped origin) while it
+  ends exactly at the target — asymmetric.
+  Pin: route 9008-snap → 9010-snap: keys [op, points], 513 points,
+  first (45.594687, -122.506212) vs origin (45.594580, -122.505951),
+  last == target.
+  Status: fixed (`route` answers `length_m`, the search's own cost —
+  transit-streets prop_test checks it against the Dijkstra oracle; the
+  start-after-`from` asymmetry is the detour-chaining contract, now
+  documented in the op doc; the 2026-10-27 re-pin session (below):
+  20.06 km).
+- **QAF-38 RUNNER GAP** — positional refs count loads first,
+  regardless of CLI order: `--op load_network --load layer.geojson`
+  makes `$1` the layer, so a session reorder silently re-targets
+  `$N` refs (it failed loudly here only because the field was
+  absent).
+  Pin: `caps-run analysis --op @load_network.json --load
+  clark-population.geojson --op '{...,"network_hash":"$1.network_hash"}'`
+  → `reference $1.network_hash: resolves to nothing`.
+  Status: fixed (steps run in command-line order; `--as NAME` names
+  results; duplicate names fail loudly; justfile gates use names).
+
+## Session 2026-10-27 (service change) — C-TRAN, planner lens
+
+The planner's core loop end to end, which no session had run:
+read the network → propose a change → author → validate → compare
+→ publish → place in the plan chain. Same feed/network/registry as
+the session above. The change: route 006 weekday midday (09:00–
+15:00) from 30 to 15 minutes on its three weekday patterns (one
+outbound, two inbound branches), forked as pick `spring-2027-006`
+effective 2027-01-10 → network
+`sha256:c37d700b67667093250ae3455e0c8d2ed7551887738f13fe303f2fd91f9817ad`,
+validate clean, export `sha256:174b11c2…` (6,306 trips = 6,273 +
+33). Answered through ops: +33 trips / +7.15 revenue hours per
+weekday on 2026-11-03 (649.44 → 656.59); frequent stops 76 → 78,
+frequent population unchanged. Glue: the AUTHORING itself (one
+host-side expression over the document — no op exists, QAF-39), a
+load_document → load_network op rename (QAF-46), and an HH:MM
+formatter + route filter to read a board (QAF-41's pin).
+
+- **QAF-39 MIRROR GAP** — authoring is not on the bus: every
+  network mutation (~30: add/remove stop, route, pattern, pattern
+  stop, timing profile, timepoint time, service type, range,
+  exception, schedule; forkPlan) lives host-side in
+  web/src/planner.ts as structuredClone + JSON edits. The UI can
+  author; an agent can only hand-edit the document. By the mirror
+  rule this is the largest gap on the bus: the planner's primary
+  verb has no op, and the domain rules a mutation should enforce
+  (ids, cascades, timing-vector shape) are host code.
+  Pin: this session's 006 change — 33 starts inserted by a node
+  expression over `schedules[1-WKDY:pat-006-*].schedule.starts`;
+  `caps-run tools network` lists no mutation op.
+  Status: on the bus (cap-author `apply`: typed atomic edits incl.
+  `retime_trip`, removals refuse while referenced; transit-network
+  edit_test, cap-author dispatch_test, caps-smoke author flow,
+  justfile author gate; the 2026-10-27 re-pin session (below) authored
+  the 006 change through ops and landed on the same hash c37d700b… as
+  the hand edit). Open: the browser's planner still mutates host-side
+  (web/src/planner.ts) — UI-reads-the-bus is the next grade.
+- **QAF-40 DEFECT (cross-cap)** — a pick runs nothing in its own
+  period: the fork inherits service types whose calendar RANGES end
+  at the source feed's end (2027-01-09), so a pick effective
+  2027-01-10 materializes zero trips — yet `validate` answers clean
+  and `plans.resolve` answers the pick as in force. Two caps
+  disagree about the same date, and the plan's effective_from and
+  its calendars are unrelated data.
+  Pin: `analysis.network_stats` on c37d700b… for 2027-01-12 →
+  trips 0; `plans.resolve` 2027-01-12 → "spring-2027-006";
+  `network.validate` → issues [].
+  Status: fixed as a report (validate warns
+  `no_service_in_plan_period`; network_test, cap-author dispatch_test;
+  the 2026-10-27 re-pin session (below): the 006 pick warns). The
+  model question — should the plan period govern its service types'
+  ranges? — stays the owner's.
+- **QAF-41 DEFECT** — `network_stats.routes[].typical_headway_secs`
+  misreports: route 019 answers 643 s (~11 min) while its board
+  runs every 30 minutes; the figure pools arrivals, both
+  directions, and the four inbound bay-variant patterns.
+  Pin: `network_stats` 2026-10-27 route 019 → 643;
+  `board.departures` at 6122 from 0 → 019 pairs XX:06 / XX:11
+  (terminating arrival + departure, QAF-29) every 30 min.
+  Status: fixed (route headway = median departure gap at the busiest
+  stop, named by `headway_stop`; analysis_prop_test oracle,
+  regression_test; the 2026-10-27 re-pin session (below): route 019
+  answers 1860 s at 1334).
+- **QAF-42 OP GAP** — "frequent" is a whole-day average: a stop's
+  headway is (last − first) / (departures − 1) over the day
+  (transit-analysis typical_headway_secs), so midday or peak
+  frequency improvements are invisible to coverage — doubling 006
+  midday moved frequent stops 76 → 78 and frequent population not
+  at all.
+  Pin: `type_coverage` 400 m / 900 s on bceda1be… vs c37d700b… —
+  1-WKDY frequent_stops 76 → 78, frequent_pct 3.248 → 3.248.
+  Status: fixed (`type_coverage` takes `window`: frequent = the worst
+  wait in the window fits; regression_test
+  `frequency_in_a_window_is_the_worst_wait`, caps-smoke; the
+  2026-10-27 re-pin session (below): the 006 fork 09:30–14:00 moves
+  frequent stops 35 → 63, frequent_pct 2.646 → 3.277, where the whole
+  day still says 76 → 78).
+- **QAF-43 OP GAP** — no revenue hours per route: `network_stats`
+  answers the day total (649.19 h) but `routes[]` carries trips,
+  span, and headway only — cost per route, the planner's first
+  question about any route, needs a host-side fold.
+  Pin: `network_stats` include_routes on 2026-10-27 — route rows
+  have no hours field.
+  Status: fixed (`routes[].revenue_hours`; analysis_prop_test oracle,
+  regression_test; the 2026-10-27 re-pin session (below): 006 19.78
+  h).
+- **QAF-44 MODEL GAP** — service types duplicate rather than
+  relate: `4-NYE` carries a full copy of the 1-WKDY schedules
+  (identical starts on all 4 006 patterns), so a weekday change
+  must be mirrored by hand and this session's 006 change silently
+  did not reach New Year's Eve. The model has no "same as weekday,
+  except" relation.
+  Pin: the document's `4-NYE:pat-006-*` schedules equal
+  `1-WKDY:pat-006-*` start for start.
+  Status: open (design question; relates to the fork-lineage
+  discussion).
+- **QAF-45 OP GAP** — trips without a vehicle are silent: the 33
+  added trips belong to no block; `validate` is clean and
+  `runcut.blocks` answers 97 blocks for both networks — nothing
+  reports unassigned trips or the vehicle delta, so the fork's
+  fleet cost is unknowable (QAF-3 and QAF-20 are the neighbors;
+  QAF-1 is the reverse case).
+  Pin: `runcut.blocks` 2026-11-03 on bceda1be… and c37d700b… →
+  97 / 97.
+  Status: fixed as a report (validate warns `unassigned_trips` per
+  schedule once a runcut exists; network_test; the 2026-10-27 re-pin
+  session (below): exactly the three 006 schedules warn — the rest of
+  C-TRAN is fully blocked).
+- **QAF-46 CONTRACT** — one registration, two names: the network
+  capability registers a document with `load_document`, every
+  model-side capability with `load_network` — the same op file
+  cannot feed both, so a session renames ops between caps.
+  Pin: `network --op @fork(load_document)` then `analysis` needs
+  the same body as `load_network`.
+  Status: fixed (cap-network's registration is `load_network`, like
+  every model-side capability; one op file feeds them all).
+- **QAF-47 OP GAP** — the import never joins the chain: a fresh
+  import is unversioned (id ""), never resolves, and no op stamps
+  plan metadata — so "which plan is in force today?" answers null
+  for an agency's real starting state until the host edits the
+  document.
+  Pin: `plans.resolve` 2027-01-12 with the import + the pick →
+  the pick; for 2026-10-27 the import alone cannot resolve.
+  Status: fixed (cap-author `set_plan` stamps an import into the
+  chain; cap-author dispatch_test; justfile author gate).
+
+## Session 2026-10-27 (re-pin) — C-TRAN, after the follow-through
+
+The registry rebuilt from the follow-through (13 capabilities,
+`just check` green: host suites, smoke, runner gates, Go -race, 31
+Playwright specs). One cross-capability session per lens, no files
+between capabilities (`--cap`, `--as`, documents by reference):
+live rt at 11:25 PDT (12 trips ≥ 3 min late, all located — four via
+their block's bus on the trip before), the Fisher's Landing station
+board (departures only), stop search, route 019's headway (1860 s),
+the 006 service change authored through cap-author (same document
+hash as the hand edit, warned for the pick period and its three
+unassigned schedules), windowed coverage, a merged 591 s walk, and
+a 20.06 km road route. The statuses above name their pins.

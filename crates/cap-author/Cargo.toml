@@ -1,0 +1,20 @@
+[package]
+name = "cap-author"
+description = "The authoring capability: what does this network become after these edits? Typed, atomic edits over the NETWORK document answer the next document (never mutating the last) under its content hash, with its validation issues and warnings — the planner's verb on the bus, the same for a UI, a script, and an agent."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]  # rlib: integration tests link the crate natively
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+ts-rs = { workspace = true }
+transit-network = { path = "../transit-network" }
+cap-abi = { path = "../cap-abi" }
+
+[dev-dependencies]
+chrono = { workspace = true }

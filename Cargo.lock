@@ -149,6 +149,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cap-author"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2",
+ "transit-network",
+ "ts-rs",
+]
+
+[[package]]
 name = "cap-board"
 version = "0.1.0"
 dependencies = [

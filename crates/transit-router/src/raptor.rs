@@ -39,12 +39,17 @@ fn fmt_time(secs: u32) -> String {
 #[ts(export)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Leg {
+    /// One continuous walk. Footpaths reach only nearby stops, so a
+    /// longer walk is a chain of them; the chain is ONE leg (a rider
+    /// walks once), its time the sum, and the stops it passes are
+    /// `via_stop_ids`, in order (empty for a single footpath).
     Walk {
         from_stop_id: String,
         from_stop_name: String,
         to_stop_id: String,
         to_stop_name: String,
         walk_secs: u32,
+        via_stop_ids: Vec<String>,
     },
     Transit {
         /// The derived trip's identity: its schedule and start. The
@@ -328,6 +333,7 @@ pub fn earliest_arrival(
                     to_stop_id: net.stops[stop].stop_id.clone(),
                     to_stop_name: net.stops[stop].stop_name.clone(),
                     walk_secs,
+                    via_stop_ids: Vec::new(),
                 });
                 stop = from;
                 // The walk used tau[r] at its source stop — same round.
@@ -346,6 +352,27 @@ pub fn earliest_arrival(
         depart_secs,
         arrival_secs: arrival,
         arrival_hhmmss: fmt_time(arrival),
-        legs: legs_rev,
+        legs: merge_walks(legs_rev),
     }))
+}
+
+/// Consecutive walk legs are one walk: from the first leg's start to
+/// the last leg's end, the times summed, the stops in between kept as
+/// `via_stop_ids`. Transit legs pass through untouched.
+fn merge_walks(legs: Vec<Leg>) -> Vec<Leg> {
+    let mut out: Vec<Leg> = Vec::with_capacity(legs.len());
+    for leg in legs {
+        if let (
+            Some(Leg::Walk { to_stop_id, to_stop_name, walk_secs, via_stop_ids, .. }),
+            Leg::Walk { to_stop_id: next_id, to_stop_name: next_name, walk_secs: next_secs, .. },
+        ) = (out.last_mut(), &leg)
+        {
+            via_stop_ids.push(std::mem::replace(to_stop_id, next_id.clone()));
+            *to_stop_name = next_name.clone();
+            *walk_secs += next_secs;
+            continue;
+        }
+        out.push(leg);
+    }
+    out
 }

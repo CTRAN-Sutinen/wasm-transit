@@ -62,9 +62,19 @@ pub struct RouteStats {
     pub trips: u32,
     pub first_start_secs: Option<u32>,
     pub last_arrival_secs: Option<u32>,
-    /// The route's best (lowest) per-pattern typical headway today —
-    /// the number a planner reads as "every N minutes".
+    /// The route's headway today — the number a planner reads as
+    /// "every N minutes": the MEDIAN gap between consecutive
+    /// departures at the route's busiest stop (`headway_stop`).
+    /// Departures only — a trip's final visit is an arrival — and a
+    /// median, so a short-lived variant or a clustered pair of trips
+    /// cannot stand in for the route. Null below two departures.
     pub typical_headway_secs: Option<u32>,
+    /// Where the headway was measured: the stop with the most
+    /// departures of this route today (ties by stop id).
+    pub headway_stop: Option<String>,
+    /// The route's revenue hours today: the sum of its trips'
+    /// runtimes (arrival − start), the cost basis per route.
+    pub revenue_hours: f64,
 }
 
 /// A service type's numbers on its representative day — the first
@@ -198,20 +208,23 @@ pub struct TypeCoverage {
 
 /// Coverage per service type — "what share of the population does
 /// WEEKDAY service cover? Saturday service?" — each measured on the
-/// type's representative day.
+/// type's representative day. `window` judges frequency inside a
+/// time window (see [`CoverageWindow`]); `None` is the whole-day
+/// average.
 pub fn type_coverage(
     net: &Network,
     layer: &PopLayer,
     radius_m: f64,
     frequent_secs: u32,
     min_departures: u32,
+    window: Option<CoverageWindow>,
 ) -> Vec<TypeCoverage> {
     let mut out = Vec::with_capacity(net.service_types.len());
     for (type_id, service_type) in &net.service_types {
         let Some(date) = representative_date(&service_type.rule) else {
             continue; // a type with no running days covers nothing
         };
-        let stats = coverage_for_type(net, date, layer, radius_m, frequent_secs, min_departures, Some(type_id.as_str()));
+        let stats = coverage_for_type(net, date, layer, radius_m, frequent_secs, min_departures, window, Some(type_id.as_str()));
         out.push(TypeCoverage {
             service_type: type_id.clone(),
             name: service_type.name.clone(),
@@ -355,6 +368,20 @@ impl StopActivity {
     }
 }
 
+/// The median gap between consecutive times (sorted here); None
+/// below two times. A median, not the span average: a busy hour and
+/// a quiet evening each count for what they are.
+fn median_gap_secs(times: &[u32]) -> Option<u32> {
+    let mut sorted = times.to_vec();
+    sorted.sort_unstable();
+    let mut gaps: Vec<u32> = sorted.windows(2).map(|w| w[1] - w[0]).collect();
+    if gaps.is_empty() {
+        return None;
+    }
+    gaps.sort_unstable();
+    Some(gaps[gaps.len() / 2])
+}
+
 /// Network stats for one service date. Best-effort: services that
 /// fail to materialize (a document mid-edit) are skipped, not fatal.
 pub fn network_stats(net: &Network, date: NaiveDate) -> NetworkStats {
@@ -372,6 +399,10 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
     let mut route_first: BTreeMap<String, u32> = BTreeMap::new();
     let mut route_last: BTreeMap<String, u32> = BTreeMap::new();
     let mut route_stop_sets: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut route_runtime: BTreeMap<String, u64> = BTreeMap::new();
+    // (route, stop) → departure times on the date (final visits are
+    // arrivals and never count): where the route's headway is read.
+    let mut route_departures: BTreeMap<(String, String), Vec<u32>> = BTreeMap::new();
     // Per-stop accumulators.
     let mut stop_activity: BTreeMap<String, StopActivity> = BTreeMap::new();
     // (stop, route) → arrival times on the date: the pooled view a
@@ -414,7 +445,15 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
                 .or_insert(end.arrival_secs);
             first_start = Some(first_start.map_or(trip.start_secs, |f| f.min(trip.start_secs)));
             last_arrival = Some(last_arrival.map_or(end.arrival_secs, |l| l.max(end.arrival_secs)));
-            runtime_secs += (end.arrival_secs.saturating_sub(trip.start_secs)) as u64;
+            let runtime = (end.arrival_secs.saturating_sub(trip.start_secs)) as u64;
+            runtime_secs += runtime;
+            *route_runtime.entry(route.clone()).or_default() += runtime;
+            for st in &trip.stop_times[..trip.stop_times.len() - 1] {
+                route_departures
+                    .entry((route.clone(), st.stop.clone()))
+                    .or_default()
+                    .push(st.departure_secs);
+            }
             pattern_starts
                 .entry(trip.pattern.clone())
                 .or_default()
@@ -441,23 +480,16 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
     let mut routes = Vec::with_capacity(net.routes.len());
     for (route_id, route) in &net.routes {
         let route_trips = *route_trips.get(route_id).unwrap_or(&0);
-        // The route's per-pattern typical headways on the date;
-        // patterns with one trip carry no headway signal.
-        let mut typical: Option<u32> = None;
-        for (pid, starts) in &pattern_starts {
-            let is_this_route = net
-                .patterns
-                .get(pid)
-                .is_some_and(|p| &p.route == route_id);
-            if !is_this_route {
-                continue;
-            }
-            if starts.len() >= 2 {
-                let span = starts[starts.len() - 1] - starts[0];
-                let headway = span / (starts.len() as u32 - 1);
-                typical = Some(typical.map_or(headway, |t| t.min(headway)));
-            }
-        }
+        // The busiest stop (most departures; the first by id on a
+        // tie — BTreeMap order) and its median departure gap.
+        let busiest = route_departures
+            .iter()
+            .filter(|((r, _), _)| r == route_id)
+            .fold(None::<(&String, &Vec<u32>)>, |best, ((_, stop), times)| match best {
+                Some((_, b)) if b.len() >= times.len() => best,
+                _ => Some((stop, times)),
+            });
+        let typical = busiest.and_then(|(_, times)| median_gap_secs(times));
         routes.push(RouteStats {
             route_id: route_id.clone(),
             name: route.name.clone(),
@@ -475,6 +507,8 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
             first_start_secs: route_first.get(route_id).copied(),
             last_arrival_secs: route_last.get(route_id).copied(),
             typical_headway_secs: typical,
+            headway_stop: busiest.map(|(stop, _)| stop.clone()),
+            revenue_hours: *route_runtime.get(route_id).unwrap_or(&0) as f64 / 3600.0,
         });
     }
 
@@ -631,6 +665,36 @@ pub fn parse_pop_layer(bytes: &[u8], pop_field: Option<&str>) -> Result<PopLayer
     Ok(PopLayer { pop_field, points })
 }
 
+/// "Frequent" inside a time window — the way planners state it:
+/// "every 15 minutes, 07:00–19:00". A stop is frequent in the window
+/// when no rider waits longer than `frequent_secs` anywhere in it:
+/// the gap from the window's start to the first departure, every gap
+/// between departures, and the gap from the last departure to the
+/// window's end all fit. Departures only (a trip's final visit is an
+/// arrival); every route at the stop pools, as a rider sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct CoverageWindow {
+    pub start_secs: u32,
+    pub end_secs: u32,
+}
+
+impl CoverageWindow {
+    /// The longest wait inside the window over sorted departures; None
+    /// when nothing departs inside it.
+    fn worst_wait_secs(&self, sorted: &[u32]) -> Option<u32> {
+        let inside: Vec<u32> = sorted
+            .iter()
+            .copied()
+            .filter(|t| (self.start_secs..=self.end_secs).contains(t))
+            .collect();
+        let first = *inside.first()?;
+        let last = *inside.last()?;
+        let between = inside.windows(2).map(|w| w[1] - w[0]).max().unwrap_or(0);
+        Some((first - self.start_secs).max(between).max(self.end_secs - last))
+    }
+}
+
 /// Coverage answers for one service date: what share of the layer's
 /// population is within `radius_m` of a stop with service, and what
 /// share is near *frequent* service (headway at or under
@@ -644,6 +708,9 @@ pub struct CoverageStats {
     pub radius_m: f64,
     pub frequent_secs: u32,
     pub min_departures: u32,
+    /// The window frequency was judged in; null = the whole-day
+    /// average headway.
+    pub window: Option<CoverageWindow>,
     pub total_pop: f64,
     pub served_pop: f64,
     pub frequent_pop: f64,
@@ -669,8 +736,9 @@ pub fn coverage(
     radius_m: f64,
     frequent_secs: u32,
     min_departures: u32,
+    window: Option<CoverageWindow>,
 ) -> CoverageStats {
-    coverage_for_type(net, date, layer, radius_m, frequent_secs, min_departures, None)
+    coverage_for_type(net, date, layer, radius_m, frequent_secs, min_departures, window, None)
 }
 
 fn coverage_for_type(
@@ -680,12 +748,16 @@ fn coverage_for_type(
     radius_m: f64,
     frequent_secs: u32,
     min_departures: u32,
+    window: Option<CoverageWindow>,
     only_type: Option<&str>,
 ) -> CoverageStats {
     // Which stops have service today, and which are frequent. Visits
     // aggregate across every service and route calling at the stop —
     // two routes at 30 minutes each make one 15-minute stop.
     let mut activity: BTreeMap<String, StopActivity> = BTreeMap::new();
+    // Departure times per stop (final visits excluded) — what the
+    // windowed frequency test reads.
+    let mut departures_at: BTreeMap<String, Vec<u32>> = BTreeMap::new();
     for (service_id, service) in &net.schedules {
         let runs = net
             .service_types
@@ -708,7 +780,13 @@ fn coverage_for_type(
                     .or_default()
                     .visit(&route, st.arrival_secs);
             }
+            for st in trip.stop_times.iter().take(trip.stop_times.len().saturating_sub(1)) {
+                departures_at.entry(st.stop.clone()).or_default().push(st.departure_secs);
+            }
         }
+    }
+    for times in departures_at.values_mut() {
+        times.sort_unstable();
     }
     let mut served: Vec<(f64, f64)> = Vec::new();
     let mut frequent: Vec<(f64, f64)> = Vec::new();
@@ -718,10 +796,20 @@ fn coverage_for_type(
         }
         let Some(stop) = net.stops.get(stop_id) else { continue };
         served.push((stop.lat, stop.lon));
-        let is_frequent = act.departures >= min_departures
-            && act
-                .typical_headway_secs()
-                .is_some_and(|h| h <= frequent_secs);
+        let is_frequent = match window {
+            // Inside the window: the worst wait fits, with enough
+            // departures that a lone pair cannot pass.
+            Some(window) => {
+                let departs = departures_at.get(stop_id).map(Vec::as_slice).unwrap_or(&[]);
+                let inside = departs.iter().filter(|t| (window.start_secs..=window.end_secs).contains(t)).count();
+                inside as u32 >= min_departures
+                    && window.worst_wait_secs(departs).is_some_and(|w| w <= frequent_secs)
+            }
+            None => {
+                act.departures >= min_departures
+                    && act.typical_headway_secs().is_some_and(|h| h <= frequent_secs)
+            }
+        };
         if is_frequent {
             frequent.push((stop.lat, stop.lon));
         }
@@ -758,6 +846,7 @@ fn coverage_for_type(
         radius_m,
         frequent_secs,
         min_departures,
+        window,
         total_pop,
         served_pop,
         frequent_pop,

@@ -14,12 +14,25 @@ block_id: string | null,
  */
 worst_delay_secs: number, 
 /**
- * The user-visible bus number, when a vehicle position names
- * this trip.
+ * The located vehicle's internal id (VehicleDescriptor.id) —
+ * agencies that leave `label` empty (C-TRAN does) still name
+ * the bus here.
+ */
+vehicle_id: string | null, 
+/**
+ * The user-visible bus number, when the located vehicle has one.
  */
 vehicle_label: string | null, 
 /**
  * DELAYED BUT DARK: a delay exists but no vehicle position
- * names this trip — the dispatcher cannot see where it is.
+ * names this trip OR any trip of its block — the dispatcher
+ * cannot see where the bus is.
  */
-has_position: boolean, lat: number | null, lon: number | null, };
+has_position: boolean, 
+/**
+ * The trip the located vehicle is actually running: this trip,
+ * or another trip of the same block — a delay propagated to the
+ * block's NEXT trip while the bus finishes the one before is a
+ * late bus, not a dark one.
+ */
+position_trip_id: string | null, lat: number | null, lon: number | null, };

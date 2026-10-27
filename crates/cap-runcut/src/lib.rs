@@ -106,7 +106,10 @@ pub enum Response {
         reports: Vec<transit_sync::EditReport>,
     },
     Blocks { blocks: Vec<DayBlock> },
-    BlockTrips { trips: Vec<BlockChainTrip> },
+    /// The chain, carrying the block it answers for — a session
+    /// asking for many blocks groups results by the answer, never by
+    /// request order.
+    BlockTrips { block_id: String, trips: Vec<BlockChainTrip> },
     TripStops { stops: Vec<transit_dispatch::TripStopView> },
 }
 
@@ -210,6 +213,7 @@ let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
             Ok(Response::BlockTrips {
                 trips: transit_dispatch::block_chain(&network, &day, &block_id),
+                block_id,
             })
         }
         Request::TripStops { network_hash, edits_hash, schedule, start_secs, date } => {

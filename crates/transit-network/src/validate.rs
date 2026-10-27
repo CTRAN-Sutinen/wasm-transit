@@ -8,7 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::error::NetworkError;
+use crate::error::{NetworkError, NetworkWarning};
 use crate::materialize::{trip_arrival_end_secs, trip_starts};
 use crate::model::{Network, Schedule};
 
@@ -227,11 +227,19 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
             });
         }
         for t in &block.trips {
-            if network.schedules.get(&t.schedule).is_none() {
-                issues.push(NetworkError::UnknownBlockSchedule {
+            match network.schedules.get(&t.schedule) {
+                None => issues.push(NetworkError::UnknownBlockSchedule {
                     block: block_id.clone(),
                     schedule: t.schedule.clone(),
-                });
+                }),
+                Some(schedule) if !trip_starts(&schedule.schedule).contains(&t.start_secs) => {
+                    issues.push(NetworkError::UnknownBlockTrip {
+                        block: block_id.clone(),
+                        schedule: t.schedule.clone(),
+                        start_secs: t.start_secs,
+                    })
+                }
+                Some(_) => {}
             }
             match owner.get(&(t.schedule.clone(), t.start_secs)) {
                 Some(prev) => issues.push(NetworkError::DuplicateBlockTrip {
@@ -293,6 +301,53 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
     }
 
     issues
+}
+
+/// Every planning concern that is not an invalidity (see
+/// [`NetworkWarning`]), in deterministic order: unassigned trips by
+/// schedule id, then the plan-period check.
+pub fn validation_warnings(network: &Network) -> Vec<NetworkWarning> {
+    let mut warnings = Vec::new();
+
+    if !network.blocks.is_empty() {
+        let blocked: BTreeSet<(&str, u32)> = network
+            .blocks
+            .values()
+            .flat_map(|b| b.trips.iter().map(|t| (t.schedule.as_str(), t.start_secs)))
+            .collect();
+        for (schedule_id, schedule) in &network.schedules {
+            let unassigned = trip_starts(&schedule.schedule)
+                .into_iter()
+                .filter(|start| !blocked.contains(&(schedule_id.as_str(), *start)))
+                .count() as u32;
+            if unassigned > 0 {
+                warnings.push(NetworkWarning::UnassignedTrips {
+                    schedule: schedule_id.clone(),
+                    trips: unassigned,
+                });
+            }
+        }
+    }
+
+    if let (false, Some(from)) = (network.plan.id.is_empty(), network.plan.effective_from) {
+        let scheduled: BTreeSet<&str> =
+            network.schedules.values().map(|s| s.service_type.as_str()).collect();
+        let runs_in_first_week = (0..7).any(|d| {
+            let date = from + chrono::Duration::days(d);
+            network
+                .service_types
+                .iter()
+                .any(|(id, st)| scheduled.contains(id.as_str()) && st.rule.runs_on(date))
+        });
+        if !runs_in_first_week {
+            warnings.push(NetworkWarning::NoServiceInPlanPeriod {
+                plan: network.plan.id.clone(),
+                effective_from: from.format("%Y-%m-%d").to_string(),
+            });
+        }
+    }
+
+    warnings
 }
 
 /// First-issue gate: `Ok` iff the network is valid.

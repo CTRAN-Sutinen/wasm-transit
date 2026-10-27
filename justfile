@@ -27,7 +27,7 @@ default:
 caps:
     #!/usr/bin/env bash
     set -e
-    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt -p cap-board -p cap-runcut -p cap-calendar -p cap-directory -p cap-streets -p cap-sync -p cap-plans --target wasm32-unknown-unknown
+    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt -p cap-board -p cap-runcut -p cap-calendar -p cap-directory -p cap-streets -p cap-sync -p cap-plans -p cap-author --target wasm32-unknown-unknown
     cargo run --quiet -p cap-abi --bin gen-manifest
     mkdir -p web/pkg
     cp target/wasm32-unknown-unknown/release/cap_sync.wasm web/pkg/cap_sync.wasm
@@ -67,8 +67,9 @@ types:
 # capability-module smoke (needs `caps` built — hash-pinned modules
 # and the manifest the smoke verifies against).
 # TS_RS_EXPORT_DIR keeps the ts-rs bindings regenerating into
-# web/src/types on every run (plain `cargo test` would scatter them
-# into crates/*/bindings).
+# web/src/types on every run (.cargo/config.toml pins the same path
+# for plain cargo runs; without either, ts-rs scatters them into
+# crates/*/bindings).
 test: caps
     #!/usr/bin/env bash
     set -e
@@ -121,6 +122,16 @@ test: caps
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"active_services","network_hash":"$load_network.network_hash","date":"$TODAY"}' \
       | grep -q '"op":"active_services"'
+    # The cross-capability session: one session imports the fixture
+    # feed, hands the DOCUMENT to the board by reference (no file in
+    # between), addresses results by --as name, and feeds the numeric
+    # clock to a seconds field — the identities must agree across the
+    # two modules (one document, one truth).
+    node tools/caps-run.mjs network --load web/public/caps/sample-gtfs.zip \
+      --as net --op '{"op":"import","feed_hash":"$load.feed_hash"}' \
+      --cap board --as board_net --op '{"op":"load_network","network":"$net.network"}' \
+      --op '{"op":"departures","network_hash":"$board_net.network_hash","stop_id":"A","date":"$TODAY","from_secs":"$NOW_SECS","limit":1}' \
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const id = (n) => r.find((x) => x.as === n).ok.network_hash; if (id("net") !== id("board_net") || r.at(-1).ok?.op !== "departures") process.exit(1)'
     # The runcut capability's gate: the day's blocks (the index) into
     # one block's chain (the detail), with the edit ripple chained in
     # session (the connection-health read: 600 − 300).
@@ -169,6 +180,16 @@ test: caps
       --op '{"op":"resolve","plans":[{"id":"spring","name":"Spring 2026","effective_from":"2026-03-01"},{"id":"fall","name":"Fall 2026","effective_from":"2026-09-07"}],"date":"2026-10-23"}' \
       --op '{"op":"periods","plans":[{"id":"spring","name":"Spring 2026","effective_from":"2026-03-01"},{"id":"fall","name":"Fall 2026","effective_from":"2026-09-07"}]}' \
       | grep -q '"plan":"fall"'
+    # The authoring capability's gate: the fixture network stamped as
+    # a pick in one atomic change, then the answered document read by
+    # the day views in the same session — chained by the hash the
+    # author answered (the next change's address), never re-uploaded.
+    node tools/caps-run.mjs author \
+      --op @web/public/caps/sample-network-load.json \
+      --as pick --op '{"op":"apply","network_hash":"$load_network.network_hash","edits":[{"edit":"set_plan","plan":{"id":"fall","name":"Fall 2026","effective_from":"2026-10-19"}}]}' \
+      --cap calendar --op '{"op":"load_network","network":"$pick.network"}' \
+      --op '{"op":"active_services","network_hash":"$pick.network_hash","date":"2026-10-23"}' \
+      | grep -q '"services":\["WK"\]'
     # ARCHITECTURE GATES — the laws as assertions (spelled out in
     # crates/AGENTS.md), because prose does
     # not enforce:
@@ -185,7 +206,7 @@ test: caps
     # Sanctioned consumers: cap-gtfs, cap-network, cap-rt (external
     # rt joining external ids). The router left the feed in U5 — it
     # plans over the network document and the effective day.
-    for crate in cap-analysis cap-board cap-runcut cap-calendar cap-directory cap-sync cap-plans transit-analysis transit-dispatch; do
+    for crate in cap-analysis cap-board cap-runcut cap-calendar cap-directory cap-sync cap-plans cap-author transit-analysis transit-dispatch; do
         for dep in transit-core transit-codec; do
             if awk '/^\[dev-dependencies\]/{exit} /^'"$dep"' =/{found=1} END{exit !found}' "crates/$crate/Cargo.toml" 2>/dev/null; then
                 echo "ARCH FAIL: $crate depends on $dep — the network is the core model; compose over the network document (crates/AGENTS.md, Law 1)"; exit 1

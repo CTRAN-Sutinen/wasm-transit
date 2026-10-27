@@ -23,7 +23,8 @@ use sha2::{Digest, Sha256};
 use ts_rs::TS;
 use transit_analysis::{
     coverage, network_stats, parse_pop_layer, service_type_detail, service_type_overview,
-    type_coverage, NetworkStats, PopLayer, ServiceTypeDetail, ServiceTypeSummary, TypeCoverage,
+    type_coverage, CoverageWindow, NetworkStats, PopLayer, ServiceTypeDetail, ServiceTypeSummary,
+    TypeCoverage,
 };
 use transit_network::Network;
 
@@ -63,13 +64,19 @@ pub enum Request {
     ServiceTypesOverview { network_hash: String },
     /// One service type expanded on its representative day.
     ServiceTypeDetail { network_hash: String, service_type: String },
-    /// Population coverage per service type.
+    /// Population coverage per service type. `window` judges
+    /// frequency inside a time window ("every 15 min 07:00–19:00":
+    /// the worst wait in the window fits frequent_secs); omitted, it
+    /// is the whole-day average headway.
     TypeCoverage {
         network_hash: String,
         layer_hash: String,
         radius_m: f64,
         frequent_secs: u32,
         min_departures: u32,
+        #[serde(default)]
+        #[ts(optional)]
+        window: Option<CoverageWindow>,
     },
 }
 
@@ -209,7 +216,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 Ok(Response::ServiceTypeDetail { detail })
             })
         }
-        Request::TypeCoverage { network_hash, layer_hash, radius_m, frequent_secs, min_departures } => {
+        Request::TypeCoverage { network_hash, layer_hash, radius_m, frequent_secs, min_departures, window } => {
             let network_arc = network_arc(&network_hash)?;
             let layer_arc = {
                 let guard = layers().lock().expect("layer lock");
@@ -225,6 +232,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                     radius_m,
                     frequent_secs,
                     min_departures,
+                    window,
                 ),
             })
         }
@@ -278,7 +286,7 @@ pub fn coverage_on(
             .cloned()
             .ok_or_else(|| format!("unknown layer {layer_hash}: load_population_layer first"))?
     };
-    Ok(coverage(&network_arc, parsed, &layer_arc, radius_m, frequent_secs, min_departures))
+    Ok(coverage(&network_arc, parsed, &layer_arc, radius_m, frequent_secs, min_departures, None))
 }
 
 cap_abi::capability! {

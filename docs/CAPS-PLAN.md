@@ -124,7 +124,7 @@ LANDED:
   cap-directory's dispatch test, caps-smoke's directory flow, the
   justfile runner gate (one chained session: load → stops →
   names join → routes → patterns), the manifest (compose-time
-  self-validation; 12 capabilities today),
+  self-validation; 13 capabilities today),
   compose-time self-validation). UI READS THE BUS: the comboboxes
   (DepartureBoard, TripPlanner, DiversionPanel routes), the map's
   name lookups, the diversion anchors, and the feed line —
@@ -278,6 +278,39 @@ day-shape answer is the dogfood record).
   has synced or resolved a real plan chain through the modules
   yet.
 
+- **The QA follow-through (2026-10-27)** — the dogfood findings
+  of the 10-26/10-27 sessions, cut into units (QA-FINDINGS carries
+  each finding's status and pin; this line carries the grades).
+  Gate for all of it: `just check` green (host suites, caps-smoke,
+  runner gates, Go -race, 31 Playwright specs), and one C-TRAN
+  re-pin session per lens (QA-FINDINGS, "Session 2026-10-27
+  (re-pin)").
+  * Boards stop listing arrivals (QAF-29): ON THE BUS, UI READS
+    THE BUS (app.spec diversion + station specs), DOGFOODED.
+  * The live view judges dark per block and names the vehicle
+    (QAF-30, QAF-33): ON THE BUS, DOGFOODED. The UI does not read
+    late_trips yet.
+  * Runner sessions (QAF-8, QAF-10 within a session, QAF-38,
+    QAF-46): ordered steps, `--cap`, `--as`, numeric clock, one
+    registration name; the justfile cross-capability gate.
+    DOGFOODED (every re-pin session spans capabilities).
+  * Analysis (QAF-7 contract, QAF-41, QAF-42, QAF-43): ON THE BUS,
+    DOGFOODED; the planner screens render the new headway
+    unchanged in shape — no UI reads `window` or per-route hours
+    yet.
+  * Validate (QAF-1 issue, QAF-40 and QAF-45 warnings): ON THE BUS,
+    DOGFOODED; UI READS THE BUS for the issue (app.spec authoring
+    spec — the browser retime now carries its block reference).
+    The browser does not show warnings yet.
+  * Authoring, cap-author (QAF-39, QAF-47): ON THE BUS (edit_test,
+    dispatch_test, caps-smoke, justfile author gate), DOGFOODED
+    (the 006 change through `apply`). NOT UI-reads-the-bus: the
+    browser's planner still mutates host-side and mirrors
+    `retime_trip` in web/src/planner.ts until it rewires.
+  * Small op gaps (QAF-13, QAF-34, QAF-35, QAF-37): ON THE BUS,
+    DOGFOODED; the map draws merged walks through their via stops
+    (no e2e pins that drawing).
+
 Model facts that hold everywhere: the import infers block
 layovers from observed end→start gaps (GTFS has none; the planner
 re-authors from there) and reports every resolution — never
@@ -299,14 +332,12 @@ in passing.
 ## Open findings (routed, never scripted)
 
 
-- **Cross-session chaining in caps-run** — a session needs a
-  document a PREVIOUS session imported (`--save` / `--op-from`, or
-  a session document store). Today it is a hand-carried wrap; the
-  runner exists to remove exactly this friction.
-- **Stop search shaping on cap-gtfs** — `stops` returns first N
-  by id; finding a station's bays means pulling the whole list and
-  grepping client-side. An `include`/query shape (or `find_stops`)
-  is the query-shaping pattern applied here.
+- **Cross-session chaining in caps-run** — within a session,
+  documents cross capabilities by reference (`--cap`, landed
+  above); ACROSS sessions nothing persists, so every session
+  re-imports (a session document store, or the journal). An
+  import's response also prints the whole document — 2.7 MB on
+  C-TRAN — into the agent's context; a shaping flag belongs here.
 - **Trip-map shaping** — the full map is 539.6 KiB on C-TRAN;
   fine for a UI (fetched once per boarding), heavy for an agent
   asking "which derived trip is agency id 757797?". Shape it when

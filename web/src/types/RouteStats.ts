@@ -13,7 +13,21 @@ stops: number,
  */
 trips: number, first_start_secs: number | null, last_arrival_secs: number | null, 
 /**
- * The route's best (lowest) per-pattern typical headway today —
- * the number a planner reads as "every N minutes".
+ * The route's headway today — the number a planner reads as
+ * "every N minutes": the MEDIAN gap between consecutive
+ * departures at the route's busiest stop (`headway_stop`).
+ * Departures only — a trip's final visit is an arrival — and a
+ * median, so a short-lived variant or a clustered pair of trips
+ * cannot stand in for the route. Null below two departures.
  */
-typical_headway_secs: number | null, };
+typical_headway_secs: number | null, 
+/**
+ * Where the headway was measured: the stop with the most
+ * departures of this route today (ties by stop id).
+ */
+headway_stop: string | null, 
+/**
+ * The route's revenue hours today: the sum of its trips'
+ * runtimes (arrival − start), the cost basis per route.
+ */
+revenue_hours: number, };

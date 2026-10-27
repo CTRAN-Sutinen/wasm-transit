@@ -35,6 +35,12 @@ pub enum NetworkError {
     #[error("block {block} references unknown schedule {schedule}")]
     UnknownBlockSchedule { block: String, schedule: String },
 
+    /// The schedule exists but produces no trip at this start: the
+    /// runcut and the published schedule would describe different
+    /// networks (a retimed schedule left its blocks behind).
+    #[error("block {block} references trip {schedule}@{start_secs}, which its schedule does not run")]
+    UnknownBlockTrip { block: String, schedule: String, start_secs: u32 },
+
     #[error("layover in block {block} references unknown stop {stop}")]
     UnknownLayoverStop { block: String, stop: String },
 
@@ -152,4 +158,22 @@ pub enum NetworkError {
 
     #[error("no timing profile of pattern {pattern} covers a trip starting at {start_secs}")]
     NoProfileForTrip { pattern: String, start_secs: u32 },
+}
+
+/// A planning concern that does not make the document invalid —
+/// materialization still succeeds, export still publishes — but that
+/// the planner almost certainly did not intend. Reported beside the
+/// issues so nothing about a document goes silent; never a gate.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum NetworkWarning {
+    /// Trips of a schedule that no block carries: service with no
+    /// vehicle assigned. Reported only once the document has a runcut
+    /// at all (a network with no blocks yet is unassigned by design).
+    UnassignedTrips { schedule: String, trips: u32 },
+    /// A versioned plan whose service types run on no day of its
+    /// first week: the pick governs a period it carries no service
+    /// for (the calendar ranges a fork inherited end before it).
+    NoServiceInPlanPeriod { plan: String, effective_from: String },
 }

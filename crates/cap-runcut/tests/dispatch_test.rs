@@ -148,7 +148,10 @@ fn the_block_chain_ripples_under_the_edit() {
     })
     .unwrap()
     {
-        Response::BlockTrips { trips } => trips,
+        Response::BlockTrips { block_id, trips } => {
+            assert_eq!(block_id, "B1", "the answer names its block (QAF-13)");
+            trips
+        }
         _ => panic!("block_trips"),
     };
     assert_eq!(base.len(), 2);
@@ -165,7 +168,7 @@ fn the_block_chain_ripples_under_the_edit() {
     })
     .unwrap()
     {
-        Response::BlockTrips { trips } => trips,
+        Response::BlockTrips { trips, .. } => trips,
         _ => panic!("block_trips"),
     };
     assert!(ghost.is_empty());
@@ -181,7 +184,7 @@ fn the_block_chain_ripples_under_the_edit() {
     })
     .unwrap()
     {
-        Response::BlockTrips { trips } => trips,
+        Response::BlockTrips { trips, .. } => trips,
         _ => panic!("block_trips"),
     };
     assert_eq!(ripped[0].layover_remaining_secs, Some(300), "the diverted end eats the layover (600 - 300)");

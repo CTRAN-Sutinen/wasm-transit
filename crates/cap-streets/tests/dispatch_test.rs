@@ -58,7 +58,12 @@ fn snap_and_route_follow_street_geometry() {
         _ => panic!("snap b"),
     };
     match dispatch(Request::Route { streets_hash, from: a, to: b }).unwrap() {
-        Response::Route { points } => {
+        Response::Route { points, length_m } => {
+            // Around the Elbow's corner: 0.005° of longitude (~390 m
+            // at 45.5°N) plus 0.004° of latitude (~445 m) — about
+            // 835 m along the streets, where the diagonal is ~592 m.
+            let length = length_m.expect("a path has a length");
+            assert!((800.0..870.0).contains(&length), "the street length, not the diagonal: {length} m");
             assert_eq!(points.len(), 2, "the corner, then the target");
             assert!((points[0].lat - 45.5040).abs() < 1e-9, "first bend is the corner");
             assert!((points[0].lon + 73.5080).abs() < 1e-9, "the corner, not the diagonal");
@@ -101,7 +106,10 @@ fn route_between_disconnected_parts_answers_empty() {
         _ => panic!("snap b"),
     };
     match dispatch(Request::Route { streets_hash, from: a, to: b }).unwrap() {
-        Response::Route { points } => assert!(points.is_empty(), "no path: empty, the caller falls back"),
+        Response::Route { points, length_m } => {
+            assert!(points.is_empty(), "no path: empty, the caller falls back");
+            assert_eq!(length_m, None, "no path, no length");
+        }
         _ => panic!("route"),
     }
 }

@@ -361,10 +361,18 @@ fn rejects_broken_runcut() {
     assert!(matches!(defect(|n| {
         n.blocks.get_mut("b1").unwrap().layovers[0].after_trip = 1;
     }), LayoverAfterLastTrip { .. }));
-    // Second trip departs before the first arrives (arrival 7:20).
+    // Second trip departs before the first arrives (arrival 7:20) —
+    // a trip the schedule really runs, so feasibility is what fails.
     assert!(matches!(defect(|n| {
+        n.schedules.get_mut("5-weekday").unwrap().schedule =
+            Schedule::ExactTimes { starts: vec![7 * 3600, 7 * 3600 + 60, 25 * 3600 + 1800] };
         n.blocks.get_mut("b1").unwrap().trips[1].start_secs = 7 * 3600 + 60;
     }), BlockInfeasible { .. }));
+    // A block trip the schedule does not run: the runcut and the
+    // published schedule would disagree (QAF-1).
+    assert!(matches!(defect(|n| {
+        n.blocks.get_mut("b1").unwrap().trips[1].start_secs = 9 * 3600;
+    }), UnknownBlockTrip { start_secs, .. } if start_secs == 9 * 3600));
     // Arrives in time, but the layover does not fit before 8:00.
     assert!(matches!(defect(|n| {
         n.blocks.get_mut("b1").unwrap().layovers[0].secs = 3 * 3600;
@@ -462,4 +470,36 @@ fn transfer_point_requires_two_routes_across_its_walking_group() {
     let index = transit_network::stop_route_index(&net);
     let meeting = transit_network::routes_meeting_at(&net, &index, "B");
     assert!(meeting.contains("5") && meeting.contains("7"), "{meeting:?}");
+}
+
+#[test]
+fn warnings_name_what_validity_lets_through() {
+    use transit_network::{validation_warnings, NetworkWarning};
+    // The fixture: b1 carries 07:00 and 08:00; 25:30 has no vehicle.
+    let net = valid_network();
+    assert!(net.validate().is_ok(), "warnings never invalidate");
+    assert_eq!(
+        validation_warnings(&net),
+        vec![NetworkWarning::UnassignedTrips { schedule: "5-weekday".into(), trips: 1 }]
+    );
+    // No runcut at all: nothing is "unassigned" yet.
+    let mut no_blocks = net.clone();
+    no_blocks.blocks.clear();
+    assert!(validation_warnings(&no_blocks).is_empty());
+
+    // A pick effective after its calendars end (QAF-40): the fork
+    // governs a period it carries no service for.
+    let mut pick = no_blocks.clone();
+    pick.plan = transit_network::PlanMeta {
+        id: "spring".into(),
+        name: "Spring".into(),
+        effective_from: Some(date(2030, 1, 7)),
+    };
+    assert_eq!(
+        validation_warnings(&pick),
+        vec![NetworkWarning::NoServiceInPlanPeriod { plan: "spring".into(), effective_from: "2030-01-07".into() }]
+    );
+    // Inside the calendar, the pick runs: no warning.
+    pick.plan.effective_from = net.service_types["weekday"].rule.ranges.first().map(|r| r.start);
+    assert!(validation_warnings(&pick).is_empty(), "{:?}", validation_warnings(&pick));
 }

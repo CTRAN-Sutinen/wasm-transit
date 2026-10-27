@@ -81,11 +81,17 @@ pub enum Request {
     /// cap-network's import produces and cap-analysis consumes.
     LoadNetwork { network: Network },
     /// The stop list, name-sorted (the pickers' shape): every stop
-    /// with its walking-group structure. `limit` truncates after
-    /// the sort; `None` answers the whole list — a silently
-    /// truncated directory would be a lie.
+    /// with its walking-group structure. `query` narrows it the way
+    /// a picker's typing does — every whitespace-separated term must
+    /// appear in the name or the id, case-insensitive ("fisher
+    /// landing" finds Fisher's Landing and its bays). `limit`
+    /// truncates after the sort; `None` answers the whole list — a
+    /// silently truncated directory would be a lie.
     Stops {
         network_hash: String,
+        #[serde(default)]
+        #[ts(optional)]
+        query: Option<String>,
         #[serde(default)]
         limit: Option<u32>,
     },
@@ -158,12 +164,22 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .or_insert_with(|| Arc::new(network));
             Ok(Response::LoadNetwork { network_hash: hash })
         }
-        Request::Stops { network_hash, limit } => {
+        Request::Stops { network_hash, query, limit } => {
             let network = network_arc(&network_hash)?;
+            let terms: Vec<String> = query
+                .as_deref()
+                .unwrap_or("")
+                .split_whitespace()
+                .map(str::to_lowercase)
+                .collect();
             let mut stops: Vec<DirectoryStop> = network
                 .stops
                 .keys()
                 .filter_map(|id| directory_stop(&network, id))
+                .filter(|stop| {
+                    let haystack = format!("{} {}", stop.name, stop.stop_id).to_lowercase();
+                    terms.iter().all(|term| haystack.contains(term.as_str()))
+                })
                 .collect();
             // Name-sorted for pickers; the id breaks ties so the
             // order is total and deterministic.

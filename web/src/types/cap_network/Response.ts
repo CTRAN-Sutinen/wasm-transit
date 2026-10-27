@@ -3,6 +3,7 @@ import type { FeedSummary } from "../FeedSummary";
 import type { ImportNote } from "../ImportNote";
 import type { Network } from "../Network";
 import type { NetworkError } from "../NetworkError";
+import type { NetworkWarning } from "../NetworkWarning";
 import type { TripIdMap } from "../TripIdMap";
 
-export type Response = { "op": "load_feed", feed_hash: string, summary: FeedSummary, } | { "op": "import", network: Network, notes: Array<ImportNote>, network_hash: string, } | { "op": "load_document", network_hash: string, } | { "op": "validate", issues: Array<NetworkError>, } | { "op": "export", feed_hash: string, summary: FeedSummary, zip_b64: string, } | { "op": "trip_map", map: TripIdMap | null, };
+export type Response = { "op": "load_feed", feed_hash: string, summary: FeedSummary, } | { "op": "import", network: Network, notes: Array<ImportNote>, network_hash: string, } | { "op": "load_network", network_hash: string, } | { "op": "validate", issues: Array<NetworkError>, warnings: Array<NetworkWarning>, } | { "op": "export", feed_hash: string, summary: FeedSummary, zip_b64: string, } | { "op": "trip_map", map: TripIdMap | null, };

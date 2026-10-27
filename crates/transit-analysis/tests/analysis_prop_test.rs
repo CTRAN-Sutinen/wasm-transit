@@ -215,7 +215,9 @@ proptest! {
             let mut route_first: BTreeMap<String, u32> = BTreeMap::new();
             let mut route_last: BTreeMap<String, u32> = BTreeMap::new();
             let mut route_patterns: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-            let mut pattern_starts: BTreeMap<String, Vec<u32>> = BTreeMap::new();
+            let mut route_runtime: BTreeMap<String, u64> = BTreeMap::new();
+            // (route, stop) → departures (every visit but the trip's last).
+            let mut route_departures: BTreeMap<(String, String), Vec<u32>> = BTreeMap::new();
             let mut stop_oracles: BTreeMap<String, StopOracle> = BTreeMap::new();
             for trip in &materialized {
                 let route = net.patterns[&trip.pattern].route.clone();
@@ -225,7 +227,10 @@ proptest! {
                 route_first.entry(route.clone()).and_modify(|f| *f = (*f).min(trip.start_secs)).or_insert(trip.start_secs);
                 route_last.entry(route.clone()).and_modify(|l| *l = (*l).max(end.arrival_secs)).or_insert(end.arrival_secs);
                 route_patterns.entry(route.clone()).or_default().insert(trip.pattern.clone());
-                pattern_starts.entry(trip.pattern.clone()).or_default().push(trip.start_secs);
+                *route_runtime.entry(route.clone()).or_default() += end.arrival_secs.saturating_sub(trip.start_secs) as u64;
+                for st in trip.stop_times.iter().rev().skip(1) {
+                    route_departures.entry((route.clone(), st.stop.clone())).or_default().push(st.departure_secs);
+                }
                 first_start = Some(first_start.map_or(trip.start_secs, |f: u32| f.min(trip.start_secs)));
                 last_arrival = Some(last_arrival.map_or(end.arrival_secs, |l: u32| l.max(end.arrival_secs)));
                 runtime += end.arrival_secs.saturating_sub(trip.start_secs) as u64;
@@ -259,19 +264,27 @@ proptest! {
                 prop_assert_eq!(route.last_arrival_secs, Some(*route_last.get(&route.route_id).unwrap()));
                 let expected_patterns = route_patterns.get(&route.route_id).map(|s| s.len() as u32).unwrap_or(0);
                 prop_assert_eq!(route.patterns, expected_patterns, "route {} patterns", route.route_id);
-                // Typical headway: min over this route's patterns of
-                // (span / count - 1), patterns with 2+ starts only.
-                let mut typical: Option<u32> = None;
-                for (pattern, starts) in &pattern_starts {
-                    if net.patterns[pattern].route != route.route_id || starts.len() < 2 {
-                        continue;
+                prop_assert!(
+                    close(route.revenue_hours, route_runtime[&route.route_id] as f64 / 3600.0, 1e-9),
+                    "route {} revenue hours", route.route_id
+                );
+                // Typical headway: the busiest stop (most departures,
+                // lowest stop id on a tie) and the upper-median gap
+                // between its sorted departures.
+                let mut busiest: Option<(&String, usize)> = None;
+                for ((r, stop), times) in &route_departures {
+                    if r == &route.route_id && busiest.map_or(true, |(_, n)| times.len() > n) {
+                        busiest = Some((stop, times.len()));
                     }
-                    let mut sorted = starts.clone();
-                    sorted.sort();
-                    let span = sorted[sorted.len() - 1] - sorted[0];
-                    let headway = span / (sorted.len() as u32 - 1);
-                    typical = Some(typical.map_or(headway, |t: u32| t.min(headway)));
                 }
+                prop_assert_eq!(route.headway_stop.as_ref(), busiest.map(|(s, _)| s), "route {} headway stop", route.route_id);
+                let typical = busiest.and_then(|(stop, _)| {
+                    let mut times = route_departures[&(route.route_id.clone(), stop.clone())].clone();
+                    times.sort();
+                    let mut gaps: Vec<u32> = times.windows(2).map(|w| w[1] - w[0]).collect();
+                    gaps.sort();
+                    gaps.get(gaps.len() / 2).copied()
+                });
                 prop_assert_eq!(route.typical_headway_secs, typical, "route {} headway", route.route_id);
             }
 
@@ -305,9 +318,9 @@ proptest! {
             .expect("generated layer parses");
         let date = EPOCH + Duration::days(0); // a weekday: service 0 runs
 
-        let c50 = transit_analysis::coverage(&net, date, &layer, 50.0, 3600, 2);
-        let c200 = transit_analysis::coverage(&net, date, &layer, 200.0, 3600, 2);
-        let c1000 = transit_analysis::coverage(&net, date, &layer, 1000.0, 3600, 2);
+        let c50 = transit_analysis::coverage(&net, date, &layer, 50.0, 3600, 2, None);
+        let c200 = transit_analysis::coverage(&net, date, &layer, 200.0, 3600, 2, None);
+        let c1000 = transit_analysis::coverage(&net, date, &layer, 1000.0, 3600, 2, None);
 
         prop_assert!(c200.served_pop >= c50.served_pop - 1e-9, "served pop not monotone 50->200");
         prop_assert!(c1000.served_pop >= c200.served_pop - 1e-9, "served pop not monotone 200->1000");
@@ -333,11 +346,11 @@ proptest! {
     ) {
         let layer = transit_analysis::parse_pop_layer(&build_layer(&net, &points), Some("pop"))
             .expect("generated layer parses");
-        let per_type = transit_analysis::type_coverage(&net, &layer, 500.0, 3600, 2);
+        let per_type = transit_analysis::type_coverage(&net, &layer, 500.0, 3600, 2, None);
         for entry in &per_type {
             let date = NaiveDate::parse_from_str(&entry.date, "%Y-%m-%d")
                 .expect("representative dates are ISO");
-            let whole = transit_analysis::coverage(&net, date, &layer, 500.0, 3600, 2);
+            let whole = transit_analysis::coverage(&net, date, &layer, 500.0, 3600, 2, None);
             prop_assert!(close(entry.served_pct, whole.served_pct, 1e-9),
                 "served_pct disagrees for {}", entry.service_type);
             prop_assert!(close(entry.frequent_pct, whole.frequent_pct, 1e-9),

@@ -193,7 +193,9 @@ fn late_trips_rank_and_flag_the_dark_ones() {
     assert_eq!(trips[0].trip_id.as_deref(), Some("t10"));
     assert_eq!(trips[0].worst_delay_secs, 180);
     assert_eq!(trips[0].vehicle_label.as_deref(), Some("4201"));
+    assert_eq!(trips[0].vehicle_id.as_deref(), Some("4201"), "the internal id rides along with the label");
     assert!(trips[0].has_position, "the fixture's vehicle names t10");
+    assert_eq!(trips[0].position_trip_id.as_deref(), Some("t10"), "located on its own trip");
 
     // The DARK case: a synthetic payload whose trip update carries a
     // delay but no vehicle names it — the dispatcher's "delayed but
@@ -226,7 +228,7 @@ fn late_trips_rank_and_flag_the_dark_ones() {
     else { panic!("decode") };
     let late = cap_rt::dispatch(cap_rt::Request::LateTrips {
         feed_hash: feed_hash.clone(),
-        rt_hash: dark_hash,
+        rt_hash: dark_hash.clone(),
         min_delay_secs: 60,
         vp_hash: None,
     })
@@ -236,6 +238,25 @@ fn late_trips_rank_and_flag_the_dark_ones() {
     assert_eq!(trips[0].trip_id.as_deref(), Some("t20"));
     assert!(!trips[0].has_position, "a delay with no position is the dark signal");
     assert_eq!(trips[0].vehicle_label, None);
+    assert_eq!(trips[0].vehicle_id, None);
+
+    // The BLOCK law (found dogfooding C-TRAN live, QAF-30): t20's
+    // delay is propagated from t10, the trip before it on block B1 —
+    // and the positions snapshot shows bus 4201 running t10. The bus
+    // is out, finishing the previous trip: late, not dark.
+    let late = cap_rt::dispatch(cap_rt::Request::LateTrips {
+        feed_hash: feed_hash.clone(),
+        rt_hash: dark_hash.clone(),
+        min_delay_secs: 60,
+        vp_hash: Some(rt_hash.clone()),
+    })
+    .expect("late_trips");
+    let cap_rt::Response::LateTrips { trips } = late else { panic!("late_trips") };
+    assert_eq!(trips[0].trip_id.as_deref(), Some("t20"));
+    assert_eq!(trips[0].block_id.as_deref(), Some("B1"));
+    assert!(trips[0].has_position, "the block's bus is visible on the trip before: not dark");
+    assert_eq!(trips[0].position_trip_id.as_deref(), Some("t10"), "the trip the bus is actually on");
+    assert_eq!(trips[0].vehicle_id.as_deref(), Some("4201"));
 
     // The SPLIT-FEED law (found dogfooding C-TRAN live: TripUpdates
     // and VehiclePositions are SEPARATE feeds — positions looked up

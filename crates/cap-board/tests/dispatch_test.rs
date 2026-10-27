@@ -132,11 +132,13 @@ fn the_board_is_the_materialized_day_model_vocabulary() {
     assert!(reports[0].valid, "the fixture diversion is valid against the network: {reports:?}");
     assert!(reports[0].affected_trips >= 1, "the report counts the touched trips");
 
-    let rows = departures(&network_hash, Some(edits_hash), "B");
-    let diverted = rows.iter().find(|r| r.schedule == schedule_id).expect("the diverted trip still serves B");
-    assert_eq!(diverted.departure_secs, 8 * 3600 + 600 + 300, "t10 at B: 08:15 (+300)");
-    let other = rows.iter().find(|r| r.schedule != schedule_id && r.route == "20").expect("t20 at B");
-    assert_eq!(other.departure_secs, 8 * 3600 + 1800, "route 20 untouched");
+    // Every fixture trip through B ENDS there: an arrival is not a
+    // departure, so B's board is empty with or without the edit.
+    assert!(
+        departures(&network_hash, Some(edits_hash), "B").is_empty(),
+        "trips terminating at B never appear on B's board"
+    );
+    assert!(departures(&network_hash, None, "B").is_empty());
 
     // The skipped stop loses its service — the honest empty board.
     assert!(departures(&network_hash, None, "C").len() >= 1, "schedule-only, C is served");
@@ -165,8 +167,11 @@ fn the_station_board_pools_the_walking_group() {
         Response::StationDepartures { departures } => departures,
         _ => panic!("station_departures"),
     };
-    assert_eq!(pooled.len(), 4, "t40/t41 across both bays");
-    assert!(pooled.iter().all(|d| d.stop == "SA" || d.stop == "SB"), "rows name their bay");
+    // t40 departs SA (ends SB), t41 departs SB (ends SA): one
+    // departure per bay — the terminating visits are not rows.
+    assert_eq!(pooled.len(), 2, "t40 at SA, t41 at SB: {pooled:?}");
+    let bays: Vec<&str> = pooled.iter().map(|d| d.stop.as_str()).collect();
+    assert_eq!(bays, vec!["SA", "SB"], "rows name their bay, soonest first");
 
     // Any member answers the same board.
     let from_bay = match dispatch(Request::StationDepartures {

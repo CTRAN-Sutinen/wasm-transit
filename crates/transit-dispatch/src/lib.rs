@@ -250,7 +250,10 @@ fn pattern_matches(pattern: &transit_network::Pattern, d: &Diversion) -> bool {
 
 /// The board at one stop: every visit the day's (patched) trips make
 /// to that stop, from `from_secs` on, soonest first. A stop a trip
-/// passes twice appears twice — both visits are service.
+/// passes twice appears twice — both visits are service. A trip's
+/// FINAL visit is an arrival, not a departure: a bus ending its trip
+/// here does not leave, so it is not on the board (a loop's first
+/// visit to its terminal still departs).
 pub fn board(
     network: &Network,
     day: &[MaterializedTrip],
@@ -288,7 +291,9 @@ fn board_over(
 ) -> Vec<BoardDeparture> {
     let mut rows = Vec::new();
     for trip in day {
-        for st in &trip.stop_times {
+        // The last visit terminates the trip — not a departure.
+        let departing = trip.stop_times.len().saturating_sub(1);
+        for st in &trip.stop_times[..departing] {
             if !stops.iter().any(|s| s == &st.stop) || st.departure_secs < from_secs {
                 continue;
             }

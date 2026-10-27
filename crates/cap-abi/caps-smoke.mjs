@@ -231,6 +231,21 @@ assert(
   coverage.coverage[0].served_pct === 50,
   `half the layer is served (one point at a stop, one far away): ${coverage.coverage[0].served_pct}`,
 );
+// The windowed form crosses the seam (QAF-42): frequency judged as
+// the worst wait inside a window; the whole day is the widest one.
+const windowed = analysis.invoke({
+  op: "type_coverage",
+  network_hash: loadedNet.network_hash,
+  layer_hash: layer.layer_hash,
+  radius_m: 500,
+  frequent_secs: 3600,
+  min_departures: 2,
+  window: { start_secs: 0, end_secs: 86400 },
+});
+assert(
+  windowed.coverage.length === 1 && windowed.coverage[0].served_pct === 50,
+  "the window changes frequency, never what is served",
+);
 const unknownNet = analysis.raw({ op: "network_stats", network_hash: "sha256:missing", date: "2026-01-05" });
 assert(unknownNet.error && unknownNet.error.includes("unknown network"), "unknown hashes error, never panic");
 
@@ -261,10 +276,10 @@ assert(
 );
 const validated = network.invoke({ op: "validate", network_hash: imported.network_hash });
 assert(validated.issues.length === 0, "the derived document validates clean");
-const loadedDoc = network.invoke({ op: "load_document", network: imported.network });
+const loadedDoc = network.invoke({ op: "load_network", network: imported.network });
 assert(
   loadedDoc.network_hash === imported.network_hash,
-  "load_document is idempotent by content hash",
+  "load_network is idempotent by content hash",
 );
 const exported = network.invoke({ op: "export", network_hash: imported.network_hash });
 const zip = Buffer.from(exported.zip_b64, "base64");
@@ -287,7 +302,7 @@ assert(
 // Broken documents: validate reports every issue, export refuses.
 const broken = JSON.parse(JSON.stringify(imported.network));
 broken.patterns[Object.keys(broken.patterns)[0]].stops[1].stop = "ghost";
-const brokenHash = network.invoke({ op: "load_document", network: broken }).network_hash;
+const brokenHash = network.invoke({ op: "load_network", network: broken }).network_hash;
 const brokenIssues = network.invoke({ op: "validate", network_hash: brokenHash });
 assert(brokenIssues.issues.length > 0, "a referential break is reported");
 const refused = network.raw({ op: "export", network_hash: brokenHash });
@@ -472,10 +487,21 @@ const stationRows = board.invoke({
   limit: 10,
 });
 assert(
-  stationRows.departures.length === 4 &&
-    stationRows.departures.every((r) => r.stop === "SA" || r.stop === "SB"),
-  "the station pin answers its bays' pooled board, rows tagged with the bay",
+  stationRows.departures.length === 2 &&
+    stationRows.departures.map((r) => r.stop).join() === "SA,SB",
+  "the station pin answers its bays' pooled board (t40 leaves SA, t41 leaves SB), rows tagged with the bay",
 );
+// An arrival is not a departure: every fixture trip through B ends
+// there, so B's board is empty (QAF-29).
+const atB = board.invoke({
+  op: "departures",
+  network_hash: loadedBoardNet.network_hash,
+  stop_id: "B",
+  date: DATE,
+  from_secs: 0,
+  limit: 10,
+});
+assert(atB.departures.length === 0, "trips terminating at B never appear on B's board");
 
 // The personal board — the watchlist document, migrated with its
 // loss reported, both versions querying over the network.
@@ -843,5 +869,33 @@ assert(
 );
 const garbagePlans = plans.raw({ op: "resolve", plans: [], date: "not a date" });
 assert(garbagePlans.error && garbagePlans.error.includes("invalid date"), "garbage dates are an error outcome, never a trap");
+
+// The authoring flow — what does this network become after these
+// edits? The imported document stamped as a pick and renamed in one
+// atomic change; the answer is a NEW identity every module agrees on
+// (the codec module re-registers the answered document and returns
+// the same hash), and a refused removal names its edit.
+assert(byId.author, "manifest advertises the author capability");
+const author = shell(loadModule(byId.author));
+const authorNet = author.invoke({ op: "load_network", network: imported.network });
+assert(authorNet.network_hash === imported.network_hash, "author agrees on the imported document's identity");
+const changed = author.invoke({
+  op: "apply",
+  network_hash: authorNet.network_hash,
+  edits: [
+    { edit: "set_plan", plan: { id: "fall", name: "Fall 2026", effective_from: DATE } },
+    { edit: "set_name", name: "Fall pick" },
+  ],
+});
+assert(changed.network_hash !== authorNet.network_hash, "a change is a new document");
+assert(changed.network.plan.id === "fall" && changed.network.name === "Fall pick", "the edits applied in order");
+assert(changed.issues.length === 0, "the stamped pick stays valid");
+const recount = network.invoke({ op: "load_network", network: changed.network });
+assert(recount.network_hash === changed.network_hash, "the codec module agrees on the authored identity (one document, one truth)");
+const firstStop = Object.keys(imported.network.stops).find((id) =>
+  Object.values(imported.network.patterns).some((p) => p.stops.some((s) => s.stop === id)),
+);
+const refusedEdit = author.raw({ op: "apply", network_hash: authorNet.network_hash, edits: [{ edit: "remove_stop", id: firstStop }] });
+assert(refusedEdit.error && refusedEdit.error.includes("edit 0"), "a referenced stop is never hard-deleted out from under a pattern");
 
 console.log("capability modules: ABI smoke ok");

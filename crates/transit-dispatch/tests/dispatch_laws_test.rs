@@ -232,13 +232,25 @@ fn boards_read_the_patched_day() {
     let records = vec![record(EditStatus::Accepted, 300)];
     let day = effective_day(&net, date(), &records).unwrap();
 
-    // B's board: the diverted trip runs 5 minutes late.
+    // B's board: route 10 ENDS at B (an arrival, never a departure),
+    // route 20 passes through on time.
     let rows = board(&net, &day, "B", 0, 10);
     let by_route: std::collections::BTreeMap<&str, u32> =
         rows.iter().map(|r| (r.route.as_str(), r.departure_secs)).collect();
-    assert_eq!(by_route.get("10"), Some(&(28_800 + 1200 + 300)), "the diverted trip at B");
+    assert_eq!(by_route.get("10"), None, "a trip terminating at B does not depart B");
     assert_eq!(by_route.get("20"), Some(&(30_600 + 600)), "route 20 on time");
     assert_eq!(by_route.get("40"), None, "the shuttle never serves B");
+
+    // A delay-only diversion (anchors A..C, nothing skipped): C is a
+    // departure for route 10, so the board shows it 5 minutes late.
+    let delay = EditRecord {
+        diversion: Diversion { last_kept_stop: "C".into(), skipped_stops: vec![], ..diversion(300) },
+        ..record(EditStatus::Accepted, 300)
+    };
+    let late_day = effective_day(&net, date(), &[delay]).unwrap();
+    let at_c_late = board(&net, &late_day, "C", 0, 10);
+    let r10 = at_c_late.iter().find(|r| r.route == "10").expect("route 10 departs C");
+    assert_eq!(r10.departure_secs, 28_800 + 600 + 300, "the board reads the patched day");
 
     // C loses the diverted route's service — the skipped stop shows
     // its emptiness (the diversion law). Route 20 still starts
@@ -252,7 +264,7 @@ fn boards_read_the_patched_day() {
 
     // The row speaks model vocabulary: trip identity, route name,
     // concrete stop, destination.
-    let row = &rows[0];
+    let row = &board(&net, &day, "A", 0, 10)[0];
     assert_eq!(row.schedule, "s10");
     assert_eq!(row.start_secs, 28_800);
     assert_eq!(row.route_name, "10");
@@ -260,7 +272,41 @@ fn boards_read_the_patched_day() {
 
     // from_secs windows the board; limit truncates it.
     assert!(board(&net, &day, "B", 40_000, 10).is_empty());
-    assert_eq!(board(&net, &day, "B", 0, 1).len(), 1);
+    assert_eq!(board(&net, &day, "A", 0, 1).len(), 1);
+}
+
+#[test]
+fn a_terminating_visit_is_not_a_departure() {
+    // Every board row is a visit the trip LEAVES from: no row is
+    // ever the trip's final stop time, at any stop of the network.
+    let net = network();
+    let day = transit_network::materialize(&net, date()).unwrap();
+    for stop in net.stops.keys() {
+        for row in board(&net, &day, stop, 0, 100) {
+            let trip = day.iter().find(|t| t.schedule == row.schedule && t.start_secs == row.start_secs).unwrap();
+            let last = trip.stop_times.last().unwrap();
+            assert!(
+                !(last.stop == row.stop && last.departure_secs == row.departure_secs),
+                "row {row:?} is the trip's terminating visit"
+            );
+        }
+    }
+
+    // A loop (first stop == last stop): the first visit departs, the
+    // closing visit arrives — exactly one row at the terminal.
+    let mut looped = net.clone();
+    looped.patterns.insert(
+        "p50".to_string(),
+        pattern("10", vec![timepoint("A", 0.0), timepoint("C", 800.0), timepoint("A", 1600.0)], vec![0, 400, 800]),
+    );
+    looped.schedules.insert(
+        "s50".to_string(),
+        PatternSchedule { pattern: "p50".into(), service_type: "WK".into(), schedule: Schedule::ExactTimes { starts: vec![36_000] } },
+    );
+    let day = transit_network::materialize(&looped, date()).unwrap();
+    let loop_rows: Vec<_> = board(&looped, &day, "A", 0, 100).into_iter().filter(|r| r.schedule == "s50").collect();
+    assert_eq!(loop_rows.len(), 1, "the loop departs its terminal once: {loop_rows:?}");
+    assert_eq!(loop_rows[0].departure_secs, 36_000);
 }
 
 #[test]
@@ -273,8 +319,8 @@ fn the_station_board_pools_the_walking_group() {
     let from_pin = station_board(&net, &day, "STN", 0, 10);
     let from_bay = station_board(&net, &day, "SA", 0, 10);
     assert_eq!(from_pin, from_bay, "every member of the group answers the same board");
-    assert_eq!(from_pin.len(), 4, "two shuttle trips, two bays each");
-    assert!(from_pin.iter().all(|r| r.stop == "SA" || r.stop == "SB"), "rows name their bay");
+    assert_eq!(from_pin.len(), 2, "two shuttle trips, each departing bay A (bay B is where they end)");
+    assert!(from_pin.iter().all(|r| r.stop == "SA"), "rows name their bay: {from_pin:?}");
     // Sorted by time across bays.
     let times: Vec<u32> = from_pin.iter().map(|r| r.departure_secs).collect();
     let mut sorted = times.clone();

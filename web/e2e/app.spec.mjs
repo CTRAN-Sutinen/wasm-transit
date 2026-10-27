@@ -277,11 +277,11 @@ test("diversion reroutes the schedule, the board and the planner", async ({ page
   const rows = page.locator("section:has(h2:text('Departures')) tbody tr");
   await expect(rows).toHaveCount(0);
 
-  // B's board shifts: t10 08:15, t30 08:55 (t12/t20 untouched).
+  // B is where every fixture trip ENDS: an arrival is not a
+  // departure, so B's board stays empty — the diverted arrival
+  // (08:15) shows in the planner below, never as a bus leaving B.
   await comboPick(page, "Stop", "Main & 2nd");
-  await expect(page.getByText("08:15", { exact: true })).toBeVisible();
-  await expect(page.getByText("08:55", { exact: true })).toBeVisible();
-  await expect(page.getByText("08:10", { exact: true })).toHaveCount(0);
+  await expect(rows).toHaveCount(0);
 
   // The planner rides the diverted schedule and shows the delta.
   await comboPick(page, "From", "Main & 1st");
@@ -365,7 +365,7 @@ test("comboboxes search, and blocks scope to the service day", async ({ page }) 
   await stopBox.click();
   await stopBox.fill("Main Station");
   await page.getByRole("option", { name: /Main Station\s*STN/ }).click();
-  await expect(rows).toHaveCount(4, { timeout: 10_000 }); // t40 + t41, both bays
+  await expect(rows).toHaveCount(2, { timeout: 10_000 }); // t40 leaves SA, t41 leaves SB
   await expect(page.getByText(/Station board/)).toBeVisible();
   await expect(page.locator("section:has(h2:text('Departures'))")).toContainText("SA");
   await expect(page.locator("section:has(h2:text('Departures'))")).toContainText("SB");
@@ -878,9 +878,14 @@ test("planner authors a network and the rider uses it", async ({ page }) => {
   await page.getByRole("button", { name: "Open schedule WK:pat-10-0-0" }).click();
   await expect(page.getByRole("heading", { name: /Schedule/ })).toBeVisible();
 
-  // Move route 10's 08:00 trip (t10) five minutes later.
+  // Move route 10's 08:00 trip (t10) five minutes EARLIER. t10 is in
+  // block B1 with a 10-minute layover before t20 (08:20): later would
+  // eat the layover (validate reports layover_infeasible — the old
+  // validator missed it because the block kept a stale reference,
+  // QAF-1); earlier keeps the runcut feasible, and the block's
+  // reference moves with the trip.
   const firstStart = page.locator(".trip-start").first();
-  await firstStart.fill("08:05:00");
+  await firstStart.fill("07:55:00");
   await firstStart.blur();
 
   // Materialize from the Document screen: the app's active feed is
@@ -890,19 +895,19 @@ test("planner authors a network and the rider uses it", async ({ page }) => {
   await page.getByRole("button", { name: "Load into app" }).click();
   await expect(page.getByText(/Materialized/)).toBeVisible();
 
-  // The rider sees the authored schedule: the 08:05 departure at A.
+  // The rider sees the authored schedule: the 07:55 departure at A.
   await page.evaluate(() => window.__setNow({ date: "2026-10-23", secs: 27000 }));
   await switchPersona(page, "Rider");
   await comboPick(page, "Stop", "Main & 1st");
-  await expect(page.getByText("08:05", { exact: true })).toBeVisible();
+  await expect(page.getByText("07:55", { exact: true })).toBeVisible();
 
-  // And rides it: A -> B boards the 08:05 trip, arrives 08:15 (the
+  // And rides it: A -> B boards the 07:55 trip, arrives 08:05 (the
   // authored 10-minute run).
   await comboPick(page, "From", "Main & 1st");
   await comboPick(page, "To", "Main & 2nd");
   await page.locator("#plan-time").fill("07:30");
   await page.getByRole("button", { name: "Plan trip" }).click();
-  await expect(page.locator(".plan-overlay").getByText("08:15", { exact: true })).toBeVisible();
+  await expect(page.locator(".plan-overlay").getByText("08:05", { exact: true })).toBeVisible();
 });
 
 test("a malformed saved record cannot wedge apply and retire", async ({ page }) => {

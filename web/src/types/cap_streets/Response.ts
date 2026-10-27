@@ -2,4 +2,4 @@
 import type { StreetPoint } from "../StreetPoint";
 import type { StreetPosition } from "../StreetPosition";
 
-export type Response = { "op": "load_streets", streets_hash: string, segments: number, nodes: number, } | { "op": "snap", position: StreetPosition | null, } | { "op": "route", points: Array<StreetPoint>, };
+export type Response = { "op": "load_streets", streets_hash: string, segments: number, nodes: number, } | { "op": "snap", position: StreetPosition | null, } | { "op": "route", points: Array<StreetPoint>, length_m: number | null, };

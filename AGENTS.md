@@ -62,7 +62,10 @@ just build                 # frontend (type-checks first — the TS layer is a g
 just caps                  # capability modules + manifest (+ cap_sync.wasm for the server)
 just registry              # publish the capability registry (gates → blobs + evidence)
 node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op ...
-                           # $refs ($load.x, $op.x, $N.path) + $TODAY/$NOW_SECS;
+                           # steps run in command-line order; --cap ID switches
+                           # capability mid-session (documents cross by $ref);
+                           # --as NAME names a result; $refs ($name.x, $load.x,
+                           # $op.x, $N.path) + $TODAY/$NOW_SECS (a number);
                            # --load [N:]FILE for bulk ops; --op @FILE for big JSON
 just test                  # host-side tests (Rust + smokes + runner gates + Go -race)
 just e2e                   # browser e2e (builds first)
@@ -88,7 +91,8 @@ the monolith inside a module.
 
 ```
 transit-core     GTFS codec substrate (parse, calendar, deterministic zip write)
-transit-network  THE authored network model — trips are derived (materialize)
+transit-network  THE authored network model — trips are derived (materialize);
+                 authoring edits answer the next document (apply_edits)
 transit-codec   the network codec: GTFS ⇄ network document (import/export)
 transit-router  RAPTOR earliest-arrival planning over the network model's materialized day
 transit-analysis planner analysis library (stats, service types, coverage)
@@ -99,7 +103,7 @@ transit-sync     THE sync document (EditRecord, Diversion, merge — pure)
 transit-plans    THE service-plan chain (resolve, periods, validity — pure, derived)
 transit-streets  street graph for detour authoring (snap, route)
 cap-abi          the capability seam (ABI macro, manifest, validator, gen-manifest)
-cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-plans
+cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-plans cap-author
                  the capability modules (docs/ARCHITECTURE.md, bus section)
 server/          Go + wazero host over cap-sync — scaffolding, never a domain decision
 web/             Svelte 5 + Vite frontend (docs/ARCHITECTURE.md, web section)

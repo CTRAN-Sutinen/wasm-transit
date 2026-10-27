@@ -36,7 +36,14 @@ transit-network The authored network model (planner authority):
                 Every document is a SERVICE PLAN (`PlanMeta`: id,
                 name, effective_from) — agencies implement a few
                 picks a year at defined dates; empty identity =
-                unversioned (a fresh import).
+                unversioned (a fresh import). AUTHORING lives here
+                too (`edit.rs`): typed, atomic `NetworkEdit`s
+                answer the NEXT document (never mutating the last);
+                removals refuse while referenced. Validation
+                answers issues (gate: a block trip its schedule
+                does not run is one) and WARNINGS that never gate
+                (unassigned trips; a pick with no service in its
+                first week).
 transit-router  RAPTOR earliest-arrival planning over the network
                 model's materialized day (patterns grouped by actual
                 stop sequence — an edited trip rides its own
@@ -111,6 +118,14 @@ cap-plans       The plan-chain capability: which service plan
                 the plan set's metadata (transit-plans is the
                 library). Pure ops, no registries: the host owns
                 the plan set and pushes its metadata per call.
+cap-author      The authoring capability: what does this network
+                become after these edits? apply (typed edits,
+                atomic) answers the next document under its hash,
+                registered for the next change, with its issues
+                and warnings. transit-network's edit module is the
+                library. On the bus for every host; the browser's
+                planner still mutates host-side (web/src/planner.ts)
+                until it rewires onto this module.
 
 Every module is the raw rustc output with the same four flat
 exports (no wasm-bindgen — do not reintroduce host glue).
@@ -219,8 +234,10 @@ cap-analysis    The analysis capability: planner numbers (stats,
 cap-network     The network codec capability: load_feed (zip bytes →
                 content-hash feed registry), import (the planner's
                 bootstrap — the derived document registers itself
-                and its hash is in the response), load_document,
-                validate (the authoring feedback loop), export (the
+                and its hash is in the response), load_network (the
+                same registration name every model-side module uses),
+                validate (the authoring feedback loop: issues that
+                gate export, warnings that never gate), export (the
                 publish path — deterministic GTFS zip bytes under
                 their content hash, base64 across the JSON seam), and
                 trip_map (the import's trip-id map: derived
@@ -239,7 +256,11 @@ cap-rt          The realtime capability: decode — a GTFS-rt protobuf
                 trip_progress (one trip's scheduled/delay/predicted
                 board), late_trips (ranked, with the DELAYED-BUT-
                 DARK flag and vp_hash for agencies that serve the
-                two feeds separately — C-TRAN does).
+                two feeds separately — C-TRAN does). Dark is judged
+                per BLOCK: a delay propagated to a block's next trip
+                while its bus runs the trip before is a located
+                vehicle (position_trip_id names the trip it is on;
+                vehicle_id rides beside the label).
 cap-board       The board capability — ONE QUESTION: when does
                 service leave this stop? (at a stop, a station's
                 pooled bays, or a personal saved set — the WATCHLIST
@@ -249,7 +270,8 @@ cap-board       The board capability — ONE QUESTION: when does
                 (validated per record against the network, invalid
                 records REPORTED never rejected) then departures /
                 station_departures / load_watchlist /
-                migrate_watchlist / watchlist_board over ONE
+                migrate_watchlist / watchlist_board (a trip's FINAL
+                visit is an arrival, never a row) over ONE
                 MATERIALIZED DAY (materialize(net, date), patched
                 with the in-force edits — no derived registry, no
                 GTFS expansion, no effective cache; a day is computed
@@ -289,7 +311,8 @@ cap-calendar    The calendar capability — ONE QUESTION: which
 cap-directory   The directory capability — ONE QUESTION: what
                 exists in the network? The stop list (name-sorted,
                 with the walking-group structure the station board
-                keys on), the names join (stops_by_ids, moved from
+                keys on; an optional query narrows it the way a
+                picker's typing does), the names join (stops_by_ids, moved from
                 cap-gtfs — one question, one answer), the route list
                 (the model's closed mode set), and one route's
                 PATTERNS with their ordered stops — the model's
@@ -309,9 +332,10 @@ cap-streets    The street-graph capability: the detour editor's need,
                 the same bytes are the same graph); snap answers the
                 nearest street position (the graph address a detour
                 waypoint commits to); route answers the street
-                geometry between two positions (shortest path; empty
-                on disconnected parts — the caller falls back to a
-                straight line). The domain code lives in the shared
+                geometry between two positions (shortest path,
+                starting after `from` — detour legs chain — with
+                its length along the graph; empty on disconnected
+                parts — the caller falls back to a straight line). The domain code lives in the shared
                 transit-streets library. Reference data the HOST
                 owns, re-imported per
                 session; the module writes nothing.
@@ -327,9 +351,9 @@ cap-streets    The street-graph capability: the detour editor's need,
   identity (JS JSON.stringify differs from the module's canonical
   serde bytes in float formatting; query with the hash the module
   returned).
-- One Request enum per capability is the whole surface (only
-  planners write networks — readers have no authoring ops by
-  construction).
+- One Request enum per capability is the whole surface (networks
+  are minted only by cap-author's apply and cap-network's import —
+  readers have no authoring ops by construction).
 - `#[no_mangle]` ABI exports collide if one binary links two cap
   crates (tests assert against the hash formula instead); cap
   crates need `crate-type = ["cdylib", "rlib"]` for native tests to
@@ -346,6 +370,12 @@ context, which gates ran at which commit) + a pointer. It is the
 artifact agents and humans pull SANDBOXED COMPUTE from —
 `tools/caps-run.mjs` verifies blob bytes against the pinned hash and
 runs ops behind a worker-termination wall-clock guard (`--timeout`).
+A session runs its steps in command-line order and may span
+capabilities (`--cap` switches; each module verified and
+instantiated once): documents cross between modules BY REFERENCE
+(`"network":"$net.network"`), the way a host hands the same bytes to
+each module, and `--as` names results so references survive
+reordering. Sessions do not persist — a later session re-imports.
 Registry records and the browser manifest are BOTH generated by
 `cargo run -p cap-abi --bin gen-manifest` — one source of contracts,
 two surfaces. `just test` gates the runner itself (the fixture feed

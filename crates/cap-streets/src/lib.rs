@@ -38,9 +38,11 @@ pub enum Request {
     /// detour waypoint commits to. Null when no street is nearby.
     Snap { streets_hash: String, lat: f64, lon: f64 },
     /// The street geometry between two positions: the shortest path
-    /// along the graph, as points ending exactly at `to`. Empty
-    /// when the positions sit on disconnected parts of the network
-    /// — the caller falls back to a straight line.
+    /// along the graph, as points ending exactly at `to` and starting
+    /// AFTER `from` (a detour chains legs: each leg's start is the
+    /// previous leg's committed end — prepend `from` for a standalone
+    /// trace). Empty when the positions sit on disconnected parts of
+    /// the network — the caller falls back to a straight line.
     Route {
         streets_hash: String,
         from: StreetPosition,
@@ -54,7 +56,9 @@ pub enum Request {
 pub enum Response {
     LoadStreets { streets_hash: String, segments: u32, nodes: u32 },
     Snap { position: Option<StreetPosition> },
-    Route { points: Vec<StreetPoint> },
+    /// `length_m`: the path's length along the graph from `from` to
+    /// `to` — null when no path exists.
+    Route { points: Vec<StreetPoint>, length_m: Option<f64> },
 }
 
 /// Street graphs by content hash of the GeoJSON bytes — the host
@@ -113,7 +117,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::Route { streets_hash, from, to } => {
             let net = graph_arc(&streets_hash)?;
-            Ok(Response::Route { points: net.route(from, to).unwrap_or_default() })
+            Ok(match net.route_with_length(from, to) {
+                Some((points, length)) => Response::Route { points, length_m: Some(length) },
+                None => Response::Route { points: vec![], length_m: None },
+            })
         }
     }
 }

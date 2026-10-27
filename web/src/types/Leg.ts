@@ -4,7 +4,7 @@
  * One leg of a planned itinerary. Internally tagged for JSON
  * serialization: `{"type": "transit", ...}` / `{"type": "walk", ...}`.
  */
-export type Leg = { "type": "walk", from_stop_id: string, from_stop_name: string, to_stop_id: string, to_stop_name: string, walk_secs: number, } | { "type": "transit", 
+export type Leg = { "type": "walk", from_stop_id: string, from_stop_name: string, to_stop_id: string, to_stop_name: string, walk_secs: number, via_stop_ids: Array<string>, } | { "type": "transit", 
 /**
  * The derived trip's identity: its schedule and start. The
  * model names no trips; (schedule, start_secs) is the key

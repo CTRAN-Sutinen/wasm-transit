@@ -5,7 +5,9 @@
 
 use std::io::Write;
 
-use transit_analysis::{network_stats, parse_pop_layer, service_type_detail, service_type_overview, type_coverage};
+use transit_analysis::{
+    network_stats, parse_pop_layer, service_type_detail, service_type_overview, type_coverage, CoverageWindow,
+};
 
 const DATE: &str = "2026-10-23"; // Friday: WK + HOL both run
 
@@ -95,9 +97,16 @@ fn stats_report_route_and_stop_activity() {
     assert_eq!(route.stops, 3);
     assert_eq!(route.first_start_secs, Some(6 * 3600));
     assert_eq!(route.last_arrival_secs, Some(9 * 3600 + 10 * 60));
-    // A→C starts 06:00/08:00/08:22 → (30120-21600)/2 = 4260 s; the
-    // A→B pattern has one trip, no headway signal.
-    assert_eq!(route.typical_headway_secs, Some(4260));
+    // The busiest stop is A (06:00/08:00/08:22/09:00 — t7's A→B
+    // departs A too; B is only ever passed or ended at). Gaps 7200,
+    // 1320, 2280 → the median 2280 s (38 min). The old per-pattern
+    // span average said 4260 s, and a clustered pattern could say
+    // anything lower — QAF-41.
+    assert_eq!(route.headway_stop.as_deref(), Some("A"));
+    assert_eq!(route.typical_headway_secs, Some(2280));
+    // The route's own revenue hours: all of the day's runtime here
+    // (30 + 20 + 20 + 10 min = 4200 s), the per-route cost basis.
+    assert!((route.revenue_hours - 4200.0 / 3600.0).abs() < 1e-9);
 
     let by_id = |id: &str| stats.stops.iter().find(|s| s.stop_id == id).expect(id);
     let a = by_id("A");
@@ -131,7 +140,7 @@ fn service_type_ops_expose_the_design_axis() {
     let detail = service_type_detail(&network, "WK").expect("detail");
     assert_eq!(detail.trips, 4);
     assert_eq!(detail.routes.len(), 1, "route 10 runs; zero-trip routes filtered out");
-    assert_eq!(detail.routes[0].typical_headway_secs, Some(4260));
+    assert_eq!(detail.routes[0].typical_headway_secs, Some(2280));
     assert_eq!(detail.stops.len(), 3, "A, B and C are all served");
     let schedule_trips: std::collections::BTreeMap<&str, u32> = detail
         .schedules
@@ -143,9 +152,36 @@ fn service_type_ops_expose_the_design_axis() {
 
     // Coverage per service type: same layer, WK on its day.
     let layer = parse_pop_layer(&pop_layer_geojson(), None).expect("layer parses");
-    let coverage = type_coverage(&network, &layer, 400.0, 3600, 4);
+    let coverage = type_coverage(&network, &layer, 400.0, 3600, 4, None);
     assert_eq!(coverage.len(), 1);
     assert_eq!(coverage[0].service_type, "WK");
     assert!((coverage[0].served_pct - 150.0 / 180.0 * 100.0).abs() < 1e-6);
     assert!((coverage[0].frequent_pct - 100.0 / 180.0 * 100.0).abs() < 1e-6);
+}
+
+#[test]
+fn frequency_in_a_window_is_the_worst_wait() {
+    // QAF-42: the whole-day average hides a frequent window. Stop A
+    // departs 06:00, 08:00, 08:22, 09:00 — a 60-min average, so a
+    // 40-min frequency test fails on the day; between 08:00 and 09:00
+    // nobody waits more than 38 minutes, so it passes in that window.
+    // The window counts its edges: from 07:00 the first wait is 60.
+    let network = import_production();
+    let layer = parse_pop_layer(&pop_layer_geojson(), None).expect("layer parses");
+    let frequent_pct = |window: Option<CoverageWindow>| {
+        type_coverage(&network, &layer, 400.0, 2400, 2, window)[0].frequent_pct
+    };
+    let on_a = 100.0 / 180.0 * 100.0;
+    assert_eq!(frequent_pct(None), 0.0, "the whole-day average (60 min) is not 40-min frequent");
+    let hour = CoverageWindow { start_secs: 8 * 3600, end_secs: 9 * 3600 };
+    assert!((frequent_pct(Some(hour)) - on_a).abs() < 1e-6, "08:00–09:00: worst wait 38 min ≤ 40");
+    let wider = CoverageWindow { start_secs: 7 * 3600, end_secs: 9 * 3600 };
+    assert_eq!(frequent_pct(Some(wider)), 0.0, "07:00–09:00: a rider at 07:00 waits 60 min");
+
+    // C is only ever a trip's last stop: served (riders alight), but
+    // never frequent — an arrival is not a departure.
+    let all_day = CoverageWindow { start_secs: 0, end_secs: 30 * 3600 };
+    let c = type_coverage(&network, &layer, 400.0, 30 * 3600, 1, Some(all_day));
+    assert!((c[0].served_pct - 150.0 / 180.0 * 100.0).abs() < 1e-6, "A and C both served");
+    assert!((c[0].frequent_pct - on_a).abs() < 1e-6, "only A departs anything");
 }

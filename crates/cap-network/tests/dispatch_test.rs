@@ -70,9 +70,9 @@ fn trip_map_joins_the_agency_ids_to_the_derived_trips() {
     // An AUTHORED network (loaded, not imported) has no map — the
     // honest None, never a silent empty one.
     let doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
-    let authored = match dispatch(Request::LoadDocument { network: doc }).unwrap() {
-        Response::LoadDocument { network_hash } => network_hash,
-        _ => panic!("load_document"),
+    let authored = match dispatch(Request::LoadNetwork { network: doc }).unwrap() {
+        Response::LoadNetwork { network_hash } => network_hash,
+        _ => panic!("load_network"),
     };
     match dispatch(Request::TripMap { network_hash: authored }).unwrap() {
         Response::TripMap { map: None } => {}
@@ -107,21 +107,21 @@ fn import_infers_and_registers_the_document() {
 
     // And the derived document is immediately addressable.
     match dispatch(Request::Validate { network_hash }).unwrap() {
-        Response::Validate { issues } => assert!(issues.is_empty()),
+        Response::Validate { issues, .. } => assert!(issues.is_empty()),
         _ => panic!("validate"),
     }
 }
 
 #[test]
-fn load_document_is_idempotent_by_hash() {
+fn load_network_is_idempotent_by_hash() {
     let doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
-    let a = match dispatch(Request::LoadDocument { network: doc.clone() }).unwrap() {
-        Response::LoadDocument { network_hash } => network_hash,
-        _ => panic!("load_document"),
+    let a = match dispatch(Request::LoadNetwork { network: doc.clone() }).unwrap() {
+        Response::LoadNetwork { network_hash } => network_hash,
+        _ => panic!("load_network"),
     };
-    let b = match dispatch(Request::LoadDocument { network: doc }).unwrap() {
-        Response::LoadDocument { network_hash } => network_hash,
-        _ => panic!("load_document"),
+    let b = match dispatch(Request::LoadNetwork { network: doc }).unwrap() {
+        Response::LoadNetwork { network_hash } => network_hash,
+        _ => panic!("load_network"),
     };
     assert_eq!(a, b, "same document, same hash, one registry entry");
     assert!(a.starts_with("sha256:"));
@@ -130,24 +130,24 @@ fn load_document_is_idempotent_by_hash() {
 #[test]
 fn validate_reports_every_issue_without_throwing() {
     let doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
-    let network_hash = match dispatch(Request::LoadDocument { network: doc }).unwrap() {
-        Response::LoadDocument { network_hash } => network_hash,
-        _ => panic!("load_document"),
+    let network_hash = match dispatch(Request::LoadNetwork { network: doc }).unwrap() {
+        Response::LoadNetwork { network_hash } => network_hash,
+        _ => panic!("load_network"),
     };
     match dispatch(Request::Validate { network_hash }).unwrap() {
-        Response::Validate { issues } => assert!(issues.is_empty(), "the fixture is valid"),
+        Response::Validate { issues, .. } => assert!(issues.is_empty(), "the fixture is valid"),
         _ => panic!("validate"),
     }
 
     // A referential break: one defect, the whole list, no throw.
     let broken = NETWORK_DOC.replace("\"stop\": \"B\"", "\"stop\": \"ghost\"");
     let doc: transit_network::Network = serde_json::from_str(&broken).unwrap();
-    let broken_hash = match dispatch(Request::LoadDocument { network: doc }).unwrap() {
-        Response::LoadDocument { network_hash } => network_hash,
-        _ => panic!("load_document"),
+    let broken_hash = match dispatch(Request::LoadNetwork { network: doc }).unwrap() {
+        Response::LoadNetwork { network_hash } => network_hash,
+        _ => panic!("load_network"),
     };
     match dispatch(Request::Validate { network_hash: broken_hash }).unwrap() {
-        Response::Validate { issues } => {
+        Response::Validate { issues, .. } => {
             assert!(!issues.is_empty(), "the broken document reports its issues");
         }
         _ => panic!("validate"),
@@ -180,9 +180,9 @@ fn base64_decode(text: &str) -> Vec<u8> {
 #[test]
 fn export_is_the_publish_path_and_the_identity_law() {
     let doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
-    let network_hash = match dispatch(Request::LoadDocument { network: doc }).unwrap() {
-        Response::LoadDocument { network_hash } => network_hash,
-        _ => panic!("load_document"),
+    let network_hash = match dispatch(Request::LoadNetwork { network: doc }).unwrap() {
+        Response::LoadNetwork { network_hash } => network_hash,
+        _ => panic!("load_network"),
     };
     let (feed_hash, summary, zip_b64) =
         match dispatch(Request::Export { network_hash }).unwrap() {
@@ -218,9 +218,9 @@ fn export_is_the_publish_path_and_the_identity_law() {
 fn export_refuses_invalid_documents() {
     let broken = NETWORK_DOC.replace("\"stop\": \"B\"", "\"stop\": \"ghost\"");
     let doc: transit_network::Network = serde_json::from_str(&broken).unwrap();
-    let network_hash = match dispatch(Request::LoadDocument { network: doc }).unwrap() {
-        Response::LoadDocument { network_hash } => network_hash,
-        _ => panic!("load_document"),
+    let network_hash = match dispatch(Request::LoadNetwork { network: doc }).unwrap() {
+        Response::LoadNetwork { network_hash } => network_hash,
+        _ => panic!("load_network"),
     };
     let err = dispatch(Request::Export { network_hash }).unwrap_err();
     assert!(err.contains("invalid network"), "{err}");

@@ -52,7 +52,7 @@ pub enum Request {
     /// Register an authored network document under its content hash
     /// (idempotent by hash). The authoring UI's entry point; every
     /// later op addresses the document by the returned hash.
-    LoadDocument { network: Network },
+    LoadNetwork { network: Network },
     /// Every issue of a registered document — the authoring UI's
     /// feedback loop, the whole list, never thrown.
     Validate { network_hash: String },
@@ -77,8 +77,11 @@ pub enum Request {
 pub enum Response {
     LoadFeed { feed_hash: String, summary: FeedSummary },
     Import { network: Network, notes: Vec<ImportNote>, network_hash: String },
-    LoadDocument { network_hash: String },
-    Validate { issues: Vec<transit_network::NetworkError> },
+    LoadNetwork { network_hash: String },
+    /// `issues` gate (invalid documents never export); `warnings`
+    /// never gate — they name what validity lets through (trips with
+    /// no vehicle, a pick with no service in its period).
+    Validate { issues: Vec<transit_network::NetworkError>, warnings: Vec<transit_network::NetworkWarning> },
     Export { feed_hash: String, summary: FeedSummary, zip_b64: String },
     TripMap { map: Option<TripIdMap> },
 }
@@ -130,7 +133,7 @@ fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
         .expect("network registry lock")
         .get(network_hash)
         .cloned()
-        .ok_or_else(|| format!("unknown network {network_hash}: load_document first"))
+        .ok_or_else(|| format!("unknown network {network_hash}: load_network first"))
 }
 
 fn load_feed(bytes: &[u8]) -> Result<Response, String> {
@@ -175,13 +178,16 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .insert(network_hash.clone(), Arc::new(trip_map));
             Ok(Response::Import { network, notes, network_hash })
         }
-        Request::LoadDocument { network } => {
+        Request::LoadNetwork { network } => {
             let hash = register_network(network)?;
-            Ok(Response::LoadDocument { network_hash: hash })
+            Ok(Response::LoadNetwork { network_hash: hash })
         }
         Request::Validate { network_hash } => {
             let network = network_arc(&network_hash)?;
-            Ok(Response::Validate { issues: transit_network::validation_issues(&network) })
+            Ok(Response::Validate {
+                issues: transit_network::validation_issues(&network),
+                warnings: transit_network::validation_warnings(&network),
+            })
         }
         Request::Export { network_hash } => {
             let network = network_arc(&network_hash)?;

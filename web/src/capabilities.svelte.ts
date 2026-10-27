@@ -693,9 +693,9 @@ export function networkCap(module: CapModule) {
     },
     loadDocument(network: Network): string {
       const resp = module.invoke({
-        op: "load_document",
+        op: "load_network",
         network,
-      } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "load_document" }>;
+      } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "load_network" }>;
       return resp.network_hash;
     },
     validate(networkHash: string): NetworkError[] {

@@ -37,7 +37,7 @@ fn load_network() -> String {
 }
 
 fn stops(limit: Option<u32>) -> Vec<cap_directory::DirectoryStop> {
-    match dispatch(Request::Stops { network_hash: load_network(), limit }).unwrap() {
+    match dispatch(Request::Stops { network_hash: load_network(), query: None, limit }).unwrap() {
         Response::Stops { stops } => stops,
         _ => panic!("stops"),
     }
@@ -78,6 +78,29 @@ fn the_stop_list_is_name_sorted_and_carries_the_walking_group() {
     let two = stops(Some(2));
     assert_eq!(two.len(), 2);
     assert_eq!(two[0].stop_id, all[0].stop_id);
+}
+
+#[test]
+fn a_query_narrows_the_list_like_a_pickers_typing() {
+    let network_hash = load_network();
+    let search = |query: &str| -> Vec<String> {
+        match dispatch(Request::Stops { network_hash: network_hash.clone(), query: Some(query.into()), limit: None })
+            .unwrap()
+        {
+            Response::Stops { stops } => stops.into_iter().map(|s| s.stop_id).collect(),
+            _ => panic!("stops"),
+        }
+    };
+    // Every term must match (name or id), case-insensitive: the
+    // station and both bays share "main station".
+    assert_eq!(search("MAIN station"), vec!["STN", "SA", "SB"].into_iter().map(String::from).collect::<Vec<_>>());
+    // Substring terms narrow as a picker's typing does: "bay b"
+    // still matches both bays ("b" is in "Bay"); the id settles it.
+    assert_eq!(search("bay b").len(), 2);
+    assert_eq!(search("bay sb"), vec!["SB".to_string()]);
+    assert_eq!(search("3rd"), vec!["C".to_string()]);
+    assert!(search("nowhere").is_empty(), "no match answers empty, never an error");
+    assert_eq!(search("  ").len(), 6, "an empty query is the whole list");
 }
 
 #[test]
@@ -158,7 +181,7 @@ fn a_routes_stop_sequences_are_its_patterns() {
 
 #[test]
 fn unknown_hashes_and_garbage_are_errors_not_panics() {
-    let err = dispatch(Request::Stops { network_hash: "sha256:missing".into(), limit: None }).unwrap_err();
+    let err = dispatch(Request::Stops { network_hash: "sha256:missing".into(), query: None, limit: None }).unwrap_err();
     assert!(err.contains("unknown network"), "{err}");
 
     let bad = dispatch_json(r#"{"op":"nope"}"#);

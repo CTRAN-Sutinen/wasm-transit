@@ -195,6 +195,7 @@ proptest! {
             radius_m: 500.0,
             frequent_secs: 3600,
             min_departures: 2,
+            window: None,
         })
         .expect("coverage");
         let cap_analysis::Response::TypeCoverage { coverage } = coverage else { panic!("cov") };

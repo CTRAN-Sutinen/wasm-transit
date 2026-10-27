@@ -472,6 +472,14 @@ proptest! {
             }
         }
         prop_assert!(!validation_issues(&broken).is_empty());
+
+        // A block trip its schedule does not run (QAF-1: a retimed
+        // schedule leaves its blocks behind) is an invalidity.
+        let mut broken = net.clone();
+        if let Some((_, block)) = broken.blocks.iter_mut().next() {
+            block.trips[0].start_secs += 1;
+            prop_assert!(!validation_issues(&broken).is_empty());
+        }
     }
 
     /// Totality law: materialization never panics on *any* generated

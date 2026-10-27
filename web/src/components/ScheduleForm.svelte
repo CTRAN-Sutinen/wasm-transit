@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app, getNetworkDoc } from "../state.svelte";
   import {
-    setScheduleRefs, removeSchedule, setScheduleStarts, addScheduleStart,
+    setScheduleRefs, removeSchedule, retimeScheduleStart, addScheduleStart,
     removeScheduleStart, setBandField, addBand, removeBand,
     plannerBack, fmtHHMMSS, parseHHMMSS,
   } from "../planner";
@@ -33,8 +33,13 @@
     }
     const sched = schedule?.schedule;
     if (sched?.kind !== "exact_times") return;
-    const starts = sched.starts.map((s: number, i: number) => (i === index ? secs : s));
-    setScheduleStarts(id, starts);
+    const from = sched.starts[index];
+    if (from === undefined || from === secs) return;
+    if (sched.starts.includes(secs)) {
+      app.status = `A trip already starts at ${text}.`;
+      return;
+    }
+    retimeScheduleStart(id, from, secs);
   }
 
   function updateBand(index: number, field: string, text: string, asMinutes = false) {

@@ -895,6 +895,29 @@ export function setScheduleStarts(scheduleId: string, starts: number[]): void {
   });
 }
 
+/** Move one trip of an exact-times service. The trip's identity is
+ * (schedule, start), so the blocks carrying it move with it — a
+ * retime never strands the runcut. This mirrors transit-network's
+ * `retime_trip` edit (cap-author's `apply`), the rule's home, until
+ * the planner's mutations move onto the bus. */
+export function retimeScheduleStart(scheduleId: string, fromSecs: number, toSecs: number): void {
+  mutateNetwork((d) => {
+    const svc = d.schedules[scheduleId];
+    if (!svc || svc.schedule.kind !== "exact_times") return;
+    const starts = svc.schedule.starts;
+    if (!starts.includes(fromSecs) || (fromSecs !== toSecs && starts.includes(toSecs))) return;
+    svc.schedule = {
+      kind: "exact_times",
+      starts: starts.map((s) => (s === fromSecs ? toSecs : s)).sort((a, b) => a - b),
+    };
+    for (const block of Object.values(d.blocks ?? {})) {
+      for (const trip of block.trips) {
+        if (trip.schedule === scheduleId && trip.start_secs === fromSecs) trip.start_secs = toSecs;
+      }
+    }
+  });
+}
+
 export function addScheduleStart(scheduleId: string): void {
   const doc = getNetworkDoc();
   const starts = (doc?.schedules?.[scheduleId]?.schedule as { starts?: number[] } | undefined)?.starts;

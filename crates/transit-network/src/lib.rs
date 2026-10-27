@@ -22,15 +22,18 @@
 //!   same network serializes to the same bytes on every host, which
 //!   is what per-entity LWW sync needs later.
 //!
-//! Everything here is pure: types, validation, materialization. No
-//! I/O, no clocks.
+//! Everything here is pure: types, validation, materialization, and
+//! authoring ([`apply_edits`] — a change answers the next document,
+//! never mutating the last). No I/O, no clocks.
 
+pub mod edit;
 pub mod error;
 pub mod materialize;
 pub mod model;
 pub mod validate;
 
-pub use error::NetworkError;
+pub use edit::{apply_edits, EditError, NetworkEdit};
+pub use error::{NetworkError, NetworkWarning};
 pub use materialize::{
     materialize, materialize_service, trip_arrival_end_secs, trip_starts, MaterializedTrip,
     StopTime,
@@ -41,5 +44,6 @@ pub use model::{
     ServiceTypeId, ServiceType, Stop, TimingProfile, TripRef, WeekdaySet,
 };
 pub use validate::{
-    routes_meeting_at, stop_route_index, validate, validation_issues, walking_group,
+    routes_meeting_at, stop_route_index, validate, validation_issues, validation_warnings,
+    walking_group,
 };
