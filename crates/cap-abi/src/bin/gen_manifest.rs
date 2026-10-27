@@ -94,7 +94,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "network",
         file: "cap_network.wasm",
-        ops: &["load_feed", "import", "load_document", "validate", "export"],
+        ops: &["load_feed", "import", "load_document", "validate", "export", "trip_map"],
         consumes: &[],
         speaks: &[("feed", &[1]), ("network", &[1])],
         migrates: &[],
@@ -105,6 +105,7 @@ const MODULES: &[ModuleSpec] = &[
             ("load_document", "Register an authored network document (the planner's JSON document) under its content hash; idempotent."),
             ("validate", "Every issue of a registered document — the authoring UI's feedback loop, the whole list, never thrown."),
             ("export", "The publish path: materialize a registered document into a GTFS zip (deterministic bytes) and return it base64-encoded under the content hash of those bytes — the same identity any capability returns for the same bytes. Invalid documents are refused."),
+            ("trip_map", "The import's trip-id map for a network: every derived trip ((schedule, start_secs) — the model's identity) joined to the agency trip ids it came from. This is the join rt data and the source feed's ops are keyed by — rt feeds speak the AGENCY's ids, the model mints its own. None for a network that was not inferred from a feed (an authored document has no agency ids)."),
         ],
     },
     ModuleSpec {
@@ -162,6 +163,24 @@ const MODULES: &[ModuleSpec] = &[
             ("departures", "The board at one stop on a service date: the network's materialized day — trips as their (schedule, start) identity, model vocabulary — with the in-force edits applied when edits_hash names a registered document (schedule-only when omitted). The stop's own board; a station pin answers nothing here, see station_departures."),
             ("station_departures", "The STATION board: departures pooled over the stop's WALKING GROUP (the model's own transfer-group concept — the stop, its parent, siblings sharing that parent, the parent's children). A station pin answers no departures of its own; its bays carry the trips. Each row carries its concrete stop_id, so the caller sees which bay a departure leaves from."),
             ("block_trips", "One block's chain on a service date: the AUTHORED runcut (the model's blocks carry layovers GTFS never had), materialized for the day, with the in-force edits applied — a diverted trip ending later eats into the vehicle's next layover, and layover_remaining_secs goes negative when the connection is eaten. Trips of the chain that do not run on the date stay in view, marked. Unknown blocks answer empty, never error."),
+        ],
+    },
+    ModuleSpec {
+        id: "streets",
+        file: "cap_streets.wasm",
+        ops: &["load_streets", "snap", "route"],
+        // The street graph is reference data the HOST owns (an OSM
+        // extract or open-data layer as GeoJSON lines, re-imported
+        // per session); the module registers the bytes under their
+        // content hash and every query addresses that hash.
+        consumes: &[],
+        speaks: &[("street_graph", &[1])],
+        migrates: &[],
+        purpose: "The detour editor's street graph: register a street-network GeoJSON (an OSM extract or an open-data layer) under its content hash and answer the detour editor's queries — snap a click to the nearest street, route between two positions along the graph so the committed detour is street geometry, never freehand chords. The domain code lives in the shared transit-streets library; the module is pure and stateless, it writes nothing.",
+        op_docs: &[
+            ("load_streets", "Parse a street-network GeoJSON (FeatureCollection or Feature of LineString/MultiLineString geometries; one-way conventions TIGER OneWay and OSM oneway honored) into the routing graph and register it under its content hash (idempotent — the same bytes are the same graph). Bulk-bytes op 0; pass the raw GeoJSON to transit_invoke_bytes."),
+            ("snap", "The nearest street position to (lat, lon) — the projected point plus its graph address (segment, parameter along it), and how far the query point was. The detour waypoint commits to this address. Null when no street is nearby."),
+            ("route", "The street geometry between two snapped positions: the shortest path along the graph, as points ending exactly at the target. Empty when the positions sit on disconnected parts of the network — the caller falls back to a straight line."),
         ],
     },
 ];
@@ -363,6 +382,7 @@ struct NetworkExampleContext {
     derived: serde_json::Value,
     notes: serde_json::Value,
     network_hash: String,
+    trip_map: serde_json::Value,
     export_feed_hash: String,
     export_summary: serde_json::Value,
     zip_b64: String,
@@ -381,6 +401,7 @@ fn network_example_context(feed_bytes: &[u8]) -> Option<NetworkExampleContext> {
     let network_hash = format!("sha256:{:x}", Sha256::digest(canonical.as_bytes()));
     let derived = serde_json::to_value(&outcome.network).ok()?;
     let notes = serde_json::to_value(&outcome.notes).ok()?;
+    let trip_map = serde_json::to_value(&outcome.trip_map).ok()?;
     let exported = transit_codec::network_to_gtfs(&outcome.network).ok()?;
     let export_summary = serde_json::to_value(exported.summary()).ok()?;
     let zip = transit_core::write::to_zip_bytes(&exported);
@@ -391,6 +412,7 @@ fn network_example_context(feed_bytes: &[u8]) -> Option<NetworkExampleContext> {
         derived,
         notes,
         network_hash,
+        trip_map,
         export_feed_hash,
         export_summary,
         zip_b64,
@@ -403,6 +425,30 @@ fn fixture_gtfs() -> Option<transit_core::Gtfs> {
     let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-gtfs.zip");
     let bytes = std::fs::read(fixture).ok()?;
     transit_core::Gtfs::from_zip_bytes(&bytes).ok()
+}
+
+/// The street capability's examples' context: the e2e street
+/// fixture parsed through the shared library, with the Elbow
+/// corner snap/route answers computed over the real graph.
+struct StreetsExampleContext {
+    streets_hash: String,
+    pos_a: transit_streets::StreetPosition,
+    pos_b: transit_streets::StreetPosition,
+    points: Vec<transit_streets::StreetPoint>,
+}
+
+fn streets_example_context() -> Option<StreetsExampleContext> {
+    let bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../web/e2e/fixtures/streets.geojson"
+    ))
+    .ok()?;
+    let net = transit_streets::StreetNetwork::parse(&bytes).ok()?;
+    let streets_hash = format!("sha256:{:x}", Sha256::digest(&bytes));
+    let pos_a = net.snap(45.5040, -73.5030)?;
+    let pos_b = net.snap(45.5080, -73.5080)?;
+    let points = net.route(pos_a, pos_b).unwrap_or_default();
+    Some(StreetsExampleContext { streets_hash, pos_a, pos_b, points })
 }
 
 /// The rt join examples' context: the fixture feed and the e2e rt
@@ -600,6 +646,13 @@ fn example_for(
                     "summary": ctx.export_summary, "zip_b64": ctx.zip_b64 } }),
             )
         }
+        ("network", "trip_map") => {
+            let ctx = net?;
+            (
+                json!({ "op": "trip_map", "network_hash": ctx.network_hash }),
+                json!({ "ok": { "op": "trip_map", "map": ctx.trip_map } }),
+            )
+        }
         // The realtime example decodes the REAL e2e fixture payload —
         // the same bytes the browser tests replay.
         ("rt", "decode") => {
@@ -766,10 +819,28 @@ fn example_for(
                     "trips": transit_dispatch::block_chain(ctx.derived_network(), &day, "B1") } }),
             )
         }
+        // The street capability's examples compute REAL answers over
+        // the e2e street fixture through the same shared library the
+        // module dispatches through: the Elbow corner snap and route.
+        ("streets", "snap") => {
+            let ctx = streets_example_context()?;
+            (
+                json!({ "op": "snap", "streets_hash": ctx.streets_hash, "lat": 45.5040, "lon": -73.5030 }),
+                json!({ "ok": { "op": "snap", "position": ctx.pos_a } }),
+            )
+        }
+        ("streets", "route") => {
+            let ctx = streets_example_context()?;
+            (
+                json!({ "op": "route", "streets_hash": ctx.streets_hash, "from": ctx.pos_a, "to": ctx.pos_b }),
+                json!({ "ok": { "op": "route", "points": ctx.points } }),
+            )
+        }
         // Bulk-bytes ops have no JSON request example (the payload is
         // the raw zip/protobuf); the description carries the contract.
         (_, "load_feed") => return None,
         (_, "load_population_layer") => return None,
+        (_, "load_streets") => return None,
         _ => return None,
     };
     Some(OpExample { request, response })

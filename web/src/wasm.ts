@@ -11,29 +11,22 @@
 /// outcomes are `{"ok": ...}` or `{"error": ...}`.
 
 import wasmUrl from "../pkg/transit_wasm.wasm?url";
-import type { Departure } from "./types/Departure";
 import type { EditRecord } from "./types/EditRecord";
 import type { EditReport } from "./types/EditReport";
 import type { FeatureCollection } from "./types/FeatureCollection";
-import type { FeedInfo } from "./types/FeedInfo";
 import type { FeedSummary } from "./types/FeedSummary";
 import type { Itinerary } from "./types/Itinerary";
 import type { Network } from "./types/Network";
-import type { BlockSummary } from "./types/BlockSummary";
-import type { BlockTrip } from "./types/BlockTrip";
 import type { RouteSummary } from "./types/RouteSummary";
 import type { PlanInfo } from "./types/PlanInfo";
 import type { PlanIssue } from "./types/PlanIssue";
 import type { PlanPeriod } from "./types/PlanPeriod";
 import type { StopFeature } from "./types/StopFeature";
 import type { StopSummary } from "./types/StopSummary";
-import type { StreetPoint } from "./types/StreetPoint";
-import type { StreetPosition } from "./types/StreetPosition";
 import type { TripLineFeature } from "./types/TripLineFeature";
 
 // Op codes for the bulk-bytes ABI (transit_ops::OP_LOAD_FEED etc.).
 const OP_LOAD_FEED = 0;
-const OP_STREETS_LOAD = 2;
 const OP_COVERAGE_LOAD = 3;
 
 /// The flat C ABI the artifact exports.
@@ -134,30 +127,6 @@ export class GtfsHandle {
     }) as { stops: StopSummary[] }).stops;
   }
 
-  departures(stopId: string, date: string, fromSecs: number, limit: number): Departure[] {
-    return (invoke({
-      op: "departures",
-      feed_id: this.#feedId,
-      stop_id: stopId,
-      date,
-      from_secs: fromSecs,
-      limit,
-    }) as { departures: Departure[] }).departures;
-  }
-
-  /// One block's trip chain on a service date — STILL monolith-backed
-  /// deliberately: the chain's layovers ripple with diversions (the
-  /// dispatcher's connection-health read), and the diversion document
-  /// has no bus home yet. It moves when diversions do.
-  block_trips(blockId: string, date: string): BlockTrip[] {
-    return (invoke({
-      op: "block_trips",
-      feed_id: this.#feedId,
-      block_id: blockId,
-      date,
-    }) as { trips: BlockTrip[] }).trips;
-  }
-
   stops_geojson(): FeatureCollection {
     return (invoke({ op: "stops_geojson", feed_id: this.#feedId }) as { collection: FeatureCollection }).collection;
   }
@@ -243,45 +212,9 @@ export class GtfsHandle {
 }
 
 // ---------------------------------------------------------------
-// Street networks (detour authoring). Pure queries against the
-// artifact's streets registry: bytes in once, snap/route after.
+// Street networks (detour authoring) live in the cap-streets
+// capability now — see capabilities.svelte.ts (streetsCap).
 // ---------------------------------------------------------------
-
-export type StreetsHandle = {
-  streets_id: number;
-  segments: number;
-  nodes: number;
-};
-
-export function streets_load(bytes: Uint8Array): StreetsHandle {
-  return invokeBytes(OP_STREETS_LOAD, bytes) as StreetsHandle;
-}
-
-export function street_snap(streetsId: number, lat: number, lon: number): StreetPosition | null {
-  return (
-    invoke({
-      op: "street_snap",
-      streets_id: streetsId,
-      lat,
-      lon,
-    }) as { position: StreetPosition | null }
-  ).position ?? null;
-}
-
-export function street_route(
-  streetsId: number,
-  from: StreetPosition,
-  to: StreetPosition,
-): StreetPoint[] {
-  return (
-    invoke({
-      op: "street_route",
-      streets_id: streetsId,
-      from,
-      to,
-    }) as { points: StreetPoint[] }
-  ).points;
-}
 
 /// Which service plan is in force on a date (the latest pick at or
 /// before it; unversioned plans never resolve).
@@ -323,9 +256,6 @@ export type WasmApi = {
   plans_validate: typeof plans_validate;
   plans_periods: typeof plans_periods;
   coverage_load: typeof coverage_load;
-  streets_load: typeof streets_load;
-  street_snap: typeof street_snap;
-  street_route: typeof street_route;
 };
 
 /// The entry point main.js awaits: instantiate the artifact, then
@@ -338,8 +268,5 @@ export async function loadWasm(): Promise<WasmApi> {
     plans_validate,
     plans_periods,
     coverage_load,
-    streets_load,
-    street_snap,
-    street_route,
   };
 }

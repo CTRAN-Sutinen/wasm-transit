@@ -1,6 +1,6 @@
 {
-  "blob": "blobs/60f8cf179ae1b33bfe5f1513f89b40e32ee3f8adc8aa21abc3b214b15d7f6f32.wasm",
-  "bytes": 1041237,
+  "blob": "blobs/c51482022db42e94464eeffd4e7815066b3adfb552e8117808228fffa77b193a.wasm",
+  "bytes": 1057072,
   "consumes": {},
   "evidence": {
     "dirty_tree": true,
@@ -10,9 +10,9 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "232d63c713af9153aa58fbf3576d634efbc62e2a"
+    "source_commit": "900ca8ab472a77d140d5b20abd34f10c4705752d"
   },
-  "hash": "sha256:60f8cf179ae1b33bfe5f1513f89b40e32ee3f8adc8aa21abc3b214b15d7f6f32",
+  "hash": "sha256:c51482022db42e94464eeffd4e7815066b3adfb552e8117808228fffa77b193a",
   "id": "network",
   "kernel": 1,
   "migrates": {},
@@ -789,6 +789,66 @@
       "description": "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
       "example": null
     },
+    "trip_map": {
+      "description": "The import's trip-id map for a network: every derived trip ((schedule, start_secs) — the model's identity) joined to the agency trip ids it came from. This is the join rt data and the source feed's ops are keyed by — rt feeds speak the AGENCY's ids, the model mints its own. None for a network that was not inferred from a feed (an authored document has no agency ids).",
+      "example": {
+        "request": {
+          "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+          "op": "trip_map"
+        },
+        "response": {
+          "ok": {
+            "map": {
+              "entries": [
+                {
+                  "agency_trip_ids": [
+                    "t11"
+                  ],
+                  "schedule": "SUN:pat-10-0-0",
+                  "start_secs": 32400
+                },
+                {
+                  "agency_trip_ids": [
+                    "t10"
+                  ],
+                  "schedule": "WK:pat-10-0-0",
+                  "start_secs": 28800
+                },
+                {
+                  "agency_trip_ids": [
+                    "t30"
+                  ],
+                  "schedule": "WK:pat-10-0-1",
+                  "start_secs": 31200
+                },
+                {
+                  "agency_trip_ids": [
+                    "t20"
+                  ],
+                  "schedule": "WK:pat-20-0-0",
+                  "start_secs": 30000
+                },
+                {
+                  "agency_trip_ids": [
+                    "t40"
+                  ],
+                  "schedule": "WK:pat-40-0-0",
+                  "start_secs": 29700
+                },
+                {
+                  "agency_trip_ids": [
+                    "t41"
+                  ],
+                  "schedule": "WK:pat-40-1-0",
+                  "start_secs": 30900
+                }
+              ]
+            },
+            "op": "trip_map"
+          }
+        }
+      }
+    },
     "validate": {
       "description": "Every issue of a registered document — the authoring UI's feedback loop, the whole list, never thrown.",
       "example": {
@@ -810,7 +870,8 @@
     "import",
     "load_document",
     "validate",
-    "export"
+    "export",
+    "trip_map"
   ],
   "purpose": "The network codec: infer an authored network document from a GTFS feed (the planner's bootstrap — patterns, service types, blocks, reported resolutions) and export one back to GTFS zip bytes (the publish path). The second capability extracted from the monolith — the codec lives in the shared transit-codec library, and the monolith keeps no copy. Assemble for planners: it is how a planner's session starts and how it publishes.",
   "speaks": {

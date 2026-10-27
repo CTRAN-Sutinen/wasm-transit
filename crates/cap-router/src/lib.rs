@@ -1,6 +1,6 @@
 //! cap-router — the trip-planning capability module.
 //!
-//! A PURE-FUNCTION capability in the capability-bus PoC: it holds no
+//! A PURE-FUNCTION capability in the capability bus: it holds no
 //! domain state of its own beyond a feed registry keyed by content
 //! hash (the same document currency the gtfs capability produces),
 //! builds the RAPTOR network lazily per service date, and answers

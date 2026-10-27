@@ -360,7 +360,7 @@ test("comboboxes search, and blocks scope to the service day", async ({ page }) 
 
   // A STATION PIN answers the station board: the parent has no
   // trips of its own, so the per-stop path is empty and the board
-  // falls back to the gtfs capability's pooled station_departures —
+  // falls back to cap-dispatch's pooled station_departures —
   // both bays' departures, each row tagged with its bay.
   await stopBox.click();
   await stopBox.fill("Main Station");
@@ -382,7 +382,12 @@ test("comboboxes search, and blocks scope to the service day", async ({ page }) 
   await expect(page.getByRole("option", { name: /^B1/ })).toBeVisible();
   await expect(page.getByRole("option")).toHaveCount(2);
   await page.getByRole("option", { name: /^B2/ }).click();
-  await expect(page.getByText("07:30:00").first()).toBeVisible(); // t12's start
+  // B2's only trip (t12) is single-stop — the model cannot represent
+  // it, the import drops it (and reports it in its notes), so the
+  // chain view says so honestly. The feed-side list still shows the
+  // block ran; the model-native chain is the honest hole, never a
+  // silent blank.
+  await expect(page.getByText(/No authored chain for this block/)).toBeVisible();
 
   // Saturday: WK is off and the holiday was Friday-only — every bus
   // is parked, so there is nothing to pick and no table to show.
@@ -725,8 +730,10 @@ test("planner degrades when the analysis capability cannot assemble", async ({ p
 
 // The dispatch reads moved to the bus: BlocksPanel (the dispatcher's
 // primary screen) answers through cap-gtfs, and when the module
-// cannot assemble the view is OFF and says so — the rider board
-// (still monolith-backed) keeps working beside it.
+// cannot assemble the view is OFF and says so. The rider board beside
+// it reads cap-dispatch (network + dispatch modules — not gtfs), so
+// it keeps answering: the assembly degrades per capability, never
+// wholesale.
 test("dispatcher degrades when the gtfs capability cannot assemble", async ({ page }) => {
   await page.route(/caps\/gtfs-.*\.wasm/, (route) => route.abort());
   await page.goto("/");
@@ -738,13 +745,30 @@ test("dispatcher degrades when the gtfs capability cannot assemble", async ({ pa
       .getByText(/blocks view needs the gtfs capability|gtfs capability unavailable/)
       .first(),
   ).toBeVisible({ timeout: 10_000 });
-  // The rider board beside it still answers (per-stop, monolith):
-  // the assembly degrades per capability, never wholesale.
+  // The rider board beside it still answers — through cap-dispatch,
+  // which composes over cap-network, not cap-gtfs.
   await switchPersona(page, "Rider");
   await comboPick(page, "Stop", "Main & 1st");
   await expect(
     page.locator("section:has(h2:text('Departures')) tbody tr"),
   ).toHaveCount(3, { timeout: 10_000 });
+});
+
+// The board's own dependencies: the day views answer through
+// cap-dispatch over the network document, so when those modules
+// cannot assemble the board is OFF and says so — the monolith op
+// is deleted, there is no fallback to silently serve instead.
+test("the board degrades when the dispatch capability cannot assemble", async ({ page }) => {
+  await page.route(/caps\/(network|dispatch)-.*\.wasm/, (route) => route.abort());
+  await page.goto("/");
+  await waitForMap(page);
+  await loadFeed(page);
+  await switchPersona(page, "Rider");
+  await comboPick(page, "Stop", "Main & 1st");
+  await expect(page.getByText(/board needs the network and dispatch/)).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(page.locator("section:has(h2:text('Departures')) tbody tr")).toHaveCount(0);
 });
 
 // Stage B of the SECOND extraction (the codec): bootstrap, validation

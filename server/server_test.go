@@ -59,32 +59,30 @@ func newTestHost(t *testing.T) *WasmHost {
 	return host
 }
 
-func boardAt(t *testing.T, host *WasmHost, feedID uint32, stop string) []string {
+// The board op is RETIRED (cap-dispatch owns the day views); the
+// effective-feed read this test pins through is the date-scoped
+// route ghost: the representative trip's stop-to-stop path, where a
+// skipped stop drops its vertex (a shape-polyline trip would not —
+// route 10's representative, t30, has no shape).
+func routeGhostVertices(t *testing.T, host *WasmHost, feedID uint32, routeID string) int {
 	t.Helper()
 	var resp struct {
-		Departures []struct {
-			TripID string `json:"trip_id"`
-			Time   string `json:"departure_time_hhmmss"`
-		} `json:"departures"`
+		Feature *struct {
+			Geometry struct {
+				Coordinates [][]float64 `json:"coordinates"`
+			} `json:"geometry"`
+		} `json:"feature"`
 	}
 	if err := host.Invoke(context.Background(), map[string]any{
-		"op": "departures", "feed_id": feedID, "stop_id": stop,
-		"date": date, "from_secs": 0, "limit": 10,
+		"op": "route_path_geojson", "feed_id": feedID, "route_id": routeID,
+		"direction_id": nil, "date": date,
 	}, &resp); err != nil {
-		t.Fatalf("departures: %v", err)
+		t.Fatalf("route_path_geojson: %v", err)
 	}
-	var out []string
-	for _, d := range resp.Departures {
-		out = append(out, d.TripID+"@"+d.Time)
+	if resp.Feature == nil {
+		t.Fatalf("route %s has no representative", routeID)
 	}
-	return out
-}
-
-func wantBoard(t *testing.T, got []string, want ...string) {
-	t.Helper()
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("board mismatch:\n got  %v\n want %v", got, want)
-	}
+	return len(resp.Feature.Geometry.Coordinates)
 }
 
 func TestArtifactRoundTrip(t *testing.T) {
@@ -107,9 +105,10 @@ func TestArtifactRoundTrip(t *testing.T) {
 		t.Fatalf("feed_info version: %q", v)
 	}
 
-	// Baseline board matches the fixture's known schedule.
-	wantBoard(t, boardAt(t, host, feedID, "B"),
-		"t12@07:30:00", "t10@08:10:00", "t20@08:30:00", "t30@08:50:00")
+	// Baseline: route 10's ghost is t30 (A → C → B, stop-to-stop) — 3 vertices.
+	if got := routeGhostVertices(t, host, feedID, "10"); got != 3 {
+		t.Fatalf("baseline path vertices: %d", got)
+	}
 
 	// The full edit-document flow: push, effective board, compare.
 	record := map[string]any{
@@ -137,10 +136,11 @@ func TestArtifactRoundTrip(t *testing.T) {
 		t.Fatalf("reports: %+v", reports)
 	}
 
-	wantBoard(t, boardAt(t, host, feedID, "B"),
-		"t12@07:30:00", "t10@08:15:00", "t20@08:30:00", "t30@08:55:00")
-	if got := boardAt(t, host, feedID, "C"); len(got) != 0 {
-		t.Fatalf("C should lose service, got %v", got)
+	// The effective ghost reflects the edit: C is skipped, so t30's
+	// path draws A → B (2 vertices) — the same fact the retired board op
+	// asserted as "C loses service".
+	if got := routeGhostVertices(t, host, feedID, "10"); got != 2 {
+		t.Fatalf("effective path vertices: %d", got)
 	}
 
 	var cmp struct {
@@ -171,8 +171,10 @@ func TestArtifactRoundTrip(t *testing.T) {
 	}, &struct{}{}); err != nil {
 		t.Fatalf("set_diversions (retire): %v", err)
 	}
-	wantBoard(t, boardAt(t, host, feedID, "B"),
-		"t12@07:30:00", "t10@08:10:00", "t20@08:30:00", "t30@08:50:00")
+	// Retire = tombstone: the baseline path returns.
+	if got := routeGhostVertices(t, host, feedID, "10"); got != 3 {
+		t.Fatalf("retired path vertices: %d", got)
+	}
 
 	if err := host.DropFeed(ctx, feedID); err != nil {
 		t.Fatalf("drop_feed: %v", err)

@@ -33,6 +33,57 @@ fn load_feed_registers_under_the_content_hash() {
 }
 
 #[test]
+fn trip_map_joins_the_agency_ids_to_the_derived_trips() {
+    let (feed_hash, _) = load_fixture();
+    let network_hash = match dispatch(Request::Import { feed_hash }).unwrap() {
+        Response::Import { network_hash, .. } => network_hash,
+        _ => panic!("import"),
+    };
+    let map = match dispatch(Request::TripMap { network_hash }).unwrap() {
+        Response::TripMap { map: Some(map) } => map,
+        Response::TripMap { map: None } => panic!("an imported network has a map"),
+        _ => panic!("trip_map"),
+    };
+    // The fixture's single-stop trip is dropped by the import (and
+    // reported in the notes); every OTHER agency id is in the map,
+    // and the map invents none.
+    let agency: std::collections::BTreeSet<&str> = map
+        .entries
+        .iter()
+        .flat_map(|e| e.agency_trip_ids.iter().map(String::as_str))
+        .collect();
+    let source = transit_core::Gtfs::from_zip_bytes(FIXTURE).unwrap();
+    let kept: std::collections::BTreeSet<&str> = source.trips.keys().map(String::as_str).collect();
+    assert_eq!(agency.len(), kept.len() - 1, "one dropped trip, the rest mapped");
+    for id in &agency {
+        assert!(kept.contains(id), "the map invented an id: {id}");
+    }
+    for e in &map.entries {
+        assert!(
+            !e.agency_trip_ids.is_empty(),
+            "entry {}@{} maps no agency id",
+            e.schedule,
+            e.start_secs
+        );
+    }
+
+    // An AUTHORED network (loaded, not imported) has no map — the
+    // honest None, never a silent empty one.
+    let doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
+    let authored = match dispatch(Request::LoadDocument { network: doc }).unwrap() {
+        Response::LoadDocument { network_hash } => network_hash,
+        _ => panic!("load_document"),
+    };
+    match dispatch(Request::TripMap { network_hash: authored }).unwrap() {
+        Response::TripMap { map: None } => {}
+        _ => panic!("an authored network answers None"),
+    }
+
+    // Unknown network is a caller error, not a panic.
+    assert!(dispatch(Request::TripMap { network_hash: "sha256:nope".into() }).is_err());
+}
+
+#[test]
 fn import_infers_and_registers_the_document() {
     let (feed_hash, _) = load_fixture();
     let (network, notes, network_hash) =

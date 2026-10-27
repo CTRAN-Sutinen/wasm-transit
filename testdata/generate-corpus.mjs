@@ -59,21 +59,13 @@ const steps = [
     request: `{"op":"route_stop_sequence","feed_id":${feedIdPlaceholder},"route_id":"10","direction_id":null}`,
   },
   {
-    name: "departures_base",
-    request: `{"op":"departures","feed_id":${feedIdPlaceholder},"stop_id":"B","date":"2026-10-23","from_secs":0,"limit":10}`,
-  },
-  {
     name: "set_diversions_draft",
     request: `{"op":"set_diversions","feed_id":${feedIdPlaceholder},"records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"draft","rev":1,"updated_at":1}]}`,
   },
-  {
-    name: "departures_effective",
-    request: `{"op":"departures","feed_id":${feedIdPlaceholder},"stop_id":"B","date":"2026-10-23","from_secs":0,"limit":10}`,
-  },
-  {
-    name: "departures_skipped_stop_loses_service",
-    request: `{"op":"departures","feed_id":${feedIdPlaceholder},"stop_id":"C","date":"2026-10-23","from_secs":0,"limit":10}`,
-  },
+  // The board op is RETIRED (cap-dispatch owns the day views); the
+  // diversion's effect pins through the surviving date-scoped reads
+  // that run after this step: plan_trip_compare and
+  // trip_path_geojson below.
   {
     name: "plan_trip_compare",
     request: `{"op":"plan_trip_compare","feed_id":${feedIdPlaceholder},"from":"A","to":"B","date":"2026-10-23","depart_secs":27000,"max_legs":6}`,
@@ -85,13 +77,6 @@ const steps = [
   {
     name: "trip_path_geojson",
     request: `{"op":"trip_path_geojson","feed_id":${feedIdPlaceholder},"trip_id":"t10","date":"2026-10-23"}`,
-  },
-  // The one dispatch read still monolith-backed: the chain's layovers
-  // ripple with diversions (this step runs AFTER the diversion is
-  // set — it pins the ripple). Moves to the bus with diversions.
-  {
-    name: "block_trips",
-    request: `{"op":"block_trips","feed_id":${feedIdPlaceholder},"block_id":"B1","date":"2026-10-23"}`,
   },
   {
     name: "sync_edits_deterministic",

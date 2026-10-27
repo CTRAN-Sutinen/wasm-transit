@@ -1,42 +1,57 @@
 # AGENTS.md
 
-Local-first transit software: GTFS static + GTFS-rt, parsed by Rust,
-shipped as **one wasm artifact** that runs in the browser (JS), in
-Node (ABI smoke), and on the sync server (Go + wazero). The same
-bytes everywhere is the point of the project — do not break it.
-(The capability-bus PoC restates this for a per-user future: the
-same DOCUMENT and the same contracts everywhere; capability bytes
-are assembled per user.)
+Local-first transit software: GTFS static + GTFS-rt, parsed by
+Rust, shipped as **one wasm artifact** that runs in the browser
+(JS), in Node (ABI smoke), and on the sync server (Go + wazero).
+The same bytes everywhere is the point of the project — do not
+break it. (The capability bus restates this for the per-user
+future: the same DOCUMENT and the same contracts everywhere;
+capability bytes are assembled per user. The GOAL is to decompose
+the monolith into capability modules entirely — the bus is the
+architecture, the monolith is legacy surface being deleted unit by
+unit: `docs/PLAN.md`.)
 
 **This file is load-bearing, and so are its pointers.** The detail
 lives in the docs below; the rules that keep them from drifting:
 
+- One doc per topic. Architecture detail lives in
+  `docs/ARCHITECTURE.md` (and `crates/AGENTS.md` for the three laws);
+  STATUS lives only in `docs/CAPS-PLAN.md` — never restate status
+  here or anywhere else. Architecture docs may be many, but they
+  must not overlap: each topic has exactly one home.
 - When your work changes the architecture, the ops surface, naming,
   conventions, commands, or testing expectations — update this file
-  AND every doc it points to that the change touches, in the same
-  change, before you declare the work done.
+  AND every doc whose topic the change touches, in the same change,
+  before you declare the work done.
 - When content moves between docs, fix every reference to it in the
   same change. A pointer to a section that no longer exists is a
   broken build for the next agent.
-- The "Current state" section below is part of that contract: do
-  not mark work done there (or in `docs/CAPS-PLAN.md`) that is not
-  done. Stale instructions are how the next agent breaks the build.
+- Do not mark work done in `docs/CAPS-PLAN.md` that is not done.
+  A DONE claim NAMES ITS PIN — the gate, e2e spec, or dogfood
+  session that proves it — and never claims more than one grade
+  at a time: on-the-bus, UI-reads-the-bus, and dogfooded are three
+  different claims. A claim whose pin is stale (a spec that no
+  longer runs, a corpus step that no longer exists) is false
+  until re-pinned. Stale instructions are how the next agent
+  breaks the build.
 - If a section contradicts the code, the code wins for the moment
   and the section must be fixed immediately.
 
 Where the detail lives:
 
-- `crates/AGENTS.md` — the two architecture laws for everything
+- `crates/AGENTS.md` — the three architecture laws for everything
   under `crates/` (enforced by arch gates in `just test`)
-- `docs/ARCHITECTURE.md` — per-crate reference behind the tree below
-- `docs/CAPABILITIES.md` — the capability bus: modules, bus rules,
-  the registry, dogfood-QA rules
-- `docs/WEB.md` — the frontend: shape, file ownership, conventions
-- `docs/CONVENTIONS.md` — Rust/wasm/ops gotchas
-- `docs/TESTING.md` — the testing expectations
+- `docs/ARCHITECTURE.md` — the architecture reference: per-crate
+  detail, server, web, the capability bus and its rules
+- `docs/PLAN.md` — THE plan: the mechanical decomposition of the
+  remaining monolith, unit by unit (caps are NEEDS, personas
+  assemble at wire time)
+- `docs/CAPS-PLAN.md` — THE status doc: what is done, what is open
+  (read PLAN.md then this before touching anything)
+- `docs/CONVENTIONS.md` — gotchas, Rust/wasm/ops and frontend
+- `docs/TESTING.md` — the testing expectations and the dogfood-QA
+  rules
 - `docs/ROADMAP.md` — the sequenced feature plan (direction changes)
-- `docs/CAPS-PLAN.md` — the capability-bus work queue (the authority
-  for what is done and what is not)
 
 ## Commands
 
@@ -88,10 +103,10 @@ transit-streets  street graph for detour authoring (snap, route)
 transit-ops      the monolith seam: dispatch(Request) -> Response + feed registry
 transit-wasm     THE artifact: flat import-free C ABI over dispatch
 cap-abi          the capability seam (ABI macro, manifest, validator, gen-manifest)
-cap-gtfs cap-router cap-analysis cap-network cap-rt cap-dispatch
-                 the capability modules (docs/CAPABILITIES.md)
+cap-gtfs cap-router cap-analysis cap-network cap-rt cap-dispatch cap-streets
+                 the capability modules (docs/ARCHITECTURE.md, bus section)
 server/          Go + wazero host — scaffolding, never a domain decision
-web/             Svelte 5 + Vite frontend (docs/WEB.md)
+web/             Svelte 5 + Vite frontend (docs/ARCHITECTURE.md, web section)
 ```
 
 Per-crate detail: `docs/ARCHITECTURE.md`.
@@ -122,27 +137,6 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
   property-tested semilattice; `POST /edits` is the whole client
   protocol. The Go host treats documents as opaque JSON.
 
-## Current state (update in the same change as the work)
-
-The monolith remains the deployed artifact; the bus is a PoC
-alongside it. Where things actually stand:
-
-DONE — monolith ops deleted, UI reads the bus:
-analysis (transit-analysis/cap-analysis), the network codec
-(transit-codec/cap-network), rt decode (transit-rt/cap-rt), and the
-gtfs dispatch reads active_services / blocks / feed_info (cap-gtfs).
-
-DONE on the bus, NOT yet serving the UI:
-cap-dispatch + the transit-dispatch library — the operator day view
-(board, station board, authored block chains with the layover
-ripple). The UI board and block chains still read the monolith.
-
-NOT done (docs/CAPS-PLAN.md is the open queue):
-the UI board/blocks rewire to cap-dispatch, then the monolith's
-`departures` and `block_trips` die; `set_diversions` dies when
-geojson/planning move; the trip-id map for rt joins; sync
-persistence; cap-authz.
-
 ## Conventions
 
 - **Git is the user's** — never commit, push, stash, or otherwise
@@ -153,8 +147,7 @@ persistence; cap-authz.
   go through the extraction pattern (crate boundary first,
   capability wrapper second, monolith deletion last).
 
-The rest of the gotchas: `docs/CONVENTIONS.md` (Rust/wasm/ops) and
-`docs/WEB.md` (frontend).
+The rest of the gotchas: `docs/CONVENTIONS.md`.
 
 ## Testing
 
@@ -175,6 +168,7 @@ dogfood) are spelled out in `docs/TESTING.md`.
   modules keep the same flat ABI — no custom calling conventions.
 - The Go server stays scaffolding; domain logic the server needs
   becomes a transit-ops op.
-- The bus is a PoC alongside the monolith: no capability grows a
-  private document format — shared data crosses modules as kernel
+- The bus is the architecture; the monolith is legacy being
+  deleted (`docs/PLAN.md`): no capability grows a private
+  document format — shared data crosses modules as kernel
   documents addressed by content hash only.

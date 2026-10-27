@@ -9,6 +9,7 @@
   import { layers as basemapLayers, namedFlavor } from "@protomaps/basemaps";
   import { app, getEditDocument, getStreets } from "../state.svelte";
   import { selectStop, setDiversionAnchor, addDetourSlice } from "../actions";
+  import { streetsSnap, streetsRoute } from "../capabilities.svelte";
   import type { StreetPosition } from "../types/StreetPosition";
 
   maplibregl.setWorkerUrl(workerUrl);
@@ -106,15 +107,15 @@
 
   function resolveWaypoint(e: maplibregl.MapMouseEvent): WaypointTarget | null {
     const streets = getStreets();
-    // The artifact snaps; JS owns pixels (thresholds are visual).
+    // JS owns pixels (thresholds are visual); the capability snaps.
     const pxOf = (lat: number, lon: number): number => {
       const p = map.project([lon, lat]);
       return Math.hypot(p.x - e.point.x, p.y - e.point.y);
     };
     let streetPos: StreetPosition | null = null;
     let streetPx = Infinity;
-    if (streets && app.wasm) {
-      const snap = app.wasm.street_snap(streets.streetsId, e.lngLat.lat, e.lngLat.lng);
+    if (streets) {
+      const snap = streetsSnap(streets.streetsHash, e.lngLat.lat, e.lngLat.lng);
       if (snap) {
         const px = pxOf(snap.lat, snap.lon);
         if (px <= SNAP_PX) {
@@ -148,9 +149,9 @@
   /// One waypoint step of the detour trace: the waypoint lands on the
   /// nearest street or stop within a few pixels; the path from the
   /// previous waypoint is ROUTED along the street graph inside the
-  /// artifact, so the committed trace is street geometry — not
-  /// freehand chords. Falls back to a straight line when no street
-  /// network is imported or no route exists.
+  /// cap-streets capability, so the committed trace is street
+  /// geometry — not freehand chords. Falls back to a straight line
+  /// when no street network is imported or no route exists.
   function commitWaypoint(e: maplibregl.MapMouseEvent): void {
     const streets = getStreets();
     const target = resolveWaypoint(e);
@@ -161,17 +162,17 @@
     if (target.kind === "stop") {
       // A stop waypoint: commit the stop exactly; route onward from
       // the street beneath it when there is one.
-      const anchor = streets && app.wasm
-        ? app.wasm.street_snap(streets.streetsId, target.point[0], target.point[1])
+      const anchor = streets
+        ? streetsSnap(streets.streetsHash, target.point[0], target.point[1])
         : null;
       addDetourSlice([target.point], anchor);
       return;
     }
-    if (target.kind === "street" && streets && app.wasm) {
+    if (target.kind === "street" && streets) {
       const prev: StreetPosition | null =
         app.diversionDraft?.slices.at(-1)?.endPos ?? null;
       const routed = prev
-        ? app.wasm.street_route(streets.streetsId, prev, target.streetPos!)
+        ? streetsRoute(streets.streetsHash, prev, target.streetPos!)
         : [];
       if (routed.length) {
         addDetourSlice(routed.map((p) => [p.lat, p.lon] as [number, number]), target.streetPos);
@@ -204,8 +205,8 @@
     const streets = getStreets();
     const prev = draft.slices.at(-1)?.endPos ?? null;
     let path: [number, number][] = [];
-    if (target.streetPos && prev && streets && app.wasm) {
-      path = app.wasm.street_route(streets.streetsId, prev, target.streetPos)
+    if (target.streetPos && prev && streets) {
+      path = streetsRoute(streets.streetsHash, prev, target.streetPos)
         .map((p) => [p.lat, p.lon] as [number, number]);
     }
     // No route (or none possible): preview the direct line — that is
@@ -438,7 +439,7 @@
         map.on("mousemove", (e) => {
           if (!app.drawingDetour) return;
           // Recompute only when the cursor actually moved: each step
-          // is a graph search inside the artifact.
+          // is a graph search inside the capability.
           if (previewPx && Math.hypot(e.point.x - previewPx[0], e.point.y - previewPx[1]) < 3) return;
           previewPx = [e.point.x, e.point.y];
           previewSegment(e);

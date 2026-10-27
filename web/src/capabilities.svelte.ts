@@ -1,4 +1,4 @@
-/// The capability-bus PoC: the host-side resolver.
+/// The capability bus: the host-side resolver.
 ///
 /// Capabilities advertise (the manifest); consumers declare needs;
 /// this module executes — demand-driven load, hash verification at
@@ -28,9 +28,20 @@ import type { Request as AnalysisRequest } from "./types/cap_analysis/Request";
 import type { Response as AnalysisResponse } from "./types/cap_analysis/Response";
 import type { Request as NetworkCapRequest } from "./types/cap_network/Request";
 import type { Response as NetworkCapResponse } from "./types/cap_network/Response";
+import type { Request as DispatchCapRequest } from "./types/cap_dispatch/Request";
+import type { Response as DispatchCapResponse } from "./types/cap_dispatch/Response";
 import type { Request as RtCapRequest } from "./types/cap_rt/Request";
 import type { Response as RtCapResponse } from "./types/cap_rt/Response";
+import type { Request as StreetsCapRequest } from "./types/cap_streets/Request";
+import type { Response as StreetsCapResponse } from "./types/cap_streets/Response";
 import type { RtOverview } from "./types/RtOverview";
+import type { StreetPoint } from "./types/StreetPoint";
+import type { StreetPosition } from "./types/StreetPosition";
+import type { TripIdMap } from "./types/TripIdMap";
+import type { BoardDeparture } from "./types/BoardDeparture";
+import type { BlockChainTrip } from "./types/BlockChainTrip";
+import type { EditRecord } from "./types/EditRecord";
+import type { EditReport } from "./types/EditReport";
 import type { Network } from "./types/Network";
 import type { NetworkError } from "./types/NetworkError";
 import type { NetworkStats } from "./types/NetworkStats";
@@ -79,8 +90,10 @@ class CapModule {
       | RouterRequest
       | AnalysisRequest
       | NetworkCapRequest
-      | RtCapRequest,
-  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | RtCapResponse {
+      | DispatchCapRequest
+      | RtCapRequest
+      | StreetsCapRequest,
+  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | DispatchCapResponse | RtCapResponse | StreetsCapResponse {
     const wasm = this.#exports;
     const payload = new TextEncoder().encode(JSON.stringify(request));
     const ptr = wasm.transit_alloc(payload.length);
@@ -92,13 +105,15 @@ class CapModule {
       | RouterResponse
       | AnalysisResponse
       | NetworkCapResponse
-      | RtCapResponse;
+      | DispatchCapResponse
+      | RtCapResponse
+      | StreetsCapResponse;
   }
 
   invokeBytes(
     op: number,
     bytes: Uint8Array,
-  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | RtCapResponse {
+  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | RtCapResponse | StreetsCapResponse {
     const wasm = this.#exports;
     const ptr = wasm.transit_alloc(bytes.length);
     new Uint8Array(wasm.memory.buffer, ptr, bytes.length).set(bytes);
@@ -109,7 +124,8 @@ class CapModule {
       | RouterResponse
       | AnalysisResponse
       | NetworkCapResponse
-      | RtCapResponse;
+      | RtCapResponse
+      | StreetsCapResponse;
   }
 
   #read(outPtr: number): unknown {
@@ -720,6 +736,15 @@ export function networkCap(module: CapModule) {
       } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "export" }>;
       return { feedHash: resp.feed_hash, summary: resp.summary, zipB64: resp.zip_b64 };
     },
+    /// The import's trip-id map: derived (schedule, start) ↔ agency
+    /// trip ids. None for an authored (non-imported) network.
+    tripMap(networkHash: string): TripIdMap | null {
+      const resp = module.invoke({
+        op: "trip_map",
+        network_hash: networkHash,
+      } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "trip_map" }>;
+      return resp.map ?? null;
+    },
   };
 }
 
@@ -781,4 +806,276 @@ export function rtCap(module: CapModule) {
 export async function rtModule(): Promise<CapModule | null> {
   const modules = await ensure(["rt"]);
   return modules.rt ?? null;
+}
+
+// ---------------------------------------------------------------------
+// The dispatch capability — the operator day view over the NETWORK
+// (the core data model) plus the OPERATOR EDIT document. The board
+// and the block chains answer here, diversion-rippled; when the
+// assembly cannot form, the views that need it degrade loudly.
+//
+// The boarding chain (feed → import → dispatch) is the bus's
+// composition law in miniature: the feed loads into cap-network,
+// import produces the network document, and the SAME document loads
+// into cap-dispatch — whose returned hash is asserted equal to the
+// import's. One document, one truth, checked at the host.
+// ---------------------------------------------------------------------
+
+export function dispatchCap(module: CapModule) {
+  return {
+    loadNetwork(network: Network): string {
+      const resp = module.invoke({
+        op: "load_network",
+        network,
+      } as DispatchCapRequest) as Extract<DispatchCapResponse, { op: "load_network" }>;
+      return resp.network_hash;
+    },
+    loadEdits(
+      networkHash: string,
+      records: EditRecord[],
+    ): { editsHash: string; reports: EditReport[] } {
+      const resp = module.invoke({
+        op: "load_edits",
+        network_hash: networkHash,
+        records,
+      } as DispatchCapRequest) as Extract<DispatchCapResponse, { op: "load_edits" }>;
+      return { editsHash: resp.edits_hash, reports: resp.reports };
+    },
+    departures(
+      networkHash: string,
+      editsHash: string | null,
+      stopId: string,
+      date: string,
+      fromSecs: number,
+      limit: number,
+    ): BoardDeparture[] {
+      const resp = module.invoke({
+        op: "departures",
+        network_hash: networkHash,
+        edits_hash: editsHash,
+        stop_id: stopId,
+        date,
+        from_secs: fromSecs,
+        limit,
+      } as DispatchCapRequest) as Extract<DispatchCapResponse, { op: "departures" }>;
+      return resp.departures;
+    },
+    stationDepartures(
+      networkHash: string,
+      editsHash: string | null,
+      stopId: string,
+      date: string,
+      fromSecs: number,
+      limit: number,
+    ): BoardDeparture[] {
+      const resp = module.invoke({
+        op: "station_departures",
+        network_hash: networkHash,
+        edits_hash: editsHash,
+        stop_id: stopId,
+        date,
+        from_secs: fromSecs,
+        limit,
+      } as DispatchCapRequest) as Extract<DispatchCapResponse, { op: "station_departures" }>;
+      return resp.departures;
+    },
+    blockTrips(
+      networkHash: string,
+      editsHash: string | null,
+      blockId: string,
+      date: string,
+    ): BlockChainTrip[] {
+      const resp = module.invoke({
+        op: "block_trips",
+        network_hash: networkHash,
+        edits_hash: editsHash,
+        block_id: blockId,
+        date,
+      } as DispatchCapRequest) as Extract<DispatchCapResponse, { op: "block_trips" }>;
+      return resp.trips;
+    },
+  };
+}
+
+/// The current dispatch module, if the bus assembled one.
+export async function dispatchModule(): Promise<CapModule | null> {
+  const modules = await ensure(["dispatch"]);
+  return modules.dispatch ?? null;
+}
+
+/// Everything the board and the block chains need from a loaded
+/// feed: the derived network document (by hash, loaded in
+/// cap-dispatch) and the import's trip-id map (the join rt delays
+/// and click-throughs are keyed by — rt and the feed's own ops
+/// speak the AGENCY's ids, the model mints its own).
+export type DispatchBoarding = {
+  feedHash: string;
+  networkHash: string;
+  tripMap: TripIdMap;
+};
+
+const dispatchBoardings = new Map<string, Promise<DispatchBoarding | null>>();
+
+/// Board the loaded feed into the dispatch capability: load the
+/// bytes into cap-network, import the network document, load that
+/// SAME document into cap-dispatch (identities asserted equal), and
+/// carry the trip-id map. Memoized by the feed bytes' content hash —
+/// the import runs once per feed per session, never per query.
+export function ensureDispatchBoarding(bytes: Uint8Array): Promise<DispatchBoarding | null> {
+  const load = async (): Promise<DispatchBoarding | null> => {
+    const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
+    const memo = dispatchBoardings.get(memoKey);
+    if (memo) return memo;
+    const boarding = (async () => {
+      const modules = await ensure(["network", "dispatch"]);
+      const network = modules.network;
+      const dispatch = modules.dispatch;
+      if (!network || !dispatch) return null;
+      const feedHash = networkCap(network).loadFeed(bytes).feedHash;
+      const imported = networkCap(network).import(feedHash);
+      const map = networkCap(network).tripMap(imported.networkHash);
+      if (!map) return null; // an imported network always has one
+      const dispatchHash = dispatchCap(dispatch).loadNetwork(imported.network);
+      if (dispatchHash !== imported.networkHash) {
+        throw new Error(
+          `network identity disagrees across capabilities: ${dispatchHash} != ${imported.networkHash}`,
+        );
+      }
+      return { feedHash, networkHash: imported.networkHash, tripMap: map };
+    })();
+    boarding.catch(() => dispatchBoardings.delete(memoKey));
+    dispatchBoardings.set(memoKey, boarding);
+    return boarding;
+  };
+  return load();
+}
+
+const dispatchEdits = new Map<string, Promise<string | null>>();
+
+/// Register the operator edit document against a boarded network,
+/// memoized by (network, document) — the edits document crosses the
+/// seam once per change, not once per query. An EMPTY document is
+/// schedule-only: no load, null hash (the day views' contract).
+export function ensureDispatchEdits(
+  networkHash: string,
+  records: EditRecord[],
+): Promise<string | null> {
+  if (records.length === 0) return Promise.resolve(null);
+  const memoKey = networkHash + "\n" + JSON.stringify(records);
+  const memo = dispatchEdits.get(memoKey);
+  if (memo) return memo;
+  const load = (async () => {
+    const module = await dispatchModule();
+    if (!module) return null;
+    return dispatchCap(module).loadEdits(networkHash, records).editsHash;
+  })();
+  load.catch(() => dispatchEdits.delete(memoKey));
+  dispatchEdits.set(memoKey, load);
+  return load;
+}
+
+// ---------------------------------------------------------------------
+// The streets capability — the detour editor's street graph (the
+// first unit of the monolith decomposition, U1): a GeoJSON street
+// network registers under its content hash, then pure snap/route
+// queries against the parsed graph. Reference data the HOST owns
+// (an OSM extract or open-data layer, re-imported per session); the
+// module writes nothing. When the assembly cannot form, street
+// import refuses with an honest status and detour clicks fall back
+// to stops — never silently to freehand chords.
+// ---------------------------------------------------------------------
+
+const OP_LOAD_STREETS = 0;
+
+export type StreetsGraph = { streetsHash: string; segments: number; nodes: number };
+
+export function streetsCap(module: CapModule) {
+  return {
+    /// Bytes in once: the GeoJSON parses into the routing graph and
+    /// registers under its content hash (idempotent — the same
+    /// bytes are the same graph).
+    loadStreets(bytes: Uint8Array): StreetsGraph {
+      const resp = module.invokeBytes(OP_LOAD_STREETS, bytes) as Extract<
+        StreetsCapResponse,
+        { op: "load_streets" }
+      >;
+      return { streetsHash: resp.streets_hash, segments: resp.segments, nodes: resp.nodes };
+    },
+    /// The nearest street position to a click: the projected point
+    /// plus its graph address — what a detour waypoint commits to.
+    snap(streetsHash: string, lat: number, lon: number): StreetPosition | null {
+      const resp = module.invoke({
+        op: "snap",
+        streets_hash: streetsHash,
+        lat,
+        lon,
+      } as StreetsCapRequest) as Extract<StreetsCapResponse, { op: "snap" }>;
+      return resp.position ?? null;
+    },
+    /// The street geometry between two positions (shortest path).
+    /// Empty when the positions sit on disconnected parts — the
+    /// caller falls back to a straight line.
+    route(streetsHash: string, from: StreetPosition, to: StreetPosition): StreetPoint[] {
+      const resp = module.invoke({
+        op: "route",
+        streets_hash: streetsHash,
+        from,
+        to,
+      } as StreetsCapRequest) as Extract<StreetsCapResponse, { op: "route" }>;
+      return resp.points;
+    },
+  };
+}
+
+/// The current streets module, if the bus assembled one.
+export async function streetsModule(): Promise<CapModule | null> {
+  const modules = await ensure(["streets"]);
+  return modules.streets ?? null;
+}
+
+const streetGraphs = new Map<string, Promise<StreetsGraph | null>>();
+
+/// Register a street network in cap-streets, memoized by the bytes'
+/// content hash — the GeoJSON crosses the seam once per import, and
+/// THE MODULE IS THE HASH AUTHORITY (its returned streets_hash is
+/// the identity; the memo key is only the host's "did I already
+/// load these bytes" check).
+export function ensureStreets(bytes: Uint8Array): Promise<StreetsGraph | null> {
+  const load = async (): Promise<StreetsGraph | null> => {
+    const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
+    const memo = streetGraphs.get(memoKey);
+    if (memo) return memo;
+    const graph = (async () => {
+      const module = await streetsModule();
+      if (!module) return null;
+      return streetsCap(module).loadStreets(bytes);
+    })();
+    graph.catch(() => streetGraphs.delete(memoKey));
+    streetGraphs.set(memoKey, graph);
+    return graph;
+  };
+  return load();
+}
+
+/// Sync snap for the map's click handlers (an event handler cannot
+/// await). A streets handle only exists after ensureStreets loaded
+/// the module, so a missing module here means the assembly was
+/// degraded mid-session — the click then behaves as "no street
+/// nearby", same as an off-graph click.
+export function streetsSnap(streetsHash: string, lat: number, lon: number): StreetPosition | null {
+  const module = caps.modules["streets"];
+  if (!module) return null;
+  return streetsCap(module).snap(streetsHash, lat, lon);
+}
+
+/// Sync route, same standing as streetsSnap: empty (straight-line
+/// fallback) when the module is gone.
+export function streetsRoute(
+  streetsHash: string,
+  from: StreetPosition,
+  to: StreetPosition,
+): StreetPoint[] {
+  const module = caps.modules["streets"];
+  if (!module) return [];
+  return streetsCap(module).route(streetsHash, from, to);
 }

@@ -13,6 +13,13 @@ serialization.
   substrate), transit-codec (import/export), cap-gtfs and
   cap-network (the boundary capabilities). cap-gtfs's charter is
   CLOSED: parse, export, primitive boundary queries — no more.
+- **"Network vs feed" is never a decision.** Model-side
+  capabilities compose over the NETWORK document (+ its day
+  views) — presenting composition over the feed as an option,
+  a trade-off, or an open question is the law broken in prose.
+  cap-router reads the feed today as a TRANSITIONAL exception
+  (the Stage-B-era shape); U5 in docs/PLAN.md retires it. No new
+  feed-composing code, and no plan may reopen the question.
 - Capabilities compose over the network document, addressed by
   content hash. The module is the hash authority.
 - Operator edits, rt joins, analysis, dispatch views: all work in
@@ -39,6 +46,30 @@ The day view is `transit_network::materialize(net, date)` — the
 day's trips, computed per call. Patch the DAY (operator edits
 over materialized stop_times), never the calendar.
 
+## Law 3: one NEED per module — personas assemble at wire time
+
+A capability module is ONE need, atomically ("see the departures
+at a stop", "watch one vehicle's connections", "plan a trip").
+The persona/bundle comes together at WIRE time — the user's
+selection over the manifest — never at build time. Do not design
+a module around who will use it, and do not merge ops because
+the same users end up wiring them together.
+
+Rejected on sight:
+
+- ops serving different needs in one module because one persona
+  downloads them together (the rider board behind an operator
+  contract — see docs/PLAN.md, the U2 split);
+- DUPLICATING an op across modules (two answers to one need on
+  the bus — the monolith rebuilt sideways);
+- shared DAY MACHINERY is a LIBRARY's job (transit-dispatch), not
+  a reason to merge module surfaces.
+
+Registration ops (`load_network`, `load_edits`, `load_feed`) are
+composition fabric, not authoring: the host owns every document,
+wholesale-replaced. Authoring ops MINT documents; readers have
+none by construction.
+
 ## Where new things go
 
 The extraction pattern, always in this order:
@@ -52,7 +83,9 @@ The extraction pattern, always in this order:
 
 ## Enforcement
 
-The justfile `test` recipe asserts both laws: model-side
+The justfile `test` recipe asserts laws 1 and 2: model-side
 capabilities may not depend on transit-core/transit-codec, and
-`network_to_gtfs` may not appear outside the codec's homes. If a
-gate fails your change, reread this file — do not widen the gate.
+`network_to_gtfs` may not appear outside the codec's homes. Law 3
+is a review gate (the need table + U2 in docs/PLAN.md is the checklist —
+every new module's ops must each name one need). If a gate fails
+your change, reread this file — do not widen the gate.

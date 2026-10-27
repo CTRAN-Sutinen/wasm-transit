@@ -42,6 +42,10 @@ test("the manifest assembles both capabilities", async ({ page }) => {
   // And the third (the realtime decoder): the dispatch leg assembles.
   await expect(panel.getByTestId("cap-rt")).toContainText("ready");
   await expect(panel).toContainText("rt");
+  // And the street graph (U1): the detour editor's snap/route reads
+  // the bus now — the monolith street ops are gone.
+  await expect(panel.getByTestId("cap-streets")).toContainText("ready");
+  await expect(panel).toContainText("streets");
 });
 
 test("the composition runs across two modules", async ({ page }) => {

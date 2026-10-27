@@ -142,5 +142,57 @@ proptest! {
         let again = transit_codec::gtfs_to_network(&gtfs);
         prop_assert_eq!(outcome.network, again.network);
         prop_assert_eq!(outcome.notes, again.notes);
+        prop_assert_eq!(outcome.trip_map, again.trip_map);
+    }
+
+    /// Law 3: the trip-id map is the HONEST join — every kept agency
+    /// trip id appears exactly once, every entry names a derived
+    /// trip the network actually materializes, and the derived
+    /// identity agrees with the id the export mints for that trip
+    /// (`"{schedule}@{start}"`). Anything less and the map is a
+    /// guess, not a join.
+    #[test]
+    fn trip_id_map_joins_every_kept_trip(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
+        let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips))
+            .expect("generated feeds parse");
+        let outcome = transit_codec::gtfs_to_network(&gtfs);
+        let mut seen = std::collections::BTreeSet::new();
+        for entry in &outcome.trip_map.entries {
+            let schedule = outcome
+                .network
+                .schedules
+                .get(&entry.schedule)
+                .unwrap_or_else(|| panic!("map names unknown schedule {}", entry.schedule));
+            let starts = match &schedule.schedule {
+                transit_network::Schedule::ExactTimes { starts } => starts,
+                transit_network::Schedule::HeadwayBands { .. } =>
+                    panic!("import mints exact-times schedules only"),
+            };
+            prop_assert!(
+                starts.contains(&entry.start_secs),
+                "map names a start the schedule does not carry"
+            );
+            for id in &entry.agency_trip_ids {
+                prop_assert!(seen.insert(id.clone()), "agency id {id} mapped twice");
+            }
+        }
+        // The generator only emits spec-valid trips the import keeps,
+        // so coverage must be total: every agency trip id in the feed.
+        let expected: std::collections::BTreeSet<String> =
+            gtfs.trips.keys().cloned().collect();
+        prop_assert_eq!(seen, expected, "the map dropped agency trip ids");
+        // The export mints "{schedule}@{start}": the map's derived
+        // identity and the published artifact's ids agree exactly.
+        let exported = transit_codec::network_to_gtfs(&outcome.network)
+            .expect("a valid document exports");
+        let minted: std::collections::BTreeSet<&str> =
+            exported.trips.keys().map(String::as_str).collect();
+        for entry in &outcome.trip_map.entries {
+            let derived = format!("{}@{}", entry.schedule, entry.start_secs);
+            prop_assert!(
+                minted.contains(derived.as_str()),
+                "map's derived id {derived} is not an id the export mints"
+            );
+        }
     }
 }

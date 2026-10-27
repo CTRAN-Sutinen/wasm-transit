@@ -22,12 +22,12 @@
       ],
       "consumes": {},
       "speaks": {
+        "feed": [
+          1
+        ],
         "watchlist": [
           1,
           2
-        ],
-        "feed": [
-          1
         ]
       },
       "migrates": {
@@ -40,30 +40,147 @@
       },
       "purpose": "Read a GTFS static zip: parse it into a hash-addressed feed registry and answer schedule questions (departures at a stop, stop lists). Assemble for any user who needs to know when service runs. Also owns the watchlist document (the rider's saved stops) and its v1→v2 migration.",
       "op_docs": {
-        "load_watchlist": {
-          "description": "Register a watchlist document (version-tagged JSON) under its content hash.",
+        "load_feed": {
+          "description": "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
+          "example": null
+        },
+        "active_services": {
+          "description": "Service keys running on a date — often several at once (regular patterns plus exception-added services). The dispatcher's first question: what is running today?",
           "example": {
             "request": {
-              "document": {
-                "stops": [
-                  {
-                    "id": "A",
-                    "label": "home"
-                  },
-                  {
-                    "id": "B",
-                    "label": "work"
-                  }
-                ],
-                "version": "v2"
-              },
-              "op": "load_watchlist"
+              "date": "2026-10-23",
+              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
+              "op": "active_services"
             },
             "response": {
               "ok": {
-                "op": "load_watchlist",
-                "version": 2,
-                "watchlist_hash": "sha256:<of the document>"
+                "op": "active_services",
+                "services": [
+                  "HOL",
+                  "WK"
+                ]
+              }
+            }
+          }
+        },
+        "block_trips": {
+          "description": "One block's trip chain on a service date: where the vehicle starts, where it ends, the layover between trips. Unknown blocks answer empty, never error.",
+          "example": {
+            "request": {
+              "block_id": "B1",
+              "date": "2026-10-23",
+              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
+              "op": "block_trips"
+            },
+            "response": {
+              "ok": {
+                "op": "block_trips",
+                "trips": [
+                  {
+                    "end_time": 29400,
+                    "end_time_hhmmss": "08:10:00",
+                    "first_stop_id": "A",
+                    "first_stop_name": "Main & 1st",
+                    "headsign": "Downtown",
+                    "last_stop_id": "B",
+                    "last_stop_name": "Main & 2nd",
+                    "layover_secs": null,
+                    "route_id": "10",
+                    "route_name": "10",
+                    "service_id": "WK",
+                    "start_time": 28800,
+                    "start_time_hhmmss": "08:00:00",
+                    "trip_id": "t10"
+                  },
+                  {
+                    "end_time": 30600,
+                    "end_time_hhmmss": "08:30:00",
+                    "first_stop_id": "A",
+                    "first_stop_name": "Main & 1st",
+                    "headsign": "Downtown",
+                    "last_stop_id": "B",
+                    "last_stop_name": "Main & 2nd",
+                    "layover_secs": 600,
+                    "route_id": "20",
+                    "route_name": "20",
+                    "service_id": "WK",
+                    "start_time": 30000,
+                    "start_time_hhmmss": "08:20:00",
+                    "trip_id": "t20"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "stops_by_ids": {
+          "description": "Stop names by id, in the request's order — the join hosts otherwise do by hand when a view (like rt's) carries ids a human reads as names. Unknown ids are omitted.",
+          "example": {
+            "request": {
+              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
+              "ids": [
+                "A",
+                "STN"
+              ],
+              "op": "stops_by_ids"
+            },
+            "response": {
+              "ok": {
+                "op": "stops_by_ids",
+                "stops": [
+                  {
+                    "name": "Main & 1st",
+                    "stop_id": "A"
+                  },
+                  {
+                    "name": "Main Station",
+                    "stop_id": "STN"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "departures": {
+          "description": "Upcoming departures at one stop on a service date, schedule only (GTFS-rt is another capability). The stop's own board — a station pin answers nothing here; see station_departures.",
+          "example": {
+            "request": {
+              "date": "2026-10-23",
+              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
+              "from_secs": 25200,
+              "limit": 5,
+              "op": "departures",
+              "stop_id": "A"
+            },
+            "response": {
+              "ok": {
+                "departures": [
+                  {
+                    "block_id": "B1",
+                    "departure_time": 28800,
+                    "departure_time_hhmmss": "08:00:00",
+                    "headsign": null,
+                    "route_id": "10",
+                    "route_name": "10",
+                    "service_id": "WK",
+                    "stop_id": "A",
+                    "stop_sequence": 1,
+                    "trip_id": "t10"
+                  },
+                  {
+                    "block_id": "B1",
+                    "departure_time": 30000,
+                    "departure_time_hhmmss": "08:20:00",
+                    "headsign": null,
+                    "route_id": "20",
+                    "route_name": "20",
+                    "service_id": "WK",
+                    "stop_id": "A",
+                    "stop_sequence": 1,
+                    "trip_id": "t20"
+                  }
+                ],
+                "op": "departures"
               }
             }
           }
@@ -132,6 +249,109 @@
                   }
                 ],
                 "op": "station_departures"
+              }
+            }
+          }
+        },
+        "stops": {
+          "description": "Stop list for UI pickers, first N by id.",
+          "example": {
+            "request": {
+              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
+              "limit": 3,
+              "op": "stops"
+            },
+            "response": {
+              "ok": {
+                "op": "stops",
+                "stops": [
+                  {
+                    "name": "Main & 1st",
+                    "stop_id": "A"
+                  },
+                  {
+                    "name": "Main & 2nd",
+                    "stop_id": "B"
+                  },
+                  {
+                    "name": "Main & 3rd",
+                    "stop_id": "C"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "blocks": {
+          "description": "All blocks in the feed; with `date`, only the blocks RUNNING that day, with that day's trip counts — the vehicle picker shows buses in service, not parked buses. A block is one vehicle's trip chain.",
+          "example": {
+            "request": {
+              "date": "2026-10-23",
+              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
+              "op": "blocks"
+            },
+            "response": {
+              "ok": {
+                "blocks": [
+                  {
+                    "block_id": "B1",
+                    "trip_count": 2
+                  },
+                  {
+                    "block_id": "B2",
+                    "trip_count": 1
+                  }
+                ],
+                "op": "blocks"
+              }
+            }
+          }
+        },
+        "feed_info": {
+          "description": "The feed's own metadata (version, publisher), when the feed provides feed_info.txt — the identity question a dispatcher asks first: which feed am I dispatching?",
+          "example": {
+            "request": {
+              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
+              "op": "feed_info"
+            },
+            "response": {
+              "ok": {
+                "info": {
+                  "feed_id": null,
+                  "feed_lang": "en",
+                  "feed_publisher_name": "Test Transit",
+                  "feed_publisher_url": "https://example.com",
+                  "feed_version": "2026.10.1"
+                },
+                "op": "feed_info"
+              }
+            }
+          }
+        },
+        "load_watchlist": {
+          "description": "Register a watchlist document (version-tagged JSON) under its content hash.",
+          "example": {
+            "request": {
+              "document": {
+                "stops": [
+                  {
+                    "id": "A",
+                    "label": "home"
+                  },
+                  {
+                    "id": "B",
+                    "label": "work"
+                  }
+                ],
+                "version": "v2"
+              },
+              "op": "load_watchlist"
+            },
+            "response": {
+              "ok": {
+                "op": "load_watchlist",
+                "version": 2,
+                "watchlist_hash": "sha256:<of the document>"
               }
             }
           }
@@ -230,226 +450,6 @@
               }
             }
           }
-        },
-        "stops": {
-          "description": "Stop list for UI pickers, first N by id.",
-          "example": {
-            "request": {
-              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
-              "limit": 3,
-              "op": "stops"
-            },
-            "response": {
-              "ok": {
-                "op": "stops",
-                "stops": [
-                  {
-                    "name": "Main & 1st",
-                    "stop_id": "A"
-                  },
-                  {
-                    "name": "Main & 2nd",
-                    "stop_id": "B"
-                  },
-                  {
-                    "name": "Main & 3rd",
-                    "stop_id": "C"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "departures": {
-          "description": "Upcoming departures at one stop on a service date, schedule only (GTFS-rt is another capability). The stop's own board — a station pin answers nothing here; see station_departures.",
-          "example": {
-            "request": {
-              "date": "2026-10-23",
-              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
-              "from_secs": 25200,
-              "limit": 5,
-              "op": "departures",
-              "stop_id": "A"
-            },
-            "response": {
-              "ok": {
-                "departures": [
-                  {
-                    "block_id": "B1",
-                    "departure_time": 28800,
-                    "departure_time_hhmmss": "08:00:00",
-                    "headsign": null,
-                    "route_id": "10",
-                    "route_name": "10",
-                    "service_id": "WK",
-                    "stop_id": "A",
-                    "stop_sequence": 1,
-                    "trip_id": "t10"
-                  },
-                  {
-                    "block_id": "B1",
-                    "departure_time": 30000,
-                    "departure_time_hhmmss": "08:20:00",
-                    "headsign": null,
-                    "route_id": "20",
-                    "route_name": "20",
-                    "service_id": "WK",
-                    "stop_id": "A",
-                    "stop_sequence": 1,
-                    "trip_id": "t20"
-                  }
-                ],
-                "op": "departures"
-              }
-            }
-          }
-        },
-        "load_feed": {
-          "description": "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
-          "example": null
-        },
-        "active_services": {
-          "description": "Service keys running on a date — often several at once (regular patterns plus exception-added services). The dispatcher's first question: what is running today?",
-          "example": {
-            "request": {
-              "date": "2026-10-23",
-              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
-              "op": "active_services"
-            },
-            "response": {
-              "ok": {
-                "op": "active_services",
-                "services": [
-                  "HOL",
-                  "WK"
-                ]
-              }
-            }
-          }
-        },
-        "block_trips": {
-          "description": "One block's trip chain on a service date: where the vehicle starts, where it ends, the layover between trips. Unknown blocks answer empty, never error.",
-          "example": {
-            "request": {
-              "block_id": "B1",
-              "date": "2026-10-23",
-              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
-              "op": "block_trips"
-            },
-            "response": {
-              "ok": {
-                "op": "block_trips",
-                "trips": [
-                  {
-                    "end_time": 29400,
-                    "end_time_hhmmss": "08:10:00",
-                    "first_stop_id": "A",
-                    "first_stop_name": "Main & 1st",
-                    "headsign": "Downtown",
-                    "last_stop_id": "B",
-                    "last_stop_name": "Main & 2nd",
-                    "layover_secs": null,
-                    "route_id": "10",
-                    "route_name": "10",
-                    "service_id": "WK",
-                    "start_time": 28800,
-                    "start_time_hhmmss": "08:00:00",
-                    "trip_id": "t10"
-                  },
-                  {
-                    "end_time": 30600,
-                    "end_time_hhmmss": "08:30:00",
-                    "first_stop_id": "A",
-                    "first_stop_name": "Main & 1st",
-                    "headsign": "Downtown",
-                    "last_stop_id": "B",
-                    "last_stop_name": "Main & 2nd",
-                    "layover_secs": 600,
-                    "route_id": "20",
-                    "route_name": "20",
-                    "service_id": "WK",
-                    "start_time": 30000,
-                    "start_time_hhmmss": "08:20:00",
-                    "trip_id": "t20"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "feed_info": {
-          "description": "The feed's own metadata (version, publisher), when the feed provides feed_info.txt — the identity question a dispatcher asks first: which feed am I dispatching?",
-          "example": {
-            "request": {
-              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
-              "op": "feed_info"
-            },
-            "response": {
-              "ok": {
-                "info": {
-                  "feed_id": null,
-                  "feed_lang": "en",
-                  "feed_publisher_name": "Test Transit",
-                  "feed_publisher_url": "https://example.com",
-                  "feed_version": "2026.10.1"
-                },
-                "op": "feed_info"
-              }
-            }
-          }
-        },
-        "stops_by_ids": {
-          "description": "Stop names by id, in the request's order — the join hosts otherwise do by hand when a view (like rt's) carries ids a human reads as names. Unknown ids are omitted.",
-          "example": {
-            "request": {
-              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
-              "ids": [
-                "A",
-                "STN"
-              ],
-              "op": "stops_by_ids"
-            },
-            "response": {
-              "ok": {
-                "op": "stops_by_ids",
-                "stops": [
-                  {
-                    "name": "Main & 1st",
-                    "stop_id": "A"
-                  },
-                  {
-                    "name": "Main Station",
-                    "stop_id": "STN"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "blocks": {
-          "description": "All blocks in the feed; with `date`, only the blocks RUNNING that day, with that day's trip counts — the vehicle picker shows buses in service, not parked buses. A block is one vehicle's trip chain.",
-          "example": {
-            "request": {
-              "date": "2026-10-23",
-              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
-              "op": "blocks"
-            },
-            "response": {
-              "ok": {
-                "blocks": [
-                  {
-                    "block_id": "B1",
-                    "trip_count": 2
-                  },
-                  {
-                    "block_id": "B2",
-                    "trip_count": 1
-                  }
-                ],
-                "op": "blocks"
-              }
-            }
-          }
         }
       }
     },
@@ -473,10 +473,6 @@
       "migrates": {},
       "purpose": "Earliest-arrival trip planning (RAPTOR) over a feed document the gtfs capability produced. Assemble for users who need directions, not just departure times. Reads documents by content hash; writes nothing.",
       "op_docs": {
-        "load_feed": {
-          "description": "Register a GTFS zip under its content hash (the same document identity gtfs returns — assert equality at the host). Bulk-bytes op 0.",
-          "example": null
-        },
         "plan": {
           "description": "Earliest-arrival itinerary from stop to stop at a departure time; null itinerary = unreachable within max_legs.",
           "example": {
@@ -503,33 +499,102 @@
               }
             }
           }
+        },
+        "load_feed": {
+          "description": "Register a GTFS zip under its content hash (the same document identity gtfs returns — assert equality at the host). Bulk-bytes op 0.",
+          "example": null
         }
       }
     },
     {
       "id": "network",
-      "hash": "sha256:60f8cf179ae1b33bfe5f1513f89b40e32ee3f8adc8aa21abc3b214b15d7f6f32",
-      "url": "caps/network-60f8cf179ae1b33bfe5f1513f89b40e32ee3f8adc8aa21abc3b214b15d7f6f32.wasm",
-      "bytes": 1041237,
+      "hash": "sha256:c51482022db42e94464eeffd4e7815066b3adfb552e8117808228fffa77b193a",
+      "url": "caps/network-c51482022db42e94464eeffd4e7815066b3adfb552e8117808228fffa77b193a.wasm",
+      "bytes": 1057072,
       "ops": [
         "load_feed",
         "import",
         "load_document",
         "validate",
-        "export"
+        "export",
+        "trip_map"
       ],
       "consumes": {},
       "speaks": {
-        "network": [
+        "feed": [
           1
         ],
-        "feed": [
+        "network": [
           1
         ]
       },
       "migrates": {},
       "purpose": "The network codec: infer an authored network document from a GTFS feed (the planner's bootstrap — patterns, service types, blocks, reported resolutions) and export one back to GTFS zip bytes (the publish path). The second capability extracted from the monolith — the codec lives in the shared transit-codec library, and the monolith keeps no copy. Assemble for planners: it is how a planner's session starts and how it publishes.",
       "op_docs": {
+        "trip_map": {
+          "description": "The import's trip-id map for a network: every derived trip ((schedule, start_secs) — the model's identity) joined to the agency trip ids it came from. This is the join rt data and the source feed's ops are keyed by — rt feeds speak the AGENCY's ids, the model mints its own. None for a network that was not inferred from a feed (an authored document has no agency ids).",
+          "example": {
+            "request": {
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "trip_map"
+            },
+            "response": {
+              "ok": {
+                "map": {
+                  "entries": [
+                    {
+                      "agency_trip_ids": [
+                        "t11"
+                      ],
+                      "schedule": "SUN:pat-10-0-0",
+                      "start_secs": 32400
+                    },
+                    {
+                      "agency_trip_ids": [
+                        "t10"
+                      ],
+                      "schedule": "WK:pat-10-0-0",
+                      "start_secs": 28800
+                    },
+                    {
+                      "agency_trip_ids": [
+                        "t30"
+                      ],
+                      "schedule": "WK:pat-10-0-1",
+                      "start_secs": 31200
+                    },
+                    {
+                      "agency_trip_ids": [
+                        "t20"
+                      ],
+                      "schedule": "WK:pat-20-0-0",
+                      "start_secs": 30000
+                    },
+                    {
+                      "agency_trip_ids": [
+                        "t40"
+                      ],
+                      "schedule": "WK:pat-40-0-0",
+                      "start_secs": 29700
+                    },
+                    {
+                      "agency_trip_ids": [
+                        "t41"
+                      ],
+                      "schedule": "WK:pat-40-1-0",
+                      "start_secs": 30900
+                    }
+                  ]
+                },
+                "op": "trip_map"
+              }
+            }
+          }
+        },
+        "load_feed": {
+          "description": "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
+          "example": null
+        },
         "import": {
           "description": "The planner's bootstrap: infer an authored network document from a loaded feed. Deterministic; every resolution the inference applied is reported in the notes — never silent. The inferred document registers itself, so its hash answers validate/export immediately.",
           "example": {
@@ -907,48 +972,6 @@
             }
           }
         },
-        "export": {
-          "description": "The publish path: materialize a registered document into a GTFS zip (deterministic bytes) and return it base64-encoded under the content hash of those bytes — the same identity any capability returns for the same bytes. Invalid documents are refused.",
-          "example": {
-            "request": {
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "export"
-            },
-            "response": {
-              "ok": {
-                "feed_hash": "sha256:0cf68d7159e9c528087d955270579f83aee1e9f24bc74e5ba16a5ce0bd875f67",
-                "op": "export",
-                "summary": {
-                  "agencies": 1,
-                  "routes": 3,
-                  "stop_times": 13,
-                  "stops": 6,
-                  "trips": 6
-                },
-                "zip_b64": "UEsDBBQAAAAIAAAAIQD+QcloOgAAAEMAAAAKAAAAYWdlbmN5LnR4dDXGsQkAIQwF0F5whxsg49gfQT8S0AgaC53eQuweZ2hcvyTiK+WK59nLo0nFbgrvKGDYFzrrECPy7gBQSwMEFAAAAAgAAAAhAPbmoolQAAAAhAAAAAoAAAByb3V0ZXMudHh0TYhBCoAgEADvgj/ZQ5n/ETGxwNzYNsjfp9VCh4GZITw5unUGn2IJtRs961iQ2BW/xW9kLOnfXHfRgBlJdrz4HVqNA0BnAtDKNDEStomVuAFQSwMEFAAAAAgAAAAhAEl420eYAAAAKgEAAAkAAABzdG9wcy50eHRtjr0KwyAUhfdA3sGp022p+aHQLXZuFrOLRAchVYl3yds3UZuS0kUPfh/nGNB5YRSE7R6d0ilZ+cppkpiDszC5UaJxVuDiNXg5a4siYHwriw7gKY0lJ0IDQtNeWjjf6vW8QlmwHVZWRUgTpRE/dlzPCVcJVxHzTzdPY3fC5EK61JNnaLst8aFfdfZPZ0e9+epDf/R/euMX3lBLAwQUAAAACAAAACEAx4QrUMUAAADYAQAACQAAAHRyaXBzLnR4dH2QwQ6CIACG726+A6dOuAGypZ7Ma6uLax0bKUtWQ4fU1gv0AD1iTxIyZ+JMOMA/+L99oOq75idRwparhyjsVivRDGvFWdmKi4SlULzQopbd0flWF1dbq1jTlXwPI5gf9knDdIBRYOYkpiGhCEGMwOf1BjsmJFgBIksI4e+SxRy3Y4qTUhJF85AML2Gwm9IQkz8uvkeGKnEMSP8MZAYkswa+R4fr1CnTXj9emzIdlXPNuk9NQMaeILMCDgMHk2QE4iXGxjK+UEsDBBQAAAAIAAAAIQBo8Mug0AAAAIsCAAAOAAAAc3RvcF90aW1lcy50eHR9kE8LwiAYxu9B38TAPxttO606Bl1GdBzSpIRay7k+f276knMYHnyUHz8fX61kV8sGcaXkhz9qLZ8CNaLjSg9K2GOvXxMz7b14D6K9utu74E0vb+16VZ1PRcf1huCNWSWjCcYI5wXGhR92iKA4TAC2YY+ogS9Hn6VZNiIZiLOZOMISYGNeUjJCLZIAm0S8PpsWfjj886bgTV0H9mOpmwPGFqHA0mWHkGXAsuXfEjeHfOu+D31tqGbiEA5KVKGZTC1y9ziYbTAwicPBiE2N0fwFUEsDBBQAAAAIAAAAIQCT7ZqZaAwAAKSJAAASAAAAY2FsZW5kYXJfZGF0ZXMudHh0fdrBjrbJTYbhPRJnMpG+sqtsF6eAxAYhllGU/IvZwAhGCM6ehkk6/Xb3Fc3ylt62Xff/1CfX/OeP//ivn//44/c//+mnP/3h1x8//fjvP/745def//3ffv/r//zy4+//7p//5Z/+4Zc//Pq79frd238/xSvqtV77pwW0ltEQxRGK1zLiB2P5gxFC6b+V/lvpv5V/42/FFdovfnCvMPIHo4TOK4nWy6iJgm6c5HjrxQ/W4gcr/MHgebXH2x5ve7zt8c4rjPjBWf5g8LwmeV73xQ/exQ/e8AdD57VeDIf1Yji8oSFiOKzFf7BviB9cyx/kP9g3pPNawfGu4Hjf/tTL6P/H+6//+E30LpIgOSRF4gqG5Ios1vbbfL4lm4T9LPazWNtvx/At4ayD/QT7Cdbm0w7OOthPqp+gIfFKkk1ySIpEVcdi1WuRsB9aFTQkVpMMCfuhVUFDIjjr4KxplTMk6UHSg6QHSQ+SHiQ9SHqQ9CDpQdKDpAdJD5IeJD1IepD0IOlB0oOkB2kPmBSZmvV+mQRJkhRJkwyJTmHTqk1DNu+fzftn06pNqzYN2bx/Nu+fTas2rdrh2jhr3j+bVh26c5guh+ly6M6hO4fuHKbLYbocunPozqE7Z7k2zfrQnUN3Dt05TJfDdDl059CdQ3eKhhTTpZguRauKVhUNKaZLMV2KVhWtKhpSTJdiuhStKlpVNKSYLsV0KVpVtKpsCNOl6U7TnaY7zXRppkvTnaY7TXea6dJMl6Y7TXea7jTTpZkuTXea7jTd6XBtnDXdabvD3ztDQ4bpMkyXoVVDq4aGDNNlmC5Dq4ZWzXJtQ6JTGFo1tGpoyDBdhukytGpo1dCQ+zIJkiTZJE0yJDqFS6surbo05DJ3LnPn0qpLqy4Nucydy9y5tOrSqhuujbNW7rztShdJkBySImmSIbkii7UpXd7IJmE/i/0s1hacdXDWwX6C/QRrC846OGsawq3uG0mSTXJIikSzXotVK0MWN8GLm+DFre4baZIhYT90h1vdN8JZB2dNd7gJXtzqrmCGBN3hvndx3/tGmmRINGvuexf3vW+EtTFDuO9d3Pcu7nvf1v6sjRnCfe/ivndx3/tGXBtnbXe+/qpZv91Z37wzvZMgOSRF0iRDckUWa/uaLu9kk7CfxX4Wa/uaLu+Esw72E+wnWFtw1sFZB/tJ9RM05JvceSeb5JAUiar+JnfeySJhP7QqaMg3ufNOhoT90KqgId/kzjvhrGlV0KqkB0kPkh4kPUh6kPQg6UHSg6QHSQ+SHiQ9SHqQ9CDpQdKDpAdJD5IepD1gUiTvn/0yCZIkKZImGRKdwqZVm4Zs3j+b98+mVZtWbRqyef9s3j+bVm1atcO1cda8fzatOnTnMF0O0+XQnUN3Dt05TJfDdDl059CdQ3fOcm2a9aE7h+4cunOYLofpcujOoTuH7hQNKaZLMV2KVhWtKhpSTJdiuhStKlpVNKSYLsV0KVpVtKpoSDFdiulStKpoVdkQpkvTnaY7TXea6dJMl6Y7TXea7jTTpZkuTXea7jTdaaZLM12a7jTdabrT4do4a7rTdoe/d4aGDNNlmC5Dq4ZWDQ0ZpsswXYZWDa2a5dqGRKcwtGpo1dCQYboM02Vo1dCqoSH3ZRIkSbJJmmRIdAqXVl1adWnIZe5c5s6lVZdWXRpymTuXuXNp1aVVN1wbZ63c+e6d6Z0EySEpkiYZkiuyWJvS5bt3pnfCfhb7WawtOOvgrIP9BPsJ1hacdXDWNIRb3e/emd7JJjkkRaJZr8WqlSGLm+DFTfDiVve7d6Z3MiTsh+5wq/vdO9M74azpDjfBi1vd796Z3kmQJMkmaZIh0ay5713c9373zvRODkmRsB+6E8yQYIZw37u4713c9373zvROOGu78/hVE/9H/vz/RjzfmZ4kSA5JkTTJkFyRxdoe6fIkm4T9LPazWNsjXZ6Esw72E+wnWFtw1sFZB/tJ9RM05Jk7T7JJDkmRqOpn7jzJImE/tCpoyDN3nmRI2A+tChryzJ0n4axpVdCqpAdJD5IeJD1IepD0IOlB0oOkB0kPkh4kPUh6kPQg6UHSg6QHSQ+SHqQ9YFIk75/9MgmSJCmSJhkSncKmVZuGbN4/m/fPplWbVm0asnn/bN4/m1ZtWrXDtXHWvH82rTp05zBdDtPl0J1Ddw7dOUyXw3Q5dOfQnUN3znJtmvWhO4fuHLpzmC6H6XLozqE7h+4UDSmmSzFdilYVrSoaUkyXYroUrSpaVTSkmC7FdClaVbSqaEgxXYrpUrSqaFXZEKZL052mO013munSTJemO013mu4006WZLk13mu403WmmSzNdmu403Wm60+HaOGu603aHv3eGhgzTZZguQ6uGVg0NGabLMF2GVg2tmuXahkSnMLRqaNXQkGG6DNNlaNXQqqEh92USJEmySZpkSHQKl1ZdWnVpyGXuXObOpVWXVl0acpk7l7lzadWlVTdcG2et3Pn0zvQkQXJIiqRJhuSKLNamdPn0zvQk7Gexn8XagrMOzjrYT7CfYG3BWQdnTUO41f30zvQkm+SQFIlmvRarVoYsboIXN8GLW91P70xPMiTsh+5wq/vpnelJOGu6w03w4lb30zvTkwRJkmySJhkSzZr73sV976d3pic5JEXCfuhOMEOCGcJ97+K+d3Hf++md6Uk4a7vz+FWz/0o+vTM9SZAckiJpkiG5Iou1PdLlSTYJ+1nsZ7G2R7o8CWcd7CfYT7C24KyDsw72k+onaMgzd55kkxySIlHVz9x5kkXCfmhV0JBn7jzJkLAfWhU05Jk7T8JZ06qgVUkPkh4kPUh6kPQg6UHSg6QHSQ+SHiQ9SHqQ9CDpQdKDpAdJD5IeJD1Ie8CkSN4/+2USJElSJE0yJDqFTas2Ddm8fzbvn02rNq3aNGTz/tm8fzat2rRqh2vjrHn/bFp16M5huhymy6E7h+4cunOYLofpcujOoTuH7pzl2jTrQ3cO3Tl05zBdDtPl0J1Ddw7dKRpSTJdiuhStKlpVNKSYLsV0KVpVtKpoSDFdiulStKpoVdGQYroU06VoVdGqsiFMl6Y7TXea7jTTpZkuTXea7jTdaaZLM12a7jTdabrTTJdmujTdabrTdKfDtXHWdKftDn/vDA0ZpsswXYZWDa0aGjJMl2G6DK0aWjXLtQ2JTmFo1dCqoSHDdBmmy9CqoVVDQ+7LJEiSZJM0yZDoFC6turTq0pDL3LnMnUurLq26NOQydy5z59KqS6tuuDbOWrnz6Z3pSYLkkBRJkwzJFVmsTeny6Z3pSdjPYj+LtQVnHZx1sJ9gP8HagrMOzpqGcKv76Z3pSTbJISkSzXotVq0MWdwEL26CF7e6n96ZnmRI2A/d4Vb30zvTk3DWdIeb4MWt7qd3picJkiTZJE0yJJo1972L+95P70xPckiKhP3QnWCGBDOE+97Ffe/ivvfTO9OTcNZ25/OvmvWXO+vLO9MHEiSHpEiaZEiuyGJtn9PlA9kk7Gexn8XaPqfLB8JZB/sJ9hOsLTjr4KyD/aT6CRryJXc+kE1ySIpEVX/JnQ9kkbAfWhU05EvufCBDwn5oVdCQL7nzgXDWtCpoVdKDpAdJD5IeJD1IepD0IOlB0oOkB0kPkh4kPUh6kPQg6UHSg6QHSQ/SHjApkvfPfpkESZIUSZMMiU5h06pNQzbvn837Z9OqTas2Ddm8fzbvn02rNq3a4do4a94/m1YdunOYLofpcujOoTuH7hymy2G6HLpz6M6hO2e5Ns360J1Ddw7dOUyXw3Q5dOfQnUN3ioYU06WYLkWrilYVDSmmSzFdilYVrSoaUkyXYroUrSpaVTSkmC7FdClaVbSqbAjTpelO052mO810aaZL052mO013munSTJemO013mu4006WZLk13mu403elwbZw13Wm7w987Q0OG6TJMl6FVQ6uGhgzTZZguQ6uGVs1ybUOiUxhaNbRqaMgwXYbpMrRqaNXQkPsyCZIk2SRNMiQ6hUurLq26NOQydy5z59KqS6suDbnMncvcubTq0qobro2zVu58fWf6QILkkBRJkwzJFVmsTeny9Z3pA2E/i/0s1hacdXDWwX6C/QRrC846OGsawq3u13emD2STHJIi0azXYtXKkMVN8OImeHGr+/Wd6QMZEvZDd7jV/frO9IFw1nSHm+DFre7Xd6YPJEiSZJM0yZBo1tz3Lu57v74zfSCHpEjYD90JZkgwQ7jvXdz3Lu57v74zfSCctd357VfN/wJQSwMEFAAAAAgAAAAhAP/f7kZhAAAA1AAAAAoAAABzaGFwZXMudHh0ZclhCoAgDAXg/0E3mZHl6DgiOUgQs1ydP0mhQAbb3vvSZiJpZyG9T2TtDf/CHr6Q6LgorFQb6xJrPs1NnmzfRcNCjiIPKBwUiGXOW0IjWAhhaqwQwtzKWC1f1aosKAGzPVBLAwQUAAAACAAAACEAT0bROkUAAABZAAAADQAAAGZlZWRfaW5mby50eHRdyEEOgCAMBdE9CXfwAD0Oe4Lho01qNS14fmPYsZrMa0DNXKn9fWHOt855xi7sJyxrubDaMJkkRY8YiBK8b8mKOneiGD5QSwECFAMUAAAACAAAACEA/kHJaDoAAABDAAAACgAAAAAAAAAAAAAApIEAAAAAYWdlbmN5LnR4dFBLAQIUAxQAAAAIAAAAIQD25qKJUAAAAIQAAAAKAAAAAAAAAAAAAACkgWIAAAByb3V0ZXMudHh0UEsBAhQDFAAAAAgAAAAhAEl420eYAAAAKgEAAAkAAAAAAAAAAAAAAKSB2gAAAHN0b3BzLnR4dFBLAQIUAxQAAAAIAAAAIQDHhCtQxQAAANgBAAAJAAAAAAAAAAAAAACkgZkBAAB0cmlwcy50eHRQSwECFAMUAAAACAAAACEAaPDLoNAAAACLAgAADgAAAAAAAAAAAAAApIGFAgAAc3RvcF90aW1lcy50eHRQSwECFAMUAAAACAAAACEAk+2amWgMAACkiQAAEgAAAAAAAAAAAAAApIGBAwAAY2FsZW5kYXJfZGF0ZXMudHh0UEsBAhQDFAAAAAgAAAAhAP/f7kZhAAAA1AAAAAoAAAAAAAAAAAAAAKSBGRAAAHNoYXBlcy50eHRQSwECFAMUAAAACAAAACEAT0bROkUAAABZAAAADQAAAAAAAAAAAAAApIGiEAAAZmVlZF9pbmZvLnR4dFBLBQYAAAAACAAIAM0BAAASEQAAAAA="
-              }
-            }
-          }
-        },
-        "validate": {
-          "description": "Every issue of a registered document — the authoring UI's feedback loop, the whole list, never thrown.",
-          "example": {
-            "request": {
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "validate"
-            },
-            "response": {
-              "ok": {
-                "issues": [],
-                "op": "validate"
-              }
-            }
-          }
-        },
-        "load_feed": {
-          "description": "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
-          "example": null
-        },
         "load_document": {
           "description": "Register an authored network document (the planner's JSON document) under its content hash; idempotent.",
           "example": {
@@ -1316,6 +1339,44 @@
               }
             }
           }
+        },
+        "export": {
+          "description": "The publish path: materialize a registered document into a GTFS zip (deterministic bytes) and return it base64-encoded under the content hash of those bytes — the same identity any capability returns for the same bytes. Invalid documents are refused.",
+          "example": {
+            "request": {
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "export"
+            },
+            "response": {
+              "ok": {
+                "feed_hash": "sha256:0cf68d7159e9c528087d955270579f83aee1e9f24bc74e5ba16a5ce0bd875f67",
+                "op": "export",
+                "summary": {
+                  "agencies": 1,
+                  "routes": 3,
+                  "stop_times": 13,
+                  "stops": 6,
+                  "trips": 6
+                },
+                "zip_b64": "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"
+              }
+            }
+          }
+        },
+        "validate": {
+          "description": "Every issue of a registered document — the authoring UI's feedback loop, the whole list, never thrown.",
+          "example": {
+            "request": {
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "validate"
+            },
+            "response": {
+              "ok": {
+                "issues": [],
+                "op": "validate"
+              }
+            }
+          }
         }
       }
     },
@@ -1334,10 +1395,10 @@
         "feed": "gtfs"
       },
       "speaks": {
-        "feed": [
+        "gtfs_rt": [
           1
         ],
-        "gtfs_rt": [
+        "feed": [
           1
         ]
       },
@@ -1347,79 +1408,6 @@
         "load_feed": {
           "description": "Register the STATIC feed the schedule joins come from — the same GTFS zip bytes gtfs loads, the same content-hash identity (assert equality at the host). Bulk-bytes op 1.",
           "example": null
-        },
-        "trip_progress": {
-          "description": "One trip's joined board: every scheduled stop with the live delay and the PREDICTED time (schedule + delay) — the dispatcher's most-asked question in one op. A trip the snapshot does not mention answers from the schedule alone; a trip the feed does not carry answers null.",
-          "example": {
-            "request": {
-              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
-              "op": "trip_progress",
-              "rt_hash": "sha256:e7295600e92977efbe26abd0ec1b4102085f04a743c1690d60f9926c065d7875",
-              "trip_id": "t10"
-            },
-            "response": {
-              "ok": {
-                "op": "trip_progress",
-                "progress": {
-                  "block_id": "B1",
-                  "route_id": "10",
-                  "stops": [
-                    {
-                      "arrival_delay": null,
-                      "departure_delay": 120,
-                      "predicted_arrival": 28800,
-                      "predicted_departure": 28920,
-                      "scheduled_arrival": 28800,
-                      "scheduled_departure": 28800,
-                      "stop_id": "A",
-                      "stop_sequence": 1
-                    },
-                    {
-                      "arrival_delay": 180,
-                      "departure_delay": null,
-                      "predicted_arrival": 29580,
-                      "predicted_departure": 29400,
-                      "scheduled_arrival": 29400,
-                      "scheduled_departure": 29400,
-                      "stop_id": "B",
-                      "stop_sequence": 2
-                    }
-                  ],
-                  "trip_id": "t10",
-                  "worst_delay_secs": 180
-                }
-              }
-            }
-          }
-        },
-        "late_trips": {
-          "description": "The ranked what's-late-now view: every trip whose worst stop delay reaches min_delay_secs, worst first, each carrying the vehicle's label and position when one names it — and the DELAYED-BUT-DARK flag (has_position false) when none does. vp_hash names the VehiclePositions snapshot (agencies serve it as a SEPARATE feed — C-TRAN does); omit it for combined feeds.",
-          "example": {
-            "request": {
-              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
-              "min_delay_secs": 60,
-              "op": "late_trips",
-              "rt_hash": "sha256:e7295600e92977efbe26abd0ec1b4102085f04a743c1690d60f9926c065d7875",
-              "vp_hash": null
-            },
-            "response": {
-              "ok": {
-                "op": "late_trips",
-                "trips": [
-                  {
-                    "block_id": "B1",
-                    "has_position": true,
-                    "lat": 45.439998626708984,
-                    "lon": -73.44000244140625,
-                    "route_id": "10",
-                    "trip_id": "t10",
-                    "vehicle_label": "4201",
-                    "worst_delay_secs": 180
-                  }
-                ]
-              }
-            }
-          }
         },
         "decode": {
           "description": "Decode a GTFS-rt protobuf payload into the overview (entity counts, trip updates with per-stop delays, vehicle positions), and register the snapshot under its content hash — idempotent, the same bytes are the same snapshot — so trip_progress/late_trips can address it. Bulk-bytes op 0. Garbage bytes are an error outcome, never a trap.",
@@ -1475,6 +1463,79 @@
               }
             }
           }
+        },
+        "late_trips": {
+          "description": "The ranked what's-late-now view: every trip whose worst stop delay reaches min_delay_secs, worst first, each carrying the vehicle's label and position when one names it — and the DELAYED-BUT-DARK flag (has_position false) when none does. vp_hash names the VehiclePositions snapshot (agencies serve it as a SEPARATE feed — C-TRAN does); omit it for combined feeds.",
+          "example": {
+            "request": {
+              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
+              "min_delay_secs": 60,
+              "op": "late_trips",
+              "rt_hash": "sha256:e7295600e92977efbe26abd0ec1b4102085f04a743c1690d60f9926c065d7875",
+              "vp_hash": null
+            },
+            "response": {
+              "ok": {
+                "op": "late_trips",
+                "trips": [
+                  {
+                    "block_id": "B1",
+                    "has_position": true,
+                    "lat": 45.439998626708984,
+                    "lon": -73.44000244140625,
+                    "route_id": "10",
+                    "trip_id": "t10",
+                    "vehicle_label": "4201",
+                    "worst_delay_secs": 180
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "trip_progress": {
+          "description": "One trip's joined board: every scheduled stop with the live delay and the PREDICTED time (schedule + delay) — the dispatcher's most-asked question in one op. A trip the snapshot does not mention answers from the schedule alone; a trip the feed does not carry answers null.",
+          "example": {
+            "request": {
+              "feed_hash": "sha256:a6e69795fd2286b537b897faf833f8f359afaffdf888e08157dba74375a0f2a7",
+              "op": "trip_progress",
+              "rt_hash": "sha256:e7295600e92977efbe26abd0ec1b4102085f04a743c1690d60f9926c065d7875",
+              "trip_id": "t10"
+            },
+            "response": {
+              "ok": {
+                "op": "trip_progress",
+                "progress": {
+                  "block_id": "B1",
+                  "route_id": "10",
+                  "stops": [
+                    {
+                      "arrival_delay": null,
+                      "departure_delay": 120,
+                      "predicted_arrival": 28800,
+                      "predicted_departure": 28920,
+                      "scheduled_arrival": 28800,
+                      "scheduled_departure": 28800,
+                      "stop_id": "A",
+                      "stop_sequence": 1
+                    },
+                    {
+                      "arrival_delay": 180,
+                      "departure_delay": null,
+                      "predicted_arrival": 29580,
+                      "predicted_departure": 29400,
+                      "scheduled_arrival": 29400,
+                      "scheduled_departure": 29400,
+                      "stop_id": "B",
+                      "stop_sequence": 2
+                    }
+                  ],
+                  "trip_id": "t10",
+                  "worst_delay_secs": 180
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -1502,6 +1563,227 @@
       "migrates": {},
       "purpose": "Planner analysis over an authored network document: network/route/stop stats, per-service-type overview and detail, population coverage. The first capability extracted from the monolith — the domain code lives in the shared transit-analysis library. Assemble for planners; riders never download it. Documents are hash-addressed (load once, query by hash — never per-op document serialization).",
       "op_docs": {
+        "service_types_overview": {
+          "description": "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight.",
+          "example": {
+            "request": {
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "service_types_overview"
+            },
+            "response": {
+              "ok": {
+                "op": "service_types_overview",
+                "service_types": [
+                  {
+                    "active_routes": 1,
+                    "active_stops": 2,
+                    "date": "2026-01-04",
+                    "name": "SUN",
+                    "revenue_hours": 0.16666666666666666,
+                    "service_type": "SUN",
+                    "trips": 1
+                  },
+                  {
+                    "active_routes": 3,
+                    "active_stops": 5,
+                    "date": "2026-01-01",
+                    "name": "WK",
+                    "revenue_hours": 0.6666666666666666,
+                    "service_type": "WK",
+                    "trips": 5
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "service_type_detail": {
+          "description": "One service type expanded on its representative day: routes, stops, schedules, totals.",
+          "example": {
+            "request": {
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "service_type_detail",
+              "service_type": "WK"
+            },
+            "response": {
+              "ok": {
+                "detail": {
+                  "date": "2026-01-01",
+                  "name": "WK",
+                  "revenue_hours": 0.6666666666666666,
+                  "routes": [
+                    {
+                      "first_start_secs": 28800,
+                      "last_arrival_secs": 31800,
+                      "name": "10",
+                      "patterns": 2,
+                      "route_id": "10",
+                      "stops": 3,
+                      "trips": 2,
+                      "typical_headway_secs": null
+                    },
+                    {
+                      "first_start_secs": 30000,
+                      "last_arrival_secs": 30600,
+                      "name": "20",
+                      "patterns": 1,
+                      "route_id": "20",
+                      "stops": 2,
+                      "trips": 1,
+                      "typical_headway_secs": null
+                    },
+                    {
+                      "first_start_secs": 29700,
+                      "last_arrival_secs": 31200,
+                      "name": "40",
+                      "patterns": 2,
+                      "route_id": "40",
+                      "stops": 2,
+                      "trips": 2,
+                      "typical_headway_secs": null
+                    }
+                  ],
+                  "schedules": [
+                    {
+                      "pattern": "pat-10-0-0",
+                      "pattern_name": "10 → Main & 2nd",
+                      "schedule": "WK:pat-10-0-0",
+                      "trips": 1
+                    },
+                    {
+                      "pattern": "pat-10-0-1",
+                      "pattern_name": "10 → Main & 2nd",
+                      "schedule": "WK:pat-10-0-1",
+                      "trips": 1
+                    },
+                    {
+                      "pattern": "pat-20-0-0",
+                      "pattern_name": "20 → Main & 2nd",
+                      "schedule": "WK:pat-20-0-0",
+                      "trips": 1
+                    },
+                    {
+                      "pattern": "pat-40-0-0",
+                      "pattern_name": "40 → Main Station: Bay B",
+                      "schedule": "WK:pat-40-0-0",
+                      "trips": 1
+                    },
+                    {
+                      "pattern": "pat-40-1-0",
+                      "pattern_name": "40 → Main Station: Bay A",
+                      "schedule": "WK:pat-40-1-0",
+                      "trips": 1
+                    }
+                  ],
+                  "service_type": "WK",
+                  "stops": [
+                    {
+                      "departures": 3,
+                      "first_arrival_secs": 28800,
+                      "last_arrival_secs": 31200,
+                      "name": "Main & 1st",
+                      "routes": 2,
+                      "stop_id": "A",
+                      "transfer": false,
+                      "transfer_group": null,
+                      "transfer_pairs": null,
+                      "typical_headway_secs": 1200
+                    },
+                    {
+                      "departures": 3,
+                      "first_arrival_secs": 29400,
+                      "last_arrival_secs": 31800,
+                      "name": "Main & 2nd",
+                      "routes": 2,
+                      "stop_id": "B",
+                      "transfer": false,
+                      "transfer_group": null,
+                      "transfer_pairs": null,
+                      "typical_headway_secs": 1200
+                    },
+                    {
+                      "departures": 1,
+                      "first_arrival_secs": 31500,
+                      "last_arrival_secs": 31500,
+                      "name": "Main & 3rd",
+                      "routes": 1,
+                      "stop_id": "C",
+                      "transfer": false,
+                      "transfer_group": null,
+                      "transfer_pairs": null,
+                      "typical_headway_secs": null
+                    },
+                    {
+                      "departures": 2,
+                      "first_arrival_secs": 29700,
+                      "last_arrival_secs": 31200,
+                      "name": "Main Station: Bay A",
+                      "routes": 1,
+                      "stop_id": "SA",
+                      "transfer": false,
+                      "transfer_group": null,
+                      "transfer_pairs": null,
+                      "typical_headway_secs": 1500
+                    },
+                    {
+                      "departures": 2,
+                      "first_arrival_secs": 30000,
+                      "last_arrival_secs": 30900,
+                      "name": "Main Station: Bay B",
+                      "routes": 1,
+                      "stop_id": "SB",
+                      "transfer": false,
+                      "transfer_group": null,
+                      "transfer_pairs": null,
+                      "typical_headway_secs": 900
+                    }
+                  ],
+                  "transfer_stops": 0,
+                  "trips": 5
+                },
+                "op": "service_type_detail"
+              }
+            }
+          }
+        },
+        "type_coverage": {
+          "description": "Population coverage per service type against a hash-addressed layer: what share of the population each type serves, and serves frequently.",
+          "example": {
+            "request": {
+              "frequent_secs": 3600,
+              "layer_hash": "sha256:d6d611354ba7ed666e7cd0491fa2559d647ffda253fd905ead37d4e1cf890ca2",
+              "min_departures": 2,
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "type_coverage",
+              "radius_m": 500
+            },
+            "response": {
+              "ok": {
+                "coverage": [
+                  {
+                    "date": "2026-01-04",
+                    "frequent_pct": 0.0,
+                    "frequent_stops": 0,
+                    "name": "SUN",
+                    "served_pct": 50.0,
+                    "served_stops": 2,
+                    "service_type": "SUN"
+                  },
+                  {
+                    "date": "2026-01-01",
+                    "frequent_pct": 50.0,
+                    "frequent_stops": 4,
+                    "name": "WK",
+                    "served_pct": 50.0,
+                    "served_stops": 5,
+                    "service_type": "WK"
+                  }
+                ],
+                "op": "type_coverage"
+              }
+            }
+          }
+        },
         "load_network": {
           "description": "Register an authored network document (the planner's JSON document, produced or derived by the network capability) under its content hash; idempotent.",
           "example": {
@@ -1870,6 +2152,10 @@
             }
           }
         },
+        "load_population_layer": {
+          "description": "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried).",
+          "example": null
+        },
         "network_stats": {
           "description": "The network's numbers on one service date: trips, spans, revenue hours, transfer points, per-route and per-stop activity, headways. include_routes/include_stops/include_service_types (default true) shape the response: false empties the corresponding lists — the day-shape question answers in under a KiB.",
           "example": {
@@ -1900,238 +2186,13 @@
               }
             }
           }
-        },
-        "service_types_overview": {
-          "description": "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight.",
-          "example": {
-            "request": {
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "service_types_overview"
-            },
-            "response": {
-              "ok": {
-                "op": "service_types_overview",
-                "service_types": [
-                  {
-                    "active_routes": 1,
-                    "active_stops": 2,
-                    "date": "2026-01-04",
-                    "name": "SUN",
-                    "revenue_hours": 0.16666666666666666,
-                    "service_type": "SUN",
-                    "trips": 1
-                  },
-                  {
-                    "active_routes": 3,
-                    "active_stops": 5,
-                    "date": "2026-01-01",
-                    "name": "WK",
-                    "revenue_hours": 0.6666666666666666,
-                    "service_type": "WK",
-                    "trips": 5
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "load_population_layer": {
-          "description": "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried).",
-          "example": null
-        },
-        "service_type_detail": {
-          "description": "One service type expanded on its representative day: routes, stops, schedules, totals.",
-          "example": {
-            "request": {
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "service_type_detail",
-              "service_type": "WK"
-            },
-            "response": {
-              "ok": {
-                "detail": {
-                  "date": "2026-01-01",
-                  "name": "WK",
-                  "revenue_hours": 0.6666666666666666,
-                  "routes": [
-                    {
-                      "first_start_secs": 28800,
-                      "last_arrival_secs": 31800,
-                      "name": "10",
-                      "patterns": 2,
-                      "route_id": "10",
-                      "stops": 3,
-                      "trips": 2,
-                      "typical_headway_secs": null
-                    },
-                    {
-                      "first_start_secs": 30000,
-                      "last_arrival_secs": 30600,
-                      "name": "20",
-                      "patterns": 1,
-                      "route_id": "20",
-                      "stops": 2,
-                      "trips": 1,
-                      "typical_headway_secs": null
-                    },
-                    {
-                      "first_start_secs": 29700,
-                      "last_arrival_secs": 31200,
-                      "name": "40",
-                      "patterns": 2,
-                      "route_id": "40",
-                      "stops": 2,
-                      "trips": 2,
-                      "typical_headway_secs": null
-                    }
-                  ],
-                  "schedules": [
-                    {
-                      "pattern": "pat-10-0-0",
-                      "pattern_name": "10 → Main & 2nd",
-                      "schedule": "WK:pat-10-0-0",
-                      "trips": 1
-                    },
-                    {
-                      "pattern": "pat-10-0-1",
-                      "pattern_name": "10 → Main & 2nd",
-                      "schedule": "WK:pat-10-0-1",
-                      "trips": 1
-                    },
-                    {
-                      "pattern": "pat-20-0-0",
-                      "pattern_name": "20 → Main & 2nd",
-                      "schedule": "WK:pat-20-0-0",
-                      "trips": 1
-                    },
-                    {
-                      "pattern": "pat-40-0-0",
-                      "pattern_name": "40 → Main Station: Bay B",
-                      "schedule": "WK:pat-40-0-0",
-                      "trips": 1
-                    },
-                    {
-                      "pattern": "pat-40-1-0",
-                      "pattern_name": "40 → Main Station: Bay A",
-                      "schedule": "WK:pat-40-1-0",
-                      "trips": 1
-                    }
-                  ],
-                  "service_type": "WK",
-                  "stops": [
-                    {
-                      "departures": 3,
-                      "first_arrival_secs": 28800,
-                      "last_arrival_secs": 31200,
-                      "name": "Main & 1st",
-                      "routes": 2,
-                      "stop_id": "A",
-                      "transfer": false,
-                      "transfer_group": null,
-                      "transfer_pairs": null,
-                      "typical_headway_secs": 1200
-                    },
-                    {
-                      "departures": 3,
-                      "first_arrival_secs": 29400,
-                      "last_arrival_secs": 31800,
-                      "name": "Main & 2nd",
-                      "routes": 2,
-                      "stop_id": "B",
-                      "transfer": false,
-                      "transfer_group": null,
-                      "transfer_pairs": null,
-                      "typical_headway_secs": 1200
-                    },
-                    {
-                      "departures": 1,
-                      "first_arrival_secs": 31500,
-                      "last_arrival_secs": 31500,
-                      "name": "Main & 3rd",
-                      "routes": 1,
-                      "stop_id": "C",
-                      "transfer": false,
-                      "transfer_group": null,
-                      "transfer_pairs": null,
-                      "typical_headway_secs": null
-                    },
-                    {
-                      "departures": 2,
-                      "first_arrival_secs": 29700,
-                      "last_arrival_secs": 31200,
-                      "name": "Main Station: Bay A",
-                      "routes": 1,
-                      "stop_id": "SA",
-                      "transfer": false,
-                      "transfer_group": null,
-                      "transfer_pairs": null,
-                      "typical_headway_secs": 1500
-                    },
-                    {
-                      "departures": 2,
-                      "first_arrival_secs": 30000,
-                      "last_arrival_secs": 30900,
-                      "name": "Main Station: Bay B",
-                      "routes": 1,
-                      "stop_id": "SB",
-                      "transfer": false,
-                      "transfer_group": null,
-                      "transfer_pairs": null,
-                      "typical_headway_secs": 900
-                    }
-                  ],
-                  "transfer_stops": 0,
-                  "trips": 5
-                },
-                "op": "service_type_detail"
-              }
-            }
-          }
-        },
-        "type_coverage": {
-          "description": "Population coverage per service type against a hash-addressed layer: what share of the population each type serves, and serves frequently.",
-          "example": {
-            "request": {
-              "frequent_secs": 3600,
-              "layer_hash": "sha256:d6d611354ba7ed666e7cd0491fa2559d647ffda253fd905ead37d4e1cf890ca2",
-              "min_departures": 2,
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "type_coverage",
-              "radius_m": 500
-            },
-            "response": {
-              "ok": {
-                "coverage": [
-                  {
-                    "date": "2026-01-04",
-                    "frequent_pct": 0.0,
-                    "frequent_stops": 0,
-                    "name": "SUN",
-                    "served_pct": 50.0,
-                    "served_stops": 2,
-                    "service_type": "SUN"
-                  },
-                  {
-                    "date": "2026-01-01",
-                    "frequent_pct": 50.0,
-                    "frequent_stops": 4,
-                    "name": "WK",
-                    "served_pct": 50.0,
-                    "served_stops": 5,
-                    "service_type": "WK"
-                  }
-                ],
-                "op": "type_coverage"
-              }
-            }
-          }
         }
       }
     },
     {
       "id": "dispatch",
-      "hash": "sha256:d56fbbdd987d5f061072a6f15ed3507fda16b20e8c85de733faeed0cde73ac81",
-      "url": "caps/dispatch-d56fbbdd987d5f061072a6f15ed3507fda16b20e8c85de733faeed0cde73ac81.wasm",
+      "hash": "sha256:830bb99b86daea26e74989315fe55862eac359263602a563f8ee40d891484a8b",
+      "url": "caps/dispatch-830bb99b86daea26e74989315fe55862eac359263602a563f8ee40d891484a8b.wasm",
       "bytes": 497084,
       "ops": [
         "load_network",
@@ -2144,10 +2205,10 @@
         "network": "network"
       },
       "speaks": {
-        "network": [
+        "operator_edits": [
           1
         ],
-        "operator_edits": [
+        "network": [
           1
         ]
       },
@@ -2195,6 +2256,66 @@
                     "valid": true
                   }
                 ]
+              }
+            }
+          }
+        },
+        "station_departures": {
+          "description": "The STATION board: departures pooled over the stop's WALKING GROUP (the model's own transfer-group concept — the stop, its parent, siblings sharing that parent, the parent's children). A station pin answers no departures of its own; its bays carry the trips. Each row carries its concrete stop_id, so the caller sees which bay a departure leaves from.",
+          "example": {
+            "request": {
+              "date": "2026-10-23",
+              "from_secs": 25200,
+              "limit": 10,
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "station_departures",
+              "stop_id": "STN"
+            },
+            "response": {
+              "ok": {
+                "departures": [
+                  {
+                    "departure_secs": 29700,
+                    "destination": "Main Station: Bay B",
+                    "pattern": "pat-40-0-0",
+                    "route": "40",
+                    "route_name": "40",
+                    "schedule": "WK:pat-40-0-0",
+                    "start_secs": 29700,
+                    "stop": "SA"
+                  },
+                  {
+                    "departure_secs": 30000,
+                    "destination": "Main Station: Bay B",
+                    "pattern": "pat-40-0-0",
+                    "route": "40",
+                    "route_name": "40",
+                    "schedule": "WK:pat-40-0-0",
+                    "start_secs": 29700,
+                    "stop": "SB"
+                  },
+                  {
+                    "departure_secs": 30900,
+                    "destination": "Main Station: Bay A",
+                    "pattern": "pat-40-1-0",
+                    "route": "40",
+                    "route_name": "40",
+                    "schedule": "WK:pat-40-1-0",
+                    "start_secs": 30900,
+                    "stop": "SB"
+                  },
+                  {
+                    "departure_secs": 31200,
+                    "destination": "Main Station: Bay A",
+                    "pattern": "pat-40-1-0",
+                    "route": "40",
+                    "route_name": "40",
+                    "schedule": "WK:pat-40-1-0",
+                    "start_secs": 30900,
+                    "stop": "SA"
+                  }
+                ],
+                "op": "station_departures"
               }
             }
           }
@@ -2567,66 +2688,6 @@
             }
           }
         },
-        "station_departures": {
-          "description": "The STATION board: departures pooled over the stop's WALKING GROUP (the model's own transfer-group concept — the stop, its parent, siblings sharing that parent, the parent's children). A station pin answers no departures of its own; its bays carry the trips. Each row carries its concrete stop_id, so the caller sees which bay a departure leaves from.",
-          "example": {
-            "request": {
-              "date": "2026-10-23",
-              "from_secs": 25200,
-              "limit": 10,
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "station_departures",
-              "stop_id": "STN"
-            },
-            "response": {
-              "ok": {
-                "departures": [
-                  {
-                    "departure_secs": 29700,
-                    "destination": "Main Station: Bay B",
-                    "pattern": "pat-40-0-0",
-                    "route": "40",
-                    "route_name": "40",
-                    "schedule": "WK:pat-40-0-0",
-                    "start_secs": 29700,
-                    "stop": "SA"
-                  },
-                  {
-                    "departure_secs": 30000,
-                    "destination": "Main Station: Bay B",
-                    "pattern": "pat-40-0-0",
-                    "route": "40",
-                    "route_name": "40",
-                    "schedule": "WK:pat-40-0-0",
-                    "start_secs": 29700,
-                    "stop": "SB"
-                  },
-                  {
-                    "departure_secs": 30900,
-                    "destination": "Main Station: Bay A",
-                    "pattern": "pat-40-1-0",
-                    "route": "40",
-                    "route_name": "40",
-                    "schedule": "WK:pat-40-1-0",
-                    "start_secs": 30900,
-                    "stop": "SB"
-                  },
-                  {
-                    "departure_secs": 31200,
-                    "destination": "Main Station: Bay A",
-                    "pattern": "pat-40-1-0",
-                    "route": "40",
-                    "route_name": "40",
-                    "schedule": "WK:pat-40-1-0",
-                    "start_secs": 30900,
-                    "stop": "SA"
-                  }
-                ],
-                "op": "station_departures"
-              }
-            }
-          }
-        },
         "block_trips": {
           "description": "One block's chain on a service date: the AUTHORED runcut (the model's blocks carry layovers GTFS never had), materialized for the day, with the in-force edits applied — a diverted trip ending later eats into the vehicle's next layover, and layover_remaining_secs goes negative when the connection is eaten. Trips of the chain that do not run on the date stay in view, marked. Unknown blocks answer empty, never error.",
           "example": {
@@ -2718,6 +2779,92 @@
                   }
                 ],
                 "op": "departures"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "streets",
+      "hash": "sha256:b84a3a1dce59c417b0305cca27858ea16abb42bb762deff897720cc3d44499a6",
+      "url": "caps/streets-b84a3a1dce59c417b0305cca27858ea16abb42bb762deff897720cc3d44499a6.wasm",
+      "bytes": 222352,
+      "ops": [
+        "load_streets",
+        "snap",
+        "route"
+      ],
+      "consumes": {},
+      "speaks": {
+        "street_graph": [
+          1
+        ]
+      },
+      "migrates": {},
+      "purpose": "The detour editor's street graph: register a street-network GeoJSON (an OSM extract or an open-data layer) under its content hash and answer the detour editor's queries — snap a click to the nearest street, route between two positions along the graph so the committed detour is street geometry, never freehand chords. The domain code lives in the shared transit-streets library; the module is pure and stateless, it writes nothing.",
+      "op_docs": {
+        "load_streets": {
+          "description": "Parse a street-network GeoJSON (FeatureCollection or Feature of LineString/MultiLineString geometries; one-way conventions TIGER OneWay and OSM oneway honored) into the routing graph and register it under its content hash (idempotent — the same bytes are the same graph). Bulk-bytes op 0; pass the raw GeoJSON to transit_invoke_bytes.",
+          "example": null
+        },
+        "snap": {
+          "description": "The nearest street position to (lat, lon) — the projected point plus its graph address (segment, parameter along it), and how far the query point was. The detour waypoint commits to this address. Null when no street is nearby.",
+          "example": {
+            "request": {
+              "lat": 45.504,
+              "lon": -73.503,
+              "op": "snap",
+              "streets_hash": "sha256:81f69db779d383bc21dfaeac800bb7d5d64673bdfa4e45f606c86eedda00ad64"
+            },
+            "response": {
+              "ok": {
+                "op": "snap",
+                "position": {
+                  "dist_m": 0.0,
+                  "lat": 45.504,
+                  "lon": -73.503,
+                  "seg": 3,
+                  "t": -0.0
+                }
+              }
+            }
+          }
+        },
+        "route": {
+          "description": "The street geometry between two snapped positions: the shortest path along the graph, as points ending exactly at the target. Empty when the positions sit on disconnected parts of the network — the caller falls back to a straight line.",
+          "example": {
+            "request": {
+              "from": {
+                "dist_m": 0.0,
+                "lat": 45.504,
+                "lon": -73.503,
+                "seg": 3,
+                "t": -0.0
+              },
+              "op": "route",
+              "streets_hash": "sha256:81f69db779d383bc21dfaeac800bb7d5d64673bdfa4e45f606c86eedda00ad64",
+              "to": {
+                "dist_m": 0.0,
+                "lat": 45.508,
+                "lon": -73.508,
+                "seg": 4,
+                "t": 0.8000000000005684
+              }
+            },
+            "response": {
+              "ok": {
+                "op": "route",
+                "points": [
+                  {
+                    "lat": 45.504,
+                    "lon": -73.508
+                  },
+                  {
+                    "lat": 45.508,
+                    "lon": -73.508
+                  }
+                ]
               }
             }
           }

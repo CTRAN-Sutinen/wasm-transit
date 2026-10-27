@@ -1,13 +1,13 @@
 //! cap-gtfs — the GTFS capability module.
 //!
-//! One horizontal capability of the capability-bus PoC: parse a GTFS
+//! One horizontal capability of the capability bus: parse a GTFS
 //! static zip, hold it in a registry keyed by the CONTENT HASH of the
 //! input bytes, and answer read queries over it (departures, stop
 //! list). It has no ops that author anything — "only planners write
 //! networks, everything else imports" is enforced by the Request enum,
 //! not by convention.
 //!
-//! The hash-keyed registry is the PoC's core seam: capabilities compose
+//! The hash-keyed registry is the bus's core seam: capabilities compose
 //! through documents addressed by content hash, so the host (JS) can
 //! load the same bytes into any set of modules and assert they agree
 //! on the identity — "same document, same truth" is a checkable
@@ -30,7 +30,7 @@ use transit_core::{FeedSummary, StopSummary};
 pub const OP_LOAD_FEED: u32 = 0;
 
 // ---------------------------------------------------------------------
-// The watchlist document — the PoC's structured, VERSIONED local
+// The watchlist document — the bus's structured, VERSIONED local
 // document, so the migration mechanism has something real to move.
 //
 // v1: stops carry a note and an optional color. v2: stops carry a

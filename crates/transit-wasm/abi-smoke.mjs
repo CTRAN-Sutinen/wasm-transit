@@ -87,15 +87,10 @@ const feed = invokeBytes(OP_LOAD_FEED, readFileSync(FIXTURE));
 const feedId = feed.feed_id;
 assert(feed.summary.stops === 6, "load_feed registers and summarizes");
 
-const boardAt = (stop) =>
-  invoke({ op: "departures", feed_id: feedId, stop_id: stop, date: DATE, from_secs: 0, limit: 10 })
-    .departures.map((d) => `${d.trip_id}@${d.departure_time_hhmmss}`);
-
-const baseB = boardAt("B");
-assert(JSON.stringify(baseB) === JSON.stringify(["t12@07:30:00", "t10@08:10:00", "t20@08:30:00", "t30@08:50:00"]),
-  `baseline board at B, got ${JSON.stringify(baseB)}`);
-
-// The whole edit-document flow through JSON.
+// The whole edit-document flow through JSON. The board op is
+// RETIRED (cap-dispatch owns the day views); the effective feed
+// pins through the surviving reads: plan compare and the geojson
+// paths, both date-scoped by the edit document.
 const record = (over = {}) => ({
   id: "e1",
   diversion: {
@@ -110,10 +105,6 @@ const record = (over = {}) => ({
 const reports = invoke({ op: "set_diversions", feed_id: feedId, records: [record()] }).reports;
 assert(reports.length === 1 && reports[0].valid && reports[0].affected_trips === 3,
   "reports validate and count trips");
-
-assert(JSON.stringify(boardAt("B")) === JSON.stringify(["t12@07:30:00", "t10@08:15:00", "t20@08:30:00", "t30@08:55:00"]),
-  "effective board reflects the edit");
-assert(boardAt("C").length === 0, "C loses service");
 
 const cmp = invoke({ op: "plan_trip_compare", feed_id: feedId, from: "A", to: "B", date: DATE, depart_secs: 27000, max_legs: 6 });
 assert(cmp.active.arrival_hhmmss === "08:15:00" && cmp.baseline.arrival_hhmmss === "08:10:00",
@@ -130,32 +121,34 @@ assert(ghost && ghost.properties.trip_id === "t30" && ghost.geometry.coordinates
 const ghostNone = invoke({ op: "route_path_geojson", feed_id: feedId, route_id: "missing", direction_id: null, date: DATE }).feature;
 assert(ghostNone === null, "route ghost: unknown route is null");
 
-// Street ops: bytes in once through the bulk ABI, then snap/route
-// queries as JSON. The Elbow route follows street geometry, not the
-// diagonal.
-const OP_STREETS_LOAD = 2;
-const elbow = new TextEncoder().encode(JSON.stringify({
-  type: "FeatureCollection",
-  features: [{
-    type: "Feature",
-    geometry: { type: "LineString", coordinates: [[-73.5030, 45.5040], [-73.5080, 45.5040], [-73.5080, 45.5090]] },
-  }],
-}));
-const loaded = invokeBytes(OP_STREETS_LOAD, elbow);
-assert(loaded.segments === 2 && loaded.nodes === 3, "streets_load: Elbow graph via ABI");
-const posA = invoke({ op: "street_snap", streets_id: loaded.streets_id, lat: 45.5040, lon: -73.5030 }).position;
-const posB = invoke({ op: "street_snap", streets_id: loaded.streets_id, lat: 45.5080, lon: -73.5080 }).position;
-assert(posA && posB, "street_snap via ABI");
-const streetRoute = invoke({ op: "street_route", streets_id: loaded.streets_id, from: posA, to: posB }).points;
-assert(streetRoute.length === 2 &&
-  Math.abs(streetRoute[0].lat - 45.5040) < 1e-9 && Math.abs(streetRoute[0].lon + 73.5080) < 1e-9,
-  "street_route: the corner, not the diagonal, via ABI");
+// The street ops are GONE from the monolith — they live in the
+// cap-streets capability now (U1: the detour editor's snap/route
+// reads the bus). The artifact must REJECT the retired ops with
+// the standard error outcome, never a trap: the deletion is itself
+// an ABI contract change this smoke pins.
+{
+  const snap = JSON.parse(rawInvoke(JSON.stringify({ op: "street_snap", streets_id: 0, lat: 0, lon: 0 })));
+  assert(snap.error && /unknown variant|invalid request/.test(snap.error),
+    "the retired street_snap op errors through the standard outcome");
+  const route = JSON.parse(rawInvoke(JSON.stringify({
+    op: "street_route", streets_id: 0,
+    from: { lat: 0, lon: 0, dist_m: 0, seg: 0, t: 0 },
+    to: { lat: 0, lon: 0, dist_m: 0, seg: 0, t: 0 },
+  })));
+  assert(route.error && /unknown variant|invalid request/.test(route.error),
+    "the retired street_route op errors through the standard outcome");
+  // The retired bulk op code errors too (cap-streets owns the graph).
+  const loaded = JSON.parse(rawInvokeBytes(2, new TextEncoder().encode("{}")));
+  assert(loaded.error && loaded.error.includes("unknown bytes op code"),
+    "the retired streets_load bulk op errors through the standard outcome");
+}
 
 // The dispatch-read ops (active_services, blocks, block_trips,
-// feed_info) are RETIRED — cap-gtfs owns them; the smoke pins the
-// retirement through the standard outcome, never a trap.
+// feed_info, departures) are RETIRED — cap-gtfs owns the reads and
+// cap-dispatch owns the day views; the smoke pins every retirement
+// through the standard outcome, never a trap.
 {
-  for (const retired of ["active_services", "blocks", "feed_info"]) {
+  for (const retired of ["active_services", "blocks", "feed_info", "departures", "block_trips"]) {
     const outcome = JSON.parse(rawInvoke(JSON.stringify({ op: retired, feed_id: feedId })));
     assert(outcome.error && /unknown variant/.test(outcome.error),
       `the retired ${retired} op errors through the standard outcome`);
@@ -164,7 +157,9 @@ assert(streetRoute.length === 2 &&
 
 // Retire = tombstone.
 invoke({ op: "set_diversions", feed_id: feedId, records: [record({ status: "retired", rev: 2 })] });
-assert(JSON.stringify(boardAt("B")) === JSON.stringify(baseB), "retired records never apply");
+const cmpBase = invoke({ op: "plan_trip_compare", feed_id: feedId, from: "A", to: "B", date: DATE, depart_secs: 27000, max_legs: 6 });
+assert(cmpBase.active.arrival_hhmmss === "08:10:00" && cmpBase.baseline === null,
+  "retired records never apply");
 
 // Error outcomes, not traps.
 const errOutcome = (() => {
@@ -231,7 +226,18 @@ assert(second.feed_id !== feedId, "registry assigns distinct feed ids");
     const want = step.expect.replaceAll("$FEED", feedToken);
     assert(got === want, `corpus step ${step.name} diverges`);
   }
-  assert(corpus.steps.length >= 11, "corpus has the full step set");
+  // The step set, pinned exactly: the board and block-chain steps
+  // are gone (cap-dispatch owns the day views), and the diversion's
+  // effect pins through plan_trip_compare and trip_path_geojson.
+  const wantSteps = [
+    "load_fixture", "summary", "route_stop_sequence", "set_diversions_draft",
+    "plan_trip_compare", "stops_geojson", "trip_path_geojson",
+    "sync_edits_deterministic", "unknown_feed_errors",
+  ];
+  assert(
+    JSON.stringify(corpus.steps.map((s) => s.name)) === JSON.stringify(wantSteps),
+    "corpus has the full step set",
+  );
 }
 
 console.log("smoke passed");

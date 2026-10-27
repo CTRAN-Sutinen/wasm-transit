@@ -7,10 +7,11 @@
 //!
 //! The module is pure and stateless: `parse` turns bytes into a
 //! [`StreetNetwork`] graph, `snap`/`route` are queries over it. No
-//! I/O, no clock, no shared state — the seam keeps a registry and
-//! hands out ids, hosts keep the bytes. This is deliberately the
-//! "stateless capability" shape discussed for future module splits:
-//! `load(bytes) -> id` + queries, never document state.
+//! I/O, no clock, no shared state — the cap-streets capability keeps
+//! a content-hash registry over parsed graphs, hosts keep the bytes.
+//! This is deliberately the "stateless capability" shape discussed
+//! for future module splits: `load(bytes) -> hash` + queries, never
+//! document state.
 
 use std::collections::{BinaryHeap, HashMap};
 

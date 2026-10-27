@@ -244,7 +244,7 @@
 </script>
 
 <section class="caps-panel" data-testid="caps-panel">
-  <h3>Capability assembly <span class="tag">PoC</span></h3>
+  <h3>Capability assembly <span class="tag">the bus</span></h3>
   <p class="hint">
     Horizontal capabilities assembled from a manifest: hash-pinned modules, loaded on
     demand, composed through one document.

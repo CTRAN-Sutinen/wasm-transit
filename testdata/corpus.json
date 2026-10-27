@@ -18,24 +18,9 @@
       "expect": "{\"ok\":{\"op\":\"route_stop_sequence\",\"stops\":[{\"stop_id\":\"A\",\"name\":\"Main & 1st\",\"parent_station\":null},{\"stop_id\":\"C\",\"name\":\"Main & 3rd\",\"parent_station\":null},{\"stop_id\":\"B\",\"name\":\"Main & 2nd\",\"parent_station\":null}]}}"
     },
     {
-      "name": "departures_base",
-      "request": "{\"op\":\"departures\",\"feed_id\":$FEED,\"stop_id\":\"B\",\"date\":\"2026-10-23\",\"from_secs\":0,\"limit\":10}",
-      "expect": "{\"ok\":{\"op\":\"departures\",\"departures\":[{\"stop_id\":\"B\",\"trip_id\":\"t12\",\"route_id\":\"20\",\"route_name\":\"20\",\"service_id\":\"HOL\",\"headsign\":\"Extra run\",\"block_id\":\"B2\",\"departure_time\":27000,\"departure_time_hhmmss\":\"07:30:00\",\"stop_sequence\":1},{\"stop_id\":\"B\",\"trip_id\":\"t10\",\"route_id\":\"10\",\"route_name\":\"10\",\"service_id\":\"WK\",\"headsign\":\"Downtown\",\"block_id\":\"B1\",\"departure_time\":29400,\"departure_time_hhmmss\":\"08:10:00\",\"stop_sequence\":2},{\"stop_id\":\"B\",\"trip_id\":\"t20\",\"route_id\":\"20\",\"route_name\":\"20\",\"service_id\":\"WK\",\"headsign\":\"Downtown\",\"block_id\":\"B1\",\"departure_time\":30600,\"departure_time_hhmmss\":\"08:30:00\",\"stop_sequence\":2},{\"stop_id\":\"B\",\"trip_id\":\"t30\",\"route_id\":\"10\",\"route_name\":\"10\",\"service_id\":\"WK\",\"headsign\":\"Downtown\",\"block_id\":null,\"departure_time\":31800,\"departure_time_hhmmss\":\"08:50:00\",\"stop_sequence\":3}]}}"
-    },
-    {
       "name": "set_diversions_draft",
       "request": "{\"op\":\"set_diversions\",\"feed_id\":$FEED,\"records\":[{\"id\":\"e1\",\"diversion\":{\"id\":\"d1\",\"route_id\":\"10\",\"direction_id\":null,\"first_kept_stop\":\"A\",\"last_kept_stop\":\"B\",\"skipped_stops\":[\"C\"],\"detour\":null,\"added_secs\":300,\"start_date\":\"2026-10-23\",\"end_date\":\"2026-10-23\"},\"status\":\"draft\",\"rev\":1,\"updated_at\":1}]}",
       "expect": "{\"ok\":{\"op\":\"set_diversions\",\"reports\":[{\"id\":\"e1\",\"valid\":true,\"error\":null,\"affected_trips\":3}]}}"
-    },
-    {
-      "name": "departures_effective",
-      "request": "{\"op\":\"departures\",\"feed_id\":$FEED,\"stop_id\":\"B\",\"date\":\"2026-10-23\",\"from_secs\":0,\"limit\":10}",
-      "expect": "{\"ok\":{\"op\":\"departures\",\"departures\":[{\"stop_id\":\"B\",\"trip_id\":\"t12\",\"route_id\":\"20\",\"route_name\":\"20\",\"service_id\":\"HOL\",\"headsign\":\"Extra run\",\"block_id\":\"B2\",\"departure_time\":27000,\"departure_time_hhmmss\":\"07:30:00\",\"stop_sequence\":1},{\"stop_id\":\"B\",\"trip_id\":\"t10\",\"route_id\":\"10\",\"route_name\":\"10\",\"service_id\":\"WK\",\"headsign\":\"Downtown\",\"block_id\":\"B1\",\"departure_time\":29700,\"departure_time_hhmmss\":\"08:15:00\",\"stop_sequence\":1},{\"stop_id\":\"B\",\"trip_id\":\"t20\",\"route_id\":\"20\",\"route_name\":\"20\",\"service_id\":\"WK\",\"headsign\":\"Downtown\",\"block_id\":\"B1\",\"departure_time\":30600,\"departure_time_hhmmss\":\"08:30:00\",\"stop_sequence\":2},{\"stop_id\":\"B\",\"trip_id\":\"t30\",\"route_id\":\"10\",\"route_name\":\"10\",\"service_id\":\"WK\",\"headsign\":\"Downtown\",\"block_id\":null,\"departure_time\":32100,\"departure_time_hhmmss\":\"08:55:00\",\"stop_sequence\":1}]}}"
-    },
-    {
-      "name": "departures_skipped_stop_loses_service",
-      "request": "{\"op\":\"departures\",\"feed_id\":$FEED,\"stop_id\":\"C\",\"date\":\"2026-10-23\",\"from_secs\":0,\"limit\":10}",
-      "expect": "{\"ok\":{\"op\":\"departures\",\"departures\":[]}}"
     },
     {
       "name": "plan_trip_compare",
@@ -51,11 +36,6 @@
       "name": "trip_path_geojson",
       "request": "{\"op\":\"trip_path_geojson\",\"feed_id\":$FEED,\"trip_id\":\"t10\",\"date\":\"2026-10-23\"}",
       "expect": "{\"ok\":{\"op\":\"trip_path_geojson\",\"feature\":{\"type\":\"Feature\",\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[-73.4,45.4],[-73.45,45.45],[-73.5,45.5],[-73.505,45.505],[-73.51,45.51]]},\"properties\":{\"trip_id\":\"t10\",\"route_id\":\"10\",\"route_name\":\"10\"}}}}"
-    },
-    {
-      "name": "block_trips",
-      "request": "{\"op\":\"block_trips\",\"feed_id\":$FEED,\"block_id\":\"B1\",\"date\":\"2026-10-23\"}",
-      "expect": "{\"ok\":{\"op\":\"block_trips\",\"trips\":[{\"trip_id\":\"t10\",\"route_id\":\"10\",\"route_name\":\"10\",\"service_id\":\"WK\",\"headsign\":\"Downtown\",\"first_stop_id\":\"A\",\"first_stop_name\":\"Main & 1st\",\"start_time\":28800,\"start_time_hhmmss\":\"08:00:00\",\"last_stop_id\":\"B\",\"last_stop_name\":\"Main & 2nd\",\"end_time\":29700,\"end_time_hhmmss\":\"08:15:00\",\"layover_secs\":null},{\"trip_id\":\"t20\",\"route_id\":\"20\",\"route_name\":\"20\",\"service_id\":\"WK\",\"headsign\":\"Downtown\",\"first_stop_id\":\"A\",\"first_stop_name\":\"Main & 1st\",\"start_time\":30000,\"start_time_hhmmss\":\"08:20:00\",\"last_stop_id\":\"B\",\"last_stop_name\":\"Main & 2nd\",\"end_time\":30600,\"end_time_hhmmss\":\"08:30:00\",\"layover_secs\":300}]}}"
     },
     {
       "name": "sync_edits_deterministic",

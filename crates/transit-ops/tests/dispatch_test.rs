@@ -91,20 +91,25 @@ fn record(status: EditStatus, rev: u64) -> EditRecord {
     }
 }
 
-fn departures(feed_id: u32, stop: &str) -> Vec<String> {
-    match dispatch(Request::Departures {
+/// The effective alignment of a route under the edit document — the
+/// surviving effective-feed read for the diversion flow (the board
+/// op is retired; cap-dispatch owns the day views). The ghost is
+/// the representative trip's path, stop-to-stop, so a skipped stop
+/// drops its vertex (a shape-polyline trip would not — the ghost's
+/// representative, t30, has no shape).
+fn effective_route_vertices(feed_id: u32, route_id: &str) -> usize {
+    match dispatch(Request::RoutePathGeojson {
         feed_id,
-        stop_id: stop.into(),
+        route_id: route_id.into(),
+        direction_id: None,
         date: DATE.into(),
-        from_secs: 0,
-        limit: 10,
     })
     .unwrap()
     {
-        Response::Departures { departures } => {
-            departures.into_iter().map(|d| format!("{}@{}", d.trip_id, d.departure_time_hhmmss)).collect()
+        Response::RoutePathGeojson { feature } => {
+            feature.expect("the route has a representative").geometry.coordinates.len()
         }
-        _ => panic!("expected Departures response"),
+        _ => panic!("route_path_geojson"),
     }
 }
 
@@ -123,11 +128,10 @@ fn load_registers_and_summarizes() {
 fn edit_document_flow_matches_the_wasm_smoke() {
     let feed_id = load();
 
-    let base_b = departures(feed_id, "B");
-    assert_eq!(
-        base_b,
-        vec!["t12@07:30:00", "t10@08:10:00", "t20@08:30:00", "t30@08:50:00"]
-    );
+    // Baseline: route 10's ghost is t30 (A → C → B, stop-to-stop) —
+    // 3 vertices.
+    let base_ghost = effective_route_vertices(feed_id, "10");
+    assert_eq!(base_ghost, 3);
 
     // Push the document: reports come back per record.
     let reports = match dispatch(Request::SetDiversions { feed_id, records: vec![record(EditStatus::Draft, 1)] })
@@ -140,12 +144,10 @@ fn edit_document_flow_matches_the_wasm_smoke() {
     assert!(reports[0].valid);
     assert_eq!(reports[0].affected_trips, 3);
 
-    // The effective board reflects the edit; C loses its only service.
-    assert_eq!(
-        departures(feed_id, "B"),
-        vec!["t12@07:30:00", "t10@08:15:00", "t20@08:30:00", "t30@08:55:00"]
-    );
-    assert!(departures(feed_id, "C").is_empty());
+    // The effective ghost reflects the edit: C is skipped, so t30's
+    // path draws A → B (2 vertices) — the same fact the retired
+    // board op asserted as "C loses service", on a surviving read.
+    assert_eq!(effective_route_vertices(feed_id, "10"), 2);
 
     // Plan compare: diverted arrival vs baseline.
     match dispatch(Request::PlanTripCompare {
@@ -167,8 +169,7 @@ fn edit_document_flow_matches_the_wasm_smoke() {
 
     // Retire: tombstone, base behavior, no baseline in the compare.
     dispatch(Request::SetDiversions { feed_id, records: vec![record(EditStatus::Retired, 2)] }).unwrap();
-    assert_eq!(departures(feed_id, "B"), base_b);
-    assert_eq!(departures(feed_id, "C").len(), 1);
+    assert_eq!(effective_route_vertices(feed_id, "10"), base_ghost);
     match dispatch(Request::PlanTripCompare {
         feed_id,
         from: "A".into(),
@@ -205,8 +206,8 @@ fn invalid_records_are_reported_not_rejected() {
     assert!(reports[0].valid);
     assert!(!reports[1].valid);
     assert!(reports[1].error.as_deref().unwrap().contains("unknown route"));
-    // The valid record still applies.
-    assert!(departures(feed_id, "C").is_empty());
+    // The valid record still applies: t10's effective path drops C.
+    assert_eq!(effective_route_vertices(feed_id, "10"), 2);
 }
 
 #[test]
@@ -278,12 +279,8 @@ fn geojson_ops_return_typed_features() {
 fn request_serializes_as_tagged_json() {
     // The protocol has a textual form for hosts that want one —
     // serde-tagged enums make the "op" naming rule explicit.
-    let json = serde_json::to_value(
-        Request::Departures { feed_id: 0, stop_id: "A".into(), date: "2026-10-23".into(), from_secs: 0, limit: 10 },
-    )
-    .unwrap();
-    assert_eq!(json["op"], "departures");
-    assert_eq!(json["stop_id"], "A");
+    let json = serde_json::to_value(Request::StopsGeojson { feed_id: 0 }).unwrap();
+    assert_eq!(json["op"], "stops_geojson");
     let response = serde_json::to_value(Response::LoadFeed {
         feed_id: 0,
         summary: transit_core::FeedSummary {
@@ -306,25 +303,20 @@ fn dispatch_json_round_trips_the_seam() {
     // Rust ABI (browser, Go server) actually take.
     let outcome = transit_ops::dispatch_json(
         &serde_json::json!({
-            "op": "departures",
+            "op": "stops",
             "feed_id": feed_id,
-            "stop_id": "B",
-            "date": DATE,
-            "from_secs": 0,
-            "limit": 10,
         })
         .to_string(),
     );
     let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
     assert!(parsed.get("ok").is_some(), "successful outcome wraps ok: {outcome}");
-    let deps = &parsed["ok"]["departures"];
-    assert_eq!(deps.as_array().unwrap().len(), 4);
-    assert_eq!(deps[1]["trip_id"], "t10");
+    assert_eq!(parsed["ok"]["stops"].as_array().unwrap().len(), 3);
 
     // The retired dispatch-read ops (active_services, blocks,
-    // block_trips, feed_info — cap-gtfs owns them now) error through
-    // the standard outcome, never trap.
-    for retired in ["active_services", "blocks", "feed_info"] {
+    // block_trips, feed_info, departures — the gtfs and dispatch
+    // capabilities own them now) error through the standard
+    // outcome, never trap.
+    for retired in ["active_services", "blocks", "feed_info", "departures", "block_trips"] {
         let outcome = transit_ops::dispatch_json(&format!(r#"{{"op":"{retired}","feed_id":{feed_id}}}"#));
         let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
         assert!(
@@ -335,7 +327,7 @@ fn dispatch_json_round_trips_the_seam() {
 
     // Errors come back as {"error": ...}, not panics.
     let outcome = transit_ops::dispatch_json(
-        &serde_json::json!({ "op": "departures", "feed_id": 99, "stop_id": "B", "date": DATE, "from_secs": 0, "limit": 10 }).to_string(),
+        &serde_json::json!({ "op": "stops", "feed_id": 99 }).to_string(),
     );
     let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
     assert!(parsed["error"].as_str().unwrap().contains("unknown feed_id"));
@@ -444,36 +436,33 @@ fn network_document_drives_the_whole_op_surface() {
     };
     assert_eq!((summary.stops, summary.routes, summary.trips, summary.stop_times), (3, 1, 3, 9));
 
-    // Departures at A: the derived trip ids are "<service>@<start>".
-    let deps = match dispatch(Request::Departures {
+    // The derived trip ids are "<service>@<start>" and mid-pattern
+    // stops interpolate. The board op is retired (cap-dispatch owns
+    // it); both conventions still pin here through the planner's
+    // legs over the same derived feed.
+    let plan_b = match dispatch(Request::PlanTrip {
         feed_id,
-        stop_id: "A".into(),
+        from: "A".into(),
+        to: "B".into(),
         date: "2026-10-23".into(),
-        from_secs: 0,
-        limit: 10,
+        depart_secs: 28800,
+        max_legs: 3,
     })
     .unwrap()
     {
-        Response::Departures { departures } => departures,
-        _ => panic!("departures"),
+        Response::PlanTrip { itinerary } => itinerary,
+        _ => panic!("plan_trip"),
     };
-    assert_eq!(deps.len(), 3);
-    assert_eq!(deps[0].trip_id, "10-weekday@28800");
-    assert_eq!(deps[0].service_id, "10-weekday");
-    // Interpolation: B (midpoint of a 600s run) is 5 minutes in.
-    let deps_b = match dispatch(Request::Departures {
-        feed_id,
-        stop_id: "B".into(),
-        date: "2026-10-23".into(),
-        from_secs: 0,
-        limit: 10,
-    })
-    .unwrap()
-    {
-        Response::Departures { departures } => departures,
-        _ => panic!("departures"),
-    };
-    assert_eq!(deps_b[0].departure_time, Some(28800 + 300));
+    let legs_b = plan_b.expect("A→B is plannable").legs;
+    assert_eq!(legs_b.len(), 1);
+    match &legs_b[0] {
+        transit_router::Leg::Transit { trip_id, alight_secs, .. } => {
+            assert_eq!(trip_id, "10-weekday@28800");
+            // Interpolation: B (midpoint of a 600s run) is 5 minutes in.
+            assert_eq!(*alight_secs, 28800 + 300);
+        }
+        leg => panic!("expected a transit leg, got {leg:?}"),
+    }
 
     // Planning: A→C on the planner's own document, 1 leg.
     let plan = match dispatch(Request::PlanTrip {
@@ -786,7 +775,7 @@ fn network_import_reports_its_resolutions() {
     let bytes = w.finish().unwrap().into_inner();
 
     let gtfs = transit_core::Gtfs::from_zip_bytes(&bytes).unwrap();
-    let transit_codec::ImportOutcome { network, notes } = gtfs_to_network(&gtfs);
+    let transit_codec::ImportOutcome { network, notes, .. } = gtfs_to_network(&gtfs);
     // The whole point: the resolved document is valid.
     assert!(
         network.validate().is_ok(),
@@ -848,7 +837,7 @@ fn transfer_zip() -> Vec<u8> {
 #[test]
 fn import_flags_transfer_points_and_reports_unusable_ones() {
     let gtfs = transit_core::Gtfs::from_zip_bytes(&transfer_zip()).unwrap();
-    let transit_codec::ImportOutcome { network, notes } = gtfs_to_network(&gtfs);
+    let transit_codec::ImportOutcome { network, notes, .. } = gtfs_to_network(&gtfs);
     // The composed flags land; the aspirational ones do not — and are
     // reported instead of silently ignored.
     assert!(network.stops["N1"].transfer, "two routes meet across the street");
@@ -987,20 +976,21 @@ fn service_plan_chain_resolves_and_validates() {
 fn imported_network_preserves_the_service_view() {
     // Law: what riders see is preserved through the codec round trip
     // (feed → inferred document → materialized service view), except
-    // for the documented drop (single-stop trips).
-    let feed_id = load();
+    // for the documented drop (single-stop trips). Both sides read
+    // through transit-core's own service view — the monolith's board
+    // op is retired (cap-dispatch owns the day views).
     let date = DATE;
-    let original = match dispatch(Request::Departures {
-        feed_id,
-        stop_id: "A".into(),
-        date: date.into(),
-        from_secs: 0,
-        limit: 10,
-    })
-    .unwrap()
-    {
-        Response::Departures { departures } => departures,
-        _ => panic!("departures"),
+    let original: Vec<(u32, String)> = {
+        let gtfs = transit_core::Gtfs::from_zip_bytes(&fixture_zip()).unwrap();
+        gtfs.next_departures(
+            "A",
+            chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap(),
+            0,
+            10,
+        )
+        .iter()
+        .map(|d| (d.departure_time.unwrap(), d.route_id.clone()))
+        .collect()
     };
     let network = {
         let gtfs = transit_core::Gtfs::from_zip_bytes(&fixture_zip()).unwrap();
@@ -1017,11 +1007,7 @@ fn imported_network_preserves_the_service_view() {
         .iter()
         .map(|d| (d.departure_time.unwrap(), d.route_id.clone()))
         .collect();
-    let expected: Vec<(u32, String)> = original
-        .iter()
-        .map(|d| (d.departure_time.unwrap(), d.route_id.clone()))
-        .collect();
-    assert_eq!(at_a, expected, "departures at A survive the round trip");
+    assert_eq!(at_a, original, "departures at A survive the round trip");
 }
 
 #[test]
@@ -1053,50 +1039,3 @@ fn imported_alignment_survives_materialization() {
     assert_eq!(bare.shape_id, None);
 }
 
-#[test]
-fn street_ops_snap_and_route_through_the_seam() {
-    // The detour-authoring street ops: bytes in once, then pure
-    // queries against the artifact's streets registry. The Elbow
-    // route must follow street geometry, not the diagonal.
-    let elbow = br#"{"type":"FeatureCollection","features":[{"type":"Feature","geometry":
-      {"type":"LineString","coordinates":[[-73.5030,45.5040],[-73.5080,45.5040],[-73.5080,45.5090]]}}]}"#;
-    let (streets_id, segments, nodes) =
-        match dispatch(Request::StreetsLoad { bytes: elbow.to_vec() }).unwrap() {
-            Response::StreetsLoad { streets_id, segments, nodes } => (streets_id, segments, nodes),
-            _ => panic!("streets_load"),
-        };
-    assert_eq!(segments, 2);
-    assert_eq!(nodes, 3);
-
-    let a = match dispatch(Request::StreetSnap { streets_id, lat: 45.5040, lon: -73.5030 }).unwrap() {
-        Response::StreetSnap { position: Some(p) } => p,
-        _ => panic!("street_snap a"),
-    };
-    assert_eq!(a.seg, 0);
-    assert!((a.t - 0.0).abs() < 1e-9, "the start vertex: {a:?}");
-
-    let b = match dispatch(Request::StreetSnap { streets_id, lat: 45.5080, lon: -73.5080 }).unwrap() {
-        Response::StreetSnap { position: Some(p) } => p,
-        _ => panic!("street_snap b"),
-    };
-    assert_eq!(b.seg, 1);
-
-    match dispatch(Request::StreetRoute { streets_id, from: a, to: b }).unwrap() {
-        Response::StreetRoute { points } => {
-            assert_eq!(points.len(), 2, "corner + endpoint: {points:?}");
-            assert!((points[0].lat - 45.5040).abs() < 1e-9
-                && (points[0].lon + 73.5080).abs() < 1e-9,
-                "the corner is committed, not the diagonal: {points:?}");
-        }
-        _ => panic!("street_route"),
-    }
-
-    // Unknown registry ids are errors; disconnected parts do not
-    // route; the JSON form round-trips the seam.
-    assert!(dispatch(Request::StreetSnap { streets_id: 999, lat: 0.0, lon: 0.0 }).is_err());
-    let json = format!(
-        r#"{{"op":"street_snap","streets_id":{streets_id},"lat":45.5040,"lon":-73.5030}}"#
-    );
-    let outcome = transit_ops::dispatch_json(&json);
-    assert!(outcome.contains(r#""ok":{"op":"street_snap""#), "{outcome}");
-}

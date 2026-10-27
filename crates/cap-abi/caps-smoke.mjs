@@ -596,4 +596,50 @@ assert(
 const unknownDispatch = dispatch.raw({ op: "departures", network_hash: "sha256:missing", stop_id: "A", date: DATE, from_secs: 0, limit: 5 });
 assert(unknownDispatch.error && unknownDispatch.error.includes("unknown network"), "unknown hashes error, never panic");
 
+// The street flow — the detour editor's capability: GeoJSON bytes
+// in on the bulk seam (the e2e street fixture), registered under
+// its content hash, then pure queries by hash. The Elbow route
+// follows street geometry, not the diagonal; garbage bytes are an
+// error outcome, never a trap.
+assert(byId.streets, "manifest advertises the streets capability");
+const streets = shell(loadModule(byId.streets));
+const streetsBytes = readFileSync(path.join(here, "../../web/e2e/fixtures/streets.geojson"));
+const loadedStreets = streets.invokeBytes(0, streetsBytes);
+assert(loadedStreets.op === "load_streets", "streets load_streets answers on the bulk-bytes seam");
+assert(loadedStreets.segments === 5 && loadedStreets.nodes === 8, "the fixture parses: 5 segments, 8 nodes");
+assert(loadedStreets.streets_hash.startsWith("sha256:"), "the graph registers under its content hash");
+const againStreets = streets.invokeBytes(0, streetsBytes);
+assert(againStreets.streets_hash === loadedStreets.streets_hash, "the same bytes are the same graph (idempotent)");
+const snappedA = streets.invoke({
+  op: "snap",
+  streets_hash: loadedStreets.streets_hash,
+  lat: 45.5040,
+  lon: -73.5030,
+});
+assert(snappedA.position && snappedA.position.dist_m < 1e-6, "a click on the street snaps to it (dist 0)");
+const snappedB = streets.invoke({
+  op: "snap",
+  streets_hash: loadedStreets.streets_hash,
+  lat: 45.5080,
+  lon: -73.5080,
+});
+const routed = streets.invoke({
+  op: "route",
+  streets_hash: loadedStreets.streets_hash,
+  from: snappedA.position,
+  to: snappedB.position,
+});
+assert(
+  routed.points.length === 2 &&
+    Math.abs(routed.points[0].lat - 45.5040) < 1e-9 &&
+    Math.abs(routed.points[0].lon + 73.5080) < 1e-9,
+  "the route bends at the Elbow corner, not the diagonal",
+);
+const nowhere = streets.invoke({ op: "snap", streets_hash: loadedStreets.streets_hash, lat: 44.0, lon: -70.0 });
+assert(nowhere.position === null, "no street nearby answers null, never an error");
+const unknownStreets = streets.raw({ op: "snap", streets_hash: "sha256:missing", lat: 0, lon: 0 });
+assert(unknownStreets.error && unknownStreets.error.includes("unknown street network"), "unknown hashes error, never panic");
+const garbageStreets = streets.raw({ op: "load_streets", bytes: [0xff, 0xfe] });
+assert(garbageStreets.error && /street network/.test(garbageStreets.error), "garbage bytes are an error outcome, never a trap");
+
 console.log("capability modules: ABI smoke ok");

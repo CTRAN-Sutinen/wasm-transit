@@ -308,13 +308,44 @@ pub enum ImportNote {
     UnusableTransferPoint { stop: String },
 }
 
-/// What `gtfs_to_network` hands back: the document plus the notes
-/// describing every resolution it applied.
+/// One row of the trip-id map: a derived trip — the model's
+/// (schedule, start) identity — and the AGENCY trip ids that
+/// collapsed into it. `network_to_gtfs` mints the derived id
+/// `"{schedule}@{start_secs}"`, so the map's derived identity and
+/// the export's minted id agree by construction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct TripIdEntry {
+    pub schedule: String,
+    pub start_secs: u32,
+    /// The agency trip ids that collapsed into this derived trip
+    /// (the model dedups duplicate starts; every source id stays
+    /// addressable). In the feed's id order — deterministic.
+    pub agency_trip_ids: Vec<String>,
+}
+
+/// The import's TRIP-ID MAP: the honest join between the agency's
+/// trip ids (rt feeds are keyed by them, and the source zip is the
+/// agency's document) and the model's derived identity. The model
+/// never stores agency ids, so this map — emitted with the document
+/// and addressed by the network's hash — is the only join. It is
+/// CODEC state, not model state: it lives at the boundary and never
+/// leaks into the authored document.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct TripIdMap {
+    pub entries: Vec<TripIdEntry>,
+}
+
+/// What `gtfs_to_network` hands back: the document, the notes
+/// describing every resolution the import applied, and the trip-id
+/// map joining the agency's trip ids to the derived trips.
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[ts(export)]
 pub struct ImportOutcome {
     pub network: Network,
     pub notes: Vec<ImportNote>,
+    pub trip_map: TripIdMap,
 }
 
 /// Infer a [`Network`] from a parsed feed. Deliberately lossy, in
@@ -755,7 +786,30 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
             missing_stop_coords: dropped_missing_stop_coords,
         });
     }
-    ImportOutcome { network: net, notes }
+
+    // The trip-id map: every kept agency trip joined to the derived
+    // trip it became. Duplicate starts collapse — all of their
+    // agency ids point at the one derived trip. Dropped trips are
+    // in the notes; they have no derived identity and no map row.
+    let mut by_derived: BTreeMap<(String, u32), Vec<&str>> = BTreeMap::new();
+    for t in &kept {
+        by_derived
+            .entry((format!("{}:{}", t.service_id, t.pattern_id), t.start_secs))
+            .or_default()
+            .push(t.trip_id);
+    }
+    let trip_map = TripIdMap {
+        entries: by_derived
+            .into_iter()
+            .map(|((schedule, start_secs), agency_trip_ids)| TripIdEntry {
+                schedule,
+                start_secs,
+                agency_trip_ids: agency_trip_ids.into_iter().map(str::to_string).collect(),
+            })
+            .collect(),
+    };
+
+    ImportOutcome { network: net, notes, trip_map }
 }
 
 /// The block that already claimed this derived trip, if any.

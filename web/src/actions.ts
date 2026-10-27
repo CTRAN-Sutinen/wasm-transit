@@ -1,7 +1,6 @@
 import { app, getEditDocument, setEditDocument, setStreets, type DiversionDraft } from "./state.svelte";
 import { get as idbGet, set as idbSet, del as idbDel } from "idb-keyval";
-import { streets_load } from "./wasm";
-import { rtCap, rtModule } from "./capabilities.svelte";
+import { ensureStreets, rtCap, rtModule } from "./capabilities.svelte";
 import type { EditRecord } from "./types/EditRecord";
 import type { Itinerary } from "./types/Itinerary";
 import type { LineGeometry } from "./types/LineGeometry";
@@ -617,21 +616,25 @@ async function installPopulation(bytes: Uint8Array, label: string): Promise<void
 }
 
 async function installStreets(geojson: unknown, label: string): Promise<void> {
-  if (!app.wasm) return;
   try {
-    // The artifact owns the routing graph; bytes cross once.
+    // The cap-streets capability owns the routing graph; the bytes
+    // cross the seam once and register under their content hash.
     const bytes = new TextEncoder().encode(JSON.stringify(geojson));
-    const handle = app.wasm.streets_load(bytes);
+    const graph = await ensureStreets(bytes);
+    if (!graph) {
+      app.status = "Street import needs the streets capability — the assembly is unavailable.";
+      return;
+    }
     const streets: Streets = {
-      streetsId: handle.streets_id,
+      streetsHash: graph.streetsHash,
       geojson: geojson as { type: "FeatureCollection"; features: unknown[] },
-      segmentCount: handle.segments,
+      segmentCount: graph.segments,
     };
     setStreets(streets);
-    app.status = `Street network loaded (${label}) — ${handle.segments} segments; detour clicks snap to streets and stops.`;
+    app.status = `Street network loaded (${label}) — ${graph.segments} segments; detour clicks snap to streets and stops.`;
   } catch (e) {
-    // wasm validates the GeoJSON: no lines, malformed JSON — surface
-    // the artifact's message.
+    // cap-streets validates the GeoJSON: no lines, malformed JSON —
+    // surface the module's message.
     app.status = `Street import failed: ${(e as Error).message}`;
     console.warn("street import failed:", e);
   }

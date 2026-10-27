@@ -28,6 +28,9 @@ transit-rt = { path = "../transit-rt" }
 # through the same shared library the module dispatches through.
 transit-sync = { path = "../transit-sync" }
 transit-dispatch = { path = "../transit-dispatch" }
+# …and the street capability's examples compute REAL snap/route
+# answers over the e2e street fixture through the same library.
+transit-streets = { path = "../transit-streets" }
 
 [dev-dependencies]
 proptest = "1"

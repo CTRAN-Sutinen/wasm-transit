@@ -3,9 +3,9 @@
 //! Every host (wasm-bindgen in the browser, wasmtime in the sync
 //! server, plain cargo tests) shares this one dispatch seam. The
 //! contract is the [`Request`]/[`Response`] pair — plain serde types,
-//! serializable to tagged JSON (`{"op": "departures", ...}`) whenever
-//! a host wants a textual form, constructible directly in Rust when
-//! it doesn't.
+//! serializable to tagged JSON (`{"op": "stops_geojson", ...}`)
+//! whenever a host wants a textual form, constructible directly in
+//! Rust when it doesn't.
 //!
 //! Ownership inside the module: feeds live in a registry keyed by
 //! `feed_id` (hosts never hold typed handles); the operator-edit
@@ -72,23 +72,8 @@ pub enum Request {
     /// longest matching trip: what the diversion editor anchors
     /// against.
     RouteStopSequence { feed_id: u32, route_id: String, direction_id: Option<u8> },
-    /// Upcoming departures at a stop on a service date.
-    Departures {
-        feed_id: u32,
-        stop_id: String,
-        date: String,
-        from_secs: u32,
-        limit: u32,
-    },
     /// All stops as a GeoJSON FeatureCollection.
     StopsGeojson { feed_id: u32 },
-    /// The trip chain of one block on a service date. STILL HERE
-    /// deliberately: this is the one dispatch read whose answer is
-    /// DIVERSION-ENTANGLED (the chain's layovers ripple when a
-    /// diverted trip ends later — the dispatcher's connection-health
-    /// read). It moves to the bus with the diversion document;
-    /// the other dispatch reads are already cap-gtfs's.
-    BlockTrips { feed_id: u32, block_id: String, date: String },
     /// One trip's path as a GeoJSON LineString Feature (date scopes
     /// operator edits: diverted trips draw patched shapes).
     TripPathGeojson { feed_id: u32, trip_id: String, date: String },
@@ -135,20 +120,6 @@ pub enum Request {
     /// Replace the whole edit document; returns per-record validation
     /// reports. Invalid records are reported, not rejected.
     SetDiversions { feed_id: u32, records: Vec<EditRecord> },
-    /// Load a street network (GeoJSON lines) for detour authoring;
-    /// returns its id. Street data is reference geometry, keyed by
-    /// its own registry — it never mixes with feed state.
-    StreetsLoad { bytes: Vec<u8> },
-    /// The nearest street position to a point (within the snap
-    /// neighborhood), or null when no street is close.
-    StreetSnap { streets_id: u32, lat: f64, lon: f64 },
-    /// The street geometry between two positions (shortest path).
-    /// Empty when the positions sit on disconnected parts.
-    StreetRoute {
-        streets_id: u32,
-        from: transit_streets::StreetPosition,
-        to: transit_streets::StreetPosition,
-    },
     /// Release a feed and its caches. Hosts use this when a
     /// republished artifact replaces the one they pinned.
     DropFeed { feed_id: u32 },
@@ -185,8 +156,6 @@ pub enum Response {
     Stops { stops: Vec<transit_core::StopSummary> },
     Routes { routes: Vec<transit_core::RouteSummary> },
     RouteStopSequence { stops: Vec<transit_core::StopSummary> },
-    Departures { departures: Vec<transit_core::Departure> },
-    BlockTrips { trips: Vec<transit_core::BlockTrip> },
     StopsGeojson { collection: FeatureCollection },
     TripPathGeojson { feature: Option<TripLineFeature> },
     RoutePathGeojson { feature: Option<TripLineFeature> },
@@ -198,9 +167,6 @@ pub enum Response {
         baseline: Option<transit_router::Itinerary>,
     },
     SetDiversions { reports: Vec<transit_sync::EditReport> },
-    StreetsLoad { streets_id: u32, segments: u32, nodes: u32 },
-    StreetSnap { position: Option<transit_streets::StreetPosition> },
-    StreetRoute { points: Vec<transit_streets::StreetPoint> },
     DropFeed {},
     SyncEdits { records: Vec<EditRecord>, reports: Vec<transit_sync::EditReport> },
 }
@@ -275,22 +241,6 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
                 Ok(Response::RouteStopSequence {
                     stops: f.gtfs.route_stop_sequence(&route_id, direction_id),
                 })
-            })
-        }
-        Request::Departures { feed_id, stop_id, date, from_secs, limit } => {
-            let parsed = parse_date(&date)?;
-            state::with_feed(feed_id, |f| {
-                let departures = f.with_effective(&date, |gtfs| {
-                    gtfs.next_departures(&stop_id, parsed, from_secs, limit as usize)
-                })?;
-                Ok(Response::Departures { departures })
-            })
-        }
-        Request::BlockTrips { feed_id, block_id, date } => {
-            let parsed = parse_date(&date)?;
-            state::with_feed(feed_id, |f| {
-                let trips = f.with_effective(&date, |gtfs| gtfs.block_trips(&block_id, parsed))?;
-                Ok(Response::BlockTrips { trips })
             })
         }
         Request::StopsGeojson { feed_id } => state::with_feed(feed_id, |f| {
@@ -380,24 +330,6 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
                 Ok(Response::PlanTripCompare { active, baseline })
             })
         }
-        Request::StreetsLoad { bytes } => {
-            let net = transit_streets::StreetNetwork::parse(&bytes)
-                .map_err(|e| OpError::new(format!("street network: {}", e.0)))?;
-            let segments = net.segment_count();
-            let nodes = net.node_count();
-            let streets_id = state::register_streets(net);
-            Ok(Response::StreetsLoad { streets_id, segments, nodes })
-        }
-        Request::StreetSnap { streets_id, lat, lon } => state::with_streets(streets_id, |net| {
-            Ok(Response::StreetSnap { position: net.snap(lat, lon) })
-        }),
-        Request::StreetRoute { streets_id, from, to } => {
-            state::with_streets(streets_id, |net| {
-                Ok(Response::StreetRoute {
-                    points: net.route(from, to).unwrap_or_default(),
-                })
-            })
-        }
         Request::SetDiversions { feed_id, records } => state::with_feed(feed_id, |f| {
             let reports = transit_core::report_all(&f.gtfs, &records);
             f.edits = records;
@@ -422,11 +354,11 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
 }
 
 /// Binary-op codes for [`dispatch_bytes`] — the ops whose payloads
-/// are megabytes of raw bytes (feed zips, street GeoJSON), where a
+/// are megabytes of raw bytes (feed zips, coverage layers), where a
 /// JSON array of numbers would be absurd. (The rt protobuf payload
-/// moved to the cap-rt capability with its decoder.)
+/// moved to cap-rt with its decoder, and the street GeoJSON to
+/// cap-streets with the detour editor's graph.)
 pub const OP_LOAD_FEED: u32 = 0;
-pub const OP_STREETS_LOAD: u32 = 2;
 pub const OP_COVERAGE_LOAD: u32 = 3;
 
 /// Outcome shape: `{"ok": <Response>}` on success, `{"error": "<msg>"}`
@@ -458,11 +390,10 @@ pub fn dispatch_json(input: &str) -> String {
 }
 
 /// Bytes-op form of the seam for [`OP_LOAD_FEED`] /
-/// [`OP_STREETS_LOAD`]. Same outcome shape as [`dispatch_json`].
+/// [`OP_COVERAGE_LOAD`]. Same outcome shape as [`dispatch_json`].
 pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
     let req = match op {
         OP_LOAD_FEED => Request::LoadFeed { bytes: bytes.to_vec() },
-        OP_STREETS_LOAD => Request::StreetsLoad { bytes: bytes.to_vec() },
         OP_COVERAGE_LOAD => Request::CoverageLoad { bytes: bytes.to_vec(), pop_field: None },
         other => {
             return dispatch_json_outcome(Err(OpError::new(format!(

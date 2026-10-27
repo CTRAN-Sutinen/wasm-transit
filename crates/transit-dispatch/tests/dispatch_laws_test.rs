@@ -1,4 +1,4 @@
-//! The dispatch laws, model-native (CAPS-PLAN item 7): the day is
+//! The dispatch laws, model-native (the day-view laws): the day is
 //! `materialize(net, date)`, operator edits patch THE DAY, boards
 //! and chains read the patched day. No GTFS substrate exists here to
 //! accidentally test against — the network below is authored model

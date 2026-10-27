@@ -1,5 +1,5 @@
 {
-  "blob": "blobs/d56fbbdd987d5f061072a6f15ed3507fda16b20e8c85de733faeed0cde73ac81.wasm",
+  "blob": "blobs/830bb99b86daea26e74989315fe55862eac359263602a563f8ee40d891484a8b.wasm",
   "bytes": 497084,
   "consumes": {
     "network": "network"
@@ -12,9 +12,9 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "232d63c713af9153aa58fbf3576d634efbc62e2a"
+    "source_commit": "900ca8ab472a77d140d5b20abd34f10c4705752d"
   },
-  "hash": "sha256:d56fbbdd987d5f061072a6f15ed3507fda16b20e8c85de733faeed0cde73ac81",
+  "hash": "sha256:830bb99b86daea26e74989315fe55862eac359263602a563f8ee40d891484a8b",
   "id": "dispatch",
   "kernel": 1,
   "migrates": {},

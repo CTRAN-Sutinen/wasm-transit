@@ -28,6 +28,26 @@ Every change lands with tests at the layer that owns the logic.
    diversion laws) follow expectation 1.
 6. **Dogfood on real data**: capability work touching feeds or
    payload size runs a `caps-run` session against the C-TRAN feed
-   before it is done (see the dogfood-QA rules in
-   `docs/CAPABILITIES.md`) — fixture-scale gates do not catch
-   real-data defects.
+   before it is done — fixture-scale gates do not catch real-data
+   defects.
+
+## Dogfood QA — the agent interface mirrors the human UI
+
+`caps-run` exercises the same capabilities, bytes, and laws the app
+runs; a human asking planner questions through it is doing real QA.
+The rules this paradigm earned (the founding C-TRAN session found
+four real defects fixture gates missed — a 64 KiB output truncation
+among them):
+
+- **All capability work is dogfooded on real data before it is
+  done.** Anything touching feeds or payload size runs against
+  `testdata/ctran-gtfs.zip` (the real C-TRAN GTFS, NOT COMMITTED —
+  licensed data; fetch from c-tran.com) through `caps-run`.
+- **A one-off script is never tooling — it is a finding.** If a QA
+  session needs bespoke glue (a bootstrap script, a summarizer),
+  that is a missing op or runner feature; route it into
+  `docs/CAPS-PLAN.md`, don't ship the script.
+- **The mirror cuts both ways.** A question that is one op via
+  the CLI but absent from the UI is a UI gap; a question awkward
+  via the CLI is an op gap. Dogfood sessions generate both
+  signals; both land in the plan doc.

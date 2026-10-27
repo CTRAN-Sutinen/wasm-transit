@@ -333,10 +333,10 @@ export async function restorePlans(): Promise<void> {
 
 /// The imported street network (dispatcher detour authoring) — same
 /// discipline: plain data, wholesale replacement. The routing graph
-/// lives in the artifact (`streetsId`); this holds only the wasm
-/// handle and the display copy. Never proxied (extracts can be tens
-/// of MB) and not persisted: reference data, re-imported per
-/// session.
+/// lives in the cap-streets capability (`streetsHash`); this holds
+/// only the hash handle and the display copy. Never proxied (extracts
+/// can be tens of MB) and not persisted: reference data,
+/// re-imported per session.
 let streets = $state.raw<Streets | null>(null);
 export function getStreets(): Streets | null {
   return streets;

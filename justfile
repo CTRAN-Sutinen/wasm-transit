@@ -17,14 +17,14 @@ default:
 wasm:
     cd web && npm run build:wasm
 
-# Build the capability modules (the capability-bus PoC: horizontal
+# Build the capability modules (the capability bus: horizontal
 # capabilities assembled per user) and regenerate the capability
 # manifest — hash-pinned modules in web/public/caps/, served under
 # their content hash so the HTTP cache holds them forever.
 caps:
     #!/usr/bin/env bash
     set -e
-    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt -p cap-dispatch --target wasm32-unknown-unknown
+    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt -p cap-dispatch -p cap-streets --target wasm32-unknown-unknown
     cargo run --quiet -p cap-abi --bin gen-manifest
 
 # Publish the registry: gates first (the records report them), then
@@ -115,8 +115,17 @@ test: caps
       --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
       --op '{"op":"block_trips","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","block_id":"B1","date":"2026-10-23"}' \
       | grep -q '"layover_remaining_secs":300'
-    # ARCHITECTURE GATES — the two laws as assertions (CAPS-PLAN
-    # item 7, spelled out in crates/AGENTS.md), because prose does
+    # The street capability's gate: the detour editor's need, one
+    # chained session — the street fixture on bulk op 0, two snaps,
+    # and the route between them (the Elbow corner, not the diagonal:
+    # the committed trace follows street geometry).
+    node tools/caps-run.mjs streets --load web/e2e/fixtures/streets.geojson \
+      --op '{"op":"snap","streets_hash":"$load.streets_hash","lat":45.504,"lon":-73.503}' \
+      --op '{"op":"snap","streets_hash":"$load.streets_hash","lat":45.508,"lon":-73.508}' \
+      --op '{"op":"route","streets_hash":"$load.streets_hash","from":"$2.position","to":"$3.position"}' \
+      | grep -q '"lat":45.504,"lon":-73.508'
+    # ARCHITECTURE GATES — the laws as assertions (spelled out in
+    # crates/AGENTS.md), because prose does
     # not enforce:
     #   1. the NETWORK is the core data model; GTFS is a serialization
     #      spec for external data sharing. Model-side capabilities do
@@ -134,7 +143,7 @@ test: caps
     for crate in cap-analysis cap-dispatch transit-analysis transit-dispatch; do
         for dep in transit-core transit-codec; do
             if awk '/^\[dev-dependencies\]/{exit} /^'"$dep"' =/{found=1} END{exit !found}' "crates/$crate/Cargo.toml" 2>/dev/null; then
-                echo "ARCH FAIL: $crate depends on $dep — the network is the core model; compose over the network document (crates/AGENTS.md, CAPS-PLAN item 7)"; exit 1
+                echo "ARCH FAIL: $crate depends on $dep — the network is the core model; compose over the network document (crates/AGENTS.md, Law 1)"; exit 1
             fi
         done
     done
@@ -148,7 +157,7 @@ test: caps
         | grep -v "crates/cap-abi/" \
         | grep -v "crates/transit-ops/" || true)
     if [ -n "$violations" ]; then
-        echo "ARCH FAIL: network_to_gtfs outside the codec's homes (CAPS-PLAN item 7 — no whole-calendar expansion in capabilities):"
+        echo "ARCH FAIL: network_to_gtfs outside the codec's homes (Law 2 — no whole-calendar expansion in capabilities):"
         echo "$violations"
         exit 1
     fi
