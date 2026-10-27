@@ -1,6 +1,6 @@
 import { app, getEditDocument, setEditDocument, setStreets, type DiversionDraft } from "./state.svelte";
 import { get as idbGet, set as idbSet, del as idbDel } from "idb-keyval";
-import { ensureStreets, rtCap, rtModule } from "./capabilities.svelte";
+import { ensureAnalysisLayer, ensureStreets, rtCap, rtModule } from "./capabilities.svelte";
 import type { EditRecord } from "./types/EditRecord";
 import type { Itinerary } from "./types/Itinerary";
 import type { LineGeometry } from "./types/LineGeometry";
@@ -548,8 +548,9 @@ export function clearStreets(): void {
 // Population layer (planner coverage analysis). Census block
 // centroids as GeoJSON points with a population property — the
 // same standing as the street network: app config, reference data,
-// re-imported per session. The artifact owns the points under
-// layer_id; coverage runs against the planner's document.
+// re-imported per session. The analysis capability owns the points
+// under their content hash; the registration answer is the import
+// handle, and coverage runs against the planner's document.
 // ------------------------------------------------------------------
 
 export async function importPopulationFile(file: File): Promise<void> {
@@ -603,11 +604,20 @@ export function clearPopulation(): void {
 }
 
 async function installPopulation(bytes: Uint8Array, label: string): Promise<void> {
-  if (!app.wasm) return;
-  const handle = app.wasm.coverage_load(bytes);
-  app.popLayer = { ...handle, label };
-  // The bytes stay: the analysis capability registers layers by
-  // content hash (the monolith path keeps its layer_id registry).
+  // The layer lives in the analysis capability (the monolith's
+  // parse-only op is retired — U4): registering it returns the
+  // import handle, and the same registration serves coverage.
+  const handle = await ensureAnalysisLayer(bytes);
+  if (!handle) {
+    app.status = "Population import needs the analysis capability — the assembly is unavailable.";
+    return;
+  }
+  app.popLayer = {
+    points: handle.points,
+    pop_field: handle.pop_field,
+    total_pop: handle.total_pop,
+    label,
+  };
   app.popLayerBytes = bytes;
   app.status =
     `Population layer loaded (${label}) — ${handle.points} points, field "${handle.pop_field}", ` +

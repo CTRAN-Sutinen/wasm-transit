@@ -12,7 +12,7 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "b74089f6ffd99b29c2d5eb8775f0848ab24d4cb8"
+    "source_commit": "15ee6cf515fda63524c77336cb72ffb6fcf8c39c"
   },
   "hash": "sha256:f0a9aab24dad491d282ddf3a0cb8506b05060ef37150a94522a833cfc70ec232",
   "id": "calendar",

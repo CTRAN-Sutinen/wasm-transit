@@ -19,10 +19,6 @@
       "migrates": {},
       "purpose": "The FEED document: parse a GTFS static zip into a content-hash-keyed feed registry and answer the feed's own questions — what it contains at a glance (load_feed returns the summary) and its identity (feed_info.txt: version, publisher). The day views and the directory questions (pickers, names join) are NOT here: they answer over the NETWORK document (the board, runcut, calendar, and directory capabilities — one question, one answer on the bus). It has no ops that author anything.",
       "op_docs": {
-        "load_feed": {
-          "description": "Register a GTFS zip under its content hash (idempotent). The response carries the feed's summary — stops, routes, trips, stop_times — the at-a-glance read the feed line shows. Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
-          "example": null
-        },
         "feed_info": {
           "description": "The feed's own metadata (version, publisher), when the feed provides feed_info.txt — the identity question: which feed is this?",
           "example": {
@@ -43,6 +39,10 @@
               }
             }
           }
+        },
+        "load_feed": {
+          "description": "Register a GTFS zip under its content hash (idempotent). The response carries the feed's summary — stops, routes, trips, stop_times — the at-a-glance read the feed line shows. Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
+          "example": null
         }
       }
     },
@@ -114,19 +114,38 @@
       ],
       "consumes": {},
       "speaks": {
-        "feed": [
+        "network": [
           1
         ],
-        "network": [
+        "feed": [
           1
         ]
       },
       "migrates": {},
       "purpose": "The network codec: infer an authored network document from a GTFS feed (the planner's bootstrap — patterns, service types, blocks, reported resolutions) and export one back to GTFS zip bytes (the publish path). The second capability extracted from the monolith — the codec lives in the shared transit-codec library, and the monolith keeps no copy. Assemble for planners: it is how a planner's session starts and how it publishes.",
       "op_docs": {
-        "load_feed": {
-          "description": "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
-          "example": null
+        "export": {
+          "description": "The publish path: materialize a registered document into a GTFS zip (deterministic bytes) and return it base64-encoded under the content hash of those bytes — the same identity any capability returns for the same bytes. Invalid documents are refused.",
+          "example": {
+            "request": {
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "export"
+            },
+            "response": {
+              "ok": {
+                "feed_hash": "sha256:0cf68d7159e9c528087d955270579f83aee1e9f24bc74e5ba16a5ce0bd875f67",
+                "op": "export",
+                "summary": {
+                  "agencies": 1,
+                  "routes": 3,
+                  "stop_times": 13,
+                  "stops": 6,
+                  "trips": 6
+                },
+                "zip_b64": "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"
+              }
+            }
+          }
         },
         "load_document": {
           "description": "Register an authored network document (the planner's JSON document) under its content hash; idempotent.",
@@ -496,44 +515,6 @@
             }
           }
         },
-        "export": {
-          "description": "The publish path: materialize a registered document into a GTFS zip (deterministic bytes) and return it base64-encoded under the content hash of those bytes — the same identity any capability returns for the same bytes. Invalid documents are refused.",
-          "example": {
-            "request": {
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "export"
-            },
-            "response": {
-              "ok": {
-                "feed_hash": "sha256:0cf68d7159e9c528087d955270579f83aee1e9f24bc74e5ba16a5ce0bd875f67",
-                "op": "export",
-                "summary": {
-                  "agencies": 1,
-                  "routes": 3,
-                  "stop_times": 13,
-                  "stops": 6,
-                  "trips": 6
-                },
-                "zip_b64": "UEsDBBQAAAAIAAAAIQD+QcloOgAAAEMAAAAKAAAAYWdlbmN5LnR4dDXGsQkAIQwF0F5whxsg49gfQT8S0AgaC53eQuweZ2hcvyTiK+WK59nLo0nFbgrvKGDYFzrrECPy7gBQSwMEFAAAAAgAAAAhAPbmoolQAAAAhAAAAAoAAAByb3V0ZXMudHh0TYhBCoAgEADvgj/ZQ5n/ETGxwNzYNsjfp9VCh4GZITw5unUGn2IJtRs961iQ2BW/xW9kLOnfXHfRgBlJdrz4HVqNA0BnAtDKNDEStomVuAFQSwMEFAAAAAgAAAAhAEl420eYAAAAKgEAAAkAAABzdG9wcy50eHRtjr0KwyAUhfdA3sGp022p+aHQLXZuFrOLRAchVYl3yds3UZuS0kUPfh/nGNB5YRSE7R6d0ilZ+cppkpiDszC5UaJxVuDiNXg5a4siYHwriw7gKY0lJ0IDQtNeWjjf6vW8QlmwHVZWRUgTpRE/dlzPCVcJVxHzTzdPY3fC5EK61JNnaLst8aFfdfZPZ0e9+epDf/R/euMX3lBLAwQUAAAACAAAACEAx4QrUMUAAADYAQAACQAAAHRyaXBzLnR4dH2QwQ6CIACG726+A6dOuAGypZ7Ma6uLax0bKUtWQ4fU1gv0AD1iTxIyZ+JMOMA/+L99oOq75idRwparhyjsVivRDGvFWdmKi4SlULzQopbd0flWF1dbq1jTlXwPI5gf9knDdIBRYOYkpiGhCEGMwOf1BjsmJFgBIksI4e+SxRy3Y4qTUhJF85AML2Gwm9IQkz8uvkeGKnEMSP8MZAYkswa+R4fr1CnTXj9emzIdlXPNuk9NQMaeILMCDgMHk2QE4iXGxjK+UEsDBBQAAAAIAAAAIQBo8Mug0AAAAIsCAAAOAAAAc3RvcF90aW1lcy50eHR9kE8LwiAYxu9B38TAPxttO606Bl1GdBzSpIRay7k+f276knMYHnyUHz8fX61kV8sGcaXkhz9qLZ8CNaLjSg9K2GOvXxMz7b14D6K9utu74E0vb+16VZ1PRcf1huCNWSWjCcYI5wXGhR92iKA4TAC2YY+ogS9Hn6VZNiIZiLOZOMISYGNeUjJCLZIAm0S8PpsWfjj886bgTV0H9mOpmwPGFqHA0mWHkGXAsuXfEjeHfOu+D31tqGbiEA5KVKGZTC1y9ziYbTAwicPBiE2N0fwFUEsDBBQAAAAIAAAAIQCT7ZqZaAwAAKSJAAASAAAAY2FsZW5kYXJfZGF0ZXMudHh0fdrBjrbJTYbhPRJnMpG+sqtsF6eAxAYhllGU/IvZwAhGCM6ehkk6/Xb3Fc3ylt62Xff/1CfX/OeP//ivn//44/c//+mnP/3h1x8//fjvP/745def//3ffv/r//zy4+//7p//5Z/+4Zc//Pq79frd238/xSvqtV77pwW0ltEQxRGK1zLiB2P5gxFC6b+V/lvpv5V/42/FFdovfnCvMPIHo4TOK4nWy6iJgm6c5HjrxQ/W4gcr/MHgebXH2x5ve7zt8c4rjPjBWf5g8LwmeV73xQ/exQ/e8AdD57VeDIf1Yji8oSFiOKzFf7BviB9cyx/kP9g3pPNawfGu4Hjf/tTL6P/H+6//+E30LpIgOSRF4gqG5Ios1vbbfL4lm4T9LPazWNtvx/At4ayD/QT7Cdbm0w7OOthPqp+gIfFKkk1ySIpEVcdi1WuRsB9aFTQkVpMMCfuhVUFDIjjr4KxplTMk6UHSg6QHSQ+SHiQ9SHqQ9CDpQdKDpAdJD5IeJD1IepD0IOlB0oOkB2kPmBSZmvV+mQRJkhRJkwyJTmHTqk1DNu+fzftn06pNqzYN2bx/Nu+fTas2rdrh2jhr3j+bVh26c5guh+ly6M6hO4fuHKbLYbocunPozqE7Z7k2zfrQnUN3Dt05TJfDdDl059CdQ3eKhhTTpZguRauKVhUNKaZLMV2KVhWtKhpSTJdiuhStKlpVNKSYLsV0KVpVtKpsCNOl6U7TnaY7zXRppkvTnaY7TXea6dJMl6Y7TXea7jTTpZkuTXea7jTd6XBtnDXdabvD3ztDQ4bpMkyXoVVDq4aGDNNlmC5Dq4ZWzXJtQ6JTGFo1tGpoyDBdhukytGpo1dCQ+zIJkiTZJE0yJDqFS6surbo05DJ3LnPn0qpLqy4Nucydy9y5tOrSqhuujbNW7rztShdJkBySImmSIbkii7UpXd7IJmE/i/0s1hacdXDWwX6C/QRrC846OGsawq3uG0mSTXJIikSzXotVK0MWN8GLm+DFre4baZIhYT90h1vdN8JZB2dNd7gJXtzqrmCGBN3hvndx3/tGmmRINGvuexf3vW+EtTFDuO9d3Pcu7nvf1v6sjRnCfe/ivndx3/tGXBtnbXe+/qpZv91Z37wzvZMgOSRF0iRDckUWa/uaLu9kk7CfxX4Wa/uaLu+Esw72E+wnWFtw1sFZB/tJ9RM05JvceSeb5JAUiar+JnfeySJhP7QqaMg3ufNOhoT90KqgId/kzjvhrGlV0KqkB0kPkh4kPUh6kPQg6UHSg6QHSQ+SHiQ9SHqQ9CDpQdKDpAdJD5IepD1gUiTvn/0yCZIkKZImGRKdwqZVm4Zs3j+b98+mVZtWbRqyef9s3j+bVm1atcO1cda8fzatOnTnMF0O0+XQnUN3Dt05TJfDdDl059CdQ3fOcm2a9aE7h+4cunOYLofpcujOoTuH7hQNKaZLMV2KVhWtKhpSTJdiuhStKlpVNKSYLsV0KVpVtKpoSDFdiulStKpoVdkQpkvTnaY7TXea6dJMl6Y7TXea7jTTpZkuTXea7jTdaaZLM12a7jTdabrT4do4a7rTdoe/d4aGDNNlmC5Dq4ZWDQ0ZpsswXYZWDa2a5dqGRKcwtGpo1dCQYboM02Vo1dCqoSH3ZRIkSbJJmmRIdAqXVl1adWnIZe5c5s6lVZdWXRpymTuXuXNp1aVVN1wbZ63c+e6d6Z0EySEpkiYZkiuyWJvS5bt3pnfCfhb7WawtOOvgrIP9BPsJ1hacdXDWNIRb3e/emd7JJjkkRaJZr8WqlSGLm+DFTfDiVve7d6Z3MiTsh+5wq/vdO9M74azpDjfBi1vd796Z3kmQJMkmaZIh0ay5713c9373zvRODkmRsB+6E8yQYIZw37u4713c9373zvROOGu78/hVE/9H/vz/RjzfmZ4kSA5JkTTJkFyRxdoe6fIkm4T9LPazWNsjXZ6Esw72E+wnWFtw1sFZB/tJ9RM05Jk7T7JJDkmRqOpn7jzJImE/tCpoyDN3nmRI2A+tChryzJ0n4axpVdCqpAdJD5IeJD1IepD0IOlB0oOkB0kPkh4kPUh6kPQg6UHSg6QHSQ+SHqQ9YFIk75/9MgmSJCmSJhkSncKmVZuGbN4/m/fPplWbVm0asnn/bN4/m1ZtWrXDtXHWvH82rTp05zBdDtPl0J1Ddw7dOUyXw3Q5dOfQnUN3znJtmvWhO4fuHLpzmC6H6XLozqE7h+4UDSmmSzFdilYVrSoaUkyXYroUrSpaVTSkmC7FdClaVbSqaEgxXYrpUrSqaFXZEKZL052mO013munSTJemO013mu4006WZLk13mu403WmmSzNdmu403Wm60+HaOGu603aHv3eGhgzTZZguQ6uGVg0NGabLMF2GVg2tmuXahkSnMLRqaNXQkGG6DNNlaNXQqqEh92USJEmySZpkSHQKl1ZdWnVpyGXuXObOpVWXVl0acpk7l7lzadWlVTdcG2et3Pn0zvQkQXJIiqRJhuSKLNamdPn0zvQk7Gexn8XagrMOzjrYT7CfYG3BWQdnTUO41f30zvQkm+SQFIlmvRarVoYsboIXN8GLW91P70xPMiTsh+5wq/vpnelJOGu6w03w4lb30zvTkwRJkmySJhkSzZr73sV976d3pic5JEXCfuhOMEOCGcJ97+K+d3Hf++md6Uk4a7vz+FWz/0o+vTM9SZAckiJpkiG5Iou1PdLlSTYJ+1nsZ7G2R7o8CWcd7CfYT7C24KyDsw72k+onaMgzd55kkxySIlHVz9x5kkXCfmhV0JBn7jzJkLAfWhU05Jk7T8JZ06qgVUkPkh4kPUh6kPQg6UHSg6QHSQ+SHiQ9SHqQ9CDpQdKDpAdJD5IeJD1Ie8CkSN4/+2USJElSJE0yJDqFTas2Ddm8fzbvn02rNq3aNGTz/tm8fzat2rRqh2vjrHn/bFp16M5huhymy6E7h+4cunOYLofpcujOoTuH7pzl2jTrQ3cO3Tl05zBdDtPl0J1Ddw7dKRpSTJdiuhStKlpVNKSYLsV0KVpVtKpoSDFdiulStKpoVdGQYroU06VoVdGqsiFMl6Y7TXea7jTTpZkuTXea7jTdaaZLM12a7jTdabrTTJdmujTdabrTdKfDtXHWdKftDn/vDA0ZpsswXYZWDa0aGjJMl2G6DK0aWjXLtQ2JTmFo1dCqoSHDdBmmy9CqoVVDQ+7LJEiSZJM0yZDoFC6turTq0pDL3LnMnUurLq26NOQydy5z59KqS6tuuDbOWrnz6Z3pSYLkkBRJkwzJFVmsTeny6Z3pSdjPYj+LtQVnHZx1sJ9gP8HagrMOzpqGcKv76Z3pSTbJISkSzXotVq0MWdwEL26CF7e6n96ZnmRI2A/d4Vb30zvTk3DWdIeb4MWt7qd3picJkiTZJE0yJJo1972L+95P70xPckiKhP3QnWCGBDOE+97Ffe/ivvfTO9OTcNZ25/OvmvWXO+vLO9MHEiSHpEiaZEiuyGJtn9PlA9kk7Gexn8XaPqfLB8JZB/sJ9hOsLTjr4KyD/aT6CRryJXc+kE1ySIpEVX/JnQ9kkbAfWhU05EvufCBDwn5oVdCQL7nzgXDWtCpoVdKDpAdJD5IeJD1IepD0IOlB0oOkB0kPkh4kPUh6kPQg6UHSg6QHSQ/SHjApkvfPfpkESZIUSZMMiU5h06pNQzbvn837Z9OqTas2Ddm8fzbvn02rNq3a4do4a94/m1YdunOYLofpcujOoTuH7hymy2G6HLpz6M6hO2e5Ns360J1Ddw7dOUyXw3Q5dOfQnUN3ioYU06WYLkWrilYVDSmmSzFdilYVrSoaUkyXYroUrSpaVTSkmC7FdClaVbSqbAjTpelO052mO810aaZL052mO013munSTJemO013mu4006WZLk13mu403elwbZw13Wm7w987Q0OG6TJMl6FVQ6uGhgzTZZguQ6uGVs1ybUOiUxhaNbRqaMgwXYbpMrRqaNXQkPsyCZIk2SRNMiQ6hUurLq26NOQydy5z59KqS6suDbnMncvcubTq0qobro2zVu58fWf6QILkkBRJkwzJFVmsTeny9Z3pA2E/i/0s1hacdXDWwX6C/QRrC846OGsawq3u13emD2STHJIi0azXYtXKkMVN8OImeHGr+/Wd6QMZEvZDd7jV/frO9IFw1nSHm+DFre7Xd6YPJEiSZJM0yZBo1tz3Lu57v74zfSCHpEjYD90JZkgwQ7jvXdz3Lu57v74zfSCctd357VfN/wJQSwMEFAAAAAgAAAAhAP/f7kZhAAAA1AAAAAoAAABzaGFwZXMudHh0ZclhCoAgDAXg/0E3mZHl6DgiOUgQs1ydP0mhQAbb3vvSZiJpZyG9T2TtDf/CHr6Q6LgorFQb6xJrPs1NnmzfRcNCjiIPKBwUiGXOW0IjWAhhaqwQwtzKWC1f1aosKAGzPVBLAwQUAAAACAAAACEAT0bROkUAAABZAAAADQAAAGZlZWRfaW5mby50eHRdyEEOgCAMBdE9CXfwAD0Oe4Lho01qNS14fmPYsZrMa0DNXKn9fWHOt855xi7sJyxrubDaMJkkRY8YiBK8b8mKOneiGD5QSwECFAMUAAAACAAAACEA/kHJaDoAAABDAAAACgAAAAAAAAAAAAAApIEAAAAAYWdlbmN5LnR4dFBLAQIUAxQAAAAIAAAAIQD25qKJUAAAAIQAAAAKAAAAAAAAAAAAAACkgWIAAAByb3V0ZXMudHh0UEsBAhQDFAAAAAgAAAAhAEl420eYAAAAKgEAAAkAAAAAAAAAAAAAAKSB2gAAAHN0b3BzLnR4dFBLAQIUAxQAAAAIAAAAIQDHhCtQxQAAANgBAAAJAAAAAAAAAAAAAACkgZkBAAB0cmlwcy50eHRQSwECFAMUAAAACAAAACEAaPDLoNAAAACLAgAADgAAAAAAAAAAAAAApIGFAgAAc3RvcF90aW1lcy50eHRQSwECFAMUAAAACAAAACEAk+2amWgMAACkiQAAEgAAAAAAAAAAAAAApIGBAwAAY2FsZW5kYXJfZGF0ZXMudHh0UEsBAhQDFAAAAAgAAAAhAP/f7kZhAAAA1AAAAAoAAAAAAAAAAAAAAKSBGRAAAHNoYXBlcy50eHRQSwECFAMUAAAACAAAACEAT0bROkUAAABZAAAADQAAAAAAAAAAAAAApIGiEAAAZmVlZF9pbmZvLnR4dFBLBQYAAAAACAAIAM0BAAASEQAAAAA="
-              }
-            }
-          }
-        },
-        "validate": {
-          "description": "Every issue of a registered document — the authoring UI's feedback loop, the whole list, never thrown.",
-          "example": {
-            "request": {
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "validate"
-            },
-            "response": {
-              "ok": {
-                "issues": [],
-                "op": "validate"
-              }
-            }
-          }
-        },
         "trip_map": {
           "description": "The import's trip-id map for a network: every derived trip ((schedule, start_secs) — the model's identity) joined to the agency trip ids it came from. This is the join rt data and the source feed's ops are keyed by — rt feeds speak the AGENCY's ids, the model mints its own. None for a network that was not inferred from a feed (an authored document has no agency ids).",
           "example": {
@@ -593,6 +574,10 @@
               }
             }
           }
+        },
+        "load_feed": {
+          "description": "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes.",
+          "example": null
         },
         "import": {
           "description": "The planner's bootstrap: infer an authored network document from a loaded feed. Deterministic; every resolution the inference applied is reported in the notes — never silent. The inferred document registers itself, so its hash answers validate/export immediately.",
@@ -970,6 +955,21 @@
               }
             }
           }
+        },
+        "validate": {
+          "description": "Every issue of a registered document — the authoring UI's feedback loop, the whole list, never thrown.",
+          "example": {
+            "request": {
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "validate"
+            },
+            "response": {
+              "ok": {
+                "issues": [],
+                "op": "validate"
+              }
+            }
+          }
         }
       }
     },
@@ -1053,6 +1053,10 @@
             }
           }
         },
+        "load_feed": {
+          "description": "Register the STATIC feed the schedule joins come from — the same GTFS zip bytes gtfs loads, the same content-hash identity (assert equality at the host). Bulk-bytes op 1.",
+          "example": null
+        },
         "trip_progress": {
           "description": "One trip's joined board: every scheduled stop with the live delay and the PREDICTED time (schedule + delay) — the dispatcher's most-asked question in one op. A trip the snapshot does not mention answers from the schedule alone; a trip the feed does not carry answers null.",
           "example": {
@@ -1097,10 +1101,6 @@
             }
           }
         },
-        "load_feed": {
-          "description": "Register the STATIC feed the schedule joins come from — the same GTFS zip bytes gtfs loads, the same content-hash identity (assert equality at the host). Bulk-bytes op 1.",
-          "example": null
-        },
         "late_trips": {
           "description": "The ranked what's-late-now view: every trip whose worst stop delay reaches min_delay_secs, worst first, each carrying the vehicle's label and position when one names it — and the DELAYED-BUT-DARK flag (has_position false) when none does. vp_hash names the VehiclePositions snapshot (agencies serve it as a SEPARATE feed — C-TRAN does); omit it for combined feeds.",
           "example": {
@@ -1134,9 +1134,9 @@
     },
     {
       "id": "analysis",
-      "hash": "sha256:95d696e1e2ada93a4b3e7b648bc49b6e9dd0f576a943cd5f82d98c8e735cba63",
-      "url": "caps/analysis-95d696e1e2ada93a4b3e7b648bc49b6e9dd0f576a943cd5f82d98c8e735cba63.wasm",
-      "bytes": 533852,
+      "hash": "sha256:1bbd6eb312cbec98c949c3b03e0019c6f70a24b1ae0ee5faa777a234b138dba4",
+      "url": "caps/analysis-1bbd6eb312cbec98c949c3b03e0019c6f70a24b1ae0ee5faa777a234b138dba4.wasm",
+      "bytes": 533982,
       "ops": [
         "load_network",
         "load_population_layer",
@@ -1156,6 +1156,10 @@
       "migrates": {},
       "purpose": "Planner analysis over an authored network document: network/route/stop stats, per-service-type overview and detail, population coverage. The first capability extracted from the monolith — the domain code lives in the shared transit-analysis library. Assemble for planners; riders never download it. Documents are hash-addressed (load once, query by hash — never per-op document serialization).",
       "op_docs": {
+        "load_population_layer": {
+          "description": "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried). The answer is the import handle — points, the picked pop_field, total population — the layer's owner never parses a second copy.",
+          "example": null
+        },
         "network_stats": {
           "description": "The network's numbers on one service date: trips, spans, revenue hours, transfer points, per-route and per-stop activity, headways. include_routes/include_stops/include_service_types (default true) shape the response: false empties the corresponding lists — the day-shape question answers in under a KiB.",
           "example": {
@@ -1183,6 +1187,227 @@
                   "transfer_stops": 0,
                   "trips": 5
                 }
+              }
+            }
+          }
+        },
+        "service_types_overview": {
+          "description": "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight.",
+          "example": {
+            "request": {
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "service_types_overview"
+            },
+            "response": {
+              "ok": {
+                "op": "service_types_overview",
+                "service_types": [
+                  {
+                    "active_routes": 1,
+                    "active_stops": 2,
+                    "date": "2026-01-04",
+                    "name": "SUN",
+                    "revenue_hours": 0.16666666666666666,
+                    "service_type": "SUN",
+                    "trips": 1
+                  },
+                  {
+                    "active_routes": 3,
+                    "active_stops": 5,
+                    "date": "2026-01-01",
+                    "name": "WK",
+                    "revenue_hours": 0.6666666666666666,
+                    "service_type": "WK",
+                    "trips": 5
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "type_coverage": {
+          "description": "Population coverage per service type against a hash-addressed layer: what share of the population each type serves, and serves frequently.",
+          "example": {
+            "request": {
+              "frequent_secs": 3600,
+              "layer_hash": "sha256:d6d611354ba7ed666e7cd0491fa2559d647ffda253fd905ead37d4e1cf890ca2",
+              "min_departures": 2,
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "type_coverage",
+              "radius_m": 500
+            },
+            "response": {
+              "ok": {
+                "coverage": [
+                  {
+                    "date": "2026-01-04",
+                    "frequent_pct": 0.0,
+                    "frequent_stops": 0,
+                    "name": "SUN",
+                    "served_pct": 50.0,
+                    "served_stops": 2,
+                    "service_type": "SUN"
+                  },
+                  {
+                    "date": "2026-01-01",
+                    "frequent_pct": 50.0,
+                    "frequent_stops": 4,
+                    "name": "WK",
+                    "served_pct": 50.0,
+                    "served_stops": 5,
+                    "service_type": "WK"
+                  }
+                ],
+                "op": "type_coverage"
+              }
+            }
+          }
+        },
+        "service_type_detail": {
+          "description": "One service type expanded on its representative day: routes, stops, schedules, totals.",
+          "example": {
+            "request": {
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "service_type_detail",
+              "service_type": "WK"
+            },
+            "response": {
+              "ok": {
+                "detail": {
+                  "date": "2026-01-01",
+                  "name": "WK",
+                  "revenue_hours": 0.6666666666666666,
+                  "routes": [
+                    {
+                      "first_start_secs": 28800,
+                      "last_arrival_secs": 31800,
+                      "name": "10",
+                      "patterns": 2,
+                      "route_id": "10",
+                      "stops": 3,
+                      "trips": 2,
+                      "typical_headway_secs": null
+                    },
+                    {
+                      "first_start_secs": 30000,
+                      "last_arrival_secs": 30600,
+                      "name": "20",
+                      "patterns": 1,
+                      "route_id": "20",
+                      "stops": 2,
+                      "trips": 1,
+                      "typical_headway_secs": null
+                    },
+                    {
+                      "first_start_secs": 29700,
+                      "last_arrival_secs": 31200,
+                      "name": "40",
+                      "patterns": 2,
+                      "route_id": "40",
+                      "stops": 2,
+                      "trips": 2,
+                      "typical_headway_secs": null
+                    }
+                  ],
+                  "schedules": [
+                    {
+                      "pattern": "pat-10-0-0",
+                      "pattern_name": "10 → Main & 2nd",
+                      "schedule": "WK:pat-10-0-0",
+                      "trips": 1
+                    },
+                    {
+                      "pattern": "pat-10-0-1",
+                      "pattern_name": "10 → Main & 2nd",
+                      "schedule": "WK:pat-10-0-1",
+                      "trips": 1
+                    },
+                    {
+                      "pattern": "pat-20-0-0",
+                      "pattern_name": "20 → Main & 2nd",
+                      "schedule": "WK:pat-20-0-0",
+                      "trips": 1
+                    },
+                    {
+                      "pattern": "pat-40-0-0",
+                      "pattern_name": "40 → Main Station: Bay B",
+                      "schedule": "WK:pat-40-0-0",
+                      "trips": 1
+                    },
+                    {
+                      "pattern": "pat-40-1-0",
+                      "pattern_name": "40 → Main Station: Bay A",
+                      "schedule": "WK:pat-40-1-0",
+                      "trips": 1
+                    }
+                  ],
+                  "service_type": "WK",
+                  "stops": [
+                    {
+                      "departures": 3,
+                      "first_arrival_secs": 28800,
+                      "last_arrival_secs": 31200,
+                      "name": "Main & 1st",
+                      "routes": 2,
+                      "stop_id": "A",
+                      "transfer": false,
+                      "transfer_group": null,
+                      "transfer_pairs": null,
+                      "typical_headway_secs": 1200
+                    },
+                    {
+                      "departures": 3,
+                      "first_arrival_secs": 29400,
+                      "last_arrival_secs": 31800,
+                      "name": "Main & 2nd",
+                      "routes": 2,
+                      "stop_id": "B",
+                      "transfer": false,
+                      "transfer_group": null,
+                      "transfer_pairs": null,
+                      "typical_headway_secs": 1200
+                    },
+                    {
+                      "departures": 1,
+                      "first_arrival_secs": 31500,
+                      "last_arrival_secs": 31500,
+                      "name": "Main & 3rd",
+                      "routes": 1,
+                      "stop_id": "C",
+                      "transfer": false,
+                      "transfer_group": null,
+                      "transfer_pairs": null,
+                      "typical_headway_secs": null
+                    },
+                    {
+                      "departures": 2,
+                      "first_arrival_secs": 29700,
+                      "last_arrival_secs": 31200,
+                      "name": "Main Station: Bay A",
+                      "routes": 1,
+                      "stop_id": "SA",
+                      "transfer": false,
+                      "transfer_group": null,
+                      "transfer_pairs": null,
+                      "typical_headway_secs": 1500
+                    },
+                    {
+                      "departures": 2,
+                      "first_arrival_secs": 30000,
+                      "last_arrival_secs": 30900,
+                      "name": "Main Station: Bay B",
+                      "routes": 1,
+                      "stop_id": "SB",
+                      "transfer": false,
+                      "transfer_group": null,
+                      "transfer_pairs": null,
+                      "typical_headway_secs": 900
+                    }
+                  ],
+                  "transfer_stops": 0,
+                  "trips": 5
+                },
+                "op": "service_type_detail"
               }
             }
           }
@@ -1554,231 +1779,6 @@
               }
             }
           }
-        },
-        "type_coverage": {
-          "description": "Population coverage per service type against a hash-addressed layer: what share of the population each type serves, and serves frequently.",
-          "example": {
-            "request": {
-              "frequent_secs": 3600,
-              "layer_hash": "sha256:d6d611354ba7ed666e7cd0491fa2559d647ffda253fd905ead37d4e1cf890ca2",
-              "min_departures": 2,
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "type_coverage",
-              "radius_m": 500
-            },
-            "response": {
-              "ok": {
-                "coverage": [
-                  {
-                    "date": "2026-01-04",
-                    "frequent_pct": 0.0,
-                    "frequent_stops": 0,
-                    "name": "SUN",
-                    "served_pct": 50.0,
-                    "served_stops": 2,
-                    "service_type": "SUN"
-                  },
-                  {
-                    "date": "2026-01-01",
-                    "frequent_pct": 50.0,
-                    "frequent_stops": 4,
-                    "name": "WK",
-                    "served_pct": 50.0,
-                    "served_stops": 5,
-                    "service_type": "WK"
-                  }
-                ],
-                "op": "type_coverage"
-              }
-            }
-          }
-        },
-        "service_types_overview": {
-          "description": "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight.",
-          "example": {
-            "request": {
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "service_types_overview"
-            },
-            "response": {
-              "ok": {
-                "op": "service_types_overview",
-                "service_types": [
-                  {
-                    "active_routes": 1,
-                    "active_stops": 2,
-                    "date": "2026-01-04",
-                    "name": "SUN",
-                    "revenue_hours": 0.16666666666666666,
-                    "service_type": "SUN",
-                    "trips": 1
-                  },
-                  {
-                    "active_routes": 3,
-                    "active_stops": 5,
-                    "date": "2026-01-01",
-                    "name": "WK",
-                    "revenue_hours": 0.6666666666666666,
-                    "service_type": "WK",
-                    "trips": 5
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "service_type_detail": {
-          "description": "One service type expanded on its representative day: routes, stops, schedules, totals.",
-          "example": {
-            "request": {
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "service_type_detail",
-              "service_type": "WK"
-            },
-            "response": {
-              "ok": {
-                "detail": {
-                  "date": "2026-01-01",
-                  "name": "WK",
-                  "revenue_hours": 0.6666666666666666,
-                  "routes": [
-                    {
-                      "first_start_secs": 28800,
-                      "last_arrival_secs": 31800,
-                      "name": "10",
-                      "patterns": 2,
-                      "route_id": "10",
-                      "stops": 3,
-                      "trips": 2,
-                      "typical_headway_secs": null
-                    },
-                    {
-                      "first_start_secs": 30000,
-                      "last_arrival_secs": 30600,
-                      "name": "20",
-                      "patterns": 1,
-                      "route_id": "20",
-                      "stops": 2,
-                      "trips": 1,
-                      "typical_headway_secs": null
-                    },
-                    {
-                      "first_start_secs": 29700,
-                      "last_arrival_secs": 31200,
-                      "name": "40",
-                      "patterns": 2,
-                      "route_id": "40",
-                      "stops": 2,
-                      "trips": 2,
-                      "typical_headway_secs": null
-                    }
-                  ],
-                  "schedules": [
-                    {
-                      "pattern": "pat-10-0-0",
-                      "pattern_name": "10 → Main & 2nd",
-                      "schedule": "WK:pat-10-0-0",
-                      "trips": 1
-                    },
-                    {
-                      "pattern": "pat-10-0-1",
-                      "pattern_name": "10 → Main & 2nd",
-                      "schedule": "WK:pat-10-0-1",
-                      "trips": 1
-                    },
-                    {
-                      "pattern": "pat-20-0-0",
-                      "pattern_name": "20 → Main & 2nd",
-                      "schedule": "WK:pat-20-0-0",
-                      "trips": 1
-                    },
-                    {
-                      "pattern": "pat-40-0-0",
-                      "pattern_name": "40 → Main Station: Bay B",
-                      "schedule": "WK:pat-40-0-0",
-                      "trips": 1
-                    },
-                    {
-                      "pattern": "pat-40-1-0",
-                      "pattern_name": "40 → Main Station: Bay A",
-                      "schedule": "WK:pat-40-1-0",
-                      "trips": 1
-                    }
-                  ],
-                  "service_type": "WK",
-                  "stops": [
-                    {
-                      "departures": 3,
-                      "first_arrival_secs": 28800,
-                      "last_arrival_secs": 31200,
-                      "name": "Main & 1st",
-                      "routes": 2,
-                      "stop_id": "A",
-                      "transfer": false,
-                      "transfer_group": null,
-                      "transfer_pairs": null,
-                      "typical_headway_secs": 1200
-                    },
-                    {
-                      "departures": 3,
-                      "first_arrival_secs": 29400,
-                      "last_arrival_secs": 31800,
-                      "name": "Main & 2nd",
-                      "routes": 2,
-                      "stop_id": "B",
-                      "transfer": false,
-                      "transfer_group": null,
-                      "transfer_pairs": null,
-                      "typical_headway_secs": 1200
-                    },
-                    {
-                      "departures": 1,
-                      "first_arrival_secs": 31500,
-                      "last_arrival_secs": 31500,
-                      "name": "Main & 3rd",
-                      "routes": 1,
-                      "stop_id": "C",
-                      "transfer": false,
-                      "transfer_group": null,
-                      "transfer_pairs": null,
-                      "typical_headway_secs": null
-                    },
-                    {
-                      "departures": 2,
-                      "first_arrival_secs": 29700,
-                      "last_arrival_secs": 31200,
-                      "name": "Main Station: Bay A",
-                      "routes": 1,
-                      "stop_id": "SA",
-                      "transfer": false,
-                      "transfer_group": null,
-                      "transfer_pairs": null,
-                      "typical_headway_secs": 1500
-                    },
-                    {
-                      "departures": 2,
-                      "first_arrival_secs": 30000,
-                      "last_arrival_secs": 30900,
-                      "name": "Main Station: Bay B",
-                      "routes": 1,
-                      "stop_id": "SB",
-                      "transfer": false,
-                      "transfer_group": null,
-                      "transfer_pairs": null,
-                      "typical_headway_secs": 900
-                    }
-                  ],
-                  "transfer_stops": 0,
-                  "trips": 5
-                },
-                "op": "service_type_detail"
-              }
-            }
-          }
-        },
-        "load_population_layer": {
-          "description": "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried).",
-          "example": null
         }
       }
     },
@@ -1800,15 +1800,15 @@
         "network": "network"
       },
       "speaks": {
-        "watchlist": [
-          1,
-          2
-        ],
         "operator_edits": [
           1
         ],
         "network": [
           1
+        ],
+        "watchlist": [
+          1,
+          2
         ]
       },
       "migrates": {
@@ -1845,140 +1845,6 @@
                 "op": "load_watchlist",
                 "version": 2,
                 "watchlist_hash": "sha256:<of the document>"
-              }
-            }
-          }
-        },
-        "migrate_watchlist": {
-          "description": "Migrate a version-1 watchlist to version 2: label = note, colors dropped and reported. Pure and deterministic; the caller keeps the old bytes — migrations never destroy.",
-          "example": {
-            "request": {
-              "document": {
-                "stops": [
-                  {
-                    "color": "blue",
-                    "id": "A",
-                    "note": "home"
-                  }
-                ],
-                "version": "v1"
-              },
-              "op": "migrate_watchlist"
-            },
-            "response": {
-              "ok": {
-                "document": {
-                  "stops": [
-                    {
-                      "id": "A",
-                      "label": "home"
-                    }
-                  ],
-                  "version": "v2"
-                },
-                "notes": [
-                  {
-                    "count": 1,
-                    "field": "color",
-                    "kind": "dropped_field"
-                  }
-                ],
-                "op": "migrated_watchlist"
-              }
-            }
-          }
-        },
-        "load_edits": {
-          "description": "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change.",
-          "example": {
-            "request": {
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "load_edits",
-              "records": [
-                {
-                  "diversion": {
-                    "added_secs": 300,
-                    "detour": null,
-                    "direction_id": null,
-                    "end_date": "2026-10-23",
-                    "first_kept_stop": "A",
-                    "id": "d1",
-                    "last_kept_stop": "B",
-                    "route_id": "10",
-                    "skipped_stops": [
-                      "C"
-                    ],
-                    "start_date": "2026-10-23"
-                  },
-                  "id": "e1",
-                  "rev": 1,
-                  "status": "accepted",
-                  "updated_at": 1
-                }
-              ]
-            },
-            "response": {
-              "ok": {
-                "edits_hash": "sha256:4ab45b2ef7edc302f64bb7d6bd1b4ef49cc5d1afc8a3b3a2af56726b29f9e233",
-                "op": "load_edits",
-                "reports": [
-                  {
-                    "affected_trips": 3,
-                    "error": null,
-                    "id": "e1",
-                    "valid": true
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "departures": {
-          "description": "The board at one stop on a service date: the network's materialized day — trips as their (schedule, start) identity, model vocabulary — with the in-force edits applied when edits_hash names a registered document (schedule-only when omitted). The stop's own board; a station pin answers nothing here, see station_departures.",
-          "example": {
-            "request": {
-              "date": "2026-10-23",
-              "from_secs": 25200,
-              "limit": 5,
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "departures",
-              "stop_id": "A"
-            },
-            "response": {
-              "ok": {
-                "departures": [
-                  {
-                    "departure_secs": 28800,
-                    "destination": "Main & 2nd",
-                    "pattern": "pat-10-0-0",
-                    "route": "10",
-                    "route_name": "10",
-                    "schedule": "WK:pat-10-0-0",
-                    "start_secs": 28800,
-                    "stop": "A"
-                  },
-                  {
-                    "departure_secs": 30000,
-                    "destination": "Main & 2nd",
-                    "pattern": "pat-20-0-0",
-                    "route": "20",
-                    "route_name": "20",
-                    "schedule": "WK:pat-20-0-0",
-                    "start_secs": 30000,
-                    "stop": "A"
-                  },
-                  {
-                    "departure_secs": 31200,
-                    "destination": "Main & 2nd",
-                    "pattern": "pat-10-0-1",
-                    "route": "10",
-                    "route_name": "10",
-                    "schedule": "WK:pat-10-0-1",
-                    "start_secs": 31200,
-                    "stop": "A"
-                  }
-                ],
-                "op": "departures"
               }
             }
           }
@@ -2071,6 +1937,56 @@
                     "label": "work"
                   }
                 ]
+              }
+            }
+          }
+        },
+        "departures": {
+          "description": "The board at one stop on a service date: the network's materialized day — trips as their (schedule, start) identity, model vocabulary — with the in-force edits applied when edits_hash names a registered document (schedule-only when omitted). The stop's own board; a station pin answers nothing here, see station_departures.",
+          "example": {
+            "request": {
+              "date": "2026-10-23",
+              "from_secs": 25200,
+              "limit": 5,
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "departures",
+              "stop_id": "A"
+            },
+            "response": {
+              "ok": {
+                "departures": [
+                  {
+                    "departure_secs": 28800,
+                    "destination": "Main & 2nd",
+                    "pattern": "pat-10-0-0",
+                    "route": "10",
+                    "route_name": "10",
+                    "schedule": "WK:pat-10-0-0",
+                    "start_secs": 28800,
+                    "stop": "A"
+                  },
+                  {
+                    "departure_secs": 30000,
+                    "destination": "Main & 2nd",
+                    "pattern": "pat-20-0-0",
+                    "route": "20",
+                    "route_name": "20",
+                    "schedule": "WK:pat-20-0-0",
+                    "start_secs": 30000,
+                    "stop": "A"
+                  },
+                  {
+                    "departure_secs": 31200,
+                    "destination": "Main & 2nd",
+                    "pattern": "pat-10-0-1",
+                    "route": "10",
+                    "route_name": "10",
+                    "schedule": "WK:pat-10-0-1",
+                    "start_secs": 31200,
+                    "stop": "A"
+                  }
+                ],
+                "op": "departures"
               }
             }
           }
@@ -2443,6 +2359,90 @@
             }
           }
         },
+        "migrate_watchlist": {
+          "description": "Migrate a version-1 watchlist to version 2: label = note, colors dropped and reported. Pure and deterministic; the caller keeps the old bytes — migrations never destroy.",
+          "example": {
+            "request": {
+              "document": {
+                "stops": [
+                  {
+                    "color": "blue",
+                    "id": "A",
+                    "note": "home"
+                  }
+                ],
+                "version": "v1"
+              },
+              "op": "migrate_watchlist"
+            },
+            "response": {
+              "ok": {
+                "document": {
+                  "stops": [
+                    {
+                      "id": "A",
+                      "label": "home"
+                    }
+                  ],
+                  "version": "v2"
+                },
+                "notes": [
+                  {
+                    "count": 1,
+                    "field": "color",
+                    "kind": "dropped_field"
+                  }
+                ],
+                "op": "migrated_watchlist"
+              }
+            }
+          }
+        },
+        "load_edits": {
+          "description": "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change.",
+          "example": {
+            "request": {
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "load_edits",
+              "records": [
+                {
+                  "diversion": {
+                    "added_secs": 300,
+                    "detour": null,
+                    "direction_id": null,
+                    "end_date": "2026-10-23",
+                    "first_kept_stop": "A",
+                    "id": "d1",
+                    "last_kept_stop": "B",
+                    "route_id": "10",
+                    "skipped_stops": [
+                      "C"
+                    ],
+                    "start_date": "2026-10-23"
+                  },
+                  "id": "e1",
+                  "rev": 1,
+                  "status": "accepted",
+                  "updated_at": 1
+                }
+              ]
+            },
+            "response": {
+              "ok": {
+                "edits_hash": "sha256:4ab45b2ef7edc302f64bb7d6bd1b4ef49cc5d1afc8a3b3a2af56726b29f9e233",
+                "op": "load_edits",
+                "reports": [
+                  {
+                    "affected_trips": 3,
+                    "error": null,
+                    "id": "e1",
+                    "valid": true
+                  }
+                ]
+              }
+            }
+          }
+        },
         "station_departures": {
           "description": "The STATION board: departures pooled over the stop's WALKING GROUP (the model's own transfer-group concept — the stop, its parent, siblings sharing that parent, the parent's children). A station pin answers no departures of its own; its bays carry the trips. Each row carries its concrete stop_id, so the caller sees which bay a departure leaves from.",
           "example": {
@@ -2520,61 +2520,16 @@
         "network": "network"
       },
       "speaks": {
-        "network": [
+        "operator_edits": [
           1
         ],
-        "operator_edits": [
+        "network": [
           1
         ]
       },
       "migrates": {},
       "purpose": "The runcut: what does this vehicle do today — the day's blocks list (which vehicles are out, with that day's running trip counts) and one block's authored chain with the layover ripple (a diverted trip ending later eats into the vehicle's next layover). Blocks and layovers are model state GTFS never had. The materialized day over the NETWORK document, patched with the in-force edits; the domain code lives in the shared transit-dispatch library.",
       "op_docs": {
-        "load_edits": {
-          "description": "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change.",
-          "example": {
-            "request": {
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "load_edits",
-              "records": [
-                {
-                  "diversion": {
-                    "added_secs": 300,
-                    "detour": null,
-                    "direction_id": null,
-                    "end_date": "2026-10-23",
-                    "first_kept_stop": "A",
-                    "id": "d1",
-                    "last_kept_stop": "B",
-                    "route_id": "10",
-                    "skipped_stops": [
-                      "C"
-                    ],
-                    "start_date": "2026-10-23"
-                  },
-                  "id": "e1",
-                  "rev": 1,
-                  "status": "accepted",
-                  "updated_at": 1
-                }
-              ]
-            },
-            "response": {
-              "ok": {
-                "edits_hash": "sha256:4ab45b2ef7edc302f64bb7d6bd1b4ef49cc5d1afc8a3b3a2af56726b29f9e233",
-                "op": "load_edits",
-                "reports": [
-                  {
-                    "affected_trips": 3,
-                    "error": null,
-                    "id": "e1",
-                    "valid": true
-                  }
-                ]
-              }
-            }
-          }
-        },
         "load_network": {
           "description": "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth.",
           "example": {
@@ -2960,6 +2915,51 @@
                   }
                 ],
                 "op": "blocks"
+              }
+            }
+          }
+        },
+        "load_edits": {
+          "description": "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change.",
+          "example": {
+            "request": {
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "load_edits",
+              "records": [
+                {
+                  "diversion": {
+                    "added_secs": 300,
+                    "detour": null,
+                    "direction_id": null,
+                    "end_date": "2026-10-23",
+                    "first_kept_stop": "A",
+                    "id": "d1",
+                    "last_kept_stop": "B",
+                    "route_id": "10",
+                    "skipped_stops": [
+                      "C"
+                    ],
+                    "start_date": "2026-10-23"
+                  },
+                  "id": "e1",
+                  "rev": 1,
+                  "status": "accepted",
+                  "updated_at": 1
+                }
+              ]
+            },
+            "response": {
+              "ok": {
+                "edits_hash": "sha256:4ab45b2ef7edc302f64bb7d6bd1b4ef49cc5d1afc8a3b3a2af56726b29f9e233",
+                "op": "load_edits",
+                "reports": [
+                  {
+                    "affected_trips": 3,
+                    "error": null,
+                    "id": "e1",
+                    "valid": true
+                  }
+                ]
               }
             }
           }
@@ -3491,6 +3491,167 @@
       "migrates": {},
       "purpose": "The directory: what exists in the network — the stops (with their walking-group structure), the routes, one route's patterns with their ordered stops (list to detail). The pickers and the names join read here; they are MODEL questions, never feed reads. Patterns are the model's directions: a route's stop sequences are its patterns, each with its own ordered stops — what a diversion editor anchors against.",
       "op_docs": {
+        "routes": {
+          "description": "The route list, name-sorted: every route with its mode (the model's closed set, not GTFS's numeric codes) and its authored color when there is one.",
+          "example": {
+            "request": {
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "routes"
+            },
+            "response": {
+              "ok": {
+                "op": "routes",
+                "routes": [
+                  {
+                    "color": null,
+                    "mode": "bus",
+                    "name": "10",
+                    "route_id": "10"
+                  },
+                  {
+                    "color": null,
+                    "mode": "bus",
+                    "name": "20",
+                    "route_id": "20"
+                  },
+                  {
+                    "color": null,
+                    "mode": "bus",
+                    "name": "40",
+                    "route_id": "40"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "stops_by_ids": {
+          "description": "Stops by id, in the request's order — the names join hosts otherwise do by hand when a view (like rt's) carries ids a human reads as names. Unknown ids are omitted.",
+          "example": {
+            "request": {
+              "ids": [
+                "A",
+                "ghost",
+                "STN"
+              ],
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "stops_by_ids"
+            },
+            "response": {
+              "ok": {
+                "op": "stops_by_ids",
+                "stops": [
+                  {
+                    "lat": 45.5,
+                    "lon": -73.5,
+                    "name": "Main & 1st",
+                    "parent": null,
+                    "stop_id": "A",
+                    "transfer": false
+                  },
+                  {
+                    "lat": 45.515,
+                    "lon": -73.515,
+                    "name": "Main Station",
+                    "parent": null,
+                    "stop_id": "STN",
+                    "transfer": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "stops": {
+          "description": "The stop list, name-sorted (the pickers' shape): every stop with its coords, its parent (the flag the station board keys off), and its transfer flag. limit truncates after the sort; omit it for the whole list — a silently truncated directory would be a lie.",
+          "example": {
+            "request": {
+              "limit": 3,
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "stops"
+            },
+            "response": {
+              "ok": {
+                "op": "stops",
+                "stops": [
+                  {
+                    "lat": 45.5,
+                    "lon": -73.5,
+                    "name": "Main & 1st",
+                    "parent": null,
+                    "stop_id": "A",
+                    "transfer": false
+                  },
+                  {
+                    "lat": 45.51,
+                    "lon": -73.51,
+                    "name": "Main & 2nd",
+                    "parent": null,
+                    "stop_id": "B",
+                    "transfer": false
+                  },
+                  {
+                    "lat": 45.52,
+                    "lon": -73.52,
+                    "name": "Main & 3rd",
+                    "parent": null,
+                    "stop_id": "C",
+                    "transfer": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "route_stop_sequence": {
+          "description": "One route's patterns with their ordered stops — the model's directions. An unknown route answers empty, never an error.",
+          "example": {
+            "request": {
+              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+              "op": "route_stop_sequence",
+              "route_id": "10"
+            },
+            "response": {
+              "ok": {
+                "op": "route_stop_sequence",
+                "patterns": [
+                  {
+                    "name": "10 → Main & 2nd",
+                    "pattern": "pat-10-0-0",
+                    "stops": [
+                      {
+                        "name": "Main & 1st",
+                        "stop_id": "A"
+                      },
+                      {
+                        "name": "Main & 2nd",
+                        "stop_id": "B"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "10 → Main & 2nd",
+                    "pattern": "pat-10-0-1",
+                    "stops": [
+                      {
+                        "name": "Main & 1st",
+                        "stop_id": "A"
+                      },
+                      {
+                        "name": "Main & 3rd",
+                        "stop_id": "C"
+                      },
+                      {
+                        "name": "Main & 2nd",
+                        "stop_id": "B"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
         "load_network": {
           "description": "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth.",
           "example": {
@@ -3855,167 +4016,6 @@
               "ok": {
                 "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
                 "op": "load_network"
-              }
-            }
-          }
-        },
-        "stops_by_ids": {
-          "description": "Stops by id, in the request's order — the names join hosts otherwise do by hand when a view (like rt's) carries ids a human reads as names. Unknown ids are omitted.",
-          "example": {
-            "request": {
-              "ids": [
-                "A",
-                "ghost",
-                "STN"
-              ],
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "stops_by_ids"
-            },
-            "response": {
-              "ok": {
-                "op": "stops_by_ids",
-                "stops": [
-                  {
-                    "lat": 45.5,
-                    "lon": -73.5,
-                    "name": "Main & 1st",
-                    "parent": null,
-                    "stop_id": "A",
-                    "transfer": false
-                  },
-                  {
-                    "lat": 45.515,
-                    "lon": -73.515,
-                    "name": "Main Station",
-                    "parent": null,
-                    "stop_id": "STN",
-                    "transfer": false
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "routes": {
-          "description": "The route list, name-sorted: every route with its mode (the model's closed set, not GTFS's numeric codes) and its authored color when there is one.",
-          "example": {
-            "request": {
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "routes"
-            },
-            "response": {
-              "ok": {
-                "op": "routes",
-                "routes": [
-                  {
-                    "color": null,
-                    "mode": "bus",
-                    "name": "10",
-                    "route_id": "10"
-                  },
-                  {
-                    "color": null,
-                    "mode": "bus",
-                    "name": "20",
-                    "route_id": "20"
-                  },
-                  {
-                    "color": null,
-                    "mode": "bus",
-                    "name": "40",
-                    "route_id": "40"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "route_stop_sequence": {
-          "description": "One route's patterns with their ordered stops — the model's directions. An unknown route answers empty, never an error.",
-          "example": {
-            "request": {
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "route_stop_sequence",
-              "route_id": "10"
-            },
-            "response": {
-              "ok": {
-                "op": "route_stop_sequence",
-                "patterns": [
-                  {
-                    "name": "10 → Main & 2nd",
-                    "pattern": "pat-10-0-0",
-                    "stops": [
-                      {
-                        "name": "Main & 1st",
-                        "stop_id": "A"
-                      },
-                      {
-                        "name": "Main & 2nd",
-                        "stop_id": "B"
-                      }
-                    ]
-                  },
-                  {
-                    "name": "10 → Main & 2nd",
-                    "pattern": "pat-10-0-1",
-                    "stops": [
-                      {
-                        "name": "Main & 1st",
-                        "stop_id": "A"
-                      },
-                      {
-                        "name": "Main & 3rd",
-                        "stop_id": "C"
-                      },
-                      {
-                        "name": "Main & 2nd",
-                        "stop_id": "B"
-                      }
-                    ]
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "stops": {
-          "description": "The stop list, name-sorted (the pickers' shape): every stop with its coords, its parent (the flag the station board keys off), and its transfer flag. limit truncates after the sort; omit it for the whole list — a silently truncated directory would be a lie.",
-          "example": {
-            "request": {
-              "limit": 3,
-              "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
-              "op": "stops"
-            },
-            "response": {
-              "ok": {
-                "op": "stops",
-                "stops": [
-                  {
-                    "lat": 45.5,
-                    "lon": -73.5,
-                    "name": "Main & 1st",
-                    "parent": null,
-                    "stop_id": "A",
-                    "transfer": false
-                  },
-                  {
-                    "lat": 45.51,
-                    "lon": -73.51,
-                    "name": "Main & 2nd",
-                    "parent": null,
-                    "stop_id": "B",
-                    "transfer": false
-                  },
-                  {
-                    "lat": 45.52,
-                    "lon": -73.52,
-                    "name": "Main & 3rd",
-                    "parent": null,
-                    "stop_id": "C",
-                    "transfer": false
-                  }
-                ]
               }
             }
           }

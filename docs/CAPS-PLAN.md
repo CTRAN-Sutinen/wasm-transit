@@ -136,6 +136,27 @@ LANDED:
   anchor sequence). NOT dogfooded: the first real-data session
   through the directory re-pins this line.
 
+- **U4, coverage** — the monolith's coverage_load was a parse-only
+  DUPLICATE of the capability (criterion 6: cap-analysis already
+  registered layers by content hash and answered type_coverage);
+  the criteria delete the duplicate, they do not re-derive it.
+  The registration answer grew into the import handle:
+  load_population_layer returns points, pop_field and total_pop
+  (the monolith op's exact answer shape — the import UI's status
+  line and chip are unchanged, and the layer's owner never parses
+  a second copy). Monolith op deleted: coverage_load (ABI smoke
+  pins both retirements — the JSON op and bulk op 3); the
+  artifact's bytes seam is load_feed alone. ON THE BUS:
+  cap-analysis's dispatch proptest (the handle's fields: points,
+  the picked pop_field, the summed population) and caps-smoke's
+  analysis flow (the handle asserted, then type_coverage by the
+  hash pair). UI READS THE BUS: the population import (file and
+  URL) registers through ensureAnalysisLayer — the registration
+  IS the handle the DataSources chip shows — and the coverage
+  refresh reads the same registration (app.spec: the
+  population-layer import spec). NOT dogfooded: the first
+  real-data session with a census layer re-pins this line.
+
 Infrastructure, DONE (pinned by the same `just check` the
 gates run in): cap-abi (the undocumented-ops law and the
 manifest's compose-time self-validation), the resolver
@@ -153,15 +174,15 @@ re-authors from there) and reports every resolution — never
 silent; diversions produce patched copies (the base feed is
 immutable); retire = tombstone.
 
-OPEN — the units of `docs/PLAN.md`: U4
-coverage, U5 planning, U6 the map view, U7 sync + plans, U8 the
-GTFS substrate retires (U1 cap-streets and U2 the need cut are
-landed above). The rider planner still plans through the monolith
-(U5); the map still draws through the monolith's geojson ops (U6);
-`set_diversions` is still the edit-document plumbing for both.
-transit-core is deprecated as of this cut — its day answers lost
-their last bus callers, and the crate itself folds into the codec
-in U8.
+OPEN — the units of `docs/PLAN.md`: U5
+planning, U6 the map view, U7 sync + plans, U8 the
+GTFS substrate retires (U1 cap-streets, U2 the need cut, U3 the
+directory + feed line, and U4 coverage are landed above). The rider
+planner still plans through the monolith (U5); the map still draws
+through the monolith's geojson ops (U6); `set_diversions` is still
+the edit-document plumbing for both. transit-core is deprecated as
+of this cut — its day answers lost their last bus callers, and
+the crate itself folds into the codec in U8.
 
 ## Open findings (routed, never scripted)
 

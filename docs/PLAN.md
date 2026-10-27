@@ -78,20 +78,12 @@ required, only honesty about the need each op serves:
 
 | monolith op(s) | the need | home | unit |
 |---|---|---|---|
-| stops, routes, route_stop_sequence | what exists in the network — the stops, the routes, one route's stop sequence (list → detail) | cap-directory — NEW: one question over the NETWORK document; the pickers are model questions, never feed reads | U3 |
-| summary | what is in the feed at a glance — the feed line | cap-gtfs, already answered (`load_feed` returns the summary, `feed_info` the identity) — the UI rewires, no new ops | U3 |
-| coverage_load | measure population coverage | cap-analysis (`load_population_layer` already registers layers by hash; `type_coverage` already answers) — the UI calls them directly | U4 |
 | plan_trip, plan_trip_compare | plan a trip, with the diversion delta | cap-router — onto the NETWORK + the effective day (its feed-document input is a Stage-B-era shape, not an option to weigh; the compare is the baseline facet — the unpatched day, one materialization apart) | U5 |
 | stops_geojson, stop_point, trip_path_geojson, route_path_geojson, trip_segment_geojson | draw the map | the HOST's view code over model documents — patterns carry paths, stops carry coords, the edit document carries detour polylines, the trip map carries click-throughs. The map is a VIEW, not a cap. | U6 |
 | set_diversions | plumbing: apply the edit document to the remaining feed-side reads | none — it dies when U5 + U6 are done (the last consumers) | — |
 | sync_edits | sync the edit document (LWW merge, the sync protocol) | transit-sync is the library; the open question is placement only: cap-sync vs permanent seam resident | U7 |
 | plans_resolve, plans_validate, plans_periods | know which service plan governs a date | same standing as transit-sync's merge — the U7 placement carries it | U7 |
 | load_feed, drop_feed | the artifact's own registry lifecycle | none — the plumbing dies with the last feed_id op (U5 + U6) | — |
-
-The names join (`stops_by_ids`, today on cap-gtfs) moves to
-cap-directory with the stop list it belongs to — one question,
-one answer (criterion 6); cap-gtfs ends U3 as parse + identity
-alone.
 
 ## The units
 

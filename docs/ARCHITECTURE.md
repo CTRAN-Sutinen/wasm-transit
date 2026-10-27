@@ -55,8 +55,9 @@ transit-codec   The network codec, both directions: a network document
                 last.
 transit-analysis Planner analysis over an authored network document:
                 stats, service-type overview/detail, population
-                coverage. A LIBRARY shared by transit-ops (parse-only
-                coverage handle) and the cap-analysis module.
+                coverage. A LIBRARY shared by the cap-analysis
+                module (transit-ops keeps the re-export its tests
+                read).
 transit-dispatch The materialized day's views, model-native: patch_day
                 (skip/shift over MATERIALIZED stop times — the day,
                 never the calendar), edit validation against the
@@ -98,13 +99,15 @@ transit-ops     dispatch(Request) -> Response: the host-agnostic seam
                 What remains: the parsed-feed op surface the map and
                 the planner still need (geojson, planning — all
                 date-scoped by the edit document via
-                set_diversions, the last diversion consumer), the
-                plans chain in src/plans.rs
+                set_diversions, the last diversion consumer) and
+                the plans chain in src/plans.rs
                 (plans_resolve / plans_validate / plans_periods —
                 cross-document domain logic, the same standing as
-                transit-sync's merge), and the parse-only coverage
-                handle. The street ops are DELETED — cap-streets owns
-                the detour editor's graph.
+                transit-sync's merge). The street ops are DELETED —
+                cap-streets owns the detour editor's graph — and
+                the population-layer parse is DELETED —
+                cap-analysis owns the layers and the coverage that
+                reads them.
 transit-wasm    THE artifact: flat import-free C ABI over dispatch.
                 No wasm-bindgen — do not reintroduce host glue.
 ```

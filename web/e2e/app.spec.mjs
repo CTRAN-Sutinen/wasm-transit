@@ -465,6 +465,22 @@ test("street network import paginates ArcGIS-style queries", async ({ page }) =>
   expect((await mapData(page, "streets")).features.length).toBe(2);
 });
 
+test("population layer import registers through the analysis capability", async ({ page }) => {
+  await page.goto("/");
+  await waitForMap(page);
+
+  // No feed needed: reference data, loadable on its own. The layer
+  // registers in cap-analysis under its content hash — the
+  // registration answer IS the import handle (points, the picked
+  // pop_field, the total), the monolith's parse-only op is gone.
+  await page.locator("#population-file").setInputFiles(path.join(fixtures, "population.geojson"));
+
+  await expect(page.getByText("Coverage analysis is on.")).toBeVisible();
+  const chip = page.locator(".chip.svc", { hasText: "points" });
+  await expect(chip).toContainText("6 points");
+  await expect(chip).toContainText("2,100 people (POP)");
+});
+
 /// Wait until the camera has settled on the fixture feed's stops:
 /// loading the feed fires a fitBounds whose flight (from the local
 /// basemap's initial view) lasts seconds, and pixel-precise clicks

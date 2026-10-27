@@ -24,7 +24,6 @@ import type { TripLineFeature } from "./types/TripLineFeature";
 
 // Op codes for the bulk-bytes ABI (transit_ops::OP_LOAD_FEED etc.).
 const OP_LOAD_FEED = 0;
-const OP_COVERAGE_LOAD = 3;
 
 /// The flat C ABI the artifact exports.
 type WasmExports = {
@@ -214,20 +213,6 @@ export function plans_periods(plans: PlanInfo[]): PlanPeriod[] {
   return (invoke({ op: "plans_periods", plans }) as { periods: PlanPeriod[] }).periods;
 }
 
-export type CoverageLayer = {
-  points: number;
-  pop_field: string;
-  total_pop: number;
-};
-
-/// Parse a population layer (GeoJSON points; the population property
-/// auto-detected from the common spellings) for the import handle.
-/// Parse-only: coverage computation lives in the analysis capability
-/// (cap-analysis), which registers layers by content hash.
-export function coverage_load(bytes: Uint8Array): CoverageLayer {
-  return invokeBytes(OP_COVERAGE_LOAD, bytes) as CoverageLayer;
-}
-
 /// The API surface `loadWasm()` hands back — the whole artifact
 /// boundary in one type.
 export type WasmApi = {
@@ -235,7 +220,6 @@ export type WasmApi = {
   plans_resolve: typeof plans_resolve;
   plans_validate: typeof plans_validate;
   plans_periods: typeof plans_periods;
-  coverage_load: typeof coverage_load;
 };
 
 /// The entry point main.js awaits: instantiate the artifact, then
@@ -247,6 +231,5 @@ export async function loadWasm(): Promise<WasmApi> {
     plans_resolve,
     plans_validate,
     plans_periods,
-    coverage_load,
   };
 }

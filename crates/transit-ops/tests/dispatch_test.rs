@@ -6,7 +6,6 @@ use std::io::Write;
 
 use transit_codec::{gtfs_to_network, network_to_gtfs};
 use transit_ops::{dispatch, PlanInfo, Request, Response};
-use prost::Message;
 use transit_network::Schedule;
 use transit_sync::{EditRecord, EditStatus};
 
@@ -720,41 +719,6 @@ fn pop_layer_geojson() -> Vec<u8> {
          "properties":{"POP":30}}
     ]}"#
     .to_vec()
-}
-
-#[test]
-fn coverage_loads_and_measures_service_quality() {
-    // The planner's opening questions, answered by the artifact:
-    // what share of the population is near service, and what share
-    // is near frequent service. coverage_load is the monolith's
-    // parse-only handle; the measurement is the analysis library
-    // (the capability's domain).
-    let handle = match dispatch(Request::CoverageLoad { bytes: pop_layer_geojson(), pop_field: None })
-        .unwrap()
-    {
-        Response::CoverageLoad { points, pop_field, total_pop } => {
-            assert_eq!(points, 3);
-            assert_eq!(pop_field, "POP");
-            assert!((total_pop - 180.0).abs() < 1e-9);
-        }
-        _ => panic!("coverage_load"),
-    };
-    let _ = handle;
-    let network = import_production();
-    let layer =
-        transit_ops::analysis::parse_pop_layer(&pop_layer_geojson(), None).expect("layer parses");
-    let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
-    let stats = transit_ops::analysis::coverage(&network, date, &layer, 400.0, 3600, 4);
-    assert_eq!(stats.served_stops, 3);
-    // Frequent bar: typical headway ≤ 3600 s on ≥ 4 visits. Stop A:
-    // starts 06:00/08:00/08:22/09:00 → 3600 s exactly, qualifies.
-    // Stop B: the materialized 480 s timepoint offset puts its
-    // spread at 3640 s — served, not frequent. Stop C: 3 visits.
-    assert_eq!(stats.frequent_stops, 1);
-    // 100 (near A) + 50 (near C) of 180 — the far point is uncovered.
-    assert!((stats.served_pct - 150.0 / 180.0 * 100.0).abs() < 1e-6);
-    // Only the point near A (frequent); C is served but not frequent.
-    assert!((stats.frequent_pct - 100.0 / 180.0 * 100.0).abs() < 1e-6);
 }
 
 /// A feed carrying all four resolution shapes: an infeasible block

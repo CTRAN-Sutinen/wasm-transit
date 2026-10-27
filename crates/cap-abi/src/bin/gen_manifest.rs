@@ -129,7 +129,7 @@ const MODULES: &[ModuleSpec] = &[
         purpose: "Planner analysis over an authored network document: network/route/stop stats, per-service-type overview and detail, population coverage. The first capability extracted from the monolith — the domain code lives in the shared transit-analysis library. Assemble for planners; riders never download it. Documents are hash-addressed (load once, query by hash — never per-op document serialization).",
         op_docs: &[
             ("load_network", "Register an authored network document (the planner's JSON document, produced or derived by the network capability) under its content hash; idempotent."),
-            ("load_population_layer", "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried)."),
+            ("load_population_layer", "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried). The answer is the import handle — points, the picked pop_field, total population — the layer's owner never parses a second copy."),
             ("network_stats", "The network's numbers on one service date: trips, spans, revenue hours, transfer points, per-route and per-stop activity, headways. include_routes/include_stops/include_service_types (default true) shape the response: false empties the corresponding lists — the day-shape question answers in under a KiB."),
             ("service_types_overview", "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight."),
             ("service_type_detail", "One service type expanded on its representative day: routes, stops, schedules, totals."),

@@ -231,6 +231,11 @@ const layer = analysis.invokeBytes(0, Buffer.from(JSON.stringify({
   ],
 })));
 assert(layer.points === 2, "analysis registers a population layer by content hash");
+// The registration answer IS the import handle (U4: the monolith's
+// parse-only op is retired): the field the parse picked, the people
+// it found.
+assert(layer.pop_field === "pop", "the layer handle names the population field");
+assert(layer.total_pop === 1000, "the layer handle sums the population: " + layer.total_pop);
 const coverage = analysis.invoke({
   op: "type_coverage",
   network_hash: loadedNet.network_hash,

@@ -202,6 +202,20 @@ assert(second.feed_id !== feedId, "registry assigns distinct feed ids");
     "the retired rt op errors through the standard outcome (cap-rt owns the decoder)");
 }
 
+// The population-layer parse is GONE from the monolith — cap-analysis
+// owns the layers and the coverage that reads them (U4: the UI's
+// import handle comes from load_population_layer's registration
+// answer). The artifact must REJECT the retired op and bulk code with
+// the standard outcome, never a trap.
+{
+  const outcome = JSON.parse(rawInvoke(JSON.stringify({ op: "coverage_load", bytes: [], pop_field: null })));
+  assert(outcome.error && /unknown variant|invalid request/.test(outcome.error),
+    "the retired coverage_load op errors through the standard outcome");
+  const loaded = JSON.parse(rawInvokeBytes(3, new TextEncoder().encode("{}")));
+  assert(loaded.error && loaded.error.includes("unknown bytes op code"),
+    "the retired coverage-load bulk op code errors through the standard outcome");
+}
+
 // Non-UTF-8 request payloads: an error outcome, never a trap.
 {
   const payload = Buffer.from([0xff, 0xfe, 0x00, 0b10101010, 0xf0]);

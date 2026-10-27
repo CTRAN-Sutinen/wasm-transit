@@ -40,7 +40,9 @@ pub enum Request {
     /// this capability only ever reads it.
     LoadNetwork { network: Network },
     /// Register a population layer (GeoJSON points) under its
-    /// content hash.
+    /// content hash. The handle is the whole answer the import UI
+    /// shows — the field the parse picked and the people it found —
+    /// so the layer's owner never needs a second parse elsewhere.
     LoadPopulationLayer { bytes: Vec<u8>, pop_field: Option<String> },
     /// The network's numbers on one service date. The optional
     /// include flags shape the response: the UI wants every route
@@ -77,7 +79,12 @@ pub enum Request {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     LoadNetwork { network_hash: String },
-    LoadPopulationLayer { layer_hash: String, points: u64 },
+    LoadPopulationLayer {
+        layer_hash: String,
+        points: u64,
+        pop_field: String,
+        total_pop: f64,
+    },
     NetworkStats { stats: NetworkStats },
     ServiceTypesOverview { service_types: Vec<ServiceTypeSummary> },
     ServiceTypeDetail { detail: ServiceTypeDetail },
@@ -154,18 +161,21 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::LoadPopulationLayer { bytes, pop_field } => {
             let hash = content_hash(&bytes);
-            if layers().lock().expect("layer lock").contains_key(&hash) {
-                let points = layers().lock().expect("layer lock").get(&hash).unwrap().points.len() as u64;
-                return Ok(Response::LoadPopulationLayer { layer_hash: hash, points });
+            let mut registry = layers().lock().expect("layer lock");
+            if !registry.contains_key(&hash) {
+                let layer = parse_pop_layer(&bytes, pop_field.as_deref())
+                    .map_err(|e| format!("population layer: {e}"))?;
+                registry.insert(hash.clone(), Arc::new(layer));
             }
-            let layer = parse_pop_layer(&bytes, pop_field.as_deref())
-                .map_err(|e| format!("population layer: {e}"))?;
-            let points = layer.points.len() as u64;
-            layers()
-                .lock()
-                .expect("layer lock")
-                .insert(hash.clone(), Arc::new(layer));
-            Ok(Response::LoadPopulationLayer { layer_hash: hash, points })
+            let layer = registry
+                .get(&hash)
+                .expect("layer was just inserted under its hash");
+            Ok(Response::LoadPopulationLayer {
+                layer_hash: hash,
+                points: layer.points.len() as u64,
+                pop_field: layer.pop_field.clone(),
+                total_pop: layer.points.iter().map(|p| p.pop).sum(),
+            })
         }
         Request::NetworkStats { network_hash, date, include_routes, include_stops, include_service_types } => {
             let parsed = parse_date(&date)?;

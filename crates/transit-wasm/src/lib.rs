@@ -22,11 +22,11 @@
 //!   [`Request`](`transit_ops::Request`) (JSON) in; a result buffer
 //!   out.
 //! * `transit_invoke_bytes(op, ptr, len) -> ptr` — the bulk-payload
-//!   form (feed zips, coverage layers), where JSON arrays of numbers
-//!   would be absurd. Op codes: 0 = load_feed, 3 = coverage_load.
-//!   (The rt protobuf payload moved to the cap-rt capability with
-//!   its decoder; the street GeoJSON to cap-streets with the detour
-//!   editor's graph.)
+//!   form (feed zips), where JSON arrays of numbers would be absurd.
+//!   Op code: 0 = load_feed. (The rt protobuf payload moved to the
+//!   cap-rt capability with its decoder; the street GeoJSON to
+//!   cap-streets with the detour editor's graph; the population
+//!   layers to cap-analysis with the coverage that reads them.)
 //!
 //! Result buffers are `[u32 little-endian length][payload]`; the host
 //! reads the length, copies the payload, then frees the buffer with

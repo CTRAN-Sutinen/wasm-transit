@@ -520,9 +520,21 @@ export async function ensureAnalysisNetwork(document: Network): Promise<string |
   return memo.get(memoKey) ?? null;
 }
 
+/// The layer registration answer — the whole import handle: the
+/// content hash coverage addresses the layer by, plus the field the
+/// parse picked and the people it found (what the import UI shows).
+export type AnalysisLayerHandle = {
+  layer_hash: string;
+  points: number;
+  pop_field: string;
+  total_pop: number;
+};
+
 /// Register a population layer in cap-analysis, memoized like
 /// networks. Same rule: the module's returned hash is the identity.
-export async function ensureAnalysisLayer(bytes: Uint8Array): Promise<string | null> {
+export async function ensureAnalysisLayer(
+  bytes: Uint8Array,
+): Promise<AnalysisLayerHandle | null> {
   const module = await analysisModule();
   if (!module) return null;
   const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
@@ -532,13 +544,18 @@ export async function ensureAnalysisLayer(bytes: Uint8Array): Promise<string | n
       AnalysisResponse,
       { op: "load_population_layer" }
     >;
-    memo.set(memoKey, resp.layer_hash);
+    memo.set(memoKey, {
+      layer_hash: resp.layer_hash,
+      points: Number(resp.points),
+      pop_field: resp.pop_field,
+      total_pop: resp.total_pop,
+    });
   }
   return memo.get(memoKey) ?? null;
 }
 
 const analysisNetworks: Record<string, Map<string, string>> = {};
-const analysisLayers: Record<string, Map<string, string>> = {};
+const analysisLayers: Record<string, Map<string, AnalysisLayerHandle>> = {};
 
 /// The current analysis module, if the bus assembled one.
 export async function analysisModule(): Promise<CapModule | null> {

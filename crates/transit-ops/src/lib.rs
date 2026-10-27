@@ -53,15 +53,6 @@ pub enum Request {
     /// until the next pick) — derived, never stored: pick dates are
     /// targets that move during planning.
     PlansPeriods { plans: Vec<PlanInfo> },
-    /// Parse a population layer (GeoJSON points with a population
-    /// property) for the UI's import handle. `pop_field` names the
-    /// property; `None` tries the common candidates. Parse-only —
-    /// coverage computation lives in the analysis capability
-    /// (cap-analysis), which registers layers by content hash.
-    CoverageLoad {
-        bytes: Vec<u8>,
-        pop_field: Option<String>,
-    },
     /// All stops as a GeoJSON FeatureCollection.
     StopsGeojson { feed_id: u32 },
     /// One trip's path as a GeoJSON LineString Feature (date scopes
@@ -137,11 +128,6 @@ pub enum Response {
     PlansResolve { plan: Option<String> },
     PlansValidate { issues: Vec<PlanIssue> },
     PlansPeriods { periods: Vec<plans::PlanPeriod> },
-    CoverageLoad {
-        points: u32,
-        pop_field: String,
-        total_pop: f64,
-    },
     StopsGeojson { collection: FeatureCollection },
     TripPathGeojson { feature: Option<TripLineFeature> },
     RoutePathGeojson { feature: Option<TripLineFeature> },
@@ -205,14 +191,6 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
         Request::PlansPeriods { plans } => Ok(Response::PlansPeriods {
             periods: plans::periods(&plans),
         }),
-        Request::CoverageLoad { bytes, pop_field } => {
-            let layer = analysis::parse_pop_layer(&bytes, pop_field.as_deref())
-                .map_err(OpError::new)?;
-            let points = layer.points.len() as u32;
-            let total_pop = layer.points.iter().map(|p| p.pop).sum();
-            let pop_field = layer.pop_field.clone();
-            Ok(Response::CoverageLoad { points, pop_field, total_pop })
-        }
         Request::StopsGeojson { feed_id } => state::with_feed(feed_id, |f| {
             Ok(Response::StopsGeojson { collection: geojson::stops_geojson(&f.gtfs) })
         }),
@@ -324,12 +302,12 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
 }
 
 /// Binary-op codes for [`dispatch_bytes`] — the ops whose payloads
-/// are megabytes of raw bytes (feed zips, coverage layers), where a
-/// JSON array of numbers would be absurd. (The rt protobuf payload
-/// moved to cap-rt with its decoder, and the street GeoJSON to
-/// cap-streets with the detour editor's graph.)
+/// are megabytes of raw bytes (feed zips), where a JSON array of
+/// numbers would be absurd. (The rt protobuf payload moved to cap-rt
+/// with its decoder, the street GeoJSON to cap-streets with the
+/// detour editor's graph, and the population layers to cap-analysis
+/// with the coverage that reads them.)
 pub const OP_LOAD_FEED: u32 = 0;
-pub const OP_COVERAGE_LOAD: u32 = 3;
 
 /// Outcome shape: `{"ok": <Response>}` on success, `{"error": "<msg>"}`
 /// on failure — one tagged wrapper, so hosts have exactly two paths.
@@ -359,12 +337,11 @@ pub fn dispatch_json(input: &str) -> String {
     }
 }
 
-/// Bytes-op form of the seam for [`OP_LOAD_FEED`] /
-/// [`OP_COVERAGE_LOAD`]. Same outcome shape as [`dispatch_json`].
+/// Bytes-op form of the seam for [`OP_LOAD_FEED`]. Same outcome
+/// shape as [`dispatch_json`].
 pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
     let req = match op {
         OP_LOAD_FEED => Request::LoadFeed { bytes: bytes.to_vec() },
-        OP_COVERAGE_LOAD => Request::CoverageLoad { bytes: bytes.to_vec(), pop_field: None },
         other => {
             return dispatch_json_outcome(Err(OpError::new(format!(
                 "unknown bytes op code {other}"

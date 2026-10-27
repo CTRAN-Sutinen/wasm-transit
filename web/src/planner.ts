@@ -221,12 +221,12 @@ export async function refreshAnalysis(): Promise<void> {
     // until this screen existed).
     app.dayStats = analysis.networkStats(networkHash, app.plannerDay || serviceDate());
     if (app.popLayer && app.popLayerBytes) {
-      const layerHash = await ensureAnalysisLayer(app.popLayerBytes);
+      const layer = await ensureAnalysisLayer(app.popLayerBytes);
       if (seq !== analysisSeq) return;
-      app.typeCoverage = layerHash
+      app.typeCoverage = layer
         ? analysis.typeCoverage(
             networkHash,
-            layerHash,
+            layer.layer_hash,
             COVERAGE_RADIUS_M,
             FREQUENT_HEADWAY_SECS,
             MIN_DEPARTURES,

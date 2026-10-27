@@ -169,8 +169,18 @@ proptest! {
             pop_field: Some("pop".into()),
         })
         .expect("layer");
-        let cap_analysis::Response::LoadPopulationLayer { layer_hash, points } = layer else { panic!("layer") };
+        let cap_analysis::Response::LoadPopulationLayer {
+            layer_hash,
+            points,
+            pop_field,
+            total_pop,
+        } = layer
+        else { panic!("layer") };
         prop_assert_eq!(points, 6);
+        // The handle is the whole import answer: the field the parse
+        // picked and the people it found (100..600 at the six points).
+        prop_assert_eq!(pop_field, "pop");
+        prop_assert!((total_pop - 2100.0).abs() < 1e-9);
 
         let overview = cap_analysis::dispatch(cap_analysis::Request::ServiceTypesOverview {
             network_hash: network_hash.clone(),

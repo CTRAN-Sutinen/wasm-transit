@@ -4,4 +4,4 @@ import type { ServiceTypeDetail } from "../ServiceTypeDetail";
 import type { ServiceTypeSummary } from "../ServiceTypeSummary";
 import type { TypeCoverage } from "../TypeCoverage";
 
-export type Response = { "op": "load_network", network_hash: string, } | { "op": "load_population_layer", layer_hash: string, points: bigint, } | { "op": "network_stats", stats: NetworkStats, } | { "op": "service_types_overview", service_types: Array<ServiceTypeSummary>, } | { "op": "service_type_detail", detail: ServiceTypeDetail, } | { "op": "type_coverage", coverage: Array<TypeCoverage>, };
+export type Response = { "op": "load_network", network_hash: string, } | { "op": "load_population_layer", layer_hash: string, points: bigint, pop_field: string, total_pop: number, } | { "op": "network_stats", stats: NetworkStats, } | { "op": "service_types_overview", service_types: Array<ServiceTypeSummary>, } | { "op": "service_type_detail", detail: ServiceTypeDetail, } | { "op": "type_coverage", coverage: Array<TypeCoverage>, };
