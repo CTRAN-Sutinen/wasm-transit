@@ -78,11 +78,9 @@ required, only honesty about the need each op serves:
 
 | monolith op(s) | the need | home | unit |
 |---|---|---|---|
-| stops_geojson, stop_point, trip_path_geojson, route_path_geojson, trip_segment_geojson | draw the map | the HOST's view code over model documents — patterns carry paths, stops carry coords, the edit document carries detour polylines, the trip map carries click-throughs. The map is a VIEW, not a cap. | U6 |
-| set_diversions | plumbing: apply the edit document to the remaining feed-side reads | none — it dies when U5 + U6 are done (the last consumers) | — |
 | sync_edits | sync the edit document (LWW merge, the sync protocol) | transit-sync is the library; the open question is placement only: cap-sync vs permanent seam resident | U7 |
 | plans_resolve, plans_validate, plans_periods | know which service plan governs a date | same standing as transit-sync's merge — the U7 placement carries it | U7 |
-| load_feed, drop_feed | the artifact's own registry lifecycle | none — the plumbing dies with the last feed_id op (U5 + U6) | — |
+| load_feed, drop_feed | the artifact's own registry lifecycle — the sync seam's feed-scoped validation keeps them until U7's placement speaks | rides U7 | — |
 
 ## The units
 
@@ -159,7 +157,9 @@ required, only honesty about the need each op serves:
   plans chain — both are cross-document logic over transit-sync,
   the same standing as its merge. The sync-persistence design
   (blobs + pointers, migrate-at-receive, pointer CAS) is the
-  standing queue's own unit.
+  standing queue's own unit — and U7 does NOT design it: the
+  pointer CAS + reflog mechanism is the host discipline's (the
+  section below); U7 places ops, never persistence.
 - **U8 the GTFS substrate retires.** transit-core is the GTFS
   serialization spec wearing core's name — the network is the
   core model, and GTFS exists to translate it. The spec's one
@@ -175,6 +175,75 @@ lands on. U3, U4 independent after it. U5 before U6 (the map's
 effective times come from the day; planning's move settles the
 document shape). U7 independent. U8 last among the units — U5
 frees the router, and rt's join move rides with it.
+
+## The host discipline (after the units)
+
+The units retire the monolith's answers; this retires its
+orchestration debt. Documents-only composition moved every
+sequenced decision into the host — the host pays that debt as a
+designed layer or it rots into glue copied per component.
+
+- **The choke point.** Exactly one piece of host code calls a
+  module op — the ENGINE, the capabilities resolver grown an
+  execution half. Components request flows by name; they never
+  see the ABI, the op surface, or an unverified hash. Enforced
+  the way the crate laws are: an arch gate in `just test` fails
+  the build on any op call outside the engine.
+- **The engine interprets; the flow maps describe.** A flow map
+  — which documents, which ops, which order, which renderer,
+  which DECLARED degrade — is data in the UI manifest document
+  (the wire-time assembly item). The engine carries zero domain
+  knowledge (the Go-server rule applied to the browser): if it
+  names a departure or a trip, domain logic leaked. Flow maps
+  validate at load: every op exists in the manifest, every edge
+  matches the generated contracts, every op node carries a
+  degrade path — a partial selection that would blank a screen
+  fails at assembly, not at runtime. Stale answers are the
+  engine's to discard: every flow request carries a generation,
+  superseded generations never land.
+- **Verified documents by construction.** A query op cannot
+  accept a raw hash: the engine's load-and-assert step mints a
+  branded `VerifiedDoc`, the op wrappers take the brand, and
+  glue has no path to one without the assertion having run —
+  `assertSameDocument` holds by construction, not discipline.
+- **The Merkle journal.** Every session is a log written at the
+  choke point: per op, the input document hashes, the artifact
+  hash, the output hashes — hashes only, never payloads (the
+  blob store retains, unreachable blobs are collected, and
+  ephemeral inputs such as rt snapshots are marked so replay
+  degrades honestly — reported, never silent). One artifact,
+  three uses: the trace, the answer-cache key, the migration
+  witness.
+- **The store's two git pieces.** A REFLOG — pointer-move
+  history, so migrations and rollbacks are audited facts — and
+  pointer CAS, the sync-persistence item's ref-update
+  discipline. The journal is the same mechanism at per-device
+  scope; a second persistence design is the monolith's ghost
+  and is rejected on sight.
+- **Replay is the proof procedure.** The runner replays
+  journals natively — same artifact bytes, same input hashes,
+  re-execute, compare output hashes: the golden corpus
+  generalized from the fixture to any session. It is how the
+  dogfood debt is PAID: the re-pinning sessions U1–U4 owe are
+  journal replays of the C-TRAN session through the new
+  modules, not hand-run scripts. Artifact replacement becomes
+  re-pin + replay against the candidate — a per-session
+  differential check, not a hope.
+- **Two gates ride with the work.** No op call outside the
+  engine; and determinism enforced in the modules — no clocks,
+  randomness, or environment inside a cap crate, hosts pass
+  time in (`now_ms` is the only route). Replay-as-migration,
+  cross-host equality, and the answer cache are all conditional
+  on determinism; the gate makes the fact checked, not assumed.
+
+Order: the journal lands first, in the runner — `caps-run`'s
+chained-session format BECOMES the journal format, the
+crystallize-on-recurrence rule applied to the tool that already
+improvises it. The engine and flow maps crystallize from the
+recurring host glue. The reflog and CAS land with sync
+persistence. None of it blocks a unit — but U7 places ops and
+never persistence: pointer CAS and the reflog are this
+section's, carried by the standing queue.
 
 ## The finish line
 

@@ -27,7 +27,7 @@
     void app.feedEpoch;
     const seq = ++infoSeq;
     const bytes = feedBytes();
-    if (!app.gtfs || !bytes) {
+    if (!app.feedLoaded || !bytes) {
       feedInfo = null;
       summary = null;
       return;
@@ -116,7 +116,7 @@
 
     {#if app.persona === "planner"}
       <PlannerRail />
-    {:else if app.gtfs}
+    {:else if app.feedLoaded}
       {#if app.persona === "rider"}
         <DepartureBoard />
         <TripPlanner />

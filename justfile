@@ -135,6 +135,14 @@ test: caps
       --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
       --op '{"op":"plan_compare","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","from":"A","to":"B","date":"2026-10-23","depart_secs":25200,"max_legs":4}' \
       | grep -q '"arrival_hhmmss":"08:15:00"'
+    # The map's click-through, on the bus (U6): the trip detail — the
+    # patched day's t30 keeps A→B, C skipped (the answer carries no
+    # geometry; the host's view code draws).
+    node tools/caps-run.mjs runcut \
+      --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
+      --op '{"op":"trip_stops","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","schedule":"WK:pat-10-0-1","start_secs":31200,"date":"2026-10-23"}' \
+      | grep -q '"stop_id":"B"'
     # The street capability's gate: the detour editor's need, one
     # chained session — the street fixture on bulk op 0, two snaps,
     # and the route between them (the Elbow corner, not the diagonal:

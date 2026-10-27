@@ -474,3 +474,46 @@ pub fn active_services(network: &Network, day: &[MaterializedTrip]) -> Vec<Strin
     }
     keys.into_iter().map(String::from).collect()
 }
+
+/// One stop of one derived trip's day view — the trip detail facet
+/// (what the map's click-through reads; the answer carries no
+/// geometry, the network document holds the coordinates).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct TripStopView {
+    pub stop_id: String,
+    pub name: String,
+    /// Seconds after the service-day anchor (past-86400 values are
+    /// after-midnight trips, not errors).
+    pub arrival_secs: u32,
+    pub departure_secs: u32,
+    pub timepoint: bool,
+}
+
+/// One derived trip's stops in the (effective) day, named from the
+/// network. The trip's identity is the model's: (schedule,
+/// start_secs). A trip not in the day (it does not run, or the edits
+/// removed it from the question) answers empty — never an error.
+pub fn trip_stops(
+    network: &Network,
+    day: &[MaterializedTrip],
+    schedule: &str,
+    start_secs: u32,
+) -> Vec<TripStopView> {
+    let Some(trip) = day
+        .iter()
+        .find(|t| t.schedule == schedule && t.start_secs == start_secs)
+    else {
+        return Vec::new();
+    };
+    trip.stop_times
+        .iter()
+        .map(|st| TripStopView {
+            stop_id: st.stop.clone(),
+            name: stop_name(network, Some(&st.stop)),
+            arrival_secs: st.arrival_secs,
+            departure_secs: st.departure_secs,
+            timepoint: st.timepoint,
+        })
+        .collect()
+}

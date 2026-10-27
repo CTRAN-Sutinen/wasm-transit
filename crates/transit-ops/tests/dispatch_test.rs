@@ -90,167 +90,12 @@ fn record(status: EditStatus, rev: u64) -> EditRecord {
     }
 }
 
-/// The effective alignment of a route under the edit document — the
-/// surviving effective-feed read for the diversion flow (the board
-/// op is retired; cap-dispatch owns the day views). The ghost is
-/// the representative trip's path, stop-to-stop, so a skipped stop
-/// drops its vertex (a shape-polyline trip would not — the ghost's
-/// representative, t30, has no shape).
-fn effective_route_vertices(feed_id: u32, route_id: &str) -> usize {
-    match dispatch(Request::RoutePathGeojson {
-        feed_id,
-        route_id: route_id.into(),
-        direction_id: None,
-        date: DATE.into(),
-    })
-    .unwrap()
-    {
-        Response::RoutePathGeojson { feature } => {
-            feature.expect("the route has a representative").geometry.coordinates.len()
-        }
-        _ => panic!("route_path_geojson"),
-    }
-}
-
-#[test]
-fn load_registers_and_summarizes() {
-    // The summary op is RETIRED (the feed line reads the gtfs
-    // capability's load_feed; the directory owns the pickers) —
-    // the load itself still summarizes.
-    let Response::LoadFeed { summary, .. } = dispatch(Request::LoadFeed { bytes: fixture_zip() }).unwrap() else {
-        panic!("load")
-    };
-    assert_eq!(summary.stop_times, 10);
-    // Unknown feed ids are an error, not a panic.
-    assert!(dispatch(Request::StopsGeojson { feed_id: 99 + 100 }).is_err());
-}
-
-#[test]
-fn edit_document_flow_matches_the_wasm_smoke() {
-    let feed_id = load();
-
-    // Baseline: route 10's ghost is t30 (A → C → B, stop-to-stop) —
-    // 3 vertices.
-    let base_ghost = effective_route_vertices(feed_id, "10");
-    assert_eq!(base_ghost, 3);
-
-    // Push the document: reports come back per record.
-    let reports = match dispatch(Request::SetDiversions { feed_id, records: vec![record(EditStatus::Draft, 1)] })
-        .unwrap()
-    {
-        Response::SetDiversions { reports } => reports,
-        _ => panic!(),
-    };
-    assert_eq!(reports.len(), 1);
-    assert!(reports[0].valid);
-    assert_eq!(reports[0].affected_trips, 3);
-
-    // The effective ghost reflects the edit: C is skipped, so t30's
-    // path draws A → B (2 vertices) — the same fact the retired
-    // board op asserted as "C loses service", on a surviving read.
-    // (The plan-compare delta this test once pinned here — 08:15
-    // active vs 08:10 baseline, no baseline once retired — moved to
-    // cap-router's dispatch test with the op.)
-    assert_eq!(effective_route_vertices(feed_id, "10"), 2);
-
-    // Retire: tombstone, base behavior.
-    dispatch(Request::SetDiversions { feed_id, records: vec![record(EditStatus::Retired, 2)] }).unwrap();
-    assert_eq!(effective_route_vertices(feed_id, "10"), base_ghost);
-}
-
-#[test]
-fn invalid_records_are_reported_not_rejected() {
-    let feed_id = load();
-    let mut bad = record(EditStatus::Draft, 1);
-    bad.diversion.route_id = "nope".into();
-    let reports = match dispatch(Request::SetDiversions {
-        feed_id,
-        records: vec![record(EditStatus::Draft, 1), bad],
-    })
-    .unwrap()
-    {
-        Response::SetDiversions { reports } => reports,
-        _ => panic!(),
-    };
-    assert_eq!(reports.len(), 2);
-    assert!(reports[0].valid);
-    assert!(!reports[1].valid);
-    assert!(reports[1].error.as_deref().unwrap().contains("unknown route"));
-    // The valid record still applies: t10's effective path drops C.
-    assert_eq!(effective_route_vertices(feed_id, "10"), 2);
-}
-
-#[test]
-fn geojson_ops_return_typed_features() {
-    let feed_id = load();
-    match dispatch(Request::StopsGeojson { feed_id }).unwrap() {
-        Response::StopsGeojson { collection } => {
-            assert_eq!(collection.kind, "FeatureCollection");
-            assert_eq!(collection.features.len(), 3);
-            assert_eq!(collection.features[0].properties.stop_id, "A");
-        }
-        _ => panic!(),
-    }
-    match dispatch(Request::TripPathGeojson { feed_id, trip_id: "t10".into(), date: DATE.into() })
-        .unwrap()
-    {
-        Response::TripPathGeojson { feature } => {
-            let f = feature.expect("t10 has a shape");
-            assert_eq!(f.geometry.coordinates.len(), 3);
-            assert_eq!(f.properties.route_name.as_deref(), Some("10"));
-        }
-        _ => panic!(),
-    }
-    // The route ghost: the representative trip's path — t30 is route
-    // 10's longest trip (A→C→B, no shape), so the ghost is its chord
-    // line; direction filtering narrows within the route.
-    match dispatch(Request::RoutePathGeojson {
-        feed_id,
-        route_id: "10".into(),
-        direction_id: None,
-        date: DATE.into(),
-    })
-    .unwrap()
-    {
-        Response::RoutePathGeojson { feature } => {
-            let f = feature.expect("route 10 has a representative");
-            assert_eq!(f.properties.trip_id, "t30");
-            assert_eq!(f.geometry.coordinates.len(), 3); // A → C → B
-        }
-        _ => panic!(),
-    }
-    match dispatch(Request::RoutePathGeojson {
-        feed_id,
-        route_id: "10".into(),
-        direction_id: Some(0),
-        date: DATE.into(),
-    })
-    .unwrap()
-    {
-        Response::RoutePathGeojson { feature } => {
-            assert!(feature.is_some(), "t30 is direction 0 — same trip");
-        }
-        _ => panic!(),
-    }
-    match dispatch(Request::RoutePathGeojson {
-        feed_id,
-        route_id: "no-such-route".into(),
-        direction_id: None,
-        date: DATE.into(),
-    })
-    .unwrap()
-    {
-        Response::RoutePathGeojson { feature } => assert!(feature.is_none()),
-        _ => panic!(),
-    }
-}
-
 #[test]
 fn request_serializes_as_tagged_json() {
     // The protocol has a textual form for hosts that want one —
     // serde-tagged enums make the "op" naming rule explicit.
-    let json = serde_json::to_value(Request::StopsGeojson { feed_id: 0 }).unwrap();
-    assert_eq!(json["op"], "stops_geojson");
+    let json = serde_json::to_value(Request::DropFeed { feed_id: 0 }).unwrap();
+    assert_eq!(json["op"], "drop_feed");
     let response = serde_json::to_value(Response::LoadFeed {
         feed_id: 0,
         summary: transit_core::FeedSummary {
@@ -273,19 +118,24 @@ fn dispatch_json_round_trips_the_seam() {
     // Rust ABI (browser, Go server) actually take.
     let outcome = transit_ops::dispatch_json(
         &serde_json::json!({
-            "op": "stops_geojson",
+            "op": "sync_edits",
             "feed_id": feed_id,
+            "client": [],
+            "server": [],
+            "now_ms": 1000,
         })
         .to_string(),
     );
     let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
     assert!(parsed.get("ok").is_some(), "successful outcome wraps ok: {outcome}");
-    assert!(parsed["ok"]["collection"].is_object(), "the map view's op answers: {outcome}");
+    assert!(parsed["ok"]["records"].is_array(), "the sync op answers: {outcome}");
 
     // The retired ops (the dispatch reads and the day views on the
     // day-view capabilities; summary, stops, routes,
     // route_stop_sequence on the gtfs capability's load_feed
-    // summary and the directory) error through the standard
+    // summary and the directory; the map's geojson ops on the
+    // host's view code, set_diversions with them — the day views
+    // hold their own edit registries) error through the standard
     // outcome, never trap.
     for retired in [
         "active_services",
@@ -297,6 +147,12 @@ fn dispatch_json_round_trips_the_seam() {
         "stops",
         "routes",
         "route_stop_sequence",
+        "stops_geojson",
+        "trip_path_geojson",
+        "route_path_geojson",
+        "trip_segment_geojson",
+        "stop_point",
+        "set_diversions",
     ] {
         let outcome = transit_ops::dispatch_json(&format!(r#"{{"op":"{retired}","feed_id":{feed_id}}}"#));
         let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
@@ -308,7 +164,7 @@ fn dispatch_json_round_trips_the_seam() {
 
     // Errors come back as {"error": ...}, not panics.
     let outcome = transit_ops::dispatch_json(
-        &serde_json::json!({ "op": "stops_geojson", "feed_id": 99 }).to_string(),
+        &serde_json::json!({ "op": "sync_edits", "feed_id": 99, "client": [], "server": [], "now_ms": 0 }).to_string(),
     );
     let parsed: serde_json::Value = serde_json::from_str(&outcome).unwrap();
     assert!(parsed["error"].as_str().unwrap().contains("unknown feed_id"));

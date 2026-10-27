@@ -28,7 +28,7 @@
     const date = serviceDate();
     const seq = ++blocksSeq;
     const bytes = feedBytes();
-    if (!app.gtfs || !bytes) {
+    if (!app.feedLoaded || !bytes) {
       blocks = [];
       return;
     }
@@ -79,7 +79,7 @@
     const seq = ++chainSeq;
     const bytes = feedBytes();
     chain = [];
-    if (!blockId || !app.gtfs || !bytes) return;
+    if (!blockId || !app.feedLoaded || !bytes) return;
     void (async () => {
       try {
         const boarding = await ensureRuncutBoarding(bytes);

@@ -53,36 +53,24 @@ const feedIdPlaceholder = "$FEED";
 // The corpus: one op per response shape, plus the edit-document flow
 // and an error outcome. Requests are written with $FEED placeholders.
 const steps = [
-  // The picker and summary ops are RETIRED (the directory owns what
-  // exists; the feed line reads the gtfs capability's load_feed) —
-  // the corpus step-set pins their absence, and the diversion's
-  // effect pins through the surviving date-scoped reads.
+  // The service-plan chain — the artifact's cross-document domain
+  // logic — answers its own shape (an unversioned plan never
+  // resolves).
   {
-    name: "set_diversions_draft",
-    request: `{"op":"set_diversions","feed_id":${feedIdPlaceholder},"records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"draft","rev":1,"updated_at":1}]}`,
-  },
-  // The board and planning ops are RETIRED (cap-dispatch owns the day
-  // views; cap-router owns planning, over the network document and
-  // the effective day); the diversion's effect pins through the
-  // surviving date-scoped reads that run after this step:
-  // trip_path_geojson below.
-  {
-    name: "stops_geojson",
-    request: `{"op":"stops_geojson","feed_id":${feedIdPlaceholder}}`,
-  },
-  {
-    name: "trip_path_geojson",
-    request: `{"op":"trip_path_geojson","feed_id":${feedIdPlaceholder},"trip_id":"t10","date":"2026-10-23"}`,
+    name: "plans_resolve",
+    request: `{\"op\":\"plans_resolve\",\"plans\":[{\"id\":\"p1\",\"name\":\"Pick 1\",\"effective_from\":null,\"routes\":[]}],\"date\":\"2026-10-23\"}`,
   },
   {
     name: "sync_edits_deterministic",
-    request: `{"op":"sync_edits","feed_id":${feedIdPlaceholder},"client":[],"server":[],"now_ms":1000}`,
+    request: `{\"op\":\"sync_edits\",\"feed_id\":${feedIdPlaceholder},\"client\":[],\"server\":[],\"now_ms\":1000}`,
   },
-  // The authored-network flow (network_import / network_load) moved
-  // out of the monolith with the codec: cap-network owns it now,
-  // and its module tests hold the "a planner's document drives the
-  // same ops" proof (export → zip → parse → the same op surface).
-  { name: "unknown_feed_errors", request: `{"op":"stops_geojson","feed_id":999}` },
+  // The map's geojson ops and set_diversions are RETIRED (the map
+  // renders from model documents in host view code; the day views
+  // hold their own edit registries — cap-runcut / cap-board /
+  // cap-router validate at load_edits), and so are the day views,
+  // planning, the pickers, and the summary (their capabilities own
+  // them). The corpus step-set pins the surviving surface exactly.
+  { name: "unknown_feed_errors", request: `{\"op\":\"sync_edits\",\"feed_id\":999,\"client\":[],\"server\":[],\"now_ms\":0}` },
 ];
 
 // Load the fixture (first feed in a fresh instance: id 0), then capture

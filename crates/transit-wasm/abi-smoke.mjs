@@ -87,10 +87,9 @@ const feed = invokeBytes(OP_LOAD_FEED, readFileSync(FIXTURE));
 const feedId = feed.feed_id;
 assert(feed.summary.stops === 6, "load_feed registers and summarizes");
 
-// The whole edit-document flow through JSON. The board op is
-// RETIRED (the day-view capabilities own the day views); the effective feed
-// pins through the surviving reads: plan compare and the geojson
-// paths, both date-scoped by the edit document.
+// The sync flow's record fixture (the edit document's LWW +
+// tombstone rules are transit-sync's, pinned over the artifact's
+// sync_edits seam below — the host-side store the server keeps).
 const record = (over = {}) => ({
   id: "e1",
   diversion: {
@@ -102,20 +101,13 @@ const record = (over = {}) => ({
   status: "draft", rev: 1, updated_at: 1, ...over,
 });
 
-const reports = invoke({ op: "set_diversions", feed_id: feedId, records: [record()] }).reports;
-assert(reports.length === 1 && reports[0].valid && reports[0].affected_trips === 3,
-  "reports validate and count trips");
-
-// GeoJSON comes back as plain data.
-const stops = invoke({ op: "stops_geojson", feed_id: feedId }).collection;
-assert(stops.type === "FeatureCollection" && stops.features.length === 6, "typed geojson collection");
-const trip = invoke({ op: "trip_path_geojson", feed_id: feedId, trip_id: "t10", date: DATE }).feature;
-assert(trip && trip.geometry.coordinates.length === 5, "full trip path via ABI (5-point shape)");
-const ghost = invoke({ op: "route_path_geojson", feed_id: feedId, route_id: "10", direction_id: null, date: DATE }).feature;
-assert(ghost && ghost.properties.trip_id === "t30" && ghost.geometry.coordinates.length === 2,
-  "route ghost: representative trip (t30) follows the effective path — C is skipped by the edit above");
-const ghostNone = invoke({ op: "route_path_geojson", feed_id: feedId, route_id: "missing", direction_id: null, date: DATE }).feature;
-assert(ghostNone === null, "route ghost: unknown route is null");
+// The map's geojson ops, set_diversions, and the edit-document flow
+// are GONE from the monolith (U6: the map renders from model
+// documents in host view code; the day views hold their own edit
+// registries and validate at load_edits). The pins for the
+// effective-day facts live in cap-runcut's dispatch test (the
+// patched trip answers A→B, B at 08:55) and caps-smoke's runcut
+// flow — never here.
 
 // The street ops are GONE from the monolith — they live in the
 // cap-streets capability now (U1: the detour editor's snap/route
@@ -143,25 +135,22 @@ assert(ghostNone === null, "route ghost: unknown route is null");
 // feed_info, departures) are RETIRED — cap-gtfs owns the reads and
 // the day-view capabilities own the day views — and so are the
 // planning ops (cap-router plans over the network document and the
-// effective day, diversion delta included); the smoke pins every
-// retirement through the standard outcome, never a trap.
+// effective day, diversion delta included) and the map's geojson
+// ops with set_diversions (the map renders from model documents in
+// host view code; the day views hold their own edit registries);
+// the smoke pins every retirement through the standard outcome,
+// never a trap.
 {
-  for (const retired of ["active_services", "blocks", "feed_info", "departures", "block_trips", "plan_trip", "plan_trip_compare"]) {
+  for (const retired of ["active_services", "blocks", "feed_info", "departures", "block_trips", "plan_trip", "plan_trip_compare", "stops_geojson", "trip_path_geojson", "route_path_geojson", "trip_segment_geojson", "stop_point", "set_diversions"]) {
     const outcome = JSON.parse(rawInvoke(JSON.stringify({ op: retired, feed_id: feedId })));
     assert(outcome.error && /unknown variant/.test(outcome.error),
       `the retired ${retired} op errors through the standard outcome`);
   }
 }
 
-// Retire = tombstone.
-invoke({ op: "set_diversions", feed_id: feedId, records: [record({ status: "retired", rev: 2 })] });
-const ghostBase = invoke({ op: "route_path_geojson", feed_id: feedId, route_id: "10", direction_id: null, date: DATE }).feature;
-assert(ghostBase && ghostBase.geometry.coordinates.length === 3,
-  "retired records never apply (C is back on the alignment)");
-
 // Error outcomes, not traps.
 const errOutcome = (() => {
-  const payload = Buffer.from(JSON.stringify({ op: "stops_geojson", feed_id: 99 }));
+  const payload = Buffer.from(JSON.stringify({ op: "sync_edits", feed_id: 99, client: [], server: [], now_ms: 0 }));
   const ptr = transit_alloc(payload.length);
   new Uint8Array(memory.buffer, ptr, payload.length).set(payload);
   const outPtr = transit_invoke(ptr, payload.length);
@@ -249,14 +238,13 @@ assert(second.feed_id !== feedId, "registry assigns distinct feed ids");
   }
   // The step set, pinned exactly: the board and block-chain steps
   // are gone (the day-view capabilities own the day views), so are
-  // the picker and summary steps (the directory owns what exists;
-  // the feed line reads the gtfs capability's load_feed), and so is
-  // the plan-compare step (cap-router plans over the network
-  // document and the effective day) — the diversion's effect pins
-  // through trip_path_geojson.
+  // the picker and summary steps (the directory owns what exists),
+  // the plan-compare step (cap-router owns planning), and the
+  // geojson / set_diversions steps (the map renders from model
+  // documents in host view code; the day views hold their own edit
+  // registries). What survives is the sync seam's own surface.
   const wantSteps = [
-    "load_fixture", "set_diversions_draft",
-    "stops_geojson", "trip_path_geojson",
+    "load_fixture", "plans_resolve",
     "sync_edits_deterministic", "unknown_feed_errors",
   ];
   assert(

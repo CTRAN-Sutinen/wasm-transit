@@ -375,7 +375,7 @@ export function scheduleTripCount(schedule: { kind: string; starts?: number[]; b
  * the raw feed bytes come from the load-time cache (JS owns the
  * documents; the artifact's feed registry is a view, not a store). */
 export async function deriveFromFeed(): Promise<void> {
-  if (!app.gtfs) {
+  if (!app.feedLoaded) {
     app.status = "Load a GTFS feed first (Rider or Dispatcher view).";
     return;
   }
@@ -500,8 +500,8 @@ export async function materializeNetwork(): Promise<void> {
     }
     const { feedHash, zipB64 } = networkCap(module).export(networkHash);
     const bytes = base64Decode(zipB64);
-    setFeedBytes(bytes); // the bus reads the same document the monolith parses
-    app.gtfs = app.wasm.GtfsHandle.load(bytes);
+    setFeedBytes(bytes); // the bus reads this document everywhere
+    app.feedLoaded = true;
     app.selectedStop = null;
     app.selectedTripId = null;
     app.tripFeature = null;

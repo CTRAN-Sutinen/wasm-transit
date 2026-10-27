@@ -17,15 +17,10 @@
 
 pub use transit_analysis as analysis; // the analysis module moved to its own crate — the bus shares it as a library
 pub use transit_codec as codec; // the network codec moved to its own crate — the bus shares it as a library
-pub mod geojson;
 pub mod plans;
 pub mod state;
 
 pub use plans::{PlanInfo, PlanIssue};
-pub use geojson::{
-    FeatureCollection, LineGeometry, PointGeometry, StopFeature, StopProps, TripLineFeature,
-    TripProps,
-};
 pub use state::FeedState;
 
 use ts_rs::TS;
@@ -53,35 +48,6 @@ pub enum Request {
     /// until the next pick) — derived, never stored: pick dates are
     /// targets that move during planning.
     PlansPeriods { plans: Vec<PlanInfo> },
-    /// All stops as a GeoJSON FeatureCollection.
-    StopsGeojson { feed_id: u32 },
-    /// One trip's path as a GeoJSON LineString Feature (date scopes
-    /// operator edits: diverted trips draw patched shapes).
-    TripPathGeojson { feed_id: u32, trip_id: String, date: String },
-    /// The route's alignment as a GeoJSON LineString Feature: the
-    /// path of the representative trip (the same trip the diversion
-    /// editor's anchors come from), shape polyline when the feed has
-    /// one. The date scopes operator edits like `trip_path_geojson`.
-    RoutePathGeojson {
-        feed_id: u32,
-        route_id: String,
-        direction_id: Option<u8>,
-        date: String,
-    },
-    /// One leg of a trip (board → alight) as a GeoJSON LineString
-    /// Feature — the ridden segment only.
-    TripSegmentGeojson {
-        feed_id: u32,
-        trip_id: String,
-        from_stop_id: String,
-        to_stop_id: String,
-        date: String,
-    },
-    /// One stop as a GeoJSON point Feature (or null).
-    StopPoint { feed_id: u32, stop_id: String },
-    /// Replace the whole edit document; returns per-record validation
-    /// reports. Invalid records are reported, not rejected.
-    SetDiversions { feed_id: u32, records: Vec<EditRecord> },
     /// Release a feed and its caches. Hosts use this when a
     /// republished artifact replaces the one they pinned.
     DropFeed { feed_id: u32 },
@@ -109,12 +75,6 @@ pub enum Response {
     PlansResolve { plan: Option<String> },
     PlansValidate { issues: Vec<PlanIssue> },
     PlansPeriods { periods: Vec<plans::PlanPeriod> },
-    StopsGeojson { collection: FeatureCollection },
-    TripPathGeojson { feature: Option<TripLineFeature> },
-    RoutePathGeojson { feature: Option<TripLineFeature> },
-    TripSegmentGeojson { feature: Option<TripLineFeature> },
-    StopPoint { feature: Option<StopFeature> },
-    SetDiversions { reports: Vec<transit_sync::EditReport> },
     DropFeed {},
     SyncEdits { records: Vec<EditRecord>, reports: Vec<transit_sync::EditReport> },
 }
@@ -166,51 +126,6 @@ pub fn dispatch(req: Request) -> Result<Response, OpError> {
         }),
         Request::PlansPeriods { plans } => Ok(Response::PlansPeriods {
             periods: plans::periods(&plans),
-        }),
-        Request::StopsGeojson { feed_id } => state::with_feed(feed_id, |f| {
-            Ok(Response::StopsGeojson { collection: geojson::stops_geojson(&f.gtfs) })
-        }),
-        Request::TripPathGeojson { feed_id, trip_id, date } => state::with_feed(feed_id, |f| {
-            // with_effective borrows the state, so collect the path
-            // first and build the feature from the base feed's names.
-            let path = f.with_effective(&date, |gtfs| gtfs.trip_path(&trip_id))?;
-            Ok(Response::TripPathGeojson {
-                feature: geojson::trip_line_feature(&f.gtfs, &trip_id, &path),
-            })
-        }),
-        Request::TripSegmentGeojson { feed_id, trip_id, from_stop_id, to_stop_id, date } => {
-            state::with_feed(feed_id, |f| {
-                let path = f.with_effective(&date, |gtfs| {
-                    gtfs.trip_path_segment(&trip_id, &from_stop_id, &to_stop_id)
-                })?;
-                Ok(Response::TripSegmentGeojson {
-                    feature: geojson::trip_line_feature(&f.gtfs, &trip_id, &path),
-                })
-            })
-        }
-        Request::RoutePathGeojson { feed_id, route_id, direction_id, date } => {
-            state::with_feed(feed_id, |f| {
-                let trip_id = f
-                    .gtfs
-                    .representative_trip_id(&route_id, direction_id)
-                    .map(str::to_string);
-                let Some(trip_id) = trip_id else {
-                    return Ok(Response::RoutePathGeojson { feature: None });
-                };
-                let path = f.with_effective(&date, |gtfs| gtfs.trip_path(&trip_id))?;
-                Ok(Response::RoutePathGeojson {
-                    feature: geojson::trip_line_feature(&f.gtfs, &trip_id, &path),
-                })
-            })
-        }
-        Request::StopPoint { feed_id, stop_id } => state::with_feed(feed_id, |f| {
-            Ok(Response::StopPoint { feature: geojson::stop_point(&f.gtfs, &stop_id) })
-        }),
-        Request::SetDiversions { feed_id, records } => state::with_feed(feed_id, |f| {
-            let reports = transit_core::report_all(&f.gtfs, &records);
-            f.edits = records;
-            f.invalidate();
-            Ok(Response::SetDiversions { reports })
         }),
         Request::DropFeed { feed_id } => {
             state::drop_feed(feed_id);

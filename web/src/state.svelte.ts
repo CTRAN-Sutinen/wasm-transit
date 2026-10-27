@@ -20,10 +20,10 @@ import type { PlanIssue } from "./types/PlanIssue";
 import type { PlanPeriod } from "./types/PlanPeriod";
 import type { TypeCoverage } from "./types/TypeCoverage";
 import type { RtOverview } from "./types/RtOverview";
-import type { TripLineFeature } from "./types/TripLineFeature";
 import type { VehicleView } from "./types/VehicleView";
 import type { EntityKind, Focus, PlannerScreen } from "./planner";
-import type { GtfsHandle, WasmApi } from "./wasm";
+import type { WasmApi } from "./wasm";
+import type { LineFeature } from "./mapview";
 import type { PlanFeature } from "./actions";
 import type { StreetPosition } from "./types/StreetPosition";
 import type { Streets } from "./streets";
@@ -66,20 +66,23 @@ export type AppState = {
   // by all of them; the panel content is focused per persona.
   persona: "rider" | "dispatcher" | "planner",
 
-  // GTFS static
-  gtfs: GtfsHandle | null,
+  // The loaded feed's day-to-day state (the bytes live in the
+  // host; every read answers through the capability bus).
   selectedStop: string | null,
   clock: number, // bumped to re-derive time-dependent views
-  // Bumped whenever the *effective feed* changes (edits pushed to
-  // wasm). wasm internals are not observable from JS, so derived
-  // views (departure boards, block chains) read this to know when to
-  // re-query. `clock` means "time moved"; `feedEpoch` means "data
-  // moved".
+  // Bumped whenever the *effective day* changes (the edit document
+  // re-registered). Derived views (departure boards, block chains)
+  // read this to know when to re-query. `clock` means "time moved";
+  // `feedEpoch` means "data moved".
   feedEpoch: number,
+  // Whether a feed is loaded (the bytes live with the host; every
+  // read answers through the capability bus).
+  feedLoaded: boolean,
   selectedTripId: string | null,
-  tripFeature: TripLineFeature | null, // GeoJSON feature for the selected trip
+  tripFeature: LineFeature | null, // the selected trip's line (the host view builds it)
 
-  // Validation reports for the edit document, from wasm, aligned by
+  // Validation reports for the edit document (the day views
+  // validate per record at registration), aligned by
   // id. Replaced wholesale on every push.
   editReports: EditReport[],
 
@@ -99,7 +102,7 @@ export type AppState = {
   drawingDetour: boolean, // map clicks append detour vertices
   // The selected route's alignment (route_path_geojson) — the ghost
   // the detour is drawn against. Plain data; MapView just draws it.
-  routeContext: TripLineFeature | null,
+  routeContext: LineFeature | null,
 
   // URL fields and poll toggles
   gtfsUrl: string,
@@ -170,8 +173,8 @@ export type AppState = {
 /// Plain data under `$state.raw`: replaced wholesale, never mutated
 /// in place. That is what makes it safe to persist (IndexedDB can
 /// structured-clone it directly — no proxies) and to sync to an ops
-/// server. wasm never owns it; `set_diversions` gives wasm a
-/// materialized view and returns validation reports.
+/// server. wasm never owns it; the day views read it by content
+/// hash and validate it per record at registration.
 let editDocument = $state.raw<EditRecord[]>([]);
 export function getEditDocument(): EditRecord[] {
   return editDocument;
@@ -352,10 +355,11 @@ export const app = $state<AppState>({
 
   persona: "rider",
 
-  gtfs: null,
+
   selectedStop: null,
   clock: 0,
   feedEpoch: 0,
+  feedLoaded: false,
   selectedTripId: null,
   tripFeature: null,
 

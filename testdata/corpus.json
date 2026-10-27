@@ -8,19 +8,9 @@
       "expect": "{\"ok\":{\"op\":\"load_feed\",\"feed_id\":$FEED,\"summary\":{\"agencies\":1,\"routes\":3,\"stops\":6,\"trips\":7,\"stop_times\":14}}}"
     },
     {
-      "name": "set_diversions_draft",
-      "request": "{\"op\":\"set_diversions\",\"feed_id\":$FEED,\"records\":[{\"id\":\"e1\",\"diversion\":{\"id\":\"d1\",\"route_id\":\"10\",\"direction_id\":null,\"first_kept_stop\":\"A\",\"last_kept_stop\":\"B\",\"skipped_stops\":[\"C\"],\"detour\":null,\"added_secs\":300,\"start_date\":\"2026-10-23\",\"end_date\":\"2026-10-23\"},\"status\":\"draft\",\"rev\":1,\"updated_at\":1}]}",
-      "expect": "{\"ok\":{\"op\":\"set_diversions\",\"reports\":[{\"id\":\"e1\",\"valid\":true,\"error\":null,\"affected_trips\":3}]}}"
-    },
-    {
-      "name": "stops_geojson",
-      "request": "{\"op\":\"stops_geojson\",\"feed_id\":$FEED}",
-      "expect": "{\"ok\":{\"op\":\"stops_geojson\",\"collection\":{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-73.5,45.5]},\"properties\":{\"stop_id\":\"A\",\"name\":\"Main & 1st\",\"code\":null}},{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-73.51,45.51]},\"properties\":{\"stop_id\":\"B\",\"name\":\"Main & 2nd\",\"code\":null}},{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-73.52,45.52]},\"properties\":{\"stop_id\":\"C\",\"name\":\"Main & 3rd\",\"code\":null}},{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-73.5155,45.515]},\"properties\":{\"stop_id\":\"SA\",\"name\":\"Main Station: Bay A\",\"code\":null}},{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-73.5145,45.515]},\"properties\":{\"stop_id\":\"SB\",\"name\":\"Main Station: Bay B\",\"code\":null}},{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-73.515,45.515]},\"properties\":{\"stop_id\":\"STN\",\"name\":\"Main Station\",\"code\":null}}]}}}"
-    },
-    {
-      "name": "trip_path_geojson",
-      "request": "{\"op\":\"trip_path_geojson\",\"feed_id\":$FEED,\"trip_id\":\"t10\",\"date\":\"2026-10-23\"}",
-      "expect": "{\"ok\":{\"op\":\"trip_path_geojson\",\"feature\":{\"type\":\"Feature\",\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[-73.4,45.4],[-73.45,45.45],[-73.5,45.5],[-73.505,45.505],[-73.51,45.51]]},\"properties\":{\"trip_id\":\"t10\",\"route_id\":\"10\",\"route_name\":\"10\"}}}}"
+      "name": "plans_resolve",
+      "request": "{\"op\":\"plans_resolve\",\"plans\":[{\"id\":\"p1\",\"name\":\"Pick 1\",\"effective_from\":null,\"routes\":[]}],\"date\":\"2026-10-23\"}",
+      "expect": "{\"ok\":{\"op\":\"plans_resolve\",\"plan\":null}}"
     },
     {
       "name": "sync_edits_deterministic",
@@ -29,7 +19,7 @@
     },
     {
       "name": "unknown_feed_errors",
-      "request": "{\"op\":\"stops_geojson\",\"feed_id\":999}",
+      "request": "{\"op\":\"sync_edits\",\"feed_id\":999,\"client\":[],\"server\":[],\"now_ms\":0}",
       "expect": "{\"error\":\"unknown feed_id 999\"}"
     }
   ]

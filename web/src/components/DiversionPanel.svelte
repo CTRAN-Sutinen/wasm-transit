@@ -3,10 +3,11 @@
   import {
     startDiversion, cancelDiversion, setDiversionAnchor, toggleSkipped,
     applyDiversion, toggleDiversion, toggleDrawing, clearDetour,
-    undoDetourSlice, syncEdits, serviceDate,
+    undoDetourSlice, syncEdits, serviceDate, feedBytes,
   } from "../actions";
   import { pathLengthMeters } from "../streets";
-  import { directory, directoryRoutePatterns } from "../capabilities.svelte";
+  import { directory, directoryRoutePatterns, importedNetworkDocument } from "../capabilities.svelte";
+  import { patternLine } from "../mapview";
   import Combobox from "./Combobox.svelte";
 
   // The directory's route list — model questions, never feed reads.
@@ -85,20 +86,25 @@
   }
 
   // Route ghost: once a route is picked, show where it runs — the
-  // alignment (shapes when the feed has them) the detour is drawn
-  // against. Re-fetches on operator edits: a diverted route shows
-  // its patched path.
+  // selected pattern's AUTHORED alignment (the network document's
+  // path, stop-to-stop when none is authored), the line the detour
+  // is drawn against. The pattern owns the anchor truth; the map is
+  // the host's view (the feed-side geojson op retired in U6).
   $effect(() => {
     void app.feedEpoch;
     const d = app.diversionDraft;
     const routeId = d?.routeId;
-    if (!d || !routeId || !app.gtfs) {
+    if (!d || !routeId) {
       app.routeContext = null;
       return;
     }
-    // The pattern owns the anchor truth; the ghost draws the
-    // representative alignment (the map view's op retires in U6).
-    app.routeContext = app.gtfs.route_path_geojson(routeId, null, serviceDate());
+    void (async () => {
+      const bytes = feedBytes();
+      const net = bytes ? await importedNetworkDocument(bytes) : null;
+      const patternId = d.patternId;
+      app.routeContext =
+        net && patternId ? patternLine(net, patternId, { route: routeId }) : null;
+    })();
   });
 
   // The drawn path's length — the number to reason about when
@@ -119,7 +125,7 @@ The draft itself is untouched: Done (or Apply) still owns it. -->
   }}
 />
 
-{#if app.gtfs}
+{#if app.feedLoaded}
 <section>
   <h2>Diversions</h2>
   <p class="muted">Operator edits: reroute around a closure. Boards, blocks and plans re-derive locally.</p>

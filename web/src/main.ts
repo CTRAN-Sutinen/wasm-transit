@@ -1,9 +1,10 @@
 import "./app.css";
 import { mount } from "svelte";
 import "maplibre-gl/dist/maplibre-gl.css";
-// The wasm artifact has zero imports — the wrapper (src/wasm.js)
-// fetches it and instantiates it directly, then exposes the same
-// GtfsHandle API the app speaks (the rt decoder lives in cap-rt).
+// The wasm artifact has zero imports — the wrapper (src/wasm.ts)
+// fetches it and instantiates it directly. The artifact's remaining
+// surface is the plans chain (every feed-side read answers through
+// the capability bus now).
 import { loadWasm } from "./wasm";
 import { get } from "idb-keyval";
 import App from "./App.svelte";

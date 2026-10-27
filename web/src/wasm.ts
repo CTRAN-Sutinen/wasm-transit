@@ -11,18 +11,11 @@
 /// outcomes are `{"ok": ...}` or `{"error": ...}`.
 
 import wasmUrl from "../pkg/transit_wasm.wasm?url";
-import type { EditRecord } from "./types/EditRecord";
-import type { EditReport } from "./types/EditReport";
-import type { FeatureCollection } from "./types/FeatureCollection";
 import type { Network } from "./types/Network";
 import type { PlanInfo } from "./types/PlanInfo";
 import type { PlanIssue } from "./types/PlanIssue";
 import type { PlanPeriod } from "./types/PlanPeriod";
-import type { StopFeature } from "./types/StopFeature";
-import type { TripLineFeature } from "./types/TripLineFeature";
 
-// Op codes for the bulk-bytes ABI (transit_ops::OP_LOAD_FEED etc.).
-const OP_LOAD_FEED = 0;
 
 /// The flat C ABI the artifact exports.
 type WasmExports = {
@@ -75,88 +68,6 @@ function invoke(request: unknown): unknown {
   return readResult(outPtr);
 }
 
-function invokeBytes(op: number, bytes: Uint8Array): unknown {
-  const wasm = exports();
-  const ptr = wasm.transit_alloc(bytes.length);
-  new Uint8Array(wasm.memory.buffer, ptr, bytes.length).set(bytes);
-  const outPtr = wasm.transit_invoke_bytes(op, ptr, bytes.length);
-  wasm.transit_free(ptr, bytes.length);
-  return readResult(outPtr);
-}
-
-export class GtfsHandle {
-  #feedId: number;
-
-  constructor(feedId: number) {
-    this.#feedId = feedId;
-  }
-
-  /// The registry id — hosts need it to address ops directly.
-  feedId(): number {
-    return this.#feedId;
-  }
-
-  static load(bytes: Uint8Array): GtfsHandle {
-    const resp = invokeBytes(OP_LOAD_FEED, bytes) as { feed_id: number };
-    return new GtfsHandle(resp.feed_id);
-  }
-
-  // The summary / stops / routes / route_stop_sequence ops are
-  // RETIRED on the monolith: the feed line reads the gtfs
-  // capability's load_feed summary, and the directory owns what
-  // exists (stops, routes, patterns) over the network document.
-  stops_geojson(): FeatureCollection {
-    return (invoke({ op: "stops_geojson", feed_id: this.#feedId }) as { collection: FeatureCollection }).collection;
-  }
-
-  trip_path_geojson(tripId: string, date: string): TripLineFeature | null {
-    return (invoke({
-      op: "trip_path_geojson",
-      feed_id: this.#feedId,
-      trip_id: tripId,
-      date,
-    }) as { feature: TripLineFeature | null }).feature ?? null;
-  }
-
-  /// The route's alignment (representative trip, shapes when present)
-  /// — the ghost the diversion editor draws before a detour.
-  route_path_geojson(routeId: string, directionId: number | null, date: string): TripLineFeature | null {
-    return (invoke({
-      op: "route_path_geojson",
-      feed_id: this.#feedId,
-      route_id: routeId,
-      direction_id: directionId,
-      date,
-    }) as { feature: TripLineFeature | null }).feature ?? null;
-  }
-
-  trip_segment_geojson(tripId: string, fromStopId: string, toStopId: string, date: string): TripLineFeature | null {
-    return (invoke({
-      op: "trip_segment_geojson",
-      feed_id: this.#feedId,
-      trip_id: tripId,
-      from_stop_id: fromStopId,
-      to_stop_id: toStopId,
-      date,
-    }) as { feature: TripLineFeature | null }).feature ?? null;
-  }
-
-  stop_point(stopId: string): StopFeature | null {
-    return (invoke({
-      op: "stop_point",
-      feed_id: this.#feedId,
-      stop_id: stopId,
-    }) as { feature: StopFeature | null }).feature ?? null;
-  }
-
-  set_diversions(records: EditRecord[]): EditReport[] {
-    return (invoke({
-      op: "set_diversions",
-      feed_id: this.#feedId,
-      records,
-    }) as { reports: EditReport[] }).reports;
-  }
-}
 
 // ---------------------------------------------------------------
 // Street networks (detour authoring) live in the cap-streets
@@ -181,10 +92,11 @@ export function plans_periods(plans: PlanInfo[]): PlanPeriod[] {
   return (invoke({ op: "plans_periods", plans }) as { periods: PlanPeriod[] }).periods;
 }
 
-/// The API surface `loadWasm()` hands back — the whole artifact
-/// boundary in one type.
+/// The API surface `loadWasm()` hands back: the plans chain (the
+/// The API surface `loadWasm()` hands back: the plans chain (the
+/// artifact's remaining surface — every feed-side read answers
+/// through the capability bus now).
 export type WasmApi = {
-  GtfsHandle: typeof GtfsHandle;
   plans_resolve: typeof plans_resolve;
   plans_validate: typeof plans_validate;
   plans_periods: typeof plans_periods;
@@ -195,7 +107,6 @@ export type WasmApi = {
 export async function loadWasm(): Promise<WasmApi> {
   await instantiate();
   return {
-    GtfsHandle,
     plans_resolve,
     plans_validate,
     plans_periods,

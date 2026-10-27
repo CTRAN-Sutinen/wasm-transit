@@ -10,6 +10,7 @@
   import { app, getEditDocument, getStreets } from "../state.svelte";
   import { selectStop, setDiversionAnchor, addDetourSlice } from "../actions";
   import { streetsSnap, streetsRoute, directory } from "../capabilities.svelte";
+  import { stopsFeatures } from "../mapview";
   import type { StreetPosition } from "../types/StreetPosition";
 
   maplibregl.setWorkerUrl(workerUrl);
@@ -513,8 +514,11 @@
   // structural rather than a convention.
 
   $effect(() => {
-    if (!mapLoaded || !app.gtfs) return;
-    const data = app.gtfs.stops_geojson();
+    if (!mapLoaded) return;
+    // The stops layer is the host's view over the directory's stop
+    // list (what exists in the network, coordinates included) — the
+    // feed-side geojson op retired in U6.
+    const data = stopsFeatures(directory.stops);
     src("stops").setData(data);
     stopPts = data.features.map((f) => [
       f.geometry.coordinates[1],

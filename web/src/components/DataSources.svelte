@@ -13,7 +13,7 @@
   // layers happen once. A MODAL, not a floating panel — it never
   // fights the persona rails for pixels (one laptop screen). Opens
   // by itself when nothing is loaded yet; afterwards on demand.
-  let open = $state(!app.gtfs && !app.cachedFeed);
+  let open = $state(!app.feedLoaded && !app.cachedFeed);
   let dragActive = $state(false);
   let fileInput: HTMLInputElement; // bind:this target
   let streetsInput: HTMLInputElement; // bind:this target
@@ -22,7 +22,7 @@
   // A feed load or IndexedDB restore closes the modal — loading is
   // one-time setup, not part of the daily workflow.
   $effect(() => {
-    if (app.gtfs) open = false;
+    if (app.feedLoaded) open = false;
   });
 
   async function handleFiles(files: FileList) {

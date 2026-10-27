@@ -18,9 +18,10 @@ transit-core    GTFS codec: model, zip/CSV parse, calendar, queries,
                 deterministic zip bytes (src/write.rs), so a produced
                 feed has one identity everywhere. Pure, no I/O.
                 The edit-document TYPES (Diversion, DetourPoint)
-                live in transit-sync; this crate re-exports them for
-                the dying feed-side patch path only (apply_diversions,
-                report_all — they die with set_diversions).
+                live in transit-sync; the feed-side patch path
+                (apply_diversions, report_all) lost its last caller
+                with set_diversions (U6) — only report_all remains,
+                behind the sync seam's feed-scoped validation.
 transit-network The authored network model (planner authority):
                 patterns, timing profiles, service types (the
                 service identifier, linked to days by its calendar
@@ -94,21 +95,24 @@ transit-ops     dispatch(Request) -> Response: the host-agnostic seam
                 + per-feed registry (feed_id keyed). The codec ops,
                 analysis ops, rt decode, the dispatch reads
                 (active_services / blocks / block_trips / feed_info),
-                the day views (departures / block_trips) AND the
-                planning ops (plan_trip / plan_trip_compare) are
+                the day views (departures / block_trips), the
+                planning ops (plan_trip / plan_trip_compare) AND the
+                map's geojson draws with set_diversions are
                 DELETED — they live in cap-network, cap-analysis,
                 cap-rt, the day-view capabilities (cap-board,
-                cap-runcut, cap-calendar), and cap-router; the
-                board, chains, and plans read the bus.
-                What remains: the parsed-feed op surface the map
-                still needs (geojson, all date-scoped by the edit
-                document via set_diversions, the last diversion
-                consumer) and the plans chain in src/plans.rs
+                cap-runcut, cap-calendar), cap-router, and the
+                host's map view; the board, chains, plans, and map
+                read the bus.
+                What remains: the sync seam (load_feed, drop_feed —
+                the registry the server's POST /edits validates the
+                merged document against; sync_edits) and the plans
+                chain in src/plans.rs
                 (plans_resolve / plans_validate / plans_periods —
                 cross-document domain logic, the same standing as
-                transit-sync's merge). The street ops are DELETED —
-                cap-streets owns the detour editor's graph — and
-                the population-layer parse is DELETED —
+                transit-sync's merge; U7 decides their placement).
+                The street ops are DELETED —
+                cap-streets owns the detour editor's graph — the
+                population-layer parse is DELETED —
                 cap-analysis owns the layers and the coverage that
                 reads them.
 transit-wasm    THE artifact: flat import-free C ABI over dispatch.
@@ -141,8 +145,12 @@ entity. There is no planner drawer.
 
 File ownership:
 
-- `src/wasm.ts` wraps the artifact (GtfsHandle + every op);
-  components never see the ABI.
+- `src/wasm.ts` wraps the artifact (the plans chain — its
+  remaining surface); components never see the ABI.
+- `src/mapview.ts` is the map's view code — HOST code over model
+  documents (the network document's stops and authored alignments,
+  the directory's stop list, the effective day via cap-runcut's
+  trip detail): the map is a VIEW, not a capability.
 - `src/capabilities.svelte.ts` is the bus resolver — manifest
   validation, demand-driven load, byte verification against pinned
   hashes, per-capability degradation, and the IMMUTABLE document
@@ -260,14 +268,18 @@ cap-runcut      The runcut capability — ONE QUESTION: what does
                 honest hole) and one block's chain (the detail
                 facet: the AUTHORED runcut with the layover ripple,
                 layover_remaining_secs going negative when a
-                connection is eaten). Same document set as cap-board
+                connection is eaten) and one derived trip's EFFECTIVE
+                stops on the date (the trip detail facet the map's
+                click-through reads — the answer carries no geometry,
+                the host's view code draws). Same document set as
+                cap-board
                 (load_network / load_edits + the day views); the
                 domain code lives in the shared transit-dispatch
                 library; no GTFS layer (arch gate). The UI's blocks
-                panel answers through this module. Replaces the
-                dissolved cap-dispatch — a module named for a role
-                is the monolith rebuilt sideways (docs/PLAN.md's
-                criteria).
+                panel and trip lines answer through this module.
+                Replaces the dissolved cap-dispatch — a module named
+                for a role is the monolith rebuilt sideways
+                (docs/PLAN.md's criteria).
 cap-calendar    The calendar capability — ONE QUESTION: which
                 service keys run today? active_services over the
                 EFFECTIVE day (a key whose every trip is skipped or

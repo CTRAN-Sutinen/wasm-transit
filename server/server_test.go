@@ -59,31 +59,10 @@ func newTestHost(t *testing.T) *WasmHost {
 	return host
 }
 
-// The board op is RETIRED (cap-dispatch owns the day views); the
-// effective-feed read this test pins through is the date-scoped
-// route ghost: the representative trip's stop-to-stop path, where a
-// skipped stop drops its vertex (a shape-polyline trip would not —
-// route 10's representative, t30, has no shape).
-func routeGhostVertices(t *testing.T, host *WasmHost, feedID uint32, routeID string) int {
-	t.Helper()
-	var resp struct {
-		Feature *struct {
-			Geometry struct {
-				Coordinates [][]float64 `json:"coordinates"`
-			} `json:"geometry"`
-		} `json:"feature"`
-	}
-	if err := host.Invoke(context.Background(), map[string]any{
-		"op": "route_path_geojson", "feed_id": feedID, "route_id": routeID,
-		"direction_id": nil, "date": date,
-	}, &resp); err != nil {
-		t.Fatalf("route_path_geojson: %v", err)
-	}
-	if resp.Feature == nil {
-		t.Fatalf("route %s has no representative", routeID)
-	}
-	return len(resp.Feature.Geometry.Coordinates)
-}
+// The date-scoped geojson reads are RETIRED with the map view (U6:
+// the map renders from model documents in host view code; the day
+// views hold their own edit registries) — the retired ops must
+// answer as request errors, which TestArtifactRoundTrip pins.
 
 func TestArtifactRoundTrip(t *testing.T) {
 	ctx := context.Background()
@@ -105,12 +84,10 @@ func TestArtifactRoundTrip(t *testing.T) {
 		t.Fatalf("feed_info version: %q", v)
 	}
 
-	// Baseline: route 10's ghost is t30 (A → C → B, stop-to-stop) — 3 vertices.
-	if got := routeGhostVertices(t, host, feedID, "10"); got != 3 {
-		t.Fatalf("baseline path vertices: %d", got)
-	}
-
-	// The full edit-document flow: push, effective board, compare.
+	// The sync seam with a feed: the merged document validates
+	// against the loaded feed, per record (the op behind POST
+	// /edits; the retired ops — the day views, planning, the map's
+	// geojson draws, set_diversions — live on the capability bus).
 	record := map[string]any{
 		"id": "e1",
 		"diversion": map[string]any{
@@ -121,52 +98,46 @@ func TestArtifactRoundTrip(t *testing.T) {
 		},
 		"status": "draft", "rev": 1, "updated_at": 1,
 	}
-	var reports struct {
+	var syncResp struct {
+		Records []map[string]any `json:"records"`
 		Reports []struct {
-			Valid         bool `json:"valid"`
-			AffectedTrips int  `json:"affected_trips"`
+			Valid         bool   `json:"valid"`
+			AffectedTrips int    `json:"affected_trips"`
+			Error         string `json:"error"`
 		} `json:"reports"`
 	}
 	if err := host.Invoke(ctx, map[string]any{
-		"op": "set_diversions", "feed_id": feedID, "records": []any{record},
-	}, &reports); err != nil {
-		t.Fatalf("set_diversions: %v", err)
+		"op": "sync_edits", "feed_id": feedID,
+		"client": []any{record}, "server": []any{}, "now_ms": 1000,
+	}, &syncResp); err != nil {
+		t.Fatalf("sync_edits: %v", err)
 	}
-	if len(reports.Reports) != 1 || !reports.Reports[0].Valid || reports.Reports[0].AffectedTrips != 3 {
-		t.Fatalf("reports: %+v", reports)
+	if len(syncResp.Records) != 1 || syncResp.Records[0]["status"] != "submitted" {
+		t.Fatalf("sync merged and submitted: %+v", syncResp.Records)
 	}
-
-	// The effective ghost reflects the edit: C is skipped, so t30's
-	// path draws A → B (2 vertices) — the same fact the retired board op
-	// asserted as "C loses service". (The plan-compare delta this
-	// once pinned — 08:15 active vs 08:10 baseline — moved to
-	// cap-router's dispatch test with the op: the router plans over
-	// the network document and the effective day.)
-	if got := routeGhostVertices(t, host, feedID, "10"); got != 2 {
-		t.Fatalf("effective path vertices: %d", got)
-	}
-
-	// Retire = tombstone; DropFeed releases the registry entry.
-	retired := map[string]any{
-		"id": "e1", "diversion": record["diversion"],
-		"status": "retired", "rev": 2, "updated_at": 2,
-	}
-	if err := host.Invoke(ctx, map[string]any{
-		"op": "set_diversions", "feed_id": feedID, "records": []any{retired},
-	}, &struct{}{}); err != nil {
-		t.Fatalf("set_diversions (retire): %v", err)
-	}
-	// Retire = tombstone: the baseline path returns.
-	if got := routeGhostVertices(t, host, feedID, "10"); got != 3 {
-		t.Fatalf("retired path vertices: %d", got)
+	if len(syncResp.Reports) != 1 || !syncResp.Reports[0].Valid || syncResp.Reports[0].AffectedTrips != 3 {
+		t.Fatalf("reports: %+v", syncResp.Reports)
 	}
 
 	if err := host.DropFeed(ctx, feedID); err != nil {
 		t.Fatalf("drop_feed: %v", err)
 	}
 	err = host.Invoke(ctx, map[string]any{"op": "stops_geojson", "feed_id": feedID}, &struct{}{})
-	if err == nil || !strings.Contains(err.Error(), "unknown feed_id") {
-		t.Fatalf("dropped feed must error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "unknown variant") {
+		t.Fatalf("the retired geojson op errors, got %v", err)
+	}
+	var plansResp struct {
+		Plan *string `json:"plan"`
+	}
+	if err := host.Invoke(ctx, map[string]any{
+		"op": "plans_resolve",
+		"plans":   []any{map[string]any{"id": "p1", "name": "Pick 1", "effective_from": nil, "routes": []any{}}},
+		"date":    date,
+	}, &plansResp); err != nil {
+		t.Fatalf("plans_resolve: %v", err)
+	}
+	if plansResp.Plan != nil {
+		t.Fatalf("unversioned plans never resolve: %+v", plansResp.Plan)
 	}
 }
 

@@ -32,7 +32,7 @@
     const date = serviceDate();
     const seq = ++servicesSeq;
     const bytes = feedBytes();
-    if (!app.gtfs || !bytes) {
+    if (!app.feedLoaded || !bytes) {
       services = [];
       return;
     }
@@ -92,7 +92,7 @@
     const stop = app.selectedStop;
     const seq = ++boardSeq;
     const bytes = feedBytes();
-    if (!stop || !app.gtfs || !bytes) {
+    if (!stop || !app.feedLoaded || !bytes) {
       board = null;
       boardOff = false;
       return;

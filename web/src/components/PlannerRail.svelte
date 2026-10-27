@@ -178,7 +178,7 @@
         first plan from it here.
       </p>
       <p>
-        <button class="primary" onclick={deriveFromFeed} disabled={!app.gtfs}>
+        <button class="primary" onclick={deriveFromFeed} disabled={!app.feedLoaded}>
           Derive from loaded feed
         </button>
       </p>
@@ -192,7 +192,7 @@
       derive a network from the loaded feed.
     </p>
     <p>
-      <button class="primary" onclick={deriveFromFeed} disabled={!app.gtfs}>
+      <button class="primary" onclick={deriveFromFeed} disabled={!app.feedLoaded}>
         Derive from loaded feed
       </button>
     </p>
@@ -451,7 +451,7 @@
       <span class="chip svc">{Object.keys(doc.blocks).length} blocks</span>
     </p>
     <p>
-      <button onclick={deriveFromFeed} disabled={!app.gtfs}>Derive from loaded feed</button>
+      <button onclick={deriveFromFeed} disabled={!app.feedLoaded}>Derive from loaded feed</button>
     </p>
     {#if app.networkValidationOff}
       <p>

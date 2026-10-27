@@ -12,7 +12,7 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "47755dbaab66a02f2894728484273311c7a44ba1"
+    "source_commit": "84fa9a4b153d71bcc9e5b57059947de1a8222a3a"
   },
   "hash": "sha256:a3b7d8a7c7c8d2328e1db1b72af2b22e41144230aa554cf7303c3cc933024390",
   "id": "router",

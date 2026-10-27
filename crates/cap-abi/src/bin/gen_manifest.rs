@@ -163,7 +163,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "runcut",
         file: "cap_runcut.wasm",
-        ops: &["load_network", "load_edits", "blocks", "block_trips"],
+        ops: &["load_network", "load_edits", "blocks", "block_trips", "trip_stops"],
         // The network document is produced by the network capability;
         // the operator edit document is host-owned (wholesale-replaced
         // — the sync contract).
@@ -176,6 +176,7 @@ const MODULES: &[ModuleSpec] = &[
             ("load_edits", "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change."),
             ("blocks", "The day's blocks: every authored block with at least one trip running on the date, with that day's running trip counts — a block whose every trip is off is a vehicle still in the garage, not offered. With edits in force, skipped trips leave the count (and a block whose every trip is skipped leaves the list)."),
             ("block_trips", "One block's chain on a service date: the AUTHORED runcut (the model's blocks carry layovers GTFS never had), materialized for the day, with the in-force edits applied — a diverted trip ending later eats into the vehicle's next layover, and layover_remaining_secs goes negative when the connection is eaten. Trips of the chain that do not run on the date stay in view, marked. Unknown blocks answer empty, never error."),
+            ("trip_stops", "One derived trip's stops on a service date — the day's trip detail, EFFECTIVE (a diverted trip answers its patched sequence). The map's click-through reads this; the answer carries no geometry (stops carry coordinates in the network document — the map is the host's view, not the module's). A trip that does not run answers empty, never an error."),
         ],
     },
     ModuleSpec {
@@ -838,6 +839,27 @@ fn example_for(
                     "edits_hash": "<of the loaded edit document>", "block_id": "B1", "date": "2026-10-23" }),
                 json!({ "ok": { "op": "block_trips",
                     "trips": transit_dispatch::block_chain(ctx.derived_network(), &day, "B1") } }),
+            )
+        }
+        ("runcut", "trip_stops") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+            let records = dispatch_fixture_edits();
+            let day = transit_dispatch::effective_day(ctx.derived_network(), date, &records)
+                .expect("fixture day");
+            // t30's derived trip: the via-C run at 08:40 — the
+            // patched day keeps A→B (C skipped, +300 s).
+            let trip = day
+                .iter()
+                .find(|t| t.stop_times.len() == 2 && t.start_secs == 8 * 3600 + 40 * 60)
+                .expect("the diverted trip is in the day");
+            (
+                json!({ "op": "trip_stops", "network_hash": ctx.network_hash,
+                    "edits_hash": "<of the loaded edit document>",
+                    "schedule": trip.schedule, "start_secs": trip.start_secs, "date": "2026-10-23" }),
+                json!({ "ok": { "op": "trip_stops",
+                    "stops": transit_dispatch::trip_stops(
+                        ctx.derived_network(), &day, &trip.schedule, trip.start_secs) } }),
             )
         }
         ("calendar", "load_network") => {

@@ -1,6 +1,6 @@
 {
-  "blob": "blobs/f286cd4d7394897333c26784a27766d2e5349097da61eea50c146c2959d37422.wasm",
-  "bytes": 472851,
+  "blob": "blobs/2fbcbd4da94271cf8e956a1fe189f270c18775580d0b00b16fab19a97820e557.wasm",
+  "bytes": 483181,
   "consumes": {
     "network": "network"
   },
@@ -12,9 +12,9 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "47755dbaab66a02f2894728484273311c7a44ba1"
+    "source_commit": "84fa9a4b153d71bcc9e5b57059947de1a8222a3a"
   },
-  "hash": "sha256:f286cd4d7394897333c26784a27766d2e5349097da61eea50c146c2959d37422",
+  "hash": "sha256:2fbcbd4da94271cf8e956a1fe189f270c18775580d0b00b16fab19a97820e557",
   "id": "runcut",
   "kernel": 1,
   "migrates": {},
@@ -497,13 +497,48 @@
           }
         }
       }
+    },
+    "trip_stops": {
+      "description": "One derived trip's stops on a service date — the day's trip detail, EFFECTIVE (a diverted trip answers its patched sequence). The map's click-through reads this; the answer carries no geometry (stops carry coordinates in the network document — the map is the host's view, not the module's). A trip that does not run answers empty, never an error.",
+      "example": {
+        "request": {
+          "date": "2026-10-23",
+          "edits_hash": "<of the loaded edit document>",
+          "network_hash": "sha256:fc9a6eb27b7b918b0a2d282c1c8c0baacc4e7302034e84a132db7c88838ffb42",
+          "op": "trip_stops",
+          "schedule": "WK:pat-10-0-1",
+          "start_secs": 31200
+        },
+        "response": {
+          "ok": {
+            "op": "trip_stops",
+            "stops": [
+              {
+                "arrival_secs": 31200,
+                "departure_secs": 31200,
+                "name": "Main & 1st",
+                "stop_id": "A",
+                "timepoint": true
+              },
+              {
+                "arrival_secs": 32100,
+                "departure_secs": 32100,
+                "name": "Main & 2nd",
+                "stop_id": "B",
+                "timepoint": true
+              }
+            ]
+          }
+        }
+      }
     }
   },
   "ops": [
     "load_network",
     "load_edits",
     "blocks",
-    "block_trips"
+    "block_trips",
+    "trip_stops"
   ],
   "purpose": "The runcut: what does this vehicle do today — the day's blocks list (which vehicles are out, with that day's running trip counts) and one block's authored chain with the layover ripple (a diverted trip ending later eats into the vehicle's next layover). Blocks and layovers are model state GTFS never had. The materialized day over the NETWORK document, patched with the in-force edits; the domain code lives in the shared transit-dispatch library.",
   "speaks": {

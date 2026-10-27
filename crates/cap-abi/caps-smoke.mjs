@@ -577,6 +577,45 @@ assert(
   rippedChain.trips[0].layover_remaining_secs === 300,
   "the diverted end eats the layover (600 - 300) — the connection-health ripple",
 );
+// The trip detail — the map's click-through question (the answer
+// carries no geometry; the host's view code holds the coordinates):
+// one derived trip's EFFECTIVE stops, patched by the same edits.
+const chainTrip = runcutChain.trips[0];
+const tripAuthored = runcut.invoke({
+  op: "trip_stops",
+  network_hash: loadedRuncutNet.network_hash,
+  schedule: chainTrip.schedule,
+  start_secs: chainTrip.start_secs,
+  date: DATE,
+});
+assert(
+  tripAuthored.stops.length === 2 &&
+    tripAuthored.stops[0].stop_id === "A" &&
+    tripAuthored.stops[1].stop_id === "B" &&
+    tripAuthored.stops[1].arrival_secs === 8 * 3600 + 10 * 60,
+  "the authored day's trip detail: A→B, B at 08:10",
+);
+const tripPatched = runcut.invoke({
+  op: "trip_stops",
+  network_hash: loadedRuncutNet.network_hash,
+  edits_hash: runcutEdits.edits_hash,
+  schedule: chainTrip.schedule,
+  start_secs: chainTrip.start_secs,
+  date: DATE,
+});
+assert(
+  tripPatched.stops.length === 2 &&
+    tripPatched.stops[1].arrival_secs === 8 * 3600 + 15 * 60,
+  "the patched day's trip detail: the kept segment carries the added 300 s (B at 08:15)",
+);
+const tripAbsent = runcut.invoke({
+  op: "trip_stops",
+  network_hash: loadedRuncutNet.network_hash,
+  schedule: chainTrip.schedule,
+  start_secs: 123,
+  date: DATE,
+});
+assert(tripAbsent.stops.length === 0, "a trip not in the day answers empty, never an error");
 const brokenEdit = runcut.invoke({
   op: "load_edits",
   network_hash: loadedRuncutNet.network_hash,

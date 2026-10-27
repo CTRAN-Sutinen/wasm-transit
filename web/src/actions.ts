@@ -1,18 +1,18 @@
 import { app, getEditDocument, setEditDocument, setStreets, type DiversionDraft } from "./state.svelte";
 import { get as idbGet, set as idbSet, del as idbDel } from "idb-keyval";
-import { ensureAnalysisLayer, ensureRouterBoarding, ensureRouterEdits, ensureStreets, routerCap, routerModule, rtCap, rtModule } from "./capabilities.svelte";
+import { ensureAnalysisLayer, ensureEditReports, importedNetworkDocument, ensureRuncutBoarding, ensureRuncutEdits, ensureRouterBoarding, ensureRouterEdits, ensureStreets, runcutCap, runcutModule, routerCap, routerModule, rtCap, rtModule } from "./capabilities.svelte";
+import { stopPointOf, tripLine, tripSegment } from "./mapview";
 import type { EditRecord } from "./types/EditRecord";
 import type { Itinerary } from "./types/Itinerary";
-import type { TripIdMap } from "./types/TripIdMap";
-import type { LineGeometry } from "./types/LineGeometry";
 import type { StreetPosition } from "./types/StreetPosition";
 import type { Streets } from "./streets";
 
 /// One drawn plan feature (transit leg or walk segment). MapView
-/// consumes these; the geometry is GeoJSON.
+/// consumes these; the geometry is GeoJSON built by the host's view
+/// code (mapview.ts).
 export type PlanFeature = {
   type: "Feature";
-  geometry: LineGeometry | { type: "LineString"; coordinates: number[][] };
+  geometry: { type: "LineString"; coordinates: [number, number][] };
   properties: { kind: "transit" | "walk" };
 };
 
@@ -124,8 +124,8 @@ function error(e: any): void {
 
 export async function loadGtfsBytes(bytes: Uint8Array, label: string): Promise<void> {
   if (!app.wasm) throw new Error("wasm not loaded");
-  setFeedBytes(bytes); // the bus reads the same document the monolith parses
-  app.gtfs = app.wasm.GtfsHandle.load(bytes); // all parsing in wasm
+  setFeedBytes(bytes); // the bus reads this document everywhere
+  app.feedLoaded = true;
   app.selectedStop = null;
   app.selectedTripId = null;
   app.tripFeature = null;
@@ -133,18 +133,11 @@ export async function loadGtfsBytes(bytes: Uint8Array, label: string): Promise<v
   app.planBaseline = null;
   app.planNotice = null;
   // The edit document may reference this feed (or an older one) —
-  // re-push so wasm revalidates every record against the new artifact
-  // and derived views re-derive.
+  // revalidate every record against the new document and derived
+  // views re-derive.
   pushEdits();
-  // Diagnostics: proves which wasm queries actually answer in-browser.
-  // (The stop list answers through the directory capability now;
-  // the stops_geojson draw is the map view's, until U6.)
-  const features = app.gtfs.stops_geojson().features.length;
-  console.log("gtfs loaded:", { geoFeatures: features });
   await cacheFeed(label, bytes.slice());
-  app.status =
-    `Loaded ${label} — map features: ${features}.` +
-    " Everything below is running client-side.";
+  app.status = `Loaded ${label}.` + " Everything below is running client-side.";
 }
 
 export async function loadGtfsFile(file: File): Promise<void> {
@@ -222,7 +215,7 @@ export function selectStop(stopId: string): void {
   app.clock = Date.now(); // re-derive the departure board
 }
 
-export function showTrip(tripId: string): void {
+export async function showTrip(tripId: string): Promise<void> {
   // Clicking the selected row again deselects: the route line always
   // has a way off the map.
   if (app.selectedTripId === tripId) {
@@ -230,10 +223,31 @@ export function showTrip(tripId: string): void {
     return;
   }
   app.selectedTripId = tripId;
-  // The date scopes operator edits: diverted trips draw patched shapes.
-  const feature = app.gtfs?.trip_path_geojson(tripId, serviceDate());
-  // No geometry -> clear the path, but never wipe other state.
-  app.tripFeature = feature ?? null;
+  const bytes = feedBytes();
+  if (!bytes) return;
+  try {
+    // Click-through: the agency's trip id joins to the derived trip
+    // through the import's trip map, the day view answers the
+    // trip's EFFECTIVE stops (operator edits apply), and the map is
+    // the host's view over both — nothing in wasm draws.
+    const boarding = await ensureRuncutBoarding(bytes);
+    const net = await importedNetworkDocument(bytes);
+    const module = boarding ? await runcutModule() : null;
+    const entry = boarding?.tripMap.entries.find((e) => e.agency_trip_ids.includes(tripId));
+    if (!boarding || !net || !module || !entry) {
+      // No geometry -> clear the path, but never wipe other state.
+      app.tripFeature = null;
+      return;
+    }
+    const editsHash = await ensureRuncutEdits(boarding.networkHash, getEditDocument());
+    const stops = runcutCap(module).tripStops(
+      boarding.networkHash, editsHash, entry.schedule, entry.start_secs, serviceDate());
+    const patternId = net.schedules[entry.schedule]?.pattern ?? "";
+    app.tripFeature = tripLine(net, patternId, stops, { trip: tripId });
+  } catch (e) {
+    app.tripFeature = null;
+    error(e);
+  }
 }
 
 /** Deselect the board's trip: the highlighted row and its map line. */
@@ -308,45 +322,49 @@ export async function planTrip(fromStopId: string, toStopId: string, departTime:
     // A new plan is the focus now — the previously selected trip's
     // line would fight the itinerary for the same pixels.
     clearTrip();
-    app.itineraryFeatures = buildItineraryFeatures(app.plan, boarding.tripMap);
+    app.itineraryFeatures = await buildItineraryFeatures(app.plan);
   } catch (e) {
     app.planNotice = `Planning failed: ${e.message}`;
     error(e);
   }
 }
 
-/// The agency trip id a derived leg rode, via the import's trip-id
-/// map — the model names trips (schedule, start_secs) and the map
-/// still draws by the agency's ids (U6 takes the map).
-function agencyTripId(map: TripIdMap, schedule: string, startSecs: number): string | null {
-  const entry = map.entries.find((e) => e.schedule === schedule && e.start_secs === startSecs);
-  return entry?.agency_trip_ids[0] ?? null;
-}
-
-function buildItineraryFeatures(plan: Itinerary | null, tripMap: TripIdMap): PlanFeature[] {
-  if (!plan || !app.gtfs) return [];
+/// The plan's drawn features, over model documents: each transit
+/// leg rides its derived trip's EFFECTIVE stops (the day view
+/// answers), sliced to the ridden segment; walk legs draw stop to
+/// stop. The map is the host's view — nothing in wasm draws.
+async function buildItineraryFeatures(plan: Itinerary | null): Promise<PlanFeature[]> {
+  if (!plan) return [];
+  const bytes = feedBytes();
+  if (!bytes) return [];
+  const net = await importedNetworkDocument(bytes);
+  const boarding = await ensureRuncutBoarding(bytes);
+  const module = boarding ? await runcutModule() : null;
+  if (!net || !boarding || !module) return [];
+  const editsHash = await ensureRuncutEdits(boarding.networkHash, getEditDocument());
+  const cap = runcutCap(module);
+  const date = serviceDate();
   const features: PlanFeature[] = [];
   for (const leg of plan.legs) {
     if (leg.type === "transit") {
       // The ridden segment only — the full route would be confusing.
-      const tripId = agencyTripId(tripMap, leg.schedule, leg.start_secs);
-      const path = tripId
-        ? app.gtfs.trip_segment_geojson(
-            tripId, leg.board_stop_id, leg.alight_stop_id, serviceDate())
-        : null;
-      if (path) {
-        features.push({ type: "Feature", geometry: path.geometry, properties: { kind: "transit" } });
+      const patternId = net.schedules[leg.schedule]?.pattern ?? "";
+      const stops = cap.tripStops(boarding.networkHash, editsHash, leg.schedule, leg.start_secs, date);
+      const coords = tripSegment(net, patternId, stops, leg.board_stop_id, leg.alight_stop_id);
+      if (coords && coords.length >= 2) {
+        features.push({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: coords },
+          properties: { kind: "transit" },
+        });
       }
     } else {
-      const from = app.gtfs.stop_point(leg.from_stop_id);
-      const to = app.gtfs.stop_point(leg.to_stop_id);
+      const from = stopPointOf(net, leg.from_stop_id);
+      const to = stopPointOf(net, leg.to_stop_id);
       if (from && to) {
         features.push({
           type: "Feature",
-          geometry: {
-            type: "LineString",
-            coordinates: [from.geometry.coordinates, to.geometry.coordinates],
-          },
+          geometry: { type: "LineString", coordinates: [from, to] },
           properties: { kind: "walk" },
         });
       }
@@ -400,14 +418,18 @@ export function flushPersist(): Promise<void> {
   return persistNow() ?? Promise.resolve();
 }
 
-/** Push the current document to wasm: validation reports come back,
- * caches drop, and derived views re-query via feedEpoch. Also called
- * after a feed load — every record is revalidated against the new
- * artifact. No-op when no feed is loaded (records wait in the doc). */
-export function pushEdits(): void {
-  if (!app.gtfs) return;
+/** Revalidate the edit document: the day views validate per record
+ * against the network at load_edits (reported, never rejected);
+ * the reports land here, and derived views re-query via feedEpoch.
+ * Also called after a feed load — every record is revalidated
+ * against the new document. No-op when no feed is loaded (records
+ * wait in the doc). */
+export async function pushEdits(): Promise<void> {
+  const bytes = feedBytes();
+  if (!bytes) return;
   try {
-    app.editReports = app.gtfs.set_diversions(getEditDocument());
+    const reports = await ensureEditReports(bytes, getEditDocument());
+    app.editReports = reports ?? [];
   } catch (e) {
     error(e);
     return;
@@ -675,7 +697,7 @@ async function installStreets(geojson: unknown, label: string): Promise<void> {
   }
 }
 
-export function applyDiversion(): void {
+export async function applyDiversion(): Promise<void> {
   const draft: DiversionDraft | null = app.diversionDraft;
   if (!draft) return;
   if (!draft.routeId || !draft.firstKept || !draft.lastKept) {
@@ -708,7 +730,12 @@ export function applyDiversion(): void {
     if (i >= 0) edits[i] = record;
     else edits.push(record);
   });
-  const report = app.editReports.find((r) => r.id === record.id);
+  // The validation is the day views' load_edits (reported, never
+  // rejected) — awaited here so the status speaks the record's own
+  // report, not the previous document's.
+  const bytes = feedBytes();
+  const reports = bytes ? ((await ensureEditReports(bytes, getEditDocument())) ?? []) : [];
+  const report = reports.find((r) => r.id === record.id);
   app.status = !report || !report.valid
     ? `Diversion saved but invalid: ${report?.error ?? "unknown error"}.`
     : report.affected_trips === 0
@@ -740,7 +767,7 @@ export function toggleDiversion(id: string): void {
  * server merges with its copy in the same artifact we run locally.
  * `quiet` (bootstrap) leaves app.status untouched. */
 export async function syncEdits({ quiet = false }: { quiet?: boolean } = {}): Promise<void> {
-  if (!app.gtfs && !quiet) return;
+  if (!app.feedLoaded && !quiet) return;
   try {
     const res = await fetch("/edits", {
       method: "POST",

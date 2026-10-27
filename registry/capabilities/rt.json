@@ -12,7 +12,7 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "47755dbaab66a02f2894728484273311c7a44ba1"
+    "source_commit": "84fa9a4b153d71bcc9e5b57059947de1a8222a3a"
   },
   "hash": "sha256:4d270e6da6c10285a8c9553b7a7de648ec9e334f71a5c424286cdb4adc701374",
   "id": "rt",

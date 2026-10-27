@@ -5,4 +5,4 @@ import type { Network } from "../Network";
 /**
  * One operation call. Tagged like every capability's seam.
  */
-export type Request = { "op": "load_network", network: Network, } | { "op": "load_edits", network_hash: string, records: Array<EditRecord>, } | { "op": "blocks", network_hash: string, edits_hash: string | null, date: string, } | { "op": "block_trips", network_hash: string, edits_hash: string | null, block_id: string, date: string, };
+export type Request = { "op": "load_network", network: Network, } | { "op": "load_edits", network_hash: string, records: Array<EditRecord>, } | { "op": "blocks", network_hash: string, edits_hash: string | null, date: string, } | { "op": "block_trips", network_hash: string, edits_hash: string | null, block_id: string, date: string, } | { "op": "trip_stops", network_hash: string, edits_hash: string | null, schedule: string, start_secs: number, date: string, };

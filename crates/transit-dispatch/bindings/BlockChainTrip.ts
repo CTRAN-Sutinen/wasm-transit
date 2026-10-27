@@ -10,7 +10,7 @@ export type BlockChainTrip = { schedule: string, start_secs: number, route: stri
 /**
  * Whether this trip of the block runs on the date. A trip that
  * does not run is still part of the authored chain (the vehicle's
- * work is authored, not observed) — the dispatcher sees the hole.
+ * work is authored, not observed) — the reader sees the hole.
  */
 runs: boolean, first_stop: string, last_stop: string, 
 /**

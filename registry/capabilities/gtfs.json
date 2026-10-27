@@ -10,7 +10,7 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "47755dbaab66a02f2894728484273311c7a44ba1"
+    "source_commit": "84fa9a4b153d71bcc9e5b57059947de1a8222a3a"
   },
   "hash": "sha256:b912bcbc2a788b2317503f26c4ca649efe44aabd6392479bf6b55f6f1682c822",
   "id": "gtfs",

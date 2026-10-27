@@ -197,6 +197,48 @@ LANDED:
   the first real-data plan session through cap-router re-pins
   this line.
 
+- **U6, the map view** — the map is a VIEW, not a capability:
+  every geojson draw left the artifact. The map renders from what
+  the host already owns — the stops layer from the directory's
+  stop list (coordinates included), the network document's
+  authored alignments (`Pattern.path`, captured at import), the
+  effective day through cap-runcut's NEW trip detail facet
+  (`trip_stops`: one derived trip's stops on a date, EFFECTIVE —
+  a diverted trip answers its patched sequence; the answer
+  carries no geometry, the host's view code draws), the edit
+  document's detour polylines (already host-drawn), and the
+  trip-id map for click-throughs (`web/src/mapview.ts`, with the
+  rider-side imported network document held by the host — JS
+  owns documents). Monolith ops deleted: stops_geojson,
+  stop_point, trip_path_geojson, route_path_geojson,
+  trip_segment_geojson, AND set_diversions (ABI smoke pins every
+  retirement; the corpus step-set dropped the geojson and
+  diversion steps and gained plans_resolve; the artifact's
+  remaining UI surface is the plans chain — the GtfsHandle is
+  gone from the browser host, the feed registry stays for the
+  server's sync validation only). The edit document's validation
+  reports — the UI's per-record display — now come from the day
+  views' load_edits (the same registration every day view reads;
+  memoized per document content). ON THE BUS:
+  transit-dispatch's trip_stops + cap-runcut's dispatch test
+  (the trip detail: authored A→B with B at 08:10, the patched
+  via-C trip keeps A→B with B at 08:55, an absent trip answers
+  empty), caps-smoke's runcut flow (authored vs patched trip
+  detail, absent answers empty), the justfile runner gate (one
+  chained session: load_network → load_edits → trip_stops), and
+  the manifest (runcut's trip_stops op doc + a REAL computed
+  example). UI READS THE BUS: the stops layer (directory), the
+  selected trip's line (trip-id map join → trip_stops → the
+  authored alignment, stop-to-stop when the effective trip
+  deviates from its pattern), the itinerary's ridden segments
+  (nearest-vertex slices of the authored alignment), the
+  diversion editor's ghost (the selected pattern's authored
+  alignment), and the apply/retire status from the day views'
+  reports (app.spec: the planner segment, trip line, ghost,
+  diversion flow and sync round-trip specs — 31 Playwright
+  tests). NOT dogfooded: the first real-data session drawing
+  the map through the host view re-pins this line.
+
 Infrastructure, DONE (pinned by the same `just check` the
 gates run in): cap-abi (the undocumented-ops law and the
 manifest's compose-time self-validation), the resolver
@@ -214,15 +256,18 @@ re-authors from there) and reports every resolution — never
 silent; diversions produce patched copies (the base feed is
 immutable); retire = tombstone.
 
-OPEN — the units of `docs/PLAN.md`: U6 the map
-view, U7 sync + plans, U8 the GTFS substrate retires (U1
-cap-streets, U2 the need cut, U3 the directory + feed line, U4
-coverage, and U5 planning are landed above). The map still draws
-through the monolith's geojson ops (U6); `set_diversions` is
-still the edit-document plumbing for them — the last consumer.
-transit-core is deprecated as of this cut — its day answers lost
-their last bus callers, and the crate itself folds into the codec
-in U8.
+OPEN — the units of `docs/PLAN.md`: U7 sync +
+plans, U8 the GTFS substrate retires (U1 cap-streets, U2 the need
+cut, U3 the directory + feed line, U4 coverage, U5 planning, and
+U6 the map view are landed above). The monolith's remaining
+surface is the sync seam (load_feed, drop_feed, sync_edits — the
+server's POST /edits path) and the plans chain; U7 decides their
+placement. transit-core is deprecated as of this cut —
+apply_diversions lost its last caller with set_diversions, and
+the crate itself folds into the codec in U8. U7 is placement
+only — the persistence mechanism (pointer CAS, the store
+reflog) is the host discipline's (`docs/PLAN.md`), not U7's to
+design.
 
 ## Open findings (routed, never scripted)
 
@@ -247,6 +292,15 @@ in U8.
 
 ## Standing queue (after the units)
 
+- **The host discipline (the composition layer):** THE plan is
+  `docs/PLAN.md`'s "The host discipline (after the units)" — the
+  choke-point engine (the ONE op caller), flow maps as data in
+  the UI manifest, branded `VerifiedDoc` at the engine seam, the
+  Merkle journal (trace / answer-cache key / migration witness),
+  the store reflog, and the two gates (no op call outside the
+  engine; no clocks or randomness in cap crates). Replay pays the
+  dogfood debt: the U1–U4 re-pin sessions are journal replays of
+  the C-TRAN session, not hand-run scripts.
 - **Wire-time assembly (the mechanism the thesis depends on):**
   user-declared selection (`web/src/selection.svelte.ts`,
   IndexedDB-persisted, defaulting to the whole manifest), the
@@ -271,12 +325,15 @@ in U8.
   assembles its own harness.
 - **caps-run harness as data** — when a session improvisation
   recurs, crystallize it; until then improvisations are findings.
+  The journal (the host discipline) crystallizes the runner's
+  chained-session format first.
 - **Fuel metering** in the runner once it may point at untrusted
   registry entries (the wall-clock guard is the stopgap).
 - **cap-authz** as a capability (policy document, server-side
   assembly, fail-closed; the validator's scope check).
 - **Sync persistence** — blobs + pointers, migrate-at-receive,
-  pointer CAS, one writer per prefix.
+  pointer CAS, one writer per prefix; the store reflog rides with
+  it (the host discipline, `docs/PLAN.md`).
 
 ## Conventions for whoever picks this up
 

@@ -1,9 +1,11 @@
 //! cap-runcut — the runcut capability.
 //!
-//! One question: **what does this vehicle do today?** — at two
+//! One question: **what does this vehicle do today?** — at three
 //! granularities: the day's blocks LIST (which vehicles are out —
-//! the index facet) and one block's authored CHAIN with the
-//! layover ripple (the detail facet). Blocks and layovers are
+//! the index facet), one block's authored CHAIN with the layover
+//! ripple (the detail facet), and one derived trip's EFFECTIVE
+//! stops on the date (the trip detail the map's click-through
+//! reads). Blocks and layovers are
 //! model state GTFS never had: the runcut is authored, and a
 //! diverted trip ending later eats into the vehicle's next
 //! layover — the connection-health ripple is IN the answer.
@@ -76,6 +78,22 @@ pub enum Request {
         block_id: String,
         date: String,
     },
+    /// One derived trip's stops on a service date — the day's trip
+    /// detail, EFFECTIVE (a diverted trip answers its patched
+    /// sequence). The trip's identity is the model's: (schedule,
+    /// start_secs). The map's click-through reads this; the answer
+    /// carries no geometry (stops carry coordinates in the network
+    /// document — the map is the host's view, not the module's).
+    /// A trip that does not run on the date answers empty, never an
+    /// error.
+    TripStops {
+        network_hash: String,
+        #[serde(default)]
+        edits_hash: Option<String>,
+        schedule: String,
+        start_secs: u32,
+        date: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -89,6 +107,7 @@ pub enum Response {
     },
     Blocks { blocks: Vec<DayBlock> },
     BlockTrips { trips: Vec<BlockChainTrip> },
+    TripStops { stops: Vec<transit_dispatch::TripStopView> },
 }
 
 /// Networks by content hash (canonical serialization).
@@ -191,6 +210,13 @@ let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
             Ok(Response::BlockTrips {
                 trips: transit_dispatch::block_chain(&network, &day, &block_id),
+            })
+        }
+        Request::TripStops { network_hash, edits_hash, schedule, start_secs, date } => {
+let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = network_arc(&network_hash)?;
+            Ok(Response::TripStops {
+                stops: transit_dispatch::trip_stops(&network, &day, &schedule, start_secs),
             })
         }
     }

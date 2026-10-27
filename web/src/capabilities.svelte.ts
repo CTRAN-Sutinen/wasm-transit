@@ -50,6 +50,7 @@ import type { TripIdMap } from "./types/TripIdMap";
 import type { BoardDeparture } from "./types/BoardDeparture";
 import type { BlockChainTrip } from "./types/BlockChainTrip";
 import type { DayBlock } from "./types/DayBlock";
+import type { TripStopView } from "./types/TripStopView";
 import type { EditRecord } from "./types/EditRecord";
 import type { EditReport } from "./types/EditReport";
 import type { Network } from "./types/Network";
@@ -932,6 +933,26 @@ export function runcutCap(module: CapModule) {
       } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "block_trips" }>;
       return resp.trips;
     },
+    /// One derived trip's EFFECTIVE stops on the date — the trip
+    /// detail the map's click-through reads (the answer carries no
+    /// geometry; the network document holds the coordinates).
+    tripStops(
+      networkHash: string,
+      editsHash: string | null,
+      schedule: string,
+      startSecs: number,
+      date: string,
+    ): TripStopView[] {
+      const resp = module.invoke({
+        op: "trip_stops",
+        network_hash: networkHash,
+        edits_hash: editsHash,
+        schedule,
+        start_secs: startSecs,
+        date,
+      } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "trip_stops" }>;
+      return resp.stops;
+    },
   };
 }
 
@@ -1026,6 +1047,61 @@ function boardings(capId: "board" | "runcut" | "router") {
 export const ensureBoardBoarding = boardings("board");
 export const ensureRuncutBoarding = boardings("runcut");
 export const ensureRouterBoarding = boardings("router");
+
+const importedDocuments = new Map<string, Promise<Network | null>>();
+
+/// The rider-side NETWORK DOCUMENT, imported once per feed and held
+/// by the HOST — JS owns documents; the capabilities hold only
+/// hash-addressed views. The map's view code reads stops, patterns,
+/// and authored alignments from this document (the map is a view,
+/// not a capability).
+export function importedNetworkDocument(bytes: Uint8Array): Promise<Network | null> {
+  const load = async (): Promise<Network | null> => {
+    const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
+    const memo = importedDocuments.get(memoKey);
+    if (memo) return memo;
+    const run = (async () => {
+      const modules = await ensure(["network"]);
+      const network = modules.network;
+      if (!network) return null;
+      const feedHash = networkCap(network).loadFeed(bytes).feedHash;
+      return networkCap(network).import(feedHash).network;
+    })();
+    run.catch(() => importedDocuments.delete(memoKey));
+    importedDocuments.set(memoKey, run);
+    return run;
+  };
+  return load();
+}
+
+const editReportCaches = new Map<string, Promise<EditReport[] | null>>();
+
+/// The edit document's validation reports — the day views validate
+/// per record against the network at load_edits; the UI reads the
+/// reports off the same registration (memoized by document content:
+/// reports are content-derived). An empty document reports nothing.
+export function ensureEditReports(
+  bytes: Uint8Array,
+  records: EditRecord[],
+): Promise<EditReport[] | null> {
+  if (records.length === 0) return Promise.resolve([]);
+  const load = async (): Promise<EditReport[] | null> => {
+    const memoKey =
+      (await contentHash(bytes as Uint8Array<ArrayBuffer>)) + "\n" + JSON.stringify(records);
+    const memo = editReportCaches.get(memoKey);
+    if (memo) return memo;
+    const run = (async () => {
+      const boarding = await ensureBoardBoarding(bytes);
+      const module = boarding ? await boardModule() : null;
+      if (!module || !boarding) return null;
+      return boardCap(module).loadEdits(boarding.networkHash, records).reports;
+    })();
+    run.catch(() => editReportCaches.delete(memoKey));
+    editReportCaches.set(memoKey, run);
+    return run;
+  };
+  return load();
+}
 
 const calendarNetworks = new Map<string, Promise<string | null>>();
 

@@ -215,6 +215,97 @@ fn invalid_edit_records_are_reported_not_rejected() {
     assert!(!blocks.is_empty(), "the list still answers");
 }
 
+/// The schedule id of one of route 10's patterns in the
+/// fixture-derived network, found by its stop sequence (t10 and t11
+/// share route and sequence — the service type disambiguates, and
+/// only WK runs on the fixture Friday).
+fn route10_schedule_of(net: &Network, seq: &[&str]) -> String {
+    let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
+    net.schedules
+        .iter()
+        .find(|(_, s)| {
+            net.patterns.get(&s.pattern).is_some_and(|p| {
+                p.route == "10"
+                    && p.stops.iter().map(|ps| ps.stop.as_str()).collect::<Vec<_>>() == seq
+            }) && net
+                .service_types
+                .get(&s.service_type)
+                .is_some_and(|st| st.rule.runs_on(date))
+        })
+        .map(|(id, _)| id.clone())
+        .unwrap_or_else(|| panic!("route 10 has a {:?} pattern running on the fixture Friday", seq))
+}
+
+#[test]
+fn the_trip_detail_answers_the_effective_day() {
+    // The map's click-through question: one derived trip's stops,
+    // EFFECTIVE for the date (a diverted trip answers its patched
+    // sequence). The answer carries no geometry — the network
+    // document holds the coordinates; the map is the host's view.
+    let net = derived_network();
+    let network_hash = load_network();
+    let direct = route10_schedule_of(&net, &["A", "B"]);
+    let via_c = route10_schedule_of(&net, &["A", "C", "B"]);
+
+    // The authored day: t10's direct run A→B, times model-native.
+    let stops = match dispatch(Request::TripStops {
+        network_hash: network_hash.clone(),
+        edits_hash: None,
+        schedule: direct,
+        start_secs: 8 * 3600,
+        date: DATE.into(),
+    })
+    .unwrap()
+    {
+        Response::TripStops { stops } => stops,
+        _ => panic!("trip_stops"),
+    };
+    assert_eq!(
+        stops.iter().map(|s| s.stop_id.as_str()).collect::<Vec<_>>(),
+        ["A", "B"]
+    );
+    assert_eq!(stops[0].departure_secs, 8 * 3600, "A departs 08:00");
+    assert_eq!(stops[1].arrival_secs, 8 * 3600 + 600, "B arrives 08:10");
+
+    // A trip not in the day (this start does not exist) answers
+    // empty, never an error.
+    let absent = match dispatch(Request::TripStops {
+        network_hash: network_hash.clone(),
+        edits_hash: None,
+        schedule: route10_schedule(&net),
+        start_secs: 123,
+        date: DATE.into(),
+    })
+    .unwrap()
+    {
+        Response::TripStops { stops } => stops,
+        _ => panic!("trip_stops"),
+    };
+    assert!(absent.is_empty(), "no such trip in the day");
+
+    // The patched day: the diverted via-C trip keeps A→B, C skipped,
+    // the added time on the kept segment (B at 08:55).
+    let (edits_hash, _) = load_edits(&network_hash, vec![record(EditStatus::Accepted, 300)]);
+    let patched = match dispatch(Request::TripStops {
+        network_hash: network_hash.clone(),
+        edits_hash: Some(edits_hash),
+        schedule: via_c,
+        start_secs: 8 * 3600 + 40 * 60,
+        date: DATE.into(),
+    })
+    .unwrap()
+    {
+        Response::TripStops { stops } => stops,
+        _ => panic!("trip_stops"),
+    };
+    assert_eq!(
+        patched.iter().map(|s| s.stop_id.as_str()).collect::<Vec<_>>(),
+        ["A", "B"],
+        "the effective trip answers its patched sequence"
+    );
+    assert_eq!(patched[1].arrival_secs, 8 * 3600 + 55 * 60, "B arrives 08:55 (08:50 + 300 s)");
+}
+
 #[test]
 fn unknown_hashes_and_garbage_are_errors_not_panics() {
     let err = dispatch(Request::LoadEdits {
