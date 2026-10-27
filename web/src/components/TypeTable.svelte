@@ -55,7 +55,7 @@
 <style>
   table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
   th { text-align: left; font-weight: 600; border-bottom: 1px solid var(--line); }
-  td, th { padding: 2px 6px; }
+  td, th { padding: 2px 4px; white-space: nowrap; }
   .n { text-align: right; font-variant-numeric: tabular-nums; }
   tbody tr { cursor: pointer; }
   tbody tr:hover { background: var(--hover); }

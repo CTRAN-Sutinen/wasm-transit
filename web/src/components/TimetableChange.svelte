@@ -88,16 +88,17 @@
     </div>
   </fieldset>
   {#if error}<p class="err">{error}</p>{/if}
-  <p class="muted">Each change applies to every pattern of this direction. Running time is the pattern's, so it changes every service type that runs it.</p>
+  <p class="muted note-foot">Applies to every pattern of this direction; running time changes every service type that runs them.</p>
 </section>
 
 <style>
-  h3 { margin: 0 0 0.25rem; font-size: 0.95rem; }
-  fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.85rem; }
+  h3 { margin: 0 0 0.15rem; font-size: 0.95rem; }
+  fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; }
   form, .stops { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
   input { width: 4.2rem; font: inherit; }
   input[type="number"] { width: 3.4rem; }
   .muted { color: var(--muted); font-size: 0.8rem; }
   .note { font-size: 0.85rem; margin: 0 0 0.25rem; }
   .err { color: var(--bad); font-size: 0.85rem; margin: 0.25rem 0 0; }
+  .note-foot { margin: 0.2rem 0 0; }
 </style>

@@ -85,7 +85,7 @@
 </section>
 
 <style>
-  .timetable { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+  .timetable { display: flex; flex-direction: column; min-height: 0; min-width: 0; height: 100%; }
   header { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
   h3 { margin: 0; font-size: 0.95rem; }
   .muted { color: var(--muted); font-size: 0.8rem; font-weight: normal; }
@@ -93,7 +93,7 @@
   .delta { margin: 0 0 0.25rem; font-size: 0.85rem; }
   .add { color: var(--accent); font-weight: 600; }
   .gone { color: var(--bad); font-weight: 600; }
-  .grid { overflow: auto; min-height: 0; flex: 1; border: 1px solid var(--line); }
+  .grid { overflow: auto; min-height: 0; min-width: 0; max-width: 100%; flex: 1; border: 1px solid var(--line); }
   table { border-collapse: collapse; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
   th, td { padding: 1px 6px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; }
   thead th {
@@ -101,7 +101,7 @@
     max-width: 6.5rem; font-weight: normal;
   }
   thead th button {
-    writing-mode: vertical-rl; transform: rotate(180deg); max-height: 9rem; overflow: hidden; text-overflow: ellipsis;
+    writing-mode: vertical-rl; transform: rotate(180deg); max-height: 6.5rem; overflow: hidden; text-overflow: ellipsis;
     background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 2px 0;
   }
   thead th.tp { font-weight: 600; }

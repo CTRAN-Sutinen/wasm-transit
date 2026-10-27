@@ -400,9 +400,11 @@ its page (`vite.config.js`), and the picker's spec
 
 The UIs today: `service-design` (`src/uis/service-design/`): the
 plan bar, then service types (cost, the change against the
-baseline, coverage, fleet), the routes under the type, and the
-route — its directions, one direction's timetable marked against
-the baseline, the timetable gestures, and the map.
+baseline, coverage, fleet), the routes under the type with the
+selected route's map beneath them, and the route — its directions,
+one direction's timetable marked against the baseline (scrolling
+inside its column, never widening the page), and the timetable
+gestures.
 Layouts are hand-placed Svelte; as layout documents they belong to
 wire-time assembly (`docs/CAPS-PLAN.md`, standing queue).
 
