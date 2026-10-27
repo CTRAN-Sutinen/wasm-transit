@@ -208,12 +208,12 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "directory",
         file: "cap_directory.wasm",
-        ops: &["load_network", "stops", "stops_by_ids", "routes", "route_stop_sequence", "focus", "entities", "route_detail"],
+        ops: &["load_network", "stops", "stops_by_ids", "routes", "route_stop_sequence", "focus", "entities", "route_detail", "stop_detail"],
         // The network document is produced by the network capability.
         consumes: &[("network", "network")],
         speaks: &[("network", &[1])],
         migrates: &[],
-        purpose: "The directory: what exists in the network — the stops (with their walking-group structure), the routes, one route's patterns with their ordered stops (list to detail). The pickers and the names join read here; they are MODEL questions, never feed reads. Patterns are the model's directions: a route's stop sequences are its patterns, each with its own ordered stops — what a diversion editor anchors against. The planner's lists ask here too: rows of any kind narrowed by a filter, a route's composition with each schedule's trip count, and where an entity is on the map.",
+        purpose: "The directory: what exists in the network — the stops (with their walking-group structure), the routes, one route's patterns with their ordered stops (list to detail). The pickers and the names join read here; they are MODEL questions, never feed reads. Patterns are the model's directions: a route's stop sequences are its patterns, each with its own ordered stops — what a diversion editor anchors against. The planner's lists ask here too: rows of any kind narrowed by a filter, a route's composition with each schedule's trip count, a stop's serving routes, and where an entity is on the map.",
         op_docs: &[
             ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth. Kernel bulk op 256 takes the bare document's JSON bytes on transit_invoke_bytes — the same answer, no request envelope; hosts send real-size networks this way."),
             ("stops", "The stop list, name-sorted (the pickers' shape): every stop with its coords, its parent (the flag the station board keys off), and its transfer flag. query narrows it the way a picker's typing does — every whitespace-separated term must appear in the name or the stop id, case-insensitive (\"fisher landing\" finds Fisher's Landing and its bays). limit truncates after the sort; omit it for the whole list — a silently truncated directory would be a lie."),
@@ -223,6 +223,7 @@ const MODULES: &[ModuleSpec] = &[
             ("focus", "Where one entity is on the map ({kind: stop | route | pattern | schedule | service_type | block, id}): its lines (each pattern's authored alignment, else its stops joined) and the stops it serves. A stop is its point; a schedule its pattern; a route, a service type, or a block every pattern it runs. Null for an unknown id."),
             ("entities", "Every entity of one kind ({kind: stop | route | pattern | schedule | service_type | block}), in id order, narrowed by an optional query the way a filter box's typing does (every whitespace-separated term in the name or the id, case-insensitive). Each row: id, name, context (a pattern's route; a schedule's pattern · service type), transfer (stops), trips (a schedule's materialized trip count; a block's chained trips)."),
             ("route_detail", "One route's composition: its patterns, the stops they visit (first-visit order), and its schedules grouped by service type, each with the trips it runs (the same expansion the materialized day runs). Null for an unknown route."),
+            ("stop_detail", "One stop's composition: the routes whose patterns visit it (id and name rows, id order). Null for an unknown stop."),
         ],
     },
     ModuleSpec {
@@ -1136,6 +1137,14 @@ fn example_for(
                 json!({ "op": "route_detail", "network_hash": ctx.network_hash, "route_id": "10" }),
                 json!({ "ok": { "op": "route_detail",
                     "detail": transit_network::route_detail(ctx.derived_network(), "10") } }),
+            )
+        }
+        ("directory", "stop_detail") => {
+            let ctx = net?;
+            (
+                json!({ "op": "stop_detail", "network_hash": ctx.network_hash, "stop_id": "B" }),
+                json!({ "ok": { "op": "stop_detail",
+                    "detail": transit_network::stop_detail(ctx.derived_network(), "B") } }),
             )
         }
         ("directory", "route_stop_sequence") => {

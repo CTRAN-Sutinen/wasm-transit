@@ -9,49 +9,14 @@
   import DiversionPanel from "./components/DiversionPanel.svelte";
   import PlannerRail from "./components/PlannerRail.svelte";
   import PersonaTabs from "./components/PersonaTabs.svelte";
-  import { app } from "./state.svelte.js";
-  import { loadRtFromUrl, loadVpFromUrl, saveSettings, feedBytes, refreshBoard, refreshServices, refreshBlocks, refreshBlockChain, refreshDiversionView, selectStop, refreshNow, showTrip, serviceDate } from "./actions";
-  import { ensureGtfsFeed, gtfsCap, gtfsModule, ensureFeedSummary, ensureDirectory, directory } from "./capabilities.svelte";
-  import type { FeedInfo } from "./types/FeedInfo";
-  import type { FeedSummary } from "./types/FeedSummary";
+  import { app, directory } from "./state.svelte.js";
+  import { loadRtFromUrl, loadVpFromUrl, saveSettings, refreshFeedLine, refreshBoard, refreshServices, refreshBlocks, refreshBlockChain, refreshDiversionView, selectStop, refreshNow, showTrip, serviceDate, planTrip } from "./actions";
 
-  // The feed's OWN reads — identity (publisher, version) and the
-  // at-a-glance summary (what it contains) — answered through the
-  // BUS (cap-gtfs's load_feed / feed_info); the monolith has no
-  // copy. Decoration-grade: absent when the capability cannot
-  // assemble.
-  let feedInfo = $state<FeedInfo | null>(null);
-  let summary = $state<FeedSummary | null>(null);
-  let infoSeq = 0;
+  // The feed line (cap-gtfs) and the directory's prime: re-asked on
+  // a new feed.
   $effect(() => {
     void app.feedEpoch;
-    const seq = ++infoSeq;
-    const bytes = feedBytes();
-    if (!app.feedLoaded || !bytes) {
-      feedInfo = null;
-      summary = null;
-      return;
-    }
-    void (async () => {
-      try {
-        // The directory primes here too (memoized — every picker,
-        // name lookup, and the diversion editor share the load).
-        await ensureDirectory(bytes);
-        if (seq !== infoSeq) return;
-        summary = await ensureFeedSummary(bytes);
-        if (seq !== infoSeq) return;
-        const feedHash = await ensureGtfsFeed(bytes);
-        if (seq !== infoSeq || !feedHash) return;
-        const module = await gtfsModule();
-        if (!module || seq !== infoSeq) return;
-        feedInfo = gtfsCap(module).feedInfo(feedHash);
-      } catch {
-        if (seq === infoSeq) {
-          feedInfo = null;
-          summary = null;
-        }
-      }
-    })();
+    void refreshFeedLine();
   });
 
   // The board and the day's service keys are the bus's answers; the
@@ -142,7 +107,9 @@
 
     <p class="muted">{app.status}</p>
 
-    {#if summary}
+    {#if app.feedSummary}
+      {@const summary = app.feedSummary}
+      {@const feedInfo = app.feedInfo}
       <p class="feed-line">
         {summary.stops} stops · {summary.routes} routes · {summary.trips} trips · {summary.stop_times} stop times
         {#if feedInfo && (feedInfo.feed_publisher_name || feedInfo.feed_version)}
@@ -166,7 +133,7 @@
           onrefresh={refreshNow}
           onselect={showTrip}
         />
-        <TripPlanner />
+        <TripPlanner {stopOptions} notice={app.planNotice} onplan={planTrip} />
       {:else}
         <BlocksPanel
           blocks={app.blocks}

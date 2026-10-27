@@ -847,6 +847,9 @@ assert(
   "schedules grouped by service type, each with the trips it runs",
 );
 assert(dir.invoke({ op: "route_detail", network_hash: loadedDirNet.network_hash, route_id: "missing" }).detail === null, "an unknown route has no composition");
+const stopDetail = dir.invoke({ op: "stop_detail", network_hash: loadedDirNet.network_hash, stop_id: "A" }).detail;
+assert(stopDetail.routes.some((r) => r.id === "10"), "a stop lists the routes whose patterns visit it");
+assert(dir.invoke({ op: "stop_detail", network_hash: loadedDirNet.network_hash, stop_id: "missing" }).detail === null, "an unknown stop has no composition");
 
 // Unknown hashes error, never panic — every day-view seam.
 const unknownBoard = board.raw({ op: "stop_board", network_hash: "sha256:missing", stop_id: "A", date: DATE, from_secs: 0, limit: 5 });

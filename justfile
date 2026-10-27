@@ -177,15 +177,17 @@ test: caps
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const legs = r.find((x) => x.ok?.op === "itinerary_paths").ok.paths; if (legs[0]?.kind !== "transit" || legs[0].path.length < 2 || ok("trip").path.length !== 2 || ok("focus").focus.lines.length !== 2) process.exit(1)'
     # The planner's numbers and search are answered (W5): route 10's
     # composition with each schedule's trip count, the stop list
-    # narrowed by every term (directory), and a plan with no trip
-    # carries the rider's notice (router) — one chained session.
+    # narrowed by every term, a stop's serving routes (directory),
+    # and a plan with no trip carries the rider's notice (router) —
+    # one chained session.
     node tools/caps-run.mjs directory \
       --op @web/public/caps/sample-network-load.json \
       --as detail --op '{"op":"route_detail","network_hash":"$load_network.network_hash","route_id":"10"}' \
       --as stops --op '{"op":"entities","network_hash":"$load_network.network_hash","kind":"stop","query":"main 2nd"}' \
+      --as serving --op '{"op":"stop_detail","network_hash":"$load_network.network_hash","stop_id":"A"}' \
       --cap router --op @web/public/caps/sample-network-load.json \
       --as late --op '{"op":"plan_compare","network_hash":"$load_network.network_hash","from":"A","to":"B","date":"2026-10-23","depart_secs":144000,"max_legs":6}' \
-      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const d = ok("detail").detail; if (d.schedules_by_type.map((g) => g.service_type).join() !== "SUN,WK" || !d.schedules_by_type.every((g) => g.schedules.every((s) => s.trips > 0)) || ok("stops").rows.map((s) => s.id).join() !== "B" || !ok("late").notice?.includes("within 6 legs")) process.exit(1)'
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const d = ok("detail").detail; if (d.schedules_by_type.map((g) => g.service_type).join() !== "SUN,WK" || !d.schedules_by_type.every((g) => g.schedules.every((s) => s.trips > 0)) || ok("stops").rows.map((s) => s.id).join() !== "B" || !ok("serving").detail.routes.some((r) => r.id === "10") || !ok("late").notice?.includes("within 6 legs")) process.exit(1)'
     # The router capability's gate: planning over the network document
     # — the plan, then the diversion delta (compare) chained on the
     # same edits document (08:15 against the unpatched 08:10).
@@ -300,9 +302,10 @@ test: caps
             fi
         done
     }
-    # W0a: components never call the bus — the host layer does.
+    # W0a: components never call the bus — the host layer does (the
+    # allowlist reached empty with W6: a hard gate now).
     ratchet resolver-in-components \
-        "web/src/App.svelte web/src/components/CapabilityDemo.svelte web/src/components/MapView.svelte web/src/components/TripPlanner.svelte" \
+        "" \
         "$(grep -l 'capabilities\.svelte' web/src/App.svelte web/src/components/*.svelte | tr '\n' ' ')" \
         "a component imports the capability resolver; take node values as props"
     # W0b: no host-side rt join — delays come from cap-rt's live

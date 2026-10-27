@@ -11,19 +11,14 @@
   const doc = $derived(getNetworkDoc());
   const id = $derived(app.plannerSelection?.kind === "schedule" ? app.plannerSelection.id : "");
   const schedule = $derived(id ? doc?.schedules?.[id] ?? null : null);
-  const patternName = $derived(schedule ? doc?.patterns?.[schedule.pattern]?.name ?? schedule.pattern : "");
-  const typeName = $derived(
-    schedule ? doc?.service_types?.[schedule.service_type]?.name ?? schedule.service_type : "",
-  );
-  const patternOptions = $derived(
-    doc ? Object.keys(doc.patterns ?? {}).sort().map((p) => ({ value: p, label: p })) : [],
-  );
+  // Names and pickers are cap-directory's rows (app.pickers).
+  const nameOf = (kind: "pattern" | "service_type", rid: string) =>
+    app.pickers?.[kind].find((r) => r.id === rid)?.name ?? rid;
+  const patternName = $derived(schedule ? nameOf("pattern", schedule.pattern) : "");
+  const typeName = $derived(schedule ? nameOf("service_type", schedule.service_type) : "");
+  const patternOptions = $derived((app.pickers?.pattern ?? []).map((r) => ({ value: r.id, label: r.id })));
   const typeOptions = $derived(
-    doc
-      ? Object.entries(doc.service_types ?? {})
-          .sort(([a], [b]) => (a < b ? -1 : 1))
-          .map(([tid, t]) => ({ value: tid, label: `${t.name} (${tid})` }))
-      : [],
+    (app.pickers?.service_type ?? []).map((r) => ({ value: r.id, label: `${r.name} (${r.id})` })),
   );
 
   function updateStart(index: number, text: string) {

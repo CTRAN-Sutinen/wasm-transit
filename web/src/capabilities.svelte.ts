@@ -44,6 +44,7 @@ import type { EntityFocus } from "./types/EntityFocus";
 import type { EntityKind } from "./types/EntityKind";
 import type { EntityRow } from "./types/EntityRow";
 import type { RouteDetail } from "./types/RouteDetail";
+import type { StopDetail } from "./types/StopDetail";
 import type { LegPath } from "./types/LegPath";
 import type { NetworkEdit } from "./types/NetworkEdit";
 import type { NetworkWarning } from "./types/NetworkWarning";
@@ -52,6 +53,7 @@ import type { Request as SyncCapRequest } from "./types/cap_sync/Request";
 import type { Response as SyncCapResponse } from "./types/cap_sync/Response";
 import type { DirectoryStop } from "./types/cap_directory/DirectoryStop";
 import type { DirectoryRoute } from "./types/cap_directory/DirectoryRoute";
+import { directory } from "./state.svelte";
 import type { PatternStops } from "./types/cap_directory/PatternStops";
 import type { Watchlist } from "./types/cap_board/Watchlist";
 import type { MigrationNote } from "./types/cap_board/MigrationNote";
@@ -1334,6 +1336,15 @@ export function directoryCap(module: CapModule) {
       } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "route_detail" }>;
       return resp.detail;
     },
+    /// One stop's composition: the routes whose patterns visit it.
+    stopDetail(networkHash: string, stopId: string): StopDetail | null {
+      const resp = module.invoke({
+        op: "stop_detail",
+        network_hash: networkHash,
+        stop_id: stopId,
+      } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "stop_detail" }>;
+      return resp.detail;
+    },
   };
 }
 
@@ -1370,20 +1381,18 @@ export async function planRouteDetail(doc: Network, routeId: string): Promise<Ro
   return plan ? plan.dir.routeDetail(plan.hash, routeId) : null;
 }
 
+/// A plan document's stop composition.
+export async function planStopDetail(doc: Network, stopId: string): Promise<StopDetail | null> {
+  const plan = await planDirectory(doc);
+  return plan ? plan.dir.stopDetail(plan.hash, stopId) : null;
+}
+
 /// The current directory module, if the bus assembled one.
 export async function directoryModule(): Promise<CapModule | null> {
   const modules = await ensure(["directory"]);
   return modules.directory ?? null;
 }
 
-/// The loaded directory's answers, held in host state so pickers and
-/// name lookups read synchronously (the module loads once per feed;
-/// views key on the reactive fields).
-export const directory = $state({
-  networkHash: null as string | null,
-  stops: [] as DirectoryStop[],
-  routes: [] as DirectoryRoute[],
-});
 
 const directoryLoads = new Map<string, Promise<boolean>>();
 

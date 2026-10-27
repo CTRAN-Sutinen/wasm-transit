@@ -1,7 +1,7 @@
 //! The planner's lists: rows per kind narrowed by every query term,
 //! and a route's composition — its trip counts the materialized day's.
 
-use transit_network::{entity_rows, route_detail, EntityKind, HeadwayBand, Network, Schedule};
+use transit_network::{entity_rows, route_detail, stop_detail, EntityKind, HeadwayBand, Network, Schedule};
 
 fn network() -> Network {
     serde_json::from_str(include_str!("../../../testdata/network.json")).unwrap()
@@ -34,6 +34,14 @@ fn a_route_lists_its_composition() {
     assert_eq!(detail.schedules_by_type[0].name, "Weekday");
     assert_eq!(detail.schedules_by_type[0].schedules[0].trips, Some(3));
     assert!(route_detail(&net, "nope").is_none());
+}
+
+#[test]
+fn a_stop_lists_the_routes_serving_it() {
+    let net = network();
+    let routes = stop_detail(&net, "B").unwrap().routes;
+    assert_eq!(routes.iter().map(|r| (r.id.as_str(), r.name.as_str())).collect::<Vec<_>>(), [("10", "Route 10")]);
+    assert!(stop_detail(&net, "nope").is_none());
 }
 
 #[test]

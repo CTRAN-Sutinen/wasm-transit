@@ -59,7 +59,7 @@ transit-network The authored network model (planner authority):
                 route's composition (patterns, the stops they
                 visit, schedules by service type) — each schedule's
                 trip count is `trip_starts`, the materialized day's
-                own expansion.
+                own expansion — and a stop's serving routes.
 transit-router  RAPTOR earliest-arrival planning over the network
                 model's materialized day (patterns grouped by actual
                 stop sequence — an edited trip rides its own
@@ -228,6 +228,10 @@ File ownership:
   `itinerary_paths`, cap-directory `focus`, cap-divert's draft
   alignment); it turns `[{lat, lon}]` into `[lon, lat]` and
   computes no geometry (W4).
+- Components are RENDER-ONLY: props in, events out, or reads of
+  `app` state plus calls into the host layer (actions.ts,
+  planner.ts, capdemo.svelte.ts). No component imports the
+  resolver (the W0 ratchet in `just test`, empty allowlist).
 - `src/capabilities.svelte.ts` is the bus resolver — the ONLY wasm
   loader (components never see the ABI): manifest
   validation, demand-driven load, byte verification against pinned
@@ -236,16 +240,19 @@ File ownership:
   pointer; migrations move it forward, rollback moves it back;
   IndexedDB-persisted). CapabilityDemo.svelte is the visible story
   (assembly, hash handoff, degraded state, migrate/rollback) in the
-  DataSources modal.
+  DataSources modal; capdemo.svelte.ts runs it.
 - `src/planner.ts` sends the planner's changes to cap-author as
   NetworkEdits (in order, each landing on the plan it was made
   against) and adopts the answered document; it also owns the
-  screen stack, and asks cap-directory for the list screens' rows
-  and the selected route's composition (`app.plannerRows`,
-  `app.routeDetail` — each tagged with what it answers, so a late
-  answer never renders under another screen).
+  screen stack, and asks cap-directory for the list screens' rows,
+  the selected route's and stop's composition, and every kind's
+  rows for the pickers (`app.plannerRows`, `app.routeDetail`,
+  `app.stopDetail` — each tagged with what it answers, so a late
+  answer never renders under another screen — and `app.pickers`).
 - `src/state.svelte.ts` owns the documents (edit document, plan
-  set — both IndexedDB-persisted, wholesale-replaced). Every next
+  set — both IndexedDB-persisted, wholesale-replaced) and the
+  loaded feed's directory store (stops, routes — written by the
+  resolver's `ensureDirectory`). Every next
   edit document is an answer (cap-divert propose / retire /
   restore, cap-sync's converge); a stored or synced copy is read
   through cap-divert's `sanitize` (`actions.readEdits`).
@@ -424,9 +431,11 @@ cap-directory   The directory capability — ONE QUESTION: what
                 module (the feed line reads cap-gtfs's load_feed
                 summary + feed_info). focus answers where an entity
                 is on the map — the planner's drill-down frames it.
-                entities and route_detail answer the planner's lists
-                (filtered rows per kind; a route's composition with
-                trip counts) — the planner computes no number.
+                entities, route_detail, and stop_detail answer the
+                planner's lists (filtered rows per kind — the forms'
+                pickers and the Document counts too; a route's
+                composition with trip counts; a stop's serving
+                routes) — the planner computes no number.
 cap-streets    The street-graph capability: the detour editor's need,
                 atomically. load_streets (bulk-bytes op 0) parses a
                 street-network GeoJSON into the routing graph and

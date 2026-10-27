@@ -334,6 +334,12 @@ caps-smoke, a runner gate — then deletes the TypeScript):
 - **W6 render-only components.** Every component takes props
   and emits events; the host layer is the single op caller (the
   engine's choke point, above) and W0's allowlists reach empty.
+  App's feed line, MapView's street snap and route, TripPlanner's
+  stop list, CapabilityDemo's composition run, StopForm's serving
+  routes, the forms' pickers, and the Document counts. Into: the
+  host layer (actions, capdemo.svelte.ts, the directory store in
+  state) and cap-directory `stop_detail`; the pickers and counts
+  render `entities` rows.
 
 ## The finish line
 

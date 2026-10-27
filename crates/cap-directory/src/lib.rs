@@ -9,7 +9,8 @@
 //! stops — that is what a diversion editor anchors against — and
 //! where each entity is on the map (focus). The planner's lists ask
 //! here too: rows of any kind narrowed by a filter (entities), and a
-//! route's composition with each schedule's trip count (route_detail).
+//! route's composition with each schedule's trip count (route_detail),
+//! a stop's serving routes (stop_detail).
 //!
 //! Documents are content-addressed like everywhere on the bus:
 //! * **network** — the same identity cap-network's import produces
@@ -134,6 +135,9 @@ pub enum Request {
     /// it runs (the materialized day's count). Null for an unknown
     /// route.
     RouteDetail { network_hash: String, route_id: String },
+    /// One stop's composition: the routes whose patterns visit it, in
+    /// id order. Null for an unknown stop.
+    StopDetail { network_hash: String, stop_id: String },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -148,6 +152,7 @@ pub enum Response {
     Focus { focus: Option<transit_network::EntityFocus> },
     Entities { rows: Vec<transit_network::EntityRow> },
     RouteDetail { detail: Option<transit_network::RouteDetail> },
+    StopDetail { detail: Option<transit_network::StopDetail> },
 }
 
 /// Networks by content hash (canonical serialization).
@@ -275,6 +280,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::RouteDetail { network_hash, route_id } => {
             let network = network_arc(&network_hash)?;
             Ok(Response::RouteDetail { detail: transit_network::route_detail(&network, &route_id) })
+        }
+        Request::StopDetail { network_hash, stop_id } => {
+            let network = network_arc(&network_hash)?;
+            Ok(Response::StopDetail { detail: transit_network::stop_detail(&network, &stop_id) })
         }
     }
 }

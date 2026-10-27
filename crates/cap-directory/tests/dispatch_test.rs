@@ -237,9 +237,18 @@ fn the_planners_lists_are_directory_answers() {
     };
     assert!(!detail.patterns.is_empty() && !detail.stops.is_empty());
     assert!(detail.schedules_by_type.iter().flat_map(|g| &g.schedules).all(|s| s.trips.unwrap_or(0) > 0));
-    match dispatch(Request::RouteDetail { network_hash: hash, route_id: "nope".into() }).unwrap() {
+    match dispatch(Request::RouteDetail { network_hash: hash.clone(), route_id: "nope".into() }).unwrap() {
         Response::RouteDetail { detail } => assert!(detail.is_none()),
         _ => panic!("route_detail"),
+    }
+    let serving = match dispatch(Request::StopDetail { network_hash: hash.clone(), stop_id: detail.stops[0].id.clone() }).unwrap() {
+        Response::StopDetail { detail } => detail.expect("a visited stop exists").routes,
+        _ => panic!("stop_detail"),
+    };
+    assert!(serving.iter().any(|r| r.id == "10"), "a stop route 10 visits is served by it");
+    match dispatch(Request::StopDetail { network_hash: hash, stop_id: "nope".into() }).unwrap() {
+        Response::StopDetail { detail } => assert!(detail.is_none()),
+        _ => panic!("stop_detail"),
     }
 }
 

@@ -1,7 +1,8 @@
 //! What exists, as the planner lists it: one row per entity of a
 //! kind (narrowed the way a filter box's typing does), and a route's
 //! composition — its patterns, the stops they visit, its schedules
-//! grouped by service type with the trips each one runs. The trip
+//! grouped by service type with the trips each one runs — and a
+//! stop's, the routes whose patterns visit it. The trip
 //! count is `trip_starts` — the same expansion materialize runs, so
 //! a list never promises a trip the day does not have.
 
@@ -44,6 +45,13 @@ pub struct RouteDetail {
     pub patterns: Vec<EntityRow>,
     pub stops: Vec<EntityRow>,
     pub schedules_by_type: Vec<ScheduleGroup>,
+}
+
+/// A stop's composition: the routes whose patterns visit it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct StopDetail {
+    pub routes: Vec<EntityRow>,
 }
 
 fn row(id: &str, name: &str) -> EntityRow {
@@ -141,4 +149,20 @@ pub fn route_detail(network: &Network, route: &str) -> Option<RouteDetail> {
         stops,
         schedules_by_type,
     })
+}
+
+/// The routes serving a stop, in id order; `None` for an unknown stop.
+pub fn stop_detail(network: &Network, stop: &str) -> Option<StopDetail> {
+    network.stops.get(stop)?;
+    let serving: std::collections::BTreeSet<&str> = network
+        .patterns
+        .values()
+        .filter(|p| p.stops.iter().any(|ps| ps.stop == stop))
+        .map(|p| p.route.as_str())
+        .collect();
+    let routes = serving
+        .into_iter()
+        .map(|rid| row(rid, network.routes.get(rid).map_or(rid, |r| r.name.as_str())))
+        .collect();
+    Some(StopDetail { routes })
 }

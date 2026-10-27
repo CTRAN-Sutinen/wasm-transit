@@ -12,7 +12,7 @@
     addStop, addRoute, addPattern, addServiceType, addSchedule, addBlock,
     plannerBack, plannerGo, togglePlannerMap, forkPlan, switchPlan,
     deletePlan, updatePlanMeta, refreshPlanChain, refreshAnalysis, fmtHHMMSS,
-    refreshPlannerRows,
+    refreshPlannerRows, refreshPickers,
   } from "../planner";
   import { serviceDate } from "../actions";
   import type { EntityKind, PlannerScreen } from "../planner";
@@ -65,6 +65,12 @@
     if (doc && listKind) void refreshPlannerRows(listKind, filter);
   });
   const rows = $derived(listKind && app.plannerRows?.kind === listKind ? app.plannerRows.rows : []);
+  // Every row of every kind (the forms' pickers, the document's
+  // counts) — re-asked on every document.
+  $effect(() => {
+    if (doc) void refreshPickers();
+  });
+  const count = (kind: EntityKind) => app.pickers?.[kind].length ?? 0;
 
   const navItems: { view: PlannerScreen["view"]; label: string }[] = [
     { view: "plans", label: "Plans" },
@@ -455,11 +461,11 @@
     {/if}
     <p class="chips">
       <span class="chip">{app.networkLabel}</span>
-      <span class="chip svc">{Object.keys(doc.stops).length} stops</span>
-      <span class="chip svc">{Object.keys(doc.routes).length} routes</span>
-      <span class="chip svc">{Object.keys(doc.patterns).length} patterns</span>
-      <span class="chip svc">{Object.keys(doc.schedules).length} schedules</span>
-      <span class="chip svc">{Object.keys(doc.blocks).length} blocks</span>
+      <span class="chip svc">{count("stop")} stops</span>
+      <span class="chip svc">{count("route")} routes</span>
+      <span class="chip svc">{count("pattern")} patterns</span>
+      <span class="chip svc">{count("schedule")} schedules</span>
+      <span class="chip svc">{count("block")} blocks</span>
     </p>
     <p>
       <button onclick={deriveFromFeed} disabled={!app.feedLoaded}>Derive from loaded feed</button>

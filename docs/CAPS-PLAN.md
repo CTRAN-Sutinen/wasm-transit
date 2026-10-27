@@ -314,8 +314,9 @@ day-shape answer is the dogfood record).
 - **The web cleanup (2026-10-27)** — parity: `web/` is host glue
   plus render components (`docs/PLAN.md`, the web cleanup).
   * W0 the ratchet: LANDED (`just test` WEB GATES — components
-    importing the resolver, against a shrinking allowlist; raw rt
-    `stop_updates` in web/, a hard gate since W1 emptied it).
+    importing the resolver, a hard gate since W6 emptied it; raw
+    rt `stop_updates` in web/, a hard gate since W1 emptied it;
+    clone-and-mutate, a hard gate since W2).
   * W1 live data: ON THE BUS — the live document (transit-live
     live_test; transit-rt live_test over the fixture pair), cap-rt
     `load_trip_map` / `live` and cap-board `load_live` /
@@ -396,9 +397,27 @@ day-shape answer is the dogfood record).
     the plan-or-compare branch are gone from web/. The schedule
     list now shows each schedule's pattern, service type, and trip
     count; a menu jump clears the list filter.
-  * W6, early: DepartureBoard, RtPanel, BlocksPanel, and (with W3)
-    DiversionPanel are render-only (props in, events out; the host
-    makes the op calls) — off the W0 allowlist.
+  * W6 render-only components: ON THE BUS — transit-network
+    listing_test `a_stop_lists_the_routes_serving_it`; cap-directory
+    `stop_detail` (dispatch test, caps-smoke, the justfile planner-
+    lists gate). UI READS THE BUS: no component imports the
+    capability resolver — the W0 resolver ratchet's allowlist is
+    empty, a hard gate in `just test`. The host layer makes every
+    op call: the feed line (actions `refreshFeedLine`), the map's
+    street snap and route (actions `snapToStreets` /
+    `routeOnStreets`), the composition demo (capdemo.svelte.ts);
+    the trip planner takes props and emits `onplan`; the directory
+    store lives in state.svelte.ts. The planner's stop screen
+    renders `stop_detail`, and its pickers, name chips, and the
+    Document counts render cap-directory's `entities` rows
+    (app.pickers) — app.spec "planner authors a network" (stop B
+    served by route 10; the Document stop count); the caps.spec
+    composition and document specs. DOGFOODED (QA-FINDINGS,
+    "Session 2026-10-27 (render-only components)"; QAF-51 open).
+    Earlier in W6: DepartureBoard, RtPanel, BlocksPanel, and (with
+    W3) DiversionPanel went render-only. Forms still read the
+    entity they edit from the plan document — JS owns the
+    documents, and that read is the form's value, not an answer.
 
 Model facts that hold everywhere: the import infers block
 layovers from observed end→start gaps (GTFS has none; the planner

@@ -11,21 +11,18 @@
   const doc = $derived(getNetworkDoc());
   const id = $derived(app.plannerSelection?.kind === "pattern" ? app.plannerSelection.id : "");
   const pattern = $derived(id ? doc?.patterns?.[id] ?? null : null);
-  const routeIds = $derived(doc ? Object.keys(doc.routes ?? {}).sort() : []);
+  // Pickers and names are cap-directory's rows (app.pickers).
+  const stopRows = $derived(app.pickers?.stop ?? []);
+  const routeOptions = $derived((app.pickers?.route ?? []).map((r) => ({ value: r.id, label: r.id, sub: r.name })));
   const timepointNames = $derived.by(() => {
     if (!pattern) return [];
-    const names = new Map(Object.entries(doc?.stops ?? {}).map(([sid, s]) => [sid, s.name]));
+    const names = new Map(stopRows.map((r) => [r.id, r.name]));
     return pattern.stops.filter((s) => s.timepoint).map((s) => names.get(s.stop) ?? s.stop);
   });
 
   // Stop options for the comboboxes: names read, ids as the sub
   // label — the search matches both.
-  const stopOptions = $derived.by(() => {
-    const names = new Map(Object.entries(doc?.stops ?? {}).map(([sid, s]) => [sid, s.name]));
-    return Object.keys(doc?.stops ?? {})
-      .sort()
-      .map((sid) => ({ value: sid, label: names.get(sid) ?? sid, sub: sid }));
-  });
+  const stopOptions = $derived(stopRows.map((r) => ({ value: r.id, label: r.name, sub: r.id })));
 
   let addStopId = $state("");
 
@@ -41,7 +38,7 @@
   <p class="ent-row">
     <input aria-label="Pattern name" value={pattern.name}
            onchange={(e) => updatePattern(id, { name: e.currentTarget.value })}>
-    <Combobox label="Pattern route" options={routeIds.map((rid) => ({ value: rid, label: rid }))}
+    <Combobox label="Pattern route" options={routeOptions}
               value={pattern.route}
               onchange={(v) => updatePattern(id, { route: v })} />
   </p>

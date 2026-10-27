@@ -806,3 +806,22 @@ imported schedules are all exact times with no repeated start, so
 the imported data never showed it; an authored headway schedule
 would have. Fixed by the move (listing_test
 `trip_counts_are_the_days_trips`), so no finding is opened.
+
+## Session 2026-10-27 (render-only components) — C-TRAN
+
+The planner's stop screen, its pickers, and the Document counts now
+come from the bus (`docs/PLAN.md`, the web cleanup, W6). One runner
+session over the imported C-TRAN network (about 0.8 s including the
+import): directory `entities` listed the 901 stops the pickers offer;
+`stop_detail` answered bay 9001 at Fisher's Landing as served by 034
+and 092, and stop 3701 by 019.
+
+- **QAF-51 OP GAP** — a parent station's stop screen lists no
+  serving routes: `stop_detail` for Fisher's Landing (106) answers
+  none, because buses visit its bays (9000–9009), never the parent.
+  The browser said the same before W6 ("no patterns visit this
+  stop") — the rule moved, it did not change. The station board
+  already pools a parent with its bays; the stop screen should pool
+  the same walking group.
+  Pin: the session's `stop_detail` for 106 (routes empty).
+  Status: open.

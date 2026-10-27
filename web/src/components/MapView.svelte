@@ -7,9 +7,8 @@
   import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
   import { PMTiles, Protocol } from "pmtiles";
   import { layers as basemapLayers, namedFlavor } from "@protomaps/basemaps";
-  import { app, getEditDocument, getStreets } from "../state.svelte";
-  import { selectStop, setDiversionAnchor, addDetourSlice } from "../actions";
-  import { streetsSnap, streetsRoute, directory } from "../capabilities.svelte";
+  import { app, getEditDocument, getStreets, directory } from "../state.svelte";
+  import { selectStop, setDiversionAnchor, addDetourSlice, snapToStreets, routeOnStreets } from "../actions";
   import { stopsFeatures } from "../mapview";
   import type { StreetPosition } from "../types/StreetPosition";
   import type { LiveStatus } from "../types/LiveStatus";
@@ -117,7 +116,7 @@
     let streetPos: StreetPosition | null = null;
     let streetPx = Infinity;
     if (streets) {
-      const snap = streetsSnap(streets.streetsHash, e.lngLat.lat, e.lngLat.lng);
+      const snap = snapToStreets(e.lngLat.lat, e.lngLat.lng);
       if (snap) {
         const px = pxOf(snap.lat, snap.lon);
         if (px <= SNAP_PX) {
@@ -164,9 +163,7 @@
     if (target.kind === "stop") {
       // A stop waypoint: commit the stop exactly; route onward from
       // the street beneath it when there is one.
-      const anchor = streets
-        ? streetsSnap(streets.streetsHash, target.point[0], target.point[1])
-        : null;
+      const anchor = snapToStreets(target.point[0], target.point[1]);
       addDetourSlice([target.point], anchor);
       return;
     }
@@ -174,7 +171,7 @@
       const prev: StreetPosition | null =
         app.diversionDraft?.slices.at(-1)?.endPos ?? null;
       const routed = prev
-        ? streetsRoute(streets.streetsHash, prev, target.streetPos!)
+        ? routeOnStreets(prev, target.streetPos!)
         : [];
       if (routed.length) {
         addDetourSlice(routed.map((p) => [p.lat, p.lon] as [number, number]), target.streetPos);
@@ -208,7 +205,7 @@
     const prev = draft.slices.at(-1)?.endPos ?? null;
     let path: [number, number][] = [];
     if (target.streetPos && prev && streets) {
-      path = streetsRoute(streets.streetsHash, prev, target.streetPos)
+      path = routeOnStreets(prev, target.streetPos)
         .map((p) => [p.lat, p.lon] as [number, number]);
     }
     // No route (or none possible): preview the direct line — that is

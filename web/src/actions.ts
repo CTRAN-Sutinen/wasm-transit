@@ -1,11 +1,12 @@
-import { app, getEditDocument, setEditDocument, setStreets, type DiversionDraft } from "./state.svelte";
+import { app, getEditDocument, setEditDocument, setStreets, getStreets, type DiversionDraft } from "./state.svelte";
 import { get as idbGet, set as idbSet, del as idbDel } from "idb-keyval";
-import { ensureAnalysisLayer, ensureEditReports, ensureRuncutBoarding, ensureRuncutEdits, ensureRouterBoarding, ensureRouterEdits, ensureStreets, runcutCap, runcutModule, routerCap, routerModule, rtCap, rtModule, boardCap, boardModule, ensureBoardBoarding, ensureBoardEdits, calendarCap, calendarModule, ensureCalendarNetwork, contentHash, networkCap, networkModule, divertModule, divertCap, divertOverFeed } from "./capabilities.svelte";
+import { ensureAnalysisLayer, ensureEditReports, ensureRuncutBoarding, ensureRuncutEdits, ensureRouterBoarding, ensureRouterEdits, ensureStreets, runcutCap, runcutModule, routerCap, routerModule, rtCap, rtModule, boardCap, boardModule, ensureBoardBoarding, ensureBoardEdits, calendarCap, calendarModule, ensureCalendarNetwork, contentHash, networkCap, networkModule, divertModule, divertCap, divertOverFeed, streetsSnap, streetsRoute, ensureDirectory, ensureFeedSummary, ensureGtfsFeed, gtfsModule, gtfsCap } from "./capabilities.svelte";
 import { lineFeature, lonLat } from "./mapview";
 import type { EditRecord } from "./types/EditRecord";
 import type { DiversionDraft as DraftDoc } from "./types/DiversionDraft";
 import type { Itinerary } from "./types/Itinerary";
 import type { StreetPosition } from "./types/StreetPosition";
+import type { StreetPoint } from "./types/StreetPoint";
 import type { Streets } from "./streets";
 
 /// One drawn plan feature (transit leg or walk segment). MapView
@@ -67,6 +68,38 @@ let activeFeedBytes: Uint8Array | null = null;
 export function setFeedBytes(bytes: Uint8Array): void {
   activeFeedBytes = bytes;
 }
+let feedLineSeq = 0;
+/// The feed line — the feed's OWN reads, identity (publisher,
+/// version) and the at-a-glance summary, answered through cap-gtfs —
+/// and the directory's prime (memoized: every picker, name lookup,
+/// and the diversion editor share the load). Decoration-grade: null
+/// when the capability cannot assemble.
+export async function refreshFeedLine(): Promise<void> {
+  const seq = ++feedLineSeq;
+  const bytes = feedBytes();
+  if (!app.feedLoaded || !bytes) {
+    app.feedInfo = null;
+    app.feedSummary = null;
+    return;
+  }
+  try {
+    await ensureDirectory(bytes);
+    if (seq !== feedLineSeq) return;
+    app.feedSummary = await ensureFeedSummary(bytes);
+    if (seq !== feedLineSeq) return;
+    const feedHash = await ensureGtfsFeed(bytes);
+    if (seq !== feedLineSeq || !feedHash) return;
+    const module = await gtfsModule();
+    if (!module || seq !== feedLineSeq) return;
+    app.feedInfo = gtfsCap(module).feedInfo(feedHash);
+  } catch {
+    if (seq === feedLineSeq) {
+      app.feedInfo = null;
+      app.feedSummary = null;
+    }
+  }
+}
+
 export function feedBytes(): Uint8Array | null {
   return activeFeedBytes;
 }
@@ -661,6 +694,21 @@ export function toggleServed(stopId: string): void {
   draft.served = draft.served.includes(stopId)
     ? draft.served.filter((s) => s !== stopId)
     : [...draft.served, stopId];
+}
+
+/// Snap to the imported street graph — sync, for the map's click
+/// handlers (an event handler cannot await). Null with no graph
+/// imported (or the module gone): "no street nearby".
+export function snapToStreets(lat: number, lon: number): StreetPosition | null {
+  const streets = getStreets();
+  return streets ? streetsSnap(streets.streetsHash, lat, lon) : null;
+}
+
+/// Route between two graph positions along the imported streets —
+/// empty (the straight-line fallback) when there is no path or graph.
+export function routeOnStreets(from: StreetPosition, to: StreetPosition): StreetPoint[] {
+  const streets = getStreets();
+  return streets ? streetsRoute(streets.streetsHash, from, to) : [];
 }
 
 /// Commit one waypoint step of the trace: the routed geometry plus

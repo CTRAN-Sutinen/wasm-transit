@@ -1,16 +1,18 @@
 <script lang="ts">
-  import { app } from "../state.svelte";
-  import { planTrip } from "../actions";
-  import { directory } from "../capabilities.svelte";
   import Combobox from "./Combobox.svelte";
+
+  type Option = { value: string; label: string; sub?: string };
+  let { stopOptions, notice, onplan }: {
+    /// The directory's stop list as picker options.
+    stopOptions: Option[];
+    /// Why the last plan found no trip (the router's notice), if any.
+    notice: string | null;
+    onplan: (from: string, to: string, depart: string) => void;
+  } = $props();
 
   let from = $state("");
   let to = $state("");
   let departTime = $state("");
-
-  // The directory's stop list — model questions, never feed reads.
-  const stops = $derived(directory.stops.slice(0, 2000));
-  const stopOptions = $derived(stops.map((s) => ({ value: s.stop_id, label: s.name, sub: s.stop_id })));
 </script>
 
 <section>
@@ -20,10 +22,10 @@
   <p>
     <label for="plan-time">Leave</label>
     <input type="time" id="plan-time" bind:value={departTime}>
-    <button class="primary" onclick={() => planTrip(from, to, departTime)}>Plan trip</button>
+    <button class="primary" onclick={() => onplan(from, to, departTime)}>Plan trip</button>
   </p>
-  {#if app.planNotice}
-    <p class="plan-notice">{app.planNotice}</p>
+  {#if notice}
+    <p class="plan-notice">{notice}</p>
   {/if}
   <p class="muted">Earliest arrival, up to 6 legs, walking transfers ≤ 300 m. The plan appears on the map.</p>
 </section>

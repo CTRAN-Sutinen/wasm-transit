@@ -9,9 +9,7 @@
   const doc = $derived(getNetworkDoc());
   const id = $derived(app.plannerSelection?.kind === "block" ? app.plannerSelection.id : "");
   const block = $derived(id ? doc?.blocks?.[id] ?? null : null);
-  const scheduleOptions = $derived(
-    doc ? Object.keys(doc.schedules ?? {}).sort().map((s) => ({ value: s, label: s })) : [],
-  );
+  const scheduleOptions = $derived((app.pickers?.schedule ?? []).map((r) => ({ value: r.id, label: r.id })));
 
   let addScheduleId = $state("");
   let addTime = $state("");

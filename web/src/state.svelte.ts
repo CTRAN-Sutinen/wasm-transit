@@ -27,6 +27,11 @@ import type { DraftView } from "./types/DraftView";
 import type { DiversionRow } from "./types/DiversionRow";
 import type { EntityRow } from "./types/EntityRow";
 import type { RouteDetail } from "./types/RouteDetail";
+import type { StopDetail } from "./types/StopDetail";
+import type { DirectoryStop } from "./types/cap_directory/DirectoryStop";
+import type { DirectoryRoute } from "./types/cap_directory/DirectoryRoute";
+import type { FeedInfo } from "./types/FeedInfo";
+import type { FeedSummary } from "./types/FeedSummary";
 import type { Live } from "./capabilities.svelte";
 import type { EntityKind, Focus, PlannerScreen } from "./planner";
 import type { LineFeature } from "./mapview";
@@ -193,6 +198,10 @@ export type AppState = {
   // for framing. Manual toggle overrides the per-screen default.
   plannerMapUp: boolean,
   networkLabel: string,
+  // The feed line: the feed's own identity and at-a-glance summary
+  // (cap-gtfs), decoration-grade — null when the bus cannot answer.
+  feedInfo: FeedInfo | null,
+  feedSummary: FeedSummary | null,
   // Drill-down: the entity the planner is focused on, and what the
   // map should frame for it (plain data, MapView just draws it).
   plannerSelection: { kind: EntityKind; id: string } | null,
@@ -200,9 +209,13 @@ export type AppState = {
   // The planner's lists, as cap-directory answers them: the rows of
   // the list screen on top (tagged with the kind they list, so a
   // screen never renders another's answer) and the selected route's
-  // composition (tagged with its route).
+  // composition (tagged with its route), the selected stop's
+  // serving routes (tagged with its stop), and every row of every
+  // kind, unfiltered (the forms' pickers, the document's counts).
   plannerRows: { kind: EntityKind; rows: EntityRow[] } | null,
   routeDetail: { routeId: string; detail: RouteDetail | null } | null,
+  stopDetail: { stopId: string; detail: StopDetail | null } | null,
+  pickers: Record<EntityKind, EntityRow[]> | null,
 };
 
 /// The sync document (transit-sync `EditRecord[]`) — **owned here**.
@@ -388,8 +401,22 @@ export const app = $state<AppState>({
   popUrl: "",
   plannerMapUp: true,
   networkLabel: "",
+  feedInfo: null,
+  feedSummary: null,
   plannerSelection: null,
   plannerFocus: null,
   plannerRows: null,
   routeDetail: null,
+  stopDetail: null,
+  pickers: null,
+});
+
+/// The loaded directory's answers (cap-directory over the loaded
+/// feed's network), held in host state so pickers and name lookups
+/// read synchronously — written by `ensureDirectory` only (the module
+/// loads once per feed; views key on the reactive fields).
+export const directory = $state({
+  networkHash: null as string | null,
+  stops: [] as DirectoryStop[],
+  routes: [] as DirectoryRoute[],
 });

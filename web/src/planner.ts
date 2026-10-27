@@ -44,7 +44,7 @@ import {
   plansChain,
   authorCap,
   authorModule,
-  planEntityFocus, planEntities, planRouteDetail,
+  planEntityFocus, planEntities, planRouteDetail, planStopDetail,
   type Applied,
 } from "./capabilities.svelte";
 import type { NetworkEdit } from "./types/NetworkEdit";
@@ -52,6 +52,7 @@ import type { CreatedEntity } from "./types/CreatedEntity";
 
 export type { EntityKind } from "./types/EntityKind";
 import type { EntityKind } from "./types/EntityKind";
+import type { EntityRow } from "./types/EntityRow";
 
 /// One planner screen. The workspace is a stack: the PLAN CHAIN at
 /// the root (service changes are the frame everything else lives
@@ -877,6 +878,38 @@ export async function refreshRouteDetail(routeId: string): Promise<void> {
     if (seq === detailSeq) app.routeDetail = { routeId, detail };
   } catch (e) {
     console.warn("route detail failed:", e);
+  }
+}
+
+let stopDetailSeq = 0;
+/// The selected stop's composition (the routes whose patterns visit it).
+export async function refreshStopDetail(stopId: string): Promise<void> {
+  const seq = ++stopDetailSeq;
+  const doc = getNetworkDoc();
+  if (!doc || !stopId) return;
+  try {
+    const detail = await planStopDetail(doc, stopId);
+    if (seq === stopDetailSeq) app.stopDetail = { stopId, detail };
+  } catch (e) {
+    console.warn("stop detail failed:", e);
+  }
+}
+
+const PICKER_KINDS: EntityKind[] = ["stop", "route", "pattern", "schedule", "service_type", "block"];
+let pickersSeq = 0;
+/// Every row of every kind over the active plan, unfiltered — the
+/// forms' pickers and name chips, the document's counts.
+export async function refreshPickers(): Promise<void> {
+  const seq = ++pickersSeq;
+  const doc = getNetworkDoc();
+  if (!doc) return;
+  try {
+    const lists = await Promise.all(PICKER_KINDS.map((kind) => planEntities(doc, kind, "")));
+    if (seq === pickersSeq) {
+      app.pickers = Object.fromEntries(PICKER_KINDS.map((kind, i) => [kind, lists[i]])) as Record<EntityKind, EntityRow[]>;
+    }
+  } catch (e) {
+    console.warn("picker rows failed:", e);
   }
 }
 

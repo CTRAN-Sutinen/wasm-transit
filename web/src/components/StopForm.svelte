@@ -1,19 +1,16 @@
 <script lang="ts">
   import { app, getNetworkDoc } from "../state.svelte";
-  import { updateStop, removeStop, selectEntity, plannerBack } from "../planner";
+  import { updateStop, removeStop, selectEntity, plannerBack, refreshStopDetail } from "../planner";
 
   const doc = $derived(getNetworkDoc());
   const id = $derived(app.plannerSelection?.kind === "stop" ? app.plannerSelection.id : "");
   const stop = $derived(id ? doc?.stops?.[id] ?? null : null);
-  // The routes serving this stop (doc-composed), linked for drill-down.
-  const servingRoutes = $derived.by(() => {
-    if (!doc) return [];
-    const routes = new Set<string>();
-    for (const p of Object.values(doc.patterns)) {
-      if (p.stops.some((ps) => ps.stop === id)) routes.add(p.route);
-    }
-    return [...routes].sort();
+  // The routes serving this stop (cap-directory's stop_detail),
+  // linked for drill-down — re-asked on every document or stop.
+  $effect(() => {
+    if (doc && id) void refreshStopDetail(id);
   });
+  const servingRoutes = $derived(app.stopDetail?.stopId === id ? app.stopDetail.detail?.routes ?? [] : []);
 </script>
 
 {#if stop}
@@ -59,9 +56,9 @@
 
     <h4>Served by ({servingRoutes.length})</h4>
     <p class="chips">
-      {#each servingRoutes as rid (rid)}
-        <button class="chip svc" aria-label={`Open route ${rid}`}
-                onclick={() => selectEntity("route", rid)}>{doc?.routes?.[rid]?.name ?? rid}</button>
+      {#each servingRoutes as r (r.id)}
+        <button class="chip svc" aria-label={`Open route ${r.id}`}
+                onclick={() => selectEntity("route", r.id)}>{r.name}</button>
       {/each}
       {#if servingRoutes.length === 0}<span class="muted">no patterns visit this stop</span>{/if}
     </p>
