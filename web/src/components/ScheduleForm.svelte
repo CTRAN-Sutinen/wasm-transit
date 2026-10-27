@@ -9,13 +9,13 @@
   import Combobox from "./Combobox.svelte";
 
   const doc = $derived(getNetworkDoc());
-  const id = $derived(app.plannerSelection?.kind === "schedule" ? app.plannerSelection.id : "");
-  const schedule = $derived(id ? doc?.schedules?.[id] ?? null : null);
+  const id = $derived(app.plannerSelection?.kind === "pattern_trips" ? app.plannerSelection.id : "");
+  const trips = $derived(id ? doc?.pattern_trips?.[id] ?? null : null);
   // Names and pickers are cap-directory's rows (app.pickers).
   const nameOf = (kind: "pattern" | "service_type", rid: string) =>
     app.pickers?.[kind].find((r) => r.id === rid)?.name ?? rid;
-  const patternName = $derived(schedule ? nameOf("pattern", schedule.pattern) : "");
-  const typeName = $derived(schedule ? nameOf("service_type", schedule.service_type) : "");
+  const patternName = $derived(trips ? nameOf("pattern", trips.pattern) : "");
+  const typeName = $derived(trips ? nameOf("service_type", trips.service_type) : "");
   const patternOptions = $derived((app.pickers?.pattern ?? []).map((r) => ({ value: r.id, label: r.id })));
   const typeOptions = $derived(
     (app.pickers?.service_type ?? []).map((r) => ({ value: r.id, label: `${r.name} (${r.id})` })),
@@ -27,7 +27,7 @@
       app.status = `Not a valid time: "${text}" (use HH:MM:SS; hours may pass 24).`;
       return;
     }
-    const sched = schedule?.schedule;
+    const sched = trips?.departures;
     if (sched?.kind !== "exact_times") return;
     const from = sched.starts[index];
     if (from === undefined || from === secs) return;
@@ -44,12 +44,12 @@
       app.status = `Not a valid ${field === "headway_secs" ? "headway" : "time"}: "${text}"`;
       return;
     }
-    if (schedule?.schedule?.kind !== "headway_bands") return;
+    if (trips?.departures?.kind !== "headway_bands") return;
     setBandField(id, index, field, secs);
   }
 </script>
 
-{#if schedule}
+{#if trips}
   <section>
     <h2>Schedule <code>{id}</code></h2>
     <p class="chips">
@@ -57,21 +57,21 @@
       <span class="chip svc">on {typeName}</span>
     </p>
     <p class="ent-row">
-      <Combobox label="Pattern" options={patternOptions} value={schedule.pattern}
+      <Combobox label="Pattern" options={patternOptions} value={trips.pattern}
                 onchange={(p) => setScheduleRefs(id, { pattern: p })} />
-      <Combobox label="Service type" options={typeOptions} value={schedule.service_type}
+      <Combobox label="Service type" options={typeOptions} value={trips.service_type}
                 onchange={(t) => setScheduleRefs(id, { service_type: t })} />
     </p>
 
-    {#if schedule.schedule.kind === "exact_times"}
+    {#if trips.departures.kind === "exact_times"}
       <h4>Trips</h4>
       <ul class="svc-rows">
-        {#each schedule.schedule.starts as secs, i (i)}
+        {#each trips.departures.starts as secs, i (i)}
           <li>
             <input class="trip-start" aria-label={`Trip ${i + 1} start`} value={fmtHHMMSS(secs)}
                    onchange={(e) => updateStart(i, e.currentTarget.value)}>
             <button aria-label={`Remove trip ${i + 1}`}
-                    disabled={schedule.schedule.starts.length <= 1}
+                    disabled={trips.departures.starts.length <= 1}
                     onclick={() => removeScheduleStart(id, i)}>remove</button>
           </li>
         {/each}
@@ -80,7 +80,7 @@
     {:else}
       <h4>Headway bands</h4>
       <ul class="svc-rows">
-        {#each schedule.schedule.bands as band, i (i)}
+        {#each trips.departures.bands as band, i (i)}
           <li>
             <input class="band-start" aria-label={`Band ${i + 1} start`} value={fmtHHMMSS(band.start_secs)}
                    onchange={(e) => updateBand(i, "start_secs", e.currentTarget.value)}>
@@ -94,7 +94,7 @@
               min
             </label>
             <button aria-label={`Remove band ${i}`}
-                    disabled={schedule.schedule.bands.length <= 1}
+                    disabled={trips.departures.bands.length <= 1}
                     onclick={() => removeBand(id, i)}>remove</button>
           </li>
         {/each}

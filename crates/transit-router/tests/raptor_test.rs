@@ -57,12 +57,12 @@ fn transfers_beat_later_direct_trips() {
     assert_eq!(it.arrival_hhmmss, "08:30:00"); // t1 + t2, not t0's 09:10
     assert_eq!(it.legs.len(), 2, "two transit legs");
     match &it.legs[0] {
-        Leg::Transit { schedule, start_secs, route_id, board_stop_id, alight_stop_id, .. } => {
+        Leg::Transit { pattern_trips, start_secs, route_id, board_stop_id, alight_stop_id, .. } => {
             // The derived trip's identity: (schedule, start_secs) —
             // the key every day view and the codec's trip-id map
             // agree on (t1 departs A at 08:00).
             assert_eq!(*start_secs, 8 * 3600);
-            assert!(schedule.contains(&route_id[..]), "the schedule names its pattern");
+            assert!(pattern_trips.contains(&route_id[..]), "the schedule names its pattern");
             assert_eq!(board_stop_id, "A");
             assert_eq!(alight_stop_id, "B");
         }

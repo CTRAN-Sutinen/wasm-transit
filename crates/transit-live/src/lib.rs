@@ -92,7 +92,7 @@ pub struct LiveStop {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct LiveTrip {
-    pub schedule: String,
+    pub pattern_trips: String,
     pub start_secs: u32,
     /// The agency's id for the trip, as the rt feed named it — a
     /// label dispatchers know, never a join key.
@@ -126,7 +126,7 @@ pub struct LiveVehicle {
     pub next_stop: Option<String>,
     /// The derived trip it runs — absent when the rt trip does not
     /// resolve (or the vehicle names no trip).
-    pub schedule: Option<String>,
+    pub pattern_trips: Option<String>,
     pub start_secs: Option<u32>,
     pub agency_trip_id: Option<String>,
     /// Its trip's worst stated delay (the same headline as the trip).
@@ -152,8 +152,8 @@ impl LiveDay {
     /// entry whose base departure matches `scheduled_departure`
     /// (a loop visits a stop twice), else the trip's first entry at
     /// that stop.
-    pub fn visit(&self, schedule: &str, start_secs: u32, stop: &str, scheduled_departure: u32) -> Option<&LiveStop> {
-        let trip = self.trips.iter().find(|t| t.schedule == schedule && t.start_secs == start_secs)?;
+    pub fn visit(&self, pattern_trips: &str, start_secs: u32, stop: &str, scheduled_departure: u32) -> Option<&LiveStop> {
+        let trip = self.trips.iter().find(|t| t.pattern_trips == pattern_trips && t.start_secs == start_secs)?;
         let mut at_stop = trip.stops.iter().filter(|s| s.stop == stop);
         let first = at_stop.clone().next();
         at_stop.find(|s| s.scheduled_departure == Some(scheduled_departure)).or(first)
@@ -181,7 +181,7 @@ pub struct LateEntry {
     /// The bus number, when a vehicle is out on it.
     pub label: Option<String>,
     pub agency_trip_id: Option<String>,
-    pub schedule: Option<String>,
+    pub pattern_trips: Option<String>,
     pub start_secs: Option<u32>,
     pub delay_secs: i32,
     pub status: LiveStatus,
@@ -221,12 +221,12 @@ pub fn summarize(day: &LiveDay, limit: usize) -> LiveSummary {
             .iter()
             .filter(|t| late_status(t.status))
             .map(|t| LateEntry {
-                key: format!("{}@{}", t.schedule, t.start_secs),
+                key: format!("{}@{}", t.pattern_trips, t.start_secs),
                 route: t.route.clone(),
                 route_name: t.route_name.clone(),
                 label: None,
                 agency_trip_id: Some(t.agency_trip_id.clone()),
-                schedule: Some(t.schedule.clone()),
+                pattern_trips: Some(t.pattern_trips.clone()),
                 start_secs: Some(t.start_secs),
                 delay_secs: t.worst_delay_secs.unwrap_or(0),
                 status: t.status,
@@ -242,7 +242,7 @@ pub fn summarize(day: &LiveDay, limit: usize) -> LiveSummary {
                 route_name: v.route_name.clone(),
                 label: v.label.clone().or_else(|| v.vehicle_id.clone()),
                 agency_trip_id: v.agency_trip_id.clone(),
-                schedule: v.schedule.clone(),
+                pattern_trips: v.pattern_trips.clone(),
                 start_secs: v.start_secs,
                 delay_secs: v.delay_secs.unwrap_or(0),
                 status: v.status,

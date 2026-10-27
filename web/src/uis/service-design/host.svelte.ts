@@ -25,6 +25,7 @@ import {
   networkCap,
   networkModule,
   plansChain,
+  readStoredNetwork,
   runcutCap,
   runcutModule,
   type AnalysisLayerHandle,
@@ -119,7 +120,7 @@ function syncPlanRows(): void {
 // ---------------------------------------------------------------------
 
 export async function boot(): Promise<void> {
-  await restorePlans();
+  await restorePlans(readStoredNetwork);
   syncPlanRows();
   const first = wb.plans[0]?.key ?? "";
   wb.activeKey = getAllPlans()[getActivePlanId()] ? getActivePlanId() : first;
@@ -288,7 +289,7 @@ export async function selectRoute(routeId: string): Promise<void> {
   const hash = hashIn(directory, doc);
   wb.selectedRoute = routeId;
   wb.routeDetail = dir.routeDetail(hash, routeId);
-  const stillThere = wb.routeDetail?.schedules_by_type.some((g) => g.schedules.some((s) => s.id === wb.selectedSchedule));
+  const stillThere = wb.routeDetail?.pattern_trips_by_type.some((g) => g.pattern_trips.some((s) => s.id === wb.selectedSchedule));
   if (!stillThere) wb.selectedSchedule = "";
   await refreshFocus();
   readStarts();
@@ -303,7 +304,7 @@ export async function selectSchedule(scheduleId: string): Promise<void> {
 /// A schedule's departures as the document holds them (exact times
 /// only — a headway schedule's starts are its bands, not a list).
 function readStarts(): void {
-  const s = active()?.schedules[wb.selectedSchedule]?.schedule;
+  const s = active()?.pattern_trips[wb.selectedSchedule]?.departures;
   wb.starts = s?.kind === "exact_times" ? s.starts : null;
 }
 
@@ -330,7 +331,7 @@ async function refreshFocus(): Promise<void> {
   const target: [EntityKind, string] | null = wb.selectedBlock
     ? ["block", wb.selectedBlock]
     : wb.selectedSchedule
-      ? ["schedule", wb.selectedSchedule]
+      ? ["pattern_trips", wb.selectedSchedule]
       : wb.selectedRoute
         ? ["route", wb.selectedRoute]
         : null;

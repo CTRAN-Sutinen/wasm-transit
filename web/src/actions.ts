@@ -444,11 +444,11 @@ export function selectStop(stopId: string): void {
 }
 
 /// A derived trip's selection key — the model's identity.
-export function tripKey(trip: { schedule: string; start_secs: number }): string {
-  return `${trip.schedule}@${trip.start_secs}`;
+export function tripKey(trip: { pattern_trips: string; start_secs: number }): string {
+  return `${trip.pattern_trips}@${trip.start_secs}`;
 }
 
-export async function showTrip(trip: { schedule: string; start_secs: number }): Promise<void> {
+export async function showTrip(trip: { pattern_trips: string; start_secs: number }): Promise<void> {
   const key = tripKey(trip);
   // Clicking the selected row again deselects: the route line always
   // has a way off the map.
@@ -471,7 +471,7 @@ export async function showTrip(trip: { schedule: string; start_secs: number }): 
     }
     const editsHash = await ensureRuncutEdits(boarding.networkHash, getEditDocument());
     const path = runcutCap(module).tripPath(
-      boarding.networkHash, editsHash, trip.schedule, trip.start_secs, serviceDate());
+      boarding.networkHash, editsHash, trip.pattern_trips, trip.start_secs, serviceDate());
     app.tripFeature = lineFeature(path, { trip: key });
   } catch (e) {
     app.tripFeature = null;

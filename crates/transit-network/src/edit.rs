@@ -28,7 +28,7 @@ use chrono::NaiveDate;
 
 use crate::model::{
     Block, CalendarException, CalendarRule, DateRange, DayState, HeadwayBand, Layover, Mode, Network, Pattern,
-    PatternSchedule, PatternStop, PlanMeta, Route, Schedule, ServiceType, Stop, TimingProfile, TripRef, WeekdaySet,
+    PatternTrips, PatternStop, PlanMeta, Route, Departures, ServiceType, Stop, TimingProfile, TripRef, WeekdaySet,
 };
 
 /// One change to a network document. Upserts insert or replace the
@@ -71,14 +71,14 @@ pub enum NetworkEdit {
     UpsertServiceType { id: String, service_type: ServiceType },
     /// Refused while a schedule runs under the type.
     RemoveServiceType { id: String },
-    UpsertSchedule { id: String, schedule: PatternSchedule },
+    UpsertPatternTrips { id: String, pattern_trips: PatternTrips },
     /// Move one trip of an exact-times schedule from `from_secs` to
     /// `to_secs`. The trip's identity is (schedule, start), so every
     /// block carrying it is carried along — a retime never strands
     /// the runcut (the starts stay sorted and unique).
-    RetimeTrip { schedule: String, from_secs: u32, to_secs: u32 },
+    RetimeTrip { pattern_trips: String, from_secs: u32, to_secs: u32 },
     /// Refused while a block carries one of its trips.
-    RemoveSchedule { id: String },
+    RemovePatternTrips { id: String },
     UpsertBlock { id: String, block: Block },
     RemoveBlock { id: String },
 
@@ -122,7 +122,7 @@ pub enum NetworkEdit {
     },
     /// A new schedule: `pattern` / `service_type` (else the first of
     /// each), one trip at 08:00.
-    AddSchedule {
+    AddPatternTrips {
         #[serde(default)]
         #[ts(optional)]
         id: Option<String>,
@@ -175,7 +175,7 @@ pub enum NetworkEdit {
         route: Option<String>,
     },
     UpdateServiceType { id: String, name: String },
-    SetScheduleRefs {
+    SetPatternTripsRefs {
         id: String,
         #[serde(default)]
         #[ts(optional)]
@@ -245,14 +245,14 @@ pub enum NetworkEdit {
 
     // --- gestures: a schedule's trips
     /// Replace an exact-times schedule's starts (sorted, deduplicated).
-    SetStarts { schedule: String, starts: Vec<u32> },
+    SetStarts { pattern_trips: String, starts: Vec<u32> },
     /// One more trip, ten minutes after the last (06:10 on an empty
     /// schedule; never past 47:00).
-    AddStart { schedule: String },
+    AddStart { pattern_trips: String },
     /// Refused for the last remaining start.
-    RemoveStart { schedule: String, index: usize },
+    RemoveStart { pattern_trips: String, index: usize },
     SetBand {
-        schedule: String,
+        pattern_trips: String,
         index: usize,
         #[serde(default)]
         #[ts(optional)]
@@ -265,9 +265,9 @@ pub enum NetworkEdit {
         headway_secs: Option<u32>,
     },
     /// A new 3-hour, 15-minute band after the last one.
-    AddBand { schedule: String },
+    AddBand { pattern_trips: String },
     /// Refused for the last remaining band.
-    RemoveBand { schedule: String, index: usize },
+    RemoveBand { pattern_trips: String, index: usize },
 
     // --- gestures: the runcut
     /// Add a trip to a block, keeping the block in time order;
@@ -387,17 +387,17 @@ fn timepoint_position(pattern: &Pattern, index: usize) -> usize {
     pattern.stops[..index].iter().filter(|s| s.timepoint).count()
 }
 
-fn exact_starts<'a>(net: &'a mut Network, schedule: &str) -> Result<&'a mut Vec<u32>, String> {
-    match &mut get_mut(&mut net.schedules, schedule, "schedule")?.schedule {
-        Schedule::ExactTimes { starts } => Ok(starts),
-        Schedule::HeadwayBands { .. } => Err(format!("schedule {schedule} runs headway bands, not exact starts")),
+fn exact_starts<'a>(net: &'a mut Network, pattern_trips: &str) -> Result<&'a mut Vec<u32>, String> {
+    match &mut get_mut(&mut net.pattern_trips, pattern_trips, "pattern trips")?.departures {
+        Departures::ExactTimes { starts } => Ok(starts),
+        Departures::HeadwayBands { .. } => Err(format!("pattern trips {pattern_trips} runs headway bands, not exact starts")),
     }
 }
 
-fn bands<'a>(net: &'a mut Network, schedule: &str) -> Result<&'a mut Vec<HeadwayBand>, String> {
-    match &mut get_mut(&mut net.schedules, schedule, "schedule")?.schedule {
-        Schedule::HeadwayBands { bands } => Ok(bands),
-        Schedule::ExactTimes { .. } => Err(format!("schedule {schedule} runs exact starts, not headway bands")),
+fn bands<'a>(net: &'a mut Network, pattern_trips: &str) -> Result<&'a mut Vec<HeadwayBand>, String> {
+    match &mut get_mut(&mut net.pattern_trips, pattern_trips, "pattern trips")?.departures {
+        Departures::HeadwayBands { bands } => Ok(bands),
+        Departures::ExactTimes { .. } => Err(format!("pattern trips {pattern_trips} runs exact starts, not headway bands")),
     }
 }
 
@@ -449,8 +449,8 @@ fn apply_one(net: &mut Network, edit: &NetworkEdit) -> Result<Option<CreatedEnti
         }
         NetworkEdit::RemovePattern { id } => {
             exists(net.patterns.contains_key(id), "pattern", id)?;
-            if let Some((s, _)) = net.schedules.iter().find(|(_, s)| &s.pattern == id) {
-                return Err(format!("pattern {id} is run by schedule {s}"));
+            if let Some((s, _)) = net.pattern_trips.iter().find(|(_, s)| &s.pattern == id) {
+                return Err(format!("pattern {id} is run by pattern trips {s}"));
             }
             net.patterns.remove(id);
         }
@@ -459,45 +459,45 @@ fn apply_one(net: &mut Network, edit: &NetworkEdit) -> Result<Option<CreatedEnti
         }
         NetworkEdit::RemoveServiceType { id } => {
             exists(net.service_types.contains_key(id), "service type", id)?;
-            if let Some((s, _)) = net.schedules.iter().find(|(_, s)| &s.service_type == id) {
-                return Err(format!("service type {id} governs schedule {s}"));
+            if let Some((s, _)) = net.pattern_trips.iter().find(|(_, s)| &s.service_type == id) {
+                return Err(format!("service type {id} governs pattern trips {s}"));
             }
             net.service_types.remove(id);
         }
-        NetworkEdit::UpsertSchedule { id, schedule } => {
-            net.schedules.insert(id.clone(), schedule.clone());
+        NetworkEdit::UpsertPatternTrips { id, pattern_trips } => {
+            net.pattern_trips.insert(id.clone(), pattern_trips.clone());
         }
-        NetworkEdit::RetimeTrip { schedule, from_secs, to_secs } => {
+        NetworkEdit::RetimeTrip { pattern_trips, from_secs, to_secs } => {
             let entry = net
-                .schedules
-                .get_mut(schedule)
-                .ok_or_else(|| format!("unknown schedule {schedule}"))?;
-            let Schedule::ExactTimes { starts } = &mut entry.schedule else {
-                return Err(format!("schedule {schedule} runs headway bands — retime its bands instead"));
+                .pattern_trips
+                .get_mut(pattern_trips)
+                .ok_or_else(|| format!("unknown pattern trips {pattern_trips}"))?;
+            let Departures::ExactTimes { starts } = &mut entry.departures else {
+                return Err(format!("pattern trips {pattern_trips} runs headway bands — retime its bands instead"));
             };
             let at = starts
                 .iter()
                 .position(|s| s == from_secs)
-                .ok_or_else(|| format!("schedule {schedule} runs no trip at {from_secs}"))?;
+                .ok_or_else(|| format!("pattern trips {pattern_trips} runs no trip at {from_secs}"))?;
             if from_secs != to_secs && starts.contains(to_secs) {
-                return Err(format!("schedule {schedule} already runs a trip at {to_secs}"));
+                return Err(format!("pattern trips {pattern_trips} already runs a trip at {to_secs}"));
             }
             starts[at] = *to_secs;
             starts.sort_unstable();
             for block in net.blocks.values_mut() {
                 for trip in block.trips.iter_mut() {
-                    if &trip.schedule == schedule && trip.start_secs == *from_secs {
+                    if &trip.pattern_trips == pattern_trips && trip.start_secs == *from_secs {
                         trip.start_secs = *to_secs;
                     }
                 }
             }
         }
-        NetworkEdit::RemoveSchedule { id } => {
-            exists(net.schedules.contains_key(id), "schedule", id)?;
-            if let Some((b, _)) = net.blocks.iter().find(|(_, b)| b.trips.iter().any(|t| &t.schedule == id)) {
-                return Err(format!("schedule {id} has trips in block {b}"));
+        NetworkEdit::RemovePatternTrips { id } => {
+            exists(net.pattern_trips.contains_key(id), "pattern trips", id)?;
+            if let Some((b, _)) = net.blocks.iter().find(|(_, b)| b.trips.iter().any(|t| &t.pattern_trips == id)) {
+                return Err(format!("pattern trips {id} have trips in block {b}"));
             }
-            net.schedules.remove(id);
+            net.pattern_trips.remove(id);
         }
         NetworkEdit::UpsertBlock { id, block } => {
             net.blocks.insert(id.clone(), block.clone());
@@ -593,7 +593,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             );
             created("service_type", &id)
         }
-        NetworkEdit::AddSchedule { id, pattern, service_type } => {
+        NetworkEdit::AddPatternTrips { id, pattern, service_type } => {
             let pattern = match pattern {
                 Some(p) => p.clone(),
                 None => net.patterns.keys().next().cloned().ok_or("add a pattern first")?,
@@ -604,12 +604,12 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             };
             exists(net.patterns.contains_key(&pattern), "pattern", &pattern)?;
             exists(net.service_types.contains_key(&service_type), "service type", &service_type)?;
-            let id = mint(&net.schedules, id, "svc", "schedule")?;
-            net.schedules.insert(
+            let id = mint(&net.pattern_trips, id, "svc", "pattern trips")?;
+            net.pattern_trips.insert(
                 id.clone(),
-                PatternSchedule { pattern, service_type, schedule: Schedule::ExactTimes { starts: vec![8 * 3600] } },
+                PatternTrips { pattern, service_type, departures: Departures::ExactTimes { starts: vec![8 * 3600] } },
             );
-            created("schedule", &id)
+            created("pattern_trips", &id)
         }
         NetworkEdit::AddBlock { id } => {
             let id = mint(&net.blocks, id, "b", "block")?;
@@ -659,19 +659,19 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             get_mut(&mut net.service_types, id, "service type")?.name = name.clone();
             None
         }
-        NetworkEdit::SetScheduleRefs { id, pattern, service_type } => {
+        NetworkEdit::SetPatternTripsRefs { id, pattern, service_type } => {
             if let Some(p) = pattern {
                 exists(net.patterns.contains_key(p), "pattern", p)?;
             }
             if let Some(t) = service_type {
                 exists(net.service_types.contains_key(t), "service type", t)?;
             }
-            let schedule = get_mut(&mut net.schedules, id, "schedule")?;
+            let pattern_trips = get_mut(&mut net.pattern_trips, id, "pattern trips")?;
             if let Some(p) = pattern {
-                schedule.pattern = p.clone();
+                pattern_trips.pattern = p.clone();
             }
             if let Some(t) = service_type {
-                schedule.service_type = t.clone();
+                pattern_trips.service_type = t.clone();
             }
             None
         }
@@ -819,16 +819,16 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             get_mut(&mut net.service_types, id, "service type")?.rule.exceptions.retain(|e| e.date != day);
             None
         }
-        NetworkEdit::SetStarts { schedule, starts } => {
-            let target = exact_starts(net, schedule)?;
+        NetworkEdit::SetStarts { pattern_trips, starts } => {
+            let target = exact_starts(net, pattern_trips)?;
             let mut clean = starts.clone();
             clean.sort_unstable();
             clean.dedup();
             *target = clean;
             None
         }
-        NetworkEdit::AddStart { schedule } => {
-            let starts = exact_starts(net, schedule)?;
+        NetworkEdit::AddStart { pattern_trips } => {
+            let starts = exact_starts(net, pattern_trips)?;
             let last = starts.last().copied().unwrap_or(6 * 3600);
             let next = (last + 600).min(47 * 3600);
             if !starts.contains(&next) {
@@ -837,17 +837,17 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             }
             None
         }
-        NetworkEdit::RemoveStart { schedule, index } => {
-            let starts = exact_starts(net, schedule)?;
+        NetworkEdit::RemoveStart { pattern_trips, index } => {
+            let starts = exact_starts(net, pattern_trips)?;
             if starts.len() <= 1 {
-                return Err(format!("schedule {schedule} keeps at least one trip"));
+                return Err(format!("pattern trips {pattern_trips} keeps at least one trip"));
             }
             at_mut(starts, *index, "start")?;
             starts.remove(*index);
             None
         }
-        NetworkEdit::SetBand { schedule, index, start_secs, end_secs, headway_secs } => {
-            let band = at_mut(bands(net, schedule)?, *index, "band")?;
+        NetworkEdit::SetBand { pattern_trips, index, start_secs, end_secs, headway_secs } => {
+            let band = at_mut(bands(net, pattern_trips)?, *index, "band")?;
             if let Some(s) = start_secs {
                 band.start_secs = *s;
             }
@@ -859,26 +859,26 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             }
             None
         }
-        NetworkEdit::AddBand { schedule } => {
-            let bands = bands(net, schedule)?;
+        NetworkEdit::AddBand { pattern_trips } => {
+            let bands = bands(net, pattern_trips)?;
             let start = bands.last().map(|b| b.end_secs).unwrap_or(6 * 3600);
             bands.push(HeadwayBand { start_secs: start, end_secs: start + 3 * 3600, headway_secs: 900 });
             None
         }
-        NetworkEdit::RemoveBand { schedule, index } => {
-            let bands = bands(net, schedule)?;
+        NetworkEdit::RemoveBand { pattern_trips, index } => {
+            let bands = bands(net, pattern_trips)?;
             if bands.len() <= 1 {
-                return Err(format!("schedule {schedule} keeps at least one band"));
+                return Err(format!("pattern trips {pattern_trips} keeps at least one band"));
             }
             at_mut(bands, *index, "band")?;
             bands.remove(*index);
             None
         }
         NetworkEdit::AddBlockTrip { block, trip } => {
-            exists(net.schedules.contains_key(&trip.schedule), "schedule", &trip.schedule)?;
+            exists(net.pattern_trips.contains_key(&trip.pattern_trips), "pattern trips", &trip.pattern_trips)?;
             let b = get_mut(&mut net.blocks, block, "block")?;
             b.trips.push(trip.clone());
-            b.trips.sort_by(|a, c| a.start_secs.cmp(&c.start_secs).then_with(|| a.schedule.cmp(&c.schedule)));
+            b.trips.sort_by(|a, c| a.start_secs.cmp(&c.start_secs).then_with(|| a.pattern_trips.cmp(&c.pattern_trips)));
             prune_layovers(b);
             None
         }

@@ -163,7 +163,8 @@ LANDED:
   by ACTUAL stop sequence, so an edited trip that skips stops
   rides its own pattern; the GTFS shape is gone, the crate is
   GTFS-free, `fmt_time` inlined ahead of U8) and the derived trip
-  identity is `(schedule, start_secs)` — the key the codec's
+  identity is `(pattern_trips, start_secs)` (named `schedule` until
+  the 2026-10-27 rename) — the key the codec's
   trip-id map and every day view already agree on (the legs carry
   it; the map joins through the trip map until U6 takes it).
   cap-router speaks the bus document currency: load_network /
@@ -437,6 +438,28 @@ day-shape answer is the dogfood record).
     the original app's `app` state. Generated UIs replace them with
     thin components (FocusMap, ScheduleChange) rather than
     rebuilding them in place.
+
+- **The vocabulary rename (2026-10-27)**: "schedule" is no longer a
+  model word. `PatternSchedule` → `PatternTrips`, the `Schedule`
+  enum → `Departures`, the document's `schedules` → `pattern_trips`,
+  a trip's identity is `(pattern_trips, start_secs)`, and the edit
+  kinds, entity kind, errors, op contracts, and TS bindings follow.
+  Stored documents written before the rename still read: the
+  modules through serde aliases, the hosts by restoring plans
+  through cap-author (`readStoredNetwork`; e2e ui-service-design
+  "a plan stored under the old field names", which fails without
+  it). Pinned by `just check` (every crate's tests,
+  caps-smoke, the runner gates, e2e); testdata/network.json uses the
+  new names. The original app's on-screen labels still say
+  "Schedule"; it is the demoted UI.
+  * Next, decided with the user and not started: Direction in the
+    model (route → direction → pattern; the import keeps GTFS
+    direction_id instead of dropping it); a derived TIMETABLE op
+    (route + direction + service type, across patterns — bay
+    variants are background); change gestures at timetable level
+    (frequency by period, span, running time by period, stops on a
+    pattern); a baseline-vs-proposal diff op (QAF-20); then the
+    service-design UI rebuilt on them.
 
 Model facts that hold everywhere: the import infers block
 layovers from observed end→start gaps (GTFS has none; the planner

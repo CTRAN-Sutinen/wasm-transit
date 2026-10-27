@@ -66,10 +66,10 @@
   {#if board && board.rows.length}
     <table>
       <tbody>
-        {#each board.rows as d (d.schedule + d.start_secs + d.stop)}
+        {#each board.rows as d (d.pattern_trips + d.start_secs + d.stop)}
           <tr
             class="clickable-row"
-            class:selected={!board.pooled && selected === `${d.schedule}@${d.start_secs}`}
+            class:selected={!board.pooled && selected === `${d.pattern_trips}@${d.start_secs}`}
             onclick={() => onselect(d)}
           >
             <td class="time">

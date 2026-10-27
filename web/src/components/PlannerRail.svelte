@@ -58,7 +58,7 @@
   let filter = $state("");
   const listKinds: Partial<Record<PlannerScreen["view"], EntityKind>> = {
     routes: "route", stops: "stop", patterns: "pattern",
-    schedules: "schedule", service_types: "service_type", blocks: "block",
+    pattern_trips_list: "pattern_trips", service_types: "service_type", blocks: "block",
   };
   const listKind = $derived(listKinds[screen.view] ?? null);
   $effect(() => {
@@ -78,7 +78,7 @@
     { view: "routes", label: "Routes" },
     { view: "stops", label: "Stops" },
     { view: "patterns", label: "Patterns" },
-    { view: "schedules", label: "Schedules" },
+    { view: "pattern_trips_list", label: "Schedules" },
     { view: "service_types", label: "Service types" },
     { view: "blocks", label: "Blocks" },
     { view: "document", label: "Document" },
@@ -392,7 +392,7 @@
     </ul>
     <p><button onclick={() => addPattern()}>Add pattern</button></p>
   </section>
-{:else if screen.view === "schedules"}
+{:else if screen.view === "pattern_trips_list"}
   <section>
     <h2>Schedules</h2>
     <p><input aria-label="Filter schedules" placeholder="filter schedules…" bind:value={filter}></p>
@@ -400,7 +400,7 @@
       {#each rows as s (s.id)}
         <li>
           <button class="rail-item" aria-label={`Open schedule ${s.id}`}
-                  onclick={() => selectEntity("schedule", s.id)}>
+                  onclick={() => selectEntity("pattern_trips", s.id)}>
             {s.id} <span class="muted">({s.context} · {s.trips} trips)</span>
           </button>
         </li>
@@ -464,7 +464,7 @@
       <span class="chip svc">{count("stop")} stops</span>
       <span class="chip svc">{count("route")} routes</span>
       <span class="chip svc">{count("pattern")} patterns</span>
-      <span class="chip svc">{count("schedule")} schedules</span>
+      <span class="chip svc">{count("pattern_trips")} schedules</span>
       <span class="chip svc">{count("block")} blocks</span>
     </p>
     <p>
@@ -508,7 +508,7 @@
   <StopForm />
 {:else if screen.view === "pattern"}
   <PatternForm />
-{:else if screen.view === "schedule"}
+{:else if screen.view === "pattern_trips"}
   <ScheduleForm />
 {:else if screen.view === "service_type"}
   <ServiceTypeForm />

@@ -9,7 +9,7 @@
 use std::io::Write;
 
 use transit_codec::{gtfs_to_network, network_to_gtfs};
-use transit_network::Schedule;
+use transit_network::Departures;
 
 const DATE: &str = "2026-10-23"; // Friday: WK + HOL both run
 
@@ -133,12 +133,12 @@ fn import_infers_a_valid_document_from_a_feed() {
     assert_eq!(network.service_types.len(), 2);
     assert!(network.service_types.contains_key("WK"));
     assert!(network.service_types.contains_key("SUN"));
-    assert_eq!(network.schedules.len(), 4);
+    assert_eq!(network.pattern_trips.len(), 4);
 
     // Route 10's A→B pattern: exact starts 08:00 (WK, t10) and
     // 09:00 (SUN, t11) — one service per (service key, pattern).
-    let svc = network.schedules.get("WK:pat-10-0-0").expect("service id scheme");
-    assert_eq!(svc.schedule, Schedule::ExactTimes { starts: vec![8 * 3600] });
+    let svc = network.pattern_trips.get("WK:pat-10-0-0").expect("service id scheme");
+    assert_eq!(svc.departures, Departures::ExactTimes { starts: vec![8 * 3600] });
     let pattern = &network.patterns[&svc.pattern];
     assert_eq!(pattern.stops.len(), 2);
     assert!(pattern.stops.iter().all(|s| s.timepoint));
@@ -160,7 +160,7 @@ fn import_infers_a_valid_document_from_a_feed() {
     let block = network.blocks.get("B1").expect("block B1 kept");
     assert_eq!(block.trips.len(), 2);
     assert_eq!(block.trips[0].start_secs, 8 * 3600);
-    assert_eq!(block.trips[0].schedule, "WK:pat-10-0-0");
+    assert_eq!(block.trips[0].pattern_trips, "WK:pat-10-0-0");
     // GTFS carries no layover data; the import infers each layover
     // from the observed end→start gap (t10 ends 08:10, t20 starts
     // 08:20 — exactly feasible, the model's law holds with
@@ -193,10 +193,10 @@ fn import_sorts_and_dedupes_exact_starts() {
     // unique starts. t1/t3 duplicate 08:00 and t9's 06:00 sorts
     // after them in trip-id order.
     let network = import_production();
-    let svc = network.schedules.get("WK:pat-10-0-1").expect("service");
+    let svc = network.pattern_trips.get("WK:pat-10-0-1").expect("service");
     assert_eq!(
-        svc.schedule,
-        Schedule::ExactTimes { starts: vec![6 * 3600, 8 * 3600, 8 * 3600 + 22 * 60] }
+        svc.departures,
+        Departures::ExactTimes { starts: vec![6 * 3600, 8 * 3600, 8 * 3600 + 22 * 60] }
     );
 }
 

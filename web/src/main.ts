@@ -22,7 +22,7 @@ declare global {
 import { app, setEditDocument, restorePlans } from "./state.svelte";
 import { analysisPath } from "./planner";
 import { loadGtfsBytes, FEED_KEY, EDITS_KEY, saveSettings, setNowOverride, flushPersist, syncEdits, readEdits } from "./actions";
-import { forgetCapability } from "./capabilities.svelte";
+import { forgetCapability, readStoredNetwork } from "./capabilities.svelte";
 
 app.status = "capability bus ready";
 
@@ -54,7 +54,7 @@ try {
   app.vpPolling = !!settings.vpPolling && !!settings.vpUrl;
   app.persona = (localStorage.getItem("transit:persona") ?? "rider") as "rider";
 
-  await restorePlans();
+  await restorePlans(readStoredNetwork);
   const edits = await get(EDITS_KEY);
   if (edits !== undefined) setEditDocument(await readEdits(edits));
 

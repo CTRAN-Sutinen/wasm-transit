@@ -158,14 +158,14 @@ proptest! {
         let outcome = transit_codec::gtfs_to_network(&gtfs);
         let mut seen = std::collections::BTreeSet::new();
         for entry in &outcome.trip_map.entries {
-            let schedule = outcome
+            let pattern_trips = outcome
                 .network
-                .schedules
-                .get(&entry.schedule)
-                .unwrap_or_else(|| panic!("map names unknown schedule {}", entry.schedule));
-            let starts = match &schedule.schedule {
-                transit_network::Schedule::ExactTimes { starts } => starts,
-                transit_network::Schedule::HeadwayBands { .. } =>
+                .pattern_trips
+                .get(&entry.pattern_trips)
+                .unwrap_or_else(|| panic!("map names unknown schedule {}", entry.pattern_trips));
+            let starts = match &pattern_trips.departures {
+                transit_network::Departures::ExactTimes { starts } => starts,
+                transit_network::Departures::HeadwayBands { .. } =>
                     panic!("import mints exact-times schedules only"),
             };
             prop_assert!(
@@ -188,7 +188,7 @@ proptest! {
         let minted: std::collections::BTreeSet<&str> =
             exported.trips.keys().map(String::as_str).collect();
         for entry in &outcome.trip_map.entries {
-            let derived = format!("{}@{}", entry.schedule, entry.start_secs);
+            let derived = format!("{}@{}", entry.pattern_trips, entry.start_secs);
             prop_assert!(
                 minted.contains(derived.as_str()),
                 "map's derived id {derived} is not an id the export mints"

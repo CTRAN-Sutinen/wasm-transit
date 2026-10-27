@@ -3,7 +3,7 @@
   /// the plan bar (which plan, against which baseline, its place in
   /// the chain) over three columns — the service types (cost,
   /// coverage, fleet), the routes under the selected type, and the
-  /// selected route (where it runs, what it schedules, the change).
+  /// selected route (where it runs, its trips by service type, the change).
   /// Every panel is a render component fed from the host's `wb`; this
   /// file only places them and routes their events to the host.
   import { wb, openPlan, setCompare, fork, loadFeedBytes, loadLayerBytes, selectType, selectRoute, selectSchedule, selectBlock, setCoverageParams, change } from "./host.svelte";
@@ -93,15 +93,15 @@
           onschedule={selectSchedule}
         />
       {:else}
-        <p class="muted">Pick a route to see where it runs and what it schedules.</p>
+        <p class="muted">Pick a route to see where it runs and its trips by service type.</p>
       {/if}
       {#if wb.selectedSchedule}
         <ScheduleChange
           scheduleId={wb.selectedSchedule}
           starts={wb.starts}
           {framed}
-          onadd={() => change([{ edit: "add_start", schedule: wb.selectedSchedule }])}
-          onremove={(index) => change([{ edit: "remove_start", schedule: wb.selectedSchedule, index }])}
+          onadd={() => change([{ edit: "add_start", pattern_trips: wb.selectedSchedule }])}
+          onremove={(index) => change([{ edit: "remove_start", pattern_trips: wb.selectedSchedule, index }])}
         />
       {/if}
     </div>

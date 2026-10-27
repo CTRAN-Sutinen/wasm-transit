@@ -33,18 +33,18 @@
       }
     }
   },
-  "schedules": {
+  "pattern_trips": {
     "10-weekday": {
       "pattern": "10-inbound",
       "service_type": "weekday",
-      "schedule": { "kind": "exact_times", "starts": [28800, 30600, 91800] }
+      "departures": { "kind": "exact_times", "starts": [28800, 30600, 91800] }
     }
   },
   "blocks": {
     "400": {
       "trips": [
-        { "schedule": "10-weekday", "start_secs": 28800 },
-        { "schedule": "10-weekday", "start_secs": 30600 }
+        { "pattern_trips": "10-weekday", "start_secs": 28800 },
+        { "pattern_trips": "10-weekday", "start_secs": 30600 }
       ],
       "layovers": [ { "after_trip": 0, "secs": 900, "at": "C" } ]
     }

@@ -22,8 +22,8 @@ use chrono::NaiveDate;
 use transit_dispatch::{block_chain, layover_health, LayoverHealth, TIGHT_LAYOVER_SECS, board, effective_day, patch_day, report_against_network, station_board, stop_board};
 use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
 use transit_network::{
-    Block, CalendarRule, DateRange, Layover, MaterializedTrip, Network, Pattern, PatternSchedule,
-    PatternStop, Route, Schedule, ServiceType, Stop, TimingProfile, TripRef, WeekdaySet,
+    Block, CalendarRule, DateRange, Layover, MaterializedTrip, Network, Pattern, PatternTrips,
+    PatternStop, Route, Departures, ServiceType, Stop, TimingProfile, TripRef, WeekdaySet,
 };
 use transit_sync::{Diversion, EditRecord, EditStatus};
 
@@ -112,36 +112,36 @@ fn network() -> Network {
         },
     );
 
-    let mut schedules = std::collections::BTreeMap::new();
-    schedules.insert(
+    let mut pattern_trips = std::collections::BTreeMap::new();
+    pattern_trips.insert(
         "s10".to_string(),
-        PatternSchedule { pattern: "p10".into(), service_type: "WK".into(), schedule: Schedule::ExactTimes { starts: vec![28_800] } },
+        PatternTrips { pattern: "p10".into(), service_type: "WK".into(), departures: Departures::ExactTimes { starts: vec![28_800] } },
     );
-    schedules.insert(
+    pattern_trips.insert(
         "s20".to_string(),
-        PatternSchedule { pattern: "p20".into(), service_type: "WK".into(), schedule: Schedule::ExactTimes { starts: vec![30_600] } },
+        PatternTrips { pattern: "p20".into(), service_type: "WK".into(), departures: Departures::ExactTimes { starts: vec![30_600] } },
     );
-    schedules.insert(
+    pattern_trips.insert(
         "s20sun".to_string(),
-        PatternSchedule { pattern: "p20".into(), service_type: "SUN".into(), schedule: Schedule::ExactTimes { starts: vec![30_600] } },
+        PatternTrips { pattern: "p20".into(), service_type: "SUN".into(), departures: Departures::ExactTimes { starts: vec![30_600] } },
     );
-    schedules.insert(
+    pattern_trips.insert(
         "s40".to_string(),
-        PatternSchedule { pattern: "p40".into(), service_type: "WK".into(), schedule: Schedule::ExactTimes { starts: vec![29_700, 30_600] } },
+        PatternTrips { pattern: "p40".into(), service_type: "WK".into(), departures: Departures::ExactTimes { starts: vec![29_700, 30_600] } },
     );
 
     let mut blocks = std::collections::BTreeMap::new();
     blocks.insert(
         "B1".to_string(),
         Block {
-            trips: vec![TripRef { schedule: "s10".into(), start_secs: 28_800 }, TripRef { schedule: "s20".into(), start_secs: 30_600 }],
+            trips: vec![TripRef { pattern_trips: "s10".into(), start_secs: 28_800 }, TripRef { pattern_trips: "s20".into(), start_secs: 30_600 }],
             layovers: vec![Layover { after_trip: 0, secs: 600, at: Some("C".into()) }],
         },
     );
     blocks.insert(
         "B2".to_string(),
         Block {
-            trips: vec![TripRef { schedule: "s10".into(), start_secs: 28_800 }, TripRef { schedule: "s20sun".into(), start_secs: 30_600 }],
+            trips: vec![TripRef { pattern_trips: "s10".into(), start_secs: 28_800 }, TripRef { pattern_trips: "s20sun".into(), start_secs: 30_600 }],
             layovers: vec![Layover { after_trip: 0, secs: 600, at: None }],
         },
     );
@@ -154,7 +154,7 @@ fn network() -> Network {
         routes,
         patterns,
         service_types,
-        schedules,
+        pattern_trips,
         blocks,
     }
 }
@@ -179,8 +179,8 @@ fn record(status: EditStatus, added_secs: u32) -> EditRecord {
     EditRecord { id: "e1".into(), diversion: diversion(added_secs), status, rev: 1, updated_at: 1 }
 }
 
-fn find_trip<'a>(day: &'a [MaterializedTrip], schedule: &str) -> &'a MaterializedTrip {
-    day.iter().find(|t| t.schedule == schedule).unwrap()
+fn find_trip<'a>(day: &'a [MaterializedTrip], pattern_trips: &str) -> &'a MaterializedTrip {
+    day.iter().find(|t| t.pattern_trips == pattern_trips).unwrap()
 }
 
 #[test]
@@ -266,7 +266,7 @@ fn boards_read_the_patched_day() {
     // The row speaks model vocabulary: trip identity, route name,
     // concrete stop, destination.
     let row = &board(&net, &day, "A", 0, 10)[0];
-    assert_eq!(row.schedule, "s10");
+    assert_eq!(row.pattern_trips, "s10");
     assert_eq!(row.start_secs, 28_800);
     assert_eq!(row.route_name, "10");
     assert_eq!(row.destination, "Main & 2nd");
@@ -284,7 +284,7 @@ fn a_terminating_visit_is_not_a_departure() {
     let day = transit_network::materialize(&net, date()).unwrap();
     for stop in net.stops.keys() {
         for row in board(&net, &day, stop, 0, 100) {
-            let trip = day.iter().find(|t| t.schedule == row.schedule && t.start_secs == row.start_secs).unwrap();
+            let trip = day.iter().find(|t| t.pattern_trips == row.pattern_trips && t.start_secs == row.start_secs).unwrap();
             let last = trip.stop_times.last().unwrap();
             assert!(
                 !(last.stop == row.stop && last.departure_secs == row.departure_secs),
@@ -300,12 +300,12 @@ fn a_terminating_visit_is_not_a_departure() {
         "p50".to_string(),
         pattern("10", vec![timepoint("A", 0.0), timepoint("C", 800.0), timepoint("A", 1600.0)], vec![0, 400, 800]),
     );
-    looped.schedules.insert(
+    looped.pattern_trips.insert(
         "s50".to_string(),
-        PatternSchedule { pattern: "p50".into(), service_type: "WK".into(), schedule: Schedule::ExactTimes { starts: vec![36_000] } },
+        PatternTrips { pattern: "p50".into(), service_type: "WK".into(), departures: Departures::ExactTimes { starts: vec![36_000] } },
     );
     let day = transit_network::materialize(&looped, date()).unwrap();
-    let loop_rows: Vec<_> = board(&looped, &day, "A", 0, 100).into_iter().filter(|r| r.schedule == "s50").collect();
+    let loop_rows: Vec<_> = board(&looped, &day, "A", 0, 100).into_iter().filter(|r| r.pattern_trips == "s50").collect();
     assert_eq!(loop_rows.len(), 1, "the loop departs its terminal once: {loop_rows:?}");
     assert_eq!(loop_rows[0].departure_secs, 36_000);
 }
@@ -329,11 +329,11 @@ fn the_station_board_pools_the_walking_group() {
     assert_eq!(times, sorted);
 }
 
-fn live_at(schedule: &str, start: u32, stop: &str, scheduled: u32, delay: i32) -> LiveDay {
+fn live_at(pattern_trips: &str, start: u32, stop: &str, scheduled: u32, delay: i32) -> LiveDay {
     LiveDay {
         window: OnTimeWindow::default(),
         trips: vec![LiveTrip {
-            schedule: schedule.into(),
+            pattern_trips: pattern_trips.into(),
             start_secs: start,
             agency_trip_id: "agency".into(),
             route: None,
@@ -368,15 +368,15 @@ fn the_board_is_realtime_first() {
     // still to come — on the board, expected 08:04, late.
     let live = live_at("s10", 28_800, "A", 28_800, 240);
     let late = stop_board(&net, &day, "A", 28_860, 10, Some(&live));
-    let r = late.rows.iter().find(|r| r.departure.schedule == "s10").expect("the late bus is still to come");
+    let r = late.rows.iter().find(|r| r.departure.pattern_trips == "s10").expect("the late bus is still to come");
     assert_eq!((r.expected_secs, r.delay_secs, r.status), (Some(29_040), Some(240), LiveStatus::Late));
     assert!(late.live);
     // Once it has left (08:05), it is gone.
-    assert!(stop_board(&net, &day, "A", 29_100, 10, Some(&live)).rows.iter().all(|r| r.departure.schedule != "s10"));
+    assert!(stop_board(&net, &day, "A", 29_100, 10, Some(&live)).rows.iter().all(|r| r.departure.pattern_trips != "s10"));
 
     // An early bus that already left is not on the board.
     let early = live_at("s10", 28_800, "A", 28_800, -120);
-    assert!(stop_board(&net, &day, "A", 28_740, 10, Some(&early)).rows.iter().all(|r| r.departure.schedule != "s10"));
+    assert!(stop_board(&net, &day, "A", 28_740, 10, Some(&early)).rows.iter().all(|r| r.departure.pattern_trips != "s10"));
 
     // Ordered by when buses actually leave: s20 reaches A at 08:50
     // on time; s10 delayed to 09:00 sorts after it.
@@ -384,13 +384,13 @@ fn the_board_is_realtime_first() {
     let order: Vec<_> = stop_board(&net, &day, "A", 0, 10, Some(&very_late))
         .rows
         .iter()
-        .map(|r| r.departure.schedule.clone())
+        .map(|r| r.departure.pattern_trips.clone())
         .collect();
     assert_eq!(order, vec!["s10"], "route 20 ends at A — only s10 departs A");
     let at_c: Vec<_> = stop_board(&net, &day, "C", 0, 10, Some(&live_at("s10", 28_800, "C", 29_400, 3_600)))
         .rows
         .iter()
-        .map(|r| (r.departure.schedule.clone(), r.status))
+        .map(|r| (r.departure.pattern_trips.clone(), r.status))
         .collect();
     assert_eq!(
         at_c,
@@ -421,7 +421,7 @@ fn the_block_chain_is_the_authored_runcut_with_the_ripple() {
     let schedule_day = transit_network::materialize(&net, date()).unwrap();
     let chain = block_chain(&net, &schedule_day, "B1", TIGHT_LAYOVER_SECS);
     assert_eq!(chain.len(), 2, "the authored chain, in order");
-    assert_eq!(chain[0].schedule, "s10");
+    assert_eq!(chain[0].pattern_trips, "s10");
     assert_eq!(chain[0].layover_after_secs, Some(600), "the authored layover");
     assert_eq!(chain[0].layover_remaining_secs, Some(600), "no edits: the layover stands");
     assert_eq!(chain[0].layover_health, Some(LayoverHealth::Ok));

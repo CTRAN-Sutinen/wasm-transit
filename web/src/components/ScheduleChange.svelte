@@ -1,5 +1,5 @@
 <script lang="ts">
-  /// The change gesture on one schedule: its departures as the
+  /// The change gesture on one pattern's trips: its departures as the
   /// document holds them, one trip added or removed per click. RENDER
   /// only — each click is an event the host turns into a NetworkEdit
   /// (cap-author `add_start` / `remove_start`, which own the +10 min
@@ -24,7 +24,7 @@
 </script>
 
 <section class="schedule-change" data-testid="schedule-change">
-  <h3>Schedule <span class="muted">{scheduleId}</span></h3>
+  <h3>Trips <span class="muted">{scheduleId}</span></h3>
   {#if starts === null}
     <p class="muted">Headway-band schedule — its trips are its bands.</p>
   {:else}

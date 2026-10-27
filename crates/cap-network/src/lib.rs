@@ -230,7 +230,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .cloned()
                 .ok_or_else(|| format!("network {network_hash} has no trip map: it was not imported from a feed"))?;
             Ok(Response::AgencyTripIds {
-                ids: trips.iter().map(|t| map.agency_ids(&t.schedule, t.start_secs)).collect(),
+                ids: trips.iter().map(|t| map.agency_ids(&t.pattern_trips, t.start_secs)).collect(),
             })
         }
     }

@@ -31,13 +31,13 @@
     </p>
 
     <h4>Schedules by service type</h4>
-    {#each detail?.schedules_by_type ?? [] as group (group.service_type)}
+    {#each detail?.pattern_trips_by_type ?? [] as group (group.service_type)}
       <p class="chips">
         <button class="chip" aria-label={`Open service type ${group.service_type}`}
                 onclick={() => selectEntity("service_type", group.service_type)}>{group.name}</button>
-        {#each group.schedules as s (s.id)}
+        {#each group.pattern_trips as s (s.id)}
           <button class="chip svc" aria-label={`Open schedule ${s.id}`}
-                  onclick={() => selectEntity("schedule", s.id)}>{s.trips} trips</button>
+                  onclick={() => selectEntity("pattern_trips", s.id)}>{s.trips} trips</button>
         {/each}
       </p>
     {:else}

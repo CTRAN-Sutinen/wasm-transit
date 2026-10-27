@@ -6,7 +6,7 @@
 use chrono::NaiveDate;
 use transit_network::{
     validation_issues, Anchor, Block, CalendarException, CalendarRule, DateRange, DayState,
-    Layover, Mode, Network, NetworkError, Pattern, PatternSchedule, PatternStop, Route, Schedule, ServiceType,
+    Layover, Mode, Network, NetworkError, Pattern, PatternTrips, PatternStop, Route, Departures, ServiceType,
     HeadwayBand, TimingProfile, TripRef, WeekdaySet,
 };
 
@@ -100,12 +100,12 @@ pub(crate) fn valid_network() -> Network {
         )]
         .into_iter()
         .collect(),
-        schedules: [(
+        pattern_trips: [(
             "5-weekday".into(),
-            PatternSchedule {
+            PatternTrips {
                 pattern: "5-inbound".into(),
                 service_type: "weekday".into(),
-                schedule: Schedule::ExactTimes {
+                departures: Departures::ExactTimes {
                     starts: vec![7 * 3600, 8 * 3600, 25 * 3600 + 1800],
                 },
             },
@@ -117,11 +117,11 @@ pub(crate) fn valid_network() -> Network {
             Block {
                 trips: vec![
                     TripRef {
-                        schedule: "5-weekday".into(),
+                        pattern_trips: "5-weekday".into(),
                         start_secs: 7 * 3600,
                     },
                     TripRef {
-                        schedule: "5-weekday".into(),
+                        pattern_trips: "5-weekday".into(),
                         start_secs: 8 * 3600,
                     },
                 ],
@@ -252,16 +252,16 @@ fn rejects_broken_references() {
         NetworkError::UnknownRoute { .. }
     ));
     assert!(matches!(
-        defect(|n| n.schedules.get_mut("5-weekday").unwrap().pattern = "ghost".into()),
+        defect(|n| n.pattern_trips.get_mut("5-weekday").unwrap().pattern = "ghost".into()),
         NetworkError::UnknownPattern { .. }
     ));
     assert!(matches!(
-        defect(|n| n.schedules.get_mut("5-weekday").unwrap().service_type = "ghost".into()),
+        defect(|n| n.pattern_trips.get_mut("5-weekday").unwrap().service_type = "ghost".into()),
         NetworkError::UnknownServiceType { .. }
     ));
     assert!(matches!(
-        defect(|n| n.blocks.get_mut("b1").unwrap().trips[0].schedule = "ghost".into()),
-        NetworkError::UnknownBlockSchedule { .. }
+        defect(|n| n.blocks.get_mut("b1").unwrap().trips[0].pattern_trips = "ghost".into()),
+        NetworkError::UnknownBlockPatternTrips { .. }
     ));
     assert!(matches!(
         defect(|n| n.blocks.get_mut("b1").unwrap().layovers[0].at = Some("ghost".into())),
@@ -315,20 +315,20 @@ fn rejects_broken_pattern_structure() {
 fn rejects_broken_service_structure() {
     use NetworkError::*;
     assert!(matches!(defect(|n| {
-        n.schedules.get_mut("5-weekday").unwrap().schedule = Schedule::ExactTimes { starts: vec![] };
-    }), EmptySchedule { .. }));
+        n.pattern_trips.get_mut("5-weekday").unwrap().departures = Departures::ExactTimes { starts: vec![] };
+    }), EmptyPatternTrips { .. }));
     assert!(matches!(defect(|n| {
-        n.schedules.get_mut("5-weekday").unwrap().schedule = Schedule::HeadwayBands {
+        n.pattern_trips.get_mut("5-weekday").unwrap().departures = Departures::HeadwayBands {
             bands: vec![HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 0 }],
         };
     }), ZeroHeadway { .. }));
     assert!(matches!(defect(|n| {
-        n.schedules.get_mut("5-weekday").unwrap().schedule = Schedule::HeadwayBands {
+        n.pattern_trips.get_mut("5-weekday").unwrap().departures = Departures::HeadwayBands {
             bands: vec![HeadwayBand { start_secs: 3600, end_secs: 3600, headway_secs: 300 }],
         };
     }), EmptyHeadwayBand { .. }));
     assert!(matches!(defect(|n| {
-        n.schedules.get_mut("5-weekday").unwrap().schedule = Schedule::HeadwayBands {
+        n.pattern_trips.get_mut("5-weekday").unwrap().departures = Departures::HeadwayBands {
             bands: vec![
                 HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 300 },
                 HeadwayBand { start_secs: 1800, end_secs: 7200, headway_secs: 300 },
@@ -336,8 +336,8 @@ fn rejects_broken_service_structure() {
         };
     }), OverlappingHeadwayBands { .. }));
     assert!(matches!(defect(|n| {
-        n.schedules.get_mut("5-weekday").unwrap().schedule =
-            Schedule::ExactTimes { starts: vec![8 * 3600, 7 * 3600] };
+        n.pattern_trips.get_mut("5-weekday").unwrap().departures =
+            Departures::ExactTimes { starts: vec![8 * 3600, 7 * 3600] };
     }), UnsortedExactTimes { .. }));
     // Trip outside every timing profile.
     assert!(matches!(defect(|n| {
@@ -364,8 +364,8 @@ fn rejects_broken_runcut() {
     // Second trip departs before the first arrives (arrival 7:20) —
     // a trip the schedule really runs, so feasibility is what fails.
     assert!(matches!(defect(|n| {
-        n.schedules.get_mut("5-weekday").unwrap().schedule =
-            Schedule::ExactTimes { starts: vec![7 * 3600, 7 * 3600 + 60, 25 * 3600 + 1800] };
+        n.pattern_trips.get_mut("5-weekday").unwrap().departures =
+            Departures::ExactTimes { starts: vec![7 * 3600, 7 * 3600 + 60, 25 * 3600 + 1800] };
         n.blocks.get_mut("b1").unwrap().trips[1].start_secs = 7 * 3600 + 60;
     }), BlockInfeasible { .. }));
     // A block trip the schedule does not run: the runcut and the
@@ -380,7 +380,7 @@ fn rejects_broken_runcut() {
     // The same trip in two blocks.
     assert!(matches!(defect(|n| {
         n.blocks.insert("b2".into(), Block {
-            trips: vec![TripRef { schedule: "5-weekday".into(), start_secs: 8 * 3600 }],
+            trips: vec![TripRef { pattern_trips: "5-weekday".into(), start_secs: 8 * 3600 }],
             layovers: vec![],
         });
     }), DuplicateBlockTrip { .. }));
@@ -395,7 +395,7 @@ fn materialization_is_total_on_invalid_networks() {
     assert!(transit_network::materialize(&net, date(2026, 10, 23)).is_err());
 
     let mut net = valid_network();
-    net.schedules.get_mut("5-weekday").unwrap().service_type = "ghost".into();
+    net.pattern_trips.get_mut("5-weekday").unwrap().service_type = "ghost".into();
     assert!(matches!(
         transit_network::materialize(&net, date(2026, 10, 23)),
         Err(NetworkError::UnknownServiceType { .. })
@@ -403,12 +403,12 @@ fn materialization_is_total_on_invalid_networks() {
 
     let mut net = valid_network();
     net.blocks.insert("b".into(), Block {
-        trips: vec![TripRef { schedule: "ghost".into(), start_secs: 0 }],
+        trips: vec![TripRef { pattern_trips: "ghost".into(), start_secs: 0 }],
         layovers: vec![],
     });
     assert!(transit_network::validation_issues(&net)
         .iter()
-        .any(|e| matches!(e, NetworkError::UnknownBlockSchedule { .. })));
+        .any(|e| matches!(e, NetworkError::UnknownBlockPatternTrips { .. })));
 }
 
 #[test]
@@ -480,7 +480,7 @@ fn warnings_name_what_validity_lets_through() {
     assert!(net.validate().is_ok(), "warnings never invalidate");
     assert_eq!(
         validation_warnings(&net),
-        vec![NetworkWarning::UnassignedTrips { schedule: "5-weekday".into(), trips: 1 }]
+        vec![NetworkWarning::UnassignedTrips { pattern_trips: "5-weekday".into(), trips: 1 }]
     );
     // No runcut at all: nothing is "unassigned" yet.
     let mut no_blocks = net.clone();

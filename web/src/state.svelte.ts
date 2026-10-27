@@ -304,12 +304,26 @@ function persistPlans(): void {
 
 /** Restore the plan set on startup (documents cross IN from
  * IndexedDB; JS owns them, so a shape guard keeps stale builds from
- * wedging the workspace). */
-export async function restorePlans(): Promise<void> {
+ * wedging the workspace). `read` canonicalizes each stored document
+ * through a module (the host layer passes the resolver's
+ * `readStoredNetwork`): a plan saved under older field names comes
+ * back in the current shape and is persisted that way. A plan the
+ * module refuses is kept as stored and reported, never dropped. */
+export async function restorePlans(read?: (stored: unknown) => Promise<Network | null>): Promise<void> {
   try {
     const stored = await idbGet(PLANS_KEY);
     if (stored && typeof stored === "object") {
-      plans = stored as Record<string, Network>;
+      const next: Record<string, Network> = {};
+      for (const [key, doc] of Object.entries(stored as Record<string, unknown>)) {
+        try {
+          next[key] = (read ? await read(doc) : null) ?? (doc as Network);
+        } catch (e) {
+          console.warn(`stored plan ${key} could not be read:`, e);
+          next[key] = doc as Network;
+        }
+      }
+      plans = next;
+      if (read) persistPlans();
     }
     const active = localStorage.getItem(ACTIVE_PLAN_KEY);
     if (active && plans[active]) {

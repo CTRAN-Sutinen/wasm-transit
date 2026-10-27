@@ -23,15 +23,15 @@ fn a_snapshot_resolves_into_derived_trips() {
     assert_eq!(day.unmatched_trips, 0);
     assert_eq!(day.window, OnTimeWindow::default());
     let trip = day.trips.iter().find(|t| t.agency_trip_id == "t10").unwrap();
-    assert_eq!((trip.schedule.as_str(), trip.start_secs), (t10.schedule.as_str(), t10.start_secs));
+    assert_eq!((trip.pattern_trips.as_str(), trip.start_secs), (t10.pattern_trips.as_str(), t10.start_secs));
     assert_eq!(trip.worst_delay_secs, Some(180));
     assert_eq!(trip.status, LiveStatus::Late);
-    let a = day.visit(&t10.schedule, t10.start_secs, "A", 8 * 3600).unwrap();
+    let a = day.visit(&t10.pattern_trips, t10.start_secs, "A", 8 * 3600).unwrap();
     assert_eq!(a.predicted_departure, Some(8 * 3600 + 120), "08:02");
 
     // The vehicle rides its derived trip, with the trip's headline.
     let bus = &day.vehicles[0];
-    assert_eq!(bus.schedule.as_deref(), Some(t10.schedule.as_str()));
+    assert_eq!(bus.pattern_trips.as_deref(), Some(t10.pattern_trips.as_str()));
     assert_eq!(bus.delay_secs, Some(180));
     assert_eq!(bus.status, LiveStatus::Late);
     assert_eq!(bus.route_name.as_deref(), Some("10"), "named as the model names the route");

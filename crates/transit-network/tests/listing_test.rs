@@ -1,7 +1,7 @@
 //! The planner's lists: rows per kind narrowed by every query term,
 //! and a route's composition — its trip counts the materialized day's.
 
-use transit_network::{entity_rows, route_detail, stop_detail, EntityKind, HeadwayBand, Network, Schedule};
+use transit_network::{entity_rows, route_detail, stop_detail, EntityKind, HeadwayBand, Network, Departures};
 
 fn network() -> Network {
     serde_json::from_str(include_str!("../../../testdata/network.json")).unwrap()
@@ -18,9 +18,9 @@ fn rows_match_every_term_in_name_or_id() {
 
     let pattern = &entity_rows(&net, EntityKind::Pattern, "inbound")[0];
     assert_eq!(pattern.context.as_deref(), Some("Route 10"), "a pattern is placed by its route");
-    let schedule = &entity_rows(&net, EntityKind::Schedule, "")[0];
-    assert_eq!(schedule.context.as_deref(), Some("10 inbound via Main · Weekday"));
-    assert_eq!(schedule.trips, Some(3));
+    let pattern_trips = &entity_rows(&net, EntityKind::PatternTrips, "")[0];
+    assert_eq!(pattern_trips.context.as_deref(), Some("10 inbound via Main · Weekday"));
+    assert_eq!(pattern_trips.trips, Some(3));
     assert_eq!(entity_rows(&net, EntityKind::Block, "400")[0].trips, Some(2));
 }
 
@@ -30,9 +30,9 @@ fn a_route_lists_its_composition() {
     let detail = route_detail(&net, "10").unwrap();
     assert_eq!(detail.patterns.len(), 1);
     assert_eq!(detail.stops.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["A", "B", "C"]);
-    assert_eq!(detail.schedules_by_type.len(), 1);
-    assert_eq!(detail.schedules_by_type[0].name, "Weekday");
-    assert_eq!(detail.schedules_by_type[0].schedules[0].trips, Some(3));
+    assert_eq!(detail.pattern_trips_by_type.len(), 1);
+    assert_eq!(detail.pattern_trips_by_type[0].name, "Weekday");
+    assert_eq!(detail.pattern_trips_by_type[0].pattern_trips[0].trips, Some(3));
     assert!(route_detail(&net, "nope").is_none());
 }
 
@@ -49,12 +49,12 @@ fn trip_counts_are_the_days_trips() {
     // Overlapping bands share a start: the day runs it once, and so
     // does the count (00:00–01:00 and 00:30–01:30 every 30 min).
     let mut net = network();
-    net.schedules.get_mut("10-weekday").unwrap().schedule = Schedule::HeadwayBands {
+    net.pattern_trips.get_mut("10-weekday").unwrap().departures = Departures::HeadwayBands {
         bands: vec![
             HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 1800 },
             HeadwayBand { start_secs: 1800, end_secs: 5400, headway_secs: 1800 },
             HeadwayBand { start_secs: 7200, end_secs: 3600, headway_secs: 600 },
         ],
     };
-    assert_eq!(entity_rows(&net, EntityKind::Schedule, "")[0].trips, Some(3));
+    assert_eq!(entity_rows(&net, EntityKind::PatternTrips, "")[0].trips, Some(3));
 }

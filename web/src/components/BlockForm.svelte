@@ -9,7 +9,7 @@
   const doc = $derived(getNetworkDoc());
   const id = $derived(app.plannerSelection?.kind === "block" ? app.plannerSelection.id : "");
   const block = $derived(id ? doc?.blocks?.[id] ?? null : null);
-  const scheduleOptions = $derived((app.pickers?.schedule ?? []).map((r) => ({ value: r.id, label: r.id })));
+  const scheduleOptions = $derived((app.pickers?.pattern_trips ?? []).map((r) => ({ value: r.id, label: r.id })));
 
   let addScheduleId = $state("");
   let addTime = $state("");
@@ -23,7 +23,7 @@
     {#each block.trips as trip, i (i)}
       <li>
         <code>{i + 1}</code>
-        <span class="muted">{trip.schedule}</span>
+        <span class="muted">{trip.pattern_trips}</span>
         <span class="time">{fmtHHMMSS(trip.start_secs)}</span>
         <button aria-label={`Remove trip ${i + 1}`} onclick={() => removeBlockTrip(id, i)}>remove</button>
       </li>

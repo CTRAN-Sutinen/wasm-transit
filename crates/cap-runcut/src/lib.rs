@@ -96,7 +96,7 @@ pub enum Request {
         network_hash: String,
         #[serde(default)]
         edits_hash: Option<String>,
-        schedule: String,
+        pattern_trips: String,
         start_secs: u32,
         date: String,
     },
@@ -108,7 +108,7 @@ pub enum Request {
         network_hash: String,
         #[serde(default)]
         edits_hash: Option<String>,
-        schedule: String,
+        pattern_trips: String,
         start_secs: u32,
         date: String,
     },
@@ -230,17 +230,17 @@ let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
                 block_id,
             })
         }
-        Request::TripStops { network_hash, edits_hash, schedule, start_secs, date } => {
+        Request::TripStops { network_hash, edits_hash, pattern_trips, start_secs, date } => {
 let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
             Ok(Response::TripStops {
-                stops: transit_dispatch::trip_stops(&network, &day, &schedule, start_secs),
+                stops: transit_dispatch::trip_stops(&network, &day, &pattern_trips, start_secs),
             })
         }
-        Request::TripPath { network_hash, edits_hash, schedule, start_secs, date } => {
+        Request::TripPath { network_hash, edits_hash, pattern_trips, start_secs, date } => {
             let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
-            Ok(Response::TripPath { path: transit_dispatch::trip_path(&network, &day, &schedule, start_secs) })
+            Ok(Response::TripPath { path: transit_dispatch::trip_path(&network, &day, &pattern_trips, start_secs) })
         }
     }
 }

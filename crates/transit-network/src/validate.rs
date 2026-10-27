@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::error::{NetworkError, NetworkWarning};
 use crate::materialize::{trip_arrival_end_secs, trip_starts};
-use crate::model::{Network, Schedule};
+use crate::model::{Network, Departures};
 
 /// All issues, in a deterministic order (entity map order, then
 /// check order). Empty = valid.
@@ -144,54 +144,54 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
     }
 
     // --- Services --------------------------------------------------
-    for (schedule_id, service) in &network.schedules {
+    for (pattern_trips_id, service) in &network.pattern_trips {
         if network.patterns.get(&service.pattern).is_none() {
             issues.push(NetworkError::UnknownPattern {
-                schedule: schedule_id.clone(),
+                pattern_trips: pattern_trips_id.clone(),
                 pattern: service.pattern.clone(),
             });
         }
         if network.service_types.get(&service.service_type).is_none() {
             issues.push(NetworkError::UnknownServiceType {
-                schedule: schedule_id.clone(),
+                pattern_trips: pattern_trips_id.clone(),
                 service_type: service.service_type.clone(),
             });
         }
-        match &service.schedule {
-            Schedule::HeadwayBands { bands } => {
+        match &service.departures {
+            Departures::HeadwayBands { bands } => {
                 if bands.is_empty() {
-                    issues.push(NetworkError::EmptySchedule {
-                        schedule: schedule_id.clone(),
+                    issues.push(NetworkError::EmptyPatternTrips {
+                        pattern_trips: pattern_trips_id.clone(),
                     });
                 }
                 for (bi, band) in bands.iter().enumerate() {
                     if band.headway_secs == 0 {
                         issues.push(NetworkError::ZeroHeadway {
-                            schedule: schedule_id.clone(),
+                            pattern_trips: pattern_trips_id.clone(),
                             band: bi,
                         });
                     }
                     if band.start_secs >= band.end_secs {
                         issues.push(NetworkError::EmptyHeadwayBand {
-                            schedule: schedule_id.clone(),
+                            pattern_trips: pattern_trips_id.clone(),
                             band: bi,
                         });
                     }
                 }
                 if overlapping(&bands.iter().map(|b| (b.start_secs, b.end_secs)).collect::<Vec<_>>()) {
                     issues.push(NetworkError::OverlappingHeadwayBands {
-                        schedule: schedule_id.clone(),
+                        pattern_trips: pattern_trips_id.clone(),
                     });
                 }
             }
-            Schedule::ExactTimes { starts } => {
+            Departures::ExactTimes { starts } => {
                 if starts.is_empty() {
-                    issues.push(NetworkError::EmptySchedule {
-                        schedule: schedule_id.clone(),
+                    issues.push(NetworkError::EmptyPatternTrips {
+                        pattern_trips: pattern_trips_id.clone(),
                     });
                 } else if starts.windows(2).any(|w| w[1] <= w[0]) {
                     issues.push(NetworkError::UnsortedExactTimes {
-                        schedule: schedule_id.clone(),
+                        pattern_trips: pattern_trips_id.clone(),
                     });
                 }
             }
@@ -200,10 +200,10 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
         // exactly one timing profile of the pattern (bands are
         // non-overlapping above, so "at least one" is "exactly one").
         if let Some(pattern) = network.patterns.get(&service.pattern) {
-            for start in trip_starts(&service.schedule) {
+            for start in trip_starts(&service.departures) {
                 if pattern.profile_for(start).is_none() {
                     issues.push(NetworkError::TripOutsideTimingProfiles {
-                        schedule: schedule_id.clone(),
+                        pattern_trips: pattern_trips_id.clone(),
                         pattern: service.pattern.clone(),
                         start_secs: start,
                     });
@@ -227,29 +227,29 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
             });
         }
         for t in &block.trips {
-            match network.schedules.get(&t.schedule) {
-                None => issues.push(NetworkError::UnknownBlockSchedule {
+            match network.pattern_trips.get(&t.pattern_trips) {
+                None => issues.push(NetworkError::UnknownBlockPatternTrips {
                     block: block_id.clone(),
-                    schedule: t.schedule.clone(),
+                    pattern_trips: t.pattern_trips.clone(),
                 }),
-                Some(schedule) if !trip_starts(&schedule.schedule).contains(&t.start_secs) => {
+                Some(pattern_trips) if !trip_starts(&pattern_trips.departures).contains(&t.start_secs) => {
                     issues.push(NetworkError::UnknownBlockTrip {
                         block: block_id.clone(),
-                        schedule: t.schedule.clone(),
+                        pattern_trips: t.pattern_trips.clone(),
                         start_secs: t.start_secs,
                     })
                 }
                 Some(_) => {}
             }
-            match owner.get(&(t.schedule.clone(), t.start_secs)) {
+            match owner.get(&(t.pattern_trips.clone(), t.start_secs)) {
                 Some(prev) => issues.push(NetworkError::DuplicateBlockTrip {
-                    schedule: t.schedule.clone(),
+                    pattern_trips: t.pattern_trips.clone(),
                     start_secs: t.start_secs,
                     a: prev.clone(),
                     b: block_id.clone(),
                 }),
                 None => {
-                    owner.insert((t.schedule.clone(), t.start_secs), block_id.clone());
+                    owner.insert((t.pattern_trips.clone(), t.start_secs), block_id.clone());
                 }
             }
         }
@@ -273,7 +273,7 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
         // connection — arrive before the next trip departs, with the
         // layovers in between accounted for.
         for i in 0..block.trips.len().saturating_sub(1) {
-            let Ok(arrival) = trip_arrival_end_secs(network, &block.trips[i].schedule, block.trips[i].start_secs)
+            let Ok(arrival) = trip_arrival_end_secs(network, &block.trips[i].pattern_trips, block.trips[i].start_secs)
             else {
                 continue; // broken refs are already flagged above
             };
@@ -313,16 +313,16 @@ pub fn validation_warnings(network: &Network) -> Vec<NetworkWarning> {
         let blocked: BTreeSet<(&str, u32)> = network
             .blocks
             .values()
-            .flat_map(|b| b.trips.iter().map(|t| (t.schedule.as_str(), t.start_secs)))
+            .flat_map(|b| b.trips.iter().map(|t| (t.pattern_trips.as_str(), t.start_secs)))
             .collect();
-        for (schedule_id, schedule) in &network.schedules {
-            let unassigned = trip_starts(&schedule.schedule)
+        for (pattern_trips_id, pattern_trips) in &network.pattern_trips {
+            let unassigned = trip_starts(&pattern_trips.departures)
                 .into_iter()
-                .filter(|start| !blocked.contains(&(schedule_id.as_str(), *start)))
+                .filter(|start| !blocked.contains(&(pattern_trips_id.as_str(), *start)))
                 .count() as u32;
             if unassigned > 0 {
                 warnings.push(NetworkWarning::UnassignedTrips {
-                    schedule: schedule_id.clone(),
+                    pattern_trips: pattern_trips_id.clone(),
                     trips: unassigned,
                 });
             }
@@ -331,7 +331,7 @@ pub fn validation_warnings(network: &Network) -> Vec<NetworkWarning> {
 
     if let (false, Some(from)) = (network.plan.id.is_empty(), network.plan.effective_from) {
         let scheduled: BTreeSet<&str> =
-            network.schedules.values().map(|s| s.service_type.as_str()).collect();
+            network.pattern_trips.values().map(|s| s.service_type.as_str()).collect();
         let runs_in_first_week = (0..7).any(|d| {
             let date = from + chrono::Duration::days(d);
             network

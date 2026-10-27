@@ -229,14 +229,14 @@ fn the_planners_lists_are_directory_answers() {
     let narrowed = rows(transit_network::EntityKind::Stop, Some(&first.name.to_uppercase()));
     assert!(narrowed.iter().any(|r| r.id == first.id), "the filter is case-insensitive");
     assert!(narrowed.len() <= all.len());
-    assert!(rows(transit_network::EntityKind::Schedule, None).iter().all(|r| r.trips.is_some()));
+    assert!(rows(transit_network::EntityKind::PatternTrips, None).iter().all(|r| r.trips.is_some()));
 
     let detail = match dispatch(Request::RouteDetail { network_hash: hash.clone(), route_id: "10".into() }).unwrap() {
         Response::RouteDetail { detail } => detail.expect("route 10 exists"),
         _ => panic!("route_detail"),
     };
     assert!(!detail.patterns.is_empty() && !detail.stops.is_empty());
-    assert!(detail.schedules_by_type.iter().flat_map(|g| &g.schedules).all(|s| s.trips.unwrap_or(0) > 0));
+    assert!(detail.pattern_trips_by_type.iter().flat_map(|g| &g.pattern_trips).all(|s| s.trips.unwrap_or(0) > 0));
     match dispatch(Request::RouteDetail { network_hash: hash.clone(), route_id: "nope".into() }).unwrap() {
         Response::RouteDetail { detail } => assert!(detail.is_none()),
         _ => panic!("route_detail"),

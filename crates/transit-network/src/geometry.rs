@@ -62,7 +62,7 @@ pub enum EntityKind {
     Stop,
     Route,
     Pattern,
-    Schedule,
+    PatternTrips,
     ServiceType,
     Block,
 }
@@ -85,7 +85,7 @@ pub fn entity_focus(network: &Network, kind: EntityKind, id: &str) -> Option<Ent
             return stop_point(network, id).map(|c| EntityFocus { lines: vec![], points: vec![c] });
         }
         EntityKind::Pattern => network.patterns.get_key_value(id).map(|(k, _)| vec![k.as_str()])?,
-        EntityKind::Schedule => vec![network.schedules.get(id)?.pattern.as_str()],
+        EntityKind::PatternTrips => vec![network.pattern_trips.get(id)?.pattern.as_str()],
         EntityKind::Route => {
             network.routes.get(id)?;
             network.patterns.iter().filter(|(_, p)| p.route == id).map(|(k, _)| k.as_str()).collect()
@@ -93,7 +93,7 @@ pub fn entity_focus(network: &Network, kind: EntityKind, id: &str) -> Option<Ent
         EntityKind::ServiceType => {
             network.service_types.get(id)?;
             let mut ids: Vec<&str> =
-                network.schedules.values().filter(|s| s.service_type == id).map(|s| s.pattern.as_str()).collect();
+                network.pattern_trips.values().filter(|s| s.service_type == id).map(|s| s.pattern.as_str()).collect();
             ids.sort();
             ids.dedup();
             ids
@@ -103,7 +103,7 @@ pub fn entity_focus(network: &Network, kind: EntityKind, id: &str) -> Option<Ent
             let mut ids: Vec<&str> = block
                 .trips
                 .iter()
-                .filter_map(|t| network.schedules.get(&t.schedule).map(|s| s.pattern.as_str()))
+                .filter_map(|t| network.pattern_trips.get(&t.pattern_trips).map(|s| s.pattern.as_str()))
                 .collect();
             ids.sort();
             ids.dedup();

@@ -40,7 +40,7 @@ use transit_sync::{Diversion, EditRecord, EditReport};
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct BoardDeparture {
-    pub schedule: String,
+    pub pattern_trips: String,
     pub start_secs: u32,
     pub route: String,
     pub route_name: String,
@@ -62,7 +62,7 @@ pub struct BoardDeparture {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct BlockChainTrip {
-    pub schedule: String,
+    pub pattern_trips: String,
     pub start_secs: u32,
     pub route: String,
     pub route_name: String,
@@ -256,15 +256,15 @@ fn validate_against_network(network: &Network, d: &Diversion) -> Result<(), Stri
 /// route whose pattern carries both anchors in order, expanded.
 fn affected_trips(network: &Network, d: &Diversion) -> usize {
     network
-        .schedules
+        .pattern_trips
         .values()
-        .filter(|schedule| {
+        .filter(|pattern_trips| {
             network
                 .patterns
-                .get(&schedule.pattern)
+                .get(&pattern_trips.pattern)
                 .is_some_and(|pattern| pattern_matches(pattern, d))
         })
-        .map(|schedule| trip_starts(&schedule.schedule).len())
+        .map(|pattern_trips| trip_starts(&pattern_trips.departures).len())
         .sum()
 }
 
@@ -399,7 +399,7 @@ fn live_rows(
         .into_iter()
         .map(|d| {
             let expected = live
-                .and_then(|l| l.visit(&d.schedule, d.start_secs, &d.stop, d.departure_secs))
+                .and_then(|l| l.visit(&d.pattern_trips, d.start_secs, &d.stop, d.departure_secs))
                 .and_then(|v| v.predicted_departure);
             let delay = expected.map(|e| e as i32 - d.departure_secs as i32);
             BoardRow { status: classify(delay, &window), expected_secs: expected, delay_secs: delay, departure: d }
@@ -410,7 +410,7 @@ fn live_rows(
         let at = |r: &BoardRow| r.expected_secs.unwrap_or(r.departure.departure_secs);
         at(a)
             .cmp(&at(b))
-            .then_with(|| a.departure.schedule.cmp(&b.departure.schedule))
+            .then_with(|| a.departure.pattern_trips.cmp(&b.departure.pattern_trips))
             .then_with(|| a.departure.start_secs.cmp(&b.departure.start_secs))
     });
     rows.truncate(limit);
@@ -433,7 +433,7 @@ fn board_over(
                 continue;
             }
             rows.push(BoardDeparture {
-                schedule: trip.schedule.clone(),
+                pattern_trips: trip.pattern_trips.clone(),
                 start_secs: trip.start_secs,
                 route: trip.route.clone(),
                 route_name: route_name(network, &trip.route),
@@ -447,7 +447,7 @@ fn board_over(
     rows.sort_by(|a, b| {
         a.departure_secs
             .cmp(&b.departure_secs)
-            .then_with(|| a.schedule.cmp(&b.schedule))
+            .then_with(|| a.pattern_trips.cmp(&b.pattern_trips))
             .then_with(|| a.start_secs.cmp(&b.start_secs))
     });
     rows.truncate(limit);
@@ -488,7 +488,7 @@ pub fn block_chain(
         // day. Runs = its service type runs on the date.
         let runs = day
             .iter()
-            .find(|t| t.schedule == trip_ref.schedule && t.start_secs == trip_ref.start_secs);
+            .find(|t| t.pattern_trips == trip_ref.pattern_trips && t.start_secs == trip_ref.start_secs);
         let layover = block
             .layovers
             .iter()
@@ -502,7 +502,7 @@ pub fn block_chain(
                 // the layover was authored against.
                 let authored_end = transit_network::trip_arrival_end_secs(
                     network,
-                    &trip_ref.schedule,
+                    &trip_ref.pattern_trips,
                     trip_ref.start_secs,
                 )
                 .ok();
@@ -512,7 +512,7 @@ pub fn block_chain(
                 };
                 let layover_remaining = layover.map(|secs| secs as i64 - delay);
                 BlockChainTrip {
-                    schedule: trip_ref.schedule.clone(),
+                    pattern_trips: trip_ref.pattern_trips.clone(),
                     start_secs: trip_ref.start_secs,
                     route: trip.route.clone(),
                     route_name: route_name(network, &trip.route),
@@ -535,7 +535,7 @@ pub fn block_chain(
                 }
             }
             None => BlockChainTrip {
-                schedule: trip_ref.schedule.clone(),
+                pattern_trips: trip_ref.pattern_trips.clone(),
                 start_secs: trip_ref.start_secs,
                 route: String::new(),
                 route_name: String::new(),
@@ -593,7 +593,7 @@ pub fn day_blocks(network: &Network, day: &[MaterializedTrip]) -> Vec<DayBlock> 
             .trips
             .iter()
             .filter(|t| {
-                day.iter().any(|d| d.schedule == t.schedule && d.start_secs == t.start_secs)
+                day.iter().any(|d| d.pattern_trips == t.pattern_trips && d.start_secs == t.start_secs)
             })
             .count();
         if count > 0 {
@@ -611,8 +611,8 @@ pub fn day_blocks(network: &Network, day: &[MaterializedTrip]) -> Vec<DayBlock> 
 pub fn active_services(network: &Network, day: &[MaterializedTrip]) -> Vec<String> {
     let mut keys: BTreeSet<&str> = BTreeSet::new();
     for trip in day {
-        if let Some(schedule) = network.schedules.get(&trip.schedule) {
-            keys.insert(schedule.service_type.as_str());
+        if let Some(pattern_trips) = network.pattern_trips.get(&trip.pattern_trips) {
+            keys.insert(pattern_trips.service_type.as_str());
         }
     }
     keys.into_iter().map(String::from).collect()
@@ -640,12 +640,12 @@ pub struct TripStopView {
 pub fn trip_stops(
     network: &Network,
     day: &[MaterializedTrip],
-    schedule: &str,
+    pattern_trips: &str,
     start_secs: u32,
 ) -> Vec<TripStopView> {
     let Some(trip) = day
         .iter()
-        .find(|t| t.schedule == schedule && t.start_secs == start_secs)
+        .find(|t| t.pattern_trips == pattern_trips && t.start_secs == start_secs)
     else {
         return Vec::new();
     };

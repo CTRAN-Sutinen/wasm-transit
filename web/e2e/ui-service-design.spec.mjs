@@ -14,6 +14,7 @@
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import fs from "node:fs";
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
 
@@ -53,4 +54,44 @@ test("service design answers a plan, a fork, and its change", async ({ page }) =
   await coverage.locator("input[type=file]").setInputFiles(path.join(fixtures, "population.geojson"));
   await expect(coverage.locator("tbody tr")).toHaveCount(2);
   await expect(page.getByTestId("plan-health")).toContainText("Coverage against");
+});
+
+// A plan saved before the 2026-10-27 rename (`schedules` / `schedule`)
+// still reads: restore canonicalizes stored documents through
+// cap-author, so the trip list shows its starts instead of falling
+// through to the headway-band message (the regression a real browser
+// with older plans hit).
+test("a plan stored under the old field names restores in the current shape", async ({ page }) => {
+  const doc = JSON.parse(fs.readFileSync(path.join(fixtures, "../../../testdata/network.json"), "utf8"));
+  const legacy = { ...doc, schedules: {}, blocks: {} };
+  delete legacy.pattern_trips;
+  for (const [id, t] of Object.entries(doc.pattern_trips)) {
+    legacy.schedules[id] = { pattern: t.pattern, service_type: t.service_type, schedule: t.departures };
+  }
+  for (const [id, b] of Object.entries(doc.blocks)) {
+    legacy.blocks[id] = { ...b, trips: b.trips.map((t) => ({ schedule: t.pattern_trips, start_secs: t.start_secs })) };
+  }
+
+  await page.goto("/service-design.html");
+  await page.evaluate(async (plans) => {
+    await new Promise((resolve, reject) => {
+      const open = indexedDB.open("keyval-store");
+      open.onupgradeneeded = () => open.result.createObjectStore("keyval");
+      open.onsuccess = () => {
+        const tx = open.result.transaction("keyval", "readwrite");
+        tx.objectStore("keyval").put(plans, "transit:plans");
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      };
+      open.onerror = () => reject(open.error);
+    });
+    localStorage.setItem("transit:active-plan", "legacy");
+  }, { legacy });
+  await page.reload();
+
+  await page.getByTestId("route-table").locator("tbody tr").first().click();
+  await page.getByTestId("route-card").locator("details[open] button").first().click();
+  const trips = page.getByTestId("schedule-change");
+  await expect(trips.locator(".start")).not.toHaveCount(0);
+  await expect(trips).not.toContainText("Headway-band");
 });

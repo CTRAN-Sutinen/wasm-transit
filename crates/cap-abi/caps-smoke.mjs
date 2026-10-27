@@ -185,11 +185,11 @@ const NETWORK = {
       },
     },
   },
-  schedules: {
+  pattern_trips: {
     "WK:pat-10-0-0": {
       pattern: "pat-10-0-0",
       service_type: "WK",
-      schedule: { kind: "exact_times", starts: [28800] },
+      departures: { kind: "exact_times", starts: [28800] },
     },
   },
   blocks: {},
@@ -503,7 +503,7 @@ const stopBoard = (stop_id, from_secs, live_hash) =>
 const atA = stopBoard("A", 25200);
 assert(atA.rows.length >= 3 && !atA.pooled && !atA.live, "the materialized board answers at A, schedule-only");
 assert(
-  atA.rows.every((r) => r.schedule && r.route_name && r.stop === "A" && r.status === "no_prediction"),
+  atA.rows.every((r) => r.pattern_trips && r.route_name && r.stop === "A" && r.status === "no_prediction"),
   "board rows speak model vocabulary (schedule, start, concrete stop); no live data, no prediction",
 );
 const atStation = stopBoard("STN", 0);
@@ -578,7 +578,7 @@ for (const document of [v1, migrated.document]) {
   });
   assert(watch.stops.length === 2, `the personal board answers at ${document.version}`);
   assert(
-    watch.stops.every((s) => s.departures.every((d) => d.schedule)),
+    watch.stops.every((s) => s.departures.every((d) => d.pattern_trips)),
     `the personal board's rows are model-native at ${document.version}`,
   );
 }
@@ -661,7 +661,7 @@ assert(
 const agencyIds = network.invoke({
   op: "agency_trip_ids",
   network_hash: imported.network_hash,
-  trips: rippedChain.trips.map((t) => ({ schedule: t.schedule, start_secs: t.start_secs })),
+  trips: rippedChain.trips.map((t) => ({ pattern_trips: t.pattern_trips, start_secs: t.start_secs })),
 });
 assert(
   agencyIds.ids.length === rippedChain.trips.length && agencyIds.ids[0].includes("t10"),
@@ -674,7 +674,7 @@ const chainTrip = runcutChain.trips[0];
 const tripAuthored = runcut.invoke({
   op: "trip_stops",
   network_hash: loadedRuncutNet.network_hash,
-  schedule: chainTrip.schedule,
+  pattern_trips: chainTrip.pattern_trips,
   start_secs: chainTrip.start_secs,
   date: DATE,
 });
@@ -689,7 +689,7 @@ const tripPatched = runcut.invoke({
   op: "trip_stops",
   network_hash: loadedRuncutNet.network_hash,
   edits_hash: runcutEdits.edits_hash,
-  schedule: chainTrip.schedule,
+  pattern_trips: chainTrip.pattern_trips,
   start_secs: chainTrip.start_secs,
   date: DATE,
 });
@@ -701,7 +701,7 @@ assert(
 const tripAbsent = runcut.invoke({
   op: "trip_stops",
   network_hash: loadedRuncutNet.network_hash,
-  schedule: chainTrip.schedule,
+  pattern_trips: chainTrip.pattern_trips,
   start_secs: 123,
   date: DATE,
 });
@@ -710,13 +710,13 @@ const tripLine = runcut.invoke({
   op: "trip_path",
   network_hash: loadedRuncutNet.network_hash,
   edits_hash: runcutEdits.edits_hash,
-  schedule: chainTrip.schedule,
+  pattern_trips: chainTrip.pattern_trips,
   start_secs: chainTrip.start_secs,
   date: DATE,
 });
 assert(
   JSON.stringify(tripLine.path) ===
-    JSON.stringify(imported.network.patterns[imported.network.schedules[chainTrip.schedule].pattern].path),
+    JSON.stringify(imported.network.patterns[imported.network.pattern_trips[chainTrip.pattern_trips].pattern].path),
   "a trip that follows its pattern draws the authored alignment",
 );
 const brokenEdit = runcut.invoke({
@@ -842,8 +842,8 @@ assert(
   "the stops its patterns visit, first-visit order",
 );
 assert(
-  routeDetail.schedules_by_type.map((g) => g.service_type).join(",") === "SUN,WK" &&
-    routeDetail.schedules_by_type.flatMap((g) => g.schedules).every((sc) => sc.trips > 0),
+  routeDetail.pattern_trips_by_type.map((g) => g.service_type).join(",") === "SUN,WK" &&
+    routeDetail.pattern_trips_by_type.flatMap((g) => g.pattern_trips).every((sc) => sc.trips > 0),
   "schedules grouped by service type, each with the trips it runs",
 );
 assert(dir.invoke({ op: "route_detail", network_hash: loadedDirNet.network_hash, route_id: "missing" }).detail === null, "an unknown route has no composition");

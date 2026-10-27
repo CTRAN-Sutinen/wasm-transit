@@ -55,7 +55,7 @@ pub enum Leg {
         /// The derived trip's identity: its schedule and start. The
         /// model names no trips; (schedule, start_secs) is the key
         /// every day view and the codec's trip-id map agree on.
-        schedule: String,
+        pattern_trips: String,
         start_secs: u32,
         route_id: String,
         route_name: String,
@@ -324,7 +324,7 @@ pub fn earliest_arrival(
                 let pt = &pat.trips[trip];
                 let board_stop = pat.stop_positions[board_pos] as usize;
                 legs_rev.push(Leg::Transit {
-                    schedule: pt.schedule.clone(),
+                    pattern_trips: pt.pattern_trips.clone(),
                     start_secs: pt.start_secs,
                     route_id: pt.route_id.clone(),
                     route_name: pt.route_name.clone(),

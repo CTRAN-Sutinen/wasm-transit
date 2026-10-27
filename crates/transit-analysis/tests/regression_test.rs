@@ -143,9 +143,9 @@ fn service_type_ops_expose_the_design_axis() {
     assert_eq!(detail.routes[0].typical_headway_secs, Some(2280));
     assert_eq!(detail.stops.len(), 3, "A, B and C are all served");
     let schedule_trips: std::collections::BTreeMap<&str, u32> = detail
-        .schedules
+        .pattern_trips
         .iter()
-        .map(|s| (s.schedule.as_str(), s.trips))
+        .map(|s| (s.pattern_trips.as_str(), s.trips))
         .collect();
     assert_eq!(schedule_trips["WK:pat-10-0-1"], 3);
     assert_eq!(schedule_trips["WK:pat-10-0-0"], 1);

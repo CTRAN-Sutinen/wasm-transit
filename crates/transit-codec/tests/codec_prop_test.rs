@@ -182,12 +182,12 @@ proptest! {
         // round trip), so they cannot be part of the contract. The
         // canonical form of a schedule is (pattern, schedule value).
         let canon = |net: &transit_network::Network| -> std::collections::HashMap<String, String> {
-            net.schedules
+            net.pattern_trips
                 .iter()
                 .map(|(id, s)| {
                     (
                         id.clone(),
-                        format!("{}|{}", s.pattern, serde_json::to_string(&s.schedule).unwrap()),
+                        format!("{}|{}", s.pattern, serde_json::to_string(&s.departures).unwrap()),
                     )
                 })
                 .collect()
@@ -206,7 +206,7 @@ proptest! {
                             block
                                 .trips
                                 .iter()
-                                .map(|t| (c[&t.schedule].clone(), t.start_secs))
+                                .map(|t| (c[&t.pattern_trips].clone(), t.start_secs))
                                 .collect(),
                             serde_json::to_string(&block.layovers).unwrap(),
                         ),
@@ -232,7 +232,7 @@ proptest! {
         // and starts, then compare the rules they reference.
         let by_pattern = |net: &transit_network::Network| -> Vec<(String, String)> {
             let mut list: Vec<(String, String)> = net
-                .schedules
+                .pattern_trips
                 .values()
                 .map(|s| (s.pattern.clone(), s.service_type.clone()))
                 .collect();

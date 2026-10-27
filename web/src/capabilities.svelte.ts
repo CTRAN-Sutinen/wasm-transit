@@ -764,7 +764,7 @@ export function networkCap(module: CapModule) {
     /// The import's trip-id map: derived (schedule, start) ↔ agency
     /// trip ids. None for an authored (non-imported) network.
     /// The agency trip ids behind derived trips, in the order asked.
-    agencyTripIds(networkHash: string, trips: { schedule: string; start_secs: number }[]): string[][] {
+    agencyTripIds(networkHash: string, trips: { pattern_trips: string; start_secs: number }[]): string[][] {
       const resp = module.invoke({
         op: "agency_trip_ids",
         network_hash: networkHash,
@@ -1024,7 +1024,7 @@ export function runcutCap(module: CapModule) {
     tripStops(
       networkHash: string,
       editsHash: string | null,
-      schedule: string,
+      pattern_trips: string,
       startSecs: number,
       date: string,
     ): TripStopView[] {
@@ -1032,7 +1032,7 @@ export function runcutCap(module: CapModule) {
         op: "trip_stops",
         network_hash: networkHash,
         edits_hash: editsHash,
-        schedule,
+        pattern_trips,
         start_secs: startSecs,
         date,
       } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "trip_stops" }>;
@@ -1040,12 +1040,12 @@ export function runcutCap(module: CapModule) {
     },
     /// One derived trip's line on the date, over the effective day (a
     /// diverted trip draws its diversion).
-    tripPath(networkHash: string, editsHash: string | null, schedule: string, startSecs: number, date: string): Coord[] {
+    tripPath(networkHash: string, editsHash: string | null, pattern_trips: string, startSecs: number, date: string): Coord[] {
       const resp = module.invoke({
         op: "trip_path",
         network_hash: networkHash,
         edits_hash: editsHash,
-        schedule,
+        pattern_trips,
         start_secs: startSecs,
         date,
       } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "trip_path" }>;
@@ -1634,6 +1634,19 @@ export function authorCap(module: CapModule) {
 export async function authorModule(): Promise<CapModule | null> {
   const modules = await ensure(["author"]);
   return modules.author ?? null;
+}
+
+/// A STORED network document read back through the authoring module:
+/// the module parses it (field names from before a rename included —
+/// the model's serde aliases) and answers its canonical form, so the
+/// host reads only the current shape and never sniffs a document's.
+/// Null when the module cannot assemble (the caller keeps the stored
+/// copy). Throws when the module refuses the document.
+export async function readStoredNetwork(stored: unknown): Promise<Network | null> {
+  const module = await authorModule();
+  if (!module) return null;
+  const cap = authorCap(module);
+  return cap.apply(cap.loadNetwork(stored as Network), []).network;
 }
 
 // ---------------------------------------------------------------------

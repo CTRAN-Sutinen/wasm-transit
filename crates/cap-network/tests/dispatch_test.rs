@@ -67,8 +67,8 @@ fn trip_map_joins_the_agency_ids_to_the_derived_trips() {
         _ => panic!("import"),
     };
     let asked = vec![
-        transit_network::TripRef { schedule: "ghost".into(), start_secs: 0 },
-        transit_network::TripRef { schedule: first.schedule.clone(), start_secs: first.start_secs },
+        transit_network::TripRef { pattern_trips: "ghost".into(), start_secs: 0 },
+        transit_network::TripRef { pattern_trips: first.pattern_trips.clone(), start_secs: first.start_secs },
     ];
     match dispatch(Request::AgencyTripIds { network_hash, trips: asked }).unwrap() {
         Response::AgencyTripIds { ids } => assert_eq!(ids, vec![vec![], first.agency_trip_ids.clone()]),
@@ -78,7 +78,7 @@ fn trip_map_joins_the_agency_ids_to_the_derived_trips() {
         assert!(
             !e.agency_trip_ids.is_empty(),
             "entry {}@{} maps no agency id",
-            e.schedule,
+            e.pattern_trips,
             e.start_secs
         );
     }

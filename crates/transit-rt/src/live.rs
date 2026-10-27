@@ -33,7 +33,7 @@ pub fn live_day(
     let derived: HashMap<&str, (&str, u32)> = trip_map
         .entries
         .iter()
-        .flat_map(|e| e.agency_trip_ids.iter().map(move |id| (id.as_str(), (e.schedule.as_str(), e.start_secs))))
+        .flat_map(|e| e.agency_trip_ids.iter().map(move |id| (id.as_str(), (e.pattern_trips.as_str(), e.start_secs))))
         .collect();
 
     let mut trips = Vec::new();
@@ -46,7 +46,7 @@ pub fn live_day(
     if let Some(delays) = delays {
         for update in &delays.trips {
             let Some(trip_id) = update.trip_id.as_deref() else { continue };
-            let (Some(&(schedule, start_secs)), Some(progress)) =
+            let (Some(&(pattern_trips, start_secs)), Some(progress)) =
                 (derived.get(trip_id), trip_progress(gtfs, delays, trip_id))
             else {
                 unmatched_trips += 1;
@@ -57,7 +57,7 @@ pub fn live_day(
             worst_by_agency.insert(trip_id, worst);
             route_by_agency.insert(trip_id, route.clone());
             trips.push(LiveTrip {
-                schedule: schedule.to_string(),
+                pattern_trips: pattern_trips.to_string(),
                 start_secs,
                 agency_trip_id: trip_id.to_string(),
                 route_name: route_name(&route),
@@ -105,7 +105,7 @@ pub fn live_day(
                         route_name: route_name(&route),
                         route,
                         next_stop: v.stop_id.clone(),
-                        schedule: resolved.map(|(s, _)| s.to_string()),
+                        pattern_trips: resolved.map(|(s, _)| s.to_string()),
                         start_secs: resolved.map(|(_, start)| *start),
                         agency_trip_id: v.trip_id.clone(),
                         delay_secs: delay,

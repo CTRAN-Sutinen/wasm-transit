@@ -59,7 +59,7 @@ fn changes_chain_by_hash_and_report_the_result() {
     assert_eq!(network.plan.id, "spring");
     assert!(issues.is_empty());
     // (The 25:30 trip was never in block 400: unassigned, warned.)
-    let unassigned = NetworkWarning::UnassignedTrips { schedule: "10-weekday".into(), trips: 1 };
+    let unassigned = NetworkWarning::UnassignedTrips { pattern_trips: "10-weekday".into(), trips: 1 };
     assert_eq!(
         warnings,
         vec![
@@ -134,8 +134,8 @@ fn gestures_report_what_they_created() {
         panic!("apply")
     };
     assert_eq!(network.stops["s1"].name, "Depot");
-    let err = apply(&network_hash, vec![NetworkEdit::RemoveStart { schedule: "ghost".into(), index: 0 }]).unwrap_err();
-    assert!(err.contains("edit 0") && err.contains("unknown schedule"), "{err}");
+    let err = apply(&network_hash, vec![NetworkEdit::RemoveStart { pattern_trips: "ghost".into(), index: 0 }]).unwrap_err();
+    assert!(err.contains("edit 0") && err.contains("unknown pattern trips"), "{err}");
 }
 
 #[test]

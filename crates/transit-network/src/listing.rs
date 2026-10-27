@@ -30,10 +30,10 @@ pub struct EntityRow {
 /// One service type's schedules on a route.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct ScheduleGroup {
+pub struct PatternTripsGroup {
     pub service_type: String,
     pub name: String,
-    pub schedules: Vec<EntityRow>,
+    pub pattern_trips: Vec<EntityRow>,
 }
 
 /// A route's composition: its patterns, the stops they visit (first
@@ -44,7 +44,7 @@ pub struct ScheduleGroup {
 pub struct RouteDetail {
     pub patterns: Vec<EntityRow>,
     pub stops: Vec<EntityRow>,
-    pub schedules_by_type: Vec<ScheduleGroup>,
+    pub pattern_trips_by_type: Vec<PatternTripsGroup>,
 }
 
 /// A stop's composition: the routes whose patterns visit it.
@@ -76,7 +76,7 @@ fn pattern_row(network: &Network, id: &str) -> EntityRow {
 }
 
 fn schedule_row(network: &Network, id: &str) -> EntityRow {
-    match network.schedules.get(id) {
+    match network.pattern_trips.get(id) {
         Some(s) => {
             let pattern = network.patterns.get(&s.pattern).map_or(s.pattern.as_str(), |p| p.name.as_str());
             let service = network
@@ -85,7 +85,7 @@ fn schedule_row(network: &Network, id: &str) -> EntityRow {
                 .map_or(s.service_type.as_str(), |t| t.name.as_str());
             EntityRow {
                 context: Some(format!("{pattern} · {service}")),
-                trips: Some(trip_starts(&s.schedule).len() as u32),
+                trips: Some(trip_starts(&s.departures).len() as u32),
                 ..row(id, id)
             }
         }
@@ -101,7 +101,7 @@ pub fn entity_rows(network: &Network, kind: EntityKind, query: &str) -> Vec<Enti
         EntityKind::Stop => network.stops.keys().map(|id| stop_row(network, id)).collect(),
         EntityKind::Route => network.routes.iter().map(|(id, r)| row(id, &r.name)).collect(),
         EntityKind::Pattern => network.patterns.keys().map(|id| pattern_row(network, id)).collect(),
-        EntityKind::Schedule => network.schedules.keys().map(|id| schedule_row(network, id)).collect(),
+        EntityKind::PatternTrips => network.pattern_trips.keys().map(|id| schedule_row(network, id)).collect(),
         EntityKind::ServiceType => network.service_types.iter().map(|(id, t)| row(id, &t.name)).collect(),
         EntityKind::Block => network
             .blocks
@@ -131,23 +131,23 @@ pub fn route_detail(network: &Network, route: &str) -> Option<RouteDetail> {
         .map(|ps| stop_row(network, &ps.stop))
         .collect();
     let mut groups: std::collections::BTreeMap<&str, Vec<EntityRow>> = Default::default();
-    for (id, s) in &network.schedules {
+    for (id, s) in &network.pattern_trips {
         if pattern_ids.contains(&&s.pattern) {
             groups.entry(s.service_type.as_str()).or_default().push(schedule_row(network, id));
         }
     }
-    let schedules_by_type = groups
+    let pattern_trips_by_type = groups
         .into_iter()
-        .map(|(tid, schedules)| ScheduleGroup {
+        .map(|(tid, pattern_trips)| PatternTripsGroup {
             service_type: tid.to_string(),
             name: network.service_types.get(tid).map_or(tid.to_string(), |t| t.name.clone()),
-            schedules,
+            pattern_trips,
         })
         .collect();
     Some(RouteDetail {
         patterns: pattern_ids.iter().map(|pid| pattern_row(network, pid)).collect(),
         stops,
-        schedules_by_type,
+        pattern_trips_by_type,
     })
 }
 

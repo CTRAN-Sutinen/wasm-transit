@@ -105,8 +105,8 @@ fn plan_answers_over_the_materialized_day() {
     // start_secs) — the identity every day view and the codec's
     // trip-id map agree on.
     match &it.legs[0] {
-        transit_router::Leg::Transit { schedule, start_secs, .. } => {
-            assert!(!schedule.is_empty());
+        transit_router::Leg::Transit { pattern_trips, start_secs, .. } => {
+            assert!(!pattern_trips.is_empty());
             assert_eq!(*start_secs, 8 * 3600);
         }
         other => panic!("expected a transit leg, got {other:?}"),

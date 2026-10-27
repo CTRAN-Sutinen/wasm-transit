@@ -1,10 +1,14 @@
 //! The authored network model — planner intent as data.
 //!
 //! Reading order: [`Network`] holds everything a planner authors.
-//! [`Pattern`] is the stop sequence with timepoints and per-band run
-//! times; [`Service`] binds a pattern to a schedule and a calendar;
-//! [`Block`] is the runcut. Trips are *not* stored anywhere — they
-//! are derived by [`crate::materialize`].
+//! [`Route`]s run in directions; a [`Pattern`] is one stop sequence of
+//! a route with timepoints and per-band run times; a [`ServiceType`]
+//! is the day type planners design (Weekday, Saturday…);
+//! [`PatternTrips`] are one pattern's departures under one service
+//! type; [`Block`] is the runcut. A planner's TIMETABLE — a route,
+//! one direction, one service type — is every trip of that
+//! direction's patterns, derived (`listing::timetable`). Trips are
+//! *not* stored anywhere — they are derived by [`crate::materialize`].
 //!
 //! Time conventions (see the crate docs): `u32` seconds after the
 //! service-day [`Anchor`] of the date in question. `at_timepoints`
@@ -30,7 +34,7 @@ pub type StopId = String;
 pub type RouteId = String;
 pub type PatternId = String;
 pub type ServiceTypeId = String;
-pub type ScheduleId = String;
+pub type PatternTripsId = String;
 pub type BlockId = String;
 
 /// A WGS84 position. Authored geometry (a pattern's alignment) is
@@ -361,12 +365,12 @@ impl WeekdaySet {
     }
 }
 
-/// When trips of a service run. A planner authors either headway
+/// When a pattern's trips depart. A planner authors either headway
 /// bands ("15-minute peak service") or exact departure offsets.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Schedule {
+pub enum Departures {
     /// Trips depart at `start_secs + k * headway_secs` while the
     /// departure is `< end_secs` (end-exclusive: the band boundary
     /// belongs to the next band, if any).
@@ -385,16 +389,18 @@ pub struct HeadwayBand {
 }
 
 /// One pattern's trips under one service type: this pattern, on this
-/// service, at these times. Everything RAPTOR and dispatch consume
-/// derives from these. (The name matters: a *service* is the
-/// service type — the day-level design; this is its per-pattern
-/// schedule.)
+/// service type, departing at these times. Everything RAPTOR and
+/// dispatch consume derives from these. Not a planner's "schedule":
+/// the timetable a planner reads is a route's direction under one
+/// service type, across all its patterns (`listing::timetable`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct PatternSchedule {
+pub struct PatternTrips {
     pub pattern: PatternId,
     pub service_type: ServiceTypeId,
-    pub schedule: Schedule,
+    /// Was `schedule` (documents before the rename still read).
+    #[serde(alias = "schedule")]
+    pub departures: Departures,
 }
 
 /// One vehicle's work: trips in order with the layovers between
@@ -407,11 +413,13 @@ pub struct Block {
 }
 
 /// A block's reference to a trip — trips being derived values, the
-/// (schedule, start) pair *is* the trip's identity.
+/// (pattern trips, start) pair *is* the trip's identity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct TripRef {
-    pub schedule: ScheduleId,
+    /// Was `schedule` (documents before the rename still read).
+    #[serde(alias = "schedule")]
+    pub pattern_trips: PatternTripsId,
     pub start_secs: u32,
 }
 
@@ -469,8 +477,9 @@ pub struct Network {
     pub patterns: BTreeMap<PatternId, Pattern>,
     /// The service types: what planners design and link to days.
     pub service_types: BTreeMap<ServiceTypeId, ServiceType>,
-    /// The schedules: one pattern's trips under one service type.
-    pub schedules: BTreeMap<ScheduleId, PatternSchedule>,
+    /// Every pattern's trips, one entry per (pattern, service type).
+    #[serde(alias = "schedules")]
+    pub pattern_trips: BTreeMap<PatternTripsId, PatternTrips>,
     pub blocks: BTreeMap<BlockId, Block>,
 }
 

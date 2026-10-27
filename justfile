@@ -171,7 +171,7 @@ test: caps
       --op '{"op":"itinerary_paths","network_hash":"$load_network.network_hash","date":"2026-10-23","itinerary":"$plan.itinerary"}' \
       --cap runcut --op @web/public/caps/sample-network-load.json \
       --as edits --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
-      --as trip --op '{"op":"trip_path","network_hash":"$load_network.network_hash","edits_hash":"$edits.edits_hash","schedule":"WK:pat-10-0-1","start_secs":31200,"date":"2026-10-23"}' \
+      --as trip --op '{"op":"trip_path","network_hash":"$load_network.network_hash","edits_hash":"$edits.edits_hash","pattern_trips":"WK:pat-10-0-1","start_secs":31200,"date":"2026-10-23"}' \
       --cap directory --op @web/public/caps/sample-network-load.json \
       --as focus --op '{"op":"focus","network_hash":"$load_network.network_hash","kind":"route","id":"10"}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const legs = r.find((x) => x.ok?.op === "itinerary_paths").ok.paths; if (legs[0]?.kind !== "transit" || legs[0].path.length < 2 || ok("trip").path.length !== 2 || ok("focus").focus.lines.length !== 2) process.exit(1)'
@@ -187,7 +187,7 @@ test: caps
       --as serving --op '{"op":"stop_detail","network_hash":"$load_network.network_hash","stop_id":"A"}' \
       --cap router --op @web/public/caps/sample-network-load.json \
       --as late --op '{"op":"plan_compare","network_hash":"$load_network.network_hash","from":"A","to":"B","date":"2026-10-23","depart_secs":144000,"max_legs":6}' \
-      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const d = ok("detail").detail; if (d.schedules_by_type.map((g) => g.service_type).join() !== "SUN,WK" || !d.schedules_by_type.every((g) => g.schedules.every((s) => s.trips > 0)) || ok("stops").rows.map((s) => s.id).join() !== "B" || !ok("serving").detail.routes.some((r) => r.id === "10") || !ok("late").notice?.includes("within 6 legs")) process.exit(1)'
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const d = ok("detail").detail; if (d.pattern_trips_by_type.map((g) => g.service_type).join() !== "SUN,WK" || !d.pattern_trips_by_type.every((g) => g.pattern_trips.every((s) => s.trips > 0)) || ok("stops").rows.map((s) => s.id).join() !== "B" || !ok("serving").detail.routes.some((r) => r.id === "10") || !ok("late").notice?.includes("within 6 legs")) process.exit(1)'
     # The router capability's gate: planning over the network document
     # — the plan, then the diversion delta (compare) chained on the
     # same edits document (08:15 against the unpatched 08:10).
@@ -203,7 +203,7 @@ test: caps
     node tools/caps-run.mjs runcut \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
-      --op '{"op":"trip_stops","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","schedule":"WK:pat-10-0-1","start_secs":31200,"date":"2026-10-23"}' \
+      --op '{"op":"trip_stops","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","pattern_trips":"WK:pat-10-0-1","start_secs":31200,"date":"2026-10-23"}' \
       | grep -q '"stop_id":"B"'
     # The street capability's gate: the detour editor's need, one
     # chained session — the street fixture on bulk op 0, two snaps,

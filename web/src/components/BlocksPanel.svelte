@@ -69,7 +69,7 @@
     <table>
     <tbody>
       <tr><th>#</th><th>start</th><th>end</th><th>route</th><th>trip</th><th>from → to</th><th>layover</th></tr>
-      {#each chain.trips as t, i (t.schedule + t.start_secs)}
+      {#each chain.trips as t, i (t.pattern_trips + t.start_secs)}
         {@const flag = t.layover_health ? FLAG[t.layover_health] : null}
         <tr class:muted={!t.runs} title={t.runs ? "" : "this trip does not run today — the authored hole"}>
           <td>{i + 1}</td>

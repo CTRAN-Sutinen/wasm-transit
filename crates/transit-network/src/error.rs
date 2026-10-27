@@ -26,20 +26,20 @@ pub enum NetworkError {
     #[error("pattern {pattern} references unknown route {route}")]
     UnknownRoute { pattern: String, route: String },
 
-    #[error("schedule {schedule} references unknown pattern {pattern}")]
-    UnknownPattern { schedule: String, pattern: String },
+    #[error("pattern trips {pattern_trips} reference unknown pattern {pattern}")]
+    UnknownPattern { pattern_trips: String, pattern: String },
 
-    #[error("schedule {schedule} references unknown service type {service_type}")]
-    UnknownServiceType { schedule: String, service_type: String },
+    #[error("pattern trips {pattern_trips} reference unknown service type {service_type}")]
+    UnknownServiceType { pattern_trips: String, service_type: String },
 
-    #[error("block {block} references unknown schedule {schedule}")]
-    UnknownBlockSchedule { block: String, schedule: String },
+    #[error("block {block} references unknown pattern trips {pattern_trips}")]
+    UnknownBlockPatternTrips { block: String, pattern_trips: String },
 
     /// The schedule exists but produces no trip at this start: the
     /// runcut and the published schedule would describe different
     /// networks (a retimed schedule left its blocks behind).
-    #[error("block {block} references trip {schedule}@{start_secs}, which its schedule does not run")]
-    UnknownBlockTrip { block: String, schedule: String, start_secs: u32 },
+    #[error("block {block} references trip {pattern_trips}@{start_secs}, which those pattern trips do not run")]
+    UnknownBlockTrip { block: String, pattern_trips: String, start_secs: u32 },
 
     #[error("layover in block {block} references unknown stop {stop}")]
     UnknownLayoverStop { block: String, stop: String },
@@ -84,24 +84,24 @@ pub enum NetworkError {
     // -----------------------------------------------------------------
     // Service structure
     // -----------------------------------------------------------------
-    #[error("schedule {schedule} has an empty schedule")]
-    EmptySchedule { schedule: String },
+    #[error("pattern trips {pattern_trips} run no trips")]
+    EmptyPatternTrips { pattern_trips: String },
 
-    #[error("schedule {schedule} headway band {band} must have positive headway")]
-    ZeroHeadway { schedule: String, band: usize },
+    #[error("pattern trips {pattern_trips} headway band {band} must have positive headway")]
+    ZeroHeadway { pattern_trips: String, band: usize },
 
-    #[error("schedule {schedule} headway band {band} has start >= end")]
-    EmptyHeadwayBand { schedule: String, band: usize },
+    #[error("pattern trips {pattern_trips} headway band {band} has start >= end")]
+    EmptyHeadwayBand { pattern_trips: String, band: usize },
 
-    #[error("schedule {schedule} headway bands overlap")]
-    OverlappingHeadwayBands { schedule: String },
+    #[error("pattern trips {pattern_trips} headway bands overlap")]
+    OverlappingHeadwayBands { pattern_trips: String },
 
-    #[error("schedule {schedule} exact times must be sorted and unique")]
-    UnsortedExactTimes { schedule: String },
+    #[error("pattern trips {pattern_trips} exact times must be sorted and unique")]
+    UnsortedExactTimes { pattern_trips: String },
 
-    #[error("schedule {schedule} trip at {start_secs} falls outside every timing profile of pattern {pattern}")]
+    #[error("pattern trips {pattern_trips} trip at {start_secs} falls outside every timing profile of pattern {pattern}")]
     TripOutsideTimingProfiles {
-        schedule: String,
+        pattern_trips: String,
         pattern: String,
         start_secs: u32,
     },
@@ -141,9 +141,9 @@ pub enum NetworkError {
     #[error("block {block} layover after trip {after_trip} does not fit before the next trip")]
     LayoverInfeasible { block: String, after_trip: usize },
 
-    #[error("trip {schedule}@{start_secs} appears in both block {a} and block {b}")]
+    #[error("trip {pattern_trips}@{start_secs} appears in both block {a} and block {b}")]
     DuplicateBlockTrip {
-        schedule: String,
+        pattern_trips: String,
         start_secs: u32,
         a: String,
         b: String,
@@ -153,8 +153,8 @@ pub enum NetworkError {
     // Materialization (total function: these fire only on networks
     // that failed validation)
     // -----------------------------------------------------------------
-    #[error("unknown schedule {schedule}")]
-    UnknownSchedule { schedule: String },
+    #[error("unknown pattern trips {pattern_trips}")]
+    UnknownPatternTrips { pattern_trips: String },
 
     #[error("no timing profile of pattern {pattern} covers a trip starting at {start_secs}")]
     NoProfileForTrip { pattern: String, start_secs: u32 },
@@ -171,7 +171,7 @@ pub enum NetworkWarning {
     /// Trips of a schedule that no block carries: service with no
     /// vehicle assigned. Reported only once the document has a runcut
     /// at all (a network with no blocks yet is unassigned by design).
-    UnassignedTrips { schedule: String, trips: u32 },
+    UnassignedTrips { pattern_trips: String, trips: u32 },
     /// A versioned plan whose service types run on no day of its
     /// first week: the pick governs a period it carries no service
     /// for (the calendar ranges a fork inherited end before it).

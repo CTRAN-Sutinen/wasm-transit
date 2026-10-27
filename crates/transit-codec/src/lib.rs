@@ -40,7 +40,7 @@ use transit_core::{
 };
 use transit_network::{
     materialize_service, Anchor, Block, CalendarException, CalendarRule, Coord, DateRange, DayState,
-    Mode, Network, Pattern, PatternSchedule, PatternStop, Schedule, ServiceType, TimingProfile, TripRef, WeekdaySet,
+    Mode, Network, Pattern, PatternTrips, PatternStop, Departures, ServiceType, TimingProfile, TripRef, WeekdaySet,
     Layover,
 };
 
@@ -106,7 +106,7 @@ pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, String> {
     let mut block_of: BTreeMap<(String, u32), String> = BTreeMap::new();
     for (block_id, block) in &net.blocks {
         for trip in &block.trips {
-            block_of.insert((trip.schedule.clone(), trip.start_secs), block_id.clone());
+            block_of.insert((trip.pattern_trips.clone(), trip.start_secs), block_id.clone());
         }
     }
 
@@ -140,24 +140,24 @@ pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, String> {
         })
         .collect();
 
-    for (schedule_id, schedule) in &net.schedules {
+    for (pattern_trips_id, pattern_trips) in &net.pattern_trips {
         // Service type → explicit running dates, exact for any rule.
-        if let Some(service_type) = net.service_types.get(&schedule.service_type) {
+        if let Some(service_type) = net.service_types.get(&pattern_trips.service_type) {
             for date in running_dates(&service_type.rule) {
                 calendar_dates.push(CalendarDate {
-                    service_id: schedule_id.clone(),
+                    service_id: pattern_trips_id.clone(),
                     date,
                     exception_type: 1,
                 });
             }
         }
-        for trip in materialize_service(net, schedule_id).map_err(|e| e.to_string())? {
-            let trip_id = format!("{schedule_id}@{}", trip.start_secs);
+        for trip in materialize_service(net, pattern_trips_id).map_err(|e| e.to_string())? {
+            let trip_id = format!("{pattern_trips_id}@{}", trip.start_secs);
             trips.insert(
                 trip_id.clone(),
                 Trip {
                     route_id: trip.route.clone(),
-                    service_id: schedule_id.clone(),
+                    service_id: pattern_trips_id.clone(),
                     trip_id: trip_id.clone(),
                     trip_headsign: net
                         .patterns
@@ -165,7 +165,7 @@ pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, String> {
                         .map(|p| p.name.clone()),
                     direction_id: None,
                     block_id: block_of
-                        .get(&(schedule_id.clone(), trip.start_secs))
+                        .get(&(pattern_trips_id.clone(), trip.start_secs))
                         .cloned(),
                     // The pattern's authored alignment, when there is
                     // one; None keeps the stop-to-stop fallback.
@@ -270,7 +270,7 @@ pub enum ImportNote {
     /// The same derived trip was claimed by two blocks (two buses
     /// running the same trip); the lowest block id won.
     DuplicateBlockTrip {
-        schedule: String,
+        pattern_trips: String,
         start_secs: u32,
         kept_block: String,
         dropped_block: String,
@@ -313,7 +313,7 @@ pub enum ImportNote {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct TripIdEntry {
-    pub schedule: String,
+    pub pattern_trips: String,
     pub start_secs: u32,
     /// The agency trip ids that collapsed into this derived trip
     /// (the model dedups duplicate starts; every source id stays
@@ -337,10 +337,10 @@ pub struct TripIdMap {
 impl TripIdMap {
     /// The agency trip ids behind one derived trip — empty when the
     /// trip is not in the map (authored after the import).
-    pub fn agency_ids(&self, schedule: &str, start_secs: u32) -> Vec<String> {
+    pub fn agency_ids(&self, pattern_trips: &str, start_secs: u32) -> Vec<String> {
         self.entries
             .iter()
-            .find(|e| e.schedule == schedule && e.start_secs == start_secs)
+            .find(|e| e.pattern_trips == pattern_trips && e.start_secs == start_secs)
             .map(|e| e.agency_trip_ids.clone())
             .unwrap_or_default()
     }
@@ -408,7 +408,7 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
         routes: Default::default(),
         patterns: Default::default(),
         service_types: Default::default(),
-        schedules: Default::default(),
+        pattern_trips: Default::default(),
         blocks: Default::default(),
     };
 
@@ -616,12 +616,12 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
             // duplicate starts.
             starts.sort_unstable();
             starts.dedup();
-            net.schedules.insert(
+            net.pattern_trips.insert(
                 format!("{sid}:{pattern_id}"),
-                PatternSchedule {
+                PatternTrips {
                     pattern: pattern_id.clone(),
                     service_type: sid.to_string(),
-                    schedule: Schedule::ExactTimes { starts },
+                    departures: Departures::ExactTimes { starts },
                 },
             );
         }
@@ -629,7 +629,7 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
 
     // Calendars for every referenced service key, in id order. Block
     // trips reference the same service keys, so nothing is missed.
-    let sids: BTreeSet<String> = net.schedules.values().map(|s| s.service_type.clone()).collect();
+    let sids: BTreeSet<String> = net.pattern_trips.values().map(|s| s.service_type.clone()).collect();
     for sid in &sids {
         let mut days = WeekdaySet::none();
         let mut ranges = Vec::new();
@@ -694,11 +694,11 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
         let mut refs: Vec<TripRef> = trips
             .iter()
             .map(|t| TripRef {
-                schedule: format!("{}:{}", t.service_id, t.pattern_id),
+                pattern_trips: format!("{}:{}", t.service_id, t.pattern_id),
                 start_secs: t.start_secs,
             })
             .collect();
-        refs.sort_by(|a, b| a.start_secs.cmp(&b.start_secs).then_with(|| a.schedule.cmp(&b.schedule)));
+        refs.sort_by(|a, b| a.start_secs.cmp(&b.start_secs).then_with(|| a.pattern_trips.cmp(&b.pattern_trips)));
         let mut chain: Vec<TripRef> = Vec::with_capacity(refs.len());
         let mut layovers: Vec<Layover> = Vec::new();
         for r in refs {
@@ -706,13 +706,13 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
                 notes.push(ImportNote::SameSecondBlockTrips {
                     block: bid.to_string(),
                     start_secs: r.start_secs,
-                    dropped_schedule: r.schedule.clone(),
+                    dropped_schedule: r.pattern_trips.clone(),
                 });
                 continue; // one vehicle cannot run two trips at once
             }
             if let Some(kept_block) = claimed_clash(&claimed, &r) {
                 notes.push(ImportNote::DuplicateBlockTrip {
-                    schedule: r.schedule.clone(),
+                    pattern_trips: r.pattern_trips.clone(),
                     start_secs: r.start_secs,
                     kept_block: kept_block,
                     dropped_block: bid.to_string(),
@@ -721,14 +721,14 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
             }
             if let Some(last) = chain.last() {
                 if let Ok(arrival) =
-                    transit_network::trip_arrival_end_secs(&net, &last.schedule, last.start_secs)
+                    transit_network::trip_arrival_end_secs(&net, &last.pattern_trips, last.start_secs)
                 {
                     if arrival > r.start_secs {
                         notes.push(ImportNote::InfeasibleBlockChain {
                             block: bid.to_string(),
                             arrival_secs: arrival,
                             start_secs: r.start_secs,
-                            dropped_schedule: r.schedule.clone(),
+                            dropped_schedule: r.pattern_trips.clone(),
                         });
                         continue; // departs before the vehicle arrives: impossible
                     }
@@ -738,8 +738,8 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
                     // feasible by construction — the model's
                     // LayoverInfeasible law holds with equality.
                     let at = net
-                        .schedules
-                        .get(&last.schedule)
+                        .pattern_trips
+                        .get(&last.pattern_trips)
                         .and_then(|s| net.patterns.get(&s.pattern))
                         .and_then(|p| p.stops.last())
                         .map(|ps| ps.stop.clone());
@@ -750,7 +750,7 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
                     });
                 }
             }
-            claimed.insert((r.schedule.clone(), r.start_secs), bid.to_string());
+            claimed.insert((r.pattern_trips.clone(), r.start_secs), bid.to_string());
             chain.push(r);
         }
         // A block whose every trip was a duplicate is not inserted:
@@ -810,8 +810,8 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
     let trip_map = TripIdMap {
         entries: by_derived
             .into_iter()
-            .map(|((schedule, start_secs), agency_trip_ids)| TripIdEntry {
-                schedule,
+            .map(|((pattern_trips, start_secs), agency_trip_ids)| TripIdEntry {
+                pattern_trips,
                 start_secs,
                 agency_trip_ids: agency_trip_ids.into_iter().map(str::to_string).collect(),
             })
@@ -827,7 +827,7 @@ fn claimed_clash(
     r: &TripRef,
 ) -> Option<String> {
     claimed
-        .get(&(r.schedule.clone(), r.start_secs))
+        .get(&(r.pattern_trips.clone(), r.start_secs))
         .cloned()
 }
 

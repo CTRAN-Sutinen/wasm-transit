@@ -28,7 +28,7 @@ fn an_entity_frames_what_it_runs() {
     let net = network();
     for (kind, id) in [
         (EntityKind::Pattern, "10-inbound"),
-        (EntityKind::Schedule, "10-weekday"),
+        (EntityKind::PatternTrips, "10-weekday"),
         (EntityKind::Route, "10"),
         (EntityKind::ServiceType, "weekday"),
         (EntityKind::Block, "400"),
@@ -38,7 +38,7 @@ fn an_entity_frames_what_it_runs() {
     }
     let stop = entity_focus(&net, EntityKind::Stop, "B").unwrap();
     assert_eq!((stop.lines.len(), stop.points), (0, vec![c(45.51, -73.51)]));
-    for kind in [EntityKind::Stop, EntityKind::Route, EntityKind::Pattern, EntityKind::Schedule, EntityKind::ServiceType, EntityKind::Block] {
+    for kind in [EntityKind::Stop, EntityKind::Route, EntityKind::Pattern, EntityKind::PatternTrips, EntityKind::ServiceType, EntityKind::Block] {
         assert!(entity_focus(&net, kind, "nope").is_none(), "{kind:?}");
     }
 }

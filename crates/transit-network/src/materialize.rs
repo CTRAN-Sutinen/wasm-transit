@@ -24,13 +24,13 @@ use ts_rs::TS;
 use chrono::NaiveDate;
 
 use crate::error::NetworkError;
-use crate::model::{Network, Pattern, Schedule};
+use crate::model::{Network, Pattern, Departures};
 
 /// One derived trip for one service date.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct MaterializedTrip {
-    pub schedule: String,
+    pub pattern_trips: String,
     pub route: String,
     pub pattern: String,
     /// Seconds after the service-day anchor (see `Network::anchor`).
@@ -52,9 +52,9 @@ pub struct StopTime {
 /// Expand a schedule into its trip start offsets, sorted. Bands are
 /// end-exclusive; a zero headway (invalid, flagged by validation)
 /// yields no trips rather than looping forever.
-pub fn trip_starts(schedule: &Schedule) -> Vec<u32> {
-    let mut starts: Vec<u32> = match schedule {
-        Schedule::HeadwayBands { bands } => {
+pub fn trip_starts(pattern_trips: &Departures) -> Vec<u32> {
+    let mut starts: Vec<u32> = match pattern_trips {
+        Departures::HeadwayBands { bands } => {
             let mut out = Vec::new();
             for band in bands {
                 if band.headway_secs == 0 {
@@ -68,7 +68,7 @@ pub fn trip_starts(schedule: &Schedule) -> Vec<u32> {
             }
             out
         }
-        Schedule::ExactTimes { starts } => starts.clone(),
+        Departures::ExactTimes { starts } => starts.clone(),
     };
     starts.sort_unstable();
     starts.dedup();
@@ -79,14 +79,14 @@ pub fn trip_starts(schedule: &Schedule) -> Vec<u32> {
 /// feasibility against. On a validated network this cannot fail.
 pub fn trip_arrival_end_secs(
     network: &Network,
-    schedule_id: &str,
+    pattern_trips_id: &str,
     start_secs: u32,
 ) -> Result<u32, NetworkError> {
-    let service = network.schedules.get(schedule_id).ok_or_else(|| NetworkError::UnknownSchedule {
-        schedule: schedule_id.to_string(),
+    let service = network.pattern_trips.get(pattern_trips_id).ok_or_else(|| NetworkError::UnknownPatternTrips {
+        pattern_trips: pattern_trips_id.to_string(),
     })?;
     let pattern = network.patterns.get(&service.pattern).ok_or_else(|| NetworkError::UnknownPattern {
-        schedule: schedule_id.to_string(),
+        pattern_trips: pattern_trips_id.to_string(),
         pattern: service.pattern.clone(),
     })?;
     let profile = pattern
@@ -112,19 +112,19 @@ pub fn trip_arrival_end_secs(
 /// the derived-feed view. On a validated network it cannot fail.
 pub fn materialize_service(
     network: &Network,
-    schedule_id: &str,
+    pattern_trips_id: &str,
 ) -> Result<Vec<MaterializedTrip>, NetworkError> {
     let service = network
-        .schedules
-        .get(schedule_id)
-        .ok_or_else(|| NetworkError::UnknownSchedule {
-            schedule: schedule_id.to_string(),
+        .pattern_trips
+        .get(pattern_trips_id)
+        .ok_or_else(|| NetworkError::UnknownPatternTrips {
+            pattern_trips: pattern_trips_id.to_string(),
         })?;
     let pattern = network
         .patterns
         .get(&service.pattern)
         .ok_or_else(|| NetworkError::UnknownPattern {
-            schedule: schedule_id.to_string(),
+            pattern_trips: pattern_trips_id.to_string(),
             pattern: service.pattern.clone(),
         })?;
     if network.routes.get(&pattern.route).is_none() {
@@ -134,9 +134,9 @@ pub fn materialize_service(
         });
     }
     let mut trips = Vec::new();
-    for start in trip_starts(&service.schedule) {
+    for start in trip_starts(&service.departures) {
         trips.push(MaterializedTrip {
-            schedule: schedule_id.to_string(),
+            pattern_trips: pattern_trips_id.to_string(),
             route: pattern.route.clone(),
             pattern: service.pattern.clone(),
             start_secs: start,
@@ -153,23 +153,23 @@ pub fn materialize(
     date: NaiveDate,
 ) -> Result<Vec<MaterializedTrip>, NetworkError> {
     let mut trips = Vec::new();
-    for (schedule_id, service) in &network.schedules {
+    for (pattern_trips_id, service) in &network.pattern_trips {
         let service_type = network
             .service_types
             .get(&service.service_type)
             .ok_or_else(|| NetworkError::UnknownServiceType {
-                schedule: schedule_id.clone(),
+                pattern_trips: pattern_trips_id.clone(),
                 service_type: service.service_type.clone(),
             })?;
         if !service_type.rule.runs_on(date) {
             continue;
         }
-        trips.extend(materialize_service(network, schedule_id)?);
+        trips.extend(materialize_service(network, pattern_trips_id)?);
     }
     trips.sort_by(|a, b| {
         a.start_secs
             .cmp(&b.start_secs)
-            .then_with(|| a.schedule.cmp(&b.schedule))
+            .then_with(|| a.pattern_trips.cmp(&b.pattern_trips))
     });
     Ok(trips)
 }
@@ -241,14 +241,14 @@ mod tests {
 
     #[test]
     fn headway_bands_generate_end_exclusive() {
-        let schedule = Schedule::HeadwayBands {
+        let departures = Departures::HeadwayBands {
             bands: vec![crate::model::HeadwayBand {
                 start_secs: 6 * 3600,
                 end_secs: 9 * 3600,
                 headway_secs: 15 * 60,
             }],
         };
-        let starts = trip_starts(&schedule);
+        let starts = trip_starts(&departures);
         assert_eq!(starts.first(), Some(&(6 * 3600)));
         assert_eq!(starts.last(), Some(&(9 * 3600 - 15 * 60)));
         assert_eq!(starts.len(), 12);
@@ -256,21 +256,21 @@ mod tests {
 
     #[test]
     fn zero_headway_yields_no_trips() {
-        let schedule = Schedule::HeadwayBands {
+        let departures = Departures::HeadwayBands {
             bands: vec![crate::model::HeadwayBand {
                 start_secs: 0,
                 end_secs: 3600,
                 headway_secs: 0,
             }],
         };
-        assert!(trip_starts(&schedule).is_empty());
+        assert!(trip_starts(&departures).is_empty());
     }
 
     #[test]
     fn exact_times_pass_through_sorted() {
-        let schedule = Schedule::ExactTimes {
+        let departures = Departures::ExactTimes {
             starts: vec![3600, 1800, 7200],
         };
-        assert_eq!(trip_starts(&schedule), vec![1800, 3600, 7200]);
+        assert_eq!(trip_starts(&departures), vec![1800, 3600, 7200]);
     }
 }

@@ -15,7 +15,7 @@
 //!    no-op — and the document is untouched.
 
 use transit_network::{
-    apply_edits, apply_edits_reporting, Day, DayState, Network, NetworkEdit, Schedule, TripRef,
+    apply_edits, apply_edits_reporting, Day, DayState, Network, NetworkEdit, Departures, TripRef,
 };
 
 fn network() -> Network {
@@ -37,10 +37,10 @@ fn aligned(net: &Network, pattern: &str) -> bool {
     p.timing.iter().all(|t| t.at_timepoints.len() == n)
 }
 
-fn starts(net: &Network, schedule: &str) -> Vec<u32> {
-    match &net.schedules[schedule].schedule {
-        Schedule::ExactTimes { starts } => starts.clone(),
-        Schedule::HeadwayBands { .. } => panic!("exact times"),
+fn starts(net: &Network, pattern_trips: &str) -> Vec<u32> {
+    match &net.pattern_trips[pattern_trips].departures {
+        Departures::ExactTimes { starts } => starts.clone(),
+        Departures::HeadwayBands { .. } => panic!("exact times"),
     }
 }
 
@@ -55,7 +55,7 @@ fn creation_mints_ids_and_reports_them() {
             NetworkEdit::AddRoute { id: Some("20".into()) },
             NetworkEdit::AddPattern { id: None, route: Some("20".into()) },
             NetworkEdit::AddServiceType { id: None, from: "2026-09-07".into() },
-            NetworkEdit::AddSchedule { id: None, pattern: Some("pat1".into()), service_type: Some("cal1".into()) },
+            NetworkEdit::AddPatternTrips { id: None, pattern: Some("pat1".into()), service_type: Some("cal1".into()) },
             NetworkEdit::AddBlock { id: None },
         ],
     )
@@ -69,7 +69,7 @@ fn creation_mints_ids_and_reports_them() {
             ("route", "20"),
             ("pattern", "pat1"),
             ("service_type", "cal1"),
-            ("schedule", "svc1"),
+            ("pattern_trips", "svc1"),
             ("block", "b1")
         ]
     );
@@ -131,15 +131,15 @@ fn pattern_gestures_keep_timing_aligned() {
 #[test]
 fn starts_stay_sorted_and_unique() {
     let net = network();
-    let set = apply(&net, vec![NetworkEdit::SetStarts { schedule: "10-weekday".into(), starts: vec![900, 300, 900] }]);
+    let set = apply(&net, vec![NetworkEdit::SetStarts { pattern_trips: "10-weekday".into(), starts: vec![900, 300, 900] }]);
     assert_eq!(starts(&set, "10-weekday"), vec![300, 900]);
-    let added = apply(&net, vec![NetworkEdit::AddStart { schedule: "10-weekday".into() }]);
+    let added = apply(&net, vec![NetworkEdit::AddStart { pattern_trips: "10-weekday".into() }]);
     assert_eq!(starts(&added, "10-weekday"), vec![28_800, 30_600, 91_800, 92_400], "ten minutes after the last");
-    let removed = apply(&net, vec![NetworkEdit::RemoveStart { schedule: "10-weekday".into(), index: 0 }]);
+    let removed = apply(&net, vec![NetworkEdit::RemoveStart { pattern_trips: "10-weekday".into(), index: 0 }]);
     assert_eq!(starts(&removed, "10-weekday"), vec![30_600, 91_800]);
-    let one = apply(&net, vec![NetworkEdit::SetStarts { schedule: "10-weekday".into(), starts: vec![28_800] }]);
-    assert!(refused(&one, NetworkEdit::RemoveStart { schedule: "10-weekday".into(), index: 0 }).contains("at least one"));
-    assert!(refused(&net, NetworkEdit::AddBand { schedule: "10-weekday".into() }).contains("not headway bands"));
+    let one = apply(&net, vec![NetworkEdit::SetStarts { pattern_trips: "10-weekday".into(), starts: vec![28_800] }]);
+    assert!(refused(&one, NetworkEdit::RemoveStart { pattern_trips: "10-weekday".into(), index: 0 }).contains("at least one"));
+    assert!(refused(&net, NetworkEdit::AddBand { pattern_trips: "10-weekday".into() }).contains("not headway bands"));
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn blocks_stay_in_time_order_with_layovers_between_trips() {
     // a pair, the one past the end is pruned.
     let early = apply(
         &net,
-        vec![NetworkEdit::AddBlockTrip { block: "400".into(), trip: TripRef { schedule: "10-weekday".into(), start_secs: 91_800 } }],
+        vec![NetworkEdit::AddBlockTrip { block: "400".into(), trip: TripRef { pattern_trips: "10-weekday".into(), start_secs: 91_800 } }],
     );
     let order: Vec<u32> = early.blocks["400"].trips.iter().map(|t| t.start_secs).collect();
     assert_eq!(order, vec![28_800, 30_600, 91_800]);
@@ -162,9 +162,9 @@ fn blocks_stay_in_time_order_with_layovers_between_trips() {
     assert!(refused(&net, NetworkEdit::SetLayover { block: "400".into(), after_trip: 1, secs: Some(60) }).contains("between two"));
     assert!(refused(
         &net,
-        NetworkEdit::AddBlockTrip { block: "400".into(), trip: TripRef { schedule: "ghost".into(), start_secs: 0 } }
+        NetworkEdit::AddBlockTrip { block: "400".into(), trip: TripRef { pattern_trips: "ghost".into(), start_secs: 0 } }
     )
-    .contains("unknown schedule"));
+    .contains("unknown pattern trips"));
 }
 
 #[test]
@@ -206,7 +206,7 @@ fn field_updates_check_their_references() {
     assert_eq!(next.stops["A"].lat, net.stops["A"].lat, "a non-finite coordinate is ignored, never stored");
     assert!(next.stops["A"].transfer);
     assert!(refused(&net, NetworkEdit::UpdatePattern { id: "10-inbound".into(), name: None, route: Some("ghost".into()) }).contains("unknown route"));
-    assert!(refused(&net, NetworkEdit::SetScheduleRefs { id: "10-weekday".into(), pattern: Some("ghost".into()), service_type: None }).contains("unknown pattern"));
+    assert!(refused(&net, NetworkEdit::SetPatternTripsRefs { id: "10-weekday".into(), pattern: Some("ghost".into()), service_type: None }).contains("unknown pattern"));
 }
 
 #[test]

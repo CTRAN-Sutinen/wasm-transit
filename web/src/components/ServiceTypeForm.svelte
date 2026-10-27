@@ -75,12 +75,12 @@
         </table>
       </div>
 
-      <h4>Schedules ({detail.schedules.length})</h4>
+      <h4>Schedules ({detail.pattern_trips.length})</h4>
       <ul class="rail-items">
-        {#each detail.schedules as s (s.schedule)}
+        {#each detail.pattern_trips as s (s.pattern_trips)}
           <li>
-            <button class="rail-item" aria-label={`Open schedule ${s.schedule}`}
-                    onclick={() => selectEntity("schedule", s.schedule)}>
+            <button class="rail-item" aria-label={`Open schedule ${s.pattern_trips}`}
+                    onclick={() => selectEntity("pattern_trips", s.pattern_trips)}>
               {s.pattern_name} <span class="muted">· {s.trips} trips</span>
             </button>
           </li>

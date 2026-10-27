@@ -241,11 +241,11 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .legs
                 .iter()
                 .map(|leg| match leg {
-                    transit_router::Leg::Transit { schedule, start_secs, board_stop_id, alight_stop_id, .. } => {
+                    transit_router::Leg::Transit { pattern_trips, start_secs, board_stop_id, alight_stop_id, .. } => {
                         transit_dispatch::LegPath {
                             kind: transit_dispatch::LegKind::Transit,
                             path: transit_dispatch::trip_segment(
-                                &network, &day, schedule, *start_secs, board_stop_id, alight_stop_id,
+                                &network, &day, pattern_trips, *start_secs, board_stop_id, alight_stop_id,
                             ),
                         }
                     }

@@ -64,13 +64,13 @@ export type PlannerScreen =
   | { view: "routes" }
   | { view: "stops" }
   | { view: "patterns" }
-  | { view: "schedules" }
+  | { view: "pattern_trips_list" }
   | { view: "service_types" }
   | { view: "blocks" }
   | { view: "route"; id: string }
   | { view: "stop"; id: string }
   | { view: "pattern"; id: string }
-  | { view: "schedule"; id: string }
+  | { view: "pattern_trips"; id: string }
   | { view: "service_type"; id: string }
   | { view: "block"; id: string };
 
@@ -439,7 +439,7 @@ export async function deriveFromFeed(): Promise<void> {
     clearFocus();
     setDoc(net, "derived from loaded feed", { validateNow: true });
     refreshPlanChain();
-    app.status = `Derived a network from the loaded feed (${Object.keys(net.patterns).length} patterns, ${Object.keys(net.schedules).length} schedules) — frame it as a pick, edit it, then load it into the app.`;
+    app.status = `Derived a network from the loaded feed (${Object.keys(net.patterns).length} patterns, ${Object.keys(net.pattern_trips).length} schedules) — frame it as a pick, edit it, then load it into the app.`;
   } catch (e) {
     app.status = `Error: ${e?.message ?? e}`;
   }
@@ -745,47 +745,47 @@ export function updateServiceType(id: string, { name }: { name?: string }): void
 // --- schedules (one pattern's trips under one service type) ---
 
 export function addSchedule(): void {
-  void create("schedule", { edit: "add_schedule" });
+  void create("pattern_trips", { edit: "add_pattern_trips" });
 }
 
 export function setScheduleRefs(id: string, { pattern, service_type }: { pattern?: string; service_type?: string }): void {
-  void edit([{ edit: "set_schedule_refs", id, pattern: pattern || undefined, service_type: service_type || undefined }]);
+  void edit([{ edit: "set_pattern_trips_refs", id, pattern: pattern || undefined, service_type: service_type || undefined }]);
 }
 
 export function removeSchedule(id: string): void {
-  void edit([{ edit: "remove_schedule", id }]);
+  void edit([{ edit: "remove_pattern_trips", id }]);
 }
 
 export function setScheduleStarts(scheduleId: string, starts: number[]): void {
-  void edit([{ edit: "set_starts", schedule: scheduleId, starts }]);
+  void edit([{ edit: "set_starts", pattern_trips: scheduleId, starts }]);
 }
 
 /** Move one trip of an exact-times schedule — cap-author's
  * `retime_trip` carries the blocks along (a retime never strands the
  * runcut). */
 export function retimeScheduleStart(scheduleId: string, fromSecs: number, toSecs: number): void {
-  void edit([{ edit: "retime_trip", schedule: scheduleId, from_secs: fromSecs, to_secs: toSecs }]);
+  void edit([{ edit: "retime_trip", pattern_trips: scheduleId, from_secs: fromSecs, to_secs: toSecs }]);
 }
 
 export function addScheduleStart(scheduleId: string): void {
-  void edit([{ edit: "add_start", schedule: scheduleId }]);
+  void edit([{ edit: "add_start", pattern_trips: scheduleId }]);
 }
 
 export function removeScheduleStart(scheduleId: string, index: number): void {
-  void edit([{ edit: "remove_start", schedule: scheduleId, index }]);
+  void edit([{ edit: "remove_start", pattern_trips: scheduleId, index }]);
 }
 
 /** Set one field of one headway band. */
 export function setBandField(scheduleId: string, index: number, field: keyof HeadwayBand, value: number): void {
-  void edit([{ edit: "set_band", schedule: scheduleId, index, [field]: value }]);
+  void edit([{ edit: "set_band", pattern_trips: scheduleId, index, [field]: value }]);
 }
 
 export function addBand(scheduleId: string): void {
-  void edit([{ edit: "add_band", schedule: scheduleId }]);
+  void edit([{ edit: "add_band", pattern_trips: scheduleId }]);
 }
 
 export function removeBand(scheduleId: string, index: number): void {
-  void edit([{ edit: "remove_band", schedule: scheduleId, index }]);
+  void edit([{ edit: "remove_band", pattern_trips: scheduleId, index }]);
 }
 
 // --- blocks (the runcut) ----------------------------------------
@@ -803,7 +803,7 @@ export function addBlockTrip(blockId: string, scheduleId: string, startSecs: num
     app.status = "Pick a schedule and a valid start time first.";
     return;
   }
-  void edit([{ edit: "add_block_trip", block: blockId, trip: { schedule: scheduleId, start_secs: startSecs } }]);
+  void edit([{ edit: "add_block_trip", block: blockId, trip: { pattern_trips: scheduleId, start_secs: startSecs } }]);
 }
 
 export function removeBlockTrip(blockId: string, index: number): void {
@@ -895,7 +895,7 @@ export async function refreshStopDetail(stopId: string): Promise<void> {
   }
 }
 
-const PICKER_KINDS: EntityKind[] = ["stop", "route", "pattern", "schedule", "service_type", "block"];
+const PICKER_KINDS: EntityKind[] = ["stop", "route", "pattern", "pattern_trips", "service_type", "block"];
 let pickersSeq = 0;
 /// Every row of every kind over the active plan, unfiltered — the
 /// forms' pickers and name chips, the document's counts.
@@ -960,7 +960,7 @@ function screenHasMap(screen: PlannerScreen): boolean {
     screen.view === "route" ||
     screen.view === "stop" ||
     screen.view === "pattern" ||
-    screen.view === "schedule" ||
+    screen.view === "pattern_trips" ||
     screen.view === "service_type"
   );
 }
@@ -969,7 +969,7 @@ function screenHasMap(screen: PlannerScreen): boolean {
  * top of the stack, and clear the map focus when it is gone. */
 function syncSelection(): void {
   const top = app.plannerStack[app.plannerStack.length - 1];
-  const kind = ["route", "stop", "pattern", "schedule", "service_type", "block"].includes(top.view);
+  const kind = ["route", "stop", "pattern", "pattern_trips", "service_type", "block"].includes(top.view);
   app.plannerSelection =
     kind && "id" in top ? { kind: top.view as EntityKind, id: top.id } : null;
 }

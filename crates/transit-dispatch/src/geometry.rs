@@ -12,14 +12,14 @@ use ts_rs::TS;
 
 use transit_network::{pattern_alignment, stop_point, stops_line, Coord, MaterializedTrip, Network};
 
-fn day_trip<'a>(day: &'a [MaterializedTrip], schedule: &str, start_secs: u32) -> Option<&'a MaterializedTrip> {
-    day.iter().find(|t| t.schedule == schedule && t.start_secs == start_secs)
+fn day_trip<'a>(day: &'a [MaterializedTrip], pattern_trips: &str, start_secs: u32) -> Option<&'a MaterializedTrip> {
+    day.iter().find(|t| t.pattern_trips == pattern_trips && t.start_secs == start_secs)
 }
 
 /// The trip's pattern alignment, when the effective trip still visits
 /// exactly its pattern's stops and the pattern has an authored path.
 fn followed_path(network: &Network, trip: &MaterializedTrip) -> Option<Vec<Coord>> {
-    let pattern_id = &network.schedules.get(&trip.schedule)?.pattern;
+    let pattern_id = &network.pattern_trips.get(&trip.pattern_trips)?.pattern;
     let pattern = network.patterns.get(pattern_id)?;
     let follows = pattern.stops.len() == trip.stop_times.len()
         && pattern.stops.iter().zip(&trip.stop_times).all(|(ps, st)| ps.stop == st.stop);
@@ -29,8 +29,8 @@ fn followed_path(network: &Network, trip: &MaterializedTrip) -> Option<Vec<Coord
 /// One derived trip's line in the effective day: its pattern's
 /// authored alignment while it follows the pattern, else its stops
 /// joined in order. Empty when the trip does not run that day.
-pub fn trip_path(network: &Network, day: &[MaterializedTrip], schedule: &str, start_secs: u32) -> Vec<Coord> {
-    let Some(trip) = day_trip(day, schedule, start_secs) else { return Vec::new() };
+pub fn trip_path(network: &Network, day: &[MaterializedTrip], pattern_trips: &str, start_secs: u32) -> Vec<Coord> {
+    let Some(trip) = day_trip(day, pattern_trips, start_secs) else { return Vec::new() };
     followed_path(network, trip)
         .unwrap_or_else(|| stops_line(network, trip.stop_times.iter().map(|st| st.stop.as_str())))
 }
@@ -43,7 +43,7 @@ pub fn trip_path(network: &Network, day: &[MaterializedTrip], schedule: &str, st
 pub fn trip_segment(
     network: &Network,
     day: &[MaterializedTrip],
-    schedule: &str,
+    pattern_trips: &str,
     start_secs: u32,
     from_stop: &str,
     to_stop: &str,
@@ -51,7 +51,7 @@ pub fn trip_segment(
     let (Some(from), Some(to)) = (stop_point(network, from_stop), stop_point(network, to_stop)) else {
         return Vec::new();
     };
-    if let Some(trip) = day_trip(day, schedule, start_secs) {
+    if let Some(trip) = day_trip(day, pattern_trips, start_secs) {
         if let Some(path) = followed_path(network, trip) {
             let (i0, i1) = (nearest_vertex(&path, from), nearest_vertex(&path, to));
             let (lo, hi) = (i0.min(i1), i0.max(i1));

@@ -42,7 +42,7 @@ fn load_network() -> String {
 /// document (the test reads the model, not the codec's naming).
 fn route10_schedule(net: &Network) -> String {
     let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
-    net.schedules
+    net.pattern_trips
         .iter()
         .find(|(_, s)| {
             net.patterns.get(&s.pattern).is_some_and(|p| p.route == "10")
@@ -192,7 +192,7 @@ fn the_block_chain_ripples_under_the_edit() {
     };
     assert_eq!(ripped[0].layover_remaining_secs, Some(300), "the diverted end eats the layover (600 - 300)");
     // The chain rows carry the authored trip identity, model-native.
-    assert_eq!(ripped[0].schedule, route10_schedule(&net));
+    assert_eq!(ripped[0].pattern_trips, route10_schedule(&net));
 }
 
 #[test]
@@ -227,7 +227,7 @@ fn invalid_edit_records_are_reported_not_rejected() {
 /// only WK runs on the fixture Friday).
 fn route10_schedule_of(net: &Network, seq: &[&str]) -> String {
     let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
-    net.schedules
+    net.pattern_trips
         .iter()
         .find(|(_, s)| {
             net.patterns.get(&s.pattern).is_some_and(|p| {
@@ -257,7 +257,7 @@ fn the_trip_detail_answers_the_effective_day() {
     let stops = match dispatch(Request::TripStops {
         network_hash: network_hash.clone(),
         edits_hash: None,
-        schedule: direct,
+        pattern_trips: direct,
         start_secs: 8 * 3600,
         date: DATE.into(),
     })
@@ -278,7 +278,7 @@ fn the_trip_detail_answers_the_effective_day() {
     let absent = match dispatch(Request::TripStops {
         network_hash: network_hash.clone(),
         edits_hash: None,
-        schedule: route10_schedule(&net),
+        pattern_trips: route10_schedule(&net),
         start_secs: 123,
         date: DATE.into(),
     })
@@ -295,7 +295,7 @@ fn the_trip_detail_answers_the_effective_day() {
     let patched = match dispatch(Request::TripStops {
         network_hash: network_hash.clone(),
         edits_hash: Some(edits_hash),
-        schedule: via_c,
+        pattern_trips: via_c,
         start_secs: 8 * 3600 + 40 * 60,
         date: DATE.into(),
     })
@@ -350,7 +350,7 @@ fn the_trip_line_is_the_effective_day_drawn() {
     let path = |start_secs: u32| match dispatch(Request::TripPath {
         network_hash: network_hash.clone(),
         edits_hash: None,
-        schedule: via_c.clone(),
+        pattern_trips: via_c.clone(),
         start_secs,
         date: DATE.into(),
     })
@@ -359,8 +359,8 @@ fn the_trip_line_is_the_effective_day_drawn() {
         Response::TripPath { path } => path,
         _ => panic!("trip_path"),
     };
-    let first_start = match &net.schedules[&via_c].schedule {
-        transit_network::Schedule::ExactTimes { starts } => starts[0],
+    let first_start = match &net.pattern_trips[&via_c].departures {
+        transit_network::Departures::ExactTimes { starts } => starts[0],
         _ => panic!("fixture uses exact times"),
     };
     assert_eq!(path(first_start).len(), 3, "A, C, B joined");

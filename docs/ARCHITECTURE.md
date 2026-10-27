@@ -25,8 +25,11 @@ transit-core    GTFS codec: model, zip/CSV parse, calendar, queries,
 transit-network The authored network model (planner authority):
                 patterns, timing profiles, service types (the
                 service identifier, linked to days by its calendar
-                rule), pattern schedules (one pattern's trips under
-                one service type), runcut. Trips are DERIVED
+                rule), pattern trips (`PatternTrips`: one pattern's
+                departures under one service type — NOT a planner's
+                schedule; the timetable a planner reads is a route's
+                direction under one service type, across its
+                patterns), runcut. Trips are DERIVED
                 (`materialize`) — trips are never stored. GTFS is a
                 codec at the boundary, not the model; no GTFS types
                 leak in here. Transfer points are authored flags on
@@ -45,19 +48,19 @@ transit-network The authored network model (planner authority):
                 rule (timing aligned with timepoints, starts sorted
                 and unique, layovers only between trips, ids minted
                 and reported, the plan frame merged field-wise). Validation
-                answers issues (gate: a block trip its schedule
-                does not run is one) and WARNINGS that never gate
+                answers issues (gate: a block trip its pattern
+                trips do not run is one) and WARNINGS that never gate
                 (unassigned trips; a pick with no service in its
                 first week). GEOMETRY lives here too
                 (`geometry.rs`): a pattern's alignment (its authored
                 path, else its stops joined — the model's own
                 contract) and where an entity is (`entity_focus`: a
                 stop's point; the lines and stops of every pattern a
-                route, schedule, service type, or block runs). The
+                route, pattern trips, service type, or block runs). The
                 planner's LISTS live here too (`listing.rs`): rows
                 of any kind narrowed by every filter term, and a
                 route's composition (patterns, the stops they
-                visit, schedules by service type) — each schedule's
+                visit, pattern trips by service type) — each entry's
                 trip count is `trip_starts`, the materialized day's
                 own expansion — and a stop's serving routes.
 transit-router  RAPTOR earliest-arrival planning over the network
@@ -262,7 +265,11 @@ File ownership:
   resolver's `ensureDirectory`). Every next
   edit document is an answer (cap-divert propose / retire /
   restore, cap-sync's converge); a stored or synced copy is read
-  through cap-divert's `sanitize` (`actions.readEdits`).
+  through cap-divert's `sanitize` (`actions.readEdits`). Stored
+  plans restore the same way: `restorePlans(readStoredNetwork)`
+  reads each through cap-author (an `apply` with no edits answers
+  the canonical document), so a plan saved under older field names
+  comes back in the current shape. The host never sniffs a shape.
 - MapView owns all map state (`window.__map`). `src/basemap.ts` is
   the basemap choice every map view shares (local pmtiles, else
   OpenFreeMap) and the MapLibre worker wiring.
@@ -306,7 +313,10 @@ Shared by every generated UI:
   `*Module()` getters (`src/capabilities.svelte.ts`) directly.
 - `src/state.svelte.ts`'s document store (`getAllPlans`,
   `putPlan`, `setActivePlan`, `restorePlans`; the edit document)
-  is shared with the original app. JS owns the documents. The `app`
+  is shared with the original app. JS owns the documents. A host's
+  boot restores it with `restorePlans(readStoredNetwork)`, never the
+  bare call: the UI reads documents in JavaScript, which has no serde
+  aliases. The `app`
   object is the original app's screen state, and generated UIs
   never import it.
 - `src/basemap.ts`: the basemap style choice and the MapLibre
@@ -321,8 +331,8 @@ on every component a generated UI imports.
   fork, health), TypeTable (`service_types_overview` rows plus the
   selected type's baseline), CoverageTable (`type_coverage`, with
   its op parameters as inputs), RouteTable (`service_type_detail`
-  routes), RouteCard (`route_detail`), ScheduleChange (a
-  schedule's starts with add and remove events), FocusMap (a
+  routes), RouteCard (`route_detail`), ScheduleChange (one
+  pattern trips' starts with add and remove events), FocusMap (a
   directory `focus` drawn and framed), BlocksPanel (runcut
   `blocks` / `block_trips`), DepartureBoard (`stop_board`), RtPanel
   (the live summary), TripPlanner (from, to, depart → `onplan`), and
@@ -440,7 +450,7 @@ cap-network     The network codec capability: load_feed (zip bytes →
                 publish path — deterministic GTFS zip bytes under
                 their content hash, base64 across the JSON seam), and
                 trip_map (the import's trip-id map: derived
-                (schedule, start) ↔ agency trip ids — the join rt
+                (pattern_trips, start) ↔ agency trip ids — the join rt
                 data and the feed's own ids are keyed by; None for
                 an authored network, the honest answer), and
                 agency_trip_ids (the map shaped to a question: the

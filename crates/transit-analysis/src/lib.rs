@@ -115,8 +115,8 @@ fn representative_date(rule: &transit_network::CalendarRule) -> Option<NaiveDate
 /// schedule list row.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
-pub struct ScheduleSummary {
-    pub schedule: String,
+pub struct PatternTripsSummary {
+    pub pattern_trips: String,
     pub pattern: String,
     pub pattern_name: String,
     pub trips: u32,
@@ -140,7 +140,7 @@ pub struct ServiceTypeDetail {
     pub routes: Vec<RouteStats>,
     /// Stops served under this type (served rows only).
     pub stops: Vec<StopStats>,
-    pub schedules: Vec<ScheduleSummary>,
+    pub pattern_trips: Vec<PatternTripsSummary>,
 }
 
 /// The drill-down: one service type expanded on its representative
@@ -155,20 +155,20 @@ pub fn service_type_detail(net: &Network, type_id: &str) -> Result<ServiceTypeDe
         .ok_or_else(|| format!("service type {type_id:?} runs on no date"))?;
     let stats = day_stats(net, date, Some(type_id));
 
-    let mut schedules = Vec::new();
-    for (schedule_id, schedule) in &net.schedules {
-        if &schedule.service_type != type_id {
+    let mut pattern_trips = Vec::new();
+    for (id, entry) in &net.pattern_trips {
+        if &entry.service_type != type_id {
             continue;
         }
-        schedules.push(ScheduleSummary {
-            schedule: schedule_id.clone(),
-            pattern: schedule.pattern.clone(),
+        pattern_trips.push(PatternTripsSummary {
+            pattern_trips: id.clone(),
+            pattern: entry.pattern.clone(),
             pattern_name: net
                 .patterns
-                .get(&schedule.pattern)
+                .get(&entry.pattern)
                 .map(|p| p.name.clone())
-                .unwrap_or_else(|| schedule.pattern.clone()),
-            trips: transit_network::trip_starts(&schedule.schedule).len() as u32,
+                .unwrap_or_else(|| entry.pattern.clone()),
+            trips: transit_network::trip_starts(&entry.departures).len() as u32,
         });
     }
 
@@ -181,7 +181,7 @@ pub fn service_type_detail(net: &Network, type_id: &str) -> Result<ServiceTypeDe
         transfer_stops: stats.transfer_stops,
         routes: stats.routes.into_iter().filter(|r| r.trips > 0).collect(),
         stops: stats.stops.into_iter().filter(|s| s.departures > 0).collect(),
-        schedules,
+        pattern_trips,
     })
 }
 
@@ -258,11 +258,11 @@ fn service_type_summaries(net: &Network) -> Vec<ServiceTypeSummary> {
         let mut routes: BTreeSet<String> = BTreeSet::new();
         let mut stops: BTreeSet<String> = BTreeSet::new();
         let mut runtime_secs = 0u64;
-        for (schedule_id, schedule) in &net.schedules {
-            if &schedule.service_type != type_id {
+        for (pattern_trips_id, pattern_trips) in &net.pattern_trips {
+            if &pattern_trips.service_type != type_id {
                 continue;
             }
-            let Ok(materialized) = transit_network::materialize_service(net, schedule_id) else {
+            let Ok(materialized) = transit_network::materialize_service(net, pattern_trips_id) else {
                 continue;
             };
             for trip in materialized {
@@ -414,7 +414,7 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
     let mut last_arrival: Option<u32> = None;
     let mut runtime_secs = 0u64;
 
-    for (service_id, service) in &net.schedules {
+    for (service_id, service) in &net.pattern_trips {
         let runs = net
             .service_types
             .get(&service.service_type)
@@ -758,7 +758,7 @@ fn coverage_for_type(
     // Departure times per stop (final visits excluded) — what the
     // windowed frequency test reads.
     let mut departures_at: BTreeMap<String, Vec<u32>> = BTreeMap::new();
-    for (service_id, service) in &net.schedules {
+    for (service_id, service) in &net.pattern_trips {
         let runs = net
             .service_types
             .get(&service.service_type)

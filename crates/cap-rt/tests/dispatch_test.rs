@@ -364,7 +364,7 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
     let canonical = serde_json::to_string(&day).unwrap();
     assert_eq!(live_hash, format!("sha256:{:x}", <sha2::Sha256 as sha2::Digest>::digest(canonical.as_bytes())), "the module is the hash authority");
     let t10 = trip_map.entries.iter().find(|e| e.agency_trip_ids.iter().any(|id| id == "t10")).unwrap();
-    assert!(day.trips.iter().any(|t| t.schedule == t10.schedule && t.start_secs == t10.start_secs));
+    assert!(day.trips.iter().any(|t| t.pattern_trips == t10.pattern_trips && t.start_secs == t10.start_secs));
     assert_eq!(summary.vehicles, 1);
     assert_eq!(summary.counts.late, 1, "+180 s is late under the default window");
     assert_eq!(summary.late[0].delay_secs, 180);
