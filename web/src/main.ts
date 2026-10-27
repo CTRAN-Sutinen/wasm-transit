@@ -1,11 +1,6 @@
 import "./app.css";
 import { mount } from "svelte";
 import "maplibre-gl/dist/maplibre-gl.css";
-// The wasm artifact has zero imports — the wrapper (src/wasm.ts)
-// fetches it and instantiates it directly. The artifact's remaining
-// surface is the plans chain (every feed-side read answers through
-// the capability bus now).
-import { loadWasm } from "./wasm";
 import { get } from "idb-keyval";
 import App from "./App.svelte";
 
@@ -29,8 +24,7 @@ import { analysisPath } from "./planner";
 import { loadGtfsBytes, FEED_KEY, EDITS_KEY, saveSettings, setNowOverride, flushPersist, syncEdits } from "./actions";
 import { forgetCapability } from "./capabilities.svelte";
 
-app.wasm = await loadWasm();
-app.status = "wasm ready";
+app.status = "capability bus ready";
 
 // E2E/inspection hooks: override the app's clock, read the map state
 // (set by MapView), force the debounced edit-document write so
@@ -81,7 +75,7 @@ try {
   saveSettings();
 } catch (e) {
   console.warn("restore failed:", e);
-  app.status = "wasm ready — drop a GTFS zip or paste a URL to begin.";
+  app.status = "capability bus ready — drop a GTFS zip or paste a URL to begin.";
 }
 
 mount(App, { target: document.getElementById("app")! });

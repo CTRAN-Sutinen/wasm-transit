@@ -1,9 +1,9 @@
 package main
 
-// The round-trip proof: the server loads the exact artifact bytes the
-// browser runs (sha256 pinned in the manifest) and gets the same
-// domain answers — feeds, boards, plans, edit documents. This is the
-// "same artifact everywhere" claim, executed, not asserted.
+// The round-trip proof: the server hosts the SYNC CAPABILITY
+// (cap-sync) and gets the same converged edit document the browser
+// and Node compute — the "same contracts everywhere" claim,
+// executed, not asserted.
 
 import (
 	"bytes"
@@ -52,101 +52,98 @@ func fixtureZip(t *testing.T) []byte {
 
 func newTestHost(t *testing.T) *WasmHost {
 	t.Helper()
-	host, err := NewWasmHost(context.Background(), "../web/pkg/transit_wasm.wasm")
+	host, err := NewWasmHost(context.Background(), "../web/pkg/cap_sync.wasm")
 	if err != nil {
-		t.Fatalf("load artifact: %v", err)
+		t.Fatalf("load sync module: %v", err)
 	}
 	return host
 }
 
-// The date-scoped geojson reads are RETIRED with the map view (U6:
-// the map renders from model documents in host view code; the day
-// views hold their own edit registries) — the retired ops must
-// answer as request errors, which TestArtifactRoundTrip pins.
-
-func TestArtifactRoundTrip(t *testing.T) {
+// The sync capability's round trip through the Go host: the protocol's
+// one step — a draft client against an empty server converges to the
+// submitted document, a newer tombstone wins LWW, and validation is
+// NOT the op's business (load_edits answers it in every model-side
+// module — the browser reads those reports through the bus).
+func TestSyncRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	host := newTestHost(t)
+	defer host.Close(ctx)
 
 	if !strings.HasPrefix(host.Hash(), "sha256:") {
 		t.Fatalf("host hash not computed: %q", host.Hash())
 	}
 
-	feedID, err := host.LoadFeed(ctx, fixtureZip(t))
-	if err != nil {
-		t.Fatalf("load_feed: %v", err)
+	record := func(status string, rev, at int64) map[string]any {
+		return map[string]any{
+			"id": "e1",
+			"diversion": map[string]any{
+				"id": "d1", "route_id": "10", "direction_id": nil,
+				"first_kept_stop": "A", "last_kept_stop": "B",
+				"skipped_stops": []string{"C"}, "detour": nil,
+				"added_secs": 300, "start_date": date, "end_date": date,
+			},
+			"status": status, "rev": rev, "updated_at": at,
+		}
+	}
+
+	var resp struct {
+		Records []map[string]any `json:"records"`
+	}
+	if err := host.Invoke(ctx, map[string]any{
+		"op": "sync_edits",
+		"client": []any{record("draft", 1, 1)}, "server": []any{}, "now_ms": 1000,
+	}, &resp); err != nil {
+		t.Fatalf("sync_edits: %v", err)
+	}
+	if len(resp.Records) != 1 || resp.Records[0]["status"] != "submitted" {
+		t.Fatalf("sync merged and submitted: %+v", resp.Records)
+	}
+	if resp.Records[0]["rev"].(float64) != 2 || resp.Records[0]["updated_at"].(float64) != 1000 {
+		t.Fatalf("submit bumps rev and stamps the host clock: %+v", resp.Records[0])
+	}
+
+	// LWW: a newer tombstone beats the submitted record.
+	var lww struct {
+		Records []map[string]any `json:"records"`
+	}
+	if err := host.Invoke(ctx, map[string]any{
+		"op": "sync_edits",
+		"client": []any{record("accepted", 1, 1)},
+		"server": []any{record("retired", 3, 2)}, "now_ms": 2000,
+	}, &lww); err != nil {
+		t.Fatalf("sync_edits lww: %v", err)
+	}
+	if len(lww.Records) != 1 || lww.Records[0]["status"] != "retired" {
+		t.Fatalf("the tombstone (newer timestamp) won: %+v", lww.Records)
+	}
+
+	// Empty documents converge to empty — the protocol's zero case.
+	var empty struct {
+		Records []map[string]any `json:"records"`
+	}
+	if err := host.Invoke(ctx, map[string]any{
+		"op": "sync_edits", "client": []any{}, "server": []any{}, "now_ms": 0,
+	}, &empty); err != nil {
+		t.Fatalf("sync_edits empty: %v", err)
+	}
+	if len(empty.Records) != 0 {
+		t.Fatalf("empty documents converge to empty: %+v", empty.Records)
 	}
 
 	// The manifest's version field: the host reads the feed's own
-	// feed_info.txt row (one boundary CSV field — the artifact owns
+	// feed_info.txt row (one boundary CSV field — the module owns
 	// the format, the host owns files).
 	if v := feedInfoVersion(fixtureZip(t)); v != "2026.10.1" {
 		t.Fatalf("feed_info version: %q", v)
 	}
-
-	// The sync seam with a feed: the merged document validates
-	// against the loaded feed, per record (the op behind POST
-	// /edits; the retired ops — the day views, planning, the map's
-	// geojson draws, set_diversions — live on the capability bus).
-	record := map[string]any{
-		"id": "e1",
-		"diversion": map[string]any{
-			"id": "d1", "route_id": "10", "direction_id": nil,
-			"first_kept_stop": "A", "last_kept_stop": "B",
-			"skipped_stops": []string{"C"}, "detour": nil,
-			"added_secs": 300, "start_date": date, "end_date": date,
-		},
-		"status": "draft", "rev": 1, "updated_at": 1,
-	}
-	var syncResp struct {
-		Records []map[string]any `json:"records"`
-		Reports []struct {
-			Valid         bool   `json:"valid"`
-			AffectedTrips int    `json:"affected_trips"`
-			Error         string `json:"error"`
-		} `json:"reports"`
-	}
-	if err := host.Invoke(ctx, map[string]any{
-		"op": "sync_edits", "feed_id": feedID,
-		"client": []any{record}, "server": []any{}, "now_ms": 1000,
-	}, &syncResp); err != nil {
-		t.Fatalf("sync_edits: %v", err)
-	}
-	if len(syncResp.Records) != 1 || syncResp.Records[0]["status"] != "submitted" {
-		t.Fatalf("sync merged and submitted: %+v", syncResp.Records)
-	}
-	if len(syncResp.Reports) != 1 || !syncResp.Reports[0].Valid || syncResp.Reports[0].AffectedTrips != 3 {
-		t.Fatalf("reports: %+v", syncResp.Reports)
-	}
-
-	if err := host.DropFeed(ctx, feedID); err != nil {
-		t.Fatalf("drop_feed: %v", err)
-	}
-	err = host.Invoke(ctx, map[string]any{"op": "stops_geojson", "feed_id": feedID}, &struct{}{})
-	if err == nil || !strings.Contains(err.Error(), "unknown variant") {
-		t.Fatalf("the retired geojson op errors, got %v", err)
-	}
-	var plansResp struct {
-		Plan *string `json:"plan"`
-	}
-	if err := host.Invoke(ctx, map[string]any{
-		"op": "plans_resolve",
-		"plans":   []any{map[string]any{"id": "p1", "name": "Pick 1", "effective_from": nil, "routes": []any{}}},
-		"date":    date,
-	}, &plansResp); err != nil {
-		t.Fatalf("plans_resolve: %v", err)
-	}
-	if plansResp.Plan != nil {
-		t.Fatalf("unversioned plans never resolve: %+v", plansResp.Plan)
-	}
 }
 
-// TestArtifactIsTheDeployedBytes pins the artifact the tests run to
-// the file the browser fetches — same bytes, by construction of this
-// test reading that exact path.
-func TestArtifactIsTheDeployedBytes(t *testing.T) {
+// TestModuleIsTheDeployedBytes pins the module the tests run to the
+// file the server hosts — same bytes, by construction of this test
+// reading that exact path.
+func TestModuleIsTheDeployedBytes(t *testing.T) {
 	host := newTestHost(t)
-	sum := sha256File(t, "../web/pkg/transit_wasm.wasm")
+	sum := sha256File(t, "../web/pkg/cap_sync.wasm")
 	if host.Hash() != sum {
 		t.Fatalf("host hash %s != file hash %s", host.Hash(), sum)
 	}

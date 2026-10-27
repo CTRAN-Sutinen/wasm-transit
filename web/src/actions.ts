@@ -123,7 +123,6 @@ function error(e: any): void {
 // ---------------------------------------------------------------
 
 export async function loadGtfsBytes(bytes: Uint8Array, label: string): Promise<void> {
-  if (!app.wasm) throw new Error("wasm not loaded");
   setFeedBytes(bytes); // the bus reads this document everywhere
   app.feedLoaded = true;
   app.selectedStop = null;

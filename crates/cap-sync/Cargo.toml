@@ -1,0 +1,19 @@
+[package]
+name = "cap-sync"
+description = "The sync capability: the converged state of an edit document pair — LWW merge per record id plus the submit transition, the one step of the sync protocol (transit-sync is the library; the host passes the clock). Validation against the network is every model-side module's load_edits answer, never this one's."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]  # rlib: integration tests link the crate natively
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+ts-rs = { workspace = true }
+transit-sync = { path = "../transit-sync" }
+cap-abi = { path = "../cap-abi" }
+
+[dev-dependencies]
+chrono = { workspace = true }

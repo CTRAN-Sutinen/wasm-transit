@@ -4,9 +4,9 @@
 //! runs:
 //!
 //! * **Build time** (expensive, once, published as evidence): the
-//!   property laws with independent oracles, the corpus replay, the
-//!   mutation runs, the reproducible-build provenance. An agent never
-//!   re-runs these — it reads their attestations.
+//!   property laws with independent oracles, the module dispatch
+//!   tests, the mutation runs. An agent never re-runs these — it
+//!   reads their attestations.
 //! * **Compose time** (this module — light, cheap, TOTAL): the
 //!   assembly a agent writes is checked the way a compiler
 //!   type-checks, not the way a test suite samples. Every check is

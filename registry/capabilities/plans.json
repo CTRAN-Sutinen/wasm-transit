@@ -1,0 +1,122 @@
+{
+  "blob": "blobs/112fd0f070c3f518048e8145494078774c353978c87198aebe2d5ee4278423c2.wasm",
+  "bytes": 227651,
+  "consumes": {},
+  "evidence": {
+    "dirty_tree": true,
+    "gates": [
+      "cargo test (workspace, includes the capability law suites)",
+      "node crates/cap-abi/caps-smoke.mjs (ABI + composition + context)"
+    ],
+    "recipe": "just registry",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "source_commit": "fcf279a244b9d1a857623b07de421081a062a8eb"
+  },
+  "hash": "sha256:112fd0f070c3f518048e8145494078774c353978c87198aebe2d5ee4278423c2",
+  "id": "plans",
+  "kernel": 1,
+  "migrates": {},
+  "op_docs": {
+    "periods": {
+      "description": "Every chain member's governing period — [effective_from, until the next pick) — derived and sorted by pick date. The until end is computed, never stored.",
+      "example": {
+        "request": {
+          "op": "periods",
+          "plans": [
+            {
+              "effective_from": "2026-03-01",
+              "id": "spring",
+              "name": "Spring 2026"
+            },
+            {
+              "effective_from": "2026-09-07",
+              "id": "fall",
+              "name": "Fall 2026"
+            }
+          ]
+        },
+        "response": {
+          "ok": {
+            "op": "periods",
+            "periods": [
+              {
+                "effective_from": "2026-03-01",
+                "id": "spring",
+                "until": "2026-09-07"
+              },
+              {
+                "effective_from": "2026-09-07",
+                "id": "fall",
+                "until": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    "resolve": {
+      "description": "Which plan is in force on the date: the latest pick at or before it, ties broken by id (deterministic, order-insensitive). Unversioned plans never resolve; no pick yet answers null.",
+      "example": {
+        "request": {
+          "date": "2026-10-23",
+          "op": "resolve",
+          "plans": [
+            {
+              "effective_from": "2026-03-01",
+              "id": "spring",
+              "name": "Spring 2026"
+            },
+            {
+              "effective_from": "2026-09-07",
+              "id": "fall",
+              "name": "Fall 2026"
+            }
+          ]
+        },
+        "response": {
+          "ok": {
+            "op": "resolve",
+            "plan": "fall"
+          }
+        }
+      }
+    },
+    "validate": {
+      "description": "Chain validity: unique plan ids, every versioned plan effective-dated, pick dates unique. Every violation is reported (kind-tagged); unversioned plans are standalone and never flagged.",
+      "example": {
+        "request": {
+          "op": "validate",
+          "plans": [
+            {
+              "effective_from": "2026-03-01",
+              "id": "spring",
+              "name": "Spring 2026"
+            },
+            {
+              "effective_from": "2026-09-07",
+              "id": "fall",
+              "name": "Fall 2026"
+            }
+          ]
+        },
+        "response": {
+          "ok": {
+            "issues": [],
+            "op": "validate"
+          }
+        }
+      }
+    }
+  },
+  "ops": [
+    "resolve",
+    "validate",
+    "periods"
+  ],
+  "purpose": "The service-plan chain: which plan governs a date. Service changes are PICKS — a few a year at defined dates — and the chain over the plan set's metadata is DERIVED, never stored: a pick's date is a target that moves while the pick is in development. resolve answers which pick is in force; periods windows every member; validate reports chain invariant violations. Unversioned plans are standalone: they never resolve, never flag. Pure ops over the metadata the host pushes per call.",
+  "speaks": {
+    "plan_set": [
+      1
+    ]
+  }
+}

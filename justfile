@@ -1,10 +1,15 @@
 # rustwasm — task runner. Run `just` (or `just --list`) to see all
 # recipes. The project has four layers, one recipe group each:
 #
-#   Rust  — transit-core/-router/-rt/-sync/-ops (cargo), transit-wasm artifact
-#   Go    — server/ (the sync server: wazero host, manifest, proxy)
-#   Node  — crates/transit-wasm/abi-smoke.mjs (runs the artifact directly)
+#   Rust  — the transit-* libraries and cap-* capability modules (cargo)
+#   Go    — server/ (the sync server: wazero host over cap-sync, proxy)
+#   Node  — crates/cap-abi/caps-smoke.mjs (runs the modules directly)
 #   Web   — web/ (Svelte + Vite) and Playwright e2e
+#
+# There is no monolith artifact anymore (docs/PLAN.md U7): every
+# host instantiates the capability modules it needs — the browser
+# fetches them from web/public/caps/, the sync server hosts
+# cap-sync at web/pkg/cap_sync.wasm.
 
 default:
     @just --list
@@ -13,19 +18,19 @@ default:
 # build
 # ---------------------------------------------------------------
 
-# Build the wasm artifact only (cargo release → web/pkg/transit_wasm.wasm).
-wasm:
-    cd web && npm run build:wasm
-
 # Build the capability modules (the capability bus: horizontal
 # capabilities assembled per user) and regenerate the capability
 # manifest — hash-pinned modules in web/public/caps/, served under
-# their content hash so the HTTP cache holds them forever.
+# their content hash so the HTTP cache holds them forever. The sync
+# server's module also lands at the stable path web/pkg/cap_sync.wasm
+# (server default -wasm flag; rebuilt with the modules, never by hand).
 caps:
     #!/usr/bin/env bash
     set -e
-    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt -p cap-board -p cap-runcut -p cap-calendar -p cap-directory -p cap-streets --target wasm32-unknown-unknown
+    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt -p cap-board -p cap-runcut -p cap-calendar -p cap-directory -p cap-streets -p cap-sync -p cap-plans --target wasm32-unknown-unknown
     cargo run --quiet -p cap-abi --bin gen-manifest
+    mkdir -p web/pkg
+    cp target/wasm32-unknown-unknown/release/cap_sync.wasm web/pkg/cap_sync.wasm
 
 # Publish the registry: gates first (the records report them), then
 # build and publish — immutable blobs, evidence records per
@@ -69,7 +74,6 @@ test: caps
     set -e
     export TS_RS_EXPORT_DIR="$PWD/web/src/types"
     cargo test
-    node crates/transit-wasm/abi-smoke.mjs
     node crates/cap-abi/caps-smoke.mjs
     # The agent runner, gated with chained sessions — every op
     # references its documents through $load/$op result references
@@ -152,6 +156,19 @@ test: caps
       --op '{"op":"snap","streets_hash":"$load.streets_hash","lat":45.508,"lon":-73.508}' \
       --op '{"op":"route","streets_hash":"$load.streets_hash","from":"$2.position","to":"$3.position"}' \
       | grep -q '"lat":45.504,"lon":-73.508'
+    # The sync capability's gate: the protocol's one step — a draft
+    # client against an empty server converges to the submitted
+    # document (rev bumped, host clock stamped).
+    node tools/caps-run.mjs sync \
+      --op '{"op":"sync_edits","client":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"draft","rev":1,"updated_at":1}],"server":[],"now_ms":1000}' \
+      | grep -q '"status":"submitted"'
+    # The plan-chain capability's gate: which pick governs — the
+    # spring pick in force, the fall pick taking over after it, and
+    # the derived windows.
+    node tools/caps-run.mjs plans \
+      --op '{"op":"resolve","plans":[{"id":"spring","name":"Spring 2026","effective_from":"2026-03-01"},{"id":"fall","name":"Fall 2026","effective_from":"2026-09-07"}],"date":"2026-10-23"}' \
+      --op '{"op":"periods","plans":[{"id":"spring","name":"Spring 2026","effective_from":"2026-03-01"},{"id":"fall","name":"Fall 2026","effective_from":"2026-09-07"}]}' \
+      | grep -q '"plan":"fall"'
     # ARCHITECTURE GATES — the laws as assertions (spelled out in
     # crates/AGENTS.md), because prose does
     # not enforce:
@@ -168,7 +185,7 @@ test: caps
     # Sanctioned consumers: cap-gtfs, cap-network, cap-rt (external
     # rt joining external ids). The router left the feed in U5 — it
     # plans over the network document and the effective day.
-    for crate in cap-analysis cap-board cap-runcut cap-calendar cap-directory transit-analysis transit-dispatch; do
+    for crate in cap-analysis cap-board cap-runcut cap-calendar cap-directory cap-sync cap-plans transit-analysis transit-dispatch; do
         for dep in transit-core transit-codec; do
             if awk '/^\[dev-dependencies\]/{exit} /^'"$dep"' =/{found=1} END{exit !found}' "crates/$crate/Cargo.toml" 2>/dev/null; then
                 echo "ARCH FAIL: $crate depends on $dep — the network is the core model; compose over the network document (crates/AGENTS.md, Law 1)"; exit 1
@@ -182,8 +199,7 @@ test: caps
     violations=$(grep -rl "network_to_gtfs" crates --include="*.rs" \
         | grep -v "crates/transit-codec/" \
         | grep -v "crates/cap-network/" \
-        | grep -v "crates/cap-abi/" \
-        | grep -v "crates/transit-ops/" || true)
+        | grep -v "crates/cap-abi/" || true)
     if [ -n "$violations" ]; then
         echo "ARCH FAIL: network_to_gtfs outside the codec's homes (Law 2 — no whole-calendar expansion in capabilities):"
         echo "$violations"
@@ -216,6 +232,12 @@ soak:
 # Regenerate the e2e GTFS fixture (web/e2e/fixtures/sample-gtfs.zip).
 fixtures:
     cd web/e2e && python3 make_fixtures.py
+
+# Regenerate the Clark County population layer
+# (testdata/clark-population.geojson, from public-domain census
+# sources — the real-data dogfood asset for analysis.type_coverage).
+population:
+    node testdata/generate-population.mjs
 
 # ---------------------------------------------------------------
 # run
@@ -262,44 +284,6 @@ basemap bbox maxzoom="15":
     pmtiles extract "https://build.protomaps.com/$(date +%Y%m%d).pmtiles" \
         web/public/basemap.pmtiles --bbox={{ bbox }} --maxzoom={{ maxzoom }}
 
-# ---------------------------------------------------------------
-# correctness infrastructure
-# ---------------------------------------------------------------
-
-# Regenerate the golden corpus (testdata/corpus.json) from the
-# artifact itself — ALWAYS freshly built (the dependency is the
-# harness's guarantee: replaying against a stale web/pkg artifact
-# writes a no-op diff and the golden test keeps failing). Run after
-# any response-shape change, then commit the diff — that diff IS the
-# reviewable contract change.
-corpus: wasm
-    node testdata/generate-corpus.mjs
-
-# Provenance + reproducibility: rebuild the artifact from scratch and
-# verify byte-identical output, then record what built it. This is the
-# chain of custody that makes "the artifact is what matters" checkable.
-provenance:
-    #!/usr/bin/env bash
-    set -e
-    cargo build --release -p transit-wasm --target wasm32-unknown-unknown
-    a1=$(sha256sum target/wasm32-unknown-unknown/release/transit_wasm.wasm | cut -d' ' -f1)
-    CARGO_TARGET_DIR=/tmp/transit-repro cargo build --release -p transit-wasm --target wasm32-unknown-unknown >/dev/null 2>&1
-    a2=$(sha256sum /tmp/transit-repro/wasm32-unknown-unknown/release/transit_wasm.wasm | cut -d' ' -f1)
-    if [ "$a1" != "$a2" ]; then
-        echo "NOT REPRODUCIBLE: $a1 != $a2"
-        exit 1
-    fi
-    commit=$(git rev-parse HEAD 2>/dev/null || echo "no-git")
-    dirty_bool=false
-    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then dirty_bool=true; fi
-    rustc=$(rustc --version | awk '{print $2}')
-    os=$(uname -srm)
-    printf '{\n  "artifact": "web/pkg/transit_wasm.wasm",\n  "sha256": "%s",\n  "source_commit": "%s",\n  "dirty_tree": %s,\n  "rustc": "%s",\n  "built_on": "%s",\n  "reproducible": true\n}\n' \
-        "$a1" "$commit" "$dirty_bool" "$rustc" "$os" > testdata/provenance.json
-    cp target/wasm32-unknown-unknown/release/transit_wasm.wasm web/pkg/transit_wasm.wasm
-    echo "artifact sha256:$a1 reproducible from $commit (rustc $rustc)"
-    cat testdata/provenance.json
-
 # Supply-chain audit: runs whatever is installed, reports what is
 # missing. Recommended installs:
 #   cargo install cargo-audit cargo-mutants
@@ -322,8 +306,8 @@ audit:
     exit $status
 
 # Mutation-test the domain crates: every surviving mutant is a place
-# where "tests passed" is a lie. Generated code (transit-rt) and the
-# ABI shim (transit-wasm) are excluded; needs cargo-mutants:
+# where "tests passed" is a lie. Generated code (transit-rt) is
+# excluded; needs cargo-mutants:
 # cargo install cargo-mutants
 mutants:
-    cargo mutants -p transit-core -p transit-router -p transit-sync -p transit-ops
+    cargo mutants -p transit-core -p transit-router -p transit-sync -p transit-plans

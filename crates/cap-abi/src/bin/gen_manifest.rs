@@ -231,6 +231,32 @@ const MODULES: &[ModuleSpec] = &[
             ("route", "The street geometry between two snapped positions: the shortest path along the graph, as points ending exactly at the target. Empty when the positions sit on disconnected parts of the network — the caller falls back to a straight line."),
         ],
     },
+    ModuleSpec {
+        id: "sync",
+        file: "cap_sync.wasm",
+        ops: &["sync_edits"],
+        consumes: &[],
+        speaks: &[("operator_edits", &[1])],
+        migrates: &[],
+        purpose: "The sync protocol's one step: what is the converged state of this edit document pair? LWW merge per record id plus tombstones (the terminal authority is the agency scheduling system — propose, review, accept), then drafts transition to submitted with the host-passed clock. transit-sync is the domain library; the module is stateless — document storage is the host's, and validation against the network is every model-side module's load_edits answer, never this one's.",
+        op_docs: &[
+            ("sync_edits", "Merge the client's edit document with the server's (LWW per record id — the newer updated_at wins, tombstones propagate), then transition drafts to submitted (rev bumped, now_ms stamped). The answer is the converged document; the client adopts it wholesale. The host owns both documents and the clock."),
+        ],
+    },
+    ModuleSpec {
+        id: "plans",
+        file: "cap_plans.wasm",
+        ops: &["resolve", "validate", "periods"],
+        consumes: &[],
+        speaks: &[("plan_set", &[1])],
+        migrates: &[],
+        purpose: "The service-plan chain: which plan governs a date. Service changes are PICKS — a few a year at defined dates — and the chain over the plan set's metadata is DERIVED, never stored: a pick's date is a target that moves while the pick is in development. resolve answers which pick is in force; periods windows every member; validate reports chain invariant violations. Unversioned plans are standalone: they never resolve, never flag. Pure ops over the metadata the host pushes per call.",
+        op_docs: &[
+            ("resolve", "Which plan is in force on the date: the latest pick at or before it, ties broken by id (deterministic, order-insensitive). Unversioned plans never resolve; no pick yet answers null."),
+            ("validate", "Chain validity: unique plan ids, every versioned plan effective-dated, pick dates unique. Every violation is reported (kind-tagged); unversioned plans are standalone and never flagged."),
+            ("periods", "Every chain member's governing period — [effective_from, until the next pick) — derived and sorted by pick date. The until end is computed, never stored."),
+        ],
+    },
 ];
 
 fn main() {
@@ -528,9 +554,9 @@ fn rt_example_context() -> Option<RtExampleContext> {
     Some(RtExampleContext { feed, overview, feed_hash, rt_hash })
 }
 
-/// Worked examples — the corpus-as-context idea: an agent reads these
-/// to learn the shapes. Requests carry the REAL feed hash computed
-/// above; responses carry the fixture's known answers.
+/// Worked examples: an agent reads these to learn the shapes.
+/// Requests carry the REAL feed hash computed above; responses
+/// carry the fixture's known answers.
 fn example_for(
     capability: &str,
     op: &str,
@@ -985,6 +1011,49 @@ fn example_for(
                 json!({ "ok": { "op": "route", "points": ctx.points } }),
             )
         }
+        // The sync capability's example computes the REAL converged
+        // answer over the fixture edit document (draft client vs
+        // empty server) through the same library the module
+        // dispatches through.
+        ("sync", "sync_edits") => {
+            let mut draft = dispatch_fixture_edits();
+            draft[0].status = transit_sync::EditStatus::Draft;
+            let now_ms: u64 = 1_770_000_000_000;
+            let records = transit_sync::submit(transit_sync::merge(&draft, &[]), now_ms);
+            (
+                json!({ "op": "sync_edits", "client": draft, "server": [], "now_ms": now_ms }),
+                json!({ "ok": { "op": "sync_edits", "records": records } }),
+            )
+        }
+        // The plan-chain capability's examples compute REAL answers
+        // through the same shared library the module dispatches
+        // through — a two-pick chain over the fixture's dates.
+        ("plans", "resolve") => {
+            let plan_set = fixture_plan_set();
+            let plan = transit_plans::resolve(
+                &plan_set,
+                chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            )
+            .expect("fixture dates parse");
+            (
+                json!({ "op": "resolve", "plans": plan_set, "date": "2026-10-23" }),
+                json!({ "ok": { "op": "resolve", "plan": plan } }),
+            )
+        }
+        ("plans", "validate") => {
+            let plan_set = fixture_plan_set();
+            (
+                json!({ "op": "validate", "plans": plan_set }),
+                json!({ "ok": { "op": "validate", "issues": transit_plans::validate(&plan_set) } }),
+            )
+        }
+        ("plans", "periods") => {
+            let plan_set = fixture_plan_set();
+            (
+                json!({ "op": "periods", "plans": plan_set }),
+                json!({ "ok": { "op": "periods", "periods": transit_plans::periods(&plan_set) } }),
+            )
+        }
         // Bulk-bytes ops have no JSON request example (the payload is
         // the raw zip/protobuf); the description carries the contract.
         (_, "load_feed") => return None,
@@ -993,6 +1062,24 @@ fn example_for(
         _ => return None,
     };
     Some(OpExample { request, response })
+}
+
+/// The plan-chain examples' plan set: a two-pick chain around the
+/// fixture's dates — the spring pick in force on the fixture Friday,
+/// the fall pick taking over after it.
+fn fixture_plan_set() -> Vec<transit_plans::PlanInfo> {
+    vec![
+        transit_plans::PlanInfo {
+            id: "spring".into(),
+            name: "Spring 2026".into(),
+            effective_from: Some("2026-03-01".into()),
+        },
+        transit_plans::PlanInfo {
+            id: "fall".into(),
+            name: "Fall 2026".into(),
+            effective_from: Some("2026-09-07".into()),
+        },
+    ]
 }
 
 /// The dispatch examples' edit document: the fixture diversion

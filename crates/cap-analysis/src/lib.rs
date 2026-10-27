@@ -3,9 +3,8 @@
 //! The first capability extracted from the MONOLITH: the analysis
 //! functions (network stats, service-type overview and detail,
 //! population coverage) live in `transit-analysis`, shared as a
-//! library between this module and transit-ops — the same domain
-//! code, gated once, dispatched from two hosts. A planner's bundle
-//! ships this module; a rider's never hears of it.
+//! library under this module. A planner's bundle ships it; a
+//! rider's never hears of it.
 //!
 //! Documents are content-addressed like everywhere on the bus: an
 //! authored network (the JSON document) registers under its canonical

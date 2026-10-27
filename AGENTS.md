@@ -1,15 +1,12 @@
 # AGENTS.md
 
 Local-first transit software: GTFS static + GTFS-rt, parsed by
-Rust, shipped as **one wasm artifact** that runs in the browser
-(JS), in Node (ABI smoke), and on the sync server (Go + wazero).
-The same bytes everywhere is the point of the project — do not
-break it. (The capability bus restates this for the per-user
-future: the same DOCUMENT and the same contracts everywhere;
-capability bytes are assembled per user. The GOAL is to decompose
-the monolith into capability modules entirely — the bus is the
-architecture, the monolith is legacy surface being deleted unit by
-unit: `docs/PLAN.md`.)
+Rust, shipped as **capability modules** — one flat import-free
+wasm ABI everywhere. The same DOCUMENT and the same contracts on
+every host (browser, Node, Go + wazero) is the point of the
+project; the bytes are assembled per user from the manifest. The
+bus is the architecture: every host instantiates the capability
+modules it needs.
 
 **This file is load-bearing, and so are its pointers.** The detail
 lives in the docs below; the rules that keep them from drifting:
@@ -31,7 +28,7 @@ lives in the docs below; the rules that keep them from drifting:
   session that proves it — and never claims more than one grade
   at a time: on-the-bus, UI-reads-the-bus, and dogfooded are three
   different claims. A claim whose pin is stale (a spec that no
-  longer runs, a corpus step that no longer exists) is false
+  longer runs, a gate that no longer exists) is false
   until re-pinned. Stale instructions are how the next agent
   breaks the build.
 - If a section contradicts the code, the code wins for the moment
@@ -51,6 +48,8 @@ Where the detail lives:
 - `docs/CONVENTIONS.md` — gotchas, Rust/wasm/ops and frontend
 - `docs/TESTING.md` — the testing expectations and the dogfood-QA
   rules
+- `docs/QA-FINDINGS.md` — the real-data QA stream: dogfood session
+  findings (defects, op/UI/data gaps), each pinned and statused
 - `docs/ROADMAP.md` — the sequenced feature plan (direction changes)
 
 ## Commands
@@ -59,8 +58,8 @@ Where the detail lives:
 before declaring work done.
 
 ```
-just build / just wasm     # frontend+artifact / artifact only
-just caps                  # capability modules + regenerate the manifest
+just build                 # frontend (type-checks first — the TS layer is a gate)
+just caps                  # capability modules + manifest (+ cap_sync.wasm for the server)
 just registry              # publish the capability registry (gates → blobs + evidence)
 node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op ...
                            # $refs ($load.x, $op.x, $N.path) + $TODAY/$NOW_SECS;
@@ -68,8 +67,6 @@ node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op .
 just test                  # host-side tests (Rust + smokes + runner gates + Go -race)
 just e2e                   # browser e2e (builds first)
 just check                 # test + e2e — the full gate
-just corpus                # regenerate the golden corpus (AFTER just wasm)
-just provenance            # refresh testdata/provenance.json after Rust changes
 just types                 # regenerate TS bindings only
 just serve [feed.zip ["Publisher"]]   # sync server on :8080
 just dev                   # vite hot reload + server alongside
@@ -99,13 +96,12 @@ transit-dispatch the operator's day library (patched materialized day, boards,
                  authored block chains with the layover ripple)
 transit-rt       GTFS-rt prost types + overview/progress join libraries
 transit-sync     THE sync document (EditRecord, Diversion, merge — pure)
+transit-plans    THE service-plan chain (resolve, periods, validity — pure, derived)
 transit-streets  street graph for detour authoring (snap, route)
-transit-ops      the monolith seam: dispatch(Request) -> Response + feed registry
-transit-wasm     THE artifact: flat import-free C ABI over dispatch
 cap-abi          the capability seam (ABI macro, manifest, validator, gen-manifest)
-cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets
+cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-plans
                  the capability modules (docs/ARCHITECTURE.md, bus section)
-server/          Go + wazero host — scaffolding, never a domain decision
+server/          Go + wazero host over cap-sync — scaffolding, never a domain decision
 web/             Svelte 5 + Vite frontend (docs/ARCHITECTURE.md, web section)
 ```
 
@@ -129,8 +125,9 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
 - **Retirement is the tombstone**: "delete" means
   `status: "retired"`, rev bumped. No hard deletes.
 - Schedules change by **artifact replacement, not mutation**: the
-  planner publishes a new zip; the manifest pins `feed_hash` +
-  `wasm_hash`; everyone re-pins and revalidates.
+  planner publishes a new zip; the server's manifest pins
+  `feed_hash` + the sync module's `wasm_hash`; everyone re-pins
+  and revalidates.
 - The sync protocol is **LWW per record id + tombstones**, not CRDT
   (deliberate — the terminal authority is the agency scheduling
   system; propose → review → accept). `transit_sync::merge` is a
@@ -142,19 +139,20 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
 - **Git is the user's** — never commit, push, stash, or otherwise
   move refs. Do the work, leave the tree, report what changed.
 - The TS bindings are GENERATED (`just types`; commit the diff) —
-  the TS contract IS the artifact's contract.
-- New monolith ops go at the transit-ops seam; new capability ops
-  go through the extraction pattern (crate boundary first,
-  capability wrapper second, monolith deletion last).
+  the TS contract IS the modules' contract.
+- New ops go through the extraction pattern (crate boundary
+  first, capability wrapper second): the monolith that ops were
+  extracted FROM is gone, so a new op is a library + a capability
+  module, never a host.
 
 The rest of the gotchas: `docs/CONVENTIONS.md`.
 
 ## Testing
 
 Every change lands with tests at the layer that owns the logic —
-the six expectations (unit/property in the owning crate, dispatch
-test, smokes + corpus, Go round-trip, Playwright e2e, real-data
-dogfood) are spelled out in `docs/TESTING.md`.
+the expectations (unit/property in the owning crate, module
+dispatch test, caps-smoke + runner gates, Go round-trip, Playwright
+e2e, real-data dogfood) are spelled out in `docs/TESTING.md`.
 
 ## Deliberate non-goals (do not "fix" these)
 
@@ -163,12 +161,11 @@ dogfood) are spelled out in `docs/TESTING.md`.
   import/export codecs live at the boundary in transit-codec.
 - Runcutting stops at blocks + layovers; duties/rosters are a future
   layer, not a `Block` extension.
-- wasm-bindgen / JS glue in the artifact is gone on purpose; the
-  artifact is the raw rustc output with four exports. Capability
-  modules keep the same flat ABI — no custom calling conventions.
+- wasm-bindgen / JS glue is gone on purpose; every module is the
+  raw rustc output with the same four exports — no custom calling
+  conventions.
 - The Go server stays scaffolding; domain logic the server needs
-  becomes a transit-ops op.
-- The bus is the architecture; the monolith is legacy being
-  deleted (`docs/PLAN.md`): no capability grows a private
+  becomes a capability module (it hosts cap-sync today).
+- The bus is the architecture: no capability grows a private
   document format — shared data crosses modules as kernel
   documents addressed by content hash only.

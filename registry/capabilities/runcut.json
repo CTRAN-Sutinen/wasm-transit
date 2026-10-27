@@ -12,7 +12,7 @@
     ],
     "recipe": "just registry",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "source_commit": "84fa9a4b153d71bcc9e5b57059947de1a8222a3a"
+    "source_commit": "fcf279a244b9d1a857623b07de421081a062a8eb"
   },
   "hash": "sha256:2fbcbd4da94271cf8e956a1fe189f270c18775580d0b00b16fab19a97820e557",
   "id": "runcut",

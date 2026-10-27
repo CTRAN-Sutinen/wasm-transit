@@ -2,13 +2,10 @@
 //!
 //! The Layer A → Layer B bridge: an authored network document
 //! (transit-network) expanded into the derived-feed view
-//! (transit-core's `Gtfs`) that every downstream op — departures,
-//! planning, blocks, geojson — already consumes, and the reverse
+//! (transit-core's `Gtfs`) that the boundary speaks, and the reverse
 //! inference (GTFS → authored network) that is the planner's
-//! bootstrap. The second crate extracted out of transit-ops for the
-//! capability bus (after transit-analysis): transit-ops and the
-//! cap-network module share this code — the same codec, gated once,
-//! dispatched from two hosts.
+//! bootstrap. The cap-network module dispatches through it — the
+//! same codec, gated once.
 //!
 //! This is the only place where model-owned ids and the derived view
 //! meet, and it is a *translation*, not a model: GTFS-the-format

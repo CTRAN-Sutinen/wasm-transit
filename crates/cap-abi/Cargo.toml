@@ -34,6 +34,10 @@ transit-router = { path = "../transit-router" }
 # …and the street capability's examples compute REAL snap/route
 # answers over the e2e street fixture through the same library.
 transit-streets = { path = "../transit-streets" }
+# …and the sync and plan-chain capabilities' examples compute REAL
+# answers (merge + submit; resolve/validate/periods) through the
+# same libraries the modules dispatch through.
+transit-plans = { path = "../transit-plans" }
 
 [dev-dependencies]
 proptest = "1"

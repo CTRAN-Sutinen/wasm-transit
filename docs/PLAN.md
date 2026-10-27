@@ -74,13 +74,17 @@ required, only honesty about the need each op serves:
    deletion third. A unit is DONE when the ops are deleted and
    `just check` pins it.
 
-## The table — every remaining monolith op, its need, its home
+## The table — the last monolith ops, their needs, their homes
 
 | monolith op(s) | the need | home | unit |
 |---|---|---|---|
-| sync_edits | sync the edit document (LWW merge, the sync protocol) | transit-sync is the library; the open question is placement only: cap-sync vs permanent seam resident | U7 |
-| plans_resolve, plans_validate, plans_periods | know which service plan governs a date | same standing as transit-sync's merge — the U7 placement carries it | U7 |
-| load_feed, drop_feed | the artifact's own registry lifecycle — the sync seam's feed-scoped validation keeps them until U7's placement speaks | rides U7 | — |
+| sync_edits | sync the edit document (LWW merge + submit, the sync protocol's one step) | cap-sync (transit-sync is the library); the op's feed-scoped reports DIE with the registry — validation against the network is every model-side module's load_edits answer (criterion 6) | U7 |
+| plans_resolve, plans_validate, plans_periods | know which service plan governs a date | cap-plans (transit-plans is the library — the chain is cross-document logic, the counterpart of transit-sync's cross-record merge) | U7 |
+| load_feed, drop_feed | the registry lifecycle that served sync's reports | death — no consumer once the reports die | U7 |
+
+With U7's placement the monolith empties: transit-ops and
+transit-wasm retire with the unit (status: `docs/CAPS-PLAN.md`),
+and the Go server hosts the sync capability directly.
 
 ## The units
 
@@ -153,13 +157,22 @@ required, only honesty about the need each op serves:
   Delete the five geojson ops. `set_diversions` dies here, with
   U5.
 - **U7 sync + plans (rides sync persistence).** Placement only:
-  cap-sync vs permanent seam residents for `sync_edits` and the
-  plans chain — both are cross-document logic over transit-sync,
-  the same standing as its merge. The sync-persistence design
-  (blobs + pointers, migrate-at-receive, pointer CAS) is the
-  standing queue's own unit — and U7 does NOT design it: the
-  pointer CAS + reflog mechanism is the host discipline's (the
-  section below); U7 places ops, never persistence.
+  both ops are cross-document logic, the same standing as
+  transit-sync's merge — so both get the library + module pair the
+  pattern prescribes. **cap-sync** (the converged edit document
+  pair: LWW merge + submit; transit-sync is the library) replaces
+  the monolith op, WITHOUT the feed-scoped reports — load_edits
+  already answers validation against the network in every
+  model-side module, and a second answer would be criterion 6
+  broken; the reports' registry (load_feed, drop_feed) dies with
+  them, and transit-core's `report_all` loses its last caller.
+  **cap-plans** (the plan chain: resolve, periods, validate;
+  transit-plans is the library) replaces the plans ops. The
+  sync-persistence design (blobs + pointers, migrate-at-receive,
+  pointer CAS) is the standing queue's own unit — and U7 does NOT
+  design it: the pointer CAS + reflog mechanism is the host
+  discipline's (the section below); U7 places ops, never
+  persistence.
 - **U8 the GTFS substrate retires.** transit-core is the GTFS
   serialization spec wearing core's name — the network is the
   core model, and GTFS exists to translate it. The spec's one
@@ -207,11 +220,11 @@ designed layer or it rots into glue copied per component.
   glue has no path to one without the assertion having run —
   `assertSameDocument` holds by construction, not discipline.
 - **The Merkle journal.** Every session is a log written at the
-  choke point: per op, the input document hashes, the artifact
-  hash, the output hashes — hashes only, never payloads (the
-  blob store retains, unreachable blobs are collected, and
+  choke point: per op, the input document hashes, the module
+  bytes' hashes, the output hashes — hashes only, never payloads
+  (the blob store retains, unreachable blobs are collected, and
   ephemeral inputs such as rt snapshots are marked so replay
-  degrades honestly — reported, never silent). One artifact,
+  degrades honestly — reported, never silent). One journal,
   three uses: the trace, the answer-cache key, the migration
   witness.
 - **The store's two git pieces.** A REFLOG — pointer-move
@@ -221,14 +234,15 @@ designed layer or it rots into glue copied per component.
   scope; a second persistence design is the monolith's ghost
   and is rejected on sight.
 - **Replay is the proof procedure.** The runner replays
-  journals natively — same artifact bytes, same input hashes,
-  re-execute, compare output hashes: the golden corpus
-  generalized from the fixture to any session. It is how the
-  dogfood debt is PAID: the re-pinning sessions U1–U4 owe are
-  journal replays of the C-TRAN session through the new
-  modules, not hand-run scripts. Artifact replacement becomes
-  re-pin + replay against the candidate — a per-session
-  differential check, not a hope.
+  journals natively — same module bytes, same input hashes,
+  re-execute, compare output hashes: the golden-replay
+  discipline generalized from any fixed fixture to every
+  session. It is how the dogfood
+  debt is PAID: the re-pinning sessions U1–U4 owe are journal
+  replays of the C-TRAN session through the new modules, not
+  hand-run scripts. Module replacement becomes re-pin + replay
+  against the candidate — a per-session differential check, not
+  a hope.
 - **Two gates ride with the work.** No op call outside the
   engine; and determinism enforced in the modules — no clocks,
   randomness, or environment inside a cap crate, hosts pass
@@ -247,10 +261,10 @@ section's, carried by the standing queue.
 
 ## The finish line
 
-After U7 no domain op remains in the monolith. transit-ops
-reduces to the seam's permanent residents (or nothing),
-transit-wasm retires, and the Go server hosts the capability
-modules directly. The monolith goes away ENTIRELY — that is the
-point of the whole plan. U8 follows: the serialization spec's
-library folds into the codec, and nothing named "core" holds
-GTFS again.
+U7's placement left the monolith no permanent residents:
+transit-ops and transit-wasm are retired with the unit, the Go
+server hosts the sync capability directly, and the browser
+fetches every answer from the capability bus. The monolith went
+away ENTIRELY — that was the point of the whole plan. U8 follows:
+the serialization spec's library folds into the codec, and
+nothing named "core" holds GTFS again.

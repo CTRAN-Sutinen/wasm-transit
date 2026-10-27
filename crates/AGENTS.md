@@ -76,11 +76,12 @@ none by construction.
 The extraction pattern, always in this order:
 
 1. crate boundary first — the domain logic lands in a shared
-   library crate (transit-analysis, transit-rt, transit-dispatch)
-   with the law tests;
-2. capability wrapper second — a thin module over the library;
-3. monolith op deletion last — the op dies in transit-ops, and
-   the web rewires to the bus.
+   library crate (transit-analysis, transit-rt, transit-dispatch,
+   transit-plans) with the law tests;
+2. capability wrapper second — a thin module over the library.
+
+A new domain op is a library and a capability module, never a
+host.
 
 ## Enforcement
 

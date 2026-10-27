@@ -53,15 +53,15 @@ transit-codec   The network codec, both directions: a network document
                 layover from the observed end→start gap (exactly
                 feasible — the model's LayoverInfeasible law holds
                 with equality); the planner re-authors from there.
-                A LIBRARY shared by cap-network and transit-ops's
-                tests — the extraction pattern: crate boundary
-                first, capability wrapper second, monolith deletion
-                last.
+                A LIBRARY under cap-network — the extraction
+                pattern: crate boundary first, capability wrapper
+                second. The C-TRAN import regressions live in its
+                own test suite (tests/import_regression_test).
 transit-analysis Planner analysis over an authored network document:
                 stats, service-type overview/detail, population
-                coverage. A LIBRARY shared by the cap-analysis
-                module (transit-ops keeps the re-export its tests
-                read).
+                coverage. A LIBRARY under the cap-analysis module;
+                the planner's regression numbers live in its own
+                test suite (tests/regression_test).
 transit-dispatch The materialized day's views, model-native: patch_day
                 (skip/shift over MATERIALIZED stop times — the day,
                 never the calendar), edit validation against the
@@ -71,9 +71,8 @@ transit-dispatch The materialized day's views, model-native: patch_day
                 the layover ripple (layover_remaining_secs goes
                 negative when a connection is eaten). A LIBRARY
                 shared by the cap-board, cap-runcut, and cap-calendar
-                modules — the monolith's day-view ops are deleted,
-                the UI reads them here. Holds no GTFS layer (the
-                justfile arch gate enforces it).
+                modules; the UI reads them here. Holds no GTFS
+                layer (the justfile arch gate enforces it).
 transit-rt      prost types from the official GTFS-rt proto, the
                 OVERVIEW view (delays, vehicles) over them, and the
                 PROGRESS join (one trip's predicted times; the
@@ -83,7 +82,17 @@ transit-rt      prost types from the official GTFS-rt proto, the
 transit-sync   THE sync document: EditRecord, FeedManifest, EditReport,
                 the Diversion edit document (THE DISPATCHER'S OWN —
                 it lives in the sync contract, not the GTFS codec),
-                pure validation/merge logic. Shared by every host.
+                pure validation/merge logic (merge is a
+                property-tested semilattice; submit transitions
+                drafts with the host-passed clock). Shared by every
+                host — cap-sync is the seam the Go server calls.
+transit-plans  THE service-plan chain: resolve (which pick is in
+                force), periods (each member's governing window),
+                validate (chain invariants) over the plan set's
+                metadata — DERIVED, never stored, deterministic and
+                order-insensitive. Cross-document logic, the
+                counterpart of transit-sync's cross-record merge;
+                cap-plans is the seam.
 transit-streets Street routing graph for detour authoring: GeoJSON in,
                 snap (nearest street position) + shortest-path route
                 out (one-way aware — TIGER `OneWay` and OSM `oneway`
@@ -91,32 +100,20 @@ transit-streets Street routing graph for detour authoring: GeoJSON in,
                 restriction table ships in the data). Pure reference
                 geometry — cap-streets registers parsed graphs under
                 their content hash, never mixed with feed state.
-transit-ops     dispatch(Request) -> Response: the host-agnostic seam
-                + per-feed registry (feed_id keyed). The codec ops,
-                analysis ops, rt decode, the dispatch reads
-                (active_services / blocks / block_trips / feed_info),
-                the day views (departures / block_trips), the
-                planning ops (plan_trip / plan_trip_compare) AND the
-                map's geojson draws with set_diversions are
-                DELETED — they live in cap-network, cap-analysis,
-                cap-rt, the day-view capabilities (cap-board,
-                cap-runcut, cap-calendar), cap-router, and the
-                host's map view; the board, chains, plans, and map
-                read the bus.
-                What remains: the sync seam (load_feed, drop_feed —
-                the registry the server's POST /edits validates the
-                merged document against; sync_edits) and the plans
-                chain in src/plans.rs
-                (plans_resolve / plans_validate / plans_periods —
-                cross-document domain logic, the same standing as
-                transit-sync's merge; U7 decides their placement).
-                The street ops are DELETED —
-                cap-streets owns the detour editor's graph — the
-                population-layer parse is DELETED —
-                cap-analysis owns the layers and the coverage that
-                reads them.
-transit-wasm    THE artifact: flat import-free C ABI over dispatch.
-                No wasm-bindgen — do not reintroduce host glue.
+cap-sync        The sync capability: the converged state of an edit
+                document pair — LWW merge + the submit transition,
+                the protocol's one step (the op behind POST /edits).
+                Stateless; validation is NOT here (load_edits
+                answers it against the network in every model-side
+                module — one question, one answer).
+cap-plans       The plan-chain capability: which service plan
+                governs a date — resolve / periods / validate over
+                the plan set's metadata (transit-plans is the
+                library). Pure ops, no registries: the host owns
+                the plan set and pushes its metadata per call.
+
+Every module is the raw rustc output with the same four flat
+exports (no wasm-bindgen — do not reintroduce host glue).
 ```
 
 ## server/
@@ -124,8 +121,11 @@ transit-wasm    THE artifact: flat import-free C ABI over dispatch.
 Go + wazero host: scaffolding only (HTTP, manifest, proxy). It must
 never make a domain decision; the host reads the feed's own
 feed_info.txt version field (one boundary CSV field — I/O, not
-domain). (Reentrancy and the Go-host serialization live in
-`docs/CONVENTIONS.md`.)
+domain). The one module it instantiates is cap-sync (the default
+-wasm flag, web/pkg/cap_sync.wasm — rebuilt by `just caps`): the
+op behind POST /edits. The manifest pins the feed hash and the
+sync module's hash. (Reentrancy and the Go-host serialization
+live in `docs/CONVENTIONS.md`.)
 
 ## web/
 
@@ -145,13 +145,12 @@ entity. There is no planner drawer.
 
 File ownership:
 
-- `src/wasm.ts` wraps the artifact (the plans chain — its
-  remaining surface); components never see the ABI.
 - `src/mapview.ts` is the map's view code — HOST code over model
   documents (the network document's stops and authored alignments,
   the directory's stop list, the effective day via cap-runcut's
   trip detail): the map is a VIEW, not a capability.
-- `src/capabilities.svelte.ts` is the bus resolver — manifest
+- `src/capabilities.svelte.ts` is the bus resolver — the ONLY wasm
+  loader (components never see the ABI): manifest
   validation, demand-driven load, byte verification against pinned
   hashes, per-capability degradation, and the IMMUTABLE document
   store (every version hash-chained by produced_by; `current` is a
@@ -172,10 +171,10 @@ Frontend conventions and gotchas: `docs/CONVENTIONS.md`.
 The architecture: horizontal capability modules, one NEED per
 module, assembled per user at WIRE time from a manifest —
 capability bytes differ per user while the DOCUMENT and the
-contracts stay identical everywhere. The monolith is legacy
-surface being deleted: what remains of it and where each piece
-goes is `docs/PLAN.md` (the plan); where the work stands is
-`docs/CAPS-PLAN.md` (the status authority).
+contracts stay identical everywhere. Every host instantiates the
+modules it needs — the browser fetches them from the manifest,
+the sync server hosts cap-sync. Where the remaining work stands
+is `docs/CAPS-PLAN.md` (the status authority).
 
 ```
 cap-abi         The seam crate: the flat C ABI as a macro (every
@@ -228,8 +227,7 @@ cap-network     The network codec capability: load_feed (zip bytes →
                 (schedule, start) ↔ agency trip ids — the join rt
                 data and the feed's own ids are keyed by; None for
                 an authored network, the honest answer). The domain
-                code lives in the shared transit-codec library — the
-                monolith keeps no copy.
+                code lives in the shared transit-codec library.
 cap-rt          The realtime capability: decode — a GTFS-rt protobuf
                 payload (bulk-bytes op 0, the ephemeral bytes an
                 agency serves every few seconds) into the overview
@@ -302,9 +300,8 @@ cap-directory   The directory capability — ONE QUESTION: what
                 case the model never matched on). The pickers are
                 model questions, never feed reads; the UI's
                 comboboxes and the map's name lookups read this
-                module. Replaces the monolith's stops / routes /
-                route_stop_sequence / summary (the feed line reads
-                cap-gtfs's load_feed summary + feed_info).
+                module (the feed line reads cap-gtfs's load_feed
+                summary + feed_info).
 cap-streets    The street-graph capability: the detour editor's need,
                 atomically. load_streets (bulk-bytes op 0) parses a
                 street-network GeoJSON into the routing graph and
@@ -315,8 +312,8 @@ cap-streets    The street-graph capability: the detour editor's need,
                 geometry between two positions (shortest path; empty
                 on disconnected parts — the caller falls back to a
                 straight line). The domain code lives in the shared
-                transit-streets library — the monolith keeps no
-                copy. Reference data the HOST owns, re-imported per
+                transit-streets library. Reference data the HOST
+                owns, re-imported per
                 session; the module writes nothing.
 ```
 

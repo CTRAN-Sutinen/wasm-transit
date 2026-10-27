@@ -86,7 +86,7 @@ test("loads cleanly with no console errors", async ({ page }) => {
     }
   });
   await page.goto("/");
-  await expect(page.getByText(/wasm ready/i)).toBeVisible();
+  await expect(page.getByText(/capability bus ready/i)).toBeVisible();
   await waitForMap(page);
   expect(errors).toEqual([]);
 });

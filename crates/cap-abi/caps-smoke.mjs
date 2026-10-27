@@ -776,4 +776,72 @@ assert(unknownStreets.error && unknownStreets.error.includes("unknown street net
 const garbageStreets = streets.raw({ op: "load_streets", bytes: [0xff, 0xfe] });
 assert(garbageStreets.error && /street network/.test(garbageStreets.error), "garbage bytes are an error outcome, never a trap");
 
+// The sync flow — the protocol's one step: the client's draft
+// diversion against an empty server converges to the submitted
+// document (LWW union, rev bumped, host clock stamped), and the
+// pair order never matters (client and server are roles, not
+// order). Validation is NOT here: load_edits answers it against
+// the network in every model-side module.
+assert(byId.sync, "manifest advertises the sync capability");
+const sync = shell(loadModule(byId.sync));
+const draft = {
+  id: "e1",
+  diversion: {
+    id: "d1", route_id: "10", direction_id: null,
+    first_kept_stop: "A", last_kept_stop: "B",
+    skipped_stops: ["C"], detour: null,
+    added_secs: 300, start_date: DATE, end_date: DATE,
+  },
+  status: "draft", rev: 1, updated_at: 1,
+};
+const converged = sync.invoke({ op: "sync_edits", client: [draft], server: [], now_ms: 1000 });
+assert(converged.op === "sync_edits" && converged.records.length === 1, "the pair converges to one document");
+assert(converged.records[0].status === "submitted", "drafts submit");
+assert(converged.records[0].rev === 2, "submit bumps rev");
+assert(converged.records[0].updated_at === 1000, "submit stamps the host clock");
+const swapped = sync.invoke({ op: "sync_edits", client: [], server: [draft], now_ms: 1000 });
+assert(
+  JSON.stringify(swapped.records) === JSON.stringify(converged.records),
+  "the pair is order-insensitive (the same documents converge the same way)",
+);
+const empty = sync.invoke({ op: "sync_edits", client: [], server: [], now_ms: 0 });
+assert(empty.records.length === 0, "empty documents converge to empty");
+const garbageSync = sync.raw({ op: "sync_edits", client: "not a list", server: [], now_ms: 0 });
+assert(garbageSync.error && garbageSync.error.includes("invalid request"), "garbage requests are an error outcome, never a trap");
+
+// The plan-chain flow — which pick governs: the spring pick in
+// force on the fixture Friday, the fall pick after it, the windows
+// derived (never stored), and the chain validating clean.
+assert(byId.plans, "manifest advertises the plans capability");
+const plans = shell(loadModule(byId.plans));
+const PLAN_SET = [
+  { id: "spring", name: "Spring 2026", effective_from: "2026-03-01" },
+  { id: "fall", name: "Fall 2026", effective_from: "2026-09-07" },
+];
+const resolved = plans.invoke({ op: "resolve", plans: PLAN_SET, date: DATE });
+assert(resolved.plan === "fall", "the latest pick at or before the date governs");
+const before = plans.invoke({ op: "resolve", plans: PLAN_SET, date: "2026-01-01" });
+assert(before.plan === null, "no pick yet answers null");
+const unversioned = plans.invoke({
+  op: "resolve",
+  plans: [{ id: "", name: "imported", effective_from: null }],
+  date: DATE,
+});
+assert(unversioned.plan === null, "unversioned plans never resolve");
+const windows = plans.invoke({ op: "periods", plans: [PLAN_SET[1], PLAN_SET[0]] });
+assert(windows.periods.length === 2, "unversioned excluded, duplicates are validate's business");
+assert(windows.periods[0].id === "spring" && windows.periods[0].until === "2026-09-07", "windows are derived and sorted by pick date");
+const valid = plans.invoke({ op: "validate", plans: PLAN_SET });
+assert(valid.issues.length === 0, "a valid chain has no issues");
+const chainIssues = plans.invoke({
+  op: "validate",
+  plans: [...PLAN_SET, { id: "spring", name: "dup", effective_from: "2026-05-01" }],
+});
+assert(
+  chainIssues.issues.some((i) => i.kind === "duplicate_plan_id"),
+  "every invariant violation is reported, never silent",
+);
+const garbagePlans = plans.raw({ op: "resolve", plans: [], date: "not a date" });
+assert(garbagePlans.error && garbagePlans.error.includes("invalid date"), "garbage dates are an error outcome, never a trap");
+
 console.log("capability modules: ABI smoke ok");

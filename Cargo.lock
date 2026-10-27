@@ -122,6 +122,7 @@ dependencies = [
  "transit-core",
  "transit-dispatch",
  "transit-network",
+ "transit-plans",
  "transit-router",
  "transit-rt",
  "transit-streets",
@@ -223,6 +224,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cap-plans"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "chrono",
+ "serde",
+ "serde_json",
+ "transit-plans",
+ "ts-rs",
+]
+
+[[package]]
 name = "cap-router"
 version = "0.1.0"
 dependencies = [
@@ -280,6 +293,18 @@ dependencies = [
  "serde_json",
  "sha2",
  "transit-streets",
+ "ts-rs",
+]
+
+[[package]]
+name = "cap-sync"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "chrono",
+ "serde",
+ "serde_json",
+ "transit-sync",
  "ts-rs",
 ]
 
@@ -1047,6 +1072,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "transit-analysis",
  "transit-core",
  "transit-network",
  "ts-rs",
@@ -1092,22 +1118,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "transit-ops"
+name = "transit-plans"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "proptest",
- "prost",
  "serde",
  "serde_json",
- "transit-analysis",
- "transit-codec",
- "transit-core",
- "transit-network",
- "transit-rt",
- "transit-sync",
  "ts-rs",
- "zip",
 ]
 
 [[package]]
@@ -1159,13 +1176,6 @@ dependencies = [
  "serde_json",
  "ts-rs",
  "zip",
-]
-
-[[package]]
-name = "transit-wasm"
-version = "0.1.0"
-dependencies = [
- "transit-ops",
 ]
 
 [[package]]

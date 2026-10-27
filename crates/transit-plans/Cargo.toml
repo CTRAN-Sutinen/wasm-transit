@@ -1,0 +1,14 @@
+[package]
+name = "transit-plans"
+description = "The service-plan chain as a shared library: resolution (which pick is in force), governing periods, and chain validity over the plan set's metadata — derived, never stored. The cross-document counterpart of transit-sync's cross-record merge; the cap-plans capability dispatches through it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+ts-rs = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

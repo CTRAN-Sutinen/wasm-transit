@@ -34,7 +34,7 @@ import (
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8080", "listen address")
 	dist := flag.String("dist", "../web/dist", "directory of static files to serve")
-	wasmPath := flag.String("wasm", "../web/pkg/transit_wasm.wasm", "the wasm artifact to host and pin")
+	wasmPath := flag.String("wasm", "../web/pkg/cap_sync.wasm", "the sync capability module to host and pin")
 	feedPath := flag.String("feed", "", "path to the GTFS zip (enables /feed and the manifest's feed section)")
 	publisher := flag.String("publisher", "", "manifest provenance (who publishes this schedule)")
 	editsPath := flag.String("edits", "", "path to persist the edit document (JSON); empty = in-memory only")
@@ -49,7 +49,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("wasm host: %v", err)
 	}
-	log.Printf("wasm artifact loaded: %s (%s)", *wasmPath, host.Hash())
+	log.Printf("sync module loaded: %s (%s)", *wasmPath, host.Hash())
 
 	s := &server{
 		dist:      *dist,
@@ -145,14 +145,14 @@ func (s *server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, resp.Body)
 }
 
-// Manifest pins the authoritative schedule artifact and the wasm
-// artifact that validates it. `feed_version` is read from the
-// feed's own feed_info.txt by the host (the host owns files and
-// I/O; the artifact owns the format's domain).
+// Manifest pins the authoritative schedule artifact and the sync
+// module this server runs. `feed_version` is read from the feed's
+// own feed_info.txt by the host (the host owns files and I/O; the
+// module owns the format's domain).
 type Manifest struct {
 	FeedHash     string  `json:"feed_hash"` // "sha256:<hex>" of the GTFS zip
 	FeedVersion  *string `json:"feed_version,omitempty"`
-	WasmHash     string  `json:"wasm_hash"` // sha256 of the artifact every host runs
+	WasmHash     string  `json:"wasm_hash"` // sha256 of the sync module this server runs
 	GeneratedAt  int64   `json:"generated_at"`
 	Publisher    *string `json:"publisher,omitempty"`
 }
@@ -163,7 +163,7 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 		GeneratedAt: time.Now().Unix(),
 	}
 	if s.feeder != nil {
-		feed, err := s.feeder.Load(r.Context(), s.wasm)
+		feed, err := s.feeder.Load()
 		if err != nil {
 			http.Error(w, fmt.Sprintf("feed unavailable: %v", err), http.StatusInternalServerError)
 			return
@@ -186,7 +186,7 @@ func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no feed configured (start with -feed <gtfs.zip>)", http.StatusNotFound)
 		return
 	}
-	feed, err := s.feeder.Load(r.Context(), s.wasm)
+	feed, err := s.feeder.Load()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("feed unavailable: %v", err), http.StatusInternalServerError)
 		return
@@ -195,11 +195,12 @@ func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 	w.Write(feed.bytes)
 }
 
-// loadedFeed is one pinned state of the GTFS artifact.
+// loadedFeed is one pinned state of the GTFS artifact — pure host
+// I/O now: serving the file needs no module (the wasm registry it
+// once registered in died with the monolith).
 type loadedFeed struct {
-	hash   string // "sha256:<hex>" of the zip
-	bytes  []byte
-	feedID uint32 // the wasm registry id
+	hash  string // "sha256:<hex>" of the zip
+	bytes []byte
 }
 
 func (l *loadedFeed) Hash() string  { return l.hash }
@@ -256,7 +257,7 @@ type fileFeed struct {
 }
 
 // Load returns the current feed, reloading when the file changed.
-func (f *fileFeed) Load(ctx context.Context, host *WasmHost) (*loadedFeed, error) {
+func (f *fileFeed) Load() (*loadedFeed, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -274,20 +275,11 @@ func (f *fileFeed) Load(ctx context.Context, host *WasmHost) (*loadedFeed, error
 	}
 	sum := sha256.Sum256(body)
 
-	// Register the fresh artifact in the module and drop the old one.
-	feedID, err := host.LoadFeed(ctx, body)
-	if err != nil {
-		return nil, err
-	}
-	if f.loaded && f.feed != nil {
-		host.DropFeed(ctx, f.feed.feedID)
-	}
 	f.loaded = true
 	f.mtime = info.ModTime()
 	f.feed = &loadedFeed{
-		hash:   "sha256:" + hex.EncodeToString(sum[:]),
-		bytes:  body,
-		feedID: feedID,
+		hash:  "sha256:" + hex.EncodeToString(sum[:]),
+		bytes: body,
 	}
 	return f.feed, nil
 }

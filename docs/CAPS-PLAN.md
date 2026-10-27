@@ -1,18 +1,16 @@
 # Capability bus — status
 
-THE status doc: what is done, what is open. THE plan — the
-decomposition of the remaining monolith, unit by unit — lives in
-`docs/PLAN.md`. Architecture: `docs/ARCHITECTURE.md`. The three
+THE status doc: what is done, what is open. THE plan — the units
+of the decomposition — lives in `docs/PLAN.md`. Architecture: `docs/ARCHITECTURE.md`. The three
 laws: `crates/AGENTS.md`. Testing and the dogfood-QA rules:
 `docs/TESTING.md`. Read the root AGENTS.md, then PLAN.md, then
 this file's Current state before touching anything.
 
 ## Current state
 
-The bus IS the architecture — the monolith is legacy surface
-being deleted, and its remaining ops are exactly `docs/PLAN.md`'s
-table (every one has a need, a home, and a unit; U1 has landed,
-the rest are OPEN below). The QA feed: `testdata/ctran-gtfs.zip` (the real
+The bus IS the architecture — the monolith is deleted, every op
+answers through a capability module (the units are LANDED below;
+what remains open is listed there). The QA feed: `testdata/ctran-gtfs.zip` (the real
 C-TRAN GTFS, NOT COMMITTED — licensed data; fetch from c-tran.com)
 and the rt payloads from gtfs-rt.c-tran.org. Every capability unit
 is dogfooded on that real data before it is done
@@ -22,16 +20,17 @@ finding routed into this doc.
 **Status claims carry receipts.** Every DONE line below names the
 gate, e2e spec, or dogfood session that pins it — a claim without
 a pin is not done, and a claim whose pin went stale (an e2e that
-no longer runs, a corpus step that no longer exists) is FALSE
+no longer runs, a gate that no longer exists) is FALSE
 until re-pinned. Three grades, never conflated: the op is ON THE
-BUS (module + monolith deletion), the UI READS the bus, and it is
+BUS (module + the old seam's deletion), the UI READS the bus, and it is
 DOGSFOODED on real data. A line that holds only the first grade
 must not claim the other two.
 
 LANDED:
 
 - **analysis** → transit-analysis / cap-analysis. Monolith ops
-  deleted (compile + corpus); the planner's numbers read the bus
+  deleted with the monolith; the planner's numbers read
+  the bus
   (app.spec: planner-degrades spec; caps.spec); dogfooded
   (C-TRAN: 1,773 trips / 29 routes / 886 stops / 646.5 revenue
   hours, reproduced through capabilities alone).
@@ -44,15 +43,16 @@ LANDED:
   6,273-entry map, total and 1:1).
 - **rt decode and the schedule joins** (trip_progress,
   late_trips with the delayed-but-dark flag) → transit-rt /
-  cap-rt. The monolith's decode_rt deleted (ABI smoke pins it);
-  the UI's rt flows decode through the bus (actions.ts → rtCap;
+  cap-rt. The monolith's decode_rt deleted with the
+  monolith; the UI's rt flows decode through the bus (actions.ts → rtCap;
   e2e rt specs); dogfooded (C-TRAN TripUpdates + VehiclePositions
   — the split-feed law is a permanent test because the dogfood
   caught it).
 - **the dispatch reads** (active_services, blocks, feed_info,
   stops_by_ids) → cap-gtfs at extraction time. Monolith ops deleted
-  (ABI smoke + corpus pin the retirements); the blocks list / chips
-  / feed header read the bus (app.spec); dogfooded (C-TRAN Sunday:
+  (deleted with the monolith); the blocks list / chips /
+  feed header read the bus
+  (app.spec); dogfooded (C-TRAN Sunday:
   two service keys, 41 vehicles, the 092's 15-hour chain). U2
   moved the day-grade reads to the need modules (below): blocks →
   cap-runcut, active_services → cap-calendar.
@@ -60,8 +60,7 @@ LANDED:
   with the layover ripple) → transit-dispatch / cap-dispatch at
   extraction time — the module dissolved in U2 into the need
   modules (below).
-  Monolith ops deleted (ABI smoke + the corpus step-set pin);
-  the board and chains answer `network_hash + edits_hash + date`
+  Monolith ops deleted with the monolith; the board and chains answer `network_hash + edits_hash + date`
   through the resolver, the rt-delay and click-through joins go
   through the trip map (app.spec: board, station board, blocks,
   the diversion ripple, and the board-degrades spec); dogfooded
@@ -69,7 +68,7 @@ LANDED:
   route-012 detour rippling 5 legs, 11/11 late-trip joins).
 - **U1, the street graph** (streets_load, street_snap,
   street_route) → transit-streets / cap-streets. Monolith ops
-  deleted (ABI smoke pins every retirement, JSON op and bulk op 2
+  deleted with the monolith — the bulk op with the JSON op
   alike; cap-streets's dispatch test + caps-smoke + the justfile
   runner gate pin the module — load_streets / snap / route over
   the content-hash registry); the detour editor reads the bus
@@ -119,14 +118,13 @@ LANDED:
   model's directions; the diversion editor picks a pattern now,
   and new edit records carry direction_id null, the documented
   both-directions case). Monolith ops deleted: stops, routes,
-  route_stop_sequence, summary (ABI smoke pins every retirement;
-  the corpus step-set dropped the picker/summary steps and the
-  unknown-feed step moved to stops_geojson); the feed line reads
+  route_stop_sequence, summary (deleted with the monolith); the feed line reads
   cap-gtfs's load_feed summary + feed_info (already on the bus).
   cap-gtfs ends the unit as parse + identity alone. ON THE BUS:
   cap-directory's dispatch test, caps-smoke's directory flow, the
   justfile runner gate (one chained session: load → stops →
-  names join → routes → patterns), the manifest (10 capabilities,
+  names join → routes → patterns), the manifest (compose-time
+  self-validation; 12 capabilities today),
   compose-time self-validation). UI READS THE BUS: the comboboxes
   (DepartureBoard, TripPlanner, DiversionPanel routes), the map's
   name lookups, the diversion anchors, and the feed line —
@@ -144,9 +142,8 @@ LANDED:
   load_population_layer returns points, pop_field and total_pop
   (the monolith op's exact answer shape — the import UI's status
   line and chip are unchanged, and the layer's owner never parses
-  a second copy). Monolith op deleted: coverage_load (ABI smoke
-  pins both retirements — the JSON op and bulk op 3); the
-  artifact's bytes seam is load_feed alone. ON THE BUS:
+  a second copy). Monolith op deleted with the monolith (the JSON op and
+  bulk op 3 alike). ON THE BUS:
   cap-analysis's dispatch proptest (the handle's fields: points,
   the picked pop_field, the summed population) and caps-smoke's
   analysis flow (the handle asserted, then type_coverage by the
@@ -174,9 +171,8 @@ LANDED:
   facet is the diversion delta — the unpatched day, one
   materialization apart, baseline honestly null when no edit is
   in force. Monolith ops deleted: plan_trip, plan_trip_compare
-  (ABI smoke pins both retirements; the corpus step-set dropped
-  the plan_trip_compare step; the Go round-trip dropped its
-  compare block — the delta facts live in cap-router's dispatch
+  (deleted with the monolith); the delta facts live in
+  cap-router's dispatch
   test: 08:15 active vs 08:10 baseline) and the feed state's
   router cache died with them. ON THE BUS: transit-router's
   raptor/oracle/FIFO suites over the model day, cap-router's
@@ -211,12 +207,7 @@ LANDED:
   rider-side imported network document held by the host — JS
   owns documents). Monolith ops deleted: stops_geojson,
   stop_point, trip_path_geojson, route_path_geojson,
-  trip_segment_geojson, AND set_diversions (ABI smoke pins every
-  retirement; the corpus step-set dropped the geojson and
-  diversion steps and gained plans_resolve; the artifact's
-  remaining UI surface is the plans chain — the GtfsHandle is
-  gone from the browser host, the feed registry stays for the
-  server's sync validation only). The edit document's validation
+  trip_segment_geojson, AND set_diversions (deleted with the monolith). The edit document's validation
   reports — the UI's per-record display — now come from the day
   views' load_edits (the same registration every day view reads;
   memoized per document content). ON THE BUS:
@@ -250,24 +241,60 @@ examples from the real fixture at generation time), query
 shaping (the shaping law is tested; the 249-byte C-TRAN
 day-shape answer is the dogfood record).
 
+- **U7, sync + plans — and the monolith dies.** Placement per
+  `docs/PLAN.md` (both ops are cross-document logic, the same
+  standing as transit-sync's merge, so both get the library +
+  module pair): **cap-sync** answers the sync protocol's one step
+  (`sync_edits`: LWW merge + the submit transition, the host
+  passes the clock; transit-sync is the library) — WITHOUT the
+  old op's feed-scoped reports, which were a criterion-6
+  duplicate of every model-side module's load_edits validation
+  answer; the reports' registry (load_feed, drop_feed) died with
+  them and transit-core's report_all lost its last caller.
+  **cap-plans** answers the plan chain (`resolve` / `periods` /
+  `validate` over the plan set's metadata; transit-plans is the
+  library — the chain is derived, never stored). ON THE BUS:
+  cap-sync's dispatch test (LWW, the tombstone, submit
+  idempotence, pair order-insensitivity), cap-plans's dispatch
+  test (the seam) + transit-plans's chain tests (the laws:
+  resolution, windows, validity, order-insensitivity), caps-smoke
+  (sync + plans flows), the justfile runner gates (both), the
+  manifest (12 capabilities, REAL computed examples for every
+  op), and the Go host: the server hosts cap-sync
+  (web/pkg/cap_sync.wasm — TestSyncRoundTrip, TestEditsSyncEndpoint
+  through real HTTP, TestConcurrentInvokes under -race,
+  TestModuleIsTheDeployedBytes). UI READS THE BUS: the planner's
+  chain view (in force, governing periods, issues) reads
+  cap-plans (app.spec: the service-plans spec — resolve, derived
+  periods, survive-reload); the sync protocol is unchanged for
+  the browser (POST /edits; the server merges through the
+  module — the Go round-trip is the pin). THE MONOLITH IS GONE:
+  transit-ops and transit-wasm are deleted, with them the corpus,
+  provenance record, and abi-smoke (they pinned THE one artifact's
+  bytes); the monolith's regression tests moved to their owning
+  crates (transit-codec's import regression suite,
+  transit-analysis's regression suite), and the browser loads
+  capability modules only. NOT dogfooded: no real-data session
+  has synced or resolved a real plan chain through the modules
+  yet.
+
 Model facts that hold everywhere: the import infers block
 layovers from observed end→start gaps (GTFS has none; the planner
 re-authors from there) and reports every resolution — never
 silent; diversions produce patched copies (the base feed is
 immutable); retire = tombstone.
 
-OPEN — the units of `docs/PLAN.md`: U7 sync +
-plans, U8 the GTFS substrate retires (U1 cap-streets, U2 the need
-cut, U3 the directory + feed line, U4 coverage, U5 planning, and
-U6 the map view are landed above). The monolith's remaining
-surface is the sync seam (load_feed, drop_feed, sync_edits — the
-server's POST /edits path) and the plans chain; U7 decides their
-placement. transit-core is deprecated as of this cut —
-apply_diversions lost its last caller with set_diversions, and
-the crate itself folds into the codec in U8. U7 is placement
-only — the persistence mechanism (pointer CAS, the store
-reflog) is the host discipline's (`docs/PLAN.md`), not U7's to
-design.
+OPEN — the units of `docs/PLAN.md`: U8, the GTFS substrate
+retires (U1 cap-streets, U2 the need cut, U3 the directory +
+feed line, U4 coverage, U5 planning, U6 the map view, and U7
+sync + plans are landed above). No monolith op remains —
+transit-ops and transit-wasm are deleted. transit-core is
+deprecated: apply_diversions lost its last caller with
+set_diversions, report_all lost its last caller with U7's sync
+cut, and the crate itself folds into the codec in U8. The
+sync-persistence design (pointer CAS, the store reflog) remains
+the host discipline's (`docs/PLAN.md`), never a unit's to design
+in passing.
 
 ## Open findings (routed, never scripted)
 

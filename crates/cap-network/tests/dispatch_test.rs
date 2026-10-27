@@ -1,7 +1,7 @@
 //! Native dispatch tests for the network capability — the seam
 //! without wasm, over the REAL fixture: the e2e sample feed, the
-//! same bytes the corpus and the caps smoke load. The extraction's
-//! own proof lives here: the module answers the planner's whole
+//! same bytes the caps smoke loads. The module answers the
+//! planner's whole
 //! bootstrap → author → publish flow (import, validate, export), and
 //! the produced artifact is a first-class feed document (the
 //! exported zip parses back to the same identity).
@@ -11,8 +11,8 @@ use sha2::Digest;
 
 const FIXTURE: &[u8] = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
 
-/// The shared authored-network fixture — the document the corpus and
-/// the monolith's dispatch tests materialize.
+/// The shared authored-network fixture — the document the smoke
+/// and the manifest's sample load request carry.
 const NETWORK_DOC: &str = include_str!("../../../testdata/network.json");
 
 fn load_fixture() -> (String, transit_core::FeedSummary) {

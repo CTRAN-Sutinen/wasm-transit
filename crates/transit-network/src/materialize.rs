@@ -108,7 +108,7 @@ pub fn trip_arrival_end_secs(
 /// Materialize every trip of one service, regardless of date — the
 /// schedule expanded against its pattern. Trip *times* don't depend
 /// on the date (only whether the service runs at all does), so this
-/// is what an authoring UI previews and what transit-ops loads into
+/// is what an authoring UI previews and what the codec loads into
 /// the derived-feed view. On a validated network it cannot fail.
 pub fn materialize_service(
     network: &Network,

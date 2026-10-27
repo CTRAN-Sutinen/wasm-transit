@@ -1,13 +1,13 @@
 package main
 
 // Edit sync: GET/POST /edits. The host treats documents as opaque
-// JSON — merge, the submit transition, and validation all happen in
-// the wasm artifact via the sync_edits op, so client and server agree
+// JSON — the merge and the submit transition happen in the SYNC
+// CAPABILITY (cap-sync) via its one op, so client and server agree
 // by construction (same bytes, same input, same output).
 //
 // POST /edits  body: the client's document ([]EditRecord).
-//              response: { records: merged document, reports: [...] }
-//              — the client adopts `records` wholesale.
+//              response: the converged document — the client
+//              adopts it wholesale.
 // GET  /edits  returns the server's document.
 
 import (
@@ -48,18 +48,6 @@ func (s *server) handlePostEdits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The feed the merged document is validated against, when one is
-	// configured (nil skips reports).
-	var feedID *uint32
-	if s.feeder != nil {
-		feed, err := s.feeder.Load(r.Context(), s.wasm)
-		if err != nil {
-			http.Error(w, "feed unavailable: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		feedID = &feed.feedID
-	}
-
 	s.editsMu.Lock()
 	defer s.editsMu.Unlock()
 
@@ -68,18 +56,19 @@ func (s *server) handlePostEdits(w http.ResponseWriter, r *http.Request) {
 		serverDoc = json.RawMessage("[]")
 	}
 
-	// One trip into the artifact: merge + submit + validate. The host
-	// passes the clock; the artifact owns every rule.
+	// One trip into the sync capability: merge + submit. The host
+	// passes the clock; the module owns every rule. Validation is
+	// NOT here — edit records validate against the network at
+	// load_edits in every model-side module (the client reads those
+	// reports through the bus).
 	var resp struct {
 		Records json.RawMessage `json:"records"`
-		Reports json.RawMessage `json:"reports"`
 	}
 	err = s.wasm.Invoke(r.Context(), map[string]any{
-		"op":      "sync_edits",
-		"feed_id": feedID,
-		"client":  json.RawMessage(body),
-		"server":  serverDoc,
-		"now_ms":  time.Now().UnixMilli(),
+		"op":     "sync_edits",
+		"client": json.RawMessage(body),
+		"server": serverDoc,
+		"now_ms": time.Now().UnixMilli(),
 	}, &resp)
 	if err != nil {
 		http.Error(w, "sync op failed: "+err.Error(), http.StatusInternalServerError)

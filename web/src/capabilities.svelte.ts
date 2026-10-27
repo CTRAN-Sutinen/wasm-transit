@@ -27,6 +27,13 @@ import type { Request as CalendarCapRequest } from "./types/cap_calendar/Request
 import type { Response as CalendarCapResponse } from "./types/cap_calendar/Response";
 import type { Request as DirectoryCapRequest } from "./types/cap_directory/Request";
 import type { Response as DirectoryCapResponse } from "./types/cap_directory/Response";
+import type { Request as PlansCapRequest } from "./types/cap_plans/Request";
+import type { Response as PlansCapResponse } from "./types/cap_plans/Response";
+import type { PlanInfo } from "./types/cap_plans/PlanInfo";
+import type { PlanIssue } from "./types/cap_plans/PlanIssue";
+import type { PlanPeriod } from "./types/cap_plans/PlanPeriod";
+import type { Request as SyncCapRequest } from "./types/cap_sync/Request";
+import type { Response as SyncCapResponse } from "./types/cap_sync/Response";
 import type { DirectoryStop } from "./types/cap_directory/DirectoryStop";
 import type { DirectoryRoute } from "./types/cap_directory/DirectoryRoute";
 import type { PatternStops } from "./types/cap_directory/PatternStops";
@@ -103,8 +110,10 @@ class CapModule {
       | CalendarCapRequest
       | DirectoryCapRequest
       | RtCapRequest
-      | StreetsCapRequest,
-  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | BoardCapResponse | RuncutCapResponse | CalendarCapResponse | DirectoryCapResponse | RtCapResponse | StreetsCapResponse {
+      | StreetsCapRequest
+      | PlansCapRequest
+      | SyncCapRequest,
+  ): GtfsResponse | RouterResponse | AnalysisResponse | NetworkCapResponse | BoardCapResponse | RuncutCapResponse | CalendarCapResponse | DirectoryCapResponse | RtCapResponse | StreetsCapResponse | PlansCapResponse | SyncCapResponse {
     const wasm = this.#exports;
     const payload = new TextEncoder().encode(JSON.stringify(request));
     const ptr = wasm.transit_alloc(payload.length);
@@ -121,7 +130,9 @@ class CapModule {
       | CalendarCapResponse
       | DirectoryCapResponse
       | RtCapResponse
-      | StreetsCapResponse;
+      | StreetsCapResponse
+      | PlansCapResponse
+      | SyncCapResponse;
   }
 
   invokeBytes(
@@ -1403,4 +1414,63 @@ export function streetsRoute(
   const module = caps.modules["streets"];
   if (!module) return [];
   return streetsCap(module).route(streetsHash, from, to);
+}
+
+// ---------------------------------------------------------------------
+// The plans capability — the service-plan chain: which pick governs a
+// date, every member's governing window, and chain validity. Pure
+// questions over the plan set's metadata (the host owns the plan
+// set; the module holds no registries), answered async because the
+// module assembles like every other capability.
+// ---------------------------------------------------------------------
+
+export function plansCap(module: CapModule) {
+  return {
+    resolve(plans: PlanInfo[], date: string): string | null {
+      const resp = module.invoke({
+        op: "resolve",
+        plans,
+        date,
+      } as PlansCapRequest) as Extract<PlansCapResponse, { op: "resolve" }>;
+      return resp.plan;
+    },
+    validate(plans: PlanInfo[]): PlanIssue[] {
+      const resp = module.invoke({
+        op: "validate",
+        plans,
+      } as PlansCapRequest) as Extract<PlansCapResponse, { op: "validate" }>;
+      return resp.issues;
+    },
+    periods(plans: PlanInfo[]): PlanPeriod[] {
+      const resp = module.invoke({
+        op: "periods",
+        plans,
+      } as PlansCapRequest) as Extract<PlansCapResponse, { op: "periods" }>;
+      return resp.periods;
+    },
+  };
+}
+
+/// The current plans module, if the bus assembled one.
+export async function plansModule(): Promise<CapModule | null> {
+  const modules = await ensure(["plans"]);
+  return modules.plans ?? null;
+}
+
+/// The whole chain view in one load (the workspace root reads all
+/// three facets together): the plan in force on the date, every
+/// pick's governing window, and the chain issues. Null when the
+/// capability did not assemble — the caller degrades loudly.
+export async function plansChain(
+  infos: PlanInfo[],
+  date: string,
+): Promise<{ inForce: string | null; periods: PlanPeriod[]; issues: PlanIssue[] } | null> {
+  const module = await plansModule();
+  if (!module) return null;
+  const cap = plansCap(module);
+  return {
+    inForce: cap.resolve(infos, date),
+    periods: cap.periods(infos),
+    issues: cap.validate(infos),
+  };
 }

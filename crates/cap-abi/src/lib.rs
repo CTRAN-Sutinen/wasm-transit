@@ -1,13 +1,11 @@
 //! cap-abi — the capability-module ABI shell.
 //!
-//! The monolithic artifact (transit-wasm) proved the flat, import-free
-//! C ABI: four exports, zero imports, every host trivial. Capability
-//! modules keep that exact ABI — a capability differs in *which ops*
-//! its dispatch answers, never in how it is called — so the shell is
-//! this macro instead of a copy per crate.
+//! The capability-module ABI: four exports, zero imports, every
+//! host trivial. A capability differs in *which ops* its dispatch
+//! answers, never in how it is called — so the shell is this macro
+//! instead of a copy per crate.
 //!
-//! Protocol (identical to transit-wasm, see its docs for the full
-//! contract):
+//! Protocol (the same contract every module speaks):
 //!
 //! * `transit_alloc(len) -> ptr`, `transit_free(ptr, len)`;
 //! * `transit_invoke(ptr, len) -> ptr` — JSON request in,

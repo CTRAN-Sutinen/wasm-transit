@@ -1,14 +1,15 @@
 package main
 
-// The wazero host for the wasm artifact. The module has zero imports
-// and four exports (see crates/transit-wasm/src/lib.rs for the ABI
+// The wazero host for a capability module. The module has zero
+// imports and four exports (see crates/cap-abi/src/lib.rs for the ABI
 // contract): staging buffers move through transit_alloc/transit_free,
 // JSON requests through transit_invoke, bulk payloads through
 // transit_invoke_bytes. Results are [u32 LE length][payload] buffers
 // holding {"ok": ...} or {"error": ...}.
 //
-// This file is the only place Go touches the ABI; everything above it
-// (main.go) speaks typed Go values.
+// This server hosts one module: the SYNC CAPABILITY (cap-sync), the
+// op behind POST /edits. This file is the only place Go touches the
+// ABI; everything above it (main.go) speaks typed Go values.
 
 import (
 	"context"
@@ -21,12 +22,6 @@ import (
 
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
-)
-
-// Bytes-op codes (transit_ops::OP_LOAD_FEED etc.).
-const (
-	opLoadFeed = uint32(0)
-	opDecodeRT = uint32(1)
 )
 
 // WasmHost wraps one instance of the artifact. The runtime is held for
@@ -89,7 +84,7 @@ func (h *WasmHost) Close(ctx context.Context) error {
 func (h *WasmHost) Hash() string { return h.hash }
 
 // Invoke runs a JSON op. `request` marshals to a serialized
-// transit-ops Request; `out` receives the unmarshalled ok-payload.
+// capability Request; `out` receives the unmarshalled ok-payload.
 func (h *WasmHost) Invoke(ctx context.Context, request, out any) error {
 	payload, err := json.Marshal(request)
 	if err != nil {
@@ -100,26 +95,6 @@ func (h *WasmHost) Invoke(ctx context.Context, request, out any) error {
 		return err
 	}
 	return h.decode(raw, out)
-}
-
-// LoadFeed registers a GTFS zip (bytes op 0) and returns its feed id.
-func (h *WasmHost) LoadFeed(ctx context.Context, zip []byte) (uint32, error) {
-	raw, err := h.call(ctx, h.invokeBytes, zip, uint64(opLoadFeed))
-	if err != nil {
-		return 0, err
-	}
-	var resp struct {
-		FeedID uint32 `json:"feed_id"`
-	}
-	if err := h.decode(raw, &resp); err != nil {
-		return 0, err
-	}
-	return resp.FeedID, nil
-}
-
-// DropFeed releases a registered feed (republish flow).
-func (h *WasmHost) DropFeed(ctx context.Context, feedID uint32) error {
-	return h.Invoke(ctx, map[string]any{"op": "drop_feed", "feed_id": feedID}, &struct{}{})
 }
 
 // call stages `payload` at an allocated pointer, calls `fn` (with an

@@ -65,9 +65,9 @@ impl Gtfs {
     }
 
     /// Build a feed from parts, wiring the secondary indexes. The zip
-    /// parser is the usual producer; the network materializer in
-    /// transit-ops (an authored network document expanded into the
-    /// derived-feed view) is the other one.
+    /// parser is the usual producer; the codec's materializer (an
+    /// authored network document expanded into the derived-feed
+    /// view) is the other one.
     pub fn from_parts(
         agencies: Vec<Agency>,
         routes: HashMap<String, Route>,

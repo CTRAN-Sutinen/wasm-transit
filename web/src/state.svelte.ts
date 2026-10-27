@@ -16,13 +16,12 @@ import type { NetworkError } from "./types/NetworkError";
 import type { NetworkStats } from "./types/NetworkStats";
 import type { ServiceTypeDetail } from "./types/ServiceTypeDetail";
 import type { ServiceTypeSummary } from "./types/ServiceTypeSummary";
-import type { PlanIssue } from "./types/PlanIssue";
-import type { PlanPeriod } from "./types/PlanPeriod";
+import type { PlanIssue } from "./types/cap_plans/PlanIssue";
+import type { PlanPeriod } from "./types/cap_plans/PlanPeriod";
 import type { TypeCoverage } from "./types/TypeCoverage";
 import type { RtOverview } from "./types/RtOverview";
 import type { VehicleView } from "./types/VehicleView";
 import type { EntityKind, Focus, PlannerScreen } from "./planner";
-import type { WasmApi } from "./wasm";
 import type { LineFeature } from "./mapview";
 import type { PlanFeature } from "./actions";
 import type { StreetPosition } from "./types/StreetPosition";
@@ -57,9 +56,6 @@ export type DiversionDraft = {
 };
 
 export type AppState = {
-  // wasm exports, injected at startup (main.ts)
-  wasm: WasmApi | null;
-
   status: string,
 
   // Persona views: which workflow the panel serves. The map is shared
@@ -146,7 +142,7 @@ export type AppState = {
   // The day the planner is inspecting (the day-summary date picker).
   plannerDay: string,
   serviceTypeDetail: ServiceTypeDetail | null,
-  // The service-plan chain view, from the artifact's plans ops: the
+  // The service-plan chain view, through the plans capability: the
   // plan in force today, each plan's governing period, chain issues.
   planChain: { inForce: string | null; periods: PlanPeriod[]; issues: PlanIssue[] },
   // Population coverage per service type (null: no layer imported).
@@ -349,9 +345,7 @@ export function setStreets(next: Streets | null): void {
 }
 
 export const app = $state<AppState>({
-  wasm: null,
-
-  status: "loading wasm...",
+  status: "loading…",
 
   persona: "rider",
 

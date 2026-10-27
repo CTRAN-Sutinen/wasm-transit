@@ -4,9 +4,8 @@
 //! analysis): the codec that turns a GTFS feed into an authored
 //! network document (the planner's bootstrap) and back (the publish
 //! path). The domain code lives in the shared `transit-codec`
-//! library — transit-ops dispatches through the same code, and the
-//! monolith's own codec ops are deleted: a planner's bundle ships
-//! this module, a rider's never hears of it.
+//! library; a planner's bundle ships this module, a rider's never
+//! hears of it.
 //!
 //! Documents are content-addressed like everywhere on the bus:
 //! * **feed** — the raw GTFS zip bytes; the content hash IS the

@@ -27,7 +27,7 @@ import type { ImportNote } from "./types/ImportNote";
 import type { Mode } from "./types/Mode";
 import type { Network } from "./types/Network";
 import type { NetworkStats } from "./types/NetworkStats";
-import type { PlanInfo } from "./types/PlanInfo";
+import type { PlanInfo } from "./types/cap_plans/PlanInfo";
 import { pushEdits, serviceDate, FEED_KEY, setFeedBytes } from "./actions";
 import { get as idbGet } from "idb-keyval";
 import {
@@ -39,6 +39,7 @@ import {
   networkModule,
   networkCap,
   base64Decode,
+  plansChain,
 } from "./capabilities.svelte";
 
 export type EntityKind = "stop" | "route" | "pattern" | "schedule" | "service_type" | "block";
@@ -195,7 +196,7 @@ export async function refreshAnalysis(): Promise<void> {
     app.serviceTypeDetail = null;
     app.typeCoverage = null;
   };
-  if (!doc || !app.wasm) {
+  if (!doc) {
     clearViews();
     return;
   }
@@ -272,18 +273,26 @@ function planInfos(): PlanInfo[] {
     .map((d) => ({ id: d.plan.id, name: d.plan.name, effective_from: d.plan.effective_from ?? null }));
 }
 
-/** Refresh the chain view from the artifact: the plan in force
- * today, each pick's governing period, and chain issues. Cheap —
- * run on workspace entry and every plan CRUD. */
-export function refreshPlanChain(): void {
-  if (!app.wasm) return;
+/** Refresh the chain view through the PLANS CAPABILITY: the plan in
+ * force today, each pick's governing period, and chain issues.
+ * Cheap — run on workspace entry and every plan CRUD. Async (the
+ * module assembles like every capability) and sequenced: a stale
+ * refresh never lands over a newer one. When the capability cannot
+ * assemble, the chain is off and the planner says so — never
+ * silently. */
+let planChainSeq = 0;
+export async function refreshPlanChain(): Promise<void> {
   const infos = planInfos();
+  const seq = ++planChainSeq;
   try {
-    app.planChain = {
-      inForce: app.wasm.plans_resolve(infos, serviceDate()),
-      periods: app.wasm.plans_periods(infos),
-      issues: app.wasm.plans_validate(infos),
-    };
+    const chain = await plansChain(infos, serviceDate());
+    if (seq !== planChainSeq) return;
+    if (!chain) {
+      app.planChain = { inForce: null, periods: [], issues: [] };
+      app.status = "Plans capability unavailable — the chain is off until it loads.";
+      return;
+    }
+    app.planChain = chain;
   } catch (e) {
     console.warn("plan chain refresh failed:", e);
   }
@@ -386,7 +395,6 @@ export async function deriveFromFeed(): Promise<void> {
   app.status = "Deriving a network from the loaded feed…";
   await new Promise((r) => setTimeout(r, 30));
   try {
-    if (!app.wasm) return;
     const cached = await idbGet<{ label: string; bytes: Uint8Array }>(FEED_KEY);
     if (!cached) {
       app.status = "The raw feed bytes are not cached — reload the GTFS feed, then derive.";
@@ -475,9 +483,9 @@ export function downloadNetwork(): void {
  * caching: the document, not a zip, is the source of truth. Stage B
  * of the extraction: the document EXPORTS through the network
  * capability (the publish path — deterministic GTFS zip bytes), and
- * the produced artifact loads through the same LoadFeed op a parsed
- * zip does. Invalid documents are refused — the capability's own
- * gate, not a JS guess. */
+ * the produced bytes land where every feed lands (the feed document
+ * cache the whole bus reads). Invalid documents are refused — the
+ * capability's own gate, not a JS guess. */
 export async function materializeNetwork(): Promise<void> {
   const doc = getNetworkDoc();
   if (!doc) {
@@ -489,7 +497,6 @@ export async function materializeNetwork(): Promise<void> {
     app.status = `Cannot load: ${app.networkIssues.length} validation issue(s) to fix first.`;
     return;
   }
-  if (!app.wasm) return;
   try {
     const networkHash = await ensureNetworkDocument(doc);
     const module = await networkModule();

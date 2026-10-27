@@ -3,9 +3,9 @@
 //! about this document.
 //!
 //! The types are the contract three things hang off — the browser
-//! resolver, the (future) Go assembler, and the corpus/provenance
-//! tooling — so they live here, next to the ABI, with TS bindings
-//! generated into `types/cap_abi/`.
+//! resolver, the (future) Go assembler, and the registry tooling —
+//! so they live here, next to the ABI, with TS bindings generated
+//! into `types/cap_abi/`.
 //!
 //! Two parts that only matter together:
 //!
@@ -19,7 +19,7 @@
 //! * **Agent context** — `purpose` and `op_docs` are the discovery
 //!   surface for agents that assemble apps from a registry: what the
 //!   capability is FOR, what each op does, and a worked
-//!   request→response example per op (the corpus-as-examples idea).
+//!   request→response example per op.
 //!   Context lives IN the manifest so it versions with the capability
 //!   and its diff is reviewable like any other contract change.
 
