@@ -24,7 +24,7 @@ serialization.
 - Capabilities compose over the network document, addressed by
   content hash. The module is the hash authority.
 - Operator edits, rt joins, analysis, dispatch views: all work in
-  MODEL vocabulary (network, service type, pattern schedule,
+  MODEL vocabulary (network, service type, pattern trips,
   walking group, materialized trip). Route/stop ids cross over;
   GTFS types and row shapes do not.
 

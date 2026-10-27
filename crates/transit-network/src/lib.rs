@@ -32,6 +32,7 @@ pub mod geometry;
 pub mod listing;
 pub mod materialize;
 pub mod model;
+pub mod timetable_edit;
 pub mod validate;
 
 pub use edit::{apply_edits, apply_edits_reporting, CreatedEntity, Day, EditError, NetworkEdit};

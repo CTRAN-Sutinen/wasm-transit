@@ -452,12 +452,13 @@ day-shape answer is the dogfood record).
   caps-smoke, the runner gates, e2e); testdata/network.json uses the
   new names. The original app's on-screen labels still say
   "Schedule"; it is the demoted UI.
-  * Next, decided with the user: Direction in the model and the
-    TIMETABLE op are landed (the entry below); not started —
-    change gestures at timetable level (frequency by period, span,
-    running time by period, stops on a pattern); a
-    baseline-vs-proposal diff op (QAF-20); then the service-design
-    UI rebuilt on them.
+  * Next, decided with the user: Direction in the model, the
+    TIMETABLE op, and the timetable gestures are landed (the
+    entries below); not started — a baseline-vs-proposal diff op
+    (QAF-20); then the service-design UI rebuilt on them. Open
+    from proposing on C-TRAN: per-service-type running time
+    (QAF-61), recovery vs slack in layovers (QAF-62), branches
+    inside one GTFS direction (QAF-63), timepoints (QAF-56).
 
 - **Directions and the timetable (2026-10-27)**: a route runs in
   named directions (`Route.directions`) and a pattern in at most
@@ -482,6 +483,24 @@ day-shape answer is the dogfood record).
   gate in `just test`. DOGFOODED: QA-FINDINGS "Session 2026-10-27
   (directions and the timetable)" (019 inbound: 25 trips over the
   Bay C / E / J patterns). No UI reads it yet.
+
+- **The timetable gestures (2026-10-27)**: changes stated against a
+  timetable (route + direction + service type), across every
+  pattern of the direction — `set_headway` (frequency by period:
+  trips in the window retimed to the nearest slots with their
+  blocks, open slots new on the neighbour's pattern, surplus trips
+  out of their blocks), `set_span` (trim, or reach the bound in
+  even steps at the edge headway), `adjust_running_time` (a delta
+  over a departure window, profiles split at its bounds), and
+  `insert_direction_stop` / `remove_direction_stop`;
+  `insert_pattern_stop` takes an `index`. The block gestures now
+  keep layovers on the trips they sat between (QAF-60). ON THE BUS:
+  transit-network `timetable_edit_test` (8 laws), caps-smoke
+  ("set_headway fills the window on the neighbour's pattern, and
+  the timetable reads it"). DOGFOODED: QA-FINDINGS "Session
+  2026-10-27 (proposing timetable changes)" (four proposals, before
+  and after: 2 + 2 + 37 edits + 15.7 KB → 2 + 2 + 1 + 251 bytes,
+  same numbers). No UI reads them yet.
 
 Model facts that hold everywhere: the import infers block
 layovers from observed end→start gaps (GTFS has none; the planner

@@ -26,6 +26,7 @@ use std::collections::BTreeMap;
 
 use chrono::NaiveDate;
 
+use crate::timetable_edit;
 use crate::model::{
     Block, CalendarException, CalendarRule, DateRange, DayState, HeadwayBand, Layover, Mode, Network, Pattern,
     Direction, PatternTrips, PatternStop, PlanMeta, Route, Departures, ServiceType, Stop, TimingProfile, TripRef, WeekdaySet,
@@ -197,10 +198,16 @@ pub enum NetworkEdit {
     },
 
     // --- gestures: a pattern's stops and timing
-    /// Visit `stop` just before the pattern's last stop, halfway
-    /// along the last leg, as a non-timepoint (the endpoints stay the
-    /// endpoints; the timing vectors are untouched).
-    InsertPatternStop { pattern: String, stop: String },
+    /// Visit `stop` before visit `index` (default: the last stop),
+    /// halfway along that leg, as a non-timepoint (the endpoints stay
+    /// the endpoints; the timing vectors are untouched).
+    InsertPatternStop {
+        pattern: String,
+        stop: String,
+        #[serde(default)]
+        #[ts(optional)]
+        index: Option<usize>,
+    },
     /// Drop a MIDDLE visit (endpoints are fixed); a timepoint's entry
     /// leaves every timing profile with it.
     RemovePatternStop { pattern: String, index: usize },
@@ -280,6 +287,80 @@ pub enum NetworkEdit {
     /// Refused for the last remaining band.
     RemoveBand { pattern_trips: String, index: usize },
 
+    // --- gestures: the timetable (route + direction + service type;
+    // `direction` null or omitted: the route's patterns in none). See
+    // `timetable_edit` for the rules every one of them keeps.
+    /// Frequency by period: a trip every `headway_secs` from
+    /// `from_secs` (the first departure) until before `to_secs`.
+    /// Trips in the window move to the nearest slots in order, their
+    /// blocks with them; open slots are new trips (`pattern`, else the
+    /// one the trip before runs); surplus trips go.
+    SetHeadway {
+        route: String,
+        #[serde(default)]
+        #[ts(optional)]
+        direction: Option<String>,
+        service_type: String,
+        from_secs: u32,
+        to_secs: u32,
+        headway_secs: u32,
+        #[serde(default)]
+        #[ts(optional)]
+        pattern: Option<String>,
+    },
+    /// The span: trips before `first_secs` or after `last_secs` go; a
+    /// bound past the first / last trip is reached at `headway_secs`
+    /// (else the edge's median gap), on the edge trip's pattern.
+    SetSpan {
+        route: String,
+        #[serde(default)]
+        #[ts(optional)]
+        direction: Option<String>,
+        service_type: String,
+        #[serde(default)]
+        #[ts(optional)]
+        first_secs: Option<u32>,
+        #[serde(default)]
+        #[ts(optional)]
+        last_secs: Option<u32>,
+        #[serde(default)]
+        #[ts(optional)]
+        headway_secs: Option<u32>,
+    },
+    /// Running time by period: trips departing in [`from_secs`,
+    /// `to_secs`) on every pattern of the direction run `delta_secs`
+    /// longer (negative: shorter), in proportion along the pattern.
+    /// Timing belongs to the pattern, so every service type running
+    /// it changes.
+    AdjustRunningTime {
+        route: String,
+        #[serde(default)]
+        #[ts(optional)]
+        direction: Option<String>,
+        from_secs: u32,
+        to_secs: u32,
+        delta_secs: i32,
+    },
+    /// Visit `stop` right after `after` on every pattern of the
+    /// direction that visits `after` before its end.
+    InsertDirectionStop {
+        route: String,
+        #[serde(default)]
+        #[ts(optional)]
+        direction: Option<String>,
+        stop: String,
+        after: String,
+    },
+    /// Stop visiting `stop` on every pattern of the direction;
+    /// refused when it ends one.
+    RemoveDirectionStop {
+        route: String,
+        #[serde(default)]
+        #[ts(optional)]
+        direction: Option<String>,
+        stop: String,
+    },
+
     // --- gestures: the runcut
     /// Add a trip to a block, keeping the block in time order;
     /// layovers past the last trip are dropped.
@@ -313,7 +394,7 @@ pub enum Day {
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[ts(export)]
 pub struct CreatedEntity {
-    /// stop | route | pattern | service_type | schedule | block
+    /// stop | route | pattern | service_type | pattern_trips | block
     pub kind: String,
     pub id: String,
 }
@@ -413,7 +494,7 @@ fn bands<'a>(net: &'a mut Network, pattern_trips: &str) -> Result<&'a mut Vec<He
 }
 
 /// Layovers live only between two trips of the block.
-fn prune_layovers(block: &mut Block) {
+pub(crate) fn prune_layovers(block: &mut Block) {
     let trips = block.trips.len();
     block.layovers.retain(|l| l.after_trip + 1 < trips);
 }
@@ -726,16 +807,44 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             }
             None
         }
-        NetworkEdit::InsertPatternStop { pattern, stop } => {
+        NetworkEdit::InsertPatternStop { pattern, stop, index } => {
             exists(net.stops.contains_key(stop), "stop", stop)?;
             let p = get_mut(&mut net.patterns, pattern, "pattern")?;
             let n = p.stops.len();
             if n < 2 {
                 return Err(format!("pattern {pattern} has no last leg to insert into"));
             }
-            let distance_m = (p.stops[n - 2].distance_m + p.stops[n - 1].distance_m) / 2.0;
-            p.stops.insert(n - 1, PatternStop { stop: stop.clone(), timepoint: false, distance_m });
+            let at = index.unwrap_or(n - 1);
+            if at == 0 || at >= n {
+                return Err(format!("visit {at} of pattern {pattern} is not a middle position — endpoints stay"));
+            }
+            let distance_m = (p.stops[at - 1].distance_m + p.stops[at].distance_m) / 2.0;
+            p.stops.insert(at, PatternStop { stop: stop.clone(), timepoint: false, distance_m });
             None
+        }
+        NetworkEdit::SetHeadway { route, direction, service_type, from_secs, to_secs, headway_secs, pattern } => {
+            timetable_edit::set_headway(
+                net,
+                route,
+                direction.as_deref(),
+                service_type,
+                *from_secs,
+                *to_secs,
+                *headway_secs,
+                pattern.as_deref(),
+            )?
+        }
+        NetworkEdit::SetSpan { route, direction, service_type, first_secs, last_secs, headway_secs } => {
+            timetable_edit::set_span(net, route, direction.as_deref(), service_type, *first_secs, *last_secs, *headway_secs)?
+        }
+        NetworkEdit::AdjustRunningTime { route, direction, from_secs, to_secs, delta_secs } => {
+            timetable_edit::adjust_running_time(net, route, direction.as_deref(), *from_secs, *to_secs, *delta_secs)?
+        }
+        NetworkEdit::InsertDirectionStop { route, direction, stop, after } => {
+            timetable_edit::insert_direction_stop(net, route, direction.as_deref(), stop, after)?
+        }
+        NetworkEdit::RemoveDirectionStop { route, direction, stop } => {
+            timetable_edit::remove_direction_stop(net, route, direction.as_deref(), stop)?
         }
         NetworkEdit::RemovePatternStop { pattern, index } => {
             let p = get_mut(&mut net.patterns, pattern, "pattern")?;
@@ -928,16 +1037,18 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
         NetworkEdit::AddBlockTrip { block, trip } => {
             exists(net.pattern_trips.contains_key(&trip.pattern_trips), "pattern trips", &trip.pattern_trips)?;
             let b = get_mut(&mut net.blocks, block, "block")?;
+            let before = b.trips.clone();
             b.trips.push(trip.clone());
             b.trips.sort_by(|a, c| a.start_secs.cmp(&c.start_secs).then_with(|| a.pattern_trips.cmp(&c.pattern_trips)));
-            prune_layovers(b);
+            timetable_edit::reindex_layovers(b, &before);
             None
         }
         NetworkEdit::RemoveBlockTrip { block, index } => {
             let b = get_mut(&mut net.blocks, block, "block")?;
             at_mut(&mut b.trips, *index, "trip")?;
+            let before = b.trips.clone();
             b.trips.remove(*index);
-            prune_layovers(b);
+            timetable_edit::reindex_layovers(b, &before);
             None
         }
         NetworkEdit::SetLayover { block, after_trip, secs } => {

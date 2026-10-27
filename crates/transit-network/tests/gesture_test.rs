@@ -106,7 +106,7 @@ fn pattern_gestures_keep_timing_aligned() {
 
     // Insert before the last stop: halfway along the last leg, not a
     // timepoint — the vectors do not move.
-    let inserted = apply(&net, vec![NetworkEdit::InsertPatternStop { pattern: "10-inbound".into(), stop: "A".into() }]);
+    let inserted = apply(&net, vec![NetworkEdit::InsertPatternStop { pattern: "10-inbound".into(), stop: "A".into(), index: None }]);
     let stops = &inserted.patterns["10-inbound"].stops;
     assert_eq!(stops.len(), 4);
     assert_eq!(stops[2].stop, "A");

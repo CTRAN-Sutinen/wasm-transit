@@ -1043,6 +1043,22 @@ assert(
     toggled.timing.every((t) => t.at_timepoints.length === timepoints),
   "a new timepoint keeps every timing profile aligned",
 );
+// The timetable's gestures address route + direction + service type:
+// route 10 toward Main & 2nd every 20 min 08:00–09:00 keeps the 08:00
+// and 08:40 trips and adds 08:20 on the pattern before it — and the
+// directory's timetable of the answer has all three.
+const frequent = author.invoke({
+  op: "apply",
+  network_hash: authorNet.network_hash,
+  edits: [{ edit: "set_headway", route: "10", direction: "0", service_type: "WK", from_secs: 28800, to_secs: 32400, headway_secs: 1200 }],
+});
+assert(frequent.issues.length === 0, "a higher frequency keeps the runcut valid");
+const frequentDir = dir.invoke({ op: "load_network", network: frequent.network });
+const frequentTable = dir.invoke({ op: "timetable", network_hash: frequentDir.network_hash, route_id: "10", direction: "0", service_type: "WK" }).timetable;
+assert(
+  frequentTable.trips.map((t) => `${t.start_secs}:${t.pattern}`).join() === "28800:pat-10-0-0,30000:pat-10-0-0,31200:pat-10-0-1",
+  "set_headway fills the window on the neighbour's pattern, and the timetable reads it",
+);
 
 // The diversion-authoring flow — what does this draft amount to:
 // the default pattern, the interior skipped unless served, the

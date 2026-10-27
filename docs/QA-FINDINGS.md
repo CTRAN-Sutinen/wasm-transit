@@ -942,3 +942,89 @@ One `caps-run` pass: network `import`, then directory
   Pin: the `timetable` call above (`stops[].timepoint`) against
   `stop_times.txt`'s timepoint column.
   Status: open.
+
+## Session 2026-10-27 (proposing timetable changes) — C-TRAN
+
+Same feed and network as the session above
+(`sha256:89631f1a…`). Four proposals, each made twice through one
+`caps-run` session (author `apply`, then analysis
+`service_type_detail` on the baseline and the proposal, then
+directory `timetable` on the proposal): first with the edit
+vocabulary as it stood, then with the timetable gestures this
+session added.
+
+| Proposal | Before the gestures | With them | Result (1-WKDY) |
+|---|---|---|---|
+| A. 019 every 15 min, 06:50–08:50 out / 07:09–09:09 in | 2 `set_starts` with whole start lists computed by hand; inbound gaps found by merging three bay patterns | 2 `set_headway` | 50 → 58 trips, 529.14 → 531.40 rev h |
+| B. 009 evening span to 21:05 out / 21:27 in | 2 `set_starts` with whole lists | 2 `set_span` | 25 → 31 trips, → 531.29 rev h, span to 21:50 |
+| C. 006 to Columbia Shores +3 min, 15:00–18:00 | 37 edits: profile splits, then `set_timepoint_time` per timepoint per pattern | 1 `adjust_running_time` | → 529.44 rev h; 18 block issues |
+| D. A new stop on 009 out; drop stop 2216 from 019 in | 15.7 KB: `upsert_pattern` with the whole pattern (alignment included), and per-pattern indices for `remove_pattern_stop` | 251 bytes: `insert_direction_stop`, `remove_direction_stop` | 4 patterns lose 2216 |
+
+Both passes give the same numbers for B, C, and D. In A, the
+inbound trips at 08:11, 08:41, and 09:11 move two minutes onto the
+15-minute clockface (with their blocks), where the hand-made
+version only added midpoints.
+
+- **QAF-57 OP GAP** — a frequency or span change could not be
+  stated: `add_start` only appends ten minutes after the last trip,
+  so every proposal was a whole `set_starts` list computed outside
+  the bus, addressed per pattern trips rather than per timetable.
+  Pin: proposals A and B, first pass.
+  Status: fixed (`set_headway`, `set_span`; transit-network
+  `timetable_edit_test`, caps-smoke "set_headway fills the window",
+  proposals A and B, second pass).
+- **QAF-58 OP GAP** — running time by period took 37 edits on two
+  patterns (split the all-day profile twice, then one
+  `set_timepoint_time` per timepoint; every stop is a timepoint,
+  QAF-56).
+  Pin: proposal C, first pass.
+  Status: fixed (`adjust_running_time`; `timetable_edit_test`
+  `running_time_changes_only_inside_the_window`; proposal C, second
+  pass).
+- **QAF-59 OP GAP** — a stop in the middle of a pattern could only be
+  added by resending the whole pattern (`insert_pattern_stop` only
+  placed it before the last stop), and dropping a stop from a
+  direction meant finding its index in each bay pattern.
+  Pin: proposal D, first pass.
+  Status: fixed (`insert_pattern_stop {index}`,
+  `insert_direction_stop`, `remove_direction_stop`;
+  `timetable_edit_test`
+  `a_stop_change_reaches_every_pattern_of_the_direction`; proposal
+  D, second pass).
+- **QAF-60 DEFECT** — `add_block_trip` and `remove_block_trip` did not
+  re-index the block's layovers: removing trip 0 of a three-trip
+  block left the old trip-0 layover (900 s) between the two
+  remaining trips and dropped the real one (600 s).
+  Pin: `timetable_edit_test`
+  `removing_a_block_trip_keeps_the_other_layovers_where_they_were`
+  (fails with the old pruning).
+  Status: fixed (that test).
+- **QAF-61 MODEL GAP** — running time belongs to the pattern, so a
+  weekday change changes every service type that runs the pattern.
+  Proposal C (weekday PM peak) also breaks 2-SAT601, 3-SUN601, and
+  4-NYE601/602. A planner usually times weekends separately; the
+  model can only do that by copying the pattern.
+  Pin: proposal C (`issues` names the SAT, SUN, and NYE blocks).
+  Status: open.
+- **QAF-62 DATA GAP** — imported layovers are the whole observed gap
+  between two trips, so any later arrival or earlier start reads as
+  infeasible. C's +3 min breaks 6 blocks, and A's two-minute
+  clockface moves break 3 layovers on 019 (1-WKDY7801, 7802, 7804).
+  The model has no split between required recovery and slack, so
+  "does the cycle still work?" cannot be answered for real.
+  Pin: proposals A and C, second pass (`issues`).
+  Status: open.
+- **QAF-63 DATA GAP** — GTFS direction_id groups branches, not only
+  variants. 006 direction 1 holds Fruit Valley (8 min) and VA
+  Medical Center (12 min) patterns leaving at the same minutes all
+  day; the direction is named "Fruit Valley" by 31 headsigns to 30.
+  A planner reads these as two branches.
+  Pin: directory `timetable` 006 "1" 1-WKDY.
+  Status: open.
+
+Re-confirmed, not re-logged:
+
+- QAF-3 (fleet). Every added trip is `unassigned_trips`; how many
+  more vehicles a proposal needs has no op.
+- QAF-20 (scenario diff). The deltas above are two full
+  `service_type_detail` answers, compared by hand.

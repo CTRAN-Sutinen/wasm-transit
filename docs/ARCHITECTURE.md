@@ -51,7 +51,13 @@ transit-network The authored network model (planner authority):
                 thing a planner does, each carrying its coherence
                 rule (timing aligned with timepoints, starts sorted
                 and unique, layovers only between trips, ids minted
-                and reported, the plan frame merged field-wise). Validation
+                and reported, the plan frame merged field-wise) —
+                and the TIMETABLE's gestures (`timetable_edit.rs`:
+                headway, span, running time, and stops, stated
+                for a route + direction (+ service type) and
+                applied across its patterns; a trip that stays is
+                retimed with its blocks, one that goes leaves
+                them, a new one is unassigned). Validation
                 answers issues (gate: a block trip its pattern
                 trips do not run is one) and WARNINGS that never gate
                 (unassigned trips; a pick with no service in its
