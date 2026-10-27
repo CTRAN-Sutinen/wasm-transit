@@ -207,7 +207,14 @@ live in `docs/CONVENTIONS.md`.)
 
 ## web/
 
-Svelte 5 runes + Vite, TypeScript end to end. ONE shell: a sidebar
+Svelte 5 runes + Vite, TypeScript end to end, as a multi-page
+build: `/` is the PICKER (`index.html` → `src/picker/`), one card
+per generated UI (below) and a link to the original app. Every page
+lives at the web root because asset fetches (`caps/manifest.json`,
+`basemap.pmtiles`) are relative.
+
+**The original app** (`app.html` → `src/main.ts`, `App.svelte`) is
+ONE shell: a sidebar
 (persona tabs + the active workflow) beside a PERSISTENT map canvas
 that never remounts on a persona switch; persona-owned layers
 DERIVE from app.persona. The map is A VIEW, not a fixture: data
@@ -256,7 +263,108 @@ File ownership:
   edit document is an answer (cap-divert propose / retire /
   restore, cap-sync's converge); a stored or synced copy is read
   through cap-divert's `sanitize` (`actions.readEdits`).
-- MapView owns all map state (`window.__map`).
+- MapView owns all map state (`window.__map`). `src/basemap.ts` is
+  the basemap choice every map view shares (local pmtiles, else
+  OpenFreeMap) and the MapLibre worker wiring.
+
+### Generated UIs
+
+A generated UI is a layout built for a set of questions, made from
+THIN components over its own host layer. It never builds on the
+original app. Each one is a directory, and the build, the picker,
+and the gates discover it. Nothing central is edited to add one.
+
+```
+web/<id>.html                  the page (copy service-design.html; change the script src)
+web/src/uis/<id>/ui.json       the descriptor the picker renders: id (= the directory),
+                               title, summary, questions, ops, components, session, spec,
+                               generated
+web/src/uis/<id>/main.ts       imports ../base.css (+ maplibre css if it maps), awaits
+                               the host's boot, mounts Shell
+web/src/uis/<id>/Shell.svelte  PLACEMENT ONLY: reads the host's answers state, passes
+                               props, routes events to host functions
+web/src/uis/<id>/host.svelte.ts the ONLY file of the UI that calls the resolver; owns
+                               I/O, the selection, and one $state object of answers
+web/e2e/ui-<id>.spec.mjs       the UI's e2e spec (fixture feed: e2e/fixtures/)
+```
+
+Shared by every generated UI:
+
+- `src/uis/base.css`: color tokens (`--surface --text --muted
+  --line --hover --accent --accent-soft --bad --warn`) in light and
+  dark, the page base, `.wb-scroll` (a table that scrolls in its own
+  box with an opaque sticky header), and the class names the shared
+  components render with (`.muted`, `.table-scroll`, `.chip`,
+  `.picker-row`). A generated UI NEVER loads `app.css`: that file's
+  card and table rules belong to the app shell, and they broke the
+  first generated UI's layout.
+- `src/uis/kit.ts` (host layer only): `hashIn(module, doc)` gives a
+  document's hash in one module, registered once per module per
+  document version; `rememberHash` adopts a hash cap-author's
+  `apply` already answered; `today()` is the host's date. Host
+  layers call the resolver's `*Cap(module)` wrappers and
+  `*Module()` getters (`src/capabilities.svelte.ts`) directly.
+- `src/state.svelte.ts`'s document store (`getAllPlans`,
+  `putPlan`, `setActivePlan`, `restorePlans`; the edit document)
+  is shared with the original app. JS owns the documents. The `app`
+  object is the original app's screen state, and generated UIs
+  never import it.
+- `src/basemap.ts`: the basemap style choice and the MapLibre
+  worker wiring, for any map view.
+
+The component catalog. A component is THIN if and only if it
+imports none of the app shell's host modules (`state.svelte`,
+`planner`, `actions`, `capdemo.svelte`). The gate checks that rule
+on every component a generated UI imports.
+
+- Thin, usable by any generated UI: PlanBar (plan, baseline, chain,
+  fork, health), TypeTable (`service_types_overview` rows plus the
+  selected type's baseline), CoverageTable (`type_coverage`, with
+  its op parameters as inputs), RouteTable (`service_type_detail`
+  routes), RouteCard (`route_detail`), ScheduleChange (a
+  schedule's starts with add and remove events), FocusMap (a
+  directory `focus` drawn and framed), BlocksPanel (runcut
+  `blocks` / `block_trips`), DepartureBoard (`stop_board`), RtPanel
+  (the live summary), TripPlanner (from, to, depart → `onplan`), and
+  Combobox (a searchable picker).
+- Coupled to the original app (do not compose; build a thin one
+  instead): MapView, PlannerRail, PersonaTabs, DataSources,
+  CapabilityDemo, PlanOverlay, DiversionPanel, and the entity forms
+  (RouteForm, StopForm, PatternForm, ScheduleForm,
+  ServiceTypeForm, BlockForm).
+
+The procedure (what the first one did):
+
+1. Dogfood first: run the questions through `caps-run` on real
+   data (`docs/TESTING.md`, the dogfood rules), one op per
+   question, and log the session and its findings in
+   `docs/QA-FINDINGS.md`. A question that needs glue is a finding,
+   not a script.
+2. Pick a layout that answers those questions in the order they
+   are asked. Name it for the need, never for a persona.
+3. Write the host first (every answer adopted as-is: no joins, no
+   thresholds, no derived numbers), then the thin components it
+   lacks in `src/components/` (props in, events out), then the shell.
+4. Add `ui.json`, the page, and `e2e/ui-<id>.spec.mjs`. Run it in
+   the browser on the real feed (`just serve testdata/ctran-gtfs.zip`)
+   and check its numbers against the runner session's.
+5. Record the status in `docs/CAPS-PLAN.md` (pinned by the spec and
+   the session).
+
+Gates (`just test`, GENERATED UIs and W0a): every `src/uis/<id>/`
+has its `ui.json` (with fields complete, and id equal to the
+directory), its page, and its spec. No generated UI or picker file
+imports the resolver from a `.svelte` file, or imports planner,
+actions, capdemo, App, or the `app` object. Every component a UI
+imports is thin. The build also refuses a UI directory without
+its page (`vite.config.js`), and the picker's spec
+(`e2e/picker.spec.mjs`) checks one card per `ui.json`.
+
+The UIs today: `service-design` (`src/uis/service-design/`): the
+plan bar, then service types (cost, coverage, fleet), the routes
+under the type, and the route (map, composition, schedule change).
+Layouts are hand-placed Svelte; as layout documents they belong to
+wire-time assembly (`docs/CAPS-PLAN.md`, standing queue).
 
 Frontend conventions and gotchas: `docs/CONVENTIONS.md`.
 

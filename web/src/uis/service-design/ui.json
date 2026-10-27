@@ -1,0 +1,35 @@
+{
+  "id": "service-design",
+  "title": "Service design",
+  "summary": "What each service type costs, covers, and runs, drilled down to one route's schedules, with forks and schedule changes compared against a baseline plan.",
+  "questions": [
+    "Which plan is this, what is it compared against, and where does it sit in the plan chain?",
+    "What does each service type cost (trips, routes, revenue hours)?",
+    "Who does each type reach (served and frequent coverage)?",
+    "How many vehicles does a type take on its representative day?",
+    "Which routes run under a type, how often, and over what span?",
+    "Where does one route run, and what does it schedule?",
+    "What does adding or removing a trip do to the type and its warnings?"
+  ],
+  "ops": [
+    "gtfs.feed_info",
+    "network.import",
+    "network.validate",
+    "analysis.service_types_overview",
+    "analysis.service_type_detail",
+    "analysis.type_coverage",
+    "runcut.blocks",
+    "runcut.block_trips",
+    "network.agency_trip_ids",
+    "directory.route_detail",
+    "directory.focus",
+    "author.apply",
+    "plans.resolve",
+    "plans.periods",
+    "plans.validate"
+  ],
+  "components": ["PlanBar", "TypeTable", "CoverageTable", "BlocksPanel", "RouteTable", "RouteCard", "ScheduleChange", "FocusMap"],
+  "session": "docs/QA-FINDINGS.md, Session 2026-10-27 (service-design workbench)",
+  "spec": "web/e2e/ui-service-design.spec.mjs",
+  "generated": "2026-10-27"
+}

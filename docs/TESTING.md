@@ -34,6 +34,12 @@ Every change lands with tests at the layer that owns the logic.
    lands as an op with expectations 1–2, never in TypeScript; a
    unit that empties an allowlist entry removes it in the same
    change.
+6. **A generated UI** (`src/uis/<id>/`) lands with
+   `web/e2e/ui-<id>.spec.mjs` on the fixture feed, which walks its
+   questions end to end, and with a dogfood session (below) in which
+   its numbers on the real feed match the runner's. The GENERATED
+   UIs gate in `just test` refuses one without its spec, and
+   `e2e/picker.spec.mjs` covers its card with no edit.
 6. **Dogfood on real data**: capability work touching feeds or
    payload size runs a `caps-run` session against the C-TRAN feed
    before it is done — fixture-scale gates do not catch real-data

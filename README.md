@@ -79,7 +79,8 @@ predicted times, vehicle colors), and the full diversion flow (schedule
 shift, skipped stop, planner compare, block layover warnings,
 persistence). Fixture feed + protobuf live in `web/e2e/fixtures/`.
 
-Run the sync server, then open http://127.0.0.1:8080:
+Run the sync server, then open http://127.0.0.1:8080. It is a picker
+over the generated UIs, and links the original app (`/app.html`):
 
 ```
 just serve                                          # static + /rt

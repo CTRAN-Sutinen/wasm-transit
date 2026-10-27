@@ -15,7 +15,7 @@
 import { test, expect } from "@playwright/test";
 
 async function openPanel(page) {
-  await page.goto("/");
+  await page.goto("/app.html");
   // The app module awaits wasm instantiation before it installs its
   // e2e hooks — wait for the hook, then pin the clock.
   await page.waitForFunction(() => typeof window.__setNow === "function");

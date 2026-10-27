@@ -85,14 +85,14 @@ test("loads cleanly with no console errors", async ({ page }) => {
       errors.push(m.text());
     }
   });
-  await page.goto("/");
+  await page.goto("/app.html");
   await expect(page.getByText(/capability bus ready/i)).toBeVisible();
   await waitForMap(page);
   expect(errors).toEqual([]);
 });
 
 test("loading a feed populates summary, board and map", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
 
@@ -112,7 +112,7 @@ test("loading a feed populates summary, board and map", async ({ page }) => {
 });
 
 test("clicking a departure draws the trip path", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
   await comboPick(page, "Stop", "Main & 1st");
@@ -124,7 +124,7 @@ test("clicking a departure draws the trip path", async ({ page }) => {
 });
 
 test("trip planner draws the ridden segment, not the whole route", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
 
@@ -150,7 +150,7 @@ test("trip planner draws the ridden segment, not the whole route", async ({ page
 });
 
 test("unplannable trip gives inline feedback", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
 
@@ -165,7 +165,7 @@ test("unplannable trip gives inline feedback", async ({ page }) => {
 });
 
 test("refresh restores the feed from local cache", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
 
@@ -175,7 +175,7 @@ test("refresh restores the feed from local cache", async ({ page }) => {
 });
 
 test("realtime feed colors delays and vehicles", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
 
@@ -263,7 +263,7 @@ async function makeDiversion(page, mins) {
 }
 
 test("diversion reroutes the schedule, the board and the planner", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
 
@@ -323,7 +323,7 @@ test("diversion reroutes the schedule, the board and the planner", async ({ page
 });
 
 test("diversion ripple shows as a tight block layover", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
 
@@ -343,7 +343,7 @@ test("diversion ripple shows as a tight block layover", async ({ page }) => {
 });
 
 test("comboboxes search, and blocks scope to the service day", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page); // Friday 2026-10-23, 07:30
 
@@ -390,7 +390,7 @@ test("comboboxes search, and blocks scope to the service day", async ({ page }) 
 });
 
 test("status text stays on one line in every persona", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
   await page.locator(".dropzone input[type=file]").setInputFiles(path.join(fixtures, "sample-rt.pb"));
@@ -432,7 +432,7 @@ test("status text stays on one line in every persona", async ({ page }) => {
 });
 
 test("street network import paginates ArcGIS-style queries", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
 
   // The /rt proxy, mocked as an ArcGIS FeatureServer: page 1 is
@@ -466,7 +466,7 @@ test("street network import paginates ArcGIS-style queries", async ({ page }) =>
 });
 
 test("population layer import registers through the analysis capability", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
 
   // No feed needed: reference data, loadable on its own. The layer
@@ -504,7 +504,7 @@ test("detour drawing snaps to an imported street network", async ({ page }) => {
   // Slow by nature: loading the feed flies the camera from the
   // basemap's initial view across the country to the stops.
   test.setTimeout(90_000);
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
   await switchPersona(page, "Dispatcher");
@@ -598,7 +598,7 @@ test("detour drawing snaps to an imported street network", async ({ page }) => {
 
 test("detour trace routes along the street graph, not straight lines", async ({ page }) => {
   test.setTimeout(90_000);
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
   await switchPersona(page, "Dispatcher");
@@ -632,7 +632,7 @@ test("detour trace routes along the street graph, not straight lines", async ({ 
 });
 
 test("diversion syncs to the server and back", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
   await switchPersona(page, "Dispatcher");
@@ -688,7 +688,7 @@ test("diversion syncs to the server and back", async ({ page }) => {
 });
 
 test("persona tabs split the workflows", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
 
@@ -727,7 +727,7 @@ test("persona tabs split the workflows", async ({ page }) => {
 // now load-bearing for a real screen.
 test("planner degrades when the analysis capability cannot assemble", async ({ page }) => {
   await page.route(/caps\/analysis-.*\.wasm/, (route) => route.abort());
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
   await switchPersona(page, "Planner");
@@ -747,7 +747,7 @@ test("planner degrades when the analysis capability cannot assemble", async ({ p
 // wholesale.
 test("the blocks view degrades when the runcut capability cannot assemble", async ({ page }) => {
   await page.route(/caps\/runcut-.*\.wasm/, (route) => route.abort());
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
   await switchPersona(page, "Dispatcher");
@@ -773,7 +773,7 @@ test("the blocks view degrades when the runcut capability cannot assemble", asyn
 // fallback to silently serve instead.
 test("the board degrades when the board capability cannot assemble", async ({ page }) => {
   await page.route(/caps\/board-.*\.wasm/, (route) => route.abort());
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
   await switchPersona(page, "Rider");
@@ -792,7 +792,7 @@ test("the board degrades when the board capability cannot assemble", async ({ pa
 // "validation off" instead of claiming validity it cannot check,
 // while materialize refuses rather than loading unchecked.
 test("planner degrades when the network capability cannot assemble", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
   await switchPersona(page, "Planner");
@@ -820,7 +820,7 @@ test("planner degrades when the network capability cannot assemble", async ({ pa
 });
 
 test("planner authors a network and the rider uses it", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   // The server's edit document is shared across this run (earlier
   // tests pushed diversions whose route/stop ids match the derived
@@ -945,7 +945,7 @@ test("a malformed saved record cannot wedge apply and retire", async ({ page }) 
   // the defaults, and leave Apply/Retire working (a malformed entry
   // used to throw inside cloneEdits: both buttons died silently).
   test.setTimeout(90_000);
-  await page.goto("/");
+  await page.goto("/app.html");
   await page.evaluate(async () => {
     const junk = [
       { id: "junk-entry", status: "draft", rev: 1, updated_at: 0 }, // no diversion
@@ -1007,7 +1007,7 @@ test("a malformed saved record cannot wedge apply and retire", async ({ page }) 
 
 test("escape exits tracing mode", async ({ page }) => {
   test.setTimeout(90_000);
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
   await switchPersona(page, "Dispatcher");
@@ -1034,7 +1034,7 @@ test("escape exits tracing mode", async ({ page }) => {
 });
 
 test("a selected trip can always be cleared from the map", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
   await settleOnStops(page);
@@ -1070,7 +1070,7 @@ test("a selected trip can always be cleared from the map", async ({ page }) => {
 });
 
 test("hiding the panel gives the map the full screen", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
 
@@ -1102,7 +1102,7 @@ test("hiding the panel gives the map the full screen", async ({ page }) => {
 });
 
 test("service plans frame service changes and survive reload", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app.html");
   await waitForMap(page);
   await loadFeed(page);
   await switchPersona(page, "Planner");

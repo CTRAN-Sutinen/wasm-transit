@@ -110,7 +110,10 @@ cap-abi          the capability seam (ABI macro, manifest, validator, gen-manife
 cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-plans cap-author cap-divert
                  the capability modules (docs/ARCHITECTURE.md, bus section)
 server/          Go + wazero host over cap-sync — scaffolding, never a domain decision
-web/             Svelte 5 + Vite frontend (docs/ARCHITECTURE.md, web section)
+web/             Svelte 5 + Vite frontend: / is a picker over the GENERATED UIs
+                 (src/uis/<id>/, each its own page and host layer) and links
+                 the original app (/app.html) (docs/ARCHITECTURE.md, web section,
+                 "Generated UIs" — the recipe a fresh agent follows)
 ```
 
 Per-crate detail: `docs/ARCHITECTURE.md`.

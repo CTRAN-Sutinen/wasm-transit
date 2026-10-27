@@ -1,0 +1,69 @@
+/* The generated UIs' shared base — never the app shell's app.css:
+   tokens, the page, and the table defaults its panels share. */
+:root {
+  color-scheme: light;
+  --surface: #ffffff;
+  --text: #1c1917;
+  --muted: #78716c;
+  --line: #e7e5e4;
+  --hover: #f5f5f4;
+  --accent: #c2410c;
+  --accent-soft: #fde7da;
+  --bad: #b91c1c;
+  --warn: #a16207;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface: #1c1b1a;
+    --text: #e7e5e4;
+    --muted: #a8a29e;
+    --line: #3a3634;
+    --hover: #292524;
+    --accent: #fb923c;
+    --accent-soft: #4a2a17;
+    --bad: #f87171;
+    --warn: #facc15;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #1c1b1a;
+  --text: #e7e5e4;
+  --muted: #a8a29e;
+  --line: #3a3634;
+  --hover: #292524;
+  --accent: #fb923c;
+  --accent-soft: #4a2a17;
+  --bad: #f87171;
+  --warn: #facc15;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: system-ui, sans-serif;
+  line-height: 1.4;
+  background: var(--surface);
+  color: var(--text);
+  overflow: hidden;
+}
+#app { height: 100dvh; }
+
+/* A panel's table scrolls inside its own box; the header is opaque
+   and pinned to that box's top edge, so nothing scrolls above it. */
+.wb-scroll { overflow: auto; min-width: 0; }
+.wb-scroll table { border-collapse: separate; border-spacing: 0; }
+.wb-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); }
+
+/* The shared render components' class vocabulary (BlocksPanel and
+   Combobox render with these names in any shell). */
+.muted { color: var(--muted); font-size: 0.85rem; }
+.table-scroll { overflow-x: auto; }
+.table-scroll table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.table-scroll td, .table-scroll th { padding: 2px 6px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.picker-row { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin: 0.3rem 0; }
+.picker-row .combo { flex: 1 1 100%; }
+.chip { display: inline-block; padding: 0 0.4rem; border-radius: 999px; font-size: 0.75rem; }
+.chip.warn { background: color-mix(in srgb, var(--warn) 25%, transparent); }
+.chip.bad { background: color-mix(in srgb, var(--bad) 25%, transparent); }

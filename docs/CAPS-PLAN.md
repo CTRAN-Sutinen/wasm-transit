@@ -418,6 +418,25 @@ day-shape answer is the dogfood record).
     W3) DiversionPanel went render-only. Forms still read the
     entity they edit from the plan document — JS owns the
     documents, and that read is the form's value, not an answer.
+- **Generated UIs (2026-10-27)**: `/` is a picker over
+  `src/uis/<id>/`, and the original app is demoted to `/app.html`
+  (`docs/ARCHITECTURE.md`, web section, "Generated UIs"). No new
+  ops: each UI composes existing ones. Pinned by the GENERATED UIs
+  gate in `just test` (descriptor, page, and spec present; thin
+  components only; no app-shell imports) and by e2e picker.spec
+  (one card per `ui.json`; each card opens its page; the original
+  app link boots the app).
+  * `service-design`: UI READS THE BUS, pinned by e2e
+    ui-service-design.spec (import → type → route → schedule, the
+    fork, the change with its warning, coverage). DOGFOODED
+    (QA-FINDINGS, "Session 2026-10-27 (service-design
+    workbench)"): in the browser on C-TRAN, the numbers equal the
+    runner's (1-WKDY rev h, coverage, block count).
+  * Not done: layouts are hand-placed Svelte, not layout
+    documents. MapView and the entity forms are still coupled to
+    the original app's `app` state. Generated UIs replace them with
+    thin components (FocusMap, ScheduleChange) rather than
+    rebuilding them in place.
 
 Model facts that hold everywhere: the import infers block
 layovers from observed end→start gaps (GTFS has none; the planner

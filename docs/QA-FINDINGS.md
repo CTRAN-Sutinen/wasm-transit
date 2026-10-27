@@ -825,3 +825,88 @@ and 092, and stop 3701 by 019.
   the same walking group.
   Pin: the session's `stop_detail` for 106 (routes empty).
   Status: open.
+
+## Session 2026-10-27 (service-design workbench) — C-TRAN
+
+Feed `sha256:aa8dbc62833237d75496b6ec04c2a45fe10ca2a957f63d63b51ddaae85a7dc4f`
+(version 20260913-20270109), network
+`sha256:bceda1be054a37698560f11aa58d6e039314a97945e525a0697f766e9861e4fa`,
+registry republished at dfbc0d8 (capability hashes unchanged from
+0f7b9eb). Two passes over the same questions: first through
+`caps-run`, one op per question, then through the new
+service-design workbench in Chromium (`/workbench.html`, the Go
+server with `-feed`).
+
+The questions, and the op that answers each:
+
+- Which feed? gtfs `feed_info`: C-TRAN 20260913-20270109.
+- What does each service type cost? analysis
+  `service_types_overview`: 13 types. 1-WKDY is 1425 trips over 25
+  routes and 529.14 rev h.
+- What runs under one type? analysis `service_type_detail`: route
+  rows with trips, rev h, span, and typical headway.
+- What is one route? directory `route_detail` for 019: 5 patterns,
+  and schedules by type (1-WKDY 25/14/10/1).
+- Who does each type reach? analysis `type_coverage` (400 m,
+  15 min) against testdata/clark-population.geojson: 1-WKDY
+  serves 18.6% of the population, 3.2% frequently.
+- How many vehicles does it take? runcut `blocks` on the type's
+  representative day: 93.
+- What does a change do? author `apply` (set_plan "Winter 2027"
+  2027-01-10, then `add_start` on 1-WKDY:pat-019-0-0): issues
+  none; warnings `unassigned_trips` (1) and
+  `no_service_in_plan_period`. 1-WKDY rev h 529.14 → 529.40.
+
+The workbench answered every one in the browser with the same
+numbers (import plus first answers in about 1.0 s; no console
+errors). The change gesture ran on the fork, never on the import.
+
+- **QAF-52 CONTRACT GAP** — the edit vocabulary cannot be
+  discovered through the runner. `caps-run tools author` gives
+  `apply` one prose paragraph and one example (`set_plan`,
+  `add_stop`) for about 50 edit kinds. The shape of `add_start`
+  (`{schedule}`) or `remove_start` (`{schedule, index}`) is found
+  in the generated TS types, not the contract, so the question
+  "what changes can I make to this schedule?" has no answer
+  without reading internals.
+  Pin: `caps-run tools author`, then look for an `add_start`
+  example (none).
+  Status: open.
+- **QAF-53 OP GAP** — the `no_service_in_plan_period` warning names
+  the plan only by id. A host-minted id is a UUID, so the
+  workbench shows "2027-01-10, 03862157-…" where the reader needs
+  the plan's name.
+  Pin: this session's `apply` warnings.
+  Status: open.
+- **QAF-54 OP GAP** — no gesture rolls a calendar forward to a
+  pick. A fork dated after the imported calendar's end
+  (2027-01-09) runs nothing, and the warning says so correctly.
+  The fix is one `set_service_range` per service type (13 on
+  C-TRAN), so "carry this service into the next pick" is 13
+  edits, not one.
+  Pin: the Winter 2027 fork above.
+  Status: open.
+- **QAF-55 CONTRACT QUESTION** — `typical_headway_secs` on sparse
+  routes reads as a headway nobody runs. 1-WKDY 041 answers 664
+  min (3 trips), and 048 and 164 answer 360 min. The median gap
+  of a few trips spread across a day is not "every N minutes".
+  Either answer null below a trip floor or label the service
+  (peak-only, sparse) in the op.
+  Pin: `service_type_detail` 1-WKDY, routes 041 / 048 / 164.
+  Status: open.
+
+Re-confirmed, not re-logged:
+
+- QAF-20 (scenario diff). The workbench shows the baseline only
+  for the selected type, as two answers side by side. Deltas per
+  route need the diff op.
+- QAF-3 (fleet). `blocks` gives the count and trips per block;
+  peak vehicles and platform hours are still not one op.
+- The runner prints the full imported document (CAPS-PLAN open
+  findings, "Cross-session chaining"): 2.8 MB of stdout here for
+  import + overview + `network_stats`.
+
+Mirror check: every question above is one op on the CLI and one
+panel in the workbench. Questions the runner answers that this
+layout does not place: `network_stats` on a calendar date, the
+board, and the router.
