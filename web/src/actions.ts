@@ -256,14 +256,14 @@ export async function refreshLive(): Promise<void> {
     const cap = rtCap(module);
     let seen = rtRegistrations.get(module);
     if (!seen) rtRegistrations.set(module, (seen = new Map()));
-    const feedKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
-    const feedHash = seen.get(feedKey) ?? cap.loadFeed(bytes);
-    seen.set(feedKey, feedHash);
-    const mapKey = `map:${boarding.networkHash}`;
-    const tripMapHash = seen.get(mapKey) ?? cap.loadTripMap(boarding.tripMap);
-    seen.set(mapKey, tripMapHash);
+    const netKey = `net:${boarding.networkHash}`;
+    const networkHash = seen.get(netKey) ?? cap.loadNetwork(boarding.network);
+    seen.set(netKey, networkHash);
+    const boundaryKey = `boundary:${boarding.networkHash}`;
+    const boundaryHash = seen.get(boundaryKey) ?? cap.loadBoundary(boarding.boundary);
+    seen.set(boundaryKey, boundaryHash);
     if (seq !== liveSeq) return;
-    app.live = cap.live(feedHash, app.rtHash, app.vpHash, tripMapHash);
+    app.live = cap.live(networkHash, boundaryHash, app.rtHash, app.vpHash);
   } catch (e) {
     console.warn("live document failed:", e);
   }
@@ -441,12 +441,12 @@ export function selectStop(stopId: string): void {
   app.clock = Date.now(); // re-derive the departure board
 }
 
-/// A derived trip's selection key — the model's identity.
-export function tripKey(trip: { pattern_trips: string; start_secs: number }): string {
-  return `${trip.pattern_trips}@${trip.start_secs}`;
+/// A trip instance's selection key — the model's identity.
+export function tripKey(trip: { trip: string; start_secs: number }): string {
+  return `${trip.trip}@${trip.start_secs}`;
 }
 
-export async function showTrip(trip: { pattern_trips: string; start_secs: number }): Promise<void> {
+export async function showTrip(trip: { trip: string; start_secs: number }): Promise<void> {
   const key = tripKey(trip);
   // Clicking the selected row again deselects: the route line always
   // has a way off the map.
@@ -469,7 +469,7 @@ export async function showTrip(trip: { pattern_trips: string; start_secs: number
     }
     const editsHash = await ensureRuncutEdits(boarding.networkHash, getEditDocument());
     const path = runcutCap(module).tripPath(
-      boarding.networkHash, editsHash, trip.pattern_trips, trip.start_secs, serviceDate());
+      boarding.networkHash, editsHash, trip.trip, trip.start_secs, serviceDate());
     app.tripFeature = lineFeature(path, { trip: key });
   } catch (e) {
     app.tripFeature = null;

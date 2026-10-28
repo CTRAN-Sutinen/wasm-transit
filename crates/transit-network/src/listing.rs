@@ -162,7 +162,7 @@ fn stop_row(network: &Network, id: &str) -> EntityRow {
 fn pattern_row(network: &Network, id: &str) -> EntityRow {
     match network.patterns.get(id) {
         Some(p) => EntityRow {
-            context: Some(network.routes.get(&p.route).map_or(p.route.clone(), |r| r.name.clone())),
+            context: Some(network.routes.get(&p.route).map_or(p.route.clone(), |r| r.label().to_string())),
             ..row(id, &p.name)
         },
         None => row(id, id),
@@ -193,7 +193,7 @@ fn schedule_row(network: &Network, id: &str) -> EntityRow {
 pub fn entity_rows(network: &Network, kind: EntityKind, query: &str) -> Vec<EntityRow> {
     let rows: Vec<EntityRow> = match kind {
         EntityKind::Stop => network.stops.keys().map(|id| stop_row(network, id)).collect(),
-        EntityKind::Route => network.routes.iter().map(|(id, r)| row(id, &r.name)).collect(),
+        EntityKind::Route => network.routes.iter().map(|(id, r)| row(id, r.label())).collect(),
         EntityKind::Pattern => network.patterns.keys().map(|id| pattern_row(network, id)).collect(),
         EntityKind::PatternTrips => network.pattern_trips.keys().map(|id| schedule_row(network, id)).collect(),
         EntityKind::ServiceType => network.service_types.iter().map(|(id, t)| row(id, &t.name)).collect(),
@@ -424,7 +424,7 @@ pub fn timetable(network: &Network, route: &str, direction: Option<&str>, servic
         .collect();
     Some(Timetable {
         route: route.to_string(),
-        route_name: r.name.clone(),
+        route_name: r.label().to_string(),
         direction: direction.map(str::to_string),
         direction_name,
         service_type: service_type.to_string(),
@@ -473,7 +473,7 @@ pub fn stop_detail(network: &Network, stop: &str) -> Option<StopDetail> {
     let index = crate::validate::stop_route_index(network);
     let routes = crate::validate::routes_meeting_at(network, &index, stop)
         .into_iter()
-        .map(|rid| row(rid.as_str(), network.routes.get(rid.as_str()).map_or(rid.as_str(), |r| r.name.as_str())))
+        .map(|rid| row(rid.as_str(), network.routes.get(rid.as_str()).map_or(rid.as_str(), |r| r.label())))
         .collect();
     Some(StopDetail { routes })
 }

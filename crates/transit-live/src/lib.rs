@@ -88,15 +88,13 @@ pub struct LiveStop {
     pub predicted_departure: Option<u32>,
 }
 
-/// One derived trip the snapshot speaks about.
+/// One trip instance the snapshot speaks about: the network's trip
+/// (the rt trip id is the model's) and the instance's start.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct LiveTrip {
-    pub pattern_trips: String,
+    pub trip: String,
     pub start_secs: u32,
-    /// The agency's id for the trip, as the rt feed named it — a
-    /// label dispatchers know, never a join key.
-    pub agency_trip_id: String,
     pub route: Option<String>,
     /// The route's name as the network names it.
     pub route_name: Option<String>,
@@ -124,11 +122,10 @@ pub struct LiveVehicle {
     pub route_name: Option<String>,
     /// The stop the vehicle is at or heading to.
     pub next_stop: Option<String>,
-    /// The derived trip it runs — absent when the rt trip does not
+    /// The trip instance it runs — absent when the rt trip does not
     /// resolve (or the vehicle names no trip).
-    pub pattern_trips: Option<String>,
+    pub trip: Option<String>,
     pub start_secs: Option<u32>,
-    pub agency_trip_id: Option<String>,
     /// Its trip's worst stated delay (the same headline as the trip).
     pub delay_secs: Option<i32>,
     pub status: LiveStatus,
@@ -142,18 +139,19 @@ pub struct LiveDay {
     pub window: OnTimeWindow,
     pub trips: Vec<LiveTrip>,
     pub vehicles: Vec<LiveVehicle>,
-    /// Trip updates naming an agency trip the import never saw —
+    /// Trip updates naming no trip instance of the network (an
+    /// unknown trip, or a start that is not one of its instances) —
     /// reported, never silently dropped.
     pub unmatched_trips: u32,
 }
 
 impl LiveDay {
-    /// The live answer for one visit of a derived trip: the stop
+    /// The live answer for one visit of a trip instance: the stop
     /// entry whose base departure matches `scheduled_departure`
     /// (a loop visits a stop twice), else the trip's first entry at
     /// that stop.
-    pub fn visit(&self, pattern_trips: &str, start_secs: u32, stop: &str, scheduled_departure: u32) -> Option<&LiveStop> {
-        let trip = self.trips.iter().find(|t| t.pattern_trips == pattern_trips && t.start_secs == start_secs)?;
+    pub fn visit(&self, trip: &str, start_secs: u32, stop: &str, scheduled_departure: u32) -> Option<&LiveStop> {
+        let trip = self.trips.iter().find(|t| t.trip == trip && t.start_secs == start_secs)?;
         let mut at_stop = trip.stops.iter().filter(|s| s.stop == stop);
         let first = at_stop.clone().next();
         at_stop.find(|s| s.scheduled_departure == Some(scheduled_departure)).or(first)
@@ -180,8 +178,7 @@ pub struct LateEntry {
     pub route_name: Option<String>,
     /// The bus number, when a vehicle is out on it.
     pub label: Option<String>,
-    pub agency_trip_id: Option<String>,
-    pub pattern_trips: Option<String>,
+    pub trip: Option<String>,
     pub start_secs: Option<u32>,
     pub delay_secs: i32,
     pub status: LiveStatus,
@@ -221,12 +218,11 @@ pub fn summarize(day: &LiveDay, limit: usize) -> LiveSummary {
             .iter()
             .filter(|t| late_status(t.status))
             .map(|t| LateEntry {
-                key: format!("{}@{}", t.pattern_trips, t.start_secs),
+                key: format!("{}@{}", t.trip, t.start_secs),
                 route: t.route.clone(),
                 route_name: t.route_name.clone(),
                 label: None,
-                agency_trip_id: Some(t.agency_trip_id.clone()),
-                pattern_trips: Some(t.pattern_trips.clone()),
+                trip: Some(t.trip.clone()),
                 start_secs: Some(t.start_secs),
                 delay_secs: t.worst_delay_secs.unwrap_or(0),
                 status: t.status,
@@ -241,8 +237,7 @@ pub fn summarize(day: &LiveDay, limit: usize) -> LiveSummary {
                 route: v.route.clone(),
                 route_name: v.route_name.clone(),
                 label: v.label.clone().or_else(|| v.vehicle_id.clone()),
-                agency_trip_id: v.agency_trip_id.clone(),
-                pattern_trips: v.pattern_trips.clone(),
+                trip: v.trip.clone(),
                 start_secs: v.start_secs,
                 delay_secs: v.delay_secs.unwrap_or(0),
                 status: v.status,

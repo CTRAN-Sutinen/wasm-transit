@@ -119,7 +119,6 @@ dependencies = [
  "sha2",
  "transit-analysis",
  "transit-codec",
- "transit-core",
  "transit-dispatch",
  "transit-live",
  "transit-network",
@@ -143,7 +142,6 @@ dependencies = [
  "sha2",
  "transit-analysis",
  "transit-codec",
- "transit-core",
  "transit-network",
  "ts-rs",
  "zip",
@@ -173,7 +171,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "transit-codec",
- "transit-core",
  "transit-dispatch",
  "transit-live",
  "transit-network",
@@ -191,7 +188,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "transit-codec",
- "transit-core",
  "transit-dispatch",
  "transit-network",
  "transit-sync",
@@ -208,7 +204,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "transit-codec",
- "transit-core",
  "transit-network",
  "ts-rs",
 ]
@@ -235,7 +230,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "transit-core",
+ "transit-codec",
  "ts-rs",
 ]
 
@@ -248,7 +243,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "transit-codec",
- "transit-core",
  "transit-network",
  "ts-rs",
 ]
@@ -275,7 +269,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "transit-codec",
- "transit-core",
  "transit-dispatch",
  "transit-network",
  "transit-router",
@@ -293,8 +286,8 @@ dependencies = [
  "serde_json",
  "sha2",
  "transit-codec",
- "transit-core",
  "transit-live",
+ "transit-network",
  "transit-rt",
  "ts-rs",
 ]
@@ -309,7 +302,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "transit-codec",
- "transit-core",
  "transit-dispatch",
  "transit-network",
  "transit-sync",
@@ -1090,7 +1082,6 @@ dependencies = [
  "serde",
  "serde_json",
  "transit-codec",
- "transit-core",
  "transit-network",
  "ts-rs",
  "zip",
@@ -1106,22 +1097,7 @@ dependencies = [
  "serde",
  "serde_json",
  "transit-analysis",
- "transit-core",
  "transit-network",
- "ts-rs",
- "zip",
-]
-
-[[package]]
-name = "transit-core"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "csv",
- "proptest",
- "serde",
- "thiserror 1.0.69",
- "transit-sync",
  "ts-rs",
  "zip",
 ]
@@ -1180,7 +1156,6 @@ dependencies = [
  "serde",
  "thiserror 1.0.69",
  "transit-codec",
- "transit-core",
  "transit-network",
  "ts-rs",
  "zip",
@@ -1190,6 +1165,7 @@ dependencies = [
 name = "transit-rt"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "proptest",
  "prost",
  "prost-build",
@@ -1197,8 +1173,8 @@ dependencies = [
  "serde",
  "thiserror 1.0.69",
  "transit-codec",
- "transit-core",
  "transit-live",
+ "transit-network",
  "ts-rs",
 ]
 

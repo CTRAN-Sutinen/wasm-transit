@@ -256,7 +256,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .iter()
                 .map(|(id, r)| DirectoryRoute {
                     route_id: id.clone(),
-                    name: r.name.clone(),
+                    name: r.label().to_string(),
                     mode: r.mode,
                     color: r.color.clone(),
                 })

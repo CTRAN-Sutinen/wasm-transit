@@ -15,7 +15,7 @@ const FIXTURE: &[u8] = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip
 /// and the manifest's sample load request carry.
 const NETWORK_DOC: &str = include_str!("../../../testdata/network.json");
 
-fn load_fixture() -> (String, transit_core::FeedSummary) {
+fn load_fixture() -> (String, transit_codec::FeedSummary) {
     match dispatch(Request::LoadFeed { bytes: FIXTURE.to_vec() }).unwrap() {
         Response::LoadFeed { feed_hash, summary } => (feed_hash, summary),
         _ => panic!("load_feed"),
@@ -30,46 +30,6 @@ fn load_feed_registers_under_the_content_hash() {
     // Idempotent: the same bytes load to the same hash.
     let (again, _) = load_fixture();
     assert_eq!(again, hash);
-}
-
-#[test]
-fn trip_map_answers_every_trip_by_its_own_id() {
-    let (feed_hash, _) = load_fixture();
-    let network_hash = match dispatch(Request::Import { feed_hash }).unwrap() {
-        Response::Import { network_hash, .. } => network_hash,
-        _ => panic!("import"),
-    };
-    let map = match dispatch(Request::TripMap { network_hash }).unwrap() {
-        Response::TripMap { map } => map,
-        _ => panic!("trip_map"),
-    };
-    // The fixture's single-stop trip is dropped by the import (and
-    // reported in the notes); every OTHER agency id is a trip of the
-    // document, named by itself, and the map invents none.
-    let agency: std::collections::BTreeSet<&str> = map
-        .entries
-        .iter()
-        .flat_map(|e| e.agency_trip_ids.iter().map(String::as_str))
-        .collect();
-    let source = transit_codec::Feed::from_zip_bytes(FIXTURE).unwrap();
-    let kept: std::collections::BTreeSet<&str> = source.trips.iter().filter_map(|t| t.trip_id.as_deref()).collect();
-    assert_eq!(agency.len(), kept.len() - 1, "one dropped trip, the rest mapped");
-    assert!(agency.is_subset(&kept), "the map invents no id");
-    assert!(map.entries.iter().all(|e| e.agency_trip_ids.len() == 1), "each trip is its own id");
-
-    // An AUTHORED network answers its own trips the same way.
-    let doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
-    let authored = match dispatch(Request::LoadNetwork { network: doc.clone() }).unwrap() {
-        Response::LoadNetwork { network_hash } => network_hash,
-        _ => panic!("load_network"),
-    };
-    match dispatch(Request::TripMap { network_hash: authored }).unwrap() {
-        Response::TripMap { map } => assert_eq!(map.entries.len(), doc.trips().count()),
-        _ => panic!("trip_map"),
-    }
-
-    // Unknown network is a caller error, not a panic.
-    assert!(dispatch(Request::TripMap { network_hash: "sha256:nope".into() }).is_err());
 }
 
 #[test]

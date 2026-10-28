@@ -26,13 +26,17 @@
 //! authoring ([`apply_edits`] — a change answers the next document,
 //! never mutating the last). No I/O, no clocks.
 
+pub mod demand;
 pub mod edit;
 pub mod error;
+pub mod fares;
 pub mod geometry;
 pub mod listing;
 pub mod materialize;
 pub mod migrate;
 pub mod model;
+pub mod operators;
+pub mod places;
 pub mod timetable_edit;
 pub mod validate;
 
@@ -45,13 +49,13 @@ pub use listing::{
     RemovedTrip, RouteDetail, StopDetail, Timetable, TimetablePattern, TimetableStop, TimetableTrip,
 };
 pub use materialize::{
-    materialize, materialize_service, produce_times, trip_arrival_end_secs, MaterializedTrip, StopTime,
+    materialize, materialize_service, produce_times, trip_arrival_end_secs, trip_instance, MaterializedTrip, StopTime,
 };
 pub use migrate::read_network;
 pub use model::{
     Alignment, AlignmentId, AlignmentPoint, Anchor, Block, CalendarException, CalendarRule, Coord, DateRange, DayState, Departs, Direction, DirectionId,
     HeadwayBand, Layover, Mode, Network, Pattern, PatternStop, PatternTrips, PatternTripsId, PlanMeta, Route,
-    ServiceType, ServiceTypeId, Stop, StopOffset, TimingProfile, Trip, TripId, TripRef, WeekdaySet,
+    ServiceType, ServiceTypeId, Stop, StopOffset, StopRule, TimingProfile, Trip, TripId, TripRef, WeekdaySet,
 };
 pub use validate::{
     routes_meeting_at, stop_route_index, validate, validation_issues, validation_warnings,

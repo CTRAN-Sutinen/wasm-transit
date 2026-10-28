@@ -26,4 +26,3 @@ cap-abi = { path = "../cap-abi" }
 # sanctioned dev-only path).
 sha2 = { workspace = true }
 transit-codec = { path = "../transit-codec" }
-transit-core = { path = "../transit-core" }

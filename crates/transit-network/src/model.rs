@@ -26,7 +26,11 @@ use std::collections::BTreeMap;
 use chrono::{Datelike, NaiveDate, Weekday};
 use serde::{Deserialize, Serialize};
 
+use crate::demand::DemandResponsive;
 use crate::error::NetworkError;
+use crate::fares::{FareNetworkId, Fares};
+use crate::operators::{Attribution, Operator, OperatorId, Publisher, Translation};
+use crate::places::{Level, LevelId, Pathway, PathwayId, StationPart, StopInfo, StopKind, TransferRule};
 
 /// IDs are opaque strings owned by this model. Type aliases document
 /// intent without newtype ceremony (a deliberate non-goal).
@@ -138,7 +142,8 @@ impl Default for Anchor {
 }
 
 /// A stop as a planner authors it: one name, one location, optional
-/// parent (platform-in-station groupings).
+/// parent (platform-in-station groupings) — a stop riders board at,
+/// or a station grouping stops.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Stop {
@@ -147,6 +152,12 @@ pub struct Stop {
     pub lon: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<StopId>,
+    #[serde(default, skip_serializing_if = "StopKind::is_stop")]
+    #[ts(optional, as = "Option<StopKind>")]
+    pub kind: StopKind,
+    #[serde(default, skip_serializing_if = "StopInfo::is_empty")]
+    #[ts(optional, as = "Option<StopInfo>")]
+    pub info: StopInfo,
     /// A designated transfer point: where the network intends riders
     /// to change vehicles. Authored intent, not a badge — the flag
     /// only means something composed with the routes that meet there
@@ -156,15 +167,61 @@ pub struct Stop {
     pub transfer: bool,
 }
 
-/// A route as a planner authors it: one display name (GTFS's
-/// short/long split is a serialization concern), a closed mode set.
+/// A route as a planner authors it: its public name (the short one
+/// riders see, "12"), its long name ("Lincoln"), a closed mode set.
+/// Display it by [`Route::label`].
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Route {
+    /// The short public name; empty for a route known only by its
+    /// long name.
     pub name: String,
     pub mode: Mode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub long_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub url: Option<String>,
+    /// The text color drawn over `color`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub text_color: Option<String>,
+    /// Where the route sorts in lists (lower first).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub sort_order: Option<u32>,
+    /// Riders may board (alight) anywhere along the route's line, by
+    /// this rule; `None` = only at stops.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub continuous_pickup: Option<StopRule>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub continuous_drop_off: Option<StopRule>,
+    /// Who runs it; `None` = the network's only operator.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub operator: Option<OperatorId>,
+    /// The fare network it belongs to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub fare_network: Option<FareNetworkId>,
+    /// Whether contactless bank cards are accepted on board; `None` =
+    /// as the operator says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub contactless: Option<crate::operators::Contactless>,
+    /// The published vehicle type code, where the mode alone does not
+    /// say it (an extended type such as a regional rail or night bus).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub vehicle_type: Option<u16>,
     /// The ways the route runs, by id, each named the way the planner
     /// says it ("To Downtown", "Northbound"). A pattern belongs to at
     /// most one; a timetable is one direction on one service type.
@@ -172,6 +229,38 @@ pub struct Route {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<DirectionId, Direction>>")]
     pub directions: BTreeMap<DirectionId, Direction>,
+}
+
+impl Route {
+    /// What to call the route: its public name, else its long name.
+    pub fn label(&self) -> &str {
+        if self.name.is_empty() {
+            self.long_name.as_deref().unwrap_or("")
+        } else {
+            &self.name
+        }
+    }
+}
+
+/// Whether, and how, riders may board or alight: at a stop (pickup,
+/// drop-off) or anywhere along the line (continuous stopping).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum StopRule {
+    #[default]
+    Regular,
+    NotAvailable,
+    /// The rider phones the agency to arrange it.
+    PhoneAgency,
+    /// The rider arranges it with the driver.
+    AskDriver,
+}
+
+impl StopRule {
+    pub fn is_regular(&self) -> bool {
+        *self == StopRule::Regular
+    }
 }
 
 /// One direction of a route, as a planner names it.
@@ -212,6 +301,37 @@ pub struct PatternStop {
     pub timepoint: bool,
     /// Meters along the pattern from its first stop. Non-decreasing.
     pub distance_m: f64,
+    /// Whether `distance_m` was published (in the publisher's own
+    /// units) rather than estimated; an estimate is never published.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(optional, as = "Option<bool>")]
+    pub distance_published: bool,
+    /// What the vehicle's sign says from this stop on, where it
+    /// changes along the way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub headsign: Option<String>,
+    #[serde(default, skip_serializing_if = "StopRule::is_regular")]
+    #[ts(optional, as = "Option<StopRule>")]
+    pub pickup: StopRule,
+    #[serde(default, skip_serializing_if = "StopRule::is_regular")]
+    #[ts(optional, as = "Option<StopRule>")]
+    pub drop_off: StopRule,
+    /// Continuous stopping from here to the next stop; `None` = the
+    /// route's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub continuous_pickup: Option<StopRule>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub continuous_drop_off: Option<StopRule>,
+    /// The booking rule a rider follows to board (alight) here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub pickup_booking: Option<crate::demand::BookingRuleId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub drop_off_booking: Option<crate::demand::BookingRuleId>,
 }
 
 /// Run-time profile for NEW trips departing in a time band
@@ -496,6 +616,25 @@ pub struct Trip {
     pub id: TripId,
     pub departs: Departs,
     pub times: Vec<StopOffset>,
+    /// What the vehicle's sign says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub headsign: Option<String>,
+    /// The trip's public number, where riders know it by one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub short_name: Option<String>,
+    /// Whether the vehicle takes a wheelchair (bikes, cars); `None` =
+    /// unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub wheelchair: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub bikes: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cars: Option<bool>,
 }
 
 impl Trip {
@@ -597,6 +736,40 @@ pub struct Network {
     /// Every pattern's trips, grouped by (pattern, service type).
     pub pattern_trips: BTreeMap<PatternTripsId, PatternTrips>,
     pub blocks: BTreeMap<BlockId, Block>,
+    /// Who runs the service, by id.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(optional, as = "Option<BTreeMap<OperatorId, Operator>>")]
+    pub operators: BTreeMap<OperatorId, Operator>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub publisher: Option<Publisher>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<Attribution>>")]
+    pub attributions: Vec<Attribution>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<Translation>>")]
+    pub translations: Vec<Translation>,
+    /// Entrances, nodes, and boarding areas, by id (ids are unique
+    /// across these and the stops).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(optional, as = "Option<BTreeMap<StopId, StationPart>>")]
+    pub station_parts: BTreeMap<StopId, StationPart>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(optional, as = "Option<BTreeMap<LevelId, Level>>")]
+    pub levels: BTreeMap<LevelId, Level>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(optional, as = "Option<BTreeMap<PathwayId, Pathway>>")]
+    pub pathways: BTreeMap<PathwayId, Pathway>,
+    /// Transfer rules, in published order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<TransferRule>>")]
+    pub transfers: Vec<TransferRule>,
+    #[serde(default, skip_serializing_if = "Fares::is_empty")]
+    #[ts(optional, as = "Option<Fares>")]
+    pub fares: Fares,
+    #[serde(default, skip_serializing_if = "DemandResponsive::is_empty")]
+    #[ts(optional, as = "Option<DemandResponsive>")]
+    pub demand: DemandResponsive,
 }
 
 impl Network {

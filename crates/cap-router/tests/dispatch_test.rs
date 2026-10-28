@@ -101,12 +101,11 @@ fn plan_answers_over_the_materialized_day() {
         panic!("A to B is reachable on the fixture date")
     };
     assert_eq!(it.arrival_secs, 8 * 3600 + 10 * 60, "t10: depart 08:00, arrive 08:10");
-    // The leg's trip identity is the derived key — (schedule,
-    // start_secs) — the identity every day view and the codec's
-    // trip-id map agree on.
+    // The leg's identity is the trip instance — (trip, start_secs) —
+    // the identity every day view agrees on.
     match &it.legs[0] {
-        transit_router::Leg::Transit { pattern_trips, start_secs, .. } => {
-            assert!(!pattern_trips.is_empty());
+        transit_router::Leg::Transit { trip, start_secs, .. } => {
+            assert_eq!(trip, "t10");
             assert_eq!(*start_secs, 8 * 3600);
         }
         other => panic!("expected a transit leg, got {other:?}"),

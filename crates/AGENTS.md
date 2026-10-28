@@ -9,9 +9,10 @@ GTFS is a serialization spec for external data sharing. Nothing
 new goes "in GTFS," and model-side code does not read
 serialization.
 
-- GTFS lives only at the boundary: transit-core (the codec
-  substrate), transit-codec (import/export), cap-gtfs and
-  cap-network (the boundary capabilities). cap-gtfs's charter is
+- GTFS lives only at the boundary: transit-codec (the whole-spec
+  feed layer and import/export), cap-gtfs and cap-network (the
+  boundary capabilities), and cap-rt (rt trip ids resolve against
+  the network there, with the import's stop numbering). cap-gtfs's charter is
   CLOSED: parse, export, primitive boundary queries — no more.
 - **"Network vs feed" is never a decision.** Model-side
   capabilities compose over the NETWORK document (+ its day
@@ -39,7 +40,7 @@ Rejected on sight:
 - derived/effective feed caches keyed by date (the monolith's
   `FeedState`/`with_effective` shape);
 - GTFS-shaped registries or GTFS row types in responses
-  (`transit_core::Departure`, `BlockTrip`, ...) — responses are
+  (`transit_codec::feed::TripRow`, ...) — responses are
   model-native types.
 
 The day view is `transit_network::materialize(net, date)` — the
@@ -134,7 +135,7 @@ host.
 ## Enforcement
 
 The justfile `test` recipe asserts laws 1 and 2: model-side
-capabilities may not depend on transit-core/transit-codec, and
+capabilities may not depend on transit-codec, and
 `transit_codec::export` may not appear outside the codec's homes. Law 3
 is a review gate (the criteria above are the checklist — every
 new module's ops must each name one need). If a gate fails your

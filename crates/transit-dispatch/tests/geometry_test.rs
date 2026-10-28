@@ -35,9 +35,9 @@ fn day(net: &Network) -> Vec<MaterializedTrip> {
 fn a_trip_on_its_pattern_draws_the_alignment() {
     let net = network();
     let d = day(&net);
-    assert_eq!(trip_path(&net, &d, "10-weekday", 28800).len(), 5);
-    assert!(trip_path(&net, &d, "10-weekday", 1).is_empty(), "a trip that does not run draws nothing");
-    let seg = trip_segment(&net, &d, "10-weekday", 28800, "B", "C");
+    assert_eq!(trip_path(&net, &d, "10-weekday@28800", 28800).len(), 5);
+    assert!(trip_path(&net, &d, "10-weekday@28800", 1).is_empty(), "a trip that does not run draws nothing");
+    let seg = trip_segment(&net, &d, "10-weekday@28800", 28800, "B", "C");
     assert_eq!(seg, vec![c(45.51, -73.51), c(45.515, -73.51), c(45.52, -73.52)], "sliced at the nearest vertices");
 }
 
@@ -57,12 +57,12 @@ fn a_diverted_trip_draws_its_patched_stops() {
         end_date: date(),
     };
     let d = patch_day(&day(&net), &[skip_b]);
-    assert_eq!(trip_path(&net, &d, "10-weekday", 28800), vec![c(45.5, -73.5), c(45.52, -73.52)]);
-    assert_eq!(trip_segment(&net, &d, "10-weekday", 28800, "A", "C"), vec![c(45.5, -73.5), c(45.52, -73.52)]);
+    assert_eq!(trip_path(&net, &d, "10-weekday@28800", 28800), vec![c(45.5, -73.5), c(45.52, -73.52)]);
+    assert_eq!(trip_segment(&net, &d, "10-weekday@28800", 28800, "A", "C"), vec![c(45.5, -73.5), c(45.52, -73.52)]);
     assert_eq!(
-        trip_segment(&net, &d, "10-weekday", 28800, "A", "B"),
+        trip_segment(&net, &d, "10-weekday@28800", 28800, "A", "B"),
         vec![c(45.5, -73.5), c(45.51, -73.51)],
         "a stop the trip no longer visits falls back to the straight line"
     );
-    assert!(trip_segment(&net, &d, "10-weekday", 28800, "A", "Z").is_empty());
+    assert!(trip_segment(&net, &d, "10-weekday@28800", 28800, "A", "Z").is_empty());
 }

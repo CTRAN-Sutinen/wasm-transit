@@ -5,6 +5,21 @@
 
 use cap_rt::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
 
+/// The fixture network and its boundary, registered: (network_hash,
+/// boundary_hash). The network goes on the kernel's bulk op, the way
+/// hosts send it.
+fn load_fixture() -> (String, String) {
+    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
+    let imported = transit_codec::import(&feed);
+    let doc = serde_json::to_vec(&imported.network).unwrap();
+    let loaded: serde_json::Value = serde_json::from_str(&dispatch_bytes(cap_abi::OP_LOAD_NETWORK, &doc)).unwrap();
+    let network_hash = loaded["ok"]["network_hash"].as_str().unwrap_or_else(|| panic!("{loaded}")).to_string();
+    let Response::LoadBoundary { boundary_hash } = dispatch(Request::LoadBoundary { boundary: imported.boundary }).unwrap() else {
+        panic!("load_boundary")
+    };
+    (network_hash, boundary_hash)
+}
+
 #[test]
 fn decode_reports_delays_and_vehicles() {
     // A minimal GTFS-rt feed, encoded here with the same generated
@@ -109,12 +124,7 @@ fn the_e2e_fixture_decodes_on_the_bulk_seam() {
 /// +180 s at B, one vehicle on t10).
 #[test]
 fn trip_progress_joins_schedule_and_delays() {
-    let feed = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
-    let loaded = cap_rt::dispatch_bytes(cap_rt::OP_LOAD_FEED, feed);
-    let parsed: serde_json::Value = serde_json::from_str(&loaded).unwrap();
-    assert!(parsed["ok"].get("feed_hash").is_some(), "{loaded}");
-    let feed_hash = parsed["ok"]["feed_hash"].as_str().unwrap().to_string();
-    assert_eq!(parsed["ok"]["summary"]["trips"], 7);
+    let (network_hash, boundary_hash) = load_fixture();
 
     let payload = include_bytes!("../../../web/e2e/fixtures/sample-rt.pb");
     let decoded = cap_rt::dispatch_bytes(cap_rt::OP_DECODE, payload);
@@ -123,7 +133,8 @@ fn trip_progress_joins_schedule_and_delays() {
 
     // t10: A 08:00 dep +120 → 08:02; B 08:10 arr +180 → 08:13.
     let progress = cap_rt::dispatch(cap_rt::Request::TripProgress {
-        feed_hash: feed_hash.clone(),
+        network_hash: network_hash.clone(),
+        boundary_hash: Some(boundary_hash.clone()),
         rt_hash: rt_hash.clone(),
         trip_id: "t10".into(),
     })
@@ -145,7 +156,8 @@ fn trip_progress_joins_schedule_and_delays() {
     // A trip the snapshot does not mention answers from the schedule
     // alone (delay-free) — the plan is still an answer.
     let plain = cap_rt::dispatch(cap_rt::Request::TripProgress {
-        feed_hash: feed_hash.clone(),
+        network_hash: network_hash.clone(),
+        boundary_hash: Some(boundary_hash.clone()),
         rt_hash: rt_hash.clone(),
         trip_id: "t30".into(),
     })
@@ -155,10 +167,11 @@ fn trip_progress_joins_schedule_and_delays() {
     assert!(p.stops.iter().all(|s| s.arrival_delay.is_none()));
     assert_eq!(p.worst_delay_secs, 0);
 
-    // A trip the FEED does not carry answers null (the rt feed named
-    // a trip the schedule never had).
+    // A trip the NETWORK does not carry answers null (the rt feed
+    // named a trip the network never had).
     let missing = cap_rt::dispatch(cap_rt::Request::TripProgress {
-        feed_hash,
+        network_hash,
+        boundary_hash: None,
         rt_hash,
         trip_id: "ghost".into(),
     })
@@ -170,10 +183,7 @@ fn trip_progress_joins_schedule_and_delays() {
 /// trip with a delay but no position naming it.
 #[test]
 fn late_trips_rank_and_flag_the_dark_ones() {
-    let feed = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip").to_vec();
-    let cap_rt::Response::LoadFeed { feed_hash, .. } =
-        cap_rt::dispatch(cap_rt::Request::LoadFeed { bytes: feed }).unwrap()
-    else { panic!("load_feed") };
+    let (network_hash, _) = load_fixture();
 
     // The fixture payload: t10 is late and HAS a vehicle (4201).
     let payload = include_bytes!("../../../web/e2e/fixtures/sample-rt.pb").to_vec();
@@ -182,7 +192,7 @@ fn late_trips_rank_and_flag_the_dark_ones() {
     else { panic!("decode") };
 
     let late = cap_rt::dispatch(cap_rt::Request::LateTrips {
-        feed_hash: feed_hash.clone(),
+        network_hash: network_hash.clone(),
         rt_hash: rt_hash.clone(),
         min_delay_secs: 60,
         vp_hash: None,
@@ -227,7 +237,7 @@ fn late_trips_rank_and_flag_the_dark_ones() {
         cap_rt::dispatch(cap_rt::Request::Decode { bytes: dark }).unwrap()
     else { panic!("decode") };
     let late = cap_rt::dispatch(cap_rt::Request::LateTrips {
-        feed_hash: feed_hash.clone(),
+        network_hash: network_hash.clone(),
         rt_hash: dark_hash.clone(),
         min_delay_secs: 60,
         vp_hash: None,
@@ -245,7 +255,7 @@ fn late_trips_rank_and_flag_the_dark_ones() {
     // and the positions snapshot shows bus 4201 running t10. The bus
     // is out, finishing the previous trip: late, not dark.
     let late = cap_rt::dispatch(cap_rt::Request::LateTrips {
-        feed_hash: feed_hash.clone(),
+        network_hash: network_hash.clone(),
         rt_hash: dark_hash.clone(),
         min_delay_secs: 60,
         vp_hash: Some(rt_hash.clone()),
@@ -286,7 +296,7 @@ fn late_trips_rank_and_flag_the_dark_ones() {
     // Same vp_hash as the delays would give (the fixture snapshot
     // carries the vehicle) — but the DELAYS are the split snapshot.
     let late = cap_rt::dispatch(cap_rt::Request::LateTrips {
-        feed_hash: feed_hash,
+        network_hash,
         rt_hash: tu_hash,
         vp_hash: Some(rt_hash),
         min_delay_secs: 60,
@@ -303,19 +313,17 @@ fn late_trips_rank_and_flag_the_dark_ones() {
 #[test]
 fn unknown_hashes_are_errors_not_panics() {
     let err = cap_rt::dispatch(cap_rt::Request::TripProgress {
-        feed_hash: "sha256:missing".into(),
+        network_hash: "sha256:missing".into(),
+        boundary_hash: None,
         rt_hash: "sha256:missing".into(),
         trip_id: "t10".into(),
     })
     .unwrap_err();
-    assert!(err.contains("unknown feed"), "{err}");
+    assert!(err.contains("unknown network"), "{err}");
 
-    let feed = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip").to_vec();
-    let cap_rt::Response::LoadFeed { feed_hash, .. } =
-        cap_rt::dispatch(cap_rt::Request::LoadFeed { bytes: feed }).unwrap()
-    else { panic!("load_feed") };
+    let (network_hash, _) = load_fixture();
     let err = cap_rt::dispatch(cap_rt::Request::LateTrips {
-        feed_hash,
+        network_hash,
         rt_hash: "sha256:missing".into(),
         min_delay_secs: 0,
         vp_hash: None,
@@ -325,36 +333,25 @@ fn unknown_hashes_are_errors_not_panics() {
 }
 
 /// THE live document through the seam, over the real fixture pair:
-/// the snapshot resolves through the network's trip map into derived
-/// trips, statuses classify under the window the request names, and
-/// the summary is the status panel's whole answer.
+/// the snapshot resolves against the network into trip instances,
+/// statuses classify under the window the request names, and the
+/// summary is the status panel's whole answer.
 #[test]
 fn live_resolves_the_snapshot_into_model_vocabulary() {
-    let feed = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
-    let trip_map = transit_codec::trip_map(&transit_codec::import(&transit_codec::Feed::from_zip_bytes(feed).unwrap()).network);
-    let cap_rt::Response::LoadFeed { feed_hash, .. } =
-        cap_rt::dispatch(cap_rt::Request::LoadFeed { bytes: feed.to_vec() }).unwrap()
-    else {
-        panic!("load_feed")
-    };
+    let (network_hash, boundary_hash) = load_fixture();
     let cap_rt::Response::Decode { rt_hash, .. } = cap_rt::dispatch(cap_rt::Request::Decode {
         bytes: include_bytes!("../../../web/e2e/fixtures/sample-rt.pb").to_vec(),
     })
     .unwrap() else {
         panic!("decode")
     };
-    let cap_rt::Response::LoadTripMap { trip_map_hash } =
-        cap_rt::dispatch(cap_rt::Request::LoadTripMap { trip_map: trip_map.clone() }).unwrap()
-    else {
-        panic!("load_trip_map")
-    };
 
     let live = |window| {
         cap_rt::dispatch(cap_rt::Request::Live {
-            feed_hash: feed_hash.clone(),
+            network_hash: network_hash.clone(),
+            boundary_hash: Some(boundary_hash.clone()),
             rt_hash: Some(rt_hash.clone()),
             vp_hash: None,
-            trip_map_hash: trip_map_hash.clone(),
             window,
             late_limit: None,
         })
@@ -362,8 +359,7 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
     let cap_rt::Response::Live { live_hash, live: day, summary } = live(None).unwrap() else { panic!("live") };
     let canonical = serde_json::to_string(&day).unwrap();
     assert_eq!(live_hash, format!("sha256:{:x}", <sha2::Sha256 as sha2::Digest>::digest(canonical.as_bytes())), "the module is the hash authority");
-    let t10 = trip_map.entries.iter().find(|e| e.agency_trip_ids.iter().any(|id| id == "t10")).unwrap();
-    assert!(day.trips.iter().any(|t| t.pattern_trips == t10.pattern_trips && t.start_secs == t10.start_secs));
+    assert!(day.trips.iter().any(|t| t.trip == "t10" && t.start_secs == 8 * 3600));
     assert_eq!(summary.vehicles, 1);
     assert_eq!(summary.counts.late, 1, "+180 s is late under the default window");
     assert_eq!(summary.late[0].delay_secs, 180);
@@ -374,26 +370,26 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
     let cap_rt::Response::Live { summary, .. } = live(Some(strict)).unwrap() else { panic!("live") };
     assert_eq!(summary.counts.very_late, 1);
 
-    // No snapshot at all is a request error; an unknown map is a
+    // No snapshot at all is a request error; an unknown boundary is a
     // missing-document error.
     let err = cap_rt::dispatch(cap_rt::Request::Live {
-        feed_hash: feed_hash.clone(),
+        network_hash: network_hash.clone(),
+        boundary_hash: None,
         rt_hash: None,
         vp_hash: None,
-        trip_map_hash: trip_map_hash.clone(),
         window: None,
         late_limit: None,
     })
     .unwrap_err();
     assert!(err.contains("needs a snapshot"), "{err}");
     let err = cap_rt::dispatch(cap_rt::Request::Live {
-        feed_hash,
+        network_hash,
+        boundary_hash: Some("sha256:missing".into()),
         rt_hash: Some(rt_hash),
         vp_hash: None,
-        trip_map_hash: "sha256:missing".into(),
         window: None,
         late_limit: None,
     })
     .unwrap_err();
-    assert!(err.contains("unknown trip map"), "{err}");
+    assert!(err.contains("unknown boundary"), "{err}");
 }

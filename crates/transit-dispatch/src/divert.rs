@@ -266,7 +266,7 @@ pub fn diversion_rows(network: &Network, records: &[EditRecord]) -> Vec<Diversio
                 record_id: r.id.clone(),
                 status: r.status,
                 in_force: r.status != EditStatus::Retired,
-                route_name: network.routes.get(&d.route_id).map(|x| x.name.clone()).unwrap_or_else(|| d.route_id.clone()),
+                route_name: network.routes.get(&d.route_id).map(|x| x.label().to_string()).unwrap_or_else(|| d.route_id.clone()),
                 first_kept_name: stop_name(network, &d.first_kept_stop),
                 last_kept_name: stop_name(network, &d.last_kept_stop),
                 skipped_names: d.skipped_stops.iter().map(|s| stop_name(network, s)).collect(),

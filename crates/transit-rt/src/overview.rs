@@ -12,6 +12,9 @@ use serde::Serialize;
 pub struct TripUpdateView {
     pub trip_id: Option<String>,
     pub route_id: Option<String>,
+    /// The instance's start ("HH:MM:SS") — how a frequency trip's
+    /// update names which run it is.
+    pub start_time: Option<String>,
     pub stop_updates: Vec<StopUpdateView>,
 }
 
@@ -31,6 +34,8 @@ pub struct StopUpdateView {
 pub struct VehicleView {
     pub entity_id: String,
     pub trip_id: Option<String>,
+    /// The instance's start ("HH:MM:SS"), as on a trip update.
+    pub start_time: Option<String>,
     pub route_id: Option<String>,
     pub lat: f64,
     pub lon: f64,
@@ -87,6 +92,7 @@ pub fn decode_overview(bytes: &[u8]) -> Result<RtOverview, String> {
                 overview.trips.push(TripUpdateView {
                     trip_id: tu.trip.trip_id.clone(),
                     route_id: tu.trip.route_id.clone(),
+                    start_time: tu.trip.start_time.clone(),
                     stop_updates: tu
                         .stop_time_update
                         .iter()
@@ -106,6 +112,7 @@ pub fn decode_overview(bytes: &[u8]) -> Result<RtOverview, String> {
                 overview.vehicle_positions.push(VehicleView {
                     entity_id: entity.id.clone(),
                     trip_id: vehicle.trip.as_ref().and_then(|t| t.trip_id.clone()),
+                    start_time: vehicle.trip.as_ref().and_then(|t| t.start_time.clone()),
                     route_id: vehicle.trip.as_ref().and_then(|t| t.route_id.clone()),
                     lat: position.latitude as f64,
                     lon: position.longitude as f64,

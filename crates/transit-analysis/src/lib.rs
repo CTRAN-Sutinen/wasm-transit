@@ -869,7 +869,7 @@ fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: NaiveDate) ->
         let typical = busiest.and_then(|(_, times)| median_gap_secs(times));
         routes.push(RouteStats {
             route_id: route_id.clone(),
-            name: route.name.clone(),
+            name: route.label().to_string(),
             patterns: pattern_starts
                 .iter()
                 .filter(|(pid, _)| {

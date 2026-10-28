@@ -296,16 +296,14 @@ fn the_trip_detail_answers_the_effective_day() {
     // EFFECTIVE for the date (a diverted trip answers its patched
     // sequence). The answer carries no geometry — the network
     // document holds the coordinates; the map is the host's view.
-    let net = derived_network();
+    let _ = derived_network();
     let network_hash = load_network();
-    let direct = route10_schedule_of(&net, &["A", "B"]);
-    let via_c = route10_schedule_of(&net, &["A", "C", "B"]);
 
     // The authored day: t10's direct run A→B, times model-native.
     let stops = match dispatch(Request::TripStops {
         network_hash: network_hash.clone(),
         edits_hash: None,
-        pattern_trips: direct,
+        trip: "t10".into(),
         start_secs: 8 * 3600,
         date: DATE.into(),
     })
@@ -326,7 +324,7 @@ fn the_trip_detail_answers_the_effective_day() {
     let absent = match dispatch(Request::TripStops {
         network_hash: network_hash.clone(),
         edits_hash: None,
-        pattern_trips: route10_schedule(&net),
+        trip: "t10".into(),
         start_secs: 123,
         date: DATE.into(),
     })
@@ -343,7 +341,7 @@ fn the_trip_detail_answers_the_effective_day() {
     let patched = match dispatch(Request::TripStops {
         network_hash: network_hash.clone(),
         edits_hash: Some(edits_hash),
-        pattern_trips: via_c,
+        trip: "t30".into(),
         start_secs: 8 * 3600 + 40 * 60,
         date: DATE.into(),
     })
@@ -398,7 +396,7 @@ fn the_trip_line_is_the_effective_day_drawn() {
     let path = |start_secs: u32| match dispatch(Request::TripPath {
         network_hash: network_hash.clone(),
         edits_hash: None,
-        pattern_trips: via_c.clone(),
+        trip: "t30".into(),
         start_secs,
         date: DATE.into(),
     })

@@ -8,9 +8,9 @@ localhost proxy — the browser is the consumer, nothing is uploaded.
 
 ```
 crates/
-├── transit-core   GTFS static: data model, zip/CSV parsing, calendar
-│                  logic, departure queries, diversion patching.
-│                  Pure Rust, no I/O deps.
+├── transit-codec  GTFS ⇄ network: the whole-spec feed layer (every
+│                  file and column, deterministic zip bytes) and the
+│                  lossless import / export. Pure Rust, no I/O deps.
 ├── transit-network The authored network model (the planner's view):
 │                  patterns, timing profiles, calendar rules, services,
 │                  stored trips (own id, departure, times), and the
@@ -144,11 +144,11 @@ detour on the map, add running time, and set a date window.
 
 Implementation shape:
 
-- `transit-core::diversion` — the `Diversion` spec plus
-  `apply_diversions(base, date, edits)`, which produces a patched copy
-  of the feed for one service date (skip + renumber, time shift from
-  the last anchor onward, shape splice). The base feed is never
-  mutated; property tests check the patched feed against an oracle.
+- `transit_sync::Diversion` — the diversion spec — and
+  `transit_dispatch::patch_day`, which patches one service date's
+  materialized trips (skip, time shift from the last anchor onward).
+  The network document is never mutated; property tests check the
+  patched day against an oracle.
 - `transit-wasm` serves every date-scoped query (departures, blocks,
   plans, trip paths) from the *effective* feed. `plan_trip_compare`
   returns both the diverted plan and the baseline, so the UI shows
@@ -233,9 +233,9 @@ making the whole app (feed, queries, basemap) fully offline-capable.
   One date can have several active service keys at once —
   `active_services(date)` returns them, and every departure/block row
   carries its `service_id`.
-- Property-based tests (`transit-core/tests/prop_test.rs`) generate
-  random feeds and check laws against independent oracles; failure seeds
-  are kept in `tests/prop_test.proptest-regressions`.
+- Property-based tests (e.g. `transit-codec/tests/spec_round_trip_test.rs`)
+  generate random feeds and check laws against independent oracles;
+  failure seeds are kept in `*.proptest-regressions`.
 - **All domain logic lives behind transit-ops' dispatch seam** — the
   flat ABI exports in transit-wasm marshal bytes over it, native tests
   call it directly (`crates/transit-ops/tests/dispatch_test.rs`), and

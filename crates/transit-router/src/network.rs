@@ -62,10 +62,8 @@ pub struct Pattern {
 /// nothing to fill here.
 #[derive(Debug, Clone)]
 pub struct PatternTrip {
-    /// The derived trip's identity: its schedule and start. The model
-    /// names no trips; (schedule, start_secs) is the key every day
-    /// view and the codec's trip-id map agree on.
-    pub pattern_trips: String,
+    /// The trip instance: the network's trip and its start.
+    pub trip: String,
     pub start_secs: u32,
     pub route_id: String,
     pub route_name: String,
@@ -149,14 +147,14 @@ impl RouterNetwork {
             let route_name = network
                 .routes
                 .get(&trip.route)
-                .map(|r| r.name.clone())
+                .map(|r| r.label().to_string())
                 .unwrap_or_else(|| trip.route.clone());
             // The authored pattern's name is the human-facing
             // description of where these trips go.
             let headsign = network.patterns.get(&trip.pattern).map(|p| p.name.clone());
 
             pattern_map.entry(positions).or_default().push(PatternTrip {
-                pattern_trips: trip.pattern_trips.clone(),
+                trip: trip.trip.clone(),
                 start_secs: trip.start_secs,
                 route_id: trip.route.clone(),
                 route_name,

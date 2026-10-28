@@ -31,7 +31,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ts_rs::TS;
-use transit_core::FeedSummary;
+use transit_codec::{Feed, FeedInfo, FeedSummary};
 
 /// The bulk-bytes op code (the only op that takes raw feed bytes).
 pub const OP_LOAD_FEED: u32 = 0;
@@ -56,13 +56,13 @@ pub enum Request {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     LoadFeed { feed_hash: String, summary: FeedSummary },
-    FeedInfo { info: Option<transit_core::FeedInfo> },
+    FeedInfo { info: Option<FeedInfo> },
 }
 
 /// The registry: content hash -> parsed feed. One instance per module
 /// (wasm modules never share state); the mutex only guards the map.
-fn registry() -> &'static Mutex<HashMap<String, Arc<transit_core::Gtfs>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<transit_core::Gtfs>>>> = OnceLock::new();
+fn registry() -> &'static Mutex<HashMap<String, Arc<Feed>>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Feed>>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -74,7 +74,7 @@ pub fn content_hash(bytes: &[u8]) -> String {
 
 fn with_feed<T>(
     feed_hash: &str,
-    f: impl FnOnce(&transit_core::Gtfs) -> Result<T, String>,
+    f: impl FnOnce(&Feed) -> Result<T, String>,
 ) -> Result<T, String> {
     let guard = registry().lock().expect("registry lock");
     let feed = guard
@@ -95,8 +95,7 @@ fn load_feed(bytes: &[u8]) -> Result<Response, String> {
             });
         }
     }
-    let feed =
-        transit_core::Gtfs::from_zip_bytes(bytes).map_err(|e| format!("parse: {e}"))?;
+    let feed = Feed::from_zip_bytes(bytes).map_err(|e| format!("parse: {e}"))?;
     let summary = feed.summary();
     registry()
         .lock()
@@ -111,7 +110,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::LoadFeed { bytes } => load_feed(&bytes),
         Request::FeedInfo { feed_hash } => with_feed(&feed_hash, |feed| {
-            Ok(Response::FeedInfo { info: feed.feed_info.clone() })
+            Ok(Response::FeedInfo { info: feed.info() })
         }),
     }
 }

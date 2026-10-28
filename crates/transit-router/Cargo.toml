@@ -16,7 +16,6 @@ ts-rs = { workspace = true }
 # Tests compose over real documents: fixture feeds go through the
 # codec's import (the sanctioned dev-only path) and the model's own
 # materialize — never the GTFS substrate in production code.
-transit-core = { path = "../transit-core" }
 transit-codec = { path = "../transit-codec" }
 proptest = "1"
 zip = { workspace = true }

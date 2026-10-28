@@ -24,6 +24,7 @@ fn stop(id: &str, lat: f64, lon: f64) -> (String, transit_network::Stop) {
             lon,
             parent: None,
             transfer: false,
+            ..Default::default()
         },
     )
 }
@@ -34,7 +35,7 @@ fn at(t: u32) -> StopOffset {
 
 /// A one-start trip: A at 0, B unscheduled, C at 20 minutes.
 fn trip(id: &str, start_secs: u32) -> Trip {
-    Trip { id: id.into(), departs: Departs::At { start_secs }, times: vec![at(0), StopOffset::default(), at(1200)] }
+    Trip { id: id.into(), departs: Departs::At { start_secs }, times: vec![at(0), StopOffset::default(), at(1200)], ..Default::default() }
 }
 
 fn trip_ref(id: &str) -> TripRef {
@@ -62,6 +63,7 @@ pub(crate) fn valid_network() -> Network {
                 name: "5-K Ave".into(),
                 mode: Mode::Bus,
                 color: None,
+                ..Default::default()
             },
         )]
         .into_iter()
@@ -79,16 +81,19 @@ pub(crate) fn valid_network() -> Network {
                         stop: "A".into(),
                         timepoint: true,
                         distance_m: 0.0,
+                        ..Default::default()
                     },
                     PatternStop {
                         stop: "B".into(),
                         timepoint: false,
                         distance_m: 1000.0,
+                        ..Default::default()
                     },
                     PatternStop {
                         stop: "C".into(),
                         timepoint: true,
                         distance_m: 2000.0,
+                        ..Default::default()
                     },
                 ],
                 timing: vec![TimingProfile {
@@ -139,6 +144,7 @@ pub(crate) fn valid_network() -> Network {
         )]
         .into_iter()
         .collect(),
+        ..Default::default()
     };
     net.validate().expect("fixture must be valid");
     net
@@ -482,12 +488,14 @@ fn transfer_point_requires_two_routes_across_its_walking_group() {
         lat: 45.01, lon: -122.701,
         parent: None,
         transfer: false,
+        ..Default::default()
     });
     let b2 = transit_network::Stop {
         name: "Stop B across the street".into(),
         lat: 45.0101, lon: -122.701,
         parent: Some("STN".into()),
         transfer: false,
+        ..Default::default()
     };
     net.stops.insert("B2".into(), b2.clone());
     let mut b = net.stops.get_mut("B").unwrap();
@@ -498,6 +506,7 @@ fn transfer_point_requires_two_routes_across_its_walking_group() {
         name: "7-L St".into(),
         mode: Mode::Bus,
         color: None,
+        ..Default::default()
     });
     net.patterns.insert("7-inbound".into(), Pattern {
         direction: None,
@@ -505,8 +514,8 @@ fn transfer_point_requires_two_routes_across_its_walking_group() {
         name: "7 inbound".into(),
         alignment: None,
         stops: vec![
-            PatternStop { stop: "B2".into(), timepoint: true, distance_m: 0.0 },
-            PatternStop { stop: "A".into(), timepoint: true, distance_m: 900.0 },
+            PatternStop { stop: "B2".into(), timepoint: true, distance_m: 0.0, ..Default::default() },
+            PatternStop { stop: "A".into(), timepoint: true, distance_m: 900.0, ..Default::default() },
         ],
         timing: vec![TimingProfile {
             start_secs: 0,

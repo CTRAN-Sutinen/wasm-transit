@@ -525,7 +525,7 @@ fn add_trip(net: &mut Network, pattern_trips: &str, id: &Option<String>, start: 
         .get_mut(pattern_trips)
         .expect("checked")
         .trips
-        .push(Trip { id: id.clone(), departs: Departs::At { start_secs: start }, times });
+        .push(Trip { id: id.clone(), departs: Departs::At { start_secs: start }, times, ..Default::default() });
     Ok(id)
 }
 
@@ -651,14 +651,14 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             let name = format!("Stop {}", net.stops.len() + 1);
             net.stops.insert(
                 id.clone(),
-                Stop { name, lat: lat.unwrap_or(clat), lon: lon.unwrap_or(clon), parent: None, transfer: false },
+                Stop { name, lat: lat.unwrap_or(clat), lon: lon.unwrap_or(clon), parent: None, transfer: false, ..Default::default() },
             );
             created("stop", &id)
         }
         NetworkEdit::AddRoute { id } => {
             let id = mint(&net.routes, id, "r", "route")?;
             let name = format!("Route {}", net.routes.len() + 1);
-            net.routes.insert(id.clone(), Route { name, mode: Mode::Bus, color: None, directions: Default::default() });
+            net.routes.insert(id.clone(), Route { name, mode: Mode::Bus, color: None, directions: Default::default(), ..Default::default() });
             created("route", &id)
         }
         NetworkEdit::AddPattern { id, route } => {
@@ -685,8 +685,8 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
                     name,
                     alignment: None,
                     stops: vec![
-                        PatternStop { stop: first, timepoint: true, distance_m: 0.0 },
-                        PatternStop { stop: second, timepoint: true, distance_m: 500.0 },
+                        PatternStop { stop: first, timepoint: true, distance_m: 0.0, ..Default::default() },
+                        PatternStop { stop: second, timepoint: true, distance_m: 500.0, ..Default::default() },
                     ],
                     timing: vec![TimingProfile { start_secs: 0, end_secs: 30 * 3600, at_timepoints: vec![0, 600] }],
                 },
@@ -843,7 +843,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
                 return Err(format!("visit {at} of pattern {pattern} is not a middle position — endpoints stay"));
             }
             let distance_m = (p.stops[at - 1].distance_m + p.stops[at].distance_m) / 2.0;
-            p.stops.insert(at, PatternStop { stop: stop.clone(), timepoint: false, distance_m });
+            p.stops.insert(at, PatternStop { stop: stop.clone(), timepoint: false, distance_m, ..Default::default() });
             timetable_edit::insert_trip_stop(net, pattern, at);
             None
         }

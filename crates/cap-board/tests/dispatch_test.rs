@@ -106,7 +106,7 @@ fn the_board_is_the_materialized_day_model_vocabulary() {
     // Route 10's schedule that runs on the fixture Friday,
     // discovered from the document (the test reads the model).
     let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
-    let (pattern_trips_id, start) = net
+    let (trip_id, start) = net
         .pattern_trips
         .iter()
         .find(|(_, s)| {
@@ -117,13 +117,14 @@ fn the_board_is_the_materialized_day_model_vocabulary() {
         })
         .map(|(id, s)| {
             let start = s.trips[0].departs.first_start().expect("a start");
-            (id.clone(), start)
+            let _ = id;
+            (s.trips[0].id.clone(), start)
         })
         .expect("route 10 has a schedule running on the fixture Friday");
 
     let rows = departures(&network_hash, None, "A");
-    let first = rows.iter().find(|r| r.pattern_trips == pattern_trips_id).expect("route 10 serves A");
-    assert_eq!(first.start_secs, start, "the row carries the trip's (schedule, start) identity");
+    let first = rows.iter().find(|r| r.trip == trip_id).expect("route 10 serves A");
+    assert_eq!(first.start_secs, start, "the row carries the trip instance's (trip, start) identity");
     assert_eq!(first.route, "10");
     assert_eq!(first.stop, "A", "the concrete stop the row leaves from");
     assert!(!first.destination.is_empty(), "the row says where the bus goes");
@@ -181,9 +182,8 @@ fn the_board_reads_a_live_document() {
     let live = LiveDay {
         window: OnTimeWindow::default(),
         trips: vec![LiveTrip {
-            pattern_trips: row.pattern_trips.clone(),
+            trip: row.trip.clone(),
             start_secs: row.start_secs,
-            agency_trip_id: "t10".into(),
             route: Some("10".into()),
             route_name: Some("10".into()),
             worst_delay_secs: Some(180),
@@ -208,7 +208,7 @@ fn the_board_reads_a_live_document() {
 
     let board = stop_board(&network_hash, None, "A", row.departure_secs + 60, Some(live_hash));
     assert!(board.live);
-    let late = board.rows.iter().find(|r| r.departure.pattern_trips == row.pattern_trips).expect("the late bus is still to come");
+    let late = board.rows.iter().find(|r| r.departure.trip == row.trip).expect("the late bus is still to come");
     assert_eq!(late.expected_secs, Some(row.departure_secs + 120));
     assert_eq!(late.delay_secs, Some(120));
     assert_eq!(late.status, LiveStatus::Late);
@@ -291,7 +291,7 @@ fn the_watchlist_migrates_with_loss_reported_and_both_versions_query() {
     assert_eq!(board[0].id, "A");
     assert_eq!(board[0].label, "home", "v1 labels are the notes");
     assert_eq!(board[1].label, "work");
-    assert!(board.iter().all(|s| s.departures.iter().all(|d| !d.pattern_trips.is_empty())), "model-native rows");
+    assert!(board.iter().all(|s| s.departures.iter().all(|d| !d.trip.is_empty())), "model-native rows");
 
     // The migration: label = note, the color dropped AND reported.
     let (migrated, notes) = migrate_watchlist(&v1()).expect("v1 migrates");

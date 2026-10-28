@@ -360,6 +360,74 @@ impl ZipWriter {
     }
 }
 
+/// A feed's counts at a glance.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct FeedSummary {
+    pub agencies: usize,
+    pub routes: usize,
+    pub stops: usize,
+    pub trips: usize,
+    pub stop_times: usize,
+}
+
+/// `feed_info.txt`: which dataset this is, and who publishes it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct FeedInfo {
+    pub feed_publisher_name: Option<String>,
+    pub feed_publisher_url: Option<String>,
+    pub feed_lang: Option<String>,
+    pub default_lang: Option<String>,
+    pub feed_start_date: Option<String>,
+    pub feed_end_date: Option<String>,
+    pub feed_version: Option<String>,
+    pub feed_contact_email: Option<String>,
+    pub feed_contact_url: Option<String>,
+}
+
+impl Feed {
+    pub fn summary(&self) -> FeedSummary {
+        FeedSummary {
+            agencies: self.agency.len(),
+            routes: self.routes.len(),
+            stops: self.stops.len(),
+            trips: self.trips.len(),
+            stop_times: self.stop_times.len(),
+        }
+    }
+
+    /// The feed's `feed_info.txt` row, when it has one.
+    pub fn info(&self) -> Option<FeedInfo> {
+        self.feed_info.first().map(|r| FeedInfo {
+            feed_publisher_name: r.feed_publisher_name.clone(),
+            feed_publisher_url: r.feed_publisher_url.clone(),
+            feed_lang: r.feed_lang.clone(),
+            default_lang: r.default_lang.clone(),
+            feed_start_date: r.feed_start_date.clone(),
+            feed_end_date: r.feed_end_date.clone(),
+            feed_version: r.feed_version.clone(),
+            feed_contact_email: r.feed_contact_email.clone(),
+            feed_contact_url: r.feed_contact_url.clone(),
+        })
+    }
+}
+
+/// Standard base64 (with padding) — how zip bytes cross the JSON seam.
+pub fn base64_encode(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        out.push(ALPHABET[(n >> 18) as usize & 63] as char);
+        out.push(ALPHABET[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 { ALPHABET[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 2 { ALPHABET[n as usize & 63] as char } else { '=' });
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

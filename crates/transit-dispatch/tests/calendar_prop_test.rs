@@ -64,7 +64,7 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
     for (id, name) in [("A", "Main & 1st"), ("B", "Main & 2nd"), ("C", "Main & 3rd")] {
         stops.insert(
             id.to_string(),
-            Stop { name: name.into(), lat: 45.5, lon: -122.5, parent: None, transfer: false },
+            Stop { name: name.into(), lat: 45.5, lon: -122.5, parent: None, transfer: false, ..Default::default() },
         );
     }
     let mut routes = std::collections::BTreeMap::new();
@@ -75,6 +75,7 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
             mode: transit_network::Mode::Bus,
             color: None,
             directions: Default::default(),
+            ..Default::default()
         },
     );
     let mut patterns = std::collections::BTreeMap::new();
@@ -86,9 +87,9 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
             name: "route 10".into(),
             alignment: None,
             stops: vec![
-                PatternStop { stop: "A".into(), timepoint: true, distance_m: 0.0 },
-                PatternStop { stop: "B".into(), timepoint: true, distance_m: 500.0 },
-                PatternStop { stop: "C".into(), timepoint: true, distance_m: 1000.0 },
+                PatternStop { stop: "A".into(), timepoint: true, distance_m: 0.0, ..Default::default() },
+                PatternStop { stop: "B".into(), timepoint: true, distance_m: 500.0, ..Default::default() },
+                PatternStop { stop: "C".into(), timepoint: true, distance_m: 1000.0, ..Default::default() },
             ],
             timing: vec![TimingProfile {
                 start_secs: 0,
@@ -141,6 +142,7 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
                         id: format!("svc-{ty}@28800"),
                         departs: Departs::At { start_secs: 28_800 },
                         times: [0, 600, 1200].map(|t| StopOffset { arrival_secs: Some(t), departure_secs: Some(t) }).to_vec(),
+                        ..Default::default()
                     }],
                 },
             );
@@ -157,6 +159,7 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
         service_types,
         pattern_trips,
         blocks: Default::default(),
+        ..Default::default()
     }
 }
 

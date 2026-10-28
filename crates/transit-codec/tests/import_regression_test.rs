@@ -190,13 +190,13 @@ fn an_authored_document_materializes_like_any_feed() {
     // network fixture (testdata/network.json — the manifest sample
     // load reads the same file) expands and reparses with the
     // summary the feed line shows: 3 stops, 1 route, 3 trips,
-    // 9 stop_times — and the old parser reads it the same.
+    // 9 stop_times — and the published zip reads back the same.
     let net: transit_network::Network =
         serde_json::from_str(include_str!("../../../testdata/network.json")).unwrap();
     let feed = published(&net);
     assert_eq!((feed.stops.len(), feed.routes.len(), feed.trips.len(), feed.stop_times.len()), (3, 1, 3, 9));
     let bytes = export(&net, &Boundary::default()).unwrap().to_zip_bytes();
-    let summary = transit_core::Gtfs::from_zip_bytes(&bytes).unwrap().summary();
+    let summary = transit_codec::Feed::from_zip_bytes(&bytes).unwrap().summary();
     assert_eq!((summary.stops, summary.routes, summary.trips, summary.stop_times), (3, 1, 3, 9));
 }
 

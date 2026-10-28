@@ -1,7 +1,0 @@
-# Seeds for failure cases proptest has generated in the past. It is
-# automatically read and these particular cases re-run before any
-# novel cases are generated.
-#
-# It is recommended to check this file in to source control so that
-# everyone who runs the test benefits from these saved cases.
-cc e32b9561a0cacff3fa99bc7ae337b3f49837e3e755e2481aacf972e787aff2b2 # shrinks to (spec, d_raw) = (FeedSpec { n_routes: 2, n_stops: 4, trips: [TripSpec { route: 0, dir: 0, start: 0, seg1: 1, seg2: 99, first: 2, mid: 1, last: 0 }] }, DivSpec { trip: 0, dir_pick: None, skip_mid: false, added: 340, detour: None, start_day: 157, end_day: 167 })

@@ -114,6 +114,7 @@ fn build(spec: &Spec) -> Network {
                         stop: format!("s{s}"),
                         timepoint: i == 0 || i == n - 1,
                         distance_m: i as f64 * 400.0,
+                        ..Default::default()
                     })
                     .collect(),
                 ..Default::default()

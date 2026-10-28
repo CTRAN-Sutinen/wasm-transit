@@ -31,14 +31,14 @@ use transit_network::{materialize, MaterializedTrip, Network, StopTime};
 use transit_live::{classify, LiveDay, LiveStatus};
 use transit_sync::{Diversion, EditRecord, EditReport};
 
-/// One row on a departure board. Model vocabulary: the trip is its
-/// (schedule, start) identity, the stop is the CONCRETE stop the row
+/// One row on a departure board. Model vocabulary: the trip instance
+/// is its (trip, start) identity, the stop is the CONCRETE stop the row
 /// leaves from (the bay, on a pooled station board), and the
 /// destination is the trip's final stop.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct BoardDeparture {
-    pub pattern_trips: String,
+    pub trip: String,
     pub start_secs: u32,
     pub route: String,
     pub route_name: String,
@@ -399,7 +399,7 @@ fn live_rows(
         .into_iter()
         .map(|d| {
             let expected = live
-                .and_then(|l| l.visit(&d.pattern_trips, d.start_secs, &d.stop, d.departure_secs))
+                .and_then(|l| l.visit(&d.trip, d.start_secs, &d.stop, d.departure_secs))
                 .and_then(|v| v.predicted_departure);
             let delay = expected.map(|e| e as i32 - d.departure_secs as i32);
             BoardRow { status: classify(delay, &window), expected_secs: expected, delay_secs: delay, departure: d }
@@ -410,7 +410,7 @@ fn live_rows(
         let at = |r: &BoardRow| r.expected_secs.unwrap_or(r.departure.departure_secs);
         at(a)
             .cmp(&at(b))
-            .then_with(|| a.departure.pattern_trips.cmp(&b.departure.pattern_trips))
+            .then_with(|| a.departure.trip.cmp(&b.departure.trip))
             .then_with(|| a.departure.start_secs.cmp(&b.departure.start_secs))
     });
     rows.truncate(limit);
@@ -433,7 +433,7 @@ fn board_over(
                 continue;
             }
             rows.push(BoardDeparture {
-                pattern_trips: trip.pattern_trips.clone(),
+                trip: trip.trip.clone(),
                 start_secs: trip.start_secs,
                 route: trip.route.clone(),
                 route_name: route_name(network, &trip.route),
@@ -447,7 +447,7 @@ fn board_over(
     rows.sort_by(|a, b| {
         a.departure_secs
             .cmp(&b.departure_secs)
-            .then_with(|| a.pattern_trips.cmp(&b.pattern_trips))
+            .then_with(|| a.trip.cmp(&b.trip))
             .then_with(|| a.start_secs.cmp(&b.start_secs))
     });
     rows.truncate(limit);
@@ -455,7 +455,7 @@ fn board_over(
 }
 
 fn route_name(network: &Network, route: &str) -> String {
-    network.routes.get(route).map(|r| r.name.clone()).unwrap_or_else(|| route.to_string())
+    network.routes.get(route).map(|r| r.label().to_string()).unwrap_or_else(|| route.to_string())
 }
 
 fn stop_name(network: &Network, stop: Option<&str>) -> String {
@@ -746,19 +746,19 @@ pub struct TripStopView {
     pub timepoint: bool,
 }
 
-/// One derived trip's stops in the (effective) day, named from the
-/// network. The trip's identity is the model's: (schedule,
+/// One trip instance's stops in the (effective) day, named from the
+/// network. The instance's identity is the model's: (trip,
 /// start_secs). A trip not in the day (it does not run, or the edits
 /// removed it from the question) answers empty — never an error.
 pub fn trip_stops(
     network: &Network,
     day: &[MaterializedTrip],
-    pattern_trips: &str,
+    trip: &str,
     start_secs: u32,
 ) -> Vec<TripStopView> {
     let Some(trip) = day
         .iter()
-        .find(|t| t.pattern_trips == pattern_trips && t.start_secs == start_secs)
+        .find(|t| t.trip == trip && t.start_secs == start_secs)
     else {
         return Vec::new();
     };

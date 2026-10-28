@@ -24,7 +24,7 @@ pub mod live;
 pub use overview::{
     decode_overview, RtOverview, StopUpdateView, TripUpdateView, VehicleView,
 };
-pub use progress::{trip_progress, late_trips, LateTrip, ProgressStop, TripProgress};
+pub use progress::{late_trips, resolve_instance, trip_progress, LateTrip, ProgressStop, TripProgress};
 pub use live::live_day;
 
 use prost::Message;

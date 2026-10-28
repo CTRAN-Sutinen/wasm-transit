@@ -87,9 +87,9 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "network",
         file: "cap_network.wasm",
-        ops: &["load_feed", "import", "load_network", "validate", "export", "trip_map"],
+        ops: &["load_feed", "import", "load_network", "validate", "export"],
         consumes: &[],
-        speaks: &[("feed", &[1]), ("network", &[1]), ("trip_map", &[1])],
+        speaks: &[("feed", &[1]), ("network", &[1]), ("boundary", &[1])],
         migrates: &[],
         purpose: "The network codec: read a GTFS feed into an authored network document (the planner's bootstrap — the agency's trips by id with their own times, patterns, service types, blocks; what cannot cross is reported) and export one back to GTFS zip bytes (the publish path). The second capability extracted from the monolith — the codec lives in the shared transit-codec library, and the monolith keeps no copy. Assemble for planners: it is how a planner's session starts and how it publishes.",
         op_docs: &[
@@ -98,31 +98,30 @@ const MODULES: &[ModuleSpec] = &[
             ("load_network", "Register an authored network document (the planner's JSON document) under its content hash; idempotent. The same registration every model-side capability names load_network — one op file feeds them all. Kernel bulk op 256 takes the bare document's JSON bytes on transit_invoke_bytes — the same answer, no request envelope; hosts send real-size networks this way."),
             ("validate", "Every issue of a registered document — the authoring UI's feedback loop, the whole list, never thrown. issues gate (export refuses an invalid document; a block trip its pattern trips do not run is one — the runcut and the publish path would disagree). warnings never gate: they name what validity lets through — trips no block carries (unassigned_trips, once the document has a runcut) and a versioned plan with no service in its first week (no_service_in_plan_period: the calendars a fork inherited end before its pick date)."),
             ("export", "The publish path: write a registered document as a GTFS zip (deterministic bytes) — every trip under its own id with its own times, the calendar as authored, with the import's boundary when it is the imported document itself — and return it base64-encoded under the content hash of those bytes, the same identity any capability returns for the same bytes. Invalid documents are refused."),
-            ("trip_map", "The trip-id map of a network: every trip by its id (the agency's, for an imported trip) with its pattern trips and first start — the join rt data is keyed by."),
         ],
     },
     ModuleSpec {
         id: "rt",
         file: "cap_rt.wasm",
-        ops: &["decode", "load_feed", "trip_progress", "late_trips", "load_trip_map", "live"],
-        consumes: &[("feed", "gtfs")],
+        ops: &["decode", "load_network", "load_boundary", "trip_progress", "late_trips", "live"],
+        consumes: &[("network", "network")],
         // The gtfs-rt payload: an ephemeral document (polled every
         // few seconds), versioned by the protobuf schema it speaks;
-        // the static feed it joins against is the SAME document gtfs
-        // serves (one zip, one identity).
-        // THE LIVE DOCUMENT is minted here (model vocabulary, through
-        // the network capability's trip map) and read by the board —
+        // it joins against the NETWORK (an rt trip id is a model trip
+        // id), with the import's boundary for the published
+        // stop_sequence numbering when there is one.
+        // THE LIVE DOCUMENT is minted here and read by the board —
         // optional edges both: neither module needs the other to
         // answer its own questions, so they are spoken, not consumed.
-        speaks: &[("gtfs_rt", &[1]), ("feed", &[1]), ("trip_map", &[1]), ("live", &[1])],
+        speaks: &[("gtfs_rt", &[1]), ("network", &[1]), ("boundary", &[1]), ("live", &[1])],
         migrates: &[],
-        purpose: "Realtime decoding and the schedule join: turn a GTFS-rt protobuf payload (trip updates, vehicle positions) into the flat view hosts show, and answer the dispatcher's joined questions — one trip's predicted times, the ranked what's-late-now view with the delayed-but-dark flag. The third capability extracted from the monolith; the domain code lives in the shared transit-rt library. It mints THE LIVE DOCUMENT: the snapshot resolved through the network's trip map into model vocabulary (delays per trip instance and stop, vehicles on their trips, statuses under the caller's on-time window) — the one place rt trip ids meet the model. Assemble for riders (live boards) and dispatchers (the operation view) alike.",
+        purpose: "Realtime decoding and the schedule join: turn a GTFS-rt protobuf payload (trip updates, vehicle positions) into the flat view hosts show, and answer the dispatcher's joined questions — one trip's predicted times, the ranked what's-late-now view with the delayed-but-dark flag. The third capability extracted from the monolith; the domain code lives in the shared transit-rt library. It mints THE LIVE DOCUMENT: the snapshot resolved against the network into model vocabulary (delays per trip instance and stop, vehicles on their trip instances, statuses under the caller's on-time window) — an rt trip id is a model trip id, resolved here once. Assemble for riders (live boards) and dispatchers (the operation view) alike.",
         op_docs: &[
             ("decode", "Decode a GTFS-rt protobuf payload into the overview (entity counts, trip updates with per-stop delays, vehicle positions), and register the snapshot under its content hash — idempotent, the same bytes are the same snapshot — so trip_progress/late_trips can address it. Bulk-bytes op 0. Garbage bytes are an error outcome, never a trap."),
-            ("load_feed", "Register the STATIC feed the schedule joins come from — the same GTFS zip bytes gtfs loads, the same content-hash identity (assert equality at the host). Bulk-bytes op 1."),
-            ("trip_progress", "One trip's joined board: every scheduled stop with the live delay and the PREDICTED time (schedule + delay) — the dispatcher's most-asked question in one op. A stop the update does not mention carries the last stated delay upstream of it (the GTFS-rt propagation rule); stops before the first update stay null. A trip the snapshot does not mention answers from the schedule alone; a trip the feed does not carry answers null."),
-            ("load_trip_map", "Register a network's trip-id map (the network capability's trip_map answer) under its canonical content hash — the join live resolves rt trip ids through."),
-            ("live", "THE LIVE DOCUMENT: one rt moment resolved into model vocabulary. rt_hash (trip updates) and/or vp_hash (vehicle positions — agencies often serve them separately) resolve through the registered trip map into delays per trip instance ((pattern_trips, start_secs)) and stop (propagated downstream, with the predicted departure), vehicles on their trips, and statuses (early / on_time / late / very_late / no_prediction) classified under `window` — the caller's on-time policy, default 60 s late on time, 300 s very late — which the document records so every reader classifies the same way. Trip and vehicle lateness is the trip's worst stated delay. Unresolvable rt trips are counted (unmatched_trips), never silently dropped. The response also carries the summary a status panel reads: vehicles by status and the late list worst first (late_limit, default 15) — late BUSES when positions exist, late trips (predictions) when they do not. Register the document in the board with load_live."),
+            ("load_network", "Register the network document the joins answer over, under its content hash; idempotent. Kernel bulk op 256 takes the bare document's JSON bytes."),
+            ("load_boundary", "Register an imported network's boundary (the network capability's import answer) under its canonical content hash: the stop_sequence numbering the published feed — and so its rt updates — use. A network published from its own export needs none (1..n)."),
+            ("trip_progress", "One trip's joined board: every scheduled stop with the live delay and the PREDICTED time (schedule + delay) — the dispatcher's most-asked question in one op. A stop the update does not mention carries the last stated delay upstream of it (the GTFS-rt propagation rule); stops before the first update stay null. The instance is the one the snapshot's update names (a frequency trip's by the update's start_time); updates pair with stops by the published stop_sequence (boundary_hash; 1..n without one), by stop id only when they name no sequence. Null when the snapshot has no update for the trip or the update names no instance of it."),
+            ("live", "THE LIVE DOCUMENT: one rt moment resolved into model vocabulary. rt_hash (trip updates) and/or vp_hash (vehicle positions — agencies often serve them separately) resolve against the registered network (an rt trip id is a model trip id; a frequency trip's instance is the update's start_time) into delays per trip instance ((trip, start_secs)) and stop (propagated downstream, with the predicted departure), vehicles on their trips, and statuses (early / on_time / late / very_late / no_prediction) classified under `window` — the caller's on-time policy, default 60 s late on time, 300 s very late — which the document records so every reader classifies the same way. Trip and vehicle lateness is the trip's worst stated delay. Unresolvable rt trips are counted (unmatched_trips), never silently dropped. The response also carries the summary a status panel reads: vehicles by status and the late list worst first (late_limit, default 15) — late BUSES when positions exist, late trips (predictions) when they do not. Register the document in the board with load_live."),
             ("late_trips", "The ranked what's-late-now view: every trip whose worst stop delay reaches min_delay_secs, worst first, each carrying the located vehicle (vehicle_id, label, position) — found on the trip itself or, failing that, on another trip of its block (position_trip_id names the trip the bus is actually running: a delay propagated to a block's next trip is a late bus, not a dark one) — and the DELAYED-BUT-DARK flag (has_position false) when no vehicle of the block is visible. vp_hash names the VehiclePositions snapshot (agencies serve it as a SEPARATE feed — C-TRAN does); omit it for combined feeds."),
         ],
     },
@@ -518,7 +517,6 @@ struct NetworkExampleContext {
     boundary: serde_json::Value,
     notes: serde_json::Value,
     network_hash: String,
-    trip_map: serde_json::Value,
     export_feed_hash: String,
     export_summary: serde_json::Value,
     zip_b64: String,
@@ -537,9 +535,8 @@ fn network_example_context(feed_bytes: &[u8]) -> Option<NetworkExampleContext> {
     let derived = serde_json::to_value(&outcome.network).ok()?;
     let boundary = serde_json::to_value(&outcome.boundary).ok()?;
     let notes = serde_json::to_value(&outcome.notes).ok()?;
-    let trip_map = serde_json::to_value(transit_codec::trip_map(&outcome.network)).ok()?;
     let exported = transit_codec::export(&outcome.network, &outcome.boundary).ok()?;
-    let export_summary = serde_json::to_value(transit_core::FeedSummary {
+    let export_summary = serde_json::to_value(transit_codec::FeedSummary {
         agencies: exported.agency.len(),
         routes: exported.routes.len(),
         stops: exported.stops.len(),
@@ -549,14 +546,13 @@ fn network_example_context(feed_bytes: &[u8]) -> Option<NetworkExampleContext> {
     .ok()?;
     let zip = exported.to_zip_bytes();
     let export_feed_hash = format!("sha256:{:x}", Sha256::digest(&zip));
-    let zip_b64 = transit_core::write::base64_encode(&zip);
+    let zip_b64 = transit_codec::base64_encode(&zip);
     Some(NetworkExampleContext {
         network: outcome.network,
         derived,
         boundary,
         notes,
         network_hash,
-        trip_map,
         export_feed_hash,
         export_summary,
         zip_b64,
@@ -565,10 +561,10 @@ fn network_example_context(feed_bytes: &[u8]) -> Option<NetworkExampleContext> {
 
 /// The parsed e2e fixture feed (for the gtfs capability's dispatch
 /// read examples — real answers, same library the module uses).
-fn fixture_gtfs() -> Option<transit_core::Gtfs> {
+fn fixture_gtfs() -> Option<transit_codec::Feed> {
     let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-gtfs.zip");
     let bytes = std::fs::read(fixture).ok()?;
-    transit_core::Gtfs::from_zip_bytes(&bytes).ok()
+    transit_codec::Feed::from_zip_bytes(&bytes).ok()
 }
 
 /// The street capability's examples' context: the e2e street
@@ -599,45 +595,44 @@ fn streets_example_context() -> Option<StreetsExampleContext> {
     Some(StreetsExampleContext { streets_hash, pos_a, pos_b, points, length_m })
 }
 
-/// The rt join examples' context: the fixture feed and the e2e rt
-/// payload, both parsed through the shared libraries.
+/// The rt join examples' context: the fixture network (imported
+/// through the codec, with its boundary) and the e2e rt payload, both
+/// through the shared libraries.
 struct RtExampleContext {
-    feed: transit_core::Gtfs,
+    network: transit_network::Network,
+    network_hash: String,
+    boundary: transit_codec::Boundary,
+    boundary_hash: String,
     overview: transit_rt::RtOverview,
-    feed_hash: String,
     rt_hash: String,
 }
 
 fn rt_example_context() -> Option<RtExampleContext> {
-    let feed = fixture_gtfs()?;
+    let outcome = transit_codec::import(&fixture_gtfs()?);
     let payload = std::fs::read(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../web/e2e/fixtures/sample-rt.pb"
     ))
     .ok()?;
     let overview = transit_rt::decode_overview(&payload).ok()?;
-    let feed_hash = format!("sha256:{:x}", Sha256::digest(
-        std::fs::read(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../web/e2e/fixtures/sample-gtfs.zip"
-        ))
-        .ok()?,
-    ));
-    let rt_hash = format!("sha256:{:x}", Sha256::digest(&payload));
-    Some(RtExampleContext { feed, overview, feed_hash, rt_hash })
+    let hash = |v: String| format!("sha256:{:x}", Sha256::digest(v.as_bytes()));
+    Some(RtExampleContext {
+        network_hash: hash(serde_json::to_string(&outcome.network).ok()?),
+        boundary_hash: hash(serde_json::to_string(&outcome.boundary).ok()?),
+        network: outcome.network,
+        boundary: outcome.boundary,
+        overview,
+        rt_hash: format!("sha256:{:x}", Sha256::digest(&payload)),
+    })
 }
 
 /// The live document over the fixture pair, the way the rt module
-/// mints it: the trip map (and its hash), the document (and its hash).
-fn live_example() -> Option<(transit_codec::TripIdMap, String, transit_live::LiveDay, String)> {
+/// mints it: the document and its hash.
+fn live_example() -> Option<(transit_live::LiveDay, String)> {
     let ctx = rt_example_context()?;
-    let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-gtfs.zip")).ok()?;
-    let trip_map = transit_codec::trip_map(&transit_codec::import(&transit_codec::Feed::from_zip_bytes(&bytes).ok()?).network);
-    let hash = |v: String| format!("sha256:{:x}", Sha256::digest(v.as_bytes()));
-    let trip_map_hash = hash(serde_json::to_string(&trip_map).ok()?);
-    let live = transit_rt::live_day(&ctx.feed, Some(&ctx.overview), None, &trip_map, transit_live::OnTimeWindow::default());
-    let live_hash = hash(serde_json::to_string(&live).ok()?);
-    Some((trip_map, trip_map_hash, live, live_hash))
+    let live = transit_rt::live_day(&ctx.network, &ctx.boundary, Some(&ctx.overview), None, transit_live::OnTimeWindow::default());
+    let live_hash = format!("sha256:{:x}", Sha256::digest(serde_json::to_string(&live).ok()?.as_bytes()));
+    Some((live, live_hash))
 }
 
 /// Worked examples: an agent reads these to learn the shapes.
@@ -655,7 +650,7 @@ fn example_for(
             let gtfs = fixture_gtfs()?;
             (
                 json!({ "op": "feed_info", "feed_hash": feed_hash }),
-                json!({ "ok": { "op": "feed_info", "info": gtfs.feed_info } }),
+                json!({ "ok": { "op": "feed_info", "info": gtfs.info() } }),
             )
         }
         // The router's examples compute REAL answers over the
@@ -714,8 +709,8 @@ fn example_for(
                 .legs
                 .iter()
                 .map(|leg| match leg {
-                    transit_router::Leg::Transit { pattern_trips, start_secs, board_stop_id, alight_stop_id, .. } => {
-                        json!({ "kind": "transit", "path": transit_dispatch::trip_segment(network, &day, pattern_trips, *start_secs, board_stop_id, alight_stop_id) })
+                    transit_router::Leg::Transit { trip, start_secs, board_stop_id, alight_stop_id, .. } => {
+                        json!({ "kind": "transit", "path": transit_dispatch::trip_segment(network, &day, trip, *start_secs, board_stop_id, alight_stop_id) })
                     }
                     transit_router::Leg::Walk { from_stop_id, via_stop_ids, to_stop_id, .. } => {
                         let stops: Vec<&str> = std::iter::once(from_stop_id).chain(via_stop_ids).chain(std::iter::once(to_stop_id)).map(String::as_str).collect();
@@ -761,13 +756,6 @@ fn example_for(
                 json!({ "op": "export", "network_hash": ctx.network_hash }),
                 json!({ "ok": { "op": "export", "feed_hash": ctx.export_feed_hash,
                     "summary": ctx.export_summary, "zip_b64": ctx.zip_b64 } }),
-            )
-        }
-        ("network", "trip_map") => {
-            let ctx = net?;
-            (
-                json!({ "op": "trip_map", "network_hash": ctx.network_hash }),
-                json!({ "ok": { "op": "trip_map", "map": ctx.trip_map } }),
             )
         }
         // The realtime example decodes the REAL e2e fixture payload —
@@ -943,28 +931,35 @@ fn example_for(
         // +180 s at B, one vehicle on t10 — the joined board and the
         // ranked view through the same shared library the module
         // dispatches through.
+        ("rt", "load_network") => {
+            let ctx = rt_example_context()?;
+            (
+                json!({ "op": "load_network", "network": ctx.network }),
+                json!({ "ok": { "op": "load_network", "network_hash": ctx.network_hash } }),
+            )
+        }
+        ("rt", "load_boundary") => {
+            let ctx = rt_example_context()?;
+            (
+                json!({ "op": "load_boundary", "boundary": ctx.boundary }),
+                json!({ "ok": { "op": "load_boundary", "boundary_hash": ctx.boundary_hash } }),
+            )
+        }
         ("rt", "trip_progress") => {
             let ctx = rt_example_context()?;
             (
-                json!({ "op": "trip_progress", "feed_hash": ctx.feed_hash,
-                    "rt_hash": ctx.rt_hash, "trip_id": "t10" }),
+                json!({ "op": "trip_progress", "network_hash": ctx.network_hash,
+                    "boundary_hash": ctx.boundary_hash, "rt_hash": ctx.rt_hash, "trip_id": "t10" }),
                 json!({ "ok": { "op": "trip_progress",
-                    "progress": transit_rt::trip_progress(&ctx.feed, &ctx.overview, "t10") } }),
-            )
-        }
-        ("rt", "load_trip_map") => {
-            let (trip_map, trip_map_hash, _, _) = live_example()?;
-            (
-                json!({ "op": "load_trip_map", "trip_map": trip_map }),
-                json!({ "ok": { "op": "load_trip_map", "trip_map_hash": trip_map_hash } }),
+                    "progress": transit_rt::trip_progress(&ctx.network, &ctx.boundary, &ctx.overview, "t10") } }),
             )
         }
         ("rt", "live") => {
             let ctx = rt_example_context()?;
-            let (_, trip_map_hash, live, live_hash) = live_example()?;
+            let (live, live_hash) = live_example()?;
             (
-                json!({ "op": "live", "feed_hash": ctx.feed_hash, "rt_hash": ctx.rt_hash,
-                    "trip_map_hash": trip_map_hash,
+                json!({ "op": "live", "network_hash": ctx.network_hash, "boundary_hash": ctx.boundary_hash,
+                    "rt_hash": ctx.rt_hash,
                     "window": { "late_secs": 60, "very_late_secs": 300 } }),
                 json!({ "ok": { "op": "live", "live_hash": live_hash,
                     "summary": transit_live::summarize(&live, 15), "live": live } }),
@@ -973,11 +968,11 @@ fn example_for(
         ("rt", "late_trips") => {
             let ctx = rt_example_context()?;
             (
-                json!({ "op": "late_trips", "feed_hash": ctx.feed_hash,
+                json!({ "op": "late_trips", "network_hash": ctx.network_hash,
                     "rt_hash": ctx.rt_hash, "min_delay_secs": 60,
                     "vp_hash": null }),
                 json!({ "ok": { "op": "late_trips",
-                    "trips": transit_rt::late_trips(&ctx.feed, &ctx.overview, None, 60) } }),
+                    "trips": transit_rt::late_trips(&ctx.network, &ctx.overview, None, 60) } }),
             )
         }
         ("board", "load_network") => {
@@ -1000,7 +995,7 @@ fn example_for(
             )
         }
         ("board", "load_live") => {
-            let (_, _, live, live_hash) = live_example()?;
+            let (live, live_hash) = live_example()?;
             (
                 json!({ "op": "load_live", "live": live }),
                 json!({ "ok": { "op": "load_live", "live_hash": live_hash } }),
@@ -1008,7 +1003,7 @@ fn example_for(
         }
         ("board", "stop_board") => {
             let ctx = net?;
-            let (_, _, live, live_hash) = live_example()?;
+            let (live, live_hash) = live_example()?;
             let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
             let day = transit_network::materialize(ctx.derived_network(), date).expect("fixture day");
             // 08:01 at A: t10 (08:00, +120 s) has not left yet.
@@ -1116,10 +1111,10 @@ fn example_for(
             (
                 json!({ "op": "trip_stops", "network_hash": ctx.network_hash,
                     "edits_hash": "<of the loaded edit document>",
-                    "pattern_trips": trip.pattern_trips, "start_secs": trip.start_secs, "date": "2026-10-23" }),
+                    "trip": trip.trip, "start_secs": trip.start_secs, "date": "2026-10-23" }),
                 json!({ "ok": { "op": "trip_stops",
                     "stops": transit_dispatch::trip_stops(
-                        ctx.derived_network(), &day, &trip.pattern_trips, trip.start_secs) } }),
+                        ctx.derived_network(), &day, &trip.trip, trip.start_secs) } }),
             )
         }
         ("runcut", "trip_path") => {
@@ -1132,9 +1127,9 @@ fn example_for(
             (
                 json!({ "op": "trip_path", "network_hash": ctx.network_hash,
                     "edits_hash": "<of the loaded edit document>",
-                    "pattern_trips": trip.pattern_trips, "start_secs": trip.start_secs, "date": "2026-10-23" }),
+                    "trip": trip.trip, "start_secs": trip.start_secs, "date": "2026-10-23" }),
                 json!({ "ok": { "op": "trip_path",
-                    "path": transit_dispatch::trip_path(ctx.derived_network(), &day, &trip.pattern_trips, trip.start_secs) } }),
+                    "path": transit_dispatch::trip_path(ctx.derived_network(), &day, &trip.trip, trip.start_secs) } }),
             )
         }
         ("calendar", "load_network") => {

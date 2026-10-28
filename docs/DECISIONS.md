@@ -32,7 +32,7 @@ the rest of the work can go ahead while the decision is reviewed.
   goes into the law that pins it and the doc that owns its topic
   (`docs/ARCHITECTURE.md`, `docs/units/`, `docs/QA-FINDINGS.md`),
   and the `Blocked: D-N` lines are removed. Git is the archive.
-- IDs are never reused; the next new decision is **D-12**.
+- IDs are never reused; the next new decision is **D-13**.
 
 ## Summary
 
@@ -48,8 +48,9 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-9 | Where does required recovery time come from? | unanswered | QAF-62, QAF-26 |
 | D-10 | Agency questions on C-TRAN's data | unanswered | QAF-9, QAF-48 |
 | D-11 | Does editing a shared alignment change every pattern on it? | unanswered | an alignment-authoring edit |
+| D-12 | What headsign does a new trip get? | encoded | nothing |
 
-## The trip model (U8)
+## The trip model
 
 ### D-1 — Is a trip's start its first arrival or its first departure?
 State: Encoded provisionally.
@@ -144,6 +145,25 @@ Pinned by: the spec-valid generators in `codec_prop_test.rs` and
 `import_prop_test.rs` (they never produce such a block, so no law
 pins the invalid case).
 Blocks: nothing. C-TRAN has no such block.
+
+### D-12 — What headsign does a new trip get?
+State: Encoded provisionally.
+Context: a trip's headsign is its own (`Trip::headsign`), and the
+export writes it as is — a feed trip published without one stays
+without one (the whole-spec law forbids inventing it). A trip the
+planner creates (`add_trip`, a headway or span gesture) has no
+headsign, so an authored network publishes none for it; riders see
+no sign text.
+Options:
+- **None (encoded).** The planner signs trips explicitly; there is
+  no edit for it yet.
+- Copy the headsign of a trip on the same pattern trips (or the
+  pattern), when one exists.
+- The direction's name, as the export did before trips carried
+  their own headsign.
+Pinned by: `spec_round_trip_test.rs` (`trips_survive`) pins only
+that nothing is invented on export.
+Blocks: nothing.
 
 ## Analysis and live
 

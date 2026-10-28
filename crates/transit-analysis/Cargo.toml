@@ -15,7 +15,6 @@ transit-network = { path = "../transit-network" }
 [dev-dependencies]
 proptest = "1"
 zip = { workspace = true }
-transit-core = { path = "../transit-core" }
 # The property-law generator builds networks by importing a generated
 # feed — the inference lives in transit-codec (the shared library),
 # so the law suite dev-depends on it.

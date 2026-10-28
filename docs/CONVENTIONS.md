@@ -38,7 +38,8 @@ holds the gotchas, Rust/wasm/ops and frontend alike.
   owns the logic (each capability module's
   `tests/dispatch_test.rs` runs the real seam without wasm, the
   library under it holds the law tests). Property tests use
-  *independent oracles* — see `transit-core/tests/prop_test.rs`;
+  *independent oracles* — see
+  `transit-codec/tests/spec_round_trip_test.rs`;
   proptest regression seeds are kept in `*.proptest-regressions`.
 - **wazero `memory.Read` returns a view** — copy bytes out before
   freeing the buffer, or the Rust allocator corrupts them (this bit

@@ -39,7 +39,7 @@
           <tr>
             <td><span class="route-badge">{x.route_name ?? x.route ?? "?"}</span></td>
             {#if x.label}<td><span class="chip svc">{x.label}</span></td>{/if}
-            <td class="muted">{x.agency_trip_id ?? "?"}</td>
+            <td class="muted">{x.trip ?? "?"}</td>
             <td><span class="chip {x.status === 'very_late' ? 'bad' : 'warn'}">{fmtDelay(x.delay_secs)}</span></td>
           </tr>
         {/each}

@@ -22,6 +22,13 @@ numbers, so the next regression is invisible.
   Off-thread instantiation is [module-runtime.md](module-runtime.md)'s.
   cap-author keeps a buffered decoder beside the direct one
   (+77 KiB) because `apply` edits carry network sub-types.
+  Splitting the network document: the whole GTFS spec lands in it
+  (C-TRAN's is 9.6 MB, shapes and their distances included), so
+  alignments, fares, demand-responsive service, and station
+  internals are candidates for documents of their own. A split
+  alignment document keys lines by alignment id and keeps them
+  exact: C-TRAN's shapes carry 14–15-digit coordinates, and nothing
+  rounds at import.
 
 ## Done when
 

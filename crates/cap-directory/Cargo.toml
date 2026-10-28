@@ -19,4 +19,3 @@ cap-abi = { path = "../cap-abi" }
 sha2 = { workspace = true }
 proptest = "1"
 transit-codec = { path = "../transit-codec" }
-transit-core = { path = "../transit-core" }

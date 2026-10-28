@@ -28,11 +28,10 @@ fn stop(stop: &str, scheduled: u32, delay: i32) -> LiveStop {
     }
 }
 
-fn trip(pattern_trips: &str, start: u32, worst: i32, stops: Vec<LiveStop>) -> LiveTrip {
+fn trip(id: &str, start: u32, worst: i32, stops: Vec<LiveStop>) -> LiveTrip {
     LiveTrip {
-        pattern_trips: pattern_trips.into(),
+        trip: id.into(),
         start_secs: start,
-        agency_trip_id: format!("agency-{pattern_trips}"),
         route: Some("10".into()),
         route_name: Some("10".into()),
         worst_delay_secs: Some(worst),
@@ -71,9 +70,8 @@ fn the_summary_ranks_buses_and_falls_back_to_predictions() {
         route: Some("10".into()),
         route_name: Some("10".into()),
         next_stop: None,
-        pattern_trips: None,
+        trip: None,
         start_secs: None,
-        agency_trip_id: None,
         delay_secs: delay,
         status: classify(delay, &w),
     };

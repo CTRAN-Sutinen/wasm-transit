@@ -27,8 +27,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use cap_abi::content_hash;
 use ts_rs::TS;
-use transit_codec::{Boundary, Feed, ImportNote, ImportOutcome, TripIdMap};
-use transit_core::FeedSummary;
+use transit_codec::{Boundary, Feed, FeedSummary, ImportNote, ImportOutcome};
 use transit_network::Network;
 
 /// The bulk-bytes op code (the only op that takes raw feed bytes).
@@ -68,10 +67,6 @@ pub enum Request {
     /// module returns for the same bytes, so the host can assert the
     /// handoff. Invalid documents are refused (validate first).
     Export { network_hash: String },
-    /// The TRIP-ID MAP of a network: every trip, by its id (the
-    /// agency's, for an imported trip), with its pattern trips and
-    /// first start — the join rt data is keyed by.
-    TripMap { network_hash: String },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -86,24 +81,12 @@ pub enum Response {
     /// no vehicle, a pick with no service in its period).
     Validate { issues: Vec<transit_network::NetworkError>, warnings: Vec<transit_network::NetworkWarning> },
     Export { feed_hash: String, summary: FeedSummary, zip_b64: String },
-    TripMap { map: TripIdMap },
 }
 
 /// Feeds by content hash of the zip bytes.
 fn feeds() -> &'static Mutex<HashMap<String, Arc<Feed>>> {
     static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Feed>>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// A feed's counts at a glance.
-fn summary(feed: &Feed) -> FeedSummary {
-    FeedSummary {
-        agencies: feed.agency.len(),
-        routes: feed.routes.len(),
-        stops: feed.stops.len(),
-        trips: feed.trips.len(),
-        stop_times: feed.stop_times.len(),
-    }
 }
 
 /// Authored network documents by content hash of their canonical
@@ -149,11 +132,11 @@ fn load_feed(bytes: &[u8]) -> Result<Response, String> {
     {
         let guard = feeds().lock().expect("feed registry lock");
         if let Some(feed) = guard.get(&hash) {
-            return Ok(Response::LoadFeed { feed_hash: hash, summary: summary(feed) });
+            return Ok(Response::LoadFeed { feed_hash: hash, summary: feed.summary() });
         }
     }
     let feed = Feed::from_zip_bytes(bytes).map_err(|e| format!("feed does not parse: {e}"))?;
-    let counts = summary(&feed);
+    let counts = feed.summary();
     feeds()
         .lock()
         .expect("feed registry lock")
@@ -199,7 +182,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let network = network_arc(&network_hash)?;
             let boundary = boundaries().lock().expect("boundary registry lock").get(&network_hash).cloned();
             let feed = transit_codec::export(&network, boundary.as_deref().unwrap_or(&Boundary::default()))?;
-            let counts = summary(&feed);
+            let counts = feed.summary();
             let bytes = feed.to_zip_bytes();
             // The produced feed registers under its own bytes' hash:
             // the exported artifact is a first-class feed document,
@@ -209,11 +192,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .lock()
                 .expect("feed registry lock")
                 .insert(feed_hash.clone(), Arc::new(feed));
-            Ok(Response::Export { feed_hash, summary: counts, zip_b64: transit_core::write::base64_encode(&bytes) })
-        }
-        Request::TripMap { network_hash } => {
-            let network = network_arc(&network_hash)?;
-            Ok(Response::TripMap { map: transit_codec::trip_map(&network) })
+            Ok(Response::Export { feed_hash, summary: counts, zip_b64: transit_codec::base64_encode(&bytes) })
         }
     }
 }

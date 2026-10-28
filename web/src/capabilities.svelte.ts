@@ -73,7 +73,7 @@ import type { Response as StreetsCapResponse } from "./types/cap_streets/Respons
 import type { RtOverview } from "./types/RtOverview";
 import type { StreetPoint } from "./types/StreetPoint";
 import type { StreetPosition } from "./types/StreetPosition";
-import type { TripIdMap } from "./types/TripIdMap";
+import type { Boundary } from "./types/Boundary";
 import type { StopBoard } from "./types/StopBoard";
 import type { LiveDay } from "./types/LiveDay";
 import type { LiveSummary } from "./types/LiveSummary";
@@ -93,7 +93,6 @@ import type { TypeCoverage } from "./types/TypeCoverage";
 import type { FeedInfo } from "./types/FeedInfo";
 import type { FeedSummary } from "./types/FeedSummary";
 import type { Itinerary } from "./types/Itinerary";
-import type { StopSummary } from "./types/StopSummary";
 import { get as idbGet, set as idbSet } from "idb-keyval";
 
 /// The flat C ABI every capability module exports (identical to the
@@ -743,6 +742,7 @@ export function assertSameDocument(a: GtfsLoadFeed, b: GtfsLoadFeed, kind = "fee
 
 export type NetworkImport = {
   network: Network;
+  boundary: Boundary;
   notes: ImportNote[];
   networkHash: string;
 };
@@ -763,6 +763,7 @@ export function networkCap(module: CapModule) {
       } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "import" }>;
       return {
         network: resp.network,
+        boundary: resp.boundary,
         notes: resp.notes,
         networkHash: resp.network_hash,
       };
@@ -783,16 +784,6 @@ export function networkCap(module: CapModule) {
         network_hash: networkHash,
       } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "export" }>;
       return { feedHash: resp.feed_hash, summary: resp.summary, zipB64: resp.zip_b64 };
-    },
-    /// The network's trip-id map: every trip by its own id (the
-    /// agency's, for an imported trip) — the join live rt resolves
-    /// through.
-    tripMap(networkHash: string): TripIdMap {
-      const resp = module.invoke({
-        op: "trip_map",
-        network_hash: networkHash,
-      } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "trip_map" }>;
-      return resp.map;
     },
   };
 }
@@ -838,7 +829,6 @@ export function base64Decode(text: string): Uint8Array {
 // ---------------------------------------------------------------------
 
 const OP_RT_DECODE = 0;
-const OP_RT_LOAD_FEED = 1;
 
 export type Live = { liveHash: string; live: LiveDay; summary: LiveSummary };
 
@@ -853,29 +843,27 @@ export function rtCap(module: CapModule) {
       >;
       return { overview: resp.overview, rtHash: resp.rt_hash };
     },
-    loadFeed(bytes: Uint8Array): string {
-      const resp = module.invokeBytes(OP_RT_LOAD_FEED, bytes) as Extract<
-        RtCapResponse,
-        { op: "load_feed" }
-      >;
-      return resp.feed_hash;
+    loadNetwork(network: Network): string {
+      return module.loadNetwork(network);
     },
-    loadTripMap(tripMap: TripIdMap): string {
-      const resp = module.invoke({ op: "load_trip_map", trip_map: tripMap } as RtCapRequest) as Extract<
+    /// The import's boundary: the published stop_sequence numbering
+    /// rt updates name.
+    loadBoundary(boundary: Boundary): string {
+      const resp = module.invoke({ op: "load_boundary", boundary } as RtCapRequest) as Extract<
         RtCapResponse,
-        { op: "load_trip_map" }
+        { op: "load_boundary" }
       >;
-      return resp.trip_map_hash;
+      return resp.boundary_hash;
     },
     /// THE live document: the snapshot(s) resolved into model
     /// vocabulary, classified under the module's default window.
-    live(feedHash: string, rtHash: string | null, vpHash: string | null, tripMapHash: string): Live {
+    live(networkHash: string, boundaryHash: string, rtHash: string | null, vpHash: string | null): Live {
       const resp = module.invoke({
         op: "live",
-        feed_hash: feedHash,
+        network_hash: networkHash,
+        boundary_hash: boundaryHash,
         rt_hash: rtHash ?? undefined,
         vp_hash: vpHash ?? undefined,
-        trip_map_hash: tripMapHash,
       } as RtCapRequest) as Extract<RtCapResponse, { op: "live" }>;
       return { liveHash: resp.live_hash, live: resp.live, summary: resp.summary };
     },
@@ -1039,7 +1027,7 @@ export function runcutCap(module: CapModule) {
     tripStops(
       networkHash: string,
       editsHash: string | null,
-      pattern_trips: string,
+      trip: string,
       startSecs: number,
       date: string,
     ): TripStopView[] {
@@ -1047,7 +1035,7 @@ export function runcutCap(module: CapModule) {
         op: "trip_stops",
         network_hash: networkHash,
         edits_hash: editsHash,
-        pattern_trips,
+        trip,
         start_secs: startSecs,
         date,
       } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "trip_stops" }>;
@@ -1055,12 +1043,12 @@ export function runcutCap(module: CapModule) {
     },
     /// One derived trip's line on the date, over the effective day (a
     /// diverted trip draws its diversion).
-    tripPath(networkHash: string, editsHash: string | null, pattern_trips: string, startSecs: number, date: string): Coord[] {
+    tripPath(networkHash: string, editsHash: string | null, trip: string, startSecs: number, date: string): Coord[] {
       const resp = module.invoke({
         op: "trip_path",
         network_hash: networkHash,
         edits_hash: editsHash,
-        pattern_trips,
+        trip,
         start_secs: startSecs,
         date,
       } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "trip_path" }>;
@@ -1107,13 +1095,13 @@ export async function calendarModule(): Promise<CapModule | null> {
 
 /// Everything a day view needs from a loaded feed: the derived
 /// network document (by hash, loaded in the day-view module) and the
-/// import's trip-id map (the join rt delays and click-throughs are
-/// keyed by — rt and the feed's own ops speak the AGENCY's ids, the
-/// model mints its own).
+/// import's boundary (the published stop_sequence numbering rt
+/// updates name; trip ids are the feed's own).
 export type Boarding = {
   feedHash: string;
+  network: Network;
   networkHash: string;
-  tripMap: TripIdMap;
+  boundary: Boundary;
 };
 
 /// Board the loaded feed into a day-view or planning module (board,
@@ -1136,7 +1124,6 @@ function boardings(capId: "board" | "runcut" | "router") {
       if (!network || !cap) return null;
       const feedHash = networkCap(network).loadFeed(bytes).feedHash;
       const imported = networkCap(network).import(feedHash);
-      const map = networkCap(network).tripMap(imported.networkHash);
       const loaders = { board: boardCap, runcut: runcutCap, router: routerCap } as const;
       const loadedHash = loaders[capId](cap).loadNetwork(imported.network);
       if (loadedHash !== imported.networkHash) {
@@ -1144,7 +1131,7 @@ function boardings(capId: "board" | "runcut" | "router") {
           `network identity disagrees across capabilities: ${loadedHash} != ${imported.networkHash}`,
         );
       }
-      return { feedHash, networkHash: imported.networkHash, tripMap: map };
+      return { feedHash, network: imported.network, networkHash: imported.networkHash, boundary: imported.boundary };
     })();
     boarding.catch(() => memo.delete(memoKey));
     memo.set(memoKey, boarding);

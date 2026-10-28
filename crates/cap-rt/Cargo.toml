@@ -13,10 +13,11 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 ts-rs = { workspace = true }
-transit-core = { path = "../transit-core" }
 transit-rt = { path = "../transit-rt" }
-# The live document: minted here from the snapshot, the feed, and
-# the import's trip-id map (codec state at the boundary).
+transit-network = { path = "../transit-network" }
+# The live document: minted here from the snapshot and the network;
+# the import's Boundary carries the published stop_sequence
+# numbering rt updates name.
 transit-codec = { path = "../transit-codec" }
 transit-live = { path = "../transit-live" }
 cap-abi = { path = "../cap-abi" }

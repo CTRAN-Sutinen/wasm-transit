@@ -18,8 +18,6 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"
-# The regression fixtures' summaries read the old parser's counts.
-transit-core = { path = "../transit-core" }
 # The transfer-fixture regression test reads the composed question
 # (walking groups, timed connections) through the analysis library.
 transit-analysis = { path = "../transit-analysis" }

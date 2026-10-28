@@ -98,20 +98,20 @@ pub enum Request {
         #[ts(optional)]
         tight_layover_secs: Option<u32>,
     },
-    /// One derived trip's stops on a service date — the day's trip
+    /// One trip instance's stops on a service date — the day's trip
     /// detail, EFFECTIVE (a diverted trip answers its patched
-    /// sequence). The trip's identity is the model's: (schedule,
+    /// sequence). The instance's identity is the model's: (trip,
     /// start_secs). Its line is `trip_path`. A trip that does not run on the date answers empty, never an
     /// error.
     TripStops {
         network_hash: String,
         #[serde(default)]
         edits_hash: Option<String>,
-        pattern_trips: String,
+        trip: String,
         start_secs: u32,
         date: String,
     },
-    /// One derived trip's LINE on a service date, over the effective
+    /// One trip instance's LINE on a service date, over the effective
     /// day: its pattern's authored alignment while it follows the
     /// pattern, its patched stops joined when diverted. A trip that
     /// does not run on the date answers an empty path.
@@ -119,7 +119,7 @@ pub enum Request {
         network_hash: String,
         #[serde(default)]
         edits_hash: Option<String>,
-        pattern_trips: String,
+        trip: String,
         start_secs: u32,
         date: String,
     },
@@ -249,17 +249,17 @@ let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
                 block_id,
             })
         }
-        Request::TripStops { network_hash, edits_hash, pattern_trips, start_secs, date } => {
+        Request::TripStops { network_hash, edits_hash, trip, start_secs, date } => {
 let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
             Ok(Response::TripStops {
-                stops: transit_dispatch::trip_stops(&network, &day, &pattern_trips, start_secs),
+                stops: transit_dispatch::trip_stops(&network, &day, &trip, start_secs),
             })
         }
-        Request::TripPath { network_hash, edits_hash, pattern_trips, start_secs, date } => {
+        Request::TripPath { network_hash, edits_hash, trip, start_secs, date } => {
             let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
-            Ok(Response::TripPath { path: transit_dispatch::trip_path(&network, &day, &pattern_trips, start_secs) })
+            Ok(Response::TripPath { path: transit_dispatch::trip_path(&network, &day, &trip, start_secs) })
         }
     }
 }

@@ -13,13 +13,6 @@ This doc describes the tree as it is; open work lives in
 ## Layering (bottom up)
 
 ```
-transit-core    The GTFS substrate: model, zip/CSV parse, calendar,
-                and the WRITE direction — deterministic zip bytes
-                (src/write.rs), so a produced feed has one identity
-                everywhere. Pure, no I/O. Its feed-side diversion
-                patching and day queries have no bus caller; the
-                crate folds into transit-codec
-                (docs/units/u8-gtfs-substrate.md).
 transit-network The authored network model (planner authority):
                 routes and their DIRECTIONS (`Route.directions`,
                 each named; a pattern runs in at most one —
@@ -55,7 +48,37 @@ transit-network The authored network model (planner authority):
                 before trips were stored (each old departure becomes
                 a trip `{pattern_trips}@{start}`) or before
                 alignments stood alone (a pattern's inline `path`
-                becomes an alignment under the pattern's id). GTFS is a codec at
+                becomes an alignment under the pattern's id).
+                `trip_instance` answers one instance date-free: a
+                one-start trip at its start, an exact frequency trip
+                on its grid, a non-exact one at any start inside a
+                band. A trip instance is addressed (trip, start)
+                everywhere. The network models everything the GTFS
+                Schedule spec describes, in model vocabulary, each
+                family in its own module: per pattern stop its
+                headsign, pickup / drop-off and continuous-stopping
+                rules (`StopRule`), booking rules, and whether its
+                distance was published; per trip its headsign,
+                public number, and wheelchair / bike / car
+                accommodation; per route its long name, description,
+                URL, text color, sort order, continuous stopping,
+                operator, fare network, contactless acceptance, and
+                a published vehicle type where the mode does not say
+                it (the short name is `Route::name`, possibly empty;
+                display by `Route::label`); per stop its kind (stop
+                or station) and `StopInfo` (code, spoken name,
+                description, URL, fare zone, wheelchair boarding,
+                platform, level, timezone, street access).
+                `operators.rs`: operators, the publisher,
+                attributions, translations. `places.rs`: station
+                parts (entrances, nodes, boarding areas), levels,
+                pathways, transfer rules. `fares.rs`: zone fares and
+                fare products (areas, fare networks, timeframes,
+                rider categories, media, offers, leg / join /
+                transfer rules). `demand.rs`: demand-responsive
+                service — location groups, zones (a GeoJSON
+                FeatureCollection), booking rules, and trips that
+                visit stops, groups, or zones within windows. GTFS is a codec at
                 the boundary, not the model; no GTFS types leak in
                 here. Transfer points are authored flags on
                 stops, composed over their WALKING GROUP (the stop +
@@ -125,13 +148,22 @@ transit-codec   The network codec, both directions, over the whole
                 every point and published distance, shapes no trip
                 runs included. Patterns are stop sequences along an
                 alignment — one per (route, direction, stops,
-                exactness flags, shape); how long a trip takes is
-                its own. A row is exact (the pattern's
+                exactness flags, shape, and what each stop row says:
+                headsign, pickup / drop-off, continuous stopping,
+                booking rules, published distance); how long a trip
+                takes is its own. A trip with a row that is not a
+                stop at a time (a location group, a zone, a window)
+                is a demand-responsive trip. Everything else a feed
+                carries reads into its model home and writes back
+                value for value (src/extras.rs; text ⇄ values in
+                src/values.rs). A row is exact (the pattern's
                 timepoint) when it carries both times and does not
                 say timepoint=0. The `Boundary` is the import's
                 serialization residue (stop_sequence and
                 shape_pt_sequence numbering, a frequency trip's
-                stop_times base); an authored
+                stop_times base, the id given an agency published
+                without one, and which file names a route's fare
+                network); an authored
                 document exports with the default. Service ids are
                 service types, written back as authored (the
                 calendar row, exceptions as calendar_dates); the
@@ -143,8 +175,8 @@ transit-codec   The network codec, both directions, over the whole
                 re-authors from there). GTFS direction_id becomes
                 the route's directions ("0"/"1"), named by the
                 trips' most common headsign (else "To" the commonest
-                terminal); the export signs directed trips with the
-                direction's name and writes direction_id back. What
+                terminal); the export writes direction_id back and
+                each trip's own headsign (none invented). What
                 the model cannot hold yet is reported as an
                 ImportNote (stops without coordinates and the trips
                 serving them, single-stop trips, a transfer point
@@ -154,11 +186,10 @@ transit-codec   The network codec, both directions, over the whole
                 trips (tests/trip_import_law_test), and
                 `import ∘ export` is a fixpoint
                 (tests/codec_prop_test); tests/spec_round_trip_test
-                holds GTFS → network → GTFS against the whole spec
-                (red until the network models every file —
-                docs/units/u8-gtfs-substrate.md). `trip_map` answers
-                every trip by its own id with its pattern trips and
-                first start — the join rt data is keyed by.
+                holds GTFS → network → GTFS against the whole spec,
+                one law per file, oracle read as raw tables. The
+                feed layer also answers a feed's summary and its
+                feed_info identity, and base64 for the JSON seam.
                 A LIBRARY under cap-network — the extraction
                 pattern: crate boundary first, capability wrapper
                 second. The C-TRAN import regressions live in its
@@ -203,18 +234,22 @@ transit-dispatch The materialized day's views, model-native: patch_day
                 them here. Holds no GTFS
                 layer (the justfile arch gate enforces it).
 transit-rt      prost types from the official GTFS-rt proto, the
-                OVERVIEW view (delays, vehicles) over them, and the
+                OVERVIEW view (delays, vehicles, each trip
+                descriptor's start_time) over them, and the joins
+                over the NETWORK: an rt trip id IS a model trip id,
+                the instance its start (a frequency trip's, the
+                descriptor's start_time — `resolve_instance`). The
                 PROGRESS join (one trip's predicted times; the
-                ranked late view with the DELAYED-BUT-DARK flag) —
-                LIBRARIES shared by cap-rt and any host that holds
-                the bytes (and, for the join, the static feed) —
-                and the BOUNDARY RESOLUTION (live_day): a snapshot
-                plus the static feed plus the network's trip map →
-                THE live document, the one place rt trip ids meet
-                the model.
+                ranked late view with the DELAYED-BUT-DARK flag)
+                pairs stop updates by the published stop_sequence
+                (the import's `Boundary`; 1..n without one), by stop
+                id only when an update names none. The BOUNDARY
+                RESOLUTION (live_day): a snapshot plus the network
+                (and its boundary) → THE live document, the one
+                place rt trip ids are resolved (tests/rt_join_law_test).
 transit-live    THE live document: one rt moment in model vocabulary
-                (delays per trip and stop, vehicles on their
-                trips, every status classified under the
+                (delays per trip instance (trip, start) and stop,
+                vehicles on their trip instances, every status classified under the
                 on-time window the document records — one window,
                 never a threshold per view), the classification
                 rule, and the status summary. Pure data; no GTFS
@@ -330,10 +365,10 @@ small: it lands as an op instead.
 Two rulings that follow from it:
 
 - **The live document.** cap-rt answers "what is live" in MODEL
-  vocabulary: an rt snapshot plus the network's trip map resolve
-  into a kernel document of delays per trip and stop,
-  addressed by hash; cap-board consumes it by hash. Agency trip ids
-  resolve INSIDE the op, never in a host. Thresholds (the on-time
+  vocabulary: an rt snapshot plus the network resolve into a
+  kernel document of delays per trip instance and stop, addressed
+  by hash; cap-board consumes it by hash. rt trip ids resolve
+  INSIDE the op, never in a host. Thresholds (the on-time
   window) are op parameters.
 - **Geometry is a model answer.** "What path does this trip take
   today" (diversions, the authored alignment, an itinerary leg's
@@ -538,9 +573,8 @@ cap-gtfs        The feed-document capability: GTFS zip →
                 names join are NOT here: they answer over the NETWORK
                 document (cap-board / cap-runcut / cap-calendar /
                 cap-directory — one question, one answer on the bus).
-                Parse + identity alone; the GTFS substrate under it
-                folds into transit-codec
-                (docs/units/u8-gtfs-substrate.md). CHARTER
+                Parse + identity alone, over transit-codec's whole-
+                spec `Feed`. CHARTER
                 CLOSED: parse, export, primitive boundary queries —
                 nothing more goes "in GTFS."
 cap-router      The router capability: RAPTOR earliest-arrival
@@ -574,20 +608,18 @@ cap-network     The network codec capability: load_feed (zip bytes →
                 publish path — deterministic GTFS zip bytes under
                 their content hash, base64 across the JSON seam, with
                 the import's boundary when it is the imported
-                document itself), and trip_map (every trip by its
-                own id — the agency's, for an imported trip — with
-                its pattern trips and first start: the join rt data
-                is keyed by). The domain code lives in the shared
-                transit-codec library.
+                document itself). The domain code lives in the
+                shared transit-codec library.
 cap-rt          The realtime capability: decode — a GTFS-rt protobuf
                 payload (bulk-bytes op 0, the ephemeral bytes an
                 agency serves every few seconds) into the overview
                 view (delays per trip/stop, live vehicles), each
                 snapshot registered under its content hash; and the
-                SCHEDULE JOIN the dispatcher actually asks for:
-                load_feed (bulk op 1, the SAME feed identity
-                cap-gtfs returns — the manifest's rt → gtfs edge),
-                trip_progress (one trip's scheduled/delay/predicted
+                SCHEDULE JOIN the dispatcher actually asks for, over
+                the NETWORK: load_network (the identity every
+                network consumer holds) and load_boundary (an
+                imported network's published stop_sequence
+                numbering; optional), trip_progress (one trip's scheduled/delay/predicted
                 board; a stop the update skips carries the last
                 stated delay, GTFS-rt's propagation rule), late_trips (ranked, with the DELAYED-BUT-
                 DARK flag and vp_hash for agencies that serve the
@@ -595,8 +627,8 @@ cap-rt          The realtime capability: decode — a GTFS-rt protobuf
                 per BLOCK: a delay propagated to a block's next trip
                 while its bus runs the trip before is a located
                 vehicle (position_trip_id names the trip it is on;
-                vehicle_id rides beside the label). load_trip_map +
-                live mint THE LIVE DOCUMENT (transit-live) from the
+                vehicle_id rides beside the label). live mints THE
+                LIVE DOCUMENT (transit-live) from the
                 trip-updates and/or vehicle-positions snapshots, with
                 the summary a status panel reads (vehicles by
                 status, the late list) — the browser's live views
@@ -621,8 +653,8 @@ cap-board       The board capability — ONE QUESTION: when does
                 in the shared transit-dispatch library; no GTFS
                 layer (arch gate). The UI's departure board renders
                 stop_board's answer; rows carry the trip instance's
-                address (pattern trips, start), so the click-through
-                needs no agency join.
+                address (trip, start), so the click-through needs no
+                join.
 cap-runcut      The runcut capability — ONE QUESTION: what does
                 this vehicle do today? The day's blocks LIST (the
                 index facet: vehicles out, with that day's running

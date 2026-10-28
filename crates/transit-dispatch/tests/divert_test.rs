@@ -25,7 +25,7 @@ fn network() -> Network {
     loop_pattern.stops = ["A", "B", "C", "B", "A"]
         .iter()
         .enumerate()
-        .map(|(i, s)| PatternStop { stop: s.to_string(), timepoint: false, distance_m: i as f64 * 400.0 })
+        .map(|(i, s)| PatternStop { stop: s.to_string(), timepoint: false, distance_m: i as f64 * 400.0, ..Default::default() })
         .collect();
     loop_pattern.stops[0].timepoint = true;
     loop_pattern.stops[4].timepoint = true;

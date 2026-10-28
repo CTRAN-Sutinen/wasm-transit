@@ -22,7 +22,7 @@ use ts_rs::TS;
 use chrono::NaiveDate;
 
 use crate::error::NetworkError;
-use crate::model::{Network, Pattern, Trip};
+use crate::model::{Departs, Network, Pattern, Trip};
 
 /// One trip instance for one service date.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
@@ -107,6 +107,42 @@ pub fn materialize_service(
     }
     trips.sort_by(|a, b| a.start_secs.cmp(&b.start_secs).then_with(|| a.trip.cmp(&b.trip)));
     Ok(trips)
+}
+
+/// One instance of a trip, date-free: the trip at `start_secs` when
+/// that start is one of its instances — a one-start trip's start, an
+/// exact frequency trip's grid, or (riders promised the headway, not
+/// the minutes) any start inside a non-exact frequency trip's band.
+pub fn trip_instance(network: &Network, trip: &str, start_secs: u32) -> Option<MaterializedTrip> {
+    let (pattern_trips_id, service, t) = network.trip(trip)?;
+    let runs = match &t.departs {
+        Departs::At { start_secs: s } => *s == start_secs,
+        Departs::Every { exact: true, .. } => t.departs.instances().contains(&start_secs),
+        Departs::Every { bands, exact: false } => bands.iter().any(|b| b.start_secs <= start_secs && start_secs < b.end_secs),
+    };
+    if !runs {
+        return None;
+    }
+    let pattern = network.patterns.get(&service.pattern)?;
+    let offsets = offsets(pattern, t).ok()?;
+    Some(MaterializedTrip {
+        trip: t.id.clone(),
+        pattern_trips: pattern_trips_id.to_string(),
+        route: pattern.route.clone(),
+        pattern: service.pattern.clone(),
+        start_secs,
+        stop_times: pattern
+            .stops
+            .iter()
+            .zip(&offsets)
+            .map(|(ps, &(a, d))| StopTime {
+                stop: ps.stop.clone(),
+                arrival_secs: start_secs + a,
+                departure_secs: start_secs + d,
+                timepoint: ps.timepoint,
+            })
+            .collect(),
+    })
 }
 
 /// Materialize every trip that runs on `date`, sorted by start time

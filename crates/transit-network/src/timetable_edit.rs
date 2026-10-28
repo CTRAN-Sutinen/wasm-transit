@@ -199,7 +199,7 @@ fn rewrite(
             .get_mut(&key)
             .expect("found or created")
             .trips
-            .push(Trip { id, departs: Departs::At { start_secs: start }, times });
+            .push(Trip { id, departs: Departs::At { start_secs: start }, times, ..Default::default() });
     }
     Ok(created)
 }
@@ -497,7 +497,7 @@ pub(crate) fn insert_direction_stop(
             continue;
         }
         let distance_m = (p.stops[i].distance_m + p.stops[i + 1].distance_m) / 2.0;
-        p.stops.insert(i + 1, PatternStop { stop: stop.to_string(), timepoint: false, distance_m });
+        p.stops.insert(i + 1, PatternStop { stop: stop.to_string(), timepoint: false, distance_m, ..Default::default() });
         placed.push((pid, i + 1));
     }
     if placed.is_empty() {

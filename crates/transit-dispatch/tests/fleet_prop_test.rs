@@ -25,10 +25,10 @@ fn day() -> NaiveDate {
 
 fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) -> Network {
     let mut stops = std::collections::BTreeMap::new();
-    stops.insert("A".to_string(), Stop { name: "Main & 1st".into(), lat: 45.5, lon: -122.5, parent: None, transfer: false });
-    stops.insert("B".to_string(), Stop { name: "Main & 2nd".into(), lat: 45.6, lon: -122.6, parent: None, transfer: false });
+    stops.insert("A".to_string(), Stop { name: "Main & 1st".into(), lat: 45.5, lon: -122.5, parent: None, transfer: false, ..Default::default() });
+    stops.insert("B".to_string(), Stop { name: "Main & 2nd".into(), lat: 45.6, lon: -122.6, parent: None, transfer: false, ..Default::default() });
     let mut routes = std::collections::BTreeMap::new();
-    routes.insert("10".to_string(), Route { name: "10".into(), mode: transit_network::Mode::Bus, color: None, directions: Default::default() });
+    routes.insert("10".to_string(), Route { name: "10".into(), mode: transit_network::Mode::Bus, color: None, directions: Default::default(), ..Default::default() });
     let mut patterns = std::collections::BTreeMap::new();
     patterns.insert(
         "p0".to_string(),
@@ -38,8 +38,8 @@ fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) ->
             name: "route 10".into(),
             alignment: None,
             stops: vec![
-                PatternStop { stop: "A".into(), timepoint: true, distance_m: 0.0 },
-                PatternStop { stop: "B".into(), timepoint: true, distance_m: 1000.0 },
+                PatternStop { stop: "A".into(), timepoint: true, distance_m: 0.0, ..Default::default() },
+                PatternStop { stop: "B".into(), timepoint: true, distance_m: 1000.0, ..Default::default() },
             ],
             timing: vec![TimingProfile { start_secs: 0, end_secs: 172_800, at_timepoints: vec![0, 600] }],
         },
@@ -71,6 +71,7 @@ fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) ->
                     id: format!("s0@{s}"),
                     departs: Departs::At { start_secs: s },
                     times: [0, 600].map(|t| StopOffset { arrival_secs: Some(t), departure_secs: Some(t) }).to_vec(),
+                    ..Default::default()
                 })
                 .collect(),
         },
@@ -105,6 +106,7 @@ fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) ->
         service_types,
         pattern_trips,
         blocks,
+        ..Default::default()
     }
 }
 

@@ -409,21 +409,24 @@ assert(vehicle.label === "4201", "the vehicle label (the bus number) survives de
 const garbage = rt.raw({ op: "decode", bytes: [0xff, 0xff] });
 assert(garbage.error && /decode/.test(garbage.error), "garbage bytes are an error outcome, never a trap");
 
-// The join: the SAME feed bytes into cap-rt (bulk op 1) must agree
-// with cap-gtfs on the identity — four capabilities, one feed — and
-// the joined ops answer over the fixture pair (t10 +120/+180, one
-// vehicle).
-const loadedRt = rt.invokeBytes(1, feed);
-assert(loadedRt.op === "load_feed", "rt load_feed answers on bulk op 1");
+// The join: the imported NETWORK into cap-rt must agree with the
+// network capability on the identity, with the import's boundary for
+// the published stop_sequence numbering — and the joined ops answer
+// over the fixture pair (t10 +120/+180, one vehicle): an rt trip id is
+// a model trip id.
+const loadedRt = rt.invoke({ op: "load_network", network: imported.network });
 assert(
-  loadedRt.feed_hash === loadedGtfs.feed_hash,
-  "cap-rt agrees with cap-gtfs on the feed identity (the manifest's registry edge)",
+  loadedRt.network_hash === imported.network_hash,
+  "cap-rt agrees with the network capability on the document's identity",
 );
+const loadedBoundary = rt.invoke({ op: "load_boundary", boundary: imported.boundary });
+assert(loadedBoundary.boundary_hash.startsWith("sha256:"), "the boundary registers under its content hash");
 const snapshot = rt.invokeBytes(0, readFileSync(path.join(here, "../../web/e2e/fixtures/sample-rt.pb")));
 assert(snapshot.rt_hash.startsWith("sha256:"), "decode registers the snapshot under its content hash");
 const progress = rt.invoke({
   op: "trip_progress",
-  feed_hash: loadedRt.feed_hash,
+  network_hash: loadedRt.network_hash,
+  boundary_hash: loadedBoundary.boundary_hash,
   rt_hash: snapshot.rt_hash,
   trip_id: "t10",
 });
@@ -434,14 +437,14 @@ assert(
 );
 const late = rt.invoke({
   op: "late_trips",
-  feed_hash: loadedRt.feed_hash,
+  network_hash: loadedRt.network_hash,
   rt_hash: snapshot.rt_hash,
   min_delay_secs: 60,
 });
 assert(late.trips.length === 1 && late.trips[0].trip_id === "t10", "the ranked view finds the late trip");
 assert(late.trips[0].vehicle_label === "4201" && late.trips[0].has_position, "its bus is named and visible");
-const unknownJoin = rt.raw({ op: "trip_progress", feed_hash: "sha256:missing", rt_hash: decoded.rt_hash, trip_id: "t10" });
-assert(unknownJoin.error && unknownJoin.error.includes("unknown feed"), "unknown hashes error, never panic");
+const unknownJoin = rt.raw({ op: "trip_progress", network_hash: "sha256:missing", rt_hash: decoded.rt_hash, trip_id: "t10" });
+assert(unknownJoin.error && unknownJoin.error.includes("unknown network"), "unknown hashes error, never panic");
 
 // The names join (stops_by_ids) moved to the directory with the
 // stop list it belongs to — the flow below pins it; the retired gtfs
@@ -585,7 +588,7 @@ const stopBoard = (stop_id, from_secs, live_hash) =>
 const atA = stopBoard("A", 25200);
 assert(atA.rows.length >= 3 && !atA.pooled && !atA.live, "the materialized board answers at A, schedule-only");
 assert(
-  atA.rows.every((r) => r.pattern_trips && r.route_name && r.stop === "A" && r.status === "no_prediction"),
+  atA.rows.every((r) => r.trip && r.route_name && r.stop === "A" && r.status === "no_prediction"),
   "board rows speak model vocabulary (schedule, start, concrete stop); no live data, no prediction",
 );
 const atStation = stopBoard("STN", 0);
@@ -600,17 +603,19 @@ const atB = stopBoard("B", 0);
 assert(atB.rows.length === 0 && !atB.pooled, "trips terminating at B never appear on B's board");
 
 // THE LIVE DOCUMENT — rt → board by hash: the snapshot resolves
-// through the import's trip map into model vocabulary in cap-rt; the
-// board reads it. No host joins rt (the parity rule).
-const tripMap = network.invoke({ op: "trip_map", network_hash: imported.network_hash }).map;
-const loadedMap = rt.invoke({ op: "load_trip_map", trip_map: tripMap });
+// against the network into trip instances in cap-rt; the board reads
+// it. No host joins rt (the parity rule).
 const live = rt.invoke({
   op: "live",
-  feed_hash: loadedRt.feed_hash,
+  network_hash: loadedRt.network_hash,
+  boundary_hash: loadedBoundary.boundary_hash,
   rt_hash: snapshot.rt_hash,
-  trip_map_hash: loadedMap.trip_map_hash,
 });
-assert(live.live.unmatched_trips === 0 && live.live.trips.length === 1, "t10 resolves into its derived trip");
+assert(
+  live.live.unmatched_trips === 0 && live.live.trips.length === 1 &&
+    live.live.trips[0].trip === "t10" && live.live.trips[0].start_secs === 28800,
+  "t10 resolves into its trip instance (t10, 08:00)",
+);
 assert(
   live.summary.counts.late === 1 && live.summary.late[0].label === "4201" && live.summary.late[0].delay_secs === 180,
   "the summary names the late bus (+180 s is late under the default window)",
@@ -624,7 +629,7 @@ assert(
   liveA.live && t10Row && t10Row.expected_secs === 28800 + 120 && t10Row.delay_secs === 120 && t10Row.status === "late",
   "the realtime-first board keeps the late bus, expected 08:02",
 );
-const noSnapshot = rt.raw({ op: "live", feed_hash: loadedRt.feed_hash, trip_map_hash: loadedMap.trip_map_hash });
+const noSnapshot = rt.raw({ op: "live", network_hash: loadedRt.network_hash });
 assert(noSnapshot.error && noSnapshot.error.includes("needs a snapshot"), "live without a snapshot is a request error");
 
 // The personal board — the watchlist document, migrated with its
@@ -660,7 +665,7 @@ for (const document of [v1, migrated.document]) {
   });
   assert(watch.stops.length === 2, `the personal board answers at ${document.version}`);
   assert(
-    watch.stops.every((s) => s.departures.every((d) => d.pattern_trips)),
+    watch.stops.every((s) => s.departures.every((d) => d.trip)),
     `the personal board's rows are model-native at ${document.version}`,
   );
 }
@@ -742,14 +747,14 @@ assert(
 // What the radio calls those trips: each row carries its trip's own
 // id (the agency's, for an imported trip).
 assert(rippedChain.trips[0].trip === "t10", "the chain names its trips by id (B1 starts with t10)");
-// The trip detail — the map's click-through question: one derived
-// trip's EFFECTIVE stops, patched by the same edits (its line is
+// The trip detail — the map's click-through question: one trip
+// instance's EFFECTIVE stops, patched by the same edits (its line is
 // trip_path, below).
 const chainTrip = runcutChain.trips[0];
 const tripAuthored = runcut.invoke({
   op: "trip_stops",
   network_hash: loadedRuncutNet.network_hash,
-  pattern_trips: chainTrip.pattern_trips,
+  trip: chainTrip.trip,
   start_secs: chainTrip.start_secs,
   date: DATE,
 });
@@ -764,7 +769,7 @@ const tripPatched = runcut.invoke({
   op: "trip_stops",
   network_hash: loadedRuncutNet.network_hash,
   edits_hash: runcutEdits.edits_hash,
-  pattern_trips: chainTrip.pattern_trips,
+  trip: chainTrip.trip,
   start_secs: chainTrip.start_secs,
   date: DATE,
 });
@@ -776,7 +781,7 @@ assert(
 const tripAbsent = runcut.invoke({
   op: "trip_stops",
   network_hash: loadedRuncutNet.network_hash,
-  pattern_trips: chainTrip.pattern_trips,
+  trip: chainTrip.trip,
   start_secs: 123,
   date: DATE,
 });
@@ -785,7 +790,7 @@ const tripLine = runcut.invoke({
   op: "trip_path",
   network_hash: loadedRuncutNet.network_hash,
   edits_hash: runcutEdits.edits_hash,
-  pattern_trips: chainTrip.pattern_trips,
+  trip: chainTrip.trip,
   start_secs: chainTrip.start_secs,
   date: DATE,
 });

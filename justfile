@@ -117,12 +117,15 @@ test: caps
       --op '{"op":"feed_info","feed_hash":"$load.feed_hash"}' \
       | grep -q '"feed_version":"2026.10.1"'
     # The realtime capability's gate: the dispatch leg as a JOIN — the
-    # fixture feed on bulk op 1, the fixture payload on op 0, and the
-    # dispatcher's most-asked question answered in one op (t10's
-    # predicted departure at A: 08:00 + 120 s).
-    node tools/caps-run.mjs rt --load 1:web/public/caps/sample-gtfs.zip \
-      --load web/e2e/fixtures/sample-rt.pb \
-      --op '{"op":"trip_progress","feed_hash":"$1.feed_hash","rt_hash":"$2.rt_hash","trip_id":"t10"}' \
+    # imported network and its boundary, the fixture payload on op 0,
+    # and the dispatcher's most-asked question answered in one op
+    # (t10's predicted departure at A: 08:00 + 120 s).
+    node tools/caps-run.mjs network --load web/public/caps/sample-gtfs.zip \
+      --as net --op '{"op":"import","feed_hash":"$load.feed_hash"}' \
+      --cap rt --as rnet --op '{"op":"load_network","network":"$net.network"}' \
+      --as bnd --op '{"op":"load_boundary","boundary":"$net.boundary"}' \
+      --as snap --load web/e2e/fixtures/sample-rt.pb \
+      --op '{"op":"trip_progress","network_hash":"$rnet.network_hash","boundary_hash":"$bnd.boundary_hash","rt_hash":"$snap.rt_hash","trip_id":"t10"}' \
       | grep -q '"predicted_departure":28920'
     # The clock: $TODAY resolves host-side (the runner is the host) —
     # a valid date must answer, whatever day the gate runs on.
@@ -184,16 +187,15 @@ test: caps
       --op '{"op":"stop_board","network_hash":"$board_net.network_hash","stop_id":"A","date":"$TODAY","from_secs":"$NOW_SECS","limit":1}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const id = (n) => r.find((x) => x.as === n).ok.network_hash; if (id("net") !== id("board_net") || r.at(-1).ok?.op !== "stop_board") process.exit(1)'
     # The live board — the parity chain every host runs (browser,
-    # runner, server): import → trip map → cap-rt resolves the rt
-    # snapshot into THE live document → the board reads it by hash.
+    # runner, server): import → cap-rt resolves the rt snapshot against
+    # the network into THE live document → the board reads it by hash.
     # 08:01 at A: t10 (08:00, +120 s) is still to come, expected 08:02.
     node tools/caps-run.mjs network --as feed --load web/public/caps/sample-gtfs.zip \
       --as net --op '{"op":"import","feed_hash":"$feed.feed_hash"}' \
-      --as map --op '{"op":"trip_map","network_hash":"$net.network_hash"}' \
-      --cap rt --as rtfeed --load 1:web/public/caps/sample-gtfs.zip \
+      --cap rt --as rnet --op '{"op":"load_network","network":"$net.network"}' \
+      --as bnd --op '{"op":"load_boundary","boundary":"$net.boundary"}' \
       --as snap --load web/e2e/fixtures/sample-rt.pb \
-      --as rtmap --op '{"op":"load_trip_map","trip_map":"$map.map"}' \
-      --as live --op '{"op":"live","feed_hash":"$rtfeed.feed_hash","rt_hash":"$snap.rt_hash","trip_map_hash":"$rtmap.trip_map_hash"}' \
+      --as live --op '{"op":"live","network_hash":"$rnet.network_hash","boundary_hash":"$bnd.boundary_hash","rt_hash":"$snap.rt_hash"}' \
       --cap board --as bnet --op '{"op":"load_network","network":"$net.network"}' \
       --as blive --op '{"op":"load_live","live":"$live.live"}' \
       --op '{"op":"stop_board","network_hash":"$bnet.network_hash","stop_id":"A","date":"2026-10-23","from_secs":28860,"limit":3,"live_hash":"$blive.live_hash"}' \
@@ -217,7 +219,7 @@ test: caps
       --op '{"op":"itinerary_paths","network_hash":"$load_network.network_hash","date":"2026-10-23","itinerary":"$plan.itinerary"}' \
       --cap runcut --op @web/public/caps/sample-network-load.json \
       --as edits --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
-      --as trip --op '{"op":"trip_path","network_hash":"$load_network.network_hash","edits_hash":"$edits.edits_hash","pattern_trips":"WK:pat-10-0-2","start_secs":31200,"date":"2026-10-23"}' \
+      --as trip --op '{"op":"trip_path","network_hash":"$load_network.network_hash","edits_hash":"$edits.edits_hash","trip":"t30","start_secs":31200,"date":"2026-10-23"}' \
       --cap directory --op @web/public/caps/sample-network-load.json \
       --as focus --op '{"op":"focus","network_hash":"$load_network.network_hash","kind":"route","id":"10"}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const legs = r.find((x) => x.ok?.op === "itinerary_paths").ok.paths; if (legs[0]?.kind !== "transit" || legs[0].path.length < 2 || ok("trip").path.length !== 2 || ok("focus").focus.lines.length !== 3) process.exit(1)'
@@ -251,7 +253,7 @@ test: caps
     node tools/caps-run.mjs runcut \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
-      --op '{"op":"trip_stops","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","pattern_trips":"WK:pat-10-0-2","start_secs":31200,"date":"2026-10-23"}' \
+      --op '{"op":"trip_stops","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","trip":"t30","start_secs":31200,"date":"2026-10-23"}' \
       | grep -q '"stop_id":"B"'
     # The street capability's gate: the detour editor's need, one
     # chained session — the street fixture on bulk op 0, two snaps,
@@ -304,15 +306,16 @@ test: caps
     #      whole-feed write never leaves the codec's homes.
     #   2. nobody reinvents the monolith inside a module.
     # Law 1a: model-side capabilities (and their shared libraries) do
-    # not depend on the GTFS layer (transit-core = the GTFS-shaped
-    # layer, transit-codec = the boundary codec) in [dependencies].
+    # not depend on the GTFS layer (transit-codec, the boundary codec)
+    # in [dependencies].
     # Dev-dependencies may build fixture documents through the codec —
     # tests compose over real documents; production code does not.
-    # Sanctioned consumers: cap-gtfs, cap-network, cap-rt (external
-    # rt joining external ids). The router left the feed in U5 — it
+    # Sanctioned consumers: cap-gtfs, cap-network, cap-rt and
+    # transit-rt (rt updates number stops as the published feed does —
+    # the import's Boundary). The router left the feed in U5 — it
     # plans over the network document and the effective day.
     for crate in cap-analysis cap-board cap-runcut cap-calendar cap-directory cap-sync cap-plans cap-author cap-divert transit-analysis transit-dispatch transit-live; do
-        for dep in transit-core transit-codec; do
+        for dep in transit-codec; do
             if awk '/^\[dev-dependencies\]/{exit} /^'"$dep"' =/{found=1} END{exit !found}' "crates/$crate/Cargo.toml" 2>/dev/null; then
                 echo "ARCH FAIL: $crate depends on $dep — the network is the core model; compose over the network document (crates/AGENTS.md, Law 1)"; exit 1
             fi
@@ -501,4 +504,4 @@ audit:
 # excluded; needs cargo-mutants:
 # cargo install cargo-mutants
 mutants:
-    cargo mutants -p transit-core -p transit-router -p transit-sync -p transit-plans
+    cargo mutants -p transit-codec -p transit-router -p transit-sync -p transit-plans

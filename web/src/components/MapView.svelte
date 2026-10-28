@@ -585,7 +585,7 @@
         geometry: { type: "Point", coordinates: [v.lon, v.lat] },
         properties: {
           key: v.key,
-          trip_id: v.agency_trip_id ?? "",
+          trip_id: v.trip ?? "",
           route_id: v.route ?? "",
           delay: v.delay_secs,
           status: v.status,
@@ -593,7 +593,7 @@
           stop_id: v.next_stop ?? "",
           vehicle_id: v.vehicle_id ?? "",
           label: v.label ?? "",
-          label_text: parts.length ? parts.join(" · ") : (v.agency_trip_id ?? ""),
+          label_text: parts.length ? parts.join(" · ") : (v.trip ?? ""),
         },
       };
     });

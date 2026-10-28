@@ -99,19 +99,20 @@ the monolith inside a module; and one NEED per module — personas
 assemble at wire time.
 
 ```
-transit-core     GTFS codec substrate (parse, calendar, deterministic zip write)
 transit-network  THE authored network model — trips are stored records (own id,
                  departure, times); materialize answers a day's instances;
                  authoring edits answer the next document (apply_edits);
                  where things are (pattern alignments, entity focus);
                  what exists, as the planner lists it (rows, route and stop composition,
                 the timetable: one route, one direction, one service type)
-transit-codec   the network codec: GTFS ⇄ network document (import/export)
+transit-codec   the network codec: the whole-spec GTFS feed (every file and column,
+                 deterministic zip bytes) ⇄ network document, losslessly
 transit-router  RAPTOR earliest-arrival planning over the network model's materialized day
 transit-analysis planner analysis library (stats, service types, coverage)
 transit-dispatch the operator's day library (patched materialized day, boards,
                  authored block chains with the layover ripple, diversion drafts)
-transit-rt       GTFS-rt prost types + overview/progress join libraries
+transit-rt       GTFS-rt prost types + the joins over the network (an rt trip id is a
+                 model trip id; a trip instance is (trip, start))
 transit-live     THE live document (rt in model vocabulary, the on-time window — pure)
 transit-sync     THE sync document (EditRecord, Diversion, merge, the record envelope — pure)
 transit-plans    THE service-plan chain (resolve, periods, validity — pure, derived)

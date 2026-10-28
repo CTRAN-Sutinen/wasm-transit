@@ -62,6 +62,7 @@ fn a_station_answers_its_bays_routes() {
                 lon: -73.510,
                 parent: None,
                 transfer: false,
+                ..Default::default()
             },
         },
         NetworkEdit::UpsertStop {
@@ -72,6 +73,7 @@ fn a_station_answers_its_bays_routes() {
                 lon: -73.510,
                 parent: Some("STN".into()),
                 transfer: false,
+                ..Default::default()
             },
         },
         NetworkEdit::UpsertStop {
@@ -82,6 +84,7 @@ fn a_station_answers_its_bays_routes() {
                 lon: -73.5095,
                 parent: Some("STN".into()),
                 transfer: false,
+                ..Default::default()
             },
         },
     ])
@@ -142,6 +145,7 @@ fn with_a_bay_variant() -> Network {
                             StopOffset::default(),
                             StopOffset { arrival_secs: Some(600), departure_secs: Some(600) },
                         ],
+                        ..Default::default()
                     }],
                 },
             },

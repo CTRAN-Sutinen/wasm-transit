@@ -25,9 +25,9 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   licensed; fetch from c-tran.com), `sha256:aa8dbc62833237d754
   96b6ec04c2a45fe10ca2a957f63d63b51ddaae85a7dc4f`, version
   20260913-20270109. rt payloads from gtfs-rt.c-tran.org.
-- Network import: `sha256:5069873a736d501df372ab1494899cdadf
-  270df50aee5804f35be2e4c8fa7764` (stored trips, the agency's ids,
-  shapes as alignments under their own ids; findings from
+- Network import: `sha256:2beddcb309d356f027d5d8281ef1a61d02580a43
+  be2292e2fc6f97ba374ed504` (the whole spec: every file round-trips;
+  findings from
   2026-10-27–28 were seen on `2e27c511…`, the import before stored
   trips; before 2026-10-27 on `89631f1a…`, the
   import before per-trip run times and the fidelity columns; before that on
@@ -143,10 +143,10 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
 - **QAF-64 CONTRACT GAP** — a retimed trip reads as removed plus
   added. A's `set_headway` moves 08:11, 08:41, 09:11 two minutes
   onto the clockface, but the timetable comparison answers "3 gone"
-  and counts them among the 7 added: it compares by trip identity
-  (pattern trips, start), and a retime changes the start. A planner
-  reads "3 gone" as a cut. Needs the edit's own account (`apply`
-  reporting what it moved) or a match in the comparison.
+  and counts them among the 7 added: it compares trip instances
+  (trip, start), and a retime changes the start. A retime keeps the
+  trip's id, so the comparison can match by trip id. A planner reads
+  "3 gone" as a cut.
   Pin: proposal A in the service-design UI (`timetable-delta`).
 - **QAF-26 OP GAP** — no recovery view: `block_trips` carries
   `layover_after_secs` and durations, but nothing folds them into
@@ -215,19 +215,20 @@ time, last bus home, is there a detour.
   follow.
   Pin: directory `stop_detail` 9000 and 9008 — both the same 10
   routes; `stop_times.txt` gives 9000 → {012}.
-- **QAF-67 MODEL GAP** — routes have no long name: the feed's
-  `route_long_name` ("Lincoln", "112th Avenue", "Fruit Valley/
-  Grand") does not survive the import (`Route` is name, mode, color,
-  directions), so every rider-facing row reads "012".
+- **QAF-67 CONTRACT GAP** — rider-facing rows carry no long name:
+  the model holds `Route::long_name` ("Lincoln", "112th Avenue",
+  "Fruit Valley/Grand"), but the directory and board rows answer
+  only the short name, so every row reads "012".
   Pin: directory `routes` — keys `color, mode, name, route_id`,
   name "012".
 - **QAF-68 CONTRACT GAP** — a departure's destination is its last
   stop's name, not its headsign: the 164 the feed signs "Portland"
   reads "SW 5th & Morrison", the 030 to "Downtown Vancouver" reads
   "Broadway & Evergreen Blvd", and terminals leak their bay ("Van
-  Mall Transit Center: Bay D"). The import spends `trip_headsign`
-  on direction names only; board rows and itinerary legs never see
-  it. (QAF-63 means the direction name is not the answer either.)
+  Mall Transit Center: Bay D"). The model holds each trip's
+  headsign (`Trip::headsign`) and each stop's (`PatternStop::
+  headsign`); board rows and itinerary legs never read them. (QAF-63
+  means the direction name is not the answer either.)
   Pin: board `stop_board` 106 2026-10-28 from 28800 —
   `rows[*].destination`; router `plan` 9000 → 6136, leg headsign
   "012 → Van Mall Transit Center: Bay D".
