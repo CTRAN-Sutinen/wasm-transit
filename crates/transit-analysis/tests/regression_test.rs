@@ -224,5 +224,7 @@ fn a_proposal_compares_route_by_route_against_its_baseline() {
     let same = transit_analysis::service_type_compare(&base, &base, "WK").unwrap();
     assert!(same.routes.is_empty());
     assert_eq!(same.unchanged_routes, 1);
-    assert!(transit_analysis::service_type_compare(&base, &proposal, "ghost").unwrap_err().contains("baseline"));
+    // An unknown type answers empty, never an error — the lookup
+    // convention (QAF-19): errors are for hash addresses.
+    assert!(transit_analysis::service_type_compare(&base, &proposal, "ghost").is_none());
 }

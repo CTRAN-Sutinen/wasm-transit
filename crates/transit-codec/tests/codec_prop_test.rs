@@ -18,6 +18,12 @@
 //!   survive the round trip exactly: same routes, same times, same
 //!   stop visits. This is the planner's actual product.
 //! * **Determinism** — the round trip is a pure function.
+//! * **Three views, one document** — the runcut, the materialized
+//!   day, and the published artifact agree: every block trip is a
+//!   trip the day runs, every materialized trip is a trip the
+//!   export publishes with its exact times, and the block a trip
+//!   belongs to is the block the export says runs it (the old
+//!   validate/runcut desync would have failed this law).
 
 use std::io::Write;
 
@@ -303,5 +309,80 @@ proptest! {
         let b = transit_codec::gtfs_to_network(&exported);
         prop_assert_eq!(a.network, b.network);
         prop_assert_eq!(a.notes, b.notes);
+    }
+
+    /// QAF-20's missing cross-capability check: the runcut, the
+    /// materialized day, and the published artifact are three views
+    /// of ONE document, so they must agree — every block trip is a
+    /// trip the day actually runs, every materialized trip is
+    /// published with its exact stop sequence and times, and the
+    /// block a trip belongs to is the block the export says runs it.
+    /// A desync between what the runcut runs and what the export
+    /// publishes fails here instead of in a planner's session.
+    #[test]
+    fn runcut_day_and_export_agree(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
+        let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
+        let net = transit_codec::gtfs_to_network(&gtfs).network;
+        let exported = transit_codec::network_to_gtfs(&net).expect("a valid document exports");
+
+        // The day: every materialized (schedule, start) with its
+        // per-stop times.
+        let mut day: std::collections::BTreeMap<(String, u32), Vec<(String, u32, u32)>> =
+            Default::default();
+        for id in net.pattern_trips.keys() {
+            for trip in transit_network::materialize_service(&net, id).expect("valid materializes") {
+                day.insert(
+                    (id.clone(), trip.start_secs),
+                    trip.stop_times
+                        .iter()
+                        .map(|st| (st.stop.clone(), st.arrival_secs, st.departure_secs))
+                        .collect(),
+                );
+            }
+        }
+        // The artifact: the export's trips, keyed by the derived id
+        // it mints ("{schedule}@{start}").
+        let mut published: std::collections::BTreeMap<String, Vec<(String, u32, u32)>> =
+            Default::default();
+        for trip_id in exported.trips.keys() {
+            published.insert(
+                trip_id.clone(),
+                exported
+                    .trip_stop_times(trip_id)
+                    .expect("exported trip rows")
+                    .iter()
+                    .map(|st| {
+                        (
+                            st.stop_id.clone(),
+                            st.arrival_time.expect("export writes arrivals"),
+                            st.departure_time.expect("export writes departures"),
+                        )
+                    })
+                    .collect(),
+            );
+        }
+        prop_assert_eq!(day.len(), published.len(), "the export lost or invented trips");
+        for ((sched, start), times) in &day {
+            let id = format!("{sched}@{start}");
+            prop_assert!(published.contains_key(&id), "the export does not publish {id}");
+            prop_assert_eq!(&published[&id], times, "the export retimed {}", id);
+        }
+        // The runcut: chains reference real trips, and the published
+        // artifact agrees about which bus runs them.
+        for (block_id, block) in &net.blocks {
+            for trip in &block.trips {
+                prop_assert!(
+                    day.contains_key(&(trip.pattern_trips.clone(), trip.start_secs)),
+                    "block {block_id} chains a trip the day does not run"
+                );
+                let id = format!("{}@{}", trip.pattern_trips, trip.start_secs);
+                prop_assert_eq!(
+                    exported.trips[&id].block_id.as_deref(),
+                    Some(block_id.as_str()),
+                    "the export disagrees with the runcut about {}",
+                    id
+                );
+            }
+        }
     }
 }

@@ -67,7 +67,9 @@ pub struct RouteStats {
     /// departures at the route's busiest stop (`headway_stop`).
     /// Departures only — a trip's final visit is an arrival — and a
     /// median, so a short-lived variant or a clustered pair of trips
-    /// cannot stand in for the route. Null below two departures.
+    /// cannot stand in for the route. Null below four departures at
+    /// the headway stop: a 3-trip route has no "typical" gap, and
+    /// the median would read as a headway nobody runs (QAF-55).
     pub typical_headway_secs: Option<u32>,
     /// Where the headway was measured: the stop with the most
     /// departures of this route today (ties by stop id).
@@ -144,15 +146,12 @@ pub struct ServiceTypeDetail {
 }
 
 /// The drill-down: one service type expanded on its representative
-/// day. Errors when the type is unknown or runs on no date (an
-/// authored type with no days yet).
-pub fn service_type_detail(net: &Network, type_id: &str) -> Result<ServiceTypeDetail, String> {
-    let service_type = net
-        .service_types
-        .get(type_id)
-        .ok_or_else(|| format!("unknown service type {type_id:?}"))?;
-    let date = representative_date(&service_type.rule)
-        .ok_or_else(|| format!("service type {type_id:?} runs on no date"))?;
+/// day. `None` for an unknown type, or one that runs on no date (an
+/// authored type with no days yet) — lookups answer empty for
+/// unknown ids; errors are for hash addresses (QAF-19's convention).
+pub fn service_type_detail(net: &Network, type_id: &str) -> Option<ServiceTypeDetail> {
+    let service_type = net.service_types.get(type_id)?;
+    let date = representative_date(&service_type.rule)?;
     let stats = day_stats(net, date, Some(type_id));
 
     let mut pattern_trips = Vec::new();
@@ -172,7 +171,7 @@ pub fn service_type_detail(net: &Network, type_id: &str) -> Result<ServiceTypeDe
         });
     }
 
-    Ok(ServiceTypeDetail {
+    Some(ServiceTypeDetail {
         service_type: type_id.to_string(),
         name: service_type.name.clone(),
         date: date.format("%Y-%m-%d").to_string(),
@@ -223,11 +222,12 @@ pub struct RouteChange {
     pub proposal: Option<RouteStats>,
 }
 
-/// The comparison: errors when either side lacks the type or it runs
-/// on no date there.
-pub fn service_type_compare(base: &Network, proposal: &Network, type_id: &str) -> Result<ServiceTypeComparison, String> {
-    let b = service_type_detail(base, type_id).map_err(|e| format!("baseline: {e}"))?;
-    let p = service_type_detail(proposal, type_id).map_err(|e| format!("proposal: {e}"))?;
+/// The comparison: `None` when either side lacks the type or it
+/// runs on no date there — unknown ids answer empty, never an error
+/// (QAF-19's convention; errors are for hash addresses).
+pub fn service_type_compare(base: &Network, proposal: &Network, type_id: &str) -> Option<ServiceTypeComparison> {
+    let b = service_type_detail(base, type_id)?;
+    let p = service_type_detail(proposal, type_id)?;
     let same = |x: &RouteStats, y: &RouteStats| {
         (x.name.as_str(), x.patterns, x.stops, x.trips, x.first_start_secs, x.last_arrival_secs, x.typical_headway_secs)
             == (y.name.as_str(), y.patterns, y.stops, y.trips, y.first_start_secs, y.last_arrival_secs, y.typical_headway_secs)
@@ -258,7 +258,7 @@ pub fn service_type_compare(base: &Network, proposal: &Network, type_id: &str) -
         revenue_hours: d.revenue_hours,
         routes: d.routes.len() as u32,
     };
-    Ok(ServiceTypeComparison {
+    Some(ServiceTypeComparison {
         service_type: type_id.to_string(),
         name: p.name.clone(),
         base: totals(&b),
@@ -272,7 +272,7 @@ pub fn service_type_compare(base: &Network, proposal: &Network, type_id: &str) -
 /// representative day. This — not a calendar date — is the planner's
 /// design axis.
 pub fn service_type_overview(net: &Network) -> Vec<ServiceTypeSummary> {
-    service_type_summaries(net)
+    service_type_summaries(net, None)
 }
 
 /// One service type's population coverage on its representative day.
@@ -321,10 +321,17 @@ pub fn type_coverage(
     out
 }
 
-/// Per-type numbers, each on its own representative day.
-fn service_type_summaries(net: &Network) -> Vec<ServiceTypeSummary> {
+/// Per-type numbers, each on its own representative day. With
+/// `running_on`, only the types whose calendar runs on that date
+/// are listed — the date-scoped read (QAF-2: the field used to
+/// answer every type on any date); `None` lists every type (the
+/// overview's axis scan).
+fn service_type_summaries(net: &Network, running_on: Option<NaiveDate>) -> Vec<ServiceTypeSummary> {
     let mut out = Vec::with_capacity(net.service_types.len());
     for (type_id, service_type) in &net.service_types {
+        if running_on.is_some_and(|date| !service_type.rule.runs_on(date)) {
+            continue;
+        }
         let Some(date) = representative_date(&service_type.rule) else {
             out.push(ServiceTypeSummary {
                 service_type: type_id.clone(),
@@ -388,8 +395,10 @@ pub struct NetworkStats {
     /// Transfer points active on the date (flagged stops whose
     /// walking group is served by at least two routes today).
     pub transfer_stops: u32,
-    /// The design axis: every service type's numbers, each on its
-    /// own representative day.
+    /// The design axis, date-scoped: the service types whose
+    /// calendar RUNS on this date, each with its own
+    /// representative-day numbers (QAF-2 — the field used to list
+    /// every type on any date).
     pub service_types: Vec<ServiceTypeSummary>,
     /// Every route, sorted by id — zero-trip routes are analysis too.
     pub routes: Vec<RouteStats>,
@@ -452,9 +461,15 @@ impl StopActivity {
 }
 
 /// The median gap between consecutive times (sorted here); None
-/// below two times. A median, not the span average: a busy hour and
-/// a quiet evening each count for what they are.
+/// below FOUR times — a median over fewer than three gaps is not a
+/// "typical" anything, and a 3-trip route reading "every 664
+/// minutes" is a headway nobody runs (QAF-55). A median, not the
+/// span average: a busy hour and a quiet evening each count for
+/// what they are.
 fn median_gap_secs(times: &[u32]) -> Option<u32> {
+    if times.len() < 4 {
+        return None;
+    }
     let mut sorted = times.to_vec();
     sorted.sort_unstable();
     let mut gaps: Vec<u32> = sorted.windows(2).map(|w| w[1] - w[0]).collect();
@@ -648,7 +663,7 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
         last_arrival_secs: last_arrival,
         revenue_hours: runtime_secs as f64 / 3600.0,
         transfer_stops,
-        service_types: service_type_summaries(net),
+        service_types: service_type_summaries(net, Some(date)),
         routes,
         stops,
     }

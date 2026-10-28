@@ -204,6 +204,50 @@ proptest! {
             prop_assert!(entry.served_pct >= 0.0 && entry.served_pct <= 100.0);
         }
     }
+
+    /// QAF-19: unknown IDs answer empty, unknown HASHES error — one
+    /// convention across the module surface. `service_type_detail`
+    /// used to error on an unknown type while its sibling lookups
+    /// answered empty; the law pins the convention for any id.
+    #[test]
+    fn unknown_ids_answer_empty_and_unknown_hashes_error(
+        trips in proptest::collection::vec(gen_trip(), 1..=14),
+        id in "[a-zA-Z][a-zA-Z0-9_]{0,7}",
+    ) {
+        let net = network(&trips);
+        let cap_analysis::Response::LoadNetwork { network_hash } =
+            cap_analysis::dispatch(cap_analysis::Request::LoadNetwork { network: net })
+                .expect("load")
+        else { panic!("load") };
+        // The generator's service keys are "0" and "1", so any
+        // alphabetic id is unknown to the document.
+        let detail = cap_analysis::dispatch(cap_analysis::Request::ServiceTypeDetail {
+            network_hash: network_hash.clone(),
+            service_type: id.clone(),
+        })
+        .expect("an unknown id answers, never errors");
+        let cap_analysis::Response::ServiceTypeDetail { detail } = detail else { panic!("detail") };
+        prop_assert!(detail.is_none(), "unknown type {} answered a detail", id);
+
+        let comparison = cap_analysis::dispatch(cap_analysis::Request::ServiceTypeCompare {
+            base_hash: network_hash.clone(),
+            network_hash: network_hash.clone(),
+            service_type: id,
+        })
+        .expect("an unknown id answers, never errors");
+        let cap_analysis::Response::ServiceTypeCompare { comparison } = comparison else { panic!("cmp") };
+        prop_assert!(comparison.is_none(), "an unknown type compared to something");
+
+        // The hash is an address: unknown means error, not empty.
+        prop_assert!(
+            cap_analysis::dispatch(cap_analysis::Request::ServiceTypeDetail {
+                network_hash: "sha256:missing".into(),
+                service_type: "0".into(),
+            })
+            .is_err(),
+            "an unknown hash must error, never answer empty"
+        );
+    }
 }
 
 #[test]
@@ -230,6 +274,7 @@ fn a_network_compares_against_itself_as_unchanged() {
     let same = cap_analysis::Request::ServiceTypeCompare { base_hash: hash.clone(), network_hash: hash.clone(), service_type };
     match cap_analysis::dispatch(same).unwrap() {
         cap_analysis::Response::ServiceTypeCompare { comparison } => {
+            let comparison = comparison.expect("the fixture carries service type 0");
             assert!(comparison.routes.is_empty());
             assert_eq!(comparison.unchanged_routes, comparison.base.routes);
         }

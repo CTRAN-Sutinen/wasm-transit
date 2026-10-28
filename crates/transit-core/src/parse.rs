@@ -28,6 +28,10 @@ struct RawStopTime {
     departure_time: Option<String>,
     #[serde(default)]
     stop_headsign: Option<String>,
+    #[serde(default)]
+    timepoint: Option<String>,
+    #[serde(default)]
+    shape_dist_traveled: Option<String>,
 }
 
 /// Read one member of the archive as UTF-8 text.
@@ -158,6 +162,30 @@ pub fn from_zip_bytes(bytes: &[u8]) -> Result<Gtfs> {
     // midnight.
     let mut stop_times = Vec::with_capacity(raw_stop_times.len());
     for raw in raw_stop_times {
+        // timepoint: absent or empty means exact (the spec's
+        // default); 0 marks an interpolated stop.
+        let timepoint = match raw.timepoint.as_deref() {
+            None | Some("") | Some("1") => true,
+            Some("0") => false,
+            other => {
+                return Err(GtfsError::Invalid {
+                    file: "stop_times.txt",
+                    message: format!("timepoint must be 0 or 1, got {other:?}"),
+                })
+            }
+        };
+        let shape_dist_traveled = raw
+            .shape_dist_traveled
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                s.parse::<f64>().map_err(|_| GtfsError::Invalid {
+                    file: "stop_times.txt",
+                    message: format!("shape_dist_traveled is not a number: {s:?}"),
+                })
+            })
+            .transpose()?;
         stop_times.push(StopTime {
             arrival_time: parse_opt_time("arrival_time", &raw.arrival_time)?,
             departure_time: parse_opt_time("departure_time", &raw.departure_time)?,
@@ -165,6 +193,8 @@ pub fn from_zip_bytes(bytes: &[u8]) -> Result<Gtfs> {
             stop_id: raw.stop_id,
             stop_sequence: raw.stop_sequence,
             stop_headsign: raw.stop_headsign,
+            timepoint,
+            shape_dist_traveled,
         });
     }
 

@@ -47,6 +47,53 @@ fn a_stop_lists_the_routes_serving_it() {
     assert!(stop_detail(&net, "nope").is_none());
 }
 
+/// QAF-51 regression (C-TRAN, Fisher's Landing): a parent station
+/// whose patterns visit only its bays answers their routes — the
+/// detail read pools the walking group, the same group the station
+/// board departs across. It used to answer nothing.
+#[test]
+fn a_station_answers_its_bays_routes() {
+    let net = apply_edits(&network(), &[
+        NetworkEdit::UpsertStop {
+            id: "STN".into(),
+            stop: transit_network::Stop {
+                name: "Main & 2nd Station".into(),
+                lat: 45.510,
+                lon: -73.510,
+                parent: None,
+                transfer: false,
+            },
+        },
+        NetworkEdit::UpsertStop {
+            id: "B".into(),
+            stop: transit_network::Stop {
+                name: "Main & 2nd".into(),
+                lat: 45.510,
+                lon: -73.510,
+                parent: Some("STN".into()),
+                transfer: false,
+            },
+        },
+        NetworkEdit::UpsertStop {
+            id: "N1".into(),
+            stop: transit_network::Stop {
+                name: "Main & 2nd across".into(),
+                lat: 45.5105,
+                lon: -73.5095,
+                parent: Some("STN".into()),
+                transfer: false,
+            },
+        },
+    ])
+    .unwrap();
+    let routes = |stop: &str| {
+        stop_detail(&net, stop).unwrap().routes.iter().map(|r| r.id.clone()).collect::<Vec<_>>()
+    };
+    assert_eq!(routes("STN"), ["10"], "the station answers its bays' routes");
+    assert_eq!(routes("N1"), ["10"], "a bay answers its sibling's routes too");
+    assert_eq!(routes("B"), ["10"]);
+}
+
 #[test]
 fn trip_counts_are_the_days_trips() {
     // Overlapping bands share a start: the day runs it once, and so

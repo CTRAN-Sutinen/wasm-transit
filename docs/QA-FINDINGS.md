@@ -24,10 +24,12 @@ is the next unit (`docs/units/`).
   licensed; fetch from c-tran.com), `sha256:aa8dbc62833237d754
   96b6ec04c2a45fe10ca2a957f63d63b51ddaae85a7dc4f`, version
   20260913-20270109. rt payloads from gtfs-rt.c-tran.org.
-- Network import: `sha256:89631f1ad4cf722721d347e2d9b7c379bd015
-  fdc1be9aed2618e1956b60a65de` (findings from before 2026-10-27
-  were seen on `bceda1be…`, the import before it kept
-  direction_id — the same service).
+- Network import: `sha256:2e27c511aaffb63998166c7cd196d714
+  d48c8b14f63059b7b70fa52b3fc049bb` (findings from before
+  2026-10-27 were seen on `89631f1a…`, the import before per-trip
+  run times and the fidelity columns; before that on
+  `bceda1be…`, the import that kept direction_id — the same
+  service).
 - Population layer: `testdata/clark-population.geojson` (`just
   population`), `sha256:a17d4372bef1122fa8152fe0c8b6f240db2a9d40
   b1dbdb4cfb7c6395505a2602`.
@@ -44,16 +46,6 @@ is the next unit (`docs/units/`).
 
 ## Import fidelity
 
-- **QAF-56 DATA GAP** — the import discards the feed's timepoint
-  flags: C-TRAN marks 25 712 of 117 667 stop times as timepoints,
-  but every imported stop is one, so 019's timetable answers 13/13
-  and 14/14 columns as timepoints. The feed also publishes
-  `shape_dist_traveled`, while the import fabricates index × 500 m.
-  Keeping the flags means non-timepoint times interpolate by
-  distance, so real distances must come with them or materialized
-  times move.
-  Pin: directory `timetable` 019 (`stops[].timepoint`) against
-  `stop_times.txt`'s timepoint column.
 - **QAF-62 DATA GAP** — imported layovers are the whole observed
   gap between two trips, so any later arrival or earlier start
   reads as infeasible: C's +3 min breaks 6 blocks, and A's
@@ -116,10 +108,8 @@ is the next unit (`docs/units/`).
 - **QAF-20 OP GAP** — the scenario diff is half there: per route
   (analysis `service_type_compare`) and per timetable (directory
   `timetable {compare_hash}`) are answered. Coverage deltas still
-  take two `type_coverage` answers, fleet deltas have no op
-  (QAF-3), and the cross-capability check is missing — a diff that
-  compares what export publishes with what the runcut runs would
-  have caught the old validate/runcut desync automatically.
+  take two `type_coverage` answers and fleet deltas have no op
+  (QAF-3).
   Pin: two `type_coverage` calls on base and fork; no op takes two
   network hashes for coverage or fleet.
 - **QAF-64 CONTRACT GAP** — a retimed trip reads as removed plus
@@ -132,7 +122,8 @@ is the next unit (`docs/units/`).
   Pin: proposal A in the service-design UI (`timetable-delta`).
 - **QAF-21 OP GAP** — no revenue miles: stats answer hours, never
   miles, though every cost model is per hour AND per mile and
-  patterns carry `distance_m` (fabricated today — QAF-56). Average
+  patterns carry `distance_m` (kept from the feed's
+  `shape_dist_traveled` since QAF-56's fix). Average
   operating speed follows.
   Pin: the `network_stats` / `service_type_detail` shapes (no
   distance field).
@@ -151,19 +142,6 @@ is the next unit (`docs/units/`).
   QAF-62 separates recovery from slack.)
   Pin: the 347.73 layover hours in QAF-3's pin were summed
   host-side.
-- **QAF-55 CONTRACT QUESTION** — `typical_headway_secs` on sparse
-  routes reads as a headway nobody runs: 1-WKDY 041 answers 664 min
-  (3 trips), 048 and 164 answer 360. Answer null below a trip
-  floor, or label the service (peak-only, sparse).
-  Pin: analysis `service_type_detail` 1-WKDY, routes 041/048/164.
-- **QAF-2 DEFECT?** — `network_stats` is date-ambiguous: `trips`
-  and `routes` answer the date, `service_types` answers all 13
-  types with representative-day numbers on any date. Date-filter
-  the field or restate the contract.
-  Pin: `network_stats {include_service_types: true}` on 2026-10-26
-  and 2026-10-31 (identical lists) against `calendar.active_services`
-  on 2026-10-31 (2-SAT, 2-SAT/31 only).
-
 ## Coverage
 
 - **QAF-23 OP GAP** — coverage answers the share, not the where:
@@ -200,11 +178,6 @@ is the next unit (`docs/units/`).
 - **QAF-24 OP GAP** — the calendar is one-directional: date →
   service types, never type → dates ("when does 1-WKDY/31 run?").
   Pin: `calendar.active_services`; no op answers a type's date set.
-- **QAF-51 OP GAP** — a parent station's stop screen lists no
-  serving routes: `stop_detail` for Fisher's Landing (106) answers
-  none, because buses visit its bays (9000–9009). The station
-  board already pools the walking group; `stop_detail` should too.
-  Pin: directory `stop_detail` 106.
 
 ## Authoring contract
 
@@ -223,15 +196,6 @@ is the next unit (`docs/units/`).
   and the fix is one `set_service_range` per service type (13 on
   C-TRAN).
   Pin: the same Winter 2027 fork.
-- **QAF-19 CONTRACT GAP** — unknown references are inconsistent:
-  `service_type_detail` errors on an unknown type, while the
-  directory and board answered empty for an unknown route or stop.
-  Pick one convention (empty for lookups, error only for hash
-  addresses).
-  Pin: `service_type_detail "NOPE"` errors. NEEDS RE-PIN: the
-  empty answers were seen on ops since retired
-  (`route_stop_sequence`, `departures`); check `route_detail` and
-  `stop_board` on "GHOST".
 
 ## Live operations
 

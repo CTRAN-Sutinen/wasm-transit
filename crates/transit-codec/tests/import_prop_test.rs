@@ -26,6 +26,10 @@
 //! 5. The round trip is lossless: import the feed, export the
 //!    document, and on every service date the same trips run (see
 //!    the test below).
+//! 6. The fidelity columns survive: a stop's exactness flag and
+//!    its shape distance are the model's own `timepoint` /
+//!    `distance_m`, and timepoint stops keep their exact times
+//!    (see the test below).
 
 use std::io::Write;
 
@@ -116,6 +120,107 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
             let secs = start + (j as u32) * (t.leg_min as u32) * 60;
             let hhmmss = format!("{:02}:{:02}:00", secs / 3600, (secs % 3600) / 60);
             stop_times.push_str(&format!("\n{},{},{},s{},{}", id, hhmmss, hhmmss, s, j + 1));
+        }
+    }
+    add(&mut w, "stop_times.txt", &stop_times);
+    add(
+        &mut w,
+        "calendar.txt",
+        "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n0,1,1,1,1,1,0,0,20260101,20261231\n1,0,0,0,0,0,1,1,20260101,20261231\n",
+    );
+    w.finish().unwrap().into_inner()
+}
+
+/// A trip carrying the fidelity columns law 6 pins: per-stop
+/// exactness flags (some stops approximate) and per-stop shape
+/// distances (non-decreasing, as real feeds accumulate; some rows
+/// may leave them empty).
+#[derive(Clone, Debug)]
+struct RichTrip {
+    trip: GenTrip,
+    flags: Vec<bool>,
+    /// Meters at each stop; `None` = the row leaves the cell empty.
+    dists: Vec<Option<u32>>,
+}
+
+fn gen_rich_trip() -> impl Strategy<Value = RichTrip> {
+    gen_trip().prop_flat_map(|trip| {
+        let n = trip.stops.len();
+        (
+            proptest::collection::vec(any::<bool>(), n..=n),
+            proptest::collection::vec(0u32..2000, n..=n),
+            proptest::collection::vec(any::<bool>(), n..=n),
+        )
+            .prop_map(move |(flags, gaps, has_dist)| {
+                let mut at = 0u32;
+                let dists = gaps
+                    .iter()
+                    .zip(&has_dist)
+                    .map(|(gap, present)| {
+                        at += gap;
+                        (*present).then_some(at)
+                    })
+                    .collect();
+                RichTrip { trip: trip.clone(), flags, dists }
+            })
+    })
+}
+
+/// `gen_feed` with the fidelity columns: `timepoint` (1/0, the
+/// spec's exactness flag) and `shape_dist_traveled` (integer
+/// meters, empty where the feed leaves them).
+fn gen_feed_rich(trips: &[RichTrip]) -> Vec<u8> {
+    let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let opts = zip::write::SimpleFileOptions::default();
+    let add = |w: &mut zip::ZipWriter<std::io::Cursor<Vec<u8>>>, name: &str, body: &str| {
+        w.start_file(name, opts).unwrap();
+        w.write_all(body.as_bytes()).unwrap();
+    };
+
+    let csv = |rows: Vec<String>| rows.join("\n");
+    add(
+        &mut w,
+        "agency.txt",
+        "agency_id,agency_name,agency_url,agency_timezone\n1,T,https://x,UTC\n",
+    );
+    add(&mut w, "routes.txt", "route_id,agency_id,route_short_name,route_type\n0,1,0,3\n1,1,1,3\n");
+    let mut stops = String::from("stop_id,stop_name,stop_lat,stop_lon");
+    for i in 0..6u8 {
+        stops.push_str(&format!("\ns{i},Stop {i},45.50{},-73.50{}", i, i));
+    }
+    add(&mut w, "stops.txt", &stops);
+    add(
+        &mut w,
+        "trips.txt",
+        &csv(
+            std::iter::once("route_id,service_id,trip_id,block_id".into())
+                .chain(trips.iter().enumerate().map(|(i, t)| {
+                    format!(
+                        "{},{},{},{},",
+                        t.trip.route,
+                        t.trip.service,
+                        format!("t{i}"),
+                        t.trip.block.map(|b| b.to_string()).unwrap_or_default()
+                    )
+                }))
+                .collect(),
+        ),
+    );
+    let mut stop_times = String::from(
+        "trip_id,arrival_time,departure_time,stop_id,stop_sequence,timepoint,shape_dist_traveled",
+    );
+    for (i, t) in trips.iter().enumerate() {
+        let id = format!("t{i}");
+        let start = (t.trip.start_slot as u32) * 600;
+        for (j, &s) in t.trip.stops.iter().enumerate() {
+            let secs = start + (j as u32) * (t.trip.leg_min as u32) * 60;
+            let hhmmss = format!("{:02}:{:02}:00", secs / 3600, (secs % 3600) / 60);
+            let flag = if t.flags[j] { "1" } else { "0" };
+            let dist = t.dists[j].map_or_else(String::new, |d| d.to_string());
+            stop_times.push_str(&format!(
+                "\n{},{},{},s{},{},{},{}",
+                id, hhmmss, hhmmss, s, j + 1, flag, dist
+            ));
         }
     }
     add(&mut w, "stop_times.txt", &stop_times);
@@ -312,6 +417,72 @@ proptest! {
                 "the round trip changed the schedule on {}",
                 date
             );
+        }
+    }
+
+    /// Law 6: the fidelity columns survive (QAF-56 — the import used
+    /// to discard both and fabricate index × 500 m). A stop's
+    /// exactness flag becomes the pattern's `timepoint` (the trip's
+    /// first and last stops are always timepoints — the model times
+    /// a trip by its start and its arrival at the end); the feed's
+    /// shape distances become `distance_m` verbatim; and a
+    /// timepoint stop's materialized time is its exact feed time
+    /// (non-timepoint stops interpolate — the spec calls those rows
+    /// approximate, so they are derived, not kept).
+    #[test]
+    fn exactness_flags_and_distances_survive_the_import(
+        trips in proptest::collection::vec(gen_rich_trip(), 0..=14),
+    ) {
+        let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed_rich(&trips))
+            .expect("generated feeds parse");
+        let outcome = transit_codec::gtfs_to_network(&gtfs);
+        let net = &outcome.network;
+        for entry in &outcome.trip_map.entries {
+            let derived = transit_network::materialize_service(net, &entry.pattern_trips)
+                .expect("a valid document materializes")
+                .into_iter()
+                .find(|t| t.start_secs == entry.start_secs)
+                .unwrap_or_else(|| panic!("map names a start {} does not run", entry.pattern_trips));
+            let pattern = &net.patterns[&derived.pattern];
+            for id in &entry.agency_trip_ids {
+                let rows = gtfs.trip_stop_times(id).expect("kept trip has rows");
+                let index = id.strip_prefix('t').expect("index ids").parse::<usize>().expect("numeric");
+                let rich = &trips[index];
+                prop_assert_eq!(rows.len(), pattern.stops.len(), "trip {} lost a stop", id);
+                for (i, row) in rows.iter().enumerate() {
+                    let expected_flag = rich.flags[i] || i == 0 || i == rows.len() - 1;
+                    prop_assert_eq!(
+                        pattern.stops[i].timepoint,
+                        expected_flag,
+                        "trip {} stop {}: the exactness flag was not kept",
+                        id,
+                        row.stop_id
+                    );
+                    prop_assert_eq!(&pattern.stops[i].stop, &row.stop_id);
+                    if let Some(d) = rich.dists[i] {
+                        prop_assert_eq!(
+                            pattern.stops[i].distance_m,
+                            d as f64,
+                            "trip {} stop {}: the shape distance was not kept",
+                            id,
+                            row.stop_id
+                        );
+                    }
+                    if expected_flag {
+                        let t = row
+                            .arrival_time
+                            .or(row.departure_time)
+                            .expect("generator writes both");
+                        prop_assert_eq!(
+                            derived.stop_times[i].arrival_secs,
+                            t,
+                            "trip {} timepoint {}: the exact time was not kept",
+                            id,
+                            row.stop_id
+                        );
+                    }
+                }
+            }
         }
     }
 }

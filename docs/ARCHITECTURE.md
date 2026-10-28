@@ -95,11 +95,22 @@ transit-codec   The network codec, both directions: a network document
                 transfer points, …) is REPORTED as an ImportNote —
                 never silent. Each trip's stop times survive the
                 import EXACTLY: patterns cluster by (route,
-                direction, stop sequence, run times), so run-time
+                direction, stop sequence, exactness flags,
+                timepoint times, distances), so run-time
                 variation between trips of one stop sequence becomes
                 pattern variants of the same direction, never a
                 collapsed profile (property-tested: materialized
-                trips preserve feed stop times). The import also
+                trips preserve feed stop times). The fidelity
+                columns survive too: a stop's timepoint flag
+                becomes the pattern's `timepoint` (first and last
+                stops always are — the model times a trip by its
+                start and arrival), `shape_dist_traveled` becomes
+                `distance_m` (fabricated index × 500 m only where
+                the feed publishes none), and a timepoint stop
+                keeps its exact feed time while non-timepoint stops
+                interpolate by distance (the spec calls those rows
+                approximate — property-tested: exactness flags and
+                distances survive the import). The import also
                 infers each block
                 layover from the observed end→start gap (exactly
                 feasible — the model's LayoverInfeasible law holds

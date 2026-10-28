@@ -18,6 +18,7 @@
 //!    empty answers, never panics.
 
 use cap_directory::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
+use proptest::prelude::*;
 use sha2::Digest;
 use transit_network::Network;
 
@@ -296,4 +297,56 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     assert_eq!(via_bytes, via_json);
     let bad = cap_directory::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    /// QAF-19 re-pin (the finding asked to re-check these): unknown
+    /// IDs are lookup misses — NULL details, never errors. Errors
+    /// are for hash addresses only. A lowercase id cannot collide
+    /// with the fixture's (A/B/C, 10/20, WK/SUN/HOL, B1, pat-*).
+    #[test]
+    fn unknown_ids_answer_empty_never_errors(id in "[a-z][a-z0-9_]{0,7}") {
+        let hash = load_network();
+        match dispatch(Request::RouteDetail { network_hash: hash.clone(), route_id: id.clone() }) {
+            Ok(Response::RouteDetail { detail }) => prop_assert!(detail.is_none()),
+            other => panic!("route_detail on an unknown id must answer, not {other:?}"),
+        }
+        match dispatch(Request::StopDetail { network_hash: hash.clone(), stop_id: id.clone() }) {
+            Ok(Response::StopDetail { detail }) => prop_assert!(detail.is_none()),
+            other => panic!("stop_detail on an unknown id must answer, not {other:?}"),
+        }
+        match dispatch(Request::Timetable {
+            network_hash: hash.clone(),
+            route_id: id.clone(),
+            direction: None,
+            service_type: "WK".into(),
+            compare_hash: None,
+        }) {
+            Ok(Response::Timetable { timetable }) => prop_assert!(timetable.is_none()),
+            other => panic!("timetable on an unknown id must answer, not {other:?}"),
+        }
+        // The known route under an unknown service type is the same
+        // lookup miss.
+        match dispatch(Request::Timetable {
+            network_hash: hash,
+            route_id: "10".into(),
+            direction: None,
+            service_type: id,
+            compare_hash: None,
+        }) {
+            Ok(Response::Timetable { timetable }) => prop_assert!(timetable.is_none()),
+            other => panic!("timetable on an unknown service type must answer, not {other:?}"),
+        }
+        // The hash is an address: unknown means error, not empty.
+        prop_assert!(
+            dispatch(Request::RouteDetail {
+                network_hash: "sha256:missing".into(),
+                route_id: "10".into(),
+            })
+            .is_err(),
+            "an unknown hash must error, never answer empty"
+        );
+    }
 }

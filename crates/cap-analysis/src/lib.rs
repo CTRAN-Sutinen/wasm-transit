@@ -101,8 +101,8 @@ pub enum Response {
     },
     NetworkStats { stats: NetworkStats },
     ServiceTypesOverview { service_types: Vec<ServiceTypeSummary> },
-    ServiceTypeDetail { detail: ServiceTypeDetail },
-    ServiceTypeCompare { comparison: ServiceTypeComparison },
+    ServiceTypeDetail { detail: Option<ServiceTypeDetail> },
+    ServiceTypeCompare { comparison: Option<ServiceTypeComparison> },
     TypeCoverage { coverage: Vec<TypeCoverage> },
 }
 
@@ -214,15 +214,17 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }),
         Request::ServiceTypeDetail { network_hash, service_type } => {
             with_network(&network_hash, |network| {
-                let detail = service_type_detail(network, &service_type)
-                    .map_err(|e| format!("service type: {e}"))?;
-                Ok(Response::ServiceTypeDetail { detail })
+                // Unknown ids answer empty (QAF-19's convention);
+                // only hash addresses error.
+                Ok(Response::ServiceTypeDetail { detail: service_type_detail(network, &service_type) })
             })
         }
         Request::ServiceTypeCompare { base_hash, network_hash, service_type } => {
             let base = network_arc(&base_hash)?;
             let proposal = network_arc(&network_hash)?;
-            let comparison = service_type_compare(&base, &proposal, &service_type)?;
+            // Unknown ids answer empty (QAF-19's convention);
+            // only hash addresses error.
+            let comparison = service_type_compare(&base, &proposal, &service_type);
             Ok(Response::ServiceTypeCompare { comparison })
         }
         Request::TypeCoverage { network_hash, layer_hash, radius_m, frequent_secs, min_departures, window } => {

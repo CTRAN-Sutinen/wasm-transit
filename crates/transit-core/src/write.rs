@@ -203,7 +203,7 @@ fn trip_rows(gtfs: &Gtfs) -> Vec<Vec<String>> {
 
 fn stop_time_rows(gtfs: &Gtfs) -> Vec<Vec<String>> {
     let mut rows = vec![
-        vec!["trip_id".into(), "arrival_time".into(), "departure_time".into(), "stop_id".into(), "stop_sequence".into(), "stop_headsign".into()],
+        vec!["trip_id".into(), "arrival_time".into(), "departure_time".into(), "stop_id".into(), "stop_sequence".into(), "stop_headsign".into(), "timepoint".into(), "shape_dist_traveled".into()],
     ];
     // The vec order is the feed's own order (parse kept stop_times
     // in file order; the materializer emits schedules in id order).
@@ -215,6 +215,8 @@ fn stop_time_rows(gtfs: &Gtfs) -> Vec<Vec<String>> {
             st.stop_id.clone(),
             st.stop_sequence.to_string(),
             opt(&st.stop_headsign),
+            if st.timepoint { "1".into() } else { "0".into() },
+            st.shape_dist_traveled.map_or_else(String::new, |d| format!("{d}")),
         ]);
     }
     rows

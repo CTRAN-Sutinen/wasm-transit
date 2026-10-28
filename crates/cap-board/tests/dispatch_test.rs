@@ -15,6 +15,7 @@
 //! 6. unknown hashes and garbage are errors, never panics.
 
 use cap_board::{dispatch, dispatch_bytes, dispatch_json, migrate_watchlist, Request, Response, Watchlist};
+use proptest::prelude::*;
 use sha2::Digest;
 use transit_network::Network;
 use transit_sync::{EditRecord, EditStatus};
@@ -394,4 +395,34 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     assert_eq!(via_bytes, via_json);
     let bad = cap_board::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    /// QAF-19 re-pin (the finding asked to check the board): an
+    /// unknown stop is a lookup miss — an EMPTY board, never an
+    /// error. Errors are for hash addresses; a lowercase id cannot
+    /// collide with the fixture's stops (A, B, C).
+    #[test]
+    fn an_unknown_stop_answers_an_empty_board(id in "[a-z][a-z0-9_]{0,7}") {
+        let hash = load_network();
+        match dispatch(Request::StopBoard {
+            network_hash: hash,
+            edits_hash: None,
+            stop_id: id,
+            date: DATE.into(),
+            from_secs: 0,
+            limit: 10,
+            live_hash: None,
+        })
+        .expect("a lookup answers, never errors")
+        {
+            Response::StopBoard { board } => {
+                prop_assert!(board.rows.is_empty(), "an unknown stop has no departures");
+                prop_assert!(!board.pooled, "an unknown stop pools nothing");
+            }
+            _ => panic!("stop_board"),
+        }
+    }
 }

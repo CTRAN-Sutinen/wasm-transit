@@ -537,7 +537,7 @@ export function analysisCap(module: CapModule) {
       } as AnalysisRequest) as Extract<AnalysisResponse, { op: "service_types_overview" }>;
       return resp.service_types;
     },
-    serviceTypeDetail(networkHash: string, serviceType: string): ServiceTypeDetail {
+    serviceTypeDetail(networkHash: string, serviceType: string): ServiceTypeDetail | null {
       const resp = module.invoke({
         op: "service_type_detail",
         network_hash: networkHash,
@@ -546,7 +546,7 @@ export function analysisCap(module: CapModule) {
       return resp.detail;
     },
     /// A proposal against its baseline under one service type.
-    serviceTypeCompare(baseHash: string, networkHash: string, serviceType: string): ServiceTypeComparison {
+    serviceTypeCompare(baseHash: string, networkHash: string, serviceType: string): ServiceTypeComparison | null {
       const resp = module.invoke({
         op: "service_type_compare",
         base_hash: baseHash,

@@ -404,18 +404,17 @@ pub fn timetable_against(
     Some(t)
 }
 
-/// The routes serving a stop, in id order; `None` for an unknown stop.
+/// The routes serving a stop, in id order; `None` for an unknown
+/// stop. A station answers what its bays answer: routes pool
+/// across the stop's WALKING GROUP, the same group the station
+/// board departs across — a parent station whose patterns visit
+/// only its bays still answers every route that serves it.
 pub fn stop_detail(network: &Network, stop: &str) -> Option<StopDetail> {
     network.stops.get(stop)?;
-    let serving: std::collections::BTreeSet<&str> = network
-        .patterns
-        .values()
-        .filter(|p| p.stops.iter().any(|ps| ps.stop == stop))
-        .map(|p| p.route.as_str())
-        .collect();
-    let routes = serving
+    let index = crate::validate::stop_route_index(network);
+    let routes = crate::validate::routes_meeting_at(network, &index, stop)
         .into_iter()
-        .map(|rid| row(rid, network.routes.get(rid).map_or(rid, |r| r.name.as_str())))
+        .map(|rid| row(rid.as_str(), network.routes.get(rid.as_str()).map_or(rid.as_str(), |r| r.name.as_str())))
         .collect();
     Some(StopDetail { routes })
 }

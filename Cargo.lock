@@ -203,6 +203,7 @@ name = "cap-directory"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
+ "proptest",
  "serde",
  "serde_json",
  "sha2",

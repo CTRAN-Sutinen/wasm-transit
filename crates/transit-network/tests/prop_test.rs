@@ -16,7 +16,7 @@
 use chrono::{Duration, NaiveDate};
 use proptest::prelude::*;
 use transit_network::{
-    materialize, trip_arrival_end_secs, validation_issues, Anchor, Block, CalendarException,
+    materialize, stop_detail, trip_arrival_end_secs, validation_issues, Anchor, Block, CalendarException,
     CalendarRule, DateRange, DayState, HeadwayBand, Layover, Mode, Network, Pattern, PatternStop,
     Route, Departures, PatternTrips, ServiceType, TimingProfile, TripRef, WeekdaySet,
 };
@@ -39,6 +39,11 @@ struct Spec {
     layover: u32,       // 0..600
     with_block: bool,
     with_exception: bool,
+    /// A parent station pin none of the patterns visits, with the
+    /// first `bays` stops as its children — the shape a transfer
+    /// center imports as (Fisher's Landing, its bays).
+    station: bool,
+    bays: u32,           // 1..3
 }
 
 fn spec_strategy() -> impl Strategy<Value = Spec> {
@@ -51,8 +56,10 @@ fn spec_strategy() -> impl Strategy<Value = Spec> {
         0u32..600,
         any::<bool>(),
         any::<bool>(),
+        any::<bool>(),
+        1u32..3,
     )
-        .prop_map(|(a, b, c, d, e, f, g, h)| Spec {
+        .prop_map(|(a, b, c, d, e, f, g, h, station, bays)| Spec {
             n_stops: a,
             n_patterns: b,
             n_services: c,
@@ -61,6 +68,8 @@ fn spec_strategy() -> impl Strategy<Value = Spec> {
             layover: f,
             with_block: g,
             with_exception: h,
+            station,
+            bays,
         })
 }
 
@@ -117,6 +126,23 @@ fn build_network(spec: &Spec) -> Network {
                 transfer: false,
             },
         );
+    }
+    // The optional station pin: no pattern visits it, its bays
+    // carry the trips — the transfer-center shape.
+    if spec.station {
+        net.stops.insert(
+            "STN".into(),
+            transit_network::Stop {
+                name: "Station".into(),
+                lat: 45.0,
+                lon: -122.7,
+                parent: None,
+                transfer: false,
+            },
+        );
+        for i in 0..spec.bays.min(spec.n_stops) {
+            net.stops.get_mut(&format!("s{i}")).expect("built above").parent = Some("STN".into());
+        }
     }
     net.routes.insert(
         "r0".into(),
@@ -500,5 +526,45 @@ proptest! {
             pattern_trips.pattern = "ghost-pattern".into();
         }
         let _ = materialize(&broken, date);
+    }
+
+    /// QAF-51 (C-TRAN, Fisher's Landing): a stop's detail answers its
+    /// whole WALKING GROUP — a station pin whose patterns visit only
+    /// its bays answers their routes, and a bay answers its
+    /// siblings'. The group is spelled out here from `parent` fields
+    /// (the oracle), never borrowed from the model's own helper.
+    #[test]
+    fn stop_detail_pools_the_walking_group(net in net_strategy()) {
+        for id in net.stops.keys() {
+            let stop = &net.stops[id];
+            let mut group: std::collections::BTreeSet<&str> =
+                [id.as_str()].into_iter().collect();
+            if let Some(parent) = stop.parent.as_deref() {
+                group.insert(parent);
+            }
+            for (other, s) in &net.stops {
+                if s.parent.as_deref() == Some(id.as_str()) {
+                    group.insert(other.as_str());
+                }
+                if stop.parent.is_some() && s.parent == stop.parent {
+                    group.insert(other.as_str());
+                }
+            }
+            let mut expected: std::collections::BTreeSet<String> = Default::default();
+            for p in net.patterns.values() {
+                if p.stops.iter().any(|ps| group.contains(ps.stop.as_str())) {
+                    expected.insert(p.route.clone());
+                }
+            }
+            let detail = stop_detail(&net, id).expect("a known stop has a detail");
+            let got: std::collections::BTreeSet<String> =
+                detail.routes.iter().map(|r| r.id.clone()).collect();
+            prop_assert_eq!(
+                got,
+                expected,
+                "stop {} does not answer its walking group",
+                id
+            );
+        }
     }
 }

@@ -270,7 +270,9 @@ proptest! {
                 );
                 // Typical headway: the busiest stop (most departures,
                 // lowest stop id on a tie) and the upper-median gap
-                // between its sorted departures.
+                // between its sorted departures — None below four
+                // departures (QAF-55: a median over fewer than three
+                // gaps is a headway nobody runs).
                 let mut busiest: Option<(&String, usize)> = None;
                 for ((r, stop), times) in &route_departures {
                     if r == &route.route_id && busiest.map_or(true, |(_, n)| times.len() > n) {
@@ -281,6 +283,9 @@ proptest! {
                 let typical = busiest.and_then(|(stop, _)| {
                     let mut times = route_departures[&(route.route_id.clone(), stop.clone())].clone();
                     times.sort();
+                    if times.len() < 4 {
+                        return None;
+                    }
                     let mut gaps: Vec<u32> = times.windows(2).map(|w| w[1] - w[0]).collect();
                     gaps.sort();
                     gaps.get(gaps.len() / 2).copied()
@@ -357,6 +362,55 @@ proptest! {
                 "frequent_pct disagrees for {}", entry.service_type);
             prop_assert_eq!(entry.served_stops, whole.served_stops, "served stops disagree for {}", entry.service_type);
             prop_assert_eq!(entry.frequent_stops, whole.frequent_stops, "frequent stops disagree for {}", entry.service_type);
+        }
+    }
+
+    /// QAF-2: network_stats is date-honest — the service_types
+    /// field names exactly the types whose calendar RUNS on the
+    /// queried date (it used to answer every type on any date, so
+    /// two different days read identically). The oracle walks each
+    /// rule by hand: ISO weekday, range check, exception scan — no
+    /// shared code with the model.
+    #[test]
+    fn service_types_match_the_date(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
+        let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("generated feeds parse");
+        let net = transit_codec::gtfs_to_network(&gtfs).network;
+        // A weekday (Mon) and a weekend day (Sat) of 2026.
+        for date in [
+            NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 1, 10).unwrap(),
+        ] {
+            let stats = transit_analysis::network_stats(&net, date);
+            let mut expected: BTreeSet<&str> = Default::default();
+            for (id, st) in &net.service_types {
+                let iso = date.format("%u").to_string();
+                let flagged = match iso.as_str() {
+                    "1" => st.rule.days.mon,
+                    "2" => st.rule.days.tue,
+                    "3" => st.rule.days.wed,
+                    "4" => st.rule.days.thu,
+                    "5" => st.rule.days.fri,
+                    "6" => st.rule.days.sat,
+                    _ => st.rule.days.sun,
+                };
+                let in_range = st.rule.ranges.iter().any(|r| date >= r.start && date <= r.end);
+                let exception = st.rule.exceptions.iter().find(|e| e.date == date);
+                let runs = match exception {
+                    Some(e) => matches!(e.state, transit_network::DayState::Added),
+                    None => flagged && in_range,
+                };
+                if runs {
+                    expected.insert(id.as_str());
+                }
+            }
+            let got: BTreeSet<&str> =
+                stats.service_types.iter().map(|s| s.service_type.as_str()).collect();
+            prop_assert_eq!(
+                got,
+                expected,
+                "the service types named on {} must be the ones that run that day",
+                date
+            );
         }
     }
 }

@@ -207,6 +207,12 @@ pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, String> {
                     arrival_time: Some(st.arrival_secs),
                     departure_time: Some(st.departure_secs),
                     stop_headsign: None,
+                    timepoint: st.timepoint,
+                    shape_dist_traveled: net
+                        .patterns
+                        .get(&trip.pattern)
+                        .and_then(|p| p.stops.get(i))
+                        .map(|ps| ps.distance_m),
                 });
             }
         }
@@ -421,8 +427,17 @@ pub struct ImportOutcome {
 ///   and short-turn variants), never a collapsed profile (the
 ///   collapse planned boardings that did not exist on the real
 ///   C-TRAN feed, 9–11 minutes fast);
-/// * every stop becomes a timepoint — exact times, no interpolation;
-/// * stop distances are fabricated (index × 500 m): GTFS has none;
+/// * the feed's timepoint flags survive: a timepoint stop keeps
+///   its exact times, a non-timepoint stop interpolates by
+///   distance between its bracketing timepoints (the spec calls
+///   those rows approximate, so the model derives them). A trip's
+///   first and last stops are always timepoints — the model times
+///   a trip by its start and its arrival at the end — a
+///   normalization the spec's own feeds almost always agree with;
+/// * stop distances come from the feed's `shape_dist_traveled`
+///   where it publishes any (kept non-decreasing, interpolated
+///   where a row leaves them empty); only a trip without a single
+///   anchor fabricates index × 500 m;
 /// * single-stop trips and trips without a first departure are
 ///   dropped (the model requires two stops and a start);
 /// * blocks keep their trip chains; GTFS has no layover data, so the
@@ -505,7 +520,22 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
         start_secs: u32,
         times: Vec<u32>,     // cumulative from start, one per stop
         seq: Vec<String>,    // stop ids
-        pattern_id: String,   // filled in during clustering
+        timepoints: Vec<bool>, // the spec's flags, first/last forced
+        dists: Vec<f64>,     // meters along the trip, resolved
+        pattern_id: String,  // filled in during clustering
+    }
+
+    impl Kept<'_> {
+        /// The times at the timepoint positions — the model's
+        /// authored timing (non-timepoint stops interpolate).
+        fn tp_times(&self) -> Vec<u32> {
+            self.timepoints
+                .iter()
+                .zip(&self.times)
+                .filter(|(tp, _)| **tp)
+                .map(|(_, t)| *t)
+                .collect()
+        }
     }
     let mut kept: Vec<Kept> = Vec::new();
     for trip_id in {
@@ -539,6 +569,18 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
             prev = t;
             times.push(t);
         }
+        // The spec's exactness flags survive, with the model's trip
+        // framing: a trip is timed by its start and its arrival at
+        // the end, so the first and last stops are always timepoints
+        // (a normalization the spec's own feeds almost always agree
+        // with — non-timepoint stops interpolate by distance).
+        let n = sts.len();
+        let timepoints: Vec<bool> = sts
+            .iter()
+            .enumerate()
+            .map(|(i, st)| st.timepoint || i == 0 || i == n - 1)
+            .collect();
+        let dists = resolve_distances(&sts.iter().map(|st| st.shape_dist_traveled).collect::<Vec<_>>());
         kept.push(Kept {
             trip_id,
             route_id: trip.route_id.clone(),
@@ -547,6 +589,8 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
             start_secs: start,
             times,
             seq: sts.iter().map(|st| st.stop_id.clone()).collect(),
+            timepoints,
+            dists,
             pattern_id: String::new(),
         });
     }
@@ -561,15 +605,21 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
         .map(|m| (m + 1).max(30 * 3600))
         .unwrap_or(30 * 3600);
 
-    // Cluster by (route, direction, stop sequence, run times). The
-    // times are part of the identity: every member of a cluster runs
-    // identical per-stop times, so the pattern's profile IS each
-    // trip's own — run-time variation between trips of one stop
-    // sequence becomes pattern variants of the same direction, never
-    // a collapsed profile. BTreeMap order is the pattern id order:
-    // deterministic everywhere.
-    let mut clusters: BTreeMap<(String, String, Vec<String>, Vec<u32>), Vec<usize>> =
-        BTreeMap::new();
+    // Cluster by (route, direction, stop sequence, exactness flags,
+    // timepoint times, distances). Everything after the sequence is
+    // part of the identity: every member of a cluster materializes
+    // identically (its timepoint times are exact, its non-timepoint
+    // stops interpolate by the same distances), so the pattern's
+    // profile IS each trip's own. Run-time variation between trips
+    // of one stop sequence becomes pattern variants of the same
+    // direction, never a collapsed profile. Non-timepoint row
+    // times are advisory in the spec and derived in the model, so
+    // they are not part of the identity. BTreeMap order is the
+    // pattern id order: deterministic everywhere.
+    let mut clusters: BTreeMap<
+        (String, String, Vec<String>, Vec<bool>, Vec<u32>, Vec<u64>),
+        Vec<usize>,
+    > = BTreeMap::new();
     for (i, t) in kept.iter().enumerate() {
         let dir = gtfs
             .trips
@@ -577,14 +627,27 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
             .and_then(|tr| tr.direction_id)
             .map(|d| d.to_string())
             .unwrap_or_else(|| "n".into());
+        // Distances key by bit pattern: f64 is not Ord, and the
+        // resolved values are finite by construction.
+        let dist_bits: Vec<u64> = t.dists.iter().map(|d| d.to_bits()).collect();
         clusters
-            .entry((t.route_id.clone(), dir, t.seq.clone(), t.times.clone()))
+            .entry((
+                t.route_id.clone(),
+                dir,
+                t.seq.clone(),
+                t.timepoints.clone(),
+                t.tp_times(),
+                dist_bits,
+            ))
             .or_default()
             .push(i);
     }
 
     let mut pattern_seq: BTreeMap<(String, String), usize> = BTreeMap::new();
-    for ((route_id, dir, seq, times), members) in &clusters {
+    for ((route_id, dir, seq, flags, tp_times, _), members) in &clusters {
+        // Members share the cluster key exactly, so the first
+        // member's resolved distances are every member's.
+        let dists = &kept[members[0]].dists;
         let index = pattern_seq.entry((route_id.clone(), dir.clone())).or_default();
         let pattern_id = format!("pat-{route_id}-{dir}-{index}");
         *index += 1;
@@ -637,14 +700,14 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
                     .enumerate()
                     .map(|(i, s)| PatternStop {
                         stop: s.clone(),
-                        timepoint: true,
-                        distance_m: i as f64 * 500.0,
+                        timepoint: flags[i],
+                        distance_m: dists[i],
                     })
                     .collect(),
                 timing: vec![TimingProfile {
                     start_secs: 0,
                     end_secs: day_end,
-                    at_timepoints: times.clone(),
+                    at_timepoints: tp_times.clone(),
                 }],
             },
         );
@@ -684,7 +747,7 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
     // Ties: the lexicographically first — deterministic.
     let mut headsigns: BTreeMap<(String, String), BTreeMap<String, usize>> = BTreeMap::new();
     let mut terminals: BTreeMap<(String, String), BTreeMap<String, usize>> = BTreeMap::new();
-    for ((route_id, dir, seq, _), members) in &clusters {
+    for ((route_id, dir, seq, _, _, _), members) in &clusters {
         if dir == "n" {
             continue;
         }
@@ -918,6 +981,59 @@ fn claimed_clash(
     claimed
         .get(&(r.pattern_trips.clone(), r.start_secs))
         .cloned()
+}
+
+/// Meters along a trip, resolved from the feed's own
+/// `shape_dist_traveled` where it publishes any: known anchors are
+/// kept (clamped non-decreasing — the model requires it), missing
+/// rows interpolate between their bracketing anchors and
+/// extrapolate by 500 m steps outside them. A trip without a
+/// single anchor fabricates index × 500 m (GTFS has none to keep).
+/// Non-finite values count as absent (they cannot key a cluster).
+fn resolve_distances(raw: &[Option<f64>]) -> Vec<f64> {
+    let raw: Vec<Option<f64>> = raw
+        .iter()
+        .map(|d| if d.is_some_and(|v| v.is_finite()) { *d } else { None })
+        .collect();
+    let n = raw.len();
+    if raw.iter().all(|d| d.is_none()) {
+        return (0..n).map(|i| i as f64 * 500.0).collect();
+    }
+    let anchors: Vec<(usize, f64)> = raw
+        .iter()
+        .enumerate()
+        .filter_map(|(i, d)| d.map(|d| (i, d)))
+        .collect();
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let d = match raw[i] {
+            Some(d) => d,
+            None => {
+                let before = anchors.iter().rev().find(|(k, _)| *k < i);
+                let after = anchors.iter().find(|(k, _)| *k > i);
+                match (before, after) {
+                    (Some((bi, bd)), Some((ai, ad))) => {
+                        let fraction = (i - bi) as f64 / (ai - bi) as f64;
+                        bd + (ad - bd) * fraction
+                    }
+                    (Some((_, bd)), None) => bd + ((i - anchors.last().expect("some anchor").0) as f64) * 500.0,
+                    (None, Some((ai, ad))) => (ad - (ai - i) as f64 * 500.0).max(0.0),
+                    (None, None) => unreachable!("at least one anchor exists"),
+                }
+            }
+        };
+        out.push(d);
+    }
+    // The model requires non-decreasing distances; the spec's rows
+    // can wobble.
+    let mut prev = 0.0f64;
+    for d in out.iter_mut() {
+        if *d < prev {
+            *d = prev;
+        }
+        prev = *d;
+    }
+    out
 }
 
 /// Reverse of the derived-view route table: GTFS codes → model modes.

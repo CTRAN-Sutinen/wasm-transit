@@ -192,6 +192,13 @@ pub struct StopTime {
     pub arrival_time: Option<u32>,
     pub departure_time: Option<u32>,
     pub stop_headsign: Option<String>,
+    /// The spec's exactness flag: 1 = times are exact, 0 = the
+    /// stop's times are approximate. An absent or empty column
+    /// means exact — the spec's own default.
+    pub timepoint: bool,
+    /// Meters along the trip's path, when the feed publishes
+    /// `shape_dist_traveled`; `None` where the feed leaves it empty.
+    pub shape_dist_traveled: Option<f64>,
 }
 
 /// `shapes.txt` — one row per point along a vehicle's path. Points of one
