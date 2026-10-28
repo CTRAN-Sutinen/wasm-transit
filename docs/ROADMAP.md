@@ -52,7 +52,7 @@ exercise of the module-composition thesis.
 
 **Exists already:** blocks + layovers in the model, feasibility
 checks, the street graph with routing, service-type analysis.
-**Unblocks:** duties/rosters (the layer above), fleet planning.
+**Unblocks:** 7 (runs are cut from blocks), fleet planning.
 
 ## 3. The operations → planning feedback loop
 
@@ -93,18 +93,36 @@ parameterized already.
 
 **First composition proof:** deadhead estimation (runcut ×
 streets) — two modules composed by the host over documents
-(composition is documents only — the bus's standing law). The
-runcut's growth toward the operational bid (duties, the package
-operators bid on) is a future layer, not a Block extension (the
-standing non-goal).
+(composition is documents only — the bus's standing law).
+
+## 7. Runs and the bid
+
+**What.** Cut blocks into operator runs under work rules (report
+and clear times and places, pieces, platform time, pay), and run
+the bid: operators pick runs from the pick's offer in seniority
+order. Runs, work rules, and bids are their own documents and
+modules beside the network (D-16), never a `Block` extension.
+
+**Why.** A pick ends in work operators can bid on. Blocks answer
+what the vehicles do; runs answer what the people do, and the bid
+is how a pick reaches them.
+
+**Exists already:** blocks + layovers, the block chain with the
+layover ripple, the sync document's LWW-per-record discipline (a
+bid is shared state).
+**Needs:** 2 (runs are cut from blocks); the work-rule policy
+(QAF-12) and workforce data (QAF-17); the open findings QAF-11,
+QAF-14, QAF-15.
+**Unblocks:** `docs/units/ui-runcut.md`'s runs questions and
+`docs/units/ui-work-bid.md`.
 
 ---
 
 ## Sequencing
 
 **1** first (complete the service-change story; a pick that
-can't publish is a document), **2** next (planner's daily work —
-and the runcut's growth toward the operational bid), **3** as the
-long moat. 4 and 5 slot anywhere. 6's discipline (composition is
+can't publish is a document), **2** next (planner's daily work),
+**7** after 2 (runs are cut from blocks, and the bid is where a
+pick reaches operators), **3** as the long moat. 4 and 5 slot anywhere. 6's discipline (composition is
 documents only) is the bus's standing law; its first proof is the
 deadhead composition in 2.

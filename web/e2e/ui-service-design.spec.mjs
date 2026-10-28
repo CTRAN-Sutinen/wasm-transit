@@ -14,6 +14,8 @@
 //   4. A stop dropped from the direction leaves its column
 //      (remove_direction_stop).
 //   5. Coverage answers against a population layer.
+//   6. The fleet (cap-runcut `blocks`) answers only once its panel
+//      is opened.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -31,6 +33,13 @@ test("service design answers a plan, a fork, and its change", async ({ page }) =
   const types = page.getByTestId("type-table");
   await expect(types.locator("tbody tr")).toHaveCount(3, { timeout: 10_000 });
   await types.locator("tbody tr", { hasText: "WK" }).click();
+
+  // The fleet answers only while its panel is open: folded, it names
+  // no count; opened, cap-runcut answers the type's blocks.
+  const fleet = page.getByTestId("fleet");
+  await expect(fleet.locator("summary")).toHaveText("Fleet");
+  await fleet.locator("summary").click();
+  await expect(fleet.locator("summary")).toHaveText(/^Fleet — \d+ blocks$/);
 
   const routes = page.getByTestId("route-table");
   await routes.locator("tbody tr", { hasText: "10" }).first().click();

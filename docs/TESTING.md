@@ -81,7 +81,10 @@ runs both, for changes that touch both sides.
 6. **A generated UI** (`src/uis/<id>/`) lands with
    `web/e2e/ui-<id>.spec.mjs` on the fixture feed, which walks its
    questions end to end, and with a dogfood session (below) in which
-   its numbers on the real feed match the runner's. The GENERATED
+   its numbers on the real feed match the runner's. That session
+   runs BEFORE the UI is built: the questions' op gaps become
+   findings and the UI's blockers (`docs/ARCHITECTURE.md`,
+   "Generated UIs", the procedure). The GENERATED
    UIs gate in `just test` refuses one without its spec, and
    `e2e/picker.spec.mjs` covers its card with no edit.
 7. **Dogfood on real data**: capability work touching feeds or

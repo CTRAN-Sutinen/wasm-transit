@@ -259,6 +259,7 @@ export function setNetworkDoc(next: Network | null): void {
     localStorage.setItem(ACTIVE_PLAN_KEY, activePlanId);
   }
   plans = { ...plans, [activePlanId]: next };
+  readPlans.add(activePlanId);
   void persistPlans();
 }
 
@@ -272,6 +273,7 @@ export function getActivePlanId(): string {
 
 export function putPlan(id: string, doc: Network): void {
   plans = { ...plans, [id]: doc };
+  readPlans.add(id);
   void persistPlans();
 }
 
@@ -293,6 +295,9 @@ export function removePlan(id: string): void {
 const PLANS_KEY = "transit:plans";
 const ACTIVE_PLAN_KEY = "transit:active-plan";
 let plansWrite: Promise<unknown> = Promise.resolve();
+/** The plans whose in-memory copy is in the current shape: put by a
+ * host (a module answered it) or read back through `readPlan`. */
+const readPlans = new Set<string>();
 
 /** Persist the plan set — serialized writes, one pending at a time
  * (the same discipline as the edit document's flushPersist). */
@@ -317,6 +322,7 @@ export async function restorePlans(read?: (stored: unknown) => Promise<Network |
       for (const [key, doc] of Object.entries(stored as Record<string, unknown>)) {
         try {
           next[key] = (read ? await read(doc) : null) ?? (doc as Network);
+          if (read) readPlans.add(key);
         } catch (e) {
           console.warn(`stored plan ${key} could not be read:`, e);
           next[key] = doc as Network;
@@ -332,6 +338,27 @@ export async function restorePlans(read?: (stored: unknown) => Promise<Network |
   } catch (e) {
     console.warn("plan restore failed:", e);
   }
+}
+
+/** One stored plan read into the current shape on first use — the
+ * on-demand half of a bare `restorePlans()`: a host that opens few of
+ * many plans reads only those (each read is a whole-document round
+ * trip through a module). The canonical copy replaces the stored one
+ * in memory and is written with the plan set's next persist. A plan
+ * the module refuses stays as stored and is reported. Plan metadata
+ * (`plan`) reads the same in every stored shape, so a host may list
+ * plans before reading them. */
+export async function readPlan(id: string, read: (stored: unknown) => Promise<Network | null>): Promise<Network | null> {
+  const doc = plans[id];
+  if (!doc || readPlans.has(id)) return doc ?? null;
+  try {
+    const next = await read(doc);
+    if (next && plans[id] === doc) plans = { ...plans, [id]: next };
+  } catch (e) {
+    console.warn(`stored plan ${id} could not be read:`, e);
+  }
+  readPlans.add(id);
+  return plans[id];
 }
 
 /// The imported street network (dispatcher detour authoring) — same

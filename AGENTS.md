@@ -230,8 +230,6 @@ e2e, real-data dogfood) are spelled out in `docs/TESTING.md`.
 - No CRDT/automerge for sync — LWW + tombstones is the design.
 - transit-network is the authored model; GTFS stays OUT of it — the
   import/export codecs live at the boundary in transit-codec.
-- Runcutting stops at blocks + layovers; duties/rosters are a future
-  layer, not a `Block` extension.
 - wasm-bindgen / JS glue is gone on purpose; every module is the
   raw rustc output with the same four exports — no custom calling
   conventions.

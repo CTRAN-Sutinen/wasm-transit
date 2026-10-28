@@ -48,7 +48,17 @@ layer (`web/src/actions.ts`, `planner.ts`, `capdemo.svelte.ts`,
 
 The journal lands first, in the runner: `caps-run`'s
 chained-session format BECOMES the journal format. The engine and
-flow maps crystallize from the recurring host glue. The store's
+flow maps crystallize from the recurring host glue. The first
+instance is the TRANSIENT answer graph in `web/src/uis/kit.ts`
+(`answerGraph`, `answer`) and the service-design host's node list:
+a node is a flow-map entry's draft (inputs, frame, visibility, op
+calls), `answer`'s key is the journal's. The engine replaces both
+— it does not grow out of them — and the change that lands it
+deletes them. The generated-UI units (`ui-*.md`) each carry an
+answer-graph table (`docs/ARCHITECTURE.md`, "Generated UIs", step
+5), and the engine is designed from those tables. What a table
+cannot express (a timer-driven live input, for one) is written
+here as an engine requirement. The store's
 reflog and pointer CAS land with
 [sync-persistence.md](sync-persistence.md) — a second persistence
 design is rejected on sight.
@@ -58,7 +68,8 @@ design is rejected on sight.
 - The two gates are in `just test`, each with an empty allowlist.
 - A C-TRAN session journal replays through `caps-run` to the same
   output hashes.
-- The UIs request flows through the engine (e2e green).
+- The UIs request flows through the engine (e2e green), and
+  `answerGraph` / `answer` are gone from `web/src/uis/kit.ts`.
 - The engine's thread boundary matches
   [module-runtime.md](module-runtime.md) (one Worker, at the choke
   point — never per component).

@@ -32,7 +32,7 @@ the rest of the work can go ahead while the decision is reviewed.
   goes into the law that pins it and the doc that owns its topic
   (`docs/ARCHITECTURE.md`, `docs/units/`, `docs/QA-FINDINGS.md`),
   and the `Blocked: D-N` lines are removed. Git is the archive.
-- IDs are never reused; the next new decision is **D-13**.
+- IDs are never reused; the next new decision is **D-17**.
 
 ## Summary
 
@@ -49,6 +49,9 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-10 | Agency questions on C-TRAN's data | unanswered | QAF-9, QAF-48 |
 | D-11 | Does editing a shared alignment change every pattern on it? | unanswered | an alignment-authoring edit |
 | D-12 | What headsign does a new trip get? | encoded | nothing |
+| D-14 | Does the proposal comparison collect public responses? | unanswered | `ui-proposal-compare` question 6 |
+| D-15 | What makes a trip "covered"? | unanswered | `ui-disruptions` question 6 |
+| D-16 | Where does the runs layer live? | encoded | nothing |
 
 ## The trip model
 
@@ -218,6 +221,52 @@ derived from the feed (for example, the smallest layover seen at
 that terminal); or both, with the policy winning.
 Blocks: QAF-62 and QAF-26 (the recovery view is meaningless until
 recovery is separated from slack).
+
+### D-16 — Where does the runs layer live?
+State: Encoded provisionally (in the docs; no code yet).
+Context: runcutting grows into runs and bidding (the user's
+decision; `docs/ROADMAP.md` 7). A run is cut from blocks, so the
+layer could hang off `Block` or stand beside the network.
+Options:
+- **Beside the network (encoded).** Runs, the work-rule policy,
+  and bids are their own documents and modules, reading the
+  network by hash. This follows the laws: the network stays the
+  core model, and one need per module.
+- A `Block` extension: runs as fields on blocks in the network
+  document. Every network consumer then carries operator work.
+Pinned by: `docs/ROADMAP.md` 7, `docs/units/ui-runcut.md`.
+Blocks: nothing.
+
+## Public comparison
+
+### D-14 — Does the proposal comparison collect public responses?
+State: Unanswered.
+Context: the comparison UI reads published proposals. Collecting
+comments or votes on them would add a new shared document, synced
+through the server, with its own retention and moderation
+questions.
+Options:
+- Read-only. Responses go through the agency's existing channels,
+  and the UI links to them.
+- A response document on the bus (a new document kind, synced by
+  LWW per record like the edit document).
+Blocks: question 6 of `docs/units/ui-proposal-compare.md`.
+
+## Live operations
+
+### D-15 — What makes a trip "covered"?
+State: Unanswered.
+Context: the disruptions UI asks which trips are covered and which
+are uncovered. The bus knows vehicles only through blocks and live
+positions. It holds no operator assignments (QAF-17), and the edit
+document cannot cancel or cover a trip (QAF-36).
+Options:
+- A trip is covered when a vehicle is on its block: from the
+  blocks and the live positions, with cancel and cover as new edit
+  kinds (QAF-36).
+- A trip is covered when an operator holds its run. This needs the
+  runs layer (`docs/ROADMAP.md` 7) and workforce data.
+Blocks: question 6 of `docs/units/ui-disruptions.md`.
 
 ## Agency data
 

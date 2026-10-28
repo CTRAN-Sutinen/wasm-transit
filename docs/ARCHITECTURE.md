@@ -439,7 +439,9 @@ File ownership:
   plans restore the same way: `restorePlans(readStoredNetwork)`
   reads each through cap-author (an `apply` with no edits answers
   the canonical document), so a plan saved under older field names
-  comes back in the current shape. The host never sniffs a shape.
+  comes back in the current shape; a bare `restorePlans()` restores
+  them as stored, and `readPlan(id, readStoredNetwork)` reads one on
+  first use. The host never sniffs a shape.
 - MapView owns all map state (`window.__map`). `src/basemap.ts` is
   the basemap choice every map view shares (local pmtiles, else
   OpenFreeMap) and the MapLibre worker wiring.
@@ -456,8 +458,8 @@ web/<id>.html                  the page (copy service-design.html; change the sc
 web/src/uis/<id>/ui.json       the descriptor the picker renders: id (= the directory),
                                title, summary, questions, ops, components, session (the
                                dogfood session: date, feed, open findings), spec, generated
-web/src/uis/<id>/main.ts       imports ../base.css (+ maplibre css if it maps), awaits
-                               the host's boot, mounts Shell
+web/src/uis/<id>/main.ts       imports ../base.css (+ maplibre css if it maps), mounts
+                               Shell, then awaits the host's boot (the layout paints first)
 web/src/uis/<id>/Shell.svelte  PLACEMENT ONLY: reads the host's answers state, passes
                                props, routes events to host functions
 web/src/uis/<id>/host.svelte.ts the ONLY file of the UI that calls the resolver; owns
@@ -481,12 +483,26 @@ Shared by every generated UI:
   `apply` already answered; `today()` is the host's date. Host
   layers call the resolver's `*Cap(module)` wrappers and
   `*Module()` getters (`src/capabilities.svelte.ts`) directly.
+  The answer graph is TRANSIENT — hand-built ahead of the engine
+  `docs/units/host-discipline.md` designs, which replaces it: a host
+  declares its answers as `AnswerNode`s (the inputs each reads, the
+  frame that renders it, when that frame is on screen), and
+  `answerGraph` answers the nodes downstream of a changed input in
+  declared order, yielding between nodes so each frame paints as
+  its answer lands; a request made mid-pass supersedes the pass,
+  and a hidden frame's node waits until it shows. `answer(module,
+  op, args, run)` caches an answer by (module bytes, op, argument
+  hashes) — the journal's key. Neither carries domain knowledge.
 - `src/state.svelte.ts`'s document store (`getAllPlans`,
   `putPlan`, `setActivePlan`, `restorePlans`; the edit document)
-  is shared with the original app. JS owns the documents. A host's
-  boot restores it with `restorePlans(readStoredNetwork)`, never the
-  bare call: the UI reads documents in JavaScript, which has no serde
-  aliases. The `app`
+  is shared with the original app. JS owns the documents. A host
+  reads every plan it uses through cap-author before using it — at
+  boot with `restorePlans(readStoredNetwork)`, or on first use with a
+  bare `restorePlans()` and `readPlan(id, readStoredNetwork)` (the
+  service-design host: a workspace of many forks reads the two it
+  opens). The UI reads documents in JavaScript, which has no serde
+  aliases; only the `plan` frame, which every stored shape spells
+  alike, may be read before. The `app`
   object is the original app's screen state, and generated UIs
   never import it.
 - `src/basemap.ts`: the basemap style choice and the MapLibre
@@ -518,22 +534,70 @@ on every component a generated UI imports.
   (RouteForm, StopForm, PatternForm, ScheduleForm,
   ServiceTypeForm, BlockForm).
 
-The procedure (what the first one did):
+The procedure. Every generated UI follows it in order, and a step
+that is not done blocks the next. A UI's open work is its unit,
+`docs/units/ui-<id>.md` (`docs/units/README.md`); the
+unit is written before any code and deleted when the UI lands.
 
-1. Dogfood first: run the questions through `caps-run` on real
-   data (`docs/TESTING.md`, the dogfood rules), one op per
-   question, and log what it found in `docs/QA-FINDINGS.md`. A
-   question that needs glue is a finding, not a script.
-2. Pick a layout that answers those questions in the order they
-   are asked. Name it for the need, never for a persona.
-3. Write the host first (every answer adopted as-is: no joins, no
-   thresholds, no derived numbers), then the thin components it
-   lacks in `src/components/` (props in, events out), then the shell.
-4. Add `ui.json`, the page, and `e2e/ui-<id>.spec.mjs`. Run it in
-   the browser on the real feed (`just serve testdata/ctran-gtfs.zip`)
-   and check its numbers against the runner session's. Record the
-   session in the descriptor's `session` field, and describe the
-   UI below.
+1. **Name the need and its questions.** Open the unit: the need the
+   UI serves (named for the need, never a persona — a persona is
+   one example of who has the need), and the questions it answers,
+   in the order they are asked.
+2. **Inventory the ops, from the manifest.** For each question:
+   the op that answers it (`caps-run tools <cap>`), or the open
+   finding that says none does (`docs/QA-FINDINGS.md`). This is
+   the unit's first draft. It is a list of what to test, not yet
+   a list of what works.
+3. **Dogfood the questions on real data** through `caps-run`
+   (`docs/TESTING.md`, the dogfood rules), one op per question.
+   Each question that needs anything besides passing one op's
+   answer through to the screen is an op gap, and it goes into
+   `docs/QA-FINDINGS.md` as a finding. That covers a host join, a
+   threshold, a derived number, a second op stitched to the first,
+   bisecting inputs until an answer changes, or a rule the
+   rendering would have to apply. A session re-confirms the
+   findings it hits. The unit's inventory then names, per question,
+   either its op (as a dogfooded fact) or its blocker (`QAF-N`,
+   and `Blocked: D-N` when the fix waits on the user).
+4. **Build only what is unblocked.** No host, shell, or component
+   is written while the session in step 3 has not run. A blocked
+   question is unblocked by an op (laws first, library first, the
+   capability wrapper second — `crates/AGENTS.md`), never by host
+   code. The UI may land answering only its unblocked questions:
+   `ui.json` lists the questions it answers, and the unit keeps
+   the blocked ones with their findings.
+5. **Draw the answer graph before the layout.** In the unit, one
+   row per node: the op (or a run of ops over the same inputs),
+   the inputs it reads (documents, selection keys, the clock, a
+   live snapshot, a visibility flag), the frame that renders it,
+   and when that frame is on screen. The table is the UI's first
+   draft of its flow map (`docs/units/host-discipline.md`): the
+   engine will be designed from these tables, so a question the
+   table cannot express (a timer, a stream, a node whose inputs
+   depend on another node's answer in a way `needs` cannot say) is
+   written into host-discipline.md as an engine requirement, and
+   `kit.ts`'s transient runner is NOT extended to cover it.
+6. **Write the host from the table.** `host.svelte.ts` declares the
+   table's nodes as `AnswerNode`s and requests inputs from event
+   handlers. The only things a host may do: read and write I/O
+   (files, fetch, IndexedDB), read the clock and pass it as an op
+   argument, hold the selection (including repairing a selection
+   the new answer no longer holds), track which frames are on
+   screen, and adopt answers as-is. It never joins, filters,
+   sorts, counts, thresholds, or falls back by a domain rule. A
+   policy value is an op parameter whose default the op owns. The
+   test: if `caps-run` or the Go server would have to re-implement
+   it to get the same answer, it belongs in an op.
+7. **Then the components, then the shell.** Thin components in
+   `src/components/` (props in, events out, formatting only), then
+   `Shell.svelte` (placement only).
+8. **Land it.** Add `ui.json`, the page, and
+   `e2e/ui-<id>.spec.mjs`. Run the UI in the browser on the real
+   feed (`just serve testdata/ctran-gtfs.zip`) and check its numbers
+   against the runner session's. Record the session in the
+   descriptor's `session` field, and describe the UI below. Delete
+   the unit if no question is left blocked, naming its pins;
+   otherwise edit it down to the blocked questions.
 
 Gates (`just test`, GENERATED UIs and the WEB GATES): every `src/uis/<id>/`
 has its `ui.json` (with fields complete, and id equal to the
@@ -550,7 +614,9 @@ baseline, coverage, fleet), the routes under the type with the
 selected route's map beneath them, and the route — its directions,
 one direction's timetable marked against the baseline (scrolling
 inside its column, never widening the page), and the timetable
-gestures.
+gestures. Its host answers through the answer graph; the fleet
+(cap-runcut) answers only while its panel is open, and the plan's
+health adopts cap-author's issues for a document it authored.
 Layouts are hand-placed Svelte; layouts as documents are
 `docs/units/wire-time-assembly.md`.
 

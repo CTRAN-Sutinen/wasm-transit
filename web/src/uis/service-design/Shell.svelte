@@ -12,7 +12,7 @@
   /// file only places them and routes their events to the host.
   import {
     wb, openPlan, setCompare, fork, loadFeedBytes, loadLayerBytes, selectType, selectRoute, selectDirection,
-    selectStop, selectBlock, setCoverageParams, gestures,
+    selectStop, selectBlock, setFleetOpen, setCoverageParams, gestures,
   } from "./host.svelte";
   import PlanBar from "../../components/PlanBar.svelte";
   import TypeTable from "../../components/TypeTable.svelte";
@@ -64,10 +64,10 @@
       onlayer={async (f) => loadLayerBytes(await bytesOf(f))}
     />
     {#if wb.typeDetail}
-      <details class="fleet" data-testid="fleet">
-        <summary>Fleet — {wb.blocks.length} blocks</summary>
+      <details class="fleet" data-testid="fleet" ontoggle={(e) => setFleetOpen(e.currentTarget.open)}>
+        <summary>Fleet{wb.blocks ? ` — ${wb.blocks.length} blocks` : ""}</summary>
         <BlocksPanel
-          blocks={wb.blocks}
+          blocks={wb.blocks ?? []}
           off={false}
           selected={wb.selectedBlock}
           chain={wb.blockChain}

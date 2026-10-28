@@ -43,6 +43,11 @@ archive — nothing here records what is finished.
 | [module-runtime.md](module-runtime.md) | bounded registries (a kernel eviction op) and off-thread instantiation |
 | [caps-run-sessions.md](caps-run-sessions.md) | the runner across sessions; shaping the import's output |
 | [grade-debt.md](grade-debt.md) | on the bus, but not yet read by a UI or dogfooded |
+| [ui-ride-now.md](ui-ride-now.md) | generated UI: riding today (stops, live boards, trip plans, last bus, detours) |
+| [ui-disruptions.md](ui-disruptions.md) | generated UI: running today's service through disruptions (late buses, detours, coverage) |
+| [ui-proposal-compare.md](ui-proposal-compare.md) | generated UI: the public comparing service proposals |
+| [ui-runcut.md](ui-runcut.md) | generated UI: cutting a plan's work into blocks and runs |
+| [ui-work-bid.md](ui-work-bid.md) | generated UI: bidding on work (waits on the runs layer) |
 
 ## Queued, not yet scoped
 

@@ -305,8 +305,8 @@ time, last bus home, is there a detour.
 
 ## Beyond blocks (runs, work rules)
 
-Runcutting stops at blocks + layovers by design (AGENTS.md
-non-goals); these are the layer above, logged for when it starts.
+The runs layer (`docs/ROADMAP.md` 7): runs cut from blocks under
+work rules, and the bid over them.
 
 - **QAF-15 OP GAP** — no block structure summary: per-block span,
   span distribution, internal gaps / cut candidates.
