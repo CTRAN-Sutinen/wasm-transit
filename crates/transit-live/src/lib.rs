@@ -1,13 +1,14 @@
 //! transit-live — THE live document.
 //!
-//! GTFS-rt speaks the agency's vocabulary (agency trip ids, rt
-//! stop sequences); the model speaks its own (a derived trip is a
-//! `(schedule, start)` pair). The live document is the rt snapshot
+//! GTFS-rt speaks the published feed's vocabulary (its trip ids,
+//! its stop_sequence numbers, a frequency run by start_time); the
+//! model speaks its own (a trip instance is a `(trip, start)` pair —
+//! the trip ids are the same). The live document is the rt snapshot
 //! RESOLVED into model vocabulary once, at the boundary (cap-rt
-//! mints it from the snapshot, the static feed, and the import's
-//! trip map), so every model-side consumer — the board, the runcut,
-//! the map — reads delays by derived trip and never re-joins rt by
-//! hand. No host computes a delay: parity between the browser, the
+//! mints it from the snapshot and the network, with the import's
+//! boundary for the stop numbering), so every model-side consumer —
+//! the board, the runcut, the map — reads delays by trip instance and
+//! never re-joins rt by hand. No host computes a delay: parity between the browser, the
 //! runner, and the Go server holds by construction.
 //!
 //! The document carries the ON-TIME WINDOW it was classified under,
@@ -105,7 +106,7 @@ pub struct LiveTrip {
     pub stops: Vec<LiveStop>,
 }
 
-/// One live vehicle, on its derived trip when the trip resolves.
+/// One live vehicle, on its trip instance when the trip resolves.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct LiveVehicle {

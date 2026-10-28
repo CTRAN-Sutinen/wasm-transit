@@ -532,7 +532,7 @@ export async function materializeNetwork(): Promise<void> {
     app.planBaseline = null;
     app.planNotice = null;
     pushEdits();
-    void refreshLive(); // the new feed's trip map: live re-resolves
+    void refreshLive(); // a new network: live re-resolves against it
     app.status = `Materialized "${doc.name}" — the Rider and Dispatcher views now run on the authored network (published GTFS ${feedHash.slice(0, 19)}…).`;
   } catch (e) {
     app.status = `Error: ${e?.message ?? e}`;

@@ -3,7 +3,7 @@
 //! One question: **what does this vehicle do today?** — at three
 //! granularities: the day's blocks LIST (which vehicles are out —
 //! the index facet), one block's authored CHAIN with the layover
-//! ripple (the detail facet), and one derived trip's EFFECTIVE
+//! ripple (the detail facet), and one trip instance's EFFECTIVE
 //! stops on the date (the trip detail the map's click-through
 //! reads). Blocks and layovers are
 //! model state GTFS never had: the runcut is authored, and a

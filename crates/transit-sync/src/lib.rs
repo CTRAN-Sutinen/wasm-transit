@@ -141,9 +141,9 @@ pub struct EditRecord {
 /// Validation result for one record — what a client needs after
 /// pushing a document (or what a server would return from a
 /// validation endpoint). The record itself is display data; the
-/// report only carries the verdict. Feed-side validation (against a
-/// parsed GTFS feed) lives in transit-core; the model-native verdict
-/// (against an authored network document) lives in transit-dispatch.
+/// report only carries the verdict. The verdict is model-native,
+/// against an authored network document (transit-dispatch); nothing
+/// validates an edit against a feed.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct EditReport {

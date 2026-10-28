@@ -47,8 +47,7 @@ use proptest::prelude::*;
 
 // ===================================================================
 // The codec's round trip — the ONLY lines that name the codec's API.
-// When the boundary moves (the import keeps a residual beside the
-// network, transit-core folds into the codec), only this changes.
+// When the codec's API moves, only this changes.
 // ===================================================================
 
 fn round_trip(feed: &[u8]) -> Result<Vec<u8>, String> {

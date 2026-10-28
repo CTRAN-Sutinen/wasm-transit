@@ -589,7 +589,7 @@ const atA = stopBoard("A", 25200);
 assert(atA.rows.length >= 3 && !atA.pooled && !atA.live, "the materialized board answers at A, schedule-only");
 assert(
   atA.rows.every((r) => r.trip && r.route_name && r.stop === "A" && r.status === "no_prediction"),
-  "board rows speak model vocabulary (schedule, start, concrete stop); no live data, no prediction",
+  "board rows speak model vocabulary (trip, start, concrete stop); no live data, no prediction",
 );
 const atStation = stopBoard("STN", 0);
 assert(

@@ -292,7 +292,7 @@ fn route10_schedule_of(net: &Network, seq: &[&str]) -> String {
 
 #[test]
 fn the_trip_detail_answers_the_effective_day() {
-    // The map's click-through question: one derived trip's stops,
+    // The map's click-through question: one trip instance's stops,
     // EFFECTIVE for the date (a diverted trip answers its patched
     // sequence). The answer carries no geometry — the network
     // document holds the coordinates; the map is the host's view.

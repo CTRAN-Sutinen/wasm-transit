@@ -88,7 +88,7 @@ export type AppState = {
   // Whether a feed is loaded (the bytes live with the host; every
   // read answers through the capability bus).
   feedLoaded: boolean,
-  // The selected derived trip, "schedule@start" (the model's identity).
+  // The selected trip instance, "trip@start" (the model's identity).
   selectedTrip: string | null,
   tripFeature: LineFeature | null, // the selected trip's line (the host view builds it)
 
@@ -99,7 +99,7 @@ export type AppState = {
 
   // GTFS-rt. The snapshots live in the rt capability by hash; the
   // LIVE DOCUMENT is its answer in model vocabulary (delays per
-  // derived trip, vehicles with their status, the status summary) —
+  // trip instance, vehicles with their status, the status summary) —
   // every live view renders from it, none re-joins rt.
   rtOverview: RtOverview | null, // the trip-updates payload's decode (alerts count)
   rtHash: string | null, // trip-updates snapshot, as cap-rt registered it
@@ -115,7 +115,7 @@ export type AppState = {
   activeServices: string[],
 
   // The day's blocks (cap-runcut) and the selected block's chain,
-  // each row with its agency trip ids (cap-network, in row order).
+  // each row naming its trip by id.
   blocks: DayBlock[],
   blocksOff: boolean,
   selectedBlock: string,

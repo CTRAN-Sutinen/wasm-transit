@@ -1,6 +1,6 @@
 //! The alignment laws: a line on the ground is its own record — its
 //! own id, its points, the distances published along it — and a
-//! pattern runs one by reference (D-4: the pattern points at the
+//! pattern runs one by reference (the pattern points at the
 //! alignment, so a pattern is its stops along its line). Alignments
 //! are shared by any number of patterns, or by none.
 //!

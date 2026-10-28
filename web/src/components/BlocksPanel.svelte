@@ -1,8 +1,8 @@
 <script lang="ts">
   /// The blocks view — a RENDER component over cap-runcut's answers
   /// (the day's blocks; one block's authored chain with the layover
-  /// ripple and its health) and cap-network's agency trip ids for
-  /// the chain's rows. It formats and emits; it classifies nothing.
+  /// ripple and its health; each row names its trip by id). It
+  /// formats and emits; it classifies nothing.
   import type { DayBlock } from "../types/DayBlock";
   import type { BlockChainTrip } from "../types/BlockChainTrip";
   import type { LayoverHealth } from "../types/LayoverHealth";

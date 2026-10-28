@@ -1,7 +1,7 @@
 //! Property-based tests (proptest) for the network model.
 //!
-//! Same discipline as `transit-core/tests/prop_test.rs`: laws that
-//! must hold for *every* network, with the expected answer recomputed
+//! Same discipline as `transit-codec/tests/spec_round_trip_test.rs`:
+//! laws that must hold for *every* network, with the expected answer recomputed
 //! **independently** from the generated input (no shared code with
 //! the implementation). Three flavors:
 //!

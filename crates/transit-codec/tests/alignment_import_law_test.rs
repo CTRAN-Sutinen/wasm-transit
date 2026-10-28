@@ -1,7 +1,7 @@
 //! The import's alignment laws: a feed's shapes ARE the network's
 //! alignments — the feed's ids, every point in sequence order, every
 //! published distance — and a trip's `shape_id` is the alignment its
-//! pattern runs (D-4: the pattern points at the alignment). A shape
+//! pattern runs (the pattern points at the alignment). A shape
 //! no trip uses is still an alignment; a shape several stop lists use
 //! is one alignment.
 //!

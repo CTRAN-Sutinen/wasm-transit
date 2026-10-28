@@ -252,7 +252,7 @@ fn validate_against_network(network: &Network, d: &Diversion) -> Result<(), Stri
     Ok(())
 }
 
-/// How many derived trips the edit touches: every schedule of the
+/// How many trip instances the edit touches: every schedule of the
 /// route whose pattern carries both anchors in order, expanded.
 fn affected_trips(network: &Network, d: &Diversion) -> usize {
     network
@@ -731,7 +731,7 @@ pub fn service_dates(
     Ok(out)
 }
 
-/// One stop of one derived trip's day view — the trip detail facet
+/// One stop of one trip instance's day view — the trip detail facet
 /// (what the map's click-through reads; the answer carries no
 /// geometry, the network document holds the coordinates).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]

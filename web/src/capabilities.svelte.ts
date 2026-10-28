@@ -1022,7 +1022,7 @@ export function runcutCap(module: CapModule) {
       } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "block_trips" }>;
       return resp.trips;
     },
-    /// One derived trip's EFFECTIVE stops on the date — the trip
+    /// One trip instance's EFFECTIVE stops on the date — the trip
     /// detail (its line is tripPath).
     tripStops(
       networkHash: string,
@@ -1041,7 +1041,7 @@ export function runcutCap(module: CapModule) {
       } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "trip_stops" }>;
       return resp.stops;
     },
-    /// One derived trip's line on the date, over the effective day (a
+    /// One trip instance's line on the date, over the effective day (a
     /// diverted trip draws its diversion).
     tripPath(networkHash: string, editsHash: string | null, trip: string, startSecs: number, date: string): Coord[] {
       const resp = module.invoke({
@@ -1108,7 +1108,8 @@ export type Boarding = {
 /// runcut, router — the modules that answer with trip-level
 /// vocabulary): load the bytes into cap-network, import the network
 /// document, load that SAME document into the module (identities
-/// asserted equal), and carry the trip-id map. Memoized by (module,
+/// asserted equal), and carry the document and its boundary.
+/// Memoized by (module,
 /// feed) — the import runs once per feed per module per session,
 /// never per query.
 function boardings(capId: "board" | "runcut" | "router") {

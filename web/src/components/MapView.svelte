@@ -573,7 +573,7 @@
   $effect(() => {
     if (!mapLoaded) return;
     // Buses signal their lateness by color — cap-rt's live document
-    // carries each vehicle's derived trip, route name, delay, and
+    // carries each vehicle's trip instance, route name, delay, and
     // status; the map only draws.
     const features = (app.live?.live.vehicles ?? []).map((v) => {
       // The rider-visible bus number, and the small label on the map:

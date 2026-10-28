@@ -169,7 +169,7 @@ export async function loadGtfsBytes(bytes: Uint8Array, label: string): Promise<v
   // revalidate every record against the new document and derived
   // views re-derive.
   pushEdits();
-  // A new feed is a new trip map: the live document re-resolves.
+  // A new feed is a new network: the live document re-resolves.
   void refreshLive();
   await cacheFeed(label, bytes.slice());
   app.status = `Loaded ${label}.` + " Everything below is running client-side.";
@@ -234,14 +234,15 @@ export async function loadVpFromUrl(): Promise<void> {
 // ---------------------------------------------------------------
 
 /// Registrations per rt module instance (a module dropped and
-/// re-fetched starts empty): the feed and the trip map, by their
+/// re-fetched starts empty): the network and its boundary, by their
 /// own identities.
 const rtRegistrations = new WeakMap<object, Map<string, string>>();
 let liveSeq = 0;
 
 /// Ask cap-rt for THE live document over the current snapshots: the
-/// feed's trip map (from the board's boarding — the import already
-/// ran) resolves agency ids into derived trips inside the module.
+/// network and its boundary (from the board's boarding — the import
+/// already ran) resolve rt trip ids into trip instances inside the
+/// module.
 /// Keeps the last good document when the bus cannot answer.
 export async function refreshLive(): Promise<void> {
   const seq = ++liveSeq;
@@ -368,8 +369,7 @@ export async function refreshBlocks(): Promise<void> {
 let chainSeq = 0;
 
 /// The selected block's chain (cap-runcut — the layover ripple and
-/// its health are the module's) with the agency trip ids the radio
-/// uses (cap-network's trip map, shaped to the rows).
+/// its health are the module's), each row naming its trip by id.
 export async function refreshBlockChain(): Promise<void> {
   const seq = ++chainSeq;
   const blockId = app.selectedBlock;
@@ -508,10 +508,8 @@ export async function planTrip(fromStopId: string, toStopId: string, departTime:
       ? hhmmssToSecs(departTime)
       : secondsSinceMidnight();
     // The router capability plans over the NETWORK document derived
-    // from the loaded feed (the monolith's plan ops are retired —
-    // U5). The boarding carries the trip-id map: the legs speak the
-    // model's derived identity, the map still draws by the agency
-    // trip ids (U6 takes the map).
+    // from the loaded feed; the legs name their trip instance
+    // (trip, start).
     const boarding = await ensureRouterBoarding(bytes);
     const module = boarding ? await routerModule() : null;
     if (!module || !boarding) {
