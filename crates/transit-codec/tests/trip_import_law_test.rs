@@ -38,7 +38,7 @@ struct GenTrip {
     /// Per stop: (leg seconds to reach it, dwell seconds, which times
     /// the row carries — 0 both, 1 arrival only, 2 departure only, 3
     /// neither — and its timepoint cell). First and last rows carry
-    /// both times.
+    /// both times; a row missing a time is marked approximate.
     rows: Vec<(u32, u32, u8, Option<bool>)>,
     /// `Some` = a frequency trip: (start, end, headway, exact_times).
     every: Option<(u32, u32, u32, bool)>,
@@ -101,8 +101,10 @@ fn rows_of(t: &GenTrip) -> Vec<Row> {
                 stop: format!("s{}", t.stops[i]),
                 arrival: (shown == 0 || shown == 1).then_some(arrival),
                 departure: (shown == 0 || shown == 2).then_some(at),
-                // A row without times is approximate by the spec.
-                timepoint: if shown == 3 { Some(false) } else { tp },
+                // A row missing a time must say it is approximate: an
+                // exact row (timepoint 1, or empty on a timed feed)
+                // carries both, by the spec.
+                timepoint: if shown != 0 { Some(false) } else { tp },
             }
         })
         .collect()
@@ -354,8 +356,5 @@ proptest! {
         let want: BTreeMap<String, BTreeSet<String>> =
             expected.iter().map(|(b, ts)| (b.clone(), ts.iter().map(|(_, id)| id.clone()).collect())).collect();
         prop_assert_eq!(got, want);
-        for block in net.blocks.values() {
-            prop_assert!(block.trips.iter().all(|r| r.start_secs.is_none()), "one-start trips need no instance");
-        }
     }
 }

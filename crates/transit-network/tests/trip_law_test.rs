@@ -18,9 +18,9 @@
 //!   Option<u32> }` — seconds after the instance's start, one per
 //!   pattern stop; `None` = not scheduled (approximate). The first
 //!   and last stops carry both.
-//! * `TripRef { trip: TripId, start_secs: Option<u32> }` — a block's
-//!   reference; `start_secs` names the instance of a frequency trip
-//!   and is `None` for a one-start trip.
+//! * `TripRef { trip: TripId }` — a block's reference, as GTFS has
+//!   it: a block runs a trip whole, so a frequency trip in a block is
+//!   every one of its instances, back to back.
 //! * `MaterializedTrip.trip: TripId`.
 //! * `read_network(&str)` reads current AND pre-trip documents
 //!   (`departures` + `(pattern_trips, start_secs)` block refs).
@@ -55,7 +55,8 @@ struct GenTrip {
     every: (u32, u32, u32, bool),
     /// Per stop: (leg seconds to reach it, dwell seconds, which
     /// times are scheduled: 0 both, 1 arrival only, 2 departure only,
-    /// 3 neither). The first and last stops always carry both.
+    /// 3 neither). Timepoint stops — the first and last always among
+    /// them — carry both, as GTFS requires of an exact row.
     rows: Vec<(u32, u32, u8)>,
 }
 
@@ -101,7 +102,7 @@ fn spec_strategy() -> impl Strategy<Value = Spec> {
     })
 }
 
-fn offsets(rows: &[(u32, u32, u8)]) -> Vec<StopOffset> {
+fn offsets(rows: &[(u32, u32, u8)], timepoints: &[bool]) -> Vec<StopOffset> {
     let last = rows.len() - 1;
     let mut t = 0u32;
     rows.iter()
@@ -113,7 +114,7 @@ fn offsets(rows: &[(u32, u32, u8)]) -> Vec<StopOffset> {
             let arrival = t;
             let dwell = if i == 0 || i == last { dwell % 2 * 60 } else { dwell };
             t += dwell;
-            let shown = if i == 0 || i == last { 0 } else { shown };
+            let shown = if i == 0 || i == last || timepoints[i] { 0 } else { shown };
             StopOffset {
                 arrival_secs: (shown == 0 || shown == 1).then_some(arrival),
                 departure_secs: (shown == 0 || shown == 2).then_some(t),
@@ -181,6 +182,7 @@ fn build(spec: &Spec) -> Network {
         );
     }
     for (i, t) in spec.trips.iter().enumerate() {
+        let timepoints: Vec<bool> = net.patterns[&format!("p{}", t.pattern)].stops.iter().map(|s| s.timepoint).collect();
         let service = if t.saturday { "sa" } else { "wk" };
         let key = format!("{service}:p{}", t.pattern);
         let departs = match t.start_secs {
@@ -198,7 +200,7 @@ fn build(spec: &Spec) -> Network {
                 trips: vec![],
             })
             .trips
-            .push(Trip { id: format!("t{i}"), departs, times: offsets(&t.rows), ..Default::default() });
+            .push(Trip { id: format!("t{i}"), departs, times: offsets(&t.rows, &timepoints), ..Default::default() });
     }
     if spec.with_blocks {
         add_blocks(&mut net);
@@ -207,19 +209,21 @@ fn build(spec: &Spec) -> Network {
 }
 
 /// b0: the weekday one-start trips, chained greedily in start order
-/// where the vehicle can make it. b1: one instance of a weekday
-/// frequency trip. b2: a weekday and a Saturday trip at the same
+/// where the vehicle can make it. b1: a weekday frequency trip whole —
+/// only when one vehicle can run its instances back to back. b2: a weekday and a Saturday trip at the same
 /// minute — the two never share a day, so they cannot conflict.
 fn add_blocks(net: &mut Network) {
     let mut weekday: Vec<(u32, u32, String)> = Vec::new();
     let mut saturday: Vec<(u32, String)> = Vec::new();
-    let mut every: Option<(String, u32)> = None;
+    let mut every: Option<String> = None;
     for pt in net.pattern_trips.values() {
         for trip in &pt.trips {
             match (&trip.departs, pt.service_type.as_str()) {
                 (Departs::At { start_secs }, "wk") => weekday.push((*start_secs, start_secs + end_offset(trip), trip.id.clone())),
                 (Departs::At { start_secs }, "sa") => saturday.push((*start_secs, trip.id.clone())),
-                (Departs::Every { bands, .. }, "wk") if every.is_none() => every = Some((trip.id.clone(), bands[0].start_secs)),
+                (Departs::Every { bands, .. }, "wk") if every.is_none() && bands[0].headway_secs >= end_offset(trip) => {
+                    every = Some(trip.id.clone())
+                }
                 _ => {}
             }
         }
@@ -237,17 +241,14 @@ fn add_blocks(net: &mut Network) {
         chain.push(t);
     }
     let chained: BTreeSet<String> = if chain.len() >= 2 {
-        let trips = chain.iter().map(|(_, _, id)| TripRef { trip: id.clone(), start_secs: None }).collect();
+        let trips = chain.iter().map(|(_, _, id)| TripRef { trip: id.clone() }).collect();
         net.blocks.insert("b0".into(), Block { trips, layovers });
         chain.iter().map(|(_, _, id)| id.clone()).collect()
     } else {
         BTreeSet::new()
     };
-    if let Some((id, first)) = every {
-        net.blocks.insert(
-            "b1".into(),
-            Block { trips: vec![TripRef { trip: id, start_secs: Some(first) }], layovers: vec![] },
-        );
+    if let Some(id) = every {
+        net.blocks.insert("b1".into(), Block { trips: vec![TripRef { trip: id }], layovers: vec![] });
     }
     // A trip is one vehicle's: b2 takes a weekday trip b0 does not run.
     let free = weekday.iter().find(|(_, _, id)| !chained.contains(id));
@@ -256,8 +257,8 @@ fn add_blocks(net: &mut Network) {
             "b2".into(),
             Block {
                 trips: vec![
-                    TripRef { trip: wk.clone(), start_secs: None },
-                    TripRef { trip: sa.clone(), start_secs: None },
+                    TripRef { trip: wk.clone() },
+                    TripRef { trip: sa.clone() },
                 ],
                 layovers: vec![],
             },
@@ -344,8 +345,8 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
     /// Every generated network validates — including duplicate starts,
-    /// frequency trips, unscheduled stops, a block holding one
-    /// frequency instance, and a block whose trips never share a day.
+    /// frequency trips, unscheduled stops, a block running a frequency
+    /// trip whole, and a block whose trips never share a day.
     #[test]
     fn generated_networks_validate(net in net_strategy()) {
         let issues = validation_issues(&net);
@@ -427,6 +428,13 @@ proptest! {
             mutate(&|n| trip_mut(n, &key, &id).times.push(StopOffset::default())),
             // The first stop unscheduled.
             mutate(&|n| trip_mut(n, &key, &id).times[0] = StopOffset::default()),
+            // A timepoint stop with one time: GTFS requires both on an
+            // exact row (the last stop is always a timepoint).
+            mutate(&|n| {
+                let t = trip_mut(n, &key, &id);
+                let last = t.times.len() - 1;
+                t.times[last].departure_secs = None;
+            }),
             // Time running backwards.
             mutate(&|n| {
                 let last = trip_mut(n, &key, &id).times.len() - 1;
@@ -437,20 +445,19 @@ proptest! {
             mutate(&|n| {
                 n.blocks.insert(
                     "ghost".into(),
-                    Block { trips: vec![TripRef { trip: "no-such-trip".into(), start_secs: None }], layovers: vec![] },
+                    Block { trips: vec![TripRef { trip: "no-such-trip".into() }], layovers: vec![] },
                 );
             }),
-            // A block naming a frequency trip without its instance, or
-            // a one-start trip with one.
+            // One vehicle cannot run it: a one-start trip in two blocks,
+            // or a frequency trip in a block whose instances overlap
+            // (a one-second headway).
             mutate(&|n| {
-                let start = match trip_mut(n, &key, &id).departs {
-                    Departs::At { start_secs } => Some(start_secs),
-                    Departs::Every { .. } => None,
-                };
-                n.blocks.insert(
-                    "bad-instance".into(),
-                    Block { trips: vec![TripRef { trip: id.clone(), start_secs: start }], layovers: vec![] },
-                );
+                if let Departs::Every { bands, .. } = &mut trip_mut(n, &key, &id).departs {
+                    bands[0].headway_secs = 1;
+                } else {
+                    n.blocks.insert("twice-a".into(), Block { trips: vec![TripRef { trip: id.clone() }], layovers: vec![] });
+                }
+                n.blocks.insert("twice-b".into(), Block { trips: vec![TripRef { trip: id.clone() }], layovers: vec![] });
             }),
         ];
         for (i, b) in broken.iter().enumerate() {
@@ -749,7 +756,7 @@ proptest! {
             let first = *s.starts.iter().next().unwrap();
             prop_assert_eq!(
                 &net.blocks["b0"].trips,
-                &vec![TripRef { trip: format!("wk:p0@{first}"), start_secs: None }]
+                &vec![TripRef { trip: format!("wk:p0@{first}") }]
             );
         }
     }

@@ -17,7 +17,7 @@ use chrono::{Duration, NaiveDate};
 use proptest::prelude::*;
 use transit_network::{
     materialize, stop_detail, validation_issues, Block, CalendarException, CalendarRule, DateRange, DayState,
-    Departs, HeadwayBand, Layover, Mode, Network, Pattern, PatternStop, PatternTrips, Route, ServiceType,
+    Departs, HeadwayBand, Mode, Network, Pattern, PatternStop, PatternTrips, Route, ServiceType,
     StopOffset, TimingProfile, Trip, TripRef, WeekdaySet,
 };
 
@@ -36,7 +36,6 @@ struct Spec {
     n_services: u32,    // 1..3
     headway: u32,       // 300..1800
     dayset: u32,        // preset index
-    layover: u32,       // 0..600
     with_block: bool,
     with_exception: bool,
     /// A parent station pin none of the patterns visits, with the
@@ -53,19 +52,17 @@ fn spec_strategy() -> impl Strategy<Value = Spec> {
         1u32..3,
         300u32..1800,
         0u32..3,
-        0u32..600,
         any::<bool>(),
         any::<bool>(),
         any::<bool>(),
         1u32..3,
     )
-        .prop_map(|(a, b, c, d, e, f, g, h, station, bays)| Spec {
+        .prop_map(|(a, b, c, d, e, g, h, station, bays)| Spec {
             n_stops: a,
             n_patterns: b,
             n_services: c,
             headway: d,
             dayset: e,
-            layover: f,
             with_block: g,
             with_exception: h,
             station,
@@ -221,23 +218,13 @@ fn build_network(spec: &Spec) -> Network {
     }
 
     if spec.with_block {
-        // Two consecutive instances of svc0's frequency trip, layover
-        // sized to fit — only if the running time allows it.
+        // svc0's frequency trip, whole (GTFS: a block runs a trip
+        // whole) — only when one vehicle can run its instances back to
+        // back.
         let every = &net.pattern_trips["svc0"].trips[0];
-        let instances = oracle_instances(&every.departs);
         let run = every.times.last().and_then(|o| o.arrival_secs).unwrap();
-        if instances.len() >= 2 && instances[0] + run <= instances[1] {
-            let gap = instances[1] - (instances[0] + run);
-            let layovers = if gap > 0 {
-                vec![Layover { after_trip: 0, secs: spec.layover.min(gap), at: None }]
-            } else {
-                vec![]
-            };
-            let trips = instances[..2]
-                .iter()
-                .map(|&s| TripRef { trip: every.id.clone(), start_secs: Some(s) })
-                .collect();
-            net.blocks.insert("b0".into(), Block { trips, layovers });
+        if spec.headway >= run {
+            net.blocks.insert("b0".into(), Block { trips: vec![TripRef { trip: every.id.clone() }], layovers: vec![] });
         }
     }
     net
@@ -423,13 +410,10 @@ proptest! {
         }
         prop_assert!(!validation_issues(&broken).is_empty());
 
-        // A block naming an instance its trip does not run (QAF-1: a
-        // retimed trip leaves its blocks behind) is an invalidity.
+        // A block naming a trip the document does not have.
         let mut broken = net.clone();
         if let Some((_, block)) = broken.blocks.iter_mut().next() {
-            if let Some(start) = &mut block.trips[0].start_secs {
-                *start += 1;
-            }
+            block.trips[0].trip = "ghost-trip".into();
             prop_assert!(!validation_issues(&broken).is_empty());
         }
     }

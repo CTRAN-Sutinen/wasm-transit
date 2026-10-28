@@ -153,6 +153,9 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
 
 ## Conventions
 
+- **Clarify, don't assume.** When a directive is ambiguous, conflicts
+  with the GTFS spec or an architecture law, or leaves a design
+  decision open, ask before building on an answer you picked.
 - **Git is the user's** — never commit, push, stash, or otherwise
   move refs. Do the work, leave the tree, report what changed.
 - The TS bindings are GENERATED and gitignored (`just types`, run
@@ -171,6 +174,13 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
 The rest of the gotchas: `docs/CONVENTIONS.md`.
 
 ## Testing
+
+**Laws first.** Every behavior change starts with the property
+tests that define it, derived from the user's stated intent and the
+GTFS spec — never from the current code — and written before the
+implementation. When the intent leaves a behavior ambiguous, ask
+the user; do not pick an answer and encode it. The rules are in
+`docs/TESTING.md`, "Laws first".
 
 Every change lands with tests at the layer that owns the logic —
 the expectations (unit/property in the owning crate, module

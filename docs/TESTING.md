@@ -1,6 +1,37 @@
 # Testing expectations
 
 Every change lands with tests at the layer that owns the logic.
+
+## Laws first — from the intent, never from the code
+
+Every behavior change STARTS with the property tests (laws) that
+define it, written before the implementation and run red. This repo
+has shipped wrong behavior whose prop tests were written to match
+the implementation, so the tests certified the bug. The rules:
+
+- **Derive each law from the stated intent** — the user's directive,
+  the GTFS spec, the architecture laws — never from what the code
+  currently does. Write down, in the law's doc comment, the intent
+  it encodes.
+- **Independent oracles.** A law's expected answer is recomputed
+  from the generated input with code that shares nothing with the
+  implementation (`docs/CONVENTIONS.md`, native tests first).
+- **Generators produce only valid input** for the domain the law
+  claims (a spec-valid feed is valid against the GTFS spec, not
+  against our parser). An invalid generator makes a law demand the
+  impossible.
+- **Audit the existing laws when intent changes.** A law that
+  encodes the old behavior is rewritten or deleted in the same
+  change that adds the new ones — never left to pass by accident.
+- **A red law is fixed in the implementation.** A law is weakened
+  or deleted only when the user's intent says the law is wrong, and
+  the change says so.
+- **Ambiguity is asked, not assumed.** When the intent does not
+  settle a behavior the law must pin (an edge case, a spec
+  conflict, two readings of a directive), stop and ask the user;
+  list the decisions a new law encodes so they can be checked
+  before the implementation starts.
+
 Two runners: `just test` is the host-side gate (no browser) — run
 it before declaring any change done; `just e2e` adds the browser
 runner, for changes that touch user-visible flows; `just check`
