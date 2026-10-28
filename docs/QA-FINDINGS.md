@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-79**. A
+IDs are never reused; the next new finding is **QAF-82**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -221,6 +221,31 @@ time, last bus home, is there a detour.
   location asks `stops_near` instead; a rider with only the
   everyday name has no op.
   Pin: directory `stops` query "vancouver mall" → `[]`.
+- **QAF-79 OP GAP** — `watchlist_board` is not the stop board: it
+  takes no live document, so watched stops answer the schedule with
+  no prediction or status, and it answers each stop through the
+  per-stop board, so a watched STATION pin answers no departures
+  where `stop_board` pools its bays. The ride-now UI's saved stops
+  show the schedule and say live predictions aren't available yet.
+  Pin: e2e fixture — `watchlist_board` over `{stops: [STN]}` →
+  `departures: []`, `stop_board` STN → the pooled bays (t40 08:15);
+  `cap-board/src/lib.rs` `WatchlistBoard` calls
+  `transit_dispatch::board` with no live hash.
+- **QAF-80 DEFECT** — no stored document survives a reload: the
+  document store (`web/src/capabilities.svelte.ts`) persists
+  `{kinds}` but `restoreDocuments` adopts what it reads as `kinds`
+  itself, so `currentDocument` finds nothing after a reload. A
+  rider's saved stops last one visit.
+  Pin: ride-now UI — save a stop, reload → the Saved section is
+  gone.
+- **QAF-81 OP GAP** — no answer is relative to the moment asked: a
+  board row carries its expected clock time but not "leaves in 4
+  min", and an itinerary carries its departure and arrival but not
+  how long the trip takes. A rider reads minutes; the host would
+  have to subtract. The ride-now UI shows clock times.
+  Pin: board `stop_board` row fields (`expected_secs`,
+  `departure_secs`); router `plan` `Itinerary` (`depart_secs`,
+  `arrival_secs`, no duration).
 
 ## The runner
 

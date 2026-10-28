@@ -1,0 +1,5 @@
+{
+  "trips": "http://gtfs-rt.c-tran.org/gtfsrealtime/TripUpdates",
+  "vehicles": "http://gtfs-rt.c-tran.org/gtfsrealtime/VehiclePositions",
+  "alerts": ""
+}

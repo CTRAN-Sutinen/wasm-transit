@@ -4,8 +4,12 @@ A generated UI for someone taking a trip today: find a stop, see
 what leaves next and whether it is running late or early, plan a
 trip, know the last bus home, and learn about a detour before it
 strands them. It follows the generated-UI procedure
-(`docs/ARCHITECTURE.md`, "Generated UIs"). It is at step 3: the
-dogfood session has not run.
+(`docs/ARCHITECTURE.md`, "Generated UIs"). The UI is built
+(`web/src/uis/ride-now/`, `e2e/ui-ride-now.spec.mjs`) ahead of its
+dogfood session, at the user's direction. It has run in the browser
+on C-TRAN with the live trip updates and vehicle positions
+(2026-10-28, 16:47 PDT, 68 buses). What is left is step 3's
+`caps-run` session and step 8's comparison of the two.
 
 ## Questions, in the order asked
 
@@ -17,40 +21,68 @@ dogfood session has not run.
 6. Is there a detour or disruption on my trip or at my stop?
 7. What leaves next from the stops I watch?
 
-## Op inventory (draft, before the session)
+## Op inventory
+
+Pinned on the e2e fixture, and seen answering on C-TRAN in the
+browser.
 
 | # | op(s) | state |
 |---|---|---|
-| 1 | directory `stops` (by name), `stops_near` (a point) | ops exist; a colloquial name finds nothing, QAF-70 |
-| 2 | rt `live` → board `stop_board` (`live_hash`) | op exists |
-| 3 | rt `live`, `trip_progress` | op exists |
-| 4 | router `plan` (`live_hash`) | op exists |
-| 5 | router `plan_arrive_by` | op exists |
-| 6 | rt `live` (`alerts_hash`) → board `stop_board` (`alerts`, `skipped`); router `plan_compare` with `edits_hash` (`notice`) | ops exist |
-| 7 | board `watchlist_board` | op exists |
+| 1 | directory `stops` (query), `stops_near` (a point: the rider, or a tapped spot) | answered; a colloquial name answers nothing, QAF-70 |
+| 2 | rt `live` → board `stop_board` (`live_hash`) | answered; "leaves in N min" has no op, QAF-81 |
+| 3 | the board row's `status` / `delay_secs`; the map's buses by status | answered |
+| 4 | router `plan_compare` (`live_hash`, `edits_hash`) → `itinerary_paths` | answered; a trip's duration has no op, QAF-81 |
+| 5 | router `plan_arrive_by` (no deadline; or a deadline) | answered |
+| 6 | board `stop_board` (`alerts`, `skipped`); router `plan_compare` (`notice`) | skipped + notice answered on the fixture; no alert has been read (no fixture carries one, and no alerts URL is configured) |
+| 7 | board `watchlist_board` | schedule only, and a station answers nothing: QAF-79; saved stops do not survive a reload: QAF-80 |
 
-The open rider findings in `docs/QA-FINDINGS.md` (QAF-66, QAF-70)
-come from an earlier import. Step 3 runs every question against the
-reference import as one sequence, with a live snapshot that
-includes C-TRAN's service-alerts feed. No real-data session has
-read alerts, a live plan, or `skipped` yet. Step 3 re-confirms the
-open findings and logs what it finds for 6 and 7.
+## Answer graph
+
+Inputs: `network` (the imported document), `edits` (the sync
+server's edit document, GET /edits), `snapshot` (the decoded live
+feeds), `clock` (the poll's tick), `query` / `near` / `stop` /
+`departure` / `trip` (the selection), `saved` (the watchlist
+document), `view` (which panel is on screen).
+
+| node | inputs | frame | on screen |
+|---|---|---|---|
+| directory `stops` + `routes` | network | RideMap (and every route badge) | always |
+| directory `stops` (query) | network, query | PlaceSearch | always |
+| directory `stops_near` | network, near | the home panel's nearby cards | always |
+| rt `live` (+ `load_boundary`) | network, snapshot | LiveFeeds, RideMap | always |
+| board `stop_board` (+ `load_edits`, `load_live`) | network, edits, rt.live, stop, clock, view | RiderBoard | the stop panel |
+| board `stop_board`, once per nearby place | network, edits, rt.live, stops_near, clock, view | StopCard | the home panel |
+| board `watchlist_board` (+ `load_watchlist`) | network, edits, saved, clock, view | StopCard | the home panel |
+| directory `focus` (route) | network, departure | RideMap | always |
+| router `plan_compare` \| `plan_arrive_by` | network, edits, rt.live, trip | TripPlan | always |
+| router `itinerary_paths` | router.plan | RideMap | always |
+
+The poll (every 30 s) re-reads the edit document and the live feeds
+and requests `clock` plus whichever changed; a trip asked for "now"
+is re-asked from the new now. That is a timer input, written into
+`docs/units/host-discipline.md` as an engine requirement. Each poll
+registers a new live document in rt, board, and router (QAF-49); a
+rider-length session is bounded only when
+`docs/units/module-runtime.md`'s eviction lands.
 
 ## Scope beyond the ops
 
-- **Live input.** A live snapshot is an input the host refreshes on
-  a timer; each poll registers a new document in every consumer
-  (QAF-49). A rider-length session is bounded only when
-  `docs/units/module-runtime.md`'s eviction lands. Record the
-  polling node in the answer graph and in host-discipline.md as an
-  engine requirement (step 5).
 - **Where edits come from.** Detours reach a rider through the sync
-  server (`docs/units/sync-persistence.md`).
+  server (`docs/units/sync-persistence.md`); the UI only reads.
+- **Live feeds.** The deployment names them in
+  `web/public/live-feeds.json` (C-TRAN's trip updates and vehicle
+  positions); a rider may set their own. C-TRAN's service-alerts
+  URL is not configured.
 
 ## Done when
 
-- The session has run, and the inventory names an op or a finding
-  for every question.
-- The answer graph table is in this file.
-- The UI lands per step 8 with `e2e/ui-ride-now.spec.mjs`, and this
-  file is deleted, or edited down to its blocked questions.
+- The session has run on C-TRAN as one sequence (the reference
+  import, a live snapshot with trip updates, vehicle positions, and
+  service alerts), each question through `caps-run`, its findings
+  logged, and the inventory above re-pinned on real data.
+- The UI's numbers on the real feed (`just serve
+  testdata/ctran-gtfs.zip`) equal the session's for the same
+  snapshot, an alert has been read on a board, and `ui.json`'s
+  `session` records it.
+- Then this file is deleted, or edited down to the questions still
+  blocked (QAF-70, QAF-79, QAF-80, QAF-81 while open).

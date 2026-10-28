@@ -569,8 +569,21 @@ on every component a generated UI imports.
   CompareTable (analysis `service_type_compare`), FocusMap (a
   directory `focus` drawn and framed), BlocksPanel (runcut
   `blocks` / `block_trips`), DepartureBoard (`stop_board`), RtPanel
-  (the live summary), TripPlanner (from, to, depart → `onplan`), and
-  Combobox (a searchable picker).
+  (the live summary), TripPlanner (from, to, depart → `onplan`),
+  Combobox (a searchable picker), and the rider's set: RideMap (every
+  stop, the live buses by status, a route's `focus`, a trip's
+  `itinerary_paths`, the rider's location; a tapped stop or spot is
+  an event), PlaceSearch (a debounced type-ahead over directory
+  `stops`, keyboard-driven), DepartureRows (`stop_board` rows with
+  their expected time and status, or `watchlist_board` departures),
+  StopCard (a stop at a glance), RiderBoard (one stop's board, its
+  alerts and skipped visits), AlertList (the live document's
+  alerts), TripPlan (the trip's ends, when, and the router's answer)
+  with Itinerary (the answer as a timeline), and LiveFeeds (whether
+  the times are live, and the feed URLs). `rideFormat.ts` holds
+  their formatting (clock times, status words and tones). Each
+  frame whose capability can fail takes an `off` prop: a capability
+  that did not assemble turns its frame off, and the frame says so.
 - Coupled to the original app (do not compose; build a thin one
   instead): MapView, PlannerRail, PersonaTabs, DataSources,
   CapabilityDemo, PlanOverlay, DiversionPanel, and the entity forms
@@ -660,6 +673,23 @@ inside its column, never widening the page), and the timetable
 gestures. Its host answers through the answer graph; the fleet
 (cap-runcut) answers only while its panel is open, and the plan's
 health adopts cap-author's issues for a document it authored.
+`ride-now` (`src/uis/ride-now/`): a full-bleed map with a panel over
+it (a card at the left on a wide screen, a sheet over the bottom of
+the map on a phone), the live pill and the alerts button in the
+corner. The panel follows the rider: home (the type-ahead, a
+"Get directions" start, the places near the rider or a tapped spot
+with each one's next departures, saved stops, recent stops), one
+stop (its live board; a picked departure draws its route and marks
+its bus), getting there (the ends as type-aheads; leave now, leave
+at, arrive by, or the last bus; the itinerary as a timeline, drawn
+on the map), and the alerts in force. It boots from the server's
+`/feed` (or a zip the rider loads), reads the edit document from
+`GET /edits`, reads the live feeds the deployment names in
+`public/live-feeds.json` (the rider may set their own) through
+`/rt`, and polls both and the clock every 30 s. A trip asked for
+"now" is re-asked on each poll. Its open work is
+`docs/units/ui-ride-now.md`.
+
 Layouts are hand-placed Svelte; layouts as documents are
 `docs/units/wire-time-assembly.md`.
 

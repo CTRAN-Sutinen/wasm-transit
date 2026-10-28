@@ -54,6 +54,7 @@ import type { CreatedEntity } from "./types/CreatedEntity";
 import type { Request as SyncCapRequest } from "./types/cap_sync/Request";
 import type { Response as SyncCapResponse } from "./types/cap_sync/Response";
 import type { DirectoryStop } from "./types/cap_directory/DirectoryStop";
+import type { NearbyStop } from "./types/NearbyStop";
 import type { DirectoryRoute } from "./types/cap_directory/DirectoryRoute";
 import { directory } from "./state.svelte";
 import type { PatternStops } from "./types/cap_directory/PatternStops";
@@ -353,8 +354,8 @@ function documentData(): { kinds: DocKinds } {
 
 export async function restoreDocuments(): Promise<void> {
   if (documents.restored) return;
-  const stored = await idbGet<DocKinds>(DOC_KEY);
-  if (stored) documents.kinds = stored;
+  const stored = await idbGet<{ kinds: DocKinds }>(DOC_KEY);
+  if (stored?.kinds) documents.kinds = stored.kinds;
   documents.restored = true;
 }
 
@@ -666,6 +667,7 @@ export function routerCap(module: CapModule) {
       date: string,
       departSecs: number,
       maxLegs: number,
+      liveHash: string | null = null,
     ): Itinerary | null {
       const resp = module.invoke({
         op: "plan",
@@ -676,6 +678,7 @@ export function routerCap(module: CapModule) {
         date,
         depart_secs: departSecs,
         max_legs: maxLegs,
+        live_hash: liveHash,
       } as RouterRequest) as Extract<RouterResponse, { op: "plan" }>;
       return resp.itinerary;
     },
@@ -687,6 +690,7 @@ export function routerCap(module: CapModule) {
       date: string,
       departSecs: number,
       maxLegs: number,
+      liveHash: string | null = null,
     ): { active: Itinerary | null; baseline: Itinerary | null; notice: string | null } {
       const resp = module.invoke({
         op: "plan_compare",
@@ -697,10 +701,46 @@ export function routerCap(module: CapModule) {
         date,
         depart_secs: departSecs,
         max_legs: maxLegs,
+        live_hash: liveHash,
       } as RouterRequest) as Extract<RouterResponse, { op: "plan_compare" }>;
       // The notice is structured (kind, minutes lost, routes, skipped
       // stops); the planner panel shows its text line.
       return { active: resp.active, baseline: resp.baseline, notice: resp.notice?.text ?? null };
+    },
+    /// Arrive-by: the latest departure that reaches `to` by
+    /// `arriveBySecs` — with null, the day's last bus there. The
+    /// answer names the deadline it answered.
+    planArriveBy(
+      networkHash: string,
+      editsHash: string | null,
+      from: string,
+      to: string,
+      date: string,
+      arriveBySecs: number | null,
+      maxLegs: number,
+      liveHash: string | null = null,
+    ): { arriveBySecs: number; itinerary: Itinerary | null } {
+      const resp = module.invoke({
+        op: "plan_arrive_by",
+        network_hash: networkHash,
+        edits_hash: editsHash,
+        from,
+        to,
+        date,
+        arrive_by_secs: arriveBySecs,
+        max_legs: maxLegs,
+        live_hash: liveHash,
+      } as RouterRequest) as Extract<RouterResponse, { op: "plan_arrive_by" }>;
+      return { arriveBySecs: resp.arrive_by_secs, itinerary: resp.itinerary };
+    },
+    /// Register a live document (cap-rt's `live`) — the same
+    /// identity rt answered; plans name it by hash.
+    loadLive(live: LiveDay): string {
+      const resp = module.invoke({ op: "load_live", live } as RouterRequest) as Extract<
+        RouterResponse,
+        { op: "load_live" }
+      >;
+      return resp.live_hash;
     },
     /// Where an itinerary runs, one path per leg, over the effective
     /// day it was planned on (the same edits hash).
@@ -859,13 +899,20 @@ export function rtCap(module: CapModule) {
     },
     /// THE live document: the snapshot(s) resolved into model
     /// vocabulary, classified under the module's default window.
-    live(networkHash: string, boundaryHash: string, rtHash: string | null, vpHash: string | null): Live {
+    live(
+      networkHash: string,
+      boundaryHash: string,
+      rtHash: string | null,
+      vpHash: string | null,
+      alertsHash: string | null = null,
+    ): Live {
       const resp = module.invoke({
         op: "live",
         network_hash: networkHash,
         boundary_hash: boundaryHash,
         rt_hash: rtHash ?? undefined,
         vp_hash: vpHash ?? undefined,
+        alerts_hash: alertsHash ?? undefined,
       } as RtCapRequest) as Extract<RtCapResponse, { op: "live" }>;
       return { liveHash: resp.live_hash, live: resp.live, summary: resp.summary };
     },
@@ -1278,12 +1325,26 @@ export function directoryCap(module: CapModule) {
     loadNetwork(network: Network): string {
       return module.loadNetwork(network);
     },
-    stops(networkHash: string, limit: number | null): DirectoryStop[] {
+    stops(networkHash: string, limit: number | null, query?: string): DirectoryStop[] {
       const resp = module.invoke({
         op: "stops",
         network_hash: networkHash,
+        query,
         limit,
       } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "stops" }>;
+      return resp.stops;
+    },
+    /// The places nearest a point, nearest first (a station once, as
+    /// the station), each with its distance.
+    stopsNear(networkHash: string, lat: number, lon: number, limit?: number, radiusM?: number): NearbyStop[] {
+      const resp = module.invoke({
+        op: "stops_near",
+        network_hash: networkHash,
+        lat,
+        lon,
+        limit,
+        radius_m: radiusM,
+      } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "stops_near" }>;
       return resp.stops;
     },
     stopsByIds(networkHash: string, ids: string[]): DirectoryStop[] {

@@ -63,6 +63,14 @@ reflog and pointer CAS land with
 [sync-persistence.md](sync-persistence.md) — a second persistence
 design is rejected on sight.
 
+Engine requirements the tables cannot express:
+
+- **A polled input** ([ui-ride-now.md](ui-ride-now.md)): a timer
+  re-reads external documents (the live feeds, the edit document)
+  and the clock, and only the inputs whose content hash changed
+  re-answer their nodes. Each poll mints an ephemeral document
+  (the live snapshot) that the journal marks as such.
+
 ## Done when
 
 - The two gates are in `just test`, each with an empty allowlist.

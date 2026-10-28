@@ -11,6 +11,7 @@
   --accent-soft: #fde7da;
   --bad: #b91c1c;
   --warn: #a16207;
+  --ok: #15803d;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -24,6 +25,7 @@
     --accent-soft: #4a2a17;
     --bad: #f87171;
     --warn: #facc15;
+    --ok: #4ade80;
   }
 }
 :root[data-theme="dark"] {
@@ -37,6 +39,7 @@
   --accent-soft: #4a2a17;
   --bad: #f87171;
   --warn: #facc15;
+  --ok: #4ade80;
 }
 
 * { box-sizing: border-box; }
