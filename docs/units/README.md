@@ -33,8 +33,7 @@ archive — nothing here records what is finished.
 
 | unit | what it is |
 |---|---|
-| [lossless-codec.md](lossless-codec.md) | GTFS → network → GTFS loses nothing in the spec; `just test` is red until it lands |
-| [u8-gtfs-substrate.md](u8-gtfs-substrate.md) | transit-core folds into transit-codec; nothing named "core" holds GTFS |
+| [u8-gtfs-substrate.md](u8-gtfs-substrate.md) | the GTFS boundary moves into transit-codec, lossless over the whole spec; `just test` is red until it lands |
 | [host-discipline.md](host-discipline.md) | the composition layer: one op caller, flow maps as data, the journal, replay |
 | [wire-time-assembly.md](wire-time-assembly.md) | per-user selection over the manifest; layouts as documents |
 | [sync-persistence.md](sync-persistence.md) | self-describing blobs + pointers, pointer CAS, the store reflog, TLC-checked, generated schemas + `docs/FORMATS.md` |

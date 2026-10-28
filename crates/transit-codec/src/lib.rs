@@ -28,6 +28,9 @@
 //! references it. Patterns without a path keep `shape_id: None` and
 //! draw stop-to-stop lines (the base `trip_path` fallback).
 
+pub mod feed;
+pub use feed::{Feed, FeedError};
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::{Duration, NaiveDate};

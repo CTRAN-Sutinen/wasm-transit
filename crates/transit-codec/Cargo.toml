@@ -11,14 +11,14 @@ ts-rs = { workspace = true }
 chrono = { workspace = true }
 transit-core = { path = "../transit-core" }
 transit-network = { path = "../transit-network" }
+# The whole-spec feed layer (src/feed.rs): zip members, CSV tables,
+# locations.geojson.
+zip = { workspace = true }
+csv = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
 proptest = "1"
-zip = { workspace = true }
-# The spec round-trip law reads both feeds as raw CSV tables — an
-# oracle independent of the parser under test.
-csv = { workspace = true }
 # The transfer-fixture regression test reads the composed question
 # (walking groups, timed connections) through the analysis library.
 transit-analysis = { path = "../transit-analysis" }

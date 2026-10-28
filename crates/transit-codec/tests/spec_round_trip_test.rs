@@ -52,12 +52,12 @@ use proptest::prelude::*;
 // ===================================================================
 
 fn round_trip(feed: &[u8]) -> Result<Vec<u8>, String> {
-    let gtfs = transit_core::Gtfs::from_zip_bytes(feed)
+    let feed = transit_codec::Feed::from_zip_bytes(feed)
         .map_err(|e| format!("the codec cannot read a spec-valid feed: {e}"))?;
-    let outcome = transit_codec::gtfs_to_network(&gtfs);
-    let exported = transit_codec::network_to_gtfs(&outcome.network)
+    let outcome = transit_codec::import(&feed);
+    let exported = transit_codec::export(&outcome.network, &outcome.boundary)
         .map_err(|e| format!("the codec cannot export its own import: {e}"))?;
-    Ok(transit_core::write::to_zip_bytes(&exported))
+    Ok(exported.to_zip_bytes())
 }
 
 // ===================================================================
@@ -607,6 +607,26 @@ fn build(feed: &SpecFeed) -> Builder {
     }
 
     // ---- trips.txt + stop_times.txt (the scheduled core) ----
+    // Blocks as the spec requires them: one vehicle, so a block's
+    // trips on one service never overlap (a frequency trip — t0 under
+    // FREQUENCIES — stays out of blocks). A block may span services.
+    let mut spans: BTreeMap<(u8, u8), Vec<(u32, u32)>> = BTreeMap::new();
+    let blocks: Vec<Option<u8>> = feed
+        .trips
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let block = t.block.filter(|_| !(i == 0 && has(FREQUENCIES)))?;
+            let start = t.start_slot as u32 * 600;
+            let span = (start, start + (t.stops.len() as u32 - 1) * t.leg_min as u32 * 60 + 30);
+            let taken = spans.entry((block, t.service)).or_default();
+            if taken.iter().any(|&(a, z)| span.0 <= z && a <= span.1) {
+                return None;
+            }
+            taken.push(span);
+            Some(block)
+        })
+        .collect();
     let mut first_seq_of_t0 = None;
     for (i, t) in feed.trips.iter().enumerate() {
         let id = format!("t{i}");
@@ -615,7 +635,7 @@ fn build(feed: &SpecFeed) -> Builder {
             ("service_id", t.service.to_string()),
             ("trip_id", id.clone()),
         ];
-        if let Some(block) = t.block {
+        if let Some(block) = blocks[i] {
             row.push(("block_id", block.to_string()));
         }
         b.maybe(&mut row, "trip_headsign", Rng::text);
@@ -1126,6 +1146,14 @@ fn show(rows: &[Normalized]) -> String {
 /// The law for one file: the source feed's rows are exactly the
 /// round-tripped feed's rows.
 fn file_survives(feed: &SpecFeed, file: &str) -> Result<(), TestCaseError> {
+    file_survives_through(feed, file, round_trip)
+}
+
+fn file_survives_through(
+    feed: &SpecFeed,
+    file: &str,
+    round_trip: fn(&[u8]) -> Result<Vec<u8>, String>,
+) -> Result<(), TestCaseError> {
     let source = zip_feed(feed);
     let out = round_trip(&source).map_err(TestCaseError::fail)?;
     let (before, after) = (
@@ -1250,5 +1278,22 @@ fn the_oracle_accepts_the_identity() {
             "{} wrote a value its own type cannot read",
             spec.name
         );
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    /// The codec's serialization layer alone reads and writes every
+    /// spec file without loss — so a failing law above is a loss in
+    /// the network import or export, never in the feed layer.
+    #[test]
+    fn the_feed_layer_is_lossless(feed in gen_spec_feed()) {
+        let through_feed = |bytes: &[u8]| -> Result<Vec<u8>, String> {
+            Ok(transit_codec::Feed::from_zip_bytes(bytes).map_err(|e| e.to_string())?.to_zip_bytes())
+        };
+        for file in SPEC.iter().map(|f| f.name).chain([LOCATIONS]) {
+            file_survives_through(&feed, file, through_feed)?;
+        }
     }
 }
