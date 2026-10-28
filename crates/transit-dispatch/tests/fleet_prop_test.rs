@@ -36,7 +36,7 @@ fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) ->
             direction: None,
             route: "10".into(),
             name: "route 10".into(),
-            path: None,
+            alignment: None,
             stops: vec![
                 PatternStop { stop: "A".into(), timepoint: true, distance_m: 0.0 },
                 PatternStop { stop: "B".into(), timepoint: true, distance_m: 1000.0 },
@@ -101,6 +101,7 @@ fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) ->
         stops,
         routes,
         patterns,
+        alignments: Default::default(),
         service_types,
         pattern_trips,
         blocks,

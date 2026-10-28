@@ -10,20 +10,20 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use transit_network::{pattern_alignment, stop_point, stops_line, Coord, MaterializedTrip, Network};
+use transit_network::{authored_alignment, stop_point, stops_line, Coord, MaterializedTrip, Network};
 
 fn day_trip<'a>(day: &'a [MaterializedTrip], pattern_trips: &str, start_secs: u32) -> Option<&'a MaterializedTrip> {
     day.iter().find(|t| t.pattern_trips == pattern_trips && t.start_secs == start_secs)
 }
 
 /// The trip's pattern alignment, when the effective trip still visits
-/// exactly its pattern's stops and the pattern has an authored path.
+/// exactly its pattern's stops and the pattern runs an alignment.
 fn followed_path(network: &Network, trip: &MaterializedTrip) -> Option<Vec<Coord>> {
     let pattern_id = &network.pattern_trips.get(&trip.pattern_trips)?.pattern;
     let pattern = network.patterns.get(pattern_id)?;
     let follows = pattern.stops.len() == trip.stop_times.len()
         && pattern.stops.iter().zip(&trip.stop_times).all(|(ps, st)| ps.stop == st.stop);
-    (follows && pattern.path.as_ref().is_some_and(|p| p.len() >= 2)).then(|| pattern_alignment(network, pattern_id))
+    follows.then(|| authored_alignment(network, pattern_id)).flatten()
 }
 
 /// One derived trip's line in the effective day: its pattern's

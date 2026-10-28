@@ -158,17 +158,19 @@ fn import_infers_a_valid_document_from_a_feed() {
     assert!(pattern.stops.iter().all(|s| s.timepoint));
 
     // The alignment survives inference: t10's sh1 (3 points) is the
-    // pattern's path; patterns whose trips carry no shapes have none.
-    let path = pattern.path.as_ref().expect("sh1 becomes the pattern path");
-    assert_eq!(path.len(), 3);
-    assert_eq!((path[0].lat, path[0].lon), (45.400, -73.400));
+    // alignment the pattern runs; patterns whose trips carry no shapes
+    // run none.
+    assert_eq!(pattern.alignment.as_deref(), Some("sh1"));
+    let points = &network.alignments["sh1"].points;
+    assert_eq!(points.len(), 3);
+    assert_eq!((points[0].lat, points[0].lon), (45.400, -73.400));
     let unshaped: Vec<&String> = network
         .patterns
         .iter()
-        .filter(|(_, p)| p.path.is_none())
+        .filter(|(_, p)| p.alignment.is_none())
         .map(|(id, _)| id)
         .collect();
-    assert_eq!(unshaped.len(), 3, "only pat-10-0-1 has a path: {unshaped:?}");
+    assert_eq!(unshaped.len(), 3, "only pat-10-0-1 runs an alignment: {unshaped:?}");
 
     // The runcut survives: B1 chains t10 and t20 chronologically.
     let block = network.blocks.get("B1").expect("block B1 kept");
@@ -389,19 +391,19 @@ fn imported_network_preserves_the_service_view() {
 
 #[test]
 fn imported_alignment_survives_publishing() {
-    // A pattern's authored path is the geometry the published feed
-    // draws — its trips reference it as their shape, so rider views
-    // after a planner publish follow the real alignment, not stop
-    // chords. Unauthored patterns publish no shape.
+    // The alignment a pattern runs is the geometry the published feed
+    // draws, under the feed's own shape id — its trips reference it,
+    // so rider views after a planner publish follow the real line,
+    // not stop chords. Patterns that run none publish no shape.
     let network = import(&fixture_zip()).network;
     let feed = published(&network);
     let points: Vec<&transit_codec::feed::ShapeRow> =
-        feed.shapes.iter().filter(|r| r.shape_id.as_deref() == Some("pat-10-0-1")).collect();
+        feed.shapes.iter().filter(|r| r.shape_id.as_deref() == Some("sh1")).collect();
     assert_eq!(points.len(), 3);
     assert_eq!(points[0].shape_pt_sequence.as_deref(), Some("1"));
     assert_eq!((points[0].shape_pt_lat.as_deref(), points[0].shape_pt_lon.as_deref()), (Some("45.4"), Some("-73.4")));
     let shape_of = |id: &str| feed.trips.iter().find(|t| t.trip_id.as_deref() == Some(id)).unwrap().shape_id.clone();
-    assert_eq!(shape_of("t10").as_deref(), Some("pat-10-0-1"), "the agency's own trip id");
+    assert_eq!(shape_of("t10").as_deref(), Some("sh1"), "the agency's own shape id");
     assert_eq!(shape_of("t20"), None);
 }
 

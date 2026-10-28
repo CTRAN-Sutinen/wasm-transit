@@ -10,13 +10,13 @@
 //! The trip is the unit both ways: a feed's trips ARE the network's
 //! trips — the agency's ids, every scheduled time, frequency trips as
 //! frequency trips, block membership by trip. Patterns are stop
-//! sequences (route, direction, stops, exactness flags, shape); how
-//! long a trip takes is the trip's own business.
+//! sequences along an alignment (route, direction, stops, exactness
+//! flags, shape); how long a trip takes is the trip's own business.
 //!
 //! What a document cannot hold and the feed's own bytes need lives
 //! in the [`Boundary`] — the import's serialization residue (the
-//! feed's stop_sequence numbering, a frequency trip's stop_times
-//! base). An authored document exports with `Boundary::default()`.
+//! feed's stop_sequence and shape_pt_sequence numbering, a frequency
+//! trip's stop_times base). An authored document exports with `Boundary::default()`.
 //!
 //! Conventions of the mapping:
 //!
@@ -28,8 +28,9 @@
 //!   bands;
 //! * a stop row is exact (the pattern's timepoint) when it carries
 //!   both times and does not say `timepoint=0`;
-//! * a pattern's authored `path` is a `shapes.txt` polyline keyed by
-//!   the pattern id;
+//! * a shape is an alignment under its own id (every shape, run or
+//!   not, with its published distances), and a trip's `shape_id` is
+//!   the alignment its pattern runs;
 //! * transfer-point flags come from transfers.txt (a stop named by a
 //!   possible transfer, where at least two routes meet) and do not
 //!   cross back (GTFS declares transfers pairwise).
@@ -49,7 +50,7 @@ use feed::{
     TripRow,
 };
 use transit_network::{
-    Block, CalendarException, CalendarRule, Coord, DateRange, DayState, Departs, Direction, HeadwayBand, Layover, Mode,
+    Alignment, AlignmentPoint, Block, CalendarException, CalendarRule, DateRange, DayState, Departs, Direction, HeadwayBand, Layover, Mode,
     Network, Pattern, PatternStop, PatternTrips, ServiceType, StopOffset, TimingProfile, Trip, TripRef, WeekdaySet,
 };
 
@@ -74,6 +75,11 @@ pub struct Boundary {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, u32>>")]
     pub frequency_bases: BTreeMap<String, u32>,
+    /// Per alignment, the feed's shape_pt_sequence numbers — kept only
+    /// where they are not 1..=n.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(optional, as = "Option<BTreeMap<String, Vec<u32>>>")]
+    pub shape_sequences: BTreeMap<String, Vec<u32>>,
 }
 
 /// One thing the import could not carry into the document. Reported,
@@ -95,6 +101,9 @@ pub enum ImportNote {
     /// served by fewer than two routes — the feed's intent cannot
     /// compose; the flag is reported, not applied.
     UnusableTransferPoint { stop: String },
+    /// Trips name a shape shapes.txt does not have; their pattern runs
+    /// no alignment.
+    UnknownShape { shape: String },
 }
 
 /// What [`import`] hands back: the document, its boundary residue,
@@ -356,18 +365,26 @@ pub fn import(feed: &Feed) -> ImportOutcome {
     let mut pattern_of: Vec<String> = vec![String::new(); trips.len()];
     let mut index: BTreeMap<(String, String), usize> = BTreeMap::new();
     let stop_name = |id: &str| net.stops.get(id).map_or(id.to_string(), |s| s.name.clone());
-    let mut shapes: BTreeMap<&str, Vec<(u32, Coord)>> = BTreeMap::new();
+    // Alignments: every shape under its own id, in sequence order —
+    // including shapes no trip runs.
+    let mut shapes: BTreeMap<&str, Vec<(u32, AlignmentPoint)>> = BTreeMap::new();
     for row in &feed.shapes {
         let (Some(id), Some(lat), Some(lon)) = (row.shape_id.as_deref(), parse_f64(&row.shape_pt_lat), parse_f64(&row.shape_pt_lon))
         else {
             continue;
         };
         let seq = row.shape_pt_sequence.as_deref().and_then(|s| s.trim().parse().ok()).unwrap_or(0);
-        shapes.entry(id).or_default().push((seq, Coord { lat, lon }));
+        shapes.entry(id).or_default().push((seq, AlignmentPoint { lat, lon, distance: parse_f64(&row.shape_dist_traveled) }));
     }
-    for points in shapes.values_mut() {
+    for (id, mut points) in shapes {
         points.sort_by_key(|(seq, _)| *seq);
+        let sequences: Vec<u32> = points.iter().map(|(seq, _)| *seq).collect();
+        if !sequences.iter().enumerate().all(|(i, &s)| s == i as u32 + 1) {
+            boundary.shape_sequences.insert(id.to_string(), sequences);
+        }
+        net.alignments.insert(id.to_string(), Alignment { points: points.into_iter().map(|(_, p)| p).collect() });
     }
+    let mut unknown_shapes: BTreeSet<String> = BTreeSet::new();
     let mut patterns: Vec<(String, Pattern)> = Vec::new();
     for ((route, direction, stops, flags, shape), members) in &clusters {
         let n = index.entry((route.clone(), direction.clone())).or_default();
@@ -397,11 +414,12 @@ pub fn import(feed: &Feed) -> ImportOutcome {
                 route: route.clone(),
                 direction: (direction != "n").then(|| direction.clone()),
                 name: format!("{route_name} → {}", stop_name(stops.last().map_or("", String::as_str))),
-                path: shape
-                    .as_deref()
-                    .and_then(|s| shapes.get(s))
-                    .filter(|points| points.len() >= 2)
-                    .map(|points| points.iter().map(|(_, c)| *c).collect()),
+                alignment: shape.as_ref().and_then(|s| {
+                    net.alignments.contains_key(s).then(|| s.clone()).or_else(|| {
+                        unknown_shapes.insert(s.clone());
+                        None
+                    })
+                }),
                 stops: stops
                     .iter()
                     .zip(flags)
@@ -559,6 +577,7 @@ pub fn import(feed: &Feed) -> ImportOutcome {
             missing_stop_coords: missing_coords,
         });
     }
+    notes.extend(unknown_shapes.into_iter().map(|shape| ImportNote::UnknownShape { shape }));
     ImportOutcome { network: net, boundary, notes }
 }
 
@@ -632,7 +651,7 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
     for pt in net.pattern_trips.values() {
         let pattern = &net.patterns[&pt.pattern];
         let direction = direction_of(pattern);
-        let shape = pattern.path.as_ref().filter(|p| p.len() >= 2).map(|_| pt.pattern.clone());
+        let shape = pattern.alignment.clone();
         for trip in &pt.trips {
             let (base, frequencies) = match &trip.departs {
                 Departs::At { start_secs } => (*start_secs, vec![]),
@@ -704,15 +723,15 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
         feed.frequencies.extend(frequencies);
     }
 
-    for (id, p) in &net.patterns {
-        let Some(path) = p.path.as_ref().filter(|p| p.len() >= 2) else { continue };
-        for (i, c) in path.iter().enumerate() {
+    for (id, alignment) in &net.alignments {
+        let sequences = boundary.shape_sequences.get(id).filter(|seqs| seqs.len() == alignment.points.len());
+        for (i, p) in alignment.points.iter().enumerate() {
             feed.shapes.push(ShapeRow {
                 shape_id: s(id),
-                shape_pt_lat: Some(c.lat.to_string()),
-                shape_pt_lon: Some(c.lon.to_string()),
-                shape_pt_sequence: Some((i + 1).to_string()),
-                ..Default::default()
+                shape_pt_lat: Some(p.lat.to_string()),
+                shape_pt_lon: Some(p.lon.to_string()),
+                shape_pt_sequence: Some(sequences.map_or(i as u32 + 1, |seqs| seqs[i]).to_string()),
+                shape_dist_traveled: p.distance.map(|d| d.to_string()),
             });
         }
     }

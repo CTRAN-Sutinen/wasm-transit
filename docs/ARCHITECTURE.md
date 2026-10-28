@@ -44,10 +44,18 @@ transit-network The authored network model (planner authority):
                 by id and runs each whole (a frequency trip's
                 instances back to back); it may hold service types
                 that never share a day, and is judged day by day.
+                An ALIGNMENT is a line on the ground, its own record
+                (`Network::alignments`: its id, its points, the
+                distances published along it); a pattern runs one by
+                reference (`Pattern::alignment`), so a pattern is its
+                stops along its line. Patterns may share one, and one
+                no pattern runs still stands.
                 `materialize` answers a day's instances of the stored
                 trips; `read_network` also reads documents written
                 before trips were stored (each old departure becomes
-                a trip `{pattern_trips}@{start}`). GTFS is a codec at
+                a trip `{pattern_trips}@{start}`) or before
+                alignments stood alone (a pattern's inline `path`
+                becomes an alignment under the pattern's id). GTFS is a codec at
                 the boundary, not the model; no GTFS types leak in
                 here. Transfer points are authored flags on
                 stops, composed over their WALKING GROUP (the stop +
@@ -78,8 +86,8 @@ transit-network The authored network model (planner authority):
                 one) and WARNINGS that never gate
                 (unassigned trips; a pick with no service in its
                 first week). GEOMETRY lives here too
-                (`geometry.rs`): a pattern's alignment (its authored
-                path, else its stops joined — the model's own
+                (`geometry.rs`): a pattern's line (the alignment it
+                runs, else its stops joined — the model's own
                 contract) and where an entity is (`entity_focus`: a
                 stop's point; the lines and stops of every pattern a
                 route, pattern trips, service type, or block runs). The
@@ -112,14 +120,18 @@ transit-codec   The network codec, both directions, over the whole
                 A feed's trips ARE the document's trips: the
                 agency's ids, every scheduled time exactly
                 (offsets from the trip's first arrival), frequency
-                trips as frequency trips, blocks by trip. Patterns
-                are stop sequences — one per (route, direction,
-                stops, exactness flags, shape); how long a trip
-                takes is its own. A row is exact (the pattern's
+                trips as frequency trips, blocks by trip. A feed's
+                shapes ARE the document's alignments: the feed's ids,
+                every point and published distance, shapes no trip
+                runs included. Patterns are stop sequences along an
+                alignment — one per (route, direction, stops,
+                exactness flags, shape); how long a trip takes is
+                its own. A row is exact (the pattern's
                 timepoint) when it carries both times and does not
                 say timepoint=0. The `Boundary` is the import's
-                serialization residue (stop_sequence numbering, a
-                frequency trip's stop_times base); an authored
+                serialization residue (stop_sequence and
+                shape_pt_sequence numbering, a frequency trip's
+                stop_times base); an authored
                 document exports with the default. Service ids are
                 service types, written back as authored (the
                 calendar row, exceptions as calendar_dates); the

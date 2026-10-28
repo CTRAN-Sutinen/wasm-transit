@@ -4,18 +4,22 @@
 
 use chrono::NaiveDate;
 use transit_dispatch::{patch_day, trip_path, trip_segment};
-use transit_network::{materialize, Coord, MaterializedTrip, Network};
+use transit_network::{materialize, Alignment, AlignmentPoint, Coord, MaterializedTrip, Network};
 use transit_sync::Diversion;
 
 fn c(lat: f64, lon: f64) -> Coord {
     Coord { lat, lon }
 }
 
-/// The planner network with an authored path bending between A and C.
+/// The planner network with an alignment bending between A and C.
 fn network() -> Network {
     let mut net: Network = serde_json::from_str(include_str!("../../../testdata/network.json")).unwrap();
-    net.patterns.get_mut("10-inbound").unwrap().path =
-        Some(vec![c(45.5, -73.5), c(45.505, -73.5), c(45.51, -73.51), c(45.515, -73.51), c(45.52, -73.52)]);
+    let line = [c(45.5, -73.5), c(45.505, -73.5), c(45.51, -73.51), c(45.515, -73.51), c(45.52, -73.52)];
+    net.alignments.insert(
+        "line".into(),
+        Alignment { points: line.iter().map(|p| AlignmentPoint { lat: p.lat, lon: p.lon, distance: None }).collect() },
+    );
+    net.patterns.get_mut("10-inbound").unwrap().alignment = Some("line".into());
     net
 }
 

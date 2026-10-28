@@ -66,13 +66,14 @@ pub(crate) fn valid_network() -> Network {
         )]
         .into_iter()
         .collect(),
+        alignments: Default::default(),
         patterns: [(
             "5-inbound".into(),
             Pattern {
                 direction: None,
                 route: "5".into(),
                 name: "5 inbound".into(),
-                path: None,
+                alignment: None,
                 stops: vec![
                     PatternStop {
                         stop: "A".into(),
@@ -502,7 +503,7 @@ fn transfer_point_requires_two_routes_across_its_walking_group() {
         direction: None,
         route: "7".into(),
         name: "7 inbound".into(),
-        path: None,
+        alignment: None,
         stops: vec![
             PatternStop { stop: "B2".into(), timepoint: true, distance_m: 0.0 },
             PatternStop { stop: "A".into(), timepoint: true, distance_m: 900.0 },

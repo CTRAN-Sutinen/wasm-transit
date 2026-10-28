@@ -1,8 +1,8 @@
 //! Where things are: the network's own geometry answers.
 //!
-//! The model's contract for drawing a pattern is its authored path,
-//! or — "None means draw stop-to-stop lines" — its stops joined in
-//! order. Every view that draws a pattern (the diversion editor's
+//! The model's contract for drawing a pattern is the alignment it
+//! runs, or — "None means draw stop-to-stop lines" — its stops joined
+//! in order. Every view that draws a pattern (the diversion editor's
 //! ghost, a planner's drill-down, a trip that still follows its
 //! pattern) asks here, so every host draws the same line.
 
@@ -11,16 +11,22 @@ use ts_rs::TS;
 
 use crate::model::{Coord, Network};
 
-/// The pattern's alignment: its authored path when it has two points
-/// or more, else its stops joined in order with consecutive repeats
-/// dropped. Empty when that leaves fewer than two points (or the
-/// pattern is unknown).
+/// The pattern's alignment: the alignment it runs when that is a
+/// line (two points or more), else its stops joined in order with
+/// consecutive repeats dropped. Empty when that leaves fewer than two
+/// points (or the pattern is unknown).
 pub fn pattern_alignment(network: &Network, pattern: &str) -> Vec<Coord> {
     let Some(p) = network.patterns.get(pattern) else { return Vec::new() };
-    if let Some(path) = p.path.as_ref().filter(|path| path.len() >= 2) {
-        return path.clone();
-    }
-    stops_line(network, p.stops.iter().map(|ps| ps.stop.as_str()))
+    authored_alignment(network, pattern)
+        .unwrap_or_else(|| stops_line(network, p.stops.iter().map(|ps| ps.stop.as_str())))
+}
+
+/// The line of the alignment the pattern runs, when it has one with
+/// two points or more.
+pub fn authored_alignment(network: &Network, pattern: &str) -> Option<Vec<Coord>> {
+    let id = network.patterns.get(pattern)?.alignment.as_ref()?;
+    let points = &network.alignments.get(id)?.points;
+    (points.len() >= 2).then(|| points.iter().map(|p| Coord { lat: p.lat, lon: p.lon }).collect())
 }
 
 /// The pattern's stops, in order (stops the network lacks skipped).

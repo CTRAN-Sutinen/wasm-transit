@@ -3,7 +3,7 @@
 Within a session, documents cross capabilities by reference
 (`--cap`, `--as`, `$refs`). Across sessions nothing persists, so
 every dogfood session re-imports the feed. And the import's
-response prints the whole network document — 8.0 MB on C-TRAN —
+response prints the whole network document — 9.1 MB on C-TRAN —
 into the agent's context, which makes every real-data session
 expensive before it asks its first question.
 

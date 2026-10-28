@@ -789,10 +789,12 @@ const tripLine = runcut.invoke({
   start_secs: chainTrip.start_secs,
   date: DATE,
 });
+const chainAlignment =
+  imported.network.alignments[imported.network.patterns[imported.network.pattern_trips[chainTrip.pattern_trips].pattern].alignment];
 assert(
-  JSON.stringify(tripLine.path) ===
-    JSON.stringify(imported.network.patterns[imported.network.pattern_trips[chainTrip.pattern_trips].pattern].path),
-  "a trip that follows its pattern draws the authored alignment",
+  chainAlignment &&
+    JSON.stringify(tripLine.path) === JSON.stringify(chainAlignment.points.map(({ lat, lon }) => ({ lat, lon }))),
+  "a trip that follows its pattern draws the alignment it runs",
 );
 const brokenEdit = runcut.invoke({
   op: "load_edits",

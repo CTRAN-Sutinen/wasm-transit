@@ -10,8 +10,8 @@ ids included.
 The law is `crates/transit-codec/tests/spec_round_trip_test.rs`:
 one proptest per spec file, against an oracle that reads both zips
 as raw tables (never through the parser under test). It is red
-today (29 of 32 file laws; calendar, calendar_dates, and
-frequencies pass), so `just test` is red until this unit lands;
+today (28 of 32 file laws; calendar, calendar_dates, frequencies,
+and shapes pass), so `just test` is red until this unit lands;
 the failing set is the to-do list. The document fixpoint
 (`codec_prop_test.rs`) stays — it catches export-side loss.
 
@@ -20,8 +20,13 @@ the trip model — trips are stored records with the agency's ids
 and their own times, frequency trips are trips, blocks name trips,
 and `transit_codec::import` / `export` run on the `Feed` (laws:
 `trip_law_test.rs`, `trip_import_law_test.rs`, the codec
-fixpoint). C-TRAN imports every trip with no notes and no issues,
-and its export re-imports to the same document.
+fixpoint); and alignments — a feed's shapes are the network's
+alignments under their own ids, run by patterns by reference (laws:
+`alignment_law_test.rs` in transit-network and
+`alignment_import_law_test.rs` in the codec). C-TRAN imports every
+trip and every shape with no notes and no issues, its shapes.txt
+and trip shape ids export exactly, and its export re-imports to the
+same document.
 
 ## Scope, in order
 
@@ -58,9 +63,8 @@ and its export re-imports to the same document.
    - translations; publisher and attribution metadata.
 
    **The boundary keeps only serialization** (`transit_codec::
-   Boundary`): today the feed's stop_sequence numbers and a
-   frequency trip's stop_times base; shape ids join it when
-   alignments stop being keyed by pattern. On edit, ids follow
+   Boundary`): the feed's stop_sequence and shape_pt_sequence
+   numbers and a frequency trip's stop_times base. On edit, ids follow
    their entity, sequence numbers are rewritten when a pattern
    changes, and new entities get new ids.
 3. **Import and export through it** until every law in
@@ -89,16 +93,15 @@ Follow-ups the trip model left, inside this unit:
   trip's rt instance resolves by the update's start_time (the map
   answers its first instance today).
 - The trip laws encode answers the intent did not state, entered
-  as D-1 – D-5 in `docs/DECISIONS.md` (provisional; nothing here
-  waits on them except the geometry split below).
+  as D-1 – D-3 and D-5 in `docs/DECISIONS.md` (provisional; nothing
+  here waits on them).
 - QAF-64 (a retimed trip reads as removed plus added) is answerable
   now: the timetable comparison can match by trip id.
 
 The geometry split (alignments as their own document, for
 registration cost — `runtime-cost-gate.md`) must keep shapes
 exact: C-TRAN's shapes carry 14–15-digit coordinates, so nothing
-rounds at import. Blocked: D-4 (whether a shape is part of a
-pattern's identity decides what the alignments are keyed by).
+rounds at import; the document keys them by alignment id.
 
 ## Done when
 

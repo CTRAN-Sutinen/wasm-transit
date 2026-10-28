@@ -25,10 +25,11 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   licensed; fetch from c-tran.com), `sha256:aa8dbc62833237d754
   96b6ec04c2a45fe10ca2a957f63d63b51ddaae85a7dc4f`, version
   20260913-20270109. rt payloads from gtfs-rt.c-tran.org.
-- Network import: `sha256:14a3abb80c4392e1d6d198ae75608950
-  5c079c07656f0d538b78212acaf46626` (stored trips, the agency's
-  ids; findings from 2026-10-27–28 were seen on `2e27c511…`, the
-  import before stored trips; before 2026-10-27 on `89631f1a…`, the
+- Network import: `sha256:5069873a736d501df372ab1494899cdadf
+  270df50aee5804f35be2e4c8fa7764` (stored trips, the agency's ids,
+  shapes as alignments under their own ids; findings from
+  2026-10-27–28 were seen on `2e27c511…`, the import before stored
+  trips; before 2026-10-27 on `89631f1a…`, the
   import before per-trip run times and the fidelity columns; before that on
   `bceda1be…`, the import that kept direction_id — the same
   service).
@@ -272,13 +273,6 @@ time, last bus home, is there a detour.
   "the 012 is detoured and skips this stop today".
   Pin: the same edits; board `stop_board` 6277 →
   `{"rows": [], "pooled": false}`.
-- **QAF-76 CONTRACT GAP** — `route_stop_sequence` answers one entry
-  per running-time pattern: the 012's direction 1 is 16 patterns
-  with the identical 29-stop list, so "what stops does the 012
-  make?" comes back 16 times.
-  Pin: directory `route_stop_sequence` 012 — 16 patterns through
-  6277, all 29 stops.
-  Blocked: D-4.
 
 ## The runner
 

@@ -49,6 +49,12 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
                 }
             }
         }
+        if let Some(alignment) = pattern.alignment.as_ref().filter(|a| !network.alignments.contains_key(*a)) {
+            issues.push(NetworkError::UnknownAlignment {
+                pattern: pattern_id.clone(),
+                alignment: alignment.clone(),
+            });
+        }
         if pattern.stops.len() < 2 {
             issues.push(NetworkError::PatternTooShort {
                 pattern: pattern_id.clone(),

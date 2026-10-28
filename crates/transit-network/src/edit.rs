@@ -683,7 +683,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
                     direction: None,
                     route,
                     name,
-                    path: None,
+                    alignment: None,
                     stops: vec![
                         PatternStop { stop: first, timepoint: true, distance_m: 0.0 },
                         PatternStop { stop: second, timepoint: true, distance_m: 500.0 },

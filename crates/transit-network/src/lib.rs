@@ -38,7 +38,7 @@ pub mod validate;
 
 pub use edit::{apply_edits, apply_edits_reporting, CreatedEntity, Day, EditError, NetworkEdit};
 pub use error::{NetworkError, NetworkWarning};
-pub use geometry::{entity_focus, pattern_alignment, pattern_stop_points, stop_point, stops_line, EntityFocus, EntityKind};
+pub use geometry::{authored_alignment, entity_focus, pattern_alignment, pattern_stop_points, stop_point, stops_line, EntityFocus, EntityKind};
 pub use listing::{
     service_family,
     entity_rows, route_detail, stop_detail, timetable, timetable_against, DirectionGroup, EntityRow, PatternTripsGroup,
@@ -49,7 +49,7 @@ pub use materialize::{
 };
 pub use migrate::read_network;
 pub use model::{
-    Anchor, Block, CalendarException, CalendarRule, Coord, DateRange, DayState, Departs, Direction, DirectionId,
+    Alignment, AlignmentId, AlignmentPoint, Anchor, Block, CalendarException, CalendarRule, Coord, DateRange, DayState, Departs, Direction, DirectionId,
     HeadwayBand, Layover, Mode, Network, Pattern, PatternStop, PatternTrips, PatternTripsId, PlanMeta, Route,
     ServiceType, ServiceTypeId, Stop, StopOffset, TimingProfile, Trip, TripId, TripRef, WeekdaySet,
 };

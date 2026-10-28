@@ -32,7 +32,7 @@ the rest of the work can go ahead while the decision is reviewed.
   goes into the law that pins it and the doc that owns its topic
   (`docs/ARCHITECTURE.md`, `docs/units/`, `docs/QA-FINDINGS.md`),
   and the `Blocked: D-N` lines are removed. Git is the archive.
-- IDs are never reused; the next new decision is **D-11**.
+- IDs are never reused; the next new decision is **D-12**.
 
 ## Summary
 
@@ -41,13 +41,13 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-1 | Is a trip's start its first arrival or its first departure? | encoded | nothing |
 | D-2 | What does a running-time change touch besides fixed-start trips? | encoded | nothing |
 | D-3 | Which timing profile does the import give a pattern? | encoded | nothing |
-| D-4 | Is a shape part of a pattern's identity? | encoded | geometry split (U8), QAF-76 |
 | D-5 | Does the import keep a block that breaks the spec? | encoded | nothing |
 | D-6 | Does "frequent" count terminal arrivals? | unanswered | QAF-78 |
 | D-7 | How early is too early? | unanswered | QAF-71 |
 | D-8 | Do timetable edits act on the whole service family? | unanswered | QAF-65 gestures, QAF-44 |
 | D-9 | Where does required recovery time come from? | unanswered | QAF-62, QAF-26 |
 | D-10 | Agency questions on C-TRAN's data | unanswered | QAF-9, QAF-48 |
+| D-11 | Does editing a shared alignment change every pattern on it? | unanswered | an alignment-authoring edit |
 
 ## The trip model (U8)
 
@@ -109,24 +109,26 @@ Options:
 Pinned by: `trip_import_law_test.rs` and `codec_prop_test.rs`.
 Blocks: nothing.
 
-### D-4 — Is a shape part of a pattern's identity?
-State: Encoded provisionally.
-Context: the import groups trips into patterns by (route,
-direction, stops, timepoint flags, shape). Two trips with the same
-stops and different `shape_id`s become two patterns.
+### D-11 — Does editing a shared alignment change every pattern on it?
+State: Unanswered.
+Context: patterns run alignments by reference (`Pattern::alignment`),
+and several patterns may run one: a feed may give one shape to
+trips with different stops. No edit authors an alignment yet. The
+first edit that redraws a pattern's line has to say what happens to
+the other patterns on the same alignment.
 Options:
-- **Yes (encoded).** The path lives on the pattern, and the export
-  writes one shape per pattern.
-- No. The pattern is its stops, and the shape becomes a per-trip
-  reference. This adds a field to the trip, and the boundary keeps
-  the shape ids.
-Pinned by: `trip_import_law_test.rs`, and the counts in
-`import_regression_test.rs` and the caps smoke (a trip with a
-shape and one without are different patterns).
-Blocks: the geometry split in `docs/units/u8-gtfs-substrate.md`
-(alignments stop being keyed by pattern). Also QAF-76, where 012
-direction 1 answers 16 patterns with identical stops, so whether
-that grouping is a defect depends on this answer.
+- The edit changes the alignment, so every pattern on it is
+  redrawn. This is one place to fix a line, but a change meant for
+  one variant moves the others silently.
+- The edit copies the alignment under a new id for the edited
+  pattern, and the others keep the old line. This follows "new
+  entities get new ids", but a fix meant for all of them must be
+  made once per pattern.
+- The edit names which it does, and the gesture reports the
+  patterns it touched.
+Blocks: an alignment-authoring edit (none exists; `UpsertPattern`
+can point a pattern at an existing alignment, but no edit adds or
+redraws one).
 
 ### D-5 — Does the import keep a block that breaks the spec?
 State: Encoded provisionally.

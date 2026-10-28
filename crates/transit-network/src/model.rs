@@ -38,6 +38,7 @@ pub type PatternTripsId = String;
 pub type BlockId = String;
 pub type DirectionId = String;
 pub type TripId = String;
+pub type AlignmentId = String;
 
 /// A WGS84 position. Authored geometry (a pattern's alignment) is
 /// model data — `lat` first, matching `Stop`'s field order. (GeoJSON
@@ -48,6 +49,28 @@ pub type TripId = String;
 pub struct Coord {
     pub lat: f64,
     pub lon: f64,
+}
+
+/// A line on the ground: the path vehicles take, in travel order.
+/// Purely geographic — it carries no timing and no stops, and
+/// materialization only uses it for drawing, never for scheduling.
+/// Patterns run one by reference ([`Pattern::alignment`]); any number
+/// may share one, and one no pattern runs still stands.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Alignment {
+    pub points: Vec<AlignmentPoint>,
+}
+
+/// One point of an [`Alignment`], with the distance along it where
+/// one was published (in the units of the pattern stops' distances).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AlignmentPoint {
+    pub lat: f64,
+    pub lon: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distance: Option<f64>,
 }
 
 /// Serde helper: dates cross every boundary as `"YYYY-MM-DD"`.
@@ -213,10 +236,14 @@ impl TimingProfile {
     }
 }
 
-/// A route pattern: the stop sequence a planner draws, with the
-/// profiles new trips are timed from. Every trip runs a pattern.
+/// A route pattern: the stop sequence a planner draws along its
+/// alignment, with the profiles new trips are timed from. Every trip
+/// runs a pattern. Unknown fields are refused, so a document written
+/// before alignments (an inline `path`) migrates rather than losing
+/// its line (`migrate.rs`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
+#[serde(deny_unknown_fields)]
 pub struct Pattern {
     pub route: RouteId,
     /// Which of the route's [`Route::directions`] this pattern runs
@@ -226,12 +253,10 @@ pub struct Pattern {
     pub direction: Option<DirectionId>,
     /// Human-facing description, e.g. "5-K Ave to Downtown via MLK".
     pub name: String,
-    /// The alignment the pattern follows on the ground, if authored.
-    /// Purely geographic: it carries no timing and no stops, and
-    /// materialization only uses it for map rendering (shapes), never
-    /// for scheduling. `None` (omitted) means "draw stop-to-stop lines".
+    /// The [`Alignment`] the pattern runs, by id. `None` (omitted)
+    /// means "draw stop-to-stop lines".
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub path: Option<Vec<Coord>>,
+    pub alignment: Option<AlignmentId>,
     pub stops: Vec<PatternStop>,
     #[serde(default)]
     pub timing: Vec<TimingProfile>,
@@ -564,6 +589,9 @@ pub struct Network {
     pub stops: BTreeMap<StopId, Stop>,
     pub routes: BTreeMap<RouteId, Route>,
     pub patterns: BTreeMap<PatternId, Pattern>,
+    /// The lines on the ground patterns run, by id.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub alignments: BTreeMap<AlignmentId, Alignment>,
     /// The service types: what planners design and link to days.
     pub service_types: BTreeMap<ServiceTypeId, ServiceType>,
     /// Every pattern's trips, grouped by (pattern, service type).

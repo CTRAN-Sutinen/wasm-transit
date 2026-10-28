@@ -84,7 +84,7 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
             direction: None,
             route: "10".into(),
             name: "route 10".into(),
-            path: None,
+            alignment: None,
             stops: vec![
                 PatternStop { stop: "A".into(), timepoint: true, distance_m: 0.0 },
                 PatternStop { stop: "B".into(), timepoint: true, distance_m: 500.0 },
@@ -153,6 +153,7 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
         stops,
         routes,
         patterns,
+        alignments: Default::default(),
         service_types,
         pattern_trips,
         blocks: Default::default(),

@@ -1,5 +1,9 @@
 //! Reading network documents, including those written before trips
-//! were stored.
+//! were stored or alignments stood on their own.
+//!
+//! A pre-alignment document draws each pattern's line inline, as its
+//! `path`. That line becomes an alignment under the pattern's id —
+//! the id the old export gave its shape — run by that pattern.
 //!
 //! A pre-trip document keeps `departures` (exact starts or headway
 //! bands) per pattern trips and references block trips as
@@ -29,6 +33,7 @@ pub fn read_network(text: &str) -> Result<Network, String> {
 
 fn migrate(doc: &mut Value) -> Result<(), String> {
     let Some(root) = doc.as_object_mut() else { return Ok(()) };
+    migrate_paths(root);
     if let Some(old) = root.remove("schedules") {
         root.entry("pattern_trips").or_insert(old);
     }
@@ -139,4 +144,29 @@ fn profile_times(pattern: &Pattern, start: u32) -> Vec<StopOffset> {
             StopOffset { arrival_secs: t, departure_secs: t }
         })
         .collect()
+}
+
+/// Inline pattern paths become alignments under the pattern's id.
+fn migrate_paths(root: &mut serde_json::Map<String, Value>) {
+    let mut lines: Vec<(String, Value)> = Vec::new();
+    if let Some(patterns) = root.get_mut("patterns").and_then(Value::as_object_mut) {
+        for (id, pattern) in patterns.iter_mut() {
+            let Some(pattern) = pattern.as_object_mut() else { continue };
+            let Some(path) = pattern.remove("path") else { continue };
+            if path.is_null() {
+                continue;
+            }
+            pattern.insert("alignment".into(), Value::String(id.clone()));
+            lines.push((id.clone(), path));
+        }
+    }
+    if lines.is_empty() {
+        return;
+    }
+    let alignments = root.entry("alignments").or_insert_with(|| json!({}));
+    if let Some(alignments) = alignments.as_object_mut() {
+        for (id, path) in lines {
+            alignments.insert(id, json!({ "points": path }));
+        }
+    }
 }

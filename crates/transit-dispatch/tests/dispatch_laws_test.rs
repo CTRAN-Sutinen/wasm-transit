@@ -52,7 +52,7 @@ fn pattern(route: &str, stops: Vec<PatternStop>, at_timepoints: Vec<u32>) -> Pat
         direction: None,
         route: route.into(),
         name: format!("route {route}"),
-        path: None,
+        alignment: None,
         stops,
         timing: vec![TimingProfile { start_secs: 0, end_secs: 172_800, at_timepoints }],
     }
@@ -170,6 +170,7 @@ fn network() -> Network {
         stops,
         routes,
         patterns,
+        alignments: Default::default(),
         service_types,
         pattern_trips,
         blocks,
