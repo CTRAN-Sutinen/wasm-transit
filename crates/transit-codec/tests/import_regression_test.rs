@@ -191,33 +191,44 @@ fn import_sorts_and_dedupes_exact_starts() {
     // Regression (C-TRAN): members arrive in trip-id order and real
     // feeds carry duplicate starts; the model requires sorted,
     // unique starts. t1/t3 duplicate 08:00 and t9's 06:00 sorts
-    // after them in trip-id order.
+    // after them in trip-id order. t9 runs 30 minutes where
+    // t1/t3/t5 run 20, so it clusters into its own pattern variant
+    // (pat-10-0-2); the 20-minute trips share pat-10-0-1.
     let network = import_production();
     let svc = network.pattern_trips.get("WK:pat-10-0-1").expect("service");
     assert_eq!(
         svc.departures,
-        Departures::ExactTimes { starts: vec![6 * 3600, 8 * 3600, 8 * 3600 + 22 * 60] }
+        Departures::ExactTimes { starts: vec![8 * 3600, 8 * 3600 + 22 * 60] }
     );
+    let slow = network.pattern_trips.get("WK:pat-10-0-2").expect("t9's own variant");
+    assert_eq!(slow.departures, Departures::ExactTimes { starts: vec![6 * 3600] });
 }
 
 #[test]
-fn import_keeps_feasible_blocks_despite_runtime_variation() {
-    // Regression (C-TRAN): the timing profile used to come from the
-    // pattern's earliest trip; applying that trip's 30-minute
-    // runtime to the later 20-minute trips pushed modeled arrivals
-    // past the next block trip's start (187 issues on the real
-    // feed, every derived network unloadable). The profile must
-    // come from the shortest-running member, so connections that
-    // hold in the source feed hold in the model.
+fn import_preserves_each_trips_own_run_time() {
+    // Regression (C-TRAN): the timing profile used to be collapsed
+    // to one runtime per stop sequence — the shortest member's —
+    // which planned boardings that did not exist in the feed (the
+    // real 105 trips ran 9–11 minutes past the modeled times). The
+    // run times are part of the pattern identity now: every trip
+    // materializes its own feed times, and connections that hold
+    // in the source feed hold in the model exactly.
     let network = import_production();
     assert!(network.validate().is_ok(),
         "inferred document must validate: {:?}", transit_network::validation_issues(&network));
-    let block = network.blocks.get("B1").expect("block B1 kept");
-    assert_eq!(block.trips.len(), 3);
-    // The model's arrival for t1 is start + the 20-minute runtime.
+    // t9's 30-minute run survives as its own pattern variant, not
+    // as a 20-minute trip (the old loss) and not as the profile
+    // of the 20-minute trips either.
+    let t9_arrival = transit_network::trip_arrival_end_secs(&network, "WK:pat-10-0-2", 6 * 3600)
+        .expect("t9 arrival");
+    assert_eq!(t9_arrival, 6 * 3600 + 30 * 60, "t9 keeps its own 30-minute runtime");
     let t1_arrival = transit_network::trip_arrival_end_secs(&network, "WK:pat-10-0-1", 8 * 3600)
         .expect("t1 arrival");
-    assert_eq!(t1_arrival, 8 * 3600 + 20 * 60);
+    assert_eq!(t1_arrival, 8 * 3600 + 20 * 60, "t1 keeps its own 20-minute runtime");
+    // The block chain is feasible against every trip's own times
+    // (t1 arrives 08:20, t5 departs 08:22).
+    let block = network.blocks.get("B1").expect("block B1 kept");
+    assert_eq!(block.trips.len(), 3);
     assert!(t1_arrival <= block.trips[2].start_secs);
     // The whole point: the derived document loads back into the app.
     assert!(network_to_gtfs(&network).is_ok());

@@ -85,15 +85,16 @@ fn stats_report_route_and_stop_activity() {
     assert_eq!(stats.active_stops, 3);
     assert_eq!(stats.first_start_secs, Some(6 * 3600));
     assert_eq!(stats.last_arrival_secs, Some(9 * 3600 + 10 * 60));
-    // Run times as the MODEL materializes them: every A→C trip gets
-    // the shortest member's 1200 s profile (the lossy collapse), t7
-    // runs 600 s — 4200 s total. t9's own 1800 s runtime is the
-    // documented loss.
-    assert!((stats.revenue_hours - 4200.0 / 3600.0).abs() < 1e-9);
+    // Run times as the MODEL materializes them — each trip's own
+    // (the import preserves per-trip run time as pattern variants):
+    // t9 30 min, t1 20 (t3 dedups onto it), t5 20, t7 10 — 4800 s
+    // total. The old import collapsed every A→C trip to the
+    // shortest member's 20 minutes and reported 4200 s.
+    assert!((stats.revenue_hours - 4800.0 / 3600.0).abs() < 1e-9);
     let route = &stats.routes[0];
     assert_eq!(route.route_id, "10");
     assert_eq!(route.trips, 4);
-    assert_eq!(route.patterns, 2);
+    assert_eq!(route.patterns, 3);
     assert_eq!(route.stops, 3);
     assert_eq!(route.first_start_secs, Some(6 * 3600));
     assert_eq!(route.last_arrival_secs, Some(9 * 3600 + 10 * 60));
@@ -105,8 +106,8 @@ fn stats_report_route_and_stop_activity() {
     assert_eq!(route.headway_stop.as_deref(), Some("A"));
     assert_eq!(route.typical_headway_secs, Some(2280));
     // The route's own revenue hours: all of the day's runtime here
-    // (30 + 20 + 20 + 10 min = 4200 s), the per-route cost basis.
-    assert!((route.revenue_hours - 4200.0 / 3600.0).abs() < 1e-9);
+    // (30 + 20 + 20 + 10 min = 4800 s), the per-route cost basis.
+    assert!((route.revenue_hours - 4800.0 / 3600.0).abs() < 1e-9);
 
     let by_id = |id: &str| stats.stops.iter().find(|s| s.stop_id == id).expect(id);
     let a = by_id("A");
@@ -116,9 +117,10 @@ fn stats_report_route_and_stop_activity() {
     assert_eq!(a.typical_headway_secs, Some((9 * 3600 - 6 * 3600) / 3));
     let c = by_id("C");
     assert_eq!(c.departures, 3);
-    // C arrivals as materialized: 06:20/08:20/08:42 (the profile's
-    // 1200 s offset — t9's original 06:30 is the documented loss).
-    assert_eq!(c.typical_headway_secs, Some(((8 * 3600 + 42 * 60) - (6 * 3600 + 20 * 60)) / 2));
+    // C arrivals as materialized: 06:30/08:20/08:42 — each trip's
+    // own feed times (t9's 06:30 survives; the old import collapsed
+    // it to the 20-minute variant's 06:20).
+    assert_eq!(c.typical_headway_secs, Some(((8 * 3600 + 42 * 60) - (6 * 3600 + 30 * 60)) / 2));
 }
 
 #[test]
@@ -135,7 +137,7 @@ fn service_type_ops_expose_the_design_axis() {
     assert_eq!(types[0].trips, 4);
     assert_eq!(types[0].active_routes, 1);
     assert_eq!(types[0].active_stops, 3);
-    assert!((types[0].revenue_hours - 4200.0 / 3600.0).abs() < 1e-9);
+    assert!((types[0].revenue_hours - 4800.0 / 3600.0).abs() < 1e-9);
 
     let detail = service_type_detail(&network, "WK").expect("detail");
     assert_eq!(detail.trips, 4);
@@ -147,7 +149,11 @@ fn service_type_ops_expose_the_design_axis() {
         .iter()
         .map(|s| (s.pattern_trips.as_str(), s.trips))
         .collect();
-    assert_eq!(schedule_trips["WK:pat-10-0-1"], 3);
+    // Three pattern variants: t7's A→B, the 20-minute A→C trips,
+    // and t9's 30-minute A→C (run time is part of the pattern
+    // identity — the import preserves each trip's own times).
+    assert_eq!(schedule_trips["WK:pat-10-0-1"], 2);
+    assert_eq!(schedule_trips["WK:pat-10-0-2"], 1);
     assert_eq!(schedule_trips["WK:pat-10-0-0"], 1);
 
     // Coverage per service type: same layer, WK on its day.

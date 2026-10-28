@@ -212,7 +212,32 @@ pub fn network_to_gtfs(net: &Network) -> Result<Gtfs, String> {
         }
     }
 
-    let services = ServiceCalendar::new(Vec::new(), calendar_dates);
+    // A valid document whose services run on no date still exports
+    // to a feed a parser accepts: GTFS requires at least one
+    // calendar row, so a zero-day stub service states "nothing
+    // runs" in the spec's own vocabulary (the round-trip lossless
+    // law found the empty schedule exporting to a feed no parser
+    // accepts).
+    let services = if calendar_dates.is_empty() {
+        let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).expect("a fixed date");
+        ServiceCalendar::new(
+            vec![transit_core::Calendar {
+                service_id: "no_service".into(),
+                monday: false,
+                tuesday: false,
+                wednesday: false,
+                thursday: false,
+                friday: false,
+                saturday: false,
+                sunday: false,
+                start_date: epoch,
+                end_date: epoch,
+            }],
+            calendar_dates,
+        )
+    } else {
+        ServiceCalendar::new(Vec::new(), calendar_dates)
+    };
     let feed_info = Some(FeedInfo {
         feed_id: None,
         feed_version: None,
@@ -389,11 +414,13 @@ pub struct ImportOutcome {
 ///   in none (the export signs directed trips with the direction's
 ///   name, so the names survive the round trip);
 /// * trips cluster into patterns by (route, direction, stop
-///   sequence); the cluster's shortest-running trip provides the
-///   pattern's single timing profile, so run-time variation between
-///   trips of one pattern is not preserved (shortest, not earliest,
-///   so materialized arrivals never overshoot any real trip's and
-///   block chains stay feasible);
+///   sequence, run times): every member runs identical per-stop
+///   times, so each trip's stop times survive the import exactly —
+///   run-time variation between trips of one stop sequence becomes
+///   pattern variants of the same direction (the same family as bay
+///   and short-turn variants), never a collapsed profile (the
+///   collapse planned boardings that did not exist on the real
+///   C-TRAN feed, 9–11 minutes fast);
 /// * every stop becomes a timepoint — exact times, no interpolation;
 /// * stop distances are fabricated (index × 500 m): GTFS has none;
 /// * single-stop trips and trips without a first departure are
@@ -524,7 +551,9 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
         });
     }
 
-    // One timing profile covers every kept start (computed up front).
+    // The day's end: every pattern's single profile spans
+    // [0, day_end), exact for its members (their times are the
+    // cluster's identity, so no other trip can share the pattern).
     let day_end = kept
         .iter()
         .map(|t| t.start_secs)
@@ -532,9 +561,15 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
         .map(|m| (m + 1).max(30 * 3600))
         .unwrap_or(30 * 3600);
 
-    // Cluster by (route, direction, stop sequence). BTreeMap order is
-    // the pattern id order: deterministic everywhere.
-    let mut clusters: BTreeMap<(String, String, Vec<String>), Vec<usize>> = BTreeMap::new();
+    // Cluster by (route, direction, stop sequence, run times). The
+    // times are part of the identity: every member of a cluster runs
+    // identical per-stop times, so the pattern's profile IS each
+    // trip's own — run-time variation between trips of one stop
+    // sequence becomes pattern variants of the same direction, never
+    // a collapsed profile. BTreeMap order is the pattern id order:
+    // deterministic everywhere.
+    let mut clusters: BTreeMap<(String, String, Vec<String>, Vec<u32>), Vec<usize>> =
+        BTreeMap::new();
     for (i, t) in kept.iter().enumerate() {
         let dir = gtfs
             .trips
@@ -543,29 +578,17 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
             .map(|d| d.to_string())
             .unwrap_or_else(|| "n".into());
         clusters
-            .entry((t.route_id.clone(), dir, t.seq.clone()))
+            .entry((t.route_id.clone(), dir, t.seq.clone(), t.times.clone()))
             .or_default()
             .push(i);
     }
 
     let mut pattern_seq: BTreeMap<(String, String), usize> = BTreeMap::new();
-    for ((route_id, dir, seq), members) in &clusters {
+    for ((route_id, dir, seq, times), members) in &clusters {
         let index = pattern_seq.entry((route_id.clone(), dir.clone())).or_default();
         let pattern_id = format!("pat-{route_id}-{dir}-{index}");
         *index += 1;
 
-        // The cluster's shortest-running trip provides the profile:
-        // its last timepoint is the earliest end-of-trip arrival any
-        // member can make, so block connections that hold in the
-        // source feed still hold after the lossy collapse to one
-        // runtime per pattern (a representative with a longer runtime
-        // would push modeled arrivals past the next trip's start).
-        // Ties: earliest start, then trip id — deterministic.
-        let repr = members
-            .iter()
-            .map(|&i| &kept[i])
-            .min_by_key(|t| (t.times.last().copied().unwrap_or(0), t.start_secs, t.trip_id))
-            .expect("clusters are non-empty");
         let last_stop_name = seq
             .last()
             .and_then(|s| gtfs.stops.get(s))
@@ -621,7 +644,7 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
                 timing: vec![TimingProfile {
                     start_secs: 0,
                     end_secs: day_end,
-                    at_timepoints: repr.times.clone(),
+                    at_timepoints: times.clone(),
                 }],
             },
         );
@@ -661,7 +684,7 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
     // Ties: the lexicographically first — deterministic.
     let mut headsigns: BTreeMap<(String, String), BTreeMap<String, usize>> = BTreeMap::new();
     let mut terminals: BTreeMap<(String, String), BTreeMap<String, usize>> = BTreeMap::new();
-    for ((route_id, dir, seq), members) in &clusters {
+    for ((route_id, dir, seq, _), members) in &clusters {
         if dir == "n" {
             continue;
         }
@@ -744,9 +767,9 @@ pub fn gtfs_to_network(gtfs: &Gtfs) -> ImportOutcome {
     //     cannot);
     //   * a trip departing before the previous trip of its block
     //     ends (the source data is operationally wrong; only a
-    //     GENUINE source error can fire — modeled arrivals use the
-    //     pattern's shortest runtime, so they never overshoot a
-    //     real arrival).
+    //     GENUINE source error can fire — modeled arrivals are the
+    //     trip's own feed times, so they never overshoot a real
+    //     arrival).
     // Without this the law "import is valid by construction" fails
     // on legal feeds (the import proptest catches it).
     let mut blocks: BTreeMap<&str, Vec<&Kept>> = BTreeMap::new();

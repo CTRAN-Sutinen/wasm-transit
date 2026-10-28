@@ -19,6 +19,13 @@
 //!    rejects.
 //! 2. The import is deterministic — the same feed yields the same
 //!    document on every host (the sync thesis needs that).
+//! 3. The trip-id map is the honest join (see the test below).
+//! 4. Stop times survive the import: every kept trip's per-stop
+//!    times are the ones the model materializes for its derived
+//!    trip (see the test below).
+//! 5. The round trip is lossless: import the feed, export the
+//!    document, and on every service date the same trips run (see
+//!    the test below).
 
 use std::io::Write;
 
@@ -192,6 +199,118 @@ proptest! {
             prop_assert!(
                 minted.contains(derived.as_str()),
                 "map's derived id {derived} is not an id the export mints"
+            );
+        }
+    }
+
+    /// Law 4: stop times survive the import. For every kept agency
+    /// trip, the derived trip the map names materializes the feed's
+    /// own per-stop times — same stops, same order, same times. The
+    /// generator varies run time per trip inside one stop sequence
+    /// (the defect's shape: the C-TRAN import collapsed each
+    /// pattern to its shortest member's runtime and the router
+    /// planned boardings 9–11 minutes fast that did not exist in
+    /// the feed), so this law holds only if that variation is
+    /// carried, as pattern variants.
+    #[test]
+    fn materialized_trips_preserve_feed_stop_times(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
+        let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips))
+            .expect("generated feeds parse");
+        let outcome = transit_codec::gtfs_to_network(&gtfs);
+        for entry in &outcome.trip_map.entries {
+            let derived = transit_network::materialize_service(&outcome.network, &entry.pattern_trips)
+                .expect("a valid document materializes")
+                .into_iter()
+                .find(|t| t.start_secs == entry.start_secs)
+                .unwrap_or_else(|| {
+                    panic!("map names a start {} does not run", entry.pattern_trips)
+                });
+            for id in &entry.agency_trip_ids {
+                let rows = gtfs.trip_stop_times(id).expect("kept trip has rows");
+                prop_assert_eq!(
+                    derived.stop_times.len(),
+                    rows.len(),
+                    "trip {}: a stop was lost or invented",
+                    id
+                );
+                for (st, row) in derived.stop_times.iter().zip(&rows) {
+                    prop_assert_eq!(&st.stop, &row.stop_id, "trip {}: stop order changed", id);
+                    // The generator authors arrival == departure, so
+                    // BOTH survive — a model that collapses run times
+                    // fails here, not just on arrival.
+                    let t = row.arrival_time.or(row.departure_time)
+                        .unwrap_or_else(|| panic!("trip {}: row without any time", id));
+                    prop_assert_eq!(
+                        (st.arrival_secs, st.departure_secs),
+                        (t, t),
+                        "trip {} at {}: the model materialized a time the feed does not carry",
+                        id,
+                        row.stop_id
+                    );
+                }
+            }
+        }
+    }
+    /// Law 5: the round trip is lossless. Import the feed, export
+    /// the document, and on every service date the SCHEDULE is
+    /// unchanged: the same trips — (route, stop sequence with its
+    /// per-stop times) — run on that date. Trip and service ids are
+    /// minted on the way out (the model's identity is (schedule,
+    /// start); the export's service_id is the schedule id), and
+    /// rider-identical duplicate trips collapse to one derived
+    /// trip, so the law compares the deduplicated SET of trips per
+    /// date — anything the model invented, altered, or dropped
+    /// fails here.
+    #[test]
+    fn round_trip_reproduces_the_feed_schedule(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
+        let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips))
+            .expect("generated feeds parse");
+        let network = transit_codec::gtfs_to_network(&gtfs).network;
+        let exported = transit_codec::network_to_gtfs(&network).expect("valid documents export");
+        let again = transit_core::Gtfs::from_zip_bytes(&transit_core::write::to_zip_bytes(&exported))
+            .expect("the exported feed parses");
+
+        // What a rider can board on `date`: the set of (route, stop
+        // sequence with times) the feed runs that day, deduplicated
+        // (the model's trip identity collapses rider-identical
+        // duplicates — that loss is by design and invisible).
+        let day_schedule = |feed: &transit_core::Gtfs, date: chrono::NaiveDate| {
+            let owned = feed.active_services(date);
+            let active: std::collections::BTreeSet<&str> =
+                owned.iter().map(|s| s.as_str()).collect();
+            let mut out: std::collections::BTreeSet<(String, Vec<(String, u32, u32)>)> =
+                std::collections::BTreeSet::new();
+            for (id, trip) in &feed.trips {
+                if !active.contains(trip.service_id.as_str()) {
+                    continue;
+                }
+                let rows = feed.trip_stop_times(id).expect("trip rows");
+                let seq = rows
+                    .iter()
+                    .map(|r| {
+                        (
+                            r.stop_id.clone(),
+                            r.arrival_time.or(r.departure_time).expect("generated rows carry times"),
+                            r.departure_time.or(r.arrival_time).expect("generated rows carry times"),
+                        )
+                    })
+                    .collect();
+                out.insert((trip.route_id.clone(), seq));
+            }
+            out
+        };
+
+        // One weekday and one weekend probe: the generator's two
+        // calendars. The original carries regular calendar rows,
+        // the export exception-based services — active_services
+        // resolves both shapes, so the law does not care.
+        for date in ["2026-10-23", "2026-10-25"] {
+            let d = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap();
+            prop_assert_eq!(
+                day_schedule(&gtfs, d),
+                day_schedule(&again, d),
+                "the round trip changed the schedule on {}",
+                date
             );
         }
     }

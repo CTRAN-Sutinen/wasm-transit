@@ -93,7 +93,14 @@ transit-codec   The network codec, both directions: a network document
                 property-tested in tests/import_prop_test) and every
                 resolution it applies (dropped block trips, unusable
                 transfer points, …) is REPORTED as an ImportNote —
-                never silent. The import also infers each block
+                never silent. Each trip's stop times survive the
+                import EXACTLY: patterns cluster by (route,
+                direction, stop sequence, run times), so run-time
+                variation between trips of one stop sequence becomes
+                pattern variants of the same direction, never a
+                collapsed profile (property-tested: materialized
+                trips preserve feed stop times). The import also
+                infers each block
                 layover from the observed end→start gap (exactly
                 feasible — the model's LayoverInfeasible law holds
                 with equality); the planner re-authors from there.
