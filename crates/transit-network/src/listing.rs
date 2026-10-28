@@ -256,11 +256,60 @@ pub fn route_detail(network: &Network, route: &str) -> Option<RouteDetail> {
     })
 }
 
+/// The SERVICE FAMILY: the base plus every service type that rides
+/// along with it — the SAME WEEKLY PATTERN (a rider runs the same
+/// KIND of days: the overlays are Mon–Fri like their 1-WKDY), and
+/// never a day the base does not run (calendar subset, Added
+/// exceptions included). A Tuesday-only or Mon+Wed service is its
+/// own family however few days it runs. The agency's ids say the
+/// family (1-WKDY/30, /31), the model's calendars prove it; service
+/// ids key TRIPS, and the trips of one family are ONE service.
+/// Empty for an unknown base.
+pub fn service_family(network: &Network, base_id: &str) -> std::collections::BTreeSet<String> {
+    let Some(base) = network.service_types.get(base_id) else {
+        return Default::default();
+    };
+    let mut members = std::collections::BTreeSet::new();
+    for (id, other) in &network.service_types {
+        if other.rule.days != base.rule.days {
+            continue;
+        }
+        let rides_along = other
+            .rule
+            .ranges
+            .iter()
+            .flat_map(|r| {
+                let mut out = Vec::new();
+                let mut d = r.start;
+                while d <= r.end {
+                    out.push(d);
+                    d += chrono::Duration::days(1);
+                }
+                out
+            })
+            .chain(
+                other
+                    .rule
+                    .exceptions
+                    .iter()
+                    .filter(|e| e.state == crate::DayState::Added)
+                    .map(|e| e.date),
+            )
+            .all(|d| !other.rule.runs_on(d) || base.rule.runs_on(d));
+        if rides_along {
+            members.insert(id.clone());
+        }
+    }
+    members
+}
+
 /// The timetable of `route` in `direction` (`None`: its patterns in
-/// no direction) under `service_type`. `None` for an unknown route,
-/// direction or service type. A pattern whose trips cannot
-/// materialize (an invalid document mid-edit) contributes none —
-/// validation names it.
+/// no direction) under `service_type` — the base's SERVICE FAMILY
+/// pooled: every member's trips on the direction's patterns, the
+/// service ids keying trips, never owning the route. `None` for an
+/// unknown route, direction or service type. A pattern whose trips
+/// cannot materialize (an invalid document mid-edit) contributes
+/// none — validation names it.
 pub fn timetable(network: &Network, route: &str, direction: Option<&str>, service_type: &str) -> Option<Timetable> {
     let r = network.routes.get(route)?;
     let direction_name = match direction {
@@ -269,12 +318,14 @@ pub fn timetable(network: &Network, route: &str, direction: Option<&str>, servic
     };
     let service = network.service_types.get(service_type)?;
 
-    // The direction's patterns under the type, with their trips.
+    // The direction's patterns under the base's FAMILY, with their
+    // trips — every member's schedules pool (service ids key trips).
+    let family = service_family(network, service_type);
     let mut by_pattern: std::collections::BTreeMap<&str, (Vec<String>, Vec<crate::MaterializedTrip>, bool)> =
         Default::default();
     for (id, pt) in &network.pattern_trips {
         let Some(p) = network.patterns.get(&pt.pattern) else { continue };
-        if pt.service_type != service_type || p.route != route || p.direction.as_deref() != direction {
+        if !family.contains(&pt.service_type) || p.route != route || p.direction.as_deref() != direction {
             continue;
         }
         let entry = by_pattern.entry(pt.pattern.as_str()).or_default();

@@ -88,6 +88,7 @@ import type { NetworkStats } from "./types/NetworkStats";
 import type { ImportNote } from "./types/ImportNote";
 import type { ServiceTypeDetail } from "./types/ServiceTypeDetail";
 import type { ServiceTypeSummary } from "./types/ServiceTypeSummary";
+import type { ServiceGroup } from "./types/ServiceGroup";
 import type { TypeCoverage } from "./types/TypeCoverage";
 import type { FeedInfo } from "./types/FeedInfo";
 import type { FeedSummary } from "./types/FeedSummary";
@@ -536,6 +537,16 @@ export function analysisCap(module: CapModule) {
         network_hash: networkHash,
       } as AnalysisRequest) as Extract<AnalysisResponse, { op: "service_types_overview" }>;
       return resp.service_types;
+    },
+    /// The service groups: the families behind the ids — the base
+    /// type's row with the riders-along folded in (QAF-65). The
+    /// axis the service-design UI renders.
+    serviceGroups(networkHash: string): ServiceGroup[] {
+      const resp = module.invoke({
+        op: "service_groups",
+        network_hash: networkHash,
+      } as AnalysisRequest) as Extract<AnalysisResponse, { op: "service_groups" }>;
+      return resp.groups;
     },
     serviceTypeDetail(networkHash: string, serviceType: string): ServiceTypeDetail | null {
       const resp = module.invoke({

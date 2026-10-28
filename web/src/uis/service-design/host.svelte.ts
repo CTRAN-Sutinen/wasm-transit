@@ -47,6 +47,7 @@ import type { ServiceTypeComparison } from "../../types/ServiceTypeComparison";
 import type { Timetable } from "../../types/Timetable";
 import type { ServiceTypeDetail } from "../../types/ServiceTypeDetail";
 import type { ServiceTypeSummary } from "../../types/ServiceTypeSummary";
+import type { ServiceGroup } from "../../types/ServiceGroup";
 import type { TypeCoverage } from "../../types/TypeCoverage";
 import type { PlanIssue } from "../../types/cap_plans/PlanIssue";
 import type { PlanPeriod } from "../../types/cap_plans/PlanPeriod";
@@ -65,6 +66,11 @@ export const wb = $state({
   issues: [] as NetworkError[],
   warnings: [] as NetworkWarning[],
   types: [] as ServiceTypeSummary[],
+  /// The service GROUPS — the families behind the ids (QAF-65):
+  /// the table renders these, one row per base with its riders
+  /// folded in; the drill-downs key on the base.
+  groups: [] as ServiceGroup[],
+  compareGroups: [] as ServiceGroup[],
   compareTypes: [] as ServiceTypeSummary[],
   layer: null as AnalysisLayerHandle | null,
   coverageParams: { radius_m: 400, frequent_secs: 900, min_departures: 2 } as CoverageParams,
@@ -225,13 +231,18 @@ async function refreshPlan(): Promise<void> {
     const [analysis, network] = [await analysisModule(), await networkModule()];
     if (!analysis) throw new Error("analysis capability unavailable");
     wb.types = analysisCap(analysis).serviceTypesOverview(hashIn(analysis, doc));
+    wb.groups = analysisCap(analysis).serviceGroups(hashIn(analysis, doc));
     wb.issues = network ? networkCap(network).validate(hashIn(network, doc)) : [];
-    if (!wb.types.some((t) => t.service_type === wb.selectedType)) {
-      wb.selectedType = wb.types[0]?.service_type ?? "";
+    // Selection keys on the group's BASE (a rider-along type never
+    // heads a row); it persists across refreshes when it still does.
+    if (!wb.groups.some((g) => g.service_type === wb.selectedType)) {
+      wb.selectedType = wb.groups[0]?.service_type ?? "";
     }
     await Promise.all([refreshChain(), refreshCompare(), refreshType()]);
     refreshCoverage();
-    wb.status = `${wb.plans.find((p) => p.key === wb.activeKey)?.name}: ${wb.types.length} service types.`;
+    const family = wb.groups.find((g) => g.service_type === wb.selectedType);
+    const riders = family && family.members.length > 1 ? ` (+${family.members.length - 1} overlays)` : "";
+    wb.status = `${wb.plans.find((p) => p.key === wb.activeKey)?.name}: ${wb.groups.length} service groups${riders}.`;
   });
 }
 
@@ -239,6 +250,7 @@ async function refreshCompare(): Promise<void> {
   const doc = getAllPlans()[wb.compareKey];
   const analysis = await analysisModule();
   wb.compareTypes = doc && analysis ? analysisCap(analysis).serviceTypesOverview(hashIn(analysis, doc)) : [];
+  wb.compareGroups = doc && analysis ? analysisCap(analysis).serviceGroups(hashIn(analysis, doc)) : [];
   await refreshComparison();
   await refreshTimetable();
 }

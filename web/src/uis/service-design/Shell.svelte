@@ -51,7 +51,7 @@
   </div>
 
   <aside class="col types">
-    <TypeTable types={wb.types} baseline={wb.compareTypes} baselineName={compareName} selected={wb.selectedType} onselect={selectType} />
+    <TypeTable groups={wb.groups} baseline={wb.compareGroups} baselineName={compareName} selected={wb.selectedType} onselect={selectType} />
     {#if wb.comparison}
       <CompareTable comparison={wb.comparison} baselineName={compareName} selected={wb.selectedRoute} onselect={selectRoute} />
     {/if}

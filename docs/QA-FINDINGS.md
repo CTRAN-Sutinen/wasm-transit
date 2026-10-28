@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-65**. A
+IDs are never reused; the next new finding is **QAF-66**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`).
@@ -70,6 +70,27 @@ is the next unit (`docs/units/`).
   is honest; whether that id is what a dispatcher calls the bus is
   an agency question.
   Pin: rt `live` summary `late[0].label`.
+- **QAF-65 DATA GAP** — the I-5-closure-era service is modeled as
+  sibling service ids (1-WKDY/30, /31, …) that ride along with the
+  base weekday — same weekly pattern, every day they run a day
+  1-WKDY runs — not as calendar exceptions on it. The weekday
+  family is ONE service (2130 pooled trips across 571 patterns on
+  the representative day), and a per-service-id read slices routes
+  into thin, wrong headways (route 164: 77 pooled weekday trips,
+  20-minute typical headway at stop 9008, vs 14 trips under the
+  bare id). The model now answers the family
+  (`transit_network::service_family`: same weekly pattern + a
+  calendar subset — a Tuesday-only or Mon+Wed service is its own
+  family), and the reads pool it: service_groups,
+  service_type_detail, schedule_texture, the directory timetable.
+  What does not pool yet: the timetable GESTURES still key on one
+  service type (a set_headway under 1-WKDY retimes only the base's
+  trips, not /30 /31's), and QAF-44's authored "same as, except"
+  relation remains open.
+  Pin: analysis `service_type_detail` 1-WKDY — route 164: 77
+  trips, typical headway 1200 s at 9008; directory `timetable` 164
+  "0" 1-WKDY — 40 trips, 18 from /30 + 18 from /31 + 4 from the
+  base.
 
 ## The model
 

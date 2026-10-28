@@ -49,7 +49,7 @@ struct GenTrip {
 fn gen_trip() -> impl Strategy<Value = GenTrip> {
     (
         0u8..2,
-        0u8..2,
+        0u8..4,
         proptest::option::of(0u8..2),
         0u16..96,
         proptest::collection::vec(0u8..6, 2..=4),
@@ -114,7 +114,7 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
     add(
         &mut w,
         "calendar.txt",
-        "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n0,1,1,1,1,1,0,0,20260101,20261231\n1,0,0,0,0,0,1,1,20260101,20261231\n",
+        "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n0,1,1,1,1,1,0,0,20260101,20261231\n1,0,0,0,0,0,1,1,20260101,20261231\n2,1,0,1,0,0,0,0,20260101,20261231\n3,1,1,1,1,1,0,0,20260301,20260601\n",
     );
     w.finish().unwrap().into_inner()
 }
@@ -372,16 +372,26 @@ proptest! {
         let layer = transit_analysis::parse_pop_layer(&build_layer(&net, &points), Some("pop"))
             .expect("generated layer parses");
         let per_type = transit_analysis::type_coverage(&net, &layer, 500.0, 3600, 2, None);
+        prop_assert!(!per_type.is_empty() || net.service_types.is_empty(), "every type answers");
         for entry in &per_type {
             let date = NaiveDate::parse_from_str(&entry.date, "%Y-%m-%d")
                 .expect("representative dates are ISO");
-            let whole = transit_analysis::coverage(&net, date, &layer, 500.0, 3600, 2, None);
-            prop_assert!(close(entry.served_pct, whole.served_pct, 1e-9),
+            // Several service ids can run on the same service day
+            // (the 164 defect's lesson: a weekday is 1-WKDY AND its
+            // overlays), so the per-type answer cannot be compared to
+            // the WHOLE-day coverage. The oracle scopes the document
+            // to the type's own schedules and runs the same coverage
+            // over it — the design axis, judged alone.
+            let mut scoped = net.clone();
+            scoped.pattern_trips
+                .retain(|_, s| s.service_type == entry.service_type);
+            let own = transit_analysis::coverage(&scoped, date, &layer, 500.0, 3600, 2, None);
+            prop_assert!(close(entry.served_pct, own.served_pct, 1e-9),
                 "served_pct disagrees for {}", entry.service_type);
-            prop_assert!(close(entry.frequent_pct, whole.frequent_pct, 1e-9),
+            prop_assert!(close(entry.frequent_pct, own.frequent_pct, 1e-9),
                 "frequent_pct disagrees for {}", entry.service_type);
-            prop_assert_eq!(entry.served_stops, whole.served_stops, "served stops disagree for {}", entry.service_type);
-            prop_assert_eq!(entry.frequent_stops, whole.frequent_stops, "frequent stops disagree for {}", entry.service_type);
+            prop_assert_eq!(entry.served_stops, own.served_stops, "served stops disagree for {}", entry.service_type);
+            prop_assert_eq!(entry.frequent_stops, own.frequent_stops, "frequent stops disagree for {}", entry.service_type);
         }
     }
 
@@ -558,18 +568,24 @@ proptest! {
         }
     }
 
-    /// QAF-16: the schedule texture — headway uniformity (min,
-    /// median, max gap between starts) and clockface alignment
-    /// (quarter-hour grid) per pattern trips, recomputed from the
-    /// document's own departures with independent code. The texture
-    /// is date-independent; the law pins the type's row set, the
-    /// gap statistics, the grid counts, and the totals.
+    /// QAF-16 (+ the 164 defect): the schedule texture — headway
+    /// uniformity and clockface alignment per PATTERN, keyed by the
+    /// SERVICE TYPE on its representative day (the planner's unit —
+    /// a planner designs "weekday service", not a calendar date),
+    /// with the day's starts POOLED across every service id running
+    /// the pattern that day. Several service ids share one service
+    /// day and one route (route 164's weekday trips split across
+    /// 1-WKDY and its disruption-era overlays), and keying by
+    /// service id would slice the corridor into thin, wrong
+    /// headways. The oracle recomputes the pooling independently:
+    /// raw trip counts, a distinct-start spine for gaps and grid,
+    /// the feeding schedule count, and the totals.
     #[test]
     fn schedule_texture_matches_the_starts_oracle(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
         let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
         let net = transit_codec::gtfs_to_network(&gtfs).network;
 
-        for type_id in ["0", "1"] {
+        for type_id in ["0", "1", "2", "3"] {
             let texture = transit_analysis::schedule_texture(&net, type_id);
             // The representative day: the first 2026 date the rule
             // runs, by the hand-rolled rule walk.
@@ -610,32 +626,68 @@ proptest! {
             }
             let texture = texture.unwrap();
 
-            // Oracle: the type's schedules, straight off the document.
-            let mut oracle: BTreeMap<String, Vec<u32>> = BTreeMap::new();
-            for (id, entry) in &net.pattern_trips {
-                if entry.service_type == type_id {
-                    let mut starts = transit_network::trip_starts(&entry.departures);
-                    starts.sort_unstable();
-                    oracle.insert(id.clone(), starts);
+            // Oracle: the service GROUP — the base plus every type
+            // whose running days are a subset of the base's
+            // (computed by an independent day walk) — and the
+            // group's POOLED starts per pattern.
+            let runs_day = |sid: &str, date: chrono::NaiveDate| {
+                net.service_types.get(sid).is_some_and(|st| st.rule.runs_on(date))
+            };
+            let day_set = |sid: &str| -> BTreeSet<chrono::NaiveDate> {
+                let st = &net.service_types[sid];
+                let mut days: BTreeSet<chrono::NaiveDate> = BTreeSet::new();
+                for r in &st.rule.ranges {
+                    let mut d = r.start;
+                    while d <= r.end {
+                        if st.rule.runs_on(d) {
+                            days.insert(d);
+                        }
+                        d += Duration::days(1);
+                    }
                 }
+                days.retain(|d| runs_day(sid, *d));
+                days
+            };
+            let base_days = day_set(type_id);
+            let group: BTreeSet<&String> = net
+                .service_types
+                .keys()
+                .filter(|other| {
+                    net.service_types[other.as_str()].rule.days == net.service_types[type_id].rule.days
+                        && day_set(other).iter().all(|d| base_days.contains(d))
+                })
+                .collect();
+            prop_assert!(group.iter().any(|s| s.as_str() == type_id), "the base is in its own group");
+            let mut oracle: BTreeMap<String, (u32, Vec<u32>)> = BTreeMap::new();
+            for entry in net.pattern_trips.values() {
+                if !group.contains(&entry.service_type) {
+                    continue;
+                }
+                let slot = oracle.entry(entry.pattern.clone()).or_insert((0, Vec::new()));
+                slot.0 += 1;
+                slot.1.extend(transit_network::trip_starts(&entry.departures));
             }
-            prop_assert_eq!(texture.pattern_trips.len(), oracle.len(), "{} schedule rows", type_id);
+            prop_assert_eq!(texture.pattern_trips.len(), oracle.len(), "{} pattern rows", type_id);
             let mut sum_trips = 0u32;
             let mut sum_grid = 0u32;
             for row in &texture.pattern_trips {
-                let starts = &oracle[&row.pattern_trips];
-                let gaps: Vec<u32> = starts.windows(2).map(|w| w[1] - w[0]).collect();
-                prop_assert_eq!(row.trips, starts.len() as u32, "{} trips", row.pattern_trips);
-                prop_assert_eq!(row.min_gap_secs, gaps.iter().copied().min(), "{} min", row.pattern_trips);
-                prop_assert_eq!(row.max_gap_secs, gaps.iter().copied().max(), "{} max", row.pattern_trips);
-                let median = (starts.len() >= 4).then(|| {
+                let (schedules, raw) = &oracle[&row.pattern];
+                prop_assert_eq!(row.schedules, *schedules, "{} feeding schedules", row.pattern);
+                prop_assert_eq!(row.trips, raw.len() as u32, "{} pooled trips", row.pattern);
+                let mut spine = raw.clone();
+                spine.sort_unstable();
+                spine.dedup();
+                let gaps: Vec<u32> = spine.windows(2).map(|w| w[1] - w[0]).collect();
+                prop_assert_eq!(row.min_gap_secs, gaps.iter().copied().min(), "{} min", row.pattern);
+                prop_assert_eq!(row.max_gap_secs, gaps.iter().copied().max(), "{} max", row.pattern);
+                let median = (spine.len() >= 4).then(|| {
                     let mut sorted = gaps.clone();
                     sorted.sort_unstable();
                     sorted[sorted.len() / 2]
                 });
-                prop_assert_eq!(row.median_gap_secs, median, "{} median", row.pattern_trips);
-                let grid = starts.iter().filter(|&&s| s % 900 == 0).count() as u32;
-                prop_assert_eq!(row.on_clockface, grid, "{} grid", row.pattern_trips);
+                prop_assert_eq!(row.median_gap_secs, median, "{} median", row.pattern);
+                let grid = spine.iter().filter(|&&s| s % 900 == 0).count() as u32;
+                prop_assert_eq!(row.on_clockface, grid, "{} grid", row.pattern);
                 sum_trips += row.trips;
                 sum_grid += row.on_clockface;
             }
@@ -875,5 +927,114 @@ proptest! {
             (c.total_pop - c.served_pop - unserved_pop).abs() < 1e-6,
             "served + unserved conserves the layer total"
         );
+    }
+
+    /// QAF-65: the service groups — the families behind the ids. A
+    /// base type (no other type's days properly contain it) heads
+    /// one row; every type whose calendar is a subset of the base's
+     /// rides along (the overlays are really part of the base's
+    /// service). The oracle computes day-sets independently, then
+    /// the bases, the members, and the family's pooled numbers.
+    #[test]
+    fn service_groups_are_the_families(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
+        let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
+        let net = transit_codec::gtfs_to_network(&gtfs).network;
+        let groups = transit_analysis::service_groups(&net);
+
+        // Oracle: day-sets per type (2026 walk over ranges +
+        // Added exceptions), then bases and members by subset.
+        let day_set = |sid: &str| -> BTreeSet<chrono::NaiveDate> {
+            let st = &net.service_types[sid];
+            let mut days: BTreeSet<chrono::NaiveDate> = BTreeSet::new();
+            for r in &st.rule.ranges {
+                let mut d = r.start;
+                while d <= r.end {
+                    if st.rule.runs_on(d) {
+                        days.insert(d);
+                    }
+                    d += Duration::days(1);
+                }
+            }
+            days
+        };
+        let ids: Vec<&String> = net.service_types.keys().collect();
+        // Same WEEKLY PATTERN and a day-set subset: the flags are
+        // the family's identity (a Tuesday-only service is its own
+        // family however few days it runs), the subset says it
+        // never runs a day the base does not.
+        let same_days_pattern = |a: &str, b: &str| {
+            net.service_types[a].rule.days == net.service_types[b].rule.days
+        };
+        let is_base = |t: &str| {
+            let dt = day_set(t);
+            !ids.iter().any(|u| {
+                u.as_str() != t
+                    && same_days_pattern(u, t)
+                    && {
+                        let du = day_set(u);
+                        dt.iter().all(|d| du.contains(d)) && !du.iter().all(|d| dt.contains(d))
+                    }
+            })
+        };
+        let expected_bases: Vec<&String> =
+            ids.iter().copied().filter(|t| is_base(t)).collect();
+        prop_assert_eq!(groups.len(), expected_bases.len(), "one row per base");
+        for group in &groups {
+            let base_days = day_set(&group.service_type);
+            let members: BTreeSet<String> = ids
+                .iter()
+                .filter(|m| {
+                    same_days_pattern(m, &group.service_type)
+                        && day_set(m).iter().all(|d| base_days.contains(d))
+                })
+                .map(|m| (*m).clone())
+                .collect();
+            prop_assert_eq!(
+                group.members.iter().collect::<BTreeSet<_>>(),
+                members.iter().collect::<BTreeSet<_>>(),
+                "{} members", group.service_type
+            );
+            assert!(members.contains(&group.service_type), "the base is in its own family");
+            // The family's pooled numbers, recomputed.
+            let mut trips_n = 0u32;
+            let mut routes: BTreeSet<String> = BTreeSet::new();
+            let mut stops: BTreeSet<String> = BTreeSet::new();
+            let mut runtime = 0u64;
+            for (schedule_id, entry) in &net.pattern_trips {
+                if !members.contains(&entry.service_type) {
+                    continue;
+                }
+                if let Some(p) = net.patterns.get(&entry.pattern) {
+                    routes.insert(p.route.clone());
+                }
+                for trip in transit_network::materialize_service(&net, schedule_id).expect("valid document") {
+                    trips_n += 1;
+                    stops.extend(trip.stop_times.iter().map(|st| st.stop.clone()));
+                    if let Some(end) = trip.stop_times.last() {
+                        runtime += end.arrival_secs.saturating_sub(trip.start_secs) as u64;
+                    }
+                }
+            }
+            prop_assert_eq!(group.trips, trips_n, "{} trips", group.service_type);
+            prop_assert_eq!(group.active_routes, routes.len() as u32, "{} routes", group.service_type);
+            prop_assert_eq!(group.active_stops, stops.len() as u32, "{} stops", group.service_type);
+            prop_assert!(
+                (group.revenue_hours - runtime as f64 / 3600.0).abs() < 1e-9,
+                "{} revenue hours", group.service_type
+            );
+        }
+        // A non-base type appears only as a member, never as a row.
+        for t in &ids {
+            if !is_base(t) {
+                prop_assert!(
+                    !groups.iter().any(|g| g.service_type == t.as_str()),
+                    "{} is a rider, not a row", t
+                );
+                prop_assert!(
+                    groups.iter().any(|g| g.members.contains(t)),
+                    "{} rides in exactly some family", t
+                );
+            }
+        }
     }
 }

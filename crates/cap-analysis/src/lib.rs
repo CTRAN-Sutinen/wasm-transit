@@ -66,6 +66,11 @@ pub enum Request {
     /// Every service type's numbers, each on its representative day —
     /// the planner's design axis.
     ServiceTypesOverview { network_hash: String },
+    /// The service groups: one row per base type with the family
+    /// that rides along (calendar subset — the overlays are really
+    /// part of the base's service) and the family's pooled numbers.
+    /// The axis a planner designs; the drill-down keys on the base.
+    ServiceGroups { network_hash: String },
     /// One service type expanded on its representative day.
     ServiceTypeDetail { network_hash: String, service_type: String },
     /// A proposal (`network_hash`) against its baseline (`base_hash`)
@@ -160,6 +165,7 @@ pub enum Response {
     },
     NetworkStats { stats: NetworkStats },
     ServiceTypesOverview { service_types: Vec<ServiceTypeSummary> },
+    ServiceGroups { groups: Vec<transit_analysis::ServiceGroup> },
     ServiceTypeDetail { detail: Option<ServiceTypeDetail> },
     ServiceTypeCompare { comparison: Option<ServiceTypeComparison> },
     TypeCoverage { coverage: Vec<TypeCoverage> },
@@ -275,6 +281,11 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::ServiceTypesOverview { network_hash } => with_network(&network_hash, |network| {
             Ok(Response::ServiceTypesOverview {
                 service_types: service_type_overview(network),
+            })
+        }),
+        Request::ServiceGroups { network_hash } => with_network(&network_hash, |network| {
+            Ok(Response::ServiceGroups {
+                groups: transit_analysis::service_groups(network),
             })
         }),
         Request::ServiceTypeDetail { network_hash, service_type } => {

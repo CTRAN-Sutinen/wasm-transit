@@ -131,9 +131,12 @@ pub struct PatternTripsSummary {
     pub trips: u32,
 }
 
-/// A service type's whole day: the planner's drill-down. Everything
-/// that runs under the type on its representative day — routes,
-/// stops, schedules — plus the type's own numbers.
+/// The SERVICE GROUP's drill-down (keyed by the base): the family
+/// that rides along with the base — same weekly pattern, calendar
+/// subset — pooled over its authored service. Routes and headways
+/// answer for the FAMILY, not the bare id (service ids key TRIPS,
+/// never routes — the 164 lesson). The representative day is the
+/// label; the members' pooled trips are the read.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ServiceTypeDetail {
@@ -160,11 +163,22 @@ pub struct ServiceTypeDetail {
 pub fn service_type_detail(net: &Network, type_id: &str) -> Option<ServiceTypeDetail> {
     let service_type = net.service_types.get(type_id)?;
     let date = representative_date(&service_type.rule)?;
-    let stats = day_stats(net, date, Some(type_id));
+    // The SERVICE GROUP's read: the family that rides along with
+    // this base (same weekly pattern, calendar subset), pooled —
+    // the routes and headways answer for the family, not the bare
+    // id (the 164 headway defect: the overlays are part of the
+    // route's service, and service ids key TRIPS, never routes).
+    let group: BTreeSet<String> = net
+        .service_types
+        .keys()
+        .filter(|&other| transit_network::service_family(net, type_id).contains(other))
+        .cloned()
+        .collect();
+    let stats = family_stats(net, &group, date);
 
     let mut pattern_trips = Vec::new();
     for (id, entry) in &net.pattern_trips {
-        if &entry.service_type != type_id {
+        if !group.contains(&entry.service_type) {
             continue;
         }
         pattern_trips.push(PatternTripsSummary {
@@ -193,15 +207,21 @@ pub fn service_type_detail(net: &Network, type_id: &str) -> Option<ServiceTypeDe
     })
 }
 
-/// One pattern trips' schedule texture: the headway uniformity and
-/// clockface alignment of its starts — "is this even, and is it on
-/// a grid?" Gaps run between consecutive starts (sorted); the
-/// median carries the same four-start floor as every median here
-/// (a median over fewer is a headway nobody runs, QAF-55).
+/// One pattern's schedule texture on the day: the headway
+/// uniformity and clockface alignment of its starts, POOLED across
+/// every schedule that runs the pattern that day — the same
+/// pattern runs under several service ids (route 164's weekday
+/// trips split across 1-WKDY and its overlays), and a texture read
+/// per service id would slice the corridor into thin, wrong
+/// headways. Gaps run between consecutive pooled starts (sorted);
+/// the median carries the same four-start floor as every median
+/// here (a median over fewer is a headway nobody runs, QAF-55).
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct PatternTexture {
-    pub pattern_trips: String,
+    /// How many service ids feed the pattern that day — the split
+    /// the pooling folded (1 = the pattern runs under one type).
+    pub schedules: u32,
     pub route: String,
     pub pattern: String,
     pub trips: u32,
@@ -214,10 +234,16 @@ pub struct PatternTexture {
     pub on_clockface: u32,
 }
 
-/// The type's schedule texture on its representative day: every
-/// pattern trips entry that runs under the type, one row per
-/// schedule (sorted by id), plus the totals. `None` for an unknown
-/// type or one with no representative day — the same convention as
+/// The SERVICE GROUP's schedule texture on its representative day —
+/// the planner's unit (a planner designs "weekday service", not a
+/// calendar date, and not a service id): the base type plus every
+/// type that rides along with it (its calendar is a subset — the
+/// overlays, 1-WKDY/30 and /31 and the rest, are really part of
+/// ONE weekday service), one row per pattern (sorted by id) with
+/// the group's POOLED starts. Keying by service id would slice the
+/// corridor into thin, wrong headways (route 164's weekday trips
+/// split across the family). `None` for an unknown type or one
+/// with no representative day — the convention of
 /// service_type_detail (QAF-19).
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
@@ -233,28 +259,61 @@ pub struct ScheduleTexture {
 pub fn schedule_texture(net: &Network, type_id: &str) -> Option<ScheduleTexture> {
     let service_type = net.service_types.get(type_id)?;
     let date = representative_date(&service_type.rule)?;
+    // The service group: the base plus every type that rides along
+    // with it (its calendar is a subset — the overlays that are
+    // really part of this service, disruption-era or not).
+    let group: BTreeSet<String> = net
+        .service_types
+        .keys()
+        .filter(|&other| transit_network::service_family(net, type_id).contains(other))
+        .cloned()
+        .collect();
+    // The scope: every pattern the group's schedules run.
+    let mut patterns: BTreeSet<String> = BTreeSet::new();
+    for entry in net.pattern_trips.values() {
+        if group.contains(&entry.service_type) {
+            patterns.insert(entry.pattern.clone());
+        }
+    }
     let mut rows = Vec::new();
     let mut trips = 0u32;
     let mut on_clockface = 0u32;
-    for (id, entry) in &net.pattern_trips {
-        if &entry.service_type != type_id {
-            continue;
+    for pattern in &patterns {
+        // The group's POOLED starts: every schedule the group runs
+        // on this pattern — the overlays fold into the base's day
+        // (each member runs only on days the base runs).
+        let mut starts: Vec<u32> = Vec::new();
+        let mut schedules = 0u32;
+        for entry in net.pattern_trips.values() {
+            if &entry.pattern != pattern {
+                continue;
+            }
+            if !group.contains(&entry.service_type) {
+                continue;
+            }
+            schedules += 1;
+            starts.extend(transit_network::trip_starts(&entry.departures));
         }
-        let mut starts = transit_network::trip_starts(&entry.departures);
         starts.sort_unstable();
+        // Two service ids running the pattern at the same second is
+        // real service (trips counts both), but no gap — the spine
+        // the gaps read is the distinct starts (the stop_gaps
+        // convention).
+        let trips_on_pattern = starts.len() as u32;
+        starts.dedup();
         let gaps: Vec<u32> = starts.windows(2).map(|w| w[1] - w[0]).collect();
         let row_on = starts.iter().filter(|&&s| s % 900 == 0).count() as u32;
-        trips += starts.len() as u32;
+        trips += trips_on_pattern;
         on_clockface += row_on;
         rows.push(PatternTexture {
-            pattern_trips: id.clone(),
+            schedules,
             route: net
                 .patterns
-                .get(&entry.pattern)
+                .get(pattern)
                 .map(|p| p.route.clone())
                 .unwrap_or_default(),
-            pattern: entry.pattern.clone(),
-            trips: starts.len() as u32,
+            pattern: pattern.clone(),
+            trips: trips_on_pattern,
             min_gap_secs: gaps.iter().copied().min(),
             median_gap_secs: median_gap_secs(&starts),
             max_gap_secs: gaps.iter().copied().max(),
@@ -355,6 +414,103 @@ pub fn service_type_compare(base: &Network, proposal: &Network, type_id: &str) -
         routes,
         unchanged_routes,
     })
+}
+
+/// One SERVICE GROUP: a base service type plus every type that
+/// rides along with it (its calendar is a subset of the base's) —
+/// the planner's unit. C-TRAN's weekday family (1-WKDY and its
+/// overlays) is ONE weekday service here, with the members named
+/// and the numbers POOLED over the family's authored service: the
+/// base's representative day is the label, the members' trips are
+/// the texture the group actually runs (QAF-65's lesson).
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct ServiceGroup {
+    /// The base type — the group's key and the drill-down's address.
+    pub service_type: String,
+    pub name: String,
+    /// The base's representative day (the family's typical day).
+    pub date: String,
+    /// The family: every member, sorted (the base included).
+    pub members: Vec<String>,
+    pub trips: u32,
+    pub active_routes: u32,
+    pub active_stops: u32,
+    pub revenue_hours: f64,
+    pub revenue_miles: f64,
+}
+
+/// The service groups: one row per BASE type (one whose calendar no
+/// other type properly contains), each with the family that rides
+/// along and the family's pooled numbers. This — not the bare
+/// service id — is the axis a planner designs (QAF-65: the
+/// disruption-era overlays are really part of the base's service).
+pub fn service_groups(net: &Network) -> Vec<ServiceGroup> {
+    let mut out = Vec::with_capacity(net.service_types.len());
+    for (base_id, base) in &net.service_types {
+        // A base: no other type's days are a proper superset of
+        // this one's (equal calendars are both bases).
+        let is_base = !net.service_types.keys().any(|u| {
+            u != base_id
+                && transit_network::service_family(net, u).contains(base_id) // base's days ⊆ u's days
+                && !transit_network::service_family(net, base_id).contains(u) // and not the reverse
+        });
+        if !is_base {
+            continue;
+        }
+        let members: BTreeSet<String> = net
+            .service_types
+            .keys()
+            .filter(|&m| transit_network::service_family(net, base_id).contains(m))
+            .cloned()
+            .collect();
+        // The family's pooled authored service: every member's
+        // schedules, their trips, routes, stops, runtime and miles.
+        let mut trips = 0u32;
+        let mut routes: BTreeSet<String> = BTreeSet::new();
+        let mut stops: BTreeSet<String> = BTreeSet::new();
+        let mut runtime_secs = 0u64;
+        let mut meters = 0f64;
+        for (schedule_id, entry) in &net.pattern_trips {
+            if !members.contains(&entry.service_type) {
+                continue;
+            }
+            routes.insert(
+                net.patterns
+                    .get(&entry.pattern)
+                    .map(|p| p.route.clone())
+                    .unwrap_or_default(),
+            );
+            // A mid-edit document can carry services that fail to
+            // materialize; analysis skips them (validation reports
+            // them).
+            let Ok(materialized) = transit_network::materialize_service(net, schedule_id) else {
+                continue;
+            };
+            for trip in materialized {
+                trips += 1;
+                stops.extend(trip.stop_times.iter().map(|st| st.stop.clone()));
+                if let Some(end) = trip.stop_times.last() {
+                    runtime_secs += end.arrival_secs.saturating_sub(trip.start_secs) as u64;
+                }
+                meters += trip_distance_m(net, &trip);
+            }
+        }
+        out.push(ServiceGroup {
+            service_type: base_id.clone(),
+            name: base.name.clone(),
+            date: representative_date(&base.rule)
+                .map(|d| d.format("%Y-%m-%d").to_string())
+                .unwrap_or_default(),
+            members: members.into_iter().collect(),
+            trips,
+            active_routes: routes.len() as u32,
+            active_stops: stops.len() as u32,
+            revenue_hours: runtime_secs as f64 / 3600.0,
+            revenue_miles: meters / METERS_PER_MILE,
+        });
+    }
+    out
 }
 
 /// The overview table: every service type's numbers, each on its own
@@ -603,7 +759,15 @@ fn trip_distance_m(net: &Network, trip: &transit_network::MaterializedTrip) -> f
 /// The stats engine: one service day, optionally scoped to a single
 /// service type (the drill-down view — the type's own representative
 /// day), in which case only that type's schedules count.
-fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> NetworkStats {
+/// The stats engine's fold: one pass over the schedules the
+/// `include` filter names. The date-scoped views filter by
+/// calendar (a type running that date); the FAMILY view pools the
+/// group's authored service with no date filter — every member
+/// runs only on days the base runs, so the pooled starts ARE the
+/// family's typical service (the 164 lesson: a date-scoped read
+/// on the representative day misses overlays whose own ranges
+/// start later).
+fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: NaiveDate) -> NetworkStats {
     // Per-pattern trip starts on the date: per-direction headways.
     let mut pattern_starts: BTreeMap<String, Vec<u32>> = BTreeMap::new();
     // Per-route accumulators.
@@ -630,12 +794,7 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
     let mut meters = 0f64;
 
     for (service_id, service) in &net.pattern_trips {
-        let runs = net
-            .service_types
-            .get(&service.service_type)
-            .is_some_and(|st| st.rule.runs_on(date))
-            && only_type.map_or(true, |t| service.service_type == t);
-        if !runs {
+        if !include(&service.service_type) {
             continue;
         }
         // A mid-edit document can carry services that fail to
@@ -785,10 +944,36 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
         revenue_hours: runtime_secs as f64 / 3600.0,
         revenue_miles: meters / METERS_PER_MILE,
         transfer_stops,
-        service_types: service_type_summaries(net, Some(date)),
+        // The wrappers decide whether the design axis rides along
+        // (the network view wants it; the family drill-down pools
+        // its own numbers).
+        service_types: Vec::new(),
         routes,
         stops,
     }
+}
+
+/// The date-scoped view: every schedule whose service type runs on
+/// the date (optionally one type's alone) — the day-shape read.
+fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> NetworkStats {
+    let mut stats = stats_fold(net, |sid| {
+        net.service_types
+            .get(sid)
+            .is_some_and(|st| st.rule.runs_on(date))
+            && only_type.map_or(true, |t| sid == t)
+    }, date);
+    stats.service_types = service_type_summaries(net, Some(date));
+    stats
+}
+
+/// The FAMILY view: the group's authored service, pooled with no
+/// date filter — every member runs only on days the base runs, so
+/// the pooled trips ARE the family's typical service. The date is
+/// the label (the base's representative day), never the filter —
+/// a date-scoped read on the representative day would miss the
+/// overlays whose own ranges start later (the 164 headway defect).
+fn family_stats(net: &Network, group: &BTreeSet<String>, date: NaiveDate) -> NetworkStats {
+    stats_fold(net, |sid| group.contains(sid), date)
 }
 
 // ---------------------------------------------------------------------

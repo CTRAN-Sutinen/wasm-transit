@@ -87,7 +87,7 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
     add(
         &mut w,
         "calendar.txt",
-        "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n0,1,1,1,1,1,0,0,20260101,20261231\n1,0,0,0,0,0,1,1,20260101,20261231\n",
+        "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n0,1,1,1,1,1,0,0,20260101,20261231\n1,0,0,0,0,0,1,1,20260101,20261231\n2,1,0,1,0,0,0,0,20260101,20261231\n3,1,1,1,1,1,0,0,20260301,20260601\n",
     );
     w.finish().unwrap().into_inner()
 }
@@ -691,4 +691,53 @@ fn unserved_points_answer_the_where() {
     let cap_analysis::Response::UnservedPoints { points: saturday } = saturday else { panic!("unserved_points") };
     assert_eq!(saturday.len(), 2, "nothing runs: every point is unserved");
     assert!(saturday.iter().all(|p| p.nearest_stop.is_none()));
+}
+
+/// The service groups (QAF-65): the families behind the ids. A
+/// rider-along type — the SAME weekly pattern, a narrower calendar
+/// — folds into the base's row and never heads one of its own; a
+/// DIFFERENT weekly pattern (Mon+Wed) is its own family, however
+/// few days it runs. The deep oracle law lives in the library's
+/// prop suite; this pins the SEAM.
+#[test]
+fn service_groups_answer_the_families() {
+    // Route 0 runs under the weekday service (every weekday, all
+    // 2026) and a SAME-PATTERN overlay (Mon–Fri, Mar–Jun) — one
+    // weekday family, the overlay folded in — plus a Mon+Wed
+    // service, which is NOT the weekday family.
+    let net = network(&[
+        GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
+        GenTrip { route: 0, service: 3, block: None, start_slot: 11, stops: vec![0, 1], leg_min: 5 },
+        GenTrip { route: 0, service: 2, block: None, start_slot: 12, stops: vec![0, 1], leg_min: 5 },
+    ]);
+    let loaded = cap_analysis::dispatch(cap_analysis::Request::LoadNetwork { network: net })
+        .expect("load");
+    let cap_analysis::Response::LoadNetwork { network_hash } = loaded else { panic!("load") };
+
+    let groups = cap_analysis::dispatch(cap_analysis::Request::ServiceGroups {
+        network_hash: network_hash.clone(),
+    })
+    .expect("service_groups");
+    let cap_analysis::Response::ServiceGroups { groups } = groups else { panic!("service_groups") };
+    assert_eq!(groups.len(), 2, "the weekday family and the Mon+Wed family");
+    let weekday = groups.iter().find(|g| g.service_type == "0").expect("weekday row");
+    assert_eq!(weekday.members, vec!["0".to_string(), "3".to_string()], "the same-pattern rider is named");
+    assert_eq!(weekday.trips, 2, "the family's schedules are pooled in");
+    assert_eq!(weekday.active_routes, 1);
+    let tue = groups.iter().find(|g| g.service_type == "2").expect("Mon+Wed row");
+    assert_eq!(tue.members, vec!["2".to_string()], "a different weekly pattern is its own family");
+
+    // A weekend-only document: the weekend type is its own base.
+    let weekend = network(&[GenTrip { route: 0, service: 1, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
+    let loaded = cap_analysis::dispatch(cap_analysis::Request::LoadNetwork { network: weekend })
+        .expect("load");
+    let cap_analysis::Response::LoadNetwork { network_hash } = loaded else { panic!("load") };
+    let groups = cap_analysis::dispatch(cap_analysis::Request::ServiceGroups {
+        network_hash,
+    })
+    .expect("service_groups");
+    let cap_analysis::Response::ServiceGroups { groups } = groups else { panic!("service_groups") };
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].service_type, "1");
+    assert_eq!(groups[0].members, vec!["1".to_string()]);
 }
