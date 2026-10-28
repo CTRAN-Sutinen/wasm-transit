@@ -6,7 +6,7 @@
 #   Node  — crates/cap-abi/caps-smoke.mjs (runs the modules directly)
 #   Web   — web/ (Svelte + Vite) and Playwright e2e
 #
-# There is no monolith artifact anymore (docs/PLAN.md U7): every
+# There is no monolith artifact: every
 # host instantiates the capability modules it needs — the browser
 # fetches them from web/public/caps/, the sync server hosts
 # cap-sync at web/pkg/cap_sync.wasm.
@@ -285,7 +285,7 @@ test: caps
         echo "$violations"
         exit 1
     fi
-    # WEB GATES — parity (docs/PLAN.md, "The web cleanup"): the
+    # WEB GATES — parity (docs/ARCHITECTURE.md, web section, "Parity"): the
     # browser runs the same ops as caps-run and the Go server, so
     # web/ holds host glue and render components, never answers.
     # Ratchets: each allowlist names today's violators and may only
@@ -295,7 +295,7 @@ test: caps
         local name="$1" allowed=" $2 " found="$3" f
         for f in $found; do
             if [[ "$allowed" != *" $f "* ]]; then
-                echo "WEB GATE FAIL ($name): $f — $4 (docs/PLAN.md, the web cleanup)"; exit 1
+                echo "WEB GATE FAIL ($name): $f — $4 (docs/ARCHITECTURE.md, Parity)"; exit 1
             fi
         done
         for f in $2; do

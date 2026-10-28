@@ -5,8 +5,8 @@
 /// writes into `wb` is an op's answer, adopted as-is. The shell's
 /// components take these as props and emit events back here.
 ///
-/// The questions it answers, in the order they are asked (the
-/// 2026-10-27 service-design dogfood session, docs/QA-FINDINGS.md): which
+/// The questions it answers, in the order they are asked (its
+/// 2026-10-27 dogfood sessions on C-TRAN): which
 /// plan, what each service type costs and covers, which routes run
 /// under a type, what one route is and where it runs, what one
 /// direction's timetable is, and what a timetable change does to the

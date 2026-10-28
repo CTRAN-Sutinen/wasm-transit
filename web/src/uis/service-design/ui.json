@@ -42,7 +42,7 @@
     "TimetableChange",
     "FocusMap"
   ],
-  "session": "docs/QA-FINDINGS.md, Session 2026-10-27 (service-design workbench); Session 2026-10-27 (proposing timetable changes)",
+  "session": "2026-10-27 on C-TRAN (feed sha256:aa8dbc62…, docs/QA-FINDINGS.md reference data): the numbers equal caps-run's; open findings QAF-52–55, QAF-61–64",
   "spec": "web/e2e/ui-service-design.spec.mjs",
   "generated": "2026-10-27"
 }

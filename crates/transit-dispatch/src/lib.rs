@@ -12,7 +12,7 @@
 //! a calendar.
 //!
 //! This is shared domain code, off the wire: several capabilities
-//! (the board, the runcut, the calendar — `docs/PLAN.md`) sit over
+//! (the board, the runcut, the calendar, the diversion editor) sit over
 //! the same library. Everything here is pure and total. Times are
 //! seconds after the service-day anchor; values past 86400 are
 //! legitimate after-midnight trips.

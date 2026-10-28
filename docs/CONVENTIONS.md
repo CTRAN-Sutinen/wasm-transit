@@ -25,8 +25,8 @@ holds the gotchas, Rust/wasm/ops and frontend alike.
   word: to a planner a schedule or timetable is a route's direction
   under one service type across all its patterns — that is the
   derived `Timetable` (directory `timetable`) — so the model never
-  names the per-pattern list that way (renamed 2026-10-27; documents
-  written before still read, through serde aliases). Do not rename
+  names the per-pattern list that way (documents using the older
+  `schedules` field names still read, through serde aliases). Do not rename
   these back toward GTFS's calendar/service words.
 - **Diagnostics are measurements; regressions are assertions.**
   Scratch repro specs live in /tmp with their own Playwright config
@@ -106,7 +106,7 @@ holds the gotchas, Rust/wasm/ops and frontend alike.
   (memoized) — never gated on "no manifest yet": another need may
   have loaded the manifest first (the bootstrap reads the edit
   document through cap-divert), and a gated panel then assembles
-  nothing (this shipped in W3 and failed caps.spec).
+  nothing (this shipped once and failed caps.spec).
 - Playwright serves the BUILT bundle (`web/dist` via the Go
   server): after a source change, `npx playwright test` alone runs
   the old app — `just e2e` builds first, or `npx vite build`.

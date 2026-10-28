@@ -29,32 +29,21 @@ reality: three picks a year, no merged feeds, no day-of scrambling.
 It is the feature that makes the architecture something an agency
 could run.
 
-**Exists already:** the plan chain (cap-plans), materialization
-through the network capability's export, the manifest concept,
-plan persistence.
-**Unblocks:** 2, 7, and multi-client deployments at all.
+**Exists already:** the plan chain (cap-plans), the publish path
+(cap-network `export`: deterministic GTFS zip bytes under their
+content hash), the manifest concept, plan persistence in the
+browser.
+**Needs:** server-side persistence (`docs/units/sync-persistence.md`).
+**Unblocks:** 6, and multi-client deployments at all.
 
-## 2. GTFS export: model → zip
-
-**What.** Serialize the derived feed view back to a GTFS zip — the
-publish format for the wider ecosystem (apps, aggregators).
-
-**Why.** Closes the loop named at the start of the project: author
-in the model, emit GTFS for compatibility. After this, the artifact
-is the authority and GTFS is purely a codec — the statement the
-whole model was built to make.
-
-**Exists already:** `network_to_gtfs` (the derived view is built;
-only zip serialization + file emission are missing).
-**Unblocks:** real-world interop; agency adoption that requires GTFS.
-
-## 3. The runcut as a first-class tool
+## 2. The runcut as a first-class tool
 
 **What.** Cut blocks from schedules: auto-chain feasible trips,
 estimate **deadheads via the street graph** (the differentiated
 piece — no GTFS toolchain does this), author layovers, and answer
 the question every runcut ends in: **peak vehicle requirement** per
-service type.
+service type (QAF-3; the layover recovery/slack split, QAF-62, is
+what makes a cut's feasibility real).
 
 **Why.** Blocks exist but are imported, not cut. This is the
 planner's daily work; the deadhead integration (design domain ×
@@ -65,7 +54,7 @@ exercise of the module-composition thesis.
 checks, the street graph with routing, service-type analysis.
 **Unblocks:** duties/rosters (the layer above), fleet planning.
 
-## 4. The operations → planning feedback loop
+## 3. The operations → planning feedback loop
 
 **What.** Accumulate adherence history from the rt feeds (locally,
 or server-side if it earns a role). Answer "which trips are
@@ -79,7 +68,7 @@ feature here.
 **Exists already:** rt decode, timing profiles, the plan chain.
 **Needs:** accumulation storage (IndexedDB first), reporting ops.
 
-## 5. Walkshed coverage (not crow-flies)
+## 4. Walkshed coverage (not crow-flies)
 
 **What.** Compute real walksheds from stops through the street
 graph (bounded by walk time), and re-run population coverage against
@@ -92,7 +81,7 @@ survives scrutiny. 400 m circles are a placeholder.
 **Exists already:** street graph, population layer, coverage ops
 parameterized already.
 
-## 6. Rider wins (filler that pays visibly)
+## 5. Rider wins (filler that pays visibly)
 
 - **ServiceAlerts** — the third rt feed.
 - **Live replanning** — rt says you miss the connection → replan;
@@ -100,7 +89,7 @@ parameterized already.
 - **PWA / offline** — the app is already local-first; installable
   offline trip planning is nearly free.
 
-## 7. The data plane: module composition
+## 6. The data plane: module composition
 
 **First composition proof:** deadhead estimation (runcut ×
 streets) — two modules composed by the host over documents
@@ -113,9 +102,9 @@ standing non-goal).
 
 ## Sequencing
 
-**1 → 2** (complete the service-change story; a pick that can't
-publish is a document), **3** next (planner's daily work — and
-the runcut's growth toward the operational bid), **4** as the
-long moat. 5 and 6 slot anywhere. 7's discipline (composition is
+**1** first (complete the service-change story; a pick that
+can't publish is a document), **2** next (planner's daily work —
+and the runcut's growth toward the operational bid), **3** as the
+long moat. 4 and 5 slot anywhere. 6's discipline (composition is
 documents only) is the bus's standing law; its first proof is the
-deadhead composition in 3.
+deadhead composition in 2.

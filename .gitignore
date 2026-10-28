@@ -16,7 +16,7 @@ playwright-report
 web/public/basemap.pmtiles
 
 mutants.out/
-# Real C-TRAN GTFS — licensed agency data, fetched for dogfood QA only (docs/CAPS-PLAN.md)
+# Real C-TRAN GTFS — licensed agency data, fetched for dogfood QA only (docs/TESTING.md)
 testdata/ctran-gtfs.zip
 # County roads export for the street soak (`just soak`, COUNTY_GEOJSON) — ~99 MB
 testdata/CTRANTrapezeRoads_*.geojson

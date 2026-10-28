@@ -7,21 +7,19 @@ three architecture laws (the network is the core data model;
 nobody reinvents the monolith inside a module; one NEED per
 module, personas assemble at wire time) are spelled out in
 `crates/AGENTS.md` — that file and this one are updated together.
-Status — what is extracted, what is pending — lives in
-`docs/CAPS-PLAN.md`, the authoritative status doc.
+This doc describes the tree as it is; open work lives in
+`docs/units/`, one file per unit.
 
 ## Layering (bottom up)
 
 ```
-transit-core    GTFS codec: model, zip/CSV parse, calendar, queries,
-                diversion patching, and the WRITE direction —
-                deterministic zip bytes (src/write.rs), so a produced
-                feed has one identity everywhere. Pure, no I/O.
-                The edit-document TYPES (Diversion, DetourPoint)
-                live in transit-sync; the feed-side patch path
-                (apply_diversions, report_all) lost its last caller
-                with set_diversions (U6) — only report_all remains,
-                behind the sync seam's feed-scoped validation.
+transit-core    The GTFS substrate: model, zip/CSV parse, calendar,
+                and the WRITE direction — deterministic zip bytes
+                (src/write.rs), so a produced feed has one identity
+                everywhere. Pure, no I/O. Its feed-side diversion
+                patching and day queries have no bus caller; the
+                crate folds into transit-codec
+                (docs/units/u8-gtfs-substrate.md).
 transit-network The authored network model (planner authority):
                 routes and their DIRECTIONS (`Route.directions`,
                 each named; a pattern runs in at most one —
@@ -83,7 +81,7 @@ transit-network The authored network model (planner authority):
 transit-router  RAPTOR earliest-arrival planning over the network
                 model's materialized day (patterns grouped by actual
                 stop sequence — an edited trip rides its own
-                pattern); GTFS-free since U5. `plan_notice` is what
+                pattern); GTFS-free. `plan_notice` is what
                 a rider is told when a compared plan finds no trip
                 (the arrival a diversion cost, or none within the
                 legs searched).
@@ -254,17 +252,48 @@ below that the network overview (per-service-type analysis —
 planners design types, not calendar dates) and drill-downs per
 entity. There is no planner drawer.
 
+### Parity
+
+An agent (caps-run), the Go server, and the browser a human uses
+run the SAME ops and get the SAME bytes. Any answer the browser
+computes in TypeScript is an answer the other two hosts cannot
+give — so `web/` holds host glue (I/O, fetch and pagination,
+IndexedDB, the clock, settings, polling, the sync POST, the
+capability resolver) and RENDER components (props in, events out,
+formatting), and nothing else. A join, fallback, threshold, record
+builder, or geometry rule in TypeScript is a parity break, however
+small: it lands as an op instead.
+
+Two rulings that follow from it:
+
+- **The live document.** cap-rt answers "what is live" in MODEL
+  vocabulary: an rt snapshot plus the import's trip map resolve
+  into a kernel document of delays per derived trip and stop,
+  addressed by hash; cap-board consumes it by hash. Agency trip ids
+  resolve INSIDE the op, never in a host. Thresholds (the on-time
+  window) are op parameters.
+- **Geometry is a model answer.** "What path does this trip take
+  today" (diversions, the authored alignment, an itinerary leg's
+  ridden segment) answers in an op; `web/` only draws the GeoJSON
+  it is handed.
+
+The WEB GATES in `just test` hold it: no component imports the
+resolver, no host code reads raw rt `stop_updates`, and nothing
+clones a document to mutate it (every change is a NetworkEdit
+through cap-author). Each gate's allowlist only shrinks, and all
+are empty.
+
 File ownership:
 
 - `src/mapview.ts` only shapes GeoJSON: every line the map draws
   is an answer from the bus (cap-runcut `trip_path`, cap-router
   `itinerary_paths`, cap-directory `focus`, cap-divert's draft
   alignment); it turns `[{lat, lon}]` into `[lon, lat]` and
-  computes no geometry (W4).
+  computes no geometry.
 - Components are RENDER-ONLY: props in, events out, or reads of
   `app` state plus calls into the host layer (actions.ts,
   planner.ts, capdemo.svelte.ts). No component imports the
-  resolver (the W0 ratchet in `just test`, empty allowlist).
+  resolver (the WEB GATES in `just test`).
 - `src/capabilities.svelte.ts` is the bus resolver — the ONLY wasm
   loader (components never see the ABI): manifest
   validation, demand-driven load, byte verification against pinned
@@ -307,8 +336,8 @@ and the gates discover it. Nothing central is edited to add one.
 ```
 web/<id>.html                  the page (copy service-design.html; change the script src)
 web/src/uis/<id>/ui.json       the descriptor the picker renders: id (= the directory),
-                               title, summary, questions, ops, components, session, spec,
-                               generated
+                               title, summary, questions, ops, components, session (the
+                               dogfood session: date, feed, open findings), spec, generated
 web/src/uis/<id>/main.ts       imports ../base.css (+ maplibre css if it maps), awaits
                                the host's boot, mounts Shell
 web/src/uis/<id>/Shell.svelte  PLACEMENT ONLY: reads the host's answers state, passes
@@ -375,9 +404,8 @@ The procedure (what the first one did):
 
 1. Dogfood first: run the questions through `caps-run` on real
    data (`docs/TESTING.md`, the dogfood rules), one op per
-   question, and log the session and its findings in
-   `docs/QA-FINDINGS.md`. A question that needs glue is a finding,
-   not a script.
+   question, and log what it found in `docs/QA-FINDINGS.md`. A
+   question that needs glue is a finding, not a script.
 2. Pick a layout that answers those questions in the order they
    are asked. Name it for the need, never for a persona.
 3. Write the host first (every answer adopted as-is: no joins, no
@@ -385,11 +413,11 @@ The procedure (what the first one did):
    lacks in `src/components/` (props in, events out), then the shell.
 4. Add `ui.json`, the page, and `e2e/ui-<id>.spec.mjs`. Run it in
    the browser on the real feed (`just serve testdata/ctran-gtfs.zip`)
-   and check its numbers against the runner session's.
-5. Record the status in `docs/CAPS-PLAN.md` (pinned by the spec and
-   the session).
+   and check its numbers against the runner session's. Record the
+   session in the descriptor's `session` field, and describe the
+   UI below.
 
-Gates (`just test`, GENERATED UIs and W0a): every `src/uis/<id>/`
+Gates (`just test`, GENERATED UIs and the WEB GATES): every `src/uis/<id>/`
 has its `ui.json` (with fields complete, and id equal to the
 directory), its page, and its spec. No generated UI or picker file
 imports the resolver from a `.svelte` file, or imports planner,
@@ -405,8 +433,8 @@ selected route's map beneath them, and the route — its directions,
 one direction's timetable marked against the baseline (scrolling
 inside its column, never widening the page), and the timetable
 gestures.
-Layouts are hand-placed Svelte; as layout documents they belong to
-wire-time assembly (`docs/CAPS-PLAN.md`, standing queue).
+Layouts are hand-placed Svelte; layouts as documents are
+`docs/units/wire-time-assembly.md`.
 
 Frontend conventions and gotchas: `docs/CONVENTIONS.md`.
 
@@ -417,8 +445,7 @@ module, assembled per user at WIRE time from a manifest —
 capability bytes differ per user while the DOCUMENT and the
 contracts stay identical everywhere. Every host instantiates the
 modules it needs — the browser fetches them from the manifest,
-the sync server hosts cap-sync. Where the remaining work stands
-is `docs/CAPS-PLAN.md` (the status authority).
+the sync server hosts cap-sync.
 
 ```
 cap-abi         The seam crate: the flat C ABI as a macro (every
@@ -448,8 +475,9 @@ cap-gtfs        The feed-document capability: GTFS zip →
                 names join are NOT here: they answer over the NETWORK
                 document (cap-board / cap-runcut / cap-calendar /
                 cap-directory — one question, one answer on the bus).
-                Parse + identity alone; the GTFS substrate itself
-                retires in U8 (it folds into transit-codec). CHARTER
+                Parse + identity alone; the GTFS substrate under it
+                folds into transit-codec
+                (docs/units/u8-gtfs-substrate.md). CHARTER
                 CLOSED: parse, export, primitive boundary queries —
                 nothing more goes "in GTFS."
 cap-router      The router capability: RAPTOR earliest-arrival
@@ -552,9 +580,6 @@ cap-runcut      The runcut capability — ONE QUESTION: what does
                 domain code lives in the shared transit-dispatch
                 library; no GTFS layer (arch gate). The UI's blocks
                 panel and trip lines answer through this module.
-                Replaces the dissolved cap-dispatch — a module named
-                for a role is the monolith rebuilt sideways
-                (docs/PLAN.md's criteria).
 cap-calendar    The calendar capability — ONE QUESTION: which
                 service keys run today? active_services over the
                 EFFECTIVE day (a key whose every trip is skipped or
@@ -567,15 +592,13 @@ cap-directory   The directory capability — ONE QUESTION: what
                 exists in the network? The stop list (name-sorted,
                 with the walking-group structure the station board
                 keys on; an optional query narrows it the way a
-                picker's typing does), the names join (stops_by_ids, moved from
-                cap-gtfs — one question, one answer), the route list
+                picker's typing does), the names join (stops_by_ids),
+                the route list
                 (the model's closed mode set), and one route's
                 PATTERNS with their ordered stops — what the
-                diversion editor anchors against (the GTFS
-                direction select is gone; the
-                pattern pick replaced it, and new edit records carry
-                direction_id null — the documented both-directions
-                case the model never matched on). The pickers are
+                diversion editor anchors against (new edit records
+                carry direction_id null — the documented
+                both-directions case). The pickers are
                 model questions, never feed reads; the UI's
                 comboboxes and the map's name lookups read this
                 module (the feed line reads cap-gtfs's load_feed

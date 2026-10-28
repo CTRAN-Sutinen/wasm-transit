@@ -11,11 +11,15 @@ modules it needs.
 **This file is load-bearing, and so are its pointers.** The detail
 lives in the docs below; the rules that keep them from drifting:
 
+- **Docs describe the repo as it is now.** History is git's: no
+  "was", no "moved from", no unit numbers for finished work, no
+  session narratives. Architecture docs are written in the present
+  tense.
 - One doc per topic. Architecture detail lives in
   `docs/ARCHITECTURE.md` (and `crates/AGENTS.md` for the three laws);
-  STATUS lives only in `docs/CAPS-PLAN.md` — never restate status
-  here or anywhere else. Architecture docs may be many, but they
-  must not overlap: each topic has exactly one home.
+  open work lives only in `docs/units/`, one file per unit — never
+  restate status here or anywhere else. Architecture docs may be
+  many, but they must not overlap: each topic has exactly one home.
 - When your work changes the architecture, the ops surface, naming,
   conventions, commands, or testing expectations — update this file
   AND every doc whose topic the change touches, in the same change,
@@ -23,13 +27,13 @@ lives in the docs below; the rules that keep them from drifting:
 - When content moves between docs, fix every reference to it in the
   same change. A pointer to a section that no longer exists is a
   broken build for the next agent.
-- Do not mark work done in `docs/CAPS-PLAN.md` that is not done.
-  A DONE claim NAMES ITS PIN — the gate, e2e spec, or dogfood
-  session that proves it — and never claims more than one grade
-  at a time: on-the-bus, UI-reads-the-bus, and dogfooded are three
-  different claims. A claim whose pin is stale (a spec that no
-  longer runs, a gate that no longer exists) is false
-  until re-pinned. Stale instructions are how the next agent
+- **Deleting a unit file is the DONE claim** (`docs/units/README.md`).
+  Do not delete one whose work is not done. The change that deletes
+  it NAMES ITS PIN — the gate, e2e spec, or dogfood session that
+  proves it — and describes what landed in the architecture docs.
+  On-the-bus, UI-reads-the-bus, and dogfooded are three different
+  claims; a unit missing a grade stays open. A fixed QA finding is
+  deleted the same way. Stale instructions are how the next agent
   breaks the build.
 - If a section contradicts the code, the code wins for the moment
   and the section must be fixed immediately.
@@ -40,16 +44,14 @@ Where the detail lives:
   under `crates/` (enforced by arch gates in `just test`)
 - `docs/ARCHITECTURE.md` — the architecture reference: per-crate
   detail, server, web, the capability bus and its rules
-- `docs/PLAN.md` — THE plan: the mechanical decomposition of the
-  remaining monolith, unit by unit (caps are NEEDS, personas
-  assemble at wire time)
-- `docs/CAPS-PLAN.md` — THE status doc: what is done, what is open
-  (read PLAN.md then this before touching anything)
+- `docs/units/` — the open work, one file per unit (read its
+  README before touching anything); a unit's file is deleted when
+  it lands
 - `docs/CONVENTIONS.md` — gotchas, Rust/wasm/ops and frontend
 - `docs/TESTING.md` — the testing expectations and the dogfood-QA
   rules
-- `docs/QA-FINDINGS.md` — the real-data QA stream: dogfood session
-  findings (defects, op/UI/data gaps), each pinned and statused
+- `docs/QA-FINDINGS.md` — the open real-data findings (defects,
+  op/UI/data gaps), each pinned; deleted when fixed
 - `docs/ROADMAP.md` — the sequenced feature plan (direction changes)
 
 ## Commands
@@ -85,10 +87,11 @@ cargo/npm/go module fetches are fine.
 
 ## Architecture
 
-**Two laws govern every crate** (spelled out and enforced — see
+**Three laws govern every crate** (spelled out and enforced — see
 `crates/AGENTS.md`): the NETWORK is the core data model, GTFS is a
-serialization spec for external data sharing; and nobody reinvents
-the monolith inside a module.
+serialization spec for external data sharing; nobody reinvents
+the monolith inside a module; and one NEED per module — personas
+assemble at wire time.
 
 ```
 transit-core     GTFS codec substrate (parse, calendar, deterministic zip write)
@@ -156,8 +159,8 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
   wire contract.
 - **Parity**: the browser, caps-run, and the Go server run the
   same ops and get the same bytes — `web/` is host glue plus
-  render components, never answers (`docs/PLAN.md`, the web
-  cleanup; ratcheted in `just test`).
+  render components, never answers (`docs/ARCHITECTURE.md`, web
+  section, "Parity"; ratcheted in `just test`).
 - New ops go through the extraction pattern (crate boundary
   first, capability wrapper second): the monolith that ops were
   extracted FROM is gone, so a new op is a library + a capability
