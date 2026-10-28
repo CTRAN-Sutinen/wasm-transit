@@ -25,7 +25,8 @@
 //!   contract);
 //! * **live** — THE live document (transit-live), minted by cap-rt
 //!   from an rt snapshot in model vocabulary; the board reads its
-//!   predictions and classifies under its window — no host joins rt;
+//!   predictions and alerts and classifies under its window — no host
+//!   joins rt;
 //! * **watchlist** — the personal document (v1 notes + colors,
 //!   v2 labels; the migration maps note → label and reports the
 //!   dropped color).
@@ -149,8 +150,14 @@ pub enum Request {
     /// document (rows ordered by when the bus actually leaves; a late
     /// bus scheduled before `from_secs` that has not left is still
     /// on the board; each row carries its expected time, delay, and
-    /// status). A stop with nothing of its own that belongs to a
-    /// walking group (a station pin, a bay) answers the group's
+    /// status). Each row names its route (short and long), the stop it
+    /// leaves from, and where it is going as the sign says there. The
+    /// departures the in-force edits took away from the stop are
+    /// `skipped`, each with the diversion that skips it; the live
+    /// document's service alerts about the board ride along (the board
+    /// carries them, each row names the ones about it). A stop with
+    /// nothing of its own — nothing leaving, nothing skipped — that
+    /// belongs to a walking group (a station pin) answers the group's
     /// board, `pooled`, each row naming its bay.
     StopBoard {
         network_hash: String,
@@ -368,8 +375,21 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
             let live = live_hash.as_deref().map(live_arc).transpose()?;
+            let edits = match edits_hash.as_deref() {
+                Some(hash) => transit_dispatch::day_edits(&network, parse_date(&date)?, &edits_arc(hash)?)
+                    .map_err(|e| format!("the network does not materialize: {e}"))?,
+                None => None,
+            };
             Ok(Response::StopBoard {
-                board: transit_dispatch::stop_board(&network, &day, &stop_id, from_secs, limit as usize, live.as_deref()),
+                board: transit_dispatch::stop_board(
+                    &network,
+                    &day,
+                    &stop_id,
+                    from_secs,
+                    limit as usize,
+                    live.as_deref(),
+                    edits.as_ref(),
+                ),
             })
         }
         Request::LoadWatchlist { document } => load_watchlist(&document),

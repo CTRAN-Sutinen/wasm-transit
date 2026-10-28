@@ -226,3 +226,24 @@ fn a_timetable_against_its_baseline_marks_what_changed() {
     let plain = timetable(&next, "10", None, "weekday").unwrap();
     assert!(plain.trips.iter().all(|x| !x.added) && plain.removed.is_empty(), "no baseline, no marks");
 }
+
+/// QAF-67: a row naming a route carries its LONG name ("Lincoln")
+/// beside the short one ("12") — a route with one answers it, one
+/// without answers none. Every listing row that names a route: the
+/// route list (entities), a stop's serving routes, the timetable's
+/// header.
+#[test]
+fn a_route_row_answers_its_long_name_when_it_has_one() {
+    let mut net = network();
+    assert_eq!(entity_rows(&net, EntityKind::Route, "")[0].long_name, None, "no long name, none answered");
+    assert_eq!(stop_detail(&net, "B").unwrap().routes[0].long_name, None);
+    assert_eq!(timetable(&net, "10", None, "weekday").unwrap().route_long_name, None);
+
+    net.routes.get_mut("10").unwrap().long_name = Some("Lincoln".into());
+    let route = &entity_rows(&net, EntityKind::Route, "")[0];
+    assert_eq!((route.name.as_str(), route.long_name.as_deref()), ("Route 10", Some("Lincoln")));
+    assert_eq!(stop_detail(&net, "B").unwrap().routes[0].long_name.as_deref(), Some("Lincoln"));
+    assert_eq!(timetable(&net, "10", None, "weekday").unwrap().route_long_name.as_deref(), Some("Lincoln"));
+    // Rows naming no route carry none.
+    assert!(entity_rows(&net, EntityKind::Stop, "").iter().all(|r| r.long_name.is_none()));
+}

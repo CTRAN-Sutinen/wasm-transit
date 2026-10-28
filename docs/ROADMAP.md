@@ -83,9 +83,9 @@ parameterized already.
 
 ## 5. Rider wins (filler that pays visibly)
 
-- **ServiceAlerts** — the third rt feed.
-- **Live replanning** — rt says you miss the connection → replan;
-  the artifact has RAPTOR and the rt decode; they have not met.
+- **Live replanning** — rt says you miss the connection → replan.
+  The router plans over the live document (`live_hash`); no UI
+  re-plans when a new snapshot breaks the rider's connection.
 - **PWA / offline** — the app is already local-first; installable
   offline trip planning is nearly free.
 

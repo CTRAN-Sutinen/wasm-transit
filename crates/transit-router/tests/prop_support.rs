@@ -25,7 +25,32 @@ pub fn model_day(
 }
 
 /// Serialize a generated spec into a GTFS zip.
+#[allow(dead_code)]
 pub fn build_zip(n_stops: usize, trips: &[TripSpec]) -> Vec<u8> {
+    let timed: Vec<(Vec<u32>, Vec<u32>)> = trips
+        .iter()
+        .map(|t| (t.stops.clone(), (0..t.stops.len() as u32).map(|seq| t.start + seq * t.step).collect()))
+        .collect();
+    build_zip_timed(n_stops, 0.0008, &timed)
+}
+
+/// [`build_zip`] with the stops `spacing_deg` of latitude apart
+/// (0.0008° ≈ 89 m: every near pair walkable; 0.003° ≈ 333 m: no
+/// footpaths at all).
+#[allow(dead_code)]
+pub fn build_zip_spaced(n_stops: usize, spacing_deg: f64, trips: &[TripSpec]) -> Vec<u8> {
+    let timed: Vec<(Vec<u32>, Vec<u32>)> = trips
+        .iter()
+        .map(|t| (t.stops.clone(), (0..t.stops.len() as u32).map(|seq| t.start + seq * t.step).collect()))
+        .collect();
+    build_zip_timed(n_stops, spacing_deg, &timed)
+}
+
+/// Serialize trips with explicit per-visit times (arrival =
+/// departure) into a GTFS zip: trip `i` is `t{i}`, stop `n` is
+/// `s{n}`, one route, one every-day service.
+#[allow(dead_code)]
+pub fn build_zip_timed(n_stops: usize, spacing_deg: f64, trips: &[(Vec<u32>, Vec<u32>)]) -> Vec<u8> {
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let opts = zip::write::SimpleFileOptions::default();
     let add = |w: &mut zip::ZipWriter<std::io::Cursor<Vec<u8>>>, name: &str, body: String| {
@@ -38,7 +63,7 @@ pub fn build_zip(n_stops: usize, trips: &[TripSpec]) -> Vec<u8> {
 
     let mut stops = String::from("stop_id,stop_name,stop_lat,stop_lon\n");
     for i in 0..n_stops {
-        let lat = 45.0 + (i as f64) * 0.0008;
+        let lat = 45.0 + (i as f64) * spacing_deg;
         stops.push_str(&format!("s{i},Stop {i},{lat:.6},-122.500000\n"));
     }
     add(&mut w, "stops.txt", stops);
@@ -48,10 +73,9 @@ pub fn build_zip(n_stops: usize, trips: &[TripSpec]) -> Vec<u8> {
 
     let mut trips_txt = String::from("route_id,service_id,trip_id\n");
     let mut stop_times = String::from("trip_id,arrival_time,departure_time,stop_id,stop_sequence\n");
-    for (i, t) in trips.iter().enumerate() {
+    for (i, (stops, times)) in trips.iter().enumerate() {
         trips_txt.push_str(&format!("1,ALL,t{i}\n"));
-        for (seq, &s) in t.stops.iter().enumerate() {
-            let secs = t.start + seq as u32 * t.step;
+        for (seq, (&s, &secs)) in stops.iter().zip(times).enumerate() {
             let hh = secs / 3600;
             let mm = (secs % 3600) / 60;
             let ss = secs % 60;
@@ -65,4 +89,85 @@ pub fn build_zip(n_stops: usize, trips: &[TripSpec]) -> Vec<u8> {
     add(&mut w, "stop_times.txt", stop_times);
 
     w.finish().unwrap().into_inner()
+}
+
+/// Unreachable in [`oracle_arrival`].
+#[allow(dead_code)]
+pub const INF: u32 = u32::MAX;
+
+/// The deliberately dumb earliest-arrival oracle: Bellman-Ford-style
+/// relaxation over every (trip, board, alight) triple and every
+/// footpath of the built network, to a fixpoint, with no leg bound.
+/// It shares no code with the round-based search.
+#[allow(dead_code)]
+pub fn oracle_arrival(net: &transit_router::RouterNetwork, from: usize, to: usize, depart: u32) -> u32 {
+    let n = net.stops.len();
+    let mut arr = vec![INF; n];
+    arr[from] = depart;
+    loop {
+        let mut changed = false;
+        for pattern in &net.patterns {
+            for trip in &pattern.trips {
+                for i in 0..pattern.stop_positions.len() {
+                    let si = pattern.stop_positions[i] as usize;
+                    if arr[si] == INF || arr[si] > trip.departures[i] {
+                        continue;
+                    }
+                    for j in i + 1..pattern.stop_positions.len() {
+                        let sj = pattern.stop_positions[j] as usize;
+                        if trip.arrivals[j] < arr[sj] {
+                            arr[sj] = trip.arrivals[j];
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+        for (s, node) in net.stops.iter().enumerate() {
+            if arr[s] == INF {
+                continue;
+            }
+            for edge in &node.footpaths {
+                let candidate = arr[s] + edge.walk_secs;
+                let t = edge.to as usize;
+                if candidate < arr[t] {
+                    arr[t] = candidate;
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            return arr[to];
+        }
+    }
+}
+
+/// An itinerary makes chronological sense from `depart`: legs connect
+/// stop to stop, nothing boards before the previous leg ended, every
+/// transit leg alights at or after it boards, and the last leg ends
+/// at the promised arrival at the destination.
+#[allow(dead_code)]
+pub fn assert_feasible(it: &transit_router::Itinerary, depart: u32) {
+    use transit_router::Leg;
+    assert_eq!(it.depart_secs, depart, "the itinerary leaves when it says");
+    let mut t = depart;
+    let mut place: &str = &it.from_stop_id;
+    for leg in &it.legs {
+        match leg {
+            Leg::Walk { from_stop_id, to_stop_id, walk_secs, .. } => {
+                assert_eq!(place, from_stop_id, "walk starts where the last leg ended");
+                t += walk_secs;
+                place = to_stop_id;
+            }
+            Leg::Transit { board_stop_id, board_secs, alight_stop_id, alight_secs, .. } => {
+                assert_eq!(place, board_stop_id, "transit boards where the last leg ended");
+                assert!(*board_secs >= t, "boards at {board_secs} before the previous leg ended at {t}");
+                assert!(*alight_secs >= *board_secs, "alights before boarding");
+                t = *alight_secs;
+                place = alight_stop_id;
+            }
+        }
+    }
+    assert_eq!(place, it.to_stop_id, "the itinerary ends at the destination");
+    assert_eq!(t, it.arrival_secs, "the last leg ends at the promised arrival");
 }

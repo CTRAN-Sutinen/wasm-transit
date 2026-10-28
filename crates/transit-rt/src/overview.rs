@@ -1,5 +1,6 @@
 //! Host-friendly view of a decoded GTFS-rt feed: header, entity
-//! counts by type, trip updates (delays), and live vehicles — the
+//! counts by type, trip updates (delays), live vehicles, and service
+//! alerts — the
 //! serialization target of cap-rt's `decode` op, shared with every
 //! host that wants meaning out of the protobuf bytes.
 
@@ -47,6 +48,41 @@ pub struct VehicleView {
     pub label: Option<String>,
 }
 
+/// One informed entity of an alert, in the feed's vocabulary (the
+/// live document resolves it into the network's).
+#[derive(Debug, Clone, Default, Serialize, TS)]
+#[ts(export)]
+pub struct InformedView {
+    pub agency_id: Option<String>,
+    pub route_id: Option<String>,
+    pub route_type: Option<i32>,
+    pub trip_id: Option<String>,
+    /// The trip instance's start ("HH:MM:SS"), for a frequency trip.
+    pub trip_start_time: Option<String>,
+    pub stop_id: Option<String>,
+    pub direction_id: Option<u32>,
+}
+
+/// One service alert from an Alerts feed. Text is the untagged
+/// translation, else the first.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct AlertView {
+    pub entity_id: String,
+    pub cause: transit_live::AlertCause,
+    pub effect: transit_live::AlertEffect,
+    pub severity: transit_live::AlertSeverity,
+    pub header: Option<String>,
+    pub description: Option<String>,
+    pub url: Option<String>,
+    /// When to show it (the communication period, else the deprecated
+    /// active period); empty = always.
+    pub communication: Vec<transit_live::AlertPeriod>,
+    /// When service is affected; empty = while shown.
+    pub impact: Vec<transit_live::AlertPeriod>,
+    pub informed: Vec<InformedView>,
+}
+
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct RtOverview {
@@ -61,6 +97,8 @@ pub struct RtOverview {
     pub trips: Vec<TripUpdateView>,
     /// Live vehicles with positions, for the map.
     pub vehicle_positions: Vec<VehicleView>,
+    /// The feed's service alerts.
+    pub service_alerts: Vec<AlertView>,
 }
 
 /// Rendered trip updates, capped for UI sanity. Kept generous: the UI
@@ -83,6 +121,7 @@ pub fn decode_overview(bytes: &[u8]) -> Result<RtOverview, String> {
         alerts: 0,
         trips: Vec::new(),
         vehicle_positions: Vec::new(),
+        service_alerts: Vec::new(),
     };
 
     for entity in &msg.entity {
@@ -123,9 +162,92 @@ pub fn decode_overview(bytes: &[u8]) -> Result<RtOverview, String> {
                 });
             }
         }
-        if entity.alert.is_some() {
+        if let Some(alert) = entity.alert.as_ref() {
             overview.alerts += 1;
+            overview.service_alerts.push(alert_view(&entity.id, alert));
         }
     }
     Ok(overview)
+}
+
+fn alert_view(entity_id: &str, alert: &crate::gtfs_rt::Alert) -> AlertView {
+    use crate::gtfs_rt::alert::{Cause, Effect, SeverityLevel};
+    use transit_live::{AlertCause as C, AlertEffect as E, AlertPeriod, AlertSeverity as S};
+    let periods = |ranges: &[crate::gtfs_rt::TimeRange]| {
+        ranges.iter().map(|r| AlertPeriod { start: r.start, end: r.end }).collect::<Vec<_>>()
+    };
+    let cause = match alert.cause() {
+        Cause::UnknownCause => C::Unknown,
+        Cause::OtherCause => C::Other,
+        Cause::TechnicalProblem => C::TechnicalProblem,
+        Cause::Strike => C::Strike,
+        Cause::Demonstration => C::Demonstration,
+        Cause::Accident => C::Accident,
+        Cause::Holiday => C::Holiday,
+        Cause::Weather => C::Weather,
+        Cause::Maintenance => C::Maintenance,
+        Cause::Construction => C::Construction,
+        Cause::PoliceActivity => C::PoliceActivity,
+        Cause::MedicalEmergency => C::MedicalEmergency,
+        Cause::SpecialEvent => C::SpecialEvent,
+    };
+    let effect = match alert.effect() {
+        Effect::NoService => E::NoService,
+        Effect::ReducedService => E::ReducedService,
+        Effect::SignificantDelays => E::SignificantDelays,
+        Effect::Detour => E::Detour,
+        Effect::AdditionalService => E::AdditionalService,
+        Effect::ModifiedService => E::ModifiedService,
+        Effect::OtherEffect => E::Other,
+        Effect::UnknownEffect => E::Unknown,
+        Effect::StopMoved => E::StopMoved,
+        Effect::NoEffect => E::NoEffect,
+        Effect::AccessibilityIssue => E::AccessibilityIssue,
+    };
+    let severity = match alert.severity_level() {
+        SeverityLevel::UnknownSeverity => S::Unknown,
+        SeverityLevel::Info => S::Info,
+        SeverityLevel::Warning => S::Warning,
+        SeverityLevel::Severe => S::Severe,
+    };
+    #[allow(deprecated)]
+    let communication = if alert.communication_period.is_empty() {
+        periods(&alert.active_period)
+    } else {
+        periods(&alert.communication_period)
+    };
+    AlertView {
+        entity_id: entity_id.to_string(),
+        cause,
+        effect,
+        severity,
+        header: translated(alert.header_text.as_ref()),
+        description: translated(alert.description_text.as_ref()),
+        url: translated(alert.url.as_ref()),
+        communication,
+        impact: periods(&alert.impact_period),
+        informed: alert
+            .informed_entity
+            .iter()
+            .map(|e| InformedView {
+                agency_id: e.agency_id.clone(),
+                route_id: e.route_id.clone(),
+                route_type: e.route_type,
+                trip_id: e.trip.as_ref().and_then(|t| t.trip_id.clone()),
+                trip_start_time: e.trip.as_ref().and_then(|t| t.start_time.clone()),
+                stop_id: e.stop_id.clone(),
+                direction_id: e.direction_id,
+            })
+            .collect(),
+    }
+}
+
+/// The untagged translation, else the first.
+fn translated(text: Option<&crate::gtfs_rt::TranslatedString>) -> Option<String> {
+    let translations = &text?.translation;
+    translations
+        .iter()
+        .find(|t| t.language.as_deref().is_none_or(str::is_empty))
+        .or(translations.first())
+        .map(|t| t.text.clone())
 }

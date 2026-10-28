@@ -21,18 +21,20 @@ dogfood session has not run.
 
 | # | op(s) | state |
 |---|---|---|
-| 1 | directory `stops` (by name) | by name: op exists. Near me: gap, QAF-70 |
-| 2 | rt `live` → board `stop_board` (`live_hash`) | op exists; rows lack long names (QAF-67), headsigns (QAF-68), bay names (QAF-69) |
-| 3 | rt `live`, `trip_progress` | op exists; early reads on time, QAF-71 (Blocked: D-7) |
-| 4 | router `plan` | op exists; ignores live data, QAF-73 |
-| 5 | none | gap, QAF-72 (no latest-departure query) |
-| 6 | board `stop_board` / router `plan_compare` with `edits_hash` | partial: QAF-74, QAF-75; no service-alerts decode (log it in the session) |
+| 1 | directory `stops` (by name), `stops_near` (a point) | ops exist; a colloquial name finds nothing, QAF-70 |
+| 2 | rt `live` → board `stop_board` (`live_hash`) | op exists |
+| 3 | rt `live`, `trip_progress` | op exists |
+| 4 | router `plan` (`live_hash`) | op exists |
+| 5 | router `plan_arrive_by` | op exists |
+| 6 | rt `live` (`alerts_hash`) → board `stop_board` (`alerts`, `skipped`); router `plan_compare` with `edits_hash` (`notice`) | ops exist |
 | 7 | board `watchlist_board` | op exists |
 
-The rider findings in `docs/QA-FINDINGS.md` (QAF-66–75) answer
-questions 1–6 on an earlier import. Step 3 re-runs them against the
-reference import as one sequence, re-confirms those findings, and
-logs what it finds for 6 and 7.
+The open rider findings in `docs/QA-FINDINGS.md` (QAF-66, QAF-70)
+come from an earlier import. Step 3 runs every question against the
+reference import as one sequence, with a live snapshot that
+includes C-TRAN's service-alerts feed. No real-data session has
+read alerts, a live plan, or `skipped` yet. Step 3 re-confirms the
+open findings and logs what it finds for 6 and 7.
 
 ## Scope beyond the ops
 

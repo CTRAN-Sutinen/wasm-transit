@@ -86,8 +86,12 @@ pub enum Request {
     /// every status classified under `window` (recorded in the
     /// document), plus the summary a status panel reads (vehicles by
     /// status, the late list worst first — late trips when there are
-    /// no positions). `rt_hash` names trip updates, `vp_hash` vehicle
-    /// positions; a combined feed passes only `rt_hash`. At least one.
+    /// no positions), and the SERVICE ALERTS in force at the snapshot's
+    /// moment, their informed entities resolved into routes, stops, and
+    /// trip instances. `rt_hash` names trip updates, `vp_hash` vehicle
+    /// positions, `alerts_hash` service alerts (alerts are gathered from
+    /// every snapshot given); a combined feed passes only `rt_hash`. At
+    /// least one.
     Live {
         network_hash: String,
         #[serde(default)]
@@ -99,6 +103,9 @@ pub enum Request {
         #[serde(default)]
         #[ts(optional)]
         vp_hash: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        alerts_hash: Option<String>,
         #[serde(default)]
         #[ts(optional)]
         window: Option<OnTimeWindow>,
@@ -221,15 +228,25 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 trips: transit_rt::late_trips(&network, &snapshot, positions.as_deref(), min_delay_secs),
             })
         }
-        Request::Live { network_hash, boundary_hash, rt_hash, vp_hash, window, late_limit } => {
-            if rt_hash.is_none() && vp_hash.is_none() {
-                return Err("live needs a snapshot: rt_hash (trip updates) and/or vp_hash (vehicle positions)".into());
+        Request::Live { network_hash, boundary_hash, rt_hash, vp_hash, alerts_hash, window, late_limit } => {
+            if rt_hash.is_none() && vp_hash.is_none() && alerts_hash.is_none() {
+                return Err(
+                    "live needs a snapshot: rt_hash (trip updates), vp_hash (vehicle positions), and/or alerts_hash (service alerts)".into(),
+                );
             }
             let network = network_arc(&network_hash)?;
             let boundary = boundary_arc(boundary_hash.as_deref())?;
             let delays = rt_hash.as_deref().map(snapshot_arc).transpose()?;
             let positions = vp_hash.as_deref().map(snapshot_arc).transpose()?;
-            let live = transit_rt::live_day(&network, &boundary, delays.as_deref(), positions.as_deref(), window.unwrap_or_default());
+            let alerts = alerts_hash.as_deref().map(snapshot_arc).transpose()?;
+            let live = transit_rt::live_day(
+                &network,
+                &boundary,
+                delays.as_deref(),
+                positions.as_deref(),
+                alerts.as_deref(),
+                window.unwrap_or_default(),
+            );
             let summary = transit_live::summarize(&live, late_limit.unwrap_or(15) as usize);
             Ok(Response::Live { live_hash: cap_abi::canonical_hash(&live)?, live, summary })
         }

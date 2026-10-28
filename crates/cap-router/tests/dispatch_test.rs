@@ -11,7 +11,16 @@
 //! 3. the compare facet is the diversion delta: the patched day
 //!    against the unpatched one — one materialization apart, and no
 //!    baseline when no edit is in force;
-//! 4. unknown hashes and garbage are errors, never panics.
+//! 4. unknown hashes and garbage are errors, never panics;
+//! 5. the compare facet's notice fires on ANY change the diversion
+//!    makes to the trip (no trip, a later arrival, a diverted ride),
+//!    structured, with its text line;
+//! 6. with a live document, plans ride the predicted times (the
+//!    graph keyed by the live hash too), and legs say so;
+//! 7. arrive-by answers the latest departure that arrives by the
+//!    deadline — the service day's end when none is given;
+//! 8. a leg names its route (short and long) and the sign at the
+//!    boarding visit.
 
 use transit_network::Network;
 use transit_sync::{EditRecord, EditStatus};
@@ -95,6 +104,7 @@ fn plan_answers_over_the_materialized_day() {
         date: DATE.into(),
         depart_secs: 7 * 3600,
         max_legs: 4,
+        live_hash: None,
     })
     .expect("plan dispatch");
     let cap_router::Response::Plan { itinerary: Some(it) } = plan else {
@@ -125,6 +135,7 @@ fn plan_is_none_on_an_unreachable_pair_or_day() {
         date: "2026-10-25".into(), // Sunday
         depart_secs: 10 * 3600,
         max_legs: 4,
+        live_hash: None,
     })
     .unwrap();
     let cap_router::Response::Plan { itinerary } = late else { panic!("plan") };
@@ -139,6 +150,7 @@ fn plan_is_none_on_an_unreachable_pair_or_day() {
         date: DATE.into(),
         depart_secs: 0,
         max_legs: 4,
+        live_hash: None,
     })
     .expect_err("unknown hash");
     assert!(err.contains("unknown network"));
@@ -157,16 +169,23 @@ fn compare_answers_the_diversion_delta() {
         date: DATE.into(),
         depart_secs: 7 * 3600,
         max_legs: 4,
+        live_hash: None,
     })
     .expect("compare dispatch");
     let cap_router::Response::PlanCompare { active, baseline, notice } = cmp else {
         panic!("compare")
     };
-    assert_eq!(notice, None, "a found trip needs no notice");
     // The diversion adds 300 s to route 10's kept segment: the
-    // patched day arrives 08:15; the unpatched one 08:10.
+    // patched day arrives 08:15; the unpatched one 08:10 — and the
+    // rider is told: 5 min later, on route 10's detour (QAF-74).
     assert_eq!(active.expect("active plan").arrival_secs, 8 * 3600 + 15 * 60);
     assert_eq!(baseline.expect("baseline world").arrival_secs, 8 * 3600 + 10 * 60);
+    let notice = notice.expect("a later arrival carries a notice");
+    assert_eq!(notice.kind, transit_router::NoticeKind::Later);
+    assert_eq!((notice.delay_secs, notice.minutes_lost), (Some(300), Some(5)));
+    assert_eq!(notice.baseline_arrival_secs, Some(8 * 3600 + 10 * 60));
+    assert_eq!(notice.routes, vec!["10".to_string()]);
+    assert!(notice.text.contains("5 min later"), "{}", notice.text);
 
     // No edit document: there is no second world to compare
     // against — the baseline is honestly absent.
@@ -178,6 +197,7 @@ fn compare_answers_the_diversion_delta() {
         date: DATE.into(),
         depart_secs: 7 * 3600,
         max_legs: 4,
+        live_hash: None,
     })
     .expect("compare dispatch");
     let cap_router::Response::PlanCompare { active, baseline, .. } = plain else {
@@ -195,12 +215,14 @@ fn compare_answers_the_diversion_delta() {
         date: DATE.into(),
         depart_secs: 40 * 3600,
         max_legs: 4,
+        live_hash: None,
     })
     .expect("compare dispatch");
     let cap_router::Response::PlanCompare { active: None, notice: Some(notice), .. } = late else {
         panic!("an unreachable plan carries its notice")
     };
-    assert!(notice.contains("within 4 legs"), "{notice}");
+    assert_eq!(notice.kind, transit_router::NoticeKind::NoTrip);
+    assert!(notice.text.contains("within 4 legs"), "{}", notice.text);
 }
 
 #[test]
@@ -238,6 +260,7 @@ fn an_itinerary_draws_its_ridden_segments() {
         date: DATE.into(),
         depart_secs: 7 * 3600,
         max_legs: 4,
+        live_hash: None,
     })
     .unwrap() else {
         panic!("plan")
@@ -271,4 +294,201 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     assert_eq!(via_bytes, via_json);
     let bad = cap_router::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
+}
+
+/// A live document over the fixture (built from JSON, so fields this
+/// module does not read keep their defaults): t10 predicted
+/// `delay` s late at A and B.
+fn live_t10(delay: i32) -> transit_live::LiveDay {
+    let stop = |stop: &str, sched: u32| serde_json::json!({
+        "stop": stop, "scheduled_departure": sched, "arrival_delay": delay,
+        "departure_delay": delay, "predicted_departure": (sched as i64 + delay as i64) as u32,
+    });
+    serde_json::from_value(serde_json::json!({
+        "window": { "early_secs": 0, "late_secs": 60, "very_late_secs": 300 },
+        "trips": [{
+            "trip": "t10", "start_secs": 8 * 3600, "route": "10", "route_name": "10",
+            "worst_delay_secs": delay, "status": "late",
+            "stops": [stop("A", 8 * 3600), stop("B", 8 * 3600 + 600)],
+        }],
+        "vehicles": [],
+        "unmatched_trips": 0,
+    }))
+    .expect("a valid live document")
+}
+
+fn load_live(live: transit_live::LiveDay) -> String {
+    match cap_router::dispatch(cap_router::Request::LoadLive { live }).expect("load_live") {
+        cap_router::Response::LoadLive { live_hash } => live_hash,
+        _ => panic!("load_live"),
+    }
+}
+
+fn plan_a_b(network_hash: &str, live_hash: Option<String>) -> transit_router::Itinerary {
+    match cap_router::dispatch(cap_router::Request::Plan {
+        network_hash: network_hash.into(),
+        edits_hash: None,
+        from: "A".into(),
+        to: "B".into(),
+        date: DATE.into(),
+        depart_secs: 7 * 3600,
+        max_legs: 4,
+        live_hash,
+    })
+    .expect("plan")
+    {
+        cap_router::Response::Plan { itinerary: Some(it) } => it,
+        other => panic!("A to B is reachable, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_live_documents_identity_is_its_canonical_hash() {
+    let live = live_t10(120);
+    use sha2::Digest as _;
+    let expected = format!("sha256:{:x}", sha2::Sha256::digest(serde_json::to_string(&live).unwrap().as_bytes()));
+    assert_eq!(load_live(live), expected);
+}
+
+#[test]
+fn a_live_plan_rides_the_predicted_times() {
+    let hash = load_network();
+    let live = load_live(live_t10(120));
+    // Schedule: t10 leaves 08:00, arrives 08:10 — no predictions.
+    let scheduled = plan_a_b(&hash, None);
+    assert_eq!(scheduled.arrival_secs, 8 * 3600 + 600);
+    let transit_router::Leg::Transit { board_delay_secs: None, alight_delay_secs: None, .. } = &scheduled.legs[0] else {
+        panic!("a schedule-only leg states no delay: {:?}", scheduled.legs[0])
+    };
+    // Live: t10 predicted 2 min late — leaves 08:02, arrives 08:12,
+    // and the leg says both times are predictions.
+    let predicted = plan_a_b(&hash, Some(live.clone()));
+    assert_eq!(predicted.arrival_secs, 8 * 3600 + 720);
+    match &predicted.legs[0] {
+        transit_router::Leg::Transit { trip, board_secs, board_delay_secs, alight_delay_secs, .. } => {
+            assert_eq!(trip, "t10");
+            assert_eq!((*board_secs, *board_delay_secs, *alight_delay_secs), (8 * 3600 + 120, Some(120), Some(120)));
+        }
+        other => panic!("a transit leg, got {other:?}"),
+    }
+    // The schedule-only graph is not the live one (keyed apart).
+    assert_eq!(plan_a_b(&hash, None).arrival_secs, 8 * 3600 + 600);
+
+    // Unknown live document: an error, never a silent schedule.
+    let err = cap_router::dispatch(cap_router::Request::Plan {
+        network_hash: hash,
+        edits_hash: None,
+        from: "A".into(),
+        to: "B".into(),
+        date: DATE.into(),
+        depart_secs: 7 * 3600,
+        max_legs: 4,
+        live_hash: Some("sha256:missing".into()),
+    })
+    .expect_err("unknown live hash");
+    assert!(err.contains("unknown live document"), "{err}");
+}
+
+#[test]
+fn a_compared_plan_reads_live_in_both_worlds() {
+    let hash = load_network();
+    let edits = load_edits(&hash, vec![record(300)]);
+    let live = load_live(live_t10(120));
+    let cap_router::Response::PlanCompare { active, baseline, notice } = cap_router::dispatch(
+        cap_router::Request::PlanCompare {
+            network_hash: hash,
+            edits_hash: Some(edits),
+            from: "A".into(),
+            to: "B".into(),
+            date: DATE.into(),
+            depart_secs: 7 * 3600,
+            max_legs: 4,
+            live_hash: Some(live),
+        },
+    )
+    .unwrap() else {
+        panic!("compare")
+    };
+    // Baseline: the unpatched t10, 2 min late → 08:12. Active: the
+    // patched t10's delay is against the PUBLISHED schedule (its
+    // detour time is already in what rt predicts) → 08:12 too, and
+    // it rides the diverted t10.
+    assert_eq!(baseline.unwrap().arrival_secs, 8 * 3600 + 720);
+    assert_eq!(active.unwrap().arrival_secs, 8 * 3600 + 720);
+    let notice = notice.expect("a diverted ride carries a notice");
+    assert_eq!(notice.kind, transit_router::NoticeKind::Diverted);
+    assert_eq!(notice.routes, vec!["10".to_string()]);
+}
+
+#[test]
+fn arrive_by_answers_the_latest_departure() {
+    let hash = load_network();
+    let arrive_by = |by: Option<u32>| match cap_router::dispatch(cap_router::Request::PlanArriveBy {
+        network_hash: hash.clone(),
+        edits_hash: None,
+        from: "A".into(),
+        to: "B".into(),
+        date: DATE.into(),
+        arrive_by_secs: by,
+        max_legs: 4,
+        live_hash: None,
+    })
+    .expect("plan_arrive_by")
+    {
+        cap_router::Response::PlanArriveBy { arrive_by_secs, itinerary } => (arrive_by_secs, itinerary),
+        other => panic!("plan_arrive_by, got {other:?}"),
+    };
+    // By 08:35: t20 (08:20 → 08:30) is the latest that makes it.
+    let (by, it) = arrive_by(Some(8 * 3600 + 35 * 60));
+    assert_eq!(by, 8 * 3600 + 35 * 60);
+    let it = it.expect("t20 arrives 08:30");
+    assert_eq!((it.depart_secs, it.arrival_secs), (8 * 3600 + 20 * 60, 8 * 3600 + 30 * 60));
+    // No deadline: the last bus home — t30 08:40 → 08:50, the day's
+    // last arrival (the deadline answered is the day's end).
+    let (by, it) = arrive_by(None);
+    assert_eq!(by, 8 * 3600 + 50 * 60, "Friday's last arrival");
+    let it = it.expect("the last bus home");
+    assert_eq!((it.depart_secs, it.arrival_secs), (8 * 3600 + 40 * 60, 8 * 3600 + 50 * 60));
+    // Before the first arrival: nothing.
+    assert!(arrive_by(Some(8 * 3600)).1.is_none());
+}
+
+#[test]
+fn a_leg_names_its_route_and_its_sign() {
+    let it = plan_a_b(&load_network(), None);
+    match &it.legs[0] {
+        transit_router::Leg::Transit { route_name, route_long_name, headsign, .. } => {
+            assert_eq!(route_name, "10");
+            assert_eq!(route_long_name.as_deref(), Some("Downtown via Main"));
+            assert_eq!(headsign, "Downtown", "t10's trip headsign, not the pattern's name");
+        }
+        other => panic!("a transit leg, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_json_seam_speaks_arrive_by_and_live() {
+    let hash = load_network();
+    let live = live_t10(60);
+    let outcome: serde_json::Value = serde_json::from_str(&cap_router::dispatch_json(
+        &serde_json::json!({ "op": "load_live", "live": live }).to_string(),
+    ))
+    .unwrap();
+    let live_hash = outcome["ok"]["live_hash"].as_str().expect("live hash").to_string();
+    let request = serde_json::json!({
+        "op": "plan_arrive_by", "network_hash": hash, "from": "A", "to": "B",
+        "date": DATE, "arrive_by_secs": 30600, "max_legs": 4, "live_hash": live_hash,
+    });
+    let outcome: serde_json::Value =
+        serde_json::from_str(&cap_router::dispatch_json(&request.to_string())).unwrap();
+    assert_eq!(outcome["ok"]["op"], "plan_arrive_by", "{outcome}");
+    assert_eq!(outcome["ok"]["itinerary"]["depart_secs"], 8 * 3600 + 20 * 60);
+    // The deadline is optional on the wire.
+    let request = serde_json::json!({
+        "op": "plan_arrive_by", "network_hash": hash, "from": "A", "to": "B",
+        "date": DATE, "max_legs": 4,
+    });
+    let outcome: serde_json::Value =
+        serde_json::from_str(&cap_router::dispatch_json(&request.to_string())).unwrap();
+    assert_eq!(outcome["ok"]["arrive_by_secs"], 8 * 3600 + 50 * 60, "{outcome}");
 }

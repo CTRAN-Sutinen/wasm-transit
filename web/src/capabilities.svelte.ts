@@ -698,7 +698,9 @@ export function routerCap(module: CapModule) {
         depart_secs: departSecs,
         max_legs: maxLegs,
       } as RouterRequest) as Extract<RouterResponse, { op: "plan_compare" }>;
-      return { active: resp.active, baseline: resp.baseline, notice: resp.notice };
+      // The notice is structured (kind, minutes lost, routes, skipped
+      // stops); the planner panel shows its text line.
+      return { active: resp.active, baseline: resp.baseline, notice: resp.notice?.text ?? null };
     },
     /// Where an itinerary runs, one path per leg, over the effective
     /// day it was planned on (the same edits hash).

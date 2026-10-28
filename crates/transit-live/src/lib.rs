@@ -13,8 +13,11 @@
 //!
 //! The document carries the ON-TIME WINDOW it was classified under,
 //! so every consumer classifies the same way (one window, never a
-//! threshold per view). Pure data plus the classification rule;
-//! nothing here reads GTFS.
+//! threshold per view). It also carries the SERVICE ALERTS in force at
+//! that moment, their informed entities resolved to routes, stops, and
+//! trip instances of the network, so a reader asks "does this alert
+//! touch this visit?" in model vocabulary. Pure data plus the
+//! classification and alert-matching rules; nothing here reads GTFS.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -25,11 +28,12 @@ use ts_rs::TS;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct OnTimeWindow {
-    /// Seconds early that still count as on time; `None` means any
-    /// earliness is on time (no Early status).
+    /// Seconds early that still count as on time. Early is not on
+    /// time: the default (and an absent bound) is 0 — a bus that
+    /// leaves before its time is a missed bus.
     #[serde(default)]
-    #[ts(optional)]
-    pub early_secs: Option<u32>,
+    #[ts(optional, as = "Option<u32>")]
+    pub early_secs: u32,
     /// Up to this many seconds late is on time.
     pub late_secs: u32,
     /// Past this many seconds late is very late.
@@ -37,9 +41,10 @@ pub struct OnTimeWindow {
 }
 
 impl Default for OnTimeWindow {
-    /// One minute late is on time, five minutes is very late.
+    /// Any earliness is early, one minute late is on time, five
+    /// minutes is very late.
     fn default() -> Self {
-        OnTimeWindow { early_secs: None, late_secs: 60, very_late_secs: 300 }
+        OnTimeWindow { early_secs: 0, late_secs: 60, very_late_secs: 300 }
     }
 }
 
@@ -59,10 +64,8 @@ pub enum LiveStatus {
 /// The classification rule — the one place a delay becomes a status.
 pub fn classify(delay: Option<i32>, window: &OnTimeWindow) -> LiveStatus {
     let Some(d) = delay else { return LiveStatus::NoPrediction };
-    if let Some(early) = window.early_secs {
-        if d < -(early as i64) as i32 {
-            return LiveStatus::Early;
-        }
+    if (d as i64) < -(window.early_secs as i64) {
+        return LiveStatus::Early;
     }
     if d <= window.late_secs as i32 {
         LiveStatus::OnTime
@@ -132,6 +135,135 @@ pub struct LiveVehicle {
     pub status: LiveStatus,
 }
 
+/// Why an alert was raised (GTFS-rt's cause, by name).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertCause {
+    #[default]
+    Unknown,
+    Other,
+    TechnicalProblem,
+    Strike,
+    Demonstration,
+    Accident,
+    Holiday,
+    Weather,
+    Maintenance,
+    Construction,
+    PoliceActivity,
+    MedicalEmergency,
+    SpecialEvent,
+}
+
+/// What an alert does to service (GTFS-rt's effect, by name).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertEffect {
+    NoService,
+    ReducedService,
+    SignificantDelays,
+    Detour,
+    AdditionalService,
+    ModifiedService,
+    Other,
+    #[default]
+    Unknown,
+    StopMoved,
+    NoEffect,
+    AccessibilityIssue,
+}
+
+/// How serious the agency says an alert is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertSeverity {
+    #[default]
+    Unknown,
+    Info,
+    Warning,
+    Severe,
+}
+
+/// A span of time in Unix seconds; an open end is unbounded.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AlertPeriod {
+    #[ts(type = "number | null")]
+    pub start: Option<u64>,
+    #[ts(type = "number | null")]
+    pub end: Option<u64>,
+}
+
+/// One informed entity, resolved: every present field must match
+/// (route 12 AT stop 6277); all absent means the whole agency. A trip
+/// without a start names every instance of the trip.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AlertScope {
+    pub route: Option<String>,
+    pub stop: Option<String>,
+    pub trip: Option<String>,
+    pub start_secs: Option<u32>,
+}
+
+/// One stop visit of a trip instance, as an alert sees it.
+#[derive(Debug, Clone, Copy)]
+pub struct Visit<'a> {
+    pub route: &'a str,
+    pub stop: &'a str,
+    pub trip: &'a str,
+    pub start_secs: u32,
+}
+
+impl AlertScope {
+    fn admits(&self, v: &Visit) -> bool {
+        self.route.as_deref().is_none_or(|r| r == v.route)
+            && self.stop.as_deref().is_none_or(|s| s == v.stop)
+            && self.trip.as_deref().is_none_or(|t| t == v.trip)
+            && self.start_secs.is_none_or(|s| s == v.start_secs)
+    }
+}
+
+/// A service alert in force at the document's moment, in model
+/// vocabulary. The text is the feed's untagged translation, else its
+/// first.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct LiveAlert {
+    /// The rt entity id.
+    pub id: String,
+    pub cause: AlertCause,
+    pub effect: AlertEffect,
+    pub severity: AlertSeverity,
+    pub header: String,
+    pub description: Option<String>,
+    pub url: Option<String>,
+    /// When service is affected (the impact period, else the active
+    /// period); empty means for as long as the alert is shown.
+    pub impact: Vec<AlertPeriod>,
+    /// What it informs about — ORed; never empty (an alert whose
+    /// entities all fail to resolve is counted, not kept).
+    pub scopes: Vec<AlertScope>,
+}
+
+impl LiveAlert {
+    /// Does the alert speak about this visit?
+    pub fn touches(&self, visit: &Visit) -> bool {
+        self.scopes.iter().any(|s| s.admits(visit))
+    }
+
+    /// Does the alert speak about the stop as a whole (whatever leaves
+    /// from it) — a stop scope, or the whole agency?
+    pub fn touches_stop(&self, stop: &str) -> bool {
+        self.scopes
+            .iter()
+            .any(|s| s.route.is_none() && s.trip.is_none() && s.stop.as_deref().is_none_or(|x| x == stop))
+    }
+}
+
 /// THE live document: one rt moment, in model vocabulary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -144,6 +276,15 @@ pub struct LiveDay {
     /// unknown trip, or a start that is not one of its instances) —
     /// reported, never silently dropped.
     pub unmatched_trips: u32,
+    /// The service alerts in force at the snapshot's moment.
+    #[serde(default)]
+    #[ts(optional, as = "Option<Vec<LiveAlert>>")]
+    pub alerts: Vec<LiveAlert>,
+    /// Alerts none of whose informed entities name anything in the
+    /// network — reported, never silently dropped.
+    #[serde(default)]
+    #[ts(optional, as = "Option<u32>")]
+    pub unmatched_alerts: u32,
 }
 
 impl LiveDay {

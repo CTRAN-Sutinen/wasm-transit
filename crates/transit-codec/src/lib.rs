@@ -666,7 +666,7 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
             route_short_name: (!r.name.is_empty()).then(|| r.name.clone()),
             route_long_name: r.long_name.clone(),
             route_desc: r.description.clone(),
-            route_type: Some(r.vehicle_type.unwrap_or_else(|| gtfs_route_type(r.mode)).to_string()),
+            route_type: Some(published_route_type(r).to_string()),
             route_url: r.url.clone(),
             route_color: r.color.clone(),
             route_text_color: r.text_color.clone(),
@@ -901,6 +901,13 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
         }
     }
     Ok(feed)
+}
+
+/// The route_type a route is published under: its own vehicle type
+/// where it carries one, else its mode's code — what an rt alert's
+/// `route_type` selector names.
+pub fn published_route_type(route: &transit_network::Route) -> u16 {
+    route.vehicle_type.unwrap_or_else(|| gtfs_route_type(route.mode))
 }
 
 /// Feed route type. The model's `Mode::Other` has no GTFS code; bus

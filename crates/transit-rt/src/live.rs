@@ -2,15 +2,17 @@
 //! vehicle positions) plus the network → THE live document in model
 //! vocabulary. An rt trip id IS a model trip id; each update resolves
 //! HERE, once, to the trip instance it names, and downstream readers
-//! key by (trip, start).
+//! key by (trip, start). Service alerts resolve here too: the ones in
+//! force at the snapshot's moment, their informed entities named as
+//! the network's routes, stops, and trip instances.
 
 use std::collections::HashMap;
 
 use transit_codec::Boundary;
-use transit_live::{classify, LiveDay, LiveStop, LiveTrip, LiveVehicle, OnTimeWindow};
+use transit_live::{classify, AlertPeriod, AlertScope, LiveAlert, LiveDay, LiveStop, LiveTrip, LiveVehicle, OnTimeWindow};
 use transit_network::Network;
 
-use crate::overview::{RtOverview, TripUpdateView};
+use crate::overview::{AlertView, InformedView, RtOverview, TripUpdateView};
 use crate::progress::{progress_of, resolve_instance};
 
 /// The worst delay an update states anywhere (arrival or departure)
@@ -21,15 +23,18 @@ fn stated_worst(update: &TripUpdateView) -> Option<i32> {
 }
 
 /// Resolve a snapshot. `delays` carries trip updates, `positions`
-/// vehicles; agencies that serve one combined feed pass it as
-/// `delays` and `None` (its own vehicles are used). `boundary` is the
-/// published numbering the updates' stop_sequences use. Every status
-/// is classified under `window`, which the document records.
+/// vehicles, `alerts` service alerts; agencies that serve one combined
+/// feed pass it as `delays` and `None`s (its own vehicles and alerts
+/// are used — alerts are gathered from every snapshot given, one per
+/// entity id). `boundary` is the published numbering the updates'
+/// stop_sequences use. Every status is classified under `window`,
+/// which the document records.
 pub fn live_day(
     network: &Network,
     boundary: &Boundary,
     delays: Option<&RtOverview>,
     positions: Option<&RtOverview>,
+    alerts: Option<&RtOverview>,
     window: OnTimeWindow,
 ) -> LiveDay {
     let route_name = |route: &Option<String>| route.as_deref().and_then(|r| network.routes.get(r)).map(|r| r.label().to_string());
@@ -107,5 +112,94 @@ pub fn live_day(
         })
         .unwrap_or_default();
 
-    LiveDay { window, trips, vehicles, unmatched_trips }
+    let (alerts, unmatched_alerts) = live_alerts(network, [alerts, delays, positions]);
+    LiveDay { window, trips, vehicles, unmatched_trips, alerts, unmatched_alerts }
+}
+
+/// The alerts in force at each snapshot's moment, resolved; the count
+/// of those none of whose informed entities name anything here.
+fn live_alerts<const N: usize>(network: &Network, snapshots: [Option<&RtOverview>; N]) -> (Vec<LiveAlert>, u32) {
+    let mut seen = std::collections::HashSet::new();
+    let mut alerts = Vec::new();
+    let mut unmatched = 0u32;
+    for snapshot in snapshots.into_iter().flatten() {
+        for view in &snapshot.service_alerts {
+            if !seen.insert(view.entity_id.clone()) || !in_force(&view.communication, snapshot.timestamp) {
+                continue;
+            }
+            let scopes: Vec<AlertScope> = view.informed.iter().flat_map(|e| resolve_scope(network, e)).collect();
+            if scopes.is_empty() {
+                unmatched += 1;
+                continue;
+            }
+            alerts.push(live_alert(view, scopes));
+        }
+    }
+    (alerts, unmatched)
+}
+
+/// No period means always; an unstamped snapshot keeps every alert.
+fn in_force(periods: &[AlertPeriod], now: Option<u64>) -> bool {
+    let Some(now) = now else { return true };
+    periods.is_empty()
+        || periods.iter().any(|p| p.start.is_none_or(|s| s <= now) && p.end.is_none_or(|e| now <= e))
+}
+
+fn live_alert(view: &AlertView, scopes: Vec<AlertScope>) -> LiveAlert {
+    LiveAlert {
+        id: view.entity_id.clone(),
+        cause: view.cause,
+        effect: view.effect,
+        severity: view.severity,
+        header: view.header.clone().unwrap_or_default(),
+        description: view.description.clone(),
+        url: view.url.clone(),
+        impact: view.impact.clone(),
+        scopes,
+    }
+}
+
+/// One informed entity → the scopes it names (a route_type names every
+/// route published under it). Every named field must resolve, or the
+/// entity names nothing. The direction is not matched: an alert for
+/// one direction of a route reaches both (over-telling beats silence).
+fn resolve_scope(network: &Network, e: &InformedView) -> Vec<AlertScope> {
+    if e.route_id.is_none() && e.route_type.is_none() && e.trip_id.is_none() && e.stop_id.is_none() {
+        return if e.agency_id.is_some() { vec![AlertScope::default()] } else { Vec::new() };
+    }
+    let stop = match &e.stop_id {
+        Some(s) if network.stops.contains_key(s) => Some(s.clone()),
+        Some(_) => return Vec::new(),
+        None => None,
+    };
+    let (trip, start_secs) = match &e.trip_id {
+        Some(t) => {
+            if network.trip(t).is_none() {
+                return Vec::new();
+            }
+            let instance = resolve_instance(network, t, e.trip_start_time.as_deref());
+            if e.trip_start_time.is_some() && instance.is_none() {
+                return Vec::new();
+            }
+            (Some(t.clone()), instance.map(|i| i.start_secs))
+        }
+        None => (None, None),
+    };
+    let routes: Vec<Option<String>> = match (&e.route_id, e.route_type) {
+        (None, None) => vec![None],
+        (Some(r), t) => match network.routes.get(r) {
+            Some(route) if t.is_none_or(|t| transit_codec::published_route_type(route) as i32 == t) => vec![Some(r.clone())],
+            _ => return Vec::new(),
+        },
+        (None, Some(t)) => network
+            .routes
+            .iter()
+            .filter(|(_, route)| transit_codec::published_route_type(route) as i32 == t)
+            .map(|(id, _)| Some(id.clone()))
+            .collect(),
+    };
+    routes
+        .into_iter()
+        .map(|route| AlertScope { route, stop: stop.clone(), trip: trip.clone(), start_secs })
+        .collect()
 }

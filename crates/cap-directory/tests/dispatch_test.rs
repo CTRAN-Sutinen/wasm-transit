@@ -182,6 +182,53 @@ fn a_routes_stop_sequences_are_its_patterns() {
     assert!(ghost.is_empty());
 }
 
+/// QAF-67: a route row carries its long name beside the short one
+/// — the fixture's routes all have one ("Downtown via Main").
+#[test]
+fn a_route_row_carries_its_long_name() {
+    let routes = match dispatch(Request::Routes { network_hash: load_network() }).unwrap() {
+        Response::Routes { routes } => routes,
+        _ => panic!("routes"),
+    };
+    let ten = routes.iter().find(|r| r.route_id == "10").unwrap();
+    assert_eq!((ten.name.as_str(), ten.long_name.as_deref()), ("10", Some("Downtown via Main")));
+}
+
+fn near(lat: f64, lon: f64, limit: Option<u32>, radius_m: Option<f64>) -> Result<Vec<transit_network::listing::NearbyStop>, String> {
+    dispatch(Request::StopsNear { network_hash: load_network(), lat, lon, limit, radius_m }).map(|r| match r {
+        Response::StopsNear { stops } => stops,
+        _ => panic!("stops_near"),
+    })
+}
+
+/// QAF-70: the stop question from a point — places nearest first,
+/// the station's bays answering as the station (one place), each
+/// row with its distance in meters.
+#[test]
+fn stops_near_a_point_are_places_nearest_first() {
+    // Standing on Bay A: the station is the nearest place (0 m).
+    let rows = near(45.5150, -73.5155, None, None).unwrap();
+    let ids: Vec<&str> = rows.iter().map(|r| r.stop_id.as_str()).collect();
+    assert_eq!(ids[0], "STN", "the bay answers as its station: {ids:?}");
+    assert!(rows[0].distance_m < 1e-6);
+    assert!(!ids.contains(&"SA") && !ids.contains(&"SB"), "bays fold into the station: {ids:?}");
+    assert_eq!(ids.len(), 4, "A, B, C and the station — every place, under the default limit");
+    assert!(rows.windows(2).all(|w| w[0].distance_m <= w[1].distance_m));
+
+    // The limit and the radius narrow it; the answer is honest-empty
+    // when nothing is near.
+    assert_eq!(near(45.5150, -73.5155, Some(1), None).unwrap().len(), 1);
+    assert!(near(45.5150, -73.5155, None, Some(500.0)).unwrap().iter().all(|r| r.distance_m <= 500.0));
+    assert!(near(0.0, 0.0, None, Some(1000.0)).unwrap().is_empty());
+
+    // A point off the earth is a request error, never a panic.
+    assert!(near(91.0, 0.0, None, None).unwrap_err().contains("lat"));
+    assert!(near(0.0, 181.0, None, None).unwrap_err().contains("lon"));
+    assert!(near(0.0, 0.0, None, Some(-1.0)).unwrap_err().contains("radius"));
+    let bad = dispatch_json(r#"{"op":"stops_near","network_hash":"sha256:x","lat":"here","lon":0}"#);
+    assert!(bad.contains("invalid request"), "{bad}");
+}
+
 #[test]
 fn unknown_hashes_and_garbage_are_errors_not_panics() {
     let err = dispatch(Request::Stops { network_hash: "sha256:missing".into(), query: None, limit: None }).unwrap_err();

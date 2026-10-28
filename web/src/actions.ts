@@ -518,7 +518,7 @@ export async function planTrip(fromStopId: string, toStopId: string, departTime:
     }
     // One op whether or not edits exist: with edits in force it
     // plans both worlds (the delta), and its notice says what the
-    // rider is told when the active world has no trip.
+    // rider is told whenever the diversion changes the trip.
     const editsHash = await ensureRouterEdits(boarding.networkHash, getEditDocument());
     const cmp = routerCap(module).planCompare(
       boarding.networkHash, editsHash, fromStopId, toStopId, serviceDate(), depart, 6);

@@ -19,6 +19,7 @@ fn overview(trip: &str, updates: Vec<StopUpdateView>) -> RtOverview {
             stop_updates: updates,
         }],
         vehicle_positions: vec![],
+        service_alerts: vec![],
     }
 }
 

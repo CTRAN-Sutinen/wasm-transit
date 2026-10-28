@@ -198,6 +198,8 @@ fn the_board_reads_a_live_document() {
         }],
         vehicles: vec![],
         unmatched_trips: 0,
+        alerts: vec![],
+        unmatched_alerts: 0,
     };
     let live_hash = match dispatch(Request::LoadLive { live: live.clone() }).unwrap() {
         Response::LoadLive { live_hash } => live_hash,
@@ -422,4 +424,17 @@ proptest! {
             _ => panic!("stop_board"),
         }
     }
+}
+
+/// QAF-75 at the seam: the board at the stop the in-force diversion
+/// skips names what it skips and why; with no edits it skips nothing.
+#[test]
+fn a_skipped_stop_answers_its_diversion() {
+    let network_hash = load_network();
+    let (edits_hash, _) = load_edits(&network_hash, vec![record(EditStatus::Accepted, 120)]);
+    let board = stop_board(&network_hash, Some(edits_hash), "C", 0, None);
+    assert!(board.rows.iter().all(|r| r.departure.route != "10"), "route 10 skips C");
+    assert!(!board.skipped.is_empty(), "the board says what was taken away");
+    assert!(board.skipped.iter().all(|s| s.departure.route == "10" && s.diversion.as_deref() == Some("d1")));
+    assert!(stop_board(&network_hash, None, "C", 0, None).skipped.is_empty());
 }

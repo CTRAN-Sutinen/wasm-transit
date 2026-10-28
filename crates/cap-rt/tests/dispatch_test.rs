@@ -352,6 +352,7 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
             boundary_hash: Some(boundary_hash.clone()),
             rt_hash: Some(rt_hash.clone()),
             vp_hash: None,
+            alerts_hash: None,
             window,
             late_limit: None,
         })
@@ -366,7 +367,7 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
     assert!(!summary.late_are_predictions);
 
     // The window is the caller's policy: five seconds late is very late.
-    let strict = transit_live::OnTimeWindow { early_secs: None, late_secs: 0, very_late_secs: 5 };
+    let strict = transit_live::OnTimeWindow { early_secs: 0, late_secs: 0, very_late_secs: 5 };
     let cap_rt::Response::Live { summary, .. } = live(Some(strict)).unwrap() else { panic!("live") };
     assert_eq!(summary.counts.very_late, 1);
 
@@ -377,6 +378,7 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
         boundary_hash: None,
         rt_hash: None,
         vp_hash: None,
+        alerts_hash: None,
         window: None,
         late_limit: None,
     })
@@ -387,9 +389,49 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
         boundary_hash: Some("sha256:missing".into()),
         rt_hash: Some(rt_hash),
         vp_hash: None,
+        alerts_hash: None,
         window: None,
         late_limit: None,
     })
     .unwrap_err();
     assert!(err.contains("unknown boundary"), "{err}");
+}
+
+/// Service alerts reach the live document from their own snapshot:
+/// an Alerts feed alone is enough, and its informed entities name the
+/// network's routes.
+#[test]
+fn live_carries_the_alerts_in_force() {
+    use prost::Message;
+    use transit_rt::gtfs_rt::{translated_string::Translation, Alert, EntitySelector, FeedEntity, FeedHeader, FeedMessage, TranslatedString};
+    let (network_hash, boundary_hash) = load_fixture();
+    let feed = FeedMessage {
+        header: FeedHeader { gtfs_realtime_version: "2.0".into(), ..Default::default() },
+        entity: vec![FeedEntity {
+            id: "detour-10".into(),
+            alert: Some(Alert {
+                informed_entity: vec![EntitySelector { route_id: Some("10".into()), ..Default::default() }],
+                header_text: Some(TranslatedString { translation: vec![Translation { text: "Route 10 detour".into(), language: None }] }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }],
+    };
+    let cap_rt::Response::Decode { rt_hash: alerts_hash, overview } =
+        cap_rt::dispatch(cap_rt::Request::Decode { bytes: feed.encode_to_vec() }).unwrap()
+    else { panic!("decode") };
+    assert_eq!(overview.service_alerts.len(), 1);
+    let cap_rt::Response::Live { live, .. } = cap_rt::dispatch(cap_rt::Request::Live {
+        network_hash,
+        boundary_hash: Some(boundary_hash),
+        rt_hash: None,
+        vp_hash: None,
+        alerts_hash: Some(alerts_hash),
+        window: None,
+        late_limit: None,
+    })
+    .unwrap() else { panic!("live") };
+    assert_eq!(live.alerts.len(), 1);
+    assert_eq!(live.alerts[0].header, "Route 10 detour");
+    assert_eq!(live.alerts[0].scopes[0].route.as_deref(), Some("10"));
 }

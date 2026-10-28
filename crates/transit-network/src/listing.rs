@@ -11,6 +11,9 @@
 //! variants together), one row per trip, one column per stop in the
 //! route's order. Rows are `materialize_service`'s trips, so the
 //! timetable is the day the model runs, never a second derivation.
+//!
+//! And the stop question asked from a POINT: the places nearest it,
+//! a station's bays answering as the station.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -31,6 +34,10 @@ pub struct EntityRow {
     /// A designated transfer point (stops only).
     pub transfer: bool,
     pub trips: Option<u32>,
+    /// A route's long name ("Lincoln") beside its short one (routes
+    /// only; `None` for a route without one).
+    #[serde(default)]
+    pub long_name: Option<String>,
 }
 
 /// One service type's schedules on a route.
@@ -71,6 +78,8 @@ pub struct DirectionGroup {
 pub struct Timetable {
     pub route: String,
     pub route_name: String,
+    /// The route's long name, when it has one.
+    pub route_long_name: Option<String>,
     pub direction: Option<String>,
     pub direction_name: String,
     pub service_type: String,
@@ -149,7 +158,15 @@ pub struct StopDetail {
 }
 
 fn row(id: &str, name: &str) -> EntityRow {
-    EntityRow { id: id.to_string(), name: name.to_string(), context: None, transfer: false, trips: None }
+    EntityRow { id: id.to_string(), name: name.to_string(), context: None, transfer: false, trips: None, long_name: None }
+}
+
+/// A route's row: its label, and its long name beside it.
+fn route_row(network: &Network, id: &str) -> EntityRow {
+    match network.routes.get(id) {
+        Some(r) => EntityRow { long_name: r.long_name.clone(), ..row(id, r.label()) },
+        None => row(id, id),
+    }
 }
 
 fn stop_row(network: &Network, id: &str) -> EntityRow {
@@ -193,7 +210,7 @@ fn schedule_row(network: &Network, id: &str) -> EntityRow {
 pub fn entity_rows(network: &Network, kind: EntityKind, query: &str) -> Vec<EntityRow> {
     let rows: Vec<EntityRow> = match kind {
         EntityKind::Stop => network.stops.keys().map(|id| stop_row(network, id)).collect(),
-        EntityKind::Route => network.routes.iter().map(|(id, r)| row(id, r.label())).collect(),
+        EntityKind::Route => network.routes.keys().map(|id| route_row(network, id)).collect(),
         EntityKind::Pattern => network.patterns.keys().map(|id| pattern_row(network, id)).collect(),
         EntityKind::PatternTrips => network.pattern_trips.keys().map(|id| schedule_row(network, id)).collect(),
         EntityKind::ServiceType => network.service_types.iter().map(|(id, t)| row(id, &t.name)).collect(),
@@ -425,6 +442,7 @@ pub fn timetable(network: &Network, route: &str, direction: Option<&str>, servic
     Some(Timetable {
         route: route.to_string(),
         route_name: r.label().to_string(),
+        route_long_name: r.long_name.clone(),
         direction: direction.map(str::to_string),
         direction_name,
         service_type: service_type.to_string(),
@@ -473,7 +491,74 @@ pub fn stop_detail(network: &Network, stop: &str) -> Option<StopDetail> {
     let index = crate::validate::stop_route_index(network);
     let routes = crate::validate::routes_meeting_at(network, &index, stop)
         .into_iter()
-        .map(|rid| row(rid.as_str(), network.routes.get(rid.as_str()).map_or(rid.as_str(), |r| r.label())))
+        .map(|rid| route_row(network, &rid))
         .collect();
     Some(StopDetail { routes })
+}
+
+/// One place near a point, as the directory's stop question answers
+/// it from a location: the stop's identity, name, point and
+/// walking-group structure (the same fields a `stops` row carries),
+/// and how far it is.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct NearbyStop {
+    pub stop_id: String,
+    pub name: String,
+    pub lat: f64,
+    pub lon: f64,
+    /// The parent station: `None` for every place but a bay whose
+    /// station the network does not hold (a bay of a held station
+    /// answers as that station).
+    pub parent: Option<String>,
+    /// A designated transfer point.
+    pub transfer: bool,
+    /// Great-circle meters from the point to the place's nearest
+    /// member (the station's pin or any of its bays).
+    pub distance_m: f64,
+}
+
+/// Great-circle distance in meters (haversine, mean earth radius).
+fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    let (p1, p2) = (lat1.to_radians(), lat2.to_radians());
+    let (dp, dl) = ((lat2 - lat1).to_radians(), (lon2 - lon1).to_radians());
+    let a = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
+    2.0 * 6_371_000.0 * a.sqrt().asin()
+}
+
+/// The places nearest a point, nearest first (ties by id), at most
+/// `limit`, and — given `radius_m` — none farther than it. A PLACE is
+/// what a rider walks to: a station with its bays answers once, as
+/// the station (the walking group its board departs across), at the
+/// distance of its nearest member; a stop with no station held by the
+/// network is its own place.
+pub fn stops_near(network: &Network, lat: f64, lon: f64, limit: usize, radius_m: Option<f64>) -> Vec<NearbyStop> {
+    let mut nearest: std::collections::BTreeMap<&str, f64> = Default::default();
+    for (id, s) in &network.stops {
+        let place = match s.parent.as_deref() {
+            Some(p) if network.stops.contains_key(p) => p,
+            _ => id.as_str(),
+        };
+        let d = haversine_m(lat, lon, s.lat, s.lon);
+        let e = nearest.entry(place).or_insert(f64::INFINITY);
+        *e = e.min(d);
+    }
+    let mut rows: Vec<(&str, f64)> =
+        nearest.into_iter().filter(|(_, d)| radius_m.is_none_or(|r| *d <= r)).collect();
+    rows.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(b.0)));
+    rows.into_iter()
+        .take(limit)
+        .map(|(id, distance_m)| {
+            let s = &network.stops[id];
+            NearbyStop {
+                stop_id: id.to_string(),
+                name: s.name.clone(),
+                lat: s.lat,
+                lon: s.lon,
+                parent: s.parent.clone(),
+                transfer: s.transfer,
+                distance_m,
+            }
+        })
+        .collect()
 }

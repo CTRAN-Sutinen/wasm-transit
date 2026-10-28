@@ -306,8 +306,8 @@ pub struct PatternStop {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(optional, as = "Option<bool>")]
     pub distance_published: bool,
-    /// What the vehicle's sign says from this stop on, where it
-    /// changes along the way.
+    /// What the vehicle's sign says at this visit, where it differs
+    /// from the trip's headsign (this visit only — `visit_destination`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub headsign: Option<String>,

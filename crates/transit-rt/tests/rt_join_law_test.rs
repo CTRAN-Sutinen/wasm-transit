@@ -19,7 +19,7 @@
 //! * `TripUpdateView.start_time: Option<String>` ("HH:MM:SS").
 //! * `transit_rt::trip_progress(&Network, &Boundary, &RtOverview,
 //!   trip_id) -> Option<TripProgress>` with `TripProgress.start_secs`.
-//! * `transit_rt::live_day(&Network, &Boundary, delays, positions,
+//! * `transit_rt::live_day(&Network, &Boundary, delays, positions, alerts,
 //!   window) -> LiveDay`; `LiveTrip { trip, start_secs, .. }`,
 //!   `LiveVehicle { trip, start_secs, .. }`, `LiveDay::visit(trip,
 //!   start_secs, stop, scheduled_departure)`.
@@ -291,6 +291,7 @@ fn overview(spec: &Spec) -> RtOverview {
         alerts: 0,
         trips,
         vehicle_positions: vec![],
+        service_alerts: vec![],
     }
 }
 
@@ -401,7 +402,7 @@ proptest! {
     fn the_live_document_speaks_in_trip_instances(spec in spec_strategy()) {
         let (net, boundary) = build(&spec);
         let rt = overview(&spec);
-        let day = live_day(&net, &boundary, Some(&rt), None, OnTimeWindow::default());
+        let day = live_day(&net, &boundary, Some(&rt), None, None, OnTimeWindow::default());
         let resolved: Vec<(String, u32)> = spec
             .updates
             .iter()
@@ -443,7 +444,7 @@ proptest! {
                 label: None,
             })
             .collect();
-        let day = live_day(&net, &boundary, None, Some(&rt), OnTimeWindow::default());
+        let day = live_day(&net, &boundary, None, Some(&rt), None, OnTimeWindow::default());
         for (v, u) in day.vehicles.iter().zip(&spec.updates) {
             let want = expected_start(&spec, u).map(|s| (format!("trip {}", u.trip), s));
             prop_assert_eq!(v.trip.clone().zip(v.start_secs), want);

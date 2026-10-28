@@ -15,7 +15,7 @@ fn a_snapshot_resolves_into_trip_instances() {
     let (net, boundary) = (&imported.network, &imported.boundary);
     let rt = decode_overview(include_bytes!("../../../web/e2e/fixtures/sample-rt.pb")).unwrap();
 
-    let day = live_day(net, boundary, Some(&rt), None, OnTimeWindow::default());
+    let day = live_day(net, boundary, Some(&rt), None, None, OnTimeWindow::default());
     assert_eq!(day.unmatched_trips, 0);
     assert_eq!(day.window, OnTimeWindow::default());
     let trip = day.trips.iter().find(|t| t.trip == "t10").unwrap();
@@ -33,15 +33,15 @@ fn a_snapshot_resolves_into_trip_instances() {
     assert_eq!(bus.route_name.as_deref(), Some("10"), "named as the model names the route");
 
     // A tighter window reclassifies — the policy is an input.
-    let strict = OnTimeWindow { early_secs: None, late_secs: 60, very_late_secs: 120 };
-    assert_eq!(live_day(net, boundary, Some(&rt), None, strict).vehicles[0].status, LiveStatus::VeryLate);
+    let strict = OnTimeWindow { early_secs: 0, late_secs: 60, very_late_secs: 120 };
+    assert_eq!(live_day(net, boundary, Some(&rt), None, None, strict).vehicles[0].status, LiveStatus::VeryLate);
 
     // Positions alone (no trip updates): vehicles, no predictions.
-    let positions_only = live_day(net, boundary, None, Some(&rt), OnTimeWindow::default());
+    let positions_only = live_day(net, boundary, None, Some(&rt), None, OnTimeWindow::default());
     assert!(positions_only.trips.is_empty());
     assert_eq!(positions_only.vehicles[0].status, LiveStatus::NoPrediction);
 
     // An rt trip the network does not have is reported, not dropped.
     let empty = transit_network::Network::default();
-    assert_eq!(live_day(&empty, &Boundary::default(), Some(&rt), None, OnTimeWindow::default()).unmatched_trips, rt.trips.len() as u32);
+    assert_eq!(live_day(&empty, &Boundary::default(), Some(&rt), None, None, OnTimeWindow::default()).unmatched_trips, rt.trips.len() as u32);
 }

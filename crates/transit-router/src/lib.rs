@@ -1,29 +1,40 @@
-//! transit-router — earliest-arrival trip planning over the network
-//! model.
+//! transit-router — trip planning over the network model.
 //!
 //! Implements RAPTOR (Round-Based Public Transit Optimized Routing,
 //! Delling et al. 2012) in its simplest form: given an origin stop, a
 //! departure time and a service date, compute the earliest arrival at
 //! every stop using at most `k` transit legs, then reconstruct the
-//! itinerary that achieves it.
+//! itinerary that achieves it — and the same rounds backward in time
+//! for arrive-by: the latest departure that still arrives by a
+//! deadline (by the service day's end when none is given: the last
+//! bus home).
 //!
 //! The crate is deliberately pure: it consumes the network document
 //! plus a MATERIALIZED DAY (the model's own trips — plain or
-//! effective, the caller's composition), builds a routing network,
+//! effective, the caller's composition) and, optionally, the LIVE
+//! document (each trip instance then rides at its predicted times
+//! where the document states them), builds a routing network,
 //! answers queries. No I/O, no clocks, no calendars — times are
 //! seconds since service-day midnight, matching every other seam.
 //!
 //! Layout:
-//! * [`network`] — the model's day → routing network: trip patterns
-//!   (grouped by actual stop sequence, so edited trips ride their
-//!   own patterns), per-pattern time arrays, footpath graph.
-//! * [`raptor`] — the round-based search and itinerary reconstruction.
+//! * [`network`] — the model's day (+ live predictions) → routing
+//!   network: trip patterns (grouped by actual stop sequence, so
+//!   edited trips ride their own patterns), per-pattern time arrays
+//!   with each visit's delay and headsign, footpath graph.
+//! * [`raptor`] — the round-based searches and itinerary
+//!   reconstruction (legs carry the route's names, the sign at the
+//!   boarding visit, and which times are predicted).
+//! * [`notice`] — what a rider is told about a compared plan (the
+//!   diverted day against the unpatched one).
 
 pub mod network;
+pub mod notice;
 pub mod raptor;
 
-pub use network::{Footpath, Pattern, PatternTrip, RouterNetwork, StopNode};
-pub use raptor::{earliest_arrival, plan_notice, Itinerary, Leg};
+pub use network::{live_times, Footpath, LiveVisit, Pattern, PatternTrip, RouterNetwork, StopNode};
+pub use notice::{diverted_instances, plan_notice, DivertedTrips, NoticeKind, PlanNotice};
+pub use raptor::{earliest_arrival, latest_departure, ArriveBy, Itinerary, Leg};
 
 use thiserror::Error;
 

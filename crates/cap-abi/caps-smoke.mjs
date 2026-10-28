@@ -556,7 +556,11 @@ assert(
     compare.baseline && compare.baseline.arrival_hhmmss === "08:10:00",
   "the diversion delta: 08:15 against the unpatched 08:10",
 );
-assert(compare.notice === null, "a found trip carries no notice");
+assert(
+  compare.notice && compare.notice.kind === "later" && compare.notice.minutes_lost === 5 &&
+    compare.notice.text.includes("5 min later"),
+  "a later arrival carries the rider's notice: 5 min later on the detour",
+);
 const tooLate = router.invoke({
   op: "plan_compare",
   network_hash: loadedRouterNet.network_hash,
@@ -568,8 +572,21 @@ const tooLate = router.invoke({
   max_legs: 6,
 });
 assert(
-  tooLate.active === null && tooLate.baseline === null && tooLate.notice.includes("within 6 legs"),
+  tooLate.active === null && tooLate.baseline === null && tooLate.notice.kind === "no_trip" &&
+    tooLate.notice.text.includes("within 6 legs"),
   "no trip and no second world: the notice names the legs searched",
+);
+const lastBus = router.invoke({
+  op: "plan_arrive_by",
+  network_hash: loadedRouterNet.network_hash,
+  from: "A",
+  to: "B",
+  date: DATE,
+  max_legs: 4,
+});
+assert(
+  lastBus.arrive_by_secs === 8 * 3600 + 3000 && lastBus.itinerary && lastBus.itinerary.depart_secs === 8 * 3600 + 2400,
+  "arrive-by with no deadline answers the last bus home: t30 leaves 08:40",
 );
 const badRouter = router.raw({ op: "nope" });
 assert(badRouter.error && badRouter.error.includes("invalid request"), "unknown ops error, never panic");

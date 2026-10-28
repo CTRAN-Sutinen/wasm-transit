@@ -215,65 +215,12 @@ time, last bus home, is there a detour.
   follow.
   Pin: directory `stop_detail` 9000 and 9008 — both the same 10
   routes; `stop_times.txt` gives 9000 → {012}.
-- **QAF-67 CONTRACT GAP** — rider-facing rows carry no long name:
-  the model holds `Route::long_name` ("Lincoln", "112th Avenue",
-  "Fruit Valley/Grand"), but the directory and board rows answer
-  only the short name, so every row reads "012".
-  Pin: directory `routes` — keys `color, mode, name, route_id`,
-  name "012".
-- **QAF-68 CONTRACT GAP** — a departure's destination is its last
-  stop's name, not its headsign: the 164 the feed signs "Portland"
-  reads "SW 5th & Morrison", the 030 to "Downtown Vancouver" reads
-  "Broadway & Evergreen Blvd", and terminals leak their bay ("Van
-  Mall Transit Center: Bay D"). The model holds each trip's
-  headsign (`Trip::headsign`) and each stop's (`PatternStop::
-  headsign`); board rows and itinerary legs never read them. (QAF-63
-  means the direction name is not the answer either.)
-  Pin: board `stop_board` 106 2026-10-28 from 28800 —
-  `rows[*].destination`; router `plan` 9000 → 6136, leg headsign
-  "012 → Van Mall Transit Center: Bay D".
-- **QAF-69 CONTRACT GAP** — a pooled station board names each row's
-  bay by id only (`"stop": "9008"`); "which bay do I stand at?"
-  takes a second op (`stops_by_ids`) and a host join.
-  Pin: board `stop_board` 106 — `rows[0].stop` "9008", no name.
-- **QAF-70 OP GAP** — no "stops near me": `directory.stops` matches
-  names only, so a rider with a location has no op, and a rider
-  with the colloquial name gets nothing ("vancouver mall" → 0; the
-  feed says "Van Mall").
-  Pin: directory `stops` query "vancouver mall" → `[]`; no op takes
-  a lat/lon.
-- **QAF-71 DEFECT** — the default on-time window counts ANY
-  earliness as on time (`OnTimeWindow { early_secs: None }`), so
-  `early` can never fire unless a host passes a policy. Early is
-  not on time: a bus leaving early is a missed bus.
-  Pin: rt `live` default window on the 08:52 snapshot — counts
-  `early: 0` of 63; board 106 — the 09:25 034 at `delay_secs: -91`
-  reads `on_time`.
-  Blocked: D-7.
-- **QAF-72 OP GAP** — the router is earliest-arrival only: "when is
-  the last bus home?" is answered by bisecting departure times until
-  the plan goes null. No latest-departure (or arrive-by) query.
-  Pin: router `plan` 6136 → 106 on 2026-10-28 — from 82800 leaves
-  23:07, arrives 24:01; from 84600 → `null`, with no "last was
-  23:07".
-- **QAF-73 OP GAP** — trip planning ignores live data: `plan` and
-  `plan_compare` take no `live_hash`, so a "leave now" plan assumes
-  every bus is on schedule while the board, from the same live
-  document, knows otherwise.
-  Pin: router `plan` request has no live input; board 106 with
-  `live_hash` shows the 092 +75 s.
-- **QAF-74 CONTRACT GAP** — `plan_compare` explains a diversion only
-  when it makes the trip unreachable: a diversion that costs 15
-  minutes answers `notice: null`, and the rider (or host) diffs the
-  two itineraries by hand.
-  Pin: divert `propose` 012 skipping 6277 (anchors 6130/6276) on
-  2026-10-28; router `plan_compare` 9000 → 6136 from 28800 —
-  active 09:19 (034 + Vine-Red), baseline 09:04, notice null.
-- **QAF-75 CONTRACT GAP** — the board at a diverted-away stop is
-  empty with no reason: a rider at the stop sees `rows: []`, not
-  "the 012 is detoured and skips this stop today".
-  Pin: the same edits; board `stop_board` 6277 →
-  `{"rows": [], "pooled": false}`.
+- **QAF-70 OP GAP** — the colloquial name finds nothing:
+  `directory.stops` matches the feed's names exactly, so "vancouver
+  mall" answers `[]` (the feed says "Van Mall"). A rider with a
+  location asks `stops_near` instead; a rider with only the
+  everyday name has no op.
+  Pin: directory `stops` query "vancouver mall" → `[]`.
 
 ## The runner
 

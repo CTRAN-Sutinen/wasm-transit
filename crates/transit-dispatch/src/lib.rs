@@ -28,28 +28,34 @@ use chrono::NaiveDate;
 use ts_rs::TS;
 
 use transit_network::{materialize, MaterializedTrip, Network, StopTime};
-use transit_live::{classify, LiveDay, LiveStatus};
+use transit_live::{classify, LiveAlert, LiveDay, LiveStatus, Visit};
 use transit_sync::{Diversion, EditRecord, EditReport};
 
 /// One row on a departure board. Model vocabulary: the trip instance
 /// is its (trip, start) identity, the stop is the CONCRETE stop the row
 /// leaves from (the bay, on a pooled station board), and the
-/// destination is the trip's final stop.
+/// destination is what the sign says at this visit.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct BoardDeparture {
     pub trip: String,
     pub start_secs: u32,
     pub route: String,
+    /// The route's public name ("12").
     pub route_name: String,
+    /// The route's long name ("Lincoln"), when it has one.
+    pub route_long_name: Option<String>,
     pub pattern: String,
     /// The concrete stop this row leaves from — on a station board,
     /// WHICH BAY a pooled row leaves from matters to the reader.
     pub stop: String,
+    /// That stop's name ("Fisher's Landing TC: Bay B").
+    pub stop_name: String,
     /// Seconds after the service-day anchor (past-86400 values are
     /// after-midnight trips, not errors).
     pub departure_secs: u32,
-    /// The trip's final stop's name — where this bus is going.
+    /// Where this bus is going, as its sign says at this visit
+    /// ([`transit_network::visit_destination`]).
     pub destination: String,
 }
 
@@ -319,8 +325,9 @@ pub fn station_board(
 
 /// One row of THE board: the departure, and what live data says
 /// about it — the expected departure, the delay against the board's
-/// own (patched) time, and its status under the live document's
-/// window. Schedule-only rows say `no_prediction`.
+/// own (patched) time, its status under the live document's window,
+/// and the ids of the board's alerts that speak about it.
+/// Schedule-only rows say `no_prediction`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct BoardRow {
@@ -330,6 +337,20 @@ pub struct BoardRow {
     pub expected_secs: Option<u32>,
     pub delay_secs: Option<i32>,
     pub status: LiveStatus,
+    pub alerts: Vec<String>,
+}
+
+/// A departure the day's edits took away from this stop: the visit as
+/// scheduled, and the diversion that skips it (none when the trip no
+/// longer reaches the stop for another reason).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct SkippedVisit {
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub departure: BoardDeparture,
+    pub diversion: Option<String>,
+    pub alerts: Vec<String>,
 }
 
 /// The board at a stop, answered whole.
@@ -337,11 +358,40 @@ pub struct BoardRow {
 #[ts(export)]
 pub struct StopBoard {
     pub rows: Vec<BoardRow>,
+    /// Scheduled departures the in-force edits skip here, soonest
+    /// first — why a detoured-away stop is empty.
+    pub skipped: Vec<SkippedVisit>,
+    /// The live document's alerts about this board: any that speak
+    /// about a row, a skipped visit, or the stop itself.
+    pub alerts: Vec<LiveAlert>,
     /// The stop had nothing of its own and is part of a walking
     /// group: the rows are the group's, each naming its bay.
     pub pooled: bool,
     /// A live document fed this answer.
     pub live: bool,
+}
+
+/// The edits behind an effective day: the unpatched day and the
+/// diversions in force — what a board compares against to say what
+/// was taken away.
+#[derive(Debug, Clone)]
+pub struct DayEdits {
+    pub base: Vec<MaterializedTrip>,
+    pub diversions: Vec<Diversion>,
+}
+
+/// The day's edits for a date — `None` when no edit is in force (the
+/// effective day IS the materialized day; nothing was taken away).
+pub fn day_edits(
+    network: &Network,
+    date: NaiveDate,
+    records: &[EditRecord],
+) -> Result<Option<DayEdits>, transit_network::NetworkError> {
+    let diversions = transit_sync::in_force_on(records, date);
+    if diversions.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(DayEdits { base: materialize(network, date)?, diversions }))
 }
 
 /// Live delays never reach back further than this when looking for
@@ -352,10 +402,14 @@ const MAX_LOOKBACK_SECS: u32 = 3 * 3600;
 /// Every departure of the day's (patched) trips from the stop, ordered
 /// by when it will actually leave: a late bus scheduled before
 /// `from_secs` that has not left yet is on the board; an early one
-/// that already left is not. A stop with nothing of its own that
-/// belongs to a walking group (a station pin, a bay) answers its
-/// group's board instead — a plain stop never pools, so a diverted-
-/// away stop shows its emptiness.
+/// that already left is not. With the day's `edits`, the departures
+/// they took away from the stop are listed as `skipped`, each with
+/// the diversion that skips it; with a live document, its alerts
+/// about the board ride along. A stop with nothing of its own —
+/// nothing leaving and nothing skipped — that belongs to a walking
+/// group (a station pin) answers its group's board instead; a plain
+/// stop never pools, so a diverted-away stop shows its emptiness and
+/// the reason.
 pub fn stop_board(
     network: &Network,
     day: &[MaterializedTrip],
@@ -363,20 +417,84 @@ pub fn stop_board(
     from_secs: u32,
     limit: usize,
     live: Option<&LiveDay>,
+    edits: Option<&DayEdits>,
 ) -> StopBoard {
-    let rows = live_rows(network, day, &[stop_id.to_string()], from_secs, limit, live);
-    if !rows.is_empty() {
-        return StopBoard { rows, pooled: false, live: live.is_some() };
+    let own = [stop_id.to_string()];
+    let rows = live_rows(network, day, &own, from_secs, limit, live);
+    let skipped = skipped_visits(network, day, &own, from_secs, limit, edits);
+    if rows.is_empty() && skipped.is_empty() {
+        let group: Vec<String> = transit_network::walking_group(network, stop_id).into_keys().collect();
+        if group.len() >= 2 {
+            let rows = live_rows(network, day, &group, from_secs, limit, live);
+            let skipped = skipped_visits(network, day, &group, from_secs, limit, edits);
+            return with_alerts(rows, skipped, &group, true, live);
+        }
     }
-    let group: Vec<String> = transit_network::walking_group(network, stop_id).into_keys().collect();
-    if group.len() < 2 {
-        return StopBoard { rows, pooled: false, live: live.is_some() };
+    with_alerts(rows, skipped, &own, false, live)
+}
+
+/// Attach the live document's alerts: on each row and skipped visit
+/// the ids that touch it; on the board every alert touching either,
+/// or the stops themselves, in the document's order.
+fn with_alerts(
+    mut rows: Vec<BoardRow>,
+    mut skipped: Vec<SkippedVisit>,
+    stops: &[String],
+    pooled: bool,
+    live: Option<&LiveDay>,
+) -> StopBoard {
+    let all = live.map(|l| l.alerts.as_slice()).unwrap_or_default();
+    let ids = |d: &BoardDeparture| -> Vec<String> {
+        let visit = Visit { route: &d.route, stop: &d.stop, trip: &d.trip, start_secs: d.start_secs };
+        all.iter().filter(|a| a.touches(&visit) || a.touches_stop(&d.stop)).map(|a| a.id.clone()).collect()
+    };
+    for r in &mut rows {
+        r.alerts = ids(&r.departure);
     }
-    StopBoard {
-        rows: live_rows(network, day, &group, from_secs, limit, live),
-        pooled: true,
-        live: live.is_some(),
+    for s in &mut skipped {
+        s.alerts = ids(&s.departure);
     }
+    let alerts = all
+        .iter()
+        .filter(|a| {
+            stops.iter().any(|s| a.touches_stop(s))
+                || rows.iter().any(|r| r.alerts.contains(&a.id))
+                || skipped.iter().any(|s| s.alerts.contains(&a.id))
+        })
+        .cloned()
+        .collect();
+    StopBoard { rows, skipped, alerts, pooled, live: live.is_some() }
+}
+
+/// The base day's departures from these stops that the patched day no
+/// longer makes, from `from_secs` on, soonest first.
+fn skipped_visits(
+    network: &Network,
+    day: &[MaterializedTrip],
+    stops: &[String],
+    from_secs: u32,
+    limit: usize,
+    edits: Option<&DayEdits>,
+) -> Vec<SkippedVisit> {
+    let Some(edits) = edits else { return Vec::new() };
+    let kept: BTreeSet<(String, u32, String)> = board_over(network, day, stops, 0, usize::MAX)
+        .into_iter()
+        .map(|d| (d.trip, d.start_secs, d.stop))
+        .collect();
+    board_over(network, &edits.base, stops, from_secs, usize::MAX)
+        .into_iter()
+        .filter(|d| !kept.contains(&(d.trip.clone(), d.start_secs, d.stop.clone())))
+        .take(limit)
+        .map(|d| SkippedVisit {
+            diversion: edits
+                .diversions
+                .iter()
+                .find(|v| v.route_id == d.route && v.skipped_stops.contains(&d.stop))
+                .map(|v| v.id.clone()),
+            departure: d,
+            alerts: Vec::new(),
+        })
+        .collect()
 }
 
 fn live_rows(
@@ -402,7 +520,13 @@ fn live_rows(
                 .and_then(|l| l.visit(&d.trip, d.start_secs, &d.stop, d.departure_secs))
                 .and_then(|v| v.predicted_departure);
             let delay = expected.map(|e| e as i32 - d.departure_secs as i32);
-            BoardRow { status: classify(delay, &window), expected_secs: expected, delay_secs: delay, departure: d }
+            BoardRow {
+                status: classify(delay, &window),
+                expected_secs: expected,
+                delay_secs: delay,
+                departure: d,
+                alerts: Vec::new(),
+            }
         })
         .filter(|r| r.expected_secs.unwrap_or(r.departure.departure_secs) >= from_secs)
         .collect();
@@ -428,7 +552,7 @@ fn board_over(
     for trip in day {
         // The last visit terminates the trip — not a departure.
         let departing = trip.stop_times.len().saturating_sub(1);
-        for st in &trip.stop_times[..departing] {
+        for (visit, st) in trip.stop_times[..departing].iter().enumerate() {
             if !stops.iter().any(|s| s == &st.stop) || st.departure_secs < from_secs {
                 continue;
             }
@@ -437,10 +561,12 @@ fn board_over(
                 start_secs: trip.start_secs,
                 route: trip.route.clone(),
                 route_name: route_name(network, &trip.route),
+                route_long_name: network.routes.get(&trip.route).and_then(|r| r.long_name.clone()),
                 pattern: trip.pattern.clone(),
                 stop: st.stop.clone(),
+                stop_name: stop_name(network, Some(&st.stop)),
                 departure_secs: st.departure_secs,
-                destination: stop_name(network, trip.stop_times.last().map(|s| s.stop.as_str())),
+                destination: transit_network::visit_destination(network, trip, visit),
             });
         }
     }

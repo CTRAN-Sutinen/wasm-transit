@@ -14,6 +14,11 @@
 //!   walks these back from the destination.
 //! * The answer is `tau[rounds][destination]`; the itinerary is
 //!   rebuilt by following parents backward in time.
+//!
+//! Arrive-by ([`latest_departure`]) is the same rounds run backward
+//! in time from the destination: the LATEST moment at each stop from
+//! which the destination is still reached by the deadline, then the
+//! forward plan from the origin's latest moment is the itinerary.
 
 use ts_rs::TS;
 use serde::{Deserialize, Serialize};
@@ -26,7 +31,7 @@ const INF: u32 = u32::MAX;
 /// Seconds since service-day midnight as "HH:MM:SS" — hours
 /// unbounded (past-86400 values are after-midnight trips, the
 /// GTFS reading everywhere on the bus).
-fn fmt_time(secs: u32) -> String {
+pub(crate) fn fmt_time(secs: u32) -> String {
     let h = secs / 3600;
     let m = (secs % 3600) / 60;
     let s = secs % 60;
@@ -51,22 +56,37 @@ pub enum Leg {
         walk_secs: u32,
         via_stop_ids: Vec<String>,
     },
+    /// One ride. Times are the ones the trip is expected to keep:
+    /// predicted where a live document states them, the day's own
+    /// elsewhere — the delays say which.
     Transit {
         /// The trip instance ridden: the network's trip and its start
         /// — the key every day view agrees on.
         trip: String,
         start_secs: u32,
         route_id: String,
+        /// The route's label: its short name, else its long name.
         route_name: String,
-        headsign: Option<String>,
+        /// The route's long name, when it has one.
+        route_long_name: Option<String>,
+        /// What the bus's sign says where the rider boards
+        /// (`transit_network::visit_destination` at the boarding
+        /// visit).
+        headsign: String,
         board_stop_id: String,
         board_stop_name: String,
         board_secs: u32,
         board_hhmmss: String,
+        /// The boarding departure is a live prediction: how far it
+        /// moved from the day's own time (`board_secs - delay` is that
+        /// time). `None` = the day's own time, no prediction.
+        board_delay_secs: Option<i32>,
         alight_stop_id: String,
         alight_stop_name: String,
         alight_secs: u32,
         alight_hhmmss: String,
+        /// The alighting arrival's prediction, read the same way.
+        alight_delay_secs: Option<i32>,
     },
 }
 
@@ -82,23 +102,6 @@ pub struct Itinerary {
     pub arrival_secs: u32,
     pub arrival_hhmmss: String,
     pub legs: Vec<Leg>,
-}
-
-/// What a rider is told about a compared plan: nothing when the
-/// diverted world has a trip; when only the undiverted one does, the
-/// arrival the diversion cost them; otherwise that no trip exists
-/// within the legs searched.
-pub fn plan_notice(active: Option<&Itinerary>, baseline: Option<&Itinerary>, max_legs: u32) -> Option<String> {
-    match (active, baseline) {
-        (Some(_), _) => None,
-        (None, Some(base)) => Some(format!(
-            "No trip found while the diversion is active — without it you would arrive {}.",
-            &fmt_time(base.arrival_secs)[..5]
-        )),
-        (None, None) => Some(format!(
-            "No trip found within {max_legs} legs — try a different time or closer stops."
-        )),
-    }
 }
 
 /// How `tau[k][s]` was improved — the reconstruction pointers.
@@ -327,15 +330,18 @@ pub fn earliest_arrival(
                     start_secs: pt.start_secs,
                     route_id: pt.route_id.clone(),
                     route_name: pt.route_name.clone(),
-                    headsign: pt.headsign.clone(),
+                    route_long_name: pt.route_long_name.clone(),
+                    headsign: pt.headsign_at(board_pos).to_string(),
                     board_stop_id: net.stops[board_stop].stop_id.clone(),
                     board_stop_name: net.stops[board_stop].stop_name.clone(),
                     board_secs: pt.departures[board_pos],
                     board_hhmmss: fmt_time(pt.departures[board_pos]),
+                    board_delay_secs: pt.delay_at(board_pos).1,
                     alight_stop_id: net.stops[stop].stop_id.clone(),
                     alight_stop_name: net.stops[stop].stop_name.clone(),
                     alight_secs: pt.arrivals[alight_pos],
                     alight_hhmmss: fmt_time(pt.arrivals[alight_pos]),
+                    alight_delay_secs: pt.delay_at(alight_pos).0,
                 });
                 stop = board_stop;
                 // The boarding used tau[k-1] at the board stop.
@@ -391,4 +397,137 @@ fn merge_walks(legs: Vec<Leg>) -> Vec<Leg> {
         out.push(leg);
     }
     out
+}
+
+/// An arrive-by answer: the deadline it answered (the request's, or
+/// the service day's end when none was given) and the itinerary
+/// leaving as late as possible — `None` when nothing reaches the
+/// destination by the deadline.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ArriveBy {
+    pub arrive_by_secs: u32,
+    pub itinerary: Option<Itinerary>,
+}
+
+/// Arrive-by: the LATEST departure from `from_stop_id` that reaches
+/// `to_stop_id` by `arrive_by` within `max_legs` transit legs (plus
+/// any walks). With no deadline, the deadline is the service day's
+/// end ([`RouterNetwork::day_end`]) — "the last bus home": nothing
+/// arrives anywhere later than the day's last arrival.
+///
+/// The search is RAPTOR backward in time: `tau[k][s]` is the latest
+/// moment at `s` from which the destination is reached by the
+/// deadline in at most `k` legs. A trip is boardable at every
+/// position before the last one it can alight at in time (its
+/// latest feasible alight — exact even when trips of a pattern
+/// overtake). The itinerary is then the forward earliest-arrival plan
+/// leaving at the origin's latest moment: it arrives by the deadline
+/// (the backward search proved a path exists), as early as it can.
+pub fn latest_departure(
+    net: &RouterNetwork,
+    from_stop_id: &str,
+    to_stop_id: &str,
+    arrive_by: Option<u32>,
+    max_legs: usize,
+) -> Result<ArriveBy> {
+    let from = net
+        .stop_index(from_stop_id)
+        .ok_or_else(|| RouterError::UnknownStop(from_stop_id.into()))? as usize;
+    let to = net
+        .stop_index(to_stop_id)
+        .ok_or_else(|| RouterError::UnknownStop(to_stop_id.into()))? as usize;
+    let by = arrive_by.unwrap_or_else(|| net.day_end());
+
+    const NONE: i64 = i64::MIN;
+    let n = net.stops.len();
+    let rounds = max_legs.max(1);
+    let mut tau: Vec<Vec<i64>> = vec![vec![NONE; n]; rounds + 1];
+    tau[0][to] = by as i64;
+    let mut marked = vec![false; n];
+    let mut marked_list: Vec<usize> = vec![to];
+    marked[to] = true;
+
+    for k in 1..=rounds {
+        if marked_list.is_empty() {
+            break;
+        }
+        tau[k] = tau[k - 1].clone();
+        let mut improved: Vec<usize> = Vec::new();
+        let mut improved_set = vec![false; n];
+
+        // ---- transit pass, backward: for every pattern serving a
+        // stop marked last round, every trip boards at each position
+        // before its latest position where it arrives in time.
+        let mut pattern_seen = vec![false; net.patterns.len()];
+        for &s in &marked_list {
+            for &(pi, _) in &net.patterns_at_stop[s] {
+                if pattern_seen[pi as usize] {
+                    continue;
+                }
+                pattern_seen[pi as usize] = true;
+                let pattern = &net.patterns[pi as usize];
+                for trip in &pattern.trips {
+                    let alight = (1..pattern.stop_positions.len()).rev().find(|&q| {
+                        let stop = pattern.stop_positions[q] as usize;
+                        marked[stop] && tau[k - 1][stop] != NONE && trip.arrivals[q] as i64 <= tau[k - 1][stop]
+                    });
+                    let Some(q) = alight else { continue };
+                    for p in 0..q {
+                        let board = pattern.stop_positions[p] as usize;
+                        let dep = trip.departures[p] as i64;
+                        if dep > tau[k][board] {
+                            tau[k][board] = dep;
+                            if !improved_set[board] {
+                                improved_set[board] = true;
+                                improved.push(board);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- footpath pass, backward (footpaths are symmetric: the
+        // same distance both ways), from every stop improved this
+        // round — and at k == 1 from the destination itself.
+        if k == 1 && !improved_set[to] {
+            improved.push(to);
+            improved_set[to] = true;
+        }
+        let mut i = 0;
+        while i < improved.len() {
+            let t = improved[i];
+            i += 1;
+            let base = tau[k][t];
+            if base == NONE {
+                continue;
+            }
+            for edge in &net.stops[t].footpaths {
+                let candidate = base - edge.walk_secs as i64;
+                let s = edge.to as usize;
+                if candidate >= 0 && candidate > tau[k][s] {
+                    tau[k][s] = candidate;
+                    improved.push(s);
+                    improved_set[s] = true;
+                }
+            }
+        }
+
+        for m in marked.iter_mut() {
+            *m = false;
+        }
+        for &s in &improved {
+            marked[s] = true;
+        }
+        marked_list = improved;
+    }
+
+    let latest = (0..=rounds).map(|k| tau[k][from]).max().unwrap_or(NONE);
+    if latest == NONE {
+        return Ok(ArriveBy { arrive_by_secs: by, itinerary: None });
+    }
+    let itinerary = earliest_arrival(net, from_stop_id, to_stop_id, latest as u32, max_legs)?
+        .filter(|it| it.arrival_secs <= by);
+    Ok(ArriveBy { arrive_by_secs: by, itinerary })
 }

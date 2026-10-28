@@ -1,12 +1,14 @@
 [package]
 name = "transit-router"
-description = "Earliest-arrival trip planning over the network model (RAPTOR) — pure algorithm, no I/O"
+description = "Trip planning over the network model (RAPTOR: earliest arrival, and latest departure for arrive-by), optionally over the live document's predicted times — pure algorithm, no I/O"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
 transit-network = { path = "../transit-network" }
+# The live document (read-only): predicted times per trip instance.
+transit-live = { path = "../transit-live" }
 chrono = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
@@ -18,4 +20,5 @@ ts-rs = { workspace = true }
 # materialize — never the GTFS substrate in production code.
 transit-codec = { path = "../transit-codec" }
 proptest = "1"
+serde_json = { workspace = true }
 zip = { workspace = true }

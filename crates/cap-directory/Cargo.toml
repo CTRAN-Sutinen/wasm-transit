@@ -1,6 +1,6 @@
 [package]
 name = "cap-directory"
-description = "The directory capability: what exists in the network — the stops (with their walking-group structure), the routes, one route's patterns with their ordered stops (list to detail, the pickers' and the names join's one question). Model-native over the NETWORK document; the pickers are model questions, never feed reads."
+description = "The directory capability: what exists in the network — the stops (with their walking-group structure; by name, by id, or the places nearest a point), the routes, one route's patterns with their ordered stops (list to detail, the pickers' and the names join's one question). Model-native over the NETWORK document; the pickers are model questions, never feed reads."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

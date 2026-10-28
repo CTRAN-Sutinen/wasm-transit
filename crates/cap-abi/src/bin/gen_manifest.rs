@@ -71,16 +71,18 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "router",
         file: "cap_router.wasm",
-        ops: &["load_network", "load_edits", "plan", "plan_compare", "itinerary_paths"],
+        ops: &["load_network", "load_edits", "load_live", "plan", "plan_arrive_by", "plan_compare", "itinerary_paths"],
         consumes: &[("network", "network")],
-        speaks: &[("network", &[1])],
+        speaks: &[("network", &[1]), ("live", &[1])],
         migrates: &[],
-        purpose: "Earliest-arrival trip planning (RAPTOR) over the NETWORK document and the effective day — the model's materialized trips, patched with the edits in force (the same transit-dispatch composition every day view starts from). The diversion delta is the compare facet: the unpatched day, one materialization apart. Assemble for users who need directions, not just departure times. Documents are hash-addressed; writes nothing.",
+        purpose: "Trip planning (RAPTOR) — how do I get from here to there — over the NETWORK document and the effective day (the model's materialized trips, patched with the edits in force — the same transit-dispatch composition every day view starts from), at the live document's predicted times when one is named. Its facets: leaving at a time (earliest arrival), arriving by a time (the latest departure; with no deadline, the last bus home), and the diversion delta (the unpatched day, one materialization apart, with the rider's notice). Assemble for users who need directions, not just departure times. Documents are hash-addressed; writes nothing.",
         op_docs: &[
             ("load_network", "Register the network document under its content hash (the same identity the network capability's import produces and every day view consumes; idempotent). Kernel bulk op 256 takes the bare document's JSON bytes on transit_invoke_bytes — the same answer, no request envelope; hosts send real-size networks this way."),
             ("load_edits", "Register the operator edit document against a loaded network, validated per record against it; the answer carries the reports and the document's hash. Wholesale replacement, like the host-owned store."),
-            ("plan", "Earliest-arrival itinerary from stop to stop at a departure time over the materialized day (edits applied when edits_hash names a registered document); null itinerary = unreachable within max_legs. The legs speak model vocabulary: the trip instance is addressed (trip, start_secs)."),
-            ("plan_compare", "The diversion delta: the same plan over the patched day (active) and the unpatched materialization (baseline, null when no edit is in force on the date or no edits_hash is given), with the rider's notice when active is null — the arrival the diversion cost, or no trip within max_legs. One op whether or not edits exist."),
+            ("load_live", "Register a LIVE document (the rt capability's live answer) under its canonical content hash — the same identity rt answered; assert equality at the host. Plans name it by live_hash."),
+            ("plan", "Earliest-arrival itinerary from stop to stop at a departure time over the materialized day (edits applied when edits_hash names a registered document; each trip instance at its PREDICTED times where the live document named by live_hash states them, schedule elsewhere); null itinerary = unreachable within max_legs. The legs speak model vocabulary: the trip instance is addressed (trip, start_secs); a transit leg carries the route's short label (route_name) and long name (route_long_name, null when it has none), the headsign the bus shows at the boarding visit (the visit's own, else the trip's, else the final stop's place), and board_delay_secs / alight_delay_secs — how far a predicted time moved from the day's own (null = no prediction, the day's time)."),
+            ("plan_arrive_by", "Arrive-by: the LATEST departure from `from` that reaches `to` by arrive_by_secs within max_legs, over the same day as plan (edits_hash, live_hash). With no arrive_by_secs, the latest departure that reaches `to` at all on the service day — the last bus home (times past 86400 are after-midnight trips of the same day). The answer carries the deadline it answered (arrive_by_secs: the request's, else the day's last arrival) and the itinerary — the earliest-arrival plan leaving at that latest departure (its depart_secs) — or null when nothing arrives by the deadline."),
+            ("plan_compare", "The diversion delta: the same plan over the patched day (active) and the unpatched materialization (baseline, null when no edit is in force on the date or no edits_hash is given), both at the live document's predictions when live_hash is given, with the rider's notice whenever the diversion changes the trip — {kind: unreachable (no active trip; the baseline has one) | no_trip (none within max_legs in either world) | later (the active trip arrives later: delay_secs, minutes_lost rounded up) | diverted (it rides a trip whose patched stop times differ from its unpatched instance), baseline_arrival_secs, routes and skipped_stops of the diverted trips the plans ride, text} — null when nothing changed. One op whether or not edits exist."),
             ("itinerary_paths", "Where an itinerary runs, one path per leg ({kind: transit | walk, path: [{lat, lon}]}) over the same effective day it was planned on (pass the same edits_hash): a transit leg's RIDDEN segment — its trip's authored alignment sliced between the board and alight stops while the trip follows its pattern, its patched stops when diverted, a straight line as the last resort — and a walk through the stops it passes. Send the itinerary plan answered. The map draws the paths; it computes none."),
         ],
     },
@@ -115,13 +117,13 @@ const MODULES: &[ModuleSpec] = &[
         // answer its own questions, so they are spoken, not consumed.
         speaks: &[("gtfs_rt", &[1]), ("network", &[1]), ("boundary", &[1]), ("live", &[1])],
         migrates: &[],
-        purpose: "Realtime decoding and the schedule join: turn a GTFS-rt protobuf payload (trip updates, vehicle positions) into the flat view hosts show, and answer the dispatcher's joined questions — one trip's predicted times, the ranked what's-late-now view with the delayed-but-dark flag. The third capability extracted from the monolith; the domain code lives in the shared transit-rt library. It mints THE LIVE DOCUMENT: the snapshot resolved against the network into model vocabulary (delays per trip instance and stop, vehicles on their trip instances, statuses under the caller's on-time window) — an rt trip id is a model trip id, resolved here once. Assemble for riders (live boards) and dispatchers (the operation view) alike.",
+        purpose: "Realtime decoding and the schedule join: turn a GTFS-rt protobuf payload (trip updates, vehicle positions, service alerts) into the flat view hosts show, and answer the dispatcher's joined questions — one trip's predicted times, the ranked what's-late-now view with the delayed-but-dark flag. The third capability extracted from the monolith; the domain code lives in the shared transit-rt library. It mints THE LIVE DOCUMENT: the snapshot resolved against the network into model vocabulary (delays per trip instance and stop, vehicles on their trip instances, statuses under the caller's on-time window, the service alerts in force with their informed entities resolved to routes, stops, and trip instances) — an rt trip id is a model trip id, resolved here once. Assemble for riders (live boards) and dispatchers (the operation view) alike.",
         op_docs: &[
-            ("decode", "Decode a GTFS-rt protobuf payload into the overview (entity counts, trip updates with per-stop delays, vehicle positions), and register the snapshot under its content hash — idempotent, the same bytes are the same snapshot — so trip_progress/late_trips can address it. Bulk-bytes op 0. Garbage bytes are an error outcome, never a trap."),
+            ("decode", "Decode a GTFS-rt protobuf payload into the overview (entity counts, trip updates with per-stop delays, vehicle positions, service alerts with their cause, effect, severity, text, periods, and informed entities in the feed's ids), and register the snapshot under its content hash — idempotent, the same bytes are the same snapshot — so trip_progress/late_trips can address it. Bulk-bytes op 0. Garbage bytes are an error outcome, never a trap."),
             ("load_network", "Register the network document the joins answer over, under its content hash; idempotent. Kernel bulk op 256 takes the bare document's JSON bytes."),
             ("load_boundary", "Register an imported network's boundary (the network capability's import answer) under its canonical content hash: the stop_sequence numbering the published feed — and so its rt updates — use. A network published from its own export needs none (1..n)."),
             ("trip_progress", "One trip's joined board: every scheduled stop with the live delay and the PREDICTED time (schedule + delay) — the dispatcher's most-asked question in one op. A stop the update does not mention carries the last stated delay upstream of it (the GTFS-rt propagation rule); stops before the first update stay null. The instance is the one the snapshot's update names (a frequency trip's by the update's start_time); updates pair with stops by the published stop_sequence (boundary_hash; 1..n without one), by stop id only when they name no sequence. Null when the snapshot has no update for the trip or the update names no instance of it."),
-            ("live", "THE LIVE DOCUMENT: one rt moment resolved into model vocabulary. rt_hash (trip updates) and/or vp_hash (vehicle positions — agencies often serve them separately) resolve against the registered network (an rt trip id is a model trip id; a frequency trip's instance is the update's start_time) into delays per trip instance ((trip, start_secs)) and stop (propagated downstream, with the predicted departure), vehicles on their trips, and statuses (early / on_time / late / very_late / no_prediction) classified under `window` — the caller's on-time policy, default 60 s late on time, 300 s very late — which the document records so every reader classifies the same way. Trip and vehicle lateness is the trip's worst stated delay. Unresolvable rt trips are counted (unmatched_trips), never silently dropped. The response also carries the summary a status panel reads: vehicles by status and the late list worst first (late_limit, default 15) — late BUSES when positions exist, late trips (predictions) when they do not. Register the document in the board with load_live."),
+            ("live", "THE LIVE DOCUMENT: one rt moment resolved into model vocabulary. rt_hash (trip updates), vp_hash (vehicle positions), and/or alerts_hash (service alerts) — agencies often serve them separately; at least one — resolve against the registered network (an rt trip id is a model trip id; a frequency trip's instance is the update's start_time) into delays per trip instance ((trip, start_secs)) and stop (propagated downstream, with the predicted departure), vehicles on their trips, and statuses (early / on_time / late / very_late / no_prediction) classified under `window` — the caller's on-time policy, default: ANY earliness is early (early_secs 0 — a bus leaving before its time is a missed bus), up to 60 s late on time, past 300 s very late — which the document records so every reader classifies the same way. Trip and vehicle lateness is the trip's worst stated delay. Unresolvable rt trips are counted (unmatched_trips), never silently dropped. alerts: the service alerts in force at the snapshot's moment (the header timestamp inside a communication period, else the deprecated active period; none = always), gathered from every snapshot given, one per entity id — each informed entity resolved to a scope (route, stop, trip, start_secs; every present field must match, all absent = the whole agency; a route_type names every route published under it; direction is not matched). An alert none of whose entities name anything in the network is counted (unmatched_alerts). The response also carries the summary a status panel reads: vehicles by status and the late list worst first (late_limit, default 15) — late BUSES when positions exist, late trips (predictions) when they do not. Register the document in the board with load_live."),
             ("late_trips", "The ranked what's-late-now view: every trip whose worst stop delay reaches min_delay_secs, worst first, each carrying the located vehicle (vehicle_id, label, position) — found on the trip itself or, failing that, on another trip of its block (position_trip_id names the trip the bus is actually running: a delay propagated to a block's next trip is a late bus, not a dark one) — and the DELAYED-BUT-DARK flag (has_position false) when no vehicle of the block is visible. vp_hash names the VehiclePositions snapshot (agencies serve it as a SEPARATE feed — C-TRAN does); omit it for combined feeds."),
         ],
     },
@@ -163,12 +165,12 @@ const MODULES: &[ModuleSpec] = &[
         consumes: &[("network", "network")],
         speaks: &[("network", &[1]), ("operator_edits", &[1]), ("watchlist", &[1, 2]), ("live", &[1])],
         migrates: &[("watchlist", &[(1, 2)])],
-        purpose: "The board: when does service leave this stop — at a stop (a station pin or bay with nothing of its own answers its pooled walking group), realtime-first over the live document the rt capability mints, or for a personal saved set (the watchlist document, the same question parameterized by a personal document). Every answer is the materialized day over the NETWORK document, patched with the in-force edits. Model-native end to end; the domain code lives in the shared transit-dispatch library. Assemble for anyone who reads a departure board.",
+        purpose: "The board: when does service leave this stop — at a stop (a station pin or bay with nothing of its own answers its pooled walking group), realtime-first over the live document the rt capability mints (its predictions and its service alerts), with what the in-force edits took away from the stop, or for a personal saved set (the watchlist document, the same question parameterized by a personal document). Every answer is the materialized day over the NETWORK document, patched with the in-force edits. Model-native end to end; the domain code lives in the shared transit-dispatch library. Assemble for anyone who reads a departure board.",
         op_docs: &[
             ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth. Kernel bulk op 256 takes the bare document's JSON bytes on transit_invoke_bytes — the same answer, no request envelope; hosts send real-size networks this way."),
             ("load_edits", "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change."),
             ("load_live", "Register a LIVE document (the rt capability's live answer) under its canonical content hash — the same identity rt answered; assert equality at the host."),
-            ("stop_board", "THE board at one stop on a service date: the network's materialized day with the in-force edits (edits_hash), REALTIME-FIRST when live_hash names a registered live document — rows ordered by when the bus actually leaves, a late bus scheduled before from_secs that has not left is still on the board, an early one that already left is not, and each row carries expected_secs, delay_secs (against the board's own patched time), and status under the live document's window (no_prediction without live data). A trip's final visit is an arrival, never a row. A stop with nothing of its own that belongs to a walking group (a station pin; a bay whose service is gone) answers the group's board with pooled: true, each row naming its bay; a plain stop never pools — a diverted-away stop shows its emptiness."),
+            ("stop_board", "THE board at one stop on a service date: the network's materialized day with the in-force edits (edits_hash), REALTIME-FIRST when live_hash names a registered live document — rows ordered by when the bus actually leaves, a late bus scheduled before from_secs that has not left is still on the board, an early one that already left is not, and each row carries expected_secs, delay_secs (against the board's own patched time), and status under the live document's window (no_prediction without live data). Each row names its route (route_name, route_long_name), the stop it leaves from (stop, stop_name — the bay, on a pooled board), and its destination as the sign says at that visit (the visit's headsign, else the trip's, else the final stop's station). A trip's final visit is an arrival, never a row. skipped: the scheduled departures the in-force edits took away from the stop, each with the diversion that skips it — why a detoured-away stop is empty. alerts: the live document's service alerts about the board (a row, a skipped visit, or the stop itself); each row and skipped visit names the ids about it. A stop with nothing of its own — nothing leaving, nothing skipped — that belongs to a walking group (a station pin) answers the group's board with pooled: true, each row naming its bay; a plain stop never pools."),
             ("load_watchlist", "Register a watchlist document (the personal saved-set, version-tagged JSON) under its content hash."),
             ("migrate_watchlist", "Migrate a version-1 watchlist to version 2: label = note, colors dropped and reported. Pure and deterministic; the caller keeps the old bytes — migrations never destroy."),
             ("watchlist_board", "The board for a watchlist: each watched stop's departures on a service date, labelled per the document's version — the same question the per-stop board answers, parameterized by the personal document. Edits apply in force like every board."),
@@ -216,23 +218,24 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "directory",
         file: "cap_directory.wasm",
-        ops: &["load_network", "stops", "stops_by_ids", "routes", "route_stop_sequence", "focus", "entities", "route_detail", "stop_detail", "timetable"],
+        ops: &["load_network", "stops", "stops_near", "stops_by_ids", "routes", "route_stop_sequence", "focus", "entities", "route_detail", "stop_detail", "timetable"],
         // The network document is produced by the network capability.
         consumes: &[("network", "network")],
         speaks: &[("network", &[1])],
         migrates: &[],
-        purpose: "The directory: what exists in the network — the stops (with their walking-group structure), the routes, one route's patterns with their ordered stops (list to detail). The pickers and the names join read here; they are MODEL questions, never feed reads. A route runs in directions, and each direction's stop sequences are its patterns (bay and short-turn variants), each with its own ordered stops — what a diversion editor anchors against. The planner's lists ask here too: rows of any kind narrowed by a filter, a route's composition with each pattern trips' trip count and its patterns by direction, a stop's serving routes, where an entity is on the map, and the timetable — one route, one direction, one service type, across the direction's patterns.",
+        purpose: "The directory: what exists in the network — the stops (with their walking-group structure; by name, or the places nearest a point), the routes (short and long names), one route's patterns with their ordered stops (list to detail). The pickers and the names join read here; they are MODEL questions, never feed reads. A route runs in directions, and each direction's stop sequences are its patterns (bay and short-turn variants), each with its own ordered stops — what a diversion editor anchors against. The planner's lists ask here too: rows of any kind narrowed by a filter, a route's composition with each pattern trips' trip count and its patterns by direction, a stop's serving routes, where an entity is on the map, and the timetable — one route, one direction, one service type, across the direction's patterns.",
         op_docs: &[
             ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth. Kernel bulk op 256 takes the bare document's JSON bytes on transit_invoke_bytes — the same answer, no request envelope; hosts send real-size networks this way."),
             ("stops", "The stop list, name-sorted (the pickers' shape): every stop with its coords, its parent (the flag the station board keys off), and its transfer flag. query narrows it the way a picker's typing does — every whitespace-separated term must appear in the name or the stop id, case-insensitive (\"fisher landing\" finds Fisher's Landing and its bays). limit truncates after the sort; omit it for the whole list — a silently truncated directory would be a lie."),
+            ("stops_near", "The stop list asked from a POINT ({lat, lon}): the places nearest it, by great-circle distance in meters (haversine), nearest first, ties by stop id — each row the stop's id, name, coords, parent and transfer flag (the stops row's fields) plus distance_m. A PLACE is what a rider walks to: a station's bays answer ONCE, as the station (the walking group the station board departs across), at the distance of its nearest member (the pin or any bay); a stop whose station the network does not hold is its own place. limit caps the rows (default 10); radius_m (meters) drops every place farther than it — omit it for the nearest limit, however far. A lat outside -90..90, a lon outside -180..180, or a negative radius is a request error."),
             ("stops_by_ids", "Stops by id, in the request's order — the names join hosts otherwise do by hand when a view (like rt's) carries ids a human reads as names. Unknown ids are omitted."),
-            ("routes", "The route list, name-sorted: every route with its mode (the model's closed set, not GTFS's numeric codes) and its authored color when there is one."),
+            ("routes", "The route list, name-sorted: every route with its name (the short public name, else the long one), its long_name (\"Lincoln\"; null for a route without one), its mode (the model's closed set, not GTFS's numeric codes) and its authored color when there is one."),
             ("route_stop_sequence", "One route's patterns with their ordered stops (route_detail groups them by direction). An unknown route answers empty, never an error."),
             ("focus", "Where one entity is on the map ({kind: stop | route | pattern | pattern_trips | service_type | block, id}): its lines (each pattern's authored alignment, else its stops joined) and the stops it serves. A stop is its point; pattern trips their pattern; a route, a service type, or a block every pattern it runs. Null for an unknown id."),
-            ("entities", "Every entity of one kind ({kind: stop | route | pattern | pattern_trips | service_type | block}), in id order, narrowed by an optional query the way a filter box's typing does (every whitespace-separated term in the name or the id, case-insensitive). Each row: id, name, context (a pattern's route; pattern trips' pattern · service type), transfer (stops), trips (pattern trips' materialized trip count; a block's chained trips)."),
+            ("entities", "Every entity of one kind ({kind: stop | route | pattern | pattern_trips | service_type | block}), in id order, narrowed by an optional query the way a filter box's typing does (every whitespace-separated term in the name or the id, case-insensitive). Each row: id, name, context (a pattern's route; pattern trips' pattern · service type), transfer (stops), trips (pattern trips' materialized trip count; a block's chained trips), long_name (routes: the long name beside the short one, null without one)."),
             ("route_detail", "One route's composition: its patterns, the stops they visit (first-visit order), its pattern trips grouped by service type, each with the trips it runs (the same expansion the materialized day runs), and its patterns grouped by direction (the route's named directions in id order, then any patterns in none). Null for an unknown route."),
-            ("timetable", "The planner's timetable: one route, one `direction` (omitted or null: its patterns in no direction), one `service_type` as the base of a SERVICE FAMILY — every trip of the direction's patterns from every member of the family (service ids key trips, never routes), one row per trip by start with its identity (trip, start_secs), its pattern trips, pattern and block, and its departure at each column (null where its pattern does not stop); the columns are every stop those patterns visit, in route order, flagged when a timepoint; the legend lists the patterns most trips first, marking headway-band ones. Rows are the materialized day's trips. With `compare_hash` (a loaded baseline) each trip is marked `added` when the baseline does not run it, and `removed` lists the baseline's trips this one no longer runs (a retimed trip is removed at its old start and added at its new — its identity is pattern_trips + start). Null for an unknown route, direction or service type."),
-            ("stop_detail", "One stop's composition: the routes whose patterns visit it (id and name rows, id order). Null for an unknown stop."),
+            ("timetable", "The planner's timetable (headed by route_name and route_long_name, null without one): one route, one `direction` (omitted or null: its patterns in no direction), one `service_type` as the base of a SERVICE FAMILY — every trip of the direction's patterns from every member of the family (service ids key trips, never routes), one row per trip by start with its identity (trip, start_secs), its pattern trips, pattern and block, and its departure at each column (null where its pattern does not stop); the columns are every stop those patterns visit, in route order, flagged when a timepoint; the legend lists the patterns most trips first, marking headway-band ones. Rows are the materialized day's trips. With `compare_hash` (a loaded baseline) each trip is marked `added` when the baseline does not run it, and `removed` lists the baseline's trips this one no longer runs (a retimed trip is removed at its old start and added at its new — its identity is pattern_trips + start). Null for an unknown route, direction or service type."),
+            ("stop_detail", "One stop's composition: the routes whose patterns visit it, pooled across its walking group (id, name and long_name rows, id order). Null for an unknown stop."),
         ],
     },
     ModuleSpec {
@@ -630,7 +633,7 @@ fn rt_example_context() -> Option<RtExampleContext> {
 /// mints it: the document and its hash.
 fn live_example() -> Option<(transit_live::LiveDay, String)> {
     let ctx = rt_example_context()?;
-    let live = transit_rt::live_day(&ctx.network, &ctx.boundary, Some(&ctx.overview), None, transit_live::OnTimeWindow::default());
+    let live = transit_rt::live_day(&ctx.network, &ctx.boundary, Some(&ctx.overview), None, None, transit_live::OnTimeWindow::default());
     let live_hash = format!("sha256:{:x}", Sha256::digest(serde_json::to_string(&live).ok()?.as_bytes()));
     Some((live, live_hash))
 }
@@ -656,19 +659,45 @@ fn example_for(
         // The router's examples compute REAL answers over the
         // fixture-derived document — the same composition the module
         // dispatches through (materialize, patch, build, query).
+        ("router", "load_live") => {
+            let (live, live_hash) = live_example()?;
+            (
+                json!({ "op": "load_live", "live": live }),
+                json!({ "ok": { "op": "load_live", "live_hash": live_hash } }),
+            )
+        }
         ("router", "plan") => {
+            // Over the fixture's live document: the legs carry the
+            // predicted times and say how far they moved.
             let ctx = net?;
+            let (live, live_hash) = live_example()?;
             let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).expect("fixture date");
             let network = ctx.derived_network();
             let day = transit_network::materialize(network, date).expect("fixture materializes");
-            let graph = transit_router::RouterNetwork::build_from_day(network, &day, date);
+            let graph = transit_router::RouterNetwork::build(network, &day, date, Some(&live));
             let itinerary = transit_router::earliest_arrival(&graph, "A", "B", 25200, 4)
                 .expect("query")
                 .expect("A→B reachable on the fixture Friday");
             (
                 json!({ "op": "plan", "network_hash": ctx.network_hash, "from": "A", "to": "B",
-                        "date": "2026-10-23", "depart_secs": 25200, "max_legs": 4 }),
+                        "date": "2026-10-23", "depart_secs": 25200, "max_legs": 4, "live_hash": live_hash }),
                 json!({ "ok": { "op": "plan", "itinerary": itinerary } }),
+            )
+        }
+        ("router", "plan_arrive_by") => {
+            // No deadline: the last bus home from A to B on the
+            // fixture Friday.
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).expect("fixture date");
+            let network = ctx.derived_network();
+            let day = transit_network::materialize(network, date).expect("fixture materializes");
+            let graph = transit_router::RouterNetwork::build_from_day(network, &day, date);
+            let answer = transit_router::latest_departure(&graph, "A", "B", None, 4).expect("query");
+            (
+                json!({ "op": "plan_arrive_by", "network_hash": ctx.network_hash, "from": "A", "to": "B",
+                        "date": "2026-10-23", "max_legs": 4 }),
+                json!({ "ok": { "op": "plan_arrive_by", "arrive_by_secs": answer.arrive_by_secs,
+                                "itinerary": answer.itinerary } }),
             )
         }
         ("router", "plan_compare") => {
@@ -691,11 +720,14 @@ fn example_for(
             let baseline = transit_router::earliest_arrival(&base_graph, "A", "B", 25200, 4)
                 .expect("query")
                 .expect("A→B reachable on the unpatched day");
+            // The diversion costs the rider 5 minutes: the notice says so.
+            let diverted = transit_router::diverted_instances(&base_day, &patched);
+            let notice = transit_router::plan_notice(network, Some(&active), Some(&baseline), 4, &diverted);
             (
                 json!({ "op": "plan_compare", "network_hash": ctx.network_hash,
                         "edits_hash": edits_hash, "from": "A", "to": "B",
                         "date": "2026-10-23", "depart_secs": 25200, "max_legs": 4 }),
-                json!({ "ok": { "op": "plan_compare", "active": active, "baseline": baseline, "notice": null } }),
+                json!({ "ok": { "op": "plan_compare", "active": active, "baseline": baseline, "notice": notice } }),
             )
         }
         ("router", "itinerary_paths") => {
@@ -1012,7 +1044,7 @@ fn example_for(
                     "stop_id": "A", "date": "2026-10-23", "from_secs": 28860, "limit": 5,
                     "live_hash": live_hash }),
                 json!({ "ok": { "op": "stop_board",
-                    "board": transit_dispatch::stop_board(ctx.derived_network(), &day, "A", 28860, 5, Some(&live)) } }),
+                    "board": transit_dispatch::stop_board(ctx.derived_network(), &day, "A", 28860, 5, Some(&live), None) } }),
             )
         }
         ("board", "load_watchlist") => (
@@ -1210,6 +1242,16 @@ fn example_for(
                 json!({ "ok": { "op": "stops", "stops": stops.into_iter().take(3).collect::<Vec<_>>() } }),
             )
         }
+        ("directory", "stops_near") => {
+            // Standing on the station's Bay A: the station answers once
+            // (0 m — its nearest member), then the plain stops by distance.
+            let ctx = net?;
+            (
+                json!({ "op": "stops_near", "network_hash": ctx.network_hash, "lat": 45.515, "lon": -73.5155, "limit": 3 }),
+                json!({ "ok": { "op": "stops_near",
+                    "stops": transit_network::listing::stops_near(ctx.derived_network(), 45.515, -73.5155, 3, None) } }),
+            )
+        }
         ("directory", "stops_by_ids") => {
             let ctx = net?;
             let network = ctx.derived_network();
@@ -1229,7 +1271,7 @@ fn example_for(
             let mut routes: Vec<serde_json::Value> = network
                 .routes
                 .iter()
-                .map(|(id, r)| json!({ "route_id": id, "name": r.name, "mode": r.mode, "color": r.color }))
+                .map(|(id, r)| json!({ "route_id": id, "name": r.label(), "long_name": r.long_name, "mode": r.mode, "color": r.color }))
                 .collect();
             routes.sort_by(|a, b| {
                 a["name"].as_str().cmp(&b["name"].as_str())

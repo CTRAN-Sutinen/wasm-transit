@@ -1,7 +1,8 @@
 //! cap-directory — the directory capability.
 //!
 //! One question: **what exists in the network?** — the stops (with
-//! their walking-group structure), the routes, and one route's
+//! their walking-group structure, by name or nearest a point), the
+//! routes (short and long names), and one route's
 //! patterns with their ordered stops (list → detail). The pickers
 //! and the names join read here; they are MODEL questions, never
 //! feed reads. A route runs in directions, and each direction's
@@ -46,13 +47,17 @@ pub struct DirectoryStop {
 }
 
 /// One route as the directory lists it: identity, display name, its
-/// mode (the model's closed set, not GTFS's numeric codes), and its
-/// authored color when there is one.
+/// long name beside it when it has one, its mode (the model's closed
+/// set, not GTFS's numeric codes), and its authored color when there
+/// is one.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export, export_to = "cap_directory/")]
 pub struct DirectoryRoute {
     pub route_id: String,
     pub name: String,
+    /// The long name ("Lincoln") beside the short one; `None` for a
+    /// route without one.
+    pub long_name: Option<String>,
     pub mode: transit_network::Mode,
     pub color: Option<String>,
 }
@@ -103,6 +108,23 @@ pub enum Request {
         query: Option<String>,
         #[serde(default)]
         limit: Option<u32>,
+    },
+    /// The stop list asked from a POINT: the places nearest
+    /// (`lat`, `lon`), by great-circle distance in meters, ties by id —
+    /// at most `limit` (default 10), none farther than `radius_m` when
+    /// given (none: the nearest `limit`, however far). A place is what
+    /// a rider walks to: a station's bays answer once, as the station,
+    /// at the distance of its nearest member.
+    StopsNear {
+        network_hash: String,
+        lat: f64,
+        lon: f64,
+        #[serde(default)]
+        #[ts(optional)]
+        limit: Option<u32>,
+        #[serde(default)]
+        #[ts(optional)]
+        radius_m: Option<f64>,
     },
     /// Stops by id, in the request's order — the names join hosts
     /// otherwise do by hand when a view (like rt's) carries ids a
@@ -167,6 +189,7 @@ pub enum Request {
 pub enum Response {
     LoadNetwork { network_hash: String },
     Stops { stops: Vec<DirectoryStop> },
+    StopsNear { stops: Vec<transit_network::listing::NearbyStop> },
     StopsByIds { stops: Vec<DirectoryStop> },
     Routes { routes: Vec<DirectoryRoute> },
     RouteStopSequence { patterns: Vec<PatternStops> },
@@ -176,6 +199,10 @@ pub enum Response {
     StopDetail { detail: Option<transit_network::StopDetail> },
     Timetable { timetable: Option<transit_network::Timetable> },
 }
+
+/// How many places `stops_near` answers when the request names no
+/// limit — a screenful.
+pub const STOPS_NEAR_LIMIT: u32 = 10;
 
 /// Networks by content hash (canonical serialization).
 fn networks() -> &'static Mutex<HashMap<String, Arc<Network>>> {
@@ -241,6 +268,20 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             }
             Ok(Response::Stops { stops })
         }
+        Request::StopsNear { network_hash, lat, lon, limit, radius_m } => {
+            if !(-90.0..=90.0).contains(&lat) {
+                return Err(format!("lat {lat} is not a latitude (-90..=90)"));
+            }
+            if !(-180.0..=180.0).contains(&lon) {
+                return Err(format!("lon {lon} is not a longitude (-180..=180)"));
+            }
+            if radius_m.is_some_and(|r| r.is_nan() || r < 0.0) {
+                return Err("radius_m must be a non-negative number of meters".into());
+            }
+            let network = network_arc(&network_hash)?;
+            let limit = limit.unwrap_or(STOPS_NEAR_LIMIT) as usize;
+            Ok(Response::StopsNear { stops: transit_network::listing::stops_near(&network, lat, lon, limit, radius_m) })
+        }
         Request::StopsByIds { network_hash, ids } => {
             let network = network_arc(&network_hash)?;
             let stops = ids
@@ -257,6 +298,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .map(|(id, r)| DirectoryRoute {
                     route_id: id.clone(),
                     name: r.label().to_string(),
+                    long_name: r.long_name.clone(),
                     mode: r.mode,
                     color: r.color.clone(),
                 })

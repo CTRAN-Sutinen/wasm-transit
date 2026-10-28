@@ -5,7 +5,8 @@
   let { stopOptions, notice, onplan }: {
     /// The directory's stop list as picker options.
     stopOptions: Option[];
-    /// Why the last plan found no trip (the router's notice), if any.
+    /// What the router's notice tells the rider about the last plan
+    /// (no trip, a later arrival, a diverted ride), if anything.
     notice: string | null;
     onplan: (from: string, to: string, depart: string) => void;
   } = $props();

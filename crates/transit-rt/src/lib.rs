@@ -22,6 +22,7 @@ pub mod progress;
 pub mod live;
 
 pub use overview::{
+    AlertView, InformedView,
     decode_overview, RtOverview, StopUpdateView, TripUpdateView, VehicleView,
 };
 pub use progress::{late_trips, resolve_instance, trip_progress, LateTrip, ProgressStop, TripProgress};

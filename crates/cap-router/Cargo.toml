@@ -1,6 +1,6 @@
 [package]
 name = "cap-router"
-description = "The router capability: earliest-arrival planning over the NETWORK document and the effective day (the model's materialized trips, patched with the edits in force). The diversion delta is the compare facet: the unpatched day, one materialization apart."
+description = "The router capability: trip planning (earliest arrival; arrive-by, the latest departure) over the NETWORK document and the effective day (the model's materialized trips, patched with the edits in force), at the live document's predicted times when one is named. The diversion delta is the compare facet: the unpatched day, one materialization apart, with the rider's notice."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -17,6 +17,7 @@ transit-network = { path = "../transit-network" }
 transit-sync = { path = "../transit-sync" }
 transit-dispatch = { path = "../transit-dispatch" }
 transit-router = { path = "../transit-router" }
+transit-live = { path = "../transit-live" }
 cap-abi = { path = "../cap-abi" }
 
 [dev-dependencies]

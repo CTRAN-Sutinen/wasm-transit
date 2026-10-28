@@ -8,14 +8,34 @@ use transit_live::{classify, summarize, LiveDay, LiveStatus, LiveStop, LiveTrip,
 fn classification_follows_the_window_edges() {
     let w = OnTimeWindow::default();
     assert_eq!(classify(None, &w), LiveStatus::NoPrediction);
-    assert_eq!(classify(Some(-600), &w), LiveStatus::OnTime, "no early bound: earliness is on time");
+    assert_eq!(classify(Some(0), &w), LiveStatus::OnTime);
     assert_eq!(classify(Some(60), &w), LiveStatus::OnTime, "the edge is inclusive");
     assert_eq!(classify(Some(61), &w), LiveStatus::Late);
     assert_eq!(classify(Some(300), &w), LiveStatus::Late);
     assert_eq!(classify(Some(301), &w), LiveStatus::VeryLate);
-    let strict = OnTimeWindow { early_secs: Some(60), ..w };
-    assert_eq!(classify(Some(-60), &strict), LiveStatus::OnTime);
-    assert_eq!(classify(Some(-61), &strict), LiveStatus::Early);
+    let grace = OnTimeWindow { early_secs: 60, ..w };
+    assert_eq!(classify(Some(-60), &grace), LiveStatus::OnTime);
+    assert_eq!(classify(Some(-61), &grace), LiveStatus::Early);
+}
+
+/// Early is not on time (the user's decision: 0 s): under the default
+/// window ANY earliness is early — a bus that leaves before its time
+/// is a missed bus. QAF-71: the 09:25 034 at -91 s read on time.
+#[test]
+fn under_the_default_window_any_earliness_is_early() {
+    let w = OnTimeWindow::default();
+    assert_eq!(w.early_secs, 0);
+    for d in [-1, -91, -600] {
+        assert_eq!(classify(Some(d), &w), LiveStatus::Early, "{d} s early");
+    }
+}
+
+/// A document minted without an early bound reads the default — the
+/// strict one, never a permissive fallback.
+#[test]
+fn a_window_without_an_early_bound_is_strict() {
+    let w: OnTimeWindow = serde_json::from_str(r#"{"late_secs":60,"very_late_secs":300}"#).unwrap();
+    assert_eq!(classify(Some(-1), &w), LiveStatus::Early);
 }
 
 fn stop(stop: &str, scheduled: u32, delay: i32) -> LiveStop {
@@ -48,6 +68,8 @@ fn a_loop_visit_resolves_by_its_scheduled_time() {
         trips: vec![trip("s1", 28800, 240, vec![stop("A", 28800, 60), stop("B", 29400, 120), stop("A", 30600, 240)])],
         vehicles: vec![],
         unmatched_trips: 0,
+        alerts: vec![],
+        unmatched_alerts: 0,
     };
     assert_eq!(day.visit("s1", 28800, "A", 30600).unwrap().departure_delay, Some(240));
     assert_eq!(day.visit("s1", 28800, "A", 28800).unwrap().departure_delay, Some(60));
@@ -81,6 +103,8 @@ fn the_summary_ranks_buses_and_falls_back_to_predictions() {
         trips: trips.clone(),
         vehicles: vec![vehicle("v1", Some(120)), vehicle("v2", Some(900)), vehicle("v3", None), vehicle("v4", Some(0))],
         unmatched_trips: 0,
+        alerts: vec![],
+        unmatched_alerts: 0,
     };
     let s = summarize(&day, 15);
     assert_eq!(s.vehicles, 4);

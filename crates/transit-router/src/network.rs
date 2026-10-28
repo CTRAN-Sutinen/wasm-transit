@@ -13,11 +13,17 @@
 //! is by ACTUAL stop sequence: an edited trip that skips stops no
 //! longer shares its authored pattern's sequence and must not ride
 //! the authored pattern's array.
+//!
+//! With a LIVE document, a trip instance rides at its PREDICTED
+//! times where the document states them (see [`live_times`]), the
+//! schedule elsewhere — the graph is the day as it is expected to
+//! run, and each visit remembers how far its time moved.
 
 use std::collections::HashMap;
 
 use chrono::NaiveDate;
 
+use transit_live::LiveDay;
 use transit_network::{MaterializedTrip, Network};
 
 /// Default footpath radius in meters.
@@ -66,10 +72,104 @@ pub struct PatternTrip {
     pub trip: String,
     pub start_secs: u32,
     pub route_id: String,
+    /// The route's label (short name, else long name).
     pub route_name: String,
-    pub headsign: Option<String>,
+    /// The route's long name, when it has one.
+    pub route_long_name: Option<String>,
+    /// The sign per visit, run-length encoded: `(first position,
+    /// headsign)` in position order — `transit_network::
+    /// visit_destination`, the one shared rule. Read with
+    /// [`PatternTrip::headsign_at`].
+    pub headsigns: Vec<(u32, String)>,
+    /// The times the trip rides at: predicted where the live
+    /// document states them, else the day's own.
     pub departures: Vec<u32>,
     pub arrivals: Vec<u32>,
+    /// Per position, `(arrival, departure)` minus the day's own time
+    /// — `None` where the time is the day's own (no prediction).
+    /// Empty when the live document says nothing about the trip.
+    pub delays: Vec<(Option<i32>, Option<i32>)>,
+}
+
+impl PatternTrip {
+    /// The headsign the bus shows at `position`.
+    pub fn headsign_at(&self, position: usize) -> &str {
+        self.headsigns
+            .iter()
+            .rev()
+            .find(|(from, _)| *from as usize <= position)
+            .map(|(_, h)| h.as_str())
+            .unwrap_or("")
+    }
+
+    /// `(arrival delay, departure delay)` at `position` — `None`
+    /// where the time is the day's own.
+    pub fn delay_at(&self, position: usize) -> (Option<i32>, Option<i32>) {
+        self.delays.get(position).copied().unwrap_or((None, None))
+    }
+}
+
+/// One visit's times as the live document predicts them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LiveVisit {
+    pub arrival_secs: u32,
+    pub departure_secs: u32,
+    /// The document states this visit (a stated zero delay is still a
+    /// prediction: "on time, as of now").
+    pub stated: bool,
+}
+
+/// A trip instance's PREDICTED times per visit, or `None` when the live document states nothing about any
+/// of its visits.
+///
+/// The live document keys a stop entry by trip instance, stop and
+/// the published schedule's departure there; its delays are against
+/// that published schedule (GTFS-rt's reading — propagation is
+/// already applied in the document, and stops before the first
+/// stated delay are absent: they stay on schedule). A visit matches
+/// the entry at its stop whose scheduled departure is the visit's
+/// own; failing that (a diverted trip's patched times moved), the
+/// entry at its stop when the stop is visited once and stated once.
+/// The predicted departure is the published departure plus the
+/// departure delay (else the arrival delay); the predicted arrival
+/// is the published arrival — the visit's dwell before it — plus the
+/// arrival delay (else the departure delay). Times never run
+/// backwards along the trip: a prediction is clamped to the time
+/// before it.
+pub fn live_times(trip: &MaterializedTrip, live: &LiveDay) -> Option<Vec<LiveVisit>> {
+    let entry = live.trips.iter().find(|t| t.trip == trip.trip && t.start_secs == trip.start_secs)?;
+    if entry.stops.is_empty() {
+        return None;
+    }
+    let mut out = Vec::with_capacity(trip.stop_times.len());
+    let mut floor = 0u32;
+    for st in &trip.stop_times {
+        let at_stop = || entry.stops.iter().filter(|s| s.stop == st.stop);
+        let stated = at_stop().find(|s| s.scheduled_departure == Some(st.departure_secs)).or_else(|| {
+            let visits = trip.stop_times.iter().filter(|v| v.stop == st.stop).count();
+            (visits == 1 && at_stop().count() == 1).then(|| at_stop().next()).flatten()
+        });
+        let (mut arr, mut dep) = (st.arrival_secs, st.departure_secs);
+        let mut is_stated = false;
+        if let Some(s) = stated {
+            let published_dep = s.scheduled_departure.unwrap_or(st.departure_secs) as i64;
+            let published_arr = published_dep - (st.departure_secs - st.arrival_secs) as i64;
+            let dep_delay = s.departure_delay.or(s.arrival_delay);
+            let arr_delay = s.arrival_delay.or(s.departure_delay);
+            if let Some(d) = arr_delay {
+                arr = (published_arr + d as i64).max(0) as u32;
+            }
+            if let Some(d) = dep_delay {
+                dep = (published_dep + d as i64).max(0) as u32;
+            }
+            is_stated = dep_delay.is_some();
+        }
+        arr = arr.max(floor);
+        dep = dep.max(arr);
+        floor = dep;
+        out.push(LiveVisit { arrival_secs: arr, departure_secs: dep, stated: is_stated });
+    }
+    Some(out)
 }
 
 /// The routing network for one network document on one date. Fields
@@ -92,17 +192,36 @@ impl RouterNetwork {
         self.stop_index.get(stop_id).copied()
     }
 
+    /// The service day's end: the latest arrival of any trip (past
+    /// 86400 when the day runs after midnight), 0 on an empty day.
+    pub fn day_end(&self) -> u32 {
+        self.patterns
+            .iter()
+            .flat_map(|p| &p.trips)
+            .filter_map(|t| t.arrivals.last().copied())
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// The schedule-only graph: [`RouterNetwork::build`] with no live
+    /// document.
+    pub fn build_from_day(network: &Network, day: &[MaterializedTrip], date: NaiveDate) -> RouterNetwork {
+        Self::build(network, day, date, None)
+    }
+
     /// Build the network for `date` over a materialized day. The day
     /// is the caller's composition: plain `materialize` for a
     /// schedule-only day, `effective_day` for the day with the edits
     /// in force — the router never expands calendars or applies
     /// patches itself (Law 2: one composition, not per-module
     /// reimplementations). Trips whose stop sequence references
-    /// unknown stops are skipped, never an error.
-    pub fn build_from_day(
+    /// unknown stops are skipped, never an error. With `live`, each
+    /// trip instance rides at its predicted times ([`live_times`]).
+    pub fn build(
         network: &Network,
         day: &[MaterializedTrip],
         date: NaiveDate,
+        live: Option<&LiveDay>,
     ) -> RouterNetwork {
         // Stops first, from the network document (BTreeMap order —
         // deterministic): index every stop, remember coordinates for
@@ -144,23 +263,50 @@ impl RouterNetwork {
                 continue;
             }
 
-            let route_name = network
-                .routes
-                .get(&trip.route)
-                .map(|r| r.label().to_string())
-                .unwrap_or_else(|| trip.route.clone());
-            // The authored pattern's name is the human-facing
-            // description of where these trips go.
-            let headsign = network.patterns.get(&trip.pattern).map(|p| p.name.clone());
+            let route = network.routes.get(&trip.route);
+            let route_name = route.map(|r| r.label().to_string()).unwrap_or_else(|| trip.route.clone());
+            let route_long_name = route.and_then(|r| r.long_name.clone()).filter(|n| !n.is_empty());
+            // What the sign says at each visit — the shared rule,
+            // stored as runs (a trip's sign rarely changes).
+            let mut headsigns: Vec<(u32, String)> = Vec::new();
+            for v in 0..trip.stop_times.len() {
+                let sign = transit_network::visit_destination(network, trip, v);
+                if headsigns.last().is_none_or(|(_, h)| *h != sign) {
+                    headsigns.push((v as u32, sign));
+                }
+            }
+
+            let own: Vec<LiveVisit> = trip
+                .stop_times
+                .iter()
+                .map(|st| LiveVisit { arrival_secs: st.arrival_secs, departure_secs: st.departure_secs, stated: false })
+                .collect();
+            let predicted = live.and_then(|l| live_times(trip, l));
+            let times = predicted.as_deref().unwrap_or(&own);
+            // A visit's delay is how far its time moved — stated by
+            // the document (zero included), or carried by the clamp.
+            let delays = match &predicted {
+                None => Vec::new(),
+                Some(p) => p
+                    .iter()
+                    .zip(&own)
+                    .map(|(p, o)| {
+                        let moved = |pt: u32, ot: u32| (p.stated || pt != ot).then(|| pt as i32 - ot as i32);
+                        (moved(p.arrival_secs, o.arrival_secs), moved(p.departure_secs, o.departure_secs))
+                    })
+                    .collect(),
+            };
 
             pattern_map.entry(positions).or_default().push(PatternTrip {
                 trip: trip.trip.clone(),
                 start_secs: trip.start_secs,
                 route_id: trip.route.clone(),
                 route_name,
-                headsign,
-                departures: trip.stop_times.iter().map(|st| st.departure_secs).collect(),
-                arrivals: trip.stop_times.iter().map(|st| st.arrival_secs).collect(),
+                route_long_name,
+                headsigns,
+                departures: times.iter().map(|t| t.departure_secs).collect(),
+                arrivals: times.iter().map(|t| t.arrival_secs).collect(),
+                delays,
             });
         }
 

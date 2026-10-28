@@ -10,7 +10,7 @@
 use std::io::Write;
 
 use chrono::NaiveDate;
-use transit_router::{earliest_arrival, plan_notice, Leg, RouterNetwork};
+use transit_router::{earliest_arrival, plan_notice, DivertedTrips, Leg, NoticeKind, RouterNetwork};
 
 #[path = "prop_support.rs"]
 mod support;
@@ -119,16 +119,20 @@ fn unreachable_and_trivial_queries() {
 
 #[test]
 fn a_compared_plan_tells_the_rider_what_it_cost() {
-    let net = router(&fixture_zip());
+    let (network, day) = model_day(&fixture_zip(), DATE);
+    let net = RouterNetwork::build_from_day(&network, &day, DATE);
     let found = earliest_arrival(&net, "A", "B", 8 * 3600, 4).expect("query").expect("A -> B runs");
-    assert_eq!(plan_notice(Some(&found), None, 6), None);
-    assert_eq!(plan_notice(Some(&found), Some(&found), 6), None);
-    let lost = plan_notice(None, Some(&found), 6).unwrap();
-    assert!(lost.ends_with(&format!("arrive {}.", &found.arrival_hhmmss[..5])), "{lost}");
-    assert_eq!(
-        plan_notice(None, None, 6).as_deref(),
-        Some("No trip found within 6 legs — try a different time or closer stops.")
-    );
+    let none = DivertedTrips::default();
+    // Nothing diverted, nothing later: nothing to tell.
+    assert_eq!(plan_notice(&network, Some(&found), None, 6, &none), None);
+    assert_eq!(plan_notice(&network, Some(&found), Some(&found), 6, &none), None);
+    let lost = plan_notice(&network, None, Some(&found), 6, &none).unwrap();
+    assert_eq!(lost.kind, NoticeKind::Unreachable);
+    assert_eq!(lost.baseline_arrival_secs, Some(found.arrival_secs));
+    assert!(lost.text.ends_with(&format!("arrive {}.", &found.arrival_hhmmss[..5])), "{}", lost.text);
+    let nothing = plan_notice(&network, None, None, 6, &none).unwrap();
+    assert_eq!(nothing.kind, NoticeKind::NoTrip);
+    assert_eq!(nothing.text, "No trip found within 6 legs — try a different time or closer stops.");
 }
 
 #[test]

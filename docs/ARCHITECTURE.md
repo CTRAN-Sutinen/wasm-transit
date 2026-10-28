@@ -53,7 +53,13 @@ transit-network The authored network model (planner authority):
                 one-start trip at its start, an exact frequency trip
                 on its grid, a non-exact one at any start inside a
                 band. A trip instance is addressed (trip, start)
-                everywhere. The network models everything the GTFS
+                everywhere. WHERE A BUS IS GOING is one rule
+                (`signs.rs`, `visit_destination`): the visit's own
+                headsign (it overrides the trip's at that visit
+                only, as GTFS's stop_headsign does), else the trip's,
+                else the final stop named as its place (the parent
+                station, never the bay) — every board row and
+                itinerary leg reads it. The network models everything the GTFS
                 Schedule spec describes, in model vocabulary, each
                 family in its own module: per pattern stop its
                 headsign, pickup / drop-off and continuous-stopping
@@ -127,13 +133,32 @@ transit-network The authored network model (planner authority):
                 in route order, a variant's stops slotted where it
                 leaves the others; rows are `materialize_service`'s
                 trips, never a second derivation).
-transit-router  RAPTOR earliest-arrival planning over the network
-                model's materialized day (patterns grouped by actual
-                stop sequence — an edited trip rides its own
-                pattern); GTFS-free. `plan_notice` is what
-                a rider is told when a compared plan finds no trip
-                (the arrival a diversion cost, or none within the
-                legs searched).
+transit-router  RAPTOR planning over the network model's
+                materialized day; pure (no I/O, clock, or calendar),
+                GTFS-free. `RouterNetwork::build(network, day, date,
+                live)` groups the caller's day (plain or effective)
+                into patterns by actual stop sequence — an edited
+                trip rides its own pattern. With a live document,
+                each trip instance rides at its predicted times where
+                the document states them (delays against the
+                published schedule, clamped so a trip never runs
+                backwards), the day's own times elsewhere.
+                `earliest_arrival` answers leave-at;
+                `latest_departure` answers ARRIVE-BY — the same
+                rounds run backward from the destination, and with
+                no deadline the service day's last arrival: the last
+                bus home; its itinerary is the forward plan from that
+                departure. A transit leg names its trip instance,
+                the route's label and long name, the sign at the
+                boarding visit (`visit_destination`), and how far
+                each predicted time moved (board/alight_delay_secs,
+                null without a prediction). `notice::plan_notice` is
+                the one place a compared plan's notice is computed:
+                structured (no_trip / unreachable / later / diverted,
+                minutes lost, routes, skipped stops) plus a text
+                line, firing whenever the diverted world arrives
+                later, has no trip, or rides a trip instance whose
+                patched times differ from its unpatched one.
 transit-codec   The network codec, both directions, over the whole
                 GTFS Schedule spec: `Feed` (src/feed.rs) reads and
                 writes every spec file and column as the exact text
@@ -211,7 +236,14 @@ transit-dispatch The materialized day's views, model-native: patch_day
                 pooling for a stop with nothing of its own,
                 realtime-first over the live document — rows
                 ordered by when the bus actually leaves, each with
-                its expected time, delay, and status), the day's
+                its expected time, delay, and status, its route's
+                short and long names, its bay's name, and its
+                destination as the sign says there; the departures
+                the day's edits took away (`skipped`, each with the
+                diversion that skips it — day_edits holds the
+                unpatched day beside the patched one); the live
+                document's alerts about the board, each row naming
+                its own), the day's
                 blocks list, the fleet summary (peak concurrent
                 vehicles and when, platform / revenue / layover
                 hours), the service keys
@@ -244,15 +276,24 @@ transit-rt      prost types from the official GTFS-rt proto, the
                 pairs stop updates by the published stop_sequence
                 (the import's `Boundary`; 1..n without one), by stop
                 id only when an update names none. The BOUNDARY
-                RESOLUTION (live_day): a snapshot plus the network
+                RESOLUTION (live_day): snapshots (trip updates,
+                vehicle positions, service alerts) plus the network
                 (and its boundary) → THE live document, the one
-                place rt trip ids are resolved (tests/rt_join_law_test).
+                place rt trip ids are resolved (tests/rt_join_law_test)
+                and the one place an alert's informed entities become
+                routes, stops, and trip instances — kept when in
+                force at the snapshot's moment (tests/alert_test).
 transit-live    THE live document: one rt moment in model vocabulary
                 (delays per trip instance (trip, start) and stop,
                 vehicles on their trip instances, every status classified under the
                 on-time window the document records — one window,
-                never a threshold per view), the classification
-                rule, and the status summary. Pure data; no GTFS
+                never a threshold per view; by default ANY earliness
+                is early, because a bus leaving early is a missed
+                bus — and the service alerts in force, each a set of
+                scopes: route / stop / trip instance, fields ANDed,
+                scopes ORed, all absent = the agency), the
+                classification and alert-matching rules, and the
+                status summary. Pure data; no GTFS
                 layer (arch gate). Minted by cap-rt, read by
                 cap-board — no host computes a delay.
 transit-sync   THE sync document: EditRecord, FeedManifest, EditReport,
@@ -386,8 +427,10 @@ Two rulings that follow from it:
 
 - **The live document.** cap-rt answers "what is live" in MODEL
   vocabulary: an rt snapshot plus the network resolve into a
-  kernel document of delays per trip instance and stop, addressed
-  by hash; cap-board consumes it by hash. rt trip ids resolve
+  kernel document of delays per trip instance and stop and of the
+  service alerts in force, addressed by hash; cap-board (and the
+  router) consume it by hash. Which alert touches which departure
+  is the board's answer, never the host's. rt trip ids resolve
   INSIDE the op, never in a host. Thresholds (the on-time
   window) are op parameters.
 - **Geometry is a model answer.** "What path does this trip take
@@ -663,19 +706,25 @@ cap-gtfs        The feed-document capability: GTFS zip →
                 spec `Feed`. CHARTER
                 CLOSED: parse, export, primitive boundary queries —
                 nothing more goes "in GTFS."
-cap-router      The router capability: RAPTOR earliest-arrival
-                planning over the NETWORK document and the
-                effective day — the model's materialized trips,
+cap-router      The router capability — ONE QUESTION: how do I get
+                from here to there? — over the NETWORK document and
+                the effective day — the model's materialized trips,
                 patched with the edits in force (the same
                 transit-dispatch composition every day view starts
-                from), the RAPTOR graph cached per (network, edits,
-                date). The compare facet is the diversion delta:
-                the unpatched day, one materialization apart; the
+                from), read at the live document's predictions when
+                live_hash names one (load_live), the RAPTOR graph
+                cached per (network, edits, live, date; only the
+                newest live document's graphs stay). plan leaves at
+                a time; plan_arrive_by answers the latest departure
+                that arrives by a deadline (none: the last bus home).
+                The compare facet is the diversion delta:
+                the unpatched day read at the same predictions, one
+                materialization apart, with its notice; the
                 itinerary_paths facet draws a plan's legs over the
                 same day (a transit leg's ridden segment, a walk
                 through its via stops). The browser plans through
                 plan_compare alone (no edits hash: no baseline) and
-                shows its notice. A pure-function capability; it
+                shows its notice's text. A pure-function capability; it
                 writes nothing.
 cap-analysis    The analysis capability: planner numbers (stats,
                 service types, coverage) over hash-keyed network and
@@ -699,7 +748,8 @@ cap-network     The network codec capability: load_feed (zip bytes →
 cap-rt          The realtime capability: decode — a GTFS-rt protobuf
                 payload (bulk-bytes op 0, the ephemeral bytes an
                 agency serves every few seconds) into the overview
-                view (delays per trip/stop, live vehicles), each
+                view (delays per trip/stop, live vehicles, service
+                alerts in the feed's ids), each
                 snapshot registered under its content hash; and the
                 SCHEDULE JOIN the dispatcher actually asks for, over
                 the NETWORK: load_network (the identity every
@@ -715,7 +765,9 @@ cap-rt          The realtime capability: decode — a GTFS-rt protobuf
                 vehicle (position_trip_id names the trip it is on;
                 vehicle_id rides beside the label). live mints THE
                 LIVE DOCUMENT (transit-live) from the
-                trip-updates and/or vehicle-positions snapshots, with
+                trip-updates, vehicle-positions, and/or service-alerts
+                snapshots (alerts_hash; every snapshot's own alerts
+                count, one per entity id), with
                 the summary a status panel reads (vehicles by
                 status, the late list) — the browser's live views
                 render it; none joins rt.
@@ -728,8 +780,11 @@ cap-board       The board capability — ONE QUESTION: when does
                 (validated per record against the network, invalid
                 records REPORTED never rejected) / load_live (cap-rt's
                 live document, by hash) then stop_board (THE board:
-                pooling, realtime-first order, row status — the
-                module's answer, never the host's) / load_watchlist /
+                pooling, realtime-first order, row status, the
+                route's long name, the bay's name, the sign's
+                destination, the visits the in-force edits skip and
+                the diversion that skips each, the live alerts about
+                the board — the module's answer, never the host's) / load_watchlist /
                 migrate_watchlist / watchlist_board (a trip's FINAL
                 visit is an arrival, never a row) over ONE
                 MATERIALIZED DAY (materialize(net, date), patched
@@ -782,8 +837,15 @@ cap-directory   The directory capability — ONE QUESTION: what
                 with the walking-group structure the station board
                 keys on; an optional query narrows it the way a
                 picker's typing does), the names join (stops_by_ids),
-                the route list
-                (the model's closed mode set), and one route's
+                the PLACES nearest a point (stops_near: great-circle
+                meters, nearest first, ties by id, at most `limit`,
+                within `radius_m` when given; a station's bays answer
+                once as the station, at its nearest member's
+                distance — the walking group the board pools; names
+                are matched exactly, never by alias), the route list
+                (the model's closed mode set; every row that names a
+                route carries its long name — routes, entities,
+                stop_detail's routes, the timetable header), and one route's
                 PATTERNS with their ordered stops — what the
                 diversion editor anchors against (new edit records
                 carry direction_id null — the documented

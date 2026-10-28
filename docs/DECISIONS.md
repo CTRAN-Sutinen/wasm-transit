@@ -32,7 +32,7 @@ the rest of the work can go ahead while the decision is reviewed.
   goes into the law that pins it and the doc that owns its topic
   (`docs/ARCHITECTURE.md`, `docs/units/`, `docs/QA-FINDINGS.md`),
   and the `Blocked: D-N` lines are removed. Git is the archive.
-- IDs are never reused; the next new decision is **D-17**.
+- IDs are never reused; the next new decision is **D-22**.
 
 ## Summary
 
@@ -43,7 +43,6 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-3 | Which timing profile does the import give a pattern? | encoded | nothing |
 | D-5 | Does the import keep a block that breaks the spec? | encoded | nothing |
 | D-6 | Does "frequent" count terminal arrivals? | unanswered | QAF-78 |
-| D-7 | How early is too early? | unanswered | QAF-71 |
 | D-8 | Do timetable edits act on the whole service family? | unanswered | QAF-65 gestures, QAF-44 |
 | D-9 | Where does required recovery time come from? | unanswered | QAF-62, QAF-26 |
 | D-10 | Agency questions on C-TRAN's data | unanswered | QAF-9, QAF-48 |
@@ -52,6 +51,11 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-14 | Does the proposal comparison collect public responses? | unanswered | `ui-proposal-compare` question 6 |
 | D-15 | What makes a trip "covered"? | unanswered | `ui-disruptions` question 6 |
 | D-16 | Where does the runs layer live? | encoded | nothing |
+| D-17 | What does "the last bus" mean with no deadline? | encoded | nothing |
+| D-18 | How do live delays meet a diverted trip? | encoded | nothing |
+| D-19 | Does an alert for one direction reach both? | encoded | nothing |
+| D-20 | Which language does an alert speak? | encoded | nothing |
+| D-21 | Where is a trip going when nothing signs it? | encoded | nothing |
 
 ## The trip model
 
@@ -181,16 +185,6 @@ way); or keep counting arrivals and document the difference.
 Blocks: the fix for QAF-78, and the `frequent_pct` number in
 `transit-analysis` `regression_test`.
 
-### D-7 — How early is too early?
-State: Unanswered.
-Context: QAF-71. The default `OnTimeWindow` has
-`early_secs: None`, so a vehicle is never early. Early is not on
-time, but the threshold is a policy number.
-Options: 0 s (any earliness is early); a grace period (for example
-59 s, so the minute shown on a sign still matches); or no default,
-so the host must pass a policy.
-Blocks: the fix for QAF-71 (`transit-live` and its laws).
-
 ## Service types
 
 ### D-8 — Do timetable edits act on the whole service family?
@@ -235,6 +229,78 @@ Options:
 - A `Block` extension: runs as fields on blocks in the network
   document. Every network consumer then carries operator work.
 Pinned by: `docs/ROADMAP.md` 7, `docs/units/ui-runcut.md`.
+Blocks: nothing.
+
+## Riding today
+
+### D-17 — What does "the last bus" mean with no deadline?
+State: Encoded provisionally.
+Context: the last bus home. `plan_arrive_by` without `arrive_by_secs` answers
+the latest departure that still reaches the destination. Something
+has to stand in for the missing deadline.
+Options:
+- **The service day's last arrival (encoded).** A pair a rider can
+  walk between answers a walk that leaves at that moment minus the
+  walk.
+- Transit legs only: a walk never counts as the last way home.
+Pinned by: transit-router `arrive_by_law_test` (law 4), cap-router
+`arrive_by_answers_the_latest_departure`.
+Blocks: nothing.
+
+### D-18 — How do live delays meet a diverted trip?
+State: Encoded provisionally.
+Context: a live plan reads each trip at its predicted
+times. The rt feed states delays against the PUBLISHED schedule, and
+a diversion's `added_secs` also shifts the trip.
+Options:
+- **The rt delay wins (encoded).** A stated visit is the published
+  time plus the delay, not also shifted by `added_secs`. A visit is
+  matched by its scheduled departure, else by stop when the trip
+  visits it once. A missing arrival (departure) delay takes the
+  other's, and predictions are clamped so a trip never runs
+  backwards.
+- Both apply: the delay is read against the patched time.
+Pinned by: transit-router `live_law_test`, cap-router
+`a_compared_plan_reads_live_in_both_worlds`.
+Blocks: nothing.
+
+### D-19 — Does an alert for one direction reach both?
+State: Encoded provisionally.
+Context: a GTFS-rt informed entity may name a `direction_id`. The
+model matches patterns, not GTFS directions (the diversion record
+keeps `direction_id` for the boundary path only).
+Options:
+- **Not matched (encoded):** the alert reaches both directions of
+  the route. Telling too many riders beats telling none.
+- Resolve the GTFS direction to the route's model directions at the
+  boundary and scope the alert to them.
+Pinned by: transit-rt `alert_test` (`resolve_scope` ignores the
+direction).
+Blocks: nothing.
+
+### D-20 — Which language does an alert speak?
+State: Encoded provisionally.
+Context: alert text is a `TranslatedString`. The live document
+carries one string per field.
+Options:
+- **The untagged translation, else the first (encoded).**
+- Carry every translation and let the reader's language choose.
+  That choice would be a parameter on the board, never host logic.
+Pinned by: transit-rt `alert_test`
+(`an_alert_decodes_and_resolves_into_model_vocabulary`).
+Blocks: nothing.
+
+### D-21 — Where is a trip going when nothing signs it?
+State: Encoded provisionally.
+Context: a board row's or leg's destination. `visit_destination` reads the visit's headsign, then
+the trip's. When neither is set, the rule falls back to the final
+stop, and that stop may be a bay ("Van Mall Transit Center: Bay D").
+Options:
+- **The final stop's parent station, else its own name (encoded).**
+- The final stop's own name, bay included.
+Pinned by: transit-network `signs_law_test`
+(`a_final_bay_is_named_by_its_station`), transit-dispatch
+`a_row_is_going_where_its_sign_says`.
 Blocks: nothing.
 
 ## Public comparison
