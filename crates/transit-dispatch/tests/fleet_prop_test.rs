@@ -15,8 +15,8 @@ use chrono::NaiveDate;
 use proptest::prelude::*;
 use transit_dispatch::fleet_summary;
 use transit_network::{
-    materialize, Block, CalendarRule, DateRange, Departures, Network, Pattern, PatternTrips,
-    PatternStop, Route, ServiceType, Stop, TimingProfile, TripRef, WeekdaySet,
+    materialize, Block, CalendarRule, DateRange, Departs, Network, Pattern, PatternTrips, PatternStop, Route,
+    ServiceType, Stop, StopOffset, TimingProfile, Trip, TripRef, WeekdaySet,
 };
 
 fn day() -> NaiveDate {
@@ -62,7 +62,18 @@ fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) ->
     let mut pattern_trips = std::collections::BTreeMap::new();
     pattern_trips.insert(
         "s0".to_string(),
-        PatternTrips { pattern: "p0".into(), service_type: "WK".into(), departures: Departures::ExactTimes { starts: starts.clone() } },
+        PatternTrips {
+            pattern: "p0".into(),
+            service_type: "WK".into(),
+            trips: starts
+                .iter()
+                .map(|&s| Trip {
+                    id: format!("s0@{s}"),
+                    departs: Departs::At { start_secs: s },
+                    times: [0, 600].map(|t| StopOffset { arrival_secs: Some(t), departure_secs: Some(t) }).to_vec(),
+                })
+                .collect(),
+        },
     );
     // Partition the (sorted, unique) starts into consecutive blocks;
     // the trailing `unassigned_tail` starts belong to no block.
@@ -79,7 +90,7 @@ fn build_network(starts: Vec<u32>, block_sizes: Vec<u8>, unassigned_tail: u8) ->
         let end = (index + size as usize).min(trips.len());
         blocks.insert(
             format!("b{n}"),
-            Block { trips: trips[index..end].iter().map(|&s| TripRef { pattern_trips: "s0".into(), start_secs: s }).collect(), layovers: vec![] },
+            Block { trips: trips[index..end].iter().map(|&s| TripRef { trip: format!("s0@{s}") }).collect(), layovers: vec![] },
         );
         index = end;
     }
@@ -110,8 +121,8 @@ proptest! {
         block_sizes in proptest::collection::vec(1u8..=3, 0..=6),
         unassigned_tail in 0u8..3,
     ) {
-        // Distinct, sorted starts (trip identity is (schedule,
-        // start) — duplicates are one trip).
+        // Distinct, sorted starts: one vehicle per block runs them in
+        // turn.
         let starts: Vec<u32> = {
             let mut s: Vec<u32> = slots.into_iter().map(|x| x as u32 * 600).collect();
             s.sort_unstable();
@@ -129,7 +140,7 @@ proptest! {
             let running: Vec<&transit_network::MaterializedTrip> = day
                 .iter()
                 .filter(|t| {
-                    block.trips.iter().any(|r| r.pattern_trips == t.pattern_trips && r.start_secs == t.start_secs)
+                    block.trips.iter().any(|r| r.trip == t.trip)
                 })
                 .collect();
             if running.is_empty() {

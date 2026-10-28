@@ -2,20 +2,21 @@
 //! carrying the rule that keeps the document coherent, over the
 //! committed planner network (testdata/network.json: stops A/B/C,
 //! route 10, pattern 10-inbound A·B·C with A and C timepoints, the
-//! weekday schedule at 08:00 / 08:30 / 25:30, block 400 with one
+//! weekday trips at 08:00 / 08:30 / 25:30, block 400 with one
 //! layover).
 //!
 //! 1. creation mints the first free id (or takes the caller's) and
 //!    reports it;
-//! 2. timing vectors stay aligned with the timepoints through every
-//!    pattern gesture;
-//! 3. starts stay sorted and unique; blocks stay in time order and
-//!    layovers only sit between two trips;
+//! 2. timing vectors and every trip's times stay aligned with the
+//!    pattern's stops through every pattern gesture;
+//! 3. blocks stay in time order and layovers only sit between two
+//!    trips;
 //! 4. a gesture that cannot apply is a named error, never a silent
 //!    no-op — and the document is untouched.
 
 use transit_network::{
-    apply_edits, apply_edits_reporting, Day, DayState, Network, NetworkEdit, Departures, TripRef,
+    apply_edits, apply_edits_reporting, Day, DayState, Departs, HeadwayBand, Network, NetworkEdit, StopOffset,
+    TripRef,
 };
 
 fn network() -> Network {
@@ -30,18 +31,17 @@ fn refused(net: &Network, edit: NetworkEdit) -> String {
     apply_edits(net, &[edit]).expect_err("the edit is refused").reason
 }
 
-/// Every profile carries one time per timepoint.
+/// Every profile carries one time per timepoint, and every trip one
+/// time per stop.
 fn aligned(net: &Network, pattern: &str) -> bool {
     let p = &net.patterns[pattern];
     let n = p.stops.iter().filter(|s| s.timepoint).count();
     p.timing.iter().all(|t| t.at_timepoints.len() == n)
+        && net.trips().filter(|(_, pt, _)| pt.pattern == pattern).all(|(_, _, t)| t.times.len() == p.stops.len())
 }
 
 fn starts(net: &Network, pattern_trips: &str) -> Vec<u32> {
-    match &net.pattern_trips[pattern_trips].departures {
-        Departures::ExactTimes { starts } => starts.clone(),
-        Departures::HeadwayBands { .. } => panic!("exact times"),
-    }
+    net.pattern_trips[pattern_trips].trips.iter().filter_map(|t| t.departs.first_start()).collect()
 }
 
 #[test]
@@ -96,13 +96,20 @@ fn creation_mints_ids_and_reports_them() {
 #[test]
 fn pattern_gestures_keep_timing_aligned() {
     let net = network();
-    // Make B a timepoint: the profile gains the midpoint of A and C.
+    // Make B a timepoint: the profile gains the midpoint of A and C,
+    // and every trip, exact there now, is scheduled where it ran.
     let on = apply(&net, vec![NetworkEdit::ToggleTimepoint { pattern: "10-inbound".into(), index: 1 }]);
     assert!(on.patterns["10-inbound"].stops[1].timepoint);
     assert_eq!(on.patterns["10-inbound"].timing[0].at_timepoints, vec![0, 300, 600]);
-    // …and back: the entry leaves.
+    for (_, _, t) in on.trips() {
+        assert_eq!(t.times[1], StopOffset { arrival_secs: Some(300), departure_secs: Some(300) });
+    }
+    assert!(transit_network::validation_issues(&on).is_empty());
+    // …and back: the entry leaves the profile; the trips keep the
+    // times they were given.
     let off = apply(&on, vec![NetworkEdit::ToggleTimepoint { pattern: "10-inbound".into(), index: 1 }]);
     assert_eq!(off.patterns["10-inbound"], net.patterns["10-inbound"]);
+    assert_eq!(off.pattern_trips, on.pattern_trips);
 
     // Insert before the last stop: halfway along the last leg, not a
     // timepoint — the vectors do not move.
@@ -113,6 +120,8 @@ fn pattern_gestures_keep_timing_aligned() {
     assert!(!stops[2].timepoint);
     assert_eq!(stops[2].distance_m, (stops[1].distance_m + stops[3].distance_m) / 2.0);
     assert!(aligned(&inserted, "10-inbound"));
+    assert!(inserted.trips().all(|(_, _, t)| t.times[2] == StopOffset::default()), "unscheduled on every trip");
+    assert!(transit_network::validation_issues(&inserted).is_empty());
 
     // Removing a middle TIMEPOINT drops its time from every profile.
     let with_profile = apply(&on, vec![NetworkEdit::AddTimingProfile { pattern: "10-inbound".into() }]);
@@ -129,17 +138,20 @@ fn pattern_gestures_keep_timing_aligned() {
 }
 
 #[test]
-fn starts_stay_sorted_and_unique() {
+fn bands_belong_to_frequency_trips() {
     let net = network();
-    let set = apply(&net, vec![NetworkEdit::SetStarts { pattern_trips: "10-weekday".into(), starts: vec![900, 300, 900] }]);
-    assert_eq!(starts(&set, "10-weekday"), vec![300, 900]);
-    let added = apply(&net, vec![NetworkEdit::AddStart { pattern_trips: "10-weekday".into() }]);
-    assert_eq!(starts(&added, "10-weekday"), vec![28_800, 30_600, 91_800, 92_400], "ten minutes after the last");
-    let removed = apply(&net, vec![NetworkEdit::RemoveStart { pattern_trips: "10-weekday".into(), index: 0 }]);
-    assert_eq!(starts(&removed, "10-weekday"), vec![30_600, 91_800]);
-    let one = apply(&net, vec![NetworkEdit::SetStarts { pattern_trips: "10-weekday".into(), starts: vec![28_800] }]);
-    assert!(refused(&one, NetworkEdit::RemoveStart { pattern_trips: "10-weekday".into(), index: 0 }).contains("at least one"));
-    assert!(refused(&net, NetworkEdit::AddBand { pattern_trips: "10-weekday".into() }).contains("not headway bands"));
+    assert!(refused(&net, NetworkEdit::AddBand { trip: "10-weekday@91800".into() }).contains("runs once"));
+    let mut every = net.clone();
+    every.pattern_trips.get_mut("10-weekday").unwrap().trips[2].departs = Departs::Every {
+        bands: vec![HeadwayBand { start_secs: 6 * 3600, end_secs: 9 * 3600, headway_secs: 900 }],
+        exact: true,
+    };
+    let added = apply(&every, vec![NetworkEdit::AddBand { trip: "10-weekday@91800".into() }]);
+    let Departs::Every { bands, .. } = &added.trip("10-weekday@91800").unwrap().2.departs else { panic!("every") };
+    assert_eq!(bands[1], HeadwayBand { start_secs: 9 * 3600, end_secs: 12 * 3600, headway_secs: 900 });
+    assert!(refused(&every, NetworkEdit::RemoveBand { trip: "10-weekday@91800".into(), index: 0 }).contains("at least one"));
+    assert!(refused(&every, NetworkEdit::RetimeTrip { trip: "10-weekday@91800".into(), to_secs: 1 }).contains("frequency"));
+    assert_eq!(starts(&net, "10-weekday"), vec![28_800, 30_600, 91_800]);
 }
 
 #[test]
@@ -149,10 +161,10 @@ fn blocks_stay_in_time_order_with_layovers_between_trips() {
     // a pair, the one past the end is pruned.
     let early = apply(
         &net,
-        vec![NetworkEdit::AddBlockTrip { block: "400".into(), trip: TripRef { pattern_trips: "10-weekday".into(), start_secs: 91_800 } }],
+        vec![NetworkEdit::AddBlockTrip { block: "400".into(), trip: TripRef { trip: "10-weekday@91800".into() } }],
     );
-    let order: Vec<u32> = early.blocks["400"].trips.iter().map(|t| t.start_secs).collect();
-    assert_eq!(order, vec![28_800, 30_600, 91_800]);
+    let order: Vec<&str> = early.blocks["400"].trips.iter().map(|t| t.trip.as_str()).collect();
+    assert_eq!(order, vec!["10-weekday@28800", "10-weekday@30600", "10-weekday@91800"]);
     let set = apply(&early, vec![NetworkEdit::SetLayover { block: "400".into(), after_trip: 1, secs: Some(600) }]);
     assert_eq!(set.blocks["400"].layovers.len(), 2);
     let cut = apply(&set, vec![NetworkEdit::RemoveBlockTrip { block: "400".into(), index: 2 }]);
@@ -162,9 +174,9 @@ fn blocks_stay_in_time_order_with_layovers_between_trips() {
     assert!(refused(&net, NetworkEdit::SetLayover { block: "400".into(), after_trip: 1, secs: Some(60) }).contains("between two"));
     assert!(refused(
         &net,
-        NetworkEdit::AddBlockTrip { block: "400".into(), trip: TripRef { pattern_trips: "ghost".into(), start_secs: 0 } }
+        NetworkEdit::AddBlockTrip { block: "400".into(), trip: TripRef { trip: "ghost".into() } }
     )
-    .contains("unknown pattern trips"));
+    .contains("unknown trip"));
 }
 
 #[test]

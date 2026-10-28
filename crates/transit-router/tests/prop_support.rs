@@ -18,8 +18,8 @@ pub fn model_day(
     zip: &[u8],
     date: NaiveDate,
 ) -> (transit_network::Network, Vec<transit_network::MaterializedTrip>) {
-    let gtfs = transit_core::Gtfs::from_zip_bytes(zip).expect("parse");
-    let outcome = transit_codec::gtfs_to_network(&gtfs);
+    let feed = transit_codec::Feed::from_zip_bytes(zip).expect("parse");
+    let outcome = transit_codec::import(&feed);
     let day = transit_network::materialize(&outcome.network, date).expect("materialize");
     (outcome.network, day)
 }

@@ -2,8 +2,8 @@
 //! image of import — the publish path. A planner imports a feed,
 //! edits the document, and publishes; the published artifact must
 //! represent the SAME network the planner sees. The generator is
-//! adversarial (colliding starts, run-time variation, overlapping
-//! blocks), so the round trip is exercised on exactly the feeds
+//! adversarial inside the spec (colliding starts, run-time variation,
+//! shared blocks), so the round trip is exercised on exactly the feeds
 //! inference is worst at.
 //!
 //! The API these laws require: `transit_codec::import(&Feed) ->
@@ -73,6 +73,27 @@ fn gen_trip() -> impl Strategy<Value = GenTrip> {
         })
 }
 
+/// Blocks that respect the spec: a block's trips on one service day
+/// never overlap (one vehicle), so a trip joins its block only where
+/// it fits.
+fn blocks(trips: &[GenTrip]) -> Vec<Option<u8>> {
+    let mut taken: std::collections::BTreeMap<(u8, u8), Vec<(u32, u32)>> = Default::default();
+    trips
+        .iter()
+        .map(|t| {
+            let b = t.block?;
+            let start = (t.start_slot as u32) * 600;
+            let span = (start, start + (t.stops.len() as u32 - 1) * (t.leg_min as u32) * 60);
+            let spans = taken.entry((b, t.service)).or_default();
+            if spans.iter().any(|&(s, e)| span.0 <= e && s <= span.1) {
+                return None;
+            }
+            spans.push(span);
+            Some(b)
+        })
+        .collect()
+}
+
 fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let opts = zip::write::SimpleFileOptions::default();
@@ -94,13 +115,14 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
     add(&mut w, "stops.txt", &stops);
 
     let mut trips_txt = String::from("route_id,service_id,trip_id,block_id,direction_id,trip_headsign");
+    let blocks = blocks(trips);
     for (i, t) in trips.iter().enumerate() {
         trips_txt.push_str(&format!(
             "\n{},{},{},{},{},{}",
             t.route,
             t.service,
             format!("t{i}"),
-            t.block.map(|b| b.to_string()).unwrap_or_default(),
+            blocks[i].map(|b| b.to_string()).unwrap_or_default(),
             t.direction.map(|d| d.to_string()).unwrap_or_default(),
             t.headsign.map(|h| format!("Sign {h}")).unwrap_or_default()
         ));

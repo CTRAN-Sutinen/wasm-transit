@@ -28,13 +28,28 @@ transit-network The authored network model (planner authority):
                 patterns, timing profiles, service types (the
                 service identifier, linked to days by its calendar
                 rule), pattern trips (`PatternTrips`: one pattern's
-                departures under one service type — NOT a planner's
+                trips under one service type — NOT a planner's
                 schedule; the timetable a planner reads is a route's
                 direction under one service type, across its
-                patterns), runcut. Trips are DERIVED
-                (`materialize`) — trips are never stored. GTFS is a
-                codec at the boundary, not the model; no GTFS types
-                leak in here. Transfer points are authored flags on
+                patterns), runcut. A TRIP is a stored record: its
+                own id, its own departure (`Departs::At` one start,
+                or `Departs::Every` a frequency — one instance per
+                band slot, sharing the trip's id and times), and its
+                own time at every pattern stop (`StopOffset`s from
+                its start; a timepoint stop carries both times, an
+                unscheduled one materializes by distance between its
+                scheduled neighbours). A pattern's timing profiles
+                are the planner's tool for PRODUCING a new trip's
+                times, never the schedule. A block references trips
+                by id and runs each whole (a frequency trip's
+                instances back to back); it may hold service types
+                that never share a day, and is judged day by day.
+                `materialize` answers a day's instances of the stored
+                trips; `read_network` also reads documents written
+                before trips were stored (each old departure becomes
+                a trip `{pattern_trips}@{start}`). GTFS is a codec at
+                the boundary, not the model; no GTFS types leak in
+                here. Transfer points are authored flags on
                 stops, composed over their WALKING GROUP (the stop +
                 siblings sharing a parent, the parent, children —
                 transfers happen across a street, not at one pin).
@@ -47,17 +62,20 @@ transit-network The authored network model (planner authority):
                 removals refuse while referenced. Two levels:
                 entity upserts/removes, and GESTURES — one edit per
                 thing a planner does, each carrying its coherence
-                rule (timing aligned with timepoints, starts sorted
-                and unique, layovers only between trips, ids minted
-                and reported, the plan frame merged field-wise) —
+                rule (timing aligned with timepoints, every trip's
+                times aligned with its pattern's stops, layovers only
+                between trips, ids minted and reported, the plan
+                frame merged field-wise) —
                 and the TIMETABLE's gestures (`timetable_edit.rs`:
                 headway, span, running time, and stops, stated
                 for a route + direction (+ service type) and
                 applied across its patterns; a trip that stays is
-                retimed with its blocks, one that goes leaves
-                them, a new one is unassigned). Validation
-                answers issues (gate: a block trip its pattern
-                trips do not run is one) and WARNINGS that never gate
+                retimed and keeps its id, so its blocks keep it; one
+                that goes leaves them; a new one gets a fresh id and
+                is unassigned; a running-time change names its
+                service type). Validation answers issues (gate: a
+                block naming a trip the network does not have is
+                one) and WARNINGS that never gate
                 (unassigned trips; a pick with no service in its
                 first week). GEOMETRY lives here too
                 (`geometry.rs`): a pattern's alignment (its authored
@@ -69,9 +87,9 @@ transit-network The authored network model (planner authority):
                 of any kind narrowed by every filter term, and a
                 route's composition (patterns, the stops they
                 visit, pattern trips by service type, patterns by
-                direction) — each entry's trip count is
-                `trip_starts`, the materialized day's own
-                expansion — a stop's serving routes, and the
+                direction) — each entry's trip count is its trips'
+                instances, the materialized day's own expansion — a
+                stop's serving routes, and the
                 planner's TIMETABLE (`timetable`: one route, one
                 direction, one service type — every trip of the
                 direction's patterns by start, one column per stop
@@ -85,42 +103,50 @@ transit-router  RAPTOR earliest-arrival planning over the network
                 a rider is told when a compared plan finds no trip
                 (the arrival a diversion cost, or none within the
                 legs searched).
-transit-codec   The network codec, both directions: a network document
-                expanded into the derived-feed view (the publish
-                path) and a GTFS feed inferred into an authored
-                document (the planner's bootstrap). The import is
-                VALID BY CONSTRUCTION over spec-valid feeds (the law,
-                property-tested in tests/import_prop_test) and every
-                resolution it applies (dropped block trips, unusable
-                transfer points, …) is REPORTED as an ImportNote —
-                never silent. Each trip's stop times survive the
-                import EXACTLY: patterns cluster by (route,
-                direction, stop sequence, exactness flags,
-                timepoint times, distances), so run-time
-                variation between trips of one stop sequence becomes
-                pattern variants of the same direction, never a
-                collapsed profile (property-tested: materialized
-                trips preserve feed stop times). The fidelity
-                columns survive too: a stop's timepoint flag
-                becomes the pattern's `timepoint` (first and last
-                stops always are — the model times a trip by its
-                start and arrival), `shape_dist_traveled` becomes
-                `distance_m` (fabricated index × 500 m only where
-                the feed publishes none), and a timepoint stop
-                keeps its exact feed time while non-timepoint stops
-                interpolate by distance (the spec calls those rows
-                approximate — property-tested: exactness flags and
-                distances survive the import). The import also
-                infers each block
-                layover from the observed end→start gap (exactly
-                feasible — the model's LayoverInfeasible law holds
-                with equality); the planner re-authors from there.
-                GTFS direction_id becomes the route's directions
-                ("0"/"1"), named by the trips' most common headsign
-                (else "To" the commonest terminal); the export
-                signs directed trips with the direction's name and
-                writes direction_id back, so both survive the round
-                trip (the codec fixpoint law covers them).
+transit-codec   The network codec, both directions, over the whole
+                GTFS Schedule spec: `Feed` (src/feed.rs) reads and
+                writes every spec file and column as the exact text
+                the feed carried — lossless by construction,
+                deterministic zip bytes — and `import` / `export`
+                map a feed to an authored network document and back.
+                A feed's trips ARE the document's trips: the
+                agency's ids, every scheduled time exactly
+                (offsets from the trip's first arrival), frequency
+                trips as frequency trips, blocks by trip. Patterns
+                are stop sequences — one per (route, direction,
+                stops, exactness flags, shape); how long a trip
+                takes is its own. A row is exact (the pattern's
+                timepoint) when it carries both times and does not
+                say timepoint=0. The `Boundary` is the import's
+                serialization residue (stop_sequence numbering, a
+                frequency trip's stop_times base); an authored
+                document exports with the default. Service ids are
+                service types, written back as authored (the
+                calendar row, exceptions as calendar_dates); the
+                import keeps every calendar the feed names. Each
+                pattern gets one all-day timing profile from its
+                earliest trip (the production tool), and each block
+                layover is the observed gap between consecutive
+                one-start trips of one service type (the planner
+                re-authors from there). GTFS direction_id becomes
+                the route's directions ("0"/"1"), named by the
+                trips' most common headsign (else "To" the commonest
+                terminal); the export signs directed trips with the
+                direction's name and writes direction_id back. What
+                the model cannot hold yet is reported as an
+                ImportNote (stops without coordinates and the trips
+                serving them, single-stop trips, a transfer point
+                where fewer than two routes meet) — never silent.
+                The laws: the import is valid by construction over
+                spec-valid feeds (tests/import_prop_test), keeps the
+                trips (tests/trip_import_law_test), and
+                `import ∘ export` is a fixpoint
+                (tests/codec_prop_test); tests/spec_round_trip_test
+                holds GTFS → network → GTFS against the whole spec
+                (red until the network models every file —
+                docs/units/u8-gtfs-substrate.md). `trip_map` answers
+                every trip by its own id with its pattern trips and
+                first start — the join rt data is keyed by.
                 A LIBRARY under cap-network — the extraction
                 pattern: crate boundary first, capability wrapper
                 second. The C-TRAN import regressions live in its
@@ -171,12 +197,12 @@ transit-rt      prost types from the official GTFS-rt proto, the
                 LIBRARIES shared by cap-rt and any host that holds
                 the bytes (and, for the join, the static feed) —
                 and the BOUNDARY RESOLUTION (live_day): a snapshot
-                plus the static feed plus the import's trip map →
-                THE live document, the one place agency trip ids
-                meet the model.
+                plus the static feed plus the network's trip map →
+                THE live document, the one place rt trip ids meet
+                the model.
 transit-live    THE live document: one rt moment in model vocabulary
-                (delays per derived trip and stop, vehicles on
-                derived trips, every status classified under the
+                (delays per trip and stop, vehicles on their
+                trips, every status classified under the
                 on-time window the document records — one window,
                 never a threshold per view), the classification
                 rule, and the status summary. Pure data; no GTFS
@@ -292,8 +318,8 @@ small: it lands as an op instead.
 Two rulings that follow from it:
 
 - **The live document.** cap-rt answers "what is live" in MODEL
-  vocabulary: an rt snapshot plus the import's trip map resolve
-  into a kernel document of delays per derived trip and stop,
+  vocabulary: an rt snapshot plus the network's trip map resolve
+  into a kernel document of delays per trip and stop,
   addressed by hash; cap-board consumes it by hash. Agency trip ids
   resolve INSIDE the op, never in a host. Thresholds (the on-time
   window) are op parameters.
@@ -527,20 +553,19 @@ cap-analysis    The analysis capability: planner numbers (stats,
                 edge the manifest carries).
 cap-network     The network codec capability: load_feed (zip bytes →
                 content-hash feed registry), import (the planner's
-                bootstrap — the derived document registers itself
-                and its hash is in the response), load_network (the
+                bootstrap — the document registers itself with its
+                boundary residue, and its hash is in the response),
+                load_network (the
                 same registration name every model-side module uses),
                 validate (the authoring feedback loop: issues that
                 gate export, warnings that never gate), export (the
                 publish path — deterministic GTFS zip bytes under
-                their content hash, base64 across the JSON seam), and
-                trip_map (the import's trip-id map: derived
-                (pattern_trips, start) ↔ agency trip ids — the join rt
-                data and the feed's own ids are keyed by; None for
-                an authored network, the honest answer), and
-                agency_trip_ids (the map shaped to a question: the
-                agency ids behind given derived trips, in the order
-                asked). The domain code lives in the shared
+                their content hash, base64 across the JSON seam, with
+                the import's boundary when it is the imported
+                document itself), and trip_map (every trip by its
+                own id — the agency's, for an imported trip — with
+                its pattern trips and first start: the join rt data
+                is keyed by). The domain code lives in the shared
                 transit-codec library.
 cap-rt          The realtime capability: decode — a GTFS-rt protobuf
                 payload (bulk-bytes op 0, the ephemeral bytes an
@@ -583,8 +608,9 @@ cap-board       The board capability — ONE QUESTION: when does
                 per call and a day is cheap). The domain code lives
                 in the shared transit-dispatch library; no GTFS
                 layer (arch gate). The UI's departure board renders
-                stop_board's answer; rows carry the derived trip's
-                identity, so the click-through needs no agency join.
+                stop_board's answer; rows carry the trip instance's
+                address (pattern trips, start), so the click-through
+                needs no agency join.
 cap-runcut      The runcut capability — ONE QUESTION: what does
                 this vehicle do today? The day's blocks LIST (the
                 index facet: vehicles out, with that day's running
@@ -598,7 +624,9 @@ cap-runcut      The runcut capability — ONE QUESTION: what does
                 layover_remaining_secs going negative when a
                 connection is eaten, and layover_health classifying
                 it — overlap / tight / ok under the caller's
-                tight_layover_secs) and one derived trip's EFFECTIVE
+                tight_layover_secs; each row names its trip by id, a
+                frequency trip once per instance) and one trip
+                instance's EFFECTIVE
                 stops on the date (the trip detail facet) and its
                 LINE (trip_path — what the map's click-through draws:
                 the authored alignment, or the diversion's patched

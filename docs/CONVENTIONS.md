@@ -18,15 +18,16 @@ holds the gotchas, Rust/wasm/ops and frontend alike.
   `ServiceType` IS the service (the GTFS service_id — the day-linked
   design unit); a route runs in named `Direction`s and a pattern in
   at most one (GTFS's binary direction_id is only the codec's
-  encoding of them); `PatternTrips` are one pattern's departures under a
-  service type (`Departures`: exact starts or headway bands), and a
-  derived trip's identity is `(pattern_trips, start_secs)`; a
+  encoding of them); `PatternTrips` are one pattern's trips under a
+  service type; a `Trip` is a stored record — its id IS its identity
+  (the agency's, for an imported trip), with its own departure
+  (`Departs`: one start, or a frequency) and its own times; a
   `Network` document is a service plan. "Schedule" is NOT a model
   word: to a planner a schedule or timetable is a route's direction
   under one service type across all its patterns — that is the
   derived `Timetable` (directory `timetable`) — so the model never
-  names the per-pattern list that way (documents using the older
-  `schedules` field names still read, through serde aliases). Do not rename
+  names the per-pattern list that way (documents written before trips
+  were stored still read, through `read_network`). Do not rename
   these back toward GTFS's calendar/service words.
 - **Diagnostics are measurements; regressions are assertions.**
   Scratch repro specs live in /tmp with their own Playwright config

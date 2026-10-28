@@ -119,7 +119,7 @@ export type AppState = {
   blocks: DayBlock[],
   blocksOff: boolean,
   selectedBlock: string,
-  blockChain: { trips: BlockChainTrip[]; agencyTripIds: string[][] } | null,
+  blockChain: { trips: BlockChainTrip[] } | null,
   chainOff: boolean,
 
   // Trip planning (RAPTOR)

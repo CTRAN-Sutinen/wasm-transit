@@ -97,7 +97,8 @@ assemble at wire time.
 
 ```
 transit-core     GTFS codec substrate (parse, calendar, deterministic zip write)
-transit-network  THE authored network model — trips are derived (materialize);
+transit-network  THE authored network model — trips are stored records (own id,
+                 departure, times); materialize answers a day's instances;
                  authoring edits answer the next document (apply_edits);
                  where things are (pattern alignments, entity focus);
                  what exists, as the planner lists it (rows, route and stop composition,

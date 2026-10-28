@@ -189,7 +189,7 @@ pub fn service_type_detail(net: &Network, type_id: &str) -> Option<ServiceTypeDe
                 .get(&entry.pattern)
                 .map(|p| p.name.clone())
                 .unwrap_or_else(|| entry.pattern.clone()),
-            trips: transit_network::trip_starts(&entry.departures).len() as u32,
+            trips: entry.trips.iter().map(|t| t.departs.instances().len()).sum::<usize>() as u32,
         });
     }
 
@@ -292,7 +292,7 @@ pub fn schedule_texture(net: &Network, type_id: &str) -> Option<ScheduleTexture>
                 continue;
             }
             schedules += 1;
-            starts.extend(transit_network::trip_starts(&entry.departures));
+            starts.extend(entry.trips.iter().flat_map(|t| t.departs.instances()));
         }
         starts.sort_unstable();
         // Two service ids running the pattern at the same second is

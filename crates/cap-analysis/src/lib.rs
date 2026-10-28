@@ -400,7 +400,7 @@ pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
         },
         cap_abi::OP_LOAD_NETWORK => {
             return cap_abi::outcome(
-                cap_abi::parse_document(bytes).and_then(|network| dispatch(Request::LoadNetwork { network })),
+                cap_abi::parse_network(bytes).and_then(|network| dispatch(Request::LoadNetwork { network })),
             )
         }
         other => serde_json::json!({ "error": format!("unknown bulk op {other}") }),

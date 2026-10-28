@@ -383,16 +383,14 @@ export async function refreshBlockChain(): Promise<void> {
   try {
     const boarding = await ensureRuncutBoarding(bytes);
     const editsHash = boarding ? await ensureRuncutEdits(boarding.networkHash, records) : null;
-    const [module, network] = boarding ? await Promise.all([runcutModule(), networkModule()]) : [null, null];
+    const module = boarding ? await runcutModule() : null;
     if (seq !== chainSeq) return;
     if (!boarding || !module) {
       app.blockChain = null;
       app.chainOff = true;
       return;
     }
-    const trips = runcutCap(module).blockTrips(boarding.networkHash, editsHash, blockId, date);
-    const agencyTripIds = network ? networkCap(network).agencyTripIds(boarding.networkHash, trips) : trips.map(() => []);
-    app.blockChain = { trips, agencyTripIds };
+    app.blockChain = { trips: runcutCap(module).blockTrips(boarding.networkHash, editsHash, blockId, date) };
     app.chainOff = false;
   } catch {
     if (seq === chainSeq) {

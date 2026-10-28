@@ -180,6 +180,17 @@ pub fn parse_document<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T,
     serde_json::from_slice(bytes).map_err(|e| format!("invalid document: {e}"))
 }
 
+/// Parse a network document from bulk bytes: straight into the type,
+/// and — only when that fails — through `read_network`, which reads
+/// documents written before trips were stored (a host's saved
+/// documents load after the model changed).
+pub fn parse_network(bytes: &[u8]) -> Result<transit_network::Network, String> {
+    parse_document(bytes).or_else(|typed: String| {
+        let text = std::str::from_utf8(bytes).map_err(|e| format!("invalid document: {e}"))?;
+        transit_network::read_network(text).map_err(|_| typed)
+    })
+}
+
 /// The `{"ok": ..} | {"error": ..}` outcome every op answers,
 /// serialized directly (no intermediate `serde_json::Value`).
 pub fn outcome<T: serde::Serialize>(result: Result<T, String>) -> String {

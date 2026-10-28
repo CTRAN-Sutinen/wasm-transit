@@ -10,16 +10,16 @@ use transit_rt::{decode_overview, live_day};
 #[test]
 fn a_snapshot_resolves_into_derived_trips() {
     let gtfs = Gtfs::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
-    let import = transit_codec::gtfs_to_network(&gtfs);
+    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
+    let trip_map = transit_codec::trip_map(&transit_codec::import(&feed).network);
     let rt = decode_overview(include_bytes!("../../../web/e2e/fixtures/sample-rt.pb")).unwrap();
-    let t10 = import
-        .trip_map
+    let t10 = trip_map
         .entries
         .iter()
         .find(|e| e.agency_trip_ids.iter().any(|id| id == "t10"))
         .expect("t10 is in the trip map");
 
-    let day = live_day(&gtfs, Some(&rt), None, &import.trip_map, OnTimeWindow::default());
+    let day = live_day(&gtfs, Some(&rt), None, &trip_map, OnTimeWindow::default());
     assert_eq!(day.unmatched_trips, 0);
     assert_eq!(day.window, OnTimeWindow::default());
     let trip = day.trips.iter().find(|t| t.agency_trip_id == "t10").unwrap();
@@ -38,10 +38,10 @@ fn a_snapshot_resolves_into_derived_trips() {
 
     // A tighter window reclassifies — the policy is an input.
     let strict = OnTimeWindow { early_secs: None, late_secs: 60, very_late_secs: 120 };
-    assert_eq!(live_day(&gtfs, Some(&rt), None, &import.trip_map, strict).vehicles[0].status, LiveStatus::VeryLate);
+    assert_eq!(live_day(&gtfs, Some(&rt), None, &trip_map, strict).vehicles[0].status, LiveStatus::VeryLate);
 
     // Positions alone (no trip updates): vehicles, no predictions.
-    let positions_only = live_day(&gtfs, None, Some(&rt), &import.trip_map, OnTimeWindow::default());
+    let positions_only = live_day(&gtfs, None, Some(&rt), &trip_map, OnTimeWindow::default());
     assert!(positions_only.trips.is_empty());
     assert_eq!(positions_only.vehicles[0].status, LiveStatus::NoPrediction);
 

@@ -1,6 +1,6 @@
 [package]
 name = "transit-codec"
-description = "The network codec as a shared library: authored network documents expanded into the derived-feed view (and GTFS feeds inferred into authored documents). Shared library under the cap-network capability."
+description = "The network codec as a shared library: GTFS feeds read into authored network documents and written back, trip for trip. Shared library under the cap-network capability."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,6 @@ license.workspace = true
 serde = { workspace = true }
 ts-rs = { workspace = true }
 chrono = { workspace = true }
-transit-core = { path = "../transit-core" }
 transit-network = { path = "../transit-network" }
 # The whole-spec feed layer (src/feed.rs): zip members, CSV tables,
 # locations.geojson.
@@ -19,6 +18,8 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"
+# The regression fixtures' summaries read the old parser's counts.
+transit-core = { path = "../transit-core" }
 # The transfer-fixture regression test reads the composed question
 # (walking groups, timed connections) through the analysis library.
 transit-analysis = { path = "../transit-analysis" }

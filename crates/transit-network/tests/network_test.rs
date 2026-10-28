@@ -5,9 +5,9 @@
 
 use chrono::NaiveDate;
 use transit_network::{
-    validation_issues, Anchor, Block, CalendarException, CalendarRule, DateRange, DayState,
-    Layover, Mode, Network, NetworkError, Pattern, PatternTrips, PatternStop, Route, Departures, ServiceType,
-    HeadwayBand, TimingProfile, TripRef, WeekdaySet,
+    validation_issues, Anchor, Block, CalendarException, CalendarRule, DateRange, DayState, Departs, HeadwayBand,
+    Layover, Mode, Network, NetworkError, Pattern, PatternStop, PatternTrips, Route, ServiceType, StopOffset,
+    TimingProfile, Trip, TripRef, WeekdaySet,
 };
 
 fn date(y: i32, m: u32, d: u32) -> NaiveDate {
@@ -26,6 +26,19 @@ fn stop(id: &str, lat: f64, lon: f64) -> (String, transit_network::Stop) {
             transfer: false,
         },
     )
+}
+
+fn at(t: u32) -> StopOffset {
+    StopOffset { arrival_secs: Some(t), departure_secs: Some(t) }
+}
+
+/// A one-start trip: A at 0, B unscheduled, C at 20 minutes.
+fn trip(id: &str, start_secs: u32) -> Trip {
+    Trip { id: id.into(), departs: Departs::At { start_secs }, times: vec![at(0), StopOffset::default(), at(1200)] }
+}
+
+fn trip_ref(id: &str) -> TripRef {
+    TripRef { trip: id.into() }
 }
 
 /// A small valid network: A → B → C, one inbound pattern, weekday
@@ -107,9 +120,7 @@ pub(crate) fn valid_network() -> Network {
             PatternTrips {
                 pattern: "5-inbound".into(),
                 service_type: "weekday".into(),
-                departures: Departures::ExactTimes {
-                    starts: vec![7 * 3600, 8 * 3600, 25 * 3600 + 1800],
-                },
+                trips: vec![trip("t0700", 7 * 3600), trip("t0800", 8 * 3600), trip("t2530", 25 * 3600 + 1800)],
             },
         )]
         .into_iter()
@@ -117,16 +128,7 @@ pub(crate) fn valid_network() -> Network {
         blocks: [(
             "b1".into(),
             Block {
-                trips: vec![
-                    TripRef {
-                        pattern_trips: "5-weekday".into(),
-                        start_secs: 7 * 3600,
-                    },
-                    TripRef {
-                        pattern_trips: "5-weekday".into(),
-                        start_secs: 8 * 3600,
-                    },
-                ],
+                trips: vec![trip_ref("t0700"), trip_ref("t0800")],
                 layovers: vec![Layover {
                     after_trip: 0,
                     secs: 1800,
@@ -148,7 +150,7 @@ fn fixture_validates_and_serializes_as_expected() {
     // Shape contracts for the document format.
     assert!(json.contains("\"anchor\":\"noon_minus_twelve\""), "{json}");
     assert!(json.contains("\"mode\":\"bus\""), "{json}");
-    assert!(json.contains("\"kind\":\"exact_times\""), "{json}");
+    assert!(json.contains("\"kind\":\"at\""), "{json}");
     assert!(json.contains("\"start\":\"2026-01-01\""), "{json}");
     assert!(!json.contains("null"), "no nulls: {json}");
 
@@ -175,11 +177,12 @@ fn materializes_expected_stop_times_including_interpolation() {
     let friday = date(2026, 10, 23);
     let trips = transit_network::materialize(&net, friday).unwrap();
 
-    assert_eq!(trips.len(), 3, "three exact trips");
+    assert_eq!(trips.len(), 3, "three trips");
+    assert_eq!(trips[0].trip, "t0700");
     assert_eq!(trips[0].start_secs, 7 * 3600);
     assert_eq!(trips[0].stop_times[0].stop, "A");
     assert_eq!(trips[0].stop_times[0].departure_secs, 7 * 3600);
-    // B interpolates halfway (1000m of 2000m) into the 1200s run.
+    // B is unscheduled: halfway (1000m of 2000m) into the 1200s run.
     assert_eq!(trips[0].stop_times[1].arrival_secs, 7 * 3600 + 600);
     assert_eq!(trips[0].stop_times[1].departure_secs, 7 * 3600 + 600);
     assert_eq!(trips[0].stop_times[2].arrival_secs, 7 * 3600 + 1200);
@@ -262,8 +265,8 @@ fn rejects_broken_references() {
         NetworkError::UnknownServiceType { .. }
     ));
     assert!(matches!(
-        defect(|n| n.blocks.get_mut("b1").unwrap().trips[0].pattern_trips = "ghost".into()),
-        NetworkError::UnknownBlockPatternTrips { .. }
+        defect(|n| n.blocks.get_mut("b1").unwrap().trips[0].trip = "ghost".into()),
+        NetworkError::UnknownBlockTrip { .. }
     ));
     assert!(matches!(
         defect(|n| n.blocks.get_mut("b1").unwrap().layovers[0].at = Some("ghost".into())),
@@ -278,14 +281,6 @@ fn rejects_broken_pattern_structure() {
         let only = n.patterns["5-inbound"].stops[0].clone();
         n.patterns.get_mut("5-inbound").unwrap().stops = vec![only];
     }), PatternTooShort { .. }));
-    assert!(matches!(
-        defect(|n| n.patterns.get_mut("5-inbound").unwrap().stops[0].timepoint = false),
-        EndpointsMustBeTimepoints { .. }
-    ));
-    assert!(matches!(
-        defect(|n| n.patterns.get_mut("5-inbound").unwrap().timing = vec![]),
-        NoTimingProfile { .. }
-    ));
     assert!(matches!(defect(|n| {
         n.patterns.get_mut("5-inbound").unwrap().timing[0].end_secs = 0;
     }), EmptyTimingProfile { .. }));
@@ -317,37 +312,56 @@ fn rejects_broken_pattern_structure() {
 fn rejects_broken_service_structure() {
     use NetworkError::*;
     assert!(matches!(defect(|n| {
-        n.pattern_trips.get_mut("5-weekday").unwrap().departures = Departures::ExactTimes { starts: vec![] };
+        n.pattern_trips.get_mut("5-weekday").unwrap().trips = vec![];
     }), EmptyPatternTrips { .. }));
-    assert!(matches!(defect(|n| {
-        n.pattern_trips.get_mut("5-weekday").unwrap().departures = Departures::HeadwayBands {
-            bands: vec![HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 0 }],
-        };
-    }), ZeroHeadway { .. }));
-    assert!(matches!(defect(|n| {
-        n.pattern_trips.get_mut("5-weekday").unwrap().departures = Departures::HeadwayBands {
-            bands: vec![HeadwayBand { start_secs: 3600, end_secs: 3600, headway_secs: 300 }],
-        };
-    }), EmptyHeadwayBand { .. }));
-    assert!(matches!(defect(|n| {
-        n.pattern_trips.get_mut("5-weekday").unwrap().departures = Departures::HeadwayBands {
-            bands: vec![
-                HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 300 },
-                HeadwayBand { start_secs: 1800, end_secs: 7200, headway_secs: 300 },
-            ],
-        };
-    }), OverlappingHeadwayBands { .. }));
-    assert!(matches!(defect(|n| {
-        n.pattern_trips.get_mut("5-weekday").unwrap().departures =
-            Departures::ExactTimes { starts: vec![8 * 3600, 7 * 3600] };
-    }), UnsortedExactTimes { .. }));
-    // Trip outside every timing profile.
-    assert!(matches!(defect(|n| {
-        n.patterns.get_mut("5-inbound").unwrap().timing[0].end_secs = 6 * 3600;
-    }), TripOutsideTimingProfiles { .. }));
+    let every = |bands: Vec<HeadwayBand>| move |n: &mut Network| {
+        n.blocks.clear();
+        n.pattern_trips.get_mut("5-weekday").unwrap().trips[0].departs = Departs::Every { bands, exact: true };
+    };
+    assert!(matches!(
+        defect(every(vec![HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 0 }])),
+        ZeroHeadway { .. }
+    ));
+    assert!(matches!(
+        defect(every(vec![HeadwayBand { start_secs: 3600, end_secs: 3600, headway_secs: 300 }])),
+        EmptyHeadwayBand { .. }
+    ));
+    assert!(matches!(
+        defect(every(vec![
+            HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 300 },
+            HeadwayBand { start_secs: 1800, end_secs: 7200, headway_secs: 300 },
+        ])),
+        OverlappingHeadwayBands { .. }
+    ));
     assert!(matches!(defect(|n| {
         n.service_types.get_mut("weekday").unwrap().rule.ranges[0].start = date(2027, 1, 1);
     }), BadDateRange { .. }));
+}
+
+#[test]
+fn rejects_broken_trips() {
+    use NetworkError::*;
+    let first = |f: fn(&mut Trip)| move |n: &mut Network| f(&mut n.pattern_trips.get_mut("5-weekday").unwrap().trips[0]);
+    assert!(matches!(defect(|n| {
+        let copy = n.pattern_trips["5-weekday"].trips[2].clone();
+        n.pattern_trips.get_mut("5-weekday").unwrap().trips.push(copy);
+    }), DuplicateTripId { .. }));
+    assert!(matches!(defect(first(|t| { t.times.pop(); })), TripTimesMismatch { .. }));
+    assert!(matches!(defect(first(|t| t.times[2].departure_secs = None)), TripEndpointUnscheduled { .. }));
+    assert!(matches!(defect(first(|t| t.times[0] = StopOffset::default())), TripEndpointUnscheduled { .. }));
+    assert!(matches!(defect(first(|t| t.times[0] = at(60))), FirstOffsetNotZero { .. }));
+    assert!(matches!(defect(first(|t| t.times[1] = at(1500))), TripTimesBackwards { .. }));
+    // A timepoint is exact on every trip.
+    assert!(matches!(defect(|n| {
+        let p = n.patterns.get_mut("5-inbound").unwrap();
+        p.stops[1].timepoint = true;
+        p.timing[0].at_timepoints = vec![0, 600, 1200];
+    }), TimepointUnscheduled { index: 1, .. }));
+    // The profile does not govern stored trips: none covering them is
+    // fine.
+    let mut net = valid_network();
+    net.patterns.get_mut("5-inbound").unwrap().timing.clear();
+    assert!(net.validate().is_ok(), "{:?}", validation_issues(&net));
 }
 
 #[test]
@@ -366,26 +380,63 @@ fn rejects_broken_runcut() {
     // Second trip departs before the first arrives (arrival 7:20) —
     // a trip the schedule really runs, so feasibility is what fails.
     assert!(matches!(defect(|n| {
-        n.pattern_trips.get_mut("5-weekday").unwrap().departures =
-            Departures::ExactTimes { starts: vec![7 * 3600, 7 * 3600 + 60, 25 * 3600 + 1800] };
-        n.blocks.get_mut("b1").unwrap().trips[1].start_secs = 7 * 3600 + 60;
+        n.pattern_trips.get_mut("5-weekday").unwrap().trips[1].departs = Departs::At { start_secs: 7 * 3600 + 60 };
     }), BlockInfeasible { .. }));
-    // A block trip the schedule does not run: the runcut and the
+    // A block trip the network does not have: the runcut and the
     // published schedule would disagree (QAF-1).
     assert!(matches!(defect(|n| {
-        n.blocks.get_mut("b1").unwrap().trips[1].start_secs = 9 * 3600;
-    }), UnknownBlockTrip { start_secs, .. } if start_secs == 9 * 3600));
+        n.blocks.get_mut("b1").unwrap().trips[1].trip = "t0900".into();
+    }), UnknownBlockTrip { trip, .. } if trip == "t0900"));
     // Arrives in time, but the layover does not fit before 8:00.
     assert!(matches!(defect(|n| {
         n.blocks.get_mut("b1").unwrap().layovers[0].secs = 3 * 3600;
     }), LayoverInfeasible { .. }));
     // The same trip in two blocks.
     assert!(matches!(defect(|n| {
-        n.blocks.insert("b2".into(), Block {
-            trips: vec![TripRef { pattern_trips: "5-weekday".into(), start_secs: 8 * 3600 }],
-            layovers: vec![],
-        });
+        n.blocks.insert("b2".into(), Block { trips: vec![trip_ref("t0800")], layovers: vec![] });
     }), DuplicateBlockTrip { .. }));
+    // A frequency trip in a block runs every instance back to back:
+    // a 10-minute headway on a 20-minute run cannot be one vehicle.
+    assert!(matches!(defect(|n| {
+        n.pattern_trips.get_mut("5-weekday").unwrap().trips[2].departs = Departs::Every {
+            bands: vec![HeadwayBand { start_secs: 10 * 3600, end_secs: 11 * 3600, headway_secs: 600 }],
+            exact: true,
+        };
+        n.blocks.get_mut("b1").unwrap().trips.push(trip_ref("t2530"));
+    }), BlockInfeasible { .. }));
+}
+
+/// A block is block id plus service day (GTFS): trips of service
+/// types that never share a day may overlap in time, and the block's
+/// feasibility is judged day by day.
+#[test]
+fn a_block_runs_day_by_day() {
+    let mut net = valid_network();
+    net.service_types.insert(
+        "saturday".into(),
+        ServiceType {
+            name: "Saturday".into(),
+            rule: CalendarRule {
+                days: WeekdaySet { sat: true, ..WeekdaySet::none() },
+                ranges: net.service_types["weekday"].rule.ranges.clone(),
+                exceptions: vec![],
+            },
+        },
+    );
+    net.pattern_trips.insert(
+        "5-saturday".into(),
+        PatternTrips { pattern: "5-inbound".into(), service_type: "saturday".into(), trips: vec![trip("s0700", 7 * 3600)] },
+    );
+    net.blocks.get_mut("b1").unwrap().trips.push(trip_ref("s0700"));
+    assert!(net.validate().is_ok(), "{:?}", validation_issues(&net));
+
+    // Once Saturday service also runs on a weekday, that day has both
+    // 07:00 trips in one vehicle.
+    net.service_types.get_mut("saturday").unwrap().rule.exceptions.push(CalendarException {
+        date: date(2026, 10, 23),
+        state: DayState::Added,
+    });
+    assert!(!validation_issues(&net).is_empty());
 }
 
 #[test]
@@ -393,7 +444,7 @@ fn materialization_is_total_on_invalid_networks() {
     // No panics on documents that failed validation — the wasm seam
     // must never trap on hostile input.
     let mut net = valid_network();
-    net.patterns.get_mut("5-inbound").unwrap().timing = vec![];
+    net.pattern_trips.get_mut("5-weekday").unwrap().trips[0].times.pop();
     assert!(transit_network::materialize(&net, date(2026, 10, 23)).is_err());
 
     let mut net = valid_network();
@@ -404,13 +455,10 @@ fn materialization_is_total_on_invalid_networks() {
     ));
 
     let mut net = valid_network();
-    net.blocks.insert("b".into(), Block {
-        trips: vec![TripRef { pattern_trips: "ghost".into(), start_secs: 0 }],
-        layovers: vec![],
-    });
+    net.blocks.insert("b".into(), Block { trips: vec![trip_ref("ghost")], layovers: vec![] });
     assert!(transit_network::validation_issues(&net)
         .iter()
-        .any(|e| matches!(e, NetworkError::UnknownBlockPatternTrips { .. })));
+        .any(|e| matches!(e, NetworkError::UnknownBlockTrip { .. })));
 }
 
 #[test]

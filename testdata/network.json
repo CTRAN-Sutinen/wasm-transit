@@ -37,14 +37,21 @@
     "10-weekday": {
       "pattern": "10-inbound",
       "service_type": "weekday",
-      "departures": { "kind": "exact_times", "starts": [28800, 30600, 91800] }
+      "trips": [
+        { "id": "10-weekday@28800", "departs": { "kind": "at", "start_secs": 28800 },
+          "times": [ { "arrival_secs": 0, "departure_secs": 0 }, {}, { "arrival_secs": 600, "departure_secs": 600 } ] },
+        { "id": "10-weekday@30600", "departs": { "kind": "at", "start_secs": 30600 },
+          "times": [ { "arrival_secs": 0, "departure_secs": 0 }, {}, { "arrival_secs": 600, "departure_secs": 600 } ] },
+        { "id": "10-weekday@91800", "departs": { "kind": "at", "start_secs": 91800 },
+          "times": [ { "arrival_secs": 0, "departure_secs": 0 }, {}, { "arrival_secs": 600, "departure_secs": 600 } ] }
+      ]
     }
   },
   "blocks": {
     "400": {
       "trips": [
-        { "pattern_trips": "10-weekday", "start_secs": 28800 },
-        { "pattern_trips": "10-weekday", "start_secs": 30600 }
+        { "trip": "10-weekday@28800" },
+        { "trip": "10-weekday@30600" }
       ],
       "layovers": [ { "after_trip": 0, "secs": 900, "at": "C" } ]
     }

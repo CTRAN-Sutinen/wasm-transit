@@ -495,7 +495,7 @@ proptest! {
     /// and only to them: each ends `delta` later, starts when it did,
     /// keeps its id, and still runs forward. Every other trip,
     /// including the same pattern on another service type, is
-    /// untouched (QAF-61).
+    /// untouched — planners time weekends separately.
     #[test]
     fn running_time_changes_only_the_named_trips(
         net in net_strategy(),

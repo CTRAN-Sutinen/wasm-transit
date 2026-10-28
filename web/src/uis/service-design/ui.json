@@ -43,7 +43,7 @@
     "TimetableChange",
     "FocusMap"
   ],
-  "session": "2026-10-27 on C-TRAN (feed sha256:aa8dbc62…, docs/QA-FINDINGS.md reference data): the numbers equal caps-run's; the type table is the SERVICE GROUPS (QAF-65 — the families behind the ids); open findings QAF-52–55, QAF-61–64",
+  "session": "2026-10-27 on C-TRAN (feed sha256:aa8dbc62…, docs/QA-FINDINGS.md reference data): the numbers equal caps-run's; the type table is the SERVICE GROUPS (QAF-65 — the families behind the ids); open findings QAF-52–55, QAF-62–64",
   "spec": "web/e2e/ui-service-design.spec.mjs",
   "generated": "2026-10-27"
 }

@@ -23,8 +23,8 @@ const DATE: &str = "2026-10-23"; // the fixture's loaded Friday
 /// The fixture-derived network document (import is the codec — the
 /// boundary; this module composes over the document it produces).
 fn derived_network() -> Network {
-    let gtfs = transit_core::Gtfs::from_zip_bytes(FIXTURE).expect("fixture parses");
-    transit_codec::gtfs_to_network(&gtfs).network
+    let feed = transit_codec::Feed::from_zip_bytes(FIXTURE).expect("fixture parses");
+    transit_codec::import(&feed).network
 }
 
 fn load_network() -> String {
@@ -85,8 +85,8 @@ fn the_answer_comes_from_the_effective_day() {
     let network_hash = load_network();
 
     // The fixture Friday: WK runs; HOL's only trip is single-stop —
-    // the import drops it (and reports it) — so HOL does not exist
-    // in the document at all. The honest answer.
+    // the import drops it (and reports it) — so HOL runs nothing,
+    // though its calendar is in the document. The honest answer.
     assert_eq!(
         active_services(&network_hash, None, DATE),
         vec!["WK".to_string()],
@@ -99,13 +99,14 @@ fn the_answer_comes_from_the_effective_day() {
         "Saturday carries nothing"
     );
 
-    // The honesty law, pinned by construction: HOL never entered the
-    // model (its unrepresentable trip was dropped at import, drop
-    // reported), so no calendar read can resurrect it.
+    // The honesty law: HOL's calendar runs on the Friday (the import
+    // keeps every calendar the feed names), yet the day answers WK
+    // alone — the calendar rule never stands in for service.
     let net = derived_network();
+    let friday = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
     assert!(
-        !net.service_types.contains_key("HOL"),
-        "the fixture pins the law: HOL's rule never made it into the document"
+        net.service_types["HOL"].rule.runs_on(friday),
+        "the fixture pins the law: HOL's rule runs that day"
     );
 }
 

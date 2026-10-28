@@ -33,9 +33,9 @@ capability that re-erects it with hash-keyed registries is the
 same bug with new clothes.
 Rejected on sight:
 
-- whole-calendar GTFS expansion where a day would do
-  (`network_to_gtfs` inside a capability — it is the codec's
-  export path, nothing else);
+- a whole GTFS feed written where a day would do
+  (`transit_codec::export` inside a capability — it is the codec's
+  publish path, nothing else);
 - derived/effective feed caches keyed by date (the monolith's
   `FeedState`/`with_effective` shape);
 - GTFS-shaped registries or GTFS row types in responses
@@ -135,7 +135,7 @@ host.
 
 The justfile `test` recipe asserts laws 1 and 2: model-side
 capabilities may not depend on transit-core/transit-codec, and
-`network_to_gtfs` may not appear outside the codec's homes. Law 3
+`transit_codec::export` may not appear outside the codec's homes. Law 3
 is a review gate (the criteria above are the checklist — every
 new module's ops must each name one need). If a gate fails your
 change, reread this file — do not widen the gate.

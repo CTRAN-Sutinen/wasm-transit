@@ -7,12 +7,12 @@
 //!    whole list, naming its position;
 //! 3. removal refuses while anything references the entity, and
 //!    succeeds once the references are gone (no dangling documents);
-//! 4. upserts are the planner's verbs: a retimed schedule changes
+//! 4. upserts are the planner's verbs: a changed trip list changes
 //!    the materialized day, a plan frame stamps the pick.
 
 use chrono::NaiveDate;
 use transit_network::{
-    apply_edits, materialize, validation_issues, Network, NetworkEdit, PlanMeta, Departures,
+    apply_edits, materialize, validation_issues, Departs, Network, NetworkEdit, PlanMeta,
 };
 
 fn network() -> Network {
@@ -83,10 +83,13 @@ fn removal_refuses_while_referenced() {
 #[test]
 fn upserts_are_the_planners_verbs() {
     let net = network();
-    // Retime: the weekday schedule gains a midday trip (the 006-style
-    // frequency change, through the model's own vocabulary).
+    // The weekday trips gain a midday trip, through the model's own
+    // vocabulary.
     let mut pattern_trips = net.pattern_trips["10-weekday"].clone();
-    pattern_trips.departures = Departures::ExactTimes { starts: vec![28_800, 30_600, 43_200, 91_800] };
+    let mut midday = pattern_trips.trips[0].clone();
+    midday.id = "midday".into();
+    midday.departs = Departs::At { start_secs: 43_200 };
+    pattern_trips.trips.push(midday);
     let next = apply_edits(
         &net,
         &[
@@ -102,40 +105,64 @@ fn upserts_are_the_planners_verbs() {
     assert_eq!(next.plan.id, "spring", "the pick frame is stamped");
     assert!(validation_issues(&next).is_empty());
 
-    // A retime that strands a block trip is APPLIED (a document
+    // An upsert that drops a block's trip is APPLIED (a document
     // mid-edit may be invalid) and validation names the break.
     let mut stranded = net.pattern_trips["10-weekday"].clone();
-    stranded.departures = Departures::ExactTimes { starts: vec![30_600, 91_800] };
+    stranded.trips.remove(0);
     let broken = apply_edits(&net, &[NetworkEdit::UpsertPatternTrips { id: "10-weekday".into(), pattern_trips: stranded }]).unwrap();
     assert!(
         validation_issues(&broken)
             .iter()
-            .any(|i| matches!(i, transit_network::NetworkError::UnknownBlockTrip { start_secs: 28_800, .. })),
+            .any(|i| matches!(i, transit_network::NetworkError::UnknownBlockTrip { trip, .. } if trip == "10-weekday@28800")),
         "the stranded block trip is reported"
     );
 }
 
 #[test]
-fn a_retime_carries_the_runcut_along() {
-    // Block 400 carries 08:00 and 08:30. Moving the 08:00 trip to
-    // 08:05 moves the block's reference with it: the document stays
-    // valid (QAF-1's check never fires), the layover still fits.
+fn a_retime_keeps_the_trip_and_its_runcut() {
+    // Block 400 carries the 08:00 and 08:30 trips by id. Moving the
+    // 08:00 trip to 08:05 keeps its id, so the block still runs it and
+    // the layover still fits.
     let net = network();
-    let next = apply_edits(&net, &[NetworkEdit::RetimeTrip { pattern_trips: "10-weekday".into(), from_secs: 28_800, to_secs: 29_100 }]).unwrap();
-    assert_eq!(next.blocks["400"].trips[0].start_secs, 29_100);
+    let next = apply_edits(&net, &[NetworkEdit::RetimeTrip { trip: "10-weekday@28800".into(), to_secs: 29_100 }]).unwrap();
+    let (_, _, moved) = next.trip("10-weekday@28800").expect("same id");
+    assert_eq!(moved.departs, Departs::At { start_secs: 29_100 });
+    assert_eq!(next.blocks, net.blocks);
     assert!(validation_issues(&next).is_empty(), "{:?}", validation_issues(&next));
-    // The same move as a bare upsert strands the block — reported.
-    let mut pattern_trips = net.pattern_trips["10-weekday"].clone();
-    pattern_trips.departures = Departures::ExactTimes { starts: vec![29_100, 30_600, 91_800] };
-    let stranded = apply_edits(&net, &[NetworkEdit::UpsertPatternTrips { id: "10-weekday".into(), pattern_trips }]).unwrap();
-    assert!(!validation_issues(&stranded).is_empty());
+    // Past the next trip's start, the block cannot run it — reported.
+    let late = apply_edits(&net, &[NetworkEdit::RetimeTrip { trip: "10-weekday@28800".into(), to_secs: 30_300 }]).unwrap();
+    assert!(!validation_issues(&late).is_empty());
 
-    // Refusals: no such trip, a collision, a headway schedule.
     let refuse = |edit: NetworkEdit, needle: &str| {
         let err = apply_edits(&net, &[edit]).unwrap_err();
         assert!(err.reason.contains(needle), "{err}");
     };
-    refuse(NetworkEdit::RetimeTrip { pattern_trips: "10-weekday".into(), from_secs: 1, to_secs: 2 }, "runs no trip at 1");
-    refuse(NetworkEdit::RetimeTrip { pattern_trips: "10-weekday".into(), from_secs: 28_800, to_secs: 30_600 }, "already runs a trip");
-    refuse(NetworkEdit::RetimeTrip { pattern_trips: "ghost".into(), from_secs: 1, to_secs: 2 }, "unknown pattern trips");
+    refuse(NetworkEdit::RetimeTrip { trip: "ghost".into(), to_secs: 2 }, "unknown trip ghost");
+}
+
+#[test]
+fn trips_are_added_and_removed_by_id() {
+    let net = network();
+    let next = apply_edits(
+        &net,
+        &[NetworkEdit::AddTrip { pattern_trips: "10-weekday".into(), id: None, start_secs: 43_200 }],
+    )
+    .unwrap();
+    let (_, _, added) = next.trip("10-weekday@43200").expect("the minted id");
+    assert_eq!(added.times.len(), 3, "timed at every stop by the profile");
+    assert_eq!(added.run_secs(), Some(600));
+    assert!(validation_issues(&next).is_empty());
+    let refused = apply_edits(
+        &net,
+        &[NetworkEdit::AddTrip { pattern_trips: "10-weekday".into(), id: Some("10-weekday@28800".into()), start_secs: 1 }],
+    )
+    .unwrap_err();
+    assert!(refused.reason.contains("already exists"), "{refused}");
+
+    // Removing a blocked trip closes the block up; its layover goes.
+    let next = apply_edits(&net, &[NetworkEdit::RemoveTrip { trip: "10-weekday@28800".into() }]).unwrap();
+    assert!(next.trip("10-weekday@28800").is_none());
+    assert_eq!(next.blocks["400"].trips.len(), 1);
+    assert!(next.blocks["400"].layovers.is_empty());
+    assert!(validation_issues(&next).is_empty(), "{:?}", validation_issues(&next));
 }

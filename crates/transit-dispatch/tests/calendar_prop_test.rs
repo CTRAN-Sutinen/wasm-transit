@@ -21,7 +21,7 @@ use chrono::{Duration, NaiveDate};
 use proptest::prelude::*;
 use transit_dispatch::{active_services, service_dates};
 use transit_network::{
-    materialize, CalendarException, CalendarRule, DateRange, DayState, Departures, Network,
+    materialize, CalendarException, CalendarRule, DateRange, DayState, Departs, Network, StopOffset, Trip,
     Pattern, PatternTrips, PatternStop, Route, ServiceType, Stop, TimingProfile, WeekdaySet,
 };
 
@@ -137,7 +137,11 @@ fn build_network(rules: &[GenRule], trips_per_type: u8) -> Network {
                 PatternTrips {
                     pattern: "p0".into(),
                     service_type: ty.into(),
-                    departures: Departures::ExactTimes { starts: vec![28_800] },
+                    trips: vec![Trip {
+                        id: format!("svc-{ty}@28800"),
+                        departs: Departs::At { start_secs: 28_800 },
+                        times: [0, 600, 1200].map(|t| StopOffset { arrival_secs: Some(t), departure_secs: Some(t) }).to_vec(),
+                    }],
                 },
             );
         }

@@ -1,13 +1,13 @@
-//! The inference law: `gtfs_to_network` is valid BY CONSTRUCTION over
+//! The inference law: `import` is valid BY CONSTRUCTION over
 //! every SPEC-VALID feed — the inferred document passes the model's
 //! own validation, so a planner can always edit a derived network
 //! immediately (this broke on the real C-TRAN feed: 187 issues, the
 //! derived document unloadable). The generator is adversarial toward
 //! the inference's failure modes while staying inside the GTFS spec:
 //! colliding trip starts, trip ids whose lexical order ignores time,
-//! per-trip run-time variation inside one pattern, shared blocks, and
-//! the spec-legal-but-unrepresentable shapes (the same derived trip
-//! claimed by two blocks, two trips of one block at the same second).
+//! per-trip run-time variation inside one pattern, and shared blocks
+//! (a block's trips on one service day never overlap — one vehicle,
+//! as the spec has it).
 //! Garbage beyond the spec is the panic-fuzz layer's job
 //! (panic_fuzz_test.rs); this law assumes a well-formed feed.
 //!
@@ -31,7 +31,8 @@ use proptest::prelude::*;
 /// One generated trip. Everything about it is adversarial by
 /// default: starts come from a small pool (collisions are the point),
 /// the per-trip `leg` varies run time inside one pattern, and blocks
-/// come from a small pool so chains overlap and double-claim. Trip
+/// come from a small pool so chains are long (a trip joins only where
+/// it fits — `blocks`). Trip
 /// ids are assigned per index in `gen_feed` (unique — the spec's
 /// primary key) and their lexical order ignores start time.
 #[derive(Clone, Debug)]
@@ -66,6 +67,27 @@ fn gen_trip() -> impl Strategy<Value = GenTrip> {
         })
 }
 
+/// Blocks that respect the spec: a block's trips on one service day
+/// never overlap (one vehicle), so a trip joins its block only where
+/// it fits.
+fn blocks(trips: &[GenTrip]) -> Vec<Option<u8>> {
+    let mut taken: std::collections::BTreeMap<(u8, u8), Vec<(u32, u32)>> = Default::default();
+    trips
+        .iter()
+        .map(|t| {
+            let b = t.block?;
+            let start = (t.start_slot as u32) * 600;
+            let span = (start, start + (t.stops.len() as u32 - 1) * (t.leg_min as u32) * 60);
+            let spans = taken.entry((b, t.service)).or_default();
+            if spans.iter().any(|&(s, e)| span.0 <= e && s <= span.1) {
+                return None;
+            }
+            spans.push(span);
+            Some(b)
+        })
+        .collect()
+}
+
 fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let opts = zip::write::SimpleFileOptions::default();
@@ -75,6 +97,7 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
     };
 
     let csv = |rows: Vec<String>| rows.join("\n");
+    let blocks = blocks(trips);
     add(
         &mut w,
         "agency.txt",
@@ -99,7 +122,7 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
                         // Index ids: unique (the spec's primary key),
                         // and lexically unordered against start times.
                         format!("t{i}"),
-                        t.block.map(|b| b.to_string()).unwrap_or_default()
+                        blocks[i].map(|b| b.to_string()).unwrap_or_default()
                     )
                 }))
                 .collect(),

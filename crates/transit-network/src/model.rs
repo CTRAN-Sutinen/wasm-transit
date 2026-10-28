@@ -2,23 +2,23 @@
 //!
 //! Reading order: [`Network`] holds everything a planner authors.
 //! [`Route`]s run in directions; a [`Pattern`] is one stop sequence of
-//! a route with timepoints and per-band run times; a [`ServiceType`]
-//! is the day type planners design (Weekday, Saturday…);
-//! [`PatternTrips`] are one pattern's departures under one service
-//! type; [`Block`] is the runcut. A planner's TIMETABLE — a route,
-//! one direction, one service type — is every trip of that
-//! direction's patterns, derived (`listing::timetable`). Trips are
-//! *not* stored anywhere — they are derived by [`crate::materialize`].
+//! a route with its timepoints; a [`ServiceType`] is the day type
+//! planners design (Weekday, Saturday…); [`PatternTrips`] are one
+//! pattern's [`Trip`]s under one service type; [`Block`] is the
+//! runcut. A planner's TIMETABLE — a route, one direction, one
+//! service type — is every trip of that direction's patterns
+//! (`listing::timetable`).
+//!
+//! A trip is a stored record: its own id, its own departure
+//! ([`Departs`]: one start, or a frequency), its own time at every
+//! stop. A pattern's [`TimingProfile`]s are the planner's tool for
+//! PRODUCING times for new trips, never the schedule — planners
+//! adjust individual trips to observed running times.
 //!
 //! Time conventions (see the crate docs): `u32` seconds after the
-//! service-day [`Anchor`] of the date in question. `at_timepoints`
-//! are cumulative seconds from trip start; a profile applies to trips
-//! departing in `[start_secs, end_secs)`.
-//!
-//! Dwells are not modeled as separate fields: running time between
-//! timepoints includes dwell at the intermediate stops, which is how
-//! planners author timing anyway. Non-timepoint stops interpolate by
-//! distance between their bracketing timepoints.
+//! service-day [`Anchor`] of the date in question. A trip's
+//! [`StopOffset`]s are seconds after its start; `at_timepoints` are
+//! cumulative seconds from the first timepoint.
 
 use ts_rs::TS;
 use std::collections::BTreeMap;
@@ -37,6 +37,7 @@ pub type ServiceTypeId = String;
 pub type PatternTripsId = String;
 pub type BlockId = String;
 pub type DirectionId = String;
+pub type TripId = String;
 
 /// A WGS84 position. Authored geometry (a pattern's alignment) is
 /// model data — `lat` first, matching `Stop`'s field order. (GeoJSON
@@ -115,7 +116,7 @@ impl Default for Anchor {
 
 /// A stop as a planner authors it: one name, one location, optional
 /// parent (platform-in-station groupings).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Stop {
     pub name: String,
@@ -134,7 +135,7 @@ pub struct Stop {
 
 /// A route as a planner authors it: one display name (GTFS's
 /// short/long split is a serialization concern), a closed mode set.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Route {
     pub name: String,
@@ -158,13 +159,14 @@ pub struct Direction {
 }
 
 /// Vehicle modes as a domain concept, not GTFS's numeric codes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
     Tram,
     Subway,
     Rail,
+    #[default]
     Bus,
     Ferry,
     CableCar,
@@ -176,24 +178,26 @@ pub enum Mode {
 }
 
 /// One stop visit within a pattern.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct PatternStop {
     pub stop: StopId,
-    /// Timepoints carry authored times; non-timepoints interpolate
-    /// by distance between their bracketing timepoints.
+    /// An exact stop: every trip of the pattern carries both its
+    /// arrival and its departure here. Other stops may leave times
+    /// unscheduled (they materialize by distance between scheduled
+    /// neighbours).
     pub timepoint: bool,
     /// Meters along the pattern from its first stop. Non-decreasing.
     pub distance_m: f64,
 }
 
-/// Run-time profile for trips departing in a time band. Applies to
-/// trips departing in `[start_secs, end_secs)`.
+/// Run-time profile for NEW trips departing in a time band
+/// `[start_secs, end_secs)` — the planner's production tool. Stored
+/// trips carry their own times; a profile never governs them.
 ///
-/// `at_timepoints` is cumulative seconds from trip start at each of
-/// the pattern's timepoints, in pattern order. The first entry is 0
-/// (the trip *departs* its first stop at `start_secs`); the last is
-/// the arrival at the final stop.
+/// `at_timepoints` is cumulative seconds from the first timepoint at
+/// each of the pattern's timepoints, in pattern order (the first
+/// entry is 0).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct TimingProfile {
@@ -209,9 +213,9 @@ impl TimingProfile {
     }
 }
 
-/// A route pattern: the stop sequence a planner draws, with its
-/// timing. Trips are instances of a pattern, not free-standing rows.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+/// A route pattern: the stop sequence a planner draws, with the
+/// profiles new trips are timed from. Every trip runs a pattern.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Pattern {
     pub route: RouteId,
@@ -229,6 +233,7 @@ pub struct Pattern {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<Vec<Coord>>,
     pub stops: Vec<PatternStop>,
+    #[serde(default)]
     pub timing: Vec<TimingProfile>,
 }
 
@@ -243,7 +248,7 @@ impl Pattern {
             .collect()
     }
 
-    /// The timing profile governing a trip departing at `t`.
+    /// The timing profile a new trip departing at `t` is produced from.
     pub fn profile_for(&self, t: u32) -> Option<&TimingProfile> {
         self.timing.iter().find(|p| p.covers(t))
     }
@@ -385,19 +390,54 @@ impl WeekdaySet {
     }
 }
 
-/// When a pattern's trips depart. A planner authors either headway
-/// bands ("15-minute peak service") or exact departure offsets.
+/// When a trip departs: once, or as a frequency.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Departures {
-    /// Trips depart at `start_secs + k * headway_secs` while the
-    /// departure is `< end_secs` (end-exclusive: the band boundary
-    /// belongs to the next band, if any).
-    HeadwayBands { bands: Vec<HeadwayBand> },
-    /// Explicit trip start offsets from the service-day anchor,
-    /// sorted, unique.
-    ExactTimes { starts: Vec<u32> },
+pub enum Departs {
+    /// One instance, starting at `start_secs`.
+    At { start_secs: u32 },
+    /// A frequency trip: one instance at `start_secs + k * headway_secs`
+    /// while the start is `< end_secs`, per band (end-exclusive), all
+    /// sharing the trip's id and times. `exact`: the instances run on
+    /// exactly that grid (otherwise riders are promised the headway,
+    /// not the minutes).
+    Every { bands: Vec<HeadwayBand>, exact: bool },
+}
+
+impl Default for Departs {
+    fn default() -> Self {
+        Departs::At { start_secs: 0 }
+    }
+}
+
+impl Departs {
+    /// Every instance start, in band order. A zero headway (invalid,
+    /// flagged by validation) yields none rather than looping forever.
+    pub fn instances(&self) -> Vec<u32> {
+        match self {
+            Departs::At { start_secs } => vec![*start_secs],
+            Departs::Every { bands, .. } => {
+                let mut out = Vec::new();
+                for band in bands.iter().filter(|b| b.headway_secs > 0) {
+                    let mut t = band.start_secs;
+                    while t < band.end_secs {
+                        out.push(t);
+                        t += band.headway_secs;
+                    }
+                }
+                out
+            }
+        }
+    }
+
+    /// The first instance start (a frequency trip's earliest band).
+    pub fn first_start(&self) -> Option<u32> {
+        match self {
+            Departs::At { start_secs } => Some(*start_secs),
+            Departs::Every { bands, .. } => bands.iter().map(|b| b.start_secs).min(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -408,8 +448,39 @@ pub struct HeadwayBand {
     pub headway_secs: u32,
 }
 
-/// One pattern's trips under one service type: this pattern, on this
-/// service type, departing at these times. Everything RAPTOR and
+/// A trip's time at one pattern stop: seconds after the instance's
+/// start. `None` = not scheduled there (the stop materializes between
+/// its scheduled neighbours). The first arrival is 0; the first and
+/// last stops, and every timepoint, carry both.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct StopOffset {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub arrival_secs: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub departure_secs: Option<u32>,
+}
+
+/// One trip: the agency's id, when it departs, and its own time at
+/// every stop of its pattern (`times[i]` is `pattern.stops[i]`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Trip {
+    pub id: TripId,
+    pub departs: Departs,
+    pub times: Vec<StopOffset>,
+}
+
+impl Trip {
+    /// Seconds from start to the arrival at the last stop.
+    pub fn run_secs(&self) -> Option<u32> {
+        self.times.last().and_then(|o| o.arrival_secs.or(o.departure_secs))
+    }
+}
+
+/// One pattern's trips under one service type. Everything RAPTOR and
 /// dispatch consume derives from these. Not a planner's "schedule":
 /// the timetable a planner reads is a route's direction under one
 /// service type, across all its patterns (`listing::timetable`).
@@ -418,13 +489,13 @@ pub struct HeadwayBand {
 pub struct PatternTrips {
     pub pattern: PatternId,
     pub service_type: ServiceTypeId,
-    /// Was `schedule` (documents before the rename still read).
-    #[serde(alias = "schedule")]
-    pub departures: Departures,
+    pub trips: Vec<Trip>,
 }
 
 /// One vehicle's work: trips in order with the layovers between
-/// them. Authored (runcutting), not derived from trip rows.
+/// them. Authored (runcutting), not derived from trip rows. A block
+/// may hold trips of service types that never share a day; on each
+/// day it is the trips running that day, in this order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Block {
@@ -432,15 +503,13 @@ pub struct Block {
     pub layovers: Vec<Layover>,
 }
 
-/// A block's reference to a trip — trips being derived values, the
-/// (pattern trips, start) pair *is* the trip's identity.
+/// A block's reference to a trip, by id. A block runs a trip whole
+/// (as GTFS has it): a frequency trip in a block is every one of its
+/// instances, back to back.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct TripRef {
-    /// Was `schedule` (documents before the rename still read).
-    #[serde(alias = "schedule")]
-    pub pattern_trips: PatternTripsId,
-    pub start_secs: u32,
+    pub trip: TripId,
 }
 
 /// Recovery time between two trips of a block.
@@ -480,7 +549,7 @@ pub struct PlanMeta {
 
 /// The authored network document. BTreeMap-keyed so serialization is
 /// canonical and per-entity sync falls out later.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Network {
     pub name: String,
@@ -497,13 +566,24 @@ pub struct Network {
     pub patterns: BTreeMap<PatternId, Pattern>,
     /// The service types: what planners design and link to days.
     pub service_types: BTreeMap<ServiceTypeId, ServiceType>,
-    /// Every pattern's trips, one entry per (pattern, service type).
-    #[serde(alias = "schedules")]
+    /// Every pattern's trips, grouped by (pattern, service type).
     pub pattern_trips: BTreeMap<PatternTripsId, PatternTrips>,
     pub blocks: BTreeMap<BlockId, Block>,
 }
 
 impl Network {
+    /// Every trip, with the id of the pattern trips holding it.
+    pub fn trips(&self) -> impl Iterator<Item = (&str, &PatternTrips, &Trip)> {
+        self.pattern_trips
+            .iter()
+            .flat_map(|(key, pt)| pt.trips.iter().map(move |t| (key.as_str(), pt, t)))
+    }
+
+    /// The trip with this id, with its pattern trips id.
+    pub fn trip(&self, id: &str) -> Option<(&str, &PatternTrips, &Trip)> {
+        self.trips().find(|(_, _, t)| t.id == id)
+    }
+
     /// Validate: every invariant the model can carry. `Ok` means
     /// materialization is guaranteed to succeed for every date.
     /// `validation_issues` returns the full list when it's wanted.

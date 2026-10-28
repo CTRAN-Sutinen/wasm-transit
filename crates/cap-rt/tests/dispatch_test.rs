@@ -325,14 +325,13 @@ fn unknown_hashes_are_errors_not_panics() {
 }
 
 /// THE live document through the seam, over the real fixture pair:
-/// the snapshot resolves through the import's trip map into derived
+/// the snapshot resolves through the network's trip map into derived
 /// trips, statuses classify under the window the request names, and
 /// the summary is the status panel's whole answer.
 #[test]
 fn live_resolves_the_snapshot_into_model_vocabulary() {
     let feed = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
-    let gtfs = transit_core::Gtfs::from_zip_bytes(feed).unwrap();
-    let trip_map = transit_codec::gtfs_to_network(&gtfs).trip_map;
+    let trip_map = transit_codec::trip_map(&transit_codec::import(&transit_codec::Feed::from_zip_bytes(feed).unwrap()).network);
     let cap_rt::Response::LoadFeed { feed_hash, .. } =
         cap_rt::dispatch(cap_rt::Request::LoadFeed { bytes: feed.to_vec() }).unwrap()
     else {

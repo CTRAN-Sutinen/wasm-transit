@@ -3,19 +3,19 @@
 //! no direction, 10-weekday at 08:00 / 08:30 / 25:30, block 400
 //! chaining 08:00 → 08:30 with 15 min layover at C).
 //!
-//! 1. a trip that stays is retimed, never re-created: its blocks move
-//!    with it and the runcut stays valid;
+//! 1. a trip that stays is retimed, never re-created: it keeps its
+//!    id, so its blocks keep it and the runcut stays valid;
 //! 2. a trip that goes leaves its blocks, and the layovers around it
 //!    go too (the chain closes up, never mis-indexed);
 //! 3. new trips land in the neighbour's pattern trips, unassigned;
-//! 4. running time changes split profiles at the window, so trips
-//!    outside it keep their times;
+//! 4. running time changes reach the trips in the window on the named
+//!    service type, and nothing else;
 //! 5. a stop change applies to every pattern of the direction, by
 //!    stop id, and endpoints stay;
 //! 6. what a gesture cannot do is a named error.
 
 use transit_network::{
-    apply_edits, materialize, validation_issues, Departures, HeadwayBand, Network, NetworkEdit, NetworkWarning, TripRef,
+    apply_edits, materialize, validation_issues, Departs, HeadwayBand, Network, NetworkEdit, NetworkWarning, TripRef,
 };
 
 fn network() -> Network {
@@ -31,14 +31,13 @@ fn refused(net: &Network, edit: NetworkEdit) -> String {
 }
 
 fn starts(net: &Network, id: &str) -> Vec<u32> {
-    match &net.pattern_trips[id].departures {
-        Departures::ExactTimes { starts } => starts.clone(),
-        Departures::HeadwayBands { .. } => panic!("exact times"),
-    }
+    let mut starts: Vec<u32> = net.pattern_trips[id].trips.iter().filter_map(|t| t.departs.first_start()).collect();
+    starts.sort_unstable();
+    starts
 }
 
 fn block_starts(net: &Network) -> Vec<u32> {
-    net.blocks["400"].trips.iter().map(|t| t.start_secs).collect()
+    net.blocks["400"].trips.iter().map(|t| net.trip(&t.trip).unwrap().2.departs.first_start().unwrap()).collect()
 }
 
 fn headway(from: u32, to: u32, every: u32) -> NetworkEdit {
@@ -73,7 +72,8 @@ fn a_new_clockface_moves_trips_with_their_blocks() {
     // the first two slots (ten minutes each), the third is new.
     let next = apply(&network(), vec![headway(7 * H + 3000, 9 * H, 1800)]);
     assert_eq!(starts(&next, "10-weekday"), [28_200, 30_000, 31_800, 91_800]);
-    assert_eq!(block_starts(&next), [28_200, 30_000], "the block carries the moved trips");
+    assert_eq!(block_starts(&next), [28_200, 30_000], "the block keeps the moved trips");
+    assert_eq!(next.blocks, network().blocks, "by id");
     assert_eq!(next.blocks["400"].layovers.len(), 1, "the layover between them stays");
     assert!(validation_issues(&next).is_empty(), "{:?}", validation_issues(&next));
 }
@@ -120,13 +120,13 @@ fn running_time_changes_only_inside_the_window() {
     let adjust = |delta: i32| NetworkEdit::AdjustRunningTime {
         route: "10".into(),
         direction: None,
+        service_type: "weekday".into(),
         from_secs: 7 * H,
         to_secs: 9 * H,
         delta_secs: delta,
     };
     let slower = apply(&net, vec![adjust(120)]);
-    let timing: Vec<_> = slower.patterns["10-inbound"].timing.iter().map(|t| (t.start_secs, t.end_secs, t.at_timepoints.clone())).collect();
-    assert_eq!(timing, [(0, 7 * H, vec![0, 600]), (7 * H, 9 * H, vec![0, 720]), (9 * H, 108_000, vec![0, 600])]);
+    assert_eq!(slower.patterns, net.patterns, "the profiles are a production tool, untouched");
     let day = materialize(&slower, chrono::NaiveDate::from_ymd_opt(2026, 10, 27).unwrap()).unwrap();
     let end = |start: u32| day.iter().find(|t| t.start_secs == start).unwrap().stop_times.last().unwrap().arrival_secs - start;
     assert_eq!((end(28_800), end(91_800)), (720, 600), "the 08:00 trip runs longer, the 25:30 does not");
@@ -160,6 +160,7 @@ fn a_stop_change_reaches_every_pattern_of_the_direction() {
     let visits = |n: &Network, p: &str| n.patterns[p].stops.iter().map(|s| s.stop.clone()).collect::<Vec<_>>();
     assert_eq!(visits(&inserted, "10-inbound"), ["A", "D", "B", "C"]);
     assert_eq!(visits(&inserted, "10-short"), ["A", "D", "B"]);
+    assert!(inserted.trips().all(|(_, _, t)| t.times.len() == 4), "every trip gains the visit");
     assert!(validation_issues(&inserted).is_empty());
 
     let removed = apply(
@@ -167,6 +168,7 @@ fn a_stop_change_reaches_every_pattern_of_the_direction() {
         vec![NetworkEdit::RemoveDirectionStop { route: "10".into(), direction: None, stop: "D".into() }],
     );
     assert_eq!(visits(&removed, "10-inbound"), ["A", "B", "C"]);
+    assert_eq!(removed.pattern_trips, net.pattern_trips, "and loses it again");
     // B ends 10-short: endpoints stay, on every pattern.
     let refusal = refused(&inserted, NetworkEdit::RemoveDirectionStop { route: "10".into(), direction: None, stop: "B".into() });
     assert!(refusal.contains("ends pattern 10-short"), "{refusal}");
@@ -179,7 +181,7 @@ fn a_stop_change_reaches_every_pattern_of_the_direction() {
 #[test]
 fn removing_a_block_trip_keeps_the_other_layovers_where_they_were() {
     let net = network();
-    let late = TripRef { pattern_trips: "10-weekday".into(), start_secs: 91_800 };
+    let late = TripRef { trip: "10-weekday@91800".into() };
     let three = apply(
         &net,
         vec![
@@ -198,12 +200,17 @@ fn removing_a_block_trip_keeps_the_other_layovers_where_they_were() {
 #[test]
 fn what_a_timetable_gesture_cannot_do_is_named() {
     let net = network();
+    // Frequency trips are left as they are: a headway change works on
+    // the one-start trips beside them.
     let mut bands = net.clone();
-    bands.pattern_trips.get_mut("10-weekday").unwrap().departures = Departures::HeadwayBands {
+    bands.pattern_trips.get_mut("10-weekday").unwrap().trips[0].departs = Departs::Every {
         bands: vec![HeadwayBand { start_secs: 8 * H, end_secs: 9 * H, headway_secs: 900 }],
+        exact: true,
     };
     bands.blocks.clear();
-    assert!(refused(&bands, headway(8 * H, 9 * H, 600)).contains("headway bands"));
+    let next = apply(&bands, vec![headway(8 * H, 9 * H, 600)]);
+    assert_eq!(next.trip("10-weekday@28800").map(|x| x.2), bands.trip("10-weekday@28800").map(|x| x.2));
+    assert_eq!(next.pattern_trips["10-weekday"].trips.len(), 1 + 6 + 1);
     let elsewhere = NetworkEdit::SetHeadway {
         route: "10".into(),
         direction: Some("out".into()),
@@ -224,5 +231,5 @@ fn what_a_timetable_gesture_cannot_do_is_named() {
         last_secs: Some(31 * H),
         headway_secs: Some(H),
     };
-    assert!(refused(&net, late).contains("has no timing profile covering"));
+    assert!(refused(&net, late).contains("has no timing profile to time a trip"));
 }

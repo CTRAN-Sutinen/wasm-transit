@@ -26,8 +26,8 @@ const DATE: &str = "2026-10-23"; // the fixture's loaded Friday
 /// The fixture-derived network document (import is the codec — the
 /// boundary; this module composes over the document it produces).
 fn derived_network() -> Network {
-    let gtfs = transit_core::Gtfs::from_zip_bytes(FIXTURE).expect("fixture parses");
-    transit_codec::gtfs_to_network(&gtfs).network
+    let feed = transit_codec::Feed::from_zip_bytes(FIXTURE).expect("fixture parses");
+    transit_codec::import(&feed).network
 }
 
 fn load_network() -> String {
@@ -407,10 +407,7 @@ fn the_trip_line_is_the_effective_day_drawn() {
         Response::TripPath { path } => path,
         _ => panic!("trip_path"),
     };
-    let first_start = match &net.pattern_trips[&via_c].departures {
-        transit_network::Departures::ExactTimes { starts } => starts[0],
-        _ => panic!("fixture uses exact times"),
-    };
+    let first_start = net.pattern_trips[&via_c].trips[0].departs.first_start().expect("a start");
     assert_eq!(path(first_start).len(), 3, "A, C, B joined");
     assert!(path(1).is_empty());
 }

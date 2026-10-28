@@ -8,9 +8,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use chrono::NaiveDate;
+
 use crate::error::{NetworkError, NetworkWarning};
-use crate::materialize::{trip_arrival_end_secs, trip_starts};
-use crate::model::{Network, Departures};
+use crate::model::{Departs, Network, Trip};
 
 /// All issues, in a deterministic order (entity map order, then
 /// check order). Empty = valid.
@@ -54,13 +55,6 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
             });
             continue; // the remaining checks need two stops
         }
-        if !pattern.stops.first().map(|s| s.timepoint).unwrap_or(false)
-            || !pattern.stops.last().map(|s| s.timepoint).unwrap_or(false)
-        {
-            issues.push(NetworkError::EndpointsMustBeTimepoints {
-                pattern: pattern_id.clone(),
-            });
-        }
         for ps in &pattern.stops {
             if !network.stops.contains_key(&ps.stop) {
                 issues.push(NetworkError::UnknownStop {
@@ -75,11 +69,6 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
             .any(|w| w[1].distance_m < w[0].distance_m)
         {
             issues.push(NetworkError::DecreasingDistances {
-                pattern: pattern_id.clone(),
-            });
-        }
-        if pattern.timing.is_empty() {
-            issues.push(NetworkError::NoTimingProfile {
                 pattern: pattern_id.clone(),
             });
         }
@@ -154,9 +143,11 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
         }
     }
 
-    // --- Services --------------------------------------------------
+    // --- Pattern trips and their trips --------------------------------
+    let mut homes: BTreeMap<&str, &str> = BTreeMap::new();
     for (pattern_trips_id, service) in &network.pattern_trips {
-        if network.patterns.get(&service.pattern).is_none() {
+        let pattern = network.patterns.get(&service.pattern);
+        if pattern.is_none() {
             issues.push(NetworkError::UnknownPattern {
                 pattern_trips: pattern_trips_id.clone(),
                 pattern: service.pattern.clone(),
@@ -168,63 +159,34 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
                 service_type: service.service_type.clone(),
             });
         }
-        match &service.departures {
-            Departures::HeadwayBands { bands } => {
-                if bands.is_empty() {
-                    issues.push(NetworkError::EmptyPatternTrips {
-                        pattern_trips: pattern_trips_id.clone(),
-                    });
-                }
-                for (bi, band) in bands.iter().enumerate() {
-                    if band.headway_secs == 0 {
-                        issues.push(NetworkError::ZeroHeadway {
-                            pattern_trips: pattern_trips_id.clone(),
-                            band: bi,
-                        });
-                    }
-                    if band.start_secs >= band.end_secs {
-                        issues.push(NetworkError::EmptyHeadwayBand {
-                            pattern_trips: pattern_trips_id.clone(),
-                            band: bi,
-                        });
-                    }
-                }
-                if overlapping(&bands.iter().map(|b| (b.start_secs, b.end_secs)).collect::<Vec<_>>()) {
-                    issues.push(NetworkError::OverlappingHeadwayBands {
-                        pattern_trips: pattern_trips_id.clone(),
-                    });
-                }
-            }
-            Departures::ExactTimes { starts } => {
-                if starts.is_empty() {
-                    issues.push(NetworkError::EmptyPatternTrips {
-                        pattern_trips: pattern_trips_id.clone(),
-                    });
-                } else if starts.windows(2).any(|w| w[1] <= w[0]) {
-                    issues.push(NetworkError::UnsortedExactTimes {
-                        pattern_trips: pattern_trips_id.clone(),
-                    });
-                }
-            }
+        if service.trips.is_empty() {
+            issues.push(NetworkError::EmptyPatternTrips {
+                pattern_trips: pattern_trips_id.clone(),
+            });
         }
-        // Timing coverage: every generated trip start must fall in
-        // exactly one timing profile of the pattern (bands are
-        // non-overlapping above, so "at least one" is "exactly one").
-        if let Some(pattern) = network.patterns.get(&service.pattern) {
-            for start in trip_starts(&service.departures) {
-                if pattern.profile_for(start).is_none() {
-                    issues.push(NetworkError::TripOutsideTimingProfiles {
-                        pattern_trips: pattern_trips_id.clone(),
-                        pattern: service.pattern.clone(),
-                        start_secs: start,
-                    });
+        for trip in &service.trips {
+            match homes.get(trip.id.as_str()) {
+                Some(a) => issues.push(NetworkError::DuplicateTripId {
+                    trip: trip.id.clone(),
+                    a: a.to_string(),
+                    b: pattern_trips_id.clone(),
+                }),
+                None => {
+                    homes.insert(&trip.id, pattern_trips_id);
                 }
             }
+            trip_issues(trip, pattern, &mut issues);
         }
     }
 
     // --- Blocks (the runcut) --------------------------------------
-    let mut owner: BTreeMap<(String, u32), String> = BTreeMap::new();
+    let index: BTreeMap<&str, (&str, &Trip)> = network
+        .pattern_trips
+        .values()
+        .flat_map(|pt| pt.trips.iter().map(move |t| (t.id.as_str(), (pt.service_type.as_str(), t))))
+        .collect();
+    let mut days = DaySignatures::new(network);
+    let mut owner: BTreeMap<&str, &str> = BTreeMap::new();
     for (block_id, block) in &network.blocks {
         if block.trips.is_empty() {
             issues.push(NetworkError::EmptyBlock {
@@ -232,35 +194,23 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
             });
             continue;
         }
-        if block.trips.windows(2).any(|w| w[1].start_secs <= w[0].start_secs) {
-            issues.push(NetworkError::BlockOutOfOrder {
-                block: block_id.clone(),
-            });
-        }
+        let mut resolved = true;
         for t in &block.trips {
-            match network.pattern_trips.get(&t.pattern_trips) {
-                None => issues.push(NetworkError::UnknownBlockPatternTrips {
+            if !index.contains_key(t.trip.as_str()) {
+                resolved = false;
+                issues.push(NetworkError::UnknownBlockTrip {
                     block: block_id.clone(),
-                    pattern_trips: t.pattern_trips.clone(),
-                }),
-                Some(pattern_trips) if !trip_starts(&pattern_trips.departures).contains(&t.start_secs) => {
-                    issues.push(NetworkError::UnknownBlockTrip {
-                        block: block_id.clone(),
-                        pattern_trips: t.pattern_trips.clone(),
-                        start_secs: t.start_secs,
-                    })
-                }
-                Some(_) => {}
+                    trip: t.trip.clone(),
+                });
             }
-            match owner.get(&(t.pattern_trips.clone(), t.start_secs)) {
+            match owner.get(t.trip.as_str()) {
                 Some(prev) => issues.push(NetworkError::DuplicateBlockTrip {
-                    pattern_trips: t.pattern_trips.clone(),
-                    start_secs: t.start_secs,
-                    a: prev.clone(),
+                    trip: t.trip.clone(),
+                    a: prev.to_string(),
                     b: block_id.clone(),
                 }),
                 None => {
-                    owner.insert((t.pattern_trips.clone(), t.start_secs), block_id.clone());
+                    owner.insert(&t.trip, block_id);
                 }
             }
         }
@@ -280,38 +230,156 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
                 }
             }
         }
-        // Feasibility: the vehicle must physically make each trip
-        // connection — arrive before the next trip departs, with the
-        // layovers in between accounted for.
-        for i in 0..block.trips.len().saturating_sub(1) {
-            let Ok(arrival) = trip_arrival_end_secs(network, &block.trips[i].pattern_trips, block.trips[i].start_secs)
-            else {
-                continue; // broken refs are already flagged above
-            };
-            let next_start = block.trips[i + 1].start_secs;
-            let layover: u32 = block
-                .layovers
-                .iter()
-                .filter(|l| l.after_trip == i)
-                .map(|l| l.secs)
-                .sum();
-            if arrival > next_start {
-                issues.push(NetworkError::BlockInfeasible {
-                    block: block_id.clone(),
-                    index: i,
-                    arrival_secs: arrival,
-                    start_secs: next_start,
-                });
-            } else if arrival.saturating_add(layover) > next_start {
-                issues.push(NetworkError::LayoverInfeasible {
-                    block: block_id.clone(),
-                    after_trip: i,
-                });
+        if !resolved {
+            continue; // feasibility needs every trip
+        }
+        // Feasibility, day by day: on each combination of service types
+        // that run together on some date, the block's trips running that
+        // day — every instance of a frequency trip — must follow one
+        // another in block order, each arriving before the next departs,
+        // with the layover between adjacent trips accounted for.
+        let types: BTreeSet<&str> = block.trips.iter().map(|t| index[t.trip.as_str()].0).collect();
+        'days: for day in days.signatures(&types) {
+            // (block index, trip, start, arrival) of the previous instance.
+            let mut prev: Option<(usize, &str, u32, u32)> = None;
+            for (i, r) in block.trips.iter().enumerate() {
+                let (service_type, trip) = index[r.trip.as_str()];
+                if !day.contains(service_type) {
+                    continue;
+                }
+                let run = trip.run_secs().unwrap_or(0);
+                let mut starts = trip.departs.instances();
+                starts.sort_unstable();
+                for start in starts {
+                    if let Some((pi, ptrip, pstart, arrival)) = prev {
+                        let layover: u32 = if pi + 1 == i {
+                            block.layovers.iter().filter(|l| l.after_trip == pi).map(|l| l.secs).sum()
+                        } else {
+                            0
+                        };
+                        let issue = if start <= pstart {
+                            Some(NetworkError::BlockOutOfOrder { block: block_id.clone(), trip: r.trip.clone() })
+                        } else if arrival > start {
+                            Some(NetworkError::BlockInfeasible {
+                                block: block_id.clone(),
+                                trip: ptrip.to_string(),
+                                arrival_secs: arrival,
+                                next: r.trip.clone(),
+                                start_secs: start,
+                            })
+                        } else if pi != i && arrival.saturating_add(layover) > start {
+                            Some(NetworkError::LayoverInfeasible { block: block_id.clone(), after_trip: pi })
+                        } else {
+                            None
+                        };
+                        if let Some(issue) = issue {
+                            issues.push(issue);
+                            break 'days;
+                        }
+                    }
+                    prev = Some((i, r.trip.as_str(), start, start + run));
+                }
             }
         }
     }
 
     issues
+}
+
+/// One trip's own invariants, against its pattern when it resolves.
+fn trip_issues(trip: &Trip, pattern: Option<&crate::model::Pattern>, issues: &mut Vec<NetworkError>) {
+    if let Departs::Every { bands, .. } = &trip.departs {
+        if bands.is_empty() {
+            issues.push(NetworkError::EmptyHeadwayBand { trip: trip.id.clone(), band: 0 });
+        }
+        for (bi, band) in bands.iter().enumerate() {
+            if band.headway_secs == 0 {
+                issues.push(NetworkError::ZeroHeadway { trip: trip.id.clone(), band: bi });
+            }
+            if band.start_secs >= band.end_secs {
+                issues.push(NetworkError::EmptyHeadwayBand { trip: trip.id.clone(), band: bi });
+            }
+        }
+        if overlapping(&bands.iter().map(|b| (b.start_secs, b.end_secs)).collect::<Vec<_>>()) {
+            issues.push(NetworkError::OverlappingHeadwayBands { trip: trip.id.clone() });
+        }
+    }
+    let Some(pattern) = pattern else { return };
+    if trip.times.len() != pattern.stops.len() {
+        issues.push(NetworkError::TripTimesMismatch {
+            trip: trip.id.clone(),
+            expected: pattern.stops.len(),
+            got: trip.times.len(),
+        });
+        return;
+    }
+    let both = |i: usize| trip.times[i].arrival_secs.is_some() && trip.times[i].departure_secs.is_some();
+    let last = trip.times.len().saturating_sub(1);
+    if trip.times.is_empty() || !both(0) || !both(last) {
+        issues.push(NetworkError::TripEndpointUnscheduled { trip: trip.id.clone() });
+    }
+    for (i, ps) in pattern.stops.iter().enumerate() {
+        if ps.timepoint && i != 0 && i != last && !both(i) {
+            issues.push(NetworkError::TimepointUnscheduled { trip: trip.id.clone(), index: i });
+        }
+    }
+    if trip.times.first().and_then(|o| o.arrival_secs).is_some_and(|a| a != 0) {
+        issues.push(NetworkError::FirstOffsetNotZero { trip: trip.id.clone() });
+    }
+    let scheduled: Vec<u32> =
+        trip.times.iter().flat_map(|o| o.arrival_secs.into_iter().chain(o.departure_secs)).collect();
+    if scheduled.windows(2).any(|w| w[1] < w[0]) {
+        issues.push(NetworkError::TripTimesBackwards { trip: trip.id.clone() });
+    }
+}
+
+/// The combinations of service types that run together on some date,
+/// restricted to a block's types: each type alone, plus every set
+/// observed on a date one of them runs. Per-type date sets are
+/// computed once per network.
+struct DaySignatures<'a> {
+    network: &'a Network,
+    dates: BTreeMap<&'a str, BTreeSet<NaiveDate>>,
+}
+
+impl<'a> DaySignatures<'a> {
+    fn new(network: &'a Network) -> Self {
+        Self { network, dates: BTreeMap::new() }
+    }
+
+    fn dates_of(&mut self, id: &'a str) -> &BTreeSet<NaiveDate> {
+        let network = self.network;
+        self.dates.entry(id).or_insert_with(|| {
+            let Some(st) = network.service_types.get(id) else { return BTreeSet::new() };
+            let mut candidates: BTreeSet<NaiveDate> =
+                st.rule.exceptions.iter().map(|e| e.date).collect();
+            for r in &st.rule.ranges {
+                let mut d = r.start;
+                while d <= r.end {
+                    candidates.insert(d);
+                    d = match d.succ_opt() {
+                        Some(next) => next,
+                        None => break,
+                    };
+                }
+            }
+            candidates.into_iter().filter(|d| st.rule.runs_on(*d)).collect()
+        })
+    }
+
+    fn signatures(&mut self, types: &BTreeSet<&'a str>) -> Vec<BTreeSet<&'a str>> {
+        let mut out: BTreeSet<BTreeSet<&'a str>> = types.iter().map(|t| [*t].into_iter().collect()).collect();
+        if types.len() > 1 {
+            let mut by_date: BTreeMap<NaiveDate, BTreeSet<&'a str>> = BTreeMap::new();
+            for t in types {
+                for d in self.dates_of(t).clone() {
+                    by_date.entry(d).or_default().insert(t);
+                }
+            }
+            out.extend(by_date.into_values());
+        }
+        out.into_iter().collect()
+    }
 }
 
 /// Every planning concern that is not an invalidity (see
@@ -321,16 +389,15 @@ pub fn validation_warnings(network: &Network) -> Vec<NetworkWarning> {
     let mut warnings = Vec::new();
 
     if !network.blocks.is_empty() {
-        let blocked: BTreeSet<(&str, u32)> = network
-            .blocks
-            .values()
-            .flat_map(|b| b.trips.iter().map(|t| (t.pattern_trips.as_str(), t.start_secs)))
-            .collect();
+        let blocked: BTreeSet<&str> =
+            network.blocks.values().flat_map(|b| b.trips.iter().map(|t| t.trip.as_str())).collect();
         for (pattern_trips_id, pattern_trips) in &network.pattern_trips {
-            let unassigned = trip_starts(&pattern_trips.departures)
-                .into_iter()
-                .filter(|start| !blocked.contains(&(pattern_trips_id.as_str(), *start)))
-                .count() as u32;
+            let unassigned = pattern_trips
+                .trips
+                .iter()
+                .filter(|t| !blocked.contains(t.id.as_str()))
+                .map(|t| t.departs.instances().len())
+                .sum::<usize>() as u32;
             if unassigned > 0 {
                 warnings.push(NetworkWarning::UnassignedTrips {
                     pattern_trips: pattern_trips_id.clone(),

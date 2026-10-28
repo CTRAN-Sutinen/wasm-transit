@@ -38,10 +38,14 @@ runner, for changes that touch user-visible flows; `just check`
 runs both, for changes that touch both sides.
 
 1. **Unit/property tests in the owning crate** (oracle style for
-   laws — e.g. `transit-codec`'s `import_prop_test` holds that the
-   inferred document is valid by construction over every spec-valid
-   feed and deterministic, its `codec_prop_test` holds the
-   export round trip, and its `spec_round_trip_test` holds that
+   laws — e.g. `transit-network`'s `trip_law_test` holds that trips
+   are stored records (ids, times, edits that keep them, documents
+   written before trips were stored); `transit-codec`'s
+   `import_prop_test` holds that the imported document is valid by
+   construction over every spec-valid feed and deterministic, its
+   `trip_import_law_test` that the feed's trips are the document's,
+   its `codec_prop_test` the export round trip, and its
+   `spec_round_trip_test` that
    GTFS → network → GTFS loses nothing in the GTFS Schedule spec,
    one law per file, against a raw-table oracle independent of the
    parser; `transit-plans`'s chain tests hold the

@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-78**. A
+IDs are never reused; the next new finding is **QAF-79**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`).
@@ -24,10 +24,11 @@ is the next unit (`docs/units/`).
   licensed; fetch from c-tran.com), `sha256:aa8dbc62833237d754
   96b6ec04c2a45fe10ca2a957f63d63b51ddaae85a7dc4f`, version
   20260913-20270109. rt payloads from gtfs-rt.c-tran.org.
-- Network import: `sha256:2e27c511aaffb63998166c7cd196d714
-  d48c8b14f63059b7b70fa52b3fc049bb` (findings from before
-  2026-10-27 were seen on `89631f1a…`, the import before per-trip
-  run times and the fidelity columns; before that on
+- Network import: `sha256:14a3abb80c4392e1d6d198ae75608950
+  5c079c07656f0d538b78212acaf46626` (stored trips, the agency's
+  ids; findings from 2026-10-27–28 were seen on `2e27c511…`, the
+  import before stored trips; before 2026-10-27 on `89631f1a…`, the
+  import before per-trip run times and the fidelity columns; before that on
   `bceda1be…`, the import that kept direction_id — the same
   service).
 - Population layer: `testdata/clark-population.geojson` (`just
@@ -98,12 +99,6 @@ is the next unit (`docs/units/`).
 
 ## The model
 
-- **QAF-61 MODEL GAP** — running time belongs to the pattern, so a
-  weekday change changes every service type that runs it: C also
-  breaks 2-SAT601, 3-SUN601, and 4-NYE601/602. Planners usually
-  time weekends separately; the model can only do that by copying
-  the pattern.
-  Pin: proposal C, `apply` `issues` (the SAT, SUN, NYE blocks).
 - **QAF-44 MODEL GAP** — service types duplicate rather than
   relate: 4-NYE carries a full copy of 1-WKDY's pattern trips
   (identical starts on all four 006 patterns), so a weekday change
@@ -154,6 +149,15 @@ is the next unit (`docs/units/`).
   host-side.
 ## Coverage
 
+- **QAF-78 DEFECT** — whole-day "frequent" counts a stop's visits,
+  arrivals included: a terminal with four arrivals in two hours
+  reads frequent, though nobody boards there. The windowed test
+  counts departures only, so the two answers disagree on the same
+  stop.
+  Pin: `transit-analysis` `regression_test`
+  `service_type_ops_expose_the_design_axis` — stop C (a terminal)
+  counts toward `type_coverage` `frequent_pct` (150/180, not
+  100/180).
 - **QAF-18 DATA/MODEL** — point layers bias coverage: a tract's
   population sits at its centroid, so rural tracts read unserved
   where their developed part has service, and the radius swings the
@@ -175,7 +179,7 @@ is the next unit (`docs/units/`).
   paragraph and one example for ~50 edit kinds; their shapes are
   only in the generated TS types. Generate per-kind examples the
   way `gen_manifest` does for ops.
-  Pin: `caps-run tools author` — no `add_start` example.
+  Pin: `caps-run tools author` — no `add_trip` example.
 - **QAF-53 OP GAP** — the `no_service_in_plan_period` warning names
   the plan by id; a host-minted id is a UUID, so the UI shows
   "2027-01-10, 03862157-…" instead of the plan's name.

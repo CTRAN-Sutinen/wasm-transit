@@ -22,8 +22,8 @@ use chrono::NaiveDate;
 use transit_dispatch::{block_chain, layover_health, LayoverHealth, TIGHT_LAYOVER_SECS, board, effective_day, patch_day, report_against_network, station_board, stop_board};
 use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
 use transit_network::{
-    Block, CalendarRule, DateRange, Layover, MaterializedTrip, Network, Pattern, PatternTrips,
-    PatternStop, Route, Departures, ServiceType, Stop, TimingProfile, TripRef, WeekdaySet,
+    Block, CalendarRule, DateRange, Departs, Layover, MaterializedTrip, Network, Pattern, PatternTrips, PatternStop,
+    Route, ServiceType, Stop, StopOffset, TimingProfile, Trip, TripRef, WeekdaySet,
 };
 use transit_sync::{Diversion, EditRecord, EditStatus};
 
@@ -56,6 +56,22 @@ fn pattern(route: &str, stops: Vec<PatternStop>, at_timepoints: Vec<u32>) -> Pat
         stops,
         timing: vec![TimingProfile { start_secs: 0, end_secs: 172_800, at_timepoints }],
     }
+}
+
+/// One-start trips `{key}@{start}`, every stop timed at `times`.
+fn trips(key: &str, times: &[u32], starts: &[u32]) -> Vec<Trip> {
+    starts
+        .iter()
+        .map(|&s| Trip {
+            id: format!("{key}@{s}"),
+            departs: Departs::At { start_secs: s },
+            times: times.iter().map(|&t| StopOffset { arrival_secs: Some(t), departure_secs: Some(t) }).collect(),
+        })
+        .collect()
+}
+
+fn trip_ref(id: &str) -> TripRef {
+    TripRef { trip: id.into() }
 }
 
 /// The authored test network: route 10 A→C→B, route 20 C→B→A, a
@@ -116,33 +132,33 @@ fn network() -> Network {
     let mut pattern_trips = std::collections::BTreeMap::new();
     pattern_trips.insert(
         "s10".to_string(),
-        PatternTrips { pattern: "p10".into(), service_type: "WK".into(), departures: Departures::ExactTimes { starts: vec![28_800] } },
+        PatternTrips { pattern: "p10".into(), service_type: "WK".into(), trips: trips("s10", &[0, 600, 1200], &[28_800]) },
     );
     pattern_trips.insert(
         "s20".to_string(),
-        PatternTrips { pattern: "p20".into(), service_type: "WK".into(), departures: Departures::ExactTimes { starts: vec![30_600] } },
+        PatternTrips { pattern: "p20".into(), service_type: "WK".into(), trips: trips("s20", &[0, 600, 1200], &[30_600]) },
     );
     pattern_trips.insert(
         "s20sun".to_string(),
-        PatternTrips { pattern: "p20".into(), service_type: "SUN".into(), departures: Departures::ExactTimes { starts: vec![30_600] } },
+        PatternTrips { pattern: "p20".into(), service_type: "SUN".into(), trips: trips("s20sun", &[0, 600, 1200], &[30_600]) },
     );
     pattern_trips.insert(
         "s40".to_string(),
-        PatternTrips { pattern: "p40".into(), service_type: "WK".into(), departures: Departures::ExactTimes { starts: vec![29_700, 30_600] } },
+        PatternTrips { pattern: "p40".into(), service_type: "WK".into(), trips: trips("s40", &[0, 300], &[29_700, 30_600]) },
     );
 
     let mut blocks = std::collections::BTreeMap::new();
     blocks.insert(
         "B1".to_string(),
         Block {
-            trips: vec![TripRef { pattern_trips: "s10".into(), start_secs: 28_800 }, TripRef { pattern_trips: "s20".into(), start_secs: 30_600 }],
+            trips: vec![trip_ref("s10@28800"), trip_ref("s20@30600")],
             layovers: vec![Layover { after_trip: 0, secs: 600, at: Some("C".into()) }],
         },
     );
     blocks.insert(
         "B2".to_string(),
         Block {
-            trips: vec![TripRef { pattern_trips: "s10".into(), start_secs: 28_800 }, TripRef { pattern_trips: "s20sun".into(), start_secs: 30_600 }],
+            trips: vec![trip_ref("s10@28800"), trip_ref("s20sun@30600")],
             layovers: vec![Layover { after_trip: 0, secs: 600, at: None }],
         },
     );
@@ -303,7 +319,7 @@ fn a_terminating_visit_is_not_a_departure() {
     );
     looped.pattern_trips.insert(
         "s50".to_string(),
-        PatternTrips { pattern: "p50".into(), service_type: "WK".into(), departures: Departures::ExactTimes { starts: vec![36_000] } },
+        PatternTrips { pattern: "p50".into(), service_type: "WK".into(), trips: trips("s50", &[0, 400, 800], &[36_000]) },
     );
     let day = transit_network::materialize(&looped, date()).unwrap();
     let loop_rows: Vec<_> = board(&looped, &day, "A", 0, 100).into_iter().filter(|r| r.pattern_trips == "s50").collect();

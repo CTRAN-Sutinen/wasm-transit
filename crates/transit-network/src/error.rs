@@ -35,14 +35,9 @@ pub enum NetworkError {
     #[error("pattern trips {pattern_trips} reference unknown service type {service_type}")]
     UnknownServiceType { pattern_trips: String, service_type: String },
 
-    #[error("block {block} references unknown pattern trips {pattern_trips}")]
-    UnknownBlockPatternTrips { block: String, pattern_trips: String },
-
-    /// The schedule exists but produces no trip at this start: the
-    /// runcut and the published schedule would describe different
-    /// networks (a retimed schedule left its blocks behind).
-    #[error("block {block} references trip {pattern_trips}@{start_secs}, which those pattern trips do not run")]
-    UnknownBlockTrip { block: String, pattern_trips: String, start_secs: u32 },
+    /// The runcut and the trips would describe different networks.
+    #[error("block {block} references trip {trip}, which the network does not have")]
+    UnknownBlockTrip { block: String, trip: String },
 
     #[error("layover in block {block} references unknown stop {stop}")]
     UnknownLayoverStop { block: String, stop: String },
@@ -52,12 +47,6 @@ pub enum NetworkError {
     // -----------------------------------------------------------------
     #[error("pattern {pattern} needs at least two stops")]
     PatternTooShort { pattern: String },
-
-    #[error("pattern {pattern} first and last stops must be timepoints")]
-    EndpointsMustBeTimepoints { pattern: String },
-
-    #[error("pattern {pattern} has no timing profile")]
-    NoTimingProfile { pattern: String },
 
     #[error("pattern {pattern} timing profile {profile} has an empty time range")]
     EmptyTimingProfile { pattern: String, profile: usize },
@@ -90,24 +79,35 @@ pub enum NetworkError {
     #[error("pattern trips {pattern_trips} run no trips")]
     EmptyPatternTrips { pattern_trips: String },
 
-    #[error("pattern trips {pattern_trips} headway band {band} must have positive headway")]
-    ZeroHeadway { pattern_trips: String, band: usize },
+    // -----------------------------------------------------------------
+    // Trip structure
+    // -----------------------------------------------------------------
+    #[error("trip {trip} appears in both pattern trips {a} and {b}")]
+    DuplicateTripId { trip: String, a: String, b: String },
 
-    #[error("pattern trips {pattern_trips} headway band {band} has start >= end")]
-    EmptyHeadwayBand { pattern_trips: String, band: usize },
+    #[error("trip {trip} has {got} stop times, expected {expected} (its pattern's stops)")]
+    TripTimesMismatch { trip: String, expected: usize, got: usize },
 
-    #[error("pattern trips {pattern_trips} headway bands overlap")]
-    OverlappingHeadwayBands { pattern_trips: String },
+    #[error("trip {trip} must carry both times at its first and last stops")]
+    TripEndpointUnscheduled { trip: String },
 
-    #[error("pattern trips {pattern_trips} exact times must be sorted and unique")]
-    UnsortedExactTimes { pattern_trips: String },
+    #[error("trip {trip} must carry both times at timepoint stop {index}")]
+    TimepointUnscheduled { trip: String, index: usize },
 
-    #[error("pattern trips {pattern_trips} trip at {start_secs} falls outside every timing profile of pattern {pattern}")]
-    TripOutsideTimingProfiles {
-        pattern_trips: String,
-        pattern: String,
-        start_secs: u32,
-    },
+    #[error("trip {trip} must arrive at its first stop at offset 0 (its start)")]
+    FirstOffsetNotZero { trip: String },
+
+    #[error("trip {trip} times run backwards")]
+    TripTimesBackwards { trip: String },
+
+    #[error("trip {trip} headway band {band} must have positive headway")]
+    ZeroHeadway { trip: String, band: usize },
+
+    #[error("trip {trip} headway band {band} has start >= end")]
+    EmptyHeadwayBand { trip: String, band: usize },
+
+    #[error("trip {trip} headway bands overlap")]
+    OverlappingHeadwayBands { trip: String },
 
     // -----------------------------------------------------------------
     // Calendar structure
@@ -127,30 +127,31 @@ pub enum NetworkError {
     #[error("block {block} is empty")]
     EmptyBlock { block: String },
 
-    #[error("block {block} trips must have strictly increasing start times")]
-    BlockOutOfOrder { block: String },
+    /// On a day the block runs, its trips (a frequency trip's
+    /// instances included) must run in its order.
+    #[error("block {block} trip {trip} does not start after the trip before it on a day both run")]
+    BlockOutOfOrder { block: String, trip: String },
 
     #[error("block {block} layover after trip {after_trip} is out of range")]
     LayoverAfterLastTrip { block: String, after_trip: usize },
 
-    #[error("block {block} trip {index} arrives at {arrival_secs}, after the next trip departs at {start_secs}")]
+    /// One vehicle cannot run it: an instance arrives after the next
+    /// one (the next trip, or the frequency trip's next instance) on a
+    /// day both run departs.
+    #[error("block {block} trip {trip} arrives at {arrival_secs}, after trip {next} departs at {start_secs}")]
     BlockInfeasible {
         block: String,
-        index: usize,
+        trip: String,
         arrival_secs: u32,
+        next: String,
         start_secs: u32,
     },
 
     #[error("block {block} layover after trip {after_trip} does not fit before the next trip")]
     LayoverInfeasible { block: String, after_trip: usize },
 
-    #[error("trip {pattern_trips}@{start_secs} appears in both block {a} and block {b}")]
-    DuplicateBlockTrip {
-        pattern_trips: String,
-        start_secs: u32,
-        a: String,
-        b: String,
-    },
+    #[error("trip {trip} appears in both block {a} and block {b}")]
+    DuplicateBlockTrip { trip: String, a: String, b: String },
 
     // -----------------------------------------------------------------
     // Materialization (total function: these fire only on networks
@@ -158,9 +159,6 @@ pub enum NetworkError {
     // -----------------------------------------------------------------
     #[error("unknown pattern trips {pattern_trips}")]
     UnknownPatternTrips { pattern_trips: String },
-
-    #[error("no timing profile of pattern {pattern} covers a trip starting at {start_secs}")]
-    NoProfileForTrip { pattern: String, start_secs: u32 },
 }
 
 /// A planning concern that does not make the document invalid —
@@ -171,7 +169,7 @@ pub enum NetworkError {
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum NetworkWarning {
-    /// Trips of a schedule that no block carries: service with no
+    /// Trip instances of a pattern trips that no block carries: service with no
     /// vehicle assigned. Reported only once the document has a runcut
     /// at all (a network with no blocks yet is unassigned by design).
     UnassignedTrips { pattern_trips: String, trips: u32 },

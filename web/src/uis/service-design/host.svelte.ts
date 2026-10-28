@@ -85,7 +85,7 @@ export const wb = $state({
   comparison: null as ServiceTypeComparison | null,
   blocks: [] as DayBlock[],
   selectedBlock: "",
-  blockChain: null as { trips: BlockChainTrip[]; agencyTripIds: string[][] } | null,
+  blockChain: null as { trips: BlockChainTrip[] } | null,
   focus: null as EntityFocus | null,
 });
 
@@ -364,16 +364,14 @@ async function refreshTimetable(): Promise<void> {
 
 export async function selectBlock(blockId: string): Promise<void> {
   const doc = active();
-  const [runcut, network] = [await runcutModule(), await networkModule()];
+  const runcut = await runcutModule();
   const date = wb.typeDetail?.date;
   wb.selectedBlock = blockId;
   if (!doc || !runcut || !date || !blockId) {
     wb.blockChain = null;
     return;
   }
-  const trips = runcutCap(runcut).blockTrips(hashIn(runcut, doc), null, blockId, date);
-  const agencyTripIds = network ? networkCap(network).agencyTripIds(hashIn(network, doc), trips) : trips.map(() => []);
-  wb.blockChain = { trips, agencyTripIds };
+  wb.blockChain = { trips: runcutCap(runcut).blockTrips(hashIn(runcut, doc), null, blockId, date) };
   await refreshFocus();
 }
 
@@ -449,7 +447,7 @@ export const gestures = {
   span: (first_secs: number | null, last_secs: number | null) =>
     change([{ edit: "set_span", ...where(), first_secs: first_secs ?? undefined, last_secs: last_secs ?? undefined }]),
   running: (from_secs: number, to_secs: number, delta_secs: number) =>
-    change([{ edit: "adjust_running_time", route: wb.selectedRoute, direction: direction(), from_secs, to_secs, delta_secs }]),
+    change([{ edit: "adjust_running_time", ...where(), from_secs, to_secs, delta_secs }]),
   insertStop: (stop: string, after: string) =>
     change([{ edit: "insert_direction_stop", route: wb.selectedRoute, direction: direction(), stop, after }]),
   removeStop: (stop: string) =>

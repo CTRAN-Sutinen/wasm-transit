@@ -22,8 +22,8 @@ const DATE: &str = "2026-10-23"; // the fixture's loaded Friday
 /// The fixture-derived network document (import is the codec — the
 /// boundary; this module composes over the document it produces).
 fn derived_network() -> Network {
-    let gtfs = transit_core::Gtfs::from_zip_bytes(FIXTURE).expect("fixture parses");
-    transit_codec::gtfs_to_network(&gtfs).network
+    let feed = transit_codec::Feed::from_zip_bytes(FIXTURE).expect("fixture parses");
+    transit_codec::import(&feed).network
 }
 
 fn load_network() -> String {

@@ -889,22 +889,21 @@ test("planner authors a network and the rider uses it", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Open route 10" })).toBeVisible();
   await page.getByRole("button", { name: "Routes", exact: true }).click();
   await page.getByRole("button", { name: "Open route 10" }).click();
-  await expect(page.getByText("Patterns (2)")).toBeVisible();
+  await expect(page.getByText("Patterns (3)")).toBeVisible();
   await expect(page.getByText("Stops (3)")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open schedule WK:pat-10-0-1" })).toHaveText("1 trips");
+  await expect(page.getByRole("button", { name: "Open schedule WK:pat-10-0-2" })).toHaveText("1 trips");
 
   // The workspace is a screen stack: menu → Schedules, drill into the
   // schedule, the editor is a screen in the rail (Back pops it).
   await page.getByRole("button", { name: "Schedules" }).click();
-  await page.getByRole("button", { name: "Open schedule WK:pat-10-0-0" }).click();
+  await page.getByRole("button", { name: "Open schedule WK:pat-10-0-1" }).click();
   await expect(page.getByRole("heading", { name: /Schedule/ })).toBeVisible();
 
   // Move route 10's 08:00 trip (t10) five minutes EARLIER. t10 is in
   // block B1 with a 10-minute layover before t20 (08:20): later would
-  // eat the layover (validate reports layover_infeasible — the old
-  // validator missed it because the block kept a stale reference,
-  // QAF-1); earlier keeps the runcut feasible, and the block's
-  // reference moves with the trip.
+  // eat the layover (validate reports layover_infeasible); earlier
+  // keeps the runcut feasible, and the block keeps the trip — it
+  // names it by id.
   const firstStart = page.locator(".trip-start").first();
   await firstStart.fill("07:55:00");
   await firstStart.blur();

@@ -784,23 +784,15 @@ export function networkCap(module: CapModule) {
       } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "export" }>;
       return { feedHash: resp.feed_hash, summary: resp.summary, zipB64: resp.zip_b64 };
     },
-    /// The import's trip-id map: derived (schedule, start) ↔ agency
-    /// trip ids. None for an authored (non-imported) network.
-    /// The agency trip ids behind derived trips, in the order asked.
-    agencyTripIds(networkHash: string, trips: { pattern_trips: string; start_secs: number }[]): string[][] {
-      const resp = module.invoke({
-        op: "agency_trip_ids",
-        network_hash: networkHash,
-        trips,
-      } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "agency_trip_ids" }>;
-      return resp.ids;
-    },
-    tripMap(networkHash: string): TripIdMap | null {
+    /// The network's trip-id map: every trip by its own id (the
+    /// agency's, for an imported trip) — the join live rt resolves
+    /// through.
+    tripMap(networkHash: string): TripIdMap {
       const resp = module.invoke({
         op: "trip_map",
         network_hash: networkHash,
       } as NetworkCapRequest) as Extract<NetworkCapResponse, { op: "trip_map" }>;
-      return resp.map ?? null;
+      return resp.map;
     },
   };
 }
@@ -1145,7 +1137,6 @@ function boardings(capId: "board" | "runcut" | "router") {
       const feedHash = networkCap(network).loadFeed(bytes).feedHash;
       const imported = networkCap(network).import(feedHash);
       const map = networkCap(network).tripMap(imported.networkHash);
-      if (!map) return null; // an imported network always has one
       const loaders = { board: boardCap, runcut: runcutCap, router: routerCap } as const;
       const loadedHash = loaders[capId](cap).loadNetwork(imported.network);
       if (loadedHash !== imported.networkHash) {
@@ -1680,8 +1671,9 @@ export async function authorModule(): Promise<CapModule | null> {
 }
 
 /// A STORED network document read back through the authoring module:
-/// the module parses it (field names from before a rename included —
-/// the model's serde aliases) and answers its canonical form, so the
+/// the module parses it (documents written before trips were stored
+/// included — the model's `read_network`) and answers its canonical
+/// form, so the
 /// host reads only the current shape and never sniffs a document's.
 /// Null when the module cannot assemble (the caller keeps the stored
 /// copy). Throws when the module refuses the document.

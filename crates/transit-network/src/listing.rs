@@ -3,8 +3,8 @@
 //! composition — its patterns, the stops they visit, its schedules
 //! grouped by service type with the trips each one runs — and a
 //! stop's, the routes whose patterns visit it. The trip
-//! count is `trip_starts` — the same expansion materialize runs, so
-//! a list never promises a trip the day does not have.
+//! count is every trip's instances — the same expansion materialize
+//! runs, so a list never promises a trip the day does not have.
 //!
 //! And the planner's TIMETABLE: one route, one direction, one service
 //! type — every trip of the direction's patterns (bay and short-turn
@@ -16,8 +16,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::geometry::EntityKind;
-use crate::materialize::{materialize_service, trip_starts};
-use crate::model::{Departures, Network};
+use crate::materialize::materialize_service;
+use crate::model::{Departs, Network};
 
 /// One entity as a list shows it. `context` is what places it (a
 /// pattern's route, a schedule's pattern and service type); `trips`
@@ -89,12 +89,13 @@ pub struct Timetable {
     pub removed: Vec<RemovedTrip>,
 }
 
-/// A baseline trip the proposal no longer runs (a retimed trip is
-/// removed at its old start and added at its new one: its identity is
-/// (pattern trips, start)).
+/// A baseline trip instance the proposal no longer runs (a retimed
+/// trip is removed at its old start and added at its new one: a row
+/// is (trip, start)).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct RemovedTrip {
+    pub trip: String,
     pub pattern_trips: String,
     pub start_secs: u32,
     pub pattern: String,
@@ -120,16 +121,17 @@ pub struct TimetablePattern {
     pub name: String,
     pub pattern_trips: Vec<String>,
     pub trips: u32,
-    /// Some of its trips come from headway bands, not exact times.
+    /// Some of its trips are frequency trips.
     pub headway: bool,
 }
 
-/// One trip: its identity (pattern trips, start), its pattern, the
-/// block carrying it, and its departure at each column (`None` where
-/// its pattern does not stop).
+/// One trip instance: its trip's id, its pattern trips, start and
+/// pattern, the block carrying it, and its departure at each column
+/// (`None` where its pattern does not stop).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct TimetableTrip {
+    pub trip: String,
     pub pattern_trips: String,
     pub start_secs: u32,
     pub pattern: String,
@@ -177,7 +179,7 @@ fn schedule_row(network: &Network, id: &str) -> EntityRow {
                 .map_or(s.service_type.as_str(), |t| t.name.as_str());
             EntityRow {
                 context: Some(format!("{pattern} · {service}")),
-                trips: Some(trip_starts(&s.departures).len() as u32),
+                trips: Some(s.trips.iter().map(|t| t.departs.instances().len()).sum::<usize>() as u32),
                 ..row(id, id)
             }
         }
@@ -331,7 +333,7 @@ pub fn timetable(network: &Network, route: &str, direction: Option<&str>, servic
         let entry = by_pattern.entry(pt.pattern.as_str()).or_default();
         entry.0.push(id.clone());
         entry.1.extend(materialize_service(network, id).unwrap_or_default());
-        entry.2 |= matches!(pt.departures, Departures::HeadwayBands { .. });
+        entry.2 |= pt.trips.iter().any(|t| matches!(t.departs, Departs::Every { .. }));
     }
     let mut order: Vec<&str> = by_pattern.keys().copied().collect();
     order.sort_by(|a, b| by_pattern[b].1.len().cmp(&by_pattern[a].1.len()).then(a.cmp(b)));
@@ -366,10 +368,10 @@ pub fn timetable(network: &Network, route: &str, direction: Option<&str>, servic
             .collect()
     };
 
-    let block_of: std::collections::HashMap<(&str, u32), &str> = network
+    let block_of: std::collections::HashMap<&str, &str> = network
         .blocks
         .iter()
-        .flat_map(|(bid, b)| b.trips.iter().map(move |t| ((t.pattern_trips.as_str(), t.start_secs), bid.as_str())))
+        .flat_map(|(bid, b)| b.trips.iter().map(move |t| (t.trip.as_str(), bid.as_str())))
         .collect();
     let mut trips: Vec<TimetableTrip> = Vec::new();
     for pid in &order {
@@ -380,7 +382,8 @@ pub fn timetable(network: &Network, route: &str, direction: Option<&str>, servic
                 times[col] = Some(st.departure_secs);
             }
             trips.push(TimetableTrip {
-                block: block_of.get(&(trip.pattern_trips.as_str(), trip.start_secs)).map(|b| b.to_string()),
+                block: block_of.get(trip.trip.as_str()).map(|b| b.to_string()),
+                trip: trip.trip.clone(),
                 pattern_trips: trip.pattern_trips.clone(),
                 start_secs: trip.start_secs,
                 pattern: trip.pattern.clone(),
@@ -389,7 +392,12 @@ pub fn timetable(network: &Network, route: &str, direction: Option<&str>, servic
             });
         }
     }
-    trips.sort_by(|a, b| a.start_secs.cmp(&b.start_secs).then_with(|| a.pattern_trips.cmp(&b.pattern_trips)));
+    trips.sort_by(|a, b| {
+        a.start_secs
+            .cmp(&b.start_secs)
+            .then_with(|| a.pattern_trips.cmp(&b.pattern_trips))
+            .then_with(|| a.trip.cmp(&b.trip))
+    });
 
     let stops = columns
         .iter()
@@ -441,16 +449,16 @@ pub fn timetable_against(
 ) -> Option<Timetable> {
     let mut t = timetable(network, route, direction, service_type)?;
     let before = timetable(base, route, direction, service_type).map(|b| b.trips).unwrap_or_default();
-    let key = |pt: &str, s: u32| (pt.to_string(), s);
-    let now: std::collections::BTreeSet<_> = t.trips.iter().map(|x| key(&x.pattern_trips, x.start_secs)).collect();
-    let was: std::collections::BTreeSet<_> = before.iter().map(|x| key(&x.pattern_trips, x.start_secs)).collect();
+    let key = |trip: &str, s: u32| (trip.to_string(), s);
+    let now: std::collections::BTreeSet<_> = t.trips.iter().map(|x| key(&x.trip, x.start_secs)).collect();
+    let was: std::collections::BTreeSet<_> = before.iter().map(|x| key(&x.trip, x.start_secs)).collect();
     for trip in &mut t.trips {
-        trip.added = !was.contains(&key(&trip.pattern_trips, trip.start_secs));
+        trip.added = !was.contains(&key(&trip.trip, trip.start_secs));
     }
     t.removed = before
         .into_iter()
-        .filter(|x| !now.contains(&key(&x.pattern_trips, x.start_secs)))
-        .map(|x| RemovedTrip { pattern_trips: x.pattern_trips, start_secs: x.start_secs, pattern: x.pattern })
+        .filter(|x| !now.contains(&key(&x.trip, x.start_secs)))
+        .map(|x| RemovedTrip { trip: x.trip, pattern_trips: x.pattern_trips, start_secs: x.start_secs, pattern: x.pattern })
         .collect();
     Some(t)
 }

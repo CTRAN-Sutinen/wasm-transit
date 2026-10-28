@@ -9,10 +9,10 @@
 //! The vocabulary has two levels: entity-level (upsert / remove per
 //! collection, plus the plan frame) and GESTURE-level — one edit per
 //! thing a planner does (add a stop to a pattern, make a stop a
-//! timepoint, add a trip start, set a layover), each carrying the
-//! rule that keeps the document coherent (timing vectors aligned with
-//! timepoints, starts sorted and unique, layovers only between
-//! trips, minted ids). An authoring UI, a script, and an agent all
+//! timepoint, add a trip, set a layover), each carrying the rule that
+//! keeps the document coherent (timing vectors aligned with
+//! timepoints, every trip's times aligned with its pattern's stops,
+//! layovers only between trips, minted ids). An authoring UI, a script, and an agent all
 //! express a change in the same edits and get the same document. Removal refuses while anything still
 //! references the entity — a dangling reference is a broken document,
 //! and the model, not each host, is where that rule lives. Validity of
@@ -26,10 +26,12 @@ use std::collections::BTreeMap;
 
 use chrono::NaiveDate;
 
+use crate::materialize::produce_times;
 use crate::timetable_edit;
 use crate::model::{
-    Block, CalendarException, CalendarRule, DateRange, DayState, HeadwayBand, Layover, Mode, Network, Pattern,
-    Direction, PatternTrips, PatternStop, PlanMeta, Route, Departures, ServiceType, Stop, TimingProfile, TripRef, WeekdaySet,
+    Block, CalendarException, CalendarRule, DateRange, DayState, Departs, Direction, HeadwayBand, Layover, Mode,
+    Network, Pattern, PatternStop, PatternTrips, PlanMeta, Route, ServiceType, Stop, StopOffset, TimingProfile, Trip,
+    TripRef, WeekdaySet,
 };
 
 /// One change to a network document. Upserts insert or replace the
@@ -73,11 +75,23 @@ pub enum NetworkEdit {
     /// Refused while a schedule runs under the type.
     RemoveServiceType { id: String },
     UpsertPatternTrips { id: String, pattern_trips: PatternTrips },
-    /// Move one trip of an exact-times schedule from `from_secs` to
-    /// `to_secs`. The trip's identity is (schedule, start), so every
-    /// block carrying it is carried along — a retime never strands
-    /// the runcut (the starts stay sorted and unique).
-    RetimeTrip { pattern_trips: String, from_secs: u32, to_secs: u32 },
+    /// Move a one-start trip to start at `to_secs`. It keeps its id,
+    /// its running times, and its blocks (they reference it by id).
+    RetimeTrip { trip: String, to_secs: u32 },
+    /// A new one-start trip of `pattern_trips` at `start_secs`, timed
+    /// by its pattern's profile covering the start. An absent id is
+    /// minted (`{pattern_trips}@{start}`, suffixed while taken).
+    AddTrip {
+        pattern_trips: String,
+        #[serde(default)]
+        #[ts(optional)]
+        id: Option<String>,
+        start_secs: u32,
+    },
+    /// Remove a trip everywhere: its pattern trips (removed when
+    /// emptied) and its block (the layovers either side go; a block
+    /// it empties goes).
+    RemoveTrip { trip: String },
     /// Refused while a block carries one of its trips.
     RemovePatternTrips { id: String },
     UpsertBlock { id: String, block: Block },
@@ -121,8 +135,8 @@ pub enum NetworkEdit {
         id: Option<String>,
         from: String,
     },
-    /// A new schedule: `pattern` / `service_type` (else the first of
-    /// each), one trip at 08:00.
+    /// A new pattern trips: `pattern` / `service_type` (else the first
+    /// of each), one trip at 08:00 timed by the pattern's profile.
     AddPatternTrips {
         #[serde(default)]
         #[ts(optional)]
@@ -261,16 +275,9 @@ pub enum NetworkEdit {
     SetServiceException { id: String, date: String, state: DayState },
     RemoveServiceException { id: String, date: String },
 
-    // --- gestures: a schedule's trips
-    /// Replace an exact-times schedule's starts (sorted, deduplicated).
-    SetStarts { pattern_trips: String, starts: Vec<u32> },
-    /// One more trip, ten minutes after the last (06:10 on an empty
-    /// schedule; never past 47:00).
-    AddStart { pattern_trips: String },
-    /// Refused for the last remaining start.
-    RemoveStart { pattern_trips: String, index: usize },
+    // --- gestures: a frequency trip's bands
     SetBand {
-        pattern_trips: String,
+        trip: String,
         index: usize,
         #[serde(default)]
         #[ts(optional)]
@@ -283,18 +290,19 @@ pub enum NetworkEdit {
         headway_secs: Option<u32>,
     },
     /// A new 3-hour, 15-minute band after the last one.
-    AddBand { pattern_trips: String },
+    AddBand { trip: String },
     /// Refused for the last remaining band.
-    RemoveBand { pattern_trips: String, index: usize },
+    RemoveBand { trip: String, index: usize },
 
     // --- gestures: the timetable (route + direction + service type;
     // `direction` null or omitted: the route's patterns in none). See
     // `timetable_edit` for the rules every one of them keeps.
-    /// Frequency by period: a trip every `headway_secs` from
+    /// Frequency by period: a one-start trip every `headway_secs` from
     /// `from_secs` (the first departure) until before `to_secs`.
-    /// Trips in the window move to the nearest slots in order, their
-    /// blocks with them; open slots are new trips (`pattern`, else the
-    /// one the trip before runs); surplus trips go.
+    /// Trips in the window move to the nearest slots in order, keeping
+    /// their ids, times and blocks; open slots are new trips
+    /// (`pattern`, else the one the trip before runs); surplus trips
+    /// go. Frequency trips are left as they are.
     SetHeadway {
         route: String,
         #[serde(default)]
@@ -327,16 +335,17 @@ pub enum NetworkEdit {
         #[ts(optional)]
         headway_secs: Option<u32>,
     },
-    /// Running time by period: trips departing in [`from_secs`,
-    /// `to_secs`) on every pattern of the direction run `delta_secs`
-    /// longer (negative: shorter), in proportion along the pattern.
-    /// Timing belongs to the pattern, so every service type running
-    /// it changes.
+    /// Running time by period: the one-start trips of the direction
+    /// under `service_type` departing in [`from_secs`, `to_secs`) run
+    /// `delta_secs` longer (negative: shorter), in proportion along
+    /// each trip. Nothing else changes — not another service type, not
+    /// the profiles.
     AdjustRunningTime {
         route: String,
         #[serde(default)]
         #[ts(optional)]
         direction: Option<String>,
+        service_type: String,
         from_secs: u32,
         to_secs: u32,
         delta_secs: i32,
@@ -362,8 +371,8 @@ pub enum NetworkEdit {
     },
 
     // --- gestures: the runcut
-    /// Add a trip to a block, keeping the block in time order;
-    /// layovers past the last trip are dropped.
+    /// Add a trip to a block, keeping the block in order of first
+    /// start; layovers past the last trip are dropped.
     AddBlockTrip { block: String, trip: TripRef },
     RemoveBlockTrip { block: String, index: usize },
     /// Set (or, with `secs` null, clear) the layover after trip
@@ -394,7 +403,7 @@ pub enum Day {
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[ts(export)]
 pub struct CreatedEntity {
-    /// stop | route | pattern | service_type | pattern_trips | block
+    /// stop | route | pattern | service_type | pattern_trips | block | trip
     pub kind: String,
     pub id: String,
 }
@@ -479,18 +488,45 @@ fn timepoint_position(pattern: &Pattern, index: usize) -> usize {
     pattern.stops[..index].iter().filter(|s| s.timepoint).count()
 }
 
-fn exact_starts<'a>(net: &'a mut Network, pattern_trips: &str) -> Result<&'a mut Vec<u32>, String> {
-    match &mut get_mut(&mut net.pattern_trips, pattern_trips, "pattern trips")?.departures {
-        Departures::ExactTimes { starts } => Ok(starts),
-        Departures::HeadwayBands { .. } => Err(format!("pattern trips {pattern_trips} runs headway bands, not exact starts")),
+fn trip_mut<'a>(net: &'a mut Network, id: &str) -> Result<&'a mut Trip, String> {
+    net.pattern_trips
+        .values_mut()
+        .flat_map(|pt| pt.trips.iter_mut())
+        .find(|t| t.id == id)
+        .ok_or_else(|| format!("unknown trip {id}"))
+}
+
+fn bands<'a>(net: &'a mut Network, trip: &str) -> Result<&'a mut Vec<HeadwayBand>, String> {
+    match &mut trip_mut(net, trip)?.departs {
+        Departs::Every { bands, .. } => Ok(bands),
+        Departs::At { .. } => Err(format!("trip {trip} runs once, not at a frequency")),
     }
 }
 
-fn bands<'a>(net: &'a mut Network, pattern_trips: &str) -> Result<&'a mut Vec<HeadwayBand>, String> {
-    match &mut get_mut(&mut net.pattern_trips, pattern_trips, "pattern trips")?.departures {
-        Departures::HeadwayBands { bands } => Ok(bands),
-        Departures::ExactTimes { .. } => Err(format!("pattern trips {pattern_trips} runs exact starts, not headway bands")),
-    }
+/// A new one-start trip of `pattern_trips` at `start`, timed by its
+/// pattern's profile; answers its id.
+fn add_trip(net: &mut Network, pattern_trips: &str, id: &Option<String>, start: u32) -> Result<String, String> {
+    let pt = net.pattern_trips.get(pattern_trips).ok_or_else(|| format!("unknown pattern trips {pattern_trips}"))?;
+    let pattern = net.patterns.get(&pt.pattern).ok_or_else(|| format!("unknown pattern {}", pt.pattern))?;
+    let times = produce_times(pattern, start).ok_or_else(|| {
+        format!(
+            "pattern {} has no timing profile to time a trip at {:02}:{:02} — extend its timing first",
+            pt.pattern,
+            start / 3600,
+            start % 3600 / 60
+        )
+    })?;
+    let id = match id {
+        Some(id) if net.trip(id).is_some() => return Err(format!("trip {id} already exists")),
+        Some(id) => id.clone(),
+        None => timetable_edit::fresh_trip_id(net, &Default::default(), &format!("{pattern_trips}@{start}")),
+    };
+    net.pattern_trips
+        .get_mut(pattern_trips)
+        .expect("checked")
+        .trips
+        .push(Trip { id: id.clone(), departs: Departs::At { start_secs: start }, times });
+    Ok(id)
 }
 
 /// Layovers live only between two trips of the block.
@@ -559,34 +595,21 @@ fn apply_one(net: &mut Network, edit: &NetworkEdit) -> Result<Option<CreatedEnti
         NetworkEdit::UpsertPatternTrips { id, pattern_trips } => {
             net.pattern_trips.insert(id.clone(), pattern_trips.clone());
         }
-        NetworkEdit::RetimeTrip { pattern_trips, from_secs, to_secs } => {
-            let entry = net
-                .pattern_trips
-                .get_mut(pattern_trips)
-                .ok_or_else(|| format!("unknown pattern trips {pattern_trips}"))?;
-            let Departures::ExactTimes { starts } = &mut entry.departures else {
-                return Err(format!("pattern trips {pattern_trips} runs headway bands — retime its bands instead"));
-            };
-            let at = starts
-                .iter()
-                .position(|s| s == from_secs)
-                .ok_or_else(|| format!("pattern trips {pattern_trips} runs no trip at {from_secs}"))?;
-            if from_secs != to_secs && starts.contains(to_secs) {
-                return Err(format!("pattern trips {pattern_trips} already runs a trip at {to_secs}"));
+        NetworkEdit::RetimeTrip { trip, to_secs } => {
+            let t = trip_mut(net, trip)?;
+            if !matches!(t.departs, Departs::At { .. }) {
+                return Err(format!("trip {trip} runs at a frequency — retime its bands instead"));
             }
-            starts[at] = *to_secs;
-            starts.sort_unstable();
-            for block in net.blocks.values_mut() {
-                for trip in block.trips.iter_mut() {
-                    if &trip.pattern_trips == pattern_trips && trip.start_secs == *from_secs {
-                        trip.start_secs = *to_secs;
-                    }
-                }
-            }
+            t.departs = Departs::At { start_secs: *to_secs };
+        }
+        NetworkEdit::RemoveTrip { trip } => {
+            exists(net.trip(trip).is_some(), "trip", trip)?;
+            timetable_edit::remove_trips(net, &[trip.clone()].into_iter().collect());
         }
         NetworkEdit::RemovePatternTrips { id } => {
-            exists(net.pattern_trips.contains_key(id), "pattern trips", id)?;
-            if let Some((b, _)) = net.blocks.iter().find(|(_, b)| b.trips.iter().any(|t| &t.pattern_trips == id)) {
+            let pt = net.pattern_trips.get(id).ok_or_else(|| format!("unknown pattern trips {id}"))?;
+            let ids: std::collections::BTreeSet<&str> = pt.trips.iter().map(|t| t.id.as_str()).collect();
+            if let Some((b, _)) = net.blocks.iter().find(|(_, b)| b.trips.iter().any(|t| ids.contains(t.trip.as_str()))) {
                 return Err(format!("pattern trips {id} have trips in block {b}"));
             }
             net.pattern_trips.remove(id);
@@ -698,10 +721,11 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             exists(net.patterns.contains_key(&pattern), "pattern", &pattern)?;
             exists(net.service_types.contains_key(&service_type), "service type", &service_type)?;
             let id = mint(&net.pattern_trips, id, "svc", "pattern trips")?;
-            net.pattern_trips.insert(
-                id.clone(),
-                PatternTrips { pattern, service_type, departures: Departures::ExactTimes { starts: vec![8 * 3600] } },
-            );
+            net.pattern_trips.insert(id.clone(), PatternTrips { pattern, service_type, trips: vec![] });
+            if let Err(e) = add_trip(net, &id, &None, 8 * 3600) {
+                net.pattern_trips.remove(&id);
+                return Err(e);
+            }
             created("pattern_trips", &id)
         }
         NetworkEdit::AddBlock { id } => {
@@ -820,6 +844,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             }
             let distance_m = (p.stops[at - 1].distance_m + p.stops[at].distance_m) / 2.0;
             p.stops.insert(at, PatternStop { stop: stop.clone(), timepoint: false, distance_m });
+            timetable_edit::insert_trip_stop(net, pattern, at);
             None
         }
         NetworkEdit::SetHeadway { route, direction, service_type, from_secs, to_secs, headway_secs, pattern } => {
@@ -837,8 +862,16 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
         NetworkEdit::SetSpan { route, direction, service_type, first_secs, last_secs, headway_secs } => {
             timetable_edit::set_span(net, route, direction.as_deref(), service_type, *first_secs, *last_secs, *headway_secs)?
         }
-        NetworkEdit::AdjustRunningTime { route, direction, from_secs, to_secs, delta_secs } => {
-            timetable_edit::adjust_running_time(net, route, direction.as_deref(), *from_secs, *to_secs, *delta_secs)?
+        NetworkEdit::AdjustRunningTime { route, direction, service_type, from_secs, to_secs, delta_secs } => {
+            timetable_edit::adjust_running_time(
+                net,
+                route,
+                direction.as_deref(),
+                service_type,
+                *from_secs,
+                *to_secs,
+                *delta_secs,
+            )?
         }
         NetworkEdit::InsertDirectionStop { route, direction, stop, after } => {
             timetable_edit::insert_direction_stop(net, route, direction.as_deref(), stop, after)?
@@ -857,6 +890,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
                     }
                 }
             }
+            timetable_edit::remove_trip_stop(net, pattern, *index);
             None
         }
         NetworkEdit::SetPatternStop { pattern, index, stop, distance_m } => {
@@ -874,6 +908,7 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             None
         }
         NetworkEdit::ToggleTimepoint { pattern, index } => {
+            let before = net.patterns.get(pattern).cloned();
             let p = get_mut(&mut net.patterns, pattern, "pattern")?;
             middle(p, pattern, *index)?;
             let position = timepoint_position(p, *index);
@@ -889,6 +924,18 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
                     let prev = if position > 0 { times.get(position - 1).copied().unwrap_or(0) } else { 0 };
                     let next = times.get(position).copied().unwrap_or(prev);
                     times.insert(position.min(times.len()), (prev + next).div_ceil(2));
+                }
+            }
+            // A timepoint is exact on every trip: one that left the stop
+            // unscheduled is scheduled where it materialized.
+            if !turning_off {
+                let before = before.expect("found above");
+                for trip in timetable_edit::pattern_trips_mut(net, pattern) {
+                    let Ok(at) = crate::materialize::offsets(&before, trip) else { continue };
+                    let (a, d) = at[*index];
+                    let o: &mut StopOffset = &mut trip.times[*index];
+                    o.arrival_secs.get_or_insert(a);
+                    o.departure_secs.get_or_insert(d);
                 }
             }
             None
@@ -979,35 +1026,12 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             get_mut(&mut net.service_types, id, "service type")?.rule.exceptions.retain(|e| e.date != day);
             None
         }
-        NetworkEdit::SetStarts { pattern_trips, starts } => {
-            let target = exact_starts(net, pattern_trips)?;
-            let mut clean = starts.clone();
-            clean.sort_unstable();
-            clean.dedup();
-            *target = clean;
-            None
+        NetworkEdit::AddTrip { pattern_trips, id, start_secs } => {
+            let id = add_trip(net, pattern_trips, id, *start_secs)?;
+            created("trip", &id)
         }
-        NetworkEdit::AddStart { pattern_trips } => {
-            let starts = exact_starts(net, pattern_trips)?;
-            let last = starts.last().copied().unwrap_or(6 * 3600);
-            let next = (last + 600).min(47 * 3600);
-            if !starts.contains(&next) {
-                starts.push(next);
-                starts.sort_unstable();
-            }
-            None
-        }
-        NetworkEdit::RemoveStart { pattern_trips, index } => {
-            let starts = exact_starts(net, pattern_trips)?;
-            if starts.len() <= 1 {
-                return Err(format!("pattern trips {pattern_trips} keeps at least one trip"));
-            }
-            at_mut(starts, *index, "start")?;
-            starts.remove(*index);
-            None
-        }
-        NetworkEdit::SetBand { pattern_trips, index, start_secs, end_secs, headway_secs } => {
-            let band = at_mut(bands(net, pattern_trips)?, *index, "band")?;
+        NetworkEdit::SetBand { trip, index, start_secs, end_secs, headway_secs } => {
+            let band = at_mut(bands(net, trip)?, *index, "band")?;
             if let Some(s) = start_secs {
                 band.start_secs = *s;
             }
@@ -1019,27 +1043,33 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             }
             None
         }
-        NetworkEdit::AddBand { pattern_trips } => {
-            let bands = bands(net, pattern_trips)?;
+        NetworkEdit::AddBand { trip } => {
+            let bands = bands(net, trip)?;
             let start = bands.last().map(|b| b.end_secs).unwrap_or(6 * 3600);
             bands.push(HeadwayBand { start_secs: start, end_secs: start + 3 * 3600, headway_secs: 900 });
             None
         }
-        NetworkEdit::RemoveBand { pattern_trips, index } => {
-            let bands = bands(net, pattern_trips)?;
+        NetworkEdit::RemoveBand { trip, index } => {
+            let bands = bands(net, trip)?;
             if bands.len() <= 1 {
-                return Err(format!("pattern trips {pattern_trips} keeps at least one band"));
+                return Err(format!("trip {trip} keeps at least one band"));
             }
             at_mut(bands, *index, "band")?;
             bands.remove(*index);
             None
         }
         NetworkEdit::AddBlockTrip { block, trip } => {
-            exists(net.pattern_trips.contains_key(&trip.pattern_trips), "pattern trips", &trip.pattern_trips)?;
+            exists(net.trip(&trip.trip).is_some(), "trip", &trip.trip)?;
+            let first: std::collections::BTreeMap<String, u32> = net
+                .trips()
+                .map(|(_, _, t)| (t.id.clone(), t.departs.first_start().unwrap_or(0)))
+                .collect();
             let b = get_mut(&mut net.blocks, block, "block")?;
             let before = b.trips.clone();
             b.trips.push(trip.clone());
-            b.trips.sort_by(|a, c| a.start_secs.cmp(&c.start_secs).then_with(|| a.pattern_trips.cmp(&c.pattern_trips)));
+            b.trips.sort_by(|a, c| {
+                first.get(&a.trip).cmp(&first.get(&c.trip)).then_with(|| a.trip.cmp(&c.trip))
+            });
             timetable_edit::reindex_layovers(b, &before);
             None
         }

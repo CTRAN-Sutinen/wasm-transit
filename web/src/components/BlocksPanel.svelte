@@ -20,7 +20,7 @@
     blocks: DayBlock[];
     off: boolean;
     selected: string;
-    chain: { trips: BlockChainTrip[]; agencyTripIds: string[][] } | null;
+    chain: { trips: BlockChainTrip[] } | null;
     chainOff: boolean;
     date: string;
     onselect: (blockId: string) => void;
@@ -69,14 +69,14 @@
     <table>
     <tbody>
       <tr><th>#</th><th>start</th><th>end</th><th>route</th><th>trip</th><th>from → to</th><th>layover</th></tr>
-      {#each chain.trips as t, i (t.pattern_trips + t.start_secs)}
+      {#each chain.trips as t, i (t.trip + "@" + t.start_secs)}
         {@const flag = t.layover_health ? FLAG[t.layover_health] : null}
         <tr class:muted={!t.runs} title={t.runs ? "" : "this trip does not run today — the authored hole"}>
           <td>{i + 1}</td>
           <td>{fmtHMS(t.runs ? t.start_secs : null)}</td>
           <td>{fmtHMS(t.end_secs)}</td>
           <td>{t.route_name}</td>
-          <td class="muted">{chain.agencyTripIds[i]?.join(", ")}</td>
+          <td class="muted">{t.trip}</td>
           <td>{t.first_stop} → {t.last_stop}</td>
           <td>
             {fmtLayover(t.layover_remaining_secs === null ? null : Number(t.layover_remaining_secs))}

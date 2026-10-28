@@ -103,7 +103,7 @@ pub fn entity_focus(network: &Network, kind: EntityKind, id: &str) -> Option<Ent
             let mut ids: Vec<&str> = block
                 .trips
                 .iter()
-                .filter_map(|t| network.pattern_trips.get(&t.pattern_trips).map(|s| s.pattern.as_str()))
+                .filter_map(|t| network.trip(&t.trip).map(|(_, pt, _)| pt.pattern.as_str()))
                 .collect();
             ids.sort();
             ids.dedup();

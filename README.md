@@ -13,10 +13,10 @@ crates/
 │                  Pure Rust, no I/O deps.
 ├── transit-network The authored network model (the planner's view):
 │                  patterns, timing profiles, calendar rules, services,
-│                  and the runcut; trips are derived by `materialize`.
+│                  stored trips (own id, departure, times), and the
+│                  runcut; `materialize` answers a day's instances.
 │                  GTFS is a codec at the boundary, never the shape.
-│                  Property-tested against an independent expansion
-│                  oracle.
+│                  Property-tested against independent oracles.
 ├── transit-router Earliest-arrival trip planning (RAPTOR): trip
 │                  patterns, footpaths, round-based search, itinerary
 │                  reconstruction. Property-tested against a

@@ -33,66 +33,39 @@ fn load_feed_registers_under_the_content_hash() {
 }
 
 #[test]
-fn trip_map_joins_the_agency_ids_to_the_derived_trips() {
+fn trip_map_answers_every_trip_by_its_own_id() {
     let (feed_hash, _) = load_fixture();
     let network_hash = match dispatch(Request::Import { feed_hash }).unwrap() {
         Response::Import { network_hash, .. } => network_hash,
         _ => panic!("import"),
     };
     let map = match dispatch(Request::TripMap { network_hash }).unwrap() {
-        Response::TripMap { map: Some(map) } => map,
-        Response::TripMap { map: None } => panic!("an imported network has a map"),
+        Response::TripMap { map } => map,
         _ => panic!("trip_map"),
     };
     // The fixture's single-stop trip is dropped by the import (and
-    // reported in the notes); every OTHER agency id is in the map,
-    // and the map invents none.
+    // reported in the notes); every OTHER agency id is a trip of the
+    // document, named by itself, and the map invents none.
     let agency: std::collections::BTreeSet<&str> = map
         .entries
         .iter()
         .flat_map(|e| e.agency_trip_ids.iter().map(String::as_str))
         .collect();
-    let source = transit_core::Gtfs::from_zip_bytes(FIXTURE).unwrap();
-    let kept: std::collections::BTreeSet<&str> = source.trips.keys().map(String::as_str).collect();
+    let source = transit_codec::Feed::from_zip_bytes(FIXTURE).unwrap();
+    let kept: std::collections::BTreeSet<&str> = source.trips.iter().filter_map(|t| t.trip_id.as_deref()).collect();
     assert_eq!(agency.len(), kept.len() - 1, "one dropped trip, the rest mapped");
-    for id in &agency {
-        assert!(kept.contains(id), "the map invented an id: {id}");
-    }
+    assert!(agency.is_subset(&kept), "the map invents no id");
+    assert!(map.entries.iter().all(|e| e.agency_trip_ids.len() == 1), "each trip is its own id");
 
-    // Shaped to a question, in the order asked: a mapped trip's ids,
-    // and an empty list for a trip the import never saw.
-    let first = &map.entries[0];
-    let network_hash = match dispatch(Request::Import { feed_hash: load_fixture().0 }).unwrap() {
-        Response::Import { network_hash, .. } => network_hash,
-        _ => panic!("import"),
-    };
-    let asked = vec![
-        transit_network::TripRef { pattern_trips: "ghost".into(), start_secs: 0 },
-        transit_network::TripRef { pattern_trips: first.pattern_trips.clone(), start_secs: first.start_secs },
-    ];
-    match dispatch(Request::AgencyTripIds { network_hash, trips: asked }).unwrap() {
-        Response::AgencyTripIds { ids } => assert_eq!(ids, vec![vec![], first.agency_trip_ids.clone()]),
-        _ => panic!("agency_trip_ids"),
-    }
-    for e in &map.entries {
-        assert!(
-            !e.agency_trip_ids.is_empty(),
-            "entry {}@{} maps no agency id",
-            e.pattern_trips,
-            e.start_secs
-        );
-    }
-
-    // An AUTHORED network (loaded, not imported) has no map — the
-    // honest None, never a silent empty one.
+    // An AUTHORED network answers its own trips the same way.
     let doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
-    let authored = match dispatch(Request::LoadNetwork { network: doc }).unwrap() {
+    let authored = match dispatch(Request::LoadNetwork { network: doc.clone() }).unwrap() {
         Response::LoadNetwork { network_hash } => network_hash,
         _ => panic!("load_network"),
     };
     match dispatch(Request::TripMap { network_hash: authored }).unwrap() {
-        Response::TripMap { map: None } => {}
-        _ => panic!("an authored network answers None"),
+        Response::TripMap { map } => assert_eq!(map.entries.len(), doc.trips().count()),
+        _ => panic!("trip_map"),
     }
 
     // Unknown network is a caller error, not a panic.
@@ -104,14 +77,14 @@ fn import_infers_and_registers_the_document() {
     let (feed_hash, _) = load_fixture();
     let (network, notes, network_hash) =
         match dispatch(Request::Import { feed_hash }).unwrap() {
-            Response::Import { network, notes, network_hash } => (network, notes, network_hash),
+            Response::Import { network, notes, network_hash, .. } => (network, notes, network_hash),
             _ => panic!("import"),
         };
     // Valid by construction — the codec's law.
     assert!(network.validate().is_ok(),
         "inferred document must validate: {:?}", transit_network::validation_issues(&network));
     assert_eq!(network.stops.len(), 6, "A, B, C, the station pin, two bays");
-    assert_eq!(network.patterns.len(), 5, "10 both ways, 20, the shuttle both ways");
+    assert_eq!(network.patterns.len(), 6, "10's A→B with and without its shape, A→C→B, 20, the shuttle both ways");
     // The fixture's single-stop trip is a REPORTED loss, never silent.
     assert!(!notes.is_empty(), "the dropped single-stop trip is reported: {notes:?}");
 

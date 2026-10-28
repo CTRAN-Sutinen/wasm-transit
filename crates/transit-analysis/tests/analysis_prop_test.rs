@@ -167,8 +167,8 @@ fn pop_spec() -> impl Strategy<Value = PopSpec> {
 fn spec_and_layer() -> impl Strategy<Value = (transit_network::Network, Vec<PopSpec>)> {
     proptest::collection::vec(gen_trip(), 0..=14).prop_flat_map(|trips| {
         proptest::collection::vec(pop_spec(), 1..=20).prop_map(move |points| {
-            let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
-            let net = transit_codec::gtfs_to_network(&gtfs).network;
+            let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
+            let net = transit_codec::import(&feed).network;
             (net.clone(), points)
         })
     })
@@ -203,8 +203,8 @@ proptest! {
     fn stats_match_the_materialize_oracle(
         trips in proptest::collection::vec(gen_trip(), 0..=14),
     ) {
-        let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
-        let net = transit_codec::gtfs_to_network(&gtfs).network;
+        let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
+        let net = transit_codec::import(&feed).network;
 
         for day in [0i64, 3, 400] {
             let date = EPOCH + Duration::days(day);
@@ -403,8 +403,8 @@ proptest! {
     /// shared code with the model.
     #[test]
     fn service_types_match_the_date(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
-        let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("generated feeds parse");
-        let net = transit_codec::gtfs_to_network(&gtfs).network;
+        let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("generated feeds parse");
+        let net = transit_codec::import(&feed).network;
         // A weekday (Mon) and a weekend day (Sat) of 2026.
         for date in [
             NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(),
@@ -449,8 +449,8 @@ proptest! {
     /// every stop of the generated day and on an unknown stop.
     #[test]
     fn stop_gaps_match_the_departure_oracle(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
-        let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
-        let net = transit_codec::gtfs_to_network(&gtfs).network;
+        let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
+        let net = transit_codec::import(&feed).network;
         let date = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
 
         let materialized = transit_network::materialize(&net, date).expect("materialize");
@@ -527,8 +527,8 @@ proptest! {
     /// hours, and the day's trip count conserved across the rows.
     #[test]
     fn hourly_trips_match_the_start_hour_oracle(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
-        let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
-        let net = transit_codec::gtfs_to_network(&gtfs).network;
+        let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
+        let net = transit_codec::import(&feed).network;
 
         for date in [
             NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(), // a Monday
@@ -582,8 +582,8 @@ proptest! {
     /// the feeding schedule count, and the totals.
     #[test]
     fn schedule_texture_matches_the_starts_oracle(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
-        let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
-        let net = transit_codec::gtfs_to_network(&gtfs).network;
+        let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
+        let net = transit_codec::import(&feed).network;
 
         for type_id in ["0", "1", "2", "3"] {
             let texture = transit_analysis::schedule_texture(&net, type_id);
@@ -665,7 +665,7 @@ proptest! {
                 }
                 let slot = oracle.entry(entry.pattern.clone()).or_insert((0, Vec::new()));
                 slot.0 += 1;
-                slot.1.extend(transit_network::trip_starts(&entry.departures));
+                slot.1.extend(entry.trips.iter().flat_map(|t| t.departs.instances()));
             }
             prop_assert_eq!(texture.pattern_trips.len(), oracle.len(), "{} pattern rows", type_id);
             let mut sum_trips = 0u32;
@@ -707,8 +707,8 @@ proptest! {
     /// highest (ties by stop id, lowest wins).
     #[test]
     fn route_overlap_matches_the_pair_oracle(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
-        let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
-        let net = transit_codec::gtfs_to_network(&gtfs).network;
+        let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
+        let net = transit_codec::import(&feed).network;
         let date = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
 
         let overlaps = transit_analysis::route_overlap(&net, date);
@@ -786,8 +786,8 @@ proptest! {
             Some(w) => (w.min_secs, w.max_secs),
             None => (60, 900),
         };
-        let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
-        let net = transit_codec::gtfs_to_network(&gtfs).network;
+        let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
+        let net = transit_codec::import(&feed).network;
         let date = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
         let materialized = transit_network::materialize(&net, date).expect("materialize");
 
@@ -937,8 +937,8 @@ proptest! {
     /// the bases, the members, and the family's pooled numbers.
     #[test]
     fn service_groups_are_the_families(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
-        let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(&trips)).expect("parse");
-        let net = transit_codec::gtfs_to_network(&gtfs).network;
+        let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
+        let net = transit_codec::import(&feed).network;
         let groups = transit_analysis::service_groups(&net);
 
         // Oracle: day-sets per type (2026 walk over ranges +

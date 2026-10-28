@@ -26,8 +26,10 @@ test("service design answers a plan, a fork, and its change", async ({ page }) =
   await page.goto("/service-design.html");
   await page.getByTestId("plan-bar").locator("input[type=file]").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
 
+  // WK, SUN, and HOL — every calendar the feed names is a service
+  // type; HOL's only trip is single-stop (dropped), so it runs none.
   const types = page.getByTestId("type-table");
-  await expect(types.locator("tbody tr")).toHaveCount(2, { timeout: 10_000 });
+  await expect(types.locator("tbody tr")).toHaveCount(3, { timeout: 10_000 });
   await types.locator("tbody tr", { hasText: "WK" }).click();
 
   const routes = page.getByTestId("route-table");
@@ -78,11 +80,20 @@ test("a plan stored under the old field names restores in the current shape", as
   const doc = JSON.parse(fs.readFileSync(path.join(fixtures, "../../../testdata/network.json"), "utf8"));
   const legacy = { ...doc, schedules: {}, blocks: {} };
   delete legacy.pattern_trips;
+  // The pre-trip shape: exact starts per schedule, block trips as
+  // (schedule, start) — what the fixture's trips were written as.
   for (const [id, t] of Object.entries(doc.pattern_trips)) {
-    legacy.schedules[id] = { pattern: t.pattern, service_type: t.service_type, schedule: t.departures };
+    const starts = t.trips.map((trip) => trip.departs.start_secs);
+    legacy.schedules[id] = { pattern: t.pattern, service_type: t.service_type, schedule: { kind: "exact_times", starts } };
   }
   for (const [id, b] of Object.entries(doc.blocks)) {
-    legacy.blocks[id] = { ...b, trips: b.trips.map((t) => ({ schedule: t.pattern_trips, start_secs: t.start_secs })) };
+    legacy.blocks[id] = {
+      ...b,
+      trips: b.trips.map((r) => {
+        const [schedule, start] = r.trip.split("@");
+        return { schedule, start_secs: Number(start) };
+      }),
+    };
   }
 
   await page.goto("/service-design.html");

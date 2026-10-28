@@ -1,14 +1,14 @@
 //! transit-network — the authored network model.
 //!
 //! The planner's data model, designed from planner intent downward:
-//! patterns, service rules, and the runcut are the authored truth;
-//! trips and stop times are *derived*, materialized per date. A
-//! planner does not author "60 trips" — they author a pattern, a
-//! schedule, and a calendar, and the trips fall out.
+//! patterns, service types, trips, and the runcut are the authored
+//! truth. A trip is a stored record — its own id, its own departure,
+//! its own times — produced from a pattern's timing profile and then
+//! adjusted trip by trip; a day's instances are materialized per date.
 //!
-//! GTFS is neither this model nor its shape. It is an optional codec
-//! at the boundary (import by inference: backlog; export: backlog).
-//! Nothing in this crate knows the format exists.
+//! GTFS is neither this model nor its shape. It is a codec at the
+//! boundary (transit-codec). Nothing in this crate knows the format
+//! exists.
 //!
 //! Conventions, deliberately not GTFS's:
 //!
@@ -31,6 +31,7 @@ pub mod error;
 pub mod geometry;
 pub mod listing;
 pub mod materialize;
+pub mod migrate;
 pub mod model;
 pub mod timetable_edit;
 pub mod validate;
@@ -44,13 +45,13 @@ pub use listing::{
     RemovedTrip, RouteDetail, StopDetail, Timetable, TimetablePattern, TimetableStop, TimetableTrip,
 };
 pub use materialize::{
-    materialize, materialize_service, trip_arrival_end_secs, trip_starts, MaterializedTrip,
-    StopTime,
+    materialize, materialize_service, produce_times, trip_arrival_end_secs, MaterializedTrip, StopTime,
 };
+pub use migrate::read_network;
 pub use model::{
-    Anchor, Block, CalendarException, CalendarRule, Coord, DateRange, DayState, HeadwayBand, Layover,
-    Direction, DirectionId, Mode, Network, Pattern, PatternTrips, PatternStop, PlanMeta, Route, Departures, PatternTripsId,
-    ServiceTypeId, ServiceType, Stop, TimingProfile, TripRef, WeekdaySet,
+    Anchor, Block, CalendarException, CalendarRule, Coord, DateRange, DayState, Departs, Direction, DirectionId,
+    HeadwayBand, Layover, Mode, Network, Pattern, PatternStop, PatternTrips, PatternTripsId, PlanMeta, Route,
+    ServiceType, ServiceTypeId, Stop, StopOffset, TimingProfile, Trip, TripId, TripRef, WeekdaySet,
 };
 pub use validate::{
     routes_meeting_at, stop_route_index, validate, validation_issues, validation_warnings,

@@ -2,8 +2,8 @@
 //! and a route's composition — its trip counts the materialized day's.
 
 use transit_network::{
-    apply_edits, entity_rows, route_detail, stop_detail, timetable, timetable_against, Departures, EntityKind, HeadwayBand, Network,
-    NetworkEdit, PatternTrips,
+    apply_edits, entity_rows, route_detail, stop_detail, timetable, timetable_against, Departs, EntityKind, HeadwayBand,
+    Network, NetworkEdit, PatternTrips, StopOffset, Trip,
 };
 
 fn network() -> Network {
@@ -96,17 +96,17 @@ fn a_station_answers_its_bays_routes() {
 
 #[test]
 fn trip_counts_are_the_days_trips() {
-    // Overlapping bands share a start: the day runs it once, and so
-    // does the count (00:00–01:00 and 00:30–01:30 every 30 min).
+    // A frequency trip counts its instances (00:00–01:00 every 30
+    // min: two; an empty band: none) beside the two one-start trips.
     let mut net = network();
-    net.pattern_trips.get_mut("10-weekday").unwrap().departures = Departures::HeadwayBands {
+    net.pattern_trips.get_mut("10-weekday").unwrap().trips[2].departs = Departs::Every {
         bands: vec![
             HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 1800 },
-            HeadwayBand { start_secs: 1800, end_secs: 5400, headway_secs: 1800 },
             HeadwayBand { start_secs: 7200, end_secs: 3600, headway_secs: 600 },
         ],
+        exact: true,
     };
-    assert_eq!(entity_rows(&net, EntityKind::PatternTrips, "")[0].trips, Some(3));
+    assert_eq!(entity_rows(&net, EntityKind::PatternTrips, "")[0].trips, Some(4));
 }
 
 /// Route 10 in direction "in" (To Downtown): the committed pattern
@@ -131,9 +131,18 @@ fn with_a_bay_variant() -> Network {
                 pattern_trips: PatternTrips {
                     pattern: "10-bay".into(),
                     service_type: "weekday".into(),
-                    departures: Departures::HeadwayBands {
-                        bands: vec![HeadwayBand { start_secs: 32_400, end_secs: 36_000, headway_secs: 1800 }],
-                    },
+                    trips: vec![Trip {
+                        id: "bay@every".into(),
+                        departs: Departs::Every {
+                            bands: vec![HeadwayBand { start_secs: 32_400, end_secs: 36_000, headway_secs: 1800 }],
+                            exact: true,
+                        },
+                        times: vec![
+                            StopOffset { arrival_secs: Some(0), departure_secs: Some(0) },
+                            StopOffset::default(),
+                            StopOffset { arrival_secs: Some(600), departure_secs: Some(600) },
+                        ],
+                    }],
                 },
             },
         ],
@@ -168,12 +177,14 @@ fn a_timetable_is_one_direction_on_one_service_type_across_its_patterns() {
     // Legend: most trips first; the bands are marked.
     let legend: Vec<_> = t.patterns.iter().map(|p| (p.pattern.as_str(), p.trips, p.headway)).collect();
     assert_eq!(legend, [("10-inbound", 3, false), ("10-bay", 2, true)]);
-    // Rows by start, each with its identity, block and times.
-    let rows: Vec<_> = t.trips.iter().map(|r| (r.start_secs, r.pattern.as_str(), r.block.as_deref())).collect();
+    // Rows by start, each with its trip, block and times.
+    let rows: Vec<_> =
+        t.trips.iter().map(|r| (r.start_secs, r.trip.as_str(), r.pattern.as_str(), r.block.as_deref())).collect();
     assert_eq!(
         rows,
-        [(28_800, "10-inbound", Some("400")), (30_600, "10-inbound", Some("400")), (32_400, "10-bay", None),
-         (34_200, "10-bay", None), (91_800, "10-inbound", None)]
+        [(28_800, "10-weekday@28800", "10-inbound", Some("400")), (30_600, "10-weekday@30600", "10-inbound", Some("400")),
+         (32_400, "bay@every", "10-bay", None), (34_200, "bay@every", "10-bay", None),
+         (91_800, "10-weekday@91800", "10-inbound", None)]
     );
     assert_eq!(t.trips[0].times, [Some(28_800), Some(29_100), None, Some(29_400)]);
     assert_eq!(t.trips[2].times, [Some(32_400), Some(32_700), Some(33_000), None]);
@@ -190,8 +201,8 @@ fn a_timetable_is_one_direction_on_one_service_type_across_its_patterns() {
 #[test]
 fn a_timetable_against_its_baseline_marks_what_changed() {
     // Every 30 min 07:50–09:00: 08:00 and 08:30 move to 07:50 and
-    // 08:20 (removed at their old starts, added at the new), 08:50 is
-    // new, 25:30 is untouched.
+    // 08:20 (a row is a trip at a start: removed at the old, added at
+    // the new), 08:50 is a new trip, 25:30 is untouched.
     let base = network();
     let edit = NetworkEdit::SetHeadway {
         route: "10".into(),
@@ -207,6 +218,7 @@ fn a_timetable_against_its_baseline_marks_what_changed() {
     let marks: Vec<_> = t.trips.iter().map(|x| (x.start_secs, x.added)).collect();
     assert_eq!(marks, [(28_200, true), (30_000, true), (31_800, true), (91_800, false)]);
     assert_eq!(t.removed.iter().map(|r| r.start_secs).collect::<Vec<_>>(), [28_800, 30_600]);
+    assert_eq!(t.trips[0].trip, "10-weekday@28800", "the moved trip keeps its id");
     let plain = timetable(&next, "10", None, "weekday").unwrap();
     assert!(plain.trips.iter().all(|x| !x.added) && plain.removed.is_empty(), "no baseline, no marks");
 }

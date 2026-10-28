@@ -10,9 +10,18 @@ ids included.
 The law is `crates/transit-codec/tests/spec_round_trip_test.rs`:
 one proptest per spec file, against an oracle that reads both zips
 as raw tables (never through the parser under test). It is red
-today (32 of 32 file laws), so `just test` is red until this unit
-lands; the failing set is the to-do list. The document fixpoint
+today (29 of 32 file laws; calendar, calendar_dates, and
+frequencies pass), so `just test` is red until this unit lands;
+the failing set is the to-do list. The document fixpoint
 (`codec_prop_test.rs`) stays — it catches export-side loss.
+
+Landed: the whole-spec `Feed` (step 1's reader and writer), and
+the trip model — trips are stored records with the agency's ids
+and their own times, frequency trips are trips, blocks name trips,
+and `transit_codec::import` / `export` run on the `Feed` (laws:
+`trip_law_test.rs`, `trip_import_law_test.rs`, the codec
+fixpoint). C-TRAN imports every trip with no notes and no issues,
+and its export re-imports to the same document.
 
 ## Scope, in order
 
@@ -36,31 +45,30 @@ lands; the failing set is the to-do list. The document fixpoint
    - routes: short and long names, description, URL, text color,
      sort order, continuous stopping, operator;
    - per pattern stop: headsign, pickup / drop-off rules,
-     continuous stopping; per trip: accessibility, bikes, cars,
-     public trip number; two vehicles running one trip;
-   - frequency-based service (`Departures::HeadwayBands`, with
-     exact_times);
+     continuous stopping, and whether its distance was published
+     (a feed without `shape_dist_traveled` must not get one
+     invented on export); per trip: headsign, accessibility, bikes,
+     cars, public trip number;
    - transfers: minimum times, route- and trip-level, in-seat;
    - demand-responsive service: location groups, zones
      (locations.geojson), booking rules, pickup windows;
    - fares v1 and v2: attributes and rules, products, rider
      categories, media, areas, networks, timeframes, leg / join /
      transfer rules;
-   - translations; publisher and attribution metadata;
-   - the calendar exported as authored (calendar.txt from the rule,
-     calendar_dates for its exceptions — not exploded per date).
+   - translations; publisher and attribution metadata.
 
-   **The boundary keeps only serialization**: the id join (agency
-   trip, service, and shape ids — the trip-id map extended),
-   original stop_sequence numbers, and the feed's approximate times
-   at non-timepoint stops. On edit, ids follow their entity,
-   sequence numbers are rewritten when a pattern changes, and new
-   entities get new ids.
+   **The boundary keeps only serialization** (`transit_codec::
+   Boundary`): today the feed's stop_sequence numbers and a
+   frequency trip's stop_times base; shape ids join it when
+   alignments stop being keyed by pattern. On edit, ids follow
+   their entity, sequence numbers are rewritten when a pattern
+   changes, and new entities get new ids.
 3. **Import and export through it** until every law in
    `spec_round_trip_test.rs` passes. The test's `round_trip` helper
    is the one seam that changes with the new API.
-4. **Re-point the dependents** — cap-gtfs, cap-network, transit-rt
-   (its joins move onto the network + the id join), transit-router,
+4. **Re-point the dependents** — cap-gtfs, transit-rt (its joins
+   move onto the network: an rt trip id IS a model trip id),
+   transit-router,
    transit-analysis, cap-abi, and every cap crate that names
    transit-core (`grep transit-core crates/*/Cargo.toml`). The dead
    feed-side paths die rather than move: `apply_diversions`,
@@ -69,6 +77,24 @@ lands; the failing set is the to-do list. The document fixpoint
    `active_services`) have no bus caller.
 5. **Delete transit-core.** The Law 1 arch gate in the justfile
    names the codec alone.
+
+Follow-ups the trip model left, inside this unit:
+
+- **A trip instance is addressed (pattern trips, start)** on the
+  wire — the live document (`LiveTrip`, `LateEntry`,
+  `LiveVehicle`), the boards' rows, `trip_stops`, `trip_path`,
+  `LiveDay::visit`. Two trips may now share a start, so the address
+  becomes (trip, start). Then the trip map (`network.trip_map`,
+  `rt.load_trip_map`) is the identity and goes, and a frequency
+  trip's rt instance resolves by the update's start_time (the map
+  answers its first instance today).
+- **Decisions the trip laws encode that the intent did not state**
+  — confirm or change: a trip's first arrival is offset 0 (its
+  start); `adjust_running_time` leaves the profiles and frequency
+  trips alone; the import gives each pattern one all-day profile
+  from its earliest trip; a pattern's identity includes its shape.
+- QAF-64 (a retimed trip reads as removed plus added) is answerable
+  now: the timetable comparison can match by trip id.
 
 The geometry split (alignments as their own document, for
 registration cost — `runtime-cost-gate.md`) must keep shapes
@@ -85,3 +111,5 @@ rounds at import.
 - A C-TRAN `caps-run` import → export reproduces the source feed
   under the law's comparison — all 15 files, including the six fare
   files and the shapes' `shape_dist_traveled`.
+- No op addresses a trip instance by (pattern trips, start), and
+  the trip map is gone.

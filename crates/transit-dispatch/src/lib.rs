@@ -27,9 +27,7 @@ use std::collections::BTreeSet;
 use chrono::NaiveDate;
 use ts_rs::TS;
 
-use transit_network::{
-    materialize, trip_starts, MaterializedTrip, Network, StopTime,
-};
+use transit_network::{materialize, MaterializedTrip, Network, StopTime};
 use transit_live::{classify, LiveDay, LiveStatus};
 use transit_sync::{Diversion, EditRecord, EditReport};
 
@@ -62,6 +60,8 @@ pub struct BoardDeparture {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct BlockChainTrip {
+    /// The stored trip (a frequency trip's instances share it).
+    pub trip: String,
     pub pattern_trips: String,
     pub start_secs: u32,
     pub route: String,
@@ -264,7 +264,7 @@ fn affected_trips(network: &Network, d: &Diversion) -> usize {
                 .get(&pattern_trips.pattern)
                 .is_some_and(|pattern| pattern_matches(pattern, d))
         })
-        .map(|pattern_trips| trip_starts(&pattern_trips.departures).len())
+        .map(|pattern_trips| pattern_trips.trips.iter().map(|t| t.departs.instances().len()).sum::<usize>())
         .sum()
 }
 
@@ -471,8 +471,9 @@ fn stop_name(network: &Network, stop: Option<&str>) -> String {
 
 /// One block's chain for a service date: the AUTHORED trips in
 /// order (the runcut is model state), each materialized for the day
-/// when it runs, with the operator-edit ripple on the layovers.
-/// Unknown blocks answer empty, never error.
+/// when it runs — a frequency trip as every instance it runs, back to
+/// back — with the operator-edit ripple on the layovers. Unknown
+/// blocks answer empty, never error.
 pub fn block_chain(
     network: &Network,
     day: &[MaterializedTrip],
@@ -484,59 +485,20 @@ pub fn block_chain(
     };
     let mut rows = Vec::with_capacity(block.trips.len());
     for (index, trip_ref) in block.trips.iter().enumerate() {
-        // The trip's identity is (schedule, start); find it in the
-        // day. Runs = its service type runs on the date.
-        let runs = day
-            .iter()
-            .find(|t| t.pattern_trips == trip_ref.pattern_trips && t.start_secs == trip_ref.start_secs);
+        let stored = network.trip(&trip_ref.trip);
+        // Runs = its service type runs on the date.
+        let mut runs: Vec<&MaterializedTrip> = day.iter().filter(|t| t.trip == trip_ref.trip).collect();
+        runs.sort_by_key(|t| t.start_secs);
         let layover = block
             .layovers
             .iter()
             .find(|l| l.after_trip == index)
             .map(|l| l.secs);
-        let row = match runs {
-            Some(trip) => {
-                let effective_end =
-                    trip.stop_times.last().map(|st| st.arrival_secs.max(st.departure_secs));
-                // The authored end from the schedule itself — what
-                // the layover was authored against.
-                let authored_end = transit_network::trip_arrival_end_secs(
-                    network,
-                    &trip_ref.pattern_trips,
-                    trip_ref.start_secs,
-                )
-                .ok();
-                let delay = match (effective_end, authored_end) {
-                    (Some(e), Some(a)) => e as i64 - a as i64,
-                    _ => 0,
-                };
-                let layover_remaining = layover.map(|secs| secs as i64 - delay);
-                BlockChainTrip {
-                    pattern_trips: trip_ref.pattern_trips.clone(),
-                    start_secs: trip_ref.start_secs,
-                    route: trip.route.clone(),
-                    route_name: route_name(network, &trip.route),
-                    pattern: trip.pattern.clone(),
-                    runs: true,
-                    first_stop: trip
-                        .stop_times
-                        .first()
-                        .map(|st| st.stop.clone())
-                        .unwrap_or_default(),
-                    last_stop: trip
-                        .stop_times
-                        .last()
-                        .map(|st| st.stop.clone())
-                        .unwrap_or_default(),
-                    end_secs: effective_end,
-                    layover_after_secs: layover,
-                    layover_remaining_secs: layover_remaining,
-                    layover_health: layover_remaining.map(|r| layover_health(r, tight_secs)),
-                }
-            }
-            None => BlockChainTrip {
-                pattern_trips: trip_ref.pattern_trips.clone(),
-                start_secs: trip_ref.start_secs,
+        if runs.is_empty() {
+            rows.push(BlockChainTrip {
+                trip: trip_ref.trip.clone(),
+                pattern_trips: stored.map(|(key, _, _)| key.to_string()).unwrap_or_default(),
+                start_secs: stored.and_then(|(_, _, t)| t.departs.first_start()).unwrap_or(0),
                 route: String::new(),
                 route_name: String::new(),
                 pattern: String::new(),
@@ -547,9 +509,38 @@ pub fn block_chain(
                 layover_after_secs: layover,
                 layover_remaining_secs: None,
                 layover_health: None,
-            },
-        };
-        rows.push(row);
+            });
+            continue;
+        }
+        let last = runs.len() - 1;
+        for (k, trip) in runs.into_iter().enumerate() {
+            let effective_end = trip.stop_times.last().map(|st| st.arrival_secs.max(st.departure_secs));
+            // The authored end from the trip itself — what the layover
+            // was authored against.
+            let authored_end = stored.and_then(|(_, _, t)| transit_network::trip_arrival_end_secs(t, trip.start_secs));
+            let delay = match (effective_end, authored_end) {
+                (Some(e), Some(a)) => e as i64 - a as i64,
+                _ => 0,
+            };
+            // The authored layover follows the trip's last instance.
+            let layover = if k == last { layover } else { None };
+            let layover_remaining = layover.map(|secs| secs as i64 - delay);
+            rows.push(BlockChainTrip {
+                trip: trip_ref.trip.clone(),
+                pattern_trips: trip.pattern_trips.clone(),
+                start_secs: trip.start_secs,
+                route: trip.route.clone(),
+                route_name: route_name(network, &trip.route),
+                pattern: trip.pattern.clone(),
+                runs: true,
+                first_stop: trip.stop_times.first().map(|st| st.stop.clone()).unwrap_or_default(),
+                last_stop: trip.stop_times.last().map(|st| st.stop.clone()).unwrap_or_default(),
+                end_secs: effective_end,
+                layover_after_secs: layover,
+                layover_remaining_secs: layover_remaining,
+                layover_health: layover_remaining.map(|r| layover_health(r, tight_secs)),
+            });
+        }
     }
     rows
 }
@@ -577,7 +568,7 @@ pub fn effective_day(
 #[ts(export)]
 pub struct DayBlock {
     pub block_id: String,
-    /// How many of the block's authored trips run on the date.
+    /// How many of the block's trip instances run on the date.
     pub trip_count: u32,
 }
 
@@ -589,13 +580,8 @@ pub struct DayBlock {
 pub fn day_blocks(network: &Network, day: &[MaterializedTrip]) -> Vec<DayBlock> {
     let mut out = Vec::new();
     for (block_id, block) in &network.blocks {
-        let count = block
-            .trips
-            .iter()
-            .filter(|t| {
-                day.iter().any(|d| d.pattern_trips == t.pattern_trips && d.start_secs == t.start_secs)
-            })
-            .count();
+        let ids: BTreeSet<&str> = block.trips.iter().map(|t| t.trip.as_str()).collect();
+        let count = day.iter().filter(|d| ids.contains(d.trip.as_str())).count();
         if count > 0 {
             out.push(DayBlock { block_id: block_id.clone(), trip_count: count as u32 });
         }
@@ -645,13 +631,8 @@ pub fn fleet_summary(network: &Network, day: &[MaterializedTrip]) -> FleetSummar
         let mut first_start: Option<u32> = None;
         let mut last_end: Option<u32> = None;
         let mut running = 0u32;
-        for trip_ref in &block.trips {
-            let Some(trip) = day
-                .iter()
-                .find(|t| t.pattern_trips == trip_ref.pattern_trips && t.start_secs == trip_ref.start_secs)
-            else {
-                continue;
-            };
+        let ids: BTreeSet<&str> = block.trips.iter().map(|t| t.trip.as_str()).collect();
+        for trip in day.iter().filter(|t| ids.contains(t.trip.as_str())) {
             running += 1;
             let end = trip
                 .stop_times

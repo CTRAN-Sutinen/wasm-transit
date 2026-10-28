@@ -217,10 +217,10 @@ test: caps
       --op '{"op":"itinerary_paths","network_hash":"$load_network.network_hash","date":"2026-10-23","itinerary":"$plan.itinerary"}' \
       --cap runcut --op @web/public/caps/sample-network-load.json \
       --as edits --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
-      --as trip --op '{"op":"trip_path","network_hash":"$load_network.network_hash","edits_hash":"$edits.edits_hash","pattern_trips":"WK:pat-10-0-1","start_secs":31200,"date":"2026-10-23"}' \
+      --as trip --op '{"op":"trip_path","network_hash":"$load_network.network_hash","edits_hash":"$edits.edits_hash","pattern_trips":"WK:pat-10-0-2","start_secs":31200,"date":"2026-10-23"}' \
       --cap directory --op @web/public/caps/sample-network-load.json \
       --as focus --op '{"op":"focus","network_hash":"$load_network.network_hash","kind":"route","id":"10"}' \
-      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const legs = r.find((x) => x.ok?.op === "itinerary_paths").ok.paths; if (legs[0]?.kind !== "transit" || legs[0].path.length < 2 || ok("trip").path.length !== 2 || ok("focus").focus.lines.length !== 2) process.exit(1)'
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const legs = r.find((x) => x.ok?.op === "itinerary_paths").ok.paths; if (legs[0]?.kind !== "transit" || legs[0].path.length < 2 || ok("trip").path.length !== 2 || ok("focus").focus.lines.length !== 3) process.exit(1)'
     # The planner's numbers and search are answered (W5): route 10's
     # composition with each pattern trips' count, the stop list
     # narrowed by every term, a stop's serving routes, route 10's
@@ -251,7 +251,7 @@ test: caps
     node tools/caps-run.mjs runcut \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
-      --op '{"op":"trip_stops","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","pattern_trips":"WK:pat-10-0-1","start_secs":31200,"date":"2026-10-23"}' \
+      --op '{"op":"trip_stops","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","pattern_trips":"WK:pat-10-0-2","start_secs":31200,"date":"2026-10-23"}' \
       | grep -q '"stop_id":"B"'
     # The street capability's gate: the detour editor's need, one
     # chained session — the street fixture on bulk op 0, two snaps,
@@ -301,7 +301,7 @@ test: caps
     #   1. the NETWORK is the core data model; GTFS is a serialization
     #      spec for external data sharing. Model-side capabilities do
     #      not depend on the GTFS layer, and the boundary codec's
-    #      whole-calendar expansion never leaves the codec's homes.
+    #      whole-feed write never leaves the codec's homes.
     #   2. nobody reinvents the monolith inside a module.
     # Law 1a: model-side capabilities (and their shared libraries) do
     # not depend on the GTFS layer (transit-core = the GTFS-shaped
@@ -318,16 +318,15 @@ test: caps
             fi
         done
     done
-    # Law 1b: whole-calendar expansion (network_to_gtfs) is the
-    # codec's export path — sanctioned only in the codec's homes and
-    # the dying monolith's own code. A hit anywhere else is the
-    # monolith rebuilt with new clothes.
-    violations=$(grep -rl "network_to_gtfs" crates --include="*.rs" \
+    # Law 1b: the whole-feed write (transit_codec::export) is the
+    # codec's publish path — sanctioned only in the codec's homes. A
+    # hit anywhere else is the monolith rebuilt with new clothes.
+    violations=$(grep -rlE "transit_codec::export|codec::\{[^}]*\bexport\b" crates --include="*.rs" \
         | grep -v "crates/transit-codec/" \
         | grep -v "crates/cap-network/" \
         | grep -v "crates/cap-abi/" || true)
     if [ -n "$violations" ]; then
-        echo "ARCH FAIL: network_to_gtfs outside the codec's homes (Law 2 — no whole-calendar expansion in capabilities):"
+        echo "ARCH FAIL: transit_codec::export outside the codec's homes (Law 2 — no whole-feed writes in capabilities):"
         echo "$violations"
         exit 1
     fi

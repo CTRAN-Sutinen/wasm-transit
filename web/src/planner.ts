@@ -756,36 +756,37 @@ export function removeSchedule(id: string): void {
   void edit([{ edit: "remove_pattern_trips", id }]);
 }
 
-export function setScheduleStarts(scheduleId: string, starts: number[]): void {
-  void edit([{ edit: "set_starts", pattern_trips: scheduleId, starts }]);
+/** Move a one-start trip — cap-author's `retime_trip` keeps its id,
+ * its running times, and its blocks. */
+export function retimeTrip(tripId: string, toSecs: number): void {
+  void edit([{ edit: "retime_trip", trip: tripId, to_secs: toSecs }]);
 }
 
-/** Move one trip of an exact-times schedule — cap-author's
- * `retime_trip` carries the blocks along (a retime never strands the
- * runcut). */
-export function retimeScheduleStart(scheduleId: string, fromSecs: number, toSecs: number): void {
-  void edit([{ edit: "retime_trip", pattern_trips: scheduleId, from_secs: fromSecs, to_secs: toSecs }]);
+/** A new trip at `startSecs`, timed by the pattern's profile; the id
+ * is minted in the module. */
+export function addTrip(scheduleId: string, startSecs: number | null): void {
+  if (startSecs === null) {
+    app.status = "Give the new trip a valid start time first (HH:MM:SS).";
+    return;
+  }
+  void edit([{ edit: "add_trip", pattern_trips: scheduleId, start_secs: startSecs }]);
 }
 
-export function addScheduleStart(scheduleId: string): void {
-  void edit([{ edit: "add_start", pattern_trips: scheduleId }]);
+export function removeTrip(tripId: string): void {
+  void edit([{ edit: "remove_trip", trip: tripId }]);
 }
 
-export function removeScheduleStart(scheduleId: string, index: number): void {
-  void edit([{ edit: "remove_start", pattern_trips: scheduleId, index }]);
+/** Set one field of one headway band of a frequency trip. */
+export function setBandField(tripId: string, index: number, field: keyof HeadwayBand, value: number): void {
+  void edit([{ edit: "set_band", trip: tripId, index, [field]: value }]);
 }
 
-/** Set one field of one headway band. */
-export function setBandField(scheduleId: string, index: number, field: keyof HeadwayBand, value: number): void {
-  void edit([{ edit: "set_band", pattern_trips: scheduleId, index, [field]: value }]);
+export function addBand(tripId: string): void {
+  void edit([{ edit: "add_band", trip: tripId }]);
 }
 
-export function addBand(scheduleId: string): void {
-  void edit([{ edit: "add_band", pattern_trips: scheduleId }]);
-}
-
-export function removeBand(scheduleId: string, index: number): void {
-  void edit([{ edit: "remove_band", pattern_trips: scheduleId, index }]);
+export function removeBand(tripId: string, index: number): void {
+  void edit([{ edit: "remove_band", trip: tripId, index }]);
 }
 
 // --- blocks (the runcut) ----------------------------------------
@@ -798,12 +799,12 @@ export function removeBlock(id: string): void {
   void edit([{ edit: "remove_block", id }]);
 }
 
-export function addBlockTrip(blockId: string, scheduleId: string, startSecs: number | null): void {
-  if (!scheduleId || startSecs === null) {
-    app.status = "Pick a schedule and a valid start time first.";
+export function addBlockTrip(blockId: string, tripId: string): void {
+  if (!tripId) {
+    app.status = "Name the trip to add first.";
     return;
   }
-  void edit([{ edit: "add_block_trip", block: blockId, trip: { pattern_trips: scheduleId, start_secs: startSecs } }]);
+  void edit([{ edit: "add_block_trip", block: blockId, trip: { trip: tripId } }]);
 }
 
 export function removeBlockTrip(blockId: string, index: number): void {

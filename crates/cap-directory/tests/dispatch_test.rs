@@ -27,8 +27,8 @@ const FIXTURE: &[u8] = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip
 /// The fixture-derived network document (import is the codec — the
 /// boundary; this module composes over the document it produces).
 fn derived_network() -> Network {
-    let gtfs = transit_core::Gtfs::from_zip_bytes(FIXTURE).expect("fixture parses");
-    transit_codec::gtfs_to_network(&gtfs).network
+    let feed = transit_codec::Feed::from_zip_bytes(FIXTURE).expect("fixture parses");
+    transit_codec::import(&feed).network
 }
 
 fn load_network() -> String {
@@ -143,9 +143,10 @@ fn the_route_list_is_name_sorted_with_model_modes() {
 }
 
 /// A route's stop sequences are its PATTERNS — the model's
-/// directions. Route 10 carries two in the fixture (the direct
-/// A→B run and the A→C→B run), and the LONGEST is the one with the
-/// skippable interior the diversion editor anchors against.
+/// directions. Route 10 carries three in the fixture (the direct
+/// A→B run with its shape and without, and the A→C→B run), and the
+/// LONGEST is the one with the skippable interior the diversion
+/// editor anchors against.
 #[test]
 fn a_routes_stop_sequences_are_its_patterns() {
     let patterns = match dispatch(Request::RouteStopSequence {
@@ -157,7 +158,7 @@ fn a_routes_stop_sequences_are_its_patterns() {
         Response::RouteStopSequence { patterns } => patterns,
         _ => panic!("route_stop_sequence"),
     };
-    assert_eq!(patterns.len(), 2, "the direct run and the via-C run: {patterns:?}");
+    assert_eq!(patterns.len(), 3, "the direct runs and the via-C run: {patterns:?}");
     let longest = patterns.iter().max_by_key(|p| p.stops.len()).unwrap();
     let ids: Vec<&str> = longest.stops.iter().map(|s| s.stop_id.as_str()).collect();
     assert!(ids.contains(&"A") && ids.contains(&"B") && ids.contains(&"C"), "{ids:?}");

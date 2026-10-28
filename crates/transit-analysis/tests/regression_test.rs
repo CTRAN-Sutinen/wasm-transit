@@ -54,8 +54,8 @@ fn production_zip() -> Vec<u8> {
 }
 
 fn import_production() -> transit_network::Network {
-    let gtfs = transit_core::Gtfs::from_zip_bytes(&production_zip()).unwrap();
-    transit_codec::gtfs_to_network(&gtfs).network
+    let feed = transit_codec::Feed::from_zip_bytes(&production_zip()).unwrap();
+    transit_codec::import(&feed).network
 }
 
 /// Three population points: on stop A, on stop C, and far from the
@@ -73,28 +73,28 @@ fn pop_layer_geojson() -> Vec<u8> {
 fn stats_report_route_and_stop_activity() {
     // The planner's read view: activity on one service date, from the
     // document (no materialization needed). On the production-shaped
-    // fixture (DATE = Friday, WK runs): 4 trips survive the
-    // duplicate-start dedup (t1/t3 share 08:00), two patterns, three
-    // stops, every stop on route 10.
+    // fixture (DATE = Friday, WK runs): 5 trips (t1 and t3 both leave
+    // at 08:00 — two vehicles, two trips), two patterns, three stops,
+    // every stop on route 10.
     let network = import_production();
     let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
     let stats = network_stats(&network, date);
     assert_eq!(stats.date, DATE);
-    assert_eq!(stats.trips, 4); // t9, t1, t5 (dedup), t7
+    assert_eq!(stats.trips, 5); // t9, t1, t3, t5, t7
     assert_eq!(stats.active_routes, 1);
     assert_eq!(stats.active_stops, 3);
     assert_eq!(stats.first_start_secs, Some(6 * 3600));
     assert_eq!(stats.last_arrival_secs, Some(9 * 3600 + 10 * 60));
     // Run times as the MODEL materializes them — each trip's own
     // (the import preserves per-trip run time as pattern variants):
-    // t9 30 min, t1 20 (t3 dedups onto it), t5 20, t7 10 — 4800 s
-    // total. The old import collapsed every A→C trip to the
-    // shortest member's 20 minutes and reported 4200 s.
-    assert!((stats.revenue_hours - 4800.0 / 3600.0).abs() < 1e-9);
+    // t9 30 min, t1 20, t3 20, t5 20, t7 10 — 6000 s total. An
+    // import that collapsed every A→C trip to the shortest member's
+    // 20 minutes reported 4200 s.
+    assert!((stats.revenue_hours - 6000.0 / 3600.0).abs() < 1e-9);
     let route = &stats.routes[0];
     assert_eq!(route.route_id, "10");
-    assert_eq!(route.trips, 4);
-    assert_eq!(route.patterns, 3);
+    assert_eq!(route.trips, 5);
+    assert_eq!(route.patterns, 2);
     assert_eq!(route.stops, 3);
     assert_eq!(route.first_start_secs, Some(6 * 3600));
     assert_eq!(route.last_arrival_secs, Some(9 * 3600 + 10 * 60));
@@ -106,27 +106,27 @@ fn stats_report_route_and_stop_activity() {
     assert_eq!(route.headway_stop.as_deref(), Some("A"));
     assert_eq!(route.typical_headway_secs, Some(2280));
     // The route's own revenue hours: all of the day's runtime here
-    // (30 + 20 + 20 + 10 min = 4800 s), the per-route cost basis.
-    assert!((route.revenue_hours - 4800.0 / 3600.0).abs() < 1e-9);
+    // (30 + 20 + 20 + 20 + 10 min = 6000 s), the per-route cost basis.
+    assert!((route.revenue_hours - 6000.0 / 3600.0).abs() < 1e-9);
     // QAF-21: the other cost basis — revenue MILES, straight off the
     // patterns' authored distances (no shape_dist in the fixture, so
-    // the codec's 500 m per stop applies): three A→C→B trips at
-    // 1000 m and one A→B at 500 m = 3500 m.
-    assert!((stats.revenue_miles - 3500.0 / 1609.344).abs() < 1e-9);
-    assert!((route.revenue_miles - 3500.0 / 1609.344).abs() < 1e-9);
+    // the codec's 500 m per stop applies): four A→B→C trips at
+    // 1000 m and one A→B at 500 m = 4500 m.
+    assert!((stats.revenue_miles - 4500.0 / 1609.344).abs() < 1e-9);
+    assert!((route.revenue_miles - 4500.0 / 1609.344).abs() < 1e-9);
 
     let by_id = |id: &str| stats.stops.iter().find(|s| s.stop_id == id).expect(id);
     let a = by_id("A");
-    assert_eq!((a.departures, a.routes), (4, 1));
+    assert_eq!((a.departures, a.routes), (5, 1));
     assert_eq!(a.first_arrival_secs, Some(6 * 3600));
     assert_eq!(a.last_arrival_secs, Some(9 * 3600));
-    assert_eq!(a.typical_headway_secs, Some((9 * 3600 - 6 * 3600) / 3));
+    assert_eq!(a.typical_headway_secs, Some((9 * 3600 - 6 * 3600) / 4));
     let c = by_id("C");
-    assert_eq!(c.departures, 3);
+    assert_eq!(c.departures, 4);
     // C arrivals as materialized: 06:30/08:20/08:42 — each trip's
     // own feed times (t9's 06:30 survives; the old import collapsed
     // it to the 20-minute variant's 06:20).
-    assert_eq!(c.typical_headway_secs, Some(((8 * 3600 + 42 * 60) - (6 * 3600 + 30 * 60)) / 2));
+    assert_eq!(c.typical_headway_secs, Some(((8 * 3600 + 42 * 60) - (6 * 3600 + 30 * 60)) / 3));
 }
 
 #[test]
@@ -140,28 +140,26 @@ fn service_type_ops_expose_the_design_axis() {
     assert_eq!(types.len(), 1, "one service key (WK) in the fixture");
     assert_eq!(types[0].service_type, "WK");
     assert_eq!(types[0].date, "2026-01-01", "first date the rule runs (a Thursday)");
-    assert_eq!(types[0].trips, 4);
+    assert_eq!(types[0].trips, 5);
     assert_eq!(types[0].active_routes, 1);
     assert_eq!(types[0].active_stops, 3);
-    assert!((types[0].revenue_hours - 4800.0 / 3600.0).abs() < 1e-9);
-    assert!((types[0].revenue_miles - 3500.0 / 1609.344).abs() < 1e-9);
+    assert!((types[0].revenue_hours - 6000.0 / 3600.0).abs() < 1e-9);
+    assert!((types[0].revenue_miles - 4500.0 / 1609.344).abs() < 1e-9);
 
     let detail = service_type_detail(&network, "WK").expect("detail");
-    assert_eq!(detail.trips, 4);
+    assert_eq!(detail.trips, 5);
     assert_eq!(detail.routes.len(), 1, "route 10 runs; zero-trip routes filtered out");
     assert_eq!(detail.routes[0].typical_headway_secs, Some(2280));
-    assert!((detail.revenue_miles - 3500.0 / 1609.344).abs() < 1e-9);
+    assert!((detail.revenue_miles - 4500.0 / 1609.344).abs() < 1e-9);
     assert_eq!(detail.stops.len(), 3, "A, B and C are all served");
     let schedule_trips: std::collections::BTreeMap<&str, u32> = detail
         .pattern_trips
         .iter()
         .map(|s| (s.pattern_trips.as_str(), s.trips))
         .collect();
-    // Three pattern variants: t7's A→B, the 20-minute A→C trips,
-    // and t9's 30-minute A→C (run time is part of the pattern
-    // identity — the import preserves each trip's own times).
-    assert_eq!(schedule_trips["WK:pat-10-0-1"], 2);
-    assert_eq!(schedule_trips["WK:pat-10-0-2"], 1);
+    // Two patterns — stop sequences: t7's A→B, and the four A→B→C
+    // trips whatever their run times (each keeps its own).
+    assert_eq!(schedule_trips["WK:pat-10-0-1"], 4);
     assert_eq!(schedule_trips["WK:pat-10-0-0"], 1);
 
     // Coverage per service type: same layer, WK on its day.
@@ -170,7 +168,10 @@ fn service_type_ops_expose_the_design_axis() {
     assert_eq!(coverage.len(), 1);
     assert_eq!(coverage[0].service_type, "WK");
     assert!((coverage[0].served_pct - 150.0 / 180.0 * 100.0).abs() < 1e-6);
-    assert!((coverage[0].frequent_pct - 100.0 / 180.0 * 100.0).abs() < 1e-6);
+    // The whole-day test counts a stop's VISITS: C, a terminal, has
+    // four arrivals two hours apart and reads frequent — where the
+    // windowed test counts departures only (QAF-78).
+    assert!((coverage[0].frequent_pct - 150.0 / 180.0 * 100.0).abs() < 1e-6, "{:?}", coverage[0]);
 }
 
 #[test]
@@ -218,13 +219,13 @@ fn a_proposal_compares_route_by_route_against_its_baseline() {
     )
     .unwrap();
     let cmp = transit_analysis::service_type_compare(&base, &proposal, "WK").unwrap();
-    assert_eq!((cmp.base.trips, cmp.base.routes), (4, 1));
+    assert_eq!((cmp.base.trips, cmp.base.routes), (5, 1));
     assert!(cmp.proposal.trips > cmp.base.trips);
     assert!(cmp.proposal.revenue_hours > cmp.base.revenue_hours);
     assert_eq!(cmp.routes.len(), 1);
     let row = &cmp.routes[0];
     assert_eq!(row.route_id, "10");
-    assert_eq!(row.base.as_ref().unwrap().trips, 4);
+    assert_eq!(row.base.as_ref().unwrap().trips, 5);
     assert_eq!(row.proposal.as_ref().unwrap().trips, cmp.proposal.trips);
     assert_eq!(cmp.unchanged_routes, 0);
 

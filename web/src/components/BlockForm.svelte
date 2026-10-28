@@ -2,17 +2,13 @@
   import { app, getNetworkDoc } from "../state.svelte";
   import {
     removeBlock, addBlockTrip, removeBlockTrip, setBlockLayover,
-    plannerBack, fmtHHMMSS, parseHHMMSS,
+    plannerBack,
   } from "../planner";
-  import Combobox from "./Combobox.svelte";
 
   const doc = $derived(getNetworkDoc());
   const id = $derived(app.plannerSelection?.kind === "block" ? app.plannerSelection.id : "");
   const block = $derived(id ? doc?.blocks?.[id] ?? null : null);
-  const scheduleOptions = $derived((app.pickers?.pattern_trips ?? []).map((r) => ({ value: r.id, label: r.id })));
-
-  let addScheduleId = $state("");
-  let addTime = $state("");
+  let addTripId = $state("");
 
   const layoverOf = (afterTrip: number) => block?.layovers.find((l) => l.after_trip === afterTrip);
 </script>
@@ -23,17 +19,15 @@
     {#each block.trips as trip, i (i)}
       <li>
         <code>{i + 1}</code>
-        <span class="muted">{trip.pattern_trips}</span>
-        <span class="time">{fmtHHMMSS(trip.start_secs)}</span>
+        <span class="muted">{trip.trip}</span>
         <button aria-label={`Remove trip ${i + 1}`} onclick={() => removeBlockTrip(id, i)}>remove</button>
       </li>
     {/each}
   </ul>
   <p class="ent-row">
-    <Combobox label="Schedule to add" options={scheduleOptions} bind:value={addScheduleId} />
-    <input aria-label="Start time to add" placeholder="HH:MM:SS" bind:value={addTime}>
-    <button disabled={!addScheduleId || parseHHMMSS(addTime) === null}
-            onclick={() => { addBlockTrip(id, addScheduleId, parseHHMMSS(addTime)); addTime = ""; }}>
+    <input aria-label="Trip to add" placeholder="trip id" bind:value={addTripId}>
+    <button disabled={!addTripId}
+            onclick={() => { addBlockTrip(id, addTripId); addTripId = ""; }}>
       Add trip
     </button>
   </p>

@@ -739,16 +739,9 @@ assert(
   rippedChain.trips[0].layover_health === "ok" && tightChain.trips[0].layover_health === "tight",
   "the module classifies the connection under the caller's tight threshold",
 );
-// What the radio calls those trips: the trip map shaped to the rows.
-const agencyIds = network.invoke({
-  op: "agency_trip_ids",
-  network_hash: imported.network_hash,
-  trips: rippedChain.trips.map((t) => ({ pattern_trips: t.pattern_trips, start_secs: t.start_secs })),
-});
-assert(
-  agencyIds.ids.length === rippedChain.trips.length && agencyIds.ids[0].includes("t10"),
-  "agency ids answer in row order (B1 starts with t10)",
-);
+// What the radio calls those trips: each row carries its trip's own
+// id (the agency's, for an imported trip).
+assert(rippedChain.trips[0].trip === "t10", "the chain names its trips by id (B1 starts with t10)");
 // The trip detail — the map's click-through question: one derived
 // trip's EFFECTIVE stops, patched by the same edits (its line is
 // trip_path, below).
@@ -927,8 +920,8 @@ const dirPatterns = dir.invoke({
   route_id: "10",
 });
 assert(
-  dirPatterns.patterns.length === 2,
-  "route 10's stop sequences are its patterns: the direct run and the via-C run",
+  dirPatterns.patterns.length === 3,
+  "route 10's stop sequences are its patterns: the direct run with its shape and without, and the via-C run",
 );
 const longest = dirPatterns.patterns.reduce((a, b) => (b.stops.length > a.stops.length ? b : a));
 assert(
@@ -942,14 +935,14 @@ const ghostRoute = dir.invoke({
 });
 assert(ghostRoute.patterns.length === 0, "an unknown route answers empty, never an error");
 const routeFocus = dir.invoke({ op: "focus", network_hash: loadedDirNet.network_hash, kind: "route", id: "10" }).focus;
-assert(routeFocus.lines.length === 2 && routeFocus.points.length === 5, "a route frames every pattern it runs");
+assert(routeFocus.lines.length === 3 && routeFocus.points.length === 7, "a route frames every pattern it runs");
 assert(dir.invoke({ op: "focus", network_hash: loadedDirNet.network_hash, kind: "stop", id: "missing" }).focus === null, "an unknown entity frames nothing");
 const entities = (kind, query) => dir.invoke({ op: "entities", network_hash: loadedDirNet.network_hash, kind, query }).rows;
 assert(entities("stop").length === 6, "the planner's stop list is every stop");
 assert(entities("stop", "MAIN 2nd").map((r) => r.id).join(",") === "B", "every term narrows, case-insensitive");
 assert(entities("pattern", "pat-10").every((r) => r.context === "10"), "a pattern is placed by its route");
 const routeDetail = dir.invoke({ op: "route_detail", network_hash: loadedDirNet.network_hash, route_id: "10" }).detail;
-assert(routeDetail.patterns.length === 2, "route 10's composition lists both patterns");
+assert(routeDetail.patterns.length === 3, "route 10's composition lists its three patterns");
 assert(
   routeDetail.stops.map((r) => r.id).join(",") === "A,B,C",
   "the stops its patterns visit, first-visit order",
@@ -1169,7 +1162,7 @@ assert(frequent.issues.length === 0, "a higher frequency keeps the runcut valid"
 const frequentDir = dir.invoke({ op: "load_network", network: frequent.network });
 const frequentTable = dir.invoke({ op: "timetable", network_hash: frequentDir.network_hash, route_id: "10", direction: "0", service_type: "WK" }).timetable;
 assert(
-  frequentTable.trips.map((t) => `${t.start_secs}:${t.pattern}`).join() === "28800:pat-10-0-0,30000:pat-10-0-0,31200:pat-10-0-1",
+  frequentTable.trips.map((t) => `${t.start_secs}:${t.pattern}`).join() === "28800:pat-10-0-1,30000:pat-10-0-1,31200:pat-10-0-2",
   "set_headway fills the window on the neighbour's pattern, and the timetable reads it",
 );
 const marked = dir.invoke({ op: "timetable", network_hash: frequentDir.network_hash, route_id: "10", direction: "0", service_type: "WK", compare_hash: loadedDirNet.network_hash }).timetable;

@@ -1,6 +1,6 @@
 //! Native dispatch tests for the analysis capability — the seam
 //! without wasm, over a REAL document: the network is built by the
-//! monolith's own import (gtfs_to_network), so the capability is
+//! codec's own import (transit_codec::import), so the capability is
 //! exercised on exactly the document a planner would author or
 //! derive. The content-hash registry gets explicit laws, same as the
 //! other capabilities: same document, same hash, one entry.
@@ -95,8 +95,8 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
 /// A REAL network document: the monolith's own inference over a
 /// generated feed — the document a planner would derive.
 fn network(trips: &[GenTrip]) -> transit_network::Network {
-    let gtfs = transit_core::Gtfs::from_zip_bytes(&gen_feed(trips)).expect("parse");
-    transit_codec::gtfs_to_network(&gtfs).network
+    let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(trips)).expect("parse");
+    transit_codec::import(&feed).network
 }
 
 fn layer_geojson() -> Vec<u8> {
@@ -704,7 +704,9 @@ fn service_groups_answer_the_families() {
     // Route 0 runs under the weekday service (every weekday, all
     // 2026) and a SAME-PATTERN overlay (Mon–Fri, Mar–Jun) — one
     // weekday family, the overlay folded in — plus a Mon+Wed
-    // service, which is NOT the weekday family.
+    // service, which is NOT the weekday family. The feed's weekend
+    // calendar is a service type too (the import keeps every
+    // calendar), running nothing.
     let net = network(&[
         GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
         GenTrip { route: 0, service: 3, block: None, start_slot: 11, stops: vec![0, 1], leg_min: 5 },
@@ -719,7 +721,9 @@ fn service_groups_answer_the_families() {
     })
     .expect("service_groups");
     let cap_analysis::Response::ServiceGroups { groups } = groups else { panic!("service_groups") };
-    assert_eq!(groups.len(), 2, "the weekday family and the Mon+Wed family");
+    assert_eq!(groups.len(), 3, "the weekday family, the Mon+Wed family, the empty weekend");
+    let weekend = groups.iter().find(|g| g.service_type == "1").expect("weekend row");
+    assert_eq!(weekend.trips, 0);
     let weekday = groups.iter().find(|g| g.service_type == "0").expect("weekday row");
     assert_eq!(weekday.members, vec!["0".to_string(), "3".to_string()], "the same-pattern rider is named");
     assert_eq!(weekday.trips, 2, "the family's schedules are pooled in");
@@ -727,7 +731,7 @@ fn service_groups_answer_the_families() {
     let tue = groups.iter().find(|g| g.service_type == "2").expect("Mon+Wed row");
     assert_eq!(tue.members, vec!["2".to_string()], "a different weekly pattern is its own family");
 
-    // A weekend-only document: the weekend type is its own base.
+    // A weekend-only service: the weekend type is its own base.
     let weekend = network(&[GenTrip { route: 0, service: 1, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
     let loaded = cap_analysis::dispatch(cap_analysis::Request::LoadNetwork { network: weekend })
         .expect("load");
@@ -737,7 +741,8 @@ fn service_groups_answer_the_families() {
     })
     .expect("service_groups");
     let cap_analysis::Response::ServiceGroups { groups } = groups else { panic!("service_groups") };
-    assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].service_type, "1");
-    assert_eq!(groups[0].members, vec!["1".to_string()]);
+    let weekend = groups.iter().find(|g| g.service_type == "1").expect("weekend row");
+    assert_eq!(weekend.members, vec!["1".to_string()]);
+    assert_eq!(weekend.trips, 1);
+    assert!(groups.iter().filter(|g| g.service_type != "1").all(|g| g.trips == 0), "{groups:?}");
 }

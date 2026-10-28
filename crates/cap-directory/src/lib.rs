@@ -346,7 +346,7 @@ pub fn dispatch_json(text: &str) -> String {
 pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
     match op {
         cap_abi::OP_LOAD_NETWORK => cap_abi::outcome(
-            cap_abi::parse_document(bytes).and_then(|network| dispatch(Request::LoadNetwork { network })),
+            cap_abi::parse_network(bytes).and_then(|network| dispatch(Request::LoadNetwork { network })),
         ),
         _ => serde_json::json!({ "error": format!("unknown bulk op {op}: directory answers only the kernel's load_network bulk op") }).to_string(),
     }

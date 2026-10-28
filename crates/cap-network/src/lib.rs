@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use cap_abi::content_hash;
 use ts_rs::TS;
-use transit_codec::{gtfs_to_network, network_to_gtfs, ImportNote, ImportOutcome, TripIdMap};
+use transit_codec::{Boundary, Feed, ImportNote, ImportOutcome, TripIdMap};
 use transit_core::FeedSummary;
 use transit_network::Network;
 
@@ -42,12 +42,13 @@ pub enum Request {
     /// content hash. Bulk-bytes op 0; the JSON form exists for hosts
     /// that already hold the bytes as numbers.
     LoadFeed { bytes: Vec<u8> },
-    /// The planner's bootstrap: infer an authored network document
-    /// from a loaded feed. Deliberately lossy, deterministic, and
-    /// every resolution is reported in the notes — never silent. The
-    /// inferred document registers itself (valid by construction —
-    /// the codec's law), and the response carries its hash so
-    /// validate/export can chain without a reload.
+    /// The planner's bootstrap: read a loaded feed into an authored
+    /// network document — the agency's trips, by id, with their own
+    /// times. Deterministic; what the model cannot hold yet is
+    /// reported in the notes, never silent. The document registers
+    /// itself with its boundary residue (what the feed's bytes carry
+    /// that the document does not), and the response carries its hash
+    /// so validate/export can chain without a reload.
     Import { feed_hash: String },
     /// Register an authored network document under its content hash
     /// (idempotent by hash). The authoring UI's entry point; every
@@ -60,25 +61,17 @@ pub enum Request {
     /// Every issue of a registered document — the authoring UI's
     /// feedback loop, the whole list, never thrown.
     Validate { network_hash: String },
-    /// The publish path: materialize a registered document into a
-    /// GTFS zip (deterministic bytes). Returns the zip (base64) under
+    /// The publish path: write a registered document as a GTFS zip
+    /// (deterministic bytes) — with its import's boundary when it is
+    /// the imported document itself. Returns the zip (base64) under
     /// the content hash of those bytes — the same identity any other
     /// module returns for the same bytes, so the host can assert the
     /// handoff. Invalid documents are refused (validate first).
     Export { network_hash: String },
-    /// The import's TRIP-ID MAP for a network: the derived trips
-    /// ((schedule, start) — the model's identity) joined to the
-    /// agency trip ids they came from. The join rt data and the
-    /// source feed's ops are keyed by. `None` for a network that was
-    /// not inferred from a feed (an authored document has no agency
-    /// ids — the honest answer, never a silent empty map).
+    /// The TRIP-ID MAP of a network: every trip, by its id (the
+    /// agency's, for an imported trip), with its pattern trips and
+    /// first start — the join rt data is keyed by.
     TripMap { network_hash: String },
-    /// The agency trip ids behind specific derived trips — the
-    /// trip map SHAPED to a question ("what does the radio call these
-    /// trips?"), answered in the order asked: one list per trip,
-    /// empty for a trip the import never saw. Errors for a network
-    /// with no map (authored documents have no agency ids).
-    AgencyTripIds { network_hash: String, trips: Vec<transit_network::TripRef> },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -86,21 +79,31 @@ pub enum Request {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     LoadFeed { feed_hash: String, summary: FeedSummary },
-    Import { network: Network, notes: Vec<ImportNote>, network_hash: String },
+    Import { network: Network, boundary: Boundary, notes: Vec<ImportNote>, network_hash: String },
     LoadNetwork { network_hash: String },
     /// `issues` gate (invalid documents never export); `warnings`
     /// never gate — they name what validity lets through (trips with
     /// no vehicle, a pick with no service in its period).
     Validate { issues: Vec<transit_network::NetworkError>, warnings: Vec<transit_network::NetworkWarning> },
     Export { feed_hash: String, summary: FeedSummary, zip_b64: String },
-    TripMap { map: Option<TripIdMap> },
-    AgencyTripIds { ids: Vec<Vec<String>> },
+    TripMap { map: TripIdMap },
 }
 
 /// Feeds by content hash of the zip bytes.
-fn feeds() -> &'static Mutex<HashMap<String, Arc<transit_core::Gtfs>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<transit_core::Gtfs>>>> = OnceLock::new();
+fn feeds() -> &'static Mutex<HashMap<String, Arc<Feed>>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Feed>>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// A feed's counts at a glance.
+fn summary(feed: &Feed) -> FeedSummary {
+    FeedSummary {
+        agencies: feed.agency.len(),
+        routes: feed.routes.len(),
+        stops: feed.stops.len(),
+        trips: feed.trips.len(),
+        stop_times: feed.stop_times.len(),
+    }
 }
 
 /// Authored network documents by content hash of their canonical
@@ -110,11 +113,11 @@ fn networks() -> &'static Mutex<HashMap<String, Arc<Network>>> {
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// The import's trip-id maps, keyed by the network they belong to —
-/// captured at import (the agency ids exist only in the feed; an
-/// authored document has none).
-fn trip_maps() -> &'static Mutex<HashMap<String, Arc<TripIdMap>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<TripIdMap>>>> = OnceLock::new();
+/// The import's boundary residue, keyed by the network it belongs
+/// to — captured at import (an edited or authored document exports
+/// with the default boundary).
+fn boundaries() -> &'static Mutex<HashMap<String, Arc<Boundary>>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Boundary>>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -146,17 +149,16 @@ fn load_feed(bytes: &[u8]) -> Result<Response, String> {
     {
         let guard = feeds().lock().expect("feed registry lock");
         if let Some(feed) = guard.get(&hash) {
-            return Ok(Response::LoadFeed { feed_hash: hash, summary: feed.summary() });
+            return Ok(Response::LoadFeed { feed_hash: hash, summary: summary(feed) });
         }
     }
-    let gtfs = transit_core::Gtfs::from_zip_bytes(bytes)
-        .map_err(|e| format!("feed does not parse: {e}"))?;
-    let summary = gtfs.summary();
+    let feed = Feed::from_zip_bytes(bytes).map_err(|e| format!("feed does not parse: {e}"))?;
+    let counts = summary(&feed);
     feeds()
         .lock()
         .expect("feed registry lock")
-        .insert(hash.clone(), Arc::new(gtfs));
-    Ok(Response::LoadFeed { feed_hash: hash, summary })
+        .insert(hash.clone(), Arc::new(feed));
+    Ok(Response::LoadFeed { feed_hash: hash, summary: counts })
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
@@ -171,17 +173,16 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .get(&feed_hash)
                 .cloned()
                 .ok_or_else(|| format!("unknown feed {feed_hash}: load_feed first"))?;
-            let ImportOutcome { network, notes, trip_map } = gtfs_to_network(&feed);
-            // The inferred document registers itself: import's
-            // answer is immediately addressable for validate and
-            // export (valid by construction — the codec's law), and
-            // its trip-id map rides along under the same hash.
+            let ImportOutcome { network, boundary, notes } = transit_codec::import(&feed);
+            // The document registers itself: import's answer is
+            // immediately addressable for validate and export, and its
+            // boundary rides along under the same hash.
             let network_hash = register_network(network.clone())?;
-            trip_maps()
+            boundaries()
                 .lock()
-                .expect("trip-map registry lock")
-                .insert(network_hash.clone(), Arc::new(trip_map));
-            Ok(Response::Import { network, notes, network_hash })
+                .expect("boundary registry lock")
+                .insert(network_hash.clone(), Arc::new(boundary.clone()));
+            Ok(Response::Import { network, boundary, notes, network_hash })
         }
         Request::LoadNetwork { network } => {
             let hash = register_network(network)?;
@@ -196,9 +197,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::Export { network_hash } => {
             let network = network_arc(&network_hash)?;
-            let gtfs = network_to_gtfs(&network)?;
-            let summary = gtfs.summary();
-            let bytes = transit_core::write::to_zip_bytes(&gtfs);
+            let boundary = boundaries().lock().expect("boundary registry lock").get(&network_hash).cloned();
+            let feed = transit_codec::export(&network, boundary.as_deref().unwrap_or(&Boundary::default()))?;
+            let counts = summary(&feed);
+            let bytes = feed.to_zip_bytes();
             // The produced feed registers under its own bytes' hash:
             // the exported artifact is a first-class feed document,
             // importable in this module and loadable in any other.
@@ -206,32 +208,12 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             feeds()
                 .lock()
                 .expect("feed registry lock")
-                .insert(feed_hash.clone(), Arc::new(gtfs));
-            Ok(Response::Export { feed_hash, summary, zip_b64: transit_core::write::base64_encode(&bytes) })
+                .insert(feed_hash.clone(), Arc::new(feed));
+            Ok(Response::Export { feed_hash, summary: counts, zip_b64: transit_core::write::base64_encode(&bytes) })
         }
         Request::TripMap { network_hash } => {
-            // Unknown network is a caller error; a known network
-            // without a map (authored, or loaded directly) answers
-            // None — the honest boundary answer.
-            network_arc(&network_hash)?;
-            let map = trip_maps()
-                .lock()
-                .expect("trip-map registry lock")
-                .get(&network_hash)
-                .cloned();
-            Ok(Response::TripMap { map: map.map(|m| (*m).clone()) })
-        }
-        Request::AgencyTripIds { network_hash, trips } => {
-            network_arc(&network_hash)?;
-            let map = trip_maps()
-                .lock()
-                .expect("trip-map registry lock")
-                .get(&network_hash)
-                .cloned()
-                .ok_or_else(|| format!("network {network_hash} has no trip map: it was not imported from a feed"))?;
-            Ok(Response::AgencyTripIds {
-                ids: trips.iter().map(|t| map.agency_ids(&t.pattern_trips, t.start_secs)).collect(),
-            })
+            let network = network_arc(&network_hash)?;
+            Ok(Response::TripMap { map: transit_codec::trip_map(&network) })
         }
     }
 }
@@ -262,7 +244,7 @@ pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
         },
         cap_abi::OP_LOAD_NETWORK => {
             return cap_abi::outcome(
-                cap_abi::parse_document(bytes).and_then(|network| dispatch(Request::LoadNetwork { network })),
+                cap_abi::parse_network(bytes).and_then(|network| dispatch(Request::LoadNetwork { network })),
             )
         }
         other => serde_json::json!({ "error": format!("unknown bulk op {other}") }),

@@ -134,8 +134,8 @@ fn gestures_report_what_they_created() {
         panic!("apply")
     };
     assert_eq!(network.stops["s1"].name, "Depot");
-    let err = apply(&network_hash, vec![NetworkEdit::RemoveStart { pattern_trips: "ghost".into(), index: 0 }]).unwrap_err();
-    assert!(err.contains("edit 0") && err.contains("unknown pattern trips"), "{err}");
+    let err = apply(&network_hash, vec![NetworkEdit::RemoveTrip { trip: "ghost".into() }]).unwrap_err();
+    assert!(err.contains("edit 0") && err.contains("unknown trip"), "{err}");
 }
 
 #[test]

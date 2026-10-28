@@ -1,9 +1,9 @@
-//! Materialization: turning authored intent into concrete trips.
+//! Materialization: the stored trips as a day's concrete instances.
 //!
 //! `materialize(network, date)` is the bridge from Layer A (the
 //! authored model) to Layer B (the service view that RAPTOR and
-//! dispatch consume): for every service whose calendar runs on
-//! `date`, expand its schedule into trips and compute stop times.
+//! dispatch consume): for every pattern trips whose service type runs
+//! on `date`, every instance of every trip, with its stop times.
 //!
 //! The function is **total**: it never panics, and it returns `Err`
 //! for any input that fails validation rather than guessing. On a
@@ -11,25 +11,25 @@
 //!
 //! Stop-time conventions (the single source of truth for these):
 //!
-//! * The trip *departs* its first stop at `start_secs`.
-//! * Timepoint stops get `arrival = start + at_timepoints[k]`.
-//! * Non-timepoint stops linearly interpolate by distance between
-//!   their bracketing timepoints (equal-distance segments are
-//!   tolerated: the fraction is 0).
-//! * Departure equals arrival everywhere except the first stop,
-//!   where the departure is the trip start; dwells are folded into
-//!   the authored running times, not added on top.
+//! * An instance's times are its start plus the trip's own offsets —
+//!   the trip's, never a profile's.
+//! * A stop scheduled on one side only uses that time for both.
+//! * An unscheduled stop gets one time, interpolated by distance
+//!   between its scheduled neighbours (the previous one's departure,
+//!   the next one's arrival; equal distances give the earlier time).
 
 use ts_rs::TS;
 use chrono::NaiveDate;
 
 use crate::error::NetworkError;
-use crate::model::{Network, Pattern, Departures};
+use crate::model::{Network, Pattern, Trip};
 
-/// One derived trip for one service date.
+/// One trip instance for one service date.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct MaterializedTrip {
+    /// The stored trip's id (a frequency trip's instances share it).
+    pub trip: String,
     pub pattern_trips: String,
     pub route: String,
     pub pattern: String,
@@ -38,8 +38,7 @@ pub struct MaterializedTrip {
     pub stop_times: Vec<StopTime>,
 }
 
-/// One derived stop visit. Times are seconds after the service-day
-/// anchor; departure == arrival except at the first stop.
+/// One stop visit. Times are seconds after the service-day anchor.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct StopTime {
@@ -49,67 +48,16 @@ pub struct StopTime {
     pub timepoint: bool,
 }
 
-/// Expand a schedule into its trip start offsets, sorted. Bands are
-/// end-exclusive; a zero headway (invalid, flagged by validation)
-/// yields no trips rather than looping forever.
-pub fn trip_starts(pattern_trips: &Departures) -> Vec<u32> {
-    let mut starts: Vec<u32> = match pattern_trips {
-        Departures::HeadwayBands { bands } => {
-            let mut out = Vec::new();
-            for band in bands {
-                if band.headway_secs == 0 {
-                    continue;
-                }
-                let mut t = band.start_secs;
-                while t < band.end_secs {
-                    out.push(t);
-                    t += band.headway_secs;
-                }
-            }
-            out
-        }
-        Departures::ExactTimes { starts } => starts.clone(),
-    };
-    starts.sort_unstable();
-    starts.dedup();
-    starts
+/// Arrival at the final stop of the trip's instance starting at
+/// `start_secs` — what the runcut checks feasibility against.
+pub fn trip_arrival_end_secs(trip: &Trip, start_secs: u32) -> Option<u32> {
+    trip.run_secs().map(|run| start_secs + run)
 }
 
-/// Arrival at the final stop of a trip — what the runcut checks
-/// feasibility against. On a validated network this cannot fail.
-pub fn trip_arrival_end_secs(
-    network: &Network,
-    pattern_trips_id: &str,
-    start_secs: u32,
-) -> Result<u32, NetworkError> {
-    let service = network.pattern_trips.get(pattern_trips_id).ok_or_else(|| NetworkError::UnknownPatternTrips {
-        pattern_trips: pattern_trips_id.to_string(),
-    })?;
-    let pattern = network.patterns.get(&service.pattern).ok_or_else(|| NetworkError::UnknownPattern {
-        pattern_trips: pattern_trips_id.to_string(),
-        pattern: service.pattern.clone(),
-    })?;
-    let profile = pattern
-        .profile_for(start_secs)
-        .ok_or_else(|| NetworkError::NoProfileForTrip {
-            pattern: service.pattern.clone(),
-            start_secs,
-        })?;
-    profile
-        .at_timepoints
-        .last()
-        .map(|t| start_secs + t)
-        .ok_or_else(|| NetworkError::NoProfileForTrip {
-            pattern: service.pattern.clone(),
-            start_secs,
-        })
-}
-
-/// Materialize every trip of one service, regardless of date — the
-/// schedule expanded against its pattern. Trip *times* don't depend
-/// on the date (only whether the service runs at all does), so this
-/// is what an authoring UI previews and what the codec loads into
-/// the derived-feed view. On a validated network it cannot fail.
+/// Materialize every trip of one pattern trips, regardless of date.
+/// Trip *times* don't depend on the date (only whether the service
+/// runs at all does), so this is what an authoring UI previews. On a
+/// validated network it cannot fail. Instances by start, then id.
 pub fn materialize_service(
     network: &Network,
     pattern_trips_id: &str,
@@ -134,20 +82,36 @@ pub fn materialize_service(
         });
     }
     let mut trips = Vec::new();
-    for start in trip_starts(&service.departures) {
-        trips.push(MaterializedTrip {
-            pattern_trips: pattern_trips_id.to_string(),
-            route: pattern.route.clone(),
-            pattern: service.pattern.clone(),
-            start_secs: start,
-            stop_times: stop_times(&service.pattern, pattern, start)?,
-        });
+    for trip in &service.trips {
+        let offsets = offsets(pattern, trip)?;
+        for start in trip.departs.instances() {
+            trips.push(MaterializedTrip {
+                trip: trip.id.clone(),
+                pattern_trips: pattern_trips_id.to_string(),
+                route: pattern.route.clone(),
+                pattern: service.pattern.clone(),
+                start_secs: start,
+                stop_times: pattern
+                    .stops
+                    .iter()
+                    .zip(&offsets)
+                    .map(|(ps, &(a, d))| StopTime {
+                        stop: ps.stop.clone(),
+                        arrival_secs: start + a,
+                        departure_secs: start + d,
+                        timepoint: ps.timepoint,
+                    })
+                    .collect(),
+            });
+        }
     }
+    trips.sort_by(|a, b| a.start_secs.cmp(&b.start_secs).then_with(|| a.trip.cmp(&b.trip)));
     Ok(trips)
 }
 
 /// Materialize every trip that runs on `date`, sorted by start time
-/// (ties by service id). Empty result means "nothing runs today".
+/// (ties by pattern trips id, then trip id). Empty result means
+/// "nothing runs today".
 pub fn materialize(
     network: &Network,
     date: NaiveDate,
@@ -170,85 +134,97 @@ pub fn materialize(
         a.start_secs
             .cmp(&b.start_secs)
             .then_with(|| a.pattern_trips.cmp(&b.pattern_trips))
+            .then_with(|| a.trip.cmp(&b.trip))
     });
     Ok(trips)
 }
 
-/// Stop times for one trip of a pattern departing at `start_secs`.
-fn stop_times(
-    pattern_id: &str,
-    pattern: &Pattern,
-    start_secs: u32,
-) -> Result<Vec<StopTime>, NetworkError> {
-    let profile = pattern
-        .profile_for(start_secs)
-        .ok_or_else(|| NetworkError::NoProfileForTrip {
-            pattern: pattern_id.to_string(),
-            start_secs,
-        })?;
-    let times = &profile.at_timepoints;
-    let tp_pos = pattern.timepoint_positions();
-    if times.is_empty() || times.len() != tp_pos.len() {
-        // Validation catches this; stay total anyway.
-        return Err(NetworkError::TimepointCountMismatch {
-            pattern: pattern_id.to_string(),
-            profile: 0,
-            expected: tp_pos.len(),
-            got: times.len(),
+/// The trip's (arrival, departure) offset at every pattern stop, with
+/// one-sided stops repeated and unscheduled stops interpolated.
+pub(crate) fn offsets(pattern: &Pattern, trip: &Trip) -> Result<Vec<(u32, u32)>, NetworkError> {
+    if trip.times.len() != pattern.stops.len() {
+        return Err(NetworkError::TripTimesMismatch {
+            trip: trip.id.clone(),
+            expected: pattern.stops.len(),
+            got: trip.times.len(),
         });
     }
-
-    let base = pattern.stops.first().map(|s| s.distance_m).unwrap_or(0.0);
-    let mut out = Vec::with_capacity(pattern.stops.len());
-    // `k` is the index of the timepoint that governs the upcoming
-    // stops; stops between timepoint k and k+1 interpolate by
-    // distance against times[k]..times[k+1].
-    let mut k = 0usize;
-    for (i, ps) in pattern.stops.iter().enumerate() {
-        let arrival = if ps.timepoint {
-            // Position i is timepoint index k (invariant: timepoints
-            // appear in pattern order, so a simple cursor suffices).
-            while k < tp_pos.len() && tp_pos[k] < i {
-                k += 1;
-            }
-            start_secs + times[k.min(times.len() - 1)]
-        } else {
-            // Bracketing timepoints: the last one at or before i and
-            // the first one after it.
-            let left = tp_pos.iter().rposition(|&p| p < i).unwrap_or(0);
-            let right = tp_pos.iter().position(|&p| p > i).unwrap_or(tp_pos.len() - 1);
-            let d0 = pattern.stops[tp_pos[left]].distance_m - base;
-            let d1 = pattern.stops[tp_pos[right]].distance_m - base;
-            let di = ps.distance_m - base;
-            let fraction = if d1 > d0 { ((di - d0) / (d1 - d0)).clamp(0.0, 1.0) } else { 0.0 };
-            let span = times[right].saturating_sub(times[left]) as f64;
-            (start_secs as f64 + times[left] as f64 + fraction * span).round() as u32
+    let side = |i: usize| -> Option<(u32, u32)> {
+        let o = &trip.times[i];
+        match (o.arrival_secs, o.departure_secs) {
+            (Some(a), Some(d)) => Some((a, d)),
+            (Some(a), None) => Some((a, a)),
+            (None, Some(d)) => Some((d, d)),
+            (None, None) => None,
+        }
+    };
+    let n = pattern.stops.len();
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        if let Some(t) = side(i) {
+            out.push(t);
+            continue;
+        }
+        let left = (0..i).rev().find(|&j| side(j).is_some());
+        let right = (i + 1..n).find(|&j| side(j).is_some());
+        let (Some(left), Some(right)) = (left, right) else {
+            return Err(NetworkError::TripEndpointUnscheduled { trip: trip.id.clone() });
         };
-        let departure = if i == 0 { start_secs } else { arrival };
-        out.push(StopTime {
-            stop: ps.stop.clone(),
-            arrival_secs: arrival,
-            departure_secs: departure,
-            timepoint: ps.timepoint,
-        });
+        let from = side(left).expect("scheduled").1;
+        let to = side(right).expect("scheduled").0;
+        let (d0, d1) = (pattern.stops[left].distance_m, pattern.stops[right].distance_m);
+        let fraction = if d1 > d0 { ((pattern.stops[i].distance_m - d0) / (d1 - d0)).clamp(0.0, 1.0) } else { 0.0 };
+        let t = (from as f64 + fraction * to.saturating_sub(from) as f64).round() as u32;
+        out.push((t, t));
     }
     Ok(out)
 }
 
+/// Times for a NEW trip of `pattern` starting at `start_secs`,
+/// produced from the profile covering it: timepoints carry the
+/// profile's offsets (arrival = departure), other stops are left
+/// unscheduled. `None` when no profile covers the start, the profile
+/// does not fit the pattern, or an endpoint is not a timepoint (its
+/// time cannot be produced).
+pub fn produce_times(pattern: &Pattern, start_secs: u32) -> Option<Vec<crate::model::StopOffset>> {
+    let profile = pattern.profile_for(start_secs)?;
+    let timepoints = pattern.timepoint_positions();
+    let last = pattern.stops.len().checked_sub(1)?;
+    if profile.at_timepoints.len() != timepoints.len()
+        || timepoints.first() != Some(&0)
+        || timepoints.last() != Some(&last)
+    {
+        return None;
+    }
+    let mut k = 0;
+    Some(
+        pattern
+            .stops
+            .iter()
+            .map(|ps| {
+                if ps.timepoint {
+                    let t = profile.at_timepoints[k];
+                    k += 1;
+                    crate::model::StopOffset { arrival_secs: Some(t), departure_secs: Some(t) }
+                } else {
+                    crate::model::StopOffset::default()
+                }
+            })
+            .collect(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::model::{Departs, HeadwayBand};
 
     #[test]
     fn headway_bands_generate_end_exclusive() {
-        let departures = Departures::HeadwayBands {
-            bands: vec![crate::model::HeadwayBand {
-                start_secs: 6 * 3600,
-                end_secs: 9 * 3600,
-                headway_secs: 15 * 60,
-            }],
+        let departs = Departs::Every {
+            bands: vec![HeadwayBand { start_secs: 6 * 3600, end_secs: 9 * 3600, headway_secs: 15 * 60 }],
+            exact: true,
         };
-        let starts = trip_starts(&departures);
+        let starts = departs.instances();
         assert_eq!(starts.first(), Some(&(6 * 3600)));
         assert_eq!(starts.last(), Some(&(9 * 3600 - 15 * 60)));
         assert_eq!(starts.len(), 12);
@@ -256,21 +232,10 @@ mod tests {
 
     #[test]
     fn zero_headway_yields_no_trips() {
-        let departures = Departures::HeadwayBands {
-            bands: vec![crate::model::HeadwayBand {
-                start_secs: 0,
-                end_secs: 3600,
-                headway_secs: 0,
-            }],
+        let departs = Departs::Every {
+            bands: vec![HeadwayBand { start_secs: 0, end_secs: 3600, headway_secs: 0 }],
+            exact: false,
         };
-        assert!(trip_starts(&departures).is_empty());
-    }
-
-    #[test]
-    fn exact_times_pass_through_sorted() {
-        let departures = Departures::ExactTimes {
-            starts: vec![3600, 1800, 7200],
-        };
-        assert_eq!(trip_starts(&departures), vec![1800, 3600, 7200]);
+        assert!(departs.instances().is_empty());
     }
 }

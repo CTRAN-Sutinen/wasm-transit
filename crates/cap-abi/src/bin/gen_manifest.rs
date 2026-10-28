@@ -79,7 +79,7 @@ const MODULES: &[ModuleSpec] = &[
         op_docs: &[
             ("load_network", "Register the network document under its content hash (the same identity the network capability's import produces and every day view consumes; idempotent). Kernel bulk op 256 takes the bare document's JSON bytes on transit_invoke_bytes — the same answer, no request envelope; hosts send real-size networks this way."),
             ("load_edits", "Register the operator edit document against a loaded network, validated per record against it; the answer carries the reports and the document's hash. Wholesale replacement, like the host-owned store."),
-            ("plan", "Earliest-arrival itinerary from stop to stop at a departure time over the materialized day (edits applied when edits_hash names a registered document); null itinerary = unreachable within max_legs. The legs speak model vocabulary: the derived trip identity is (pattern_trips, start_secs)."),
+            ("plan", "Earliest-arrival itinerary from stop to stop at a departure time over the materialized day (edits applied when edits_hash names a registered document); null itinerary = unreachable within max_legs. The legs speak model vocabulary: the trip instance is addressed (pattern_trips, start_secs)."),
             ("plan_compare", "The diversion delta: the same plan over the patched day (active) and the unpatched materialization (baseline, null when no edit is in force on the date or no edits_hash is given), with the rider's notice when active is null — the arrival the diversion cost, or no trip within max_legs. One op whether or not edits exist."),
             ("itinerary_paths", "Where an itinerary runs, one path per leg ({kind: transit | walk, path: [{lat, lon}]}) over the same effective day it was planned on (pass the same edits_hash): a transit leg's RIDDEN segment — its trip's authored alignment sliced between the board and alight stops while the trip follows its pattern, its patched stops when diverted, a straight line as the last resort — and a walk through the stops it passes. Send the itinerary plan answered. The map draws the paths; it computes none."),
         ],
@@ -87,19 +87,18 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "network",
         file: "cap_network.wasm",
-        ops: &["load_feed", "import", "load_network", "validate", "export", "trip_map", "agency_trip_ids"],
+        ops: &["load_feed", "import", "load_network", "validate", "export", "trip_map"],
         consumes: &[],
         speaks: &[("feed", &[1]), ("network", &[1]), ("trip_map", &[1])],
         migrates: &[],
-        purpose: "The network codec: infer an authored network document from a GTFS feed (the planner's bootstrap — patterns, service types, blocks, reported resolutions) and export one back to GTFS zip bytes (the publish path). The second capability extracted from the monolith — the codec lives in the shared transit-codec library, and the monolith keeps no copy. Assemble for planners: it is how a planner's session starts and how it publishes.",
+        purpose: "The network codec: read a GTFS feed into an authored network document (the planner's bootstrap — the agency's trips by id with their own times, patterns, service types, blocks; what cannot cross is reported) and export one back to GTFS zip bytes (the publish path). The second capability extracted from the monolith — the codec lives in the shared transit-codec library, and the monolith keeps no copy. Assemble for planners: it is how a planner's session starts and how it publishes.",
         op_docs: &[
             ("load_feed", "Register a GTFS zip under its content hash (idempotent). Bulk-bytes op 0; pass the raw zip to transit_invoke_bytes."),
-            ("import", "The planner's bootstrap: infer an authored network document from a loaded feed. Deterministic; every resolution the inference applied is reported in the notes — never silent. The inferred document registers itself, so its hash answers validate/export immediately."),
+            ("import", "The planner's bootstrap: read a loaded feed into an authored network document — the feed's trips ARE the document's trips (the agency's ids, every scheduled time, frequency trips as frequency trips), patterns are stop sequences. Deterministic; what the model cannot hold yet is reported in the notes — never silent. The boundary is the feed's serialization residue (its stop_sequence numbering, a frequency trip's stop_times base). The document registers itself with its boundary, so its hash answers validate/export immediately."),
             ("load_network", "Register an authored network document (the planner's JSON document) under its content hash; idempotent. The same registration every model-side capability names load_network — one op file feeds them all. Kernel bulk op 256 takes the bare document's JSON bytes on transit_invoke_bytes — the same answer, no request envelope; hosts send real-size networks this way."),
             ("validate", "Every issue of a registered document — the authoring UI's feedback loop, the whole list, never thrown. issues gate (export refuses an invalid document; a block trip its pattern trips do not run is one — the runcut and the publish path would disagree). warnings never gate: they name what validity lets through — trips no block carries (unassigned_trips, once the document has a runcut) and a versioned plan with no service in its first week (no_service_in_plan_period: the calendars a fork inherited end before its pick date)."),
-            ("export", "The publish path: materialize a registered document into a GTFS zip (deterministic bytes) and return it base64-encoded under the content hash of those bytes — the same identity any capability returns for the same bytes. Invalid documents are refused."),
-            ("trip_map", "The import's trip-id map for a network: every derived trip ((pattern_trips, start_secs) — the model's identity) joined to the agency trip ids it came from. This is the join rt data and the source feed's ops are keyed by — rt feeds speak the AGENCY's ids, the model mints its own. None for a network that was not inferred from a feed (an authored document has no agency ids)."),
-            ("agency_trip_ids", "The trip map SHAPED to a question: the agency trip ids behind specific derived trips ({pattern_trips, start_secs}), one list per trip in the order asked — empty for a trip the import never saw. What the radio calls a block's trips, without shipping the whole map (539 KiB on C-TRAN). Errors for a network with no map (an authored document has no agency ids)."),
+            ("export", "The publish path: write a registered document as a GTFS zip (deterministic bytes) — every trip under its own id with its own times, the calendar as authored, with the import's boundary when it is the imported document itself — and return it base64-encoded under the content hash of those bytes, the same identity any capability returns for the same bytes. Invalid documents are refused."),
+            ("trip_map", "The trip-id map of a network: every trip by its id (the agency's, for an imported trip) with its pattern trips and first start — the join rt data is keyed by."),
         ],
     },
     ModuleSpec {
@@ -117,13 +116,13 @@ const MODULES: &[ModuleSpec] = &[
         // answer its own questions, so they are spoken, not consumed.
         speaks: &[("gtfs_rt", &[1]), ("feed", &[1]), ("trip_map", &[1]), ("live", &[1])],
         migrates: &[],
-        purpose: "Realtime decoding and the schedule join: turn a GTFS-rt protobuf payload (trip updates, vehicle positions) into the flat view hosts show, and answer the dispatcher's joined questions — one trip's predicted times, the ranked what's-late-now view with the delayed-but-dark flag. The third capability extracted from the monolith; the domain code lives in the shared transit-rt library. It mints THE LIVE DOCUMENT: the snapshot resolved through the import's trip map into model vocabulary (delays per derived trip and stop, vehicles on derived trips, statuses under the caller's on-time window) — the one place agency trip ids meet the model. Assemble for riders (live boards) and dispatchers (the operation view) alike.",
+        purpose: "Realtime decoding and the schedule join: turn a GTFS-rt protobuf payload (trip updates, vehicle positions) into the flat view hosts show, and answer the dispatcher's joined questions — one trip's predicted times, the ranked what's-late-now view with the delayed-but-dark flag. The third capability extracted from the monolith; the domain code lives in the shared transit-rt library. It mints THE LIVE DOCUMENT: the snapshot resolved through the network's trip map into model vocabulary (delays per trip instance and stop, vehicles on their trips, statuses under the caller's on-time window) — the one place rt trip ids meet the model. Assemble for riders (live boards) and dispatchers (the operation view) alike.",
         op_docs: &[
             ("decode", "Decode a GTFS-rt protobuf payload into the overview (entity counts, trip updates with per-stop delays, vehicle positions), and register the snapshot under its content hash — idempotent, the same bytes are the same snapshot — so trip_progress/late_trips can address it. Bulk-bytes op 0. Garbage bytes are an error outcome, never a trap."),
             ("load_feed", "Register the STATIC feed the schedule joins come from — the same GTFS zip bytes gtfs loads, the same content-hash identity (assert equality at the host). Bulk-bytes op 1."),
             ("trip_progress", "One trip's joined board: every scheduled stop with the live delay and the PREDICTED time (schedule + delay) — the dispatcher's most-asked question in one op. A stop the update does not mention carries the last stated delay upstream of it (the GTFS-rt propagation rule); stops before the first update stay null. A trip the snapshot does not mention answers from the schedule alone; a trip the feed does not carry answers null."),
-            ("load_trip_map", "Register the import's trip-id map (the network capability's trip_map answer) under its canonical content hash — the join live resolves agency trip ids through."),
-            ("live", "THE LIVE DOCUMENT: one rt moment resolved into model vocabulary. rt_hash (trip updates) and/or vp_hash (vehicle positions — agencies often serve them separately) resolve through the registered trip map into delays per derived trip ((pattern_trips, start_secs)) and stop (propagated downstream, with the predicted departure), vehicles on their derived trips, and statuses (early / on_time / late / very_late / no_prediction) classified under `window` — the caller's on-time policy, default 60 s late on time, 300 s very late — which the document records so every reader classifies the same way. Trip and vehicle lateness is the trip's worst stated delay. Unresolvable rt trips are counted (unmatched_trips), never silently dropped. The response also carries the summary a status panel reads: vehicles by status and the late list worst first (late_limit, default 15) — late BUSES when positions exist, late trips (predictions) when they do not. Register the document in the board with load_live."),
+            ("load_trip_map", "Register a network's trip-id map (the network capability's trip_map answer) under its canonical content hash — the join live resolves rt trip ids through."),
+            ("live", "THE LIVE DOCUMENT: one rt moment resolved into model vocabulary. rt_hash (trip updates) and/or vp_hash (vehicle positions — agencies often serve them separately) resolve through the registered trip map into delays per trip instance ((pattern_trips, start_secs)) and stop (propagated downstream, with the predicted departure), vehicles on their trips, and statuses (early / on_time / late / very_late / no_prediction) classified under `window` — the caller's on-time policy, default 60 s late on time, 300 s very late — which the document records so every reader classifies the same way. Trip and vehicle lateness is the trip's worst stated delay. Unresolvable rt trips are counted (unmatched_trips), never silently dropped. The response also carries the summary a status panel reads: vehicles by status and the late list worst first (late_limit, default 15) — late BUSES when positions exist, late trips (predictions) when they do not. Register the document in the board with load_live."),
             ("late_trips", "The ranked what's-late-now view: every trip whose worst stop delay reaches min_delay_secs, worst first, each carrying the located vehicle (vehicle_id, label, position) — found on the trip itself or, failing that, on another trip of its block (position_trip_id names the trip the bus is actually running: a delay propagated to a block's next trip is a late bus, not a dark one) — and the DELAYED-BUT-DARK flag (has_position false) when no vehicle of the block is visible. vp_hash names the VehiclePositions snapshot (agencies serve it as a SEPARATE feed — C-TRAN does); omit it for combined feeds."),
         ],
     },
@@ -193,8 +192,8 @@ const MODULES: &[ModuleSpec] = &[
             ("blocks", "The day's blocks: every authored block with at least one trip running on the date, with that day's running trip counts — a block whose every trip is off is a vehicle still in the garage, not offered. With edits in force, skipped trips leave the count (and a block whose every trip is skipped leaves the list)."),
             ("fleet_summary", "The day's fleet in ONE answer: running blocks, the peak concurrent vehicles and the first time the peak is reached, and the platform / revenue / layover hours — the fold that used to take one block_trips call per block plus host-side concurrency glue. A vehicle is out from its block's first running start to its last running arrival (half-open spans: a bus arriving as another departs is one vehicle, not two). Platform = the fleet's out hours, revenue = the trips' own runtimes, layover = the rest; the peak is the dispatcher's fleet-need number."),
             ("block_trips", "One block's chain on a service date: the AUTHORED runcut (the model's blocks carry layovers GTFS never had), materialized for the day, with the in-force edits applied — a diverted trip ending later eats into the vehicle's next layover, and layover_remaining_secs goes negative when the connection is eaten. Each row's layover_health classifies the connection: overlap (negative — the next trip starts late), tight (under tight_layover_secs, default 300), ok. Trips of the chain that do not run on the date stay in view, marked. The answer carries the block_id it is for (many block_trips results group by the answer, never by request order). Unknown blocks answer empty, never error."),
-            ("trip_stops", "One derived trip's stops on a service date — the day's trip detail, EFFECTIVE (a diverted trip answers its patched sequence). The trip's line is trip_path. A trip that does not run answers empty, never an error."),
-            ("trip_path", "One derived trip's LINE on a service date ([{lat, lon}]), over the effective day: its pattern's authored alignment while the trip follows the pattern, its (patched) stops joined in order when it does not — a diverted trip draws its diversion. A trip that does not run answers an empty path, never an error."),
+            ("trip_stops", "One trip instance's stops on a service date — the day's trip detail, EFFECTIVE (a diverted trip answers its patched sequence). The trip's line is trip_path. A trip that does not run answers empty, never an error."),
+            ("trip_path", "One trip instance's LINE on a service date ([{lat, lon}]), over the effective day: its pattern's authored alignment while the trip follows the pattern, its (patched) stops joined in order when it does not — a diverted trip draws its diversion. A trip that does not run answers an empty path, never an error."),
         ],
     },
     ModuleSpec {
@@ -280,7 +279,7 @@ const MODULES: &[ModuleSpec] = &[
         purpose: "Authoring: what does this network become after these edits? A change — retime a trip, add a stop, extend a calendar, fork the plan into the next pick — is a list of typed edits applied atomically to a registered NETWORK document. The answer is the next document under its content hash (registered: chain the next change on it), with its validation issues and warnings — the authoring loop in one op. The last document is never touched (the host wholesale-replaces its copy); removals refuse while anything references the entity. The edit vocabulary lives in transit-network. Assemble for anyone who changes a network: a planner's UI, a script, an agent.",
         op_docs: &[
             ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same identity every model-side capability returns. Kernel bulk op 256 takes the bare document's JSON bytes on transit_invoke_bytes — the same answer, no request envelope; hosts send real-size networks this way."),
-            ("apply", "Apply `edits` in order, atomically, to the registered document: set_plan (fork / stamp a pick — {plan:{id,name,effective_from}}), set_name, retime_trip (move one exact-times trip {pattern_trips, from_secs, to_secs} — the blocks carrying it move with it, so a retime never strands the runcut), upsert_* / remove_* for stop, route, pattern, service_type, pattern_trips, block (upserts replace the whole entity under its id: read it from the document, change it, send it back), and the GESTURES — one edit per thing a planner does, each carrying its coherence rule: add_stop / add_route / add_pattern / add_service_type {from} / add_pattern_trips / add_block (id minted when omitted — first free s1, r1, pat1, cal1, svc1, b1 — and reported in `created`); update_stop / update_route / update_pattern / update_service_type / set_pattern_trips_refs (field-wise, references checked); set_direction {route, id, name} (add or rename one of a route's directions) / remove_direction (refused while a pattern runs in it), update_pattern {direction} (one of its route's directions, \"\" for none; a route move leaves it in none unless the same edit places it); insert_pattern_stop {index?} (before visit index, default the last stop, halfway along that leg, non-timepoint), remove_pattern_stop / toggle_timepoint (middle visits only; every timing profile stays aligned — a new timepoint takes its neighbours' midpoint), set_pattern_stop, add_timing_profile / remove_timing_profile (one always stays) / set_timing_profile / set_timepoint_time; toggle_service_day {day: mon..sun}, add_service_range / set_service_range / remove_service_range, set_service_exception (one per date, date order) / remove_service_exception; set_starts (sorted, unique) / add_start (+10 min) / remove_start (one always stays), set_band / add_band / remove_band; add_block_trip (time order; a layover stays only while its two trips stay adjacent) / remove_block_trip / set_layover {after_trip, secs | null} (only between two trips). The TIMETABLE gestures address a route + direction (+ service type) — the directory's `timetable` — and apply across every pattern of the direction: set_headway {route, direction, service_type, from_secs, to_secs, headway_secs, pattern?} (frequency by period: a trip every headway from from_secs until before to_secs; trips already in the window move to the nearest slots in order, carrying their blocks; open slots are new trips on the pattern the trip before runs, unassigned; surplus trips leave their blocks), set_span {route, direction, service_type, first_secs?, last_secs?, headway_secs?} (trim past a bound; extend to it at headway_secs, else the edge's median gap, on the edge trip's pattern), adjust_running_time {route, direction, from_secs, to_secs, delta_secs} (every pattern of the direction runs trips departing in the window delta_secs longer, negative shorter, in proportion along it; profiles split at the window; timing is the pattern's, so every service type running it changes), insert_direction_stop {route, direction, stop, after} / remove_direction_stop {route, direction, stop} (by stop id on every pattern of the direction; endpoints stay). direction null or omitted means the route's patterns in no direction; pattern trips a gesture empties are removed and new ones minted ({service_type}:{pattern}) are reported in `created`; only exact-times trips are moved. An out-of-range index or a missing reference is a named error, never a silent no-op. One edit that cannot apply (an unknown id; a removal of something still referenced — a stop a pattern visits, pattern trips a block carries) rejects the whole change as an error naming the edit's position. The answer: the next network_hash (already registered), the document itself, its issues (gate export) and warnings (never gate: unassigned trips, a pick with no service in its period), and `created` ({kind, id} per entity the change made)."),
+            ("apply", "Apply `edits` in order, atomically, to the registered document: set_plan (fork / stamp a pick — {plan:{id,name,effective_from}}), set_name, retime_trip {trip, to_secs} (move a one-start trip: it keeps its id, its running times, and its blocks — they name it by id), add_trip {pattern_trips, start_secs, id?} (a new trip timed by its pattern's profile covering the start; id minted {pattern_trips}@{start} when omitted, reported in `created`), remove_trip {trip} (gone everywhere: its pattern trips, emptied, go; its block closes up and goes when emptied), upsert_* / remove_* for stop, route, pattern, service_type, pattern_trips, block (upserts replace the whole entity under its id: read it from the document, change it, send it back), and the GESTURES — one edit per thing a planner does, each carrying its coherence rule: add_stop / add_route / add_pattern / add_service_type {from} / add_pattern_trips / add_block (id minted when omitted — first free s1, r1, pat1, cal1, svc1, b1 — and reported in `created`); update_stop / update_route / update_pattern / update_service_type / set_pattern_trips_refs (field-wise, references checked); set_direction {route, id, name} (add or rename one of a route's directions) / remove_direction (refused while a pattern runs in it), update_pattern {direction} (one of its route's directions, \"\" for none; a route move leaves it in none unless the same edit places it); insert_pattern_stop {index?} (before visit index, default the last stop, halfway along that leg, non-timepoint, unscheduled on every trip), remove_pattern_stop / toggle_timepoint (middle visits only; every timing profile and every trip's times stay aligned — a new timepoint takes its neighbours' midpoint in each profile, and each trip is scheduled there where it ran), set_pattern_stop, add_timing_profile / remove_timing_profile (one always stays) / set_timing_profile / set_timepoint_time; toggle_service_day {day: mon..sun}, add_service_range / set_service_range / remove_service_range, set_service_exception (one per date, date order) / remove_service_exception; set_band / add_band / remove_band {trip} (a frequency trip's bands; one always stays); add_block_trip {block, trip:{trip}} (in order of first start; a layover stays only while its two trips stay adjacent) / remove_block_trip / set_layover {after_trip, secs | null} (only between two trips). The TIMETABLE gestures address a route + direction (+ service type) — the directory's `timetable` — and apply across every pattern of the direction: set_headway {route, direction, service_type, from_secs, to_secs, headway_secs, pattern?} (frequency by period: a trip every headway from from_secs until before to_secs; one-start trips already in the window move to the nearest slots in order, keeping their ids, times, and blocks; open slots are new trips with fresh ids on the pattern the trip before runs, timed by its profile, unassigned; surplus trips go everywhere; frequency trips are left alone), set_span {route, direction, service_type, first_secs?, last_secs?, headway_secs?} (trim past a bound; extend to it at headway_secs, else the edge's median gap, on the edge trip's pattern), adjust_running_time {route, direction, service_type, from_secs, to_secs, delta_secs} (the direction's one-start trips under that service type departing in the window run delta_secs longer, negative shorter, in proportion along each trip — each keeps its id and start; other service types, frequency trips, and the profiles are untouched), insert_direction_stop {route, direction, stop, after} / remove_direction_stop {route, direction, stop} (by stop id on every pattern of the direction; endpoints stay). direction null or omitted means the route's patterns in no direction; pattern trips a gesture empties are removed and new ones minted ({service_type}:{pattern}) are reported in `created`; only one-start trips are moved. An out-of-range index or a missing reference is a named error, never a silent no-op. One edit that cannot apply (an unknown id; a removal of something still referenced — a stop a pattern visits, pattern trips a block carries) rejects the whole change as an error naming the edit's position. The answer: the next network_hash (already registered), the document itself, its issues (gate export) and warnings (never gate: unassigned trips, a pick with no service in its period), and `created` ({kind, id} per entity the change made)."),
         ],
     },
     ModuleSpec {
@@ -516,6 +515,7 @@ struct NetworkExampleContext {
     /// real answers over it.
     network: transit_network::Network,
     derived: serde_json::Value,
+    boundary: serde_json::Value,
     notes: serde_json::Value,
     network_hash: String,
     trip_map: serde_json::Value,
@@ -531,21 +531,29 @@ impl NetworkExampleContext {
 }
 
 fn network_example_context(feed_bytes: &[u8]) -> Option<NetworkExampleContext> {
-    let gtfs = transit_core::Gtfs::from_zip_bytes(feed_bytes).ok()?;
-    let outcome = transit_codec::gtfs_to_network(&gtfs);
+    let outcome = transit_codec::import(&transit_codec::Feed::from_zip_bytes(feed_bytes).ok()?);
     let canonical = serde_json::to_string(&outcome.network).ok()?;
     let network_hash = format!("sha256:{:x}", Sha256::digest(canonical.as_bytes()));
     let derived = serde_json::to_value(&outcome.network).ok()?;
+    let boundary = serde_json::to_value(&outcome.boundary).ok()?;
     let notes = serde_json::to_value(&outcome.notes).ok()?;
-    let trip_map = serde_json::to_value(&outcome.trip_map).ok()?;
-    let exported = transit_codec::network_to_gtfs(&outcome.network).ok()?;
-    let export_summary = serde_json::to_value(exported.summary()).ok()?;
-    let zip = transit_core::write::to_zip_bytes(&exported);
+    let trip_map = serde_json::to_value(transit_codec::trip_map(&outcome.network)).ok()?;
+    let exported = transit_codec::export(&outcome.network, &outcome.boundary).ok()?;
+    let export_summary = serde_json::to_value(transit_core::FeedSummary {
+        agencies: exported.agency.len(),
+        routes: exported.routes.len(),
+        stops: exported.stops.len(),
+        trips: exported.trips.len(),
+        stop_times: exported.stop_times.len(),
+    })
+    .ok()?;
+    let zip = exported.to_zip_bytes();
     let export_feed_hash = format!("sha256:{:x}", Sha256::digest(&zip));
     let zip_b64 = transit_core::write::base64_encode(&zip);
     Some(NetworkExampleContext {
         network: outcome.network,
         derived,
+        boundary,
         notes,
         network_hash,
         trip_map,
@@ -623,7 +631,8 @@ fn rt_example_context() -> Option<RtExampleContext> {
 /// mints it: the trip map (and its hash), the document (and its hash).
 fn live_example() -> Option<(transit_codec::TripIdMap, String, transit_live::LiveDay, String)> {
     let ctx = rt_example_context()?;
-    let trip_map = transit_codec::gtfs_to_network(&ctx.feed).trip_map;
+    let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/sample-gtfs.zip")).ok()?;
+    let trip_map = transit_codec::trip_map(&transit_codec::import(&transit_codec::Feed::from_zip_bytes(&bytes).ok()?).network);
     let hash = |v: String| format!("sha256:{:x}", Sha256::digest(v.as_bytes()));
     let trip_map_hash = hash(serde_json::to_string(&trip_map).ok()?);
     let live = transit_rt::live_day(&ctx.feed, Some(&ctx.overview), None, &trip_map, transit_live::OnTimeWindow::default());
@@ -726,7 +735,7 @@ fn example_for(
             let ctx = net?;
             (
                 json!({ "op": "import", "feed_hash": feed_hash }),
-                json!({ "ok": { "op": "import", "network": ctx.derived,
+                json!({ "ok": { "op": "import", "network": ctx.derived, "boundary": ctx.boundary,
                     "notes": ctx.notes, "network_hash": ctx.network_hash } }),
             )
         }
@@ -752,16 +761,6 @@ fn example_for(
                 json!({ "op": "export", "network_hash": ctx.network_hash }),
                 json!({ "ok": { "op": "export", "feed_hash": ctx.export_feed_hash,
                     "summary": ctx.export_summary, "zip_b64": ctx.zip_b64 } }),
-            )
-        }
-        ("network", "agency_trip_ids") => {
-            let ctx = net?;
-            let map: transit_codec::TripIdMap = serde_json::from_value(ctx.trip_map.clone()).ok()?;
-            let first = map.entries.first()?;
-            (
-                json!({ "op": "agency_trip_ids", "network_hash": ctx.network_hash,
-                    "trips": [{ "pattern_trips": first.pattern_trips, "start_secs": first.start_secs }] }),
-                json!({ "ok": { "op": "agency_trip_ids", "ids": [first.agency_trip_ids] } }),
             )
         }
         ("network", "trip_map") => {
@@ -1108,7 +1107,7 @@ fn example_for(
             let records = dispatch_fixture_edits();
             let day = transit_dispatch::effective_day(ctx.derived_network(), date, &records)
                 .expect("fixture day");
-            // t30's derived trip: the via-C run at 08:40 — the
+            // t30: the via-C run at 08:40 — the
             // patched day keeps A→B (C skipped, +300 s).
             let trip = day
                 .iter()
