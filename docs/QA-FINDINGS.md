@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-66**. A
+IDs are never reused; the next new finding is **QAF-78**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`).
@@ -65,11 +65,15 @@ is the next unit (`docs/units/`).
   fixture the only world with transfers?
   Pin: analysis `network_stats` (`transfer_stops`); board at stop
   9021 pooling bays 9021–9027.
+  Re-confirmed: 2026-10-28, directory `stops` "fisher" — station 106
+  and all nine bays `transfer: false`.
 - **QAF-48 DATA GAP** — C-TRAN's vehicle labels are empty, so the
   late list names buses by internal id ("CTRAN2269"). The fallback
   is honest; whether that id is what a dispatcher calls the bus is
   an agency question.
   Pin: rt `live` summary `late[0].label`.
+  Re-confirmed: 2026-10-28 08:52 snapshot, `late[0].label`
+  "CTRAN7003" (route 105, +721 s).
 - **QAF-65 DATA GAP** — the I-5-closure-era service is modeled as
   sibling service ids (1-WKDY/30, /31, …) that ride along with the
   base weekday — same weekly pattern, every day they run a day
@@ -181,6 +185,97 @@ is the next unit (`docs/units/`).
   and the fix is one `set_service_range` per service type (13 on
   C-TRAN).
   Pin: the same Winter 2027 fork.
+
+## The rider's questions
+
+Findings from the 2026-10-28 rider session on the import
+(`2e27c511…`) and live rt fetched 08:52 PDT (63 vehicles, 0
+unmatched trips): find my stop, next bus, plan a trip, is it on
+time, last bus home, is there a detour.
+
+- **QAF-66 DEFECT** — `directory.stop_detail` on a BAY with its own
+  service answers the whole station's routes: Fisher's Landing Bay A
+  (9000) lists 10 routes; the feed stops only 012 there (Bay B: 034,
+  092; Bay I: 041, 065, 164). Pooling across the walking group is
+  right for the station pin, wrong for a bay — the board's own rule
+  (a stop with service of its own never pools) is the one to
+  follow.
+  Pin: directory `stop_detail` 9000 and 9008 — both the same 10
+  routes; `stop_times.txt` gives 9000 → {012}.
+- **QAF-67 MODEL GAP** — routes have no long name: the feed's
+  `route_long_name` ("Lincoln", "112th Avenue", "Fruit Valley/
+  Grand") does not survive the import (`Route` is name, mode, color,
+  directions), so every rider-facing row reads "012".
+  Pin: directory `routes` — keys `color, mode, name, route_id`,
+  name "012".
+- **QAF-68 CONTRACT GAP** — a departure's destination is its last
+  stop's name, not its headsign: the 164 the feed signs "Portland"
+  reads "SW 5th & Morrison", the 030 to "Downtown Vancouver" reads
+  "Broadway & Evergreen Blvd", and terminals leak their bay ("Van
+  Mall Transit Center: Bay D"). The import spends `trip_headsign`
+  on direction names only; board rows and itinerary legs never see
+  it. (QAF-63 means the direction name is not the answer either.)
+  Pin: board `stop_board` 106 2026-10-28 from 28800 —
+  `rows[*].destination`; router `plan` 9000 → 6136, leg headsign
+  "012 → Van Mall Transit Center: Bay D".
+- **QAF-69 CONTRACT GAP** — a pooled station board names each row's
+  bay by id only (`"stop": "9008"`); "which bay do I stand at?"
+  takes a second op (`stops_by_ids`) and a host join.
+  Pin: board `stop_board` 106 — `rows[0].stop` "9008", no name.
+- **QAF-70 OP GAP** — no "stops near me": `directory.stops` matches
+  names only, so a rider with a location has no op, and a rider
+  with the colloquial name gets nothing ("vancouver mall" → 0; the
+  feed says "Van Mall").
+  Pin: directory `stops` query "vancouver mall" → `[]`; no op takes
+  a lat/lon.
+- **QAF-71 DEFECT** — the default on-time window counts ANY
+  earliness as on time (`OnTimeWindow { early_secs: None }`), so
+  `early` can never fire unless a host passes a policy. Early is
+  not on time: a bus leaving early is a missed bus.
+  Pin: rt `live` default window on the 08:52 snapshot — counts
+  `early: 0` of 63; board 106 — the 09:25 034 at `delay_secs: -91`
+  reads `on_time`.
+- **QAF-72 OP GAP** — the router is earliest-arrival only: "when is
+  the last bus home?" is answered by bisecting departure times until
+  the plan goes null. No latest-departure (or arrive-by) query.
+  Pin: router `plan` 6136 → 106 on 2026-10-28 — from 82800 leaves
+  23:07, arrives 24:01; from 84600 → `null`, with no "last was
+  23:07".
+- **QAF-73 OP GAP** — trip planning ignores live data: `plan` and
+  `plan_compare` take no `live_hash`, so a "leave now" plan assumes
+  every bus is on schedule while the board, from the same live
+  document, knows otherwise.
+  Pin: router `plan` request has no live input; board 106 with
+  `live_hash` shows the 092 +75 s.
+- **QAF-74 CONTRACT GAP** — `plan_compare` explains a diversion only
+  when it makes the trip unreachable: a diversion that costs 15
+  minutes answers `notice: null`, and the rider (or host) diffs the
+  two itineraries by hand.
+  Pin: divert `propose` 012 skipping 6277 (anchors 6130/6276) on
+  2026-10-28; router `plan_compare` 9000 → 6136 from 28800 —
+  active 09:19 (034 + Vine-Red), baseline 09:04, notice null.
+- **QAF-75 CONTRACT GAP** — the board at a diverted-away stop is
+  empty with no reason: a rider at the stop sees `rows: []`, not
+  "the 012 is detoured and skips this stop today".
+  Pin: the same edits; board `stop_board` 6277 →
+  `{"rows": [], "pooled": false}`.
+- **QAF-76 CONTRACT GAP** — `route_stop_sequence` answers one entry
+  per running-time pattern: the 012's direction 1 is 16 patterns
+  with the identical 29-stop list, so "what stops does the 012
+  make?" comes back 16 times.
+  Pin: directory `route_stop_sequence` 012 — 16 patterns through
+  6277, all 29 stops.
+
+## The runner
+
+- **QAF-77 RUNNER GAP** — `caps-run` runs whatever `registry/` last
+  published, with no check against the tree: after three commits
+  the session imported the pre-fidelity document (`89631f1a…`), not
+  the reference (`2e27c511…`), silently. And `just registry` gates
+  on the whole `cargo test`, so one failing crate test leaves the
+  runner stale.
+  Pin: `caps-run network` import before `just caps` →
+  `89631f1a…`; after → `2e27c511…`.
 
 ## Live operations
 

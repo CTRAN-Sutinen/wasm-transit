@@ -9,8 +9,11 @@ runs both, for changes that touch both sides.
 1. **Unit/property tests in the owning crate** (oracle style for
    laws — e.g. `transit-codec`'s `import_prop_test` holds that the
    inferred document is valid by construction over every spec-valid
-   feed and deterministic, and its `codec_prop_test` holds the
-   export round trip; `transit-plans`'s chain tests hold the
+   feed and deterministic, its `codec_prop_test` holds the
+   export round trip, and its `spec_round_trip_test` holds that
+   GTFS → network → GTFS loses nothing in the GTFS Schedule spec,
+   one law per file, against a raw-table oracle independent of the
+   parser; `transit-plans`'s chain tests hold the
    service-plan chain laws (resolution, windows, validity,
    order-insensitivity); transit-dispatch's `dispatch_laws_test`
    holds the diversion/ripple laws).

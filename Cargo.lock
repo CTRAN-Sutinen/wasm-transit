@@ -1101,6 +1101,7 @@ name = "transit-codec"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "csv",
  "proptest",
  "serde",
  "serde_json",

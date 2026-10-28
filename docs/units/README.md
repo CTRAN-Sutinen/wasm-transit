@@ -33,6 +33,7 @@ archive — nothing here records what is finished.
 
 | unit | what it is |
 |---|---|
+| [lossless-codec.md](lossless-codec.md) | GTFS → network → GTFS loses nothing in the spec; `just test` is red until it lands |
 | [u8-gtfs-substrate.md](u8-gtfs-substrate.md) | transit-core folds into transit-codec; nothing named "core" holds GTFS |
 | [host-discipline.md](host-discipline.md) | the composition layer: one op caller, flow maps as data, the journal, replay |
 | [wire-time-assembly.md](wire-time-assembly.md) | per-user selection over the manifest; layouts as documents |

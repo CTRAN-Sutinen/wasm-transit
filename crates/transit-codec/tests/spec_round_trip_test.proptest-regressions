@@ -1,0 +1,20 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc bcb944d41451da2faeebf2659bda3a904547b600df5d437a27ea83be1701c210 # shrinks to feed = SpecFeed { trips: [], families: 0, density: 0, seed: 0 }
+cc ec55aeb5803d89eb11d1c9b647a48d54c9b9acddb70cf30291098266a5042a4d # shrinks to feed = SpecFeed { trips: [], families: 0, density: 0, seed: 0 }
+cc aa411cfc02d6201f48b4b74173af4c639026cd8727ce39abf33116dfd9eeed00 # shrinks to feed = SpecFeed { trips: [], families: 0, density: 0, seed: 0 }
+cc 88eec2d0a90242e09183714404e5236e2e90109db080dc31e439add02ccbfdd0 # shrinks to feed = SpecFeed { trips: [], families: 0, density: 0, seed: 0 }
+cc a853fee71f08b03eb8c2cfdc16ff4206af9df1e547913e759117588c58e81128 # shrinks to feed = SpecFeed { trips: [], families: 0, density: 0, seed: 0 }
+cc 44ee92b4dcec164f1f86ab20e4da54248626cc225f47c6582d4f5f45c293c29f # shrinks to feed = SpecFeed { trips: [], families: 0, density: 0, seed: 0 }
+cc 880221b6fc885dfe22c88f2a34c75e806a73a8cd4009215cd5bcf4393eb19802 # shrinks to feed = SpecFeed { trips: [], families: 0, density: 0, seed: 0 }
+cc 37738c34b2017d5e860e35fbf516fc9db3551d395287bb6fc2e5332ba9327136 # shrinks to feed = SpecFeed { trips: [], families: 0, density: 0, seed: 0 }
+cc 69405e28a35a4b783b36d1a8786a5112af5b2f2e3f5c3398a349c7d342b34cc2 # shrinks to feed = SpecFeed { trips: [], families: 0, density: 0, seed: 0 }
+cc bd893a35dd2b066ac78938fcf92274ac39b70167caa6f31332f4faf66a939152 # shrinks to feed = SpecFeed { trips: [], families: 0, density: 0, seed: 0 }
+cc cb644e8711d3b91497e1e058069a3cd3dc808c90e776dbfa236097b66bc738ac # shrinks to feed = SpecFeed { trips: [], families: 0, density: 0, seed: 0 }
+cc 5623b535dbf440b76d537a69c45bf4c88eb13dc83e38620f5c10cd4c8689ddf5 # shrinks to feed = SpecFeed { trips: [], families: 0, density: 0, seed: 0 }
+cc 6694bdc67347a132c3053650033a14e7cc376f4604c928fa5314ca8f35b5cbc1 # shrinks to feed = SpecFeed { trips: [], families: 0, density: 0, seed: 0 }
+cc e4b55842ee414c4338f653d7930f230ce5f1a1d05a06614acfa5a7e9cfd499cd # shrinks to feed = SpecFeed { trips: [], families: 0, density: 0, seed: 0 }
