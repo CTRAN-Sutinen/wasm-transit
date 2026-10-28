@@ -1,7 +1,10 @@
 # Testing expectations
 
 Every change lands with tests at the layer that owns the logic.
-`just check` is the full gate; run it before declaring work done.
+Two runners: `just test` is the host-side gate (no browser) — run
+it before declaring any change done; `just e2e` adds the browser
+runner, for changes that touch user-visible flows; `just check`
+runs both, for changes that touch both sides.
 
 1. **Unit/property tests in the owning crate** (oracle style for
    laws — e.g. `transit-codec`'s `import_prop_test` holds that the

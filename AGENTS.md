@@ -56,8 +56,10 @@ Where the detail lives:
 
 ## Commands
 
-`just` is the task runner. `just check` is the full gate — run it
-before declaring work done.
+`just` is the task runner. Two runners: `just test` is the
+host-side gate (no browser) — run it before declaring any change
+done; `just e2e` adds the browser runner, for UI-visible changes;
+`just check` runs both, for changes that touch both sides.
 
 ```
 just build                 # frontend (type-checks first — the TS layer is a gate)
@@ -69,10 +71,10 @@ node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op .
                            # --as NAME names a result; $refs ($name.x, $load.x,
                            # $op.x, $N.path) + $TODAY/$NOW_SECS (a number);
                            # --load [N:]FILE for bulk ops; --op @FILE for big JSON
-just test                  # host-side tests (Rust + smokes + runner gates + web parity
-                           # ratchets + Go -race)
-just e2e                   # browser e2e (builds first)
-just check                 # test + e2e — the full gate
+just test                  # the host-side runner (Rust + smokes + runner gates + web
+                           # parity ratchets + Go -race) — no browser
+just e2e                   # the browser runner (Playwright, builds first) — UI changes
+just check                 # both runners — changes touching both sides
 just types                 # regenerate TS bindings (gitignored; build runs it)
 just serve [feed.zip ["Publisher"]]   # sync server on :8080
 just dev                   # vite hot reload + server alongside

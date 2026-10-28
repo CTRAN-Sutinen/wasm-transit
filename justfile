@@ -68,9 +68,12 @@ types:
 # test
 # ---------------------------------------------------------------
 
-# All host-side tests: Rust suites, Go suite, artifact smoke in Node,
-# capability-module smoke (needs `caps` built — hash-pinned modules
-# and the manifest the smoke verifies against).
+# The host-side runner: Rust suites, Go -race, artifact smoke in
+# Node, capability-module smoke (needs `caps` built — hash-pinned
+# modules and the manifest the smoke verifies against), runner
+# gates, web parity ratchets. No browser — the gate for logic
+# changes under a stable op surface; pair with a real-data caps-run
+# session (docs/TESTING.md, dogfood QA). Browser cover is `e2e`.
 # TS_RS_EXPORT_DIR keeps the ts-rs bindings regenerating into
 # web/src/types on every run (.cargo/config.toml pins the same path
 # for plain cargo runs; without either, ts-rs scatters them into
@@ -355,10 +358,12 @@ test: caps
 
 # Browser e2e (Chromium via Playwright, against the Go server).
 # Builds first; the runner starts the server unless :8080 is taken.
+# For UI-visible changes: user-visible flows, module surfaces, the
+# capability-bus spec (web/e2e/caps.spec.mjs).
 e2e: caps build
     cd web && npx playwright test
 
-# Everything: host tests + e2e.
+# Both runners — for changes that touch both sides.
 check: test e2e
 
 # Real-data soak: transit-streets against the downloaded county
