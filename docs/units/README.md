@@ -36,8 +36,9 @@ archive — nothing here records what is finished.
 | [u8-gtfs-substrate.md](u8-gtfs-substrate.md) | transit-core folds into transit-codec; nothing named "core" holds GTFS |
 | [host-discipline.md](host-discipline.md) | the composition layer: one op caller, flow maps as data, the journal, replay |
 | [wire-time-assembly.md](wire-time-assembly.md) | per-user selection over the manifest; layouts as documents |
-| [sync-persistence.md](sync-persistence.md) | blobs + pointers, pointer CAS, the store reflog |
+| [sync-persistence.md](sync-persistence.md) | self-describing blobs + pointers, pointer CAS, the store reflog, TLC-checked, generated schemas + `docs/FORMATS.md` |
 | [runtime-cost-gate.md](runtime-cost-gate.md) | a ratchet on per-module memory and registration time |
+| [module-runtime.md](module-runtime.md) | bounded registries (a kernel eviction op) and off-thread instantiation |
 | [caps-run-sessions.md](caps-run-sessions.md) | the runner across sessions; shaping the import's output |
 | [grade-debt.md](grade-debt.md) | on the bus, but not yet read by a UI or dogfooded |
 

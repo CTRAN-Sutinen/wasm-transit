@@ -68,6 +68,17 @@ pub enum Request {
         edits_hash: Option<String>,
         date: String,
     },
+    /// The day's fleet in one answer (QAF-3): running blocks, the
+    /// peak concurrent vehicles and the first time the peak is
+    /// reached, and the platform / revenue / layover hours — the
+    /// fold that took one block_trips call per block plus
+    /// host-side concurrency glue.
+    FleetSummary {
+        network_hash: String,
+        #[serde(default)]
+        edits_hash: Option<String>,
+        date: String,
+    },
     /// One block's chain on a service date: the AUTHORED runcut (the
     /// model's blocks carry layovers GTFS never had), materialized
     /// for the day, with the in-force edits applied — a diverted trip
@@ -124,6 +135,7 @@ pub enum Response {
         reports: Vec<transit_sync::EditReport>,
     },
     Blocks { blocks: Vec<DayBlock> },
+    FleetSummary { summary: transit_dispatch::FleetSummary },
     /// The chain, carrying the block it answers for — a session
     /// asking for many blocks groups results by the answer, never by
     /// request order.
@@ -216,6 +228,13 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
 let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
             Ok(Response::Blocks { blocks: transit_dispatch::day_blocks(&network, &day) })
+        }
+        Request::FleetSummary { network_hash, edits_hash, date } => {
+            let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = network_arc(&network_hash)?;
+            Ok(Response::FleetSummary {
+                summary: transit_dispatch::fleet_summary(&network, &day),
+            })
         }
         Request::BlockTrips { network_hash, edits_hash, block_id, date, tight_layover_secs } => {
 let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;

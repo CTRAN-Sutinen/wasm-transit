@@ -108,6 +108,12 @@ fn stats_report_route_and_stop_activity() {
     // The route's own revenue hours: all of the day's runtime here
     // (30 + 20 + 20 + 10 min = 4800 s), the per-route cost basis.
     assert!((route.revenue_hours - 4800.0 / 3600.0).abs() < 1e-9);
+    // QAF-21: the other cost basis — revenue MILES, straight off the
+    // patterns' authored distances (no shape_dist in the fixture, so
+    // the codec's 500 m per stop applies): three A→C→B trips at
+    // 1000 m and one A→B at 500 m = 3500 m.
+    assert!((stats.revenue_miles - 3500.0 / 1609.344).abs() < 1e-9);
+    assert!((route.revenue_miles - 3500.0 / 1609.344).abs() < 1e-9);
 
     let by_id = |id: &str| stats.stops.iter().find(|s| s.stop_id == id).expect(id);
     let a = by_id("A");
@@ -138,11 +144,13 @@ fn service_type_ops_expose_the_design_axis() {
     assert_eq!(types[0].active_routes, 1);
     assert_eq!(types[0].active_stops, 3);
     assert!((types[0].revenue_hours - 4800.0 / 3600.0).abs() < 1e-9);
+    assert!((types[0].revenue_miles - 3500.0 / 1609.344).abs() < 1e-9);
 
     let detail = service_type_detail(&network, "WK").expect("detail");
     assert_eq!(detail.trips, 4);
     assert_eq!(detail.routes.len(), 1, "route 10 runs; zero-trip routes filtered out");
     assert_eq!(detail.routes[0].typical_headway_secs, Some(2280));
+    assert!((detail.revenue_miles - 3500.0 / 1609.344).abs() < 1e-9);
     assert_eq!(detail.stops.len(), 3, "A, B and C are all served");
     let schedule_trips: std::collections::BTreeMap<&str, u32> = detail
         .pattern_trips

@@ -98,6 +98,27 @@ A cut that fails one criterion is a bundle or a duplicate:
    never justify a module and do not count toward its need.
 8. **Independently retirable.** The module can die alone.
 
+### The split — triggers that end a module's growth
+
+The cut is re-judged at every change to a module, not only at
+its birth: a module conforming at birth drifts into a bundle one
+op at a time. Any one trigger makes SPLIT the answer to "where
+does the next op go", in the change that trips it:
+
+1. **The second cluster.** The module's ops partition into
+   groups that share neither documents nor response vocabulary.
+   One cluster is a facet family; two is one module holding two
+   questions. The next op added to either cluster is the new
+   module's first op.
+2. **The second document.** An op takes a document none of the
+   module's other ops take. One such op is a facet; the second
+   composes a question this module does not otherwise answer —
+   those ops go where the need that composes it lives.
+3. **The near neighbor.** An op answers inside another module's
+   question. Criterion 6 applies to converging answers, not only
+   born duplicates: the next op that moves either module toward
+   the other's answer deletes one of the pair in that change.
+
 ## Where new things go
 
 The extraction pattern, always in this order:

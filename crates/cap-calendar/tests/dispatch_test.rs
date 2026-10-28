@@ -47,6 +47,27 @@ fn active_services(network_hash: &str, edits_hash: Option<String>, date: &str) -
     }
 }
 
+fn service_dates(
+    network_hash: &str,
+    edits_hash: Option<String>,
+    service_type: &str,
+    from: &str,
+    to: &str,
+) -> Vec<String> {
+    match dispatch(Request::ServiceDates {
+        network_hash: network_hash.into(),
+        edits_hash,
+        service_type: service_type.into(),
+        from: from.into(),
+        to: to.into(),
+    })
+    .unwrap()
+    {
+        Response::ServiceDates { dates } => dates,
+        _ => panic!("service_dates"),
+    }
+}
+
 #[test]
 fn the_network_identity_is_the_modules_canonical_serialization() {
     let hash = load_network();
@@ -132,6 +153,109 @@ fn edits_can_take_a_key_off_the_board() {
     assert_eq!(
         active_services(&network_hash, Some(edits_hash), DATE),
         vec!["WK".to_string()]
+    );
+}
+
+#[test]
+fn the_reverse_read_names_a_types_dates() {
+    let network_hash = load_network();
+
+    // The fixture pins the reverse read: WK runs every weekday of
+    // its 2026 range EXCEPT 2026-10-29, which calendar_dates.txt
+    // removes. The window crosses the exception — the answer must
+    // carry it.
+    let dates = service_dates(&network_hash, None, "WK", "2026-10-23", "2026-11-03");
+    assert_eq!(
+        dates,
+        vec![
+            "2026-10-23", "2026-10-26", "2026-10-27", "2026-10-28",
+            "2026-10-30", "2026-11-02", "2026-11-03",
+        ],
+        "every fixture weekday except the removed 10-29"
+    );
+
+    // The two-way agreement at the seam, every date of the window
+    // and every service key the day ever answers: a date the rule
+    // names is exactly a date the day fold lists the key on.
+    for day in ["2026-10-23", "2026-10-24", "2026-10-25", "2026-10-29"] {
+        let keys = active_services(&network_hash, None, day);
+        for key in ["WK", "SUN"] {
+            let named = service_dates(&network_hash, None, key, day, day);
+            assert_eq!(
+                named.len(),
+                keys.contains(&key.to_string()) as usize,
+                "{key} on {day}: the reverse read agrees with active_services"
+            );
+        }
+    }
+
+    // Id-lookup honesty: an unknown type and an inverted window
+    // answer empty, never an error.
+    assert!(service_dates(&network_hash, None, "NOPE", "2026-10-23", "2026-11-03").is_empty());
+    assert!(service_dates(&network_hash, None, "WK", "2026-11-03", "2026-10-23").is_empty());
+
+    // Garbage dates and unknown hashes are errors, never panics.
+    let err = dispatch(Request::ServiceDates {
+        network_hash: network_hash.clone(),
+        edits_hash: None,
+        service_type: "WK".into(),
+        from: "2026-13-99".into(),
+        to: "2026-11-03".into(),
+    })
+    .unwrap_err();
+    assert!(err.contains("invalid date"), "{err}");
+    let err = dispatch(Request::ServiceDates {
+        network_hash: network_hash.clone(),
+        edits_hash: Some("sha256:missing".into()),
+        service_type: "WK".into(),
+        from: "2026-10-23".into(),
+        to: "2026-11-03".into(),
+    })
+    .unwrap_err();
+    assert!(err.contains("unknown edits"), "{err}");
+}
+
+#[test]
+fn the_reverse_read_comes_from_the_effective_day() {
+    let network_hash = load_network();
+    // The same fixture diversion as the active_services law: in
+    // force on 2026-10-23 only, and it cannot take WK off the
+    // board — so the reverse read is unchanged wherever it runs,
+    // and the edits window answers from the patched day.
+    let records = vec![EditRecord {
+        id: "e1".into(),
+        diversion: transit_sync::Diversion {
+            id: "d1".into(),
+            route_id: "20".into(),
+            direction_id: None,
+            first_kept_stop: "A".into(),
+            last_kept_stop: "B".into(),
+            skipped_stops: vec!["C".into()],
+            detour: None,
+            added_secs: 60,
+            start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+        },
+        status: EditStatus::Accepted,
+        rev: 1,
+        updated_at: 1,
+    }];
+    let edits_hash = match dispatch(Request::LoadEdits {
+        network_hash: network_hash.clone(),
+        records,
+    })
+    .unwrap()
+    {
+        Response::LoadEdits { edits_hash, reports } => {
+            assert!(reports.iter().all(|r| r.valid), "{reports:?}");
+            edits_hash
+        }
+        _ => panic!("load_edits"),
+    };
+    assert_eq!(
+        service_dates(&network_hash, Some(edits_hash), "WK", "2026-10-23", "2026-10-26"),
+        vec!["2026-10-23".to_string(), "2026-10-26".to_string()],
+        "the patched day answers the same as the rule"
     );
 }
 

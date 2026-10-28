@@ -2,7 +2,8 @@
 //!
 //! One question: **which service keys run on this date?** — often
 //! several at once (a regular pattern plus an exception-added
-//! service). The answer comes from the EFFECTIVE day, not the
+//! service) — and its reverse, **when does one service type
+//! run?**. Both answers come from the EFFECTIVE day, not the
 //! calendar rules alone: a key whose every trip is skipped by
 //! edits (or was never representable in the model) is not running,
 //! however its calendar reads — the same honesty as the runcut
@@ -63,6 +64,19 @@ pub enum Request {
         edits_hash: Option<String>,
         date: String,
     },
+    /// The dates one service type runs on within a window — the same
+    /// question `active_services` answers in the other direction
+    /// ("when does 1-WKDY/31 run?"). Inclusive "YYYY-MM-DD" window;
+    /// an unknown type or an inverted window answers empty.
+    /// Schedule-only when `edits_hash` is omitted.
+    ServiceDates {
+        network_hash: String,
+        #[serde(default)]
+        edits_hash: Option<String>,
+        service_type: String,
+        from: String,
+        to: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -75,6 +89,7 @@ pub enum Response {
         reports: Vec<transit_sync::EditReport>,
     },
     ActiveServices { services: Vec<String> },
+    ServiceDates { dates: Vec<String> },
 }
 
 /// Networks by content hash (canonical serialization).
@@ -162,6 +177,23 @@ let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
             Ok(Response::ActiveServices {
                 services: transit_dispatch::active_services(&network, &day),
+            })
+        }
+        Request::ServiceDates { network_hash, edits_hash, service_type, from, to } => {
+            // The request's own fields validate before any registry
+            // lookup — a garbage date is a caller error, not a
+            // missing-document error.
+            let from = parse_date(&from)?;
+            let to = parse_date(&to)?;
+            let network = network_arc(&network_hash)?;
+            let records = match edits_hash.as_deref() {
+                Some(hash) => edits_arc(hash)?,
+                None => Arc::new(Vec::new()),
+            };
+            let dates = transit_dispatch::service_dates(&network, &records, &service_type, from, to)
+                .map_err(|e| format!("the network does not materialize: {e}"))?;
+            Ok(Response::ServiceDates {
+                dates: dates.iter().map(|d| d.format("%Y-%m-%d").to_string()).collect(),
             })
         }
     }

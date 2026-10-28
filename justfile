@@ -130,6 +130,49 @@ test: caps
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"active_services","network_hash":"$load_network.network_hash","date":"$TODAY"}' \
       | grep -q '"op":"active_services"'
+    # The calendar read backwards: WK's fixture dates across a window
+    # that crosses the feed's calendar exception (removed 10-29) —
+    # the reverse read must carry it.
+    node tools/caps-run.mjs calendar \
+      --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"service_dates","network_hash":"$load_network.network_hash","service_type":"WK","from":"2026-10-23","to":"2026-11-03"}' \
+      | grep -q '"dates":\["2026-10-23","2026-10-26","2026-10-27","2026-10-28","2026-10-30","2026-11-02","2026-11-03"\]'
+    # The stop's day as gaps (QAF-25): stop A's three fixture
+    # departures (08:00, 08:20, 08:40) fold into two 1200 s gaps —
+    # the answer a jq fold over the board used to approximate.
+    node tools/caps-run.mjs analysis \
+      --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"stop_gaps","network_hash":"$load_network.network_hash","date":"2026-10-23","stop_id":"A"}' \
+      | grep -q '"departures":3,"first_departure_secs":28800'
+    # The day's hourly profile (QAF-4): all five fixture trips start
+    # in hour 8 under WK — one hour row answers what the jq fold
+    # used to approximate.
+    node tools/caps-run.mjs analysis \
+      --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"hourly_trips","network_hash":"$load_network.network_hash","date":"2026-10-23"}' \
+      | grep -q '"hour":8,"service_types":\[{"service_type":"WK","trips":5}\],"trips":5'
+    # The schedule texture (QAF-16): WK's five fixture schedules —
+    # each a single trip (no gaps to read), two starts on the
+    # quarter-hour grid (28800, 29700), three off it.
+    node tools/caps-run.mjs analysis \
+      --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"schedule_texture","network_hash":"$load_network.network_hash","service_type":"WK"}' \
+      | grep -q '"on_clockface":2,"pattern_trips":\['
+    # The corridor read (QAF-22): routes 10 and 20 share the A→B
+    # segment and stack three departures at A — the pair answered,
+    # not inferred from stop data.
+    node tools/caps-run.mjs analysis \
+      --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"route_overlap","network_hash":"$load_network.network_hash","date":"2026-10-23"}' \
+      | grep -q '"a":"10","b":"20","shared_segments":1,"shared_stops":2,"stack_departures":3,"stack_stop":"A"'
+    # The timed-transfer view (QAF-27): route 10's 08:00 arrival at
+    # A meets route 20's 08:20 departure under a caller-brought
+    # 25-minute window (the default convention caps at 15) — the
+    # hub's pairs, not just pooled departures.
+    node tools/caps-run.mjs analysis \
+      --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"timed_transfers","network_hash":"$load_network.network_hash","date":"2026-10-23","stop_id":"A","window":{"min_secs":60,"max_secs":1500}}' \
+      | grep -q '"from_route":"10","to_route":"20","wait_secs":1200'
     # The cross-capability session: one session imports the fixture
     # feed, hands the DOCUMENT to the board by reference (no file in
     # between), addresses results by --as name, and feeds the numeric

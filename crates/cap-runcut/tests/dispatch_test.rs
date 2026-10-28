@@ -133,6 +133,54 @@ fn the_days_blocks_are_the_index_facet_of_the_chain() {
     assert!(parked.is_empty(), "no service, no blocks out");
 }
 
+/// QAF-3's fold, pinned at the seam: the day's fleet in one answer
+/// — running blocks, the peak and when, and the hour bases. The
+/// deep oracle law lives in transit-dispatch's prop suite; this
+/// pins the numbers the fixture pins: B1 is one vehicle out
+/// 08:00–08:30 (t10 + t20), platform = revenue + layover.
+#[test]
+fn the_fleet_summary_folds_the_day_into_one_answer() {
+    let network_hash = load_network();
+
+    let summary = match dispatch(Request::FleetSummary {
+        network_hash: network_hash.clone(),
+        edits_hash: None,
+        date: DATE.into(),
+    })
+    .unwrap()
+    {
+        Response::FleetSummary { summary } => summary,
+        _ => panic!("fleet_summary"),
+    };
+    assert_eq!(summary.blocks, 1, "only B1 runs");
+    assert_eq!(summary.peak_vehicles, 1, "one vehicle is out at a time");
+    assert_eq!(summary.peak_at_secs, Some(28800), "out from t10's 08:00");
+    // Platform 08:00–08:30 = 1800 s; the trips run 600 s each
+    // (revenue 1200 s); the rest is the layover (600 s).
+    assert!((summary.platform_hours - 1800.0 / 3600.0).abs() < 1e-9, "platform hours");
+    assert!((summary.revenue_hours - 1200.0 / 3600.0).abs() < 1e-9, "revenue hours");
+    assert!((summary.layover_hours - 600.0 / 3600.0).abs() < 1e-9, "layover hours");
+    assert!(
+        (summary.platform_hours - summary.revenue_hours - summary.layover_hours).abs() < 1e-9,
+        "platform = revenue + layover"
+    );
+
+    // A no-service day answers a zero fleet, never an error.
+    let parked = match dispatch(Request::FleetSummary {
+        network_hash,
+        edits_hash: None,
+        date: "2026-10-24".into(),
+    })
+    .unwrap()
+    {
+        Response::FleetSummary { summary } => summary,
+        _ => panic!("fleet_summary"),
+    };
+    assert_eq!((parked.blocks, parked.peak_vehicles), (0, 0));
+    assert_eq!(parked.peak_at_secs, None);
+    assert_eq!(parked.platform_hours, 0.0);
+}
+
 #[test]
 fn the_block_chain_ripples_under_the_edit() {
     let net = derived_network();

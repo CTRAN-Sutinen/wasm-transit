@@ -86,6 +86,65 @@ pub enum Request {
         #[ts(optional)]
         window: Option<CoverageWindow>,
     },
+    /// One stop's day folded into headway gaps: departures, the max
+    /// gap and the departure it follows, and the per-hour profile
+    /// (departures, max and median gap starting in the hour) — the
+    /// service-quality read of "how long until the next bus?". An
+    /// unknown stop answers zero/None/empty, never an error.
+    StopGaps {
+        network_hash: String,
+        date: String,
+        stop_id: String,
+    },
+    /// The day's service profile: trips per hour bucketed by trip
+    /// start, each hour row carrying every running service type's
+    /// count. Only hours with trips are rows — the planner's
+    /// texture question (where service is thick, where it tapers).
+    HourlyTrips {
+        network_hash: String,
+        date: String,
+    },
+    /// One service type's schedule texture on its representative
+    /// day: every pattern trips entry that runs under the type, with
+    /// headway uniformity (min/median/max gap between starts) and
+    /// clockface alignment (starts on the quarter-hour grid). Null
+    /// for an unknown type — lookups answer empty, never error.
+    ScheduleTexture {
+        network_hash: String,
+        service_type: String,
+    },
+    /// The corridor read: every pair of routes that shares at least
+    /// one stop on the date — shared stops, shared segments (same-
+    /// order consecutive pairs), and the shared stop where the
+    /// pair's departures stack highest.
+    RouteOverlap {
+        network_hash: String,
+        date: String,
+    },
+    /// The hub's timed-transfer view: arrival→departure pairs
+    /// across routes within the connection window — the caller's
+    /// (`window`, for a hub with widely separated bays), else the
+    /// 60–900 s transfer-point convention — pooled over the stop's
+    /// walking group: who can make what here. An unknown stop
+    /// answers empty, never an error.
+    TimedTransfers {
+        network_hash: String,
+        date: String,
+        stop_id: String,
+        #[serde(default)]
+        #[ts(optional)]
+        window: Option<transit_analysis::TransferWindow>,
+    },
+    /// The unserved WHERE of coverage: every layer point beyond the
+    /// radius of every stop with service on the date, with the
+    /// nearest served stop and its distance — "which part, and
+    /// where", not just the share. Sorted by population descending.
+    UnservedPoints {
+        network_hash: String,
+        layer_hash: String,
+        radius_m: f64,
+        date: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -104,6 +163,12 @@ pub enum Response {
     ServiceTypeDetail { detail: Option<ServiceTypeDetail> },
     ServiceTypeCompare { comparison: Option<ServiceTypeComparison> },
     TypeCoverage { coverage: Vec<TypeCoverage> },
+    StopGaps { gaps: transit_analysis::StopGaps },
+    HourlyTrips { hours: Vec<transit_analysis::HourlyTrips> },
+    ScheduleTexture { texture: Option<transit_analysis::ScheduleTexture> },
+    RouteOverlap { overlaps: Vec<transit_analysis::RouteOverlap> },
+    TimedTransfers { transfers: Vec<transit_analysis::TimedTransfer> },
+    UnservedPoints { points: Vec<transit_analysis::UnservedPoint> },
 }
 
 /// Networks by content hash — canonical serialization, so byte
@@ -245,6 +310,54 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                     min_departures,
                     window,
                 ),
+            })
+        }
+        Request::StopGaps { network_hash, date, stop_id } => {
+            let parsed = parse_date(&date)?;
+            let network_arc = network_arc(&network_hash)?;
+            Ok(Response::StopGaps {
+                gaps: transit_analysis::stop_gaps(&network_arc, parsed, &stop_id),
+            })
+        }
+        Request::HourlyTrips { network_hash, date } => {
+            let parsed = parse_date(&date)?;
+            let network_arc = network_arc(&network_hash)?;
+            Ok(Response::HourlyTrips {
+                hours: transit_analysis::hourly_trips(&network_arc, parsed),
+            })
+        }
+        Request::ScheduleTexture { network_hash, service_type } => {
+            let network_arc = network_arc(&network_hash)?;
+            Ok(Response::ScheduleTexture {
+                texture: transit_analysis::schedule_texture(&network_arc, &service_type),
+            })
+        }
+        Request::RouteOverlap { network_hash, date } => {
+            let parsed = parse_date(&date)?;
+            let network_arc = network_arc(&network_hash)?;
+            Ok(Response::RouteOverlap {
+                overlaps: transit_analysis::route_overlap(&network_arc, parsed),
+            })
+        }
+        Request::TimedTransfers { network_hash, date, stop_id, window } => {
+            let parsed = parse_date(&date)?;
+            let network_arc = network_arc(&network_hash)?;
+            Ok(Response::TimedTransfers {
+                transfers: transit_analysis::timed_transfers(&network_arc, parsed, &stop_id, window),
+            })
+        }
+        Request::UnservedPoints { network_hash, layer_hash, radius_m, date } => {
+            let parsed = parse_date(&date)?;
+            let network_arc = network_arc(&network_hash)?;
+            let layer_arc = {
+                let guard = layers().lock().expect("layer lock");
+                guard
+                    .get(&layer_hash)
+                    .cloned()
+                    .ok_or_else(|| format!("unknown layer {layer_hash}: load_population_layer first"))?
+            };
+            Ok(Response::UnservedPoints {
+                points: transit_analysis::unserved_points(&network_arc, parsed, &layer_arc, radius_m),
             })
         }
     }

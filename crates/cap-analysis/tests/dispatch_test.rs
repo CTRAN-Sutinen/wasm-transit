@@ -313,6 +313,267 @@ fn json_seam_round_trips_the_tagged_form() {
     assert!(bad["error"].as_str().unwrap().contains("invalid request"));
 }
 
+/// The stop's day as gaps (QAF-25): one op answers what used to be a
+/// jq fold over the board — departures, the max gap and the
+/// departure it follows, and the per-hour profile. The deep oracle
+/// law lives in the library's prop suite; this pins the SEAM: the
+/// tagged round-trip, the two-trip fixture's one gap, and the
+/// id-lookup honesty (an unknown stop answers empty, never an
+/// error).
+#[test]
+fn stop_gaps_answer_through_the_seam() {
+    let net = network(&[
+        GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
+        GenTrip { route: 0, service: 0, block: None, start_slot: 13, stops: vec![0, 1], leg_min: 5 },
+    ]);
+    let loaded = cap_analysis::dispatch(cap_analysis::Request::LoadNetwork { network: net })
+        .expect("load");
+    let cap_analysis::Response::LoadNetwork { network_hash } = loaded else { panic!("load") };
+
+    let gaps = cap_analysis::dispatch(cap_analysis::Request::StopGaps {
+        network_hash: network_hash.clone(),
+        date: "2026-01-05".into(),
+        stop_id: "s0".into(),
+    })
+    .expect("stop_gaps");
+    let cap_analysis::Response::StopGaps { gaps } = gaps else { panic!("stop_gaps") };
+    assert_eq!(gaps.departures, 2);
+    // start_slot 10 and 13 → 6000 s and 7800 s: one 1800 s gap.
+    assert_eq!(gaps.max_gap_secs, Some(1800));
+    assert_eq!(gaps.max_gap_after_secs, Some(6000));
+    assert_eq!(gaps.hourly.len(), 2, "6000 s is hour 1, 7800 s is hour 2");
+    assert_eq!(gaps.hourly[0].hour, 1);
+    assert_eq!(gaps.hourly[0].departures, 1);
+    assert_eq!(gaps.hourly[0].max_gap_secs, Some(1800), "the gap starts in hour 1");
+    assert_eq!(gaps.hourly[1].hour, 2);
+    assert_eq!(gaps.hourly[1].departures, 1);
+    assert_eq!(gaps.hourly[1].max_gap_secs, None, "no gap starts in hour 2");
+    assert_eq!(gaps.hourly[0].median_gap_secs, None, "one gap is no median");
+
+    // The last stop is an arrival, not a departure — no gap row.
+    let terminal = cap_analysis::dispatch(cap_analysis::Request::StopGaps {
+        network_hash: network_hash.clone(),
+        date: "2026-01-05".into(),
+        stop_id: "s1".into(),
+    })
+    .expect("stop_gaps");
+    let cap_analysis::Response::StopGaps { gaps: terminal } = terminal else { panic!("stop_gaps") };
+    assert_eq!(terminal.departures, 0, "final-stop visits never count");
+    assert!(terminal.hourly.is_empty());
+
+    // An unknown stop answers empty, never an error.
+    let unknown = cap_analysis::dispatch(cap_analysis::Request::StopGaps {
+        network_hash,
+        date: "2026-01-05".into(),
+        stop_id: "nope".into(),
+    })
+    .expect("stop_gaps");
+    let cap_analysis::Response::StopGaps { gaps: unknown } = unknown else { panic!("stop_gaps") };
+    assert_eq!(unknown.departures, 0);
+    assert!(unknown.hourly.is_empty());
+
+    // The JSON seam answers the same tagged form.
+    let net = network(&[GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);    let loaded: serde_json::Value = serde_json::from_str(&cap_analysis::dispatch_json(
+        &serde_json::json!({ "op": "load_network", "network": serde_json::to_value(net).unwrap() }).to_string(),
+    ))
+    .unwrap();
+    let hash = loaded["ok"]["network_hash"].as_str().unwrap();
+    let via_json: serde_json::Value = serde_json::from_str(&cap_analysis::dispatch_json(
+        &serde_json::json!({ "op": "stop_gaps", "network_hash": hash, "date": "2026-01-05", "stop_id": "s0" }).to_string(),
+    ))
+    .unwrap();
+    assert!(via_json["ok"]["gaps"]["departures"].as_u64().unwrap() >= 1);
+    let bad: serde_json::Value = serde_json::from_str(&cap_analysis::dispatch_json(
+        &serde_json::json!({ "op": "stop_gaps", "network_hash": hash, "date": "garbage", "stop_id": "s0" }).to_string(),
+    ))
+    .unwrap();
+    assert!(bad["error"].as_str().unwrap().contains("invalid date"));
+}
+
+/// The day's hourly profile (QAF-4): trips per hour by service type,
+/// bucketed by trip start — only hours with trips are rows, and the
+/// day's trip count is conserved across them. The deep oracle law
+/// lives in the library's prop suite; this pins the SEAM.
+#[test]
+fn hourly_trips_answer_through_the_seam() {
+    let net = network(&[
+        GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
+        GenTrip { route: 0, service: 0, block: None, start_slot: 13, stops: vec![0, 1], leg_min: 5 },
+        GenTrip { route: 0, service: 1, block: None, start_slot: 13, stops: vec![0, 1], leg_min: 5 },
+    ]);
+    let loaded = cap_analysis::dispatch(cap_analysis::Request::LoadNetwork { network: net })
+        .expect("load");
+    let cap_analysis::Response::LoadNetwork { network_hash } = loaded else { panic!("load") };
+
+    let hours = cap_analysis::dispatch(cap_analysis::Request::HourlyTrips {
+        network_hash: network_hash.clone(),
+        date: "2026-01-05".into(), // a Monday: service 0 runs, service 1 does not
+    })
+    .expect("hourly_trips");
+    let cap_analysis::Response::HourlyTrips { hours } = hours else { panic!("hourly_trips") };
+    // start slots 10 and 13 → hours 1 and 2, one type, one trip each.
+    assert_eq!(hours.len(), 2);
+    assert_eq!(hours[0].hour, 1);
+    assert_eq!(hours[0].trips, 1);
+    assert_eq!(hours[0].service_types[0].service_type, "0");
+    assert_eq!(hours[1].hour, 2);
+    assert_eq!(hours[1].trips, 1);
+
+    // A day nothing runs answers empty, never an error: a weekend-only
+    // document asked on a Monday.
+    let weekend_only = network(&[GenTrip { route: 0, service: 1, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
+    let loaded = cap_analysis::dispatch(cap_analysis::Request::LoadNetwork { network: weekend_only })
+        .expect("load");
+    let cap_analysis::Response::LoadNetwork { network_hash } = loaded else { panic!("load") };
+    let quiet = cap_analysis::dispatch(cap_analysis::Request::HourlyTrips {
+        network_hash,
+        date: "2026-01-05".into(),
+    })
+    .expect("hourly_trips");
+    let cap_analysis::Response::HourlyTrips { hours: quiet } = quiet else { panic!("hourly_trips") };
+    assert!(quiet.is_empty(), "a day nothing runs answers empty");
+}
+
+/// The schedule texture (QAF-16): headway uniformity and clockface
+/// alignment per pattern trips on the type's representative day.
+/// The deep oracle law lives in the library's prop suite; this pins
+/// the SEAM: the two-trip fixture's one 1800 s gap, the quarter-hour
+/// grid count, and the unknown-type honesty.
+#[test]
+fn schedule_texture_answers_through_the_seam() {
+    // Two trips 30 minutes apart, both on the quarter-hour grid.
+    let net = network(&[
+        GenTrip { route: 0, service: 0, block: None, start_slot: 15, stops: vec![0, 1], leg_min: 5 }, // 9000 s
+        GenTrip { route: 0, service: 0, block: None, start_slot: 18, stops: vec![0, 1], leg_min: 5 }, // 10800 s
+    ]);
+    let loaded = cap_analysis::dispatch(cap_analysis::Request::LoadNetwork { network: net })
+        .expect("load");
+    let cap_analysis::Response::LoadNetwork { network_hash } = loaded else { panic!("load") };
+
+    let texture = cap_analysis::dispatch(cap_analysis::Request::ScheduleTexture {
+        network_hash: network_hash.clone(),
+        service_type: "0".into(),
+    })
+    .expect("schedule_texture");
+    let cap_analysis::Response::ScheduleTexture { texture } = texture else { panic!("schedule_texture") };
+    let texture = texture.expect("the weekday type has a representative day");
+    assert_eq!(texture.trips, 2);
+    assert_eq!(texture.on_clockface, 2, "4800 and 6600 are both on the grid");
+    assert_eq!(texture.pattern_trips.len(), 1, "one schedule");
+    let row = &texture.pattern_trips[0];
+    assert_eq!(row.trips, 2);
+    assert_eq!(row.min_gap_secs, Some(1800));
+    assert_eq!(row.max_gap_secs, Some(1800));
+    assert_eq!(row.median_gap_secs, None, "one gap is no median (the QAF-55 floor)");
+    assert_eq!(row.on_clockface, 2);
+
+    // An unknown type answers null, never an error (QAF-19).
+    let unknown = cap_analysis::dispatch(cap_analysis::Request::ScheduleTexture {
+        network_hash,
+        service_type: "nope".into(),
+    })
+    .expect("schedule_texture");
+    let cap_analysis::Response::ScheduleTexture { texture: unknown } = unknown else { panic!("schedule_texture") };
+    assert!(unknown.is_none());
+}
+
+/// The corridor read (QAF-22): which routes share stops, and where
+/// their service stacks. The deep oracle law lives in the library's
+/// prop suite; this pins the SEAM: the two-route fixture answers one
+/// pair with its shared stop, and a day nothing runs answers empty.
+#[test]
+fn route_overlap_answers_through_the_seam() {
+    // Routes 0 and 1 (both on weekday service 0), both calling at
+    // stop 0 — one shared stop, no shared segments.
+    let net = network(&[
+        GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
+        GenTrip { route: 1, service: 0, block: None, start_slot: 12, stops: vec![0, 2], leg_min: 5 },
+    ]);
+    let loaded = cap_analysis::dispatch(cap_analysis::Request::LoadNetwork { network: net })
+        .expect("load");
+    let cap_analysis::Response::LoadNetwork { network_hash } = loaded else { panic!("load") };
+
+    let overlaps = cap_analysis::dispatch(cap_analysis::Request::RouteOverlap {
+        network_hash: network_hash.clone(),
+        date: "2026-01-05".into(),
+    })
+    .expect("route_overlap");
+    let cap_analysis::Response::RouteOverlap { overlaps } = overlaps else { panic!("route_overlap") };
+    assert_eq!(overlaps.len(), 1, "routes 0 and 1 share stop 0");
+    let pair = &overlaps[0];
+    assert_eq!(pair.a, "0");
+    assert_eq!(pair.b, "1");
+    assert_eq!(pair.shared_stops, 1);
+    assert_eq!(pair.shared_segments, 0, "no consecutive pair runs in both");
+    assert_eq!(pair.stack_stop.as_deref(), Some("s0"));
+    assert_eq!(pair.stack_departures, 2, "one departure each at the shared stop");
+
+    // A day nothing runs answers empty, never an error.
+    let quiet = cap_analysis::dispatch(cap_analysis::Request::RouteOverlap {
+        network_hash,
+        date: "2026-01-10".into(), // a Saturday: service 0 does not run
+    })
+    .expect("route_overlap");
+    let cap_analysis::Response::RouteOverlap { overlaps: quiet } = quiet else { panic!("route_overlap") };
+    assert!(quiet.is_empty());
+}
+
+/// The hub's timed-transfer view (QAF-27): arrivals paired with the
+/// next routes' departures inside the 60–900 s window — the station
+/// board's next question. The deep oracle law lives in the library's
+/// prop suite; this pins the SEAM: the fixture's one connection, its
+/// window, and the id-lookup honesty.
+#[test]
+fn timed_transfers_answer_through_the_seam() {
+    // Route 0 arrives at s0 (06:00); route 1 departs s0 ten minutes
+    // later (06:10) — one usable connection, wait 600 s.
+    let net = network(&[
+        GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
+        GenTrip { route: 1, service: 0, block: None, start_slot: 11, stops: vec![0, 2], leg_min: 5 },
+    ]);
+    let loaded = cap_analysis::dispatch(cap_analysis::Request::LoadNetwork { network: net })
+        .expect("load");
+    let cap_analysis::Response::LoadNetwork { network_hash } = loaded else { panic!("load") };
+
+    let transfers = cap_analysis::dispatch(cap_analysis::Request::TimedTransfers {
+        network_hash: network_hash.clone(),
+        date: "2026-01-05".into(),
+        stop_id: "s0".into(),
+        window: None,
+    })
+    .expect("timed_transfers");
+    let cap_analysis::Response::TimedTransfers { transfers } = transfers else { panic!("timed_transfers") };
+    assert_eq!(transfers.len(), 1, "route 0's arrival meets route 1's departure");
+    let t = &transfers[0];
+    assert_eq!((t.from_route.as_str(), t.to_route.as_str()), ("0", "1"));
+    assert_eq!(t.arrival_secs, 6000);
+    assert_eq!(t.departure_secs, 6600);
+    assert_eq!(t.wait_secs, 600);
+
+    // The caller's window decides: narrowed below the 600 s wait,
+    // the connection is gone.
+    let narrow = cap_analysis::dispatch(cap_analysis::Request::TimedTransfers {
+        network_hash: network_hash.clone(),
+        date: "2026-01-05".into(),
+        stop_id: "s0".into(),
+        window: Some(transit_analysis::TransferWindow { min_secs: 60, max_secs: 300 }),
+    })
+    .expect("timed_transfers");
+    let cap_analysis::Response::TimedTransfers { transfers: narrow } = narrow else { panic!("timed_transfers") };
+    assert!(narrow.is_empty(), "a 600 s wait does not fit a 300 s window");
+
+    // An unknown stop answers empty, never an error.
+    let unknown = cap_analysis::dispatch(cap_analysis::Request::TimedTransfers {
+        network_hash,
+        date: "2026-01-05".into(),
+        stop_id: "nope".into(),
+        window: None,
+    })
+    .expect("timed_transfers");
+    let cap_analysis::Response::TimedTransfers { transfers: unknown } = unknown else { panic!("timed_transfers") };
+    assert!(unknown.is_empty());
+}
+
 /// The query-shaping law (the founding dogfood session's 199 KiB
 /// answer to a five-number question): `include_routes` /
 /// `include_stops` false empty the corresponding lists while every
@@ -377,4 +638,57 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     assert_eq!(via_bytes, via_json);
     let bad = cap_analysis::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
+}
+
+/// The unserved WHERE of coverage (QAF-23): the share's complement,
+/// named — every point beyond the radius, with the nearest served
+/// stop and how far out it sits. The deep oracle law (and the
+/// conservation cross-check with `coverage`) lives in the
+/// library's prop suite; this pins the SEAM.
+#[test]
+fn unserved_points_answer_the_where() {
+    // One weekday trip s0→s1; a layer with one point AT s0 and one
+    // far away — only the far point is unserved, and the answer
+    // names its nearest served stop.
+    let net = network(&[GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
+    let loaded = cap_analysis::dispatch(cap_analysis::Request::LoadNetwork { network: net })
+        .expect("load");
+    let cap_analysis::Response::LoadNetwork { network_hash } = loaded else { panic!("load") };
+
+    let layer = cap_analysis::dispatch(cap_analysis::Request::LoadPopulationLayer {
+        bytes: br#"{"type":"FeatureCollection","features":[
+            {"type":"Feature","properties":{"pop":100},"geometry":{"type":"Point","coordinates":[-73.5,45.5]}},
+            {"type":"Feature","properties":{"pop":50},"geometry":{"type":"Point","coordinates":[-74.0,46.0]}}
+        ]}"#
+            .to_vec(),
+        pop_field: Some("pop".into()),
+    })
+    .expect("layer");
+    let cap_analysis::Response::LoadPopulationLayer { layer_hash, .. } = layer else { panic!("layer") };
+
+    let points = cap_analysis::dispatch(cap_analysis::Request::UnservedPoints {
+        network_hash: network_hash.clone(),
+        layer_hash: layer_hash.clone(),
+        radius_m: 500.0,
+        date: "2026-01-05".into(),
+    })
+    .expect("unserved_points");
+    let cap_analysis::Response::UnservedPoints { points } = points else { panic!("unserved_points") };
+    assert_eq!(points.len(), 1, "the point at s0 is served; the far one is not");
+    assert_eq!(points[0].nearest_stop.as_deref(), Some("s1"), "s1 is marginally nearer than s0");
+    assert!((points[0].lat - 46.0).abs() < 1e-9 && (points[0].lon - -74.0).abs() < 1e-9);
+    assert!(points[0].nearest_m > 60_000.0, "the far point is ~70 km out: {}", points[0].nearest_m);
+
+    // A day nothing runs: every point is unserved, and no stop is
+    // nearest (there is no service to be near).
+    let saturday = cap_analysis::dispatch(cap_analysis::Request::UnservedPoints {
+        network_hash,
+        layer_hash,
+        radius_m: 500.0,
+        date: "2026-01-10".into(),
+    })
+    .expect("unserved_points");
+    let cap_analysis::Response::UnservedPoints { points: saturday } = saturday else { panic!("unserved_points") };
+    assert_eq!(saturday.len(), 2, "nothing runs: every point is unserved");
+    assert!(saturday.iter().all(|p| p.nearest_stop.is_none()));
 }

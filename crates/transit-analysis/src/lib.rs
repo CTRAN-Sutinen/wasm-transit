@@ -77,6 +77,12 @@ pub struct RouteStats {
     /// The route's revenue hours today: the sum of its trips'
     /// runtimes (arrival − start), the cost basis per route.
     pub revenue_hours: f64,
+    /// The route's revenue miles today: the sum of its trips'
+    /// pattern distances (last stop's distance − first's, the
+    /// authored alignment length kept from the feed's
+    /// shape_dist_traveled), the OTHER cost basis — every cost
+    /// model is per hour AND per mile.
+    pub revenue_miles: f64,
 }
 
 /// A service type's numbers on its representative day — the first
@@ -95,6 +101,7 @@ pub struct ServiceTypeSummary {
     pub active_routes: u32,
     pub active_stops: u32,
     pub revenue_hours: f64,
+    pub revenue_miles: f64,
 }
 
 /// The first date a rule runs on (deterministic), or None when the
@@ -137,6 +144,7 @@ pub struct ServiceTypeDetail {
     pub date: String,
     pub trips: u32,
     pub revenue_hours: f64,
+    pub revenue_miles: f64,
     pub transfer_stops: u32,
     /// Routes running under this type (active rows only).
     pub routes: Vec<RouteStats>,
@@ -177,10 +185,89 @@ pub fn service_type_detail(net: &Network, type_id: &str) -> Option<ServiceTypeDe
         date: date.format("%Y-%m-%d").to_string(),
         trips: stats.trips,
         revenue_hours: stats.revenue_hours,
+        revenue_miles: stats.revenue_miles,
         transfer_stops: stats.transfer_stops,
         routes: stats.routes.into_iter().filter(|r| r.trips > 0).collect(),
         stops: stats.stops.into_iter().filter(|s| s.departures > 0).collect(),
         pattern_trips,
+    })
+}
+
+/// One pattern trips' schedule texture: the headway uniformity and
+/// clockface alignment of its starts — "is this even, and is it on
+/// a grid?" Gaps run between consecutive starts (sorted); the
+/// median carries the same four-start floor as every median here
+/// (a median over fewer is a headway nobody runs, QAF-55).
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct PatternTexture {
+    pub pattern_trips: String,
+    pub route: String,
+    pub pattern: String,
+    pub trips: u32,
+    pub min_gap_secs: Option<u32>,
+    pub median_gap_secs: Option<u32>,
+    pub max_gap_secs: Option<u32>,
+    /// Starts on the quarter-hour grid (start % 900 == 0, the
+    /// clockface convention) — a 15-minute headway run off-grid
+    /// reads "every 15 minutes" but never on the quarter-hour.
+    pub on_clockface: u32,
+}
+
+/// The type's schedule texture on its representative day: every
+/// pattern trips entry that runs under the type, one row per
+/// schedule (sorted by id), plus the totals. `None` for an unknown
+/// type or one with no representative day — the same convention as
+/// service_type_detail (QAF-19).
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct ScheduleTexture {
+    pub service_type: String,
+    pub name: String,
+    pub date: String,
+    pub trips: u32,
+    pub on_clockface: u32,
+    pub pattern_trips: Vec<PatternTexture>,
+}
+
+pub fn schedule_texture(net: &Network, type_id: &str) -> Option<ScheduleTexture> {
+    let service_type = net.service_types.get(type_id)?;
+    let date = representative_date(&service_type.rule)?;
+    let mut rows = Vec::new();
+    let mut trips = 0u32;
+    let mut on_clockface = 0u32;
+    for (id, entry) in &net.pattern_trips {
+        if &entry.service_type != type_id {
+            continue;
+        }
+        let mut starts = transit_network::trip_starts(&entry.departures);
+        starts.sort_unstable();
+        let gaps: Vec<u32> = starts.windows(2).map(|w| w[1] - w[0]).collect();
+        let row_on = starts.iter().filter(|&&s| s % 900 == 0).count() as u32;
+        trips += starts.len() as u32;
+        on_clockface += row_on;
+        rows.push(PatternTexture {
+            pattern_trips: id.clone(),
+            route: net
+                .patterns
+                .get(&entry.pattern)
+                .map(|p| p.route.clone())
+                .unwrap_or_default(),
+            pattern: entry.pattern.clone(),
+            trips: starts.len() as u32,
+            min_gap_secs: gaps.iter().copied().min(),
+            median_gap_secs: median_gap_secs(&starts),
+            max_gap_secs: gaps.iter().copied().max(),
+            on_clockface: row_on,
+        });
+    }
+    Some(ScheduleTexture {
+        service_type: type_id.to_string(),
+        name: service_type.name.clone(),
+        date: date.format("%Y-%m-%d").to_string(),
+        trips,
+        on_clockface,
+        pattern_trips: rows,
     })
 }
 
@@ -208,6 +295,7 @@ pub struct ComparedTotals {
     pub date: String,
     pub trips: u32,
     pub revenue_hours: f64,
+    pub revenue_miles: f64,
     pub routes: u32,
 }
 
@@ -256,6 +344,7 @@ pub fn service_type_compare(base: &Network, proposal: &Network, type_id: &str) -
         date: d.date.clone(),
         trips: d.trips,
         revenue_hours: d.revenue_hours,
+        revenue_miles: d.revenue_miles,
         routes: d.routes.len() as u32,
     };
     Some(ServiceTypeComparison {
@@ -341,6 +430,7 @@ fn service_type_summaries(net: &Network, running_on: Option<NaiveDate>) -> Vec<S
                 active_routes: 0,
                 active_stops: 0,
                 revenue_hours: 0.0,
+                revenue_miles: 0.0,
             });
             continue;
         };
@@ -348,6 +438,7 @@ fn service_type_summaries(net: &Network, running_on: Option<NaiveDate>) -> Vec<S
         let mut routes: BTreeSet<String> = BTreeSet::new();
         let mut stops: BTreeSet<String> = BTreeSet::new();
         let mut runtime_secs = 0u64;
+        let mut meters = 0f64;
         for (pattern_trips_id, pattern_trips) in &net.pattern_trips {
             if &pattern_trips.service_type != type_id {
                 continue;
@@ -363,6 +454,7 @@ fn service_type_summaries(net: &Network, running_on: Option<NaiveDate>) -> Vec<S
                     trips += 1;
                     stops.extend(trip.stop_times.iter().map(|st| st.stop.clone()));
                     runtime_secs += end.arrival_secs.saturating_sub(trip.start_secs) as u64;
+                    meters += trip_distance_m(net, &trip);
                 }
             }
         }
@@ -374,6 +466,7 @@ fn service_type_summaries(net: &Network, running_on: Option<NaiveDate>) -> Vec<S
             active_routes: routes.len() as u32,
             active_stops: stops.len() as u32,
             revenue_hours: runtime_secs as f64 / 3600.0,
+            revenue_miles: meters / METERS_PER_MILE,
         });
     }
     out
@@ -392,6 +485,10 @@ pub struct NetworkStats {
     /// Sum of trip runtimes (arrival − start), hours. Revenue hours;
     /// layovers are the runcut's business, not the schedule's.
     pub revenue_hours: f64,
+    /// Sum of trip pattern distances, miles (last stop's distance −
+    /// first's per trip) — the per-mile cost basis that pairs with
+    /// revenue_hours; average operating speed follows from the two.
+    pub revenue_miles: f64,
     /// Transfer points active on the date (flagged stops whose
     /// walking group is served by at least two routes today).
     pub transfer_stops: u32,
@@ -486,6 +583,23 @@ pub fn network_stats(net: &Network, date: NaiveDate) -> NetworkStats {
     day_stats(net, date, None)
 }
 
+/// Meters per mile — the per-mile cost basis is reported in miles.
+const METERS_PER_MILE: f64 = 1609.344;
+
+/// One trip's pattern distance in meters: the last stop's distance
+/// minus the first's — the authored alignment length the import
+/// keeps from the feed's shape_dist_traveled (QAF-56). Zero for a
+/// pattern with no distances: an authored document's honest zero.
+fn trip_distance_m(net: &Network, trip: &transit_network::MaterializedTrip) -> f64 {
+    let Some(pattern) = net.patterns.get(&trip.pattern) else {
+        return 0.0;
+    };
+    match (pattern.stops.first(), pattern.stops.last()) {
+        (Some(first), Some(last)) => (last.distance_m - first.distance_m).max(0.0),
+        _ => 0.0,
+    }
+}
+
 /// The stats engine: one service day, optionally scoped to a single
 /// service type (the drill-down view — the type's own representative
 /// day), in which case only that type's schedules count.
@@ -498,6 +612,8 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
     let mut route_last: BTreeMap<String, u32> = BTreeMap::new();
     let mut route_stop_sets: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut route_runtime: BTreeMap<String, u64> = BTreeMap::new();
+    // Per-route pattern distance, meters (revenue miles' numerator).
+    let mut route_meters: BTreeMap<String, f64> = BTreeMap::new();
     // (route, stop) → departure times on the date (final visits are
     // arrivals and never count): where the route's headway is read.
     let mut route_departures: BTreeMap<(String, String), Vec<u32>> = BTreeMap::new();
@@ -511,6 +627,7 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
     let mut first_start: Option<u32> = None;
     let mut last_arrival: Option<u32> = None;
     let mut runtime_secs = 0u64;
+    let mut meters = 0f64;
 
     for (service_id, service) in &net.pattern_trips {
         let runs = net
@@ -546,6 +663,9 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
             let runtime = (end.arrival_secs.saturating_sub(trip.start_secs)) as u64;
             runtime_secs += runtime;
             *route_runtime.entry(route.clone()).or_default() += runtime;
+            let distance = trip_distance_m(net, &trip);
+            meters += distance;
+            *route_meters.entry(route.clone()).or_default() += distance;
             for st in &trip.stop_times[..trip.stop_times.len() - 1] {
                 route_departures
                     .entry((route.clone(), st.stop.clone()))
@@ -607,6 +727,7 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
             typical_headway_secs: typical,
             headway_stop: busiest.map(|(stop, _)| stop.clone()),
             revenue_hours: *route_runtime.get(route_id).unwrap_or(&0) as f64 / 3600.0,
+            revenue_miles: *route_meters.get(route_id).unwrap_or(&0.0) / METERS_PER_MILE,
         });
     }
 
@@ -662,11 +783,404 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
         first_start_secs: first_start,
         last_arrival_secs: last_arrival,
         revenue_hours: runtime_secs as f64 / 3600.0,
+        revenue_miles: meters / METERS_PER_MILE,
         transfer_stops,
         service_types: service_type_summaries(net, Some(date)),
         routes,
         stops,
     }
+}
+
+// ---------------------------------------------------------------------
+// One stop's day: the gap view
+// ---------------------------------------------------------------------
+
+/// One hour of a stop's service day. The hour is the service-day
+/// hour (0..47 — after-midnight departures are legitimate, never
+/// errors); a gap belongs to the hour it STARTS in, so a 23:50
+/// departure followed by a 00:30 one is hour 23's gap.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct StopHourGaps {
+    pub hour: u32,
+    /// Every trip departing in the hour — two routes leaving
+    /// together is real service and counts twice.
+    pub departures: u32,
+    /// The largest gap starting in the hour (between consecutive
+    /// distinct departure times).
+    pub max_gap_secs: Option<u32>,
+    /// The hour's median gap, with the same floor as every median
+    /// here: None below four gaps (QAF-55 — a median over fewer is
+    /// not a "typical" anything).
+    pub median_gap_secs: Option<u32>,
+}
+
+/// One stop's day folded into gaps — the service-quality read of
+/// "how long until the next bus?". Gaps run between consecutive
+/// DISTINCT departure times (two routes leaving together is no gap
+/// at all); `departures` still counts every trip. An unknown stop,
+/// or one nothing serves on the date, answers zero / None / empty —
+/// never an error (an id lookup).
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct StopGaps {
+    pub stop_id: String,
+    pub name: String,
+    pub departures: u32,
+    /// The day's first and last departure at the stop.
+    pub first_departure_secs: Option<u32>,
+    pub last_departure_secs: Option<u32>,
+    /// The day's largest gap and the departure it follows. None
+    /// below two distinct departures — a one-departure day has no
+    /// gap to read.
+    pub max_gap_secs: Option<u32>,
+    pub max_gap_after_secs: Option<u32>,
+    /// Every hour that departs or gaps, sorted.
+    pub hourly: Vec<StopHourGaps>,
+}
+
+/// The stop's day as gaps: departures on the service date folded
+/// into the max gap, the departure it follows, and the per-hour
+/// profile (departures, max and median gap starting in the hour).
+/// Final-stop visits are arrivals, not departures — they never
+/// count (the same line the route headway reads).
+pub fn stop_gaps(net: &Network, date: NaiveDate, stop_id: &str) -> StopGaps {
+    let mut departures: Vec<u32> = Vec::new();
+    for (service_id, service) in &net.pattern_trips {
+        if !net
+            .service_types
+            .get(&service.service_type)
+            .is_some_and(|st| st.rule.runs_on(date))
+        {
+            continue;
+        }
+        // A mid-edit document can carry services that fail to
+        // materialize; analysis skips them (validation reports them).
+        let Ok(materialized) = transit_network::materialize_service(net, service_id) else {
+            continue;
+        };
+        for trip in materialized {
+            for st in &trip.stop_times[..trip.stop_times.len() - 1] {
+                if st.stop == stop_id {
+                    departures.push(st.departure_secs);
+                }
+            }
+        }
+    }
+    // Distinct departure times, sorted — the gap spine.
+    let distinct: BTreeSet<u32> = departures.iter().copied().collect();
+    let spine: Vec<u32> = distinct.into_iter().collect();
+    let mut max_gap = None;
+    let mut max_after = None;
+    // The hour's gaps (starting in the hour), for the per-hour rows.
+    let mut gaps_by_hour: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+    for w in spine.windows(2) {
+        let gap = w[1] - w[0];
+        if max_gap.map_or(true, |m| gap > m) {
+            max_gap = Some(gap);
+            max_after = Some(w[0]);
+        }
+        gaps_by_hour.entry(w[0] / 3600).or_default().push(gap);
+    }
+    let departures_by_hour: BTreeMap<u32, u32> =
+        departures.iter().copied().fold(BTreeMap::new(), |mut m, d| {
+            *m.entry(d / 3600).or_default() += 1;
+            m
+        });
+    let mut hours: BTreeSet<u32> = departures_by_hour.keys().copied().collect();
+    hours.extend(gaps_by_hour.keys().copied());
+    let hourly = hours
+        .into_iter()
+        .map(|hour| {
+            let mut gaps = gaps_by_hour.get(&hour).cloned().unwrap_or_default();
+            gaps.sort_unstable();
+            StopHourGaps {
+                hour,
+                departures: departures_by_hour.get(&hour).copied().unwrap_or(0),
+                max_gap_secs: gaps.last().copied(),
+                median_gap_secs: (gaps.len() >= 4).then(|| gaps[gaps.len() / 2]),
+            }
+        })
+        .collect();
+    StopGaps {
+        stop_id: stop_id.to_string(),
+        name: net.stops.get(stop_id).map(|s| s.name.clone()).unwrap_or_default(),
+        departures: departures.len() as u32,
+        first_departure_secs: spine.first().copied(),
+        last_departure_secs: spine.last().copied(),
+        max_gap_secs: max_gap,
+        max_gap_after_secs: max_after,
+        hourly,
+    }
+}
+
+/// One service hour of one service type's day: how many trips
+/// START in the hour. The hour is the service-day hour (0..47 —
+/// after-midnight starts are legitimate, never errors).
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct HourlyTypeTrips {
+    pub service_type: String,
+    pub trips: u32,
+}
+
+/// One service hour of the day: every running service type's trip
+/// count, sorted by type id. Only hours with at least one trip are
+/// rows — the empty hours are the span's edges, not holes.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct HourlyTrips {
+    pub hour: u32,
+    pub trips: u32,
+    pub service_types: Vec<HourlyTypeTrips>,
+}
+
+/// The day's service profile: trips per hour, per service type,
+/// bucketed by trip start — the planner's first texture question
+/// (where the service is thick, where it tapers). The materialized
+/// day on the date, nothing else.
+pub fn hourly_trips(net: &Network, date: NaiveDate) -> Vec<HourlyTrips> {
+    // hour → (service type → trips), sorted structures throughout.
+    let mut by_hour: BTreeMap<u32, BTreeMap<String, u32>> = BTreeMap::new();
+    for (service_id, service) in &net.pattern_trips {
+        if !net
+            .service_types
+            .get(&service.service_type)
+            .is_some_and(|st| st.rule.runs_on(date))
+        {
+            continue;
+        }
+        let Ok(materialized) = transit_network::materialize_service(net, service_id) else {
+            continue;
+        };
+        for trip in materialized {
+            *by_hour
+                .entry(trip.start_secs / 3600)
+                .or_default()
+                .entry(service.service_type.clone())
+                .or_default() += 1;
+        }
+    }
+    by_hour
+        .into_iter()
+        .map(|(hour, types)| HourlyTrips {
+            hour,
+            trips: types.values().sum(),
+            service_types: types
+                .into_iter()
+                .map(|(service_type, trips)| HourlyTypeTrips { service_type, trips })
+                .collect(),
+        })
+        .collect()
+}
+
+/// Two routes that meet: the corridor-overlap read. Stop sharing is
+/// where they meet; segment sharing (consecutive stops in the same
+/// order) is where they run together — the corridor. The stack is
+/// where the two routes' service piles up: the shared stop with
+/// the most combined departures on the date.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct RouteOverlap {
+    /// The pair, route ids sorted (a < b).
+    pub a: String,
+    pub b: String,
+    /// Stops both routes serve on the date.
+    pub shared_stops: u32,
+    /// Consecutive stop pairs both routes run, in the same order —
+    /// the shared segments (the corridor proper).
+    pub shared_segments: u32,
+    /// The shared stop where the two routes' departures stack
+    /// highest, and the combined departures there on the date.
+    pub stack_stop: Option<String>,
+    pub stack_departures: u32,
+}
+
+/// Which routes share stops or segments, and how much service
+/// stacks there — the corridor question (the Vine Green/Red read):
+/// every pair of routes that shares at least one stop on the date,
+/// with the shared-stop count, the shared-segment count (same-order
+/// consecutive pairs), and the busiest shared stop by combined
+/// departures. Pairs sorted by (a, b).
+pub fn route_overlap(net: &Network, date: NaiveDate) -> Vec<RouteOverlap> {
+    // Per route: served stops, ordered segments, departures per stop.
+    struct RouteDay {
+        stops: BTreeSet<String>,
+        segs: BTreeSet<(String, String)>,
+        deps: BTreeMap<String, u32>,
+    }
+    let mut routes: BTreeMap<String, RouteDay> = BTreeMap::new();
+    for (service_id, service) in &net.pattern_trips {
+        if !net
+            .service_types
+            .get(&service.service_type)
+            .is_some_and(|st| st.rule.runs_on(date))
+        {
+            continue;
+        }
+        let Ok(materialized) = transit_network::materialize_service(net, service_id) else {
+            continue;
+        };
+        for trip in materialized {
+            let Some(pattern) = net.patterns.get(&trip.pattern) else { continue };
+            let entry = routes.entry(pattern.route.clone()).or_insert(RouteDay {
+                stops: BTreeSet::new(),
+                segs: BTreeSet::new(),
+                deps: BTreeMap::new(),
+            });
+            for st in &trip.stop_times {
+                entry.stops.insert(st.stop.clone());
+            }
+            for w in pattern.stops.windows(2) {
+                entry.segs.insert((w[0].stop.clone(), w[1].stop.clone()));
+            }
+            for st in &trip.stop_times[..trip.stop_times.len() - 1] {
+                *entry.deps.entry(st.stop.clone()).or_default() += 1;
+            }
+        }
+    }
+    let ids: Vec<&String> = routes.keys().collect();
+    let mut out = Vec::new();
+    for i in 0..ids.len() {
+        for j in (i + 1)..ids.len() {
+            let (ra, rb) = (&routes[ids[i]], &routes[ids[j]]);
+            let shared: BTreeSet<&String> = ra.stops.intersection(&rb.stops).collect();
+            if shared.is_empty() {
+                continue;
+            }
+            let shared_segments =
+                ra.segs.intersection(&rb.segs).count() as u32;
+            let (stack_stop, stack_departures) = shared
+                .iter()
+                .map(|stop| {
+                    (
+                        (*stop).clone(),
+                        ra.deps.get(*stop).copied().unwrap_or(0)
+                            + rb.deps.get(*stop).copied().unwrap_or(0),
+                    )
+                })
+                .max_by(|x, y| x.1.cmp(&y.1).then_with(|| y.0.cmp(&x.0)))
+                .unwrap();
+            out.push(RouteOverlap {
+                a: ids[i].clone(),
+                b: ids[j].clone(),
+                shared_stops: shared.len() as u32,
+                shared_segments,
+                stack_stop: Some(stack_stop),
+                stack_departures,
+            });
+        }
+    }
+    out
+}
+
+/// The hub connection window a caller brings: the wait between an
+/// arrival and a departure counts as a transfer when
+/// min_secs <= wait <= max_secs. Defaults (omitted) are the
+/// transfer-point convention: a rider needs a minute to move
+/// (60 s), and beyond 15 minutes it is not a timed transfer — the
+/// walk across the street or down the block is folded into those
+/// bounds. A hub with widely separated bays gets a wider window.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct TransferWindow {
+    pub min_secs: u32,
+    pub max_secs: u32,
+}
+
+impl Default for TransferWindow {
+    fn default() -> Self {
+        TransferWindow { min_secs: TRANSFER_WINDOW_MIN_SECS, max_secs: TRANSFER_WINDOW_MAX_SECS }
+    }
+}
+
+/// One usable timed connection at a hub: an arrival of one route
+/// followed by a departure of another within the connection window
+/// (the caller's, else the 60–900 s transfer-point convention).
+/// Stops are the CONCRETE bays — a connection crosses the hub's
+/// walking group (across a street, down a block).
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct TimedTransfer {
+    pub from_route: String,
+    pub to_route: String,
+    pub arrival_secs: u32,
+    pub arrival_stop: String,
+    pub departure_secs: u32,
+    pub departure_stop: String,
+    pub wait_secs: u32,
+}
+
+/// The hub's timed-transfer view: every arrival→departure pair
+/// across routes within the connection window (the caller's, else
+/// the 60–900 s convention the transfer-point pairs use), pooled
+/// over the stop's walking group — the station board's next
+/// question ("who can make what here?"), not just pooled
+/// departures. Sorted by arrival time, then routes. An unknown stop
+/// answers empty, never an error.
+pub fn timed_transfers(
+    net: &Network,
+    date: NaiveDate,
+    stop_id: &str,
+    window: Option<TransferWindow>,
+) -> Vec<TimedTransfer> {
+    let window = window.unwrap_or_default();
+    let group = transit_network::walking_group(net, stop_id);
+    // (route, stop, time): arrivals are every visit; departures are
+    // every visit but the trip's last (final stops are arrivals).
+    let mut arrivals: Vec<(String, String, u32)> = Vec::new();
+    let mut departures: Vec<(String, String, u32)> = Vec::new();
+    for (service_id, service) in &net.pattern_trips {
+        if !net
+            .service_types
+            .get(&service.service_type)
+            .is_some_and(|st| st.rule.runs_on(date))
+        {
+            continue;
+        }
+        let Ok(materialized) = transit_network::materialize_service(net, service_id) else {
+            continue;
+        };
+        for trip in materialized {
+            let Some(route) = net.patterns.get(&trip.pattern).map(|p| p.route.clone()) else {
+                continue;
+            };
+            for (i, st) in trip.stop_times.iter().enumerate() {
+                if !group.contains_key(&st.stop) {
+                    continue;
+                }
+                arrivals.push((route.clone(), st.stop.clone(), st.arrival_secs));
+                if i + 1 < trip.stop_times.len() {
+                    departures.push((route.clone(), st.stop.clone(), st.departure_secs));
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for (from_route, arrival_stop, arrival_secs) in &arrivals {
+        for (to_route, departure_stop, departure_secs) in &departures {
+            let wait = departure_secs.saturating_sub(*arrival_secs);
+            if from_route != to_route && window.min_secs <= wait && wait <= window.max_secs {
+                out.push(TimedTransfer {
+                    from_route: from_route.clone(),
+                    to_route: to_route.clone(),
+                    arrival_secs: *arrival_secs,
+                    arrival_stop: arrival_stop.clone(),
+                    departure_secs: *departure_secs,
+                    departure_stop: departure_stop.clone(),
+                    wait_secs: wait,
+                });
+            }
+        }
+    }
+    out.sort_by(|x, y| {
+        x.arrival_secs
+            .cmp(&y.arrival_secs)
+            .then_with(|| x.from_route.cmp(&y.from_route))
+            .then_with(|| x.to_route.cmp(&y.to_route))
+            .then_with(|| x.departure_secs.cmp(&y.departure_secs))
+    });
+    out
 }
 
 // ---------------------------------------------------------------------
@@ -953,4 +1467,86 @@ fn coverage_for_type(
         served_stops,
         frequent_stops,
     }
+}
+
+/// One layer point nothing serves on the date — the WHERE of the
+/// unserved share ("which 71%, and where?"), with the nearest
+/// served stop and how far out the point sits.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct UnservedPoint {
+    pub lat: f64,
+    pub lon: f64,
+    pub pop: f64,
+    /// The served stop nearest the point, and the distance to it.
+    pub nearest_stop: Option<String>,
+    pub nearest_m: f64,
+}
+
+/// The unserved points of a layer on a service date: every point
+/// beyond `radius_m` of every stop with service that day (the same
+/// served set [`coverage`] measures against), sorted by population
+/// descending then by position — the biggest unserved communities
+/// first. Together with the coverage share they answer "which part,
+/// and where".
+pub fn unserved_points(
+    net: &Network,
+    date: NaiveDate,
+    layer: &PopLayer,
+    radius_m: f64,
+) -> Vec<UnservedPoint> {
+    // The served stops (any visit on the date), with coordinates —
+    // id order, so a distance tie names the lowest id.
+    let mut served: BTreeMap<String, (f64, f64)> = BTreeMap::new();
+    for (service_id, service) in &net.pattern_trips {
+        if !net
+            .service_types
+            .get(&service.service_type)
+            .is_some_and(|st| st.rule.runs_on(date))
+        {
+            continue;
+        }
+        let Ok(materialized) = transit_network::materialize_service(net, service_id) else {
+            continue;
+        };
+        for trip in &materialized {
+            for st in &trip.stop_times {
+                if let Some(stop) = net.stops.get(&st.stop) {
+                    served.insert(st.stop.clone(), (stop.lat, stop.lon));
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for point in &layer.points {
+        let mut nearest: Option<(&str, f64)> = None;
+        for (id, (lat, lon)) in &served {
+            let d = distance_m(point.lat, point.lon, *lat, *lon);
+            if nearest.map_or(true, |(_, nd)| d < nd) {
+                nearest = Some((id, d));
+            }
+        }
+        let (nearest_stop, nearest_m) = match nearest {
+            // Served means within radius of SOME served stop —
+            // unserved means beyond radius of ALL of them.
+            Some((id, d)) if d > radius_m => (Some(id.to_string()), d),
+            Some(_) => continue,
+            None => (None, 0.0),
+        };
+        out.push(UnservedPoint {
+            lat: point.lat,
+            lon: point.lon,
+            pop: point.pop,
+            nearest_stop,
+            nearest_m,
+        });
+    }
+    out.sort_by(|a, b| {
+        b.pop
+            .partial_cmp(&a.pop)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.lat.partial_cmp(&b.lat).unwrap_or(std::cmp::Ordering::Equal))
+            .then_with(|| a.lon.partial_cmp(&b.lon).unwrap_or(std::cmp::Ordering::Equal))
+    });
+    out
 }

@@ -18,10 +18,10 @@ numbers, so the next regression is invisible.
   the feed is not committed).
 - Candidates once it is measured, not before: skip the re-hash
   when the host passes the hash the import answered (the module
-  stays the hash authority — it verifies, never trusts); register
-  off the main thread (a Worker). cap-author keeps a buffered
-  decoder beside the direct one (+77 KiB) because `apply` edits
-  carry network sub-types.
+  stays the hash authority — it verifies, never trusts).
+  Off-thread instantiation is [module-runtime.md](module-runtime.md)'s.
+  cap-author keeps a buffered decoder beside the direct one
+  (+77 KiB) because `apply` edits carry network sub-types.
 
 ## Done when
 

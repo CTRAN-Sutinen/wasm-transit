@@ -205,6 +205,88 @@ const stats = analysis.invoke({
 assert(stats.stats.trips === 1, `analysis computes the document's weekday trips: ${stats.stats.trips}`);
 const overview = analysis.invoke({ op: "service_types_overview", network_hash: loadedNet.network_hash });
 assert(overview.service_types.length === 1, "the design axis answers");
+// The stop's day as gaps (QAF-25): one departure is no gap — the
+// honest answer is null, and the terminal stop is an arrival, never
+// a departure.
+const gaps = analysis.invoke({
+  op: "stop_gaps",
+  network_hash: loadedNet.network_hash,
+  date: "2026-01-05",
+  stop_id: "A",
+});
+assert(gaps.gaps.departures === 1, "one weekday departure at A");
+assert(gaps.gaps.max_gap_secs == null, "a one-departion day has no gap to read");
+assert(gaps.gaps.hourly.length === 1 && gaps.gaps.hourly[0].hour === 8, "28800 s is hour 8");
+assert(gaps.gaps.hourly[0].max_gap_secs == null, "no gap starts in hour 8");
+const terminalGaps = analysis.invoke({
+  op: "stop_gaps",
+  network_hash: loadedNet.network_hash,
+  date: "2026-01-05",
+  stop_id: "B",
+});
+assert(terminalGaps.gaps.departures === 0, "final-stop visits are arrivals, never departures");
+const unknownGaps = analysis.invoke({
+  op: "stop_gaps",
+  network_hash: loadedNet.network_hash,
+  date: "2026-01-05",
+  stop_id: "nope",
+});
+assert(unknownGaps.gaps.departures === 0, "an unknown stop answers empty, never errors");
+// The day's hourly profile (QAF-4): one weekday trip at 28800 s is
+// one hour row; a weekend-only day asked on a Monday answers empty.
+const hours = analysis.invoke({
+  op: "hourly_trips",
+  network_hash: loadedNet.network_hash,
+  date: "2026-01-05",
+});
+assert(hours.hours.length === 1 && hours.hours[0].hour === 8, "28800 s is hour 8");
+assert(hours.hours[0].trips === 1, "one trip starts in hour 8");
+assert(hours.hours[0].service_types.length === 1 && hours.hours[0].service_types[0].service_type === "WK",
+  "the hour row carries the running service type");
+const quietHours = analysis.invoke({
+  op: "hourly_trips",
+  network_hash: loadedNet.network_hash,
+  date: "2026-01-10", // a Saturday: WK does not run
+});
+assert(quietHours.hours.length === 0, "a day nothing runs answers empty, never errors");
+// The schedule texture (QAF-16): the one schedule's uniformity (one
+// trip — no gaps to read) and clockface alignment (28800 s is on
+// the quarter-hour grid).
+const texture = analysis.invoke({
+  op: "schedule_texture",
+  network_hash: loadedNet.network_hash,
+  service_type: "WK",
+});
+assert(texture.texture.pattern_trips.length === 1, "one schedule under WK");
+const row = texture.texture.pattern_trips[0];
+assert(row.trips === 1 && row.min_gap_secs == null && row.max_gap_secs == null,
+  "a one-trip schedule has no gap to read");
+assert(texture.texture.on_clockface === 1, "28800 s is on the quarter-hour grid");
+const unknownTexture = analysis.invoke({
+  op: "schedule_texture",
+  network_hash: loadedNet.network_hash,
+  service_type: "nope",
+});
+assert(unknownTexture.texture == null, "an unknown service type answers null, never errors");
+// The corridor read (QAF-22): a one-route document has no pairs —
+// the honest answer is empty, never an error.
+const overlaps = analysis.invoke({
+  op: "route_overlap",
+  network_hash: loadedNet.network_hash,
+  date: "2026-01-05",
+});
+assert(Array.isArray(overlaps.overlaps) && overlaps.overlaps.length === 0,
+  "a one-route document has no pairs to join");
+// The timed-transfer view (QAF-27): one route alone has nobody to
+// meet — the honest answer is empty, never an error.
+const transfers = analysis.invoke({
+  op: "timed_transfers",
+  network_hash: loadedNet.network_hash,
+  date: "2026-01-05",
+  stop_id: "A",
+});
+assert(Array.isArray(transfers.transfers) && transfers.transfers.length === 0,
+  "a one-route hub has no connections to pair");
 const layer = analysis.invokeBytes(0, Buffer.from(JSON.stringify({
   type: "FeatureCollection",
   features: [
@@ -766,6 +848,37 @@ const keysEmpty = calendar.invoke({
   date: "2026-10-24",
 });
 assert(keysEmpty.services.length === 0, "a no-service day answers empty, never errors");
+// The reverse read: WK's fixture dates across a window that crosses
+// the calendar exception (removed 2026-10-29) — the two directions
+// must agree on the same relation.
+const wkDates = calendar.invoke({
+  op: "service_dates",
+  network_hash: loadedCalendarNet.network_hash,
+  service_type: "WK",
+  from: "2026-10-23",
+  to: "2026-11-03",
+});
+assert(
+  JSON.stringify(wkDates.dates) ===
+    JSON.stringify([
+      "2026-10-23",
+      "2026-10-26",
+      "2026-10-27",
+      "2026-10-28",
+      "2026-10-30",
+      "2026-11-02",
+      "2026-11-03",
+    ]),
+  "the reverse read carries the calendar exception: no 2026-10-29",
+);
+const wkNone = calendar.invoke({
+  op: "service_dates",
+  network_hash: loadedCalendarNet.network_hash,
+  service_type: "NOPE",
+  from: "2026-10-23",
+  to: "2026-11-03",
+});
+assert(wkNone.dates.length === 0, "an unknown service type answers empty, never errors");
 
 // THE DIRECTORY — what exists in the network. The pickers and the
 // names join are MODEL questions: the stop list (name-sorted, with

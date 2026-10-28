@@ -38,9 +38,8 @@ layer (`web/src/actions.ts`, `planner.ts`, `capdemo.svelte.ts`,
   hashes). Module replacement becomes re-pin + replay against the
   candidate.
 - **Registry eviction.** Each module keeps every registered
-  document for the session; a long-running host needs eviction
-  (QAF-49: the live document is 388 KB per snapshot on C-TRAN,
-  re-minted every poll).
+  document for the session; eviction (a kernel keep-set op, the
+  ephemeral-kind defaults) is [module-runtime.md](module-runtime.md)'s.
 - **Two gates.** No op call outside the engine; and determinism in
   the modules — no clocks, randomness, or environment inside a
   cap crate (hosts pass time in; `now_ms` is the only route).
@@ -59,5 +58,7 @@ design is rejected on sight.
 - The two gates are in `just test`, each with an empty allowlist.
 - A C-TRAN session journal replays through `caps-run` to the same
   output hashes.
-- The UIs request flows through the engine (e2e green), and QAF-49
-  is closed by eviction.
+- The UIs request flows through the engine (e2e green).
+- The engine's thread boundary matches
+  [module-runtime.md](module-runtime.md) (one Worker, at the choke
+  point — never per component).

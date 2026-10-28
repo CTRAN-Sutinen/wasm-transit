@@ -603,6 +603,97 @@ pub fn day_blocks(network: &Network, day: &[MaterializedTrip]) -> Vec<DayBlock> 
     out
 }
 
+/// The day's fleet in one answer (QAF-3): how many blocks run, the
+/// peak concurrent vehicles and when, and the platform / revenue /
+/// layover hours — the numbers that took one `block_trips` call per
+/// block plus host-side concurrency glue.
+///
+/// A vehicle is out from its block's first running start to its
+/// last running arrival (the effective day's times, edits applied
+/// by the caller); half-open spans, so a bus arriving as another
+/// departs is one vehicle, not two. Platform = the fleet's out
+/// hours; revenue = the trips' own runtimes; layover = the rest.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct FleetSummary {
+    /// Blocks with at least one trip in the (effective) day.
+    pub blocks: u32,
+    /// The most blocks out at once.
+    pub peak_vehicles: u32,
+    /// The first time the peak is reached; None on an empty day.
+    pub peak_at_secs: Option<u32>,
+    /// Every running block's span (last arrival − first start),
+    /// hours — the vehicle hours the fleet is out.
+    pub platform_hours: f64,
+    /// The running trips' own runtimes (arrival − start), hours.
+    pub revenue_hours: f64,
+    /// Platform − revenue, hours: recovery, pull gaps, and the
+    /// authored layovers the day actually runs.
+    pub layover_hours: f64,
+}
+
+/// The day's fleet: every block with a running trip, folded into
+/// the peak and the hour bases. The day is the caller's — patched
+/// or plain materialize, the same seam every day view takes.
+pub fn fleet_summary(network: &Network, day: &[MaterializedTrip]) -> FleetSummary {
+    let mut blocks = 0u32;
+    let mut platform_secs = 0u64;
+    let mut revenue_secs = 0u64;
+    // (time, delta): a block's span is half-open [start, end).
+    let mut events: Vec<(u32, i64)> = Vec::new();
+    for block in network.blocks.values() {
+        let mut first_start: Option<u32> = None;
+        let mut last_end: Option<u32> = None;
+        let mut running = 0u32;
+        for trip_ref in &block.trips {
+            let Some(trip) = day
+                .iter()
+                .find(|t| t.pattern_trips == trip_ref.pattern_trips && t.start_secs == trip_ref.start_secs)
+            else {
+                continue;
+            };
+            running += 1;
+            let end = trip
+                .stop_times
+                .last()
+                .map(|st| st.arrival_secs.max(st.departure_secs))
+                .unwrap_or(trip.start_secs);
+            first_start = Some(first_start.map_or(trip.start_secs, |f| f.min(trip.start_secs)));
+            last_end = Some(last_end.map_or(end, |l| l.max(end)));
+            revenue_secs += end.saturating_sub(trip.start_secs) as u64;
+        }
+        if running == 0 {
+            continue;
+        }
+        blocks += 1;
+        let (start, end) = (first_start.expect("running block has a start"), last_end.expect("running block has an end"));
+        platform_secs += end.saturating_sub(start) as u64;
+        events.push((start, 1));
+        events.push((end, -1));
+    }
+    // -1 sorts before +1 at the same second: a bus arriving as
+    // another departs does not double-count.
+    events.sort();
+    let mut current = 0i64;
+    let mut peak = 0u32;
+    let mut peak_at: Option<u32> = None;
+    for (time, delta) in events {
+        current += delta;
+        if current > peak as i64 {
+            peak = current as u32;
+            peak_at = Some(time);
+        }
+    }
+    FleetSummary {
+        blocks,
+        peak_vehicles: peak,
+        peak_at_secs: peak_at,
+        platform_hours: platform_secs as f64 / 3600.0,
+        revenue_hours: revenue_secs as f64 / 3600.0,
+        layover_hours: (platform_secs - revenue_secs) as f64 / 3600.0,
+    }
+}
+
 /// The service keys running on a date: the distinct service types the
 /// (effective) day's trips run under, sorted — the day's first
 /// first question, answered from the day itself. A key whose every
@@ -616,6 +707,47 @@ pub fn active_services(network: &Network, day: &[MaterializedTrip]) -> Vec<Strin
         }
     }
     keys.into_iter().map(String::from).collect()
+}
+
+/// The dates one service type runs on within a window — the calendar
+/// read backwards ("when does 1-WKDY/31 run?" is the same question
+/// active_services answers in the other direction). An unknown type,
+/// or one no pattern trips run under, answers empty (an id lookup,
+/// never an error); so does an inverted window. Schedule-only (no
+/// records) the answer is the RULE's own dates; with records in
+/// force, the effective day decides each date — the same honesty as
+/// active_services: a type whose every trip is skipped by edits is
+/// not running, however its calendar reads.
+pub fn service_dates(
+    network: &Network,
+    records: &[EditRecord],
+    service_type: &str,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<NaiveDate>, transit_network::NetworkError> {
+    // A type no trips run under never runs, however its rule reads —
+    // the two-way agreement with active_services depends on it.
+    if !network.pattern_trips.values().any(|s| s.service_type == service_type) {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    let mut date = from;
+    while date <= to {
+        let runs = if records.is_empty() {
+            network
+                .service_types
+                .get(service_type)
+                .is_some_and(|t| t.rule.runs_on(date))
+        } else {
+            let day = effective_day(network, date, records)?;
+            active_services(network, &day).iter().any(|s| s == service_type)
+        };
+        if runs {
+            out.push(date);
+        }
+        date += chrono::Duration::days(1);
+    }
+    Ok(out)
 }
 
 /// One stop of one derived trip's day view — the trip detail facet

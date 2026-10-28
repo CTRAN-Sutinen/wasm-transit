@@ -130,7 +130,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "analysis",
         file: "cap_analysis.wasm",
-        ops: &["load_network", "load_population_layer", "network_stats", "service_types_overview", "service_type_detail", "service_type_compare", "type_coverage"],
+        ops: &["load_network", "load_population_layer", "network_stats", "service_types_overview", "service_type_detail", "service_type_compare", "stop_gaps", "hourly_trips", "schedule_texture", "route_overlap", "timed_transfers", "type_coverage", "unserved_points"],
         // The network document is produced by the network capability —
         // the extraction this module's own docs once called "future".
         consumes: &[("network", "network")],
@@ -140,11 +140,17 @@ const MODULES: &[ModuleSpec] = &[
         op_docs: &[
             ("load_network", "Register an authored network document (the planner's JSON document, produced or derived by the network capability) under its content hash; idempotent. Kernel bulk op 256 takes the bare document's JSON bytes on transit_invoke_bytes — the same answer, no request envelope; hosts send real-size networks this way."),
             ("load_population_layer", "Register a GeoJSON population layer under its content hash. Bulk-bytes op 0; pop_field optional (common candidates tried). The answer is the import handle — points, the picked pop_field, total population — the layer's owner never parses a second copy."),
-            ("network_stats", "The network's numbers on one service date: trips, spans, revenue hours, transfer points, per-route and per-stop activity, headways. Each route row carries its own revenue_hours (the per-route cost basis) and its headway as the MEDIAN gap between departures at its busiest stop (headway_stop says which) — arrivals never count. Every route of the document is a row, sorted by id: a route with no service on the date answers trips 0 and null spans (inactive routes are analysis too — filter on trips). include_routes/include_stops/include_service_types (default true) shape the response: false empties the corresponding lists — the day-shape question answers in under a KiB."),
+            ("network_stats", "The network's numbers on one service date: trips, spans, revenue hours AND revenue miles, transfer points, per-route and per-stop activity, headways. Each route row carries its own revenue_hours and revenue_miles (the per-route cost basis — every cost model is per hour AND per mile; average operating speed follows from the two) and its headway as the MEDIAN gap between departures at its busiest stop (headway_stop says which) — arrivals never count. Every route of the document is a row, sorted by id: a route with no service on the date answers trips 0 and null spans (inactive routes are analysis too — filter on trips). include_routes/include_stops/include_service_types (default true) shape the response: false empties the corresponding lists — the day-shape question answers in under a KiB."),
             ("service_types_overview", "Every service type's numbers, each on its representative day — the design axis, no calendar dates in sight."),
             ("service_type_detail", "One service type expanded on its representative day: routes, stops, pattern trips, totals."),
-            ("service_type_compare", "What a change does: the proposal (network_hash) against its baseline (base_hash) under one service type, each on its own representative day — both sides' trips, revenue hours, and routes, then only the routes whose numbers changed (trips, span, typical headway, revenue hours, patterns, stops), each with its baseline and proposal row (null on the side that does not run it), and the count of unchanged routes. Both documents must be loaded."),
+            ("service_type_compare", "What a change does: the proposal (network_hash) against its baseline (base_hash) under one service type, each on its own representative day — both sides' trips, revenue hours and miles, and routes, then only the routes whose numbers changed (trips, span, typical headway, revenue hours and miles, patterns, stops), each with its baseline and proposal row (null on the side that does not run it), and the count of unchanged routes. Both documents must be loaded."),
+            ("stop_gaps", "One stop's day folded into headway gaps: departures, the max gap and the departure it follows, and the per-hour profile (departures, max and median gap starting in the hour — a gap belongs to the hour it starts in). Gaps run between consecutive DISTINCT departure times — two routes leaving together is no gap at all — and final-stop visits are arrivals, never departures. The service-quality read of \\\"how long until the next bus?\\\". An unknown stop answers zero/null/empty, never an error."),
+            ("hourly_trips", "The day's service profile: trips per hour bucketed by trip start (the service-day hour, 0..47 — after-midnight starts are legitimate), each hour row carrying every running service type's count, sorted by type id. Only hours with trips are rows — where service is thick, where it tapers. The planner's texture question (QAF-4), answered from the materialized day, not a jq fold over the document."),
+            ("schedule_texture", "One service type's schedule texture on its representative day: every pattern trips entry that runs under the type, one row per schedule (sorted by id), each with headway uniformity (min/median/max gap between its starts — the median with the same four-start floor as every headway here) and clockface alignment (starts on the quarter-hour grid, start % 900 == 0). \\\"Is this headway even, and is it on a grid?\\\" Null for an unknown type (QAF-19 — lookups answer empty, never error)."),
+            ("route_overlap", "The corridor read: every pair of routes that shares at least one stop on the date, sorted by (a, b) — shared stops, shared SEGMENTS (consecutive stop pairs both run, in the same order — the corridor proper), and the shared stop where the pair's departures stack highest (stack_stop, with the combined count; ties by lowest stop id). Where the Vine Green and Red run together, answered instead of inferred."),
+            ("timed_transfers", "The hub's timed-transfer view: every arrival of one route followed by a departure of another within the connection window — the caller's ({min_secs, max_secs}, for a hub with widely separated bays), else the transfer-point convention (60–900 s: a rider needs a minute to move, and beyond 15 minutes it is not a timed transfer) — pooled over the stop's walking group (bays named: arrival_stop, departure_stop), sorted by arrival then routes. Who can make what at this hub, not just pooled departures. An unknown stop answers empty, never an error."),
             ("type_coverage", "Population coverage per service type against a hash-addressed layer: what share of the population each type serves, and serves frequently. Frequency is the whole-day average headway unless `window` ({start_secs, end_secs}) is given — then a stop is frequent when the worst wait anywhere in the window (edges included, departures only, every route pooled) fits frequent_secs: the planner's \"every 15 minutes, 07:00–19:00\". A midday or peak improvement is visible only through a window."),
+            ("unserved_points", "The unserved WHERE of coverage: every layer point beyond radius_m of every stop with service on the date (the same served set type_coverage measures against), each with the nearest served stop and its distance — which part, and where, not just the share. Sorted by population descending, so the biggest unserved communities read first. Together with the coverage share they are complements: served + unserved conserves the layer total."),
         ],
     },
     ModuleSpec {
@@ -172,7 +178,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "runcut",
         file: "cap_runcut.wasm",
-        ops: &["load_network", "load_edits", "blocks", "block_trips", "trip_stops", "trip_path"],
+        ops: &["load_network", "load_edits", "blocks", "fleet_summary", "block_trips", "trip_stops", "trip_path"],
         // The network document is produced by the network capability;
         // the operator edit document is host-owned (wholesale-replaced
         // — the sync contract).
@@ -184,6 +190,7 @@ const MODULES: &[ModuleSpec] = &[
             ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth. Kernel bulk op 256 takes the bare document's JSON bytes on transit_invoke_bytes — the same answer, no request envelope; hosts send real-size networks this way."),
             ("load_edits", "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change."),
             ("blocks", "The day's blocks: every authored block with at least one trip running on the date, with that day's running trip counts — a block whose every trip is off is a vehicle still in the garage, not offered. With edits in force, skipped trips leave the count (and a block whose every trip is skipped leaves the list)."),
+            ("fleet_summary", "The day's fleet in ONE answer: running blocks, the peak concurrent vehicles and the first time the peak is reached, and the platform / revenue / layover hours — the fold that used to take one block_trips call per block plus host-side concurrency glue. A vehicle is out from its block's first running start to its last running arrival (half-open spans: a bus arriving as another departs is one vehicle, not two). Platform = the fleet's out hours, revenue = the trips' own runtimes, layover = the rest; the peak is the dispatcher's fleet-need number."),
             ("block_trips", "One block's chain on a service date: the AUTHORED runcut (the model's blocks carry layovers GTFS never had), materialized for the day, with the in-force edits applied — a diverted trip ending later eats into the vehicle's next layover, and layover_remaining_secs goes negative when the connection is eaten. Each row's layover_health classifies the connection: overlap (negative — the next trip starts late), tight (under tight_layover_secs, default 300), ok. Trips of the chain that do not run on the date stay in view, marked. The answer carries the block_id it is for (many block_trips results group by the answer, never by request order). Unknown blocks answer empty, never error."),
             ("trip_stops", "One derived trip's stops on a service date — the day's trip detail, EFFECTIVE (a diverted trip answers its patched sequence). The trip's line is trip_path. A trip that does not run answers empty, never an error."),
             ("trip_path", "One derived trip's LINE on a service date ([{lat, lon}]), over the effective day: its pattern's authored alignment while the trip follows the pattern, its (patched) stops joined in order when it does not — a diverted trip draws its diversion. A trip that does not run answers an empty path, never an error."),
@@ -192,18 +199,19 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "calendar",
         file: "cap_calendar.wasm",
-        ops: &["load_network", "load_edits", "active_services"],
+        ops: &["load_network", "load_edits", "active_services", "service_dates"],
         // The network document is produced by the network capability;
         // the operator edit document is host-owned (wholesale-replaced
         // — the sync contract).
         consumes: &[("network", "network")],
         speaks: &[("network", &[1]), ("operator_edits", &[1])],
         migrates: &[],
-        purpose: "The calendar: which service keys run on a date — often several at once (a regular pattern plus an exception-added service). The answer comes from the EFFECTIVE day, not the calendar rules alone: a key whose every trip is skipped by edits, or was never representable in the model, is not running however its calendar reads. The materialized day over the NETWORK document; the domain code lives in the shared transit-dispatch library.",
+        purpose: "The calendar: which service keys run on a date — often several at once (a regular pattern plus an exception-added service) — and its reverse, the dates one service type runs on. Both answers come from the EFFECTIVE day, not the calendar rules alone: a key whose every trip is skipped by edits, or was never representable in the model, is not running however its calendar reads. The materialized day over the NETWORK document; the domain code lives in the shared transit-dispatch library.",
         op_docs: &[
             ("load_network", "Register the authored NETWORK document under its content hash (idempotent) — the same document identity the network capability's import produces and analysis consumes. Assert equality at the host: one document, one truth. Kernel bulk op 256 takes the bare document's JSON bytes on transit_invoke_bytes — the same answer, no request envelope; hosts send real-size networks this way."),
             ("load_edits", "Register the OPERATOR EDIT document against a loaded network, validated per record AGAINST THE NETWORK (model vocabulary — nothing is expanded to answer it). The response carries the reports (invalid records are REPORTED, never rejected — the host owns the document) and the document's content hash, which the day views address. Wholesale replacement: push the whole document on every change."),
             ("active_services", "The service keys running on a date: the distinct service types the effective day's trips run under, sorted. Departures-only when edits_hash is omitted. The day's first question — what is running today?"),
+            ("service_dates", "The dates one service type runs on within an inclusive YYYY-MM-DD window — the same question active_services answers in the other direction (\"when does 1-WKDY/31 run?\"). The effective day decides each date (edits applied when edits_hash names a registered document): a type whose every trip is skipped is not running, however its calendar reads. An unknown type or an inverted window answers empty, never an error."),
         ],
     },
     ModuleSpec {
@@ -827,6 +835,62 @@ fn example_for(
                 json!({ "ok": { "op": "service_type_compare", "comparison": comparison } }),
             )
         }
+        // The stop's day as gaps, computed over the same fixture
+        // document — a real weekday answer, not a hand-written one.
+        ("analysis", "stop_gaps") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 1, 5).unwrap();
+            let gaps = transit_analysis::stop_gaps(&ctx.derived_network(), date, "A");
+            (
+                json!({ "op": "stop_gaps", "network_hash": ctx.network_hash, "date": "2026-01-05", "stop_id": "A" }),
+                json!({ "ok": { "op": "stop_gaps", "gaps": gaps } }),
+            )
+        }
+        // The day's hourly profile over the same fixture document.
+        ("analysis", "hourly_trips") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 1, 5).unwrap();
+            (
+                json!({ "op": "hourly_trips", "network_hash": ctx.network_hash, "date": "2026-01-05" }),
+                json!({ "ok": { "op": "hourly_trips",
+                    "hours": transit_analysis::hourly_trips(&ctx.derived_network(), date) } }),
+            )
+        }
+        // The schedule texture over the same fixture document.
+        ("analysis", "schedule_texture") => {
+            let ctx = net?;
+            (
+                json!({ "op": "schedule_texture", "network_hash": ctx.network_hash, "service_type": "WK" }),
+                json!({ "ok": { "op": "schedule_texture",
+                    "texture": transit_analysis::schedule_texture(&ctx.derived_network(), "WK") } }),
+            )
+        }
+        // The corridor read over the same fixture document.
+        ("analysis", "route_overlap") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 1, 5).unwrap();
+            (
+                json!({ "op": "route_overlap", "network_hash": ctx.network_hash, "date": "2026-01-05" }),
+                json!({ "ok": { "op": "route_overlap",
+                    "overlaps": transit_analysis::route_overlap(&ctx.derived_network(), date) } }),
+            )
+        }
+        // The hub's timed transfers over the same fixture document —
+        // the window the caller brings widens the default 60–900 s
+        // connection bounds to catch the fixture's 20-minute meeting.
+        ("analysis", "timed_transfers") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 1, 5).unwrap();
+            (
+                json!({ "op": "timed_transfers", "network_hash": ctx.network_hash,
+                    "date": "2026-01-05", "stop_id": "A",
+                    "window": { "min_secs": 60, "max_secs": 1500 } }),
+                json!({ "ok": { "op": "timed_transfers",
+                    "transfers": transit_analysis::timed_transfers(
+                        &ctx.derived_network(), date, "A",
+                        Some(transit_analysis::TransferWindow { min_secs: 60, max_secs: 1500 })) } }),
+            )
+        }
         ("analysis", "type_coverage") => {
             let ctx = net?;
             // The same two-point layer the caps smoke uses: one point
@@ -843,6 +907,26 @@ fn example_for(
                     "layer_hash": layer_hash, "radius_m": 500, "frequent_secs": 3600, "min_departures": 2 }),
                 json!({ "ok": { "op": "type_coverage",
                     "coverage": transit_analysis::type_coverage(&ctx.derived_network(), &layer, 500.0, 3600, 2, None) } }),
+            )
+        }
+        // The unserved WHERE over the same fixture document and the
+        // same two-point layer: the far point, named, with the
+        // nearest served stop.
+        ("analysis", "unserved_points") => {
+            let ctx = net?;
+            let layer_json = r#"{"type":"FeatureCollection","features":[
+                {"type":"Feature","properties":{"pop":500},"geometry":{"type":"Point","coordinates":[-73.5,45.5]}},
+                {"type":"Feature","properties":{"pop":500},"geometry":{"type":"Point","coordinates":[-74.0,46.0]}}
+            ]}"#;
+            let layer = transit_analysis::parse_pop_layer(layer_json.as_bytes(), None)
+                .expect("layer parses");
+            let layer_hash = format!("sha256:{:x}", Sha256::digest(layer_json.as_bytes()));
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 1, 5).unwrap();
+            (
+                json!({ "op": "unserved_points", "network_hash": ctx.network_hash,
+                    "layer_hash": layer_hash, "radius_m": 500, "date": "2026-01-05" }),
+                json!({ "ok": { "op": "unserved_points",
+                    "points": transit_analysis::unserved_points(&ctx.derived_network(), date, &layer, 500.0) } }),
             )
         }
         // The rt join examples compute REAL answers over the fixture
@@ -985,6 +1069,16 @@ fn example_for(
                     "blocks": transit_dispatch::day_blocks(ctx.derived_network(), &day) } }),
             )
         }
+        ("runcut", "fleet_summary") => {
+            let ctx = net?;
+            let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+            let day = transit_network::materialize(ctx.derived_network(), date).expect("fixture day");
+            (
+                json!({ "op": "fleet_summary", "network_hash": ctx.network_hash, "date": "2026-10-23" }),
+                json!({ "ok": { "op": "fleet_summary",
+                    "summary": transit_dispatch::fleet_summary(ctx.derived_network(), &day) } }),
+            )
+        }
         ("runcut", "block_trips") => {
             let ctx = net?;
             let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
@@ -1061,6 +1155,22 @@ fn example_for(
                 json!({ "op": "active_services", "network_hash": ctx.network_hash, "date": "2026-10-23" }),
                 json!({ "ok": { "op": "active_services",
                     "services": transit_dispatch::active_services(ctx.derived_network(), &day) } }),
+            )
+        }
+        // The reverse read, computed over the same fixture document
+        // — the window crosses the fixture's calendar exception (WK
+        // removed on 2026-10-29), so the example cannot drift.
+        ("calendar", "service_dates") => {
+            let ctx = net?;
+            let from = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+            let to = chrono::NaiveDate::from_ymd_opt(2026, 11, 3).unwrap();
+            let dates = transit_dispatch::service_dates(ctx.derived_network(), &[], "WK", from, to)
+                .expect("fixture window");
+            (
+                json!({ "op": "service_dates", "network_hash": ctx.network_hash,
+                    "service_type": "WK", "from": "2026-10-23", "to": "2026-11-03" }),
+                json!({ "ok": { "op": "service_dates",
+                    "dates": dates.iter().map(|d| d.format("%Y-%m-%d").to_string()).collect::<Vec<_>>() } }),
             )
         }
         // The directory's examples compute REAL answers over the

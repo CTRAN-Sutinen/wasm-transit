@@ -126,9 +126,14 @@ transit-codec   The network codec, both directions: a network document
                 second. The C-TRAN import regressions live in its
                 own test suite (tests/import_regression_test).
 transit-analysis Planner analysis over an authored network document:
-                stats, service-type overview/detail, population
-                coverage. A LIBRARY under the cap-analysis module;
-                the planner's regression numbers live in its own
+                stats, service-type overview/detail, schedule
+                texture (hourly profile, headway gaps, clockface),
+                route corridors (shared stops and segments),
+                population coverage — the share AND the unserved
+                where (unserved_points: the complement, named).
+                A LIBRARY under the
+                cap-analysis module; the planner's regression
+                numbers live in its own
                 test suite (tests/regression_test).
 transit-dispatch The materialized day's views, model-native: patch_day
                 (skip/shift over MATERIALIZED stop times — the day,
@@ -138,7 +143,9 @@ transit-dispatch The materialized day's views, model-native: patch_day
                 realtime-first over the live document — rows
                 ordered by when the bus actually leaves, each with
                 its expected time, delay, and status), the day's
-                blocks list, the service keys
+                blocks list, the fleet summary (peak concurrent
+                vehicles and when, platform / revenue / layover
+                hours), the service keys
                 running on a date, and the AUTHORED block chain with
                 the layover ripple (layover_remaining_secs goes
                 negative when a connection is eaten), and the
@@ -583,7 +590,10 @@ cap-runcut      The runcut capability — ONE QUESTION: what does
                 index facet: vehicles out, with that day's running
                 trip counts; a block whose every trip is
                 unrepresentable or skipped is not offered — the
-                honest hole) and one block's chain (the detail
+                honest hole), the day's FLEET SUMMARY (peak
+                concurrent vehicles and when, platform / revenue /
+                layover hours — the fold that took a block_trips
+                call per block), and one block's chain (the detail
                 facet: the AUTHORED runcut with the layover ripple,
                 layover_remaining_secs going negative when a
                 connection is eaten, and layover_health classifying
@@ -598,14 +608,17 @@ cap-runcut      The runcut capability — ONE QUESTION: what does
                 domain code lives in the shared transit-dispatch
                 library; no GTFS layer (arch gate). The UI's blocks
                 panel and trip lines answer through this module.
-cap-calendar    The calendar capability — ONE QUESTION: which
-                service keys run today? active_services over the
-                EFFECTIVE day (a key whose every trip is skipped or
-                unrepresentable is not running, however its calendar
-                reads — the same honesty as the runcut view's empty
-                hole). Same document set (load_network / load_edits
-                plumbing); the domain code lives in the shared
-                transit-dispatch library; no GTFS layer (arch gate).
+cap-calendar    The calendar capability — TWO READS of one relation:
+                which service keys run today (active_services), and
+                the reverse, the dates one service type runs
+                (service_dates over an inclusive window). Both over
+                the EFFECTIVE day (a key whose every trip is skipped
+                or unrepresentable is not running, however its
+                calendar reads — the same honesty as the runcut
+                view's empty hole). Same document set (load_network
+                / load_edits plumbing); the domain code lives in the
+                shared transit-dispatch library; no GTFS layer (arch
+                gate).
 cap-directory   The directory capability — ONE QUESTION: what
                 exists in the network? The stop list (name-sorted,
                 with the walking-group structure the station board

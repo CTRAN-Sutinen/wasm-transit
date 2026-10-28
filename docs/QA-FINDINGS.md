@@ -95,16 +95,17 @@ is the next unit (`docs/units/`).
 
 ## Resources and comparison (the planner's core loop)
 
-- **QAF-3 OP GAP** — no fleet summary: peak vehicles and platform
-  hours take one `runcut.block_trips` call per block (93 on
-  weekdays) plus host-side concurrency glue. Per day or type:
-  blocks, peak concurrent vehicles and when, platform / revenue /
-  layover hours. A proposal's added trips are `unassigned_trips`,
-  so how many more vehicles it needs has no op either.
-  Pin: 2026-10-26 by hand — 76 peak vehicles at 16:40, 994.25
-  platform h = 646.51 revenue + 347.73 layover.
-  Re-confirmed: 2026-10-27 (service-design UI shows block count
-  only); 2026-10-27 (proposals A–D).
+- **QAF-3 OP GAP** — the fleet summary op exists (`runcut
+  fleet_summary`: blocks, peak vehicles and when, platform /
+  revenue / layover hours, over the effective day), but the
+  PROPOSAL question is still host arithmetic: a proposal's added
+  trips are `unassigned_trips`, so "how many more vehicles does it
+  need" has no answer — unassigned trips have no block, and a
+  vehicle-need is a block assignment the model does not make.
+  Per-service-type scoping of the summary is open too.
+  Pin: 2026-10-27 `fleet_summary` on the weekday import — 97 blocks,
+  77 peak at 16:50, 1003.78 platform h = 803.61 revenue + 200.18
+  layover (revenue cross-checks `network_stats` exactly).
 - **QAF-20 OP GAP** — the scenario diff is half there: per route
   (analysis `service_type_compare`) and per timetable (directory
   `timetable {compare_hash}`) are answered. Coverage deltas still
@@ -120,22 +121,6 @@ is the next unit (`docs/units/`).
   reads "3 gone" as a cut. Needs the edit's own account (`apply`
   reporting what it moved) or a match in the comparison.
   Pin: proposal A in the service-design UI (`timetable-delta`).
-- **QAF-21 OP GAP** — no revenue miles: stats answer hours, never
-  miles, though every cost model is per hour AND per mile and
-  patterns carry `distance_m` (kept from the feed's
-  `shape_dist_traveled` since QAF-56's fix). Average
-  operating speed follows.
-  Pin: the `network_stats` / `service_type_detail` shapes (no
-  distance field).
-- **QAF-4 OP GAP** — no hourly service profile: trips per hour by
-  service type is a jq fold over the document's pattern trips.
-  Pin: 2026-10-26 by hand — 105–117 trips/h midday, taper from
-  19:00 (86/74/53/25/21/10).
-- **QAF-16 OP GAP** — no schedule texture: headway uniformity and
-  clockface alignment per pattern trips are jq over their starts.
-  Pin: 2026-10-26 by hand — weekday headways peak in 27–32-minute
-  bands (158 of 168 off a quarter-hour grid); route 060 spans 9–31
-  minutes within single patterns, all 146 trips under 1-WKDY/31.
 - **QAF-26 OP GAP** — no recovery view: `block_trips` carries
   `layover_after_secs` and durations, but nothing folds them into
   layover-to-runtime per trip or pattern. (Meaningless until
@@ -144,10 +129,6 @@ is the next unit (`docs/units/`).
   host-side.
 ## Coverage
 
-- **QAF-23 OP GAP** — coverage answers the share, not the where:
-  `type_coverage` returns percentages and stop counts, never the
-  unserved points. "Which 71%, and where?" is the next question.
-  Pin: the `type_coverage` response shape.
 - **QAF-18 DATA/MODEL** — point layers bias coverage: a tract's
   population sits at its centroid, so rural tracts read unserved
   where their developed part has service, and the radius swings the
@@ -161,23 +142,6 @@ is the next unit (`docs/units/`).
   households), but the vocabulary is population and no other layer
   exists. Job access is the standard companion.
   Pin: `load_population_layer` is the only layer op.
-
-## What the network does (questions with no op)
-
-- **QAF-25 OP GAP** — no gap analysis: no op folds a stop's day
-  into headway gaps (max gap, gaps by hour).
-  Pin: stop 6136's 316 weekday departures; any gap question is jq
-  over the board.
-- **QAF-22 OP GAP** — no corridor overlap: which routes share stops
-  or segments, and how much service stacks there.
-  Pin: the Vine Green/Red overlap on 7th St (stop 6136) is inferred
-  from stop data; no op joins routes by shared stops.
-- **QAF-27 OP GAP** — no timed-transfer view: nothing pairs
-  arrivals with departures across routes within a window at a hub.
-  Pin: the station board at 9021 lists pooled departures only.
-- **QAF-24 OP GAP** — the calendar is one-directional: date →
-  service types, never type → dates ("when does 1-WKDY/31 run?").
-  Pin: `calendar.active_services`; no op answers a type's date set.
 
 ## Authoring contract
 
@@ -211,7 +175,7 @@ is the next unit (`docs/units/`).
   Pin: runcut `trip_path` with an edits hash (10 points).
 - **QAF-49 OP GAP** — the live document is 388 KB per snapshot,
   re-minted every poll, and each module keeps every registered
-  document. Eviction is `docs/units/host-discipline.md`'s.
+  document. Eviction is `docs/units/module-runtime.md`'s.
   Pin: `JSON.stringify(live).length` on a C-TRAN snapshot.
 
 ## Beyond blocks (runs, work rules)
