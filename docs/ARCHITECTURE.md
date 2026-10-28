@@ -327,6 +327,26 @@ op behind POST /edits. The manifest pins the feed hash and the
 sync module's hash. (Reentrancy and the Go-host serialization
 live in `docs/CONVENTIONS.md`.)
 
+Its HTTP surface:
+
+- `/` — `web/dist` (stdlib `http.ServeContent`, so the Range
+  requests PMTiles needs work).
+- `/rt?url=<encoded>` — a proxy that fetches an agency's realtime
+  feed and returns it with CORS headers, so feeds without
+  `Access-Control-Allow-Origin` can be polled from the page (the
+  server binds 127.0.0.1 by default; `-addr` changes it).
+- `/manifest` — `{feed_hash, feed_version, wasm_hash, generated_at,
+  publisher}`: which GTFS artifact is authoritative, which sync
+  module bytes the server runs, and who says so.
+- `/feed` — the configured GTFS zip (`-feed`); republishing the file
+  is picked up on the next request (mtime-checked).
+- `/edits` — the edit document: `POST` a client document, receive
+  the LWW-merged result (cap-sync's `sync_edits`); `GET` reads the
+  server's. `-edits <path>` persists it across restarts.
+
+`go test ./...` in `server/` proves the server runs the exact
+module bytes the manifest pins and answers what the browser does.
+
 ## web/
 
 Svelte 5 runes + Vite, TypeScript end to end, as a multi-page

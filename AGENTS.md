@@ -38,6 +38,37 @@ lives in the docs below; the rules that keep them from drifting:
 - If a section contradicts the code, the code wins for the moment
   and the section must be fixed immediately.
 
+**Finishing work: the documentation sweep.** Work is not done, and
+is not reported as done, until its documentation is. Before you
+tell the user a piece of work is finished, sweep every place that
+describes what you changed, and say in your report what you
+updated:
+
+1. **The docs.** `AGENTS.md` (the crate tree, commands, rules),
+   `README.md` (what the project is and how to start it),
+   `crates/AGENTS.md`, and every file under `docs/` whose topic the
+   change touches — in the present tense, one home per topic.
+2. **The open-work records.** Edit a unit down to what is left, or
+   delete it with its pin; add every decision you had to encode to
+   `docs/DECISIONS.md` (provisional, with its pins) and delete the
+   ones the user settled; delete fixed findings in
+   `docs/QA-FINDINGS.md`, reword ones the change answers in part,
+   and update the reference hashes a dogfood session re-measured.
+3. **The contract an agent reads.** The op docs and worked examples
+   in `crates/cap-abi/src/bin/gen_manifest.rs` (regenerate the
+   manifest), the justfile's gate comments, and the TS bindings
+   (`just types`).
+4. **The comments.** Module and crate doc comments, the API notes
+   in law-test headers, and the web glue's comments — a comment
+   describing a retired type, op, field, or address misleads the
+   next reader exactly as a stale doc does.
+5. **The retired names.** Search the whole tree (`*.md`, `*.rs`,
+   `*.ts`, `*.svelte`, `*.mjs`, the justfile) for every name the
+   change removed or renamed — crates, types, ops, fields, decision
+   ids, unit files — and for phrases that describe the old design.
+   The search must come back empty, except for code that
+   deliberately reads old documents.
+
 Where the detail lives:
 
 - `crates/AGENTS.md` — the three architecture laws for everything
