@@ -28,6 +28,9 @@ archive — nothing here records what is finished.
   `docs/QA-FINDINGS.md` when the unit lands.
 - New ops follow the extraction pattern (`crates/AGENTS.md`):
   library first, capability wrapper second.
+- **A unit waiting on the user names the decision**: `Blocked:
+  D-N` against the part it blocks. The question itself lives only
+  in `docs/DECISIONS.md`; the rest of the unit proceeds.
 
 ## Open units
 

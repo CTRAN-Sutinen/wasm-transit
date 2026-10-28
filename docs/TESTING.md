@@ -30,7 +30,10 @@ the implementation, so the tests certified the bug. The rules:
   settle a behavior the law must pin (an edge case, a spec
   conflict, two readings of a directive), stop and ask the user;
   list the decisions a new law encodes so they can be checked
-  before the implementation starts.
+  before the implementation starts. Every open question is an
+  entry in `docs/DECISIONS.md`, which names the work it blocks; a
+  law landed on an unconfirmed answer is entered there as
+  *Encoded provisionally* and names its pins.
 
 Two runners: `just test` is the host-side gate (no browser) — run
 it before declaring any change done; `just e2e` adds the browser

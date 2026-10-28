@@ -52,6 +52,9 @@ Where the detail lives:
   rules
 - `docs/QA-FINDINGS.md` — the open real-data findings (defects,
   op/UI/data gaps), each pinned; deleted when fixed
+- `docs/DECISIONS.md` — the open questions for the user, the one
+  record of them; each names the work it blocks (`Blocked: D-N`),
+  and work that names none is free to start
 - `docs/ROADMAP.md` — the sequenced feature plan (direction changes)
 
 ## Commands
@@ -156,7 +159,9 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
 
 - **Clarify, don't assume.** When a directive is ambiguous, conflicts
   with the GTFS spec or an architecture law, or leaves a design
-  decision open, ask before building on an answer you picked.
+  decision open, ask before building on an answer you picked —
+  and record the question in `docs/DECISIONS.md`, naming the work
+  it blocks, so the rest proceeds while it is decided.
 - **Git is the user's** — never commit, push, stash, or otherwise
   move refs. Do the work, leave the tree, report what changed.
 - The TS bindings are GENERATED and gitignored (`just types`, run

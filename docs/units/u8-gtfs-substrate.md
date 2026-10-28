@@ -88,18 +88,17 @@ Follow-ups the trip model left, inside this unit:
   `rt.load_trip_map`) is the identity and goes, and a frequency
   trip's rt instance resolves by the update's start_time (the map
   answers its first instance today).
-- **Decisions the trip laws encode that the intent did not state**
-  — confirm or change: a trip's first arrival is offset 0 (its
-  start); `adjust_running_time` leaves the profiles and frequency
-  trips alone; the import gives each pattern one all-day profile
-  from its earliest trip; a pattern's identity includes its shape.
+- The trip laws encode answers the intent did not state, entered
+  as D-1 – D-5 in `docs/DECISIONS.md` (provisional; nothing here
+  waits on them except the geometry split below).
 - QAF-64 (a retimed trip reads as removed plus added) is answerable
   now: the timetable comparison can match by trip id.
 
 The geometry split (alignments as their own document, for
 registration cost — `runtime-cost-gate.md`) must keep shapes
 exact: C-TRAN's shapes carry 14–15-digit coordinates, so nothing
-rounds at import.
+rounds at import. Blocked: D-4 (whether a shape is part of a
+pattern's identity decides what the alignments are keyed by).
 
 ## Done when
 

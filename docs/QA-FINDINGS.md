@@ -16,7 +16,8 @@ Format, grouped by theme:
 IDs are never reused; the next new finding is **QAF-79**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
-is the next unit (`docs/units/`).
+is the next unit (`docs/units/`). A finding whose fix waits on the
+user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
 
 ## Reference data
 
@@ -54,6 +55,7 @@ is the next unit (`docs/units/`).
   7802, 7804). The model has no split between required recovery
   and slack, so "does the cycle still work?" has no real answer.
   Pin: proposals A and C, author `apply` `issues`.
+  Blocked: D-9.
 - **QAF-63 DATA GAP** — GTFS direction_id groups branches, not only
   variants: 006 direction 1 holds Fruit Valley (8 min) and VA
   Medical Center (12 min) patterns leaving at the same minutes all
@@ -68,6 +70,7 @@ is the next unit (`docs/units/`).
   9021 pooling bays 9021–9027.
   Re-confirmed: 2026-10-28, directory `stops` "fisher" — station 106
   and all nine bays `transfer: false`.
+  Blocked: D-10.
 - **QAF-48 DATA GAP** — C-TRAN's vehicle labels are empty, so the
   late list names buses by internal id ("CTRAN2269"). The fallback
   is honest; whether that id is what a dispatcher calls the bus is
@@ -75,6 +78,7 @@ is the next unit (`docs/units/`).
   Pin: rt `live` summary `late[0].label`.
   Re-confirmed: 2026-10-28 08:52 snapshot, `late[0].label`
   "CTRAN7003" (route 105, +721 s).
+  Blocked: D-10.
 - **QAF-65 DATA GAP** — the I-5-closure-era service is modeled as
   sibling service ids (1-WKDY/30, /31, …) that ride along with the
   base weekday — same weekly pattern, every day they run a day
@@ -96,6 +100,7 @@ is the next unit (`docs/units/`).
   trips, typical headway 1200 s at 9008; directory `timetable` 164
   "0" 1-WKDY — 40 trips, 18 from /30 + 18 from /31 + 4 from the
   base.
+  Blocked: D-8 (the gestures).
 
 ## The model
 
@@ -106,6 +111,7 @@ is the next unit (`docs/units/`).
   no "same as weekday, except" relation.
   Pin: the document's `4-NYE:pat-006-*` pattern trips equal
   `1-WKDY:pat-006-*` start for start.
+  Blocked: D-8.
 - **QAF-36 OP GAP** — the edit document is diversions only: no trip
   cancellation, hold, or vehicle swap. A dispatcher's first
   reaction to a 24-minute-late trip (cancel or cover it) has no
@@ -147,6 +153,7 @@ is the next unit (`docs/units/`).
   QAF-62 separates recovery from slack.)
   Pin: the 347.73 layover hours in QAF-3's pin were summed
   host-side.
+  Blocked: D-9.
 ## Coverage
 
 - **QAF-78 DEFECT** — whole-day "frequent" counts a stop's visits,
@@ -158,6 +165,7 @@ is the next unit (`docs/units/`).
   `service_type_ops_expose_the_design_axis` — stop C (a terminal)
   counts toward `type_coverage` `frequent_pct` (150/180, not
   100/180).
+  Blocked: D-6.
 - **QAF-18 DATA/MODEL** — point layers bias coverage: a tract's
   population sits at its centroid, so rural tracts read unserved
   where their developed part has service, and the radius swings the
@@ -239,6 +247,7 @@ time, last bus home, is there a detour.
   Pin: rt `live` default window on the 08:52 snapshot — counts
   `early: 0` of 63; board 106 — the 09:25 034 at `delay_secs: -91`
   reads `on_time`.
+  Blocked: D-7.
 - **QAF-72 OP GAP** — the router is earliest-arrival only: "when is
   the last bus home?" is answered by bisecting departure times until
   the plan goes null. No latest-departure (or arrive-by) query.
@@ -269,6 +278,7 @@ time, last bus home, is there a detour.
   make?" comes back 16 times.
   Pin: directory `route_stop_sequence` 012 — 16 patterns through
   6277, all 29 stops.
+  Blocked: D-4.
 
 ## The runner
 
