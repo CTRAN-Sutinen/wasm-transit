@@ -1,11 +1,12 @@
 <script lang="ts">
   /// The rider's map — a RENDER component. It draws answers: every
   /// stop (directory `stops`), the picked stop, the live buses (the
-  /// live document's vehicles, colored by their status), a picked
-  /// departure's route (directory `focus`), the planned trip's legs
-  /// (router `itinerary_paths`), the trip's ends, and the rider's
-  /// location. It computes no geometry; it frames what it draws. A
-  /// tapped stop and a tapped spot are events.
+  /// live document's vehicles, colored by their status, pointing their
+  /// bearing), the route in play (directory `focus`: its line and its
+  /// stops; its buses stay bright, the rest dim), the planned trip's
+  /// legs (router `itinerary_paths`), the trip's ends, and the rider's
+  /// location. It computes no geometry; it frames what it draws, and
+  /// follows a picked bus. A tapped bus, stop, or spot is an event.
   import { onMount } from "svelte";
   import * as maplibregl from "maplibre-gl";
   import { pickStyle } from "../basemap";
@@ -25,8 +26,12 @@
     selected,
     vehicles,
     trip,
+    picked,
+    follow,
     route,
+    routeId,
     routeColor,
+    frameRoute,
     legs,
     from,
     to,
@@ -34,6 +39,7 @@
     padding,
     onstop,
     onpoint,
+    onvehicle,
   }: {
     stops: DirectoryStop[];
     /// Stops the panel lists (the places near the rider), ringed.
@@ -43,9 +49,17 @@
     vehicles: LiveVehicle[];
     /// The picked departure's trip: its bus is drawn large.
     trip: string | null;
+    /// The picked bus (the live document's key): drawn large.
+    picked: string | null;
+    /// Keep the picked bus in view as it moves.
+    follow: boolean;
     route: EntityFocus | null;
+    /// The route in play: its buses stay bright, the rest dim.
+    routeId: string | null;
     /// The route's authored color (the directory's, bare hex).
     routeColor: string | null;
+    /// Frame the route when it arrives (not while following a bus).
+    frameRoute: boolean;
     legs: LegPath[] | null;
     from: Place | null;
     to: Place | null;
@@ -54,6 +68,7 @@
     padding: { top: number; right: number; bottom: number; left: number };
     onstop: (place: Place) => void;
     onpoint: (lat: number, lon: number) => void;
+    onvehicle: (v: { key: string; trip: string | null; route: string | null }) => void;
   } = $props();
 
   let container: HTMLDivElement;
@@ -81,6 +96,23 @@
     return coords.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(coords[0], coords[0]));
   }
 
+  /// The heading arrow: a chevron the map tints with the bus's status
+  /// and turns to its bearing.
+  function arrow(): ImageData {
+    const size = 40;
+    const ctx = document.createElement("canvas").getContext("2d")!;
+    ctx.canvas.width = ctx.canvas.height = size;
+    ctx.beginPath();
+    ctx.moveTo(size / 2, 4);
+    ctx.lineTo(size - 8, size - 8);
+    ctx.lineTo(size / 2, size - 16);
+    ctx.lineTo(8, size - 8);
+    ctx.closePath();
+    ctx.fillStyle = "#000";
+    ctx.fill();
+    return ctx.getImageData(0, 0, size, size);
+  }
+
   function set(source: string, data: unknown) {
     (map?.getSource(source) as maplibregl.GeoJSONSource | undefined)?.setData(data as any);
   }
@@ -99,12 +131,22 @@
         const warn = token("--warn", "#a16207");
         const bad = token("--bad", "#b91c1c");
         const muted = token("--muted", "#78716c");
-        for (const id of ["route", "legs", "stops", "vehicles", "ends", "here"]) m.addSource(id, { type: "geojson", data: EMPTY as any });
+        for (const id of ["route", "route-stops", "legs", "stops", "vehicles", "ends", "here"]) m.addSource(id, { type: "geojson", data: EMPTY as any });
+        m.addImage("heading", arrow(), { pixelRatio: 2, sdf: true });
 
         m.addLayer({
           id: "route", type: "line", source: "route",
           layout: { "line-join": "round", "line-cap": "round" },
           paint: { "line-width": 5, "line-opacity": 0.55, "line-color": ["coalesce", ["get", "color"], accent] },
+        });
+        m.addLayer({
+          id: "route-stops", type: "circle", source: "route-stops", minzoom: 11,
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 2, 15, 4.5],
+            "circle-color": "#fff",
+            "circle-stroke-color": ["coalesce", ["get", "color"], accent],
+            "circle-stroke-width": 2,
+          },
         });
         m.addLayer({
           id: "legs-walk", type: "line", source: "legs", filter: ["==", ["get", "kind"], "walk"],
@@ -152,19 +194,36 @@
             "circle-stroke-width": 3,
           },
         });
+        const status = ["match", ["get", "status"], "on_time", ok, "late", warn, "very_late", bad, "early", bad, muted];
+        const dim = ["case", ["==", ["get", "dim"], 1], 0.25, 1];
+        m.addLayer({
+          id: "vehicles-heading", type: "symbol", source: "vehicles", minzoom: 11, filter: ["has", "bearing"],
+          layout: {
+            "icon-image": "heading", "icon-rotate": ["get", "bearing"], "icon-rotation-alignment": "map",
+            "icon-allow-overlap": true, "icon-ignore-placement": true,
+            "icon-offset": ["interpolate", ["linear"], ["zoom"], 11, ["literal", [0, -14]], 15, ["literal", [0, -20]]],
+            "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 0.6, 15, 1],
+          },
+          paint: { "icon-color": status as any, "icon-opacity": dim as any },
+        });
         m.addLayer({
           id: "vehicles", type: "circle", source: "vehicles",
           paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, ["case", ["==", ["get", "picked"], 1], 8, 3.5], 15, ["case", ["==", ["get", "picked"], 1], 13, 8]],
-            "circle-color": ["match", ["get", "status"], "on_time", ok, "late", warn, "very_late", bad, "early", bad, muted],
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, ["case", ["==", ["get", "picked"], 1], 9, 4.5], 13, ["case", ["==", ["get", "picked"], 1], 13, 8], 16, ["case", ["==", ["get", "picked"], 1], 16, 11]],
+            "circle-color": status as any,
             "circle-stroke-color": "#fff",
             "circle-stroke-width": ["case", ["==", ["get", "picked"], 1], 3, 1.5],
+            "circle-opacity": dim as any,
+            "circle-stroke-opacity": dim as any,
           },
         });
         m.addLayer({
-          id: "vehicles-label", type: "symbol", source: "vehicles", minzoom: 13,
-          layout: { "text-field": ["coalesce", ["get", "route_name"], ""], "text-size": 10, "text-font": ["Noto Sans Regular"], "text-allow-overlap": true },
-          paint: { "text-color": "#fff" },
+          id: "vehicles-label", type: "symbol", source: "vehicles", minzoom: 12,
+          layout: {
+            "text-field": ["coalesce", ["get", "route_name"], ""], "text-size": ["interpolate", ["linear"], ["zoom"], 12, 8, 16, 11],
+            "text-font": ["Noto Sans Regular"], "text-allow-overlap": true, "text-ignore-placement": true,
+          },
+          paint: { "text-color": "#fff", "text-opacity": dim as any },
         });
         m.addLayer({
           id: "here-halo", type: "circle", source: "here",
@@ -175,9 +234,17 @@
           paint: { "circle-radius": 6, "circle-color": "#2563eb", "circle-stroke-color": "#fff", "circle-stroke-width": 2 },
         });
 
-        // A tapped stop opens it; a tapped spot asks what is near it.
+        // A tapped bus opens it; a tapped stop opens it; a tapped spot
+        // asks what is near it.
         m.on("click", (e) => {
           const pad = 6;
+          const box: [[number, number], [number, number]] = [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]];
+          const bus = m.queryRenderedFeatures(box, { layers: ["vehicles"] })[0];
+          if (bus) {
+            const p = bus.properties;
+            onvehicle({ key: String(p.key), trip: p.trip ? String(p.trip) : null, route: p.route ? String(p.route) : null });
+            return;
+          }
           const hits = m.queryRenderedFeatures(
             [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]],
             { layers: ["stops", "stops-marked", "stop-selected"] },
@@ -190,8 +257,10 @@
             onpoint(e.lngLat.lat, e.lngLat.lng);
           }
         });
-        m.on("mouseenter", "stops", () => (m.getCanvas().style.cursor = "pointer"));
-        m.on("mouseleave", "stops", () => (m.getCanvas().style.cursor = ""));
+        for (const layer of ["stops", "vehicles"]) {
+          m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));
+          m.on("mouseleave", layer, () => (m.getCanvas().style.cursor = ""));
+        }
         loaded = true;
       });
     })();
@@ -220,9 +289,28 @@
     }
   });
 
+  // The buses; a followed bus keeps the map on it.
   $effect(() => {
-    if (!loaded) return;
-    set("vehicles", collection(vehicles.map((v) => point(v, { status: v.status, route_name: v.route_name, picked: trip != null && v.trip === trip ? 1 : 0 }))));
+    if (!loaded || !map) return;
+    set(
+      "vehicles",
+      collection(
+        vehicles.map((v) =>
+          point(v, {
+            key: v.key,
+            trip: v.trip,
+            route: v.route,
+            status: v.status,
+            route_name: v.route_name,
+            ...(v.bearing != null ? { bearing: v.bearing } : {}),
+            picked: (picked != null && v.key === picked) || (trip != null && v.trip === trip) ? 1 : 0,
+            dim: routeId != null && v.route !== routeId ? 1 : 0,
+          }),
+        ),
+      ),
+    );
+    const bus = follow && picked != null ? vehicles.find((v) => v.key === picked) : undefined;
+    if (bus) map.easeTo({ center: [bus.lon, bus.lat], zoom: Math.max(map.getZoom(), 14), padding, duration: 800 });
   });
 
   $effect(() => {
@@ -230,12 +318,14 @@
     map.setFilter("stops-marked", ["in", ["get", "stop_id"], ["literal", marked]]);
   });
 
-  // A picked departure's route, framed whole.
+  // The route in play, framed whole when it arrives.
   $effect(() => {
     if (!loaded || !map) return;
-    set("route", collection(route ? route.lines.map((l) => lineFeature(l, { color: css(routeColor) })).filter(Boolean) : []));
+    const color = css(routeColor);
+    set("route", collection(route ? route.lines.map((l) => lineFeature(l, { color })).filter(Boolean) : []));
+    set("route-stops", collection(route ? route.points.map((p) => point(p, { color })) : []));
     const b = route ? bounds(route.lines.flatMap((l) => lonLat(l))) : null;
-    if (b) map.fitBounds(b, { padding, maxZoom: 15, duration: 500 });
+    if (b && frameRoute) map.fitBounds(b, { padding, maxZoom: 15, duration: 500 });
   });
 
   // The trip's legs, framed whole when a different trip arrives (a

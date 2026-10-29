@@ -10,7 +10,9 @@
 /// mine (typed, near me, or tapped on the map), what leaves next from
 /// it live, is my bus on time, how do I get there (now, at a time, by
 /// a time), when is the last bus, is a detour or alert in my way, and
-/// what leaves the stops I saved.
+/// what leaves the stops I saved — and, around them, the network:
+/// where every bus is now and where one is going, and what each route
+/// is (its directions and their stops).
 ///
 /// A capability the bus cannot assemble turns its frames OFF (`off`),
 /// and they say so — nothing here answers in its place.
@@ -35,6 +37,10 @@ import { answer, answerGraph, hashIn, rememberHash, today, type CapModule } from
 import type { Boundary } from "../../types/Boundary";
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
 import type { DirectoryStop } from "../../types/cap_directory/DirectoryStop";
+import type { PatternStops } from "../../types/cap_directory/PatternStops";
+import type { EntityRow } from "../../types/EntityRow";
+import type { RouteDetail } from "../../types/RouteDetail";
+import type { TripProgress } from "../../types/TripProgress";
 import type { EditRecord } from "../../types/EditRecord";
 import type { EntityFocus } from "../../types/EntityFocus";
 import type { Itinerary } from "../../types/Itinerary";
@@ -49,7 +55,9 @@ import type { Watchlist } from "../../types/cap_board/Watchlist";
 /// on the map, and ask its board.
 export type Place = { id: string; name: string; lat?: number; lon?: number; distance_m?: number };
 export type Field = "search" | "from" | "to";
-export type View = "home" | "stop" | "trip" | "alerts";
+export type View = "home" | "stop" | "trip" | "alerts" | "routes" | "route" | "bus";
+/// A bus picked on the map, by the live document's key.
+export type Picked = { key: string; trip: string | null; route: string | null };
 export type When = { mode: "now" | "depart" | "arrive" | "last"; secs: number | null };
 export type LiveUrls = { trips: string; vehicles: string; alerts: string };
 
@@ -94,6 +102,8 @@ export const ride = $state({
   /// marked.
   departure: null as { trip: string; start_secs: number; route: string } | null,
   routeFocus: null as EntityFocus | null,
+  /// Which route `routeFocus` draws.
+  focusRoute: null as string | null,
   urls: { trips: "", vehicles: "", alerts: "" } as LiveUrls,
   live: null as Live | null,
   liveAt: "",
@@ -103,6 +113,17 @@ export const ride = $state({
   when: { mode: "now", secs: null } as When,
   plan: null as { itinerary: Itinerary | null; notice: string | null; error?: string } | null,
   paths: null as LegPath[] | null,
+  /// The network: the routes list (filtered as typed), one route
+  /// (its composition and each pattern's stops), one bus (its trip's
+  /// progress, its stops named).
+  routeQuery: "",
+  routeRows: null as EntityRow[] | null,
+  route: null as string | null,
+  routeInfo: null as { detail: RouteDetail | null; patterns: PatternStops[] } | null,
+  vehicle: null as Picked | null,
+  progress: null as { progress: TripProgress | null; names: DirectoryStop[] } | null,
+  /// The map keeps the picked bus in view as it moves.
+  follow: true,
   saved: [] as { id: string; label: string }[],
   savedBoards: null as WatchBoardStop[] | null,
   recent: [] as Place[],
@@ -250,7 +271,7 @@ const request = answerGraph(
       id: "rt.live",
       frame: "LiveFeeds",
       needs: ["network", "snapshot"],
-      run: async () => {
+      run: async (touch) => {
         const rt = await rtModule();
         ride.off.rt = !rt;
         const { trips, vehicles, alerts } = snapshots;
@@ -264,6 +285,13 @@ const request = answerGraph(
         if (!boundaryHash) boundaries.set(rt, (boundaryHash = cap.loadBoundary(boundary)));
         const bh = boundaryHash;
         ride.live = answer(rt, "live", [networkHash, bh, trips, vehicles, alerts], () => cap.live(networkHash, bh, trips, vehicles, alerts));
+        // A picked bus that moved on to its next trip is followed onto it.
+        const v = ride.vehicle;
+        const now = v && ride.live.live.vehicles.find((x) => x.key === v.key);
+        if (v && now && (now.trip !== v.trip || now.route !== v.route)) {
+          ride.vehicle = { key: v.key, trip: now.trip, route: now.route };
+          touch("vehicle");
+        }
       },
     },
     {
@@ -345,18 +373,89 @@ const request = answerGraph(
       },
     },
     {
-      // A picked departure's route, drawn.
+      // The route in play, drawn: the open route's, the picked bus's,
+      // or the picked departure's.
       id: "directory.focus",
       frame: "RideMap",
-      needs: ["network", "departure"],
+      needs: ["network", "departure", "route", "vehicle", "view"],
       run: async () => {
-        const [d, directory] = [ride.departure, await directoryModule()];
-        if (!network || !directory || !d) {
+        const directory = await directoryModule();
+        const route = focusRoute();
+        ride.focusRoute = route;
+        if (!network || !directory || !route) {
           ride.routeFocus = null;
           return;
         }
         const hash = hashIn(directory, network);
-        ride.routeFocus = answer(directory, "focus", [hash, "route", d.route], () => directoryCap(directory).focus(hash, "route", d.route));
+        ride.routeFocus = answer(directory, "focus", [hash, "route", route], () => directoryCap(directory).focus(hash, "route", route));
+      },
+    },
+    {
+      // The routes, narrowed by the filter's words.
+      id: "directory.entities[route]",
+      frame: "RouteList",
+      needs: ["network", "routeQuery", "view"],
+      visible: () => ride.view === "routes",
+      run: async () => {
+        const directory = await directoryModule();
+        ride.off.directory = !directory;
+        if (!network || !directory) {
+          ride.routeRows = null;
+          return;
+        }
+        const hash = hashIn(directory, network);
+        const q = ride.routeQuery.trim();
+        ride.routeRows = answer(directory, "entities", [hash, "route", q], () => directoryCap(directory).entities(hash, "route", q));
+      },
+    },
+    {
+      // One route: its directions and patterns, and each pattern's
+      // stops in order.
+      id: "directory.route_detail+route_stop_sequence",
+      frame: "RouteView",
+      needs: ["network", "route", "view"],
+      visible: () => ride.view === "route",
+      run: async () => {
+        const [route, directory] = [ride.route, await directoryModule()];
+        if (!network || !directory || !route) {
+          ride.routeInfo = null;
+          return;
+        }
+        const dir = directoryCap(directory);
+        const hash = hashIn(directory, network);
+        ride.routeInfo = {
+          detail: answer(directory, "route_detail", [hash, route], () => dir.routeDetail(hash, route)),
+          patterns: answer(directory, "route_stop_sequence", [hash, route], () => dir.routeStopSequence(hash, route)),
+        };
+      },
+    },
+    {
+      // One bus: its trip's progress in the trip-updates snapshot,
+      // and the names of the stops it lists (`stops_by_ids` — the
+      // names join for views that carry ids).
+      id: "rt.trip_progress+directory.stops_by_ids",
+      frame: "BusView",
+      needs: ["network", "snapshot", "vehicle", "view"],
+      visible: () => ride.view === "bus",
+      run: async () => {
+        const [v, rt, directory] = [ride.vehicle, await rtModule(), await directoryModule()];
+        if (!network || !boundary || !rt || !v?.trip || !snapshots.trips) {
+          ride.progress = v ? { progress: null, names: [] } : null;
+          return;
+        }
+        const cap = rtCap(rt);
+        const networkHash = hashIn(rt, network);
+        let bh = boundaries.get(rt);
+        if (!bh) boundaries.set(rt, (bh = cap.loadBoundary(boundary)));
+        const [b, rtHash, trip] = [bh, snapshots.trips, v.trip];
+        const progress = answer(rt, "trip_progress", [networkHash, b, rtHash, trip], () => cap.tripProgress(networkHash, b, rtHash, trip));
+        let names: DirectoryStop[] = [];
+        if (progress && directory) {
+          const hash = hashIn(directory, network);
+          const ids = progress.stops.map((s) => s.stop_id);
+          names = answer(directory, "stops_by_ids", [hash, ...ids], () => directoryCap(directory).stopsByIds(hash, ids));
+        }
+        ride.progress = { progress, names };
       },
     },
     {
@@ -658,6 +757,43 @@ export function pickDeparture(d: { trip: string; start_secs: number; route: stri
   const same = d && ride.departure && ride.departure.trip === d.trip && ride.departure.start_secs === d.start_secs;
   ride.departure = same ? null : d;
   return request("departure");
+}
+
+/// The route the map draws for the panel on screen.
+function focusRoute(): string | null {
+  if (ride.view === "route") return ride.route;
+  if (ride.view === "bus") return ride.vehicle?.route ?? null;
+  if (ride.view === "stop") return ride.departure?.route ?? null;
+  return null;
+}
+
+export function showRoutes(): Promise<void> {
+  ride.view = "routes";
+  return request("view");
+}
+
+export function filterRoutes(text: string): Promise<void> {
+  ride.routeQuery = text;
+  return request("routeQuery");
+}
+
+export function openRoute(routeId: string): Promise<void> {
+  ride.route = routeId;
+  ride.view = "route";
+  return request("route", "view");
+}
+
+/// A bus tapped on the map.
+export function openVehicle(v: Picked): Promise<void> {
+  ride.vehicle = v;
+  ride.progress = null;
+  ride.follow = true;
+  ride.view = "bus";
+  return request("vehicle", "view");
+}
+
+export function setFollow(on: boolean): void {
+  ride.follow = on;
 }
 
 /// Directions from or to a place; the other end defaults to the

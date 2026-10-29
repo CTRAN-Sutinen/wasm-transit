@@ -55,6 +55,7 @@ import type { Request as SyncCapRequest } from "./types/cap_sync/Request";
 import type { Response as SyncCapResponse } from "./types/cap_sync/Response";
 import type { DirectoryStop } from "./types/cap_directory/DirectoryStop";
 import type { NearbyStop } from "./types/NearbyStop";
+import type { TripProgress } from "./types/TripProgress";
 import type { DirectoryRoute } from "./types/cap_directory/DirectoryRoute";
 import { directory } from "./state.svelte";
 import type { PatternStops } from "./types/cap_directory/PatternStops";
@@ -896,6 +897,19 @@ export function rtCap(module: CapModule) {
         { op: "load_boundary" }
       >;
       return resp.boundary_hash;
+    },
+    /// One trip's progress in a snapshot: every scheduled stop with
+    /// the live delay and the predicted time. Null when the snapshot
+    /// has no update for the trip.
+    tripProgress(networkHash: string, boundaryHash: string, rtHash: string, tripId: string): TripProgress | null {
+      const resp = module.invoke({
+        op: "trip_progress",
+        network_hash: networkHash,
+        boundary_hash: boundaryHash,
+        rt_hash: rtHash,
+        trip_id: tripId,
+      } as RtCapRequest) as Extract<RtCapResponse, { op: "trip_progress" }>;
+      return resp.progress;
     },
     /// THE live document: the snapshot(s) resolved into model
     /// vocabulary, classified under the module's default window.

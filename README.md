@@ -82,3 +82,12 @@ java -jar planetiler.jar --osm-path=<your-region>-latest.osm.pbf --output=web/pu
 Rebuild the frontend afterwards (`just build`). A metro extract is
 small enough to keep next to the GTFS zip, which makes the whole app
 — feed, queries, basemap — work offline.
+
+## Live feeds
+
+The ride-now UI (`/ride-now.html`) reads the agency's GTFS-rt feeds
+named in `web/public/live-feeds.json` (`trips`, `vehicles`,
+`alerts`; an empty URL is a feed the agency does not have), fetched
+through the server's `/rt` proxy every 30 seconds. A rider can set
+their own from the live pill. Rebuild the frontend after changing
+the file.

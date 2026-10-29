@@ -1,18 +1,20 @@
 <script lang="ts">
   /// The ride-now UI — a map with a panel over it. The map is the
-  /// network as a rider sees it: every stop (tap one), the live buses
-  /// colored by how they are running, the picked bus's route, the
-  /// planned trip. The panel follows what the rider is doing: home
-  /// (search, what leaves near you, saved and recent stops), one stop
-  /// (its live board, alerts, detours), getting there (a trip, now or
-  /// at a time, or the last bus), and the alerts in force. A wide
+  /// network as a rider sees it: every stop (tap one), every live bus
+  /// colored by how it is running and pointing where it heads (tap
+  /// one), the route in play, the planned trip. The panel follows what
+  /// the rider is doing: home (search, what leaves near you, saved and
+  /// recent stops), one stop (its live board, alerts, detours), getting
+  /// there (a trip, now or at a time, or the last bus), the routes and
+  /// one route (its directions and stops), one bus (where it is going,
+  /// stop by stop), and the alerts in force. A wide
   /// screen floats the panel at the left; a phone makes it a sheet
   /// that slides up over the map.
   /// Every panel is a render component fed from the host's `ride`;
   /// this file only places them and routes their events to the host.
   import {
     ride, loadFeedBytes, setLiveUrls, typed, clearFound, show, openStop, pickDeparture, directions, setEnd, swapEnds,
-    setWhen, toggleSaved, locate, nearPoint, type Place,
+    setWhen, toggleSaved, locate, nearPoint, showRoutes, filterRoutes, openRoute, openVehicle, setFollow, type Place,
   } from "./host.svelte";
   import RideMap from "../../components/RideMap.svelte";
   import LiveFeeds from "../../components/LiveFeeds.svelte";
@@ -21,11 +23,23 @@
   import RiderBoard from "../../components/RiderBoard.svelte";
   import TripPlan from "../../components/TripPlan.svelte";
   import AlertList from "../../components/AlertList.svelte";
+  import RouteList from "../../components/RouteList.svelte";
+  import RouteView from "../../components/RouteView.svelte";
+  import BusView from "../../components/BusView.svelte";
 
   const FOUND = 25;
   const alerts = $derived(ride.live?.live.alerts ?? []);
   const saved = $derived(!!ride.stop && ride.saved.some((s) => s.id === ride.stop?.id));
-  const routeColor = $derived(ride.departure ? (ride.routes.find((r) => r.route_id === ride.departure?.route)?.color ?? null) : null);
+  const routeColor = $derived(ride.focusRoute ? (ride.routes.find((r) => r.route_id === ride.focusRoute)?.color ?? null) : null);
+  const bus = $derived(ride.vehicle ? (ride.live?.live.vehicles.find((v) => v.key === ride.vehicle?.key) ?? null) : null);
+  const following = $derived(ride.view === "bus" && ride.follow);
+  /// The picked departure's bus: the live document's vehicle on that
+  /// trip instance, when one is reporting.
+  const departureBus = $derived(
+    ride.departure
+      ? (ride.live?.live.vehicles.find((v) => v.trip === ride.departure?.trip && v.start_secs === ride.departure?.start_secs) ?? null)
+      : null,
+  );
   const searchFound = $derived(ride.found?.field === "search" ? ride.found : null);
 
   // The sheet: up (the panel) or down (the map) on a phone.
@@ -71,8 +85,12 @@
       selected={ride.view === "stop" ? ride.stop : null}
       vehicles={ride.live?.live.vehicles ?? []}
       trip={ride.view === "stop" ? (ride.departure?.trip ?? null) : null}
-      route={ride.view === "stop" ? ride.routeFocus : null}
+      picked={ride.view === "bus" ? (ride.vehicle?.key ?? null) : null}
+      follow={following}
+      route={ride.routeFocus}
+      routeId={ride.view === "route" || ride.view === "bus" ? ride.focusRoute : null}
       {routeColor}
+      frameRoute={!following}
       legs={ride.view === "trip" ? ride.paths : null}
       from={ride.view === "trip" ? ride.from : null}
       to={ride.view === "trip" ? ride.to : null}
@@ -80,6 +98,7 @@
       {padding}
       onstop={stopFromMap}
       onpoint={spotFromMap}
+      onvehicle={(v) => { sheetUp = true; openVehicle(v); }}
     />
   </div>
 
@@ -122,10 +141,17 @@
             onpick={openStop}
             onclose={clearFound}
           />
-          <button class="cta" onclick={() => show("trip")}>
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3l8.5 9-8.5 9-8.5-9z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /><path d="M9.5 13.5v-2a1 1 0 011-1H15m-2-2l2 2-2 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
-            Get directions
-          </button>
+          <div class="actions">
+            <button class="cta" onclick={() => show("trip")}>
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3l8.5 9-8.5 9-8.5-9z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /><path d="M9.5 13.5v-2a1 1 0 011-1H15m-2-2l2 2-2 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              Get directions
+            </button>
+            <button class="cta second" onclick={showRoutes}>
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="6" cy="6" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8" /><circle cx="18" cy="18" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M6 8.2V10a4 4 0 004 4h4a4 4 0 014 4v-2.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+              Routes
+            </button>
+          </div>
+          <p class="tip">Tap any bus on the map to see where it’s going.</p>
 
           <section class="group" data-testid="nearby">
             <div class="group-head">
@@ -193,6 +219,8 @@
           liveOff={ride.off.rt}
           {saved}
           picked={ride.departure}
+          tracked={departureBus ? { label: departureBus.label ?? departureBus.vehicle_id ?? departureBus.key } : null}
+          ontrack={() => departureBus && openVehicle({ key: departureBus.key, trip: departureBus.trip, route: departureBus.route })}
           onpick={(r) => pickDeparture({ trip: r.trip, start_secs: r.start_secs, route: r.route })}
           onsave={() => ride.stop && toggleSaved(ride.stop)}
           onfrom={() => ride.stop && directions("from", ride.stop)}
@@ -217,6 +245,15 @@
           onwhen={setWhen}
           onback={() => show(ride.stop ? "stop" : "home")}
         />
+      {:else if ride.view === "routes"}
+        <RouteList rows={ride.routeRows} routes={ride.routes} query={ride.routeQuery} off={ride.off.directory}
+          onfilter={filterRoutes} onopen={openRoute} onback={() => show("home")} />
+      {:else if ride.view === "route"}
+        <RouteView route={ride.routes.find((r) => r.route_id === ride.route) ?? null} info={ride.routeInfo} off={ride.off.directory}
+          onstop={openStop} onback={showRoutes} />
+      {:else if ride.view === "bus"}
+        <BusView vehicle={bus} progress={ride.progress} routes={ride.routes} follow={ride.follow} liveOff={ride.off.rt}
+          onfollow={setFollow} onstop={openStop} onroute={openRoute} onback={() => show("home")} />
       {:else if ride.view === "alerts"}
         <header class="sub-head">
           <button class="back" onclick={() => show("home")} aria-label="back">‹</button>
@@ -272,6 +309,11 @@
     font: inherit; font-weight: 700; padding: 0.65rem 0.9rem; border-radius: 12px; cursor: pointer; margin-top: -0.4rem;
   }
   .cta:hover { filter: brightness(1.08); }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: -0.4rem; }
+  .actions .cta { margin-top: 0; justify-content: center; }
+  .cta.second { background: var(--surface); color: var(--text); border: 1px solid var(--line); }
+  .cta.second:hover { border-color: var(--accent); color: var(--accent); filter: none; }
+  .tip { margin: -0.4rem 0 0; font-size: 0.8rem; color: var(--muted); }
   .feed { display: grid; gap: 0.4rem; padding: 1rem; border: 2px dashed var(--line); border-radius: 14px; color: var(--muted); }
   .loading { display: flex; align-items: center; gap: 0.6rem; color: var(--muted); }
   .loading span { width: 1rem; height: 1rem; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }

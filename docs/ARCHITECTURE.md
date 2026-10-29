@@ -513,7 +513,7 @@ web/e2e/ui-<id>.spec.mjs       the UI's e2e spec (fixture feed: e2e/fixtures/)
 Shared by every generated UI:
 
 - `src/uis/base.css`: color tokens (`--surface --text --muted
-  --line --hover --accent --accent-soft --bad --warn`) in light and
+  --line --hover --accent --accent-soft --bad --warn --ok`) in light and
   dark, the page base, `.wb-scroll` (a table that scrolls in its own
   box with an opaque sticky header), and the class names the shared
   components render with (`.muted`, `.table-scroll`, `.chip`,

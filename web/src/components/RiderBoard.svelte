@@ -21,7 +21,9 @@
     liveOff,
     saved,
     picked,
+    tracked,
     onpick,
+    ontrack,
     onsave,
     onfrom,
     onto,
@@ -39,7 +41,10 @@
     liveOff: boolean;
     saved: boolean;
     picked: { trip: string; start_secs: number } | null;
+    /// The picked departure's bus, when it is reporting.
+    tracked: { label: string } | null;
     onpick: (row: BoardRow) => void;
+    ontrack: () => void;
     onsave: () => void;
     onfrom: () => void;
     onto: () => void;
@@ -72,6 +77,17 @@
   {:else}
     {#if board.alerts.length}
       <AlertList alerts={board.alerts} {routes} compact />
+    {/if}
+
+    {#if picked}
+      <div class="track" data-testid="track">
+        {#if tracked}
+          <span><span class="dot"></span> Bus {tracked.label} is on its way</span>
+          <button onclick={ontrack}>Track this bus ›</button>
+        {:else}
+          <span class="quiet-inline">This bus isn’t reporting its position — its route is on the map.</span>
+        {/if}
+      </div>
     {/if}
 
     {#if board.rows.length}
@@ -134,6 +150,13 @@
   .source { color: var(--muted); font-size: 0.78rem; margin: 0.75rem 0 0; display: flex; align-items: center; gap: 0.4rem; }
   .dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
   .off { color: var(--bad); font-size: 0.9rem; }
+  .track {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin: 0.3rem 0 0.4rem;
+    padding: 0.5rem 0.7rem; border-radius: 12px; background: var(--accent-soft); font-size: 0.85rem;
+  }
+  .track span { display: flex; align-items: center; gap: 0.4rem; }
+  .track button { border: 0; background: var(--accent); color: #fff; font: inherit; font-weight: 700; padding: 0.3rem 0.7rem; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+  .quiet-inline { color: var(--muted); }
   .skeleton { display: grid; gap: 0.5rem; padding: 0.75rem 0; }
   .skeleton span { height: 2.6rem; border-radius: 10px; background: linear-gradient(90deg, var(--hover), var(--line), var(--hover)); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
   @keyframes shimmer { to { background-position: -200% 0; } }
