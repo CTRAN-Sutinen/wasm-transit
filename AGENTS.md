@@ -145,7 +145,8 @@ transit-network  THE authored network model — trips are stored records (own id
 transit-codec   the network codec: the whole-spec GTFS feed (every file and column,
                  deterministic zip bytes) ⇄ network document, losslessly
 transit-router  RAPTOR planning over the network model's materialized day (leave-at and
-                 arrive-by, live predictions, the diversion notice, transfers over a walk table)
+                 arrive-by, live predictions, the diversion notice, transfers over a walk table,
+                 trips from and to any place)
 transit-analysis planner analysis library (stats, service types, coverage)
 transit-dispatch the operator's day library (patched materialized day, boards,
                  authored block chains with the layover ripple, diversion drafts)
@@ -156,7 +157,8 @@ transit-sync     THE sync document (EditRecord, Diversion, merge, the record env
 transit-plans    THE service-plan chain (resolve, periods, validity — pure, derived)
 transit-streets  THE streets document (canonical: its hash is the streets', not a file's),
                  its import from street layers (GeoJSON: agency exports, TIGER, OSM),
-                 the graph over it (snap, route), and walking (the walk table between stops)
+                 the graph over it (snap, route), and walking (the walk table between stops,
+                 a point's walks to the stops near it)
 cap-abi          the capability seam (ABI macro, manifest, validator, gen-manifest)
 cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-plans cap-author cap-divert
                  the capability modules (docs/ARCHITECTURE.md, bus section)

@@ -273,3 +273,59 @@ fn the_walk_table_names_what_it_walks_and_is_its_hash() {
     assert!(walks(json!({ "network_hash": "sha256:missing" })).contains("load_network first"));
     assert!(walks(json!({ "streets_hash": "sha256:missing" })).contains("unknown street network"));
 }
+
+// ---------------------------------------------------------------------
+// The walks from a point
+// ---------------------------------------------------------------------
+
+/// Station Rd (residential) runs through the station's bays; Station
+/// Expy (motorway) crosses it.
+const WALK_STREETS: &str = include_str!("../../../web/e2e/fixtures/walk-streets.geojson");
+
+#[test]
+fn a_point_walks_to_the_stops_near_it_nearest_first() {
+    let network_hash = load_network();
+    let streets_hash =
+        ok(dispatch_bytes(OP_IMPORT, WALK_STREETS.as_bytes()))["streets_hash"].as_str().unwrap().to_string();
+    // ~22 m north of Station Rd, west of the bays.
+    let point = json!({ "lat": 45.5152, "lon": -73.5165 });
+    let to = json!({ "lat": 45.5148, "lon": -73.5135 });
+    let answer = ok(dispatch_json(
+        &json!({ "op": "access", "streets_hash": streets_hash, "network_hash": network_hash,
+                 "point": point, "to": to }).to_string(),
+    ));
+    assert_eq!(answer["op"], "access");
+    let walks = answer["walks"].as_array().unwrap();
+    let order: Vec<_> = walks.iter().map(|w| w["stop_id"].as_str().unwrap()).collect();
+    assert_eq!(order, ["SA", "STN", "SB"], "the bays and the station, nearest first; A, B, C are kilometers off");
+    let secs: Vec<_> = walks.iter().map(|w| w["walk_secs"].as_u64().unwrap()).collect();
+    assert!(secs.windows(2).all(|p| p[0] <= p[1]), "{secs:?}");
+    // 22 m to the street, 78 m along it: 77 s at 1.3 m/s.
+    assert!(secs[0].abs_diff(77) <= 1, "{secs:?}");
+    for w in walks {
+        let path = w["path"].as_array().unwrap();
+        assert_eq!(path[0], point, "the path starts at the point");
+        assert_eq!(path.last().unwrap()["lat"], 45.515, "and ends at the stop");
+    }
+    let direct = &answer["direct"];
+    assert!(direct["walk_secs"].as_u64().unwrap().abs_diff(214) <= 1, "{direct}");
+    assert_eq!(direct["path"].as_array().unwrap().last().unwrap(), &to);
+
+    // No `to`, no direct walk; a point far from every walkable street
+    // walks nowhere.
+    let far = ok(dispatch_json(
+        &json!({ "op": "access", "streets_hash": streets_hash, "network_hash": network_hash,
+                 "point": { "lat": 45.6, "lon": -73.6 } }).to_string(),
+    ));
+    assert_eq!(far["walks"], json!([]));
+    assert_eq!(far["direct"], Value::Null);
+
+    let access = |point: Value, extra: Value| {
+        let mut req = json!({ "op": "access", "streets_hash": streets_hash, "network_hash": network_hash, "point": point });
+        req.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        err(dispatch_json(&req.to_string()))
+    };
+    assert!(access(json!({ "lat": 91.0, "lon": 0.0 }), json!({})).contains("not on the globe"));
+    assert!(access(point.clone(), json!({ "max_walk_secs": 7200 })).contains("at most an hour"));
+    assert!(access(point.clone(), json!({ "network_hash": "sha256:missing" })).contains("load_network first"));
+}

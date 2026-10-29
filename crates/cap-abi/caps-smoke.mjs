@@ -1084,6 +1084,29 @@ assert(
 );
 const foreignWalks = router.raw({ op: "plan", network_hash: loadedRouterNet.network_hash, from: "SA", to: "SB", date: DATE, depart_secs: 0, max_legs: 2, walks_hash: "sha256:missing" });
 assert(foreignWalks.error && foreignWalks.error.includes("load_walks first"), "an unknown walk table is an error, never a panic");
+// A trip from any point: streets answers a dropped pin's walks to
+// the stops near it, the router plans from the pin as a place —
+// the walks pass as they are.
+const pin = { lat: 45.5152, lon: -73.5165 };
+const access = streets.invoke({ op: "access", streets_hash: walkStreets.streets_hash, network_hash: streetsNet.network_hash, point: pin });
+const reached = access.walks.map((w) => w.stop_id).join(" ");
+assert(reached === "SA STN SB", `the pin walks to the bays and the station, nearest first (${reached})`);
+assert(access.walks.every((w) => w.path[0].lat === pin.lat && w.path[0].lon === pin.lon), "each walk's path starts at the pin");
+const fromPin = router.invoke({
+  op: "plan",
+  network_hash: loadedRouterNet.network_hash,
+  from: { id: "pin", name: "Dropped pin", walks: access.walks },
+  to: "SB",
+  date: DATE,
+  depart_secs: 5 * 3600,
+  max_legs: 2,
+  walks_hash: routerWalks.walks_hash,
+});
+const pinWalk = access.walks.find((w) => w.stop_id === "SB").walk_secs;
+assert(
+  fromPin.itinerary?.from_stop_id === "pin" && fromPin.itinerary.legs[0].from_stop_id === "pin" && fromPin.itinerary.arrival_secs === 5 * 3600 + pinWalk,
+  "the plan walks from the pin, along the streets",
+);
 
 // The sync flow — the protocol's one step: the client's draft
 // diversion against an empty server converges to the submitted

@@ -73,6 +73,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-30 | What does the streets import call a street, and what class is it? | encoded | nothing |
 | D-31 | Can a plan add a street the data does not have? | unanswered | streets-model planned streets |
 | D-32 | How does the router walk with no walk table? | encoded | nothing |
+| D-33 | How does a trip from a place walk? | encoded | nothing |
 
 ## The trip model
 
@@ -567,6 +568,39 @@ Options:
   that plans must assemble cap-streets and a streets document.
 - No transfers on foot without a walk table.
 Blocks: nothing. Pins: `crates/transit-router/tests/walks_law_test.rs`.
+
+### D-33 — How does a trip from a place walk?
+State: Encoded provisionally.
+Context: a plan's end can be a place off the network (a tapped
+spot, the rider's location), named by its walks to the stops near
+it: cap-streets `access` answers them along the streets, each
+within the walk limit (ten minutes, D-26), and the walk straight to
+a second point. The router plans between ends. Three things the
+intent leaves open:
+- Whether the walk to the first stop may continue on foot to
+  another stop before boarding (and the walk from the last stop be
+  preceded by one). A stop plan already chains transfer walks.
+- When walking straight there arrives as early as riding, which the
+  rider is told to do.
+- Whether a destination past the walk limit on foot is ever walked
+  to directly.
+Options:
+- **Encoded:** a trip from a place is the place's walk to one of its
+  stops, any stop plan (which may begin or end with transfer walks:
+  a walk chain is one walk leg), and a stop's walk to the
+  destination place — or the direct walk, which wins ties. Every
+  single walk is within the limit; a chain of them may total more,
+  as a stop plan's chains already do. The direct walk exists only
+  within the limit.
+- The place's walk is the whole walk at each end (no chain): a
+  rider never walks more than the limit to reach the first bus.
+- Ties go to riding.
+- The direct walk is unbounded: a destination 20 minutes away on
+  foot with no bus is still a plan.
+Blocks: nothing. Pins:
+`crates/transit-router/tests/places_law_test.rs` (laws 1–3 compose
+the stop plan with chains; law 6 the tie), `walks_from` in
+`crates/transit-streets/tests/walk_law_test.rs` (the limit).
 
 ## Agency data
 

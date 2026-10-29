@@ -301,6 +301,16 @@ test: caps
       --op '{"op":"load_walks","walks":"$walks.walks"}' \
       --op '{"op":"plan","network_hash":"$load_network.network_hash","from":"SA","to":"SB","date":"2026-10-23","depart_secs":18000,"max_legs":2,"walks_hash":"$load_walks.walks_hash"}' \
       | grep '"arrival_secs":18061' > /dev/null
+    # The place gate: a trip from any point — streets answers a
+    # dropped pin's walks to the stops near it (with their paths),
+    # the router plans from the pin as a place, the walks passed as
+    # they are (138 s along Station Rd to bay B).
+    node tools/caps-run.mjs streets --load web/e2e/fixtures/walk-streets.geojson \
+      --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"access","streets_hash":"$load.streets_hash","network_hash":"$load_network.network_hash","point":{"lat":45.5152,"lon":-73.5165}}' \
+      --cap router --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"plan","network_hash":"$load_network.network_hash","from":{"id":"pin","name":"Dropped pin","walks":"$access.walks"},"to":"SB","date":"2026-10-23","depart_secs":18000,"max_legs":2}' \
+      | grep '"arrival_secs":18138,"depart_secs":18000,"from_stop_id":"pin"' > /dev/null
     # The sync capability's gate: the protocol's one step — a draft
     # client against an empty server converges to the submitted
     # document (rev bumped, host clock stamped).

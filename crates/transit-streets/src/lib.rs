@@ -46,8 +46,8 @@ pub struct StreetPosition {
     pub t: f64,
 }
 
-/// A [lat, lon] point of a routed path.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, TS)]
+/// A point: of a routed path, or a place a query starts from.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct StreetPoint {
     pub lat: f64,

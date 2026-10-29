@@ -147,12 +147,22 @@ transit-router  RAPTOR planning over the network model's
                 the document states them (delays against the
                 published schedule, clamped so a trip never runs
                 backwards), the day's own times elsewhere.
-                `earliest_arrival` answers leave-at;
-                `latest_departure` answers ARRIVE-BY — the same
-                rounds run backward from the destination, and with
-                no deadline the service day's last arrival: the last
-                bus home; its itinerary is the forward plan from that
-                departure. A transit leg names its trip instance,
+                A plan's ends (`End`) are stops or PLACES off the
+                network (`Place`: an id never a stop's, a name, its
+                walks to the stops near it): from a place the rounds
+                start at every stop it walks to, each at its walk's
+                time, and to one they end at the best of its stops
+                plus its walk — or at the direct walk between the
+                ends, which wins ties (D-33). The itinerary and its
+                first and last walks name the place.
+                `earliest_arrival_between` answers leave-at;
+                `latest_departure_between` answers ARRIVE-BY — the
+                same rounds run backward from the destination, and
+                with no deadline the service day's last arrival: the
+                last bus home; its itinerary is the forward plan from
+                that departure (`earliest_arrival` /
+                `latest_departure` are the stop-to-stop forms). A
+                transit leg names its trip instance,
                 the route's label and long name, the sign at the
                 boarding visit (`visit_destination`), and how far
                 each predicted time moved (board/alight_delay_secs,
@@ -365,7 +375,12 @@ transit-streets THE streets model. `model.rs`: the streets document
                 (`WalkTable`) is a document derived from a streets
                 document and a network — every walk between its stops,
                 naming both hashes, the speed and the limit — that
-                the router plans transfers over. Walking quality is
+                the router plans transfers over. A POINT walks as a
+                stop there would (`walks_from`): its walks to the
+                stops within the limit, nearest first, each with the
+                path the rider walks (the point, along walkable
+                streets, the stop) — a router place's walks, the ends
+                of a trip from anywhere. Walking quality is
                 the streets document's: a source with real classes
                 and footways (OSM), not one whose classes cannot tell
                 a freeway from an arterial (QAF-85). Open work:
@@ -854,9 +869,15 @@ cap-router      The router capability — ONE QUESTION: how do I get
                 when derived for another network; straight lines
                 without one), the RAPTOR graph cached per (network,
                 edits, live, date, walks; only the newest live
-                document's graphs stay). plan leaves at
-                a time; plan_arrive_by answers the latest departure
-                that arrives by a deadline (none: the last bus home).
+                document's graphs stay). A plan's `from` and `to`
+                are stop ids or places (`{id, name, walks}` —
+                cap-streets' `access` walks pass as they are) with
+                `direct_walk_secs` the walk between them. plan
+                leaves at a time; plan_arrive_by answers the latest
+                departure that arrives by a deadline (none: the last
+                bus home). itinerary_paths draws a place's walk legs
+                as nothing (the place is no stop): the host draws
+                them from `access`'s paths.
                 The compare facet is the diversion delta:
                 the unpatched day read at the same predictions, one
                 materialization apart, with its notice; the
@@ -1023,7 +1044,10 @@ cap-streets    The street-graph capability: where along the
                 walks answers the walk table between a registered
                 network's stops (load_network, kernel op 256 — the
                 module keeps only the stops) with its hash, the
-                router's load_walks answering the same. The walking
+                router's load_walks answering the same; access
+                answers a point's walks to those stops, each with
+                its path, nearest first, and the direct walk to a
+                second point — the router's place. The walking
                 graph is built on first walks, the street graph on
                 first snap — a host that only walks never builds the
                 other. The domain code lives in the shared

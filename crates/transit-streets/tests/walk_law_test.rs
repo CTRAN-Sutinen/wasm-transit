@@ -18,6 +18,12 @@
 //!   and the limit are parameters; their defaults are 1.3 m/s and
 //!   ten minutes.
 //!
+//! * **A point walks as a stop there would**: the walks from a point
+//!   (a tapped spot, the rider's location) to the stops are the walk
+//!   table's from a stop at the point, and each walk carries its
+//!   path: from the point, along walkable streets, to the stop, as
+//!   long as the walk.
+//!
 //! The oracle rebuilds the walking graph from the document with its
 //! own code — its own snap (brute force over the snap neighborhood),
 //! its own Dijkstra — and shares nothing with the implementation.
@@ -32,7 +38,7 @@ use proptest::collection::vec;
 use proptest::prelude::*;
 use serde_json::json;
 use transit_streets::geojson::import;
-use transit_streets::walking::{walks, Walk, MAX_WALK_SECS, WALK_SPEED_MPS};
+use transit_streets::walking::{walks, walks_from, Walk, MAX_WALK_SECS, WALK_SPEED_MPS};
 use transit_streets::Streets;
 
 const LAT0: f64 = 45.6;
@@ -93,6 +99,11 @@ fn stops() -> impl Strategy<Value = Vec<(String, f64, f64)>> {
             .map(|(i, (a, b))| (format!("s{i}"), LAT0 + a * STEP, LON0 + b * STEP))
             .collect()
     })
+}
+
+/// A point anywhere stops may be.
+fn point() -> impl Strategy<Value = (f64, f64)> {
+    (-1.0f64..7.0, -1.0f64..7.0).prop_map(|(a, b)| (LAT0 + a * STEP, LON0 + b * STEP))
 }
 
 fn case() -> impl Strategy<Value = (Streets, Vec<(String, f64, f64)>, f64, u32)> {
@@ -296,6 +307,56 @@ proptest! {
         sorted.sort();
         sorted.dedup();
         prop_assert_eq!(keys, sorted);
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    /// The walks from a point are the oracle's walks from a stop at
+    /// the point.
+    #[test]
+    fn a_point_walks_as_a_stop_there_walks((doc, stops, speed, max) in case(), (lat, lon) in point()) {
+        let got: Vec<_> = walks_from(&doc, lat, lon, &stops, speed, max)
+            .into_iter()
+            .map(|w| ("@".to_string(), w.stop_id, w.walk_secs))
+            .collect();
+        let mut with_point = stops.clone();
+        with_point.push(("@".into(), lat, lon));
+        let want: BTreeMap<_, _> = Oracle::new(&doc)
+            .walks(&with_point, speed)
+            .into_iter()
+            .filter(|((from, _), _)| from == "@")
+            .collect();
+        if let Err(e) = agree(&got, &want, max) {
+            prop_assert!(false, "{e}");
+        }
+        prop_assert!(got.iter().all(|(_, _, s)| *s <= max), "no walk past the limit");
+    }
+
+    /// Each walk's path starts at the point, runs along walkable
+    /// streets, ends at the stop, and is as long as the walk.
+    #[test]
+    fn a_walk_from_a_point_draws_its_path((doc, stops, speed, max) in case(), (lat, lon) in point()) {
+        let oracle = Oracle::new(&doc);
+        for w in walks_from(&doc, lat, lon, &stops, speed, max) {
+            let path = &w.path;
+            let (_, s_lat, s_lon) = stops.iter().find(|s| s.0 == w.stop_id).unwrap();
+            prop_assert!(path.len() >= 2);
+            prop_assert_eq!((path[0].lat, path[0].lon), (lat, lon), "the path starts at the point");
+            let last = path[path.len() - 1];
+            prop_assert_eq!((last.lat, last.lon), (*s_lat, *s_lon), "the path ends at the stop");
+            for p in &path[1..path.len() - 1] {
+                let on = oracle.snap(p.lat, p.lon).first().is_some_and(|c| c.2 < 0.05);
+                prop_assert!(on, "{p:?} is on no walkable street");
+            }
+            let meters: f64 = path.windows(2).map(|q| meters_between(q[0].lat, q[0].lon, q[1].lat, q[1].lon)).sum();
+            let secs = meters / speed;
+            prop_assert!(
+                secs <= w.walk_secs as f64 + 0.01 && secs > w.walk_secs as f64 - 1.01,
+                "the path takes {secs} s, the walk {} s", w.walk_secs
+            );
+        }
     }
 }
 

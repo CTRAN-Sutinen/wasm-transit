@@ -3,9 +3,10 @@
 //! One question: where along the streets? Snap a point to the nearest
 //! street, route between two positions along the graph — so a traced
 //! detour, or a pattern drawn the same way, is STREET GEOMETRY, never
-//! freehand chords — and how long a rider walks between a network's
-//! stops along them (the walk table the router plans transfers
-//! over). The domain code lives in the shared
+//! freehand chords — and how long a rider walks along them: between
+//! a network's stops (the walk table the router plans transfers
+//! over), and from any point to the stops near it (the ends of a trip
+//! from anywhere). The domain code lives in the shared
 //! `transit-streets` library (the streets document, its import, the
 //! graph).
 //!
@@ -23,7 +24,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_network::Network;
-use transit_streets::walking::{WalkGraph, WalkTable, MAX_WALK_SECS, WALK_SPEED_MPS};
+use transit_streets::walking::{PointWalk, WalkGraph, WalkTable, MAX_WALK_SECS, WALK_SPEED_MPS};
 use transit_streets::{StreetNetwork, StreetPoint, StreetPosition, Streets};
 
 /// The bulk-bytes op codes: 0 imports a street layer (GeoJSON), 1
@@ -66,6 +67,24 @@ pub enum Request {
         #[serde(default)]
         max_walk_secs: Option<u32>,
     },
+    /// The walks from a point (a tapped spot, the rider's location) to
+    /// the network's stops within the limit, as the walk table walks —
+    /// a stop at the point would have these walks — each with the path
+    /// the rider walks, nearest first; and, when `to` is given, the
+    /// walk from the point straight to it. The router plans a trip
+    /// from the point over them (a place's walks). Nothing when no
+    /// walkable street is near the point.
+    Access {
+        streets_hash: String,
+        network_hash: String,
+        point: StreetPoint,
+        #[serde(default)]
+        to: Option<StreetPoint>,
+        #[serde(default)]
+        speed_mps: Option<f64>,
+        #[serde(default)]
+        max_walk_secs: Option<u32>,
+    },
     /// The nearest street position to (lat, lon), within the snap
     /// neighborhood — the graph address (segment, parameter) a
     /// trace's waypoint commits to. Null when no street is nearby.
@@ -94,10 +113,21 @@ pub enum Response {
     /// The walk table and its hash (the router's `load_walks` answers
     /// the same).
     Walks { walks_hash: String, walks: WalkTable },
+    /// `direct`: the walk to `to` (null when none was asked, or none
+    /// is within the limit).
+    Access { walks: Vec<PointWalk>, direct: Option<DirectWalk> },
     Snap { position: Option<StreetPosition> },
     /// `length_m`: the path's length along the graph from `from` to
     /// `to` — null when no path exists.
     Route { points: Vec<StreetPoint>, length_m: Option<f64> },
+}
+
+/// The walk from a point straight to another, and its path.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "cap_streets/")]
+pub struct DirectWalk {
+    pub walk_secs: u32,
+    pub path: Vec<StreetPoint>,
 }
 
 /// A registered streets document and the graphs built over it on
@@ -159,7 +189,8 @@ fn register(streets: Streets) -> Result<(String, Streets, u32, u32, u32), String
     Ok((hash, entry.streets.clone(), ways, segments, nodes))
 }
 
-fn walks(streets_hash: &str, network_hash: &str, speed_mps: Option<f64>, max_walk_secs: Option<u32>) -> Result<Response, String> {
+/// The walking speed and limit, defaulted and checked.
+fn pace(speed_mps: Option<f64>, max_walk_secs: Option<u32>) -> Result<(f64, u32), String> {
     let speed_mps = speed_mps.unwrap_or(WALK_SPEED_MPS);
     let max_walk_secs = max_walk_secs.unwrap_or(MAX_WALK_SECS);
     if !(speed_mps.is_finite() && speed_mps > 0.0 && speed_mps <= 10.0) {
@@ -168,13 +199,22 @@ fn walks(streets_hash: &str, network_hash: &str, speed_mps: Option<f64>, max_wal
     if max_walk_secs > 3_600 {
         return Err(format!("max_walk_secs {max_walk_secs}: a walk is at most an hour"));
     }
-    let entry = registered(streets_hash)?;
-    let stops = networks()
+    Ok((speed_mps, max_walk_secs))
+}
+
+fn network_stops(network_hash: &str) -> Result<Arc<Vec<(String, f64, f64)>>, String> {
+    networks()
         .lock()
         .expect("network registry lock")
         .get(network_hash)
         .cloned()
-        .ok_or_else(|| format!("unknown network {network_hash}: load_network first"))?;
+        .ok_or_else(|| format!("unknown network {network_hash}: load_network first"))
+}
+
+fn walks(streets_hash: &str, network_hash: &str, speed_mps: Option<f64>, max_walk_secs: Option<u32>) -> Result<Response, String> {
+    let (speed_mps, max_walk_secs) = pace(speed_mps, max_walk_secs)?;
+    let entry = registered(streets_hash)?;
+    let stops = network_stops(network_hash)?;
     let table = WalkTable {
         streets_hash: streets_hash.to_string(),
         network_hash: network_hash.to_string(),
@@ -183,6 +223,32 @@ fn walks(streets_hash: &str, network_hash: &str, speed_mps: Option<f64>, max_wal
         walks: entry.walking().walks(&stops, speed_mps, max_walk_secs),
     };
     Ok(Response::Walks { walks_hash: cap_abi::canonical_hash(&table)?, walks: table })
+}
+
+fn access(
+    streets_hash: &str,
+    network_hash: &str,
+    point: StreetPoint,
+    to: Option<StreetPoint>,
+    speed_mps: Option<f64>,
+    max_walk_secs: Option<u32>,
+) -> Result<Response, String> {
+    let (speed_mps, max_walk_secs) = pace(speed_mps, max_walk_secs)?;
+    for p in std::iter::once(&point).chain(&to) {
+        if !(p.lat.is_finite() && p.lon.is_finite() && p.lat.abs() <= 90.0 && p.lon.abs() <= 180.0) {
+            return Err(format!("point ({}, {}) is not on the globe", p.lat, p.lon));
+        }
+    }
+    let entry = registered(streets_hash)?;
+    let stops = network_stops(network_hash)?;
+    let walking = entry.walking();
+    let walks = walking.walks_from(point.lat, point.lon, &stops, speed_mps, max_walk_secs);
+    let direct = to.and_then(|to| {
+        let target = [(String::new(), to.lat, to.lon)];
+        let walk = walking.walks_from(point.lat, point.lon, &target, speed_mps, max_walk_secs).pop()?;
+        Some(DirectWalk { walk_secs: walk.walk_secs, path: walk.path })
+    });
+    Ok(Response::Access { walks, direct })
 }
 
 fn import(bytes: &[u8]) -> Result<Response, String> {
@@ -212,6 +278,9 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::Walks { streets_hash, network_hash, speed_mps, max_walk_secs } => {
             walks(&streets_hash, &network_hash, speed_mps, max_walk_secs)
+        }
+        Request::Access { streets_hash, network_hash, point, to, speed_mps, max_walk_secs } => {
+            access(&streets_hash, &network_hash, point, to, speed_mps, max_walk_secs)
         }
         Request::Snap { streets_hash, lat, lon } => {
             let entry = registered(&streets_hash)?;

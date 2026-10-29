@@ -25,6 +25,7 @@
 //!    keyed by the walks hash too); a table derived for another
 //!    network is refused.
 
+use serde_json::{json, Value};
 use transit_network::Network;
 use transit_sync::{EditRecord, EditStatus};
 
@@ -109,6 +110,7 @@ fn plan_answers_over_the_materialized_day() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
+        direct_walk_secs: None,
     })
     .expect("plan dispatch");
     let cap_router::Response::Plan { itinerary: Some(it) } = plan else {
@@ -141,6 +143,7 @@ fn plan_is_none_on_an_unreachable_pair_or_day() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
+        direct_walk_secs: None,
     })
     .unwrap();
     let cap_router::Response::Plan { itinerary } = late else { panic!("plan") };
@@ -157,6 +160,7 @@ fn plan_is_none_on_an_unreachable_pair_or_day() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
+        direct_walk_secs: None,
     })
     .expect_err("unknown hash");
     assert!(err.contains("unknown network"));
@@ -177,6 +181,7 @@ fn compare_answers_the_diversion_delta() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
+        direct_walk_secs: None,
     })
     .expect("compare dispatch");
     let cap_router::Response::PlanCompare { active, baseline, notice } = cmp else {
@@ -206,6 +211,7 @@ fn compare_answers_the_diversion_delta() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
+        direct_walk_secs: None,
     })
     .expect("compare dispatch");
     let cap_router::Response::PlanCompare { active, baseline, .. } = plain else {
@@ -225,6 +231,7 @@ fn compare_answers_the_diversion_delta() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
+        direct_walk_secs: None,
     })
     .expect("compare dispatch");
     let cap_router::Response::PlanCompare { active: None, notice: Some(notice), .. } = late else {
@@ -271,6 +278,7 @@ fn an_itinerary_draws_its_ridden_segments() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
+        direct_walk_secs: None,
     })
     .unwrap() else {
         panic!("plan")
@@ -345,6 +353,7 @@ fn plan_a_b(network_hash: &str, live_hash: Option<String>) -> transit_router::It
         max_legs: 4,
         live_hash,
         walks_hash: None,
+        direct_walk_secs: None,
     })
     .expect("plan")
     {
@@ -396,6 +405,7 @@ fn a_live_plan_rides_the_predicted_times() {
         max_legs: 4,
         live_hash: Some("sha256:missing".into()),
         walks_hash: None,
+        direct_walk_secs: None,
     })
     .expect_err("unknown live hash");
     assert!(err.contains("unknown live document"), "{err}");
@@ -417,6 +427,7 @@ fn a_compared_plan_reads_live_in_both_worlds() {
             max_legs: 4,
             live_hash: Some(live),
             walks_hash: None,
+        direct_walk_secs: None,
         },
     )
     .unwrap() else {
@@ -446,6 +457,7 @@ fn arrive_by_answers_the_latest_departure() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
+        direct_walk_secs: None,
     })
     .expect("plan_arrive_by")
     {
@@ -538,6 +550,7 @@ fn plan_bays(network_hash: &str, walks_hash: Option<String>) -> Result<Option<tr
         max_legs: 2,
         live_hash: None,
         walks_hash,
+        direct_walk_secs: None,
     })
     .map(|r| match r {
         cap_router::Response::Plan { itinerary } => itinerary,
@@ -578,4 +591,37 @@ fn a_walk_table_is_the_plan_s_transfers() {
     assert!(err.contains("walks network"), "{err}");
     let err = plan_bays(&hash, Some("sha256:missing".into())).expect_err("unknown table");
     assert!(err.contains("load_walks first"), "{err}");
+}
+
+/// A plan's ends over the JSON seam: a bare string is a stop, an
+/// object a place with its walks — cap-streets' `access` walks pass
+/// as they are (their paths ride along unread). The trip walks from
+/// the place; a place named like a stop is refused.
+#[test]
+fn a_plan_from_a_place_walks_from_it() {
+    let hash = load_network();
+    let place = |id: &str| json!({ "id": id, "name": "Dropped pin", "walks": [
+        { "stop_id": "SA", "walk_secs": 120, "path": [{ "lat": 45.515, "lon": -73.516 }, { "lat": 45.515, "lon": -73.5155 }] },
+    ]});
+    let plan = |from: Value, extra: Value| {
+        let mut req = json!({ "op": "plan", "network_hash": hash, "from": from, "to": "SB", "date": DATE,
+                              "depart_secs": 5 * 3600, "max_legs": 2 });
+        req.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        serde_json::from_str::<Value>(&cap_router::dispatch_json(&req.to_string())).unwrap()
+    };
+    let answer = plan(place("here"), json!({}));
+    let it = &answer["ok"]["itinerary"];
+    assert_eq!(it["from_stop_id"], "here");
+    assert_eq!(it["from_stop_name"], "Dropped pin");
+    let legs = it["legs"].as_array().unwrap();
+    assert_eq!(legs.len(), 1, "one walk: to the bay, then the straight-line walk between the bays: {legs:?}");
+    assert_eq!(legs[0]["from_stop_id"], "here");
+    assert_eq!(legs[0]["via_stop_ids"], json!(["SA"]));
+    assert_eq!(legs[0]["to_stop_id"], "SB");
+
+    let direct = plan(place("here"), json!({ "direct_walk_secs": 30 }));
+    assert_eq!(direct["ok"]["itinerary"]["arrival_secs"], 5 * 3600 + 30, "walking straight there is sooner");
+
+    let refused = plan(place("SA"), json!({}));
+    assert!(refused["error"].as_str().unwrap().contains("names a stop"), "{refused}");
 }
