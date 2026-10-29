@@ -203,6 +203,19 @@ test: caps
       --as blive --op '{"op":"load_live","live":"$live.live"}' \
       --op '{"op":"stop_board","network_hash":"$bnet.network_hash","stop_id":"A","date":"2026-10-23","from_secs":28860,"limit":3,"live_hash":"$blive.live_hash"}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const row = r.at(-1).ok.board.rows.find((x) => x.expected_secs != null); if (ok("live").live_hash !== ok("blive").live_hash || !row || row.expected_secs !== 28920 || row.status !== "late") process.exit(1)'
+    # The stop display's board: the same live chain into grouped_board.
+    # 08:01 at A: the 10 → Downtown group leads with t10 (+120 s,
+    # expected 08:02) — a minute away, "1 min" by the op's wait.
+    node tools/caps-run.mjs network --as feed --load web/public/caps/sample-gtfs.zip \
+      --as net --op '{"op":"import","feed_hash":"$feed.feed_hash"}' \
+      --cap rt --as rnet --op '{"op":"load_network","network":"$net.network"}' \
+      --as bnd --op '{"op":"load_boundary","boundary":"$net.boundary"}' \
+      --as snap --load web/e2e/fixtures/sample-rt.pb \
+      --as live --op '{"op":"live","network_hash":"$rnet.network_hash","boundary_hash":"$bnd.boundary_hash","rt_hash":"$snap.rt_hash"}' \
+      --cap board --as bnet --op '{"op":"load_network","network":"$net.network"}' \
+      --as blive --op '{"op":"load_live","live":"$live.live"}' \
+      --op '{"op":"grouped_board","network_hash":"$bnet.network_hash","stop_id":"A","date":"2026-10-23","from_secs":28860,"live_hash":"$blive.live_hash"}' \
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const g = r.at(-1).ok?.board.groups.find((x) => x.route === "10"); const d = g?.departures[0]; if (!d || d.trip !== "t10" || d.wait.kind !== "minutes" || d.wait.minutes !== 1 || g.departures.length > 3) process.exit(1)'
     # The runcut capability's gate: the day's blocks (the index) into
     # one block's chain (the detail), with the edit ripple chained in
     # session (the connection-health read: 600 − 300).

@@ -77,6 +77,7 @@ import type { StreetPoint } from "./types/StreetPoint";
 import type { StreetPosition } from "./types/StreetPosition";
 import type { Boundary } from "./types/Boundary";
 import type { StopBoard } from "./types/StopBoard";
+import type { GroupedBoard } from "./types/GroupedBoard";
 import type { LiveDay } from "./types/LiveDay";
 import type { LiveSummary } from "./types/LiveSummary";
 import type { BlockChainTrip } from "./types/BlockChainTrip";
@@ -1003,6 +1004,30 @@ export function boardCap(module: CapModule) {
         limit,
         live_hash: liveHash ?? undefined,
       } as BoardCapRequest) as Extract<BoardCapResponse, { op: "stop_board" }>;
+      return resp.board;
+    },
+    /// THE board by route and destination, for a stop's display —
+    /// the groups, their order, how many each holds (`perGroup` null:
+    /// the op's default), and each row's wait are the module's answer.
+    groupedBoard(
+      networkHash: string,
+      editsHash: string | null,
+      stopId: string,
+      date: string,
+      fromSecs: number,
+      perGroup: number | null,
+      liveHash: string | null,
+    ): GroupedBoard {
+      const resp = module.invoke({
+        op: "grouped_board",
+        network_hash: networkHash,
+        edits_hash: editsHash ?? undefined,
+        stop_id: stopId,
+        date,
+        from_secs: fromSecs,
+        per_group: perGroup ?? undefined,
+        live_hash: liveHash ?? undefined,
+      } as BoardCapRequest) as Extract<BoardCapResponse, { op: "grouped_board" }>;
       return resp.board;
     },
     loadWatchlist(document: Watchlist): { watchlistHash: string; version: number } {

@@ -32,7 +32,7 @@ the rest of the work can go ahead while the decision is reviewed.
   goes into the law that pins it and the doc that owns its topic
   (`docs/ARCHITECTURE.md`, `docs/units/`, `docs/QA-FINDINGS.md`),
   and the `Blocked: D-N` lines are removed. Git is the archive.
-- IDs are never reused; the next new decision is **D-23**.
+- IDs are never reused; the next new decision is **D-25**.
 
 ## Summary
 
@@ -57,6 +57,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-20 | Which language does an alert speak? | encoded | nothing |
 | D-21 | Where is a trip going when nothing signs it? | encoded | nothing |
 | D-22 | How is a route's rider variant named and ordered? | encoded | nothing |
+| D-23 | In what order does a stop display list its groups? | encoded | nothing |
+| D-24 | How does a departure's countdown round? | encoded | nothing |
 
 ## The trip model
 
@@ -321,6 +323,40 @@ Options:
   mornings") — needs the service day; a rider reads time of day.
 Pinned by: transit-network `listing_test`
 (`bay_variants_of_a_direction_read_as_one`).
+Blocks: nothing.
+
+### D-23 — In what order does a stop display list its groups?
+State: Encoded provisionally.
+Context: `grouped_board` answers one group per route and
+destination. GTFS `route_sort_order` says routes with lower values
+display first; it says nothing about routes without one, or about
+one route's several destinations. C-TRAN sets it on every route.
+Options:
+- **`route_sort_order` ascending, routes without one after them by
+  route id, then destination by name (encoded).** Stable: a group
+  keeps its place as the day goes on, and an ended group stays put.
+- Soonest departure first. The next bus is always on top, but the
+  sign reshuffles every poll and a rider loses their line.
+- Routes without a sort order first, or by public name instead of id.
+Pinned by: `the_groups_list_in_display_order`
+(`grouped_board_prop_test.rs`).
+Blocks: nothing.
+
+### D-24 — How does a departure's countdown round?
+State: Encoded provisionally.
+Context: the user set the display's time format: "Due" under a
+minute, "N min" up to 59, then the clock time. Whether 3 min 50 s
+reads "3 min" or "4 min" was left open. Every board row carries it
+(`wait`).
+Options:
+- **Round down (encoded).** 3 min 50 s reads "3 min" — a rider
+  hurries rather than misses a bus (an early departure is a missed
+  bus).
+- Round to the nearest minute. Closer on average; a rider can read
+  "4 min" for a bus 3 min 31 s away.
+Pinned by: `every_row_says_how_long_until_it_leaves` and
+`the_wait_turns_at_a_minute_and_an_hour`
+(`grouped_board_prop_test.rs`).
 Blocks: nothing.
 
 ## Public comparison

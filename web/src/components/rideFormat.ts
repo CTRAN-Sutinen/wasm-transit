@@ -3,6 +3,7 @@
 /// after-midnight trip of the same day: it reads as the clock time).
 
 import type { LiveStatus } from "../types/LiveStatus";
+import type { Wait } from "../types/Wait";
 
 /// "8:02" and "am" — a rider's clock, the suffix set apart so a
 /// board can size it down.
@@ -71,4 +72,17 @@ export function walkText(secs: number): string {
 /// A route's authored color as CSS (null without one).
 export function routeColor(color: string | null | undefined): string | null {
   return color ? `#${color.replace(/^#/, "")}` : null;
+}
+
+/// How long until a row leaves, as the board's `wait` says it: "Due",
+/// "4 min", or the clock time.
+export function waitText(wait: Wait): string {
+  switch (wait.kind) {
+    case "due":
+      return "Due";
+    case "minutes":
+      return `${wait.minutes} min`;
+    default:
+      return clockText(wait.secs);
+  }
 }

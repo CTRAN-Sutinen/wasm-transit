@@ -51,6 +51,9 @@ pub struct BoardDeparture {
     pub stop: String,
     /// That stop's name ("Fisher's Landing TC: Bay B").
     pub stop_name: String,
+    /// That stop's own identifier at its station (GTFS
+    /// `platform_code`: "B"), when it has one.
+    pub platform: Option<String>,
     /// Seconds after the service-day anchor (past-86400 values are
     /// after-midnight trips, not errors).
     pub departure_secs: u32,
@@ -326,8 +329,8 @@ pub fn station_board(
 /// One row of THE board: the departure, and what live data says
 /// about it — the expected departure, the delay against the board's
 /// own (patched) time, its status under the live document's window,
-/// and the ids of the board's alerts that speak about it.
-/// Schedule-only rows say `no_prediction`.
+/// how long until it leaves, and the ids of the board's alerts that
+/// speak about it. Schedule-only rows say `no_prediction`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct BoardRow {
@@ -337,7 +340,34 @@ pub struct BoardRow {
     pub expected_secs: Option<u32>,
     pub delay_secs: Option<i32>,
     pub status: LiveStatus,
+    /// How long from the board's `from_secs` until it leaves (the
+    /// expected time when live, else the board's own).
+    pub wait: Wait,
     pub alerts: Vec<String>,
+}
+
+/// How long until a departure leaves, as a rider reads it: due under
+/// a minute, whole minutes (rounded down) under an hour, then the
+/// clock time it leaves at (seconds after the service-day anchor).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Wait {
+    Due,
+    Minutes { minutes: u32 },
+    Clock { secs: u32 },
+}
+
+/// THE wait rule — the one place a departure time becomes "how long".
+pub fn wait(at_secs: u32, from_secs: u32) -> Wait {
+    let d = at_secs.saturating_sub(from_secs);
+    if d < 60 {
+        Wait::Due
+    } else if d < 3_600 {
+        Wait::Minutes { minutes: d / 60 }
+    } else {
+        Wait::Clock { secs: at_secs }
+    }
 }
 
 /// A departure the day's edits took away from this stop: the visit as
@@ -433,6 +463,103 @@ pub fn stop_board(
     with_alerts(rows, skipped, &own, false, live)
 }
 
+/// One group on a stop's display: a route to one destination, its
+/// next departures, and the visits the in-force edits took from it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct DepartureGroup {
+    pub route: String,
+    pub route_name: String,
+    pub route_long_name: Option<String>,
+    /// The route's authored colors (hex, no `#`), when it has them.
+    pub route_color: Option<String>,
+    pub route_text_color: Option<String>,
+    pub destination: String,
+    /// The next departures, soonest-leaving first — none once the
+    /// group's last departure of the day has left.
+    pub departures: Vec<BoardRow>,
+    pub skipped: Vec<SkippedVisit>,
+}
+
+/// The board by route and destination, answered whole.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct GroupedBoard {
+    pub groups: Vec<DepartureGroup>,
+    /// The live document's alerts about the stop or any departure
+    /// still to leave it (THE board's rule).
+    pub alerts: Vec<LiveAlert>,
+    pub pooled: bool,
+    pub live: bool,
+}
+
+/// THE board grouped for a stop's display: one group per route and
+/// destination the stop is served by on the day (its whole day — a
+/// group whose last departure has left stays, with none), each holding
+/// its next `per_group` departures by THE board's realtime-first rule
+/// and the visits the edits skip. Groups list in the route's display
+/// order (`sort_order`, lower first; routes without one after, by id),
+/// then by destination. A stop with nothing of its own all day that
+/// belongs to a walking group pools it, like THE board.
+pub fn grouped_board(
+    network: &Network,
+    day: &[MaterializedTrip],
+    stop_id: &str,
+    from_secs: u32,
+    per_group: usize,
+    live: Option<&LiveDay>,
+    edits: Option<&DayEdits>,
+) -> GroupedBoard {
+    let served = |stops: &[String]| -> BTreeSet<(String, String)> {
+        let base = edits.map(|e| e.base.as_slice()).unwrap_or_default();
+        board_over(network, day, stops, 0, usize::MAX)
+            .into_iter()
+            .chain(board_over(network, base, stops, 0, usize::MAX))
+            .map(|d| (d.route, d.destination))
+            .collect()
+    };
+    let own = vec![stop_id.to_string()];
+    let mut stops = own.clone();
+    let mut keys = served(&own);
+    let mut pooled = false;
+    if keys.is_empty() {
+        let group: Vec<String> = transit_network::walking_group(network, stop_id).into_keys().collect();
+        if group.len() >= 2 {
+            keys = served(&group);
+            stops = group;
+            pooled = true;
+        }
+    }
+    let rows = live_rows(network, day, &stops, from_secs, usize::MAX, live);
+    let skipped = skipped_visits(network, day, &stops, from_secs, usize::MAX, edits);
+    let board = with_alerts(rows, skipped, &stops, pooled, live);
+
+    let mut keys: Vec<(String, String)> = keys.into_iter().collect();
+    let order = |route: &str| network.routes.get(route).and_then(|r| r.sort_order);
+    keys.sort_by(|a, b| {
+        let (sa, sb) = (order(&a.0), order(&b.0));
+        (sa.is_none(), sa, &a.0, &a.1).cmp(&(sb.is_none(), sb, &b.0, &b.1))
+    });
+    let groups = keys
+        .into_iter()
+        .map(|(route, destination)| {
+            let ours = |d: &BoardDeparture| d.route == route && d.destination == destination;
+            let r = network.routes.get(&route);
+            DepartureGroup {
+                route_name: route_name(network, &route),
+                route_long_name: r.and_then(|r| r.long_name.clone()),
+                route_color: r.and_then(|r| r.color.clone()),
+                route_text_color: r.and_then(|r| r.text_color.clone()),
+                departures: board.rows.iter().filter(|x| ours(&x.departure)).take(per_group).cloned().collect(),
+                skipped: board.skipped.iter().filter(|x| ours(&x.departure)).take(per_group).cloned().collect(),
+                route,
+                destination,
+            }
+        })
+        .collect();
+    GroupedBoard { groups, alerts: board.alerts, pooled: board.pooled, live: board.live }
+}
+
 /// Attach the live document's alerts: on each row and skipped visit
 /// the ids that touch it; on the board every alert touching either,
 /// or the stops themselves, in the document's order.
@@ -522,6 +649,7 @@ fn live_rows(
             let delay = expected.map(|e| e as i32 - d.departure_secs as i32);
             BoardRow {
                 status: classify(delay, &window),
+                wait: wait(expected.unwrap_or(d.departure_secs), from_secs),
                 expected_secs: expected,
                 delay_secs: delay,
                 departure: d,
@@ -565,6 +693,7 @@ fn board_over(
                 pattern: trip.pattern.clone(),
                 stop: st.stop.clone(),
                 stop_name: stop_name(network, Some(&st.stop)),
+                platform: network.stops.get(&st.stop).and_then(|s| s.info.platform.clone()),
                 departure_secs: st.departure_secs,
                 destination: transit_network::visit_destination(network, trip, visit),
             });

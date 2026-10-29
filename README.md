@@ -85,9 +85,12 @@ small enough to keep next to the GTFS zip, which makes the whole app
 
 ## Live feeds
 
-The ride-now UI (`/ride-now.html`) reads the agency's GTFS-rt feeds
+The ride-now UI (`/ride-now.html`) and the stop display
+(`/stop-display.html?stop=<id>&layout=center|route|routes`) read the
+agency's GTFS-rt feeds
 named in `web/public/live-feeds.json` (`trips`, `vehicles`,
 `alerts`; an empty URL is a feed the agency does not have), fetched
-through the server's `/rt` proxy every 30 seconds. A rider can set
-their own from the live pill. Rebuild the frontend after changing
+through the server's `/rt` proxy (every 30 seconds for ride-now,
+20 for the display). A rider can set their own from ride-now's live
+pill. Rebuild the frontend after changing
 the file.

@@ -240,14 +240,21 @@ transit-dispatch The materialized day's views, model-native: patch_day
                 pooling for a stop with nothing of its own,
                 realtime-first over the live document — rows
                 ordered by when the bus actually leaves, each with
-                its expected time, delay, and status, its route's
-                short and long names, its bay's name, and its
+                its expected time, delay, status, and wait (due,
+                minutes rounded down under an hour, then the clock
+                time — `wait`, the one rule), its route's short and
+                long names, its bay's name and platform code, and its
                 destination as the sign says there; the departures
                 the day's edits took away (`skipped`, each with the
                 diversion that skips it — day_edits holds the
                 unpatched day beside the patched one); the live
                 document's alerts about the board, each row naming
-                its own), the day's
+                its own), the grouped board (grouped_board: THE
+                board's rows by route and destination for a stop's
+                display — every group the stop is served by all day,
+                one that has stopped kept with none, its next
+                per_group, its skipped visits; in route_sort_order,
+                then id, then destination), the day's
                 blocks list, the fleet summary (peak concurrent
                 vehicles and when, platform / revenue / layover
                 hours), the service keys
@@ -588,8 +595,15 @@ on every component a generated UI imports.
   directions and their variants, as line diagrams), BusView (one
   live bus and its trip's `trip_progress`, stop by stop), and
   LiveFeeds (whether
-  the times are live, and the feed URLs). `rideFormat.ts` holds
-  their formatting (clock times, status words and tones). Each
+  the times are live, and the feed URLs); and the stop display's set:
+  DisplayHeader (the stop's name and id, the host's clock, live or
+  scheduled), DisplayGroup (one `grouped_board` group as a station
+  list's row, one route large, or a card; each time its `wait`, its
+  status, and at a station its bay; a group with none left says it
+  is detoured or has stopped for the day), DisplayAlerts (the alerts
+  slot, always on screen), and DisplaySetup (the three layouts and
+  the stop type-ahead). `rideFormat.ts` holds their formatting
+  (clock times, a row's wait, status words and tones). Each
   frame whose capability can fail takes an `off` prop: a capability
   that did not assemble turns its frame off, and the frame says so.
 - Coupled to the original app (do not compose; build a thin one
@@ -703,6 +717,20 @@ the alerts in force. It boots from the server's
 `/rt`, and polls both and the clock every 30 s. A trip asked for
 "now" is re-asked on each poll. Its open work is
 `docs/units/ui-ride-now.md`.
+
+`stop-display` (`src/uis/stop-display/`): the screen at a stop, a
+passenger information display, in three full-screen layouts over
+one `grouped_board` answer — a transit center (the groups as a list,
+each time naming its bay, the alerts beside it), a single route (one
+group large, for the stop one route serves), and several routes (a
+grid of cards); the alerts slot is always on screen. Any layout
+shows any stop. The stop and the layout live in the page's URL
+(`?stop=<id>&layout=center|route|routes`), so a screen reopens on its
+stop; without a stop, the setup picks both. It boots from the
+server's `/feed` (or a zip), reads `GET /edits` and the deployment's
+live feeds (`public/live-feeds.json`, through `/rt`), and polls them
+and the clock every 20 s. Its open work is
+`docs/units/ui-stop-display.md`.
 
 Layouts are hand-placed Svelte; layouts as documents are
 `docs/units/wire-time-assembly.md`.
@@ -828,7 +856,10 @@ cap-board       The board capability — ONE QUESTION: when does
                 route's long name, the bay's name, the sign's
                 destination, the visits the in-force edits skip and
                 the diversion that skips each, the live alerts about
-                the board — the module's answer, never the host's) / load_watchlist /
+                the board — the module's answer, never the host's) /
+                grouped_board (the same rows by route and
+                destination, the next three of each by default — the
+                stop display's answer) / load_watchlist /
                 migrate_watchlist / watchlist_board (a trip's FINAL
                 visit is an arrival, never a row) over ONE
                 MATERIALIZED DAY (materialize(net, date), patched

@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-82**. A
+IDs are never reused; the next new finding is **QAF-83**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -238,14 +238,21 @@ time, last bus home, is there a detour.
   rider's saved stops last one visit.
   Pin: ride-now UI — save a stop, reload → the Saved section is
   gone.
-- **QAF-81 OP GAP** — no answer is relative to the moment asked: a
-  board row carries its expected clock time but not "leaves in 4
-  min", and an itinerary carries its departure and arrival but not
-  how long the trip takes. A rider reads minutes; the host would
-  have to subtract. The ride-now UI shows clock times.
-  Pin: board `stop_board` row fields (`expected_secs`,
-  `departure_secs`); router `plan` `Itinerary` (`depart_secs`,
-  `arrival_secs`, no duration).
+- **QAF-81 OP GAP** — an itinerary is not relative to the moment
+  asked: it carries its departure and arrival but not how long the
+  trip takes, so a rider reading minutes has the host subtract. (A
+  board row says how long until it leaves — its `wait`; the ride-now
+  UI still shows clock times and does not read it yet.)
+  Pin: router `plan` `Itinerary` (`depart_secs`, `arrival_secs`, no
+  duration).
+- **QAF-82 OP GAP** — no op says when a route next runs at a stop
+  once it has stopped for the day: `grouped_board` keeps the group
+  with no departures, and the next one is on another service day
+  the board does not ask. The stop display says "No more service
+  today" where it should say when service resumes ("Next: 5:12 am
+  tomorrow", "Next: Monday").
+  Pin: board `grouped_board` stop 106, 2026-10-29, from_secs 86000 —
+  nine of ten groups answer `departures: []`.
 
 ## The runner
 

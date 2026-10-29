@@ -31,7 +31,7 @@ browser.
 | # | op(s) | state |
 |---|---|---|
 | 1 | directory `stops` (query), `stops_near` (a point: the rider, or a tapped spot) | answered; a colloquial name answers nothing, QAF-70 |
-| 2 | rt `live` → board `stop_board` (`live_hash`) | answered; "leaves in N min" has no op, QAF-81 |
+| 2 | rt `live` → board `stop_board` (`live_hash`) | answered; each row's `wait` says "leaves in N min", which the UI does not read yet |
 | 3 | the board row's `status` / `delay_secs`; the map's buses by status | answered |
 | 4 | router `plan_compare` (`live_hash`, `edits_hash`) → `itinerary_paths` | answered; a trip's duration has no op, QAF-81 |
 | 5 | router `plan_arrive_by` (no deadline; or a deadline) | answered |

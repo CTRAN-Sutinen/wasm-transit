@@ -44,6 +44,7 @@ archive — nothing here records what is finished.
 | [caps-run-sessions.md](caps-run-sessions.md) | the runner across sessions; shaping the import's output |
 | [grade-debt.md](grade-debt.md) | on the bus, but not yet read by a UI or dogfooded |
 | [ui-ride-now.md](ui-ride-now.md) | generated UI: riding today (stops, live boards, trip plans, last bus, detours) |
+| [ui-stop-display.md](ui-stop-display.md) | generated UI: the screen at a stop (next three per route and destination, three layouts, alerts) |
 | [ui-disruptions.md](ui-disruptions.md) | generated UI: running today's service through disruptions (late buses, detours, coverage) |
 | [ui-proposal-compare.md](ui-proposal-compare.md) | generated UI: the public comparing service proposals |
 | [ui-runcut.md](ui-runcut.md) | generated UI: cutting a plan's work into blocks and runs |

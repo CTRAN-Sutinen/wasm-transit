@@ -8,7 +8,9 @@
 //!    serialization (the same identity cap-analysis returns);
 //! 2. the board is the materialized day, model vocabulary in the
 //!    rows, edits applied in force;
-//! 3. the station board pools the walking group;
+//! 3. the station board pools the walking group; the grouped board
+//!    (the stop's display) is the same rows by route and destination,
+//!    three per group unless asked;
 //! 4. the watchlist document migrates with loss reported, and both
 //!    versions query the board;
 //! 5. invalid edit records are REPORTED at load, never rejected;
@@ -169,6 +171,34 @@ fn the_station_board_pools_the_walking_group() {
     let bay = stop_board(&network_hash, None, "SA", 0, None);
     assert!(!bay.pooled);
     assert!(bay.rows.iter().all(|r| r.departure.stop == "SA"));
+}
+
+/// The display's board at the seam: the station pin's bays by route
+/// and destination, three per group by default, and the same rows as
+/// the plain board.
+#[test]
+fn the_grouped_board_is_the_board_by_route_and_destination() {
+    let network_hash = load_network();
+    let grouped = |stop: &str, per_group: Option<u32>| match dispatch(Request::GroupedBoard {
+        network_hash: network_hash.clone(),
+        edits_hash: None,
+        stop_id: stop.into(),
+        date: DATE.into(),
+        from_secs: 0,
+        per_group,
+        live_hash: None,
+    })
+    .unwrap()
+    {
+        Response::GroupedBoard { board } => board,
+        _ => panic!("grouped_board"),
+    };
+    let pin = grouped("STN", None);
+    assert!(pin.pooled);
+    assert!(pin.groups.iter().all(|g| g.departures.len() <= 3));
+    let mut rows: Vec<_> = grouped("STN", Some(1_000)).groups.into_iter().flat_map(|g| g.departures).collect();
+    rows.sort_by_key(|r| (r.departure.departure_secs, r.departure.trip.clone()));
+    assert_eq!(rows, stop_board(&network_hash, None, "STN", 0, None).rows);
 }
 
 /// The realtime-first board over a LIVE document: the late bus

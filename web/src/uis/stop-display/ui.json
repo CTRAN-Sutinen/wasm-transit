@@ -1,0 +1,37 @@
+{
+  "id": "stop-display",
+  "title": "Stop display",
+  "summary": "The screen at a stop (a passenger information display), in three full-screen layouts — a transit center's bays, a single route, or several routes at a street stop: which stop this is, the next three departures of each route to each destination with how long until each leaves (live when predicted), the bay at a station, the routes that have stopped for the day, and a slot for the service alerts and detours here.",
+  "questions": [
+    "Which stop is this?",
+    "What leaves next here, on each route and to each destination — the next three of each?",
+    "How long until each one leaves?",
+    "Is that time live, or the schedule?",
+    "Which bay does it leave from (a transit center)?",
+    "Has a route stopped running here today?",
+    "Is there an alert or a detour at this stop?"
+  ],
+  "ops": [
+    "network.import",
+    "directory.routes",
+    "directory.stops",
+    "directory.stops_by_ids",
+    "rt.decode",
+    "rt.load_boundary",
+    "rt.live",
+    "board.load_edits",
+    "board.load_live",
+    "board.grouped_board"
+  ],
+  "components": [
+    "DisplaySetup",
+    "PlaceSearch",
+    "DisplayHeader",
+    "DisplayGroup",
+    "DisplayAlerts",
+    "AlertList"
+  ],
+  "session": "2026-10-29 08:53 PDT on C-TRAN (feed sha256:aa8dbc62…, import 2beddcb3…) with the live trip updates (160 trips, live bfb2259d…): caps-run grouped_board at Fisher's Landing TC (106, 10 groups pooled over its bays), Andresen & Van Mall Dr (2676, one route) and Van Mall Dr & 94th Ave (701, five routes) equals the browser's display in the center, route, and routes layouts at the same clock and snapshot. No alert has been read (C-TRAN publishes no alerts feed). Open finding QAF-82.",
+  "spec": "web/e2e/ui-stop-display.spec.mjs",
+  "generated": "2026-10-29"
+}

@@ -3,7 +3,8 @@
 //! One question: **when does service leave this stop?** — asked at
 //! three granularities: one stop (a station pin or bay with nothing
 //! of its own answers its POOLED walking group — the model's own
-//! concept), realtime-first when a LIVE document is supplied, and a
+//! concept), realtime-first when a LIVE document is supplied, the
+//! same stop grouped by route and destination for its display, and a
 //! personal saved set
 //! (the WATCHLIST document, version-tagged and migrated here — a
 //! personal multi-stop board is the same question parameterized by
@@ -37,7 +38,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use cap_abi::canonical_hash;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use transit_dispatch::{BoardDeparture, StopBoard};
+use transit_dispatch::{BoardDeparture, GroupedBoard, StopBoard};
 use transit_live::LiveDay;
 use transit_network::Network;
 
@@ -172,6 +173,31 @@ pub enum Request {
         #[ts(optional)]
         live_hash: Option<String>,
     },
+    /// THE board grouped for a stop's display: one group per route
+    /// and destination the stop is served by on the date (a group
+    /// whose last departure has left stays, with none), each holding
+    /// its next `per_group` departures (default 3) by the board's
+    /// realtime-first rule and the visits the in-force edits skip,
+    /// in the route's display order (`route_sort_order`, then id),
+    /// then by destination. Every row says how long until it leaves
+    /// (`wait`). A stop with nothing of its own all day that belongs
+    /// to a walking group (a station pin) pools it, each row naming
+    /// its bay.
+    GroupedBoard {
+        network_hash: String,
+        #[serde(default)]
+        #[ts(optional)]
+        edits_hash: Option<String>,
+        stop_id: String,
+        date: String,
+        from_secs: u32,
+        #[serde(default)]
+        #[ts(optional)]
+        per_group: Option<u32>,
+        #[serde(default)]
+        #[ts(optional)]
+        live_hash: Option<String>,
+    },
     /// Register a watchlist document under its content hash
     /// (idempotent by hash, like every document on the bus).
     LoadWatchlist { document: Watchlist },
@@ -205,6 +231,7 @@ pub enum Response {
     },
     LoadLive { live_hash: String },
     StopBoard { board: StopBoard },
+    GroupedBoard { board: GroupedBoard },
     LoadWatchlist { watchlist_hash: String, version: u32 },
     MigratedWatchlist { document: Watchlist, notes: Vec<MigrationNote> },
     WatchlistBoard { stops: Vec<WatchBoardStop> },
@@ -285,6 +312,24 @@ fn effective_day(
     transit_dispatch::effective_day(&network, date, &records)
         .map_err(|e| format!("the network does not materialize: {e}"))
 }
+
+/// The departures the in-force edits took away on the date — `None`
+/// with no edit document, or none in force.
+fn day_edits(
+    network: &Network,
+    edits_hash: Option<&str>,
+    date: &str,
+) -> Result<Option<transit_dispatch::DayEdits>, String> {
+    match edits_hash {
+        Some(hash) => transit_dispatch::day_edits(network, parse_date(date)?, &edits_arc(hash)?)
+            .map_err(|e| format!("the network does not materialize: {e}")),
+        None => Ok(None),
+    }
+}
+
+/// How many departures each group holds when the caller names none —
+/// the display's next three.
+const PER_GROUP: u32 = 3;
 
 /// The v1 → v2 migration: pure, deterministic, loss reported. Label
 /// comes from the note; the color goes and says so.
@@ -375,11 +420,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
             let live = live_hash.as_deref().map(live_arc).transpose()?;
-            let edits = match edits_hash.as_deref() {
-                Some(hash) => transit_dispatch::day_edits(&network, parse_date(&date)?, &edits_arc(hash)?)
-                    .map_err(|e| format!("the network does not materialize: {e}"))?,
-                None => None,
-            };
+            let edits = day_edits(&network, edits_hash.as_deref(), &date)?;
             Ok(Response::StopBoard {
                 board: transit_dispatch::stop_board(
                     &network,
@@ -387,6 +428,23 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                     &stop_id,
                     from_secs,
                     limit as usize,
+                    live.as_deref(),
+                    edits.as_ref(),
+                ),
+            })
+        }
+        Request::GroupedBoard { network_hash, edits_hash, stop_id, date, from_secs, per_group, live_hash } => {
+            let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = network_arc(&network_hash)?;
+            let live = live_hash.as_deref().map(live_arc).transpose()?;
+            let edits = day_edits(&network, edits_hash.as_deref(), &date)?;
+            Ok(Response::GroupedBoard {
+                board: transit_dispatch::grouped_board(
+                    &network,
+                    &day,
+                    &stop_id,
+                    from_secs,
+                    per_group.unwrap_or(PER_GROUP) as usize,
                     live.as_deref(),
                     edits.as_ref(),
                 ),
@@ -404,7 +462,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .get(&watchlist_hash)
                 .cloned()
                 .ok_or_else(|| format!("unknown watchlist {watchlist_hash}: load_watchlist first"))?;
-let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
+            let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
             let stops = watchlist
                 .stop_ids()

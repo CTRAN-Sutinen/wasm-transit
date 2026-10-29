@@ -556,6 +556,13 @@ fn a_row_names_its_route_and_its_bay() {
     let pooled = stop_board(&net, &day, "STN", 0, 10, None, None);
     assert!(pooled.rows.iter().all(|r| r.departure.stop == "SA" && r.departure.stop_name == "Bay A"));
     assert_eq!(pooled.rows[0].departure.route_long_name, None, "a route without a long name has none");
+    // The bay's own identifier (GTFS platform_code), when it has one —
+    // what the sign at a station prints.
+    assert_eq!(a.platform, None);
+    net.stops.get_mut("SA").unwrap().info.platform = Some("A".into());
+    let day = transit_network::materialize(&net, date()).unwrap();
+    let pooled = stop_board(&net, &day, "STN", 0, 10, None, None);
+    assert!(pooled.rows.iter().all(|r| r.departure.platform.as_deref() == Some("A")));
 }
 
 /// QAF-68: the destination is what the sign says at that visit
@@ -633,4 +640,53 @@ fn the_board_carries_the_alerts_about_it() {
     assert_eq!(late.alerts.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), ["stop-a", "agency"]);
     // No live document: no alerts.
     assert!(stop_board(&net, &day, "A", 0, 10, None, None).alerts.is_empty());
+}
+
+// ---------------------------------------------------------------------
+// The grouped board — a stop's display: the board by route and
+// destination (its own laws: grouped_board_prop_test.rs).
+// ---------------------------------------------------------------------
+
+/// A station pin pools like THE board, each group's rows naming their
+/// bay; a group the edits took away from the stop stays, empty, with
+/// the visits it lost and the diversion; the board carries the alerts.
+#[test]
+fn the_grouped_board_pools_skips_and_alerts() {
+    use transit_dispatch::grouped_board;
+    let key = |g: &transit_dispatch::DepartureGroup| (g.route.clone(), g.destination.clone());
+    let net = network();
+    let day = transit_network::materialize(&net, date()).unwrap();
+
+    // The station pin has nothing of its own: its bays answer, pooled.
+    let pin = grouped_board(&net, &day, "STN", 0, 3, None, None);
+    assert!(pin.pooled);
+    assert_eq!(pin.groups.iter().map(key).collect::<Vec<_>>(), [("40".to_string(), "Main Station".to_string())]);
+    assert_eq!(pin.groups[0].route_name, "Circulator");
+    assert!(pin.groups[0].departures.iter().all(|r| r.departure.stop == "SA" && r.departure.stop_name == "Bay A"));
+    // A plain stop never pools, even with nothing left.
+    let empty = grouped_board(&net, &day, "B", 40_000, 3, None, None);
+    assert!(!empty.pooled);
+
+    // The diversion takes the 10 away from C: its group stays, empty,
+    // and says what skipped it; the 20 still leaves.
+    let records = vec![record(EditStatus::Accepted, 300)];
+    let edits = transit_dispatch::day_edits(&net, date(), &records).unwrap().expect("an edit is in force");
+    let patched = effective_day(&net, date(), &records).unwrap();
+    let c = grouped_board(&net, &patched, "C", 0, 3, None, Some(&edits));
+    assert_eq!(
+        c.groups.iter().map(key).collect::<Vec<_>>(),
+        [("10".to_string(), "Main & 2nd".to_string()), ("20".to_string(), "Main & 1st".to_string())]
+    );
+    assert!(c.groups[0].departures.is_empty());
+    assert_eq!(c.groups[0].skipped.len(), 1);
+    assert_eq!(c.groups[0].skipped[0].diversion.as_deref(), Some("d1"));
+    assert_eq!(c.groups[1].departures.len(), 1);
+    assert!(c.groups[1].skipped.is_empty());
+
+    // The alerts about the stop and its departures ride on the board.
+    let mut live = live_at("s10@28800", 28_800, "A", 28_800, 0);
+    live.alerts = vec![alert("stop-a", vec![scope(None, Some("A"))]), alert("route-20", vec![scope(Some("20"), None)])];
+    let a = grouped_board(&net, &day, "A", 0, 3, Some(&live), None);
+    assert_eq!(a.alerts.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), ["stop-a"], "route 20 only ends at A");
+    assert_eq!(a.groups[0].departures[0].alerts, ["stop-a"]);
 }
