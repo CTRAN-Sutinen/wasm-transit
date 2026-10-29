@@ -1052,6 +1052,39 @@ assert(unknownStreets.error && unknownStreets.error.includes("unknown street net
 const garbageStreets = streets.raw({ op: "import", bytes: [0xff, 0xfe] });
 assert(garbageStreets.error && /street layer/.test(garbageStreets.error), "garbage bytes are an error outcome, never a trap");
 
+// The walk flow — a plan's transfers along the streets, composed by
+// documents only: streets mints the walk table from a streets
+// document and the network (the walking fixture: a residential
+// street through the station's bays, a motorway across it no rider
+// walks), the router registers it under the same hash and plans over
+// it. Two capabilities, one document between them.
+const walkStreets = streets.invokeBytes(0, readFileSync(path.join(here, "../../web/e2e/fixtures/walk-streets.geojson")));
+const streetsNet = streets.invoke({ op: "load_network", network: imported.network });
+assert(streetsNet.network_hash === imported.network_hash, "streets agrees with the network capability on the document identity");
+const walked = streets.invoke({ op: "walks", streets_hash: walkStreets.streets_hash, network_hash: streetsNet.network_hash });
+const walkPairs = walked.walks.walks.map((w) => `${w.from}>${w.to}`).join(" ");
+assert(walkPairs === "SA>SB SA>STN SB>SA SB>STN STN>SA STN>SB", `the bays and their station walk Station Rd (${walkPairs})`);
+assert(walked.walks.max_walk_secs === 600 && walked.walks.speed_mps === 1.3, "the walk defaults: ten minutes at 1.3 m/s");
+const routerWalks = router.invoke({ op: "load_walks", walks: walked.walks });
+assert(routerWalks.walks_hash === walked.walks_hash, "router agrees with streets on the walk table's identity");
+const bayWalk = router.invoke({
+  op: "plan",
+  network_hash: loadedRouterNet.network_hash,
+  from: "SA",
+  to: "SB",
+  date: DATE,
+  depart_secs: 5 * 3600,
+  max_legs: 2,
+  walks_hash: routerWalks.walks_hash,
+});
+const sabWalk = walked.walks.walks.find((w) => w.from === "SA" && w.to === "SB").walk_secs;
+assert(
+  bayWalk.itinerary?.legs.length === 1 && bayWalk.itinerary.legs[0].type === "walk" && bayWalk.itinerary.arrival_secs === 5 * 3600 + sabWalk,
+  "the plan walks the table's walk between the bays",
+);
+const foreignWalks = router.raw({ op: "plan", network_hash: loadedRouterNet.network_hash, from: "SA", to: "SB", date: DATE, depart_secs: 0, max_legs: 2, walks_hash: "sha256:missing" });
+assert(foreignWalks.error && foreignWalks.error.includes("load_walks first"), "an unknown walk table is an error, never a panic");
+
 // The sync flow — the protocol's one step: the client's draft
 // diversion against an empty server converges to the submitted
 // document (LWW union, rev bumped, host clock stamped), and the

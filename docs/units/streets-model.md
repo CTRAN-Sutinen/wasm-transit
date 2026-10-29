@@ -31,15 +31,24 @@ cap-streets). What is left:
    the gzipped JSON is not enough. The browser keeps the document
    (`state.svelte.ts`), so persisting it in the store follows
    [sync-persistence.md](sync-persistence.md).
-2. **Mode profiles.** Which classes walking and a bus may use, as
-   an op parameter with an op-owned default. Blocked: D-26.
-3. **The walk table.** A document derived from streets × network:
-   footpaths between stops and each stop's access from the street,
-   addressed by its pair of input hashes. The router plans over it
-   instead of straight lines (closes QAF-83), and plans from an
-   arbitrary point through the access legs a streets op answers.
-   Coverage computes walksheds over it (`docs/ROADMAP.md` 4).
-   Blocked: D-25, D-26.
+2. **The bus profile.** Which classes a bus may be drawn on, as an
+   op parameter with an op-owned default (walking's is decided and
+   built: `docs/ARCHITECTURE.md`, transit-streets). Blocked: D-26.
+3. **Walking for riders.** The walk table is on the bus (cap-streets
+   `walks`, the router's `load_walks` / `walks_hash`). Left:
+   - **Trips from any point.** A streets op answers the walks from a
+     point (a tapped spot, the rider's location) to the stops within
+     the limit, each with its street path; the router plans from and
+     to those walks (access and egress legs at the ends of an
+     itinerary, drawn along their paths).
+   - **ride-now walks the streets.** Its host loads a streets
+     document and the walk table and names them in every plan, plans
+     from the rider's spot, and its nearby list ranks stops by walk
+     (closes QAF-83). It waits on item 1 — a page cannot download
+     the 99 MB layer — and on an OSM-sourced streets document for
+     walking to be worth showing (QAF-85).
+   - **Walksheds.** Coverage over the walking graph instead of 400 m
+     circles (`docs/ROADMAP.md` 4).
 4. **Drawing on streets.** The future consumer the document is
    designed for: a planner draws a new pattern by tracing between
    waypoints along the streets a bus may use, as the detour editor

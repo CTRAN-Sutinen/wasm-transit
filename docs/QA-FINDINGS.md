@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-85**. A
+IDs are never reused; the next new finding is **QAF-87**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -264,6 +264,22 @@ time, last bus home, is there a detour.
   runner stale.
   Pin: `caps-run network` import before `just caps` →
   `89631f1a…`; after → `2e27c511…`.
+- **QAF-86 RUNNER GAP** — a session that holds two real-size
+  results is GC-bound: the C-TRAN GTFS import (2.0 s alone) followed
+  by the C-TRAN roads import (14.6 s alone) takes 76–122 s in one
+  session, and a CPU profile of the session's worker spends 59.5 of
+  75.2 s in the garbage collector (wasm about 10 s). It is not the
+  heap limit (4 GB; an 8 GB heap takes 92 s against 101 s, about
+  10% less — fewer collections), and not the `$ref` hand-off (the
+  import plus handing its network to cap-streets' `load_network`
+  takes 1.96 s). The leading cause: the runner keeps every result as
+  a parsed JS object graph for later `$ref`s, so each major
+  collection re-marks the earlier results while the next large
+  answer parses — unproven, since a session holding only
+  `load_feed`'s small answer before the roads still takes 26.6 s.
+  Pin: `caps-run network --load ctran-gtfs.zip --op import --cap
+  streets --load <roads>` → 76–122 s; each half alone → 2.0 s and
+  14.6 s.
 
 ## Live operations
 
@@ -307,18 +323,31 @@ work rules, and the bid over them.
 
 ## Geography
 
-- **QAF-83 MODEL GAP** — the router walks in straight lines: its
-  footpaths are every stop pair within `WALK_RADIUS_M` (300 m) of
-  haversine distance at `WALK_SPEED_MPS` (1.3 m/s), constants in
-  `transit-router` that no op parameter reaches. A walk crosses a
-  river or a freeway, a stop 310 m away across a direct street is
-  out of reach, and a slower walker cannot ask for their own speed.
-  The router takes no streets document, so the answer does not
-  change when one exists. Its fix is the walk table
-  (`docs/units/streets-model.md`).
-  Pin: `crates/transit-router/src/network.rs`, the footpath build
-  (`haversine_m` against `WALK_RADIUS_M`); no router op takes a
-  streets hash.
+- **QAF-83 UI GAP** — riders' plans still walk in straight lines.
+  The router walks the streets when a plan names a walk table
+  (`walks_hash`), but no host passes one: ride-now plans with
+  straight-line transfers (stops within 300 m, at 1.3 m/s), and a
+  trip starts and ends only at a stop. The fix is the rest of the
+  walk table work (`docs/units/streets-model.md`, item 3).
+  Pin: `web/src/uis/ride-now/host.svelte.ts` — `planCompare` is
+  called with no walks hash.
+- **QAF-85 DATA GAP** — C-TRAN's Trapeze roads cannot carry
+  walking. The export codes every state route CFCC `A10` — I-5 and
+  I-205, and also NE Fourth Plain Rd, W Mill Plain Blvd, NE 117th
+  Ave, W Main St (Battle Ground), Lewis River Rd, and the on-ramps
+  ("ONTO I-5 NB"): 468 street names — so its class cannot tell a
+  freeway from an arterial, and it holds no sidewalk, path, or
+  stairs. Read as the spec reads CFCC (D-30), walking refuses every
+  A1 street: the stops on NE 117th Ave, NE 162nd Ave, and W Main St
+  lose their street walks. The fix is the data, not the model: an
+  OSM-sourced streets document for walking (the import reads OSM
+  `highway`), the Trapeze roads kept for driving and drawing.
+  Pin: streets `walks` on the C-TRAN network (`sha256:2beddcb3…`)
+  and roads (`sha256:48fe6c89…`): stops 812 and 852 (NE 117th Ave &
+  Padden Pkwy, 205 m apart) have no walk; 46 of the 2,924 stop pairs
+  within 300 m straight-line have none. Router `plan` 812 → 852 on
+  2026-10-29 at 08:20 walks 158 s in a straight line, and over the
+  walk table rides route 007 around, arriving 08:51.
 - **QAF-84 DEFECT** — the basemap is not local: with
   `basemap.pmtiles` served, the style still fetches its glyphs and
   sprites from `protomaps.github.io` (`web/src/basemap.ts`), and

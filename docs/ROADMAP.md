@@ -79,9 +79,12 @@ them.
 population does this network serve?") deserves an answer that
 survives scrutiny. 400 m circles are a placeholder.
 
-**Exists already:** the streets document and its graph, population
-layer, coverage ops parameterized already.
-**Needs:** the walk table (`docs/units/streets-model.md`).
+**Exists already:** the streets document and its graph, the walk
+table (walking along the streets, between stops), population layer,
+coverage ops parameterized already.
+**Needs:** a walkshed op over the walking graph
+(`docs/units/streets-model.md`), and an OSM-sourced streets document
+for walking (QAF-85).
 
 ## 5. Rider wins (filler that pays visibly)
 

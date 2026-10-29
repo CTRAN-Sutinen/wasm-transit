@@ -273,6 +273,7 @@ dependencies = [
  "transit-live",
  "transit-network",
  "transit-router",
+ "transit-streets",
  "transit-sync",
  "ts-rs",
 ]
@@ -316,6 +317,7 @@ dependencies = [
  "cap-abi",
  "serde",
  "serde_json",
+ "transit-network",
  "transit-streets",
  "ts-rs",
 ]
@@ -1159,6 +1161,7 @@ dependencies = [
  "transit-codec",
  "transit-live",
  "transit-network",
+ "transit-streets",
  "ts-rs",
  "zip",
 ]

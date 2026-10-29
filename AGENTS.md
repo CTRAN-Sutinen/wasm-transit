@@ -50,8 +50,9 @@ updated:
    change touches — in the present tense, one home per topic.
 2. **The open-work records.** Edit a unit down to what is left, or
    delete it with its pin; add every decision you had to encode to
-   `docs/DECISIONS.md` (provisional, with its pins) and delete the
-   ones the user settled; delete fixed findings in
+   `docs/DECISIONS.md` (provisional, with its pins) and mark the
+   ones the user settled Decided, with their answer — a decision is
+   a durable record, never deleted; delete fixed findings in
    `docs/QA-FINDINGS.md`, reword ones the change answers in part,
    and update the reference hashes a dogfood session re-measured.
 3. **The contract an agent reads.** The op docs and worked examples
@@ -83,9 +84,10 @@ Where the detail lives:
   rules
 - `docs/QA-FINDINGS.md` — the open real-data findings (defects,
   op/UI/data gaps), each pinned; deleted when fixed
-- `docs/DECISIONS.md` — the open questions for the user, the one
-  record of them; each names the work it blocks (`Blocked: D-N`),
-  and work that names none is free to start
+- `docs/DECISIONS.md` — the questions for the user and their
+  answers, the one durable record of them (never deleted); an open
+  one names the work it blocks (`Blocked: D-N`), and work that names
+  none is free to start
 - `docs/ROADMAP.md` — the sequenced feature plan (direction changes)
 
 ## Commands
@@ -143,7 +145,7 @@ transit-network  THE authored network model — trips are stored records (own id
 transit-codec   the network codec: the whole-spec GTFS feed (every file and column,
                  deterministic zip bytes) ⇄ network document, losslessly
 transit-router  RAPTOR planning over the network model's materialized day (leave-at and
-                 arrive-by, live predictions, the diversion notice)
+                 arrive-by, live predictions, the diversion notice, transfers over a walk table)
 transit-analysis planner analysis library (stats, service types, coverage)
 transit-dispatch the operator's day library (patched materialized day, boards,
                  authored block chains with the layover ripple, diversion drafts)
@@ -154,7 +156,7 @@ transit-sync     THE sync document (EditRecord, Diversion, merge, the record env
 transit-plans    THE service-plan chain (resolve, periods, validity — pure, derived)
 transit-streets  THE streets document (canonical: its hash is the streets', not a file's),
                  its import from street layers (GeoJSON: agency exports, TIGER, OSM),
-                 and the graph over it (snap, route)
+                 the graph over it (snap, route), and walking (the walk table between stops)
 cap-abi          the capability seam (ABI macro, manifest, validator, gen-manifest)
 cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-plans cap-author cap-divert
                  the capability modules (docs/ARCHITECTURE.md, bus section)

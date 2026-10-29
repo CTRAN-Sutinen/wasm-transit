@@ -163,6 +163,10 @@ transit-router  RAPTOR planning over the network model's
                 line, firing whenever the diverted world arrives
                 later, has no trip, or rides a trip instance whose
                 patched times differ from its unpatched one.
+                Transfers are footpaths: straight lines (stop pairs
+                within 300 m at 1.3 m/s) until `with_walks` replaces
+                them with a walk table's walks — exactly the table's,
+                between the network's stops (D-32).
 transit-codec   The network codec, both directions, over the whole
                 GTFS Schedule spec: `Feed` (src/feed.rs) reads and
                 writes every spec file and column as the exact text
@@ -351,7 +355,21 @@ transit-streets THE streets model. `model.rs`: the streets document
                 document) — snap (nearest street position) and
                 shortest-path route (one-way aware; turn restrictions
                 are a non-goal until a restriction table ships in the
-                data). Open work: `docs/units/streets-model.md`.
+                data). `walking.rs`: how long a rider walks — the
+                walking profile is every class but motorway, ramp and
+                unknown, both ways along one-way streets; a walk is
+                each stop's walk to its nearest walkable street, the
+                street distance, and the walk on to the other stop,
+                at 1.3 m/s by default, kept within ten minutes by
+                default, symmetric by construction. The WALK TABLE
+                (`WalkTable`) is a document derived from a streets
+                document and a network — every walk between its stops,
+                naming both hashes, the speed and the limit — that
+                the router plans transfers over. Walking quality is
+                the streets document's: a source with real classes
+                and footways (OSM), not one whose classes cannot tell
+                a freeway from an arterial (QAF-85). Open work:
+                `docs/units/streets-model.md`.
 cap-sync        The sync capability: the converged state of an edit
                 document pair — LWW merge + the submit transition,
                 the protocol's one step (the op behind POST /edits).
@@ -830,9 +848,13 @@ cap-router      The router capability — ONE QUESTION: how do I get
                 patched with the edits in force (the same
                 transit-dispatch composition every day view starts
                 from), read at the live document's predictions when
-                live_hash names one (load_live), the RAPTOR graph
-                cached per (network, edits, live, date; only the
-                newest live document's graphs stay). plan leaves at
+                live_hash names one (load_live), its transfers
+                walking the streets when walks_hash names a walk table
+                (load_walks — cap-streets' `walks` answer, refused
+                when derived for another network; straight lines
+                without one), the RAPTOR graph cached per (network,
+                edits, live, date, walks; only the newest live
+                document's graphs stay). plan leaves at
                 a time; plan_arrive_by answers the latest departure
                 that arrives by a deadline (none: the last bus home).
                 The compare facet is the diversion delta:
@@ -997,9 +1019,15 @@ cap-streets    The street-graph capability: where along the
                 geometry between two positions (shortest path,
                 starting after `from` — trace legs chain — with
                 its length along the graph; empty on disconnected
-                parts — the caller falls back to a straight line). The
-                domain code lives in the shared transit-streets
-                library; the module writes nothing. Its consumer
+                parts — the caller falls back to a straight line);
+                walks answers the walk table between a registered
+                network's stops (load_network, kernel op 256 — the
+                module keeps only the stops) with its hash, the
+                router's load_walks answering the same. The walking
+                graph is built on first walks, the street graph on
+                first snap — a host that only walks never builds the
+                other. The domain code lives in the shared
+                transit-streets library; the module writes nothing. Its consumer
                 today is the detour editor (the original app's
                 DataSources import; the map draws the document, so it
                 shows exactly what routes); drawing a pattern on
