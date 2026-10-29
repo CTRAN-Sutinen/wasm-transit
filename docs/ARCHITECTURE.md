@@ -436,7 +436,7 @@ exports (no wasm-bindgen — do not reintroduce host glue).
 
 ## server/
 
-Go + wazero host: scaffolding only (HTTP, manifest, proxy). It must
+Go + wazero host: scaffolding only (HTTP, manifest, proxies). It must
 never make a domain decision; the host reads the feed's own
 feed_info.txt version field (one boundary CSV field — I/O, not
 domain). It instantiates three modules, all rebuilt by `just caps`
@@ -485,10 +485,24 @@ Its HTTP surface:
   feed and returns it with CORS headers, so feeds without
   `Access-Control-Allow-Origin` can be polled from the page (the
   server binds 127.0.0.1 by default; `-addr` changes it).
+- `/geocode/{autocomplete,search,reverse}` — a proxy to the Pelias
+  geocoder named by `-geocoder` (`<url>/v1/<op>`): it forwards the
+  user's input only (`text`, the focus point, the reverse point) and
+  adds the deployment's query policy (`-geocoder-policy`, default
+  `server/geocoder.json`); 404 when none is configured. The geocoder
+  is an oracle, never a document on the bus (D-36, D-38; web
+  section, "External services"). `just geocoder-build` builds a local Pelias
+  (`github.com/pelias/docker`'s portland-metro project, in the
+  gitignored `.pelias/`, its transit importer not run — stops are
+  the network's), `just geocoder` starts it on :4000, and
+  `GEOCODER=http://127.0.0.1:4000 just serve …` (or `just dev`)
+  proxies it.
 - `/manifest` — `{network_hash, feed_hash, feed_version,
-  streets_hash, walks_hash, wasm_hash, generated_at, publisher}`: which network is authoritative, the
+  streets_hash, walks_hash, wasm_hash, generated_at, publisher,
+  services}`: which network is authoritative, the
   GTFS zip it was imported from, which sync module bytes the server
-  runs, and who says so.
+  runs, who says so, and the external services it proxies
+  (`services.geocoder: {path, query}` with `-geocoder`).
 - `/streets` — the canonical streets document imported from the
   configured layer (`-streets`), bare (the bytes `load_streets`
   takes); gzipped, its ETag the streets hash, re-imported when the
@@ -615,6 +629,67 @@ File ownership:
   the basemap choice every map view shares (local pmtiles, else
   OpenFreeMap) and the MapLibre worker wiring.
 
+### External services
+
+Parity holds the bus's answers; it does not say what a host may do
+with something OFF the bus. External things are sorted by what
+their answer BECOMES, not by how they are fetched (`/rt` and
+`/geocode` are the same proxy and different kinds):
+
+| kind | its answer becomes | examples | rule |
+|---|---|---|---|
+| source | a document on the bus, by hash | the GTFS zip, a street layer, the GTFS-rt feeds | a module registers its bytes; ops read it by hash |
+| presentation | pixels — no op reads it | basemap tiles, glyphs, sprites | the map's; nothing else touches it |
+| oracle | an input the user could have given by hand | the geocoder | below |
+
+**The oracle test: could the user have done it themselves?** A
+geocoded point is a tap on the map; a geocoded name is a label the
+rider could have typed. An oracle only makes an input easier to
+give, so every op stays deterministic in its inputs and cannot tell
+where a point came from. A service whose answer no user could give
+by hand — another agency's itineraries, say — is not an oracle: it
+is a source (its answer becomes a document an op reads), or it is
+not used.
+
+The contract:
+
+- **A host may** ask the oracle with the user's input only (the
+  text typed, the point tapped, where the map looks), render the
+  answer exactly as given, in the oracle's order, and turn the item
+  the user picks into the input the user could have given: a point,
+  and the label it was shown with.
+- **A host may not** rank, filter, merge, or threshold the answers
+  (that is policy), or join them with a document (that is an op).
+  When the answers must meet model data — D-28's "rank stops and
+  addresses together" — the oracle is PROMOTED: its candidates
+  become an input document, like an rt snapshot, and an op joins
+  them.
+- **Ops may echo an oracle's label, never branch on it.** The
+  router repeats a geocoded pin's name in the itinerary (D-37); no
+  op decides anything by it.
+- **The query policy is the deployment's** (which layers, how far,
+  how many): the server's policy file (`server/geocoder.json`,
+  `-geocoder-policy`), applied by its proxy, which forwards only the
+  user's input from the page. Every host that asks through the path
+  asks the same question.
+- **Discovery is the manifest's.** `/manifest`'s `services` lists
+  each service the deployment offers (`{geocoder: {path, query}}`);
+  one it does not list is off, and the frames that need it say so —
+  the host never probes.
+- **Transport is the deployment's origin**, so a user's queries go
+  no further than the service the deployment chose.
+- **Durability:** nothing durable keeps a query or an oracle's id
+  for a result (Pelias's `gid`) — only the user-equivalent input
+  (the point and its label). The oracle's data drifts; a saved trip
+  end must not drift with it.
+- **Failure:** an oracle only makes input easier; down or slow,
+  the user types a stop, taps the map, or shares a location, and
+  nothing waits on it.
+- **Parity:** caps-run asks an oracle the way a page does (`--ask`
+  through the deployment's path) and chains its answer into the
+  ops; the answers themselves drift with the oracle's data, so
+  sessions record them as reference, never as fixtures.
+
 ### Generated UIs
 
 A generated UI is a layout built for a set of questions, made from
@@ -700,7 +775,8 @@ on every component a generated UI imports.
   stop, the live buses by status, a route's `focus`, a trip's
   `itinerary_paths`, the rider's location; a tapped stop or spot is
   an event), PlaceSearch (a debounced type-ahead over directory
-  `stops`, keyboard-driven), DepartureRows (`stop_board` rows with
+  `stops`, and under them the geocoder's addresses when the host
+  passes them — two lists, one box, D-28 — keyboard-driven), DepartureRows (`stop_board` rows with
   their expected time and status, or `watchlist_board` departures),
   StopCard (a stop at a glance), RiderBoard (one stop's board, its
   alerts and skipped visits), AlertList (the live document's
@@ -818,7 +894,9 @@ the map on a phone), the live pill and the alerts button in the
 corner. The map draws every stop and every live bus (colored by its
 status, pointing its bearing, labeled with its route); a tapped bus,
 stop, or spot opens it. The panel follows the rider: home (the
-type-ahead, "Get directions" and "Routes", the places near the rider
+type-ahead — stops, and addresses and places when the server runs
+a geocoder: a picked address is a spot, "Near 1400 NE 136th Ave" —,
+"Get directions" and "Routes", the places near the rider
 or a tapped spot with each one's next departures, saved stops,
 recent stops — nearest by the walk along the streets when the
 server publishes them), one stop (its live board; a picked departure draws
@@ -828,7 +906,9 @@ map), the routes and one route (its directions' variants as line
 diagrams; its buses stay bright on the map, the rest dim), getting
 there (the ends as type-aheads, or the rider's location, or chosen
 on the map — "Choose on map" per end: the next tap sets it, a stop,
-or with the streets published any spot, a dropped pin; "Directions
+or with the streets published any spot, a dropped pin named by the
+geocoder's nearest address (D-37); an address typed in an end's
+field is a point end the same way; "Directions
 here" on a tapped spot does the same; a point end plans
 as a router place over cap-streets `access`, its walks drawn along
 the streets; leave now, leave at, arrive by, or the last bus; the
@@ -842,7 +922,11 @@ walks the published network), reads the edit document from
 `GET /edits`, reads the live feeds the deployment names in
 `public/live-feeds.json` (the rider may set their own) through
 `/rt`, and polls both and the clock every 30 s. A trip asked for
-"now" is re-asked on each poll. Its open work is
+"now" is re-asked on each poll. Addresses come from the geocoder
+the manifest lists (read once on boot; "External services"): the
+host sends the typed text and the near point or the rider's, shows
+Pelias's answer as given, and a point it answers keeps the name it
+was shown with; nothing keeps the query. Its open work is
 `docs/units/ui-ride-now.md`.
 
 `stop-display` (`src/uis/stop-display/`): the screen at a stop, a

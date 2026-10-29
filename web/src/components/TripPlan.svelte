@@ -8,7 +8,7 @@
   import PlaceSearch from "./PlaceSearch.svelte";
   import Itinerary from "./Itinerary.svelte";
 
-  type Place = { id: string; name: string; lat?: number; lon?: number };
+  type Place = { id: string; name: string; lat?: number; lon?: number; detail?: string };
   type Field = "search" | "from" | "to";
   type When = { mode: "now" | "depart" | "arrive" | "last"; secs: number | null };
 
@@ -17,6 +17,7 @@
     to,
     when,
     found,
+    addresses = null,
     limit,
     plan,
     routes,
@@ -24,6 +25,7 @@
     onhere,
     picking = null,
     spots = false,
+    addressable = false,
     onmap,
     off,
     searchOff,
@@ -38,6 +40,8 @@
     to: Place | null;
     when: When;
     found: { field: Field; text: string; places: Place[] } | null;
+    /// The geocoder's addresses for the field being typed, if any.
+    addresses?: { field: Field; text: string; places: Place[] } | null;
     limit: number;
     plan: { itinerary: Plan | null; notice: string | null; error?: string } | null;
     routes: DirectoryRoute[];
@@ -48,6 +52,8 @@
     picking?: "from" | "to" | null;
     /// Any spot can be an end (the streets walk it); else only a stop.
     spots?: boolean;
+    /// The fields take addresses (a geocoder, and streets to walk).
+    addressable?: boolean;
     /// Choose an end on the map (asked again: cancel).
     onmap?: (field: "from" | "to") => void;
     /// The router capability did not assemble.
@@ -85,6 +91,7 @@
   }
 
   const forField = (f: Field) => (found && found.field === f ? found : null);
+  const addressesFor = (f: Field) => (addresses && addresses.field === f ? addresses : null);
 </script>
 
 <section class="trip" data-testid="trip-plan">
@@ -95,9 +102,9 @@
 
   <div class="ends">
     <div class="fields">
-      <PlaceSearch label="From" placeholder="From — a stop" icon="from" value={from?.name ?? ""} found={forField("from")} {limit} off={searchOff}
+      <PlaceSearch label="From" placeholder={addressable ? "From — a stop or address" : "From — a stop"} icon="from" value={from?.name ?? ""} found={forField("from")} addresses={addressesFor("from")} {limit} off={searchOff}
         ontype={(t) => ontype("from", t)} onpick={(p) => onpick("from", p)} {onclose} />
-      <PlaceSearch label="To" placeholder="To — a stop" icon="to" value={to?.name ?? ""} found={forField("to")} {limit} off={searchOff}
+      <PlaceSearch label="To" placeholder={addressable ? "To — a stop or address" : "To — a stop"} icon="to" value={to?.name ?? ""} found={forField("to")} addresses={addressesFor("to")} {limit} off={searchOff}
         ontype={(t) => ontype("to", t)} onpick={(p) => onpick("to", p)} {onclose} />
     </div>
     <button class="swap" onclick={onswap} aria-label="swap from and to" title="Swap">

@@ -107,7 +107,8 @@ node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op .
                            # capability mid-session (documents cross by $ref);
                            # --as NAME names a result; $refs ($name.x, $load.x,
                            # $op.x, $N.path) + $TODAY/$NOW_SECS (a number);
-                           # --load [N:]FILE for bulk ops; --op @FILE for big JSON
+                           # --load [N:]FILE for bulk ops; --op @FILE for big JSON;
+                           # --ask URL asks an oracle ($ask.x)
 just test                  # the host-side runner (Rust + smokes + runner gates + web
                            # parity ratchets + Go -race) — no browser
 just e2e                   # the browser runner (Playwright, builds first) — UI changes
@@ -115,6 +116,9 @@ just check                 # both runners — changes touching both sides
 just types                 # regenerate TS bindings (gitignored; build runs it)
 just serve [feed.zip [streets.geojson ["Publisher" [addr]]]]   # sync server on :8080
 just dev                   # vite hot reload + server alongside
+just geocoder-build        # once: a local Pelias (portland-metro) in .pelias/
+just geocoder              # start it on :4000 (GEOCODER=http://127.0.0.1:4000
+                           # just serve|dev proxies it at /geocode); geocoder-stop
 just fixtures              # regenerate the e2e GTFS fixture
 just soak                  # real-data soak (COUNTY_GEOJSON=… county roads)
 just perf                  # browser perf baselines on the real feed — reports, never
@@ -163,8 +167,9 @@ cap-abi          the capability seam (ABI macro, manifest, validator, gen-manife
 cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-plans cap-author cap-divert
                  the capability modules (docs/ARCHITECTURE.md, bus section)
 server/          Go + wazero host over cap-sync, cap-network and cap-streets (the
-                 network, streets and walk table it publishes) — scaffolding,
-                 never a domain decision
+                 network, streets and walk table it publishes) and the proxies
+                 (/rt, /geocode to a Pelias geocoder) — scaffolding, never a
+                 domain decision
 web/             Svelte 5 + Vite frontend: / is a picker over the GENERATED UIs
                  (src/uis/<id>/, each its own page and host layer) and links
                  the original app (/app.html) (docs/ARCHITECTURE.md, web section,
@@ -219,6 +224,11 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
   same ops and get the same bytes — `web/` is host glue plus
   render components, never answers (`docs/ARCHITECTURE.md`, web
   section, "Parity"; ratcheted in `just test`).
+- **External services** are sources, presentation, or oracles — an
+  oracle (the geocoder) answers an input the user could have given
+  by hand; a host sends it the user's input only, shows its answer
+  as given, and finds it in the manifest's `services`
+  (`docs/ARCHITECTURE.md`, web section, "External services").
 - New ops go through the extraction pattern (crate boundary
   first, capability wrapper second): the monolith that ops were
   extracted FROM is gone, so a new op is a library + a capability
@@ -248,6 +258,8 @@ e2e, real-data dogfood) are spelled out in `docs/TESTING.md`.
 - wasm-bindgen / JS glue is gone on purpose; every module is the
   raw rustc output with the same four exports — no custom calling
   conventions.
+- The geocoder is an oracle, not a document on the bus — no
+  gazetteer capability ("External services").
 - The Go server stays scaffolding; domain logic the server needs
   becomes a capability module (it hosts cap-sync, and cap-network
   for the import it publishes, cap-streets for the streets and walk

@@ -86,6 +86,26 @@ Rebuild the frontend afterwards (`just build`). A metro extract is
 small enough to keep next to the GTFS zip, which makes the whole app
 — feed, queries, basemap — work offline.
 
+## Address search
+
+Stop search is the network's; addresses and places come from a
+geocoder the server proxies at `/geocode` — a service, not data
+the app holds, so without one the search finds stops only. To run
+a local Pelias for the Portland–Vancouver area (Docker or podman
+with podman-compose; several GB of data, about an hour to build):
+
+```
+just geocoder-build                          # once: download and import
+just geocoder                                # start it on 127.0.0.1:4000
+GEOCODER=http://127.0.0.1:4000 just serve path/to/gtfs.zip roads.geojson
+just geocoder-stop
+```
+
+What the server asks Pelias for (which layers name a dropped pin,
+how far, how many results) is the deployment's policy,
+`server/geocoder.json` (`-geocoder-policy`); the manifest lists the
+geocoder and its policy under `services`.
+
 ## Live feeds
 
 The ride-now UI (`/ride-now.html`) and the stop display

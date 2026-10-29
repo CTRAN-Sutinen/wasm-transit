@@ -30,7 +30,7 @@ browser.
 
 | # | op(s) | state |
 |---|---|---|
-| 1 | directory `stops` (query), `stops_near` (a point: the rider, or a tapped spot; by walk over streets `access` when the server publishes streets) | answered; a colloquial name answers nothing, QAF-70; by walk pinned on the fixture only |
+| 1 | directory `stops` (query), `stops_near` (a point: the rider, a tapped spot, or an address the geocoder answers; by walk over streets `access` when the server publishes streets) | answered; a colloquial name answers no stop, QAF-70 (the geocoder's places answer it where one runs); by walk and addresses pinned on the fixture only |
 | 2 | rt `live` → board `stop_board` (`live_hash`) | answered; each row's `wait` says "leaves in N min", which the UI does not read yet |
 | 3 | the board row's `status` / `delay_secs`; the map's buses by status | answered |
 | 4 | router `plan_compare` (`live_hash`, `edits_hash`, `walks_hash`; a point end as a place over streets `access`) → `itinerary_paths` (the ends, so a place's walks draw along the streets) | answered; a trip's duration has no op, QAF-81; walking pinned on the fixture only |
@@ -81,6 +81,9 @@ rider-length session is bounded only when
 
 - **Where edits come from.** Detours reach a rider through the sync
   server (`docs/units/sync-persistence.md`); the UI only reads.
+- **Addresses.** Not an op: an oracle (D-38) the manifest lists —
+  the server's `/geocode` proxy to Pelias (D-36), its answer shown
+  under the stops (D-28), a dropped pin named by it (D-37).
 - **Live feeds.** The deployment names them in
   `web/public/live-feeds.json` (C-TRAN's trip updates and vehicle
   positions); a rider may set their own. C-TRAN's service-alerts

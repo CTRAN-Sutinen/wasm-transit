@@ -12,7 +12,7 @@
 //   caps-run list                       capabilities + evidence
 //   caps-run tools <capability>         the tool catalog (op docs)
 //   caps-run <capability> [--cap ID] [--as NAME]
-//          [--load FILE]... [--op '<json>|@FILE']...
+//          [--load FILE]... [--op '<json>|@FILE']... [--ask URL]...
 //          [--timeout MS]               run a session
 //
 // --load [N:]FILE sends the file's bytes on bulk op N (default 0 —
@@ -23,6 +23,14 @@
 // --op invokes one JSON op; repeatable; '@FILE' reads the JSON from
 // a file. Steps run in COMMAND-LINE ORDER, loads and ops alike;
 // results print as JSON, one per line, in that order.
+//
+// --ask URL asks an ORACLE — an external service whose answer is an
+// input the user could have given by hand (docs/ARCHITECTURE.md, web
+// section, "External services") — through the deployment's path, the
+// way a page asks it: `--ask 'http://127.0.0.1:8080/geocode/
+// autocomplete?text=peacehealth'`. Its JSON answer joins the session
+// as a result (`$ask.features.0.geometry.coordinates.1`), so "the
+// rider typed X and picked the first" chains into the ops.
 //
 // A session spans capabilities: --cap ID switches the capability
 // the following steps run against (each module is verified and
@@ -37,6 +45,7 @@
 //   $net.network_hash  the result named by `--as net` (names are the
 //                      stable address — they survive reordering)
 //   $load.feed_hash    the last --load result ("load" op)
+//   $ask.features      the last --ask result (the oracle's answer)
 //   $import.network_hash  the last prior result tagged op:"import"
 //   $1.feed_hash       the 1st result overall, in command-line order
 // The rest of the reference is a dotted path into the result
@@ -72,7 +81,7 @@ function sha256(bytes) {
 function usage() {
   console.error(
     "usage: caps-run list | caps-run tools <capability> | " +
-      "caps-run <capability> [--cap ID] [--as NAME] [--load FILE]... [--op JSON|@FILE]... [--timeout MS]",
+      "caps-run <capability> [--cap ID] [--as NAME] [--load FILE]... [--op JSON|@FILE]... [--ask URL]... [--timeout MS]",
   );
   process.exit(2);
 }
@@ -93,6 +102,7 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "--load") step("load", argv[++i]);
     else if (arg === "--op") step("op", argv[++i]);
+    else if (arg === "--ask") step("ask", argv[++i] ?? usage());
     else if (arg === "--cap") current = argv[++i] ?? usage();
     else if (arg === "--as") pendingName = argv[++i] ?? usage();
     else if (arg === "--timeout") out.timeout = Number(argv[++i]);
@@ -164,8 +174,8 @@ async function runSession() {
     $NOW_SECS: now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds(),
   };
   const resolveRef = (ref) => {
-    const m = /^\$(load|\d+|[a-zA-Z_][a-zA-Z0-9_]*)(?:\.([a-zA-Z0-9_.]*))?$/.exec(ref);
-    if (!m) throw new Error(`bad result reference ${JSON.stringify(ref)}: expected $<name|load|op|N>.<path>`);
+    const m = /^\$(load|ask|\d+|[a-zA-Z_][a-zA-Z0-9_]*)(?:\.([a-zA-Z0-9_.]*))?$/.exec(ref);
+    if (!m) throw new Error(`bad result reference ${JSON.stringify(ref)}: expected $<name|load|ask|op|N>.<path>`);
     const [, base, path] = m;
     let current;
     const named = results.find((r) => r.as === base);
@@ -174,6 +184,9 @@ async function runSession() {
     } else if (base === "load") {
       current = [...results].reverse().find((r) => r.load !== undefined);
       if (!current) throw new Error(`reference ${ref}: no --load result to resolve against`);
+    } else if (base === "ask") {
+      current = [...results].reverse().find((r) => r.ask !== undefined);
+      if (!current) throw new Error(`reference ${ref}: no --ask result to resolve against`);
     } else if (/^\d+$/.test(base)) {
       current = results[Number(base) - 1];
       if (!current) throw new Error(`reference ${ref}: no result ${base} (the session has ${results.length})`);
@@ -210,14 +223,20 @@ async function runSession() {
     return value;
   };
   for (const step of steps) {
-    const module = moduleFor(step.capability);
     let result;
-    if (step.kind === "load") {
+    if (step.kind === "ask") {
+      // The oracle answers over HTTP, outside the sandbox — its
+      // answer is input, like a file the session loads.
+      const resp = await fetch(step.value);
+      result = resp.ok ? { ask: step.value, ok: await resp.json() } : { ask: step.value, error: `HTTP ${resp.status}` };
+    } else if (step.kind === "load") {
+      const module = moduleFor(step.capability);
       const match = /^(\d+):(.+)$/.exec(step.value);
       const op = match ? Number(match[1]) : 0;
       const file = match ? match[2] : step.value;
       result = { load: file, ...module.invokeBytes(op, readFileSync(file)) };
     } else {
+      const module = moduleFor(step.capability);
       const request = step.value.startsWith("@")
         ? JSON.parse(readFileSync(step.value.slice(1), "utf8"))
         : JSON.parse(step.value);

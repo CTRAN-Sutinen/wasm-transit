@@ -41,6 +41,7 @@ export default defineConfig({
       "/manifest": "http://127.0.0.1:8080",
       "/feed": "http://127.0.0.1:8080",
       "/edits": "http://127.0.0.1:8080",
+      "/geocode": "http://127.0.0.1:8080",
     },
   },
 });

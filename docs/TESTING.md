@@ -65,6 +65,12 @@ runs both, for changes that touch both sides.
 3. **A Go round-trip test** if server-visible behavior changes.
 4. **Playwright e2e for user-visible flows** (Svelte components
    should not need changes when only the ABI underneath changes).
+   External services are answered by the spec (`page.route`): the
+   live feeds behind `/rt`, the edit document, and the geocoder
+   (the manifest's `services` entry and `/geocode`) — no spec needs
+   a running Pelias, and the e2e servers list none, so the
+   no-geocoder path is the default. A runner gate stands in for an
+   oracle with a `data:` URL (`--ask`).
    The capability bus keeps its own spec (`web/e2e/caps.spec.mjs`:
    assembly, composition, degraded state, migrate/rollback) —
    extend it for bus-visible changes; capability law tests

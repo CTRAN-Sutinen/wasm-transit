@@ -5,7 +5,8 @@
 // modules own all domain logic — the server loads the exact bytes
 // the browser runs (sha256 in the manifest proves it) and calls the
 // flat ABI. This host is scaffolding only: HTTP routing, static
-// serving with Range support, the CORS proxy, the published network
+// serving with Range support, the CORS proxy, the geocoder proxy
+// (geocode.go), the published network
 // (network.go) and streets (streets.go), and the manifest that pins
 // their hashes and the sync module's. No
 // domain decision is ever made here.
@@ -39,6 +40,8 @@ func main() {
 	streetsWasm := flag.String("streets-wasm", "../web/pkg/cap_streets.wasm", "the streets capability module that imports the layer and derives the walk table")
 	publisher := flag.String("publisher", "", "manifest provenance (who publishes this schedule)")
 	editsPath := flag.String("edits", "", "path to persist the edit document (JSON); empty = in-memory only")
+	geocoderURL := flag.String("geocoder", "", "base URL of a Pelias geocoder (e.g. http://127.0.0.1:4000): enables /geocode/{autocomplete,search,reverse} and lists it in the manifest's services")
+	geocoderPolicy := flag.String("geocoder-policy", "geocoder.json", "the deployment's geocoder query policy (Pelias parameters per op), applied by the proxy")
 	flag.Parse()
 
 	mime.AddExtensionType(".wasm", "application/wasm")
@@ -57,6 +60,11 @@ func main() {
 		wasm:      host,
 		publisher: *publisher,
 		editsPath: *editsPath,
+	}
+	if *geocoderURL != "" {
+		if s.geocoder, err = loadGeocoder(*geocoderURL, *geocoderPolicy); err != nil {
+			log.Fatalf("geocoder: %v", err)
+		}
 	}
 	if *feedPath != "" {
 		s.feeder = &fileFeed{path: *feedPath, networkWasm: *networkWasm}
@@ -79,6 +87,7 @@ func main() {
 	mux.HandleFunc("/streets", s.handleStreets)
 	mux.HandleFunc("/walks", s.handleWalks)
 	mux.HandleFunc("/edits", s.handleEdits)
+	mux.HandleFunc("/geocode/", s.handleGeocode)
 	mux.HandleFunc("/", s.handleStatic)
 
 	log.Printf("listening on http://%s (dist: %s)", *addr, *dist)
@@ -92,6 +101,7 @@ type server struct {
 	feeder    *fileFeed    // nil when no feed is configured
 	streets   *fileStreets // nil when no street layer is configured
 	publisher string
+	geocoder  *geocoder // nil when no geocoder is configured
 
 	// The edit document. Opaque JSON: the artifact owns the schema
 	// and every domain decision about it (merge, submit, validation)
@@ -160,7 +170,7 @@ func (s *server) handleProxy(w http.ResponseWriter, r *http.Request) {
 
 // Manifest pins the published network, the GTFS zip it was imported
 // from, the published streets and walk table, and the sync module
-// this server runs. `feed_version` is read
+// this server runs, and lists the external services it proxies. `feed_version` is read
 // from the feed's own feed_info.txt by the host (the host owns files
 // and I/O; the module owns the format's domain).
 type Manifest struct {
@@ -172,6 +182,17 @@ type Manifest struct {
 	WasmHash    string  `json:"wasm_hash"`              // sha256 of the sync module this server runs
 	GeneratedAt int64   `json:"generated_at"`
 	Publisher   *string `json:"publisher,omitempty"`
+	// The external services this deployment offers, by name — a
+	// service it does not list is off, and the frames that need it
+	// say so (docs/ARCHITECTURE.md, web section, "External services").
+	Services map[string]Service `json:"services,omitempty"`
+}
+
+// Service is where a page asks an external service on this origin,
+// and the query policy the path applies.
+type Service struct {
+	Path  string                    `json:"path"`
+	Query map[string]map[string]any `json:"query,omitempty"`
 }
 
 func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
@@ -202,6 +223,9 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.publisher != "" {
 		manifest.Publisher = &s.publisher
+	}
+	if s.geocoder != nil {
+		manifest.Services = map[string]Service{"geocoder": s.geocoder.service()}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(manifest)

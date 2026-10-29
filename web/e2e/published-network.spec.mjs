@@ -7,7 +7,10 @@
 // Its own server (playwright.config.mjs, :8083) publishes the fixture
 // feed and the walking fixture's streets (Station Rd through the
 // station's bays) with the walk table over the two — the shared e2e
-// server publishes none, the file-input path the UI specs walk.
+// server publishes none, the file-input path the UI specs walk. It
+// runs no geocoder (its manifest lists no service: spots stay
+// "Dropped pin"); the geocoder specs list one and answer /geocode
+// themselves.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -122,6 +125,90 @@ test.describe("ride now chooses a trip's end on the map", () => {
     await expect(page.getByLabel("From", { exact: true })).toHaveValue("My location");
     await expect(page.getByLabel("To", { exact: true })).toHaveValue("Dropped pin");
     await expect(page.getByTestId("plan-now")).toContainText("min walk to Dropped pin");
+  });
+});
+
+/// The geocoder, as a deployment that runs one offers it: the
+/// manifest lists it, and its /geocode proxy answers (Pelias GeoJSON)
+/// an address east of the bays on Station Rd for any typed text, and
+/// the address nearest any spot. The asked paths and queries are
+/// kept.
+async function geocoder(page) {
+  const asked = [];
+  await page.route("**/manifest", async (route) => {
+    const manifest = await (await route.fetch()).json();
+    manifest.services = { geocoder: { path: "/geocode" } };
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(manifest) });
+  });
+  const feature = (name, lon, lat) => ({
+    type: "Feature",
+    geometry: { type: "Point", coordinates: [lon, lat] },
+    properties: { gid: `openaddresses:address:${name}`, layer: "address", name, label: `${name}, Testville`, locality: "Testville" },
+  });
+  await page.route(/\/geocode\//, (route) => {
+    const url = new URL(route.request().url());
+    asked.push(`${url.pathname}?${[...url.searchParams.keys()].sort().join("&")}`);
+    const features = url.pathname.endsWith("/reverse")
+      ? [feature("210 Station Rd", -73.5133, 45.5151)]
+      : [feature("200 Station Rd", -73.5134, 45.5151)];
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ type: "FeatureCollection", features }) });
+  });
+  return asked;
+}
+
+test.describe("ride now searches addresses through the geocoder", () => {
+  test.use({ geolocation: { latitude: 45.5152, longitude: -73.5165 } });
+
+  test("an address typed is a spot: what is near it, and directions there", async ({ page }) => {
+    await live(page);
+    const asked = await geocoder(page);
+    await page.goto("/ride-now.html");
+    await expect(page.getByTestId("nearby").getByTestId("walk").first()).toBeVisible({ timeout: 10_000 });
+
+    // The search takes addresses once the server answers for a geocoder.
+    const search = page.getByLabel("stop name");
+    await expect(search).toHaveAttribute("placeholder", "Search for a stop or address");
+    await search.fill("200 station rd");
+    const listbox = page.getByRole("listbox");
+    await expect(listbox).toContainText("Addresses and places");
+    await expect(listbox.getByTestId("address-result")).toContainText("200 Station Rd");
+    await expect(listbox.getByTestId("address-result")).toContainText("Testville");
+    // No stop carries the words, but an address answered: no "no stop" hint.
+    await expect(listbox).not.toContainText("No stop is named");
+    // The page sends only what the rider did: the text and where the
+    // map looks — the query policy is the deployment's.
+    expect(asked).toContain("/geocode/autocomplete?focus.point.lat&focus.point.lon&text");
+    await search.press("Enter");
+
+    // The address is a spot, named as it was shown.
+    await expect(page.getByTestId("nearby")).toContainText("Near 200 Station Rd");
+    await page.getByTestId("directions-here").click();
+    await expect(page.getByLabel("From", { exact: true })).toHaveValue("My location");
+    await expect(page.getByLabel("To", { exact: true })).toHaveValue("200 Station Rd");
+    await expect(page.getByTestId("plan-now")).toContainText("min walk to 200 Station Rd");
+  });
+
+  test("an address typed as a trip's end, and a dropped pin named by the geocoder", async ({ page }) => {
+    await live(page);
+    await geocoder(page);
+    await page.goto("/ride-now.html");
+    await expect(page.getByTestId("nearby").getByTestId("walk").first()).toBeVisible({ timeout: 10_000 });
+
+    await page.getByRole("button", { name: "Get directions" }).click();
+    await page.getByRole("button", { name: "Start: my location" }).click();
+    const to = page.getByLabel("To", { exact: true });
+    await expect(to).toHaveAttribute("placeholder", "To — a stop or address");
+    await to.fill("200 station");
+    await expect(page.getByTestId("address-result")).toContainText("200 Station Rd");
+    await to.press("Enter");
+    await expect(to).toHaveValue("200 Station Rd");
+    await expect(page.getByTestId("plan-now")).toContainText("min walk to 200 Station Rd");
+
+    // A spot tapped while choosing takes the nearest address's name.
+    await page.getByRole("button", { name: "Destination: choose on map" }).click();
+    await tapMap(page, -73.5133, 45.5151);
+    await expect(to).toHaveValue("210 Station Rd");
+    await expect(page.getByTestId("plan-now")).toContainText("min walk to 210 Station Rd");
   });
 });
 

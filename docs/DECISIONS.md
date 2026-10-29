@@ -38,7 +38,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-33**.
+- IDs are never reused; the next new decision is **D-40**.
 
 ## Summary
 
@@ -67,8 +67,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-24 | How does a departure's countdown round? | encoded | nothing |
 | D-25 | Which streets are the source of truth? | decided | nothing |
 | D-26 | Which streets can each mode use? | decided (walking); unanswered (a bus) | drawing on streets |
-| D-27 | What does place search find? | unanswered | geocoding (queued) |
-| D-28 | Where do stop and address results meet? | unanswered | geocoding (queued) |
+| D-27 | What does place search find? | decided | nothing |
+| D-28 | Where do stop and address results meet? | encoded | nothing |
 | D-29 | What area does a geography release cover? | unanswered | streets-model geography release |
 | D-30 | What does the streets import call a street, and what class is it? | encoded | nothing |
 | D-31 | Can a plan add a street the data does not have? | unanswered | streets-model planned streets |
@@ -76,6 +76,10 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-33 | How does a trip from a place walk? | encoded | nothing |
 | D-34 | Where does a stop no walk reaches go in the nearby list? | encoded | nothing |
 | D-35 | Among plans arriving together, where does the rider board and get off? | encoded | nothing |
+| D-36 | Is geocoding a document on the bus or a service the host calls? | decided | nothing |
+| D-37 | What names a spot dropped on the map? | encoded | nothing |
+| D-38 | What may a host do with an external service's answer? | decided | nothing |
+| D-39 | Do the live feeds move into the manifest's services? | unanswered | live-feed discovery |
 
 ## The trip model
 
@@ -462,38 +466,48 @@ unknown class is allowed (permissive) or refused (strict).
 Blocks: drawing on streets in `docs/units/streets-model.md`.
 
 ### D-27 — What does place search find?
-State: Unanswered.
-Context: search finds stop names only (directory `stops`). A rider
+State: Decided.
+Answer: 2026-10-29 — "i can run a pelias container for this project
+and have it wire to ride-now" … "wire up pelias with the portland
+metro example". Search finds stops (directory `stops`) and whatever
+the geocoder answers: Pelias's portland-metro project — addresses
+(OpenAddresses, TIGER interpolation), streets and venues (OSM),
+and places (Who's On First). Which sources is the geocoder's
+configuration, not the model's (D-36).
+Context: search found stop names only (directory `stops`). A rider
 types addresses ("1400 NE 136th Ave"), intersections ("4th Plain
 & Andresen"), and places ("PeaceHealth", "WSU Vancouver"). The
 Trapeze roads carry TIGER-style address ranges per side
 (`L_F_ADD`…`R_T_ADD`) and street names, so addresses and
 intersections need no new source; places do (OSM, or the county's
 data), and they are the hardest to keep current.
-Options: stops only (today); + intersections; + addresses
+Options: stops only; + intersections; + addresses
 (interpolated along the ranges, or the county's address points);
-+ places.
-Blocks: geocoding (queued in `docs/units/streets-model.md`).
++ places. **Decided:** stops, and every kind the geocoder answers.
+Blocks: nothing.
 
 ### D-28 — Where do stop and address results meet?
-State: Unanswered.
+State: Encoded provisionally.
 Context: a rider wants one search box. The host may not merge two
-ops' answers (`docs/ARCHITECTURE.md`, "Generated UIs", step 6), and
-a capability that takes both the gazetteer and the network trips
-the second-document split trigger (`crates/AGENTS.md`).
+answers (`docs/ARCHITECTURE.md`, "Generated UIs", step 6). With the
+geocoder a service (D-36), the stops are an op's answer and the
+addresses the geocoder's; neither knows the other.
 Options:
-- A places capability whose one question is "which place do you
-  mean?", over both documents — the trigger's ops belong together
-  here, and the law's text says so.
-- The gazetteer imports the network's stops, so one document
-  answers; the gazetteer then changes with every plan.
+- **Encoded:** one box, two lists — the directory's stops, then the
+  geocoder's addresses and places under their own heading, each in
+  the order its source gave; the arrow keys move through both. The
+  "no stop is named" hint shows only when neither answered anything.
+- Rank them together: the geocoder's candidates go into an op as
+  input (like an rt snapshot) and a capability orders both — the
+  oracle promoted to a source (D-38).
 - Two boxes (stops, addresses).
-Blocks: geocoding (queued in `docs/units/streets-model.md`).
+Blocks: nothing. Pins: `web/e2e/published-network.spec.mjs`, "ride
+now searches addresses through the geocoder".
 
 ### D-29 — What area does a geography release cover?
 State: Unanswered.
-Context: a geography release pins the basemap, the streets
-document, and later the gazetteer, built from one source snapshot
+Context: a geography release pins the basemap and the streets
+document, built from one source snapshot
 (`docs/units/streets-model.md`). C-TRAN runs into Portland. The
 Trapeze export already reaches Portland (its first feature is NE
 21st Ave, Portland); the local basemap is one extract.
@@ -646,6 +660,114 @@ Options:
   rider can reach.
 Blocks: nothing. Pins:
 `crates/transit-router/tests/walk_least_law_test.rs` (laws 1–4).
+
+### D-36 — Is geocoding a document on the bus or a service the host calls?
+State: Decided.
+Answer: 2026-10-29 — "basemap tiles are outside the data model, but
+streets are a part of it. what about geocoding/reverse geocoding?
+this feels like something that should just be a service i call to"
+… "i can run a pelias container for this project and have it wire
+to ride-now". The geocoder is an external service: the host asks
+it, through the server's `/geocode` proxy, and every op takes the
+point it answers.
+Context: data belongs on the bus when an op's answer depends on it
+— the streets do (walks, the walk table); basemap tiles do not.
+A geocoder turns text into a point and a point into a name; from
+the point on, every op answers the same whichever way the point
+came (typed, tapped, located). The gazetteer that was queued in
+`docs/units/streets-model.md` (a document read from the street
+layers' names and address ranges) would have rebuilt a geocoder —
+interpolation, fuzzy matching, ranking, places — inside a
+capability.
+Options:
+- A gazetteer document on the bus: offline, the same answer on
+  every host, and a geocoder to build and keep current.
+- **Decided:** an external service (Pelias, `just geocoder`). Costs:
+  no address search offline or where the server runs no geocoder
+  (stop search, the map, and the location still answer); a rider's
+  typed addresses reach whoever runs it (the agency's server, here);
+  its answers drift as its data does, so nothing durable keeps a
+  query — a trip end keeps the point and the name it was shown with.
+  Stops stay the network's: the Pelias project's transit importer
+  is not run.
+Blocks: nothing. Pins: `server/geocode_test.go` (the proxy forwards
+the query as-is, answers 404 with no geocoder),
+`web/e2e/published-network.spec.mjs` ("ride now searches addresses
+through the geocoder").
+
+### D-37 — What names a spot dropped on the map?
+State: Encoded provisionally.
+Context: a spot tapped on the map (as a trip's end, or to see what
+is near it) has a point and no name; the itinerary repeats its
+name ("min walk to …"). The geocoder's reverse lookup names a
+point; nearby, it may answer a street, an address, a venue, or a
+town far off.
+Options:
+- **Encoded:** the nearest address, venue, or street the geocoder
+  answers within 250 m, else "Dropped pin" (and with no geocoder).
+  The name rides into the router's place as its label — an echo no
+  op branches on (D-38). On the local
+  Pelias (2026-10-29) a venue names a spot well at a transit center
+  ("Vancouver Mall Transit Center", 2 m) and poorly elsewhere: a
+  sign by the I-5 bridge ("Welcome to Washington", 39 m, where the
+  street is East Fourth Plain Boulevard, 71 m) and a store
+  ("Advance Auto Parts", where NE Andresen Road is 39 m).
+- Always "Dropped pin": the itinerary never depends on the geocoder.
+- The nearest of anything, at any distance.
+- The nearest address or street only: always a street name, never
+  a venue's — and never "Vancouver Mall Transit Center".
+Blocks: nothing. Pins: `web/e2e/published-network.spec.mjs` ("an
+address typed as a trip's end, and a dropped pin named by the
+geocoder"; the no-geocoder specs keep "Dropped pin").
+
+### D-38 — What may a host do with an external service's answer?
+State: Decided.
+Answer: 2026-10-29 — "makes sense to me", to the proposal: external
+things are sources (their answer becomes a document on the bus),
+presentation (pixels only), or oracles (an input the user could have
+given by hand). A host asks an oracle with the user's input only,
+renders its answer as given, and turns the pick into the user's
+input (a point, the label shown); it never ranks, filters, merges,
+thresholds, or joins the answers — answers that must meet model
+data promote the oracle to a source. Ops echo an oracle's label,
+never branch on it. The query policy is the deployment's (the
+server's policy file, applied by its proxy); the manifest's
+`services` lists what a deployment offers; nothing durable keeps a
+query or an oracle's id. The rule's home is `docs/ARCHITECTURE.md`,
+web section, "External services".
+Context: the geocoder (D-36) was the first time a host showed an
+answer that is not an op's. Its query policy (layers, radius, size)
+was chosen in ride-now's TypeScript — a threshold in TypeScript,
+which "Parity" forbids — and the page found it by probing for a
+404, a third way of discovering a deployment's offer beside fixed
+endpoints and `live-feeds.json`.
+Options:
+- Leave external services to each host's judgment.
+- **Decided:** the three kinds and the oracle contract above.
+Blocks: nothing. Pins: `server/geocode_test.go` (the page's own
+policy is dropped and the deployment's applied; the manifest lists
+the service exactly when configured), `web/e2e/published-network.
+spec.mjs` ("ride now searches addresses through the geocoder": the
+page sends the text and the focus point only), the `--ask` runner
+gate in `just test`.
+
+### D-39 — Do the live feeds move into the manifest's services?
+State: Unanswered.
+Context: D-38 makes the manifest's `services` the way a deployment
+says what it offers. The deployment's GTFS-rt feeds are still named
+in a static `web/public/live-feeds.json` beside the page (read by
+ride-now and the stop display; the perf harness and its recorder
+read the file too), and a rider may set their own. Moving them
+moves where a deployment configures its feeds — server flags or a
+file the server reads — and the page would read them from
+`/manifest`, so a page served without the sync server has no
+default feeds.
+Options:
+- Move them now: `services.live: {trips, vehicles, alerts}` from
+  the server's configuration; `live-feeds.json` is retired.
+- Wait for a second deployment to need it; `live-feeds.json` stays.
+Blocks: live-feed discovery (ride-now's and the stop display's
+`restoreUrls`, `web/perf/record-rt.mjs`).
 
 ## Agency data
 

@@ -60,14 +60,14 @@ cap-streets). What is left:
    (the bus profile).
 5. **Planned streets.** A street a plan serves that the data does
    not have. Blocked: D-31.
-6. **The geography release.** The basemap, the streets document,
-   and later the gazetteer, built from one source snapshot and
+6. **The geography release.** The basemap and the streets document,
+   built from one source snapshot and
    pinned together in the manifest beside `feed_hash`, the
    basemap's glyphs and sprites in it (closes QAF-84). Blocked:
    D-29.
 
-Queued, not scoped: geocoding (a gazetteer document read from the
-same layers' names and address ranges). Blocked: D-27, D-28.
+Geocoding is not this unit's: it is an external service the host
+calls (D-36; `docs/ARCHITECTURE.md`, server section, `/geocode`).
 
 ## Done when
 

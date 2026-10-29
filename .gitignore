@@ -41,3 +41,6 @@ web/src/types/
 # TS_RS_EXPORT_DIR. .cargo/config.toml points every run at
 # web/src/types, so these never come back.
 crates/*/bindings/
+
+# The local geocoder (`just geocoder-build`): pelias/docker and its data
+.pelias/

@@ -1,16 +1,19 @@
 <script lang="ts">
   /// A stop type-ahead — a RENDER component over the directory's
-  /// `stops` answer (every word typed in the name or the stop id). It
-  /// emits what is typed, a beat after typing pauses, and renders the
-  /// answer as it lands: arrow keys move, Enter picks, Escape closes.
-  /// It matches nothing itself; the typed words are only marked bold.
-  type Place = { id: string; name: string; lat?: number; lon?: number };
+  /// `stops` answer (every word typed in the name or the stop id) and,
+  /// below it, the geocoder's addresses and places when the host has
+  /// one. It emits what is typed, a beat after typing pauses, and
+  /// renders each answer as it lands: arrow keys move through both
+  /// lists, Enter picks, Escape closes. It matches nothing itself;
+  /// the typed words are only marked bold.
+  type Place = { id: string; name: string; lat?: number; lon?: number; detail?: string };
 
   let {
     label,
     placeholder,
     value = "",
     found,
+    addresses = null,
     limit,
     off,
     icon = "search",
@@ -25,6 +28,8 @@
     /// The directory's answer for this field; null when it asked
     /// nothing (or for another field).
     found: { text: string; places: Place[] } | null;
+    /// The geocoder's answer for this field; null when it has none.
+    addresses?: { text: string; places: Place[] } | null;
     /// The answer's cap: a full page means there may be more.
     limit: number;
     off: boolean;
@@ -40,7 +45,10 @@
   let timer: ReturnType<typeof setTimeout> | undefined;
   const listId = `ps-${crypto.randomUUID()}`;
 
-  const open = $derived(editing && text.trim().length > 0 && found !== null);
+  const open = $derived(editing && text.trim().length > 0 && (found !== null || addresses !== null));
+  /// Both lists in order, for the arrow keys.
+  const items = $derived([...(found?.places ?? []), ...(addresses?.places ?? [])]);
+  const stopCount = $derived(found?.places.length ?? 0);
 
   function input(e: Event) {
     text = (e.currentTarget as HTMLInputElement).value;
@@ -65,7 +73,7 @@
   }
 
   function key(e: KeyboardEvent) {
-    const places = found?.places ?? [];
+    const places = items;
     if (e.key === "ArrowDown") {
       active = Math.min(active + 1, places.length - 1);
       e.preventDefault();
@@ -119,23 +127,40 @@
 
   {#if off}
     <p class="off">Stop search is unavailable right now — tap a stop on the map instead.</p>
-  {:else if open && found}
+  {:else if open}
     <ul class="results" id={listId} role="listbox">
-      {#each found.places as p, i (p.id)}
-        <li role="option" aria-selected={i === active}>
-          <button class:active={i === active} onmousedown={(e) => e.preventDefault()} onclick={() => pick(p)}>
-            <span class="pin" aria-hidden="true"></span>
-            <span class="name">{#each marked(p.name, found.text) as part, j (j)}{#if part.hit}<b>{part.s}</b>{:else}{part.s}{/if}{/each}</span>
-            <span class="id">#{p.id}</span>
-          </button>
-        </li>
-      {:else}
-        <li class="none">
-          No stop is named “{found.text}”. Stop names follow the sign (“Van Mall”, not “Vancouver Mall”) — try another word, the stop number, or tap the map.
-        </li>
-      {/each}
-      {#if found.places.length === limit}
-        <li class="more">Showing the first {limit} — keep typing to narrow it.</li>
+      {#if found}
+        {#each found.places as p, i (p.id)}
+          <li role="option" aria-selected={i === active}>
+            <button class:active={i === active} onmousedown={(e) => e.preventDefault()} onclick={() => pick(p)}>
+              <span class="pin" aria-hidden="true"></span>
+              <span class="name">{#each marked(p.name, found.text) as part, j (j)}{#if part.hit}<b>{part.s}</b>{:else}{part.s}{/if}{/each}</span>
+              <span class="id">#{p.id}</span>
+            </button>
+          </li>
+        {:else}
+          {#if !addresses?.places.length}
+            <li class="none">
+              No stop is named “{found.text}”. Stop names follow the sign (“Van Mall”, not “Vancouver Mall”) — try another word, the stop number, or tap the map.
+            </li>
+          {/if}
+        {/each}
+        {#if found.places.length === limit}
+          <li class="more">Showing the first {limit} — keep typing to narrow it.</li>
+        {/if}
+      {/if}
+      {#if addresses?.places.length}
+        <li class="head" role="presentation">Addresses and places</li>
+        {#each addresses.places as p, k (p.id)}
+          {@const i = stopCount + k}
+          <li role="option" aria-selected={i === active} data-testid="address-result">
+            <button class:active={i === active} onmousedown={(e) => e.preventDefault()} onclick={() => pick(p)}>
+              <span class="pin addr" aria-hidden="true"></span>
+              <span class="name">{#each marked(p.name, addresses.text) as part, j (j)}{#if part.hit}<b>{part.s}</b>{:else}{part.s}{/if}{/each}</span>
+              {#if p.detail}<span class="id">{p.detail}</span>{/if}
+            </button>
+          </li>
+        {/each}
       {/if}
     </ul>
   {/if}
@@ -168,6 +193,11 @@
   }
   .results button.active, .results button:hover { background: var(--hover); }
   .pin { width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--muted); flex: none; }
+  .pin.addr { border-radius: 2px; }
+  .head {
+    padding: 0.5rem 0.6rem 0.2rem; color: var(--muted); font-size: 0.72rem; font-weight: 650;
+    text-transform: uppercase; letter-spacing: 0.04em; border-top: 1px solid var(--line); margin-top: 0.2rem;
+  }
   .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .name b { color: var(--accent); font-weight: 650; }
   .id { color: var(--muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }

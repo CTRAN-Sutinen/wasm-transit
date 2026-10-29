@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-87**. A
+IDs are never reused; the next new finding is **QAF-88**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -218,8 +218,11 @@ time, last bus home, is there a detour.
 - **QAF-70 OP GAP** — the colloquial name finds nothing:
   `directory.stops` matches the feed's names exactly, so "vancouver
   mall" answers `[]` (the feed says "Van Mall"). A rider with a
-  location asks `stops_near` instead; a rider with only the
-  everyday name has no op.
+  location asks `stops_near` instead; where the server runs a
+  geocoder (D-36), the everyday name finds the place, and picking it
+  answers the stops near it — the stop itself is still found by its
+  sign's name only, and with no geocoder the everyday name has no
+  answer.
   Pin: directory `stops` query "vancouver mall" → `[]`.
 - **QAF-79 OP GAP** — `watchlist_board` is not the stop board: it
   takes no live document, so watched stops answer the schedule with
@@ -323,6 +326,15 @@ work rules, and the bid over them.
 
 ## Geography
 
+- **QAF-87 DATA GAP** — the geocoder answers no intersection: the
+  local Pelias (`just geocoder-build`, pelias/docker `3dfa07d5`,
+  portland-metro) answers addresses, venues, and places, but
+  "4th plain & andresen" (autocomplete) and "NE 4th Plain Blvd & NE
+  Andresen Rd" (search) answer `[]` — D-27's intersections are not
+  in its data. A rider types the corner a stop is named for.
+  Pin: `/geocode/autocomplete?text=4th plain %26 andresen` and
+  `/geocode/search?text=NE 4th Plain Blvd %26 NE Andresen Rd` →
+  no features (2026-10-29).
 - **QAF-85 DATA GAP** — C-TRAN's Trapeze roads cannot carry
   walking. The export codes every state route CFCC `A10` — I-5 and
   I-205, and also NE Fourth Plain Rd, W Mill Plain Blvd, NE 117th

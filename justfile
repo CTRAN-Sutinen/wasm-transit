@@ -104,6 +104,14 @@ test: caps
       --op '{"op":"routes","network_hash":"$load_network.network_hash"}' \
       --op '{"op":"route_stop_sequence","network_hash":"$load_network.network_hash","route_id":"10"}' \
       | grep '"stop_id":"A"' > /dev/null
+    # An oracle's answer chains into the ops (--ask; a data: URL
+    # stands in for the deployment's geocoder): the rider typed an
+    # address, picked the first, and asks what is near it.
+    node tools/caps-run.mjs directory \
+      --op @web/public/caps/sample-network-load.json \
+      --ask 'data:application/json,{"features":[{"geometry":{"coordinates":[-73.5155,45.515]},"properties":{"name":"200 Station Rd"}}]}' \
+      --op '{"op":"stops_near","network_hash":"$load_network.network_hash","lat":"$ask.features.0.geometry.coordinates.1","lon":"$ask.features.0.geometry.coordinates.0","limit":1}' \
+      | grep '"stop_id":"STN"' > /dev/null
     # The board capability's gate: the station pin answers the union
     # of its bays (walking-group pooling), and the personal board
     # chains its watchlist document — all references chained, no
@@ -523,15 +531,18 @@ serve feed="" streets="" publisher="" addr="127.0.0.1:8080":
     if [ -n "{{ feed }}" ]; then args+=(-feed "{{ absolute_path(feed) }}"); fi
     if [ -n "{{ streets }}" ]; then args+=(-streets "{{ absolute_path(streets) }}"); fi
     if [ -n "{{ publisher }}" ]; then args+=(-publisher "{{ publisher }}"); fi
+    if [ -n "${GEOCODER:-}" ]; then args+=(-geocoder "$GEOCODER"); fi
     exec go run . "${args[@]}"
 
-# Frontend dev loop: vite with hot reload on :5173 (proxies /rt),
-# with the sync server alongside on :8080 (logs: /tmp/transit-server.log).
+# Frontend dev loop: vite with hot reload on :5173 (proxies /rt,
+# /geocode), with the sync server alongside on :8080 (logs:
+# /tmp/transit-server.log). GEOCODER=<url> passes -geocoder.
 dev: caps types
     #!/usr/bin/env bash
     set -e
+    geo=(); if [ -n "${GEOCODER:-}" ]; then geo=(-geocoder "$GEOCODER"); fi
     (cd server && go build -o /tmp/transit-server . && \
-      /tmp/transit-server >/tmp/transit-server.log 2>&1 & echo $! >/tmp/transit-server.pid)
+      /tmp/transit-server "${geo[@]}" >/tmp/transit-server.log 2>&1 & echo $! >/tmp/transit-server.pid)
     trap 'kill "$(cat /tmp/transit-server.pid)" 2>/dev/null || true' EXIT
     cd web && npx vite
 
@@ -547,6 +558,79 @@ dev: caps types
 basemap bbox maxzoom="15":
     pmtiles extract "https://build.protomaps.com/$(date +%Y%m%d).pmtiles" \
         web/public/basemap.pmtiles --bbox={{ bbox }} --maxzoom={{ maxzoom }}
+
+# ---------------------------------------------------------------
+# geocoder
+# ---------------------------------------------------------------
+
+# Address search is an external service, not a document: a local
+# Pelias (github.com/pelias/docker, its portland-metro project —
+# OSM, OpenAddresses, Who's On First, TIGER interpolation) in
+# .pelias/ (gitignored; data ~ several GB). The server proxies it at
+# /geocode when started with GEOCODER set:
+#
+#   just geocoder-build      # once: clone, download, import (~1 h)
+#   just geocoder            # start it on 127.0.0.1:4000
+#   GEOCODER=http://127.0.0.1:4000 just serve feed.zip roads.geojson
+#   just geocoder-stop       # stop every container
+#
+# Needs docker compose (or podman + podman-compose; rootless podman
+# gets a keep-id compose override and a docker.io short-name config
+# here). The
+# project's transit importer is skipped: stops come from the
+# network, never the geocoder.
+pelias_commit := "3dfa07d580416edd7a27c2d4ff5976c8c1cc6ebc"
+
+[private]
+pelias *args:
+    #!/usr/bin/env bash
+    set -e
+    root="{{ justfile_directory() }}/.pelias"
+    if [ ! -d "$root/.git" ]; then
+        git clone https://github.com/pelias/docker "$root"
+    fi
+    git -C "$root" fetch --quiet --depth 1 origin {{ pelias_commit }} 2>/dev/null || true
+    git -C "$root" -c advice.detachedHead=false checkout --quiet {{ pelias_commit }}
+    mkdir -p "$root/data"
+    project="$root/projects/portland-metro"
+    printf 'COMPOSE_PROJECT_NAME=pelias\nDATA_DIR=%s\n' "$root/data" > "$project/.env"
+    if command -v podman >/dev/null; then
+        # Rootless podman: unqualified images resolve on docker.io, and
+        # every container runs as the invoking user (keep-id, outside a
+        # pod — podman refuses keep-id in one) so the data bind mount
+        # is writable.
+        printf 'unqualified-search-registries = ["docker.io"]\nshort-name-mode = "permissive"\n' > "$root/registries.conf"
+        export CONTAINERS_REGISTRIES_CONF="$root/registries.conf"
+        { echo 'x-podman: { in_pod: false }'; echo 'services:'
+          awk '/^services:/ { on = 1; next } /^[^ ]/ { on = 0 }
+               on && /^  [a-z-]+:$/ { print $0 " { userns_mode: keep-id }" }' "$project/docker-compose.yml"
+        } > "$project/docker-compose.override.yml"
+    fi
+    cd "$project" && "$root/pelias" {{ args }}
+
+geocoder-build:
+    just pelias compose pull
+    just pelias elastic start
+    just pelias elastic wait
+    just pelias elastic create
+    just pelias download wof
+    just pelias download oa
+    just pelias download osm
+    just pelias download tiger
+    just pelias prepare polylines
+    just pelias prepare placeholder
+    just pelias prepare interpolation
+    just pelias import wof
+    just pelias import oa
+    just pelias import osm
+    just pelias import polylines
+    just pelias compose down
+
+geocoder:
+    just pelias compose up -d elasticsearch api libpostal placeholder pip interpolation
+
+geocoder-stop:
+    just pelias compose down
 
 # Supply-chain audit: runs whatever is installed, reports what is
 # missing. Recommended installs:

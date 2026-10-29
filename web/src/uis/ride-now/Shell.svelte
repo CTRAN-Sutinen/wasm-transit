@@ -42,6 +42,7 @@
       : null,
   );
   const searchFound = $derived(ride.found?.field === "search" ? ride.found : null);
+  const searchAddresses = $derived(ride.addresses?.field === "search" ? ride.addresses : null);
 
   // The sheet: up (the panel) or down (the map) on a phone.
   let sheetUp = $state(true);
@@ -142,8 +143,9 @@
         {:else}
           <PlaceSearch
             label="stop name"
-            placeholder="Search for a stop"
+            placeholder={ride.geocoding ? "Search for a stop or address" : "Search for a stop"}
             found={searchFound}
+            addresses={searchAddresses}
             limit={FOUND}
             off={ride.off.directory}
             ontype={(t) => typed("search", t)}
@@ -164,7 +166,7 @@
 
           <section class="group" data-testid="nearby">
             <div class="group-head">
-              <h2>{ride.near && !ride.near.mine ? "Near this spot" : "Near you"}</h2>
+              <h2>{ride.near && !ride.near.mine ? `Near ${ride.near.label ?? "this spot"}` : "Near you"}</h2>
               <span class="links">
                 {#if ride.walking && ride.near && !ride.near.mine}
                   <button class="link" onclick={directionsToSpot} data-testid="directions-here">Directions here</button>
@@ -248,6 +250,7 @@
           to={ride.to}
           when={ride.when}
           found={ride.found}
+          addresses={ride.addresses}
           limit={FOUND}
           plan={ride.plan}
           routes={ride.routes}
@@ -255,6 +258,7 @@
           onhere={fromHere}
           picking={ride.picking}
           spots={ride.walking}
+          addressable={ride.walking && ride.geocoding}
           onmap={(end) => {
             // On a phone the sheet steps aside so the map can be tapped.
             if (ride.picking !== end) sheetUp = false;

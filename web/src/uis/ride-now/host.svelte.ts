@@ -7,7 +7,7 @@
 /// answer, adopted as-is.
 ///
 /// The questions it answers (docs/units/ui-ride-now.md): which stop is
-/// mine (typed, near me — by walk along the streets when the server
+/// mine (typed — or an address typed, through the server's geocoder —, near me — by walk along the streets when the server
 /// publishes them — or tapped on the map), what leaves next from it
 /// live, is my bus on time, how do I get there (now, at a time, by a
 /// time; from my location or a dropped pin, walking the streets),
@@ -18,6 +18,15 @@
 ///
 /// A capability the bus cannot assemble turns its frames OFF (`off`),
 /// and they say so — nothing here answers in its place.
+///
+/// Addresses are not the bus's: the geocoder is an ORACLE
+/// (docs/ARCHITECTURE.md, web section, "External services") — the
+/// server's manifest lists it, and it turns text into a point and
+/// names a point. This host sends only what the rider did (the text,
+/// the tap, where the map looks; the deployment's query policy is
+/// the server's) and shows the answer as given; a point it answers
+/// is a trip end like a dropped pin, carrying the name it was shown
+/// with; nothing durable keeps the query.
 
 import {
   boardCap,
@@ -79,6 +88,8 @@ export type Place = {
   distance_m?: number;
   walk_secs?: number | null;
   point?: boolean;
+  /// An address's town, shown beside its name.
+  detail?: string;
 };
 export type Field = "search" | "from" | "to";
 export type View = "home" | "stop" | "trip" | "alerts" | "routes" | "route" | "bus";
@@ -112,6 +123,12 @@ export const ride = $state({
   /// The type-ahead: which field is asking, and the directory's answer.
   query: null as { field: Field; text: string } | null,
   found: null as { field: Field; text: string; places: Place[] } | null,
+  /// The geocoder's answer for the same field and text: addresses and
+  /// places, each a point. Null until it answers, or where the server
+  /// runs no geocoder.
+  addresses: null as { field: Field; text: string; places: Place[] } | null,
+  /// The manifest lists a geocoder: the search boxes take addresses.
+  geocoding: false,
   /// The device's location, once the rider shares it.
   here: null as { lat: number; lon: number } | null,
   /// The published streets are registered: walks follow the streets,
@@ -122,7 +139,7 @@ export const ride = $state({
   locating: false,
   /// The point the nearby list answers: the rider, or a spot tapped
   /// on the map.
-  near: null as { lat: number; lon: number; mine: boolean } | null,
+  near: null as { lat: number; lon: number; mine: boolean; label?: string } | null,
   nearby: null as Place[] | null,
   /// Each nearby place's board; null where asking it failed.
   nearbyBoards: {} as Record<string, StopBoard | null>,
@@ -188,10 +205,10 @@ let planEnds: { from: End; to: End; direct: DirectWalk | null } | null = null;
 
 const HERE_ID = "@here";
 
-/// A spot on the map as a trip's end — one pin per end, so the two
-/// never share an id.
-function pinPlace(end: "from" | "to", lat: number, lon: number): Place {
-  return { id: `@pin-${end}`, name: "Dropped pin", lat, lon, point: true };
+/// A spot as a trip's end (tapped on the map, or an address) — one
+/// pin per end, so the two never share an id.
+function pinPlace(end: "from" | "to", lat: number, lon: number, name = "Dropped pin"): Place {
+  return { id: `@pin-${end}`, name, lat, lon, point: true };
 }
 
 /// The rider's location as a trip's end.
@@ -226,9 +243,9 @@ async function routerEnds(from: Place, to: Place): Promise<{ from: End; to: End;
 }
 
 /// What determines a trip's end, for the answer cache: a stop's id, a
-/// point's place.
+/// point's place and the name the router repeats.
 function endKey(p: Place): string {
-  return p.point ? `${p.id}@${p.lat},${p.lon}` : p.id;
+  return p.point ? `${p.id}@${p.lat},${p.lon}:${p.name}` : p.id;
 }
 
 /// The clock: seconds since local midnight. Hosts own the clock; ops
@@ -633,6 +650,7 @@ export async function boot(): Promise<void> {
   await restoreSaved();
   restoreRecent();
   void locateIfAllowed();
+  void discoverServices();
   await withNetworkModule("the agency's network", async (module) => {
     const served = await servedNetwork(module);
     if (served) return served;
@@ -862,11 +880,96 @@ export function nearPoint(lat: number, lon: number): Promise<void> {
     }
     ride.picking = null;
     ride.status = "";
-    return setEnd(end, pinPlace(end, lat, lon));
+    return spotName(lat, lon).then((name) => setEnd(end, pinPlace(end, lat, lon, name ?? undefined)));
   }
-  ride.near = { lat, lon, mine: false };
+  return nearSpot(lat, lon, null);
+}
+
+/// What is near a spot — tapped, or an address picked — named by the
+/// geocoder when the spot came without a name.
+async function nearSpot(lat: number, lon: number, label: string | null): Promise<void> {
+  ride.near = { lat, lon, mine: false, label: label ?? undefined };
   ride.view = "home";
-  return request("near", "view");
+  const named = label ? null : spotName(lat, lon);
+  await request("near", "view");
+  const name = await named;
+  if (name && ride.near?.lat === lat && ride.near.lon === lon) ride.near = { ...ride.near, label: name };
+}
+
+// ---------------------------------------------------------------------
+// the geocoder — an oracle the server's manifest lists: asked with
+// the rider's input only, its answers adopted as it gives them
+// ---------------------------------------------------------------------
+
+/// Where the deployment's geocoder answers (the manifest's
+/// `services.geocoder.path`); null when it lists none.
+let geocoderPath: string | null = null;
+let geocodeAsked = 0;
+
+/// The services the deployment offers, read once at boot.
+async function discoverServices(): Promise<void> {
+  try {
+    const resp = await fetch("/manifest");
+    const manifest = resp.ok ? ((await resp.json()) as { services?: Record<string, { path: string }> }) : null;
+    geocoderPath = manifest?.services?.geocoder?.path ?? null;
+  } catch {
+    geocoderPath = null;
+  }
+  ride.geocoding = geocoderPath !== null;
+}
+
+type GeoFeature = {
+  geometry: { coordinates: [number, number] };
+  properties: { gid: string; name: string; label: string; locality?: string; layer?: string };
+};
+
+async function geocoderAsk(op: "autocomplete" | "reverse", params: Record<string, string | number>): Promise<GeoFeature[] | null> {
+  if (!geocoderPath) return null;
+  try {
+    const query = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]));
+    const resp = await fetch(`${geocoderPath}/${op}?${query}`);
+    if (!resp.ok) return null;
+    return ((await resp.json()) as { features?: GeoFeature[] }).features ?? [];
+  } catch {
+    return null;
+  }
+}
+
+/// The geocoder's places for what was typed, focused where the rider
+/// is looking. A trip end from an address walks the streets, so the
+/// from/to fields ask only where the streets are published.
+async function geocode(field: Field, text: string): Promise<void> {
+  const asked = ++geocodeAsked;
+  const t = text.trim();
+  if (!t || (field !== "search" && !ride.walking)) {
+    ride.addresses = null;
+    return;
+  }
+  const focus = ride.near ?? ride.here;
+  const features = await geocoderAsk("autocomplete", {
+    text: t,
+    ...(focus ? { "focus.point.lat": focus.lat, "focus.point.lon": focus.lon } : {}),
+  });
+  if (asked !== geocodeAsked) return;
+  ride.addresses = features && {
+    field,
+    text: t,
+    places: features.map((f) => ({
+      id: f.properties.gid,
+      name: f.properties.name,
+      detail: f.properties.locality,
+      lat: f.geometry.coordinates[1],
+      lon: f.geometry.coordinates[0],
+      point: true,
+    })),
+  };
+}
+
+/// The geocoder's name for a spot (what the deployment's policy finds
+/// nearest — D-37), or null when it has none or is not running.
+async function spotName(lat: number, lon: number): Promise<string | null> {
+  const features = await geocoderAsk("reverse", { "point.lat": lat, "point.lon": lon });
+  return features?.[0]?.properties.name ?? null;
 }
 
 // ---------------------------------------------------------------------
@@ -875,12 +978,14 @@ export function nearPoint(lat: number, lon: number): Promise<void> {
 
 export function typed(field: Field, text: string): Promise<void> {
   ride.query = { field, text };
+  void geocode(field, text);
   return request("query");
 }
 
 export function clearFound(): void {
   ride.query = null;
   ride.found = null;
+  ride.addresses = null;
 }
 
 export function show(view: View): Promise<void> {
@@ -905,6 +1010,8 @@ export function openStop(place: Place): Promise<void> {
     return setEnd(end, located(place));
   }
   clearFound();
+  // An address picked from the search: what is near it.
+  if (place.point && place.lat != null && place.lon != null) return nearSpot(place.lat, place.lon, place.name);
   place = located(place);
   ride.stop = place;
   ride.board = null;
@@ -976,7 +1083,7 @@ export function directions(end: "from" | "to", place: Place): Promise<void> {
 export function directionsToSpot(): Promise<void> {
   const near = ride.near;
   if (!near || near.mine) return Promise.resolve();
-  return directions("to", pinPlace("to", near.lat, near.lon));
+  return directions("to", pinPlace("to", near.lat, near.lon, near.label));
 }
 
 /// Choose a trip's end on the map: the next tap — a stop, or (with
@@ -996,6 +1103,9 @@ export function fromHere(end: "from" | "to"): Promise<void> {
 
 export function setEnd(end: "from" | "to", place: Place): Promise<void> {
   clearFound();
+  // A point (an address) becomes this end's pin.
+  if (place.point && place.id !== HERE_ID && place.lat != null && place.lon != null)
+    place = pinPlace(end, place.lat, place.lon, place.name);
   ride[end] = place;
   remember(place);
   return replan();
@@ -1004,7 +1114,7 @@ export function setEnd(end: "from" | "to", place: Place): Promise<void> {
 export function swapEnds(): Promise<void> {
   // A pin's id names its end.
   const repin = (p: Place | null, end: "from" | "to") =>
-    p?.id.startsWith("@pin-") && p.lat != null && p.lon != null ? pinPlace(end, p.lat, p.lon) : p;
+    p?.id.startsWith("@pin-") && p.lat != null && p.lon != null ? pinPlace(end, p.lat, p.lon, p.name) : p;
   [ride.from, ride.to] = [repin(ride.to, "from"), repin(ride.from, "to")];
   return replan();
 }

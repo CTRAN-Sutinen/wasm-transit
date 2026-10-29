@@ -1,7 +1,7 @@
 {
   "id": "ride-now",
   "title": "Ride now",
-  "summary": "Taking a trip today, on a map: find a stop as you type, near you (by the walk there, along the streets), or by tapping it; see what leaves next with live predictions and whether each bus is early, on time, or late; watch every bus live and track one stop by stop; explore the routes and each way they run; plan a trip — from your location or a dropped pin, walking the streets — leaving now, at a time, arriving by a time, or the last bus; see the alerts and detours in the way; keep your saved and recent stops at hand.",
+  "summary": "Taking a trip today, on a map: find a stop — or an address, where the server runs a geocoder — as you type, near you (by the walk there, along the streets), or by tapping it; see what leaves next with live predictions and whether each bus is early, on time, or late; watch every bus live and track one stop by stop; explore the routes and each way they run; plan a trip — from your location or a dropped pin, walking the streets — leaving now, at a time, arriving by a time, or the last bus; see the alerts and detours in the way; keep your saved and recent stops at hand.",
   "questions": [
     "Which stop is mine, by name or near where I am?",
     "What leaves next from it, with real-time predictions?",

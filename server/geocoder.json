@@ -1,0 +1,5 @@
+{
+  "autocomplete": { "size": 5 },
+  "search": { "size": 5 },
+  "reverse": { "size": 1, "layers": "address,venue,street", "boundary.circle.radius": 0.25 }
+}
