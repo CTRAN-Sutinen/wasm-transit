@@ -1,6 +1,6 @@
 [package]
 name = "cap-streets"
-description = "The street-graph capability: register a street-network GeoJSON under its content hash and answer the detour editor's queries — snap a point to the nearest street, route between two positions along the graph. transit-streets is shared as a library; the module is pure and stateless — it writes nothing."
+description = "The street-graph capability: import a street layer into the canonical streets document (answered to the host with its hash), register a document the host holds, and answer where along the streets — snap a point to the nearest street, route between two positions along the graph. transit-streets is shared as a library; the module writes nothing."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,7 +11,6 @@ crate-type = ["cdylib", "rlib"]  # rlib: integration tests link the crate native
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
 ts-rs = { workspace = true }
 transit-streets = { path = "../transit-streets" }
 cap-abi = { path = "../cap-abi" }

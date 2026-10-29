@@ -326,13 +326,32 @@ transit-plans  THE service-plan chain: resolve (which pick is in
                 order-insensitive. Cross-document logic, the
                 counterpart of transit-sync's cross-record merge;
                 cap-plans is the seam.
-transit-streets Street routing graph for detour authoring: GeoJSON in,
-                snap (nearest street position) + shortest-path route
-                out (one-way aware — TIGER `OneWay` and OSM `oneway`
-                conventions; turn restrictions are a non-goal until a
-                restriction table ships in the data). Pure reference
-                geometry — cap-streets registers parsed graphs under
-                their content hash, never mixed with feed state.
+transit-streets THE streets model. `model.rs`: the streets document
+                (`Streets`: ways — points as [lat, lon] microdegrees,
+                one-way, class, name), CANONICAL so its hash is the
+                streets' own, not a file's: the same streets in
+                another feature order, digitized the other way, drawn
+                twice, or carrying other properties are one document
+                (two-ways in canonical direction, a one-way running
+                first point to last, ways sorted and unique;
+                `validate` holds a stored document to it).
+                `geojson.rs`: the boundary — a street layer (an
+                agency GIS export such as C-TRAN's Trapeze roads,
+                TIGER, OSM; GeoJSON lines) read into the document:
+                CFCC, MTFCC, or OSM `highway` classify each street
+                and leave out lines that are not streets (railroads,
+                water — D-30), `FULLNAME` / `name` / `NAME` name it,
+                TIGER `OneWay` and OSM `oneway` set its direction; a
+                malformed vertex breaks a line. No other code reads a
+                layer's properties. `lib.rs`: the routing graph built
+                from the document — segments numbered way by way, the
+                address a snapped position names (valid for one
+                streets hash, so a trace commits GEOMETRY, never an
+                address: a network never depends on a streets
+                document) — snap (nearest street position) and
+                shortest-path route (one-way aware; turn restrictions
+                are a non-goal until a restriction table ships in the
+                data). Open work: `docs/units/streets-model.md`.
 cap-sync        The sync capability: the converged state of an edit
                 document pair — LWW merge + the submit transition,
                 the protocol's one step (the op behind POST /edits).
@@ -941,20 +960,25 @@ cap-directory   The directory capability — ONE QUESTION: what
                 answers the planner's timetable (route + direction
                 + service type, across the direction's patterns) —
                 the planner computes no number.
-cap-streets    The street-graph capability: the detour editor's need,
-                atomically. load_streets (bulk-bytes op 0) parses a
-                street-network GeoJSON into the routing graph and
-                registers it under its content hash (idempotent —
-                the same bytes are the same graph); snap answers the
-                nearest street position (the graph address a detour
+cap-streets    The street-graph capability: where along the
+                streets. import (bulk-bytes op 0) reads a street
+                layer into the streets document and registers it,
+                answering the document (the host keeps it) with its
+                hash and size; load_streets (bulk op 1, or JSON)
+                registers a document the host holds under the same
+                hash, refused unless canonical; snap answers the
+                nearest street position (the graph address a trace's
                 waypoint commits to); route answers the street
                 geometry between two positions (shortest path,
-                starting after `from` — detour legs chain — with
+                starting after `from` — trace legs chain — with
                 its length along the graph; empty on disconnected
-                parts — the caller falls back to a straight line). The domain code lives in the shared
-                transit-streets library. Reference data the HOST
-                owns, re-imported per
-                session; the module writes nothing.
+                parts — the caller falls back to a straight line). The
+                domain code lives in the shared transit-streets
+                library; the module writes nothing. Its consumer
+                today is the detour editor (the original app's
+                DataSources import; the map draws the document, so it
+                shows exactly what routes); drawing a pattern on
+                streets is the next (`docs/units/streets-model.md`).
 ```
 
 ### Bus rules (load-bearing)

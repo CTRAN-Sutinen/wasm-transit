@@ -32,7 +32,7 @@ the rest of the work can go ahead while the decision is reviewed.
   goes into the law that pins it and the doc that owns its topic
   (`docs/ARCHITECTURE.md`, `docs/units/`, `docs/QA-FINDINGS.md`),
   and the `Blocked: D-N` lines are removed. Git is the archive.
-- IDs are never reused; the next new decision is **D-25**.
+- IDs are never reused; the next new decision is **D-32**.
 
 ## Summary
 
@@ -59,6 +59,13 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-22 | How is a route's rider variant named and ordered? | encoded | nothing |
 | D-23 | In what order does a stop display list its groups? | encoded | nothing |
 | D-24 | How does a departure's countdown round? | encoded | nothing |
+| D-25 | Which streets are the source of truth? | unanswered | streets-model walk table |
+| D-26 | Which streets can each mode use? | unanswered | streets-model walk table, drawing on streets |
+| D-27 | What does place search find? | unanswered | geocoding (queued) |
+| D-28 | Where do stop and address results meet? | unanswered | geocoding (queued) |
+| D-29 | What area does a geography release cover? | unanswered | streets-model geography release |
+| D-30 | What does the streets import call a street, and what class is it? | encoded | nothing |
+| D-31 | Can a plan add a street the data does not have? | unanswered | streets-model planned streets |
 
 ## The trip model
 
@@ -389,6 +396,138 @@ Options:
 - A trip is covered when an operator holds its run. This needs the
   runs layer (`docs/ROADMAP.md` 7) and workforce data.
 Blocks: question 6 of `docs/units/ui-disruptions.md`.
+
+## Geography
+
+### D-25 — Which streets are the source of truth?
+State: Unanswered.
+Context: the streets document (`docs/units/streets-model.md`) is
+imported from a street layer; the import reads the agency's
+Trapeze roads export, TIGER, and OSM GeoJSON alike. C-TRAN's
+Trapeze roads (118,860 features) are what the agency's scheduling
+system routes on, so deadheads computed over them agree with it.
+They carry no sidewalks, paths, or stairs (no CFCC A7x feature),
+so walking over them treats every road as walkable and misses
+every cut-through. OSM carries footways and crossings, at a
+licence cost: the ODbL's share-alike applies to a streets document
+derived from OSM and distributed.
+Options:
+- One source for every mode: the Trapeze roads (agency parity,
+  no walking network), or OSM (walking detail, no parity).
+- Two documents: the Trapeze roads for driving (drawing, detours,
+  deadheads) and OSM for walking (access, transfers, walksheds).
+  Every op that takes streets then names which.
+Blocks: the walk table in `docs/units/streets-model.md`.
+
+### D-26 — Which streets can each mode use?
+State: Unanswered.
+Context: the import classifies every street (D-30), and the graph
+today routes on all of them. A rider cannot walk a motorway or a
+ramp; a bus cannot be drawn down a path, stairs, or a 4WD track,
+and a planner may not want one drawn down an alley or a private
+drive. C-TRAN's data holds 1,701 streets with no class (626 with a
+null CFCC, among them SE Powell Blvd, and 1,075 unnamed `X10`
+features), so a rule must also say what an unknown class allows.
+Options: a mode profile per class, owned by the op as a parameter
+with a default (a walking profile, a bus profile). The defaults
+are the decision: which classes each mode may use, and whether an
+unknown class is allowed (permissive) or refused (strict).
+Blocks: the walk table and drawing on streets in
+`docs/units/streets-model.md`.
+
+### D-27 — What does place search find?
+State: Unanswered.
+Context: search finds stop names only (directory `stops`). A rider
+types addresses ("1400 NE 136th Ave"), intersections ("4th Plain
+& Andresen"), and places ("PeaceHealth", "WSU Vancouver"). The
+Trapeze roads carry TIGER-style address ranges per side
+(`L_F_ADD`…`R_T_ADD`) and street names, so addresses and
+intersections need no new source; places do (OSM, or the county's
+data), and they are the hardest to keep current.
+Options: stops only (today); + intersections; + addresses
+(interpolated along the ranges, or the county's address points);
++ places.
+Blocks: geocoding (queued in `docs/units/streets-model.md`).
+
+### D-28 — Where do stop and address results meet?
+State: Unanswered.
+Context: a rider wants one search box. The host may not merge two
+ops' answers (`docs/ARCHITECTURE.md`, "Generated UIs", step 6), and
+a capability that takes both the gazetteer and the network trips
+the second-document split trigger (`crates/AGENTS.md`).
+Options:
+- A places capability whose one question is "which place do you
+  mean?", over both documents — the trigger's ops belong together
+  here, and the law's text says so.
+- The gazetteer imports the network's stops, so one document
+  answers; the gazetteer then changes with every plan.
+- Two boxes (stops, addresses).
+Blocks: geocoding (queued in `docs/units/streets-model.md`).
+
+### D-29 — What area does a geography release cover?
+State: Unanswered.
+Context: a geography release pins the basemap, the streets
+document, and later the gazetteer, built from one source snapshot
+(`docs/units/streets-model.md`). C-TRAN runs into Portland. The
+Trapeze export already reaches Portland (its first feature is NE
+21st Ave, Portland); the local basemap is one extract.
+Options: the service area plus a buffer (how far?); the counties
+served (Clark, plus Multnomah for the Portland trips); whatever
+the agency's GIS exports.
+Blocks: the geography release in `docs/units/streets-model.md`.
+
+### D-30 — What does the streets import call a street, and what class is it?
+State: Encoded provisionally.
+Context: street layers mix roads with other lines. C-TRAN's
+Trapeze roads hold 1,673 + 1,388 railroads (CFCC `B10`, `B20`) and
+1,160 + 1,898 + 81 water lines (`H10`, `H20`, `H30`: shorelines,
+the Washougal River). Before the streets document, every one of
+them was welded into the routing graph. The import must say which
+lines are streets, and give each a class the mode profiles (D-26)
+can read. The class field is read from the layer's own scheme:
+TIGER's CFCC (Trapeze and older TIGER), TIGER's MTFCC, OSM's
+`highway`.
+Options:
+- **Encoded:** a line whose class field names something other than
+  a road is not a street: a CFCC in a non-road category (`B`
+  railroads, `C` other transport, `D` landmarks, `E` physical
+  features, `F` boundaries, `H` water), an MTFCC outside `S1`, an
+  OSM line with no `highway` but a `railway`, `waterway`,
+  `natural`, `power`, or `boundary` tag. A line with no class
+  field, or with a road class the import does not know (CFCC `X10`
+  "not yet classified", a null CFCC, CFCC `A65` ferries, MTFCC
+  `S1750`, OSM `construction` and `proposed`), is a street of
+  class `unknown`, and the mode profiles (D-26) decide what it
+  allows. The class field is read in the order CFCC, MTFCC,
+  `highway`; the name in the order `FULLNAME`, `name`, `NAME` (the
+  Trapeze `NAME` is the bare street name, "21ST" for NE 21st
+  Ave). The classes: `motorway` (CFCC A1, MTFCC S1100, OSM
+  motorway), `primary` (A2, S1200, trunk, primary), `secondary`
+  (A3, secondary, tertiary), `local` (A4, A60–A62, S1400,
+  residential, unclassified, living_street, road), `ramp` (A63,
+  S1630, any `*_link`), `service` (A64, A73, A74, S1640, S1730,
+  S1740, S1780, service), `track` (A5, S1500, track), `path` (A70,
+  A71, S1710, S1820, S1830, footway, path, pedestrian, cycleway,
+  bridleway), `steps` (A72, S1720, steps).
+- Keep every line, classed `other` — the graph then needs the mode
+  profiles (D-26) before it is safe to route on.
+Blocks: nothing. Pins: `crates/transit-streets/tests/import_law_test.rs`.
+
+### D-31 — Can a plan add a street the data does not have?
+State: Unanswered.
+Context: a service change often serves streets that do not exist
+yet (a subdivision under construction, a new connector). Drawing a
+pattern on streets (`docs/units/streets-model.md`) can only follow
+streets the streets document has. A pattern's committed alignment
+is geometry and never references the streets document, so a
+pattern can always be drawn freehand.
+Options:
+- No: a planned street is drawn freehand on the pattern.
+- A streets edit document beside the plan, applied to the imported
+  streets the way network edits answer the next network. The
+  streets document's ways then need identities that survive a
+  re-import.
+Blocks: planned streets in `docs/units/streets-model.md`.
 
 ## Agency data
 

@@ -78,8 +78,9 @@ them.
 population does this network serve?") deserves an answer that
 survives scrutiny. 400 m circles are a placeholder.
 
-**Exists already:** street graph, population layer, coverage ops
-parameterized already.
+**Exists already:** the streets document and its graph, population
+layer, coverage ops parameterized already.
+**Needs:** the walk table (`docs/units/streets-model.md`).
 
 ## 5. Rider wins (filler that pays visibly)
 

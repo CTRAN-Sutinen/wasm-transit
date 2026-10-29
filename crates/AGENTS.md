@@ -26,6 +26,11 @@ serialization.
   MODEL vocabulary (network, service type, pattern trips,
   walking group, materialized trip). Route/stop ids cross over;
   GTFS types and row shapes do not.
+- Streets are the same kind of thing: a street layer (an agency GIS
+  export, TIGER, OSM) is a serialization read into the streets
+  document by `transit_streets::geojson` and nowhere else; the graph
+  and every op read the document. A network never references a
+  streets document or a graph position — a trace commits geometry.
 
 ## Law 2: do not reinvent the monolith inside a module
 

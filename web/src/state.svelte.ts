@@ -361,11 +361,11 @@ export async function readPlan(id: string, read: (stored: unknown) => Promise<Ne
   return plans[id];
 }
 
-/// The imported street network (dispatcher detour authoring) — same
-/// discipline: plain data, wholesale replacement. The routing graph
-/// lives in the cap-streets capability (`streetsHash`); this holds
-/// only the hash handle and the display copy. Never proxied (extracts
-/// can be tens of MB) and not persisted: reference data,
+/// The imported streets (detour authoring) — same discipline: plain
+/// data, wholesale replacement. The routing graph lives in the
+/// cap-streets capability (`streetsHash`); this holds the hash handle
+/// and the streets document the import answered. Never proxied (a
+/// county's document is tens of MB) and not yet persisted:
 /// re-imported per session.
 let streets = $state.raw<Streets | null>(null);
 export function getStreets(): Streets | null {

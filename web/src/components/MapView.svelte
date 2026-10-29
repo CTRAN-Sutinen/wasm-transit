@@ -5,10 +5,12 @@
   import { app, getEditDocument, getStreets, directory } from "../state.svelte";
   import { selectStop, setDiversionAnchor, addDetourSlice, snapToStreets, routeOnStreets } from "../actions";
   import { stopsFeatures } from "../mapview";
+  import { streetsLayer, type Streets } from "../streets";
   import type { StreetPosition } from "../types/StreetPosition";
   import type { LiveStatus } from "../types/LiveStatus";
 
   const EMPTY_FC = { type: "FeatureCollection", features: [] };
+  const streetsDisplay = (streets: Streets | null) => (streets ? streetsLayer(streets.document) : EMPTY_FC);
 
   /// Every source this view adds is a geojson source; this accessor
   /// keeps the setData calls typed.
@@ -480,7 +482,7 @@
   // The imported street network: context for detour drawing.
   $effect(() => {
     if (!mapLoaded) return;
-    src("streets").setData(getStreets()?.geojson ?? EMPTY_FC);
+    src("streets").setData(streetsDisplay(getStreets()));
   });
 
   // The map persists across persona switches — so each persona-owned

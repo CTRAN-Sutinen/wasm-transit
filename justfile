@@ -274,15 +274,19 @@ test: caps
       --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
       --op '{"op":"trip_stops","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","trip":"t30","start_secs":31200,"date":"2026-10-23"}' \
       | grep -q '"stop_id":"B"'
-    # The street capability's gate: the detour editor's need, one
-    # chained session — the street fixture on bulk op 0, two snaps,
-    # and the route between them (the Elbow corner, not the diagonal:
-    # the committed trace follows street geometry).
+    # The street capability's gate: where along the streets, one
+    # chained session — the street fixture imported on bulk op 0, the
+    # document it answered registered back (load_streets: the hash
+    # the queries address), two snaps, and the route between them
+    # (the Elbow corner, not the diagonal: the committed trace
+    # follows street geometry). grep reads the whole answer (no -q:
+    # quitting early breaks the runner's pipe).
     node tools/caps-run.mjs streets --load web/e2e/fixtures/streets.geojson \
-      --op '{"op":"snap","streets_hash":"$load.streets_hash","lat":45.504,"lon":-73.503}' \
-      --op '{"op":"snap","streets_hash":"$load.streets_hash","lat":45.508,"lon":-73.508}' \
-      --op '{"op":"route","streets_hash":"$load.streets_hash","from":"$2.position","to":"$3.position"}' \
-      | grep -q '"lat":45.504,"lon":-73.508'
+      --op '{"op":"load_streets","streets":"$load.streets"}' \
+      --op '{"op":"snap","streets_hash":"$2.streets_hash","lat":45.504,"lon":-73.503}' \
+      --op '{"op":"snap","streets_hash":"$2.streets_hash","lat":45.508,"lon":-73.508}' \
+      --op '{"op":"route","streets_hash":"$2.streets_hash","from":"$3.position","to":"$4.position"}' \
+      | grep '"lat":45.504,"lon":-73.508' > /dev/null
     # The sync capability's gate: the protocol's one step — a draft
     # client against an empty server converges to the submitted
     # document (rev bumped, host clock stamped).

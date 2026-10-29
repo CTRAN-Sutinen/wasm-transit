@@ -242,19 +242,19 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "streets",
         file: "cap_streets.wasm",
-        ops: &["load_streets", "snap", "route"],
-        // The street graph is reference data the HOST owns (an OSM
-        // extract or open-data layer as GeoJSON lines, re-imported
-        // per session); the module registers the bytes under their
-        // content hash and every query addresses that hash.
+        ops: &["import", "load_streets", "snap", "route"],
+        // The streets document is the HOST's (read from a street
+        // layer by import, answered with its hash); every query
+        // addresses that hash.
         consumes: &[],
-        speaks: &[("street_graph", &[1])],
+        speaks: &[("streets", &[1])],
         migrates: &[],
-        purpose: "The detour editor's street graph: register a street-network GeoJSON (an OSM extract or an open-data layer) under its content hash and answer the detour editor's queries — snap a click to the nearest street, route between two positions along the graph so the committed detour is street geometry, never freehand chords. The domain code lives in the shared transit-streets library; the module is pure and stateless, it writes nothing.",
+        purpose: "Where along the streets? Snap a point to the nearest street and route between two positions along the street graph, so a traced detour (or a pattern drawn the same way) is street geometry, never freehand chords. The streets are a document: import reads a street layer (an agency GIS export, TIGER, OSM — GeoJSON lines) into the canonical streets document, whose hash is the streets' own, not the file's. The domain code lives in the shared transit-streets library; the module writes nothing.",
         op_docs: &[
-            ("load_streets", "Parse a street-network GeoJSON (FeatureCollection or Feature of LineString/MultiLineString geometries; one-way conventions TIGER OneWay and OSM oneway honored) into the routing graph and register it under its content hash (idempotent — the same bytes are the same graph). Bulk-bytes op 0; pass the raw GeoJSON to transit_invoke_bytes."),
-            ("snap", "The nearest street position to (lat, lon) — the projected point plus its graph address (segment, parameter along it), and how far the query point was. The detour waypoint commits to this address. Null when no street is nearby."),
-            ("route", "The street geometry between two snapped positions: the shortest path along the graph, as points ending exactly at the target and starting AFTER the origin (detours chain legs — each leg's start is the previous leg's committed end; prepend `from` for a standalone trace), plus length_m: the path's length along the graph from the origin itself — \"how far by road?\" answered by the router, never a host-side sum. Empty points and null length when the positions sit on disconnected parts of the network — the caller falls back to a straight line."),
+            ("import", "Read a street layer — a GeoJSON FeatureCollection or Feature of LineString/MultiLineString geometries — into the canonical streets document and register it: the answer carries the document (the host keeps it), its streets_hash, and its ways, segments and nodes. Lines that are not streets (a CFCC railroad or water line, an MTFCC outside S1, an OSM railway or waterway) are left out; every street gets a class from its CFCC, MTFCC or OSM highway (unknown when none says), a name (FULLNAME, name, NAME), and its one-way (TIGER OneWay, OSM oneway — a one-way runs first point to last). The same streets in another feature order, digitized the other way, or with other properties are the same document and hash. Errors when the layer holds no street. Bulk-bytes op 0; pass the raw GeoJSON to transit_invoke_bytes."),
+            ("load_streets", "Register a streets document the host holds (an import's answer, stored) under its hash — the same hash its import answered. Refused unless canonical (ways of two or more points, sorted, none twice, two-ways in canonical direction). Bulk-bytes op 1 takes the bare document's JSON bytes."),
+            ("snap", "The nearest street position to (lat, lon) — the projected point plus its graph address (segment, parameter along it), and how far the query point was. Segments are numbered through the document, way by way, so an address holds for one streets hash: a trace commits the geometry, never the address. Null when no street is nearby."),
+            ("route", "The street geometry between two snapped positions: the shortest path along the graph, as points ending exactly at the target and starting AFTER the origin (traces chain legs — each leg's start is the previous leg's committed end; prepend `from` for a standalone trace), plus length_m: the path's length along the graph from the origin itself — \"how far by road?\" answered by the router, never a host-side sum. Empty points and null length when the positions sit on disconnected parts of the network — the caller falls back to a straight line."),
         ],
     },
     ModuleSpec {
@@ -572,10 +572,13 @@ fn fixture_gtfs() -> Option<transit_codec::Feed> {
 }
 
 /// The street capability's examples' context: the e2e street
-/// fixture parsed through the shared library, with the Elbow
+/// fixture imported through the shared library, with the Elbow
 /// corner snap/route answers computed over the real graph.
 struct StreetsExampleContext {
+    streets: transit_streets::Streets,
     streets_hash: String,
+    segments: u32,
+    nodes: u32,
     pos_a: transit_streets::StreetPosition,
     pos_b: transit_streets::StreetPosition,
     points: Vec<transit_streets::StreetPoint>,
@@ -588,15 +591,17 @@ fn streets_example_context() -> Option<StreetsExampleContext> {
         "/../../web/e2e/fixtures/streets.geojson"
     ))
     .ok()?;
-    let net = transit_streets::StreetNetwork::parse(&bytes).ok()?;
-    let streets_hash = format!("sha256:{:x}", Sha256::digest(&bytes));
+    let streets = transit_streets::geojson::import(&bytes).ok()?;
+    let streets_hash = cap_abi::canonical_hash(&streets).ok()?;
+    let net = transit_streets::StreetNetwork::build(&streets);
+    let (segments, nodes) = (net.segment_count(), net.node_count());
     let pos_a = net.snap(45.5040, -73.5030)?;
     let pos_b = net.snap(45.5080, -73.5080)?;
     let (points, length_m) = match net.route_with_length(pos_a, pos_b) {
         Some((points, length)) => (points, Some(length)),
         None => (vec![], None),
     };
-    Some(StreetsExampleContext { streets_hash, pos_a, pos_b, points, length_m })
+    Some(StreetsExampleContext { streets, streets_hash, segments, nodes, pos_a, pos_b, points, length_m })
 }
 
 /// The rt join examples' context: the fixture network (imported
@@ -1352,6 +1357,14 @@ fn example_for(
             (
                 json!({ "op": "route_stop_sequence", "network_hash": ctx.network_hash, "route_id": "10" }),
                 json!({ "ok": { "op": "route_stop_sequence", "patterns": patterns } }),
+            )
+        }
+        ("streets", "load_streets") => {
+            let ctx = streets_example_context()?;
+            (
+                json!({ "op": "load_streets", "streets": ctx.streets }),
+                json!({ "ok": { "op": "load_streets", "streets_hash": ctx.streets_hash,
+                    "ways": ctx.streets.ways.len(), "segments": ctx.segments, "nodes": ctx.nodes } }),
             )
         }
         ("streets", "snap") => {

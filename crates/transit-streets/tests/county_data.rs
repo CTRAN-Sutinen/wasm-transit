@@ -3,10 +3,13 @@
 // COUNTY_GEOJSON pointing at the downloaded geojson — it skips
 // silently otherwise, keeping `just check` hermetic.
 //
-// What it proves that the synthetic fixtures cannot: the artifact
-// parses a production-sized network, and one-way travel is respected
-// on real digitized geometry (NW 10TH AVE is `>` northbound; the
-// southbound trip must loop through the grid, never the segment).
+// What it proves that the synthetic fixtures cannot: the import reads
+// a production-sized layer into a streets document, the export's
+// railroads and water lines stay out of it (D-30), and one-way travel
+// is respected on real digitized geometry (NW 10TH AVE is `>`
+// northbound; the southbound trip must loop through the grid, never
+// the segment). It prints the document's JSON size — the number the
+// browser pays to hold it (docs/units/streets-model.md, size).
 
 #[test]
 fn county_export_parses_and_respects_one_ways() {
@@ -16,13 +19,24 @@ fn county_export_parses_and_respects_one_ways() {
     };
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
     let t0 = std::time::Instant::now();
-    let net = transit_streets::StreetNetwork::parse(&bytes).expect("parse");
-    let elapsed = t0.elapsed();
+    let doc = transit_streets::geojson::import(&bytes).expect("import");
+    let imported = t0.elapsed();
+    let net = transit_streets::StreetNetwork::build(&doc);
+    let built = t0.elapsed() - imported;
+    let json = serde_json::to_vec(&doc).expect("the document serializes");
     println!(
-        "{} segments / {} nodes in {elapsed:?}",
+        "{} ways, {} segments / {} nodes; import {imported:?}, graph {built:?}; document {} bytes of JSON",
+        doc.ways.len(),
         net.segment_count(),
-        net.node_count()
+        net.node_count(),
+        json.len()
     );
+    for name in ["BURLINGTON NORTHERN SANTA FE", "PORTLAND TERMINAL", "WATER", "WASHOUGAL RIVER"] {
+        assert!(
+            doc.ways.iter().all(|w| w.name.as_deref() != Some(name)),
+            "{name} is not a street"
+        );
+    }
     assert!(net.segment_count() > 500_000, "production-sized, not a stub");
 
     // NW 10TH AVE, OneWay ">": digitized

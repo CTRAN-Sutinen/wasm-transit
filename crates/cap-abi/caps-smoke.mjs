@@ -1003,20 +1003,23 @@ assert(dir.invoke({ op: "stop_detail", network_hash: loadedDirNet.network_hash, 
 const unknownBoard = board.raw({ op: "stop_board", network_hash: "sha256:missing", stop_id: "A", date: DATE, from_secs: 0, limit: 5 });
 assert(unknownBoard.error && unknownBoard.error.includes("unknown network"), "unknown hashes error, never panic");
 
-// The street flow — the detour editor's capability: GeoJSON bytes
-// in on the bulk seam (the e2e street fixture), registered under
-// its content hash, then pure queries by hash. The Elbow route
-// follows street geometry, not the diagonal; garbage bytes are an
-// error outcome, never a trap.
+// The street flow — where along the streets: a street layer in on
+// the bulk seam (the e2e street fixture), read into the canonical
+// streets document and registered under its hash; the document
+// handed back on bulk op 1 is the same hash; then pure queries by
+// hash. The Elbow route follows street geometry, not the diagonal;
+// garbage bytes are an error outcome, never a trap.
 assert(byId.streets, "manifest advertises the streets capability");
 const streets = shell(loadModule(byId.streets));
 const streetsBytes = readFileSync(path.join(here, "../../web/e2e/fixtures/streets.geojson"));
 const loadedStreets = streets.invokeBytes(0, streetsBytes);
-assert(loadedStreets.op === "load_streets", "streets load_streets answers on the bulk-bytes seam");
-assert(loadedStreets.segments === 5 && loadedStreets.nodes === 8, "the fixture parses: 5 segments, 8 nodes");
-assert(loadedStreets.streets_hash.startsWith("sha256:"), "the graph registers under its content hash");
-const againStreets = streets.invokeBytes(0, streetsBytes);
-assert(againStreets.streets_hash === loadedStreets.streets_hash, "the same bytes are the same graph (idempotent)");
+assert(loadedStreets.op === "import", "streets import answers on the bulk-bytes seam");
+assert(loadedStreets.ways === 3 && loadedStreets.segments === 5 && loadedStreets.nodes === 8, "the fixture imports: 3 ways, 5 segments, 8 nodes");
+assert(loadedStreets.streets_hash.startsWith("sha256:"), "the document registers under its content hash");
+assert(loadedStreets.streets.ways.length === 3, "the import answers the document the host keeps");
+const againStreets = streets.invokeBytes(1, new TextEncoder().encode(JSON.stringify(loadedStreets.streets)));
+assert(againStreets.op === "load_streets", "load_streets answers on bulk op 1");
+assert(againStreets.streets_hash === loadedStreets.streets_hash, "the document handed back is the same hash");
 const snappedA = streets.invoke({
   op: "snap",
   streets_hash: loadedStreets.streets_hash,
@@ -1046,8 +1049,8 @@ const nowhere = streets.invoke({ op: "snap", streets_hash: loadedStreets.streets
 assert(nowhere.position === null, "no street nearby answers null, never an error");
 const unknownStreets = streets.raw({ op: "snap", streets_hash: "sha256:missing", lat: 0, lon: 0 });
 assert(unknownStreets.error && unknownStreets.error.includes("unknown street network"), "unknown hashes error, never panic");
-const garbageStreets = streets.raw({ op: "load_streets", bytes: [0xff, 0xfe] });
-assert(garbageStreets.error && /street network/.test(garbageStreets.error), "garbage bytes are an error outcome, never a trap");
+const garbageStreets = streets.raw({ op: "import", bytes: [0xff, 0xfe] });
+assert(garbageStreets.error && /street layer/.test(garbageStreets.error), "garbage bytes are an error outcome, never a trap");
 
 // The sync flow — the protocol's one step: the client's draft
 // diversion against an empty server converges to the submitted

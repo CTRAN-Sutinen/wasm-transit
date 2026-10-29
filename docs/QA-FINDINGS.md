@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-83**. A
+IDs are never reused; the next new finding is **QAF-85**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -304,6 +304,28 @@ work rules, and the bid over them.
   platform, pay, pieces, deadhead per run.
   Pin: block 1-WKDY5004 cut by hand into three pieces reporting
   05:25 / 14:12 / 22:23.
+
+## Geography
+
+- **QAF-83 MODEL GAP** — the router walks in straight lines: its
+  footpaths are every stop pair within `WALK_RADIUS_M` (300 m) of
+  haversine distance at `WALK_SPEED_MPS` (1.3 m/s), constants in
+  `transit-router` that no op parameter reaches. A walk crosses a
+  river or a freeway, a stop 310 m away across a direct street is
+  out of reach, and a slower walker cannot ask for their own speed.
+  The router takes no streets document, so the answer does not
+  change when one exists. Its fix is the walk table
+  (`docs/units/streets-model.md`).
+  Pin: `crates/transit-router/src/network.rs`, the footpath build
+  (`haversine_m` against `WALK_RADIUS_M`); no router op takes a
+  streets hash.
+- **QAF-84 DEFECT** — the basemap is not local: with
+  `basemap.pmtiles` served, the style still fetches its glyphs and
+  sprites from `protomaps.github.io` (`web/src/basemap.ts`), and
+  without it the map is OpenFreeMap's. A stop display that loses
+  its uplink loses every map label.
+  Pin: `pickStyle` in `web/src/basemap.ts` — the `glyphs` and
+  `sprite` URLs of the local style.
 
 ## Data the bus does not have
 

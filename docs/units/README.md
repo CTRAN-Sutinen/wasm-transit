@@ -41,6 +41,7 @@ archive — nothing here records what is finished.
 | [sync-persistence.md](sync-persistence.md) | self-describing blobs + pointers, pointer CAS, the store reflog, TLC-checked, generated schemas + `docs/FORMATS.md` |
 | [runtime-cost-gate.md](runtime-cost-gate.md) | a ratchet on per-module memory and registration time |
 | [module-runtime.md](module-runtime.md) | bounded registries (a kernel eviction op) and off-thread instantiation |
+| [streets-model.md](streets-model.md) | streets as a model document: serving it, mode profiles, the walk table, drawing on streets, the geography release |
 | [caps-run-sessions.md](caps-run-sessions.md) | the runner across sessions; shaping the import's output |
 | [grade-debt.md](grade-debt.md) | on the bus, but not yet read by a UI or dogfooded |
 | [ui-ride-now.md](ui-ride-now.md) | generated UI: riding today (stops, live boards, trip plans, last bus, detours) |

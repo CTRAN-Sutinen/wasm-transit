@@ -1,6 +1,6 @@
 [package]
 name = "transit-streets"
-description = "Street networks for detour authoring: GeoJSON to routing graph, snapping, shortest-path routing. Pure and stateless — the query-only module of the artifact."
+description = "The streets model: the canonical streets document, its import from street layers (GeoJSON lines: agency exports, TIGER, OSM), and the routing graph over it (snapping, shortest paths). Pure and stateless."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

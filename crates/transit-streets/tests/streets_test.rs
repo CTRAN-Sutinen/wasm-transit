@@ -1,3 +1,4 @@
+use transit_streets::geojson::import;
 use transit_streets::{StreetNetwork, StreetPoint};
 
 const ELBOW: &str = r#"{
@@ -9,8 +10,9 @@ const ELBOW: &str = r#"{
   ]
 }"#;
 
+/// A layer through the import, then the graph over its document.
 fn parse(geojson: &str) -> StreetNetwork {
-    StreetNetwork::parse(geojson.as_bytes()).expect("parse")
+    StreetNetwork::build(&import(geojson.as_bytes()).expect("import"))
 }
 
 #[test]
@@ -129,8 +131,8 @@ fn junk_rows_and_degenerate_segments_are_skipped() {
 
 #[test]
 fn no_lines_is_an_error() {
-    assert!(StreetNetwork::parse(br#"{"type":"FeatureCollection","features":[]}"#).is_err());
-    assert!(StreetNetwork::parse(b"not json").is_err());
+    assert!(import(br#"{"type":"FeatureCollection","features":[]}"#).is_err());
+    assert!(import(b"not json").is_err());
 }
 
 #[test]

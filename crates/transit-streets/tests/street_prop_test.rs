@@ -1,10 +1,12 @@
-//! Street network laws, as property tests with independent oracles.
+//! Street graph laws, as property tests with independent oracles.
 //!
 //! `streets_test.rs` covers hand-picked configurations. These laws
-//! hold for ANY network the generator can produce:
+//! hold for ANY streets document the generator's layers import to
+//! (the layer → document laws are `import_law_test.rs`):
 //!
-//! * **Structure** — the parsed graph's segment and node counts match
-//!   the spec (welding by 1e-6 quantization, degenerate rows dropped).
+//! * **Structure** — the graph's segment and node counts match the
+//!   document (a segment per consecutive point pair, way by way;
+//!   ways that share a point weld there).
 //! * **Snap projection** — the snapped point lies on its segment,
 //!   `dist_m` is the true distance to it, and re-snapping is a fixed
 //!   point.
@@ -17,15 +19,17 @@
 //!   included.
 //! * **Reachability** — route returns None exactly when the oracle
 //!   says unreachable, and a returned path ends exactly at `to`.
-//! * **Totality** — arbitrary bytes never panic the parser.
 //!
-//! The oracle rebuilds the graph from the generated spec with its own
-//! code — same documented rules, none of the implementation's code.
+//! The oracle rebuilds the graph from the DOCUMENT with its own code —
+//! same documented rules (segments numbered way by way, point pair by
+//! point pair, the graph address a position names), none of the
+//! implementation's code.
 
 use proptest::collection::vec;
 use proptest::prelude::*;
 use std::collections::{BinaryHeap, HashMap};
-use transit_streets::{StreetNetwork, StreetPosition};
+use transit_streets::geojson::import;
+use transit_streets::{StreetNetwork, StreetPosition, Streets};
 
 const CELL: f64 = 0.001;
 const LAT0: f64 = 45.0;
@@ -154,38 +158,29 @@ struct OGraph {
     adj: Vec<Vec<(usize, f64)>>,
 }
 
-fn build_oracle(spec: &Spec) -> OGraph {
+fn build_oracle(doc: &Streets) -> OGraph {
     let mut g = OGraph::default();
-    let mut node_ids: HashMap<(i64, i64), usize> = HashMap::new();
-    let node = |lat: f64, lon: f64, ids: &mut HashMap<(i64, i64), usize>, nodes: &mut Vec<(f64, f64)>| -> usize {
-        let key = ((lat * 1e6).round() as i64, (lon * 1e6).round() as i64);
-        *ids.entry(key).or_insert_with(|| {
-            nodes.push((lat, lon));
-            nodes.len() - 1
-        })
-    };
-    for (dir, lines) in &spec.features {
-        for line in lines {
-            for pair in line.windows(2) {
-                let a_lat = vertex_lat(pair[0].0);
-                let a_lon = vertex_lon(pair[0].1);
-                let b_lat = vertex_lat(pair[1].0);
-                let b_lon = vertex_lon(pair[1].1);
-                let len = meters_between(a_lat, a_lon, b_lat, b_lon);
-                if len <= 0.0 {
-                    continue; // degenerate rows are dropped, not welded
-                }
-                let node_a = node(a_lat, a_lon, &mut node_ids, &mut g.nodes);
-                let node_b = node(b_lat, b_lon, &mut node_ids, &mut g.nodes);
-                g.segs.push(OSeg {
-                    a: (a_lat, a_lon),
-                    b: (b_lat, b_lon),
-                    len,
-                    dir: *dir,
-                    node_a,
-                    node_b,
+    let mut node_ids: HashMap<[i32; 2], usize> = HashMap::new();
+    for way in &doc.ways {
+        let dir = if way.oneway { SpecDir::Forward } else { SpecDir::Both };
+        for pair in way.points.windows(2) {
+            let mut ends = [0usize; 2];
+            for (end, p) in ends.iter_mut().zip(pair) {
+                *end = *node_ids.entry(*p).or_insert_with(|| {
+                    g.nodes.push((p[0] as f64 / 1e6, p[1] as f64 / 1e6));
+                    g.nodes.len() - 1
                 });
             }
+            let a = g.nodes[ends[0]];
+            let b = g.nodes[ends[1]];
+            g.segs.push(OSeg {
+                a,
+                b,
+                len: meters_between(a.0, a.1, b.0, b.1),
+                dir,
+                node_a: ends[0],
+                node_b: ends[1],
+            });
         }
     }
     g.adj = vec![Vec::new(); g.nodes.len()];
@@ -362,46 +357,37 @@ fn query_point(g: &OGraph, q: (usize, f64, f64)) -> (f64, f64) {
     (lat, lon)
 }
 
-fn spec_and_queries() -> impl Strategy<Value = (Spec, (usize, f64, f64), (usize, f64, f64), (i64, i64))> {
+fn spec_and_queries() -> impl Strategy<Value = (Streets, (usize, f64, f64), (usize, f64, f64), (i64, i64))> {
     spec()
-        .prop_filter("spec has at least one non-degenerate segment", |spec| {
-            !build_oracle(spec).segs.is_empty()
-        })
-        .prop_flat_map(|spec| {
-            let g = build_oracle(&spec);
-            let n = g.segs.len();
-            (Just(spec), near_query(n), near_query(n), (20i64..40, 20i64..40))
+        .prop_filter_map("the layer has a street", |spec| import(build_geojson(&spec).as_bytes()).ok())
+        .prop_flat_map(|doc| {
+            let n = build_oracle(&doc).segs.len();
+            (Just(doc), near_query(n), near_query(n), (20i64..40, 20i64..40))
         })
 }
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
-    /// Structure: the parsed graph agrees with the spec on segment and
-    /// node counts — welding and degenerate-row dropping included. A
-    /// spec with no usable geometry is an error, not a graph.
+    /// Structure: the graph agrees with the document on segment and
+    /// node counts — welding included.
     #[test]
-    fn graph_shape_matches_the_spec(spec in spec()) {
-        let g = build_oracle(&spec);
-        let parsed = StreetNetwork::parse(build_geojson(&spec).as_bytes());
-        if g.segs.is_empty() {
-            prop_assert!(parsed.is_err(), "no usable line geometry must error");
-        } else {
-            let net = parsed.expect("generated GeoJSON parses");
-            prop_assert_eq!(net.segment_count() as usize, g.segs.len());
-            prop_assert_eq!(net.node_count() as usize, g.nodes.len());
-        }
+    fn graph_shape_matches_the_document(spec in spec()) {
+        let Ok(doc) = import(build_geojson(&spec).as_bytes()) else { return Ok(()) };
+        let g = build_oracle(&doc);
+        let net = StreetNetwork::build(&doc);
+        prop_assert_eq!(net.segment_count() as usize, g.segs.len());
+        prop_assert_eq!(net.node_count() as usize, g.nodes.len());
     }
 
     /// Snap: the position lies on its segment, dist_m is true, and
     /// re-snapping the snapped point is a fixed point.
     #[test]
     fn snap_projects_and_is_a_fixed_point(
-        (spec, qa, qb, far) in spec_and_queries(),
+        (doc, qa, qb, far) in spec_and_queries(),
     ) {
-        let g = build_oracle(&spec);
-        let net = StreetNetwork::parse(build_geojson(&spec).as_bytes())
-            .expect("parse");
+        let g = build_oracle(&doc);
+        let net = StreetNetwork::build(&doc);
         let (lat, lon) = query_point(&g, qa);
         let pos = net.snap(lat, lon).expect("a query anchored on a street snaps");
 
@@ -429,11 +415,10 @@ proptest! {
     /// projection over the whole visible window.
     #[test]
     fn snap_distance_matches_the_brute_force_oracle(
-        (spec, qa, qb, far) in spec_and_queries(),
+        (doc, qa, qb, far) in spec_and_queries(),
     ) {
-        let g = build_oracle(&spec);
-        let net = StreetNetwork::parse(build_geojson(&spec).as_bytes())
-            .expect("parse");
+        let g = build_oracle(&doc);
+        let net = StreetNetwork::build(&doc);
         for q in [qa, qb] {
             let (lat, lon) = query_point(&g, q);
             let got = net.snap(lat, lon).expect("anchored query snaps");
@@ -448,11 +433,10 @@ proptest! {
     /// exactly at the target, and it is deterministic.
     #[test]
     fn route_cost_matches_the_dijkstra_oracle(
-        (spec, qa, qb, _far) in spec_and_queries(),
+        (doc, qa, qb, _far) in spec_and_queries(),
     ) {
-        let g = build_oracle(&spec);
-        let net = StreetNetwork::parse(build_geojson(&spec).as_bytes())
-            .expect("parse");
+        let g = build_oracle(&doc);
+        let net = StreetNetwork::build(&doc);
         let (flat, flon) = query_point(&g, qa);
         let (tlat, tlon) = query_point(&g, qb);
         let from = net.snap(flat, flon).expect("from snaps");
@@ -486,15 +470,5 @@ proptest! {
             (None, Some(cost)) => panic!("route gave up; oracle reaches for {cost} m"),
             (Some(_), None) => panic!("route returned a path on an unreachable pair"),
         }
-    }
-}
-
-proptest! {
-    #![proptest_config(ProptestConfig::with_cases(256))]
-
-    /// Totality: arbitrary bytes never panic the parser — Ok or Err.
-    #[test]
-    fn parse_survives_arbitrary_bytes(bytes in proptest::collection::vec(any::<u8>(), 0..=128)) {
-        let _ = StreetNetwork::parse(&bytes);
     }
 }

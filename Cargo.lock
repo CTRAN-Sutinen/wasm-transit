@@ -316,7 +316,6 @@ dependencies = [
  "cap-abi",
  "serde",
  "serde_json",
- "sha2",
  "transit-streets",
  "ts-rs",
 ]

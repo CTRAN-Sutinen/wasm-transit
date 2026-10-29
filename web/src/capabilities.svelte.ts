@@ -75,6 +75,7 @@ import type { Response as StreetsCapResponse } from "./types/cap_streets/Respons
 import type { RtOverview } from "./types/RtOverview";
 import type { StreetPoint } from "./types/StreetPoint";
 import type { StreetPosition } from "./types/StreetPosition";
+import type { Streets as StreetsDoc } from "./types/Streets";
 import type { Boundary } from "./types/Boundary";
 import type { StopBoard } from "./types/StopBoard";
 import type { GroupedBoard } from "./types/GroupedBoard";
@@ -1574,31 +1575,32 @@ export function ensureFeedSummary(bytes: Uint8Array): Promise<FeedSummary | null
   return load();
 }
 
-// The streets capability — the detour editor's street graph (the
-// first unit of the monolith decomposition, U1): a GeoJSON street
-// network registers under its content hash, then pure snap/route
-// queries against the parsed graph. Reference data the HOST owns
-// (an OSM extract or open-data layer, re-imported per session); the
-// module writes nothing. When the assembly cannot form, street
-// import refuses with an honest status and detour clicks fall back
-// to stops — never silently to freehand chords.
+// The streets capability — where along the streets: a street layer
+// (GeoJSON lines) imports into the canonical streets document, which
+// the host keeps; its hash addresses pure snap/route queries. The
+// module writes nothing. When the assembly cannot form, street import
+// refuses with an honest status and detour clicks fall back to stops
+// — never silently to freehand chords.
 // ---------------------------------------------------------------------
 
-const OP_LOAD_STREETS = 0;
+const OP_IMPORT_STREETS = 0;
 
-export type StreetsGraph = { streetsHash: string; segments: number; nodes: number };
+export type StreetsGraph = { streetsHash: string; streets: StreetsDoc; ways: number; segments: number; nodes: number };
 
 export function streetsCap(module: CapModule) {
   return {
-    /// Bytes in once: the GeoJSON parses into the routing graph and
-    /// registers under its content hash (idempotent — the same
-    /// bytes are the same graph).
-    loadStreets(bytes: Uint8Array): StreetsGraph {
-      const resp = module.invokeBytes(OP_LOAD_STREETS, bytes) as Extract<
-        StreetsCapResponse,
-        { op: "load_streets" }
-      >;
-      return { streetsHash: resp.streets_hash, segments: resp.segments, nodes: resp.nodes };
+    /// A street layer in once: the module reads it into the streets
+    /// document and registers it under the document's hash (the same
+    /// streets from another file are the same hash).
+    importStreets(bytes: Uint8Array): StreetsGraph {
+      const resp = module.invokeBytes(OP_IMPORT_STREETS, bytes) as Extract<StreetsCapResponse, { op: "import" }>;
+      return {
+        streetsHash: resp.streets_hash,
+        streets: resp.streets,
+        ways: resp.ways,
+        segments: resp.segments,
+        nodes: resp.nodes,
+      };
     },
     /// The nearest street position to a click: the projected point
     /// plus its graph address — what a detour waypoint commits to.
@@ -1634,11 +1636,11 @@ export async function streetsModule(): Promise<CapModule | null> {
 
 const streetGraphs = new Map<string, Promise<StreetsGraph | null>>();
 
-/// Register a street network in cap-streets, memoized by the bytes'
+/// Import a street layer in cap-streets, memoized by the bytes'
 /// content hash — the GeoJSON crosses the seam once per import, and
 /// THE MODULE IS THE HASH AUTHORITY (its returned streets_hash is
-/// the identity; the memo key is only the host's "did I already
-/// load these bytes" check).
+/// the document's identity; the memo key is only the host's "did I
+/// already import these bytes" check).
 export function ensureStreets(bytes: Uint8Array): Promise<StreetsGraph | null> {
   const load = async (): Promise<StreetsGraph | null> => {
     const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
@@ -1647,7 +1649,7 @@ export function ensureStreets(bytes: Uint8Array): Promise<StreetsGraph | null> {
     const graph = (async () => {
       const module = await streetsModule();
       if (!module) return null;
-      return streetsCap(module).loadStreets(bytes);
+      return streetsCap(module).importStreets(bytes);
     })();
     graph.catch(() => streetGraphs.delete(memoKey));
     streetGraphs.set(memoKey, graph);

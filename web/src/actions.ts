@@ -866,8 +866,9 @@ async function installPopulation(bytes: Uint8Array, label: string): Promise<void
 
 async function installStreets(geojson: unknown, label: string): Promise<void> {
   try {
-    // The cap-streets capability owns the routing graph; the bytes
-    // cross the seam once and register under their content hash.
+    // The cap-streets capability reads the layer into the streets
+    // document (the host keeps it) and owns the routing graph; the
+    // bytes cross the seam once.
     const bytes = new TextEncoder().encode(JSON.stringify(geojson));
     const graph = await ensureStreets(bytes);
     if (!graph) {
@@ -876,13 +877,13 @@ async function installStreets(geojson: unknown, label: string): Promise<void> {
     }
     const streets: Streets = {
       streetsHash: graph.streetsHash,
-      geojson: geojson as { type: "FeatureCollection"; features: unknown[] },
+      document: graph.streets,
       segmentCount: graph.segments,
     };
     setStreets(streets);
-    app.status = `Street network loaded (${label}) — ${graph.segments} segments; detour clicks snap to streets and stops.`;
+    app.status = `Street network loaded (${label}) — ${graph.ways} streets, ${graph.segments} segments; detour clicks snap to streets and stops.`;
   } catch (e) {
-    // cap-streets validates the GeoJSON: no lines, malformed JSON —
+    // cap-streets validates the layer: no streets, malformed JSON —
     // surface the module's message.
     app.status = `Street import failed: ${(e as Error).message}`;
     console.warn("street import failed:", e);
