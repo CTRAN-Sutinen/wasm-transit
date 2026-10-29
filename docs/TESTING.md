@@ -119,3 +119,44 @@ among them):
   and names its pin. The session narrative itself is not kept —
   what it proved lands as tests, and what it found lands as
   findings.
+
+## Performance baselines — measured, never gated
+
+`just perf` drives a generated UI in Chromium against the real feed
+and reports what it costs the browser; it fails only when the UI
+cannot be driven, never on a number (timings on a dev box are noisy).
+Its spec is `web/perf/<ui>.perf.mjs`, its probe `web/perf/probe.mjs`
+(the DevTools protocol, test-side only — the page is the shipped page,
+observed).
+
+- **What it measures, per step:** wall time; main-thread, script,
+  layout and style time; long tasks and long animation frames (their
+  scripts named); a sampled CPU profile, summarized by self time per
+  bucket — a capability module's crate (`wasm:transit_router`), a JS
+  bundle file, the engine (GC, compile) — and saved as a
+  `.cpuprofile` for DevTools' Performance panel. Memory, after a
+  forced collection: the JS heap, the array buffers outside it, each
+  capability module's linear memory by manifest id (the JS heap
+  counters do not see it, and it never shrinks), DOM nodes and
+  listeners.
+- **The build it measures** is a profiling build: the capability
+  modules keep their name sections (`CARGO_PROFILE_RELEASE_STRIP=
+  debuginfo`; the code is the shipped code) and the frontend is
+  unminified (`web/dist-perf`). The next `just caps` restores the
+  stripped modules.
+- **The live feeds are recorded, then replayed** one snapshot per
+  poll, with the browser clock installed at the recording's first
+  header timestamp and fast-forwarded a poll at a time — a 45-minute
+  soak takes minutes and every run sees the same data.
+  `node web/perf/record-rt.mjs [count] [dir] [interval]` records the
+  feeds `web/public/live-feeds.json` names into `testdata/perf-rt*/`
+  (gitignored — agency data); `PERF_RT=testdata/perf-rt-45m just perf`
+  picks one.
+- **The soak** leaves the UI open while every remaining snapshot
+  arrives, sampling memory every 10 polls: growth across the samples
+  that does not level off is a leak to chase with a heap snapshot.
+- **Reports** land in `web/perf-results/<stamp>/` (`summary.md`,
+  `report.json`, `profiles/`, gitignored). Headless Chromium renders
+  the map with software WebGL, so map rendering costs more there than
+  on a device with a GPU — compare runs with each other, not with a
+  phone.

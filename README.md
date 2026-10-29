@@ -44,7 +44,7 @@ Toolchains: Rust (with the `wasm32-unknown-unknown` target), Go
 cd web && npm install && cd ..
 just build                                   # capability modules + frontend
 just serve                                   # the server on :8080
-just serve path/to/gtfs.zip "Test Transit"   # + /feed and the manifest's feed
+just serve path/to/gtfs.zip "Test Transit"   # + /network (the zip, imported once) and the manifest
 just dev                                     # vite hot reload + the server
 ```
 

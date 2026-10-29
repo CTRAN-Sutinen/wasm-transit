@@ -4,6 +4,8 @@
 # Node / frontend
 node_modules
 web/dist
+web/dist-perf
+web/perf-results
 web/pkg
 web/test-results
 web/.playwright
@@ -20,6 +22,8 @@ mutants.out/
 testdata/ctran-gtfs.zip
 # County roads export for the street soak (`just soak`, COUNTY_GEOJSON) — ~99 MB
 testdata/CTRANTrapezeRoads_*.geojson
+# Recorded live feeds for the perf runner (web/perf/record-rt.mjs)
+testdata/perf-rt*/
 
 # Build outputs of `just caps` (cap-abi gen-manifest): the hash-pinned
 # modules, manifest, and demo fixtures the browser serves, and the

@@ -1,5 +1,5 @@
 /// The stop display's host layer — the ONLY file of this UI that calls
-/// the capability bus. It owns I/O (the published feed, the agency's
+/// the capability bus. It owns I/O (the published network, the agency's
 /// live feeds through the server's /rt proxy, the sync server's edit
 /// document, the page's URL), the clock, and the selection (the stop
 /// and the layout); every group, time, status, and alert it writes
@@ -24,7 +24,7 @@ import {
   rtModule,
   type Live,
 } from "../../capabilities.svelte";
-import { answer, answerGraph, hashIn, rememberHash, today, type CapModule } from "../kit";
+import { answer, answerGraph, hashIn, rememberHash, servedNetwork, today, type CapModule } from "../kit";
 import type { Boundary } from "../../types/Boundary";
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
 import type { EditRecord } from "../../types/EditRecord";
@@ -240,21 +240,34 @@ const request = answerGraph(
 export async function boot(): Promise<void> {
   readUrl();
   await restoreUrls();
-  const resp = await fetch("/feed").catch(() => null);
-  if (resp?.ok) {
-    await loadFeedBytes(new Uint8Array(await resp.arrayBuffer()), "the agency's feed");
-  } else {
-    display.busy = false;
-    display.status = "This server publishes no feed — load the agency's GTFS zip to begin.";
-  }
+  await withNetworkModule("the agency's network", async (module) => {
+    const served = await servedNetwork(module);
+    if (served) return served;
+    display.status = "This server publishes no network — load the agency's GTFS zip to begin.";
+    return null;
+  });
   setInterval(() => void poll(), POLL_MS);
   // The header's clock reads the host's clock between polls.
   setInterval(() => (display.nowSecs = nowSecs()), 5_000);
 }
 
-/// The published feed becomes the network document (and its boundary,
-/// the stop_sequence numbering the live feeds name).
-export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
+/// A GTFS zip loaded here becomes the network document (and its
+/// boundary, the stop_sequence numbering the live feeds name).
+export function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
+  return withNetworkModule(label, (module) => {
+    const cap = networkCap(module);
+    const imported = cap.import(cap.loadFeed(bytes).feedHash);
+    rememberHash(module, imported.network, imported.networkHash);
+    return imported;
+  });
+}
+
+/// Adopt the network (and boundary) `obtain` answers, then answer
+/// everything over it.
+async function withNetworkModule(
+  label: string,
+  obtain: (module: CapModule) => Promise<{ network: Network; boundary: Boundary } | null> | { network: Network; boundary: Boundary },
+): Promise<void> {
   display.busy = true;
   display.status = `Loading ${label}…`;
   await new Promise((r) => setTimeout(r, 20));
@@ -264,11 +277,10 @@ export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<v
       display.status = "The network capability is unavailable — nothing can be answered without it.";
       return;
     }
-    const cap = networkCap(module);
-    const imported = cap.import(cap.loadFeed(bytes).feedHash);
-    rememberHash(module, imported.network, imported.networkHash);
-    network = imported.network;
-    boundary = imported.boundary;
+    const got = await obtain(module);
+    if (!got) return;
+    network = got.network;
+    boundary = got.boundary;
     display.feed = network.name || label;
     display.status = "";
     await Promise.all([syncEdits(), fetchLive()]);

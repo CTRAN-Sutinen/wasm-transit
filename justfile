@@ -31,6 +31,7 @@ caps:
     cargo run --quiet -p cap-abi --bin gen-manifest
     mkdir -p web/pkg
     cp target/wasm32-unknown-unknown/release/cap_sync.wasm web/pkg/cap_sync.wasm
+    cp target/wasm32-unknown-unknown/release/cap_network.wasm web/pkg/cap_network.wasm
 
 # Publish the registry: gates first (the records report them), then
 # build and publish — immutable blobs, evidence records per
@@ -434,6 +435,22 @@ e2e: caps build
 # Both runners — for changes that touch both sides.
 check: test e2e
 
+# Browser performance baselines (docs/TESTING.md, "Performance
+# baselines"): the real feed and recorded live feeds through a UI,
+# measured over the DevTools protocol — reports, never gates. The
+# profiling build keeps the capability modules' name sections (so a
+# CPU profile names Rust functions) and serves an unminified frontend
+# from web/dist-perf; the next `just caps` (or `just test`) restores
+# the stripped modules. PERF_RT picks the recording
+# (`node web/perf/record-rt.mjs`), PERF_FEED the feed.
+perf *args:
+    #!/usr/bin/env bash
+    set -e
+    CARGO_PROFILE_RELEASE_STRIP=debuginfo just caps
+    just types
+    cd web && npx vite build --minify false --outDir dist-perf --emptyOutDir
+    npx playwright test -c perf/playwright.config.mjs {{args}}
+
 # Real-data soak: transit-streets against the downloaded county
 # export. Hermetic tests skip it; point COUNTY_GEOJSON at the file to
 # run it (e.g. the CTRAN Trapeze roads geojson from the open data
@@ -463,7 +480,7 @@ population:
 # Serve the built app and APIs on :8080. Arguments are positional:
 #
 #   just serve                                   # static + /rt only
-#   just serve path/to/gtfs.zip                  # + /feed, /manifest
+#   just serve path/to/gtfs.zip                  # + /network (imported once), /manifest
 #   just serve path/to/gtfs.zip "Test Transit"   # + manifest publisher
 #   just serve path/to/gtfs.zip "" 127.0.0.1:8081
 #

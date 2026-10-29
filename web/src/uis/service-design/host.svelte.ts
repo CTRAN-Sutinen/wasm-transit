@@ -32,7 +32,7 @@ import {
   runcutModule,
   type AnalysisLayerHandle,
 } from "../../capabilities.svelte";
-import { answer, answerGraph, hashIn, rememberHash, today } from "../kit";
+import { answer, answerGraph, hashIn, rememberHash, servedNetwork, today } from "../kit";
 import type { BlockChainTrip } from "../../types/BlockChainTrip";
 import type { DayBlock } from "../../types/DayBlock";
 import type { EntityFocus } from "../../types/EntityFocus";
@@ -437,9 +437,20 @@ export async function boot(): Promise<void> {
     wb.status = `Restored ${wb.plans.length} plan(s).`;
     await openPlan(wb.activeKey);
   } else {
-    // A server started with -feed serves the artifact itself.
-    const resp = await fetch("/feed").catch(() => null);
-    if (resp?.ok) await loadFeedBytes(new Uint8Array(await resp.arrayBuffer()), "server feed");
+    // A server started with -feed publishes its network: the base
+    // every fork copies, with no import here.
+    const key = await step("Loading the published network…", async () => {
+      const network = await networkModule();
+      if (!network) throw new Error("network capability unavailable — the plan needs it");
+      const served = await servedNetwork(network);
+      if (!served) return null;
+      const key = `plan-${crypto.randomUUID()}`;
+      putPlan(key, served.network);
+      wb.feed = { label: served.network.name || "the published network", info: null };
+      syncPlanRows();
+      return key;
+    });
+    if (key) await openPlan(key);
   }
 }
 
