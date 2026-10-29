@@ -14,7 +14,8 @@ alert read on the display, and when a stopped route runs next.
 Three layouts, picked on the display and taking the whole screen:
 a transit center (a station's bays pooled, each group naming its
 bay), a single route (the stop most stops are: one route, drawn
-large), and several routes at a street stop (a grid of groups).
+large), and several routes at a street stop (its two or three, each a
+band across the screen).
 They are layouts over one answer; any layout shows any stop.
 
 ## Questions, in the order asked

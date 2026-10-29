@@ -33,7 +33,7 @@
   const LAYOUTS: { id: Layout; title: string; blurb: string }[] = [
     { id: "center", title: "Transit center", blurb: "Every bay's routes in one list, each time with its bay." },
     { id: "route", title: "Single route", blurb: "One route, large — the stop most stops are." },
-    { id: "routes", title: "Several routes", blurb: "A street stop's routes side by side." },
+    { id: "routes", title: "Several routes", blurb: "A street stop's two or three routes, each a band across the screen." },
   ];
 </script>
 

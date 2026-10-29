@@ -598,8 +598,8 @@ on every component a generated UI imports.
   the times are live, and the feed URLs); and the stop display's set:
   DisplayHeader (the stop's name and id, the host's clock, live or
   scheduled), DisplayGroup (one `grouped_board` group as a station
-  list's row, one route large, or a card; each time its `wait`, its
-  status, and at a station its bay; a group with none left says it
+  list's row, one route large, or a band across the screen; each
+  time its `wait`, its status, and at a station its bay; a group with none left says it
   is detoured or has stopped for the day), DisplayAlerts (the alerts
   slot, always on screen), and DisplaySetup (the three layouts and
   the stop type-ahead). `rideFormat.ts` holds their formatting
@@ -722,9 +722,11 @@ the alerts in force. It boots from the server's
 passenger information display, in three full-screen layouts over
 one `grouped_board` answer — a transit center (the groups as a list,
 each time naming its bay, the alerts beside it), a single route (one
-group large, for the stop one route serves), and several routes (a
-grid of cards); the alerts slot is always on screen. Any layout
-shows any stop. The stop and the layout live in the page's URL
+group filling the screen, its type scaled to it, for the stop one
+route serves), and several routes (a
+street stop's two or three, each a full-width band sharing the
+screen's height, its type scaled to the band); the alerts slot is
+always on screen. Any layout shows any stop. The stop and the layout live in the page's URL
 (`?stop=<id>&layout=center|route|routes`), so a screen reopens on its
 stop; without a stop, the setup picks both. It boots from the
 server's `/feed` (or a zip), reads `GET /edits` and the deployment's

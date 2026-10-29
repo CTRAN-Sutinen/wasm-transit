@@ -14,9 +14,11 @@
     bays = false,
   }: {
     group: DepartureGroup;
-    /// "row" (a line of a station's list), "hero" (one route, large),
-    /// "card" (one of several, in a grid).
-    variant: "row" | "hero" | "card";
+    /// "row" (a line of a station's list), "hero" (one route filling
+    /// the screen), "band" (one of a street stop's few, across the
+    /// screen) — hero and band size to the size container their
+    /// placement gives them.
+    variant: "row" | "hero" | "band";
     /// Show each departure's bay.
     bays?: boolean;
   } = $props();
@@ -82,14 +84,44 @@
   /* a line of a station's list: route, destination, then the times */
   .row { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr); align-items: center; font-size: clamp(1rem, 2.6vh, 2.2rem); padding: 0.45em 0; border-bottom: 1px solid var(--line); }
   .row .note { grid-column: 2; }
-  /* one route, large */
-  .hero { font-size: clamp(1.4rem, 6vh, 5rem); gap: 0.4em; }
-  .hero .times { gap: 1em; }
-  .hero .meta { font-size: 0.32em; }
-  .hero .long { font-size: 0.45em; }
-  .hero .none { font-size: 0.6em; }
-  /* one of several */
-  .card { font-size: clamp(1rem, 3.2vh, 2.6rem); padding: 0.6em 0.7em; border: 1px solid var(--line); border-radius: 0.4em; align-content: start; }
-  .card .dest { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
-  .card .wait { font-size: 0.85em; }
+  /* one route, large: the route above its three times, spread over
+     the height its placement gives it; the type follows that box, and
+     a time never outgrows its third of the width */
+  .hero {
+    height: 100%; align-content: space-evenly; gap: 0.4em;
+    font-size: clamp(1.4rem, min(11cqh, 4.6cqw), 9rem); padding: 0 0.3em;
+  }
+  .hero .times { gap: 0.6em; }
+  .hero .wait { font-size: min(1.8em, 6.6cqw, 24cqh); }
+  .hero .meta { font-size: max(0.4em, 1rem); }
+  .hero .long { font-size: max(0.42em, 0.85rem); }
+  .hero .none { font-size: 0.8em; }
+  .hero header { flex-wrap: wrap; row-gap: 0.2em; }
+  .hero .dest { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.1; }
+  /* narrow: the times stack down the height, each with its status
+     beside it */
+  @container (max-width: 40rem) {
+    .hero { font-size: clamp(1rem, min(6cqh, 8cqw), 4rem); }
+    .hero .times { grid-template-columns: minmax(0, 1fr); gap: 0.5em; }
+    .hero .times li { grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 0.6em; }
+    .hero .wait { font-size: min(1.7em, 14cqw, 11cqh); }
+  }
+  /* one of a street stop's few: route and destination, then the
+     times, across the band; the type follows the band's height */
+  .band {
+    height: 100%; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); align-items: center; column-gap: 1.2em;
+    font-size: clamp(1rem, min(15cqh, 3.4cqw), 7rem); padding: 0 0.8em;
+    border: 1px solid var(--line); border-radius: 0.3em;
+  }
+  .band header { flex-wrap: wrap; row-gap: 0.2em; }
+  .band .dest { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.1; }
+  .band .long { font-size: max(0.42em, 0.85rem); }
+  .band .times { gap: 0.8em; }
+  .band .meta { font-size: max(0.36em, 0.85rem); }
+  .band .none { font-size: 0.7em; }
+  .band .note { grid-column: 2; font-size: max(0.36em, 0.85rem); }
+  @container (max-width: 40rem) {
+    .band { grid-template-columns: minmax(0, 1fr); align-content: center; row-gap: 0.4em; font-size: clamp(1rem, min(11cqh, 7cqw), 4rem); }
+    .band .note { grid-column: 1; }
+  }
 </style>

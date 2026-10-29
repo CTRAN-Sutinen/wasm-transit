@@ -34,12 +34,12 @@
 
 <style>
   .head {
-    display: flex; align-items: center; justify-content: space-between; gap: 1em;
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.3em 1em;
     padding: 0.5em 0.8em; border-bottom: 3px solid var(--accent);
     font-size: clamp(1rem, 3vh, 2.4rem);
   }
-  .stop { min-width: 0; display: grid; }
-  h1 { margin: 0; font-size: 1.4em; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stop { min-width: 0; flex: 1 1 14rem; display: grid; }
+  h1 { margin: 0; font-size: 1.4em; line-height: 1.15; overflow-wrap: anywhere; }
   .id { color: var(--muted); font-size: 0.55em; }
   .right { display: flex; align-items: center; gap: 0.8em; flex: none; }
   .mode { font-size: 0.5em; color: var(--muted); }
