@@ -19,7 +19,8 @@ exists* and moves the thesis from demonstrable to operational.
 
 **What.** The Go server serves plan documents and the materialized
 feed per service change date. The manifest protocol (already pins
-`feed_hash` + the sync module's hash) grows plan documents; every
+`network_hash` + the zip's `feed_hash` + the sync module's hash)
+grows plan documents; every
 client resolves "which plan is in force today" through the plans
 capability (`resolve` is on the bus) and re-pins automatically.
 

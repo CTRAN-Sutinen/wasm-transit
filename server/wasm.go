@@ -7,9 +7,12 @@ package main
 // transit_invoke_bytes. Results are [u32 LE length][payload] buffers
 // holding {"ok": ...} or {"error": ...}.
 //
-// This server hosts one module: the SYNC CAPABILITY (cap-sync), the
-// op behind POST /edits. This file is the only place Go touches the
-// ABI; everything above it (main.go) speaks typed Go values.
+// This server hosts two modules: the SYNC CAPABILITY (cap-sync), the
+// op behind POST /edits, held for the server's lifetime; and the
+// NETWORK CAPABILITY (cap-network), instantiated once per published
+// feed to import it and then closed (network.go). This file is the
+// only place Go touches the ABI; everything above it speaks typed Go
+// values.
 
 import (
 	"context"
@@ -46,6 +49,11 @@ type WasmHost struct {
 	mu sync.Mutex
 }
 
+// compiled caches machine code by module bytes for the process: a
+// module instantiated again (cap-network, per published feed)
+// compiles once.
+var compiled = wazero.NewCompilationCache()
+
 // NewWasmHost loads the artifact and instantiates it. The bytes are
 // hashed once: the manifest's wasm_hash claim is about exactly what
 // runs here.
@@ -54,7 +62,7 @@ func NewWasmHost(ctx context.Context, artifactPath string) (*WasmHost, error) {
 	if err != nil {
 		return nil, err
 	}
-	runtime := wazero.NewRuntime(ctx)
+	runtime := wazero.NewRuntimeWithConfig(ctx, wazero.NewRuntimeConfig().WithCompilationCache(compiled))
 
 	// Zero imports: instantiation is the whole integration story.
 	module, err := runtime.Instantiate(ctx, body)
@@ -95,6 +103,38 @@ func (h *WasmHost) Invoke(ctx context.Context, request, out any) error {
 		return err
 	}
 	return h.decode(raw, out)
+}
+
+// The bulk ops this host calls (cap-network's OP_LOAD_FEED, the
+// kernel's OP_LOAD_NETWORK): raw bytes on transit_invoke_bytes.
+const (
+	opLoadFeed    = 0
+	opLoadNetwork = 256
+)
+
+// InvokeBytes runs a bulk op: `payload` crosses as raw bytes (a GTFS
+// zip, a bare network document); `out` receives the ok-payload.
+func (h *WasmHost) InvokeBytes(ctx context.Context, op uint32, payload []byte, out any) error {
+	raw, err := h.call(ctx, h.invokeBytes, payload, uint64(op))
+	if err != nil {
+		return err
+	}
+	return h.decode(raw, out)
+}
+
+// InvokeRaw runs a JSON op and returns its ok-payload's bytes
+// untouched — for answers the host serves without reading.
+func (h *WasmHost) InvokeRaw(ctx context.Context, request any) (json.RawMessage, error) {
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := h.call(ctx, h.invoke, payload)
+	if err != nil {
+		return nil, err
+	}
+	var ok json.RawMessage
+	return ok, h.decode(raw, &ok)
 }
 
 // call stages `payload` at an allocated pointer, calls `fn` (with an

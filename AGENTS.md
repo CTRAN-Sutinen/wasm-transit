@@ -99,7 +99,8 @@ done; `just e2e` adds the browser runner, for UI-visible changes;
 
 ```
 just build                 # frontend (type-checks first — the TS layer is a gate)
-just caps                  # capability modules + manifest (+ cap_sync.wasm for the server)
+just caps                  # capability modules + manifest (+ cap_sync.wasm and
+                           # cap_network.wasm for the server)
 just registry              # publish the capability registry (gates → blobs + evidence)
 node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op ...
                            # steps run in command-line order; --cap ID switches
@@ -116,6 +117,8 @@ just serve [feed.zip ["Publisher"]]   # sync server on :8080
 just dev                   # vite hot reload + server alongside
 just fixtures              # regenerate the e2e GTFS fixture
 just soak                  # real-data soak (COUNTY_GEOJSON=… county roads)
+just perf                  # browser perf baselines on the real feed — reports, never
+                           # gates (docs/TESTING.md, "Performance baselines")
 ```
 
 Toolchains live in `~/.cargo/bin` and `~/.local/bin` (rustc, pmtiles,
@@ -184,9 +187,11 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
 - **Retirement is the tombstone**: "delete" means
   `status: "retired"`, rev bumped. No hard deletes.
 - Schedules change by **artifact replacement, not mutation**: the
-  planner publishes a new zip; the server's manifest pins
-  `feed_hash` + the sync module's `wasm_hash`; everyone re-pins
-  and revalidates.
+  planner publishes a new zip; the server imports it once
+  (cap-network) and publishes the NETWORK — browsers never parse
+  GTFS the server has; the manifest pins `network_hash` (with the
+  zip's `feed_hash` as provenance) + the sync module's `wasm_hash`;
+  everyone re-pins and revalidates.
 - The sync protocol is **LWW per record id + tombstones**, not CRDT
   (deliberate — the terminal authority is the agency scheduling
   system; propose → review → accept). `transit_sync::merge` is a
@@ -240,7 +245,8 @@ e2e, real-data dogfood) are spelled out in `docs/TESTING.md`.
   raw rustc output with the same four exports — no custom calling
   conventions.
 - The Go server stays scaffolding; domain logic the server needs
-  becomes a capability module (it hosts cap-sync today).
+  becomes a capability module (it hosts cap-sync, and cap-network
+  for the import it publishes).
 - The bus is the architecture: no capability grows a private
   document format — shared data crosses modules as kernel
   documents addressed by content hash only.

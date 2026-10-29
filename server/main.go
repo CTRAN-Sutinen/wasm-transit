@@ -1,20 +1,17 @@
-// Package main is the sync server: the Go host for the wasm artifact.
+// Package main is the sync server: the Go host for the capability
+// modules.
 //
 // The division of labor is deliberate (see the repo README): the
-// artifact owns all domain logic — the server loads the exact bytes
+// modules own all domain logic — the server loads the exact bytes
 // the browser runs (sha256 in the manifest proves it) and calls the
 // flat ABI. This host is scaffolding only: HTTP routing, static
-// serving with Range support, the CORS proxy, and the manifest that
-// pins feed + wasm hashes. No domain decision is ever made here.
+// serving with Range support, the CORS proxy, the published network
+// (network.go), and the manifest that pins network + wasm hashes. No
+// domain decision is ever made here.
 package main
 
 import (
-	"archive/zip"
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/csv"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -35,7 +32,8 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8080", "listen address")
 	dist := flag.String("dist", "../web/dist", "directory of static files to serve")
 	wasmPath := flag.String("wasm", "../web/pkg/cap_sync.wasm", "the sync capability module to host and pin")
-	feedPath := flag.String("feed", "", "path to the GTFS zip (enables /feed and the manifest's feed section)")
+	feedPath := flag.String("feed", "", "path to the GTFS zip: imported once and published as the network (enables /network and the manifest's schedule section)")
+	networkWasm := flag.String("network-wasm", "../web/pkg/cap_network.wasm", "the network capability module that imports the feed")
 	publisher := flag.String("publisher", "", "manifest provenance (who publishes this schedule)")
 	editsPath := flag.String("edits", "", "path to persist the edit document (JSON); empty = in-memory only")
 	flag.Parse()
@@ -58,14 +56,17 @@ func main() {
 		editsPath: *editsPath,
 	}
 	if *feedPath != "" {
-		s.feeder = &fileFeed{path: *feedPath}
+		s.feeder = &fileFeed{path: *feedPath, networkWasm: *networkWasm}
+		if _, err := s.feeder.Load(); err != nil {
+			log.Fatalf("feed: %v", err)
+		}
 	}
 	s.edits = loadEdits(*editsPath)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rt", s.handleProxy)
 	mux.HandleFunc("/manifest", s.handleManifest)
-	mux.HandleFunc("/feed", s.handleFeed)
+	mux.HandleFunc("/network", s.handleNetwork)
 	mux.HandleFunc("/edits", s.handleEdits)
 	mux.HandleFunc("/", s.handleStatic)
 
@@ -145,16 +146,17 @@ func (s *server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, resp.Body)
 }
 
-// Manifest pins the authoritative schedule artifact and the sync
-// module this server runs. `feed_version` is read from the feed's
-// own feed_info.txt by the host (the host owns files and I/O; the
-// module owns the format's domain).
+// Manifest pins the published network, the GTFS zip it was imported
+// from, and the sync module this server runs. `feed_version` is read
+// from the feed's own feed_info.txt by the host (the host owns files
+// and I/O; the module owns the format's domain).
 type Manifest struct {
-	FeedHash     string  `json:"feed_hash"` // "sha256:<hex>" of the GTFS zip
-	FeedVersion  *string `json:"feed_version,omitempty"`
-	WasmHash     string  `json:"wasm_hash"` // sha256 of the sync module this server runs
-	GeneratedAt  int64   `json:"generated_at"`
-	Publisher    *string `json:"publisher,omitempty"`
+	NetworkHash string  `json:"network_hash"` // the network GET /network serves
+	FeedHash    string  `json:"feed_hash"`    // "sha256:<hex>" of the GTFS zip it was imported from
+	FeedVersion *string `json:"feed_version,omitempty"`
+	WasmHash    string  `json:"wasm_hash"` // sha256 of the sync module this server runs
+	GeneratedAt int64   `json:"generated_at"`
+	Publisher   *string `json:"publisher,omitempty"`
 }
 
 func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
@@ -168,8 +170,9 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("feed unavailable: %v", err), http.StatusInternalServerError)
 			return
 		}
+		manifest.NetworkHash = feed.networkHash
 		manifest.FeedHash = feed.hash
-		if v := feed.Version(); v != "" {
+		if v := feed.version; v != "" {
 			manifest.FeedVersion = &v
 		}
 	}
@@ -178,108 +181,4 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(manifest)
-}
-
-// handleFeed serves the configured GTFS artifact itself.
-func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
-	if s.feeder == nil {
-		http.Error(w, "no feed configured (start with -feed <gtfs.zip>)", http.StatusNotFound)
-		return
-	}
-	feed, err := s.feeder.Load()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("feed unavailable: %v", err), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/zip")
-	w.Write(feed.bytes)
-}
-
-// loadedFeed is one pinned state of the GTFS artifact — pure host
-// I/O now: serving the file needs no module (the wasm registry it
-// once registered in died with the monolith).
-type loadedFeed struct {
-	hash  string // "sha256:<hex>" of the zip
-	bytes []byte
-}
-
-func (l *loadedFeed) Hash() string  { return l.hash }
-func (l *loadedFeed) Bytes() []byte { return l.bytes }
-
-// Version reads the feed's own feed_info.txt row — one boundary
-// CSV field, the host's own I/O (the host owns files; the artifact
-// owns domain). Empty when the feed carries no version.
-func (l *loadedFeed) Version() string {
-	return feedInfoVersion(l.bytes)
-}
-
-// feedInfoVersion pulls feed_version out of feed_info.txt in the
-// zip. Nothing else about GTFS is known here — the artifact owns
-// the format; the host reads one metadata field.
-func feedInfoVersion(zipBytes []byte) string {
-	zr, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
-	if err != nil {
-		return ""
-	}
-	for _, f := range zr.File {
-		if f.Name != "feed_info.txt" {
-			continue
-		}
-		rc, err := f.Open()
-		if err != nil {
-			return ""
-		}
-		defer rc.Close()
-		rows, err := csv.NewReader(rc).ReadAll()
-		if err != nil || len(rows) < 2 {
-			return ""
-		}
-		for i, col := range rows[0] {
-			if col == "feed_version" && i < len(rows[1]) {
-				return rows[1][i]
-			}
-		}
-		return ""
-	}
-	return ""
-}
-
-// fileFeed reads the GTFS artifact from disk, caching by mtime so a
-// republished file is picked up without a restart (the "planner
-// publishes, everyone re-pins" flow).
-type fileFeed struct {
-	path string
-
-	mu     sync.Mutex
-	mtime  time.Time
-	loaded bool
-	feed   *loadedFeed
-}
-
-// Load returns the current feed, reloading when the file changed.
-func (f *fileFeed) Load() (*loadedFeed, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	info, err := os.Stat(f.path)
-	if err != nil {
-		return nil, err
-	}
-	if f.loaded && info.ModTime().Equal(f.mtime) {
-		return f.feed, nil
-	}
-
-	body, err := os.ReadFile(f.path)
-	if err != nil {
-		return nil, err
-	}
-	sum := sha256.Sum256(body)
-
-	f.loaded = true
-	f.mtime = info.ModTime()
-	f.feed = &loadedFeed{
-		hash:  "sha256:" + hex.EncodeToString(sum[:]),
-		bytes: body,
-	}
-	return f.feed, nil
 }

@@ -8,6 +8,7 @@
 /// only file that calls the bus), and `<id>.html` at the web root.
 
 import { analysisModule } from "../capabilities.svelte";
+import type { Boundary } from "../types/Boundary";
 import type { Network } from "../types/Network";
 
 /// Any assembled module (the resolver keeps the class private).
@@ -24,6 +25,22 @@ export function hashIn(module: CapModule, doc: Network): string {
   let hash = docs.get(doc);
   if (!hash) docs.set(doc, (hash = module.loadNetwork(doc)));
   return hash;
+}
+
+/// The deployment's published network: `GET /network`, the server's
+/// import of its GTFS zip (cap-network, the same module), registered
+/// in `module` — refused unless the module answers the hash the
+/// server pins. Null when the server publishes no network.
+export async function servedNetwork(module: CapModule): Promise<{ network: Network; boundary: Boundary } | null> {
+  const resp = await fetch("/network").catch(() => null);
+  if (!resp?.ok) return null;
+  const served = (await resp.json()) as { network: Network; boundary: Boundary; network_hash: string };
+  const hash = module.loadNetwork(served.network);
+  if (hash !== served.network_hash) {
+    throw new Error(`the served network registers as ${hash}, the server pins ${served.network_hash}`);
+  }
+  rememberHash(module, served.network, hash);
+  return { network: served.network, boundary: served.boundary };
 }
 
 /// Record a document a module already registered (cap-author's

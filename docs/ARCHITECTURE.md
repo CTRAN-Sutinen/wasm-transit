@@ -410,11 +410,27 @@ exports (no wasm-bindgen — do not reintroduce host glue).
 Go + wazero host: scaffolding only (HTTP, manifest, proxy). It must
 never make a domain decision; the host reads the feed's own
 feed_info.txt version field (one boundary CSV field — I/O, not
-domain). The one module it instantiates is cap-sync (the default
--wasm flag, web/pkg/cap_sync.wasm — rebuilt by `just caps`): the
-op behind POST /edits. The manifest pins the feed hash and the
-sync module's hash. (Reentrancy and the Go-host serialization
-live in `docs/CONVENTIONS.md`.)
+domain). It instantiates two modules, both rebuilt by `just caps`
+into web/pkg/: cap-sync (the -wasm flag, cap_sync.wasm), the op
+behind POST /edits, held for the server's lifetime; and cap-network
+(the -network-wasm flag, cap_network.wasm), which imports the
+configured GTFS zip (`load_feed` + `import`) in a fresh instance
+that is closed afterwards — the import's working memory goes with
+it. Machine code is cached per module bytes for the process, so a
+re-import does not recompile. The manifest pins the network it
+publishes, the zip it was imported from, and the sync module's
+hash. (Reentrancy and the Go-host serialization live in
+`docs/CONVENTIONS.md`.)
+
+**The deployment publishes the network, not the feed.** Browsers
+never parse GTFS a server has: the import runs once per published
+zip, on the server, through the module the browser runs (same
+bytes, same `network_hash`), and every client registers the
+answer. On the real C-TRAN feed that is the difference between
+~2.7 s of import and a ~187 MB network module on every rider's
+page, and ~0.4 s and ~17 MB (the import's high-water mark never
+shrinks; the parsed feed stays registered). A zip loaded by hand
+(the UIs' file input) still imports in the browser.
 
 Its HTTP surface:
 
@@ -424,11 +440,18 @@ Its HTTP surface:
   feed and returns it with CORS headers, so feeds without
   `Access-Control-Allow-Origin` can be polled from the page (the
   server binds 127.0.0.1 by default; `-addr` changes it).
-- `/manifest` — `{feed_hash, feed_version, wasm_hash, generated_at,
-  publisher}`: which GTFS artifact is authoritative, which sync
-  module bytes the server runs, and who says so.
-- `/feed` — the configured GTFS zip (`-feed`); republishing the file
-  is picked up on the next request (mtime-checked).
+- `/manifest` — `{network_hash, feed_hash, feed_version, wasm_hash,
+  generated_at, publisher}`: which network is authoritative, the
+  GTFS zip it was imported from, which sync module bytes the server
+  runs, and who says so.
+- `/network` — the import's answer for the configured zip
+  (`-feed`), served as-is: `{network, boundary, notes,
+  network_hash}`. Gzipped when the client takes it; its ETag is the
+  network hash, so a client holding it revalidates for a 304.
+  Republishing the zip is re-imported on the next request
+  (mtime-checked). A client registers the network with
+  `load_network` and refuses it unless the module answers the
+  pinned hash (`servedNetwork` in `src/uis/kit.ts`).
 - `/edits` — the edit document: `POST` a client document, receive
   the LWW-merged result (cap-sync's `sync_edits`); `GET` reads the
   server's. `-edits <path>` persists it across restarts.
@@ -729,7 +752,9 @@ baseline, coverage, fleet), the routes under the type with the
 selected route's map beneath them, and the route — its directions,
 one direction's timetable marked against the baseline (scrolling
 inside its column, never widening the page), and the timetable
-gestures. Its host answers through the answer graph; the fleet
+gestures. With no stored plan it opens the server's `/network` as
+the base plan (or imports a zip from the plan bar, which also reads
+its feed_info). Its host answers through the answer graph; the fleet
 (cap-runcut) answers only while its panel is open, and the plan's
 health adopts cap-author's issues for a document it authored.
 `ride-now` (`src/uis/ride-now/`): a full-bleed map with a panel over
@@ -748,7 +773,7 @@ diagrams; its buses stay bright on the map, the rest dim), getting
 there (the ends as type-aheads; leave now, leave at, arrive by, or
 the last bus; the itinerary as a timeline, drawn on the map), and
 the alerts in force. It boots from the server's
-`/feed` (or a zip the rider loads), reads the edit document from
+`/network` (or a zip the rider loads), reads the edit document from
 `GET /edits`, reads the live feeds the deployment names in
 `public/live-feeds.json` (the rider may set their own) through
 `/rt`, and polls both and the clock every 30 s. A trip asked for
@@ -766,7 +791,7 @@ screen's height, its type scaled to the band); the alerts slot is
 always on screen. Any layout shows any stop. The stop and the layout live in the page's URL
 (`?stop=<id>&layout=center|route|routes`), so a screen reopens on its
 stop; without a stop, the setup picks both. It boots from the
-server's `/feed` (or a zip), reads `GET /edits` and the deployment's
+server's `/network` (or a zip), reads `GET /edits` and the deployment's
 live feeds (`public/live-feeds.json`, through `/rt`), and polls them
 and the clock every 20 s. Its open work is
 `docs/units/ui-stop-display.md`.
