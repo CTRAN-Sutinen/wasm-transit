@@ -16,6 +16,7 @@
 
 pub mod geojson;
 mod model;
+pub mod walking;
 
 pub use model::{StreetClass, Streets, Way};
 
@@ -397,5 +398,54 @@ impl StreetNetwork {
             .collect();
         points.push(StreetPoint { lat: to.lat, lon: to.lon });
         Some((points, best_cost))
+    }
+
+    /// Street meters from `from` to every node within `limit_m`, into
+    /// `dist` (one slot per node, infinite where unreached). The nodes
+    /// it sets are appended to `touched`, so a caller searching from
+    /// many positions resets only those. Travel honors one-way.
+    pub(crate) fn reach(&self, from: StreetPosition, limit_m: f64, dist: &mut [f64], touched: &mut Vec<u32>) {
+        let seg = from.seg as usize;
+        let len = self.seg_len[seg];
+        let mut heap: BinaryHeap<std::cmp::Reverse<(u64, u32)>> = BinaryHeap::new();
+        let mut seed = |node: u32, cost: f64, dist: &mut [f64], heap: &mut BinaryHeap<_>| {
+            if cost <= limit_m && cost < dist[node as usize] {
+                if dist[node as usize].is_infinite() {
+                    touched.push(node);
+                }
+                dist[node as usize] = cost;
+                heap.push(std::cmp::Reverse((cost.to_bits(), node)));
+            }
+        };
+        seed(self.seg_node[2 * seg + 1], (1.0 - from.t) * len, dist, &mut heap);
+        if !self.seg_oneway[seg] {
+            seed(self.seg_node[2 * seg], from.t * len, dist, &mut heap);
+        }
+        while let Some(std::cmp::Reverse((bits, node))) = heap.pop() {
+            let d = f64::from_bits(bits);
+            if d > dist[node as usize] {
+                continue;
+            }
+            for e in self.adj_offset[node as usize]..self.adj_offset[node as usize + 1] {
+                let next = self.adj_node[e as usize];
+                seed(next, d + self.seg_len[self.adj_seg[e as usize] as usize], dist, &mut heap);
+            }
+        }
+    }
+
+    /// Street meters from `from` to the position `to`, over the node
+    /// distances [`reach`](Self::reach) left from `from` — infinite
+    /// when `to` is out of reach.
+    pub(crate) fn meters_to(&self, from: StreetPosition, dist: &[f64], to: StreetPosition) -> f64 {
+        let seg = to.seg as usize;
+        let len = self.seg_len[seg];
+        let mut best = dist[self.seg_node[2 * seg] as usize] + to.t * len;
+        if !self.seg_oneway[seg] {
+            best = best.min(dist[self.seg_node[2 * seg + 1] as usize] + (1.0 - to.t) * len);
+        }
+        if from.seg == to.seg && (!self.seg_oneway[seg] || to.t >= from.t) {
+            best = best.min((to.t - from.t).abs() * len);
+        }
+        best
     }
 }

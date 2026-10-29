@@ -287,6 +287,19 @@ test: caps
       --op '{"op":"snap","streets_hash":"$2.streets_hash","lat":45.508,"lon":-73.508}' \
       --op '{"op":"route","streets_hash":"$2.streets_hash","from":"$3.position","to":"$4.position"}' \
       | grep '"lat":45.504,"lon":-73.508' > /dev/null
+    # The walk gate: a plan's transfers along the streets, composed
+    # by documents across two capabilities — streets mints the walk
+    # table from the walking fixture (a residential street through
+    # the station's bays; a motorway no rider walks) and the network,
+    # the router registers it and walks bay A to bay B on it (61 s
+    # along Station Rd, before the day's first bus).
+    node tools/caps-run.mjs streets --load web/e2e/fixtures/walk-streets.geojson \
+      --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"walks","streets_hash":"$load.streets_hash","network_hash":"$load_network.network_hash"}' \
+      --cap router --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"load_walks","walks":"$walks.walks"}' \
+      --op '{"op":"plan","network_hash":"$load_network.network_hash","from":"SA","to":"SB","date":"2026-10-23","depart_secs":18000,"max_legs":2,"walks_hash":"$load_walks.walks_hash"}' \
+      | grep '"arrival_secs":18061' > /dev/null
     # The sync capability's gate: the protocol's one step — a draft
     # client against an empty server converges to the submitted
     # document (rev bumped, host clock stamped).

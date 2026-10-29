@@ -25,8 +25,10 @@ use chrono::NaiveDate;
 
 use transit_live::LiveDay;
 use transit_network::{MaterializedTrip, Network};
+use transit_streets::walking::WalkTable;
 
-/// Default footpath radius in meters.
+/// The straight-line footpath radius in meters — the transfers of a
+/// network with no walk table ([`RouterNetwork::with_walks`]; D-32).
 pub const WALK_RADIUS_M: f64 = 300.0;
 /// Average walking speed (m/s) used to turn distances into durations.
 pub const WALK_SPEED_MPS: f64 = 1.3;
@@ -188,6 +190,22 @@ pub struct RouterNetwork {
 }
 
 impl RouterNetwork {
+    /// The network with its transfers walking the streets: every
+    /// footpath is the walk table's (`transit_streets::walking` — the
+    /// stops' walks along the streets), the straight-line ones are
+    /// dropped, and a walk naming a stop the network lacks is ignored.
+    pub fn with_walks(mut self, walks: &WalkTable) -> RouterNetwork {
+        for stop in &mut self.stops {
+            stop.footpaths.clear();
+        }
+        for walk in &walks.walks {
+            if let (Some(from), Some(to)) = (self.stop_index(&walk.from), self.stop_index(&walk.to)) {
+                self.stops[from as usize].footpaths.push(Footpath { to, walk_secs: walk.walk_secs });
+            }
+        }
+        self
+    }
+
     pub fn stop_index(&self, stop_id: &str) -> Option<u32> {
         self.stop_index.get(stop_id).copied()
     }
@@ -326,8 +344,9 @@ impl RouterNetwork {
             }
         }
 
-        // Footpaths: stop pairs within WALK_RADIUS_M. A simple uniform
-        // grid keeps this O(n) instead of O(n^2).
+        // Footpaths: stop pairs within WALK_RADIUS_M in a straight
+        // line, until a walk table replaces them (`with_walks`). A
+        // simple uniform grid keeps this O(n) instead of O(n^2).
         let footpaths = build_footpaths(&coords);
         for (i, edges) in footpaths.into_iter().enumerate() {
             stops[i].footpaths = edges;

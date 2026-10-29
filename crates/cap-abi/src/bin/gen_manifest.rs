@@ -71,18 +71,19 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "router",
         file: "cap_router.wasm",
-        ops: &["load_network", "load_edits", "load_live", "plan", "plan_arrive_by", "plan_compare", "itinerary_paths"],
+        ops: &["load_network", "load_edits", "load_live", "load_walks", "plan", "plan_arrive_by", "plan_compare", "itinerary_paths"],
         consumes: &[("network", "network")],
-        speaks: &[("network", &[1]), ("live", &[1])],
+        speaks: &[("network", &[1]), ("live", &[1]), ("walks", &[1])],
         migrates: &[],
         purpose: "Trip planning (RAPTOR) — how do I get from here to there — over the NETWORK document and the effective day (the model's materialized trips, patched with the edits in force — the same transit-dispatch composition every day view starts from), at the live document's predicted times when one is named. Its facets: leaving at a time (earliest arrival), arriving by a time (the latest departure; with no deadline, the last bus home), and the diversion delta (the unpatched day, one materialization apart, with the rider's notice). Assemble for users who need directions, not just departure times. Documents are hash-addressed; writes nothing.",
         op_docs: &[
             ("load_network", "Register the network document under its content hash (the same identity the network capability's import produces and every day view consumes; idempotent). Kernel bulk op 256 takes the bare document's JSON bytes on transit_invoke_bytes — the same answer, no request envelope; hosts send real-size networks this way."),
             ("load_edits", "Register the operator edit document against a loaded network, validated per record against it; the answer carries the reports and the document's hash. Wholesale replacement, like the host-owned store."),
             ("load_live", "Register a LIVE document (the rt capability's live answer) under its canonical content hash — the same identity rt answered; assert equality at the host. Plans name it by live_hash."),
-            ("plan", "Earliest-arrival itinerary from stop to stop at a departure time over the materialized day (edits applied when edits_hash names a registered document; each trip instance at its PREDICTED times where the live document named by live_hash states them, schedule elsewhere); null itinerary = unreachable within max_legs. The legs speak model vocabulary: the trip instance is addressed (trip, start_secs); a transit leg carries the route's short label (route_name) and long name (route_long_name, null when it has none), the headsign the bus shows at the boarding visit (the visit's own, else the trip's, else the final stop's place), and board_delay_secs / alight_delay_secs — how far a predicted time moved from the day's own (null = no prediction, the day's time)."),
-            ("plan_arrive_by", "Arrive-by: the LATEST departure from `from` that reaches `to` by arrive_by_secs within max_legs, over the same day as plan (edits_hash, live_hash). With no arrive_by_secs, the latest departure that reaches `to` at all on the service day — the last bus home (times past 86400 are after-midnight trips of the same day). The answer carries the deadline it answered (arrive_by_secs: the request's, else the day's last arrival) and the itinerary — the earliest-arrival plan leaving at that latest departure (its depart_secs) — or null when nothing arrives by the deadline."),
-            ("plan_compare", "The diversion delta: the same plan over the patched day (active) and the unpatched materialization (baseline, null when no edit is in force on the date or no edits_hash is given), both at the live document's predictions when live_hash is given, with the rider's notice whenever the diversion changes the trip — {kind: unreachable (no active trip; the baseline has one) | no_trip (none within max_legs in either world) | later (the active trip arrives later: delay_secs, minutes_lost rounded up) | diverted (it rides a trip whose patched stop times differ from its unpatched instance), baseline_arrival_secs, routes and skipped_stops of the diverted trips the plans ride, text} — null when nothing changed. One op whether or not edits exist."),
+            ("load_walks", "Register a WALK TABLE (the streets capability's walks answer: every walk between the network's stops along the streets) under its canonical content hash — the same identity streets answered; assert equality at the host. A plan naming it by walks_hash walks its transfers along the streets: its footpaths are the table's walks and nothing else. A table derived for another network is refused. Plans with no walks_hash walk straight lines (stops within 300 m, at 1.3 m/s)."),
+            ("plan", "Earliest-arrival itinerary from stop to stop at a departure time over the materialized day (edits applied when edits_hash names a registered document; each trip instance at its PREDICTED times where the live document named by live_hash states them, schedule elsewhere; transfers along the streets when walks_hash names a registered walk table, straight lines otherwise); null itinerary = unreachable within max_legs. The legs speak model vocabulary: the trip instance is addressed (trip, start_secs); a transit leg carries the route's short label (route_name) and long name (route_long_name, null when it has none), the headsign the bus shows at the boarding visit (the visit's own, else the trip's, else the final stop's place), and board_delay_secs / alight_delay_secs — how far a predicted time moved from the day's own (null = no prediction, the day's time)."),
+            ("plan_arrive_by", "Arrive-by: the LATEST departure from `from` that reaches `to` by arrive_by_secs within max_legs, over the same day as plan (edits_hash, live_hash, walks_hash). With no arrive_by_secs, the latest departure that reaches `to` at all on the service day — the last bus home (times past 86400 are after-midnight trips of the same day). The answer carries the deadline it answered (arrive_by_secs: the request's, else the day's last arrival) and the itinerary — the earliest-arrival plan leaving at that latest departure (its depart_secs) — or null when nothing arrives by the deadline."),
+            ("plan_compare", "The diversion delta: the same plan over the patched day (active) and the unpatched materialization (baseline, null when no edit is in force on the date or no edits_hash is given), both at the live document's predictions when live_hash is given and walking the walk table named by walks_hash, with the rider's notice whenever the diversion changes the trip — {kind: unreachable (no active trip; the baseline has one) | no_trip (none within max_legs in either world) | later (the active trip arrives later: delay_secs, minutes_lost rounded up) | diverted (it rides a trip whose patched stop times differ from its unpatched instance), baseline_arrival_secs, routes and skipped_stops of the diverted trips the plans ride, text} — null when nothing changed. One op whether or not edits exist."),
             ("itinerary_paths", "Where an itinerary runs, one path per leg ({kind: transit | walk, path: [{lat, lon}]}) over the same effective day it was planned on (pass the same edits_hash): a transit leg's RIDDEN segment — its trip's authored alignment sliced between the board and alight stops while the trip follows its pattern, its patched stops when diverted, a straight line as the last resort — and a walk through the stops it passes. Send the itinerary plan answered. The map draws the paths; it computes none."),
         ],
     },
@@ -242,17 +243,20 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "streets",
         file: "cap_streets.wasm",
-        ops: &["import", "load_streets", "snap", "route"],
+        ops: &["import", "load_streets", "load_network", "walks", "snap", "route"],
         // The streets document is the HOST's (read from a street
         // layer by import, answered with its hash); every query
-        // addresses that hash.
-        consumes: &[],
-        speaks: &[("streets", &[1])],
+        // addresses that hash. The walk table reads the network's
+        // stops.
+        consumes: &[("network", "network")],
+        speaks: &[("streets", &[1]), ("network", &[1]), ("walks", &[1])],
         migrates: &[],
-        purpose: "Where along the streets? Snap a point to the nearest street and route between two positions along the street graph, so a traced detour (or a pattern drawn the same way) is street geometry, never freehand chords. The streets are a document: import reads a street layer (an agency GIS export, TIGER, OSM — GeoJSON lines) into the canonical streets document, whose hash is the streets' own, not the file's. The domain code lives in the shared transit-streets library; the module writes nothing.",
+        purpose: "Where along the streets? Snap a point to the nearest street and route between two positions along the street graph, so a traced detour (or a pattern drawn the same way) is street geometry, never freehand chords — and how long a rider walks between a network's stops along them (the walk table the router plans transfers over). The streets are a document: import reads a street layer (an agency GIS export, TIGER, OSM — GeoJSON lines) into the canonical streets document, whose hash is the streets' own, not the file's. The domain code lives in the shared transit-streets library; the module writes nothing.",
         op_docs: &[
             ("import", "Read a street layer — a GeoJSON FeatureCollection or Feature of LineString/MultiLineString geometries — into the canonical streets document and register it: the answer carries the document (the host keeps it), its streets_hash, and its ways, segments and nodes. Lines that are not streets (a CFCC railroad or water line, an MTFCC outside S1, an OSM railway or waterway) are left out; every street gets a class from its CFCC, MTFCC or OSM highway (unknown when none says), a name (FULLNAME, name, NAME), and its one-way (TIGER OneWay, OSM oneway — a one-way runs first point to last). The same streets in another feature order, digitized the other way, or with other properties are the same document and hash. Errors when the layer holds no street. Bulk-bytes op 0; pass the raw GeoJSON to transit_invoke_bytes."),
             ("load_streets", "Register a streets document the host holds (an import's answer, stored) under its hash — the same hash its import answered. Refused unless canonical (ways of two or more points, sorted, none twice, two-ways in canonical direction). Bulk-bytes op 1 takes the bare document's JSON bytes."),
+            ("load_network", "Register the network document under its content hash (the same identity every model-side capability answers); the walk table reads its stops. Kernel bulk op 256 takes the bare document's JSON bytes."),
+            ("walks", "The WALK TABLE: every walk between the network's stops along the streets, within max_walk_secs (default 600 — ten minutes) at speed_mps (default 1.3), as a document {streets_hash, network_hash, speed_mps, max_walk_secs, walks: [{from, to, walk_secs}]} in (from, to) order, symmetric — and its walks_hash (the router's load_walks answers the same). A rider walks every street class but motorway, ramp and unknown, both ways along one-way streets; a walk is each stop's walk to its nearest walkable street, the street distance, and the walk on to the other stop, rounded up to the second. A stop with no walkable street nearby walks nowhere. Which streets the document holds is the host's choice of source (walking wants one with real classes and footways)."),
             ("snap", "The nearest street position to (lat, lon) — the projected point plus its graph address (segment, parameter along it), and how far the query point was. Segments are numbered through the document, way by way, so an address holds for one streets hash: a trace commits the geometry, never the address. Null when no street is nearby."),
             ("route", "The street geometry between two snapped positions: the shortest path along the graph, as points ending exactly at the target and starting AFTER the origin (traces chain legs — each leg's start is the previous leg's committed end; prepend `from` for a standalone trace), plus length_m: the path's length along the graph from the origin itself — \"how far by road?\" answered by the router, never a host-side sum. Empty points and null length when the positions sit on disconnected parts of the network — the caller falls back to a straight line."),
         ],
@@ -670,6 +674,23 @@ fn example_for(
             (
                 json!({ "op": "load_live", "live": live }),
                 json!({ "ok": { "op": "load_live", "live_hash": live_hash } }),
+            )
+        }
+        ("router", "load_walks") => {
+            // A two-walk table over the fixture's station bays.
+            let net = net?;
+            let walk = |from: &str, to: &str| transit_streets::walking::Walk { from: from.into(), to: to.into(), walk_secs: 95 };
+            let table = transit_streets::walking::WalkTable {
+                streets_hash: "sha256:…".into(),
+                network_hash: net.network_hash.clone(),
+                speed_mps: transit_streets::walking::WALK_SPEED_MPS,
+                max_walk_secs: transit_streets::walking::MAX_WALK_SECS,
+                walks: vec![walk("SA", "SB"), walk("SB", "SA")],
+            };
+            let walks_hash = cap_abi::canonical_hash(&table).ok()?;
+            (
+                json!({ "op": "load_walks", "walks": table }),
+                json!({ "ok": { "op": "load_walks", "walks_hash": walks_hash } }),
             )
         }
         ("router", "plan") => {
@@ -1357,6 +1378,33 @@ fn example_for(
             (
                 json!({ "op": "route_stop_sequence", "network_hash": ctx.network_hash, "route_id": "10" }),
                 json!({ "ok": { "op": "route_stop_sequence", "patterns": patterns } }),
+            )
+        }
+        ("streets", "walks") => {
+            // The walking fixture: a residential street through the
+            // station's bays, a motorway across it no rider walks.
+            let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/e2e/fixtures/walk-streets.geojson")).ok()?;
+            let streets = transit_streets::geojson::import(&bytes).ok()?;
+            let streets_hash = cap_abi::canonical_hash(&streets).ok()?;
+            let net = net?;
+            let stops: Vec<(String, f64, f64)> =
+                net.derived_network().stops.iter().map(|(id, s)| (id.clone(), s.lat, s.lon)).collect();
+            let table = transit_streets::walking::WalkTable {
+                streets_hash: streets_hash.clone(),
+                network_hash: net.network_hash.clone(),
+                speed_mps: transit_streets::walking::WALK_SPEED_MPS,
+                max_walk_secs: transit_streets::walking::MAX_WALK_SECS,
+                walks: transit_streets::walking::walks(
+                    &streets,
+                    &stops,
+                    transit_streets::walking::WALK_SPEED_MPS,
+                    transit_streets::walking::MAX_WALK_SECS,
+                ),
+            };
+            let walks_hash = cap_abi::canonical_hash(&table).ok()?;
+            (
+                json!({ "op": "walks", "streets_hash": streets_hash, "network_hash": net.network_hash }),
+                json!({ "ok": { "op": "walks", "walks_hash": walks_hash, "walks": table } }),
             )
         }
         ("streets", "load_streets") => {

@@ -226,3 +226,50 @@ fn what_is_not_canonical_or_not_streets_is_an_error() {
     let unknown = dispatch_json(&json!({ "op": "snap", "streets_hash": "sha256:missing", "lat": 0, "lon": 0 }).to_string());
     assert!(err(unknown).contains("unknown street network"));
 }
+
+// ---------------------------------------------------------------------
+// The walk table over a registered network
+// ---------------------------------------------------------------------
+
+const NETWORK_LOAD: &str = include_str!("../../../web/public/caps/sample-network-load.json");
+
+fn load_network() -> String {
+    let network: Value = serde_json::from_str::<Value>(NETWORK_LOAD).unwrap()["network"].clone();
+    let by_bytes = ok(dispatch_bytes(cap_abi::OP_LOAD_NETWORK, network.to_string().as_bytes()));
+    let by_json = ok(dispatch_json(&json!({ "op": "load_network", "network": network }).to_string()));
+    assert_eq!(by_bytes["network_hash"], by_json["network_hash"], "either lane, one identity");
+    by_bytes["network_hash"].as_str().unwrap().to_string()
+}
+
+#[test]
+fn the_walk_table_names_what_it_walks_and_is_its_hash() {
+    let network_hash = load_network();
+    let streets_hash = ok(dispatch_bytes(OP_IMPORT, FIXTURE.as_bytes()))["streets_hash"].as_str().unwrap().to_string();
+    let answer = ok(dispatch_json(
+        &json!({ "op": "walks", "streets_hash": streets_hash, "network_hash": network_hash }).to_string(),
+    ));
+    let table = &answer["walks"];
+    assert_eq!(table["streets_hash"], streets_hash.as_str());
+    assert_eq!(table["network_hash"], network_hash.as_str());
+    assert_eq!(table["speed_mps"], 1.3, "the default speed");
+    assert_eq!(table["max_walk_secs"], 600, "the default limit: ten minutes");
+    let typed: transit_streets::walking::WalkTable = serde_json::from_value(table.clone()).unwrap();
+    assert_eq!(answer["walks_hash"], cap_abi::canonical_hash(&typed).unwrap().as_str());
+
+    let slower = ok(dispatch_json(
+        &json!({ "op": "walks", "streets_hash": streets_hash, "network_hash": network_hash,
+                 "speed_mps": 0.9, "max_walk_secs": 900 }).to_string(),
+    ));
+    assert_eq!(slower["walks"]["speed_mps"], 0.9);
+    assert_ne!(slower["walks_hash"], answer["walks_hash"], "the parameters are part of the document");
+
+    let walks = |extra: Value| {
+        let mut req = json!({ "op": "walks", "streets_hash": streets_hash, "network_hash": network_hash });
+        req.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        err(dispatch_json(&req.to_string()))
+    };
+    assert!(walks(json!({ "speed_mps": 0.0 })).contains("walking speed"));
+    assert!(walks(json!({ "max_walk_secs": 7200 })).contains("at most an hour"));
+    assert!(walks(json!({ "network_hash": "sha256:missing" })).contains("load_network first"));
+    assert!(walks(json!({ "streets_hash": "sha256:missing" })).contains("unknown street network"));
+}

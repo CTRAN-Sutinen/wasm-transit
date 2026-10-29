@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 2921420b7ba25c5ea46e41dd9dbecd136de99fa44e447743c6596b059172f076 # shrinks to (doc, stops, speed, max) = (Streets { ways: [Way { points: [[45601000, -122599000], [45601000, -122597000]], oneway: false, class: Secondary, name: None }, Way { points: [[45602000, -122600000], [45601000, -122598000], [45601000, -122600000]], oneway: true, class: Path, name: None }] }, [("s0", 45.6, -122.59806925112358), ("s1", 45.6, -122.6)], 0.8, 467)

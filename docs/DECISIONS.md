@@ -1,6 +1,7 @@
-# Decisions — open
+# Decisions
 
-This is the only record of the questions waiting on the user. When
+This is the durable record of the questions put to the user and
+their answers. When
 an agent hits a decision that the user's intent, the GTFS spec,
 and the architecture laws leave open, the agent writes it down here
 and does not build on an answer it picked (AGENTS.md, "Clarify,
@@ -13,7 +14,8 @@ the rest of the work can go ahead while the decision is reviewed.
 
   ```
   ### D-N — the question
-  State: Unanswered | Encoded provisionally
+  State: Unanswered | Encoded provisionally | Decided
+  Answer: (Decided only) the user's answer, dated, in their words.
   Context: what the intent, the spec, and the code say, briefly.
   Options: each answer and what it costs; mark the one the code
     encodes (if any).
@@ -28,11 +30,15 @@ the rest of the work can go ahead while the decision is reviewed.
 - **Blocked work names its decision.** A unit or finding that
   waits on a decision says `Blocked: D-N`. Work that does not name
   one is free to start.
-- **A decided entry is deleted.** In the same change, the answer
-  goes into the law that pins it and the doc that owns its topic
+- **A decided entry stays — decisions are a durable record, never
+  deleted.** Its state becomes *Decided* and its Answer line records
+  what the user said and when. In the same change, the answer goes
+  into the law that pins it and the doc that owns its topic
   (`docs/ARCHITECTURE.md`, `docs/units/`, `docs/QA-FINDINGS.md`),
-  and the `Blocked: D-N` lines are removed. Git is the archive.
-- IDs are never reused; the next new decision is **D-32**.
+  and the `Blocked: D-N` lines are removed. A later answer that
+  reverses one is a new entry naming the entry it replaces; the old
+  entry's state says so.
+- IDs are never reused; the next new decision is **D-33**.
 
 ## Summary
 
@@ -59,13 +65,14 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-22 | How is a route's rider variant named and ordered? | encoded | nothing |
 | D-23 | In what order does a stop display list its groups? | encoded | nothing |
 | D-24 | How does a departure's countdown round? | encoded | nothing |
-| D-25 | Which streets are the source of truth? | unanswered | streets-model walk table |
-| D-26 | Which streets can each mode use? | unanswered | streets-model walk table, drawing on streets |
+| D-25 | Which streets are the source of truth? | decided | nothing |
+| D-26 | Which streets can each mode use? | decided (walking); unanswered (a bus) | drawing on streets |
 | D-27 | What does place search find? | unanswered | geocoding (queued) |
 | D-28 | Where do stop and address results meet? | unanswered | geocoding (queued) |
 | D-29 | What area does a geography release cover? | unanswered | streets-model geography release |
 | D-30 | What does the streets import call a street, and what class is it? | encoded | nothing |
 | D-31 | Can a plan add a street the data does not have? | unanswered | streets-model planned streets |
+| D-32 | How does the router walk with no walk table? | encoded | nothing |
 
 ## The trip model
 
@@ -400,7 +407,14 @@ Blocks: question 6 of `docs/units/ui-disruptions.md`.
 ## Geography
 
 ### D-25 — Which streets are the source of truth?
-State: Unanswered.
+State: Decided.
+Answer: 2026-10-29 — "it should use the streets document model you
+just built. that model can get data from multiple sources." Walking
+and every other street op read a streets document by hash; which
+source fills it is the host's choice. On C-TRAN's Trapeze roads not
+carrying walking: "that is something to be solved in the data, not
+in the model or the logic … a problem for me/the user to solve" —
+walking wants an OSM-sourced document (QAF-85).
 Context: the streets document (`docs/units/streets-model.md`) is
 imported from a street layer; the import reads the agency's
 Trapeze roads export, TIGER, and OSM GeoJSON alike. C-TRAN's
@@ -417,23 +431,32 @@ Options:
 - Two documents: the Trapeze roads for driving (drawing, detours,
   deadheads) and OSM for walking (access, transfers, walksheds).
   Every op that takes streets then names which.
-Blocks: the walk table in `docs/units/streets-model.md`.
+- **Decided:** the model takes any source; the source is data.
+Blocks: nothing.
 
 ### D-26 — Which streets can each mode use?
-State: Unanswered.
-Context: the import classifies every street (D-30), and the graph
-today routes on all of them. A rider cannot walk a motorway or a
-ramp; a bus cannot be drawn down a path, stairs, or a 4WD track,
-and a planner may not want one drawn down an alley or a private
-drive. C-TRAN's data holds 1,701 streets with no class (626 with a
-null CFCC, among them SE Powell Blvd, and 1,075 unnamed `X10`
-features), so a rule must also say what an unknown class allows.
+State: Decided for walking; unanswered for a bus.
+Answer: 2026-10-29 — walking: "Also refuse unknown" (a rider walks
+every class but motorway, ramp, and unknown — strict); a rider walks
+a one-way street both ways ("agreed"); a walk is at most ten minutes
+by default, at 1.3 m/s, both op parameters. Pins:
+`crates/transit-streets/tests/walk_law_test.rs`.
+Context: the import classifies every street (D-30). A rider cannot
+walk a motorway or a ramp; a bus cannot be drawn down a path,
+stairs, or a 4WD track, and a planner may not want one drawn down an
+alley or a private drive. C-TRAN's data holds 1,701 streets with no
+class (626 with a null CFCC, among them SE Powell Blvd, and 1,075
+unnamed `X10` features), so a rule must also say what an unknown
+class allows.
 Options: a mode profile per class, owned by the op as a parameter
 with a default (a walking profile, a bus profile). The defaults
 are the decision: which classes each mode may use, and whether an
 unknown class is allowed (permissive) or refused (strict).
-Blocks: the walk table and drawing on streets in
-`docs/units/streets-model.md`.
+- **Decided (walking):** strict — every class but motorway, ramp,
+  and unknown; one-way does not bind a rider.
+- Open (a bus): which classes a bus may be drawn on, and whether an
+  unknown class is allowed.
+Blocks: drawing on streets in `docs/units/streets-model.md`.
 
 ### D-27 — What does place search find?
 State: Unanswered.
@@ -483,7 +506,7 @@ Trapeze roads hold 1,673 + 1,388 railroads (CFCC `B10`, `B20`) and
 1,160 + 1,898 + 81 water lines (`H10`, `H20`, `H30`: shorelines,
 the Washougal River). Before the streets document, every one of
 them was welded into the routing graph. The import must say which
-lines are streets, and give each a class the mode profiles (D-26)
+lines are streets, and give each a class the walking profile and the bus profile (D-26)
 can read. The class field is read from the layer's own scheme:
 TIGER's CFCC (Trapeze and older TIGER), TIGER's MTFCC, OSM's
 `highway`.
@@ -497,7 +520,7 @@ Options:
   field, or with a road class the import does not know (CFCC `X10`
   "not yet classified", a null CFCC, CFCC `A65` ferries, MTFCC
   `S1750`, OSM `construction` and `proposed`), is a street of
-  class `unknown`, and the mode profiles (D-26) decide what it
+  class `unknown`, and the walking and bus profiles (D-26) decide what it
   allows. The class field is read in the order CFCC, MTFCC,
   `highway`; the name in the order `FULLNAME`, `name`, `NAME` (the
   Trapeze `NAME` is the bare street name, "21ST" for NE 21st
@@ -528,6 +551,22 @@ Options:
   streets document's ways then need identities that survive a
   re-import.
 Blocks: planned streets in `docs/units/streets-model.md`.
+
+### D-32 — How does the router walk with no walk table?
+State: Encoded provisionally.
+Context: the router's transfers walk the streets when a plan names
+a walk table (`walks_hash`, minted by cap-streets `walks` from a
+streets document and the network). A plan with none still needs
+transfers: the fixture feeds, a host with no streets, a plan
+document drawn where no streets are loaded.
+Options:
+- **Encoded:** with no walk table the router keeps its straight-line
+  transfers (every stop pair within 300 m, at 1.3 m/s) — two answers
+  to "how long is this walk" on the bus, one of them crow-flies.
+- Require a walk table on every plan: one answer, and every host
+  that plans must assemble cap-streets and a streets document.
+- No transfers on foot without a walk table.
+Blocks: nothing. Pins: `crates/transit-router/tests/walks_law_test.rs`.
 
 ## Agency data
 

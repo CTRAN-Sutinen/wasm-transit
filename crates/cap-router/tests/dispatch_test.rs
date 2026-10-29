@@ -20,7 +20,10 @@
 //! 7. arrive-by answers the latest departure that arrives by the
 //!    deadline — the service day's end when none is given;
 //! 8. a leg names its route (short and long) and the sign at the
-//!    boarding visit.
+//!    boarding visit;
+//! 9. with a walk table, a plan's transfers are its walks (the graph
+//!    keyed by the walks hash too); a table derived for another
+//!    network is refused.
 
 use transit_network::Network;
 use transit_sync::{EditRecord, EditStatus};
@@ -105,6 +108,7 @@ fn plan_answers_over_the_materialized_day() {
         depart_secs: 7 * 3600,
         max_legs: 4,
         live_hash: None,
+        walks_hash: None,
     })
     .expect("plan dispatch");
     let cap_router::Response::Plan { itinerary: Some(it) } = plan else {
@@ -136,6 +140,7 @@ fn plan_is_none_on_an_unreachable_pair_or_day() {
         depart_secs: 10 * 3600,
         max_legs: 4,
         live_hash: None,
+        walks_hash: None,
     })
     .unwrap();
     let cap_router::Response::Plan { itinerary } = late else { panic!("plan") };
@@ -151,6 +156,7 @@ fn plan_is_none_on_an_unreachable_pair_or_day() {
         depart_secs: 0,
         max_legs: 4,
         live_hash: None,
+        walks_hash: None,
     })
     .expect_err("unknown hash");
     assert!(err.contains("unknown network"));
@@ -170,6 +176,7 @@ fn compare_answers_the_diversion_delta() {
         depart_secs: 7 * 3600,
         max_legs: 4,
         live_hash: None,
+        walks_hash: None,
     })
     .expect("compare dispatch");
     let cap_router::Response::PlanCompare { active, baseline, notice } = cmp else {
@@ -198,6 +205,7 @@ fn compare_answers_the_diversion_delta() {
         depart_secs: 7 * 3600,
         max_legs: 4,
         live_hash: None,
+        walks_hash: None,
     })
     .expect("compare dispatch");
     let cap_router::Response::PlanCompare { active, baseline, .. } = plain else {
@@ -216,6 +224,7 @@ fn compare_answers_the_diversion_delta() {
         depart_secs: 40 * 3600,
         max_legs: 4,
         live_hash: None,
+        walks_hash: None,
     })
     .expect("compare dispatch");
     let cap_router::Response::PlanCompare { active: None, notice: Some(notice), .. } = late else {
@@ -261,6 +270,7 @@ fn an_itinerary_draws_its_ridden_segments() {
         depart_secs: 7 * 3600,
         max_legs: 4,
         live_hash: None,
+        walks_hash: None,
     })
     .unwrap() else {
         panic!("plan")
@@ -334,6 +344,7 @@ fn plan_a_b(network_hash: &str, live_hash: Option<String>) -> transit_router::It
         depart_secs: 7 * 3600,
         max_legs: 4,
         live_hash,
+        walks_hash: None,
     })
     .expect("plan")
     {
@@ -384,6 +395,7 @@ fn a_live_plan_rides_the_predicted_times() {
         depart_secs: 7 * 3600,
         max_legs: 4,
         live_hash: Some("sha256:missing".into()),
+        walks_hash: None,
     })
     .expect_err("unknown live hash");
     assert!(err.contains("unknown live document"), "{err}");
@@ -404,6 +416,7 @@ fn a_compared_plan_reads_live_in_both_worlds() {
             depart_secs: 7 * 3600,
             max_legs: 4,
             live_hash: Some(live),
+            walks_hash: None,
         },
     )
     .unwrap() else {
@@ -432,6 +445,7 @@ fn arrive_by_answers_the_latest_departure() {
         arrive_by_secs: by,
         max_legs: 4,
         live_hash: None,
+        walks_hash: None,
     })
     .expect("plan_arrive_by")
     {
@@ -491,4 +505,77 @@ fn the_json_seam_speaks_arrive_by_and_live() {
     let outcome: serde_json::Value =
         serde_json::from_str(&cap_router::dispatch_json(&request.to_string())).unwrap();
     assert_eq!(outcome["ok"]["arrive_by_secs"], 8 * 3600 + 50 * 60, "{outcome}");
+}
+
+fn walk_table(network_hash: &str, walk_secs: Option<u32>) -> transit_streets::walking::WalkTable {
+    let walks = walk_secs
+        .map(|secs| {
+            vec![
+                transit_streets::walking::Walk { from: "SA".into(), to: "SB".into(), walk_secs: secs },
+                transit_streets::walking::Walk { from: "SB".into(), to: "SA".into(), walk_secs: secs },
+            ]
+        })
+        .unwrap_or_default();
+    transit_streets::walking::WalkTable {
+        streets_hash: "sha256:streets".into(),
+        network_hash: network_hash.into(),
+        speed_mps: 1.3,
+        max_walk_secs: 600,
+        walks,
+    }
+}
+
+fn plan_bays(network_hash: &str, walks_hash: Option<String>) -> Result<Option<transit_router::Itinerary>, String> {
+    // The station's two bays, ~80 m apart, before the day's first
+    // trip: a walk, if one joins them, beats waiting for a bus.
+    cap_router::dispatch(cap_router::Request::Plan {
+        network_hash: network_hash.into(),
+        edits_hash: None,
+        from: "SA".into(),
+        to: "SB".into(),
+        date: DATE.into(),
+        depart_secs: 5 * 3600,
+        max_legs: 2,
+        live_hash: None,
+        walks_hash,
+    })
+    .map(|r| match r {
+        cap_router::Response::Plan { itinerary } => itinerary,
+        _ => panic!("plan"),
+    })
+}
+
+fn load_walks(table: transit_streets::walking::WalkTable) -> String {
+    let want = cap_abi::canonical_hash(&table).unwrap();
+    match cap_router::dispatch(cap_router::Request::LoadWalks { walks: table }).unwrap() {
+        cap_router::Response::LoadWalks { walks_hash } => {
+            assert_eq!(walks_hash, want, "the walk table's identity is its canonical hash");
+            walks_hash
+        }
+        _ => panic!("load_walks"),
+    }
+}
+
+#[test]
+fn a_walk_table_is_the_plan_s_transfers() {
+    let hash = load_network();
+    let walked = |it: &transit_router::Itinerary| matches!(&it.legs[..], [transit_router::Leg::Walk { .. }]);
+    let straight = plan_bays(&hash, None).unwrap().expect("straight-line: the bays are a walk apart");
+    assert!(walked(&straight), "{:?}", straight.legs);
+
+    let none = load_walks(walk_table(&hash, None));
+    if let Some(it) = plan_bays(&hash, Some(none)).unwrap() {
+        assert!(!it.legs.iter().any(|l| matches!(l, transit_router::Leg::Walk { .. })), "the table joins the bays by no walk: {:?}", it.legs);
+    }
+
+    let five = load_walks(walk_table(&hash, Some(300)));
+    let it = plan_bays(&hash, Some(five)).unwrap().expect("the table's walk");
+    assert!(walked(&it), "{:?}", it.legs);
+    assert_eq!(it.arrival_secs, 5 * 3600 + 300);
+
+    let other = load_walks(walk_table("sha256:another-network", Some(300)));
+    let err = plan_bays(&hash, Some(other)).expect_err("another network's table");
+    assert!(err.contains("walks network"), "{err}");
+    let err = plan_bays(&hash, Some("sha256:missing".into())).expect_err("unknown table");
+    assert!(err.contains("load_walks first"), "{err}");
 }

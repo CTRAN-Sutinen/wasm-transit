@@ -9,6 +9,8 @@ license.workspace = true
 transit-network = { path = "../transit-network" }
 # The live document (read-only): predicted times per trip instance.
 transit-live = { path = "../transit-live" }
+# The walk table (read-only): street walks between the network's stops.
+transit-streets = { path = "../transit-streets" }
 chrono = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }

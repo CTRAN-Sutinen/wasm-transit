@@ -17,6 +17,7 @@ transit-network = { path = "../transit-network" }
 transit-sync = { path = "../transit-sync" }
 transit-dispatch = { path = "../transit-dispatch" }
 transit-router = { path = "../transit-router" }
+transit-streets = { path = "../transit-streets" }
 transit-live = { path = "../transit-live" }
 cap-abi = { path = "../cap-abi" }
 
