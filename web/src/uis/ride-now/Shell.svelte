@@ -14,7 +14,8 @@
   /// this file only places them and routes their events to the host.
   import {
     ride, loadFeedBytes, setLiveUrls, typed, clearFound, show, openStop, pickDeparture, directions, setEnd, swapEnds,
-    setWhen, toggleSaved, locate, nearPoint, showRoutes, filterRoutes, openRoute, openVehicle, setFollow, type Place,
+    setWhen, toggleSaved, locate, nearPoint, showRoutes, filterRoutes, openRoute, openVehicle, setFollow, directionsToSpot,
+    fromHere, chooseOnMap, type Place,
   } from "./host.svelte";
   import RideMap from "../../components/RideMap.svelte";
   import LiveFeeds from "../../components/LiveFeeds.svelte";
@@ -72,7 +73,8 @@
   }
 
   async function spotFromMap(lat: number, lon: number) {
-    sheetUp = true;
+    // A spot that cannot be an end leaves the map up to tap a stop.
+    if (!ride.picking || ride.walking) sheetUp = true;
     await nearPoint(lat, lon);
   }
 </script>
@@ -98,9 +100,16 @@
       {padding}
       onstop={stopFromMap}
       onpoint={spotFromMap}
-      onvehicle={(v) => { sheetUp = true; openVehicle(v); }}
+      onvehicle={(v) => { if (ride.picking) return; sheetUp = true; openVehicle(v); }}
     />
   </div>
+
+  {#if ride.picking}
+    <div class="pick-banner" data-testid="pick-banner">
+      Tap the map to set your {ride.picking === "from" ? "start" : "destination"}
+      <button onclick={() => { sheetUp = true; chooseOnMap(null); }}>Cancel</button>
+    </div>
+  {/if}
 
   <div class="corner">
     {#if alerts.length}
@@ -156,9 +165,14 @@
           <section class="group" data-testid="nearby">
             <div class="group-head">
               <h2>{ride.near && !ride.near.mine ? "Near this spot" : "Near you"}</h2>
-              <button class="link" onclick={locate} disabled={ride.locating}>
-                {ride.locating ? "Locating…" : ride.near?.mine ? "Update" : "Use my location"}
-              </button>
+              <span class="links">
+                {#if ride.walking && ride.near && !ride.near.mine}
+                  <button class="link" onclick={directionsToSpot} data-testid="directions-here">Directions here</button>
+                {/if}
+                <button class="link" onclick={locate} disabled={ride.locating}>
+                  {ride.locating ? "Locating…" : ride.near?.mine ? "Update" : "Use my location"}
+                </button>
+              </span>
             </div>
             {#if ride.nearby}
               {#each ride.nearby as p (p.id)}
@@ -166,6 +180,7 @@
                 <StopCard
                   name={p.name}
                   distance={p.distance_m ?? null}
+                  walk={p.walk_secs ?? null}
                   rows={b === undefined ? null : (b?.rows ?? [])}
                   pooled={b?.pooled ?? false}
                   routes={ride.routes}
@@ -236,6 +251,15 @@
           limit={FOUND}
           plan={ride.plan}
           routes={ride.routes}
+          here={ride.walking && !!ride.here}
+          onhere={fromHere}
+          picking={ride.picking}
+          spots={ride.walking}
+          onmap={(end) => {
+            // On a phone the sheet steps aside so the map can be tapped.
+            if (ride.picking !== end) sheetUp = false;
+            chooseOnMap(end);
+          }}
           off={ride.off.router}
           searchOff={ride.off.directory}
           ontype={typed}
@@ -277,6 +301,12 @@
   .app { position: relative; height: 100dvh; overflow: hidden; background: var(--hover); }
   .map { position: absolute; inset: 0; }
 
+  .pick-banner {
+    position: absolute; z-index: 3; top: 0.9rem; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 0.75rem;
+    background: var(--text); color: var(--surface); font-size: 0.85rem; font-weight: 600; padding: 0.45rem 0.6rem 0.45rem 0.9rem;
+    border-radius: 999px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.2); white-space: nowrap;
+  }
+  .pick-banner button { border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
   .corner { position: absolute; top: 0.9rem; right: 0.9rem; display: flex; gap: 0.5rem; align-items: flex-start; z-index: 3; }
   .alerts-btn {
     border: 0; cursor: pointer; font: inherit; font-size: 0.8rem; font-weight: 700; padding: 0.4rem 0.75rem; border-radius: 999px;
@@ -296,6 +326,7 @@
   .group { display: grid; gap: 0.5rem; }
   .group-head { display: flex; align-items: baseline; justify-content: space-between; }
   .group h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0; }
+  .links { display: flex; gap: 0.9rem; }
   .link { border: 0; background: none; color: var(--accent); font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; padding: 0; }
   .quiet { color: var(--muted); font-size: 0.88rem; margin: 0; line-height: 1.45; }
   .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }

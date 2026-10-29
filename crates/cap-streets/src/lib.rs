@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_network::Network;
-use transit_streets::walking::{PointWalk, WalkGraph, WalkTable, MAX_WALK_SECS, WALK_SPEED_MPS};
+use transit_streets::walking::{DirectWalk, PointWalk, WalkGraph, WalkTable, MAX_WALK_SECS, WALK_SPEED_MPS};
 use transit_streets::{StreetNetwork, StreetPoint, StreetPosition, Streets};
 
 /// The bulk-bytes op codes: 0 imports a street layer (GeoJSON), 1
@@ -120,14 +120,6 @@ pub enum Response {
     /// `length_m`: the path's length along the graph from `from` to
     /// `to` — null when no path exists.
     Route { points: Vec<StreetPoint>, length_m: Option<f64> },
-}
-
-/// The walk from a point straight to another, and its path.
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "cap_streets/")]
-pub struct DirectWalk {
-    pub walk_secs: u32,
-    pub path: Vec<StreetPoint>,
 }
 
 /// A registered streets document and the graphs built over it on

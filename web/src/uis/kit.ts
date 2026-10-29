@@ -7,9 +7,10 @@
 /// then boot), `Shell.svelte` (placement only), `host.svelte.ts` (the
 /// only file that calls the bus), and `<id>.html` at the web root.
 
-import { analysisModule } from "../capabilities.svelte";
+import { analysisModule, routerCap, streetsCap } from "../capabilities.svelte";
 import type { Boundary } from "../types/Boundary";
 import type { Network } from "../types/Network";
+import type { WalkTable } from "../types/WalkTable";
 
 /// Any assembled module (the resolver keeps the class private).
 export type CapModule = NonNullable<Awaited<ReturnType<typeof analysisModule>>>;
@@ -41,6 +42,41 @@ export async function servedNetwork(module: CapModule): Promise<{ network: Netwo
   }
   rememberHash(module, served.network, hash);
   return { network: served.network, boundary: served.boundary };
+}
+
+/// The hash a published document's ETag pins (`"<hash>"`, weakened or
+/// not by a proxy).
+function pinned(resp: Response): string | null {
+  return resp.headers.get("ETag")?.replace(/^W\//, "").replace(/"/g, "") || null;
+}
+
+/// The deployment's published streets: `GET /streets`, the server's
+/// import of its street layer (cap-streets, the same module) — its
+/// BYTES handed to `module` (cap-streets' `load_streets`): the module
+/// parses the document, the page never does. Refused unless the
+/// module answers the hash the server pins. Null when the server
+/// publishes no streets.
+export async function servedStreets(module: CapModule): Promise<string | null> {
+  const resp = await fetch("/streets").catch(() => null);
+  if (!resp?.ok) return null;
+  const bytes = new Uint8Array(await resp.arrayBuffer());
+  const hash = streetsCap(module).loadStreetsBytes(bytes);
+  const pin = pinned(resp);
+  if (hash !== pin) throw new Error(`the served streets register as ${hash}, the server pins ${pin}`);
+  return hash;
+}
+
+/// The deployment's walk table: `GET /walks`, derived on the server
+/// from its streets and network (cap-streets' `walks`), registered in
+/// `router` — refused unless it answers the hash the server pins.
+/// Null when the server publishes none.
+export async function servedWalks(router: CapModule): Promise<string | null> {
+  const resp = await fetch("/walks").catch(() => null);
+  if (!resp?.ok) return null;
+  const hash = routerCap(router).loadWalks((await resp.json()) as WalkTable);
+  const pin = pinned(resp);
+  if (hash !== pin) throw new Error(`the served walk table registers as ${hash}, the server pins ${pin}`);
+  return hash;
 }
 
 /// Record a document a module already registered (cap-author's

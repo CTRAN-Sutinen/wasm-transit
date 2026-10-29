@@ -122,7 +122,9 @@ transit-network The authored network model (planner authority):
                 route, pattern trips, service type, or block runs). The
                 planner's LISTS live here too (`listing.rs`): rows
                 of any kind narrowed by every filter term (id, name,
-                and a route's long name), and a route's composition
+                and a route's long name), the places near a point
+                (`stops_near`; `stops_near_walked` ranks them by the
+                point's walks), and a route's composition
                 (patterns, the stops they visit, pattern trips by
                 service type, patterns by direction, and each
                 direction's VARIANTS — the ways a rider rides it:
@@ -176,7 +178,15 @@ transit-router  RAPTOR planning over the network model's
                 Transfers are footpaths: straight lines (stop pairs
                 within 300 m at 1.3 m/s) until `with_walks` replaces
                 them with a walk table's walks — exactly the table's,
-                between the network's stops (D-32).
+                between the network's stops (D-32). A plan's legs
+                bound its rides, never its walks: the walk to the
+                first boarding and from the last alighting settle
+                before any round, so a one-leg plan walks to and
+                from its bus. `walk_path`
+                draws a walk leg: through its stops, and along a
+                place's walk path where it walks from or to a place
+                (a `PlaceWalk` carries the path `access` answered;
+                between two places, the direct walk's).
 transit-codec   The network codec, both directions, over the whole
                 GTFS Schedule spec: `Feed` (src/feed.rs) reads and
                 writes every spec file and column as the exact text
@@ -425,16 +435,20 @@ exports (no wasm-bindgen — do not reintroduce host glue).
 Go + wazero host: scaffolding only (HTTP, manifest, proxy). It must
 never make a domain decision; the host reads the feed's own
 feed_info.txt version field (one boundary CSV field — I/O, not
-domain). It instantiates two modules, both rebuilt by `just caps`
+domain). It instantiates three modules, all rebuilt by `just caps`
 into web/pkg/: cap-sync (the -wasm flag, cap_sync.wasm), the op
-behind POST /edits, held for the server's lifetime; and cap-network
+behind POST /edits, held for the server's lifetime; cap-network
 (the -network-wasm flag, cap_network.wasm), which imports the
 configured GTFS zip (`load_feed` + `import`) in a fresh instance
 that is closed afterwards — the import's working memory goes with
-it. Machine code is cached per module bytes for the process, so a
-re-import does not recompile. The manifest pins the network it
-publishes, the zip it was imported from, and the sync module's
-hash. (Reentrancy and the Go-host serialization live in
+it; and cap-streets (the -streets-wasm flag, cap_streets.wasm),
+which imports the configured street layer (`import`) and derives
+the walk table over it and the published network (`load_network`
++ `walks`) in a fresh instance, closed the same way. Machine code
+is cached per module bytes for the process, so a re-import does
+not recompile. The manifest pins the network it publishes, the zip
+it was imported from, the streets and walk table it publishes, and
+the sync module's hash. (Reentrancy and the Go-host serialization live in
 `docs/CONVENTIONS.md`.)
 
 **The deployment publishes the network, not the feed.** Browsers
@@ -447,6 +461,18 @@ page, and ~0.4 s and ~17 MB (the import's high-water mark never
 shrinks; the parsed feed stays registered). A zip loaded by hand
 (the UIs' file input) still imports in the browser.
 
+**The deployment publishes the streets the same way.** The street
+layer is read once, on the server (`-streets`), and the walk table
+— every walk between the network's stops, 13 s of work on C-TRAN —
+is derived there too: a browser registers the canonical document
+by its BYTES (cap-streets' `load_streets` bulk op parses it in the
+module; the page never parses it) and the table in the router. On
+C-TRAN's Trapeze roads (`sha256:48fe6c89…`) the server's startup
+spends 11.8 s on the import and the table; the page fetches 4.5 MB
+(the document, gzipped) and 43 KB (the table), and registers the
+document in 0.47 s; the first `access` builds the walking graph in
+0.32 s, later ones answer in ~14 ms.
+
 Its HTTP surface:
 
 - `/` — `web/dist` (stdlib `http.ServeContent`, so the Range
@@ -455,10 +481,20 @@ Its HTTP surface:
   feed and returns it with CORS headers, so feeds without
   `Access-Control-Allow-Origin` can be polled from the page (the
   server binds 127.0.0.1 by default; `-addr` changes it).
-- `/manifest` — `{network_hash, feed_hash, feed_version, wasm_hash,
-  generated_at, publisher}`: which network is authoritative, the
+- `/manifest` — `{network_hash, feed_hash, feed_version,
+  streets_hash, walks_hash, wasm_hash, generated_at, publisher}`: which network is authoritative, the
   GTFS zip it was imported from, which sync module bytes the server
   runs, and who says so.
+- `/streets` — the canonical streets document imported from the
+  configured layer (`-streets`), bare (the bytes `load_streets`
+  takes); gzipped, its ETag the streets hash, re-imported when the
+  file changes (mtime-checked). A client refuses it unless the
+  module answers the ETag's hash (`servedStreets` in
+  `src/uis/kit.ts`).
+- `/walks` — the walk table over the published streets and network
+  (both `-streets` and `-feed`), derived again when either changes;
+  gzipped, its ETag the walks hash, refused by a client the same
+  way (`servedWalks`).
 - `/network` — the import's answer for the configured zip
   (`-feed`), served as-is: `{network, boundary, notes,
   network_hash}`. Gzipped when the client takes it; its ETag is the
@@ -780,15 +816,25 @@ status, pointing its bearing, labeled with its route); a tapped bus,
 stop, or spot opens it. The panel follows the rider: home (the
 type-ahead, "Get directions" and "Routes", the places near the rider
 or a tapped spot with each one's next departures, saved stops,
-recent stops), one stop (its live board; a picked departure draws
+recent stops — nearest by the walk along the streets when the
+server publishes them), one stop (its live board; a picked departure draws
 its route, marks its bus, and offers to track it), one bus (its
 trip stop by stop, the stop it heads to marked, followed on the
 map), the routes and one route (its directions' variants as line
 diagrams; its buses stay bright on the map, the rest dim), getting
-there (the ends as type-aheads; leave now, leave at, arrive by, or
-the last bus; the itinerary as a timeline, drawn on the map), and
-the alerts in force. It boots from the server's
-`/network` (or a zip the rider loads), reads the edit document from
+there (the ends as type-aheads, or the rider's location, or chosen
+on the map — "Choose on map" per end: the next tap sets it, a stop,
+or with the streets published any spot, a dropped pin; "Directions
+here" on a tapped spot does the same; a point end plans
+as a router place over cap-streets `access`, its walks drawn along
+the streets; leave now, leave at, arrive by, or the last bus; the
+itinerary as a timeline, drawn on the map), and the alerts in
+force. It boots from the server's `/network` (or a zip the rider
+loads), then loads the server's `/streets` and `/walks` in the
+background (`servedStreets`, `servedWalks`; until they land, or
+where none is published, walks are straight lines and trips run
+stop to stop; a hand-loaded zip walks no streets — the walk table
+walks the published network), reads the edit document from
 `GET /edits`, reads the live feeds the deployment names in
 `public/live-feeds.json` (the rider may set their own) through
 `/rt`, and polls both and the clock every 30 s. A trip asked for
@@ -872,12 +918,13 @@ cap-router      The router capability — ONE QUESTION: how do I get
                 document's graphs stay). A plan's `from` and `to`
                 are stop ids or places (`{id, name, walks}` —
                 cap-streets' `access` walks pass as they are) with
-                `direct_walk_secs` the walk between them. plan
+                `direct` the walk between them (`access`'s). plan
                 leaves at a time; plan_arrive_by answers the latest
                 departure that arrives by a deadline (none: the last
-                bus home). itinerary_paths draws a place's walk legs
-                as nothing (the place is no stop): the host draws
-                them from `access`'s paths.
+                bus home). itinerary_paths, given the plan's ends
+                and `direct`, draws a place's walks along their
+                street paths (`transit_router::walk_path`); without
+                them a place draws nothing.
                 The compare facet is the diversion delta:
                 the unpatched day read at the same predictions, one
                 materialization apart, with its notice; the
@@ -1005,7 +1052,10 @@ cap-directory   The directory capability — ONE QUESTION: what
                 meters, nearest first, ties by id, at most `limit`,
                 within `radius_m` when given; a station's bays answer
                 once as the station, at its nearest member's
-                distance — the walking group the board pools; names
+                distance — the walking group the board pools; given
+                the point's `walks` (cap-streets `access`), the
+                places a walk reaches first, by walk — the shortest
+                to any member — and the rest by distance, D-34; names
                 are matched exactly, never by alias), the route list
                 (the model's closed mode set; every row that names a
                 route carries its long name — routes, entities,

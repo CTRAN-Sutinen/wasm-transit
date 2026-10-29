@@ -13,13 +13,25 @@
 //!    (the walking group the station board pools), at the distance
 //!    of its nearest member; a stop with no station is its own place.
 //!
+//! Asked with the point's WALKS to stops (cap-streets `access`, along
+//! the streets — docs/units/streets-model.md, item 3; D-34):
+//!
+//! 6. the places a walk reaches come first, by walk (then distance,
+//!    then id); the rest follow by distance, ties by id — a place
+//!    across a freeway is no nearer for being near;
+//! 7. a place's walk is the shortest walk to any of its members, and
+//!    a walk to a stop the network does not hold reaches nothing;
+//! 8. the walks reorder the rows and nothing else: the same places
+//!    answer within the radius (laws 2, 4, 5 hold as asked without).
+//!
 //! API: `transit_network::listing::stops_near(network, lat, lon,
-//! limit, radius_m) -> Vec<NearbyStop>`.
+//! limit, radius_m) -> Vec<NearbyStop>`, and `stops_near_walked(…,
+//! walks: &[(stop id, walk_secs)])`.
 
 use std::collections::BTreeSet;
 
 use proptest::prelude::*;
-use transit_network::listing::{stops_near, NearbyStop};
+use transit_network::listing::{stops_near, stops_near_walked, NearbyStop};
 use transit_network::{Network, Stop};
 
 /// The test's own great-circle distance (the spec's formula, mean
@@ -158,6 +170,74 @@ proptest! {
             prop_assert_eq!(&r.parent, &s.parent);
             prop_assert_eq!(r.transfer, s.transfer);
         }
+    }
+}
+
+/// Walks from the point to some of the network's stops (and to a stop
+/// it does not hold).
+fn arb_walks(net: &Network) -> impl Strategy<Value = Vec<(String, u32)>> {
+    let mut ids: Vec<String> = net.stops.keys().cloned().collect();
+    ids.push("NOWHERE".into());
+    prop::collection::vec((prop::sample::select(ids), 0u32..600), 0..12)
+}
+
+fn case() -> impl Strategy<Value = (Network, Vec<(String, u32)>)> {
+    arb_network().prop_flat_map(|net| {
+        let walks = arb_walks(&net);
+        (Just(net), walks)
+    })
+}
+
+/// Every place's walk: the shortest walk to any of its members.
+fn place_walks(net: &Network, walks: &[(String, u32)]) -> std::collections::BTreeMap<String, u32> {
+    let mut out: std::collections::BTreeMap<String, u32> = Default::default();
+    for (id, secs) in walks {
+        if !net.stops.contains_key(id) {
+            continue;
+        }
+        let e = out.entry(place_of(net, id).to_string()).or_insert(u32::MAX);
+        *e = (*e).min(*secs);
+    }
+    out
+}
+
+proptest! {
+    #[test]
+    fn walked_places_come_first_by_walk_then_the_rest_by_distance(
+        (net, walks) in case(), (lat, lon) in arb_point(), limit in 0usize..40,
+        radius in prop::option::of(0.0f64..3000.0),
+    ) {
+        let rows = stops_near_walked(&net, lat, lon, limit, radius, &walks);
+        let key = |r: &NearbyStop| (r.walk_secs.is_none(), r.walk_secs.unwrap_or(0));
+        for w in rows.windows(2) {
+            let (a, b) = (key(&w[0]), key(&w[1]));
+            prop_assert!(
+                a < b || (a == b && (w[0].distance_m < w[1].distance_m
+                    || (w[0].distance_m == w[1].distance_m && w[0].stop_id < w[1].stop_id))),
+                "{:?} then {:?}", w[0], w[1]
+            );
+        }
+    }
+
+    #[test]
+    fn a_place_walks_as_far_as_its_nearest_member(
+        (net, walks) in case(), (lat, lon) in arb_point(),
+    ) {
+        let want = place_walks(&net, &walks);
+        for r in stops_near_walked(&net, lat, lon, usize::MAX, None, &walks) {
+            prop_assert_eq!(r.walk_secs, want.get(&r.stop_id).copied(), "{:?}", r);
+        }
+    }
+
+    #[test]
+    fn the_walks_reorder_the_rows_and_nothing_else(
+        (net, walks) in case(), (lat, lon) in arb_point(), radius in prop::option::of(0.0f64..3000.0),
+    ) {
+        let walked = stops_near_walked(&net, lat, lon, usize::MAX, radius, &walks);
+        let plain = stops_near(&net, lat, lon, usize::MAX, radius);
+        prop_assert!(plain.iter().all(|r| r.walk_secs.is_none()), "no walks, no walk times");
+        let set = |rows: &[NearbyStop]| rows.iter().map(|r| (r.stop_id.clone(), r.distance_m.to_bits())).collect::<BTreeSet<_>>();
+        prop_assert_eq!(set(&walked), set(&plain));
     }
 }
 

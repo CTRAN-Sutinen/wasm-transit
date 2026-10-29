@@ -94,7 +94,7 @@ fn as_end(e: &GenEnd, id: &str) -> End {
         GenEnd::Place(walks) => End::Place(Place {
             id: id.into(),
             name: format!("Place {id}"),
-            walks: walks.iter().map(|(s, w)| PlaceWalk { stop_id: format!("s{s}"), walk_secs: *w }).collect(),
+            walks: walks.iter().map(|(s, w)| PlaceWalk { stop_id: format!("s{s}"), walk_secs: *w, path: vec![] }).collect(),
         }),
     }
 }
@@ -215,7 +215,7 @@ proptest! {
         let net = network(n_stops, spacing, &trips);
         let (fs, ts) = (format!("s{from}"), format!("s{to}"));
         let place = |id: &str, s: &str| End::Place(Place {
-            id: id.into(), name: id.into(), walks: vec![PlaceWalk { stop_id: s.into(), walk_secs: 0 }],
+            id: id.into(), name: id.into(), walks: vec![PlaceWalk { stop_id: s.into(), walk_secs: 0, path: vec![] }],
         });
         let stops = earliest_arrival(&net, &fs, &ts, depart, MAX_LEGS).unwrap().map(|it| it.arrival_secs);
         let places = earliest_arrival_between(&net, &place("here", &fs), &place("there", &ts), None, depart, MAX_LEGS)
@@ -237,7 +237,7 @@ fn place(id: &str, walks: &[(&str, u32)]) -> End {
     End::Place(Place {
         id: id.into(),
         name: format!("Place {id}"),
-        walks: walks.iter().map(|(s, w)| PlaceWalk { stop_id: (*s).into(), walk_secs: *w }).collect(),
+        walks: walks.iter().map(|(s, w)| PlaceWalk { stop_id: (*s).into(), walk_secs: *w, path: vec![] }).collect(),
     })
 }
 

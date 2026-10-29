@@ -195,7 +195,7 @@ fn a_route_row_carries_its_long_name() {
 }
 
 fn near(lat: f64, lon: f64, limit: Option<u32>, radius_m: Option<f64>) -> Result<Vec<transit_network::listing::NearbyStop>, String> {
-    dispatch(Request::StopsNear { network_hash: load_network(), lat, lon, limit, radius_m }).map(|r| match r {
+    dispatch(Request::StopsNear { network_hash: load_network(), lat, lon, limit, radius_m, walks: None }).map(|r| match r {
         Response::StopsNear { stops } => stops,
         _ => panic!("stops_near"),
     })
@@ -227,6 +227,28 @@ fn stops_near_a_point_are_places_nearest_first() {
     assert!(near(0.0, 0.0, None, Some(-1.0)).unwrap_err().contains("radius"));
     let bad = dispatch_json(r#"{"op":"stops_near","network_hash":"sha256:x","lat":"here","lon":0}"#);
     assert!(bad.contains("invalid request"), "{bad}");
+}
+
+/// With the point's walks (cap-streets `access`'s, passed as they are,
+/// paths and all): the station a walk reaches comes first at its
+/// bays' shortest walk, though A and B are nearer as the crow flies; the places
+/// no walk reaches follow by distance.
+#[test]
+fn stops_near_with_walks_ranks_by_walk() {
+    let request = serde_json::json!({
+        "op": "stops_near", "network_hash": load_network(), "lat": 45.5075, "lon": -73.5075,
+        "walks": [
+            { "stop_id": "SB", "walk_secs": 400, "path": [] },
+            { "stop_id": "SA", "walk_secs": 300, "path": [] },
+        ],
+    });
+    let answer: serde_json::Value = serde_json::from_str(&dispatch_json(&request.to_string())).unwrap();
+    let rows = answer["ok"]["stops"].as_array().unwrap();
+    let ids: Vec<&str> = rows.iter().map(|r| r["stop_id"].as_str().unwrap()).collect();
+    assert_eq!(ids[0], "STN", "{ids:?}");
+    assert_eq!(rows[0]["walk_secs"], 300, "the station walks as far as its nearest bay");
+    assert!(rows[1..].iter().all(|r| r["walk_secs"].is_null()));
+    assert!(rows[1..].windows(2).all(|w| w[0]["distance_m"].as_f64() <= w[1]["distance_m"].as_f64()));
 }
 
 #[test]

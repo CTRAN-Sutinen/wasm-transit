@@ -1,6 +1,6 @@
 <script lang="ts">
   /// Getting there — a RENDER component: the trip's two ends (stop
-  /// type-aheads), when (leave now, leave at, arrive by, or the last
+  /// type-aheads, the rider's location, or chosen on the map), when (leave now, leave at, arrive by, or the last
   /// bus), and cap-router's answer: the itinerary, and the rider's
   /// notice when a detour changes the trip (`plan_compare`).
   import type { Itinerary as Plan } from "../types/Itinerary";
@@ -20,6 +20,11 @@
     limit,
     plan,
     routes,
+    here = false,
+    onhere,
+    picking = null,
+    spots = false,
+    onmap,
     off,
     searchOff,
     ontype,
@@ -36,6 +41,15 @@
     limit: number;
     plan: { itinerary: Plan | null; notice: string | null; error?: string } | null;
     routes: DirectoryRoute[];
+    /// The rider's location can be an end (walking the streets).
+    here?: boolean;
+    onhere?: (field: "from" | "to") => void;
+    /// The end the next tap on the map sets, if the rider is choosing.
+    picking?: "from" | "to" | null;
+    /// Any spot can be an end (the streets walk it); else only a stop.
+    spots?: boolean;
+    /// Choose an end on the map (asked again: cancel).
+    onmap?: (field: "from" | "to") => void;
     /// The router capability did not assemble.
     off: boolean;
     searchOff: boolean;
@@ -91,6 +105,28 @@
     </button>
   </div>
 
+  {#if onmap || (here && onhere)}
+    <div class="choose" data-testid="choose-ends">
+      {#each [["from", "Start", from], ["to", "Destination", to]] as const as [field, label, end] (field)}
+        <div class="row">
+          <span class="label">{label}</span>
+          {#if here && onhere && end?.id !== "@here"}
+            <button class="link" onclick={() => onhere(field)} aria-label={`${label}: my location`}>My location</button>
+          {/if}
+          {#if onmap}
+            <button class="link" class:on={picking === field} aria-pressed={picking === field}
+              aria-label={`${label}: choose on map`} onclick={() => onmap(field)}>
+              {picking === field ? "Cancel" : "Choose on map"}
+            </button>
+          {/if}
+        </div>
+      {/each}
+    </div>
+    {#if picking}
+      <p class="picking" data-testid="picking">Tap the map to set your {picking === "from" ? "start" : "destination"} — {spots ? "a stop, or any spot" : "a stop"}.</p>
+    {/if}
+  {/if}
+
   <div class="when" role="radiogroup" aria-label="when">
     {#each MODES as m (m.mode)}
       <button role="radio" aria-checked={when.mode === m.mode} class:on={when.mode === m.mode} onclick={() => mode(m.mode)}>{m.label}</button>
@@ -108,7 +144,7 @@
   {:else if !from || !to}
     <p class="hint">Choose where you’re starting and where you’re going — type a stop, or tap one on the map and choose “Directions”.</p>
   {:else if from.id === to.id}
-    <p class="hint">Those are the same stop.</p>
+    <p class="hint">Those are the same place.</p>
   {:else if !plan}
     <div class="skeleton" aria-label="planning"><span></span><span></span></div>
   {:else if plan.error}
@@ -140,6 +176,12 @@
   .back:hover, .swap:hover { background: var(--hover); }
   .ends { display: flex; align-items: center; gap: 0.3rem; }
   .fields { flex: 1; display: grid; gap: 0.4rem; min-width: 0; }
+  .choose { display: grid; gap: 0.25rem; margin-top: 0.5rem; }
+  .row { display: flex; align-items: baseline; gap: 0.9rem; }
+  .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); width: 6.5rem; }
+  .link.on { text-decoration: underline; }
+  .picking { margin: 0.4rem 0 0; padding: 0.45rem 0.65rem; border-radius: 10px; font-size: 0.85rem; background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .link { border: 0; background: none; color: var(--accent); font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; padding: 0; }
   .when { display: flex; gap: 0.25rem; margin: 0.75rem 0 0.4rem; background: var(--hover); padding: 0.2rem; border-radius: 10px; }
   .when button {
     flex: 1; border: 0; background: none; color: var(--muted); font: inherit; font-size: 0.82rem; font-weight: 600;

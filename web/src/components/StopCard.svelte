@@ -1,17 +1,19 @@
 <script lang="ts">
   /// A stop at a glance — a RENDER component: its name, how far it is
-  /// (the directory's `stops_near` distance, when it was asked from a
-  /// point), and its next few departures (a board's rows). Tapping it
+  /// (the directory's `stops_near` answer, when it was asked from a
+  /// point: the walk along the streets when one reaches it, else the
+  /// distance), and its next few departures (a board's rows). Tapping it
   /// opens the stop.
   import type { BoardRow } from "../types/BoardRow";
   import type { BoardDeparture } from "../types/BoardDeparture";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import DepartureRows from "./DepartureRows.svelte";
-  import { distanceText } from "./rideFormat";
+  import { distanceText, walkText } from "./rideFormat";
 
   let {
     name,
     distance = null,
+    walk = null,
     rows,
     pooled = false,
     routes,
@@ -20,6 +22,8 @@
   }: {
     name: string;
     distance?: number | null;
+    /// Seconds on foot, along the streets.
+    walk?: number | null;
     /// Null while the board is being asked.
     rows: (BoardRow | BoardDeparture)[] | null;
     pooled?: boolean;
@@ -33,7 +37,8 @@
 <article class="card" data-testid="stop-card">
   <button class="head" onclick={onopen}>
     <span class="name">{name}</span>
-    {#if distance != null}<span class="dist">{distanceText(distance)}</span>{/if}
+    {#if walk != null}<span class="dist" data-testid="walk">{walkText(walk)}</span>
+    {:else if distance != null}<span class="dist">{distanceText(distance)}</span>{/if}
     <span class="chev" aria-hidden="true">›</span>
   </button>
   {#if rows === null}

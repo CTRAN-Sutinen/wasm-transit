@@ -31,7 +31,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_live::LiveDay;
 use transit_network::Network;
-use transit_streets::walking::WalkTable;
+use transit_streets::walking::{DirectWalk, WalkTable};
 use transit_sync::EditRecord;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -70,7 +70,7 @@ pub enum Request {
     /// the stops near it (cap-streets `access` answers them; a place's
     /// id is never a stop's): the trip walks from the place to one of
     /// its stops and from one of its stops to the place, or straight
-    /// there when `direct_walk_secs` arrives as early. Over the
+    /// there when the `direct` walk arrives as early. Over the
     /// materialized day, with
     /// the in-force edits applied when `edits_hash` names a
     /// registered edit document, and at the predicted times when
@@ -94,9 +94,9 @@ pub enum Request {
         #[serde(default)]
         walks_hash: Option<String>,
         /// The walk straight from `from` to `to`, when one joins them
-        /// (cap-streets `access` answers it as `direct`).
+        /// — cap-streets `access`'s `direct`, as it is.
         #[serde(default)]
-        direct_walk_secs: Option<u32>,
+        direct: Option<DirectWalk>,
     },
     /// Arrive-by: the LATEST departure from `from` that reaches `to`
     /// by `arrive_by_secs` on `date` within `max_legs` — with no
@@ -120,9 +120,9 @@ pub enum Request {
         #[serde(default)]
         walks_hash: Option<String>,
         /// The walk straight from `from` to `to`, when one joins them
-        /// (cap-streets `access` answers it as `direct`).
+        /// — cap-streets `access`'s `direct`, as it is.
         #[serde(default)]
-        direct_walk_secs: Option<u32>,
+        direct: Option<DirectWalk>,
     },
     /// The diversion delta: the same plan over the patched day
     /// (active) and the unpatched materialization (baseline), both
@@ -149,21 +149,30 @@ pub enum Request {
         #[serde(default)]
         walks_hash: Option<String>,
         /// The walk straight from `from` to `to`, when one joins them
-        /// (cap-streets `access` answers it as `direct`).
+        /// — cap-streets `access`'s `direct`, as it is.
         #[serde(default)]
-        direct_walk_secs: Option<u32>,
+        direct: Option<DirectWalk>,
     },
     /// Where an itinerary runs, leg by leg, over the same effective
     /// day it was planned on: a transit leg's RIDDEN segment (the
     /// trip's alignment sliced between its board and alight stops
     /// while it follows its pattern; its patched stops when diverted),
-    /// a walk through the stops it passes. The map draws the answer.
+    /// a walk through the stops it passes — and, given the plan's
+    /// ends and direct walk, along the streets from or to a place
+    /// (its walk's path; between two places, the direct walk's). The
+    /// map draws the answer.
     ItineraryPaths {
         network_hash: String,
         #[serde(default)]
         edits_hash: Option<String>,
         date: String,
         itinerary: transit_router::Itinerary,
+        #[serde(default)]
+        from: Option<transit_router::End>,
+        #[serde(default)]
+        to: Option<transit_router::End>,
+        #[serde(default)]
+        direct: Option<DirectWalk>,
     },
 }
 
@@ -374,24 +383,26 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::LoadWalks { walks_hash: hash })
         }
         Request::PlanArriveBy {
-            network_hash, edits_hash, from, to, date, arrive_by_secs, max_legs, live_hash, walks_hash, direct_walk_secs,
+            network_hash, edits_hash, from, to, date, arrive_by_secs, max_legs, live_hash, walks_hash, direct,
         } => {
             let net = graph(&network_hash, edits_hash.as_deref(), live_hash.as_deref(), walks_hash.as_deref(), &date)?;
             let legs = max_legs.max(1) as usize;
-            let answer = transit_router::latest_departure_between(&net, &from, &to, direct_walk_secs, arrive_by_secs, legs)
+            let direct_secs = direct.map(|d| d.walk_secs);
+            let answer = transit_router::latest_departure_between(&net, &from, &to, direct_secs, arrive_by_secs, legs)
                 .map_err(|e| e.to_string())?;
             Ok(Response::PlanArriveBy { arrive_by_secs: answer.arrive_by_secs, itinerary: answer.itinerary })
         }
         Request::Plan {
-            network_hash, edits_hash, from, to, date, depart_secs, max_legs, live_hash, walks_hash, direct_walk_secs,
+            network_hash, edits_hash, from, to, date, depart_secs, max_legs, live_hash, walks_hash, direct,
         } => {
             let net = graph(&network_hash, edits_hash.as_deref(), live_hash.as_deref(), walks_hash.as_deref(), &date)?;
             let legs = max_legs.max(1) as usize;
-            let itinerary = transit_router::earliest_arrival_between(&net, &from, &to, direct_walk_secs, depart_secs, legs)
+            let direct_secs = direct.map(|d| d.walk_secs);
+            let itinerary = transit_router::earliest_arrival_between(&net, &from, &to, direct_secs, depart_secs, legs)
                 .map_err(|e| e.to_string())?;
             Ok(Response::Plan { itinerary })
         }
-        Request::ItineraryPaths { network_hash, edits_hash, date, itinerary } => {
+        Request::ItineraryPaths { network_hash, edits_hash, date, itinerary, from, to, direct } => {
             let parsed = parse_date(&date)?;
             let network = network_arc(&network_hash)?;
             let records = match edits_hash.as_deref() {
@@ -414,12 +425,13 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                     transit_router::Leg::Walk { from_stop_id, via_stop_ids, to_stop_id, .. } => {
                         transit_dispatch::LegPath {
                             kind: transit_dispatch::LegKind::Walk,
-                            path: transit_network::stops_line(
+                            path: transit_router::walk_path(
                                 &network,
-                                std::iter::once(from_stop_id)
-                                    .chain(via_stop_ids)
-                                    .chain(std::iter::once(to_stop_id))
-                                    .map(String::as_str),
+                                from_stop_id,
+                                via_stop_ids,
+                                to_stop_id,
+                                [from.as_ref(), to.as_ref()],
+                                direct.as_ref(),
                             ),
                         }
                     }
@@ -428,14 +440,15 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::ItineraryPaths { paths })
         }
         Request::PlanCompare {
-            network_hash, edits_hash, from, to, date, depart_secs, max_legs, live_hash, walks_hash, direct_walk_secs,
+            network_hash, edits_hash, from, to, date, depart_secs, max_legs, live_hash, walks_hash, direct,
         } => {
             // The request's own fields validate before any registry
             // lookup, so both worlds fail identically on bad input.
             let parsed = parse_date(&date)?;
             let legs = max_legs.max(1) as usize;
             let net = graph(&network_hash, edits_hash.as_deref(), live_hash.as_deref(), walks_hash.as_deref(), &date)?;
-            let active = transit_router::earliest_arrival_between(&net, &from, &to, direct_walk_secs, depart_secs, legs)
+            let direct_secs = direct.map(|d| d.walk_secs);
+            let active = transit_router::earliest_arrival_between(&net, &from, &to, direct_secs, depart_secs, legs)
                 .map_err(|e| e.to_string())?;
             let network = network_arc(&network_hash)?;
             // The baseline is the unpatched materialization — one
@@ -450,7 +463,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                     } else {
                         let base = graph(&network_hash, None, live_hash.as_deref(), walks_hash.as_deref(), &date)?;
                         let baseline =
-                            transit_router::earliest_arrival_between(&base, &from, &to, direct_walk_secs, depart_secs, legs)
+                            transit_router::earliest_arrival_between(&base, &from, &to, direct_secs, depart_secs, legs)
                             .map_err(|e| e.to_string())?;
                         let unpatched = transit_network::materialize(&network, parsed)
                             .map_err(|e| format!("the network does not materialize: {e}"))?;

@@ -74,6 +74,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-31 | Can a plan add a street the data does not have? | unanswered | streets-model planned streets |
 | D-32 | How does the router walk with no walk table? | encoded | nothing |
 | D-33 | How does a trip from a place walk? | encoded | nothing |
+| D-34 | Where does a stop no walk reaches go in the nearby list? | encoded | nothing |
 
 ## The trip model
 
@@ -575,7 +576,7 @@ Context: a plan's end can be a place off the network (a tapped
 spot, the rider's location), named by its walks to the stops near
 it: cap-streets `access` answers them along the streets, each
 within the walk limit (ten minutes, D-26), and the walk straight to
-a second point. The router plans between ends. Three things the
+a second point (the plan's `direct`). The router plans between ends. Three things the
 intent leaves open:
 - Whether the walk to the first stop may continue on foot to
   another stop before boarding (and the walk from the last stop be
@@ -601,6 +602,25 @@ Blocks: nothing. Pins:
 `crates/transit-router/tests/places_law_test.rs` (laws 1–3 compose
 the stop plan with chains; law 6 the tie), `walks_from` in
 `crates/transit-streets/tests/walk_law_test.rs` (the limit).
+
+### D-34 — Where does a stop no walk reaches go in the nearby list?
+State: Encoded provisionally.
+Context: with the point's walks along the streets (cap-streets
+`access`, within the ten-minute limit), the directory's
+`stops_near` ranks the places near the point by walk. Some places
+are near as the crow flies and reached by no walk within the
+limit — across a freeway, past the limit, or off every walkable
+street.
+Options:
+- **Encoded:** the places a walk reaches come first, by walk (then
+  distance, then id); the rest follow by distance, with no walk
+  time. The walks reorder the places and nothing else: the same
+  places answer within the radius and the limit.
+- Leave the places no walk reaches out: the list says only where
+  the rider can walk, and is empty off the streets.
+- Rank every place by distance and show the walk where one exists.
+Blocks: nothing. Pins:
+`crates/transit-network/tests/stops_near_law_test.rs` (laws 6–8).
 
 ## Agency data
 

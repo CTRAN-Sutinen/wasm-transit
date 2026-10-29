@@ -1,15 +1,17 @@
 /// The ride-now UI's host layer — the ONLY file of this UI that calls the
-/// capability bus. It owns I/O (the published network, the agency's live
-/// feeds through the server's /rt proxy, the sync server's edit
+/// capability bus. It owns I/O (the published network and streets, the
+/// agency's live feeds through the server's /rt proxy, the sync server's edit
 /// document, the watchlist document, the device's location, the
 /// rider's recent stops), the clock, and the selection; every row,
 /// time, status, line, and notice it writes into `ride` is an op's
 /// answer, adopted as-is.
 ///
 /// The questions it answers (docs/units/ui-ride-now.md): which stop is
-/// mine (typed, near me, or tapped on the map), what leaves next from
-/// it live, is my bus on time, how do I get there (now, at a time, by
-/// a time), when is the last bus, is a detour or alert in my way, and
+/// mine (typed, near me — by walk along the streets when the server
+/// publishes them — or tapped on the map), what leaves next from it
+/// live, is my bus on time, how do I get there (now, at a time, by a
+/// time; from my location or a dropped pin, walking the streets),
+/// when is the last bus, is a detour or alert in my way, and
 /// what leaves the stops I saved — and, around them, the network:
 /// where every bus is now and where one is going, and what each route
 /// is (its directions and their stops).
@@ -31,9 +33,24 @@ import {
   routerModule,
   rtCap,
   rtModule,
+  streetsCap,
+  streetsModule,
   type Live,
 } from "../../capabilities.svelte";
-import { answer, answerGraph, hashIn, rememberHash, servedNetwork, today, type CapModule } from "../kit";
+import {
+  answer,
+  answerGraph,
+  hashIn,
+  rememberHash,
+  servedNetwork,
+  servedStreets,
+  servedWalks,
+  today,
+  type CapModule,
+} from "../kit";
+import type { DirectWalk } from "../../types/DirectWalk";
+import type { End } from "../../types/End";
+import type { PointWalk } from "../../types/PointWalk";
 import type { Boundary } from "../../types/Boundary";
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
 import type { DirectoryStop } from "../../types/cap_directory/DirectoryStop";
@@ -51,8 +68,18 @@ import type { Watchlist } from "../../types/cap_board/Watchlist";
 
 /// A stop as the directory answers it, wherever it was picked from
 /// (typed, near a point, tapped on the map): enough to name it, put it
-/// on the map, and ask its board.
-export type Place = { id: string; name: string; lat?: number; lon?: number; distance_m?: number };
+/// on the map, and ask its board — or, as a trip's end, a POINT (my
+/// location, a dropped pin), which the router plans from as a place
+/// by its walks along the streets.
+export type Place = {
+  id: string;
+  name: string;
+  lat?: number;
+  lon?: number;
+  distance_m?: number;
+  walk_secs?: number | null;
+  point?: boolean;
+};
 export type Field = "search" | "from" | "to";
 export type View = "home" | "stop" | "trip" | "alerts" | "routes" | "route" | "bus";
 /// A bus picked on the map, by the live document's key.
@@ -87,6 +114,11 @@ export const ride = $state({
   found: null as { field: Field; text: string; places: Place[] } | null,
   /// The device's location, once the rider shares it.
   here: null as { lat: number; lon: number } | null,
+  /// The published streets are registered: walks follow the streets,
+  /// and a trip can start or end at a point.
+  walking: false,
+  /// The trip end the next tap on the map sets ("choose on map").
+  picking: null as "from" | "to" | null,
   locating: false,
   /// The point the nearby list answers: the rider, or a spot tapped
   /// on the map.
@@ -140,9 +172,64 @@ let edits: EditRecord[] = [];
 let editsText = "[]";
 let watchlist: Watchlist | null = null;
 const snapshots = { trips: null as string | null, vehicles: null as string | null, alerts: null as string | null };
+/// The published streets (registered in the streets module) and walk
+/// table (registered in the router), by hash — null when the server
+/// publishes none.
+let streetsHash: string | null = null;
+let walksHash: string | null = null;
+/// The near point's walks to the stops (streets `access`).
+let nearWalks: PointWalk[] | null = null;
 /// The trip asked: its ends and its time, fixed when asked (a "now"
 /// plan re-asks on every poll).
-let trip: { from: string; to: string; date: string; when: When } | null = null;
+let trip: { from: Place; to: Place; date: string; when: When } | null = null;
+/// The planned trip's ends as the router took them — what
+/// itinerary_paths draws a place's walks from.
+let planEnds: { from: End; to: End; direct: DirectWalk | null } | null = null;
+
+const HERE_ID = "@here";
+
+/// A spot on the map as a trip's end — one pin per end, so the two
+/// never share an id.
+function pinPlace(end: "from" | "to", lat: number, lon: number): Place {
+  return { id: `@pin-${end}`, name: "Dropped pin", lat, lon, point: true };
+}
+
+/// The rider's location as a trip's end.
+function herePlace(): Place | null {
+  return ride.here ? { id: HERE_ID, name: "My location", lat: ride.here.lat, lon: ride.here.lon, point: true } : null;
+}
+
+/// The walks from a point to the stops (and straight to `to`), along
+/// the published streets.
+async function accessFrom(p: Place, to: Place | null): Promise<{ walks: PointWalk[]; direct: DirectWalk | null } | null> {
+  const streets = await streetsModule();
+  if (!network || !streets || !streetsHash || p.lat == null || p.lon == null) return null;
+  const [cap, sh, nh] = [streetsCap(streets), streetsHash, hashIn(streets, network)];
+  const point = { lat: p.lat, lon: p.lon };
+  const target = to?.lat != null && to.lon != null ? { lat: to.lat, lon: to.lon } : null;
+  return answer(streets, "access", [sh, nh, point.lat, point.lon, target?.lat ?? null, target?.lon ?? null], () =>
+    cap.access(sh, nh, point, target),
+  );
+}
+
+/// A trip's ends as the router takes them: a stop by id, a point as a
+/// place with its walks — and the walk straight between two points.
+async function routerEnds(from: Place, to: Place): Promise<{ from: End; to: End; direct: DirectWalk | null }> {
+  const end = async (p: Place, other: Place | null) => {
+    if (!p.point) return { end: p.id as End, direct: null };
+    const access = await accessFrom(p, other?.point ? other : null);
+    if (!access) throw new Error("planning from a point needs the published streets");
+    return { end: { id: p.id, name: p.name, walks: access.walks } as End, direct: access.direct };
+  };
+  const [f, t] = [await end(from, to), await end(to, null)];
+  return { from: f.end, to: t.end, direct: f.direct };
+}
+
+/// What determines a trip's end, for the answer cache: a stop's id, a
+/// point's place.
+function endKey(p: Place): string {
+  return p.point ? `${p.id}@${p.lat},${p.lon}` : p.id;
+}
 
 /// The clock: seconds since local midnight. Hosts own the clock; ops
 /// take it as arguments.
@@ -249,9 +336,21 @@ const request = answerGraph(
       },
     },
     {
+      // The near point's walks to the stops, along the streets.
+      id: "streets.access[near]",
+      frame: "NearbyList",
+      needs: ["network", "streets", "near"],
+      run: async () => {
+        const near = ride.near;
+        nearWalks = near ? ((await accessFrom({ id: "", name: "", lat: near.lat, lon: near.lon }, null))?.walks ?? null) : null;
+      },
+    },
+    {
+      // The places near the point: by walk when the streets answered
+      // its walks, else by distance.
       id: "directory.stops_near",
       frame: "NearbyList",
-      needs: ["network", "near"],
+      needs: ["network", "near", "streets.access[near]"],
       run: async () => {
         const [near, directory] = [ride.near, await directoryModule()];
         if (!network || !directory || !near) {
@@ -259,10 +358,18 @@ const request = answerGraph(
           return;
         }
         const hash = hashIn(directory, network);
-        const stops = answer(directory, "stops_near", [hash, near.lat, near.lon, NEARBY], () =>
-          directoryCap(directory).stopsNear(hash, near.lat, near.lon, NEARBY),
+        const walks = nearWalks ?? undefined;
+        const stops = answer(directory, "stops_near", [hash, near.lat, near.lon, NEARBY, walks ? streetsHash : null], () =>
+          directoryCap(directory).stopsNear(hash, near.lat, near.lon, NEARBY, undefined, walks),
         );
-        ride.nearby = stops.map((s) => ({ id: s.stop_id, name: s.name, lat: s.lat, lon: s.lon, distance_m: s.distance_m }));
+        ride.nearby = stops.map((s) => ({
+          id: s.stop_id,
+          name: s.name,
+          lat: s.lat,
+          lon: s.lon,
+          distance_m: s.distance_m,
+          walk_secs: s.walk_secs,
+        }));
       },
     },
     {
@@ -460,7 +567,7 @@ const request = answerGraph(
       // (arrive-by with no deadline) — at the live predictions.
       id: "router.plan",
       frame: "TripPlan",
-      needs: ["network", "edits", "rt.live", "trip"],
+      needs: ["network", "edits", "rt.live", "trip", "streets", "walks"],
       run: async () => {
         const router = await routerModule();
         ride.off.router = !router;
@@ -474,14 +581,21 @@ const request = answerGraph(
           const net = hashIn(router, network);
           const ed = editsIn(router, cap.loadEdits);
           const lv = liveIn(router, cap.loadLive);
+          const ends = await routerEnds(t.from, t.to);
+          planEnds = ends;
+          // The ends cross by what determines them, never as documents.
+          const key = [endKey(t.from), endKey(t.to), streetsHash, walksHash];
           if (t.when.mode === "now" || t.when.mode === "depart") {
-            const args = [net, ed, t.from, t.to, t.date, t.when.secs ?? nowSecs(), MAX_LEGS, lv] as const;
-            const { active, notice } = answer(router, "plan_compare", [...args], () => cap.planCompare(...args));
+            const secs = t.when.secs ?? nowSecs();
+            const { active, notice } = answer(router, "plan_compare", [net, ed, t.date, secs, MAX_LEGS, lv, ...key], () =>
+              cap.planCompare(net, ed, ends.from, ends.to, t.date, secs, MAX_LEGS, lv, walksHash, ends.direct),
+            );
             ride.plan = { itinerary: active, notice };
           } else {
             const deadline = t.when.mode === "arrive" ? t.when.secs : null;
-            const args = [net, ed, t.from, t.to, t.date, deadline, MAX_LEGS, lv] as const;
-            const { itinerary } = answer(router, "plan_arrive_by", [...args], () => cap.planArriveBy(...args));
+            const { itinerary } = answer(router, "plan_arrive_by", [net, ed, t.date, deadline, MAX_LEGS, lv, ...key], () =>
+              cap.planArriveBy(net, ed, ends.from, ends.to, t.date, deadline, MAX_LEGS, lv, walksHash, ends.direct),
+            );
             ride.plan = { itinerary, notice: null };
           }
         } catch (e) {
@@ -503,7 +617,7 @@ const request = answerGraph(
           return;
         }
         const cap = routerCap(router);
-        ride.paths = cap.itineraryPaths(hashIn(router, network), editsIn(router, cap.loadEdits), trip.date, it);
+        ride.paths = cap.itineraryPaths(hashIn(router, network), editsIn(router, cap.loadEdits), trip.date, it, planEnds);
       },
     },
   ],
@@ -525,7 +639,28 @@ export async function boot(): Promise<void> {
     ride.status = "This server publishes no network — load the agency's GTFS zip to begin.";
     return null;
   });
+  if (network) void loadStreets();
   setInterval(() => void poll(), POLL_MS);
+}
+
+/// The published streets and walk table, in the background once the
+/// published network answers (the walk table walks that network):
+/// the streets document's bytes go straight to the streets module,
+/// the walk table to the router. Until they land — or where the
+/// server publishes none — walks are straight lines and trips run
+/// stop to stop.
+async function loadStreets(): Promise<void> {
+  try {
+    const [streets, router] = await Promise.all([streetsModule(), routerModule()]);
+    const [sh, wh] = await Promise.all([streets ? servedStreets(streets) : null, router ? servedWalks(router) : null]);
+    if (!sh && !wh) return;
+    streetsHash = sh;
+    walksHash = wh;
+    ride.walking = !!sh;
+    await request("streets", "walks");
+  } catch (e) {
+    console.warn("the published streets did not load:", e);
+  }
 }
 
 /// A GTFS zip the rider loads becomes the network document (and its
@@ -715,8 +850,20 @@ export function locate(): void {
   );
 }
 
-/// A spot tapped on the map: what is near it.
+/// A spot tapped on the map: what is near it — or, while choosing a
+/// trip's end on the map, that end (a point walks only where the
+/// streets are published).
 export function nearPoint(lat: number, lon: number): Promise<void> {
+  const end = ride.picking;
+  if (end) {
+    if (!ride.walking) {
+      ride.status = "Tap a stop — this server publishes no streets to walk from a spot.";
+      return Promise.resolve();
+    }
+    ride.picking = null;
+    ride.status = "";
+    return setEnd(end, pinPlace(end, lat, lon));
+  }
   ride.near = { lat, lon, mine: false };
   ride.view = "home";
   return request("near", "view");
@@ -737,6 +884,7 @@ export function clearFound(): void {
 }
 
 export function show(view: View): Promise<void> {
+  ride.picking = null;
   ride.view = view;
   return request("view");
 }
@@ -750,6 +898,12 @@ function located(place: Place): Place {
 }
 
 export function openStop(place: Place): Promise<void> {
+  const end = ride.picking;
+  if (end) {
+    ride.picking = null;
+    ride.status = "";
+    return setEnd(end, located(place));
+  }
   clearFound();
   place = located(place);
   ride.stop = place;
@@ -805,13 +959,38 @@ export function setFollow(on: boolean): void {
 }
 
 /// Directions from or to a place; the other end defaults to the
-/// place nearest the rider when the directory answered one.
+/// rider's location when the streets can walk it, else the place
+/// nearest the rider when the directory answered one.
 export function directions(end: "from" | "to", place: Place): Promise<void> {
   clearFound();
   ride[end] = place;
   const other = end === "from" ? "to" : "from";
-  if (!ride[other] && ride.near?.mine && ride.nearby?.[0] && ride.nearby[0].id !== place.id) ride[other] = ride.nearby[0];
+  const here = ride.walking ? herePlace() : null;
+  if (!ride[other] && here && place.id !== HERE_ID) ride[other] = here;
+  else if (!ride[other] && ride.near?.mine && ride.nearby?.[0] && ride.nearby[0].id !== place.id) ride[other] = ride.nearby[0];
   ride.view = "trip";
+  return replan();
+}
+
+/// Directions to the spot tapped on the map (a dropped pin).
+export function directionsToSpot(): Promise<void> {
+  const near = ride.near;
+  if (!near || near.mine) return Promise.resolve();
+  return directions("to", pinPlace("to", near.lat, near.lon));
+}
+
+/// Choose a trip's end on the map: the next tap — a stop, or (with
+/// the streets published) any spot — sets it. Asked again, cancelled.
+export function chooseOnMap(end: "from" | "to" | null): void {
+  ride.picking = ride.picking === end ? null : end;
+  ride.status = "";
+}
+
+/// The rider's location as one end of the trip.
+export function fromHere(end: "from" | "to"): Promise<void> {
+  const here = herePlace();
+  if (!here) return Promise.resolve();
+  ride[end] = here;
   return replan();
 }
 
@@ -823,7 +1002,10 @@ export function setEnd(end: "from" | "to", place: Place): Promise<void> {
 }
 
 export function swapEnds(): Promise<void> {
-  [ride.from, ride.to] = [ride.to, ride.from];
+  // A pin's id names its end.
+  const repin = (p: Place | null, end: "from" | "to") =>
+    p?.id.startsWith("@pin-") && p.lat != null && p.lon != null ? pinPlace(end, p.lat, p.lon) : p;
+  [ride.from, ride.to] = [repin(ride.to, "from"), repin(ride.from, "to")];
   return replan();
 }
 
@@ -835,7 +1017,7 @@ export function setWhen(when: When): Promise<void> {
 function replan(): Promise<void> {
   trip =
     ride.from && ride.to && ride.from.id !== ride.to.id
-      ? { from: ride.from.id, to: ride.to.id, date: today(), when: { ...ride.when } }
+      ? { from: { ...ride.from }, to: { ...ride.to }, date: today(), when: { ...ride.when } }
       : null;
   if (!trip) ride.plan = null;
   return request("trip", "view");
@@ -891,6 +1073,7 @@ function restoreRecent(): void {
 }
 
 function remember(place: Place): void {
+  if (place.point) return;
   ride.recent = [{ id: place.id, name: place.name, lat: place.lat, lon: place.lon }, ...ride.recent.filter((p) => p.id !== place.id)].slice(0, 6);
   try {
     localStorage.setItem(RECENT_KEY, JSON.stringify(ride.recent));

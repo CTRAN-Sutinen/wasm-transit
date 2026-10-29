@@ -99,8 +99,8 @@ done; `just e2e` adds the browser runner, for UI-visible changes;
 
 ```
 just build                 # frontend (type-checks first — the TS layer is a gate)
-just caps                  # capability modules + manifest (+ cap_sync.wasm and
-                           # cap_network.wasm for the server)
+just caps                  # capability modules + manifest (+ cap_sync.wasm,
+                           # cap_network.wasm and cap_streets.wasm for the server)
 just registry              # publish the capability registry (gates → blobs + evidence)
 node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op ...
                            # steps run in command-line order; --cap ID switches
@@ -113,7 +113,7 @@ just test                  # the host-side runner (Rust + smokes + runner gates 
 just e2e                   # the browser runner (Playwright, builds first) — UI changes
 just check                 # both runners — changes touching both sides
 just types                 # regenerate TS bindings (gitignored; build runs it)
-just serve [feed.zip ["Publisher"]]   # sync server on :8080
+just serve [feed.zip [streets.geojson ["Publisher" [addr]]]]   # sync server on :8080
 just dev                   # vite hot reload + server alongside
 just fixtures              # regenerate the e2e GTFS fixture
 just soak                  # real-data soak (COUNTY_GEOJSON=… county roads)
@@ -162,7 +162,9 @@ transit-streets  THE streets document (canonical: its hash is the streets', not 
 cap-abi          the capability seam (ABI macro, manifest, validator, gen-manifest)
 cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-plans cap-author cap-divert
                  the capability modules (docs/ARCHITECTURE.md, bus section)
-server/          Go + wazero host over cap-sync — scaffolding, never a domain decision
+server/          Go + wazero host over cap-sync, cap-network and cap-streets (the
+                 network, streets and walk table it publishes) — scaffolding,
+                 never a domain decision
 web/             Svelte 5 + Vite frontend: / is a picker over the GENERATED UIs
                  (src/uis/<id>/, each its own page and host layer) and links
                  the original app (/app.html) (docs/ARCHITECTURE.md, web section,
@@ -248,7 +250,8 @@ e2e, real-data dogfood) are spelled out in `docs/TESTING.md`.
   conventions.
 - The Go server stays scaffolding; domain logic the server needs
   becomes a capability module (it hosts cap-sync, and cap-network
-  for the import it publishes).
+  for the import it publishes, cap-streets for the streets and walk
+  table it publishes).
 - The bus is the architecture: no capability grows a private
   document format — shared data crosses modules as kernel
   documents addressed by content hash only.

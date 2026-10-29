@@ -110,7 +110,7 @@ fn plan_answers_over_the_materialized_day() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
-        direct_walk_secs: None,
+        direct: None,
     })
     .expect("plan dispatch");
     let cap_router::Response::Plan { itinerary: Some(it) } = plan else {
@@ -143,7 +143,7 @@ fn plan_is_none_on_an_unreachable_pair_or_day() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
-        direct_walk_secs: None,
+        direct: None,
     })
     .unwrap();
     let cap_router::Response::Plan { itinerary } = late else { panic!("plan") };
@@ -160,7 +160,7 @@ fn plan_is_none_on_an_unreachable_pair_or_day() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
-        direct_walk_secs: None,
+        direct: None,
     })
     .expect_err("unknown hash");
     assert!(err.contains("unknown network"));
@@ -181,7 +181,7 @@ fn compare_answers_the_diversion_delta() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
-        direct_walk_secs: None,
+        direct: None,
     })
     .expect("compare dispatch");
     let cap_router::Response::PlanCompare { active, baseline, notice } = cmp else {
@@ -211,7 +211,7 @@ fn compare_answers_the_diversion_delta() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
-        direct_walk_secs: None,
+        direct: None,
     })
     .expect("compare dispatch");
     let cap_router::Response::PlanCompare { active, baseline, .. } = plain else {
@@ -231,7 +231,7 @@ fn compare_answers_the_diversion_delta() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
-        direct_walk_secs: None,
+        direct: None,
     })
     .expect("compare dispatch");
     let cap_router::Response::PlanCompare { active: None, notice: Some(notice), .. } = late else {
@@ -278,7 +278,7 @@ fn an_itinerary_draws_its_ridden_segments() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
-        direct_walk_secs: None,
+        direct: None,
     })
     .unwrap() else {
         panic!("plan")
@@ -289,6 +289,9 @@ fn an_itinerary_draws_its_ridden_segments() {
         edits_hash: None,
         date: DATE.into(),
         itinerary: it,
+        from: None,
+        to: None,
+        direct: None,
     })
     .unwrap() else {
         panic!("itinerary_paths")
@@ -353,7 +356,7 @@ fn plan_a_b(network_hash: &str, live_hash: Option<String>) -> transit_router::It
         max_legs: 4,
         live_hash,
         walks_hash: None,
-        direct_walk_secs: None,
+        direct: None,
     })
     .expect("plan")
     {
@@ -405,7 +408,7 @@ fn a_live_plan_rides_the_predicted_times() {
         max_legs: 4,
         live_hash: Some("sha256:missing".into()),
         walks_hash: None,
-        direct_walk_secs: None,
+        direct: None,
     })
     .expect_err("unknown live hash");
     assert!(err.contains("unknown live document"), "{err}");
@@ -427,7 +430,7 @@ fn a_compared_plan_reads_live_in_both_worlds() {
             max_legs: 4,
             live_hash: Some(live),
             walks_hash: None,
-        direct_walk_secs: None,
+        direct: None,
         },
     )
     .unwrap() else {
@@ -457,7 +460,7 @@ fn arrive_by_answers_the_latest_departure() {
         max_legs: 4,
         live_hash: None,
         walks_hash: None,
-        direct_walk_secs: None,
+        direct: None,
     })
     .expect("plan_arrive_by")
     {
@@ -550,7 +553,7 @@ fn plan_bays(network_hash: &str, walks_hash: Option<String>) -> Result<Option<tr
         max_legs: 2,
         live_hash: None,
         walks_hash,
-        direct_walk_secs: None,
+        direct: None,
     })
     .map(|r| match r {
         cap_router::Response::Plan { itinerary } => itinerary,
@@ -619,9 +622,50 @@ fn a_plan_from_a_place_walks_from_it() {
     assert_eq!(legs[0]["via_stop_ids"], json!(["SA"]));
     assert_eq!(legs[0]["to_stop_id"], "SB");
 
-    let direct = plan(place("here"), json!({ "direct_walk_secs": 30 }));
+    let direct = plan(place("here"), json!({ "direct": { "walk_secs": 30 } }));
     assert_eq!(direct["ok"]["itinerary"]["arrival_secs"], 5 * 3600 + 30, "walking straight there is sooner");
 
     let refused = plan(place("SA"), json!({}));
     assert!(refused["error"].as_str().unwrap().contains("names a stop"), "{refused}");
+}
+
+/// A place's walk legs draw along the streets: given the plan's ends,
+/// the walk from the place runs its walk's path, then on through the
+/// stops; walking straight between two places runs the direct walk's
+/// path. Without the ends, a place is no stop: only the stops draw.
+#[test]
+fn a_place_s_walk_draws_along_its_path() {
+    let hash = load_network();
+    let place = json!({ "id": "here", "name": "Dropped pin", "walks": [
+        { "stop_id": "SA", "walk_secs": 120, "path": [
+            { "lat": 45.5152, "lon": -73.5165 }, { "lat": 45.515, "lon": -73.5165 }, { "lat": 45.515, "lon": -73.5155 } ] },
+    ]});
+    let call = |req: Value| -> Value {
+        let out: Value = serde_json::from_str(&cap_router::dispatch_json(&req.to_string())).unwrap();
+        assert!(out.get("error").is_none(), "{out}");
+        out["ok"].clone()
+    };
+    let it = call(json!({ "op": "plan", "network_hash": hash, "from": place, "to": "SB", "date": DATE,
+                          "depart_secs": 5 * 3600, "max_legs": 2 }))["itinerary"].clone();
+    let paths = |from: Value, to: Value, direct: Value, it: &Value| {
+        call(json!({ "op": "itinerary_paths", "network_hash": hash, "date": DATE, "itinerary": it,
+                     "from": from, "to": to, "direct": direct }))["paths"].clone()
+    };
+    let drawn = paths(place.clone(), json!("SB"), Value::Null, &it);
+    let line = drawn[0]["path"].as_array().unwrap();
+    assert_eq!(drawn[0]["kind"], "walk");
+    assert_eq!(line.len(), 4, "the pin, its street, bay A, then on to bay B: {line:?}");
+    assert_eq!(line[0], json!({ "lat": 45.5152, "lon": -73.5165 }));
+    assert_eq!(line[3], json!({ "lat": 45.515, "lon": -73.5145 }), "bay B");
+    assert_eq!(
+        paths(Value::Null, Value::Null, Value::Null, &it)[0]["path"].as_array().unwrap().len(), 2,
+        "without the ends, a place is no stop: the walk draws bay A to bay B alone"
+    );
+
+    let there = json!({ "id": "there", "name": "Destination", "walks": [] });
+    let direct = json!({ "walk_secs": 40, "path": [{ "lat": 45.5152, "lon": -73.5165 }, { "lat": 45.5153, "lon": -73.516 }] });
+    let walked = call(json!({ "op": "plan", "network_hash": hash, "from": place, "to": there, "date": DATE,
+                              "depart_secs": 5 * 3600, "max_legs": 2, "direct": direct }))["itinerary"].clone();
+    assert_eq!(walked["arrival_secs"], 5 * 3600 + 40);
+    assert_eq!(paths(place.clone(), there, direct.clone(), &walked)[0]["path"], direct["path"]);
 }

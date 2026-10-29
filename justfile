@@ -9,7 +9,7 @@
 # There is no monolith artifact: every
 # host instantiates the capability modules it needs — the browser
 # fetches them from web/public/caps/, the sync server hosts
-# cap-sync at web/pkg/cap_sync.wasm.
+# cap-sync, cap-network and cap-streets from web/pkg/.
 
 default:
     @just --list
@@ -22,8 +22,10 @@ default:
 # capabilities assembled per user) and regenerate the capability
 # manifest — hash-pinned modules in web/public/caps/, served under
 # their content hash so the HTTP cache holds them forever. The sync
-# server's module also lands at the stable path web/pkg/cap_sync.wasm
-# (server default -wasm flag; rebuilt with the modules, never by hand).
+# server's modules also land at stable paths in web/pkg/ (cap_sync,
+# cap_network, cap_streets — the server's default -wasm,
+# -network-wasm and -streets-wasm flags; rebuilt with the modules,
+# never by hand).
 caps:
     #!/usr/bin/env bash
     set -e
@@ -32,6 +34,7 @@ caps:
     mkdir -p web/pkg
     cp target/wasm32-unknown-unknown/release/cap_sync.wasm web/pkg/cap_sync.wasm
     cp target/wasm32-unknown-unknown/release/cap_network.wasm web/pkg/cap_network.wasm
+    cp target/wasm32-unknown-unknown/release/cap_streets.wasm web/pkg/cap_streets.wasm
 
 # Publish the registry: gates first (the records report them), then
 # build and publish — immutable blobs, evidence records per
@@ -504,17 +507,21 @@ population:
 #
 #   just serve                                   # static + /rt only
 #   just serve path/to/gtfs.zip                  # + /network (imported once), /manifest
-#   just serve path/to/gtfs.zip "Test Transit"   # + manifest publisher
-#   just serve path/to/gtfs.zip "" 127.0.0.1:8081
+#   just serve path/to/gtfs.zip roads.geojson    # + /streets, /walks (the layer
+#                                                # imported once, the walk table
+#                                                # derived from both)
+#   just serve path/to/gtfs.zip "" "Test Transit"   # + manifest publisher
+#   just serve path/to/gtfs.zip "" "" 127.0.0.1:8081
 #
-# The feed path is resolved relative to the repo root, wherever you
-# run just from.
-serve feed="" publisher="" addr="127.0.0.1:8080":
+# The feed and street layer paths are resolved relative to the repo
+# root, wherever you run just from.
+serve feed="" streets="" publisher="" addr="127.0.0.1:8080":
     #!/usr/bin/env bash
     set -e
     cd server
     args=(-addr "{{ addr }}")
     if [ -n "{{ feed }}" ]; then args+=(-feed "{{ absolute_path(feed) }}"); fi
+    if [ -n "{{ streets }}" ]; then args+=(-streets "{{ absolute_path(streets) }}"); fi
     if [ -n "{{ publisher }}" ]; then args+=(-publisher "{{ publisher }}"); fi
     exec go run . "${args[@]}"
 

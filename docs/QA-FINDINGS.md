@@ -323,15 +323,6 @@ work rules, and the bid over them.
 
 ## Geography
 
-- **QAF-83 UI GAP** — riders' plans still walk in straight lines,
-  from stop to stop. The router walks the streets when a plan names
-  a walk table (`walks_hash`), and plans from and to any place
-  (cap-streets `access`), but ride-now uses neither: it plans with
-  straight-line transfers (stops within 300 m, at 1.3 m/s), and a
-  trip starts and ends only at a stop. The fix is ride-now's wiring
-  (`docs/units/streets-model.md`, item 3).
-  Pin: `web/src/uis/ride-now/host.svelte.ts` — `planCompare` is
-  called with no walks hash and stop ids for both ends.
 - **QAF-85 DATA GAP** — C-TRAN's Trapeze roads cannot carry
   walking. The export codes every state route CFCC `A10` — I-5 and
   I-205, and also NE Fourth Plain Rd, W Mill Plain Blvd, NE 117th

@@ -52,6 +52,16 @@ pub struct PointWalk {
     pub path: Vec<StreetPoint>,
 }
 
+/// The walk from a point straight to another, and its path (empty
+/// when the walk was given by its seconds alone).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DirectWalk {
+    pub walk_secs: u32,
+    #[serde(default)]
+    pub path: Vec<StreetPoint>,
+}
+
 /// Every walk between a network's stops within the limit, and what
 /// it was derived from: the streets and network documents' hashes,
 /// the speed, the limit. Walks in (from, to) order; symmetric.

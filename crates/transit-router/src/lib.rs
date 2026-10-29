@@ -26,14 +26,18 @@
 //! * [`raptor`] — a plan's ends (stops, places), the round-based
 //!   searches, and itinerary reconstruction (legs carry the route's names, the sign at the
 //!   boarding visit, and which times are predicted).
+//! * [`walk_path`] — where a walk leg runs: through its stops, and
+//!   along the streets from or to a place.
 //! * [`notice`] — what a rider is told about a compared plan (the
 //!   diverted day against the unpatched one).
 
 pub mod network;
 pub mod notice;
 pub mod raptor;
+pub mod walk_path;
 
 pub use network::{live_times, Footpath, LiveVisit, Pattern, PatternTrip, RouterNetwork, StopNode};
+pub use walk_path::walk_path;
 pub use notice::{diverted_instances, plan_notice, DivertedTrips, NoticeKind, PlanNotice};
 pub use raptor::{
     earliest_arrival, earliest_arrival_between, latest_departure, latest_departure_between, ArriveBy, End,

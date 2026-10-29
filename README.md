@@ -44,7 +44,10 @@ Toolchains: Rust (with the `wasm32-unknown-unknown` target), Go
 cd web && npm install && cd ..
 just build                                   # capability modules + frontend
 just serve                                   # the server on :8080
-just serve path/to/gtfs.zip "Test Transit"   # + /network (the zip, imported once) and the manifest
+just serve path/to/gtfs.zip                  # + /network (the zip, imported once) and the manifest
+just serve path/to/gtfs.zip roads.geojson    # + /streets and /walks (the layer imported
+                                             # once, the walk table derived from both)
+just serve path/to/gtfs.zip "" "Test Transit"   # + the manifest's publisher
 just dev                                     # vite hot reload + the server
 ```
 

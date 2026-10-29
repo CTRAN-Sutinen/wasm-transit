@@ -82,6 +82,15 @@ pub struct PatternStops {
 }
 
 /// One operation call. Tagged like every capability's seam.
+/// A point's walk to one stop — cap-streets `access`'s walks pass as
+/// they are (their paths ride along unread).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "cap_directory/")]
+pub struct StopWalk {
+    pub stop_id: String,
+    pub walk_secs: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_directory/")]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -114,7 +123,11 @@ pub enum Request {
     /// at most `limit` (default 10), none farther than `radius_m` when
     /// given (none: the nearest `limit`, however far). A place is what
     /// a rider walks to: a station's bays answer once, as the station,
-    /// at the distance of its nearest member.
+    /// at the distance of its nearest member. With the point's `walks`
+    /// (cap-streets `access` answers them, along the streets), the
+    /// places a walk reaches come first, by walk, each with its
+    /// `walk_secs` (the shortest to any member); the rest follow by
+    /// distance (D-34).
     StopsNear {
         network_hash: String,
         lat: f64,
@@ -125,6 +138,9 @@ pub enum Request {
         #[serde(default)]
         #[ts(optional)]
         radius_m: Option<f64>,
+        #[serde(default)]
+        #[ts(optional)]
+        walks: Option<Vec<StopWalk>>,
     },
     /// Stops by id, in the request's order — the names join hosts
     /// otherwise do by hand when a view (like rt's) carries ids a
@@ -270,7 +286,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             }
             Ok(Response::Stops { stops })
         }
-        Request::StopsNear { network_hash, lat, lon, limit, radius_m } => {
+        Request::StopsNear { network_hash, lat, lon, limit, radius_m, walks } => {
             if !(-90.0..=90.0).contains(&lat) {
                 return Err(format!("lat {lat} is not a latitude (-90..=90)"));
             }
@@ -282,7 +298,9 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             }
             let network = network_arc(&network_hash)?;
             let limit = limit.unwrap_or(STOPS_NEAR_LIMIT) as usize;
-            Ok(Response::StopsNear { stops: transit_network::listing::stops_near(&network, lat, lon, limit, radius_m) })
+            let walks: Vec<(String, u32)> = walks.unwrap_or_default().into_iter().map(|w| (w.stop_id, w.walk_secs)).collect();
+            let stops = transit_network::listing::stops_near_walked(&network, lat, lon, limit, radius_m, &walks);
+            Ok(Response::StopsNear { stops })
         }
         Request::StopsByIds { network_hash, ids } => {
             let network = network_arc(&network_hash)?;

@@ -6,7 +6,8 @@
 // the browser runs (sha256 in the manifest proves it) and calls the
 // flat ABI. This host is scaffolding only: HTTP routing, static
 // serving with Range support, the CORS proxy, the published network
-// (network.go), and the manifest that pins network + wasm hashes. No
+// (network.go) and streets (streets.go), and the manifest that pins
+// their hashes and the sync module's. No
 // domain decision is ever made here.
 package main
 
@@ -34,6 +35,8 @@ func main() {
 	wasmPath := flag.String("wasm", "../web/pkg/cap_sync.wasm", "the sync capability module to host and pin")
 	feedPath := flag.String("feed", "", "path to the GTFS zip: imported once and published as the network (enables /network and the manifest's schedule section)")
 	networkWasm := flag.String("network-wasm", "../web/pkg/cap_network.wasm", "the network capability module that imports the feed")
+	streetsPath := flag.String("streets", "", "path to a street layer (GeoJSON lines): imported once and published as the streets document (enables /streets, and with -feed the walk table at /walks)")
+	streetsWasm := flag.String("streets-wasm", "../web/pkg/cap_streets.wasm", "the streets capability module that imports the layer and derives the walk table")
 	publisher := flag.String("publisher", "", "manifest provenance (who publishes this schedule)")
 	editsPath := flag.String("edits", "", "path to persist the edit document (JSON); empty = in-memory only")
 	flag.Parse()
@@ -61,12 +64,20 @@ func main() {
 			log.Fatalf("feed: %v", err)
 		}
 	}
+	if *streetsPath != "" {
+		s.streets = &fileStreets{path: *streetsPath, streetsWasm: *streetsWasm}
+		if _, err := s.publishedStreets(); err != nil {
+			log.Fatalf("streets: %v", err)
+		}
+	}
 	s.edits = loadEdits(*editsPath)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rt", s.handleProxy)
 	mux.HandleFunc("/manifest", s.handleManifest)
 	mux.HandleFunc("/network", s.handleNetwork)
+	mux.HandleFunc("/streets", s.handleStreets)
+	mux.HandleFunc("/walks", s.handleWalks)
 	mux.HandleFunc("/edits", s.handleEdits)
 	mux.HandleFunc("/", s.handleStatic)
 
@@ -78,7 +89,8 @@ func main() {
 type server struct {
 	dist      string
 	wasm      *WasmHost
-	feeder    *fileFeed // nil when no feed is configured
+	feeder    *fileFeed    // nil when no feed is configured
+	streets   *fileStreets // nil when no street layer is configured
 	publisher string
 
 	// The edit document. Opaque JSON: the artifact owns the schema
@@ -147,14 +159,17 @@ func (s *server) handleProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 // Manifest pins the published network, the GTFS zip it was imported
-// from, and the sync module this server runs. `feed_version` is read
+// from, the published streets and walk table, and the sync module
+// this server runs. `feed_version` is read
 // from the feed's own feed_info.txt by the host (the host owns files
 // and I/O; the module owns the format's domain).
 type Manifest struct {
 	NetworkHash string  `json:"network_hash"` // the network GET /network serves
 	FeedHash    string  `json:"feed_hash"`    // "sha256:<hex>" of the GTFS zip it was imported from
 	FeedVersion *string `json:"feed_version,omitempty"`
-	WasmHash    string  `json:"wasm_hash"` // sha256 of the sync module this server runs
+	StreetsHash string  `json:"streets_hash,omitempty"` // the streets document GET /streets serves
+	WalksHash   string  `json:"walks_hash,omitempty"`   // the walk table GET /walks serves
+	WasmHash    string  `json:"wasm_hash"`              // sha256 of the sync module this server runs
 	GeneratedAt int64   `json:"generated_at"`
 	Publisher   *string `json:"publisher,omitempty"`
 }
@@ -175,6 +190,15 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 		if v := feed.version; v != "" {
 			manifest.FeedVersion = &v
 		}
+	}
+	if s.streets != nil {
+		streets, err := s.publishedStreets()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("streets unavailable: %v", err), http.StatusInternalServerError)
+			return
+		}
+		manifest.StreetsHash = streets.streets.hash
+		manifest.WalksHash = streets.walks.hash
 	}
 	if s.publisher != "" {
 		manifest.Publisher = &s.publisher

@@ -30,10 +30,10 @@ browser.
 
 | # | op(s) | state |
 |---|---|---|
-| 1 | directory `stops` (query), `stops_near` (a point: the rider, or a tapped spot) | answered; a colloquial name answers nothing, QAF-70 |
+| 1 | directory `stops` (query), `stops_near` (a point: the rider, or a tapped spot; by walk over streets `access` when the server publishes streets) | answered; a colloquial name answers nothing, QAF-70; by walk pinned on the fixture only |
 | 2 | rt `live` → board `stop_board` (`live_hash`) | answered; each row's `wait` says "leaves in N min", which the UI does not read yet |
 | 3 | the board row's `status` / `delay_secs`; the map's buses by status | answered |
-| 4 | router `plan_compare` (`live_hash`, `edits_hash`) → `itinerary_paths` | answered; a trip's duration has no op, QAF-81 |
+| 4 | router `plan_compare` (`live_hash`, `edits_hash`, `walks_hash`; a point end as a place over streets `access`) → `itinerary_paths` (the ends, so a place's walks draw along the streets) | answered; a trip's duration has no op, QAF-81; walking pinned on the fixture only |
 | 5 | router `plan_arrive_by` (no deadline; or a deadline) | answered |
 | 6 | board `stop_board` (`alerts`, `skipped`); router `plan_compare` (`notice`) | skipped + notice answered on the fixture; no alert has been read (no fixture carries one, and no alerts URL is configured) |
 | 7 | board `watchlist_board` | schedule only, and a station answers nothing: QAF-79; saved stops do not survive a reload: QAF-80 |
@@ -42,7 +42,9 @@ browser.
 
 ## Answer graph
 
-Inputs: `network` (the imported document), `edits` (the sync
+Inputs: `network` (the imported document), `streets` / `walks` (the
+published streets document and walk table, registered in the
+background), `edits` (the sync
 server's edit document, GET /edits), `snapshot` (the decoded live
 feeds), `clock` (the poll's tick), `query` / `near` / `stop` /
 `departure` / `trip` / `routeQuery` / `route` / `vehicle` (the
@@ -54,7 +56,8 @@ onto it (the live node repairs the `vehicle` selection).
 |---|---|---|---|
 | directory `stops` + `routes` | network | RideMap (and every route badge) | always |
 | directory `stops` (query) | network, query | PlaceSearch | always |
-| directory `stops_near` | network, near | the home panel's nearby cards | always |
+| streets `access` (the near point) | network, streets, near | the home panel's nearby cards | always |
+| directory `stops_near` (with the walks) | network, near, streets.access | the home panel's nearby cards | always |
 | rt `live` (+ `load_boundary`) | network, snapshot | LiveFeeds, RideMap | always |
 | board `stop_board` (+ `load_edits`, `load_live`) | network, edits, rt.live, stop, clock, view | RiderBoard | the stop panel |
 | board `stop_board`, once per nearby place | network, edits, rt.live, stops_near, clock, view | StopCard | the home panel |
@@ -63,7 +66,7 @@ onto it (the live node repairs the `vehicle` selection).
 | directory `entities` (routes) | network, routeQuery, view | RouteList | the routes panel |
 | directory `route_detail` | network, route, view | RouteView | the route panel |
 | rt `trip_progress` + directory `stops_by_ids` | network, snapshot, vehicle, view | BusView | the bus panel |
-| router `plan_compare` \| `plan_arrive_by` | network, edits, rt.live, trip | TripPlan | always |
+| router `plan_compare` \| `plan_arrive_by` (a point end: streets `access`) | network, edits, rt.live, trip, streets, walks | TripPlan | always |
 | router `itinerary_paths` | router.plan | RideMap | always |
 
 The poll (every 30 s) re-reads the edit document and the live feeds

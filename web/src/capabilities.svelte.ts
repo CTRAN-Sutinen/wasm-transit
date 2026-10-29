@@ -97,6 +97,11 @@ import type { TypeCoverage } from "./types/TypeCoverage";
 import type { FeedInfo } from "./types/FeedInfo";
 import type { FeedSummary } from "./types/FeedSummary";
 import type { Itinerary } from "./types/Itinerary";
+import type { End } from "./types/End";
+import type { DirectWalk } from "./types/DirectWalk";
+import type { PointWalk } from "./types/PointWalk";
+import type { WalkTable } from "./types/WalkTable";
+import type { StopWalk } from "./types/cap_directory/StopWalk";
 import { get as idbGet, set as idbSet } from "idb-keyval";
 
 /// The flat C ABI every capability module exports (identical to the
@@ -665,8 +670,8 @@ export function routerCap(module: CapModule) {
     plan(
       networkHash: string,
       editsHash: string | null,
-      from: string,
-      to: string,
+      from: End,
+      to: End,
       date: string,
       departSecs: number,
       maxLegs: number,
@@ -685,15 +690,21 @@ export function routerCap(module: CapModule) {
       } as RouterRequest) as Extract<RouterResponse, { op: "plan" }>;
       return resp.itinerary;
     },
+    /// The ends are stop ids or places (`{id, name, walks}` — the
+    /// streets capability's `access` walks); `direct` is `access`'s
+    /// walk straight between two places; `walksHash` names a walk
+    /// table (`loadWalks`) the transfers walk.
     planCompare(
       networkHash: string,
       editsHash: string | null,
-      from: string,
-      to: string,
+      from: End,
+      to: End,
       date: string,
       departSecs: number,
       maxLegs: number,
       liveHash: string | null = null,
+      walksHash: string | null = null,
+      direct: DirectWalk | null = null,
     ): { active: Itinerary | null; baseline: Itinerary | null; notice: string | null } {
       const resp = module.invoke({
         op: "plan_compare",
@@ -705,6 +716,8 @@ export function routerCap(module: CapModule) {
         depart_secs: departSecs,
         max_legs: maxLegs,
         live_hash: liveHash,
+        walks_hash: walksHash,
+        direct,
       } as RouterRequest) as Extract<RouterResponse, { op: "plan_compare" }>;
       // The notice is structured (kind, minutes lost, routes, skipped
       // stops); the planner panel shows its text line.
@@ -716,12 +729,14 @@ export function routerCap(module: CapModule) {
     planArriveBy(
       networkHash: string,
       editsHash: string | null,
-      from: string,
-      to: string,
+      from: End,
+      to: End,
       date: string,
       arriveBySecs: number | null,
       maxLegs: number,
       liveHash: string | null = null,
+      walksHash: string | null = null,
+      direct: DirectWalk | null = null,
     ): { arriveBySecs: number; itinerary: Itinerary | null } {
       const resp = module.invoke({
         op: "plan_arrive_by",
@@ -733,6 +748,8 @@ export function routerCap(module: CapModule) {
         arrive_by_secs: arriveBySecs,
         max_legs: maxLegs,
         live_hash: liveHash,
+        walks_hash: walksHash,
+        direct,
       } as RouterRequest) as Extract<RouterResponse, { op: "plan_arrive_by" }>;
       return { arriveBySecs: resp.arrive_by_secs, itinerary: resp.itinerary };
     },
@@ -745,15 +762,34 @@ export function routerCap(module: CapModule) {
       >;
       return resp.live_hash;
     },
+    /// Register a walk table (the streets capability's `walks`) — the
+    /// same identity streets answered; plans name it by hash.
+    loadWalks(walks: WalkTable): string {
+      const resp = module.invoke({ op: "load_walks", walks } as RouterRequest) as Extract<
+        RouterResponse,
+        { op: "load_walks" }
+      >;
+      return resp.walks_hash;
+    },
     /// Where an itinerary runs, one path per leg, over the effective
-    /// day it was planned on (the same edits hash).
-    itineraryPaths(networkHash: string, editsHash: string | null, date: string, itinerary: Itinerary): LegPath[] {
+    /// day it was planned on (the same edits hash) — with the plan's
+    /// ends and direct walk, a place's walks along the streets.
+    itineraryPaths(
+      networkHash: string,
+      editsHash: string | null,
+      date: string,
+      itinerary: Itinerary,
+      ends: { from: End; to: End; direct: DirectWalk | null } | null = null,
+    ): LegPath[] {
       const resp = module.invoke({
         op: "itinerary_paths",
         network_hash: networkHash,
         edits_hash: editsHash,
         date,
         itinerary,
+        from: ends?.from ?? null,
+        to: ends?.to ?? null,
+        direct: ends?.direct ?? null,
       } as RouterRequest) as Extract<RouterResponse, { op: "itinerary_paths" }>;
       return resp.paths;
     },
@@ -1375,8 +1411,17 @@ export function directoryCap(module: CapModule) {
       return resp.stops;
     },
     /// The places nearest a point, nearest first (a station once, as
-    /// the station), each with its distance.
-    stopsNear(networkHash: string, lat: number, lon: number, limit?: number, radiusM?: number): NearbyStop[] {
+    /// the station), each with its distance — given the point's walks
+    /// (the streets capability's `access`), the places a walk reaches
+    /// first, by walk.
+    stopsNear(
+      networkHash: string,
+      lat: number,
+      lon: number,
+      limit?: number,
+      radiusM?: number,
+      walks?: StopWalk[],
+    ): NearbyStop[] {
       const resp = module.invoke({
         op: "stops_near",
         network_hash: networkHash,
@@ -1384,6 +1429,7 @@ export function directoryCap(module: CapModule) {
         lon,
         limit,
         radius_m: radiusM,
+        walks,
       } as DirectoryCapRequest) as Extract<DirectoryCapResponse, { op: "stops_near" }>;
       return resp.stops;
     },
@@ -1584,6 +1630,7 @@ export function ensureFeedSummary(bytes: Uint8Array): Promise<FeedSummary | null
 // ---------------------------------------------------------------------
 
 const OP_IMPORT_STREETS = 0;
+const OP_LOAD_STREETS = 1;
 
 export type StreetsGraph = { streetsHash: string; streets: StreetsDoc; ways: number; segments: number; nodes: number };
 
@@ -1601,6 +1648,34 @@ export function streetsCap(module: CapModule) {
         segments: resp.segments,
         nodes: resp.nodes,
       };
+    },
+    /// A streets document's bytes in (a published one, `GET /streets`):
+    /// the module parses and registers it — the host never parses
+    /// the document — and answers its hash.
+    loadStreetsBytes(bytes: Uint8Array): string {
+      const resp = module.invokeBytes(OP_LOAD_STREETS, bytes) as Extract<StreetsCapResponse, { op: "load_streets" }>;
+      return resp.streets_hash;
+    },
+    loadNetwork(network: Network): string {
+      return module.loadNetwork(network);
+    },
+    /// The walks from a point to the network's stops within the walk
+    /// limit, nearest first, each with its path — and, with `to`, the
+    /// walk straight there.
+    access(
+      streetsHash: string,
+      networkHash: string,
+      point: StreetPoint,
+      to: StreetPoint | null = null,
+    ): { walks: PointWalk[]; direct: DirectWalk | null } {
+      const resp = module.invoke({
+        op: "access",
+        streets_hash: streetsHash,
+        network_hash: networkHash,
+        point,
+        to,
+      } as StreetsCapRequest) as Extract<StreetsCapResponse, { op: "access" }>;
+      return { walks: resp.walks, direct: resp.direct };
     },
     /// The nearest street position to a click: the projected point
     /// plus its graph address — what a detour waypoint commits to.

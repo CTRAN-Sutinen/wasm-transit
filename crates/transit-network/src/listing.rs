@@ -634,6 +634,9 @@ pub struct NearbyStop {
     /// Great-circle meters from the point to the place's nearest
     /// member (the station's pin or any of its bays).
     pub distance_m: f64,
+    /// Seconds on foot from the point to the place's nearest member,
+    /// when the question named the point's walks and one reaches it.
+    pub walk_secs: Option<u32>,
 }
 
 /// Great-circle distance in meters (haversine, mean earth radius).
@@ -651,22 +654,54 @@ fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 /// distance of its nearest member; a stop with no station held by the
 /// network is its own place.
 pub fn stops_near(network: &Network, lat: f64, lon: f64, limit: usize, radius_m: Option<f64>) -> Vec<NearbyStop> {
-    let mut nearest: std::collections::BTreeMap<&str, f64> = Default::default();
-    for (id, s) in &network.stops {
-        let place = match s.parent.as_deref() {
+    stops_near_walked(network, lat, lon, limit, radius_m, &[])
+}
+
+/// [`stops_near`] with the point's walks to stops (`(stop id,
+/// walk_secs)`, cap-streets `access` along the streets): a place's
+/// walk is the shortest to any of its members, and the places a walk
+/// reaches come first, by walk (then distance, then id); the rest
+/// follow by distance (D-34). The walks reorder the places and
+/// nothing else.
+pub fn stops_near_walked(
+    network: &Network,
+    lat: f64,
+    lon: f64,
+    limit: usize,
+    radius_m: Option<f64>,
+    walks: &[(String, u32)],
+) -> Vec<NearbyStop> {
+    let place_of = |id: &str| -> Option<&str> {
+        let (id, s) = network.stops.get_key_value(id)?;
+        Some(match s.parent.as_deref() {
             Some(p) if network.stops.contains_key(p) => p,
             _ => id.as_str(),
-        };
+        })
+    };
+    let mut nearest: std::collections::BTreeMap<&str, (f64, Option<u32>)> = Default::default();
+    for (id, s) in &network.stops {
+        let place = place_of(id).expect("a held stop");
         let d = haversine_m(lat, lon, s.lat, s.lon);
-        let e = nearest.entry(place).or_insert(f64::INFINITY);
-        *e = e.min(d);
+        let e = nearest.entry(place).or_insert((f64::INFINITY, None));
+        e.0 = e.0.min(d);
     }
-    let mut rows: Vec<(&str, f64)> =
-        nearest.into_iter().filter(|(_, d)| radius_m.is_none_or(|r| *d <= r)).collect();
-    rows.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(b.0)));
+    for (id, secs) in walks {
+        let Some(place) = place_of(id) else { continue };
+        if let Some(e) = nearest.get_mut(place) {
+            e.1 = Some(e.1.map_or(*secs, |w| w.min(*secs)));
+        }
+    }
+    let mut rows: Vec<(&str, (f64, Option<u32>))> =
+        nearest.into_iter().filter(|(_, (d, _))| radius_m.is_none_or(|r| *d <= r)).collect();
+    rows.sort_by(|(a_id, (a_d, a_w)), (b_id, (b_d, b_w))| {
+        (a_w.is_none(), a_w.unwrap_or(0))
+            .cmp(&(b_w.is_none(), b_w.unwrap_or(0)))
+            .then(a_d.total_cmp(b_d))
+            .then_with(|| a_id.cmp(b_id))
+    });
     rows.into_iter()
         .take(limit)
-        .map(|(id, distance_m)| {
+        .map(|(id, (distance_m, walk_secs))| {
             let s = &network.stops[id];
             NearbyStop {
                 stop_id: id.to_string(),
@@ -676,6 +711,7 @@ pub fn stops_near(network: &Network, lat: f64, lon: f64, limit: usize, radius_m:
                 parent: s.parent.clone(),
                 transfer: s.transfer,
                 distance_m,
+                walk_secs,
             }
         })
         .collect()

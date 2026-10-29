@@ -24,6 +24,7 @@ use ts_rs::TS;
 use serde::{Deserialize, Serialize};
 
 use crate::network::RouterNetwork;
+use transit_streets::StreetPoint;
 use crate::{Result, RouterError};
 
 const INF: u32 = u32::MAX;
@@ -151,12 +152,17 @@ pub struct Place {
     pub walks: Vec<PlaceWalk>,
 }
 
-/// A place's walk to (and, walks being symmetric, from) one stop.
+/// A place's walk to (and, walks being symmetric, from) one stop, and
+/// the path the rider walks — the place first, the stop last (empty
+/// when the walk was given by its seconds alone). Planning reads the
+/// seconds; [`crate::walk_path`] draws the path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct PlaceWalk {
     pub stop_id: String,
     pub walk_secs: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path: Vec<StreetPoint>,
 }
 
 /// An end resolved against the network: what an itinerary names it,
@@ -313,7 +319,25 @@ fn forward(
             marked_list.push(s);
         }
     }
-    let sources = marked_list.clone();
+    // The walk to the first boarding is no leg: the sources' footpaths
+    // (chains included) settle into round 0, before any ride — so a
+    // one-leg plan may walk to its bus.
+    let mut i = 0;
+    while i < marked_list.len() {
+        let s = marked_list[i];
+        i += 1;
+        for edge in &net.stops[s].footpaths {
+            let (t, candidate) = (edge.to as usize, tau[0][s] + edge.walk_secs);
+            if candidate < tau[0][t] {
+                tau[0][t] = candidate;
+                parent[0][t] = Parent::Walk { from: s as u32, walk_secs: edge.walk_secs };
+                marked[t] = true;
+                marked_list.push(t);
+            }
+        }
+    }
+    marked_list.sort_unstable();
+    marked_list.dedup();
 
     for k in 1..=rounds {
         if marked_list.is_empty() {
@@ -394,17 +418,8 @@ fn forward(
             }
         }
 
-        // ---- footpath pass, from every stop improved this round (and,
-        // at k == 1, from the sources: walking to a nearby stop is how
-        // you board without having arrived by transit).
-        if k == 1 {
-            for &s in &sources {
-                if !improved_set[s] {
-                    improved_set[s] = true;
-                    improved.push(s);
-                }
-            }
-        }
+        // ---- footpath pass, from every stop improved this round (the
+        // walk before the first ride settled in round 0).
         let mut i = 0;
         while i < improved.len() {
             let s = improved[i];
@@ -611,7 +626,24 @@ pub fn latest_departure_between(
             }
         }
     }
-    let sinks = marked_list.clone();
+    // The walk from the last alighting is no leg: the footpaths into
+    // the sinks settle into round 0, before any ride (footpaths are
+    // symmetric) — so a one-leg plan may walk from its bus.
+    let mut i = 0;
+    while i < marked_list.len() {
+        let t = marked_list[i];
+        i += 1;
+        for edge in &net.stops[t].footpaths {
+            let (s, candidate) = (edge.to as usize, tau[0][t] - edge.walk_secs as i64);
+            if candidate >= 0 && candidate > tau[0][s] {
+                tau[0][s] = candidate;
+                marked[s] = true;
+                marked_list.push(s);
+            }
+        }
+    }
+    marked_list.sort_unstable();
+    marked_list.dedup();
 
     for k in 1..=rounds {
         if marked_list.is_empty() {
@@ -655,16 +687,7 @@ pub fn latest_departure_between(
 
         // ---- footpath pass, backward (footpaths are symmetric: the
         // same distance both ways), from every stop improved this
-        // round — and at k == 1 from the stops the destination is
-        // reached from.
-        if k == 1 {
-            for &s in &sinks {
-                if !improved_set[s] {
-                    improved_set[s] = true;
-                    improved.push(s);
-                }
-            }
-        }
+        // round (the walk after the last ride settled in round 0).
         let mut i = 0;
         while i < improved.len() {
             let t = improved[i];

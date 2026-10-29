@@ -4,8 +4,9 @@ import { defineConfig } from "@playwright/test";
 // Go sync server — on their OWN port, never reused: a shared server
 // carries a live edit document, and the suite must be hermetic (nor
 // should test records land in a dev server someone is using). The
-// second server publishes the fixture feed's network
-// (e2e/published-network.spec.mjs); the first publishes none.
+// second server publishes the fixture feed's network and the walking
+// fixture's streets and walk table (e2e/published-network.spec.mjs);
+// the first publishes none.
 export default defineConfig({
   testDir: "./e2e",
   timeout: 20_000,
@@ -23,7 +24,8 @@ export default defineConfig({
       stderr: "pipe",
     },
     {
-      command: "go run . -addr 127.0.0.1:8083 -feed ../web/e2e/fixtures/sample-gtfs.zip",
+      command:
+        "go run . -addr 127.0.0.1:8083 -feed ../web/e2e/fixtures/sample-gtfs.zip -streets ../web/e2e/fixtures/walk-streets.geojson",
       cwd: "../server",
       url: "http://127.0.0.1:8083",
       reuseExistingServer: false,

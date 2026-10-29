@@ -234,6 +234,10 @@
           paint: { "circle-radius": 6, "circle-color": "#2563eb", "circle-stroke-color": "#fff", "circle-stroke-width": 2 },
         });
 
+        // Test/inspection hook, as MapView's: e2e tests project points
+        // to tap through it.
+        window.__map = m;
+
         // A tapped bus opens it; a tapped stop opens it; a tapped spot
         // asks what is near it.
         m.on("click", (e) => {
