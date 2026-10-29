@@ -287,12 +287,20 @@ pub fn earliest_arrival_between(
     }
     let Some((arrival, exit, exit_walk)) = best else { return Ok(None) };
 
-    let (mut legs, entry) = reconstruct(net, &tau, &parent, exit, rounds);
+    let (hops, entry) = reconstruct(&tau, &parent, net, exit, rounds);
+    let plan = walk_least(net, &hops, &origin.stops, depart_secs, &target.stops, arrival).unwrap_or(Plan {
+        entry_walk: tau[0][entry] - depart_secs,
+        entry,
+        hops,
+        exit,
+        exit_walk,
+    });
+    let mut legs: Vec<Leg> = plan.hops.iter().map(|hop| hop.leg(net)).collect();
     if origin.place {
-        legs.insert(0, origin.walk(net, entry, tau[0][entry] - depart_secs, true));
+        legs.insert(0, origin.walk(net, plan.entry, plan.entry_walk, true));
     }
     if target.place {
-        legs.push(target.walk(net, exit, exit_walk, false));
+        legs.push(target.walk(net, plan.exit, plan.exit_walk, false));
     }
     Ok(Some(itinerary(arrival, legs)))
 }
@@ -458,16 +466,57 @@ fn forward(
     (tau, parent)
 }
 
-/// The legs that reach `exit`, walking parents back from it — and the
+/// One step of a plan between its first and last stop: a ride (its
+/// pattern, its trip, the positions boarded and left) or one footpath.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Hop {
+    Ride { pattern: usize, trip: usize, board: usize, alight: usize },
+    Walk { from: usize, to: usize, walk_secs: u32 },
+}
+
+impl Hop {
+    fn leg(&self, net: &RouterNetwork) -> Leg {
+        match *self {
+            Hop::Ride { pattern, trip, board, alight } => {
+                let pat = &net.patterns[pattern];
+                let pt = &pat.trips[trip];
+                let (board_stop, alight_stop) =
+                    (pat.stop_positions[board] as usize, pat.stop_positions[alight] as usize);
+                Leg::Transit {
+                    trip: pt.trip.clone(),
+                    start_secs: pt.start_secs,
+                    route_id: pt.route_id.clone(),
+                    route_name: pt.route_name.clone(),
+                    route_long_name: pt.route_long_name.clone(),
+                    headsign: pt.headsign_at(board).to_string(),
+                    board_stop_id: net.stops[board_stop].stop_id.clone(),
+                    board_stop_name: net.stops[board_stop].stop_name.clone(),
+                    board_secs: pt.departures[board],
+                    board_hhmmss: fmt_time(pt.departures[board]),
+                    board_delay_secs: pt.delay_at(board).1,
+                    alight_stop_id: net.stops[alight_stop].stop_id.clone(),
+                    alight_stop_name: net.stops[alight_stop].stop_name.clone(),
+                    alight_secs: pt.arrivals[alight],
+                    alight_hhmmss: fmt_time(pt.arrivals[alight]),
+                    alight_delay_secs: pt.delay_at(alight).0,
+                }
+            }
+            Hop::Walk { from, to, walk_secs } => Leg::Walk {
+                from_stop_id: net.stops[from].stop_id.clone(),
+                from_stop_name: net.stops[from].stop_name.clone(),
+                to_stop_id: net.stops[to].stop_id.clone(),
+                to_stop_name: net.stops[to].stop_name.clone(),
+                walk_secs,
+                via_stop_ids: Vec::new(),
+            },
+        }
+    }
+}
+
+/// The hops that reach `exit`, walking parents back from it — and the
 /// source stop they start at.
-fn reconstruct(
-    net: &RouterNetwork,
-    tau: &[Vec<u32>],
-    parent: &[Vec<Parent>],
-    exit: usize,
-    rounds: usize,
-) -> (Vec<Leg>, usize) {
-    let mut legs_rev: Vec<Leg> = Vec::new();
+fn reconstruct(tau: &[Vec<u32>], parent: &[Vec<Parent>], net: &RouterNetwork, exit: usize, rounds: usize) -> (Vec<Hop>, usize) {
+    let mut hops_rev: Vec<Hop> = Vec::new();
     let mut stop = exit;
     let mut k = rounds;
     loop {
@@ -492,50 +541,196 @@ fn reconstruct(
                 break;
             }
             Some((r, Parent::Transit { pattern, trip, board_pos, alight_pos })) => {
-                let pat = &net.patterns[pattern];
-                let pt = &pat.trips[trip];
-                let board_stop = pat.stop_positions[board_pos] as usize;
-                legs_rev.push(Leg::Transit {
-                    trip: pt.trip.clone(),
-                    start_secs: pt.start_secs,
-                    route_id: pt.route_id.clone(),
-                    route_name: pt.route_name.clone(),
-                    route_long_name: pt.route_long_name.clone(),
-                    headsign: pt.headsign_at(board_pos).to_string(),
-                    board_stop_id: net.stops[board_stop].stop_id.clone(),
-                    board_stop_name: net.stops[board_stop].stop_name.clone(),
-                    board_secs: pt.departures[board_pos],
-                    board_hhmmss: fmt_time(pt.departures[board_pos]),
-                    board_delay_secs: pt.delay_at(board_pos).1,
-                    alight_stop_id: net.stops[stop].stop_id.clone(),
-                    alight_stop_name: net.stops[stop].stop_name.clone(),
-                    alight_secs: pt.arrivals[alight_pos],
-                    alight_hhmmss: fmt_time(pt.arrivals[alight_pos]),
-                    alight_delay_secs: pt.delay_at(alight_pos).0,
-                });
-                stop = board_stop;
+                hops_rev.push(Hop::Ride { pattern, trip, board: board_pos, alight: alight_pos });
+                stop = net.patterns[pattern].stop_positions[board_pos] as usize;
                 // The boarding used tau[k-1] at the board stop.
                 k = r - 1;
             }
             Some((r, Parent::Walk { from, walk_secs })) => {
-                let from = from as usize;
-                legs_rev.push(Leg::Walk {
-                    from_stop_id: net.stops[from].stop_id.clone(),
-                    from_stop_name: net.stops[from].stop_name.clone(),
-                    to_stop_id: net.stops[stop].stop_id.clone(),
-                    to_stop_name: net.stops[stop].stop_name.clone(),
-                    walk_secs,
-                    via_stop_ids: Vec::new(),
-                });
-                stop = from;
+                hops_rev.push(Hop::Walk { from: from as usize, to: stop, walk_secs });
+                stop = from as usize;
                 // The walk used tau[r] at its source stop — same round.
                 k = r;
             }
             Some((_, Parent::Unset)) => unreachable!(),
         }
     }
-    legs_rev.reverse();
-    (legs_rev, stop)
+    hops_rev.reverse();
+    (hops_rev, stop)
+}
+
+/// A plan's hops between its ends: the source stop it starts at and
+/// the walk there, and the stop it leaves the network at and the walk
+/// on (zero for a stop end).
+struct Plan {
+    entry: usize,
+    entry_walk: u32,
+    hops: Vec<Hop>,
+    exit: usize,
+    exit_walk: u32,
+}
+
+/// The shortest walks from `sources` (each at its own cost) over the
+/// footpaths, chains included — no farther than `limit` — and each
+/// stop's predecessor.
+struct WalkTree {
+    secs: Vec<u32>,
+    prev: Vec<Option<(usize, u32)>>,
+}
+
+impl WalkTree {
+    fn new(net: &RouterNetwork, sources: &[(usize, u32)], limit: u32) -> WalkTree {
+        let n = net.stops.len();
+        let (mut secs, mut prev) = (vec![INF; n], vec![None; n]);
+        let mut heap = std::collections::BinaryHeap::new();
+        for &(s, c) in sources {
+            if c < secs[s] {
+                secs[s] = c;
+                heap.push(std::cmp::Reverse((c, s)));
+            }
+        }
+        while let Some(std::cmp::Reverse((d, s))) = heap.pop() {
+            if d > secs[s] || d >= limit {
+                continue;
+            }
+            for e in &net.stops[s].footpaths {
+                let (t, c) = (e.to as usize, d + e.walk_secs);
+                if c < secs[t] {
+                    secs[t] = c;
+                    prev[t] = Some((s, e.walk_secs));
+                    heap.push(std::cmp::Reverse((c, t)));
+                }
+            }
+        }
+        WalkTree { secs, prev }
+    }
+
+    /// The footpaths to `stop`, in order, and the source they start at.
+    fn path(&self, stop: usize) -> (Vec<Hop>, usize) {
+        let mut hops = Vec::new();
+        let mut at = stop;
+        while let Some((from, walk_secs)) = self.prev[at] {
+            hops.push(Hop::Walk { from, to: at, walk_secs });
+            at = from;
+        }
+        hops.reverse();
+        (hops, at)
+    }
+}
+
+/// The plan's rides kept — and so its arrival and its leg count — with
+/// each walk the least that still connects (D-35): the first ride
+/// boarded, each transfer's pair of stops, and the last ride left
+/// where the walk is shortest and the connection still made, until
+/// nothing moves (each move shortens one walk, so it ends). A tie
+/// keeps the search's choice. `None` for a plan with no ride.
+fn walk_least(
+    net: &RouterNetwork,
+    hops: &[Hop],
+    sources: &[(usize, u32)],
+    depart_secs: u32,
+    targets: &[(usize, u32)],
+    arrival: u32,
+) -> Option<Plan> {
+    let mut rides: Vec<(usize, usize, usize, usize)> = hops
+        .iter()
+        .filter_map(|h| match *h {
+            Hop::Ride { pattern, trip, board, alight } => Some((pattern, trip, board, alight)),
+            Hop::Walk { .. } => None,
+        })
+        .collect();
+    if rides.is_empty() {
+        return None;
+    }
+    let stop = |r: (usize, usize, usize, usize), pos: usize| net.patterns[r.0].stop_positions[pos] as usize;
+    let dep = |r: (usize, usize, usize, usize), pos: usize| net.patterns[r.0].trips[r.1].departures[pos];
+    let arr = |r: (usize, usize, usize, usize), pos: usize| net.patterns[r.0].trips[r.1].arrivals[pos];
+    let len = |r: (usize, usize, usize, usize)| net.patterns[r.0].stop_positions.len();
+    // The walk from a stop on to the destination: its best target.
+    let onward = |tree: &WalkTree| {
+        targets
+            .iter()
+            .filter(|(t, _)| tree.secs[*t] != INF)
+            .map(|&(t, w)| (tree.secs[t] + w, t, w))
+            .min_by_key(|&(total, _, _)| total)
+    };
+
+    let origin = WalkTree::new(net, sources, INF);
+    loop {
+        let mut moved = false;
+
+        // The first boarding.
+        let r = rides[0];
+        let mut best = (origin.secs[stop(r, r.2)], r.2);
+        for p in 0..r.3 {
+            let w = origin.secs[stop(r, p)];
+            if w < best.0 && depart_secs + w <= dep(r, p) {
+                best = (w, p);
+            }
+        }
+        if best.1 != r.2 {
+            rides[0].2 = best.1;
+            moved = true;
+        }
+
+        // Each transfer: where the earlier ride is left and the later
+        // one boarded.
+        for i in 0..rides.len() - 1 {
+            let (a, b) = (rides[i], rides[i + 1]);
+            let current = WalkTree::new(net, &[(stop(a, a.3), 0)], INF).secs[stop(b, b.2)];
+            let mut best = (current, a.3, b.2);
+            for q in a.2 + 1..len(a) {
+                let tree = WalkTree::new(net, &[(stop(a, q), 0)], best.0);
+                for p in 0..b.3 {
+                    let w = tree.secs[stop(b, p)];
+                    if w < best.0 && arr(a, q) + w <= dep(b, p) {
+                        best = (w, q, p);
+                    }
+                }
+            }
+            if (best.1, best.2) != (a.3, b.2) {
+                rides[i].3 = best.1;
+                rides[i + 1].2 = best.2;
+                moved = true;
+            }
+        }
+
+        // The last alighting.
+        let last = rides.len() - 1;
+        let r = rides[last];
+        let current = onward(&WalkTree::new(net, &[(stop(r, r.3), 0)], INF)).map_or(INF, |o| o.0);
+        let mut best = (current, r.3);
+        for q in r.2 + 1..len(r) {
+            if let Some((w, _, _)) = onward(&WalkTree::new(net, &[(stop(r, q), 0)], best.0)) {
+                if w < best.0 && arr(r, q) + w <= arrival {
+                    best = (w, q);
+                }
+            }
+        }
+        if best.1 != r.3 {
+            rides[last].3 = best.1;
+            moved = true;
+        }
+
+        if !moved {
+            break;
+        }
+    }
+
+    // The plan again: the walk to the first ride, the rides and the
+    // walks between, the walk on from the last.
+    let (mut out, entry) = origin.path(stop(rides[0], rides[0].2));
+    for (i, &r) in rides.iter().enumerate() {
+        out.push(Hop::Ride { pattern: r.0, trip: r.1, board: r.2, alight: r.3 });
+        if let Some(&next) = rides.get(i + 1) {
+            out.extend(WalkTree::new(net, &[(stop(r, r.3), 0)], INF).path(stop(next, next.2)).0);
+        }
+    }
+    let r = rides[rides.len() - 1];
+    let tree = WalkTree::new(net, &[(stop(r, r.3), 0)], INF);
+    let (_, exit, exit_walk) = onward(&tree)?;
+    out.extend(tree.path(exit).0);
+    Some(Plan { entry, entry_walk: origin.secs[entry], hops: out, exit, exit_walk })
 }
 
 /// Consecutive walk legs are one walk: from the first leg's start to

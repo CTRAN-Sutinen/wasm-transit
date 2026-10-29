@@ -182,7 +182,11 @@ transit-router  RAPTOR planning over the network model's
                 bound its rides, never its walks: the walk to the
                 first boarding and from the last alighting settle
                 before any round, so a one-leg plan walks to and
-                from its bus. `walk_path`
+                from its bus. Its arrival and rides fixed, a plan
+                then walks the least it can: the first ride boarded,
+                each transfer made, and the last ride left at the
+                stops whose walk is shortest and still connects
+                (D-35). `walk_path`
                 draws a walk leg: through its stops, and along a
                 place's walk path where it walks from or to a place
                 (a `PlaceWalk` carries the path `access` answered;

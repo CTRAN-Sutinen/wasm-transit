@@ -75,6 +75,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-32 | How does the router walk with no walk table? | encoded | nothing |
 | D-33 | How does a trip from a place walk? | encoded | nothing |
 | D-34 | Where does a stop no walk reaches go in the nearby list? | encoded | nothing |
+| D-35 | Among plans arriving together, where does the rider board and get off? | encoded | nothing |
 
 ## The trip model
 
@@ -621,6 +622,30 @@ Options:
 - Rank every place by distance and show the walk where one exists.
 Blocks: nothing. Pins:
 `crates/transit-network/tests/stops_near_law_test.rs` (laws 6–8).
+
+### D-35 — Among plans arriving together, where does the rider board and get off?
+State: Encoded provisionally.
+Context: the search answers the earliest arrival within the leg
+bound, and its rides; it is indifferent to how far the rider walks.
+On C-TRAN (2026-10-29, Jantzen Beach to Van Mall Dr & 72nd at 14:15)
+it walked the rider 13 minutes up Broadway to route 032's first stop
+at 19th St, when the same bus passes Evergreen & Broadway, a
+four-minute walk, three minutes later — the same arrival. The user
+called it out: closer stops serve the transfer.
+Options:
+- **Encoded:** the arrival and the rides are the search's; then the
+  first ride is boarded, each transfer made, and the last ride left
+  at the stops that walk least while still connecting (a tie keeps
+  the search's stop). Each walk is the least for the stops around
+  it — not a search for the least walking over every plan with that
+  arrival.
+- Least total walking over every earliest plan (a second criterion
+  in the search itself: costlier, and it can trade a ride for a walk
+  the encoded rule never does).
+- Fewest minutes waiting instead: board as late on the trip as the
+  rider can reach.
+Blocks: nothing. Pins:
+`crates/transit-router/tests/walk_least_law_test.rs` (laws 1–4).
 
 ## Agency data
 
