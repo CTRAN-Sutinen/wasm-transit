@@ -32,7 +32,7 @@ the rest of the work can go ahead while the decision is reviewed.
   goes into the law that pins it and the doc that owns its topic
   (`docs/ARCHITECTURE.md`, `docs/units/`, `docs/QA-FINDINGS.md`),
   and the `Blocked: D-N` lines are removed. Git is the archive.
-- IDs are never reused; the next new decision is **D-22**.
+- IDs are never reused; the next new decision is **D-23**.
 
 ## Summary
 
@@ -56,6 +56,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-19 | Does an alert for one direction reach both? | encoded | nothing |
 | D-20 | Which language does an alert speak? | encoded | nothing |
 | D-21 | Where is a trip going when nothing signs it? | encoded | nothing |
+| D-22 | How is a route's rider variant named and ordered? | encoded | nothing |
 
 ## The trip model
 
@@ -301,6 +302,25 @@ Options:
 Pinned by: transit-network `signs_law_test`
 (`a_final_bay_is_named_by_its_station`), transit-dispatch
 `a_row_is_going_where_its_sign_says`.
+Blocks: nothing.
+
+### D-22 — How is a route's rider variant named and ordered?
+State: Encoded provisionally.
+Context: `route_detail` groups a direction's patterns into the
+variants a rider rides: the same places in order, a station's bays
+one place (the user's rule — the per-bay patterns at a transit
+center read as one route). Real differences stay apart (006's two
+branches; 060's time-of-day stops). Two variants can share their
+ends, and they need names a rider can tell apart.
+Options:
+- **Ordered by trips, every service type summed; named "first →
+  last", then " via" the first place only it visits against the
+  most-trips variant with the same ends, else ", skips" the first
+  place of that variant it misses (encoded).**
+- Ordered by today's trips, named by when they run ("weekday
+  mornings") — needs the service day; a rider reads time of day.
+Pinned by: transit-network `listing_test`
+(`bay_variants_of_a_direction_read_as_one`).
 Blocks: nothing.
 
 ## Public comparison

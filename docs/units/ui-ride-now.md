@@ -20,6 +20,8 @@ on C-TRAN with the live trip updates and vehicle positions
 5. When is the last bus home?
 6. Is there a detour or disruption on my trip or at my stop?
 7. What leaves next from the stops I watch?
+8. Where is my bus now, and where is it going?
+9. What does a route serve, each way it runs?
 
 ## Op inventory
 
@@ -35,14 +37,18 @@ browser.
 | 5 | router `plan_arrive_by` (no deadline; or a deadline) | answered |
 | 6 | board `stop_board` (`alerts`, `skipped`); router `plan_compare` (`notice`) | skipped + notice answered on the fixture; no alert has been read (no fixture carries one, and no alerts URL is configured) |
 | 7 | board `watchlist_board` | schedule only, and a station answers nothing: QAF-79; saved stops do not survive a reload: QAF-80 |
+| 8 | rt `live` (the vehicles, by status and bearing) → rt `trip_progress` + directory `stops_by_ids` | answered |
+| 9 | directory `entities` (routes, by number or long name) → `route_detail` (each direction's variants) + `focus` | answered |
 
 ## Answer graph
 
 Inputs: `network` (the imported document), `edits` (the sync
 server's edit document, GET /edits), `snapshot` (the decoded live
 feeds), `clock` (the poll's tick), `query` / `near` / `stop` /
-`departure` / `trip` (the selection), `saved` (the watchlist
-document), `view` (which panel is on screen).
+`departure` / `trip` / `routeQuery` / `route` / `vehicle` (the
+selection), `saved` (the watchlist document), `view` (which panel is
+on screen). A picked bus that moves on to its next trip is followed
+onto it (the live node repairs the `vehicle` selection).
 
 | node | inputs | frame | on screen |
 |---|---|---|---|
@@ -53,7 +59,10 @@ document), `view` (which panel is on screen).
 | board `stop_board` (+ `load_edits`, `load_live`) | network, edits, rt.live, stop, clock, view | RiderBoard | the stop panel |
 | board `stop_board`, once per nearby place | network, edits, rt.live, stops_near, clock, view | StopCard | the home panel |
 | board `watchlist_board` (+ `load_watchlist`) | network, edits, saved, clock, view | StopCard | the home panel |
-| directory `focus` (route) | network, departure | RideMap | always |
+| directory `focus` (route) | network, departure, route, vehicle, view | RideMap | always |
+| directory `entities` (routes) | network, routeQuery, view | RouteList | the routes panel |
+| directory `route_detail` | network, route, view | RouteView | the route panel |
+| rt `trip_progress` + directory `stops_by_ids` | network, snapshot, vehicle, view | BusView | the bus panel |
 | router `plan_compare` \| `plan_arrive_by` | network, edits, rt.live, trip | TripPlan | always |
 | router `itinerary_paths` | router.plan | RideMap | always |
 

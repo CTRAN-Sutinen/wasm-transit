@@ -1,7 +1,7 @@
 {
   "id": "ride-now",
   "title": "Ride now",
-  "summary": "Taking a trip today, on a map: find a stop as you type, near you, or by tapping it; see what leaves next with live predictions and whether each bus is early, on time, or late, and watch it on the map; plan a trip leaving now, at a time, arriving by a time, or the last bus; see the alerts and detours in the way; keep your saved and recent stops at hand.",
+  "summary": "Taking a trip today, on a map: find a stop as you type, near you, or by tapping it; see what leaves next with live predictions and whether each bus is early, on time, or late; watch every bus live and track one stop by stop; explore the routes and each way they run; plan a trip leaving now, at a time, arriving by a time, or the last bus; see the alerts and detours in the way; keep your saved and recent stops at hand.",
   "questions": [
     "Which stop is mine, by name or near where I am?",
     "What leaves next from it, with real-time predictions?",
@@ -9,7 +9,9 @@
     "How do I get from here to there, leaving now?",
     "When is the last bus home?",
     "Is there a detour or disruption on my trip or at my stop?",
-    "What leaves next from the stops I watch?"
+    "What leaves next from the stops I watch?",
+    "Where is my bus now, and where is it going?",
+    "What does a route serve, each way it runs?"
   ],
   "ops": [
     "network.import",
@@ -29,7 +31,11 @@
     "router.load_live",
     "router.plan_compare",
     "router.plan_arrive_by",
-    "router.itinerary_paths"
+    "router.itinerary_paths",
+    "directory.entities",
+    "directory.route_detail",
+    "directory.stops_by_ids",
+    "rt.trip_progress"
   ],
   "components": [
     "RideMap",
@@ -40,7 +46,10 @@
     "RiderBoard",
     "AlertList",
     "TripPlan",
-    "Itinerary"
+    "Itinerary",
+    "RouteList",
+    "RouteView",
+    "BusView"
   ],
   "session": "2026-10-28 16:47 PDT in the browser on C-TRAN (feed sha256:aa8dbc62…) with the live trip updates and vehicle positions (68 buses): nearby boards, a pooled station board (Fisher's Landing), a two-ride trip, and the last bus answered. The caps-run session and the numbers comparison are docs/units/ui-ride-now.md's; no alert has been read. Open findings QAF-70, QAF-79, QAF-80, QAF-81.",
   "spec": "web/e2e/ui-ride-now.spec.mjs",

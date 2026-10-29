@@ -37,7 +37,6 @@ import { answer, answerGraph, hashIn, rememberHash, today, type CapModule } from
 import type { Boundary } from "../../types/Boundary";
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
 import type { DirectoryStop } from "../../types/cap_directory/DirectoryStop";
-import type { PatternStops } from "../../types/cap_directory/PatternStops";
 import type { EntityRow } from "../../types/EntityRow";
 import type { RouteDetail } from "../../types/RouteDetail";
 import type { TripProgress } from "../../types/TripProgress";
@@ -113,13 +112,14 @@ export const ride = $state({
   when: { mode: "now", secs: null } as When,
   plan: null as { itinerary: Itinerary | null; notice: string | null; error?: string } | null,
   paths: null as LegPath[] | null,
-  /// The network: the routes list (filtered as typed), one route
-  /// (its composition and each pattern's stops), one bus (its trip's
+  /// The network: the routes list (filtered as typed), one route (its
+  /// directions and the variants a rider rides), one bus (its trip's
   /// progress, its stops named).
   routeQuery: "",
   routeRows: null as EntityRow[] | null,
   route: null as string | null,
-  routeInfo: null as { detail: RouteDetail | null; patterns: PatternStops[] } | null,
+  /// Asked for the open route; `detail` null when the route is unknown.
+  routeInfo: null as { detail: RouteDetail | null } | null,
   vehicle: null as Picked | null,
   progress: null as { progress: TripProgress | null; names: DirectoryStop[] } | null,
   /// The map keeps the picked bus in view as it moves.
@@ -409,9 +409,9 @@ const request = answerGraph(
       },
     },
     {
-      // One route: its directions and patterns, and each pattern's
-      // stops in order.
-      id: "directory.route_detail+route_stop_sequence",
+      // One route: its directions, each with the variants a rider
+      // rides (a station's bays one place).
+      id: "directory.route_detail",
       frame: "RouteView",
       needs: ["network", "route", "view"],
       visible: () => ride.view === "route",
@@ -421,12 +421,8 @@ const request = answerGraph(
           ride.routeInfo = null;
           return;
         }
-        const dir = directoryCap(directory);
         const hash = hashIn(directory, network);
-        ride.routeInfo = {
-          detail: answer(directory, "route_detail", [hash, route], () => dir.routeDetail(hash, route)),
-          patterns: answer(directory, "route_stop_sequence", [hash, route], () => dir.routeStopSequence(hash, route)),
-        };
+        ride.routeInfo = { detail: answer(directory, "route_detail", [hash, route], () => directoryCap(directory).routeDetail(hash, route)) };
       },
     },
     {

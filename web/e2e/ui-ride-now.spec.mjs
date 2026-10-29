@@ -22,6 +22,10 @@
 //      what no longer stops there; the trip to it carries the notice.
 //   7. A capability that fails to load turns its frames off, and they
 //      say so; the rest answers.
+//   8. The network: the routes filter by long name (directory
+//      `entities`); a route lists its directions' variants
+//      (`route_detail`); a picked departure's bus is tracked stop by
+//      stop (rt `trip_progress`, its stops named by `stops_by_ids`).
 //
 // The live feeds and the edit document are served by the test (the
 // shared e2e server holds other specs' edits).
@@ -159,4 +163,40 @@ test("ride now degrades frame by frame when a capability fails to load", async (
   await page.getByTestId("rider-board").getByRole("button", { name: "Directions from here" }).click();
   await pick(page, "To", "main 2", "Main & 2nd");
   await expect(page.getByTestId("trip-plan")).toContainText("Trip planning is unavailable right now");
+});
+
+test("ride now explores the routes and tracks a bus", async ({ page }) => {
+  await open(page);
+
+  // The routes, filtered by the long name a list shows.
+  await page.getByRole("button", { name: "Routes" }).click();
+  const list = page.getByTestId("route-list");
+  await expect(list.locator("li")).toHaveCount(3);
+  await page.getByLabel("filter routes").fill("downtown");
+  await expect(list.locator("li")).toHaveCount(1);
+  await expect(list).toContainText("Downtown via Main");
+
+  // Route 10 runs two different shapes (A→B, and A→C→B): two variants.
+  await list.locator("li button").first().click();
+  const route = page.getByTestId("route-view");
+  await expect(route.getByTestId("route-variant")).toHaveCount(2);
+  await expect(route.getByTestId("route-variant").first()).toContainText("Main & 1st → Main & 2nd");
+  await expect(route.getByTestId("route-variant").nth(1)).toContainText("via Main & 3rd");
+
+  // A place on the route opens its board; t10's bus is reporting.
+  await route.getByRole("button", { name: "Main & 1st" }).first().click();
+  const board = page.getByTestId("rider-board");
+  await board.getByTestId("board-rows").locator("li button").first().click();
+  await expect(board.getByTestId("track")).toContainText("Bus 4201");
+  await board.getByRole("button", { name: "Track this bus ›" }).click();
+
+  const bus = page.getByTestId("bus-view");
+  // A bus is as late as its trip's worst stated delay (+180 s at B).
+  await expect(bus).toContainText("3 min late");
+  const stops = bus.getByTestId("bus-stops").locator("li");
+  await expect(stops).toHaveCount(2);
+  await expect(stops.first()).toContainText("Main & 1st");
+  await expect(stops.first()).toContainText("8:02");
+  await expect(stops.nth(1)).toContainText("Main & 2nd");
+  await expect(stops.nth(1)).toContainText("8:13");
 });

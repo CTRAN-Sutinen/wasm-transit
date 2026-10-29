@@ -47,7 +47,7 @@ pub use geometry::{authored_alignment, entity_focus, pattern_alignment, pattern_
 pub use listing::{
     service_family,
     entity_rows, route_detail, stop_detail, timetable, timetable_against, DirectionGroup, EntityRow, PatternTripsGroup,
-    RemovedTrip, RouteDetail, StopDetail, Timetable, TimetablePattern, TimetableStop, TimetableTrip,
+    RemovedTrip, RouteDetail, RouteVariant, StopDetail, Timetable, TimetablePattern, TimetableStop, TimetableTrip, VariantStop,
 };
 pub use materialize::{
     materialize, materialize_service, produce_times, trip_arrival_end_secs, trip_instance, MaterializedTrip, StopTime,

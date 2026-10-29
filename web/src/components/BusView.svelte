@@ -2,7 +2,8 @@
   /// One bus — a RENDER component over the live document's vehicle
   /// (its route, its status under the document's window, the stop it
   /// is at or heading to) and rt's `trip_progress` for its trip (every
-  /// stop with the scheduled and predicted time), its stops named by
+  /// stop with its scheduled and predicted time — when the bus leaves
+  /// it, and when it arrives at its last), its stops named by
   /// the directory's `stops_by_ids`. The stop it heads to is marked;
   /// the stops before it read as passed.
   import type { LiveVehicle } from "../types/LiveVehicle";
@@ -74,8 +75,9 @@
       <ol class="line" data-testid="bus-stops">
         {#each progress.progress.stops as s, i (s.stop_id + ":" + s.stop_sequence)}
           {@const stop = names.get(s.stop_id)}
-          {@const sched = s.scheduled_departure ?? s.scheduled_arrival}
-          {@const pred = s.predicted_departure ?? s.predicted_arrival}
+          {@const last = i === progress.progress.stops.length - 1}
+          {@const sched = last ? (s.scheduled_arrival ?? s.scheduled_departure) : (s.scheduled_departure ?? s.scheduled_arrival)}
+          {@const pred = last ? (s.predicted_arrival ?? s.predicted_departure) : (s.predicted_departure ?? s.predicted_arrival)}
           <li class:passed={next >= 0 && i < next} class:next={i === next}>
             <button onclick={() => onstop({ id: s.stop_id, name: stop?.name ?? s.stop_id, lat: stop?.lat, lon: stop?.lon })}>
               <span class="name">{stop?.name ?? s.stop_id}</span>

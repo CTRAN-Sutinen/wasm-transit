@@ -143,8 +143,8 @@ pub enum Request {
     /// block every pattern it runs. Null for an unknown id.
     Focus { network_hash: String, kind: transit_network::EntityKind, id: String },
     /// Every entity of one kind, in id order, narrowed the way a
-    /// filter box's typing does (every term in the name or the id,
-    /// case-insensitive): what places it (a pattern's route, a
+    /// filter box's typing does (every term in the id, the name, or a
+    /// route's long name, case-insensitive): what places it (a pattern's route, a
     /// schedule's pattern and service type) and the trips a schedule
     /// runs or a block chains.
     Entities {
@@ -155,9 +155,11 @@ pub enum Request {
         query: Option<String>,
     },
     /// One route's composition: its patterns, the stops they visit,
-    /// and its schedules grouped by service type, each with the trips
-    /// it runs (the materialized day's count). Null for an unknown
-    /// route.
+    /// its schedules grouped by service type, each with the trips it
+    /// runs (the materialized day's count), and its directions — each
+    /// with its patterns and its VARIANTS, the ways a rider rides it
+    /// (patterns over the same places in order, a station's bays one
+    /// place). Null for an unknown route.
     RouteDetail { network_hash: String, route_id: String },
     /// One stop's composition: the routes whose patterns visit it, in
     /// id order. Null for an unknown stop.

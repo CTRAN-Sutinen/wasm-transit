@@ -27,6 +27,91 @@ fn rows_match_every_term_in_name_or_id() {
     assert_eq!(entity_rows(&net, EntityKind::Block, "400")[0].trips, Some(2));
 }
 
+/// A route reads by its long name as much as by its number: the
+/// filter matches the long name a list shows beside the label
+/// ("Lin" finds 002 Lincoln).
+#[test]
+fn a_route_is_found_by_its_long_name() {
+    let mut net = network();
+    net.routes.get_mut("10").unwrap().long_name = Some("Lincoln".into());
+    let ids = |q| entity_rows(&net, EntityKind::Route, q).into_iter().map(|r| r.id).collect::<Vec<_>>();
+    assert_eq!(ids("lin"), ["10"]);
+    assert_eq!(ids("10 LINCOLN"), ["10"], "the number and the long name together");
+    assert_eq!(ids("lincoln nowhere"), Vec::<String>::new(), "every term must match");
+}
+
+fn stop(name: &str, lat: f64, parent: Option<&str>) -> transit_network::Stop {
+    transit_network::Stop { name: name.into(), lat, lon: -73.5, parent: parent.map(str::to_string), ..Default::default() }
+}
+
+fn pattern(name: &str, stops: &[&str]) -> transit_network::Pattern {
+    transit_network::Pattern {
+        route: "10".into(),
+        name: name.into(),
+        stops: stops
+            .iter()
+            .enumerate()
+            .map(|(i, s)| transit_network::PatternStop { stop: s.to_string(), distance_m: i as f64 * 500.0, ..Default::default() })
+            .collect(),
+        ..Default::default()
+    }
+}
+
+/// A direction's VARIANTS are the ways a rider can ride it: patterns
+/// that visit the same places in the same order are one variant, a
+/// station's bays being one place (the walking group its board
+/// departs across) — so patterns that differ only by the bay they use
+/// at a transit center read as one. Any other difference — a branch,
+/// a stop served only at some hours, a short trip — is its own
+/// variant, named apart. Variants list most trips first.
+#[test]
+fn bay_variants_of_a_direction_read_as_one() {
+    let net = apply_edits(&network(), &[
+        NetworkEdit::UpsertStop { id: "STN".into(), stop: stop("Main & 2nd Station", 45.51, None) },
+        NetworkEdit::UpsertStop { id: "B".into(), stop: stop("Main & 2nd: Bay A", 45.51, Some("STN")) },
+        NetworkEdit::UpsertStop { id: "N1".into(), stop: stop("Main & 2nd: Bay B", 45.5101, Some("STN")) },
+        NetworkEdit::UpsertStop { id: "D".into(), stop: stop("Elm & 2nd", 45.515, None) },
+        // 10-inbound runs A, B, C (three trips); these run none.
+        NetworkEdit::UpsertPattern { id: "10-bay".into(), pattern: pattern("10 inbound from Bay B", &["A", "N1", "C"]) },
+        NetworkEdit::UpsertPattern { id: "10-short".into(), pattern: pattern("10 inbound express", &["A", "C"]) },
+        NetworkEdit::UpsertPattern { id: "10-elm".into(), pattern: pattern("10 inbound via Elm", &["A", "D", "C"]) },
+    ])
+    .unwrap();
+    let detail = route_detail(&net, "10").unwrap();
+    let variants = &detail.directions[0].variants;
+
+    let patterns = |i: usize| variants[i].patterns.clone();
+    assert_eq!(variants.len(), 3, "the bay variant joins its sibling; the others stand apart");
+    assert_eq!(patterns(0), ["10-bay", "10-inbound"], "same places, different bay: one variant");
+    assert_eq!(variants[0].trips, 3, "most trips first");
+    assert_eq!(variants[0].name, "Main & 1st → Main & 3rd");
+    let places: Vec<(&str, &str, Vec<&str>)> = variants[0]
+        .stops
+        .iter()
+        .map(|s| (s.place.as_str(), s.name.as_str(), s.stops.iter().map(String::as_str).collect()))
+        .collect();
+    assert_eq!(
+        places,
+        [
+            ("A", "Main & 1st", vec!["A"]),
+            ("STN", "Main & 2nd Station", vec!["N1", "B"]),
+            ("C", "Main & 3rd", vec!["C"]),
+        ],
+        "a station is its place; the bays the variant uses there are listed"
+    );
+
+    // Same ends as the main variant: each is named by what sets it
+    // apart — a place only it visits, else the first place it skips.
+    assert_eq!(patterns(1), ["10-elm"]);
+    assert_eq!(variants[1].name, "Main & 1st → Main & 3rd via Elm & 2nd");
+    assert_eq!(patterns(2), ["10-short"]);
+    assert_eq!(variants[2].name, "Main & 1st → Main & 3rd, skips Main & 2nd Station");
+
+    // A plain stop is its own place: two different plain stops never
+    // merge (D stands apart from the station above).
+    assert!(variants.iter().all(|v| v.patterns.len() == 1 || v.stops.iter().all(|s| s.place != "D")));
+}
+
 #[test]
 fn a_route_lists_its_composition() {
     let net = network();

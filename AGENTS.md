@@ -135,6 +135,7 @@ transit-network  THE authored network model — trips are stored records (own id
                  authoring edits answer the next document (apply_edits);
                  where things are (pattern alignments, entity focus);
                  what exists, as the planner lists it (rows, route and stop composition,
+                 a direction's rider variants — a station's bays one place,
                 the timetable: one route, one direction, one service type)
 transit-codec   the network codec: the whole-spec GTFS feed (every file and column,
                  deterministic zip bytes) ⇄ network document, losslessly

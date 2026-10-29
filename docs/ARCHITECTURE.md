@@ -121,12 +121,16 @@ transit-network The authored network model (planner authority):
                 stop's point; the lines and stops of every pattern a
                 route, pattern trips, service type, or block runs). The
                 planner's LISTS live here too (`listing.rs`): rows
-                of any kind narrowed by every filter term, and a
-                route's composition (patterns, the stops they
-                visit, pattern trips by service type, patterns by
-                direction) — each entry's trip count is its trips'
-                instances, the materialized day's own expansion — a
-                stop's serving routes, and the
+                of any kind narrowed by every filter term (id, name,
+                and a route's long name), and a route's composition
+                (patterns, the stops they visit, pattern trips by
+                service type, patterns by direction, and each
+                direction's VARIANTS — the ways a rider rides it:
+                patterns over the same places in order, a station's
+                bays one place, named by their ends and by what sets
+                them apart, most trips first) — each entry's trip
+                count is its trips' instances, the materialized
+                day's own expansion — a stop's serving routes, and the
                 planner's TIMETABLE (`timetable`: one route, one
                 direction, one service type — every trip of the
                 direction's patterns by start, one column per stop
@@ -579,7 +583,11 @@ on every component a generated UI imports.
   StopCard (a stop at a glance), RiderBoard (one stop's board, its
   alerts and skipped visits), AlertList (the live document's
   alerts), TripPlan (the trip's ends, when, and the router's answer)
-  with Itinerary (the answer as a timeline), and LiveFeeds (whether
+  with Itinerary (the answer as a timeline), RouteList (directory
+  `entities` for routes, filtered as typed), RouteView (one route's
+  directions and their variants, as line diagrams), BusView (one
+  live bus and its trip's `trip_progress`, stop by stop), and
+  LiveFeeds (whether
   the times are live, and the feed URLs). `rideFormat.ts` holds
   their formatting (clock times, status words and tones). Each
   frame whose capability can fail takes an `off` prop: a capability
@@ -676,13 +684,19 @@ health adopts cap-author's issues for a document it authored.
 `ride-now` (`src/uis/ride-now/`): a full-bleed map with a panel over
 it (a card at the left on a wide screen, a sheet over the bottom of
 the map on a phone), the live pill and the alerts button in the
-corner. The panel follows the rider: home (the type-ahead, a
-"Get directions" start, the places near the rider or a tapped spot
-with each one's next departures, saved stops, recent stops), one
-stop (its live board; a picked departure draws its route and marks
-its bus), getting there (the ends as type-aheads; leave now, leave
-at, arrive by, or the last bus; the itinerary as a timeline, drawn
-on the map), and the alerts in force. It boots from the server's
+corner. The map draws every stop and every live bus (colored by its
+status, pointing its bearing, labeled with its route); a tapped bus,
+stop, or spot opens it. The panel follows the rider: home (the
+type-ahead, "Get directions" and "Routes", the places near the rider
+or a tapped spot with each one's next departures, saved stops,
+recent stops), one stop (its live board; a picked departure draws
+its route, marks its bus, and offers to track it), one bus (its
+trip stop by stop, the stop it heads to marked, followed on the
+map), the routes and one route (its directions' variants as line
+diagrams; its buses stay bright on the map, the rest dim), getting
+there (the ends as type-aheads; leave now, leave at, arrive by, or
+the last bus; the itinerary as a timeline, drawn on the map), and
+the alerts in force. It boots from the server's
 `/feed` (or a zip the rider loads), reads the edit document from
 `GET /edits`, reads the live feeds the deployment names in
 `public/live-feeds.json` (the rider may set their own) through
@@ -888,8 +902,9 @@ cap-directory   The directory capability — ONE QUESTION: what
                 entities, route_detail, and stop_detail answer the
                 planner's lists (filtered rows per kind — the forms'
                 pickers and the Document counts too; a route's
-                composition with trip counts and its patterns by
-                direction; a stop's serving routes), and timetable
+                composition with trip counts and its patterns and
+                rider variants by direction; a stop's serving
+                routes), and timetable
                 answers the planner's timetable (route + direction
                 + service type, across the direction's patterns) —
                 the planner computes no number.

@@ -1,10 +1,10 @@
 <script lang="ts">
   /// One route — a RENDER component over the directory's
-  /// `route_detail` (its directions, each direction's patterns) and
-  /// `route_stop_sequence` (each pattern's stops, in order), drawn as a
-  /// line diagram in the route's color. A stop is an event.
+  /// `route_detail`: its directions, and in each the VARIANTS a rider
+  /// rides (patterns over the same places in order, a station's bays
+  /// one place — the op groups and names them, most trips first),
+  /// drawn as a line diagram in the route's color. A place is an event.
   import type { RouteDetail } from "../types/RouteDetail";
-  import type { PatternStops } from "../types/cap_directory/PatternStops";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import { routeColor } from "./rideFormat";
 
@@ -17,7 +17,7 @@
   }: {
     /// The route as the directory lists it (name, long name, color).
     route: DirectoryRoute | null;
-    info: { detail: RouteDetail | null; patterns: PatternStops[] } | null;
+    info: { detail: RouteDetail | null } | null;
     off: boolean;
     onstop: (stop: { id: string; name: string }) => void;
     onback: () => void;
@@ -29,8 +29,7 @@
     direction = 0;
   });
 
-  const directions = $derived(info?.detail?.directions ?? []);
-  const stopsOf = $derived(new Map((info?.patterns ?? []).map((p) => [p.pattern, p.stops])));
+  const directions = $derived((info?.detail?.directions ?? []).filter((d) => d.variants.length));
   const color = $derived(routeColor(route?.color));
 </script>
 
@@ -58,17 +57,16 @@
         {/each}
       </div>
     {/if}
-    {#each directions[direction]?.patterns ?? [] as p, i (p.id)}
-      {@const stops = stopsOf.get(p.id) ?? []}
-      <details class="pattern" open={i === 0}>
+    {#each directions[direction]?.variants ?? [] as v, i (v.patterns.join(","))}
+      <details class="variant" open={i === 0} data-testid="route-variant">
         <summary>
-          <span class="pname">{p.name}</span>
-          <span class="count">{stops.length} stops</span>
+          <span class="vname">{v.name}</span>
+          <span class="count">{v.stops.length} stops</span>
         </summary>
         <ol class="line">
-          {#each stops as s, j (s.stop_id + ":" + j)}
-            <li class:end={j === 0 || j === stops.length - 1}>
-              <button onclick={() => onstop({ id: s.stop_id, name: s.name })}>{s.name}</button>
+          {#each v.stops as s, j (s.place + ":" + j)}
+            <li class:end={j === 0 || j === v.stops.length - 1}>
+              <button onclick={() => onstop({ id: s.place, name: s.name })}>{s.name}</button>
             </li>
           {/each}
         </ol>
@@ -90,10 +88,10 @@
     padding: 0.4rem; border-radius: 8px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .tabs button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
-  .pattern { border: 1px solid var(--line); border-radius: 12px; padding: 0.3rem 0.6rem; margin-bottom: 0.5rem; }
+  .variant { border: 1px solid var(--line); border-radius: 12px; padding: 0.3rem 0.6rem; margin-bottom: 0.5rem; }
   summary { cursor: pointer; display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.35rem 0; font-weight: 650; }
   .count { color: var(--muted); font-weight: 500; font-size: 0.8rem; flex: none; }
-  .pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vname { min-width: 0; }
   .line { list-style: none; margin: 0.2rem 0 0.3rem; padding: 0; position: relative; }
   .line::before { content: ""; position: absolute; left: 0.55rem; top: 0.8rem; bottom: 0.8rem; width: 4px; border-radius: 2px; background: var(--route, var(--accent)); }
   .line li { position: relative; padding-left: 1.6rem; }

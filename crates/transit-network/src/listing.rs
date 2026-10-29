@@ -70,6 +70,43 @@ pub struct DirectionGroup {
     pub direction: Option<String>,
     pub name: String,
     pub patterns: Vec<EntityRow>,
+    /// The ways a rider can ride the direction, most trips first.
+    #[serde(default)]
+    pub variants: Vec<RouteVariant>,
+}
+
+/// One way a rider can ride a direction: the direction's patterns that
+/// visit the same PLACES in the same order — a station's bays are one
+/// place (the walking group its board departs across), so patterns
+/// that differ only by the bay they use read as one. Any other
+/// difference (a branch, a stop served only at some hours, a short
+/// trip) is its own variant.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct RouteVariant {
+    /// "First place → last place"; when another variant of the
+    /// direction shares its ends, what sets it apart from the one with
+    /// the most trips: "via" a place only it visits, else "skips" the
+    /// first place it does not.
+    pub name: String,
+    /// Its patterns, by id.
+    pub patterns: Vec<String>,
+    /// Its places, in order.
+    pub stops: Vec<VariantStop>,
+    /// The trips its patterns' schedules run, every service type
+    /// (instances, as the day expands them).
+    pub trips: u32,
+}
+
+/// One place on a variant: the station (or the stop, when it is in no
+/// station the network holds), and the stops its patterns use there
+/// (a station's bays, in pattern order).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct VariantStop {
+    pub place: String,
+    pub name: String,
+    pub stops: Vec<String>,
 }
 
 /// A timetable: one route, one direction, one service type.
@@ -204,9 +241,9 @@ fn schedule_row(network: &Network, id: &str) -> EntityRow {
     }
 }
 
-/// Every entity of `kind`, in id order, whose name and id together
-/// hold every whitespace-separated term of `query` (case-insensitive;
-/// an empty query keeps all).
+/// Every entity of `kind`, in id order, whose id, name, and long name
+/// (routes) together hold every whitespace-separated term of `query`
+/// (case-insensitive; an empty query keeps all).
 pub fn entity_rows(network: &Network, kind: EntityKind, query: &str) -> Vec<EntityRow> {
     let rows: Vec<EntityRow> = match kind {
         EntityKind::Stop => network.stops.keys().map(|id| stop_row(network, id)).collect(),
@@ -223,7 +260,7 @@ pub fn entity_rows(network: &Network, kind: EntityKind, query: &str) -> Vec<Enti
     let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
     rows.into_iter()
         .filter(|r| {
-            let haystack = format!("{} {}", r.id, r.name).to_lowercase();
+            let haystack = format!("{} {} {}", r.id, r.name, r.long_name.as_deref().unwrap_or("")).to_lowercase();
             terms.iter().all(|t| haystack.contains(t.as_str()))
         })
         .collect()
@@ -259,12 +296,15 @@ pub fn route_detail(network: &Network, route: &str) -> Option<RouteDetail> {
     let directions = named
         .chain(std::iter::once((None, "No direction".to_string())))
         .filter_map(|(direction, name)| {
-            let patterns: Vec<EntityRow> = pattern_ids
-                .iter()
-                .filter(|pid| network.patterns[**pid].direction == direction)
-                .map(|pid| pattern_row(network, pid))
-                .collect();
-            (direction.is_some() || !patterns.is_empty()).then_some(DirectionGroup { direction, name, patterns })
+            let ids: Vec<&String> =
+                pattern_ids.iter().copied().filter(|pid| network.patterns[*pid].direction == direction).collect();
+            let patterns: Vec<EntityRow> = ids.iter().map(|pid| pattern_row(network, pid)).collect();
+            (direction.is_some() || !patterns.is_empty()).then(|| DirectionGroup {
+                direction,
+                name,
+                patterns,
+                variants: variants(network, &ids),
+            })
         })
         .collect();
     Some(RouteDetail {
@@ -273,6 +313,84 @@ pub fn route_detail(network: &Network, route: &str) -> Option<RouteDetail> {
         pattern_trips_by_type,
         directions,
     })
+}
+
+/// The place a rider walks to for a stop: its station when the network
+/// holds one, else the stop itself (`stops_near`'s rule).
+fn place_of<'a>(network: &'a Network, stop: &'a str) -> &'a str {
+    match network.stops.get(stop).and_then(|s| s.parent.as_deref()) {
+        Some(p) if network.stops.contains_key(p) => p,
+        _ => stop,
+    }
+}
+
+/// The patterns grouped by the places they visit, in order — see
+/// [`RouteVariant`].
+fn variants(network: &Network, pattern_ids: &[&String]) -> Vec<RouteVariant> {
+    let name_of = |id: &str| network.stops.get(id).map_or(id.to_string(), |s| s.name.clone());
+    let mut groups: std::collections::BTreeMap<Vec<&str>, Vec<&String>> = Default::default();
+    for pid in pattern_ids {
+        let places = network.patterns[*pid].stops.iter().map(|ps| place_of(network, &ps.stop)).collect();
+        groups.entry(places).or_default().push(pid);
+    }
+    let trips_of = |pid: &str| -> u32 {
+        network
+            .pattern_trips
+            .values()
+            .filter(|pt| pt.pattern == pid)
+            .flat_map(|pt| pt.trips.iter())
+            .map(|t| t.departs.instances().len() as u32)
+            .sum()
+    };
+    let mut out: Vec<(Vec<&str>, RouteVariant)> = groups
+        .into_iter()
+        .map(|(places, pids)| {
+            let stops = places
+                .iter()
+                .enumerate()
+                .map(|(i, place)| {
+                    let mut used: Vec<String> = Vec::new();
+                    for pid in &pids {
+                        let stop = &network.patterns[*pid].stops[i].stop;
+                        if !used.contains(stop) {
+                            used.push(stop.clone());
+                        }
+                    }
+                    VariantStop { place: place.to_string(), name: name_of(place), stops: used }
+                })
+                .collect();
+            let name = match (places.first(), places.last()) {
+                (Some(a), Some(b)) if a != b => format!("{} → {}", name_of(a), name_of(b)),
+                (Some(a), _) => name_of(a),
+                _ => String::new(),
+            };
+            let variant = RouteVariant {
+                name,
+                patterns: pids.iter().map(|p| p.to_string()).collect(),
+                stops,
+                trips: pids.iter().map(|p| trips_of(p)).sum(),
+            };
+            (places, variant)
+        })
+        .collect();
+    out.sort_by(|a, b| b.1.trips.cmp(&a.1.trips).then_with(|| a.1.patterns.cmp(&b.1.patterns)));
+
+    // Variants sharing their ends are named by what sets each apart
+    // from the one with the most trips.
+    let bases: Vec<String> = out.iter().map(|(_, v)| v.name.clone()).collect();
+    for i in 0..out.len() {
+        let Some(main) = (0..i).find(|&j| bases[j] == bases[i]) else { continue };
+        let (main_places, places) = (out[main].0.clone(), &out[i].0);
+        let suffix = if let Some(only) = places.iter().find(|p| !main_places.contains(p)) {
+            format!(" via {}", name_of(only))
+        } else if let Some(skipped) = main_places.iter().find(|p| !places.contains(p)) {
+            format!(", skips {}", name_of(skipped))
+        } else {
+            String::new()
+        };
+        out[i].1.name = format!("{}{suffix}", bases[i]);
+    }
+    out.into_iter().map(|(_, v)| v).collect()
 }
 
 /// The SERVICE FAMILY: the base plus every service type that rides
