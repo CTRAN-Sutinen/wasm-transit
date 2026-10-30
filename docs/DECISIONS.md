@@ -38,7 +38,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-40**.
+- IDs are never reused; the next new decision is **D-51**.
 
 ## Summary
 
@@ -80,6 +80,17 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-37 | What names a spot dropped on the map? | encoded | nothing |
 | D-38 | What may a host do with an external service's answer? | decided | nothing |
 | D-39 | Do the live feeds move into the manifest's services? | unanswered | live-feed discovery |
+| D-40 | How long does a planned trip take, and from when? | unanswered | QAF-81 |
+| D-41 | What carries a service type's calendar into a fork's period? | unanswered | QAF-54 |
+| D-42 | When a route has stopped for the day, how far ahead does a stop look? | unanswered | QAF-82 |
+| D-43 | What does a coverage comparison report? | unanswered | QAF-20 |
+| D-44 | Is a branch of a direction its own thing? | unanswered | QAF-63 |
+| D-45 | Which dispatcher edits does the edit document carry beyond the diversion? | unanswered | QAF-36, D-15 |
+| D-46 | How many more vehicles does a proposal need? | unanswered | QAF-3 |
+| D-47 | Which layers does coverage take? | unanswered | QAF-18, QAF-28 |
+| D-48 | Does a stop answer to a name its sign does not carry? | unanswered | QAF-70 |
+| D-49 | Where do the basemap's glyphs and sprites come from? | unanswered | QAF-84 |
+| D-50 | What are the work rules a run is cut under? | unanswered | QAF-11, QAF-12, QAF-14, QAF-15 |
 
 ## The trip model
 
@@ -196,6 +207,24 @@ Pinned by: `spec_round_trip_test.rs` (`trips_survive`) pins only
 that nothing is invented on export.
 Blocks: nothing.
 
+### D-44 — Is a branch of a direction its own thing?
+State: Unanswered.
+Context: QAF-63. GTFS direction_id groups branches, not only
+variants: C-TRAN's 006 direction 1 holds a Fruit Valley pattern and
+a VA Medical Center pattern leaving at the same minutes all day,
+and the import puts both in one direction, named by the majority
+headsign. A planner reads them as two branches; the timetable shows
+one direction with two variants (D-22).
+Options:
+- The model stays as it is: a planner who wants two branches
+  authors them (set_direction + update_pattern). The finding becomes
+  documentation.
+- The import splits a direction whose patterns end at different
+  terminals into one direction per terminal.
+- The model names branches inside a direction (a pattern group with
+  its own name and timetable), and the timetable can show one branch.
+Blocks: QAF-63.
+
 ## Analysis and live
 
 ### D-6 — Does "frequent" count terminal arrivals?
@@ -208,6 +237,38 @@ Options: departures only, for both tests (the finding reads this
 way); or keep counting arrivals and document the difference.
 Blocks: the fix for QAF-78, and the `frequent_pct` number in
 `transit-analysis` `regression_test`.
+
+### D-43 — What does a coverage comparison report?
+State: Unanswered.
+Context: QAF-20. Comparing two plans' coverage takes two
+type_coverage answers and a host subtraction, and a net change hides
+churn: a proposal can serve 2,000 new people and drop 1,900 others
+for a net +100.
+Options:
+- Per service type (matched by id across the two documents): both
+  documents' served and frequent shares, and the population gained
+  and lost — served and frequent separately.
+- The same per representative DATE instead of per service type
+  (a fork that renames or splits a type still compares).
+- Net change only (the two shares and their difference).
+Blocks: QAF-20 (the coverage half).
+
+### D-47 — Which layers does coverage take?
+State: Unanswered.
+Context: QAF-18 and QAF-28. Coverage takes one weighted POINT layer
+and calls the weight population. A tract's people sit at its
+centroid, so a rural tract reads unserved where its developed part
+has service, and the radius swings the answer by 20 points (28.9%
+at 500 m, 49.1% at 800 m). Jobs, seniors, and zero-car households
+are the usual companions; no such layer exists in the repo.
+Options:
+- Areal layers: polygons with a weight, served share by the share of
+  the area within the radius (block groups or blocks for population).
+- Point layers only, at a finer resolution (block centroids), with
+  the resolution stated in the answer.
+- Either, and the vocabulary becomes "a weighted layer" (any field:
+  population, jobs, households).
+Blocks: QAF-18, QAF-28.
 
 ## Service types
 
@@ -225,6 +286,24 @@ Options:
 - An authored "same as, except" relation between service types
   (QAF-44), which the gestures follow. This is a model change.
 Blocks: the remaining QAF-65 work (the gestures) and QAF-44.
+
+### D-41 — What carries a service type's calendar into a fork's period?
+State: Unanswered.
+Context: QAF-54. A fork picked after the import's calendar end
+(2027-01-09) runs nothing until every service type's date range is
+extended by hand — 13 set_service_range edits on C-TRAN. Holiday
+types (4-NYE and others) are dated exceptions, not ranges.
+Options:
+- A gesture, extend_service_ranges {through}: every weekly service
+  type whose last range ends before `through` ends at `through`;
+  dated-only types are untouched.
+- The fork itself (set_plan with a period end) extends every weekly
+  type to the period's end.
+- No gesture: the warning names the problem, the planner extends by
+  hand.
+Open inside the first two: which date the period ends on, and
+whether next year's holidays (new dated exceptions) are part of it.
+Blocks: QAF-54.
 
 ## Blocks and runcutting
 
@@ -254,6 +333,38 @@ Options:
   document. Every network consumer then carries operator work.
 Pinned by: `docs/ROADMAP.md` 7, `docs/units/ui-runcut.md`.
 Blocks: nothing.
+
+### D-46 — How many more vehicles does a proposal need?
+State: Unanswered.
+Context: QAF-3. A proposal's added trips are unassigned (no block),
+so fleet_summary cannot say how many more vehicles it needs. A
+vehicle need is a block assignment, which the model does not make,
+and an automatic one needs a minimum turn time (D-9).
+Options:
+- An automatic blocking op over a proposal (chain trips terminal to
+  terminal under a minimum layover), answering the blocks it would
+  make; the planner adopts them or not.
+- A peak-vehicle estimate from concurrent trips plus a recovery
+  allowance, with no blocks made.
+- The planner blocks by hand (add_block_trip) and fleet_summary
+  answers; the finding becomes a UI affordance.
+Blocks: QAF-3 (and depends on D-9 for any automatic answer).
+
+### D-50 — What are the work rules a run is cut under?
+State: Unanswered.
+Context: QAF-11, QAF-12, QAF-14, and the rest of QAF-15. The runs
+layer (D-16: beside the network) needs a work-rule policy document,
+and its shape is the agency's rules: maximum platform and spread,
+report and pull times, minimum and maximum piece, meal breaks,
+relief points, pay (guarantee, spread premium, overtime). The
+hand-cut menu in QAF-11 assumed 8 h maximum platform, 15 + 15
+report and pull, and a 2 h minimum piece.
+Options:
+- The user supplies C-TRAN's rules (or the labor agreement's
+  section), and the policy document is shaped to them.
+- A generic policy document (the common rules above, each optional)
+  lands first, and C-TRAN's values are data in it.
+Blocks: QAF-11, QAF-12, QAF-14, QAF-15 (the cut candidates).
 
 ## Riding today
 
@@ -380,6 +491,55 @@ Pinned by: `every_row_says_how_long_until_it_leaves` and
 (`grouped_board_prop_test.rs`).
 Blocks: nothing.
 
+### D-40 — How long does a planned trip take, and from when?
+State: Unanswered.
+Context: QAF-81. An itinerary carries depart_secs (the moment the
+plan was asked for) and arrival_secs; a walk leg carries only its
+seconds, so when the rider must leave is host arithmetic, and so is
+"takes 23 min". A board row already says how long until it leaves
+(`wait`, D-24).
+Options:
+- Door to door: `leave_secs` (the first ride's boarding minus the
+  walk before it — when the rider must set out) and `duration_secs`
+  (arrival minus leave), plus the board's `wait` rule for "leave in
+  N min".
+- From the moment asked: one `duration_secs` = arrival minus
+  depart_secs (it counts the wait before leaving).
+- Both readings, named.
+Blocks: QAF-81.
+
+### D-42 — When a route has stopped for the day, how far ahead does a stop look?
+State: Unanswered.
+Context: QAF-82. grouped_board keeps a route and destination whose
+last departure has left, with no departures. The display says "No
+more service today" where a rider wants "Next: 5:12 am tomorrow" or
+"Next: Monday". The next one is on another service day, which the
+board does not ask.
+Options:
+- Look ahead day by day for up to a week (one weekly cycle), with
+  each day's in-force edits; say nothing past a week.
+- Tomorrow only.
+- Until the calendar ends.
+Open inside each: whether a later day's answer reads that day's
+edits (yes, if they are in the document) and never the live feed.
+Blocks: QAF-82.
+
+### D-48 — Does a stop answer to a name its sign does not carry?
+State: Unanswered.
+Context: QAF-70. directory `stops` matches the feed's names, so
+"vancouver mall" finds nothing (the sign says "Van Mall"). Where the
+server runs a geocoder (D-36), the everyday name finds the place and
+the stops near it; without one it has no answer.
+Options:
+- Stops carry authored aliases in the network (a stop's other
+  names), and `stops` matches them.
+- The geocoder is the answer; a deployment without one says how
+  stops are named (as the UI does now). The finding closes as
+  documentation.
+- Fuzzy matching on the stop names (typos, abbreviations like
+  "Van" for "Vancouver").
+Blocks: QAF-70.
+
 ## Public comparison
 
 ### D-14 — Does the proposal comparison collect public responses?
@@ -410,6 +570,24 @@ Options:
 - A trip is covered when an operator holds its run. This needs the
   runs layer (`docs/ROADMAP.md` 7) and workforce data.
 Blocks: question 6 of `docs/units/ui-disruptions.md`.
+
+### D-45 — Which dispatcher edits does the edit document carry beyond the diversion?
+State: Unanswered.
+Context: QAF-36. The edit document holds diversions only; a
+dispatcher's first answer to a 24-minute-late trip (cancel it,
+cover it, hold a connection, swap the vehicle) has no vocabulary. A
+new edit kind is a sync-document change, and each kind needs a
+meaning on every reader: does a cancelled trip leave the board or
+show as cancelled, does the router skip it, does the live feed's
+own cancellation (SCHEDULED/CANCELED in GTFS-rt) agree with it.
+D-15 ("covered") depends on the answer.
+Options:
+- Cancel (whole trip) first; a cancelled trip shows on boards as
+  cancelled and the router never rides it.
+- Cancel and partial cancel (from a stop on).
+- Cancel, cover (another block or vehicle takes it), hold, swap —
+  the full set, landed together.
+Blocks: QAF-36, and with it D-15.
 
 ## Geography
 
@@ -768,6 +946,22 @@ Options:
 - Wait for a second deployment to need it; `live-feeds.json` stays.
 Blocks: live-feed discovery (ride-now's and the stop display's
 `restoreUrls`, `web/perf/record-rt.mjs`).
+
+### D-49 — Where do the basemap's glyphs and sprites come from?
+State: Unanswered.
+Context: QAF-84. With `basemap.pmtiles` served, the style still
+fetches its fonts (glyphs) and icons (sprites) from
+protomaps.github.io, so a stop display that loses its uplink loses
+every map label. Installs and downloads are the user's job.
+Options:
+- Vendor them into the repo (the Protomaps font PBFs and sprite
+  sheets, a few MB, OFL/BSD licensed), served beside the tiles.
+- A recipe that fetches them once into web/public (like `just
+  geocoder-build`), gitignored; the style reads them locally when
+  present and falls back to the network.
+- Keep the network fetch; the finding is documented as a known
+  offline limit.
+Blocks: QAF-84.
 
 ## Agency data
 

@@ -178,6 +178,8 @@ pub enum NetworkWarning {
     UnassignedTrips { pattern_trips: String, trips: u32 },
     /// A versioned plan whose service types run on no day of its
     /// first week: the pick governs a period it carries no service
-    /// for (the calendar ranges a fork inherited end before it).
-    NoServiceInPlanPeriod { plan: String, effective_from: String },
+    /// for (the calendar ranges a fork inherited end before it). The
+    /// plan is the document's own, named as a reader knows it — its
+    /// name, never its (often minted) id.
+    NoServiceInPlanPeriod { plan_name: String, effective_from: String },
 }

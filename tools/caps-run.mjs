@@ -10,10 +10,16 @@
 // agent's context does.
 //
 //   caps-run list                       capabilities + evidence
-//   caps-run tools <capability>         the tool catalog (op docs)
+//   caps-run tools <capability>         the tool catalog (op docs, and
+//                                       per-kind examples where an op
+//                                       takes a tagged vocabulary)
 //   caps-run <capability> [--cap ID] [--as NAME]
 //          [--load FILE]... [--op '<json>|@FILE']... [--ask URL]...
 //          [--timeout MS]               run a session
+//
+// Every run compares the registry's recorded source digest with the
+// tree's and says on stderr when they differ — the registry runs the
+// code it was built from, not the code in the tree (`just caps`).
 //
 // --load [N:]FILE sends the file's bytes on bulk op N (default 0 —
 // feeds, layers; a module with a second bulk op spells it, e.g.
@@ -59,7 +65,8 @@
 
 import { createHash } from "node:crypto";
 import { parentPort, workerData, isMainThread } from "node:worker_threads";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -68,6 +75,43 @@ const REGISTRY = join(HERE, "..", "registry");
 
 function registryPointer() {
   return JSON.parse(readFileSync(join(REGISTRY, "registry.json"), "utf8"));
+}
+
+// The digest of the source the registry's modules are built from,
+// computed exactly as gen-manifest records it (`source_digest`): every
+// file git sees under crates/ plus Cargo.toml and Cargo.lock, sha256
+// over "{path}\n{sha256 hex}\n" in path order. Null without git.
+function sourceDigest() {
+  const root = join(HERE, "..");
+  let listing;
+  try {
+    listing = execFileSync("git", ["ls-files", "-co", "--exclude-standard", "-z", "--", "crates", "Cargo.toml", "Cargo.lock"], {
+      cwd: root,
+      maxBuffer: 64 * 1024 * 1024,
+    }).toString("utf8");
+  } catch {
+    return null;
+  }
+  const paths = [...new Set(listing.split("\0").filter(Boolean))].sort();
+  const digest = createHash("sha256");
+  for (const path of paths) {
+    const file = join(root, path);
+    if (!existsSync(file)) continue;
+    digest.update(`${path}\n${createHash("sha256").update(readFileSync(file)).digest("hex")}\n`);
+  }
+  return "sha256:" + digest.digest("hex");
+}
+
+// A registry published from another tree runs other code than the
+// tree says: say so on every run (QAF-77), never silently.
+function warnIfStale() {
+  const published = registryPointer().evidence?.source_digest ?? null;
+  const tree = sourceDigest();
+  if (!published || !tree || published === tree) return;
+  console.error(
+    `caps-run: the registry is STALE — published from source ${published.slice(0, 19)}…, ` +
+      `the tree is ${tree.slice(0, 19)}…; \`just caps\` republishes it`,
+  );
 }
 
 function capabilityRecord(id) {
@@ -134,9 +178,14 @@ function instantiate(capability) {
   if (imports.length !== 0) throw new Error(`capability ${capability} has imports — refusing`);
   const ex = new WebAssembly.Instance(mod, {}).exports;
 
+  // The outcome stays the module's JSON TEXT: a session holds every
+  // result for later references, and one string per result is all the
+  // collector marks — a parsed real-size answer is millions of
+  // objects, re-marked by every major collection while the next large
+  // answer runs (QAF-86).
   const read = (outPtr) => {
     const len = new DataView(ex.memory.buffer).getUint32(outPtr, true);
-    const outcome = JSON.parse(Buffer.from(ex.memory.buffer, outPtr + 4, len).toString("utf8"));
+    const outcome = Buffer.from(ex.memory.buffer, outPtr + 4, len).toString("utf8");
     ex.transit_free(outPtr, len + 4);
     return outcome;
   };
@@ -161,7 +210,17 @@ async function runSession() {
     return modules.get(capability);
   };
 
+  // Each result: its metadata (`as`, `cap`, `load`, `ask`, the op its
+  // answer is tagged with) and its outcome as JSON text, parsed only
+  // when a reference reaches into it.
   const results = [];
+  const outcomeOf = (r) => JSON.parse(r.text);
+  // The op an answer is tagged with, read the first time a `$op`
+  // reference asks — only the tag is kept.
+  const opOf = (r) => {
+    if (r.op === undefined) r.op = outcomeOf(r).ok?.op ?? null;
+    return r.op;
+  };
   // The clock: the HOST owns it, so $TODAY / $NOW_SECS resolve to the
   // host's here-and-now before the ops ever see them. Result
   // references ($load.x, $import.x, $1.x) resolve against the
@@ -191,13 +250,14 @@ async function runSession() {
       current = results[Number(base) - 1];
       if (!current) throw new Error(`reference ${ref}: no result ${base} (the session has ${results.length})`);
     } else {
-      current = [...results].reverse().find((r) => r.ok?.op === base);
+      current = [...results].reverse().find((r) => opOf(r) === base);
       if (!current) throw new Error(`reference ${ref}: no prior result tagged op:"${base}"`);
     }
     // References resolve into the result's ok payload — the document
     // the session prints and the agent reads (the outcome wrapper is
     // transport, not content).
-    current = current.ok ?? current;
+    const outcome = outcomeOf(current);
+    current = outcome.ok ?? outcome;
     for (const segment of (path ?? "").split(".").filter((s) => s.length)) {
       if (current === null || current === undefined) {
         throw new Error(`reference ${ref}: path leaves the result at segment "${segment}"`);
@@ -223,35 +283,45 @@ async function runSession() {
     return value;
   };
   for (const step of steps) {
-    let result;
+    // The printed line's leading fields, in this order: the name, the
+    // capability, then the step's own (load, ask), then the outcome.
+    const result = {};
+    if (step.name) {
+      if (results.some((r) => r.as === step.name)) throw new Error(`--as ${step.name}: the name is already taken`);
+      result.as = step.name;
+    }
+    // The capability rides on every line once a session spans more
+    // than one — the reader sees which module answered.
+    if (new Set(steps.map((s) => s.capability)).size > 1) result.cap = step.capability;
     if (step.kind === "ask") {
       // The oracle answers over HTTP, outside the sandbox — its
       // answer is input, like a file the session loads.
       const resp = await fetch(step.value);
-      result = resp.ok ? { ask: step.value, ok: await resp.json() } : { ask: step.value, error: `HTTP ${resp.status}` };
+      result.ask = step.value;
+      result.text = resp.ok ? `{"ok":${JSON.stringify(await resp.json())}}` : JSON.stringify({ error: `HTTP ${resp.status}` });
     } else if (step.kind === "load") {
       const module = moduleFor(step.capability);
       const match = /^(\d+):(.+)$/.exec(step.value);
       const op = match ? Number(match[1]) : 0;
       const file = match ? match[2] : step.value;
-      result = { load: file, ...module.invokeBytes(op, readFileSync(file)) };
+      result.load = file;
+      result.text = module.invokeBytes(op, readFileSync(file));
     } else {
       const module = moduleFor(step.capability);
       const request = step.value.startsWith("@")
         ? JSON.parse(readFileSync(step.value.slice(1), "utf8"))
         : JSON.parse(step.value);
-      result = module.invoke(resolveRefs(request));
-    }
-    // The capability rides on every line once a session spans more
-    // than one — the reader sees which module answered.
-    if (new Set(steps.map((s) => s.capability)).size > 1) result = { cap: step.capability, ...result };
-    if (step.name) {
-      if (results.some((r) => r.as === step.name)) throw new Error(`--as ${step.name}: the name is already taken`);
-      result = { as: step.name, ...result };
+      result.text = module.invoke(resolveRefs(request));
     }
     results.push(result);
   }
-  parentPort.postMessage({ ok: results });
+  // One printed line per result: the leading fields, then the
+  // outcome's own fields — spliced as text, never re-parsed.
+  const lines = results.map(({ text, op, ...lead }) => {
+    const head = JSON.stringify(lead);
+    return head === "{}" ? text : `${head.slice(0, -1)},${text.slice(1)}`;
+  });
+  parentPort.postMessage({ ok: lines });
 }
 
 if (!isMainThread) {
@@ -265,6 +335,7 @@ if (!isMainThread) {
 // -----------------------------------------------------------------
 
 export async function main(argv) {
+  warnIfStale();
   if (argv[0] === "list") {
     const pointer = registryPointer();
     console.log(JSON.stringify(pointer, null, 2));
@@ -304,7 +375,7 @@ export async function main(argv) {
     });
   });
 
-  for (const result of outcome) console.log(JSON.stringify(result));
+  for (const line of outcome) console.log(line);
   return 0;
 }
 

@@ -38,7 +38,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use cap_abi::canonical_hash;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use transit_dispatch::{BoardDeparture, GroupedBoard, StopBoard};
+use transit_dispatch::{GroupedBoard, StopBoard};
 use transit_live::LiveDay;
 use transit_network::Network;
 
@@ -108,13 +108,14 @@ pub struct MigrationNote {
 }
 
 /// One watched stop's board, with the version-appropriate label
-/// (v2 labels; v1 notes — the migration maps note → label).
+/// (v2 labels; v1 notes — the migration maps note → label). The board
+/// is THE stop board (`stop_board` with the same arguments).
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export, export_to = "cap_board/")]
 pub struct WatchBoardStop {
     pub id: String,
     pub label: String,
-    pub departures: Vec<BoardDeparture>,
+    pub board: StopBoard,
 }
 
 /// One operation call. Tagged like every capability's seam.
@@ -205,10 +206,12 @@ pub enum Request {
     /// deterministic: label = note, colors dropped and reported.
     /// The caller keeps the old bytes — migrations never destroy.
     MigrateWatchlist { document: Watchlist },
-    /// The board for a watchlist: each watched stop's departures on
-    /// a service date, labelled per its version — the same question
-    /// the per-stop board answers, parameterized by the personal
-    /// document.
+    /// The board for a watchlist: each watched stop's board on a
+    /// service date, labelled per its version — the same question the
+    /// per-stop board answers, parameterized by the personal document,
+    /// so the same answer: `stop_board` for each stop with the same
+    /// edits and live document (realtime-first, skipped visits, a
+    /// watched station pin pooling its bays).
     WatchlistBoard {
         watchlist_hash: String,
         network_hash: String,
@@ -217,6 +220,9 @@ pub enum Request {
         date: String,
         from_secs: u32,
         limit: u32,
+        #[serde(default)]
+        #[ts(optional)]
+        live_hash: Option<String>,
     },
 }
 
@@ -455,7 +461,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let (migrated, notes) = migrate_watchlist(&document)?;
             Ok(Response::MigratedWatchlist { document: migrated, notes })
         }
-        Request::WatchlistBoard { watchlist_hash, network_hash, edits_hash, date, from_secs, limit } => {
+        Request::WatchlistBoard { watchlist_hash, network_hash, edits_hash, date, from_secs, limit, live_hash } => {
             let watchlist = watchlists()
                 .lock()
                 .expect("watchlist lock")
@@ -464,18 +470,22 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .ok_or_else(|| format!("unknown watchlist {watchlist_hash}: load_watchlist first"))?;
             let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
+            let live = live_hash.as_deref().map(live_arc).transpose()?;
+            let edits = day_edits(&network, edits_hash.as_deref(), &date)?;
             let stops = watchlist
                 .stop_ids()
                 .into_iter()
                 .map(|stop_id| WatchBoardStop {
                     id: stop_id.to_string(),
                     label: watch_label(&watchlist, stop_id),
-                    departures: transit_dispatch::board(
+                    board: transit_dispatch::stop_board(
                         &network,
                         &day,
                         stop_id,
                         from_secs,
                         limit as usize,
+                        live.as_deref(),
+                        edits.as_ref(),
                     ),
                 })
                 .collect();

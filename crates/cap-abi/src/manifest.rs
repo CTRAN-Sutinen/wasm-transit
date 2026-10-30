@@ -19,7 +19,9 @@
 //! * **Agent context** — `purpose` and `op_docs` are the discovery
 //!   surface for agents that assemble apps from a registry: what the
 //!   capability is FOR, what each op does, and a worked
-//!   request→response example per op.
+//!   request→response example per op (and, for an op whose argument
+//!   is a tagged vocabulary — cap-author `apply`'s edits — one worked
+//!   example per kind).
 //!   Context lives IN the manifest so it versions with the capability
 //!   and its diff is reviewable like any other contract change.
 
@@ -88,6 +90,21 @@ pub struct MigrationSpec {
 pub struct OpDoc {
     pub description: String,
     pub example: Option<OpExample>,
+    /// An op whose argument is a tagged vocabulary (cap-author
+    /// `apply`'s edits): one worked example per kind, so every kind's
+    /// shape is readable here — not only in the generated types.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kinds: Vec<KindExample>,
+}
+
+/// One kind of an op's tagged argument, worked: the kind's tag and a
+/// value of it that the op accepts.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "cap_abi/")]
+pub struct KindExample {
+    pub kind: String,
+    #[ts(type = "unknown")]
+    pub example: serde_json::Value,
 }
 
 /// A worked request→response pair.

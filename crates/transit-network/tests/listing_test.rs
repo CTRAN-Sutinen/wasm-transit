@@ -133,9 +133,9 @@ fn a_stop_lists_the_routes_serving_it() {
 }
 
 /// QAF-51 regression (C-TRAN, Fisher's Landing): a parent station
-/// whose patterns visit only its bays answers their routes — the
-/// detail read pools the walking group, the same group the station
-/// board departs across. It used to answer nothing.
+/// whose patterns visit only its bays answers their routes — a stop
+/// with no service of its own pools the walking group, the same group
+/// the station board departs across.
 #[test]
 fn a_station_answers_its_bays_routes() {
     let net = apply_edits(&network(), &[
@@ -178,8 +178,23 @@ fn a_station_answers_its_bays_routes() {
         stop_detail(&net, stop).unwrap().routes.iter().map(|r| r.id.clone()).collect::<Vec<_>>()
     };
     assert_eq!(routes("STN"), ["10"], "the station answers its bays' routes");
-    assert_eq!(routes("N1"), ["10"], "a bay answers its sibling's routes too");
+    assert_eq!(routes("N1"), ["10"], "a bay no route serves answers its sibling's routes");
     assert_eq!(routes("B"), ["10"]);
+
+    // QAF-66 (C-TRAN, Fisher's Landing: Bay A serves only 012): a bay
+    // with service of its own answers its own routes, never its
+    // siblings' — the board's rule.
+    let mut net = net;
+    let mut route20 = net.routes["10"].clone();
+    route20.name = "Route 20".into();
+    net.routes.insert("20".into(), route20);
+    net.patterns.insert("20-only".into(), transit_network::Pattern { route: "20".into(), ..pattern("20 via N1", &["N1", "C"]) });
+    let routes = |stop: &str| {
+        stop_detail(&net, stop).unwrap().routes.iter().map(|r| r.id.clone()).collect::<Vec<_>>()
+    };
+    assert_eq!(routes("N1"), ["20"], "a served bay answers its own routes");
+    assert_eq!(routes("B"), ["10"], "and not its sibling's");
+    assert_eq!(routes("STN"), ["10", "20"], "the station pools every bay");
 }
 
 #[test]
@@ -290,8 +305,8 @@ fn a_timetable_is_one_direction_on_one_service_type_across_its_patterns() {
 #[test]
 fn a_timetable_against_its_baseline_marks_what_changed() {
     // Every 30 min 07:50–09:00: 08:00 and 08:30 move to 07:50 and
-    // 08:20 (a row is a trip at a start: removed at the old, added at
-    // the new), 08:50 is a new trip, 25:30 is untouched.
+    // 08:20 (a moved trip keeps its id, so it reads retimed from its
+    // old start — QAF-64), 08:50 is a new trip, 25:30 is untouched.
     let base = network();
     let edit = NetworkEdit::SetHeadway {
         route: "10".into(),
@@ -304,12 +319,18 @@ fn a_timetable_against_its_baseline_marks_what_changed() {
     };
     let next = apply_edits(&base, &[edit]).unwrap();
     let t = timetable_against(&next, &base, "10", None, "weekday").unwrap();
-    let marks: Vec<_> = t.trips.iter().map(|x| (x.start_secs, x.added)).collect();
-    assert_eq!(marks, [(28_200, true), (30_000, true), (31_800, true), (91_800, false)]);
-    assert_eq!(t.removed.iter().map(|r| r.start_secs).collect::<Vec<_>>(), [28_800, 30_600]);
+    let marks: Vec<_> = t.trips.iter().map(|x| (x.start_secs, x.added, x.retimed_from_secs)).collect();
+    assert_eq!(
+        marks,
+        [(28_200, false, Some(28_800)), (30_000, false, Some(30_600)), (31_800, true, None), (91_800, false, None)]
+    );
+    assert!(t.removed.is_empty(), "nothing is cut: {:?}", t.removed);
     assert_eq!(t.trips[0].trip, "10-weekday@28800", "the moved trip keeps its id");
     let plain = timetable(&next, "10", None, "weekday").unwrap();
-    assert!(plain.trips.iter().all(|x| !x.added) && plain.removed.is_empty(), "no baseline, no marks");
+    assert!(
+        plain.trips.iter().all(|x| !x.added && x.retimed_from_secs.is_none()) && plain.removed.is_empty(),
+        "no baseline, no marks"
+    );
 }
 
 /// QAF-67: a row naming a route carries its LONG name ("Lincoln")

@@ -481,7 +481,7 @@ const request = answerGraph(
     {
       id: "board.watchlist_board",
       frame: "SavedList",
-      needs: ["network", "edits", "saved", "clock", "view"],
+      needs: ["network", "edits", "rt.live", "saved", "clock", "view"],
       visible: () => ride.view === "home",
       run: async () => {
         const board = await boardModule();
@@ -492,7 +492,15 @@ const request = answerGraph(
         }
         const cap = boardCap(board);
         const { watchlistHash } = cap.loadWatchlist(watchlist);
-        const args = [watchlistHash, hashIn(board, network), editsIn(board, cap.loadEdits), today(), nowSecs(), CARD_ROWS] as const;
+        const args = [
+          watchlistHash,
+          hashIn(board, network),
+          editsIn(board, cap.loadEdits),
+          today(),
+          nowSecs(),
+          CARD_ROWS,
+          liveIn(board, cap.loadLive),
+        ] as const;
         ride.savedBoards = answer(board, "watchlist_board", [...args], () => cap.watchlistBoard(...args));
       },
     },

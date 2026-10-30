@@ -296,10 +296,12 @@ transit-dispatch The materialized day's views, model-native: patch_day
                 and its length, the problems — the record a ready
                 draft becomes, and the edit document's named rows),
                 and WHERE SERVICE RUNS TODAY (geometry.rs: a trip's
-                line over the effective day — the authored alignment
-                while it follows its pattern, its patched stops
-                joined when diverted — and the ridden segment, the
-                alignment sliced between two stops).
+                line over the effective day — the authored alignment,
+                and for a diverted trip the alignment to the first
+                kept stop, the traced detour, the alignment from the
+                last (a skip-only diversion keeps the alignment) —
+                and the ridden segment, that line sliced between two
+                stops).
                 A LIBRARY shared by the cap-board, cap-runcut,
                 cap-calendar, and cap-divert modules; the UI reads
                 them here. Holds no GTFS
@@ -764,7 +766,7 @@ on every component a generated UI imports.
   routes), RouteCard (`route_detail`), ScheduleChange (one
   pattern trips' starts with add and remove events), DirectionTabs
   (`route_detail` directions), TimetableGrid (directory `timetable`,
-  added rows and removed trips when asked against a baseline; a stop
+  added, retimed, and removed trips when asked against a baseline; a stop
   column click is an event), TimetableChange (the timetable gestures'
   forms: frequency, span, running time, stops — one event each),
   CompareTable (analysis `service_type_compare`), FocusMap (a
@@ -776,8 +778,9 @@ on every component a generated UI imports.
   `itinerary_paths`, the rider's location; a tapped stop or spot is
   an event), PlaceSearch (a debounced type-ahead over directory
   `stops`, and under them the geocoder's addresses when the host
-  passes them — two lists, one box, D-28 — keyboard-driven), DepartureRows (`stop_board` rows with
-  their expected time and status, or `watchlist_board` departures),
+  passes them — two lists, one box, D-28 — keyboard-driven), DepartureRows (a board's rows —
+  `stop_board`, or a watched stop's from `watchlist_board` — with
+  their expected time and status),
   StopCard (a stop at a glance), RiderBoard (one stop's board, its
   alerts and skipped visits), AlertList (the live document's
   alerts), TripPlan (the trip's ends, when, and the router's answer)
@@ -968,7 +971,11 @@ cap-abi         The seam crate: the flat C ABI as a macro (every
                 migration-path reachability — total and property-
                 tested; gen-manifest self-validizes before writing),
                 and gen-manifest (the capability set as code; the
-                manifest diff IS the reviewable assembly change).
+                manifest diff IS the reviewable assembly change; its
+                worked examples are computed, and cap-author apply's
+                carry one example per edit kind, applied to the
+                fixture in order — a kind without one, or one that
+                stops applying, fails the build).
                 The kernel registration lives here too: bulk op 256
                 (OP_LOAD_NETWORK — the bare network document on
                 transit_invoke_bytes, parsed straight into the
@@ -1084,7 +1091,9 @@ cap-board       The board capability — ONE QUESTION: when does
                 grouped_board (the same rows by route and
                 destination, the next three of each by default — the
                 stop display's answer) / load_watchlist /
-                migrate_watchlist / watchlist_board (a trip's FINAL
+                migrate_watchlist / watchlist_board (each watched
+                stop's stop_board, the same edits and live document;
+                a trip's FINAL
                 visit is an arrival, never a row) over ONE
                 MATERIALIZED DAY (materialize(net, date), patched
                 with the in-force edits — no derived registry, no
@@ -1102,9 +1111,14 @@ cap-runcut      The runcut capability — ONE QUESTION: what does
                 unrepresentable or skipped is not offered — the
                 honest hole), the day's FLEET SUMMARY (peak
                 concurrent vehicles and when, platform / revenue /
-                layover hours — the fold that took a block_trips
-                call per block), and one block's chain (the detail
-                facet: the AUTHORED runcut with the layover ripple,
+                layover hours, and each running block's outline —
+                span, trips, longest internal gap — the fold that
+                took a block_trips call per block), and one block's
+                chain (the detail
+                facet: the AUTHORED runcut with the layover ripple —
+                the in-force edits' added time, or with a live
+                document (load_live) a trip's predicted delay at its
+                last stop, which wins (D-18) —
                 layover_remaining_secs going negative when a
                 connection is eaten, and layover_health classifying
                 it — overlap / tight / ok under the caller's
@@ -1113,10 +1127,12 @@ cap-runcut      The runcut capability — ONE QUESTION: what does
                 instance's EFFECTIVE
                 stops on the date (the trip detail facet) and its
                 LINE (trip_path — what the map's click-through draws:
-                the authored alignment, or the diversion's patched
-                stops). Same document set as
+                the authored alignment, with an in-force diversion's
+                traced detour spliced between its kept stops). Same
+                document set as
                 cap-board
-                (load_network / load_edits + the day views); the
+                (load_network / load_edits / load_live + the day
+                views); the
                 domain code lives in the shared transit-dispatch
                 library; no GTFS layer (arch gate). The UI's blocks
                 panel and trip lines answer through this module.
@@ -1162,7 +1178,8 @@ cap-directory   The directory capability — ONE QUESTION: what
                 pickers and the Document counts too; a route's
                 composition with trip counts and its patterns and
                 rider variants by direction; a stop's serving
-                routes), and timetable
+                routes — its own, or a station pin's bays', the
+                board's rule), and timetable
                 answers the planner's timetable (route + direction
                 + service type, across the direction's patterns) —
                 the planner computes no number.
@@ -1224,9 +1241,14 @@ cap-streets    The street-graph capability: where along the
 
 ### The registry and the runner
 
-The registry (`registry/`, published by `just registry`): immutable
-blobs + one evidence record per capability (contracts, agent
-context, which gates ran at which commit) + a pointer. It is the
+The registry (`registry/`, published by every `just caps`; `just
+registry` runs the gates first): immutable blobs + one evidence
+record per capability (contracts, agent context, which gates ran —
+none for a plain `just caps` — at which commit, and the digest of
+the source tree that built it) + a pointer. `caps-run` recomputes
+the source digest on every run and says on stderr when the registry
+was published from another tree (`just test` gates the agreement).
+It is the
 artifact agents and humans pull SANDBOXED COMPUTE from —
 `tools/caps-run.mjs` verifies blob bytes against the pinned hash and
 runs ops behind a worker-termination wall-clock guard (`--timeout`).
@@ -1235,7 +1257,10 @@ capabilities (`--cap` switches; each module verified and
 instantiated once): documents cross between modules BY REFERENCE
 (`"network":"$net.network"`), the way a host hands the same bytes to
 each module, and `--as` names results so references survive
-reordering. Sessions do not persist — a later session re-imports.
+reordering. A session holds each result as the module's JSON text
+and parses one only when a reference reaches into it — a parsed
+real-size answer is millions of objects every later collection
+re-marks. Sessions do not persist — a later session re-imports.
 Registry records and the browser manifest are BOTH generated by
 `cargo run -p cap-abi --bin gen-manifest` — one source of contracts,
 two surfaces. `just test` gates the runner itself (the fixture feed

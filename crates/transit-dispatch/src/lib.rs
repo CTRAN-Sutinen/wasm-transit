@@ -64,8 +64,8 @@ pub struct BoardDeparture {
 
 /// One trip in a block's chain for a service date: the AUTHORED runcut
 /// (blocks and layovers are model state GTFS never had), materialized
-/// for the day, with the operator-edit ripple made visible — a
-/// diverted trip that ends later eats into its next layover.
+/// for the day, with the ripple made visible — a diverted trip, or a
+/// trip the live document says ends late, eats into its next layover.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct BlockChainTrip {
@@ -85,13 +85,19 @@ pub struct BlockChainTrip {
     /// The trip's end (last arrival), EFFECTIVE for the date: after
     /// the day's operator edits. `None` when the trip does not run.
     pub end_secs: Option<u32>,
+    /// The live delay at the trip's last stop (its arrival, else its
+    /// departure delay), against the published schedule — `None` when
+    /// no live document predicts this instance there.
+    pub live_end_delay_secs: Option<i32>,
     /// The authored layover following this trip, when the runcut
     /// places one there.
     pub layover_after_secs: Option<u32>,
-    /// The layover that REMAINS after this trip absorbed the day's
-    /// edits: authored layover minus the trip's delay. Negative means
-    /// the next trip starts late — the connection-health ripple.
-    /// `None` when there is no layover or the trip does not run.
+    /// The layover that REMAINS after this trip's delay: authored
+    /// layover minus how late it ends — its live delay at its last
+    /// stop when predicted (against the published time, D-18), else
+    /// what the day's edits added. Negative means the next trip starts
+    /// late — the connection-health ripple. `None` when there is no
+    /// layover or the trip does not run.
     pub layover_remaining_secs: Option<i64>,
     /// The connection's health, classified under the caller's tight
     /// threshold: overlap (the delay ate the whole layover — the next
@@ -138,9 +144,10 @@ pub fn layover_health(remaining_secs: i64, tight_secs: u32) -> LayoverHealth {
 /// * *Shift*: every stop time from the last anchor onward moves
 ///   later by `added_secs` — the detour's running time.
 ///
-/// The detour polyline is DRAWING, not schedule: the host renders it
-/// on the map directly from the document. Shapes are a GTFS
-/// serialization concern and do not exist here.
+/// The detour polyline is DRAWING, not schedule: the day carries no
+/// geometry, and a trip's line splices the detour in where the trip
+/// is drawn (`geometry::trip_path`). Shapes are a GTFS serialization
+/// concern and do not exist here.
 ///
 /// Edits apply in the order given; each trip can absorb several.
 pub fn patch_day(day: &[MaterializedTrip], diversions: &[Diversion]) -> Vec<MaterializedTrip> {
@@ -727,13 +734,15 @@ fn stop_name(network: &Network, stop: Option<&str>) -> String {
 /// One block's chain for a service date: the AUTHORED trips in
 /// order (the runcut is model state), each materialized for the day
 /// when it runs — a frequency trip as every instance it runs, back to
-/// back — with the operator-edit ripple on the layovers. Unknown
-/// blocks answer empty, never error.
+/// back — with the ripple on the layovers: the operator edits', and
+/// with a live document, each trip's predicted lateness at its last
+/// stop. Unknown blocks answer empty, never error.
 pub fn block_chain(
     network: &Network,
     day: &[MaterializedTrip],
     block_id: &str,
     tight_secs: u32,
+    live: Option<&LiveDay>,
 ) -> Vec<BlockChainTrip> {
     let Some(block) = network.blocks.get(block_id) else {
         return Vec::new();
@@ -761,6 +770,7 @@ pub fn block_chain(
                 first_stop: String::new(),
                 last_stop: String::new(),
                 end_secs: None,
+                live_end_delay_secs: None,
                 layover_after_secs: layover,
                 layover_remaining_secs: None,
                 layover_health: None,
@@ -773,8 +783,15 @@ pub fn block_chain(
             // The authored end from the trip itself — what the layover
             // was authored against.
             let authored_end = stored.and_then(|(_, _, t)| transit_network::trip_arrival_end_secs(t, trip.start_secs));
-            let delay = match (effective_end, authored_end) {
-                (Some(e), Some(a)) => e as i64 - a as i64,
+            let live_delay = match (live, trip.stop_times.last(), authored_end) {
+                (Some(live), Some(st), Some(published)) => live
+                    .visit(&trip.trip, trip.start_secs, &st.stop, published)
+                    .and_then(|v| v.arrival_delay.or(v.departure_delay)),
+                _ => None,
+            };
+            let delay = match (live_delay, effective_end, authored_end) {
+                (Some(d), _, _) => d as i64,
+                (None, Some(e), Some(a)) => e as i64 - a as i64,
                 _ => 0,
             };
             // The authored layover follows the trip's last instance.
@@ -791,6 +808,7 @@ pub fn block_chain(
                 first_stop: trip.stop_times.first().map(|st| st.stop.clone()).unwrap_or_default(),
                 last_stop: trip.stop_times.last().map(|st| st.stop.clone()).unwrap_or_default(),
                 end_secs: effective_end,
+                live_end_delay_secs: live_delay,
                 layover_after_secs: layover,
                 layover_remaining_secs: layover_remaining,
                 layover_health: layover_remaining.map(|r| layover_health(r, tight_secs)),
@@ -871,6 +889,30 @@ pub struct FleetSummary {
     /// Platform − revenue, hours: recovery, pull gaps, and the
     /// authored layovers the day actually runs.
     pub layover_hours: f64,
+    /// Each running block's outline, in block order — the structure
+    /// behind the totals: span, trips, and the longest internal gap.
+    pub spans: Vec<BlockSpan>,
+}
+
+/// One running block's day in outline: when the vehicle is out, how
+/// many trips it runs, and its longest internal gap — the wait
+/// between one trip's end and the next one's start, where the block
+/// might be cut.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct BlockSpan {
+    pub block_id: String,
+    /// Its running trip instances on the day.
+    pub trips: u32,
+    pub first_start_secs: u32,
+    pub last_end_secs: u32,
+    /// `last_end_secs − first_start_secs`.
+    pub span_secs: u32,
+    /// The longest gap between consecutive trips (the first of equal
+    /// ones) and when it starts — the earlier trip's end. `None` for a
+    /// block running one trip.
+    pub longest_gap_secs: Option<u32>,
+    pub longest_gap_at_secs: Option<u32>,
 }
 
 /// The day's fleet: every block with a running trip, folded into
@@ -882,30 +924,49 @@ pub fn fleet_summary(network: &Network, day: &[MaterializedTrip]) -> FleetSummar
     let mut revenue_secs = 0u64;
     // (time, delta): a block's span is half-open [start, end).
     let mut events: Vec<(u32, i64)> = Vec::new();
-    for block in network.blocks.values() {
-        let mut first_start: Option<u32> = None;
-        let mut last_end: Option<u32> = None;
-        let mut running = 0u32;
+    let mut spans = Vec::new();
+    for (block_id, block) in &network.blocks {
         let ids: BTreeSet<&str> = block.trips.iter().map(|t| t.trip.as_str()).collect();
-        for trip in day.iter().filter(|t| ids.contains(t.trip.as_str())) {
-            running += 1;
-            let end = trip
-                .stop_times
-                .last()
-                .map(|st| st.arrival_secs.max(st.departure_secs))
-                .unwrap_or(trip.start_secs);
-            first_start = Some(first_start.map_or(trip.start_secs, |f| f.min(trip.start_secs)));
-            last_end = Some(last_end.map_or(end, |l| l.max(end)));
-            revenue_secs += end.saturating_sub(trip.start_secs) as u64;
-        }
-        if running == 0 {
+        // (start, end) per running instance, in start order.
+        let mut runs: Vec<(u32, u32)> = day
+            .iter()
+            .filter(|t| ids.contains(t.trip.as_str()))
+            .map(|trip| {
+                let end = trip
+                    .stop_times
+                    .last()
+                    .map(|st| st.arrival_secs.max(st.departure_secs))
+                    .unwrap_or(trip.start_secs);
+                (trip.start_secs, end)
+            })
+            .collect();
+        if runs.is_empty() {
             continue;
         }
+        runs.sort_unstable();
         blocks += 1;
-        let (start, end) = (first_start.expect("running block has a start"), last_end.expect("running block has an end"));
+        revenue_secs += runs.iter().map(|(s, e)| e.saturating_sub(*s) as u64).sum::<u64>();
+        let start = runs[0].0;
+        let end = runs.iter().map(|r| r.1).max().expect("running block has an end");
         platform_secs += end.saturating_sub(start) as u64;
         events.push((start, 1));
         events.push((end, -1));
+        let mut longest: Option<(u32, u32)> = None;
+        for pair in runs.windows(2) {
+            let gap = pair[1].0.saturating_sub(pair[0].1);
+            if longest.is_none_or(|(g, _)| gap > g) {
+                longest = Some((gap, pair[0].1));
+            }
+        }
+        spans.push(BlockSpan {
+            block_id: block_id.clone(),
+            trips: runs.len() as u32,
+            first_start_secs: start,
+            last_end_secs: end,
+            span_secs: end - start,
+            longest_gap_secs: longest.map(|l| l.0),
+            longest_gap_at_secs: longest.map(|l| l.1),
+        });
     }
     // -1 sorts before +1 at the same second: a bus arriving as
     // another departs does not double-count.
@@ -927,6 +988,7 @@ pub fn fleet_summary(network: &Network, day: &[MaterializedTrip]) -> FleetSummar
         platform_hours: platform_secs as f64 / 3600.0,
         revenue_hours: revenue_secs as f64 / 3600.0,
         layover_hours: (platform_secs - revenue_secs) as f64 / 3600.0,
+        spans,
     }
 }
 

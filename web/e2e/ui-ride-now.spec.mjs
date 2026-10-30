@@ -12,8 +12,10 @@
 //      no stop carries says how stops are named (QAF-70); Enter picks.
 //   3. The stop's board is realtime-first: t10 leaves 8:02, two
 //      minutes late (board `stop_board` over rt `live`).
-//   4. A saved stop answers on home (`watchlist_board`, the schedule —
-//      QAF-79), and the stop is among the recent ones.
+//   4. A saved stop answers on home (`watchlist_board`: the stop
+//      board, realtime-first — t10 at 8:02), and the stop is among the
+//      recent ones; it is still saved after a reload (the store's
+//      watchlist document).
 //   5. Directions: leaving now rides t10 at its prediction
 //      (`plan_compare`), the map draws the leg (`itinerary_paths`);
 //      the last bus leaves 8:40 and arriving by 8:35 rides route 20
@@ -115,7 +117,8 @@ test("ride now answers near me, a stop, a save, and a trip", async ({ page }) =>
   await board.getByRole("button", { name: "back" }).click();
   const saved = page.getByTestId("saved");
   await expect(saved).toContainText("Main & 1st");
-  await expect(saved).toContainText("8:00");
+  await expect(saved).toContainText("8:02");
+  await expect(saved).toContainText("2 min late");
   const recent = page.getByTestId("recent").getByRole("button", { name: "Main & 1st" });
   await expect(recent).toBeVisible();
 
@@ -138,6 +141,21 @@ test("ride now answers near me, a stop, a save, and a trip", async ({ page }) =>
   await trip.getByRole("radio", { name: "Arrive by" }).click();
   await trip.locator("input[type=time]").fill("08:35");
   await expect(it).toContainText("Arrive Main & 2nd at 8:30 am");
+});
+
+test("ride now keeps saved stops across a reload", async ({ page }) => {
+  await open(page);
+  await pick(page, "stop name", "main 1s", "Main & 1st");
+  const board = page.getByTestId("rider-board");
+  await board.getByRole("button", { name: "Save this stop" }).click();
+  await expect(board.getByRole("button", { name: "Remove from saved" })).toBeVisible();
+
+  // The watchlist document is the store's: it survives the visit.
+  await page.reload();
+  await page.getByLabel("Agency GTFS zip").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
+  const saved = page.getByTestId("saved");
+  await expect(saved).toContainText("Main & 1st");
+  await expect(saved).toContainText("8:02");
 });
 
 test("ride now shows a detour on the board and on the trip", async ({ page }) => {

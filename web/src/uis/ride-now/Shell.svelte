@@ -204,9 +204,10 @@
                 {@const b = ride.savedBoards?.find((w) => w.id === s.id)}
                 <StopCard
                   name={s.label}
-                  rows={b ? b.departures : ride.off.board ? [] : null}
+                  rows={b ? b.board.rows : ride.off.board ? [] : null}
+                  pooled={b?.board.pooled ?? false}
                   routes={ride.routes}
-                  note={ride.off.board ? "Departures are unavailable right now." : "Scheduled times — live predictions aren’t available for saved stops yet."}
+                  note={ride.off.board ? "Departures are unavailable right now." : ""}
                   onopen={() => openStop({ id: s.id, name: s.label })}
                 />
               {/each}

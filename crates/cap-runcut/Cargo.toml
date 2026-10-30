@@ -16,6 +16,7 @@ ts-rs = { workspace = true }
 transit-network = { path = "../transit-network" }
 transit-sync = { path = "../transit-sync" }
 transit-dispatch = { path = "../transit-dispatch" }
+transit-live = { path = "../transit-live" }
 cap-abi = { path = "../cap-abi" }
 
 [dev-dependencies]

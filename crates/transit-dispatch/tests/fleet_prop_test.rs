@@ -4,7 +4,9 @@
 //! every number from the materialized day with independent code:
 //! per-block spans and runtimes, and the peak by brute force over
 //! every boundary time (half-open spans — a bus arriving as
-//! another departs is one vehicle, not two).
+//! another departs is one vehicle, not two) — and each running
+//! block's outline (QAF-15): its span, trip count, and longest
+//! internal gap, where a block might be cut.
 //!
 //! The generator authors blocks directly: one pattern, a set of
 //! starts partitioned into consecutive blocks (strictly increasing
@@ -137,6 +139,7 @@ proptest! {
 
         // Oracle: per running block, span and runtime.
         let mut spans: Vec<(u32, u32)> = Vec::new();
+        let mut outlines: Vec<(String, u32, u32, u32, Option<(u32, u32)>)> = Vec::new();
         let mut platform = 0u64;
         let mut revenue = 0u64;
         for block in net.blocks.values() {
@@ -157,6 +160,22 @@ proptest! {
                 .unwrap();
             spans.push((first, last));
             platform += (last - first) as u64;
+            // The longest wait between one trip's end and the next's
+            // start, in start order (the first of equal ones).
+            let mut ordered: Vec<(u32, u32)> = running
+                .iter()
+                .map(|t| (t.start_secs, t.stop_times.last().map(|st| st.arrival_secs.max(st.departure_secs)).unwrap_or(t.start_secs)))
+                .collect();
+            ordered.sort_unstable();
+            let mut longest: Option<(u32, u32)> = None;
+            for pair in ordered.windows(2) {
+                let gap = pair[1].0.saturating_sub(pair[0].1);
+                if longest.is_none_or(|(g, _)| gap > g) {
+                    longest = Some((gap, pair[0].1));
+                }
+            }
+            let id = net.blocks.iter().find(|(_, b)| std::ptr::eq(*b, block)).unwrap().0.clone();
+            outlines.push((id, running.len() as u32, first, last, longest));
             for t in &running {
                 let end = t.stop_times.last().map(|st| st.arrival_secs.max(st.departure_secs)).unwrap_or(t.start_secs);
                 revenue += (end - t.start_secs) as u64;
@@ -184,6 +203,15 @@ proptest! {
         prop_assert!((summary.layover_hours - (platform - revenue) as f64 / 3600.0).abs() < 1e-9, "layover hours");
         prop_assert!(summary.peak_vehicles <= summary.blocks, "the peak never exceeds the fleet");
         prop_assert!(summary.layover_hours >= -1e-9, "platform is at least revenue");
+        let got: Vec<(String, u32, u32, u32, Option<(u32, u32)>)> = summary
+            .spans
+            .iter()
+            .map(|b| {
+                assert_eq!(b.span_secs, b.last_end_secs - b.first_start_secs, "{}: the span is end − start", b.block_id);
+                (b.block_id.clone(), b.trips, b.first_start_secs, b.last_end_secs, b.longest_gap_secs.zip(b.longest_gap_at_secs))
+            })
+            .collect();
+        prop_assert_eq!(got, outlines, "each running block's outline, in block order");
 
         // An empty day answers zero fleet, never an error.
         let saturday = materialize(&net, NaiveDate::from_ymd_opt(2026, 1, 10).unwrap()).expect("materialize");
@@ -191,5 +219,6 @@ proptest! {
         prop_assert_eq!((quiet.blocks, quiet.peak_vehicles), (0, 0));
         prop_assert_eq!(quiet.peak_at_secs, None);
         prop_assert_eq!(quiet.platform_hours, 0.0);
+        prop_assert!(quiet.spans.is_empty());
     }
 }

@@ -559,7 +559,7 @@ fn warnings_name_what_validity_lets_through() {
     };
     assert_eq!(
         validation_warnings(&pick),
-        vec![NetworkWarning::NoServiceInPlanPeriod { plan: "spring".into(), effective_from: "2030-01-07".into() }]
+        vec![NetworkWarning::NoServiceInPlanPeriod { plan_name: "Spring".into(), effective_from: "2030-01-07".into() }]
     );
     // Inside the calendar, the pick runs: no warning.
     pick.plan.effective_from = net.service_types["weekday"].rule.ranges.first().map(|r| r.start);

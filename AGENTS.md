@@ -101,7 +101,8 @@ done; `just e2e` adds the browser runner, for UI-visible changes;
 just build                 # frontend (type-checks first — the TS layer is a gate)
 just caps                  # capability modules + manifest (+ cap_sync.wasm,
                            # cap_network.wasm and cap_streets.wasm for the server)
-just registry              # publish the capability registry (gates → blobs + evidence)
+just registry              # publish the capability registry (gates → blobs + evidence;
+                           # every `just caps` republishes it ungated)
 node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op ...
                            # steps run in command-line order; --cap ID switches
                            # capability mid-session (documents cross by $ref);

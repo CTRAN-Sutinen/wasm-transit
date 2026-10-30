@@ -153,7 +153,7 @@ async function queryBoard(): Promise<void> {
     const cap = boardCap(module);
     const { watchlistHash } = cap.loadWatchlist(document);
     const stops = cap.watchlistBoard(watchlistHash, boarding.networkHash, null, DATE, DEPART, 3);
-    demo.board = stops.map((s) => ({ id: s.id, label: s.label, count: s.departures.length }));
+    demo.board = stops.map((s) => ({ id: s.id, label: s.label, count: s.board.rows.length }));
     demo.docSteps.push({
       label: `board @ v${current.version}`,
       detail: demo.board.map((s) => `${s.id} "${s.label}" (${s.count})`).join(", "),

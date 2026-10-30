@@ -201,14 +201,12 @@ fn the_grouped_board_is_the_board_by_route_and_destination() {
     assert_eq!(rows, stop_board(&network_hash, None, "STN", 0, None).rows);
 }
 
-/// The realtime-first board over a LIVE document: the late bus
-/// scheduled before `from_secs` is still to come, with its expected
-/// time, delay, and status — the module classifies, no host does.
-#[test]
-fn the_board_reads_a_live_document() {
+/// A live document with route 10's first departure from A two
+/// minutes late, registered; answers its hash, the document, and the
+/// scheduled row it moves.
+fn late_at_a(network_hash: &str) -> (String, transit_live::LiveDay, transit_dispatch::BoardDeparture) {
     use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
-    let network_hash = load_network();
-    let row = departures(&network_hash, None, "A").into_iter().find(|d| d.route == "10").unwrap();
+    let row = departures(network_hash, None, "A").into_iter().find(|d| d.route == "10").unwrap();
     let live = LiveDay {
         window: OnTimeWindow::default(),
         trips: vec![LiveTrip {
@@ -235,6 +233,17 @@ fn the_board_reads_a_live_document() {
         Response::LoadLive { live_hash } => live_hash,
         _ => panic!("load_live"),
     };
+    (live_hash, live, row)
+}
+
+/// The realtime-first board over a LIVE document: the late bus
+/// scheduled before `from_secs` is still to come, with its expected
+/// time, delay, and status — the module classifies, no host does.
+#[test]
+fn the_board_reads_a_live_document() {
+    use transit_live::LiveStatus;
+    let network_hash = load_network();
+    let (live_hash, live, row) = late_at_a(&network_hash);
     let canonical = serde_json::to_string(&live).unwrap();
     assert_eq!(live_hash, format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes())));
 
@@ -303,6 +312,7 @@ fn watchlist_board(watchlist_hash: &str, network_hash: &str) -> Vec<cap_board::W
         date: DATE.into(),
         from_secs: 0,
         limit: 5,
+        live_hash: None,
     })
     .unwrap()
     {
@@ -323,7 +333,7 @@ fn the_watchlist_migrates_with_loss_reported_and_both_versions_query() {
     assert_eq!(board[0].id, "A");
     assert_eq!(board[0].label, "home", "v1 labels are the notes");
     assert_eq!(board[1].label, "work");
-    assert!(board.iter().all(|s| s.departures.iter().all(|d| !d.trip.is_empty())), "model-native rows");
+    assert!(board.iter().all(|s| s.board.rows.iter().all(|r| !r.departure.trip.is_empty())), "model-native rows");
 
     // The migration: label = note, the color dropped AND reported.
     let (migrated, notes) = migrate_watchlist(&v1()).expect("v1 migrates");
@@ -358,6 +368,7 @@ fn the_watchlist_migrates_with_loss_reported_and_both_versions_query() {
         date: DATE.into(),
         from_secs: 0,
         limit: 5,
+        live_hash: None,
     })
     .unwrap()
     {
@@ -365,6 +376,47 @@ fn the_watchlist_migrates_with_loss_reported_and_both_versions_query() {
         _ => panic!("watchlist_board"),
     };
     assert_eq!(patched.len(), 2, "the personal board patches with the edits in force");
+}
+
+/// QAF-79: a watched stop answers THE stop board — the same question
+/// parameterized by the personal document, so the same answer: live
+/// predictions and status with a live document, the skipped visits
+/// with the edits, and a watched STATION pin pooling its bays. Each
+/// stop's board equals `stop_board` asked with the same arguments.
+#[test]
+fn the_watchlist_board_is_the_stop_board() {
+    let network_hash = load_network();
+    let (live_hash, _, row) = late_at_a(&network_hash);
+    let (edits_hash, _) = load_edits(&network_hash, vec![record(EditStatus::Accepted, 60)]);
+    let watched = Watchlist::V2 {
+        stops: ["A", "STN", "C"]
+            .into_iter()
+            .map(|id| cap_board::WatchStopV2 { id: id.into(), label: id.to_lowercase() })
+            .collect(),
+    };
+    let (watchlist_hash, _) = load_watchlist(&watched);
+    let from_secs = row.departure_secs + 60;
+    let stops = match dispatch(Request::WatchlistBoard {
+        watchlist_hash,
+        network_hash: network_hash.clone(),
+        edits_hash: Some(edits_hash.clone()),
+        date: DATE.into(),
+        from_secs,
+        limit: 20,
+        live_hash: Some(live_hash.clone()),
+    })
+    .unwrap()
+    {
+        Response::WatchlistBoard { stops } => stops,
+        _ => panic!("watchlist_board"),
+    };
+    assert_eq!(stops.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["A", "STN", "C"]);
+    for s in &stops {
+        let expected = stop_board(&network_hash, Some(edits_hash.clone()), &s.id, from_secs, Some(live_hash.clone()));
+        assert_eq!(s.board, expected, "{}: the stop board", s.id);
+    }
+    assert!(stops[0].board.live && stops[0].board.rows.iter().any(|r| r.departure.trip == row.trip && r.delay_secs == Some(120)));
+    assert!(stops[1].board.pooled && !stops[1].board.rows.is_empty(), "a watched station pools its bays");
 }
 
 #[test]
@@ -396,6 +448,7 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
         date: DATE.into(),
         from_secs: 0,
         limit: 5,
+        live_hash: None,
     })
     .unwrap_err();
     assert!(err.contains("unknown watchlist"), "{err}");

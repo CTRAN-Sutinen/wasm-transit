@@ -410,6 +410,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 None => Arc::new(Vec::new()),
             };
             let day = effective_day(&network, &records, parsed)?;
+            let diversions = transit_sync::in_force_on(&records, parsed);
             let paths = itinerary
                 .legs
                 .iter()
@@ -418,7 +419,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                         transit_dispatch::LegPath {
                             kind: transit_dispatch::LegKind::Transit,
                             path: transit_dispatch::trip_segment(
-                                &network, &day, trip, *start_secs, board_stop_id, alight_stop_id,
+                                &network, &day, &diversions, trip, *start_secs, board_stop_id, alight_stop_id,
                             ),
                         }
                     }

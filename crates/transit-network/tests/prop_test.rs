@@ -436,13 +436,15 @@ proptest! {
         let _ = materialize(&broken, date);
     }
 
-    /// QAF-51 (C-TRAN, Fisher's Landing): a stop's detail answers its
-    /// whole WALKING GROUP — a station pin whose patterns visit only
-    /// its bays answers their routes, and a bay answers its
-    /// siblings'. The group is spelled out here from `parent` fields
-    /// (the oracle), never borrowed from the model's own helper.
+    /// QAF-51 and QAF-66 (C-TRAN, Fisher's Landing): a stop's detail
+    /// answers the routes that serve IT — the board's rule (a stop
+    /// with service of its own never pools). A stop no pattern visits
+    /// (a station pin whose patterns visit only its bays) answers its
+    /// whole WALKING GROUP. The group is spelled out here from
+    /// `parent` fields (the oracle), never borrowed from the model's
+    /// own helper.
     #[test]
-    fn stop_detail_pools_the_walking_group(net in net_strategy()) {
+    fn stop_detail_answers_its_own_routes_or_its_walking_group(net in net_strategy()) {
         for id in net.stops.keys() {
             let stop = &net.stops[id];
             let mut group: std::collections::BTreeSet<&str> =
@@ -458,19 +460,24 @@ proptest! {
                     group.insert(other.as_str());
                 }
             }
-            let mut expected: std::collections::BTreeSet<String> = Default::default();
-            for p in net.patterns.values() {
-                if p.stops.iter().any(|ps| group.contains(ps.stop.as_str())) {
-                    expected.insert(p.route.clone());
+            let serving = |members: &std::collections::BTreeSet<&str>| {
+                let mut routes: std::collections::BTreeSet<String> = Default::default();
+                for p in net.patterns.values() {
+                    if p.stops.iter().any(|ps| members.contains(ps.stop.as_str())) {
+                        routes.insert(p.route.clone());
+                    }
                 }
-            }
+                routes
+            };
+            let own = serving(&[id.as_str()].into_iter().collect());
+            let expected = if own.is_empty() { serving(&group) } else { own };
             let detail = stop_detail(&net, id).expect("a known stop has a detail");
             let got: std::collections::BTreeSet<String> =
                 detail.routes.iter().map(|r| r.id.clone()).collect();
             prop_assert_eq!(
                 got,
                 expected,
-                "stop {} does not answer its walking group",
+                "stop {} does not answer its own routes or its walking group",
                 id
             );
         }

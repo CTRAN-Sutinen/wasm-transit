@@ -305,6 +305,7 @@ dependencies = [
  "sha2",
  "transit-codec",
  "transit-dispatch",
+ "transit-live",
  "transit-network",
  "transit-sync",
  "ts-rs",

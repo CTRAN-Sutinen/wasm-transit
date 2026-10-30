@@ -8,7 +8,8 @@
 //   2. The import is not changed in place: the timetable's changes are
 //      disabled until the plan is forked.
 //   3. The fork takes a timetable gesture (cap-author set_headway):
-//      the timetable marks the added trip against the baseline, the
+//      the timetable marks the added trip against the baseline (a
+//      kept trip is never "gone" — QAF-64), the
 //      comparison (cap-analysis service_type_compare) names the route,
 //      and the warnings say the new trip has no block.
 //   4. A stop dropped from the direction leaves its column
@@ -64,7 +65,7 @@ test("service design answers a plan, a fork, and its change", async ({ page }) =
   await headway.getByRole("button", { name: "Apply" }).click();
   await expect(timetable.locator("tbody tr")).toHaveCount(3);
   await expect(timetable.locator("tbody tr.added")).toHaveCount(1);
-  await expect(page.getByTestId("timetable-delta")).toContainText("1 added");
+  await expect(page.getByTestId("timetable-delta")).toContainText("1 added, 0 retimed, 0 gone");
   await expect(page.getByTestId("compare")).toContainText("2 → 3");
   await expect(page.getByTestId("plan-health")).toContainText("unassigned trips");
   await expect(page.getByTestId("type-vs")).toContainText("vs (unframed import)");

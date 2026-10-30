@@ -1088,6 +1088,7 @@ export function boardCap(module: CapModule) {
       date: string,
       fromSecs: number,
       limit: number,
+      liveHash: string | null = null,
     ): WatchBoardStop[] {
       const resp = module.invoke({
         op: "watchlist_board",
@@ -1097,6 +1098,7 @@ export function boardCap(module: CapModule) {
         date,
         from_secs: fromSecs,
         limit,
+        live_hash: liveHash ?? undefined,
       } as BoardCapRequest) as Extract<BoardCapResponse, { op: "watchlist_board" }>;
       return resp.stops;
     },

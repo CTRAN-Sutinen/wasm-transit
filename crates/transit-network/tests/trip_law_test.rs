@@ -591,6 +591,82 @@ proptest! {
         }
     }
 
+    /// QAF-64: a trip's id is its identity, so the timetable against a
+    /// baseline reads a moved trip as RETIMED — kept, with its
+    /// baseline start — never as removed and added. A one-start trip
+    /// both documents hold reads unchanged at its old start and
+    /// retimed at a new one; a trip only the proposal holds is added;
+    /// a one-start trip only the baseline holds is removed. A
+    /// frequency trip's instances have no identity beyond (trip,
+    /// start): each is kept, added, or removed by that pair.
+    #[test]
+    fn a_retimed_trip_reads_retimed_against_its_baseline(
+        net in net_strategy(),
+        pick in any::<prop::sample::Index>(),
+        by in 1u32..20,
+        from in (6u32 * 3600..18 * 3600).prop_map(|s| s - s % 600),
+        headway in prop::sample::select(vec![600u32, 900, 1800]),
+    ) {
+        let starts: Vec<(String, u32)> = all_trips(&net)
+            .into_iter()
+            .filter_map(|(_, _, t)| match t.departs { Departs::At { start_secs } => Some((t.id.clone(), start_secs)), _ => None })
+            .collect();
+        let mut edits = vec![NetworkEdit::SetHeadway {
+            route: "r0".into(),
+            direction: None,
+            service_type: "wk".into(),
+            from_secs: from,
+            to_secs: from + 2 * 3600,
+            headway_secs: headway,
+            pattern: None,
+        }];
+        if !starts.is_empty() {
+            let (id, start) = starts[pick.index(starts.len())].clone();
+            edits.insert(0, NetworkEdit::RetimeTrip { trip: id, to_secs: start + by * 60 });
+        }
+        let next = apply_edits(&net, &edits).expect("the edits apply");
+        let Some(t) = transit_network::timetable_against(&next, &net, "r0", None, "wk") else {
+            return Ok(());
+        };
+
+        // The oracle: the stored trips under r0 / wk, by id.
+        let one_start = |n: &Network| -> BTreeMap<String, u32> {
+            all_trips(n).into_iter()
+                .filter(|(_, pt, _)| pt.service_type == "wk")
+                .filter_map(|(_, _, t)| match t.departs { Departs::At { start_secs } => Some((t.id.clone(), start_secs)), _ => None })
+                .collect()
+        };
+        let instances = |n: &Network| -> BTreeSet<(String, u32)> {
+            all_trips(n).into_iter()
+                .filter(|(_, pt, _)| pt.service_type == "wk")
+                .flat_map(|(_, _, t)| oracle_instances(&t.departs).into_iter().map(|s| (t.id.clone(), s)))
+                .collect()
+        };
+        let (was, now) = (one_start(&net), one_start(&next));
+        let (was_all, now_all) = (instances(&net), instances(&next));
+        for row in &t.trips {
+            match (now.get(&row.trip), was.get(&row.trip)) {
+                (Some(_), Some(&old)) => {
+                    prop_assert!(!row.added, "{}: kept, not added", row.trip);
+                    let moved = (old != row.start_secs).then_some(old);
+                    prop_assert_eq!(row.retimed_from_secs, moved, "{}: its baseline start", row.trip);
+                }
+                _ => {
+                    prop_assert_eq!(row.added, !was_all.contains(&(row.trip.clone(), row.start_secs)), "{}@{}", row.trip, row.start_secs);
+                    prop_assert_eq!(row.retimed_from_secs, None, "{}: not a kept one-start trip", row.trip);
+                }
+            }
+        }
+        let expected_removed: BTreeSet<(String, u32)> = was_all
+            .iter()
+            .filter(|(id, s)| !now_all.contains(&(id.clone(), *s)))
+            .filter(|(id, _)| !(was.contains_key(id) && now.contains_key(id)))
+            .cloned()
+            .collect();
+        let got_removed: BTreeSet<(String, u32)> = t.removed.iter().map(|r| (r.trip.clone(), r.start_secs)).collect();
+        prop_assert_eq!(got_removed, expected_removed, "removed: the baseline's instances it no longer runs");
+    }
+
     /// Adding a trip mints a fresh id, times it at every stop, and
     /// keeps the document valid.
     #[test]

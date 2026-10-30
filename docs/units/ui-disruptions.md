@@ -25,10 +25,10 @@ session has asked these questions as one sequence.
 | # | op(s) | state |
 |---|---|---|
 | 1 | rt `live`, `late_trips` | op exists; no UI reads `late_trips` (`docs/units/grade-debt.md`); vehicle labels are ids, QAF-48 (Blocked: D-10) |
-| 2 | none | gap, QAF-31 (no live ripple through layovers) |
+| 2 | runcut `block_trips` (`live_hash`, + `load_live`) | op exists: a trip's live delay at its last stop against its next layover |
 | 3 | divert `list` | op exists |
 | 4 | divert `draft`, streets `snap` / `route`, divert `propose` | op exists; cap-streets is not dogfooded on real data (`docs/units/grade-debt.md`, needs the county export) |
-| 5 | runcut `trip_path`, board `stop_board`, router `plan_compare` with `edits_hash` | partial: QAF-50 (path drops the detour) |
+| 5 | runcut `trip_path`, board `stop_board`, router `plan_compare` with `edits_hash` | op exists (a diverted trip's line splices the traced detour into its alignment) |
 | 6 | none | gap, QAF-36 (the edit document is diversions only) |
 | 7 | sync `sync_edits` | op exists; not dogfooded, rides with `docs/units/sync-persistence.md` |
 

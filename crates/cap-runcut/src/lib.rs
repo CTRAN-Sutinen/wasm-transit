@@ -8,7 +8,8 @@
 //! reads). Blocks and layovers are
 //! model state GTFS never had: the runcut is authored, and a
 //! diverted trip ending later eats into the vehicle's next
-//! layover — the connection-health ripple is IN the answer.
+//! layover, as does a trip the live document predicts ends late —
+//! the connection-health ripple is IN the answer.
 //!
 //! Every answer is one MATERIALIZED DAY — `materialize(net,
 //! date)`, patched with the edits in force on that date. There is
@@ -23,7 +24,9 @@
 //! * **edits** — the operator edit document, wholesale-replaced by
 //!   the host, validated per record against the NETWORK at load
 //!   (invalid records are REPORTED, not rejected — the sync
-//!   contract).
+//!   contract);
+//! * **live** — cap-rt's live document (the snapshot in model
+//!   vocabulary), which the chain's ripple reads.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -32,6 +35,7 @@ use cap_abi::canonical_hash;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_dispatch::{BlockChainTrip, DayBlock};
+use transit_live::LiveDay;
 use transit_network::Network;
 
 /// One operation call. Tagged like every capability's seam.
@@ -58,6 +62,10 @@ pub enum Request {
         network_hash: String,
         records: Vec<transit_sync::EditRecord>,
     },
+    /// Register a LIVE document (minted by cap-rt's `live`) under its
+    /// content hash — the same identity cap-rt answered (assert at
+    /// the host). Ephemeral like the snapshot it came from.
+    LoadLive { live: LiveDay },
     /// The day's blocks: every authored block with at least one trip
     /// running on the date, with that day's running trip counts. A
     /// block whose every trip is off that day is a vehicle still in
@@ -70,8 +78,9 @@ pub enum Request {
     },
     /// The day's fleet in one answer (QAF-3): running blocks, the
     /// peak concurrent vehicles and the first time the peak is
-    /// reached, and the platform / revenue / layover hours — the
-    /// fold that took one block_trips call per block plus
+    /// reached, the platform / revenue / layover hours, and each
+    /// running block's outline (span, trips, longest internal gap) —
+    /// the fold that took one block_trips call per block plus
     /// host-side concurrency glue.
     FleetSummary {
         network_hash: String,
@@ -83,8 +92,10 @@ pub enum Request {
     /// model's blocks carry layovers GTFS never had), materialized
     /// for the day, with the in-force edits applied — a diverted trip
     /// ending later eats into the vehicle's next layover (the
-    /// connection-health ripple, made visible). Trips of the chain
-    /// that do not run on the date stay in view, marked; unknown
+    /// connection-health ripple, made visible), and with `live_hash`
+    /// so does a trip the live document predicts ends late (its delay
+    /// at its last stop, against the published time). Trips of the
+    /// chain that do not run on the date stay in view, marked; unknown
     /// blocks answer empty, never error.
     BlockTrips {
         network_hash: String,
@@ -97,6 +108,9 @@ pub enum Request {
         #[serde(default)]
         #[ts(optional)]
         tight_layover_secs: Option<u32>,
+        #[serde(default)]
+        #[ts(optional)]
+        live_hash: Option<String>,
     },
     /// One trip instance's stops on a service date — the day's trip
     /// detail, EFFECTIVE (a diverted trip answers its patched
@@ -112,9 +126,12 @@ pub enum Request {
         date: String,
     },
     /// One trip instance's LINE on a service date, over the effective
-    /// day: its pattern's authored alignment while it follows the
-    /// pattern, its patched stops joined when diverted. A trip that
-    /// does not run on the date answers an empty path.
+    /// day: its pattern's authored alignment, and for a trip a
+    /// diversion in force reroutes, the alignment to the first kept
+    /// stop, the diversion's traced detour, and the alignment from the
+    /// last kept stop (a skip-only diversion keeps the alignment; with
+    /// no alignment, the patched stops joined around the detour). A
+    /// trip that does not run on the date answers an empty path.
     TripPath {
         network_hash: String,
         #[serde(default)]
@@ -134,6 +151,7 @@ pub enum Response {
         edits_hash: String,
         reports: Vec<transit_sync::EditReport>,
     },
+    LoadLive { live_hash: String },
     Blocks { blocks: Vec<DayBlock> },
     FleetSummary { summary: transit_dispatch::FleetSummary },
     /// The chain, carrying the block it answers for — a session
@@ -154,6 +172,21 @@ fn networks() -> &'static Mutex<HashMap<String, Arc<Network>>> {
 fn edits() -> &'static Mutex<HashMap<String, Arc<Vec<transit_sync::EditRecord>>>> {
     static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Vec<transit_sync::EditRecord>>>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Live documents by content hash (canonical serialization).
+fn lives() -> &'static Mutex<HashMap<String, Arc<LiveDay>>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<LiveDay>>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn live_arc(live_hash: &str) -> Result<Arc<LiveDay>, String> {
+    lives()
+        .lock()
+        .expect("live registry lock")
+        .get(live_hash)
+        .cloned()
+        .ok_or_else(|| format!("unknown live document {live_hash}: load_live first"))
 }
 
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
@@ -224,6 +257,11 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .insert(hash.clone(), Arc::new(records));
             Ok(Response::LoadEdits { edits_hash: hash, reports })
         }
+        Request::LoadLive { live } => {
+            let hash = canonical_hash(&live)?;
+            lives().lock().expect("live registry lock").entry(hash.clone()).or_insert_with(|| Arc::new(live));
+            Ok(Response::LoadLive { live_hash: hash })
+        }
         Request::Blocks { network_hash, edits_hash, date } => {
 let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
@@ -236,15 +274,17 @@ let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
                 summary: transit_dispatch::fleet_summary(&network, &day),
             })
         }
-        Request::BlockTrips { network_hash, edits_hash, block_id, date, tight_layover_secs } => {
-let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
+        Request::BlockTrips { network_hash, edits_hash, block_id, date, tight_layover_secs, live_hash } => {
+            let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
+            let live = live_hash.as_deref().map(live_arc).transpose()?;
             Ok(Response::BlockTrips {
                 trips: transit_dispatch::block_chain(
                     &network,
                     &day,
                     &block_id,
                     tight_layover_secs.unwrap_or(transit_dispatch::TIGHT_LAYOVER_SECS),
+                    live.as_deref(),
                 ),
                 block_id,
             })
@@ -259,7 +299,11 @@ let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
         Request::TripPath { network_hash, edits_hash, trip, start_secs, date } => {
             let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = network_arc(&network_hash)?;
-            Ok(Response::TripPath { path: transit_dispatch::trip_path(&network, &day, &trip, start_secs) })
+            let diversions = match edits_hash.as_deref() {
+                Some(hash) => transit_sync::in_force_on(&edits_arc(hash)?, parse_date(&date)?),
+                None => Vec::new(),
+            };
+            Ok(Response::TripPath { path: transit_dispatch::trip_path(&network, &day, &diversions, &trip, start_secs) })
         }
     }
 }

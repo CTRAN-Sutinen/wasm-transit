@@ -13,8 +13,9 @@
 //!    trivial — the base-feed immutability law, model edition);
 //! 3. the station board pools the walking group, rows tagged with
 //!    their concrete bay;
-//! 4. the block chain is the AUTHORED runcut; a diverted trip eats
-//!    its next layover (the connection-health ripple);
+//! 4. the block chain is the AUTHORED runcut; a diverted trip — or a
+//!    trip a live prediction ends late — eats its next layover (the
+//!    connection-health ripple);
 //! 5. edit validation reports against the NETWORK, invalid records
 //!    reported, never rejected.
 
@@ -441,7 +442,7 @@ fn the_board_pools_only_a_walking_group() {
 fn the_block_chain_is_the_authored_runcut_with_the_ripple() {
     let net = network();
     let schedule_day = transit_network::materialize(&net, date()).unwrap();
-    let chain = block_chain(&net, &schedule_day, "B1", TIGHT_LAYOVER_SECS);
+    let chain = block_chain(&net, &schedule_day, "B1", TIGHT_LAYOVER_SECS, None);
     assert_eq!(chain.len(), 2, "the authored chain, in order");
     assert_eq!(chain[0].pattern_trips, "s10");
     assert_eq!(chain[0].layover_after_secs, Some(600), "the authored layover");
@@ -455,31 +456,69 @@ fn the_block_chain_is_the_authored_runcut_with_the_ripple() {
     // has 4 minutes left (the connection-health read).
     let records = vec![record(EditStatus::Accepted, 300)];
     let day = effective_day(&net, date(), &records).unwrap();
-    let ripped = block_chain(&net, &day, "B1", TIGHT_LAYOVER_SECS);
+    let ripped = block_chain(&net, &day, "B1", TIGHT_LAYOVER_SECS, None);
     assert_eq!(ripped[0].end_secs, Some(28_800 + 1200 + 300), "the effective end");
     assert_eq!(ripped[0].layover_remaining_secs, Some(300), "the diverted end eats the layover (600 - 300)");
     assert_eq!(ripped[0].layover_health, Some(LayoverHealth::Ok), "300 s left is not under the 300 s threshold");
     // The threshold is the caller's policy.
-    assert_eq!(block_chain(&net, &day, "B1", 301)[0].layover_health, Some(LayoverHealth::Tight));
+    assert_eq!(block_chain(&net, &day, "B1", 301, None)[0].layover_health, Some(LayoverHealth::Tight));
 
     // A connection eaten outright goes negative — the dispatcher's
     // alarm, not a silent clamp.
     let eaten = vec![record(EditStatus::Accepted, 900)];
     let day = effective_day(&net, date(), &eaten).unwrap();
-    let chain = block_chain(&net, &day, "B1", TIGHT_LAYOVER_SECS);
+    let chain = block_chain(&net, &day, "B1", TIGHT_LAYOVER_SECS, None);
     assert_eq!(chain[0].layover_remaining_secs, Some(-300), "an eaten connection is negative");
     assert_eq!(chain[0].layover_health, Some(LayoverHealth::Overlap));
     assert_eq!(layover_health(0, 300), LayoverHealth::Tight, "zero left is tight, not overlap");
 
     // Unknown blocks answer empty, never error.
-    assert!(block_chain(&net, &day, "nope", TIGHT_LAYOVER_SECS).is_empty());
+    assert!(block_chain(&net, &day, "nope", TIGHT_LAYOVER_SECS, None).is_empty());
 
     // A trip of the chain that does not run on the date stays in the
     // chain, marked — the authored work, the hole visible.
-    let b2 = block_chain(&net, &schedule_day, "B2", TIGHT_LAYOVER_SECS);
+    let b2 = block_chain(&net, &schedule_day, "B2", TIGHT_LAYOVER_SECS, None);
     assert!(b2[0].runs, "s10 runs on the Friday");
     assert!(!b2[1].runs, "the Sunday schedule does not");
     assert_eq!(b2[1].end_secs, None);
+}
+
+/// QAF-31: the ripple reads a live prediction the way it reads an
+/// edit — "will this late bus make its next trip?" A trip the live
+/// document says ends +370 s leaves 230 s of its 600 s layover. The
+/// rt delay is against the published schedule and wins over a
+/// diversion's added time (D-18): +370 live on a trip diverted +300
+/// still leaves 230 s. A live document about another instance, or
+/// none, leaves the edit ripple as it was.
+#[test]
+fn the_ripple_reads_the_live_delay() {
+    let net = network();
+    let schedule_day = transit_network::materialize(&net, date()).unwrap();
+    let plain = block_chain(&net, &schedule_day, "B1", TIGHT_LAYOVER_SECS, None);
+    let first = &plain[0];
+    let end = first.end_secs.unwrap();
+    let late = live_at(&first.trip, first.start_secs, &first.last_stop, end, 370);
+
+    let chain = block_chain(&net, &schedule_day, "B1", TIGHT_LAYOVER_SECS, Some(&late));
+    assert_eq!(chain[0].live_end_delay_secs, Some(370), "the live delay at its last stop");
+    assert_eq!(chain[0].layover_remaining_secs, Some(600 - 370), "the late end eats the layover");
+    assert_eq!(chain[0].layover_health, Some(LayoverHealth::Tight), "230 s left is under the 300 s threshold");
+    assert_eq!(chain[1].live_end_delay_secs, None, "the next trip has no prediction of its own");
+
+    // The rt delay wins over the diversion's added time.
+    let day = effective_day(&net, date(), &[record(EditStatus::Accepted, 300)]).unwrap();
+    let both = block_chain(&net, &day, "B1", TIGHT_LAYOVER_SECS, Some(&late));
+    assert_eq!(both[0].layover_remaining_secs, Some(600 - 370), "a stated delay is against the published time");
+
+    // Late past the layover: the connection is eaten, and says so.
+    let very = live_at(&first.trip, first.start_secs, &first.last_stop, end, 900);
+    let eaten = block_chain(&net, &schedule_day, "B1", TIGHT_LAYOVER_SECS, Some(&very));
+    assert_eq!(eaten[0].layover_remaining_secs, Some(-300));
+    assert_eq!(eaten[0].layover_health, Some(LayoverHealth::Overlap));
+
+    // A prediction for another instance says nothing about this one.
+    let other = live_at(&first.trip, first.start_secs + 1, &first.last_stop, end, 370);
+    assert_eq!(block_chain(&net, &schedule_day, "B1", TIGHT_LAYOVER_SECS, Some(&other)), plain);
 }
 
 #[test]

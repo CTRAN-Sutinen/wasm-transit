@@ -425,7 +425,7 @@ pub fn validation_warnings(network: &Network) -> Vec<NetworkWarning> {
         });
         if !runs_in_first_week {
             warnings.push(NetworkWarning::NoServiceInPlanPeriod {
-                plan: network.plan.id.clone(),
+                plan_name: network.plan.name.clone(),
                 effective_from: from.format("%Y-%m-%d").to_string(),
             });
         }

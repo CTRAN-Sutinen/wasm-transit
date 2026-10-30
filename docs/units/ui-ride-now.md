@@ -36,7 +36,7 @@ browser.
 | 4 | router `plan_compare` (`live_hash`, `edits_hash`, `walks_hash`; a point end as a place over streets `access`) → `itinerary_paths` (the ends, so a place's walks draw along the streets) | answered; a trip's duration has no op, QAF-81; walking pinned on the fixture only |
 | 5 | router `plan_arrive_by` (no deadline; or a deadline) | answered |
 | 6 | board `stop_board` (`alerts`, `skipped`); router `plan_compare` (`notice`) | skipped + notice answered on the fixture; no alert has been read (no fixture carries one, and no alerts URL is configured) |
-| 7 | board `watchlist_board` | schedule only, and a station answers nothing: QAF-79; saved stops do not survive a reload: QAF-80 |
+| 7 | board `watchlist_board` (`live_hash`) | answered: each saved stop's stop board, live; saved stops survive a reload |
 | 8 | rt `live` (the vehicles, by status and bearing) → rt `trip_progress` + directory `stops_by_ids` | answered |
 | 9 | directory `entities` (routes, by number or long name) → `route_detail` (each direction's variants) + `focus` | answered |
 
@@ -61,7 +61,7 @@ onto it (the live node repairs the `vehicle` selection).
 | rt `live` (+ `load_boundary`) | network, snapshot | LiveFeeds, RideMap | always |
 | board `stop_board` (+ `load_edits`, `load_live`) | network, edits, rt.live, stop, clock, view | RiderBoard | the stop panel |
 | board `stop_board`, once per nearby place | network, edits, rt.live, stops_near, clock, view | StopCard | the home panel |
-| board `watchlist_board` (+ `load_watchlist`) | network, edits, saved, clock, view | StopCard | the home panel |
+| board `watchlist_board` (+ `load_watchlist`) | network, edits, rt.live, saved, clock, view | StopCard | the home panel |
 | directory `focus` (route) | network, departure, route, vehicle, view | RideMap | always |
 | directory `entities` (routes) | network, routeQuery, view | RouteList | the routes panel |
 | directory `route_detail` | network, route, view | RouteView | the route panel |
@@ -100,4 +100,4 @@ rider-length session is bounded only when
   snapshot, an alert has been read on a board, and `ui.json`'s
   `session` records it.
 - Then this file is deleted, or edited down to the questions still
-  blocked (QAF-70, QAF-79, QAF-80, QAF-81 while open).
+  blocked (QAF-70, QAF-81 while open).

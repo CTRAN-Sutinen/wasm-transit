@@ -5,7 +5,6 @@
   /// distance), and its next few departures (a board's rows). Tapping it
   /// opens the stop.
   import type { BoardRow } from "../types/BoardRow";
-  import type { BoardDeparture } from "../types/BoardDeparture";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import DepartureRows from "./DepartureRows.svelte";
   import { distanceText, walkText } from "./rideFormat";
@@ -25,7 +24,7 @@
     /// Seconds on foot, along the streets.
     walk?: number | null;
     /// Null while the board is being asked.
-    rows: (BoardRow | BoardDeparture)[] | null;
+    rows: BoardRow[] | null;
     pooled?: boolean;
     routes: DirectoryRoute[];
     /// A line under the rows (what this card cannot tell).

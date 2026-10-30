@@ -682,7 +682,7 @@ for (const document of [v1, migrated.document]) {
   });
   assert(watch.stops.length === 2, `the personal board answers at ${document.version}`);
   assert(
-    watch.stops.every((s) => s.departures.every((d) => d.trip)),
+    watch.stops.every((s) => s.board.rows.every((r) => r.trip)),
     `the personal board's rows are model-native at ${document.version}`,
   );
 }
@@ -760,6 +760,21 @@ const tightChain = runcut.invoke({
 assert(
   rippedChain.trips[0].layover_health === "ok" && tightChain.trips[0].layover_health === "tight",
   "the module classifies the connection under the caller's tight threshold",
+);
+// The live ripple (QAF-31): the snapshot predicts t10 +180 s at B, its
+// last stop — 420 s of the 600 s layover before t20 remain.
+const runcutLive = runcut.invoke({ op: "load_live", live: live.live });
+assert(runcutLive.live_hash === live.live_hash, "runcut and rt agree on the live document's identity");
+const liveChain = runcut.invoke({
+  op: "block_trips",
+  network_hash: loadedRuncutNet.network_hash,
+  block_id: "B1",
+  date: DATE,
+  live_hash: runcutLive.live_hash,
+});
+assert(
+  liveChain.trips[0].live_end_delay_secs === 180 && liveChain.trips[0].layover_remaining_secs === 420,
+  "the live delay at t10's last stop eats the layover (600 - 180)",
 );
 // What the radio calls those trips: each row carries its trip's own
 // id (the agency's, for an imported trip).

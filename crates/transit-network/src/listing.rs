@@ -135,9 +135,9 @@ pub struct Timetable {
     pub removed: Vec<RemovedTrip>,
 }
 
-/// A baseline trip instance the proposal no longer runs (a retimed
-/// trip is removed at its old start and added at its new one: a row
-/// is (trip, start)).
+/// A baseline trip instance the proposal no longer runs. A trip the
+/// proposal keeps under a new start is not removed — it reads
+/// retimed (`TimetableTrip::retimed_from_secs`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct RemovedTrip {
@@ -185,6 +185,10 @@ pub struct TimetableTrip {
     pub times: Vec<Option<u32>>,
     /// Asked against a baseline: the baseline does not run this trip.
     pub added: bool,
+    /// Asked against a baseline: the baseline runs this one-start trip
+    /// (the same trip id) at another start — its start there. A moved
+    /// trip is kept, not removed and added (QAF-64).
+    pub retimed_from_secs: Option<u32>,
 }
 
 /// A stop's composition: the routes whose patterns visit it.
@@ -524,6 +528,7 @@ pub fn timetable(network: &Network, route: &str, direction: Option<&str>, servic
                 pattern: trip.pattern.clone(),
                 times,
                 added: false,
+                retimed_from_secs: None,
             });
         }
     }
@@ -572,10 +577,13 @@ pub fn timetable(network: &Network, route: &str, direction: Option<&str>, servic
     })
 }
 
-/// The proposal's timetable marked against a baseline: each trip the
-/// baseline does not run is `added`, and the baseline's trips it no
-/// longer runs are `removed`. A baseline without this route,
-/// direction, or service type runs none of them.
+/// The proposal's timetable marked against a baseline. A trip's id
+/// is its identity: a one-start trip both run at different starts is
+/// RETIMED (it carries its baseline start), one only the proposal runs
+/// is `added`, and one only the baseline runs is `removed`. A
+/// frequency trip's instances share its id, so each instance is
+/// matched by (trip, start) — kept, added, or removed. A baseline
+/// without this route, direction, or service type runs none of them.
 pub fn timetable_against(
     network: &Network,
     base: &Network,
@@ -583,31 +591,52 @@ pub fn timetable_against(
     direction: Option<&str>,
     service_type: &str,
 ) -> Option<Timetable> {
+    use std::collections::{BTreeMap, BTreeSet};
     let mut t = timetable(network, route, direction, service_type)?;
     let before = timetable(base, route, direction, service_type).map(|b| b.trips).unwrap_or_default();
+    // A trip id with exactly one instance is a one-start trip.
+    let singles = |trips: &[TimetableTrip]| -> BTreeMap<String, u32> {
+        let mut seen: BTreeMap<String, Option<u32>> = BTreeMap::new();
+        for x in trips {
+            seen.entry(x.trip.clone()).and_modify(|s| *s = None).or_insert(Some(x.start_secs));
+        }
+        seen.into_iter().filter_map(|(id, s)| Some((id, s?))).collect()
+    };
+    let (was_single, now_single) = (singles(&before), singles(&t.trips));
+    let kept = |id: &str| was_single.contains_key(id) && now_single.contains_key(id);
     let key = |trip: &str, s: u32| (trip.to_string(), s);
-    let now: std::collections::BTreeSet<_> = t.trips.iter().map(|x| key(&x.trip, x.start_secs)).collect();
-    let was: std::collections::BTreeSet<_> = before.iter().map(|x| key(&x.trip, x.start_secs)).collect();
+    let now: BTreeSet<_> = t.trips.iter().map(|x| key(&x.trip, x.start_secs)).collect();
+    let was: BTreeSet<_> = before.iter().map(|x| key(&x.trip, x.start_secs)).collect();
     for trip in &mut t.trips {
-        trip.added = !was.contains(&key(&trip.trip, trip.start_secs));
+        if kept(&trip.trip) {
+            let old = was_single[&trip.trip];
+            trip.retimed_from_secs = (old != trip.start_secs).then_some(old);
+        } else {
+            trip.added = !was.contains(&key(&trip.trip, trip.start_secs));
+        }
     }
     t.removed = before
         .into_iter()
-        .filter(|x| !now.contains(&key(&x.trip, x.start_secs)))
+        .filter(|x| !kept(&x.trip) && !now.contains(&key(&x.trip, x.start_secs)))
         .map(|x| RemovedTrip { trip: x.trip, pattern_trips: x.pattern_trips, start_secs: x.start_secs, pattern: x.pattern })
         .collect();
     Some(t)
 }
 
 /// The routes serving a stop, in id order; `None` for an unknown
-/// stop. A station answers what its bays answer: routes pool
-/// across the stop's WALKING GROUP, the same group the station
-/// board departs across — a parent station whose patterns visit
-/// only its bays still answers every route that serves it.
+/// stop. The board's rule: a stop with service of its own answers
+/// its own routes and never pools, and a stop no pattern visits (a
+/// station pin whose patterns visit only its bays) answers what its
+/// WALKING GROUP answers — the same group the station board departs
+/// across.
 pub fn stop_detail(network: &Network, stop: &str) -> Option<StopDetail> {
     network.stops.get(stop)?;
     let index = crate::validate::stop_route_index(network);
-    let routes = crate::validate::routes_meeting_at(network, &index, stop)
+    let routes = match index.get(stop) {
+        Some(own) if !own.is_empty() => own.clone(),
+        _ => crate::validate::routes_meeting_at(network, &index, stop),
+    };
+    let routes = routes
         .into_iter()
         .map(|rid| route_row(network, &rid))
         .collect();

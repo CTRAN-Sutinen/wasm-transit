@@ -3,7 +3,8 @@
   /// one direction, one service type, every trip across the
   /// direction's patterns. One row per trip in the op's order, one
   /// column per stop in the op's order; against a baseline the op
-  /// marks `added` rows and lists `removed` trips. RENDER only — the
+  /// marks `added` rows, `retimed_from_secs` on a kept trip that
+  /// moved, and lists `removed` trips. RENDER only — the
   /// pattern letters index the op's legend, and "timepoints only"
   /// hides the columns the op does not flag.
   import type { Timetable } from "../types/Timetable";
@@ -29,6 +30,7 @@
     return i < 0 ? "?" : String.fromCharCode(65 + i);
   };
   const added = $derived(timetable.trips.filter((t) => t.added).length);
+  const retimed = $derived(timetable.trips.filter((t) => t.retimed_from_secs != null).length);
 
   function hm(secs: number | null): string {
     if (secs == null) return "";
@@ -49,9 +51,10 @@
       <li><b>{String.fromCharCode(65 + i)}</b> {p.name} <span class="muted">{p.trips} trips{p.headway ? " · headway bands" : ""}</span></li>
     {/each}
   </ul>
-  {#if baselineName && (added || timetable.removed.length)}
+  {#if baselineName && (added || retimed || timetable.removed.length)}
     <p class="delta" data-testid="timetable-delta">
       Against {baselineName}: <span class="add">{added} added</span>,
+      <span class="moved">{retimed} retimed</span>,
       <span class="gone">{timetable.removed.length} gone</span>
       {#if timetable.removed.length}
         <span class="muted">({timetable.removed.map((r) => `${hm(r.start_secs)} ${letter(r.pattern)}`).join(", ")})</span>
@@ -73,7 +76,12 @@
       </thead>
       <tbody>
         {#each timetable.trips as t (t.pattern_trips + "@" + t.start_secs)}
-          <tr class:added={t.added} data-start={t.start_secs}>
+          <tr
+            class:added={t.added}
+            class:retimed={t.retimed_from_secs != null}
+            data-start={t.start_secs}
+            title={t.retimed_from_secs != null ? `was ${hm(t.retimed_from_secs)}` : undefined}
+          >
             <td class="pat">{letter(t.pattern)}</td>
             {#each columns as s (s.i)}<td class:sel={s.stop === selectedStop}>{hm(t.times[s.i])}</td>{/each}
             <td class="blk muted">{t.block ?? "—"}</td>
@@ -92,6 +100,7 @@
   .legend { list-style: none; margin: 0.25rem 0; padding: 0; font-size: 0.8rem; display: flex; flex-wrap: wrap; gap: 0 1rem; }
   .delta { margin: 0 0 0.25rem; font-size: 0.85rem; }
   .add { color: var(--accent); font-weight: 600; }
+  .moved { font-weight: 600; }
   .gone { color: var(--bad); font-weight: 600; }
   .grid { overflow: auto; min-height: 0; min-width: 0; max-width: 100%; flex: 1; border: 1px solid var(--line); }
   table { border-collapse: collapse; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
@@ -110,5 +119,6 @@
   thead .pat { z-index: 2; }
   tr.added td { background: var(--accent-soft); }
   tr.added td.pat { box-shadow: inset 3px 0 0 var(--accent); }
+  tr.retimed td.pat { box-shadow: inset 3px 0 0 var(--muted); }
   .blk { text-align: left; }
 </style>

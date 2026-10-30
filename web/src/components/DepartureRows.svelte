@@ -1,15 +1,14 @@
 <script lang="ts">
   /// Departure rows — a RENDER component over a board's rows (cap-board
-  /// `stop_board`, realtime-first with each row's expected time and
-  /// status) or a watched stop's departures (`watchlist_board`, the
-  /// schedule). The order, the times, and the statuses are the op's;
-  /// this formats them and emits the row picked.
+  /// `stop_board`, or a watched stop's board from `watchlist_board`:
+  /// realtime-first, each row with its expected time and status). The
+  /// order, the times, and the statuses are the op's; this formats
+  /// them and emits the row picked.
   import type { BoardRow } from "../types/BoardRow";
-  import type { BoardDeparture } from "../types/BoardDeparture";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import { clock, routeColor, statusText, statusTone } from "./rideFormat";
 
-  type Row = BoardRow | BoardDeparture;
+  type Row = BoardRow;
   let {
     rows,
     routes,
@@ -29,15 +28,13 @@
   } = $props();
 
   const colors = $derived(new Map(routes.map((r) => [r.route_id, routeColor(r.color)])));
-  const isLive = (r: Row): r is BoardRow => "status" in r;
 </script>
 
 <ul class="rows" class:compact>
   {#each rows as r (r.trip + ":" + r.start_secs + ":" + r.stop)}
-    {@const live = isLive(r)}
-    {@const when = clock(live && r.expected_secs != null ? r.expected_secs : r.departure_secs)}
-    {@const moved = live && r.expected_secs != null && r.expected_secs !== r.departure_secs}
-    {@const tone = live ? statusTone(r.status) : "sched"}
+    {@const when = clock(r.expected_secs ?? r.departure_secs)}
+    {@const moved = r.expected_secs != null && r.expected_secs !== r.departure_secs}
+    {@const tone = statusTone(r.status)}
     <li>
       <button
         class:picked={picked?.trip === r.trip && picked?.start_secs === r.start_secs}
@@ -55,10 +52,10 @@
         </span>
         <span class="when">
           <span class="time {tone}">{when.hm}<small>{when.ap}</small></span>
-          <span class="status {tone}" data-status={live ? r.status : "no_prediction"}>
-            {#if live && r.alerts.length}<span class="alert-dot" title="An alert applies to this trip">!</span>{/if}
+          <span class="status {tone}" data-status={r.status}>
+            {#if r.alerts.length}<span class="alert-dot" title="An alert applies to this trip">!</span>{/if}
             {#if moved}<s>{clock(r.departure_secs).hm}</s>{/if}
-            {live ? statusText(r.status, r.delay_secs) : "Scheduled"}
+            {statusText(r.status, r.delay_secs)}
           </span>
         </span>
       </button>

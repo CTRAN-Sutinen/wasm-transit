@@ -64,7 +64,7 @@ fn changes_chain_by_hash_and_report_the_result() {
         warnings,
         vec![
             unassigned.clone(),
-            NetworkWarning::NoServiceInPlanPeriod { plan: "spring".into(), effective_from: "2027-01-10".into() },
+            NetworkWarning::NoServiceInPlanPeriod { plan_name: "Spring 2027".into(), effective_from: "2027-01-10".into() },
         ]
     );
 

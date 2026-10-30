@@ -46,7 +46,7 @@ registry:
     export TS_RS_EXPORT_DIR="$PWD/web/src/types"
     cargo test
     node crates/cap-abi/caps-smoke.mjs
-    just caps
+    CAPS_PUBLISH_GATED=1 just caps
 
 # Build everything the server serves: artifact + frontend (web/dist).
 # Regenerates the TS bindings, then type-checks — the TS layer is
@@ -88,6 +88,11 @@ test: caps
     export TS_RS_EXPORT_DIR="$PWD/web/src/types"
     cargo test
     node crates/cap-abi/caps-smoke.mjs
+    # The runner knows which tree its registry was built from
+    # (QAF-77): just published, the registry's source digest (Rust,
+    # gen-manifest) equals the tree's (JS, caps-run) — nothing on
+    # stderr.
+    test -z "$(node tools/caps-run.mjs list 2>&1 >/dev/null)"
     # The agent runner, gated with chained sessions — every op
     # references its documents through $load/$op result references
     # (no hand-copied hashes; the runner resolves them in-session).
@@ -126,6 +131,11 @@ test: caps
     # dropped single-stop trip must be REPORTED (never silent).
     node tools/caps-run.mjs network --load web/public/caps/sample-gtfs.zip \
       --op '{"op":"import","feed_hash":"$load.feed_hash"}' | grep -q '"kind":"dropped_trips"'
+    # The edit vocabulary reads through the runner: `tools author`
+    # carries one worked example per edit kind (QAF-52), each applied
+    # to the fixture when the manifest was generated.
+    node tools/caps-run.mjs tools author \
+      | node -e 'const apply = JSON.parse(require("fs").readFileSync(0, "utf8")).tools.apply; if (!apply.kinds?.some((k) => k.kind === "add_trip" && k.example.edit === "add_trip")) process.exit(1)'
     # The feed's identity — the feed document capability's one
     # question.
     node tools/caps-run.mjs gtfs --load web/public/caps/sample-gtfs.zip \
@@ -239,18 +249,18 @@ test: caps
       | grep -q '"layover_remaining_secs":300'
     # The map's geometry is answered, never computed by a host (W4):
     # a plan's ridden segment (router), the diverted 08:40 trip drawn
-    # through its patched stops A→B (runcut), and a route framed by
-    # its two patterns (directory) — one chained session.
+    # along the diversion's traced detour from A (runcut), and a route
+    # framed by its two patterns (directory) — one chained session.
     node tools/caps-run.mjs router \
       --op @web/public/caps/sample-network-load.json \
       --as plan --op '{"op":"plan","network_hash":"$load_network.network_hash","from":"A","to":"B","date":"2026-10-23","depart_secs":25200,"max_legs":4}' \
       --op '{"op":"itinerary_paths","network_hash":"$load_network.network_hash","date":"2026-10-23","itinerary":"$plan.itinerary"}' \
       --cap runcut --op @web/public/caps/sample-network-load.json \
-      --as edits --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
+      --as edits --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":[{"lat":45.6,"lon":-73.6}],"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
       --as trip --op '{"op":"trip_path","network_hash":"$load_network.network_hash","edits_hash":"$edits.edits_hash","trip":"t30","start_secs":31200,"date":"2026-10-23"}' \
       --cap directory --op @web/public/caps/sample-network-load.json \
       --as focus --op '{"op":"focus","network_hash":"$load_network.network_hash","kind":"route","id":"10"}' \
-      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const legs = r.find((x) => x.ok?.op === "itinerary_paths").ok.paths; if (legs[0]?.kind !== "transit" || legs[0].path.length < 2 || ok("trip").path.length !== 2 || ok("focus").focus.lines.length !== 3) process.exit(1)'
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const legs = r.find((x) => x.ok?.op === "itinerary_paths").ok.paths; if (legs[0]?.kind !== "transit" || legs[0].path.length < 2 || !ok("trip").path.some((p) => p.lat === 45.6 && p.lon === -73.6) || ok("focus").focus.lines.length !== 3) process.exit(1)'
     # The planner's numbers and search are answered (W5): route 10's
     # composition with each pattern trips' count, the stop list
     # narrowed by every term, a stop's serving routes, route 10's

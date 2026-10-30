@@ -164,6 +164,13 @@ fn the_fleet_summary_folds_the_day_into_one_answer() {
         (summary.platform_hours - summary.revenue_hours - summary.layover_hours).abs() < 1e-9,
         "platform = revenue + layover"
     );
+    // B1 in outline (QAF-15): out 08:00–08:30, two trips, the
+    // 10-minute layover its longest gap, from t10's 08:10 end.
+    let b1 = &summary.spans[0];
+    assert_eq!(
+        (b1.block_id.as_str(), b1.trips, b1.first_start_secs, b1.span_secs, b1.longest_gap_secs, b1.longest_gap_at_secs),
+        ("B1", 2, 28800, 1800, Some(600), Some(29400))
+    );
 
     // A no-service day answers a zero fleet, never an error.
     let parked = match dispatch(Request::FleetSummary {
@@ -194,6 +201,7 @@ fn the_block_chain_ripples_under_the_edit() {
         block_id: "B1".into(),
         date: DATE.into(),
         tight_layover_secs: None,
+        live_hash: None,
     })
     .unwrap()
     {
@@ -215,6 +223,7 @@ fn the_block_chain_ripples_under_the_edit() {
         block_id: "missing".into(),
         date: DATE.into(),
         tight_layover_secs: None,
+        live_hash: None,
     })
     .unwrap()
     {
@@ -232,6 +241,7 @@ fn the_block_chain_ripples_under_the_edit() {
         block_id: "B1".into(),
         date: DATE.into(),
         tight_layover_secs: None,
+        live_hash: None,
     })
     .unwrap()
     {
@@ -241,6 +251,71 @@ fn the_block_chain_ripples_under_the_edit() {
     assert_eq!(ripped[0].layover_remaining_secs, Some(300), "the diverted end eats the layover (600 - 300)");
     // The chain rows carry the authored trip identity, model-native.
     assert_eq!(ripped[0].pattern_trips, route10_schedule(&net));
+}
+
+/// QAF-31 at the seam: a registered live document ripples the chain —
+/// t10 predicted +370 s at its last stop leaves 230 s of the 600 s
+/// layover before t20 (the dispatcher's "will it make its next
+/// trip?"), and the trip says how late it ends.
+#[test]
+fn the_block_chain_ripples_under_a_live_prediction() {
+    use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
+    let network_hash = load_network();
+    let chain = |live_hash: Option<String>| match dispatch(Request::BlockTrips {
+        network_hash: network_hash.clone(),
+        edits_hash: None,
+        block_id: "B1".into(),
+        date: DATE.into(),
+        tight_layover_secs: None,
+        live_hash,
+    })
+    .unwrap()
+    {
+        Response::BlockTrips { trips, .. } => trips,
+        _ => panic!("block_trips"),
+    };
+    let first = chain(None).remove(0);
+    let live = LiveDay {
+        window: OnTimeWindow::default(),
+        trips: vec![LiveTrip {
+            trip: first.trip.clone(),
+            start_secs: first.start_secs,
+            route: None,
+            route_name: None,
+            worst_delay_secs: Some(370),
+            status: LiveStatus::Late,
+            stops: vec![LiveStop {
+                stop: first.last_stop.clone(),
+                scheduled_departure: first.end_secs,
+                arrival_delay: Some(370),
+                departure_delay: Some(370),
+                predicted_departure: first.end_secs.map(|e| e + 370),
+            }],
+        }],
+        vehicles: vec![],
+        unmatched_trips: 0,
+        alerts: vec![],
+        unmatched_alerts: 0,
+    };
+    let live_hash = match dispatch(Request::LoadLive { live }).unwrap() {
+        Response::LoadLive { live_hash } => live_hash,
+        _ => panic!("load_live"),
+    };
+    let rippled = chain(Some(live_hash));
+    assert_eq!(rippled[0].live_end_delay_secs, Some(370));
+    assert_eq!(rippled[0].layover_remaining_secs, Some(230));
+    assert_eq!(rippled[0].layover_health, Some(transit_dispatch::LayoverHealth::Tight));
+
+    let err = dispatch(Request::BlockTrips {
+        network_hash: network_hash.clone(),
+        edits_hash: None,
+        block_id: "B1".into(),
+        date: DATE.into(),
+        tight_layover_secs: None,
+        live_hash: Some("sha256:missing".into()),
+    })
+    .unwrap_err();
+    assert!(err.contains("unknown live document"), "{err}");
 }
 
 #[test]
@@ -374,6 +449,7 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
         block_id: "B1".into(),
         date: DATE.into(),
         tight_layover_secs: None,
+        live_hash: None,
     })
     .unwrap_err();
     assert!(err.contains("unknown edits"), "{err}");
