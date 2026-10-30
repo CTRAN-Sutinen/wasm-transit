@@ -566,10 +566,11 @@ basemap bbox maxzoom="15":
 # Address search is an external service, not a document: a local
 # Pelias (github.com/pelias/docker, its portland-metro project —
 # OSM, OpenAddresses, Who's On First, TIGER interpolation) in
-# .pelias/ (gitignored; data ~ several GB). The server proxies it at
-# /geocode when started with GEOCODER set:
+# .pelias/ (gitignored: pelias/docker at a pinned commit in docker/,
+# never written to; data/ ~6.5 GB). The server proxies it at /geocode when started with
+# GEOCODER set:
 #
-#   just geocoder-build      # once: clone, download, import (~1 h)
+#   just geocoder-build      # once: fetch, download, import (~1 h)
 #   just geocoder            # start it on 127.0.0.1:4000
 #   GEOCODER=http://127.0.0.1:4000 just serve feed.zip roads.geojson
 #   just geocoder-stop       # stop every container
@@ -585,28 +586,38 @@ pelias_commit := "3dfa07d580416edd7a27c2d4ff5976c8c1cc6ebc"
 pelias *args:
     #!/usr/bin/env bash
     set -e
+    # .pelias/ holds pelias/docker at the pinned commit (docker/, a
+    # plain tarball extract — no nested git repository — never written
+    # to), its data (data/), and the files this recipe generates
+    # (podman/).
     root="{{ justfile_directory() }}/.pelias"
-    if [ ! -d "$root/.git" ]; then
-        git clone https://github.com/pelias/docker "$root"
+    clone="$root/docker"
+    if [ "$(cat "$clone/.commit" 2>/dev/null)" != "{{ pelias_commit }}" ]; then
+        rm -rf "$clone" && mkdir -p "$clone"
+        curl -fsSL "https://codeload.github.com/pelias/docker/tar.gz/{{ pelias_commit }}" \
+            | tar -xz -C "$clone" --strip-components=1
+        echo "{{ pelias_commit }}" > "$clone/.commit"
     fi
-    git -C "$root" fetch --quiet --depth 1 origin {{ pelias_commit }} 2>/dev/null || true
-    git -C "$root" -c advice.detachedHead=false checkout --quiet {{ pelias_commit }}
+    project="$clone/projects/portland-metro"
     mkdir -p "$root/data"
-    project="$root/projects/portland-metro"
-    printf 'COMPOSE_PROJECT_NAME=pelias\nDATA_DIR=%s\n' "$root/data" > "$project/.env"
+    # The environment wins over the project's .env, in the pelias CLI
+    # and in compose alike.
+    export DATA_DIR="$root/data" COMPOSE_PROJECT_NAME=pelias
     if command -v podman >/dev/null; then
         # Rootless podman: unqualified images resolve on docker.io, and
         # every container runs as the invoking user (keep-id, outside a
         # pod — podman refuses keep-id in one) so the data bind mount
         # is writable.
-        printf 'unqualified-search-registries = ["docker.io"]\nshort-name-mode = "permissive"\n' > "$root/registries.conf"
-        export CONTAINERS_REGISTRIES_CONF="$root/registries.conf"
+        mkdir -p "$root/podman"
+        printf 'unqualified-search-registries = ["docker.io"]\nshort-name-mode = "permissive"\n' > "$root/podman/registries.conf"
         { echo 'x-podman: { in_pod: false }'; echo 'services:'
           awk '/^services:/ { on = 1; next } /^[^ ]/ { on = 0 }
                on && /^  [a-z-]+:$/ { print $0 " { userns_mode: keep-id }" }' "$project/docker-compose.yml"
-        } > "$project/docker-compose.override.yml"
+        } > "$root/podman/compose.override.yml"
+        export CONTAINERS_REGISTRIES_CONF="$root/podman/registries.conf"
+        export COMPOSE_FILE="$project/docker-compose.yml:$root/podman/compose.override.yml"
     fi
-    cd "$project" && "$root/pelias" {{ args }}
+    cd "$project" && "$clone/pelias" {{ args }}
 
 geocoder-build:
     just pelias compose pull
