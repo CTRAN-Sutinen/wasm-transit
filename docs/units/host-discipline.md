@@ -70,6 +70,13 @@ Engine requirements the tables cannot express:
   and the clock, and only the inputs whose content hash changed
   re-answer their nodes. Each poll mints an ephemeral document
   (the live snapshot) that the journal marks as such.
+- **A failure belongs to its frame** ([ui-service-design.md](ui-service-design.md)):
+  a node whose capability did not assemble, or whose op refused,
+  fails its frame alone — the frame renders why, with a retry, and
+  every other node answers. The transient runner reports errors to
+  one handler, so the service-design host wraps each node and keeps
+  the failures by frame (`sd.failed`); the engine carries a node's
+  failure as that node's answer.
 
 ## Done when
 

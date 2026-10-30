@@ -1368,6 +1368,184 @@ pub fn timed_transfers(
     out
 }
 
+/// One route pair's timed connections at a hub: how many the day
+/// makes, the shortest and longest wait, and the median wait with
+/// the floor every median here carries (None below four — QAF-55).
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct RouteConnections {
+    pub from_route: String,
+    pub to_route: String,
+    pub connections: u32,
+    pub shortest_wait_secs: u32,
+    pub longest_wait_secs: u32,
+    pub median_wait_secs: Option<u32>,
+}
+
+/// The hub as a route-pair matrix: `timed_transfers` folded by
+/// (from route, to route) — who connects to whom here, how often,
+/// and how long the wait runs. Pairs in route order; a pair with no
+/// connection is no row. An unknown stop answers empty.
+pub fn hub_connections(
+    net: &Network,
+    date: NaiveDate,
+    stop_id: &str,
+    window: Option<TransferWindow>,
+) -> Vec<RouteConnections> {
+    let mut pairs: BTreeMap<(String, String), Vec<u32>> = BTreeMap::new();
+    for t in timed_transfers(net, date, stop_id, window) {
+        pairs.entry((t.from_route, t.to_route)).or_default().push(t.wait_secs);
+    }
+    pairs
+        .into_iter()
+        .map(|((from_route, to_route), mut waits)| {
+            waits.sort_unstable();
+            RouteConnections {
+                from_route,
+                to_route,
+                connections: waits.len() as u32,
+                shortest_wait_secs: waits[0],
+                longest_wait_secs: waits[waits.len() - 1],
+                median_wait_secs: (waits.len() >= 4).then(|| waits[waits.len() / 2]),
+            }
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------
+// The frequency grid: each route's day by hour
+// ---------------------------------------------------------------------
+
+/// One hour of a route's day at its headway stop. A gap belongs to
+/// the hour it starts in, between consecutive distinct departure
+/// times; the gaps are the trips' own — a target headway adjusted
+/// through the day for traffic, layover and reliefs reads as the
+/// range it runs, never rounded to a grid.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct RouteHourGaps {
+    /// The service-day hour (0..47).
+    pub hour: u32,
+    /// Every departure in the hour at the headway stop.
+    pub departures: u32,
+    pub shortest_gap_secs: Option<u32>,
+    pub longest_gap_secs: Option<u32>,
+    /// None below four gaps (QAF-55's floor).
+    pub median_gap_secs: Option<u32>,
+}
+
+/// One route's row of the grid: where its headway is read (the stop
+/// with the most departures, lowest id on a tie — `RouteStats`'
+/// `headway_stop`), that stop's hours, and the route's numbers under
+/// the group (`service_type_detail`'s row for it) — one row the grid
+/// reads whole.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct RouteFrequencyRow {
+    pub route_id: String,
+    pub name: String,
+    pub headway_stop: Option<String>,
+    pub hours: Vec<RouteHourGaps>,
+    pub stats: RouteStats,
+}
+
+/// The SERVICE GROUP's frequency grid: every route that departs
+/// under the group (route id order), hour by hour.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct RouteFrequency {
+    pub service_type: String,
+    pub name: String,
+    /// The representative day (the label, as in `service_type_detail`).
+    pub date: String,
+    pub routes: Vec<RouteFrequencyRow>,
+}
+
+/// How often each route comes, hour by hour, under a service group —
+/// the family `service_type_detail` pools (base plus the types that
+/// ride along), read at each route's headway stop. `None` for an
+/// unknown type or one with no representative day (QAF-19).
+pub fn route_frequency(net: &Network, type_id: &str) -> Option<RouteFrequency> {
+    let service_type = net.service_types.get(type_id)?;
+    let date = representative_date(&service_type.rule)?;
+    let group = transit_network::service_family(net, type_id);
+    let mut stats: BTreeMap<String, RouteStats> =
+        family_stats(net, &group, date).routes.into_iter().map(|r| (r.route_id.clone(), r)).collect();
+    // route → stop → departures (final visits are arrivals).
+    let mut departures: BTreeMap<String, BTreeMap<String, Vec<u32>>> = BTreeMap::new();
+    for (id, entry) in &net.pattern_trips {
+        if !group.contains(&entry.service_type) {
+            continue;
+        }
+        // A mid-edit document can carry services that fail to
+        // materialize; analysis skips them (validation reports them).
+        let Ok(day) = transit_network::materialize_service(net, id) else {
+            continue;
+        };
+        for trip in day {
+            let Some(route) = net.patterns.get(&trip.pattern).map(|p| p.route.clone()) else {
+                continue;
+            };
+            if trip.stop_times.is_empty() {
+                continue;
+            }
+            for st in &trip.stop_times[..trip.stop_times.len() - 1] {
+                departures
+                    .entry(route.clone())
+                    .or_default()
+                    .entry(st.stop.clone())
+                    .or_default()
+                    .push(st.departure_secs);
+            }
+        }
+    }
+    let routes = departures
+        .into_iter()
+        .filter_map(|(route_id, stops)| {
+            // The busiest stop: most departures, the first by id on a
+            // tie (BTreeMap order) — the stats fold's rule.
+            let (stop, times) = stops.into_iter().fold(None::<(String, Vec<u32>)>, |best, (stop, times)| match best {
+                Some((_, ref b)) if b.len() >= times.len() => best,
+                _ => Some((stop, times)),
+            })?;
+            let spine: Vec<u32> = times.iter().copied().collect::<BTreeSet<u32>>().into_iter().collect();
+            let mut by_hour: BTreeMap<u32, (u32, Vec<u32>)> = BTreeMap::new();
+            for t in &times {
+                by_hour.entry(t / 3600).or_default().0 += 1;
+            }
+            for w in spine.windows(2) {
+                by_hour.entry(w[0] / 3600).or_default().1.push(w[1] - w[0]);
+            }
+            let hours = by_hour
+                .into_iter()
+                .map(|(hour, (count, mut gaps))| {
+                    gaps.sort_unstable();
+                    RouteHourGaps {
+                        hour,
+                        departures: count,
+                        shortest_gap_secs: gaps.first().copied(),
+                        longest_gap_secs: gaps.last().copied(),
+                        median_gap_secs: (gaps.len() >= 4).then(|| gaps[gaps.len() / 2]),
+                    }
+                })
+                .collect();
+            Some(RouteFrequencyRow {
+                name: net.routes.get(&route_id).map_or(route_id.clone(), |r| r.label().to_string()),
+                stats: stats.remove(&route_id)?,
+                route_id,
+                headway_stop: Some(stop),
+                hours,
+            })
+        })
+        .collect();
+    Some(RouteFrequency {
+        service_type: type_id.to_string(),
+        name: service_type.name.clone(),
+        date: date.format("%Y-%m-%d").to_string(),
+        routes,
+    })
+}
+
 // ---------------------------------------------------------------------
 // Population coverage
 // ---------------------------------------------------------------------

@@ -574,6 +574,58 @@ fn timed_transfers_answer_through_the_seam() {
     assert!(unknown.is_empty());
 }
 
+/// The hub's route pairs and the frequency grid answer through the
+/// seam (the oracle laws live in the library's prop suite): route 0
+/// meets route 1 once at s0, and route 0's two trips leave s0 ten
+/// minutes apart in hour 1; unknown ids answer empty, never errors.
+#[test]
+fn hub_connections_and_route_frequency_answer_through_the_seam() {
+    let net = network(&[
+        GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
+        GenTrip { route: 0, service: 0, block: None, start_slot: 11, stops: vec![0, 1], leg_min: 5 },
+        GenTrip { route: 1, service: 0, block: None, start_slot: 11, stops: vec![1, 2], leg_min: 5 },
+    ]);
+    let loaded = cap_analysis::dispatch(cap_analysis::Request::LoadNetwork { network: net }).expect("load");
+    let cap_analysis::Response::LoadNetwork { network_hash } = loaded else { panic!("load") };
+
+    let pairs = cap_analysis::dispatch(cap_analysis::Request::HubConnections {
+        network_hash: network_hash.clone(),
+        date: "2026-01-05".into(),
+        stop_id: "s1".into(),
+        window: None,
+    })
+    .expect("hub_connections");
+    let cap_analysis::Response::HubConnections { connections } = pairs else { panic!("hub_connections") };
+    // Route 0 arrives at s1 06:05 and 06:15; route 1 leaves s1 06:10.
+    assert_eq!(connections.len(), 1);
+    let c = &connections[0];
+    assert_eq!((c.from_route.as_str(), c.to_route.as_str(), c.connections), ("0", "1", 1));
+    assert_eq!((c.shortest_wait_secs, c.longest_wait_secs, c.median_wait_secs), (300, 300, None));
+    let none = cap_analysis::dispatch(cap_analysis::Request::HubConnections {
+        network_hash: network_hash.clone(),
+        date: "2026-01-05".into(),
+        stop_id: "nope".into(),
+        window: None,
+    })
+    .expect("hub_connections");
+    let cap_analysis::Response::HubConnections { connections: none } = none else { panic!("hub_connections") };
+    assert!(none.is_empty());
+
+    let grid = cap_analysis::dispatch(cap_analysis::Request::RouteFrequency {
+        network_hash: network_hash.clone(),
+        service_type: "0".into(),
+    })
+    .expect("route_frequency");
+    let cap_analysis::Response::RouteFrequency { frequency: Some(grid) } = grid else { panic!("route_frequency") };
+    let route0 = &grid.routes[0];
+    assert_eq!((route0.route_id.as_str(), route0.headway_stop.as_deref()), ("0", Some("s0")));
+    let hour = &route0.hours[0];
+    assert_eq!((hour.hour, hour.departures, hour.shortest_gap_secs, hour.longest_gap_secs), (1, 2, Some(600), Some(600)));
+    let unknown = cap_analysis::dispatch(cap_analysis::Request::RouteFrequency { network_hash, service_type: "nope".into() })
+        .expect("route_frequency");
+    assert!(matches!(unknown, cap_analysis::Response::RouteFrequency { frequency: None }));
+}
+
 /// The query-shaping law (the founding dogfood session's 199 KiB
 /// answer to a five-number question): `include_routes` /
 /// `include_stops` false empty the corresponding lists while every

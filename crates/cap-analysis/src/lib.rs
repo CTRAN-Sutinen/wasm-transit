@@ -140,6 +140,26 @@ pub enum Request {
         #[ts(optional)]
         window: Option<transit_analysis::TransferWindow>,
     },
+    /// The hub as a route-pair matrix: `timed_transfers` folded by
+    /// (from route, to route) — connections, shortest and longest
+    /// wait, median wait (None below four). An unknown stop answers
+    /// empty, never an error.
+    HubConnections {
+        network_hash: String,
+        date: String,
+        stop_id: String,
+        #[serde(default)]
+        #[ts(optional)]
+        window: Option<transit_analysis::TransferWindow>,
+    },
+    /// The SERVICE GROUP's frequency grid: every route that departs
+    /// under the group, hour by hour at its headway stop — departures
+    /// and the shortest, longest and median gap starting in the hour,
+    /// the trips' own (never regularized). Null for an unknown type.
+    RouteFrequency {
+        network_hash: String,
+        service_type: String,
+    },
     /// The unserved WHERE of coverage: every layer point beyond the
     /// radius of every stop with service on the date, with the
     /// nearest served stop and its distance — "which part, and
@@ -174,6 +194,8 @@ pub enum Response {
     ScheduleTexture { texture: Option<transit_analysis::ScheduleTexture> },
     RouteOverlap { overlaps: Vec<transit_analysis::RouteOverlap> },
     TimedTransfers { transfers: Vec<transit_analysis::TimedTransfer> },
+    HubConnections { connections: Vec<transit_analysis::RouteConnections> },
+    RouteFrequency { frequency: Option<transit_analysis::RouteFrequency> },
     UnservedPoints { points: Vec<transit_analysis::UnservedPoint> },
 }
 
@@ -348,6 +370,19 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let network_arc = network_arc(&network_hash)?;
             Ok(Response::RouteOverlap {
                 overlaps: transit_analysis::route_overlap(&network_arc, parsed),
+            })
+        }
+        Request::HubConnections { network_hash, date, stop_id, window } => {
+            let parsed = parse_date(&date)?;
+            let network_arc = network_arc(&network_hash)?;
+            Ok(Response::HubConnections {
+                connections: transit_analysis::hub_connections(&network_arc, parsed, &stop_id, window),
+            })
+        }
+        Request::RouteFrequency { network_hash, service_type } => {
+            let network_arc = network_arc(&network_hash)?;
+            Ok(Response::RouteFrequency {
+                frequency: transit_analysis::route_frequency(&network_arc, &service_type),
             })
         }
         Request::TimedTransfers { network_hash, date, stop_id, window } => {

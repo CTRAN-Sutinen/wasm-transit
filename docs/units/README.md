@@ -48,6 +48,7 @@ archive — nothing here records what is finished.
 | [ui-stop-display.md](ui-stop-display.md) | generated UI: the screen at a stop (next three per route and destination, three layouts, alerts) |
 | [ui-disruptions.md](ui-disruptions.md) | generated UI: running today's service through disruptions (late buses, detours, coverage) |
 | [ui-proposal-compare.md](ui-proposal-compare.md) | generated UI: the public comparing service proposals |
+| [ui-service-design.md](ui-service-design.md) | generated UI: designing a service change in six chained views — the blocked questions and the views' remaining parts |
 | [ui-runcut.md](ui-runcut.md) | generated UI: cutting a plan's work into blocks and runs |
 | [ui-work-bid.md](ui-work-bid.md) | generated UI: bidding on work (waits on the runs layer) |
 

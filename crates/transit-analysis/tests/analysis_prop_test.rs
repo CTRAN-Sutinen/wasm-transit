@@ -1037,4 +1037,134 @@ proptest! {
             }
         }
     }
+
+    /// The frequency grid's read — `route_frequency` matches an
+    /// independent fold of the service GROUP's pooled trips (the
+    /// family `schedule_texture` reads, no date filter): one row per
+    /// route with departures, at the route's headway stop (the most
+    /// departures, lowest id on a tie — the stop `service_type_detail`
+    /// reads its headway at), and that stop's day by hour — every
+    /// departure counted, gaps between distinct departure times
+    /// belonging to the hour they start in, shortest, longest, and
+    /// the median with the four-gap floor. The gaps are the trips'
+    /// own: nothing is rounded or regularized.
+    #[test]
+    fn route_frequency_matches_the_headway_stop_oracle(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
+        let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
+        let net = transit_codec::import(&feed).network;
+
+        for type_id in ["0", "1", "2", "3"] {
+            let answer = transit_analysis::route_frequency(&net, type_id);
+            let detail = transit_analysis::service_type_detail(&net, type_id);
+            prop_assert_eq!(answer.is_some(), detail.is_some(), "{} answers like the detail", type_id);
+            let (Some(answer), Some(detail)) = (answer, detail) else { continue };
+            prop_assert_eq!(&answer.date, &detail.date);
+
+            let group = transit_network::service_family(&net, type_id);
+            let mut departures: BTreeMap<String, BTreeMap<String, Vec<u32>>> = BTreeMap::new();
+            for (id, entry) in &net.pattern_trips {
+                if !group.contains(&entry.service_type) {
+                    continue;
+                }
+                let Ok(day) = transit_network::materialize_service(&net, id) else { continue };
+                for trip in day {
+                    let route = net.patterns[&trip.pattern].route.clone();
+                    for st in &trip.stop_times[..trip.stop_times.len() - 1] {
+                        departures.entry(route.clone()).or_default().entry(st.stop.clone()).or_default().push(st.departure_secs);
+                    }
+                }
+            }
+            prop_assert_eq!(
+                answer.routes.iter().map(|r| r.route_id.clone()).collect::<Vec<_>>(),
+                departures.keys().cloned().collect::<Vec<_>>(),
+                "{} rows: the routes that depart, by id", type_id
+            );
+            for row in &answer.routes {
+                let stops = &departures[&row.route_id];
+                let most = stops.values().map(|v| v.len()).max().unwrap();
+                let stop = stops.iter().find(|(_, v)| v.len() == most).map(|(s, _)| s.clone()).unwrap();
+                prop_assert_eq!(row.headway_stop.as_deref(), Some(stop.as_str()), "{} headway stop", row.route_id);
+                let stats = detail.routes.iter().find(|r| r.route_id == row.route_id).expect("the detail lists it");
+                prop_assert_eq!(&row.headway_stop, &stats.headway_stop, "the detail's headway stop");
+                // The row carries the route's numbers, the detail's own.
+                prop_assert_eq!(
+                    (row.stats.trips, row.stats.first_start_secs, row.stats.last_arrival_secs, row.stats.typical_headway_secs),
+                    (stats.trips, stats.first_start_secs, stats.last_arrival_secs, stats.typical_headway_secs)
+                );
+                prop_assert!(close(row.stats.revenue_hours, stats.revenue_hours, 1e-9) && close(row.stats.revenue_miles, stats.revenue_miles, 1e-9));
+
+                let times = &stops[&stop];
+                let mut spine = times.clone();
+                spine.sort_unstable();
+                spine.dedup();
+                let mut by_hour: BTreeMap<u32, (u32, Vec<u32>)> = BTreeMap::new();
+                for t in times {
+                    by_hour.entry(t / 3600).or_default().0 += 1;
+                }
+                for w in spine.windows(2) {
+                    by_hour.entry(w[0] / 3600).or_default().1.push(w[1] - w[0]);
+                }
+                prop_assert_eq!(row.hours.len(), by_hour.len(), "{} hours", row.route_id);
+                for (h, (hour, (count, gaps))) in row.hours.iter().zip(&by_hour) {
+                    let mut gaps = gaps.clone();
+                    gaps.sort_unstable();
+                    prop_assert_eq!(h.hour, *hour);
+                    prop_assert_eq!(h.departures, *count, "{} {}:00 departures", row.route_id, hour);
+                    prop_assert_eq!(h.shortest_gap_secs, gaps.first().copied());
+                    prop_assert_eq!(h.longest_gap_secs, gaps.last().copied());
+                    prop_assert_eq!(h.median_gap_secs, (gaps.len() >= 4).then(|| gaps[gaps.len() / 2]));
+                }
+            }
+        }
+        prop_assert!(transit_analysis::route_frequency(&net, "nope").is_none(), "an unknown type answers None");
+    }
+
+    /// The hub's route-pair read — `hub_connections` is the fold of
+    /// `timed_transfers` by (from route, to route): how many timed
+    /// connections the pair makes, the shortest and longest wait,
+    /// and the median wait with the four-connection floor; pairs in
+    /// route order, none with no connection.
+    #[test]
+    fn hub_connections_fold_the_timed_transfers(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
+        let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
+        let net = transit_codec::import(&feed).network;
+        let date = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
+        for stop_id in net.stops.keys() {
+            let pairs = transit_analysis::hub_connections(&net, date, stop_id, None);
+            let mut oracle: BTreeMap<(String, String), Vec<u32>> = BTreeMap::new();
+            for t in transit_analysis::timed_transfers(&net, date, stop_id, None) {
+                oracle.entry((t.from_route, t.to_route)).or_default().push(t.wait_secs);
+            }
+            prop_assert_eq!(pairs.len(), oracle.len(), "pairs at {}", stop_id);
+            for (row, ((from, to), waits)) in pairs.iter().zip(&oracle) {
+                let mut waits = waits.clone();
+                waits.sort_unstable();
+                prop_assert_eq!((&row.from_route, &row.to_route), (from, to));
+                prop_assert_eq!(row.connections, waits.len() as u32);
+                prop_assert_eq!(row.shortest_wait_secs, waits[0]);
+                prop_assert_eq!(row.longest_wait_secs, *waits.last().unwrap());
+                prop_assert_eq!(row.median_wait_secs, (waits.len() >= 4).then(|| waits[waits.len() / 2]));
+            }
+        }
+        prop_assert!(transit_analysis::hub_connections(&net, date, "nope", None).is_empty());
+    }
+}
+
+/// A route's hour reports the gaps its trips actually leave: trips at
+/// :00, :10, :30 and 1:00 leave gaps of 10, 20 and 30 minutes in the
+/// first hour — the shortest and longest as they are, never snapped
+/// to a regular headway (the user, 2026-10-30: a target headway is
+/// adjusted through the day; the variation is information).
+#[test]
+fn an_hours_gaps_are_the_trips_own() {
+    let trip = |start_slot| GenTrip { route: 0, service: 0, block: None, start_slot, stops: vec![0, 1], leg_min: 5 };
+    let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&[trip(0), trip(1), trip(3), trip(6)])).expect("parse");
+    let net = transit_codec::import(&feed).network;
+    let answer = transit_analysis::route_frequency(&net, "0").expect("a weekday type");
+    let hours: Vec<_> = answer.routes[0]
+        .hours
+        .iter()
+        .map(|h| (h.hour, h.departures, h.shortest_gap_secs, h.longest_gap_secs, h.median_gap_secs))
+        .collect();
+    assert_eq!(hours, [(0, 3, Some(600), Some(1800), None), (1, 1, None, None, None)]);
 }

@@ -38,7 +38,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-51**.
+- IDs are never reused; the next new decision is **D-56**.
 
 ## Summary
 
@@ -46,7 +46,7 @@ the rest of the work can go ahead while the decision is reviewed.
 |---|---|---|---|
 | D-1 | Is a trip's start its first arrival or its first departure? | encoded | nothing |
 | D-2 | What does a running-time change touch besides fixed-start trips? | encoded | nothing |
-| D-3 | Which timing profile does the import give a pattern? | encoded | nothing |
+| D-3 | Which timing profile does the import give a pattern? | encoded; re-opened | QAF-90 |
 | D-5 | Does the import keep a block that breaks the spec? | encoded | nothing |
 | D-6 | Does "frequent" count terminal arrivals? | unanswered | QAF-78 |
 | D-8 | Do timetable edits act on the whole service family? | unanswered | QAF-65 gestures, QAF-44 |
@@ -91,6 +91,11 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-48 | Does a stop answer to a name its sign does not carry? | unanswered | QAF-70 |
 | D-49 | Where do the basemap's glyphs and sprites come from? | unanswered | QAF-84 |
 | D-50 | What are the work rules a run is cut under? | unanswered | QAF-11, QAF-12, QAF-14, QAF-15 |
+| D-51 | What does a revenue hour, a revenue mile, and a vehicle cost? | unanswered | `ui-service-design` questions 2, 18 (cost) |
+| D-52 | How is a route-hour's frequency judged and drawn? | encoded | nothing |
+| D-53 | What ridership data does the planner bring? | unanswered | `ui-service-design` question 10 |
+| D-54 | What does a frequency change keep of the trips already there? | unanswered | QAF-90, `ui-service-design` question 16 |
+| D-55 | Which members does a service group count on a day? | unanswered | QAF-91 |
 
 ## The trip model
 
@@ -150,7 +155,14 @@ Options:
 - No profile. `add_trip` on an imported pattern then has to name
   its times or copy them from a neighbouring trip.
 Pinned by: `trip_import_law_test.rs` and `codec_prop_test.rs`.
-Blocks: nothing.
+Re-opened 2026-10-30 by QAF-90: on 071 an evening trip added by
+`set_headway` runs 20 min beside trips that run 28. The user, the
+same day: "traffic pattern[s] change throughout the day and layover
+needs, reliefs require flexibility. so please don't make a rigid
+timetable setup." That points to profiles per time band, which is
+the second option. It stays provisional until the user confirms it
+and names the band rule.
+Blocks: QAF-90.
 
 ### D-11 — Does editing a shared alignment change every pattern on it?
 State: Unanswered.
@@ -304,6 +316,104 @@ Options:
 Open inside the first two: which date the period ends on, and
 whether next year's holidays (new dated exceptions) are part of it.
 Blocks: QAF-54.
+
+## Service design
+
+### D-51 — What does a revenue hour, a revenue mile, and a vehicle cost?
+State: Unanswered.
+Context: `docs/units/ui-service-design.md` questions 2 and 18. The
+ops answer revenue hours and miles, and the fleet answers peak
+vehicles. A proposal's cost in dollars needs the agency's rates, and
+the feed carries none. A rate the UI multiplies in is a policy value
+in the host.
+Options:
+- A cost-model document on the bus (rates per revenue hour, per
+  revenue mile, per peak vehicle, optionally per service group),
+  read by the ops that answer cost.
+- Rates as op parameters with no default: the host passes what the
+  planner types, and no dollar figure appears until they do.
+- No dollars: the UI answers hours, miles, and vehicles only.
+Blocks: the cost line in the service-design questions 2 and 18.
+
+### D-52 — How is a route-hour's frequency judged and drawn?
+State: Encoded provisionally — the third option: the grid shades
+continuously by the longest gap (full at 10 min or less, none at 75
+or more — drawing, not a standard) and prints the longest and
+shortest gap in the cell; no boundary judges an hour. Pinned by
+`web/src/components/FrequencyGrid.svelte`; the op (`route_frequency`)
+answers the gaps and carries no threshold, so a decided standard
+becomes an op parameter without changing the answer.
+Context: `docs/units/ui-service-design.md` question 4. The frequency
+matrix shades each route-hour. The trips vary around a target on
+purpose (traffic, layover, reliefs: the user, 2026-10-30), so an
+hour has a typical gap, a shortest, and a longest, and no one
+number. Which of them the shading reads, and any boundary on it,
+is a threshold, so the op owns it, as a parameter with a default.
+Coverage already takes `frequent_secs` (default 900).
+Options:
+- Shade by the longest gap (what a rider can wait), with standards
+  as parameters (the frequent-network and base headways).
+- Shade by the typical gap, and mark an hour whose longest gap
+  breaks the standard.
+- No boundaries: continuous shading of the longest gap, with the
+  range printed in the cell.
+Blocks: nothing (the grid's shading is provisional).
+
+### D-53 — What ridership data does the planner bring?
+State: Unanswered.
+Context: `docs/units/ui-service-design.md` question 10. Productivity
+(boardings per revenue hour) is a planner's first measure, and
+nothing on the bus carries a boarding. The GTFS-Ride extension and
+APC exports carry boardings per stop and per trip. Adherence history
+is `docs/ROADMAP.md` 3.
+Options:
+- A ridership document on the bus (boardings and alightings per trip
+  and stop, by date or averaged per service group), imported from
+  GTFS-Ride or an APC export.
+- A weighted point layer (boardings per stop), read the way coverage
+  reads population (D-47).
+- None for now: the question stays open as a data gap.
+Blocks: the service-design question 10.
+
+### D-54 — What does a frequency change keep of the trips already there?
+State: Unanswered.
+Context: QAF-90 and the user's direction of 2026-10-30, against rigid
+timetables: a route's trips are adjusted around a target through the
+day, for traffic, layover, and reliefs. `set_headway` moves every
+one-start trip in the window to the nearest slot of an exact grid,
+which erases those adjustments, and times new trips by the pattern's
+one profile (D-3).
+Options:
+- A target with a tolerance: trips whose gaps already fall within
+  the tolerance keep their times. Trips are added only where a gap
+  exceeds target + tolerance and removed only where gaps fall short
+  of target − tolerance, and a new trip goes in the middle of the
+  gap it fills.
+- Add and remove only: existing trips never move, and new trips
+  split the longest gaps until the target is met.
+- Keep the exact grid as one option among these, chosen per change.
+Open in every option: which running time a new trip takes (D-3),
+and whether a hand-nudged trip is ever moved by a later target.
+Blocks: QAF-90, the service-design question 16 (the frequency
+gesture).
+
+### D-55 — Which members does a service group count on a day?
+State: Unanswered.
+Context: QAF-91 and QAF-65. A group pools a base service type and
+the types whose calendars are subsets of it. C-TRAN's 1-WKDY/30 and
+1-WKDY/31 are both subsets of 1-WKDY, but they run in successive
+periods and never share a day, so pooling both on the representative
+day counts trips that never run together (2130 against 1774).
+Options:
+- Count only the members that run on the group's representative day
+  (a real day's service). A member that runs in another period shows
+  as the group's other period.
+- Split a group into periods wherever its members' date ranges
+  change, each period with its own representative day and numbers.
+- Count every member, as now, and say so in the answer (a total over
+  the members' authored service, not a day).
+Blocks: QAF-91 (every pooled read: service_groups,
+service_type_detail, schedule_texture, the directory timetable).
 
 ## Blocks and runcutting
 

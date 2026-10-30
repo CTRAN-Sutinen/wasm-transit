@@ -138,7 +138,8 @@ transit-network The authored network model (planner authority):
                 direction's patterns by start, one column per stop
                 in route order, a variant's stops slotted where it
                 leaves the others; rows are `materialize_service`'s
-                trips, never a second derivation).
+                trips, never a second derivation, each with its own
+                end-to-end running time, `run_secs`).
 transit-router  RAPTOR planning over the network model's
                 materialized day; pure (no I/O, clock, or calendar),
                 GTFS-free. `RouterNetwork::build(network, day, date,
@@ -254,8 +255,13 @@ transit-codec   The network codec, both directions, over the whole
 transit-analysis Planner analysis over an authored network document:
                 stats, service-type overview/detail, schedule
                 texture (hourly profile, headway gaps, clockface),
-                route corridors (shared stops and segments),
-                population coverage — the share AND the unserved
+                route corridors (shared stops and segments), the
+                frequency grid (route_frequency: each route of a
+                service group hour by hour at its headway stop —
+                the trips' own shortest, longest and median gaps,
+                never regularized — with the route's numbers), a
+                hub's connections by route pair (hub_connections:
+                timed_transfers folded), population coverage — the share AND the unserved
                 where (unserved_points: the complement, named).
                 A LIBRARY under the
                 cap-analysis module; the planner's regression
@@ -759,17 +765,33 @@ imports none of the app shell's host modules (`state.svelte`,
 `planner`, `actions`, `capdemo.svelte`). The gate checks that rule
 on every component a generated UI imports.
 
-- Thin, usable by any generated UI: PlanBar (plan, baseline, chain,
-  fork, health), TypeTable (`service_types_overview` rows plus the
-  selected type's baseline), CoverageTable (`type_coverage`, with
-  its op parameters as inputs), RouteTable (`service_type_detail`
-  routes), RouteCard (`route_detail`), ScheduleChange (one
+- Thin, usable by any generated UI: Unavailable (a frame with no
+  answer, said plainly: what is missing and why — an op or decision
+  it waits on, or a capability that failed, with a retry), the
+  service-design set: DesignRail (the views, keyed 1–6),
+  ContextBar (plan, baseline, group, route, stop, hours, health, a
+  route jump), PickTimeline (plans `periods` as bars, `resolve`'s
+  plan named), PlanList (the plan set, fork, feed import),
+  GroupTable (`service_groups`), GroupLedger
+  (`service_type_compare` totals), DayProfile (`hourly_trips`, a
+  drag sets the hour window), FrequencyGrid (`route_frequency`:
+  hours as cells, shaded continuously by the longest wait),
+  CoveragePanel (`type_coverage` with its parameters and window,
+  `unserved_points` listed), CoverageMap (`unserved_points` drawn),
+  HubMatrix (`hub_connections`), CorridorTable (`route_overlap`),
+  StopWaits (`stop_gaps`), RouteHeader (a route's `route_frequency`
+  numbers, before → after), StringLine (directory `timetable` as
+  time against stop; a dragged trip is a nudge event), RunTimes
+  (`run_secs` by start), HourGaps (a route's `route_frequency`
+  hours), GesturePanel (span, running time, one trip, stops — one
+  event each), ChangeLedger (`service_type_compare` routes, undo and
+  redo events), ProposalScore and Redline
+  (`service_type_compare`), Readiness (issues, warnings, the export
+  event); RouteCard (`route_detail`), ScheduleChange (one
   pattern trips' starts with add and remove events), DirectionTabs
   (`route_detail` directions), TimetableGrid (directory `timetable`,
   added, retimed, and removed trips when asked against a baseline; a stop
-  column click is an event), TimetableChange (the timetable gestures'
-  forms: frequency, span, running time, stops — one event each),
-  CompareTable (analysis `service_type_compare`), FocusMap (a
+  column click is an event), FocusMap (a
   directory `focus` drawn and framed), BlocksPanel (runcut
   `blocks` / `block_trips`), DepartureBoard (`stop_board`), RtPanel
   (the live summary), TripPlanner (from, to, depart → `onplan`),
@@ -880,17 +902,29 @@ imports is thin. The build also refuses a UI directory without
 its page (`vite.config.js`), and the picker's spec
 (`e2e/picker.spec.mjs`) checks one card per `ui.json`.
 
-The UIs today: `service-design` (`src/uis/service-design/`): the
-plan bar, then service types (cost, the change against the
-baseline, coverage, fleet), the routes under the type with the
-selected route's map beneath them, and the route — its directions,
-one direction's timetable marked against the baseline (scrolling
-inside its column, never widening the page), and the timetable
-gestures. With no stored plan it opens the server's `/network` as
-the base plan (or imports a zip from the plan bar, which also reads
-its feed_info). Its host answers through the answer graph; the fleet
-(cap-runcut) answers only while its panel is open, and the plan's
-health adopts cap-author's issues for a document it authored.
+The UIs today: `service-design` (`src/uis/service-design/`): six
+views over one selection — a rail of views (keys 1–6) and a context
+bar (plan, baseline, service group, route, stop, hour window) frame
+whichever is open. Plans: the pick timeline, the plan set (fork,
+baseline, feed import), the service groups. Network: the group's
+numbers against the baseline, trips per hour (a drag sets the hour
+window every view reads), and the frequency grid; a row opens the
+route. Coverage: the parameters and window, shares per service id,
+the unserved points listed and mapped. Hubs: a stop's connection
+matrix and waits, and the shared corridors. Route: the string-line
+workbench — directions, the string-line or the timetable grid,
+gaps by hour, running time by start, the change ledger with undo
+and redo, the route's map, and (edit mode, E) the gestures: span,
+running time, one trip moved alone (picked or dragged), stops. A
+frequency target is shown as waiting on D-54. Proposal: the
+scorecard, the redline, readiness, and the export. The selection
+lives in the URL hash. With no stored plan it opens the server's
+`/network` as the base plan. Its host answers through the answer
+graph; a view's nodes answer only while it is open, each frame
+records its own failure (`sd.failed`) and renders Unavailable with
+a retry while the rest answers, and the plan's health adopts
+cap-author's issues for a document it authored. Undo restores an
+earlier document version the host keeps; nothing is inverted.
 `ride-now` (`src/uis/ride-now/`): a full-bleed map with a panel over
 it (a card at the left on a wide screen, a sheet over the bottom of
 the map on a phone), the live pill and the alerts button in the
@@ -1030,7 +1064,8 @@ cap-router      The router capability — ONE QUESTION: how do I get
                 shows its notice's text. A pure-function capability; it
                 writes nothing.
 cap-analysis    The analysis capability: planner numbers (stats,
-                service types, coverage) over hash-keyed network and
+                service types, the frequency grid, hub connections,
+                coverage) over hash-keyed network and
                 population-layer registries. The domain code lives
                 in the shared transit-analysis library. Consumes
                 network documents from cap-network (the registry

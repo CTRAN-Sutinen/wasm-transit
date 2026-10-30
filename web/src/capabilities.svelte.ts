@@ -94,6 +94,13 @@ import type { ServiceTypeDetail } from "./types/ServiceTypeDetail";
 import type { ServiceTypeSummary } from "./types/ServiceTypeSummary";
 import type { ServiceGroup } from "./types/ServiceGroup";
 import type { TypeCoverage } from "./types/TypeCoverage";
+import type { CoverageWindow } from "./types/CoverageWindow";
+import type { HourlyTrips } from "./types/HourlyTrips";
+import type { RouteConnections } from "./types/RouteConnections";
+import type { RouteFrequency } from "./types/RouteFrequency";
+import type { RouteOverlap } from "./types/RouteOverlap";
+import type { StopGaps } from "./types/StopGaps";
+import type { UnservedPoint } from "./types/UnservedPoint";
 import type { FeedInfo } from "./types/FeedInfo";
 import type { FeedSummary } from "./types/FeedSummary";
 import type { Itinerary } from "./types/Itinerary";
@@ -580,6 +587,7 @@ export function analysisCap(module: CapModule) {
       radiusM: number,
       frequentSecs: number,
       minDepartures: number,
+      window: CoverageWindow | null = null,
     ): TypeCoverage[] {
       const resp = module.invoke({
         op: "type_coverage",
@@ -588,8 +596,66 @@ export function analysisCap(module: CapModule) {
         radius_m: radiusM,
         frequent_secs: frequentSecs,
         min_departures: minDepartures,
+        window: window ?? undefined,
       } as AnalysisRequest) as Extract<AnalysisResponse, { op: "type_coverage" }>;
       return resp.coverage;
+    },
+    /// The group's frequency grid: each route by hour at its headway
+    /// stop, with the route's numbers.
+    routeFrequency(networkHash: string, serviceType: string): RouteFrequency | null {
+      const resp = module.invoke({
+        op: "route_frequency",
+        network_hash: networkHash,
+        service_type: serviceType,
+      } as AnalysisRequest) as Extract<AnalysisResponse, { op: "route_frequency" }>;
+      return resp.frequency;
+    },
+    /// The day's trips per hour, by service type.
+    hourlyTrips(networkHash: string, date: string): HourlyTrips[] {
+      const resp = module.invoke({ op: "hourly_trips", network_hash: networkHash, date } as AnalysisRequest) as Extract<
+        AnalysisResponse,
+        { op: "hourly_trips" }
+      >;
+      return resp.hours;
+    },
+    /// Route pairs that share stops on the date.
+    routeOverlap(networkHash: string, date: string): RouteOverlap[] {
+      const resp = module.invoke({ op: "route_overlap", network_hash: networkHash, date } as AnalysisRequest) as Extract<
+        AnalysisResponse,
+        { op: "route_overlap" }
+      >;
+      return resp.overlaps;
+    },
+    /// A hub's timed connections, by route pair.
+    hubConnections(networkHash: string, date: string, stopId: string): RouteConnections[] {
+      const resp = module.invoke({
+        op: "hub_connections",
+        network_hash: networkHash,
+        date,
+        stop_id: stopId,
+      } as AnalysisRequest) as Extract<AnalysisResponse, { op: "hub_connections" }>;
+      return resp.connections;
+    },
+    /// One stop's day as gaps.
+    stopGaps(networkHash: string, date: string, stopId: string): StopGaps {
+      const resp = module.invoke({
+        op: "stop_gaps",
+        network_hash: networkHash,
+        date,
+        stop_id: stopId,
+      } as AnalysisRequest) as Extract<AnalysisResponse, { op: "stop_gaps" }>;
+      return resp.gaps;
+    },
+    /// The layer points beyond the radius of every served stop.
+    unservedPoints(networkHash: string, layerHash: string, radiusM: number, date: string): UnservedPoint[] {
+      const resp = module.invoke({
+        op: "unserved_points",
+        network_hash: networkHash,
+        layer_hash: layerHash,
+        radius_m: radiusM,
+        date,
+      } as AnalysisRequest) as Extract<AnalysisResponse, { op: "unserved_points" }>;
+      return resp.points;
     },
   };
 }

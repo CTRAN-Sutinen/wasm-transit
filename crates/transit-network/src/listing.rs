@@ -183,6 +183,10 @@ pub struct TimetableTrip {
     pub pattern: String,
     pub block: Option<String>,
     pub times: Vec<Option<u32>>,
+    /// The trip's running time end to end: its last stop's arrival
+    /// less its start — each trip's own, so a slower evening reads
+    /// as it runs.
+    pub run_secs: u32,
     /// Asked against a baseline: the baseline does not run this trip.
     pub added: bool,
     /// Asked against a baseline: the baseline runs this one-start trip
@@ -526,6 +530,7 @@ pub fn timetable(network: &Network, route: &str, direction: Option<&str>, servic
                 pattern_trips: trip.pattern_trips.clone(),
                 start_secs: trip.start_secs,
                 pattern: trip.pattern.clone(),
+                run_secs: trip.stop_times.last().map_or(0, |st| st.arrival_secs.saturating_sub(trip.start_secs)),
                 times,
                 added: false,
                 retimed_from_secs: None,

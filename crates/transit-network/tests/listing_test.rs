@@ -292,6 +292,14 @@ fn a_timetable_is_one_direction_on_one_service_type_across_its_patterns() {
     );
     assert_eq!(t.trips[0].times, [Some(28_800), Some(29_100), None, Some(29_400)]);
     assert_eq!(t.trips[2].times, [Some(32_400), Some(32_700), Some(33_000), None]);
+    // Each row's running time is its trip's own, end to end: the last
+    // stop's arrival less its start (the string-line's slope).
+    for row in &t.trips {
+        let day = transit_network::materialize_service(&net, &row.pattern_trips).unwrap();
+        let trip = day.iter().find(|m| m.trip == row.trip && m.start_secs == row.start_secs).unwrap();
+        assert_eq!(row.run_secs, trip.stop_times.last().unwrap().arrival_secs - trip.start_secs, "{}", row.trip);
+    }
+    assert_eq!(t.trips.iter().map(|r| r.run_secs).collect::<Vec<_>>(), [600, 600, 600, 600, 600]);
 
     // The patterns in no direction are their own timetable; an
     // unknown route, direction or type is no timetable.

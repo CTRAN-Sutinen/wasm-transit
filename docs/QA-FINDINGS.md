@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-88**. A
+IDs are never reused; the next new finding is **QAF-93**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -103,6 +103,41 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   "0" 1-WKDY — 40 trips, 18 from /30 + 18 from /31 + 4 from the
   base.
   Blocked: D-8 (the gestures).
+- **QAF-88 DEFECT** — `service_groups` heads one row per member
+  when the members' calendars are equal: 4-NYE, 4-NYE/31 and
+  FARES_NYE each run only 2026-12-31, so each is a subset of the
+  others, and the answer carries three rows with the same family
+  and the same pooled numbers (1853 trips, 829.4 revenue hours).
+  FARES_NYE's row has an empty date. A planner reads New Year's Eve
+  three times over. A family of equal calendars needs one base.
+  Pin: 2026-10-30 analysis `service_groups` on C-TRAN (feed
+  sha256:aa8dbc62…) — rows 4-NYE, 4-NYE/31 and FARES_NYE, each with
+  members [4-NYE, 4-NYE/31, FARES_NYE].
+- **QAF-89 OP GAP** — `type_coverage` answers per service id, not
+  per service group: the weekday family reads as five rows (1-WKDY
+  served 18.6% and frequent 3.2%, 1-WKDY/30 6.9%, 1-WKDY/31 6.9%, and
+  the rest), so "who does the weekday network reach" has no answer
+  without a host union of the members' served stops. The other
+  reads pool the family (QAF-65).
+  Pin: 2026-10-30 analysis `type_coverage` on C-TRAN with
+  `clark-population.geojson`, radius 400 m, frequent 900 s, min
+  departures 2.
+- **QAF-91 DEFECT** — the service group pools members that never run
+  on the same day: 1-WKDY/30 runs 2026-09-14 → 2026-10-09 and
+  1-WKDY/31 runs 2026-10-12 → 2027-01-08 (no shared date). They are
+  successive periods of the I-5 closure service, not overlays of each
+  other, yet both count on the representative day. The weekday group
+  answers 2130 trips; 1774 run on 2026-09-14 (1-WKDY 1425 + /30 349),
+  and no weekday runs more than 1782. Route 071's timetable shows
+  eleven trips twice at identical times (/30's 762788 beside /31's
+  758141), and every pooled read (service_groups,
+  service_type_detail, schedule_texture, the directory timetable, and
+  service_type_compare through them) is inflated the same way.
+  Pin: 2026-10-30 analysis `service_groups` 1-WKDY on C-TRAN — 2130
+  trips, 942.2 revenue hours; directory `timetable` 071 "0" 1-WKDY —
+  trips 762788 and 758141 both at 07:12; calendar_dates.txt — /30 and
+  /31 share no date.
+  Blocked: D-55.
 
 ## The model
 
@@ -151,6 +186,14 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   Pin: the 347.73 layover hours in QAF-3's pin were summed
   host-side.
   Blocked: D-9.
+- **QAF-92 OP GAP** — `stop_gaps` reads one stop, not its walking
+  group: asked for a station (99th Street Transit Center, stop 110)
+  it answers 0 departures, while `timed_transfers` and
+  `hub_connections` pool the same station's bays (1,410 connections
+  across bays A–J). The hub view's waits go empty exactly where a
+  planner looks first.
+  Pin: 2026-10-30 analysis `stop_gaps` 110 on 2026-09-14 — 0
+  departures; `hub_connections` 110 — 82 route pairs.
 ## Coverage
 
 - **QAF-78 DEFECT** — whole-day "frequent" counts a stop's visits,
@@ -180,6 +223,20 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   Blocked: D-47.
 
 ## Authoring contract
+
+- **QAF-90 DATA/MODEL** — a frequency gesture's new trips run at the
+  pattern's early-morning pace in the evening: `set_headway` on 071
+  direction 0, 18:00–21:00 every 15 min, under 1-WKDY adds six trips
+  timed by the imported profile (D-3: the earliest trip's run time).
+  The trip added at 18:00 runs 20 min, and trip 758184 beside it
+  (18:15, retimed from 18:12) runs 28 min. Toward 99th Street the
+  trip added at 18:00 arrives at 18:23, before the 17:57 trip that
+  left ahead of it (18:26).
+  Pin: 2026-10-30 directory `timetable` 071 "0" 1-WKDY on the fork
+  (`compare_hash` the import) — trip `1-WKDY:pat-071-0-0@64800`
+  64800→66000, trip 758184 65700→67380; "1" — trip
+  `1-WKDY:pat-071-1-4@64800` 64800→66180, trip 758239 64620→66360.
+  Blocked: D-3 (re-opened), D-54.
 
 - **QAF-54 OP GAP** — no gesture carries a calendar into a pick: a
   fork after the import's calendar end (2027-01-09) runs nothing,
