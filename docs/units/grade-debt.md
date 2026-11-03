@@ -17,14 +17,25 @@ empty.
 
 ## Not read by a UI
 
-These are original-app (`/app.html`) gaps. A generated UI that
-reads the op pays the line instead.
+On the bus and tested, but no generated UI calls them. A generated
+UI that reads the op pays the line instead.
 
-- cap-rt `late_trips` — no UI renders the ranked late list.
-- network `validate` warnings — the original app shows the issues,
-  not the warnings (the service-design UI shows `apply`'s).
-- analysis `network_stats`'s `window` and per-route hours — the
-  original app's planner screens do not render them.
+- cap-rt `late_trips` — no UI renders the ranked late list
+  ([ui-disruptions.md](ui-disruptions.md) question 1).
+- Diversion authoring: cap-divert (`draft`, `list`, `propose`,
+  `retire`, `restore`, `sanitize`), cap-streets `snap` / `route` for
+  tracing a detour, and writing the edit document (`POST /edits`) —
+  no page writes a detour; ride-now and the stop display only read
+  them ([ui-disruptions.md](ui-disruptions.md) questions 3–5, 7).
+- cap-runcut (`blocks`, `fleet_summary`, `block_trips`,
+  `trip_stops`, `trip_path`) — no UI shows a day's blocks
+  ([ui-runcut.md](ui-runcut.md)).
+- cap-calendar (`active_services`, `service_dates`) — no UI asks
+  which services run on a date.
+- network `validate` warnings — service-design shows the issues
+  and `apply`'s warnings, not `validate`'s.
+- analysis `network_stats` — no UI renders it (the window, the
+  per-route hours).
 - The map draws merged walks through their via stops, but no e2e
   pins that drawing.
 

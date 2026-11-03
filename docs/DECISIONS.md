@@ -38,7 +38,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-69**.
+- IDs are never reused; the next new decision is **D-70**.
 
 ## Summary
 
@@ -108,7 +108,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-65 | Do ride-now and the stop display work offline? | decided | nothing |
 | D-66 | How long is a migration kept? | decided | nothing |
 | D-67 | Whose feeds does the server's proxy fetch? | decided | nothing |
-| D-68 | What are ride-now's and the stop display's performance budgets? | unanswered | `deploy-rider-apps` budgets |
+| D-68 | What are ride-now's and the stop display's performance budgets? | decided | nothing |
+| D-69 | What happens to the original app when host calls move into the engine? | decided | nothing |
 
 ## The trip model
 
@@ -1308,7 +1309,8 @@ Options:
 Blocks: `deploy-rider-apps` the proxy.
 
 ### D-68 — What are ride-now's and the stop display's performance budgets?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-03 — "ok" to the proposal below, after asking "why would we be allowing a departure board to tax 2 GB of RAM": budgets are set from what the page needs, never the hardware's headroom — the display at most 40 MB of wasm + JS heap flat across 24 h, ride-now at most 80 MB, with the timing budgets below.
 Context: D-64 sets no device floor for ride-now and names the
 display hardware (a Raspberry Pi 4). Budgets are what the cost
 gate's ratchet must come under; the costs that matter are bytes on
@@ -1336,6 +1338,23 @@ document kind (`docs/units/runtime-cost-gate.md`, splitting the
 network document).
 Blocks: `deploy-rider-apps` budgets (the ceilings' targets) and its
 dogfood.
+
+### D-69 — What happens to the original app when host calls move into the engine?
+State: Decided.
+Answer: 2026-11-03 — "Retire it now": delete `/app.html` and its host
+layer; anything only it answered becomes a gap recorded in a unit.
+Context: `docs/units/host-discipline.md`'s gate (no op call outside
+the engine) ends with an empty allowlist. The original app (persona
+tabs over one shell) called ops directly from `actions.ts`,
+`planner.ts`, and `capdemo.svelte.ts`. It was the only browser UI
+that authored a diversion, showed a day's blocks, imported a feed or
+street layer in the page, and demonstrated migrate/rollback.
+Options: migrate it onto the engine; keep it on the gate's
+allowlist until retired; retire it now (chosen).
+Blocks: nothing. The gaps it left are lines in
+`docs/units/grade-debt.md` ("Not read by a UI"), paid by
+`ui-disruptions` and `ui-runcut`; the migrate/rollback pin is
+`docs/units/document-versioning.md`'s browser e2e.
 
 ## Agency data
 

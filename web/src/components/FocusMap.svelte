@@ -2,7 +2,7 @@
   /// A map that draws ONE answer: an entity's focus (cap-directory
   /// `focus` — the lines it runs and the stops it serves) and frames
   /// it. A RENDER component: the focus comes in as a prop; the map
-  /// computes no geometry and reads no app state. `mapview.ts` only
+  /// computes no geometry and reads no host state. `mapview.ts` only
   /// reorders [{lat, lon}] into GeoJSON's [lon, lat].
   import { onMount } from "svelte";
   import * as maplibregl from "maplibre-gl";

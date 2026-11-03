@@ -7,8 +7,9 @@ transit network: a canonical streets document, read from street
 layers (the agency's GIS export, TIGER, OSM) by an import at the
 boundary, the way the network is read from GTFS. Its identity is
 the hash of the model, never of the file it came from. Its
-consumers are the detour editor today and pattern drawing in
-planning next; every item below is designed for both.
+consumers are walking (ride-now) today, and drawing a detour
+([ui-disruptions.md](ui-disruptions.md)) and a pattern in planning
+next; every item below is designed for both drawings.
 
 ## Scope
 
@@ -16,20 +17,16 @@ The document, its import, and cap-streets' import / load_streets
 are on the bus (`docs/ARCHITECTURE.md`, transit-streets and
 cap-streets). What is left:
 
-1. **The original app reads the published streets.** The server
-   publishes the document (`/streets`, gzipped, the hash its ETag)
-   and ride-now registers it by its bytes (`docs/ARCHITECTURE.md`,
-   server). The original app's detour editor still imports a layer
-   itself — the browser downloads the 99 MB C-TRAN roads GeoJSON
-   and cap-streets reads it — and keeps the document in the page
-   (`state.svelte.ts`, `installStreets`). Left: it registers
-   `/streets` when the server publishes it (its DataSources import
-   stays for a layer the server does not have), and persisting a
-   document in the store follows
-   [sync-persistence.md](sync-persistence.md). A compact encoding
-   (delta-coded varints, names in a table: about 3.4 MB before
-   compression against the JSON's 4.5 MB gzipped) is a later step
-   if the gzipped JSON is not enough.
+1. **Serving the streets.** The server publishes the document
+   (`/streets`, gzipped, the hash its ETag) and ride-now registers
+   it by its bytes (`docs/ARCHITECTURE.md`, server); no page imports
+   a street layer itself, and a UI that draws on streets (the
+   detour, [ui-disruptions.md](ui-disruptions.md)) registers the
+   published document the same way. Left: persisting the document
+   in the store follows [sync-persistence.md](sync-persistence.md).
+   A compact encoding (delta-coded varints, names in a table: about
+   3.4 MB before compression against the JSON's 4.5 MB gzipped) is a
+   later step if the gzipped JSON is not enough.
 2. **The bus profile.** Which classes a bus may be drawn on, as an
    op parameter with an op-owned default (walking's is decided and
    built: `docs/ARCHITECTURE.md`, transit-streets). Blocked: D-26.
@@ -49,8 +46,8 @@ cap-streets). What is left:
      circles (`docs/ROADMAP.md` 4).
 4. **Drawing on streets.** The future consumer the document is
    designed for: a planner draws a new pattern by tracing between
-   waypoints along the streets a bus may use, as the detour editor
-   traces a detour. The committed alignment is GEOMETRY in the
+   waypoints along the streets a bus may use, the way a dispatcher
+   traces a detour (cap-streets `snap` / `route`). The committed alignment is GEOMETRY in the
    network document and never references the streets document or a
    graph position (`crates/AGENTS.md`, Law 1), so a new streets
    import never breaks a plan. Street names name new stops and the

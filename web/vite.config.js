@@ -4,7 +4,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
-// Pages: the picker (/), the original app, and every generated UI —
+// Pages: the picker (/) and every generated UI —
 // one per `src/uis/<id>/` directory, served from `<id>.html` at the
 // web root (asset fetches are relative, so every page lives at the
 // root). Adding a UI is adding its directory and its html; a
@@ -21,27 +21,21 @@ for (const id of uis) {
 }
 const input = {
   main: "index.html",
-  app: "app.html",
   ...Object.fromEntries(uis.map((id) => [id, `${id}.html`])),
 };
 
 export default defineConfig({
   plugins: [svelte()],
-  // wasm-bindgen glue uses top-level await
   build: { target: "esnext", rollupOptions: { input } },
   server: {
-    // The planner persona imports the shared network fixture straight
-    // from the repo's testdata/ (one source of truth, also used by the
-    // corpus and native tests) — the dev server needs to serve it.
-    fs: { allow: [path.resolve("..")] },
-    // `npm run dev` proxies API requests to the sync server, which
-    // owns the /rt CORS proxy, the manifest, and edit sync.
-    proxy: {
-      "/rt": "http://127.0.0.1:8080",
-      "/manifest": "http://127.0.0.1:8080",
-      "/feed": "http://127.0.0.1:8080",
-      "/edits": "http://127.0.0.1:8080",
-      "/geocode": "http://127.0.0.1:8080",
-    },
+    // `npm run dev` proxies the sync server's routes (server/main.go):
+    // the published documents, the manifest, edit sync and the store,
+    // the geocoder, and the /rt feed proxy (dev only, until the
+    // agency's feeds serve HTTPS with CORS — docs/units/deploy-rider-apps.md).
+    proxy: Object.fromEntries(
+      ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/geocode"].map(
+        (route) => [route, "http://127.0.0.1:8080"],
+      ),
+    ),
   },
 });

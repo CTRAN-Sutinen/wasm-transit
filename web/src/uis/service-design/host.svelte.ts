@@ -1,8 +1,8 @@
 /// The service-design UI's host layer — the ONLY file of this UI that
 /// calls the capability bus. It owns I/O (feed and layer bytes, the
-/// export download, the URL hash), the plan set (shared with every
-/// other shell through state.svelte.ts: JS owns the documents, and
-/// the undo stack is earlier versions of them), and the selection.
+/// export download, the URL hash), the plan set (plans.svelte.ts:
+/// JS owns the documents, and the undo stack is earlier versions of
+/// them), and the selection.
 /// Every number, list, and line it writes into `sd` is an op's answer,
 /// adopted as-is; the shell's components take these as props and emit
 /// events back here.
@@ -18,7 +18,7 @@
 /// `sd.failed`, and the frame says so while the rest of the view
 /// answers (a production failure, shown gracefully).
 
-import { getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../state.svelte";
+import { getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
 import {
   analysisCap,
   analysisModule,

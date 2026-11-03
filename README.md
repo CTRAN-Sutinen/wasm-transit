@@ -30,8 +30,8 @@ crates/   Rust: the domain libraries (transit-*) and the capability
           modules (cap-*) over them
 server/   Go + wazero: the sync server — static files, the rt proxy,
           the manifest, the edit document
-web/      Svelte 5 + Vite: a picker over the generated UIs, and the
-          original app (/app.html)
+web/      Svelte 5 + Vite: a picker over the generated UIs (ride-now,
+          the stop display, service design)
 testdata/ the authored-network fixture, real-data assets
 ```
 

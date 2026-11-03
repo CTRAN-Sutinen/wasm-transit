@@ -83,8 +83,8 @@
 
   function onKey(e: KeyboardEvent): void {
     if (e.key === "Escape" && open) {
-      // Consumed here: ESC must not leak to persona-wide handlers
-      // (it ends detour tracing, for instance).
+      // Consumed here: ESC closes the list and must not leak to
+      // page-wide handlers.
       e.stopPropagation();
       close();
       return;

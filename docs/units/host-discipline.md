@@ -3,9 +3,9 @@
 Documents-only composition moved every sequenced decision into the
 host. The host pays that debt as a designed layer, or it rots into
 glue copied per component. Today the resolver
-(`web/src/capabilities.svelte.ts`) loads modules and each host
-layer (`web/src/actions.ts`, `planner.ts`, `capdemo.svelte.ts`,
-`src/uis/<id>/host.svelte.ts`) calls ops directly.
+(`web/src/capabilities.svelte.ts`) loads modules and each generated
+UI's host layer (`web/src/uis/<id>/host.svelte.ts`) calls ops
+directly.
 
 ## Scope
 
@@ -46,20 +46,27 @@ layer (`web/src/actions.ts`, `planner.ts`, `capdemo.svelte.ts`,
 
 ## Order
 
-The journal lands first, in the runner: `caps-run`'s
-chained-session format BECOMES the journal format. The engine and
-flow maps crystallize from the recurring host glue. The first
-instance is the TRANSIENT answer graph in `web/src/uis/kit.ts`
-(`answerGraph`, `answer`) and the service-design host's node list:
-a node is a flow-map entry's draft (inputs, frame, visibility, op
-calls), `answer`'s key is the journal's. The engine replaces both
-— it does not grow out of them — and the change that lands it
-deletes them. The generated-UI units (`ui-*.md`) each carry an
-answer-graph table (`docs/ARCHITECTURE.md`, "Generated UIs", step
-5), and the engine is designed from those tables. What a table
-cannot express (a timer-driven live input, for one) is written
-here as an engine requirement. The store's
-log and pointer CAS landed in the Go server (`server/store/`,
+The engine lands first (the rider apps' deployment needs it: the
+bus worker of [module-runtime.md](module-runtime.md) sits behind
+it), keyed from the start by the journal's entry — module bytes'
+hash, op, input hashes — so the journal slots in without rework.
+Ride-now and the stop display move onto it first, then
+service-design; then the worker behind it; then the journal and
+replay in the runner (`caps-run`'s chained-session format becomes
+the journal format, closing [caps-run-sessions.md](caps-run-sessions.md)'s
+session store); flow maps as data last, with
+[wire-time-assembly.md](wire-time-assembly.md)'s UI manifest.
+
+The engine replaces the TRANSIENT answer graph in
+`web/src/uis/kit.ts` (`answerGraph`, `answer`) — it does not grow
+out of it — and the change that lands it deletes both. A node is a
+flow-map entry's draft (inputs, frame, visibility, op calls), and
+`answer`'s key is the journal's. The generated-UI units (`ui-*.md`)
+each carry an answer-graph table (`docs/ARCHITECTURE.md`,
+"Generated UIs", step 5), and the engine is designed from those
+tables. What a table cannot express (a timer-driven live input, for
+one) is written here as an engine requirement. The store's log and
+pointer CAS landed in the Go server (`server/store/`,
 [sync-persistence.md](sync-persistence.md)) — the per-device journal
 reuses the same envelope + hash-chained log shape
 (`docs/FORMATS.md`); a second persistence design is rejected on sight.

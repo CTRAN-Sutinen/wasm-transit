@@ -1,7 +1,7 @@
 <script lang="ts">
   /// The front door: every generated UI (each `src/uis/<id>/ui.json`,
-  /// discovered at build time) with the questions it answers, and the
-  /// original app demoted to a link. RENDER only — the list is data
+  /// discovered at build time) with the questions it answers. RENDER
+  /// only — the list is data
   /// the build carries; nothing here calls the bus.
   type Ui = {
     id: string;
@@ -45,10 +45,6 @@
     {/each}
   </ul>
 
-  <footer>
-    <a href="app.html" data-testid="original-app">The original app</a>
-    <span class="muted">(persona tabs: rider, dispatcher, planner)</span>
-  </footer>
 </main>
 
 <style>
@@ -67,7 +63,5 @@
   .summary { font-size: 0.9rem; }
   .questions { margin: 0; padding-left: 1.1rem; font-size: 0.82rem; color: var(--muted); }
   .meta { margin-top: auto; font-size: 0.75rem; color: var(--muted); }
-  footer { margin-top: 2rem; font-size: 0.9rem; display: flex; gap: 0.5rem; align-items: baseline; }
-  footer a { color: var(--accent); }
   code { font-size: 0.85em; }
 </style>

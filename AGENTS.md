@@ -191,9 +191,9 @@ server/          Go + wazero host over cap-sync, cap-network and cap-streets (th
                  (/rt, /geocode to a Pelias geocoder) — scaffolding, never a
                  domain decision
 web/             Svelte 5 + Vite frontend: / is a picker over the GENERATED UIs
-                 (src/uis/<id>/, each its own page and host layer) and links
-                 the original app (/app.html) (docs/ARCHITECTURE.md, web section,
-                 "Generated UIs" — the recipe a fresh agent follows)
+                 (src/uis/<id>/, each its own page and host layer; every page
+                 is one) (docs/ARCHITECTURE.md, web section, "Generated UIs" —
+                 the recipe a fresh agent follows)
 ```
 
 Per-crate detail: `docs/ARCHITECTURE.md`.
@@ -206,9 +206,9 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
   legitimate — after-midnight trips).
 - The **base feed is immutable**. Diversions produce patched copies
   per service date; patching never mutates its input.
-- **JS owns the documents** (edit document, plan set): `$state.raw`
-  in `src/state.svelte.ts`, wholesale-replaced, never mutated in
-  place — that is what makes IndexedDB cloning and sync work. wasm
+- **JS owns the documents** (plan set, watchlist): `$state.raw` in
+  the host layer (`src/plans.svelte.ts`, the resolver's document
+  store), wholesale-replaced, never mutated in place — that is what makes IndexedDB cloning and sync work. wasm
   holds only materialized views. A service change is a FORK (the
   next pick copies the whole world it changes); the chain (who is
   in force, governing periods) is always derived by the artifact,

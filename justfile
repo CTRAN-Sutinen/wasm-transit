@@ -431,10 +431,10 @@ test: caps
     }
     # W0a: components never call the bus — the host layer does (the
     # allowlist reached empty with W6: a hard gate now). Every shell's
-    # layout is held to it too (App.svelte, each generated UI, the picker).
+    # layout is held to it too (each generated UI's shell, the picker).
     ratchet resolver-in-components \
         "" \
-        "$(grep -l 'capabilities\.svelte' web/src/App.svelte web/src/components/*.svelte web/src/uis/*/*.svelte web/src/picker/*.svelte | tr '\n' ' ')" \
+        "$(grep -l 'capabilities\.svelte' web/src/components/*.svelte web/src/uis/*/*.svelte web/src/picker/*.svelte | tr '\n' ' ')" \
         "a component imports the capability resolver; take node values as props"
     # W0b: no host-side rt join — delays come from cap-rt's live
     # document (the allowlist reached empty with W1: a hard gate now).
@@ -450,11 +450,8 @@ test: caps
         "clones a document to mutate it; send NetworkEdits through cap-author"
     # GENERATED UIs (docs/ARCHITECTURE.md, "Generated UIs"): each
     # src/uis/<id>/ carries its descriptor, its page, and its e2e spec,
-    # and composes THIN components only — a component is thin iff it
-    # imports none of the app shell's host modules (state.svelte's
-    # `app`, planner, actions, capdemo). The rule is checked on what a
-    # UI imports, so a thin component that grows a coupling fails here.
-    coupled='from "\.\./(state\.svelte|planner|actions|capdemo\.svelte)"'
+    # and owns its host layer: nothing reaches into another UI's
+    # directory, and no component imports a UI's host.
     for dir in web/src/uis/*/; do
         id=$(basename "$dir")
         for need in "web/src/uis/$id/ui.json" "web/$id.html" "web/e2e/ui-$id.spec.mjs"; do
@@ -463,25 +460,22 @@ test: caps
         node -e 'const j = require(process.argv[1]); for (const k of ["id","title","summary","questions","components"]) if (j[k] === undefined) { console.error("missing " + k); process.exit(1) } if (j.id !== process.argv[2]) { console.error("id " + j.id + " != directory"); process.exit(1) }' "./web/src/uis/$id/ui.json" "$id" \
             || { echo "UI GATE FAIL: web/src/uis/$id/ui.json"; exit 1; }
     done
-    for f in web/src/uis/*.ts web/src/uis/*/* web/src/picker/*; do
-        if grep -qE 'from "(\.\./)+(planner|actions|capdemo\.svelte|App\.svelte)"' "$f" \
-            || grep -qE 'import \{[^}]*\bapp\b[^}]*\} from "(\.\./)+state\.svelte"' "$f"; then
-            echo "UI GATE FAIL: $f imports the app shell — a generated UI has its own host layer (src/uis/<id>/host.svelte.ts)"; exit 1
+    for f in web/src/uis/*/*; do
+        if grep -qE 'from "\.\./[a-z-]+/' "$f"; then
+            echo "UI GATE FAIL: $f imports another generated UI's files — each UI owns its host layer (src/uis/<id>/host.svelte.ts)"; exit 1
         fi
-        for c in $(grep -oE 'components/[A-Za-z]+\.svelte' "$f" | sort -u); do
-            if grep -qE "$coupled" "web/src/$c"; then
-                echo "UI GATE FAIL: $f uses $c, which is coupled to the app shell — compose thin components (or build a thin one)"; exit 1
-            fi
-        done
     done
+    if grep -lE 'from "\.\./uis/' web/src/components/*.svelte web/src/components/*.ts 2>/dev/null | grep -q .; then
+        echo "UI GATE FAIL: a component imports a generated UI's host layer — take node values as props"; exit 1
+    fi
     # -race: the artifact is one non-reentrant instance; the host must
     # serialize invokes (see server/race_test.go — the gate watches it).
     cd server && go test -race ./...
 
 # Browser e2e (Chromium via Playwright, against the Go server).
 # Builds first; the runner starts the server unless :8080 is taken.
-# For UI-visible changes: user-visible flows, module surfaces, the
-# capability-bus spec (web/e2e/caps.spec.mjs).
+# For UI-visible changes: each generated UI's spec, the picker, and
+# the published-network spec (module surfaces as the UIs read them).
 e2e: caps build
     cd web && npx playwright test
 

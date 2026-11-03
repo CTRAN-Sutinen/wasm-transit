@@ -36,10 +36,6 @@ import type { Request as AuthorCapRequest } from "./types/cap_author/Request";
 import type { Response as AuthorCapResponse } from "./types/cap_author/Response";
 import type { Request as DivertCapRequest } from "./types/cap_divert/Request";
 import type { Response as DivertCapResponse } from "./types/cap_divert/Response";
-import type { DiversionDraft } from "./types/DiversionDraft";
-import type { DiversionRow } from "./types/DiversionRow";
-import type { DraftView } from "./types/DraftView";
-import type { Coord } from "./types/Coord";
 import type { EntityFocus } from "./types/EntityFocus";
 import type { EntityKind } from "./types/EntityKind";
 import type { EntityRow } from "./types/EntityRow";
@@ -57,7 +53,6 @@ import type { DirectoryStop } from "./types/cap_directory/DirectoryStop";
 import type { NearbyStop } from "./types/NearbyStop";
 import type { TripProgress } from "./types/TripProgress";
 import type { DirectoryRoute } from "./types/cap_directory/DirectoryRoute";
-import { directory } from "./state.svelte";
 import type { PatternStops } from "./types/cap_directory/PatternStops";
 import type { Watchlist } from "./types/cap_board/Watchlist";
 import type { MigrationNote } from "./types/cap_board/MigrationNote";
@@ -81,9 +76,6 @@ import type { StopBoard } from "./types/StopBoard";
 import type { GroupedBoard } from "./types/GroupedBoard";
 import type { LiveDay } from "./types/LiveDay";
 import type { LiveSummary } from "./types/LiveSummary";
-import type { BlockChainTrip } from "./types/BlockChainTrip";
-import type { DayBlock } from "./types/DayBlock";
-import type { TripStopView } from "./types/TripStopView";
 import type { EditRecord } from "./types/EditRecord";
 import type { EditReport } from "./types/EditReport";
 import type { Network } from "./types/Network";
@@ -322,21 +314,13 @@ function ensureOne(cap: Capability): Promise<CapModule | null> {
   return load;
 }
 
-/// Forget a loaded capability (the demo's degraded-state simulation):
-/// the next `ensure` re-fetches it — against whatever url the
-/// manifest now carries.
-export function forgetCapability(id: string): void {
-  delete caps.modules[id];
-  caps.statuses[id] = "unavailable";
-}
-
 // ---------------------------------------------------------------------
 // The document store: versioned local data, immutable history.
 //
 // A migration never destroys: the migrated document is a NEW record
 // (its own content hash) whose `produced_by` names the record it came
-// from. `current` is the only mutable thing — a pointer, moved
-// forward by migrations and back by rollback. The whole store
+// from. `current` is the only mutable thing — a pointer to the record
+// in force; earlier records stay addressable. The whole store
 // persists to IndexedDB as plain data (the project's persistence
 // rule: state survives reloads; proxies never cross).
 // ---------------------------------------------------------------------
@@ -401,44 +385,6 @@ export function currentDocument(kind: string): DocRecord | null {
   return entry.records[entry.current] ?? null;
 }
 
-/// The chain of versions from current back to the seed (the
-/// `produced_by` links). Rollback walks this list.
-export function documentHistory(kind: string): DocRecord[] {
-  const chain: DocRecord[] = [];
-  let record = currentDocument(kind);
-  while (record) {
-    chain.push(record);
-    const from = record.produced_by?.from;
-    record = from ? (documents.kinds[kind]?.records[from] ?? null) : null;
-  }
-  return chain;
-}
-
-/// Roll back: move the current pointer one step back along the
-/// produced_by chain. The forward record stays addressable — nothing
-/// is destroyed, history is just re-pointed.
-export async function rollbackDocument(kind: string): Promise<DocRecord | null> {
-  const entry = documents.kinds[kind];
-  const current = currentDocument(kind);
-  const from = current?.produced_by?.from;
-  if (!entry || !from) return null;
-  entry.current = from;
-  await persistDocuments();
-  return entry.records[from] ?? null;
-}
-
-/// Version arithmetic, host-side and domain-free: can this capability
-/// read the current document, or migrate it to a version it speaks?
-export function documentPlan(kind: string, cap: Capability): { readable: boolean; migration: boolean } {
-  const current = currentDocument(kind);
-  if (!current) return { readable: false, migration: false };
-  const spoken = cap.speaks[kind] ?? [];
-  if (spoken.includes(current.version)) return { readable: true, migration: false };
-  const steps = cap.migrates[kind] ?? [];
-  const bridged = steps.some((step) => step.from === current.version && spoken.includes(step.to));
-  return { readable: bridged, migration: bridged };
-}
-
 // ---------------------------------------------------------------------
 // Typed per-capability wrappers — components never see the ABI.
 // ---------------------------------------------------------------------
@@ -447,28 +393,10 @@ const OP_LOAD_FEED = 0;
 
 export type GtfsLoadFeed = { feedHash: string; summary: FeedSummary };
 
-const gtfsFeeds: Record<string, Map<string, string>> = {};
-
 /// The current gtfs module, if the bus assembled one.
 export async function gtfsModule(): Promise<CapModule | null> {
   const modules = await ensure(["gtfs"]);
   return modules.gtfs ?? null;
-}
-
-/// Register the active feed in cap-gtfs, memoized by the bytes'
-/// content hash — the station board's fallback queries it by hash.
-/// THE MODULE IS THE HASH AUTHORITY (its returned feed_hash is the
-/// identity; the memo key is only the host's "did I already load
-/// these bytes" check).
-export async function ensureGtfsFeed(bytes: Uint8Array): Promise<string | null> {
-  const module = await gtfsModule();
-  if (!module) return null;
-  const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
-  const memo = (gtfsFeeds[module.cap.id] ??= new Map());
-  if (!memo.has(memoKey)) {
-    memo.set(memoKey, gtfsCap(module).loadFeed(bytes).feedHash);
-  }
-  return memo.get(memoKey) ?? null;
 }
 
 export function gtfsCap(module: CapModule) {
@@ -489,35 +417,6 @@ export function gtfsCap(module: CapModule) {
       return resp.info;
     },
   };
-}
-
-/// Migrate the current watchlist forward through a capability's
-/// migration op: the module produces the new document, the STORE keeps
-/// both — the new record's produced_by names the old one, and
-/// rollback is a pointer move. Returns the new record and the loss
-/// notes (never silent).
-export async function migrateWatchlistForward(
-  capabilityId: string,
-): Promise<{ record: DocRecord; notes: MigrationNote[] } | { error: string }> {
-  const module = caps.modules[capabilityId];
-  const current = currentDocument("watchlist");
-  if (!module || !current) return { error: "no watchlist or capability loaded" };
-  const document = JSON.parse(current.bytes) as Watchlist;
-  const board = boardCap(module);
-  const { document: migrated, notes } = board.migrateWatchlist(document);
-  const canonical = JSON.stringify(migrated);
-  const hash = await hashDocument(canonical);
-  const entry = (documents.kinds["watchlist"] ??= { records: {}, current: null });
-  const record: DocRecord = {
-    hash,
-    version: migrated.version === "v2" ? 2 : 1,
-    bytes: canonical,
-    produced_by: { op: "migrate", from: current.hash, by: capabilityId },
-  };
-  entry.records[hash] = record;
-  entry.current = hash;
-  await persistDocuments();
-  return { record, notes };
 }
 
 // ---------------------------------------------------------------------
@@ -660,20 +559,6 @@ export function analysisCap(module: CapModule) {
   };
 }
 
-/// Register the current network document in cap-analysis, memoized —
-/// the document crosses the seam once per edit, not once per query.
-/// THE MODULE IS THE HASH AUTHORITY: its canonical serialization
-/// decides the document's identity (the host's JSON.stringify can
-/// differ in float formatting, so the host never mints its own).
-export async function ensureAnalysisNetwork(document: Network): Promise<string | null> {
-  const module = await analysisModule();
-  if (!module) return null;
-  const memoKey = await contentHash(networkBytes(document));
-  const memo = (analysisNetworks[module.cap.id] ??= new Map());
-  if (!memo.has(memoKey)) memo.set(memoKey, module.loadNetwork(document));
-  return memo.get(memoKey) ?? null;
-}
-
 /// The layer registration answer — the whole import handle: the
 /// content hash coverage addresses the layer by, plus the field the
 /// parse picked and the people it found (what the import UI shows).
@@ -707,8 +592,6 @@ export async function ensureAnalysisLayer(
   }
   return memo.get(memoKey) ?? null;
 }
-
-const analysisNetworks: Record<string, Map<string, string>> = {};
 const analysisLayers: Record<string, Map<string, AnalysisLayerHandle>> = {};
 
 /// The current analysis module, if the bus assembled one.
@@ -868,16 +751,6 @@ export async function routerModule(): Promise<CapModule | null> {
   return modules.router ?? null;
 }
 
-/// The composition law, host-side: load the same document bytes into
-/// two capabilities and assert they agree on its identity. This is
-/// the moment "same document, same truth" stops being a convention —
-/// it is a check the host performs at every composition.
-export function assertSameDocument(a: GtfsLoadFeed, b: GtfsLoadFeed, kind = "feed"): void {
-  if (a.feedHash !== b.feedHash) {
-    throw new Error(`${kind} identity disagrees across capabilities: ${a.feedHash} != ${b.feedHash}`);
-  }
-}
-
 // ---------------------------------------------------------------------
 // The network capability — the second REAL capability extracted from
 // the monolith (the codec: import / validate / export). The planner's
@@ -939,32 +812,6 @@ export function networkCap(module: CapModule) {
 export async function networkModule(): Promise<CapModule | null> {
   const modules = await ensure(["network"]);
   return modules.network ?? null;
-}
-
-const networkDocuments: Record<string, Map<string, string>> = {};
-
-/// Register the current network document in cap-network, memoized —
-/// the document crosses the seam once per edit, not once per query.
-/// THE MODULE IS THE HASH AUTHORITY: its canonical serialization
-/// decides the document's identity (the host never mints its own).
-export async function ensureNetworkDocument(document: Network): Promise<string | null> {
-  const module = await networkModule();
-  if (!module) return null;
-  const memoKey = await contentHash(networkBytes(document));
-  const memo = (networkDocuments[module.cap.id] ??= new Map());
-  if (!memo.has(memoKey)) {
-    memo.set(memoKey, networkCap(module).loadDocument(document));
-  }
-  return memo.get(memoKey) ?? null;
-}
-
-/// Standard base64 → bytes (the export op's payload crosses the JSON
-/// seam encoded; the host decodes and holds the bytes).
-export function base64Decode(text: string): Uint8Array {
-  const binary = atob(text);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
 }
 
 // ---------------------------------------------------------------------
@@ -1171,289 +1018,11 @@ export function boardCap(module: CapModule) {
   };
 }
 
-export function runcutCap(module: CapModule) {
-  return {
-    loadNetwork(network: Network): string {
-      return module.loadNetwork(network);
-    },
-    loadEdits(
-      networkHash: string,
-      records: EditRecord[],
-    ): { editsHash: string; reports: EditReport[] } {
-      const resp = module.invoke({
-        op: "load_edits",
-        network_hash: networkHash,
-        records,
-      } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "load_edits" }>;
-      return { editsHash: resp.edits_hash, reports: resp.reports };
-    },
-    /// The day's blocks list — the index facet (vehicles out, with
-    /// that day's running trip counts).
-    blocks(networkHash: string, editsHash: string | null, date: string): DayBlock[] {
-      const resp = module.invoke({
-        op: "blocks",
-        network_hash: networkHash,
-        edits_hash: editsHash,
-        date,
-      } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "blocks" }>;
-      return resp.blocks;
-    },
-    /// One block's authored chain with the layover ripple — the
-    /// detail facet.
-    blockTrips(
-      networkHash: string,
-      editsHash: string | null,
-      blockId: string,
-      date: string,
-    ): BlockChainTrip[] {
-      const resp = module.invoke({
-        op: "block_trips",
-        network_hash: networkHash,
-        edits_hash: editsHash,
-        block_id: blockId,
-        date,
-      } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "block_trips" }>;
-      return resp.trips;
-    },
-    /// One trip instance's EFFECTIVE stops on the date — the trip
-    /// detail (its line is tripPath).
-    tripStops(
-      networkHash: string,
-      editsHash: string | null,
-      trip: string,
-      startSecs: number,
-      date: string,
-    ): TripStopView[] {
-      const resp = module.invoke({
-        op: "trip_stops",
-        network_hash: networkHash,
-        edits_hash: editsHash,
-        trip,
-        start_secs: startSecs,
-        date,
-      } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "trip_stops" }>;
-      return resp.stops;
-    },
-    /// One trip instance's line on the date, over the effective day (a
-    /// diverted trip draws its diversion).
-    tripPath(networkHash: string, editsHash: string | null, trip: string, startSecs: number, date: string): Coord[] {
-      const resp = module.invoke({
-        op: "trip_path",
-        network_hash: networkHash,
-        edits_hash: editsHash,
-        trip,
-        start_secs: startSecs,
-        date,
-      } as RuncutCapRequest) as Extract<RuncutCapResponse, { op: "trip_path" }>;
-      return resp.path;
-    },
-  };
-}
-
-export function calendarCap(module: CapModule) {
-  return {
-    loadNetwork(network: Network): string {
-      return module.loadNetwork(network);
-    },
-    /// The service keys running on a date — from the effective day
-    /// (schedule-only when no edit document is registered).
-    activeServices(networkHash: string, date: string): string[] {
-      const resp = module.invoke({
-        op: "active_services",
-        network_hash: networkHash,
-        date,
-      } as CalendarCapRequest) as Extract<CalendarCapResponse, { op: "active_services" }>;
-      return resp.services;
-    },
-  };
-}
-
 /// The current board module, if the bus assembled one.
 export async function boardModule(): Promise<CapModule | null> {
   const modules = await ensure(["board"]);
   return modules.board ?? null;
 }
-
-/// The current runcut module, if the bus assembled one.
-export async function runcutModule(): Promise<CapModule | null> {
-  const modules = await ensure(["runcut"]);
-  return modules.runcut ?? null;
-}
-
-/// The current calendar module, if the bus assembled one.
-export async function calendarModule(): Promise<CapModule | null> {
-  const modules = await ensure(["calendar"]);
-  return modules.calendar ?? null;
-}
-
-/// Everything a day view needs from a loaded feed: the derived
-/// network document (by hash, loaded in the day-view module) and the
-/// import's boundary (the published stop_sequence numbering rt
-/// updates name; trip ids are the feed's own).
-export type Boarding = {
-  feedHash: string;
-  network: Network;
-  networkHash: string;
-  boundary: Boundary;
-};
-
-/// Board the loaded feed into a day-view or planning module (board,
-/// runcut, router — the modules that answer with trip-level
-/// vocabulary): load the bytes into cap-network, import the network
-/// document, load that SAME document into the module (identities
-/// asserted equal), and carry the document and its boundary.
-/// Memoized by (module,
-/// feed) — the import runs once per feed per module per session,
-/// never per query.
-function boardings(capId: "board" | "runcut" | "router") {
-  const memo = new Map<string, Promise<Boarding | null>>();
-  return async function ensureBoarding(bytes: Uint8Array): Promise<Boarding | null> {
-    const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
-    const hit = memo.get(memoKey);
-    if (hit) return hit;
-    const boarding = (async () => {
-      const modules = await ensure(["network", capId]);
-      const network = modules.network;
-      const cap = modules[capId];
-      if (!network || !cap) return null;
-      const feedHash = networkCap(network).loadFeed(bytes).feedHash;
-      const imported = networkCap(network).import(feedHash);
-      const loaders = { board: boardCap, runcut: runcutCap, router: routerCap } as const;
-      const loadedHash = loaders[capId](cap).loadNetwork(imported.network);
-      if (loadedHash !== imported.networkHash) {
-        throw new Error(
-          `network identity disagrees across capabilities: ${loadedHash} != ${imported.networkHash}`,
-        );
-      }
-      return { feedHash, network: imported.network, networkHash: imported.networkHash, boundary: imported.boundary };
-    })();
-    boarding.catch(() => memo.delete(memoKey));
-    memo.set(memoKey, boarding);
-    return boarding;
-  };
-}
-
-export const ensureBoardBoarding = boardings("board");
-export const ensureRuncutBoarding = boardings("runcut");
-export const ensureRouterBoarding = boardings("router");
-
-const importedDocuments = new Map<string, Promise<Network | null>>();
-
-/// The rider-side NETWORK DOCUMENT, imported once per feed and held
-/// by the HOST — JS owns documents; the capabilities hold only
-/// hash-addressed views. The map's view code reads stops, patterns,
-/// and authored alignments from this document (the map is a view,
-/// not a capability).
-export function importedNetworkDocument(bytes: Uint8Array): Promise<Network | null> {
-  const load = async (): Promise<Network | null> => {
-    const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
-    const memo = importedDocuments.get(memoKey);
-    if (memo) return memo;
-    const run = (async () => {
-      const modules = await ensure(["network"]);
-      const network = modules.network;
-      if (!network) return null;
-      const feedHash = networkCap(network).loadFeed(bytes).feedHash;
-      return networkCap(network).import(feedHash).network;
-    })();
-    run.catch(() => importedDocuments.delete(memoKey));
-    importedDocuments.set(memoKey, run);
-    return run;
-  };
-  return load();
-}
-
-const editReportCaches = new Map<string, Promise<EditReport[] | null>>();
-
-/// The edit document's validation reports — the day views validate
-/// per record against the network at load_edits; the UI reads the
-/// reports off the same registration (memoized by document content:
-/// reports are content-derived). An empty document reports nothing.
-export function ensureEditReports(
-  bytes: Uint8Array,
-  records: EditRecord[],
-): Promise<EditReport[] | null> {
-  if (records.length === 0) return Promise.resolve([]);
-  const load = async (): Promise<EditReport[] | null> => {
-    const memoKey =
-      (await contentHash(bytes as Uint8Array<ArrayBuffer>)) + "\n" + JSON.stringify(records);
-    const memo = editReportCaches.get(memoKey);
-    if (memo) return memo;
-    const run = (async () => {
-      const boarding = await ensureBoardBoarding(bytes);
-      const module = boarding ? await boardModule() : null;
-      if (!module || !boarding) return null;
-      return boardCap(module).loadEdits(boarding.networkHash, records).reports;
-    })();
-    run.catch(() => editReportCaches.delete(memoKey));
-    editReportCaches.set(memoKey, run);
-    return run;
-  };
-  return load();
-}
-
-const calendarNetworks = new Map<string, Promise<string | null>>();
-
-/// Load the imported network document into the calendar module
-/// (the chips-grade read: service keys by date), memoized by feed
-/// bytes — the document crosses the seam once per feed.
-export async function ensureCalendarNetwork(bytes: Uint8Array): Promise<string | null> {
-  const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
-  const memo = calendarNetworks.get(memoKey);
-  if (memo) return memo;
-  const load = (async () => {
-    const modules = await ensure(["network", "calendar"]);
-    const network = modules.network;
-    const calendar = modules.calendar;
-    if (!network || !calendar) return null;
-    const feedHash = networkCap(network).loadFeed(bytes).feedHash;
-    const imported = networkCap(network).import(feedHash);
-    const loadedHash = calendarCap(calendar).loadNetwork(imported.network);
-    if (loadedHash !== imported.networkHash) {
-      throw new Error(
-        `network identity disagrees across capabilities: ${loadedHash} != ${imported.networkHash}`,
-      );
-    }
-    return imported.networkHash;
-  })();
-  load.catch(() => calendarNetworks.delete(memoKey));
-  calendarNetworks.set(memoKey, load);
-  return load;
-}
-
-/// Register the operator edit document against a boarded network, in
-/// a given day-view or planning module, memoized by (module,
-/// network, document) — the edits document crosses the seam once per
-/// change, not once per query. An EMPTY document is schedule-only:
-/// no load, null hash (the day views' contract).
-function editsRegistry(
-  capId: "board" | "runcut" | "router",
-  moduleOf: () => Promise<CapModule | null>,
-) {
-  const memo = new Map<string, Promise<string | null>>();
-  return function ensureEdits(
-    networkHash: string,
-    records: EditRecord[],
-  ): Promise<string | null> {
-    if (records.length === 0) return Promise.resolve(null);
-    const memoKey = capId + "\n" + networkHash + "\n" + JSON.stringify(records);
-    const hit = memo.get(memoKey);
-    if (hit) return hit;
-    const load = (async () => {
-      const module = await moduleOf();
-      if (!module) return null;
-      const loaders = { board: boardCap, runcut: runcutCap, router: routerCap } as const;
-      return loaders[capId](module).loadEdits(networkHash, records).editsHash;
-    })();
-    load.catch(() => memo.delete(memoKey));
-    memo.set(memoKey, load);
-    return load;
-  };
-}
-
-export const ensureBoardEdits = editsRegistry("board", boardModule);
-export const ensureRuncutEdits = editsRegistry("runcut", runcutModule);
-export const ensureRouterEdits = editsRegistry("router", routerModule);
 
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
@@ -1587,106 +1156,10 @@ export function directoryCap(module: CapModule) {
   };
 }
 
-/// The directory over a PLAN document (the planner's lists and
-/// drill-down): the document registered once per version.
-const planHashes = new WeakMap<Network, string>();
-async function planDirectory(doc: Network): Promise<{ dir: ReturnType<typeof directoryCap>; hash: string } | null> {
-  const module = await directoryModule();
-  if (!module) return null;
-  const dir = directoryCap(module);
-  let hash = planHashes.get(doc);
-  if (!hash) {
-    hash = dir.loadNetwork(doc);
-    planHashes.set(doc, hash);
-  }
-  return { dir, hash };
-}
-
-/// Where an entity of a plan document is on the map.
-export async function planEntityFocus(doc: Network, kind: EntityKind, id: string): Promise<EntityFocus | null> {
-  const plan = await planDirectory(doc);
-  return plan ? plan.dir.focus(plan.hash, kind, id) : null;
-}
-
-/// A plan document's rows of one kind, narrowed by a filter.
-export async function planEntities(doc: Network, kind: EntityKind, query: string): Promise<EntityRow[]> {
-  const plan = await planDirectory(doc);
-  return plan ? plan.dir.entities(plan.hash, kind, query) : [];
-}
-
-/// A plan document's route composition.
-export async function planRouteDetail(doc: Network, routeId: string): Promise<RouteDetail | null> {
-  const plan = await planDirectory(doc);
-  return plan ? plan.dir.routeDetail(plan.hash, routeId) : null;
-}
-
-/// A plan document's stop composition.
-export async function planStopDetail(doc: Network, stopId: string): Promise<StopDetail | null> {
-  const plan = await planDirectory(doc);
-  return plan ? plan.dir.stopDetail(plan.hash, stopId) : null;
-}
-
 /// The current directory module, if the bus assembled one.
 export async function directoryModule(): Promise<CapModule | null> {
   const modules = await ensure(["directory"]);
   return modules.directory ?? null;
-}
-
-
-const directoryLoads = new Map<string, Promise<boolean>>();
-
-/// Load the imported network document into the directory module and
-/// pull its lists into host state — memoized by the feed bytes'
-/// content hash, so concurrent views share one load.
-export function ensureDirectory(bytes: Uint8Array): Promise<boolean> {
-  const load = async (): Promise<boolean> => {
-    const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
-    const memo = directoryLoads.get(memoKey);
-    if (memo) return memo;
-    const run = (async () => {
-      const modules = await ensure(["network", "directory"]);
-      const network = modules.network;
-      const dir = modules.directory;
-      if (!network || !dir) return false;
-      const feedHash = networkCap(network).loadFeed(bytes).feedHash;
-      const imported = networkCap(network).import(feedHash);
-      const loadedHash = directoryCap(dir).loadNetwork(imported.network);
-      if (loadedHash !== imported.networkHash) {
-        throw new Error(
-          `network identity disagrees across capabilities: ${loadedHash} != ${imported.networkHash}`,
-        );
-      }
-      directory.networkHash = imported.networkHash;
-      directory.stops = directoryCap(dir).stops(imported.networkHash, null);
-      directory.routes = directoryCap(dir).routes(imported.networkHash);
-      return true;
-    })();
-    run.catch(() => directoryLoads.delete(memoKey));
-    directoryLoads.set(memoKey, run);
-    return run;
-  };
-  return load();
-}
-
-/// The feed line's summary — the feed document's own read (what it
-/// contains at a glance), through the gtfs capability's load_feed.
-const feedSummaries = new Map<string, Promise<FeedSummary | null>>();
-
-export function ensureFeedSummary(bytes: Uint8Array): Promise<FeedSummary | null> {
-  const load = async (): Promise<FeedSummary | null> => {
-    const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
-    const memo = feedSummaries.get(memoKey);
-    if (memo) return memo;
-    const run = (async () => {
-      const module = await gtfsModule();
-      if (!module) return null;
-      return gtfsCap(module).loadFeed(bytes).summary;
-    })();
-    run.catch(() => feedSummaries.delete(memoKey));
-    feedSummaries.set(memoKey, run);
-    return run;
-  };
-  return load();
 }
 
 // The streets capability — where along the streets: a street layer
@@ -1775,53 +1248,6 @@ export function streetsCap(module: CapModule) {
 export async function streetsModule(): Promise<CapModule | null> {
   const modules = await ensure(["streets"]);
   return modules.streets ?? null;
-}
-
-const streetGraphs = new Map<string, Promise<StreetsGraph | null>>();
-
-/// Import a street layer in cap-streets, memoized by the bytes'
-/// content hash — the GeoJSON crosses the seam once per import, and
-/// THE MODULE IS THE HASH AUTHORITY (its returned streets_hash is
-/// the document's identity; the memo key is only the host's "did I
-/// already import these bytes" check).
-export function ensureStreets(bytes: Uint8Array): Promise<StreetsGraph | null> {
-  const load = async (): Promise<StreetsGraph | null> => {
-    const memoKey = await contentHash(bytes as Uint8Array<ArrayBuffer>);
-    const memo = streetGraphs.get(memoKey);
-    if (memo) return memo;
-    const graph = (async () => {
-      const module = await streetsModule();
-      if (!module) return null;
-      return streetsCap(module).importStreets(bytes);
-    })();
-    graph.catch(() => streetGraphs.delete(memoKey));
-    streetGraphs.set(memoKey, graph);
-    return graph;
-  };
-  return load();
-}
-
-/// Sync snap for the map's click handlers (an event handler cannot
-/// await). A streets handle only exists after ensureStreets loaded
-/// the module, so a missing module here means the assembly was
-/// degraded mid-session — the click then behaves as "no street
-/// nearby", same as an off-graph click.
-export function streetsSnap(streetsHash: string, lat: number, lon: number): StreetPosition | null {
-  const module = caps.modules["streets"];
-  if (!module) return null;
-  return streetsCap(module).snap(streetsHash, lat, lon);
-}
-
-/// Sync route, same standing as streetsSnap: empty (straight-line
-/// fallback) when the module is gone.
-export function streetsRoute(
-  streetsHash: string,
-  from: StreetPosition,
-  to: StreetPosition,
-): StreetPoint[] {
-  const module = caps.modules["streets"];
-  if (!module) return [];
-  return streetsCap(module).route(streetsHash, from, to);
 }
 
 // ---------------------------------------------------------------------
@@ -1917,60 +1343,6 @@ export async function readStoredNetwork(stored: unknown): Promise<Network | null
   if (!module) return null;
   const cap = authorCap(module);
   return cap.apply(cap.loadNetwork(stored as Network), []).network;
-}
-
-// ---------------------------------------------------------------------
-// The diversion-authoring capability — the editor's draft answered
-// over the network (default pattern, interior skips, alignment,
-// traced path), the dispatcher's list, and the edit document's next
-// states (propose / retire / restore; sanitize for stored copies).
-// The host passes the clock and the record ids.
-// ---------------------------------------------------------------------
-
-export function divertCap(module: CapModule) {
-  const call = <K extends DivertCapResponse["op"]>(req: DivertCapRequest) =>
-    module.invoke(req) as Extract<DivertCapResponse, { op: K }>;
-  return {
-    loadNetwork: (network: Network): string => module.loadNetwork(network),
-    draft: (networkHash: string, draft: DiversionDraft): DraftView =>
-      call<"draft">({ op: "draft", network_hash: networkHash, draft }).view,
-    list: (networkHash: string, records: EditRecord[]): DiversionRow[] =>
-      call<"list">({ op: "list", network_hash: networkHash, records }).rows,
-    propose: (networkHash: string, draft: DiversionDraft, records: EditRecord[], recordId: string, nowMs: number): EditRecord[] =>
-      call<"propose">({ op: "propose", network_hash: networkHash, draft, records, record_id: recordId, now_ms: nowMs }).records,
-    retire: (records: EditRecord[], recordId: string, nowMs: number): EditRecord[] =>
-      call<"retire">({ op: "retire", records, record_id: recordId, now_ms: nowMs }).records,
-    restore: (records: EditRecord[], recordId: string, nowMs: number): EditRecord[] =>
-      call<"restore">({ op: "restore", records, record_id: recordId, now_ms: nowMs }).records,
-    sanitize: (records: unknown): { records: EditRecord[]; dropped: number } => {
-      const resp = call<"sanitize">({ op: "sanitize", records });
-      return { records: resp.records, dropped: resp.dropped };
-    },
-  };
-}
-
-/// The diversion-authoring module, if the bus assembled one.
-export async function divertModule(): Promise<CapModule | null> {
-  const modules = await ensure(["divert"]);
-  return modules.divert ?? null;
-}
-
-/// The imported network registered in the divert module — the base
-/// network every diversion is authored against. Memoized per document
-/// (registration serializes the whole network).
-const divertHashes = new WeakMap<Network, string>();
-export async function divertOverFeed(
-  bytes: Uint8Array,
-): Promise<{ divert: ReturnType<typeof divertCap>; networkHash: string } | null> {
-  const [module, network] = await Promise.all([divertModule(), importedNetworkDocument(bytes)]);
-  if (!module || !network) return null;
-  const divert = divertCap(module);
-  let networkHash = divertHashes.get(network);
-  if (!networkHash) {
-    networkHash = divert.loadNetwork(network);
-    divertHashes.set(network, networkHash);
-  }
-  return { divert, networkHash };
 }
 
 export async function plansModule(): Promise<CapModule | null> {

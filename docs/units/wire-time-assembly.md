@@ -7,16 +7,16 @@ Today every page loads its modules on demand from the whole
 manifest; there is no user selection, and generated UI layouts
 are hand-placed Svelte.
 
-Assemblies are per NEED and reassemble per request. The persona
-tabs (rider / dispatcher / planner) in the original app are a
-proof-of-concept cut, neither exhaustive nor the right cuts — no
-layout, manifest, or registry entry is ever keyed to a persona.
+Assemblies are per NEED and reassemble per request. Rider,
+dispatcher, and planner are examples of who has a need, neither
+exhaustive nor the right cuts — no layout, manifest, or registry
+entry is ever keyed to a persona.
 
 ## Scope
 
 - **The user's selection** — declared, persisted (IndexedDB),
-  defaulting to the whole manifest, with its store surface in the
-  DataSources modal.
+  defaulting to the whole manifest, with a surface in every page
+  to change it.
 - **Probe-based sections** — three states, not one "degraded":
   unassembled, starved (assembled, missing a document), ready.
 - **The UI manifest** — host-side, op → render | flow map
@@ -27,10 +27,6 @@ layout, manifest, or registry entry is ever keyed to a persona.
 - **Layouts as documents** — a generated UI's placement (today its
   `Shell.svelte`) becomes a layout document over the thin
   component catalog.
-- **The coupled components** — MapView and the entity forms are
-  coupled to the original app's `app` state. Generated UIs replace
-  them with thin components (FocusMap, ScheduleChange) rather than
-  rebuilding them in place.
 - **The agent side** — harnesses (assembly / projection / flow /
   budget) are ephemeral, discovered then crystallized, never
   pre-built.

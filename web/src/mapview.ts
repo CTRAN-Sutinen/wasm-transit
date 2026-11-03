@@ -1,9 +1,8 @@
 // The map's GeoJSON shaping — and nothing else. Every line the map
-// draws is an ANSWER from the bus (a trip's line: cap-runcut
-// trip_path; an itinerary's legs: cap-router itinerary_paths; a
-// planner entity: cap-directory focus; the diversion ghost:
-// cap-divert's draft view); this module only turns [{lat, lon}]
-// into GeoJSON's [lon, lat]. No geometry is computed here.
+// draws is an ANSWER from the bus (an itinerary's legs: cap-router
+// itinerary_paths; a route or entity: cap-directory focus); this
+// module only turns [{lat, lon}] into GeoJSON's [lon, lat]. No
+// geometry is computed here.
 
 import type { DirectoryStop } from "./types/cap_directory/DirectoryStop";
 import type { Coord } from "./types/Coord";

@@ -438,9 +438,9 @@ cap-author      The authoring capability: what does this network
                 registered for the next change, with its issues
                 and warnings. transit-network's edit module is the
                 library; `created` names the entities a change made.
-                Every host authors through it — the browser's
-                planner included (web/src/planner.ts sends edits and
-                adopts the answer; it never edits a document).
+                Every host authors through it — the service-design
+                UI included (its host sends edits and adopts the
+                answer; it never edits a document).
 cap-divert      The diversion-authoring capability: what does this
                 diversion draft amount to over the network (draft —
                 the editor's whole view; list — the edit document's
@@ -449,8 +449,9 @@ cap-divert      The diversion-authoring capability: what does this
                 — plus sanitize for stored copies. A separate need
                 from cap-sync's converge step (the Go server hosts
                 that one without a network). The host passes the
-                clock and the record ids; the browser's diversion
-                editor is a render component over these answers.
+                clock and the record ids. No browser UI authors a
+                diversion yet: drawing one is
+                `docs/units/ui-disruptions.md`'s question 4.
 
 Every module is the raw rustc output with the same four flat
 exports (no wasm-bindgen — do not reintroduce host glue).
@@ -593,24 +594,9 @@ module bytes the manifest pins and answers what the browser does.
 
 Svelte 5 runes + Vite, TypeScript end to end, as a multi-page
 build: `/` is the PICKER (`index.html` → `src/picker/`), one card
-per generated UI (below) and a link to the original app. Every page
-lives at the web root because asset fetches (`caps/manifest.json`,
-`basemap.pmtiles`) are relative.
-
-**The original app** (`app.html` → `src/main.ts`, `App.svelte`) is
-ONE shell: a sidebar
-(persona tabs + the active workflow) beside a PERSISTENT map canvas
-that never remounts on a persona switch; persona-owned layers
-DERIVE from app.persona. The map is A VIEW, not a fixture: data
-screens hide it and the rail takes the full width
-(`.map-side.hidden`; entity and service-type screens frame things
-on it). Data sources (feed, rt, streets, population layer) is a
-MODAL, not a floating panel. The Planner persona is a WORKSPACE of
-screens with a back stack, ROOTED AT SERVICE PLANS (the chain: in
-force / upcoming / superseded, fork = the service-change workflow);
-below that the network overview (per-service-type analysis —
-planners design types, not calendar dates) and drill-downs per
-entity. There is no planner drawer.
+per generated UI (below). Every page lives at the web root because
+asset fetches (`caps/manifest.json`, `basemap.pmtiles`) are
+relative. Every page is a generated UI; there is no other shell.
 
 ### Parity
 
@@ -648,47 +634,31 @@ are empty.
 File ownership:
 
 - `src/mapview.ts` only shapes GeoJSON: every line the map draws
-  is an answer from the bus (cap-runcut `trip_path`, cap-router
-  `itinerary_paths`, cap-directory `focus`, cap-divert's draft
-  alignment); it turns `[{lat, lon}]` into `[lon, lat]` and
-  computes no geometry.
-- Components are RENDER-ONLY: props in, events out, or reads of
-  `app` state plus calls into the host layer (actions.ts,
-  planner.ts, capdemo.svelte.ts). No component imports the
-  resolver (the WEB GATES in `just test`).
+  is an answer from the bus (cap-router `itinerary_paths`,
+  cap-directory `focus`); it turns `[{lat, lon}]` into
+  `[lon, lat]` and computes no geometry.
+- Components are RENDER-ONLY: props in, events out. No component
+  imports the resolver or a UI's host layer (the WEB GATES and the
+  GENERATED UIs gates in `just test`).
 - `src/capabilities.svelte.ts` is the bus resolver — the ONLY wasm
-  loader (components never see the ABI): manifest
-  validation, demand-driven load, byte verification against pinned
-  hashes, per-capability degradation, and the IMMUTABLE document
-  store (every version hash-chained by produced_by; `current` is a
-  pointer; migrations move it forward, rollback moves it back;
-  IndexedDB-persisted). CapabilityDemo.svelte is the visible story
-  (assembly, hash handoff, degraded state, migrate/rollback) in the
-  DataSources modal; capdemo.svelte.ts runs it.
-- `src/planner.ts` sends the planner's changes to cap-author as
-  NetworkEdits (in order, each landing on the plan it was made
-  against) and adopts the answered document; it also owns the
-  screen stack, and asks cap-directory for the list screens' rows,
-  the selected route's and stop's composition, and every kind's
-  rows for the pickers (`app.plannerRows`, `app.routeDetail`,
-  `app.stopDetail` — each tagged with what it answers, so a late
-  answer never renders under another screen — and `app.pickers`).
-- `src/state.svelte.ts` owns the documents (edit document, plan
-  set — both IndexedDB-persisted, wholesale-replaced) and the
-  loaded feed's directory store (stops, routes — written by the
-  resolver's `ensureDirectory`). Every next
-  edit document is an answer (cap-divert propose / retire /
-  restore, cap-sync's converge); a stored or synced copy is read
-  through cap-divert's `sanitize` (`actions.readEdits`). Stored
-  plans restore the same way: `restorePlans(readStoredNetwork)`
-  reads each through cap-author (an `apply` with no edits answers
-  the canonical document), so a plan saved under older field names
-  comes back in the current shape; a bare `restorePlans()` restores
-  them as stored, and `readPlan(id, readStoredNetwork)` reads one on
-  first use. The host never sniffs a shape.
-- MapView owns all map state (`window.__map`). `src/basemap.ts` is
-  the basemap choice every map view shares (local pmtiles, else
-  OpenFreeMap) and the MapLibre worker wiring.
+  loader (components never see the ABI): manifest validation,
+  demand-driven load, byte verification against pinned hashes,
+  per-capability degradation, the typed `*Cap(module)` wrappers and
+  `*Module()` getters the hosts call, and the IMMUTABLE document
+  store (every version hash-chained by `produced_by`; `current` is a
+  pointer; IndexedDB-persisted — ride-now's watchlist lives there).
+- `src/plans.svelte.ts` owns the service plans (the authored
+  network documents service-design keeps on the device: plain data,
+  wholesale-replaced, IndexedDB-persisted). Stored plans restore
+  through a module: `restorePlans(readStoredNetwork)` reads each
+  through cap-author (an `apply` with no edits answers the canonical
+  document), so a plan saved under older field names comes back in
+  the current shape; a bare `restorePlans()` restores them as
+  stored, and `readPlan(id, readStoredNetwork)` reads one on first
+  use. The host never sniffs a shape.
+- `src/basemap.ts` is the basemap choice every map view shares
+  (local pmtiles, else OpenFreeMap) and the MapLibre worker wiring;
+  each map component owns its map (`window.__map` is the e2e hook).
 
 ### External services
 
@@ -754,8 +724,7 @@ The contract:
 ### Generated UIs
 
 A generated UI is a layout built for a set of questions, made from
-THIN components over its own host layer. It never builds on the
-original app. Each one is a directory, and the build, the picker,
+THIN components over its own host layer. Each one is a directory, and the build, the picker,
 and the gates discover it. Nothing central is edited to add one.
 
 ```
@@ -779,9 +748,7 @@ Shared by every generated UI:
   dark, the page base, `.wb-scroll` (a table that scrolls in its own
   box with an opaque sticky header), and the class names the shared
   components render with (`.muted`, `.table-scroll`, `.chip`,
-  `.picker-row`). A generated UI NEVER loads `app.css`: that file's
-  card and table rules belong to the app shell, and they broke the
-  first generated UI's layout.
+  `.picker-row`).
 - `src/uis/kit.ts` (host layer only): `hashIn(module, doc)` gives a
   document's hash in one module, registered once per module per
   document version; `rememberHash` adopts a hash cap-author's
@@ -798,25 +765,22 @@ Shared by every generated UI:
   and a hidden frame's node waits until it shows. `answer(module,
   op, args, run)` caches an answer by (module bytes, op, argument
   hashes) — the journal's key. Neither carries domain knowledge.
-- `src/state.svelte.ts`'s document store (`getAllPlans`,
-  `putPlan`, `setActivePlan`, `restorePlans`; the edit document)
-  is shared with the original app. JS owns the documents. A host
-  reads every plan it uses through cap-author before using it — at
-  boot with `restorePlans(readStoredNetwork)`, or on first use with a
-  bare `restorePlans()` and `readPlan(id, readStoredNetwork)` (the
+- `src/plans.svelte.ts` (`getAllPlans`, `putPlan`,
+  `setActivePlan`, `restorePlans`, `readPlan`): the service plans.
+  JS owns the documents. A host reads every plan it uses through
+  cap-author before using it — at boot with
+  `restorePlans(readStoredNetwork)`, or on first use with a bare
+  `restorePlans()` and `readPlan(id, readStoredNetwork)` (the
   service-design host: a workspace of many forks reads the two it
   opens). The UI reads documents in JavaScript, which has no serde
   aliases; only the `plan` frame, which every stored shape spells
-  alike, may be read before. The `app`
-  object is the original app's screen state, and generated UIs
-  never import it.
+  alike, may be read before.
 - `src/basemap.ts`: the basemap style choice and the MapLibre
   worker wiring, for any map view.
 
-The component catalog. A component is THIN if and only if it
-imports none of the app shell's host modules (`state.svelte`,
-`planner`, `actions`, `capdemo.svelte`). The gate checks that rule
-on every component a generated UI imports.
+The component catalog. Every component is THIN: props in, events
+out, formatting only; it imports neither the resolver nor a UI's
+host layer (the gates check both).
 
 - Thin, usable by any generated UI: Unavailable (a frame with no
   answer, said plainly: what is missing and why — an op or decision
@@ -845,9 +809,7 @@ on every component a generated UI imports.
   (`route_detail` directions), TimetableGrid (directory `timetable`,
   added, retimed, and removed trips when asked against a baseline; a stop
   column click is an event), FocusMap (a
-  directory `focus` drawn and framed), BlocksPanel (runcut
-  `blocks` / `block_trips`), DepartureBoard (`stop_board`), RtPanel
-  (the live summary), TripPlanner (from, to, depart → `onplan`),
+  directory `focus` drawn and framed),
   Combobox (a searchable picker), and the rider's set: RideMap (every
   stop, the live buses by status, a route's `focus`, a trip's
   `itinerary_paths`, the rider's location; a tapped stop or spot is
@@ -875,11 +837,6 @@ on every component a generated UI imports.
   (clock times, a row's wait, status words and tones). Each
   frame whose capability can fail takes an `off` prop: a capability
   that did not assemble turns its frame off, and the frame says so.
-- Coupled to the original app (do not compose; build a thin one
-  instead): MapView, PlannerRail, PersonaTabs, DataSources,
-  CapabilityDemo, PlanOverlay, DiversionPanel, and the entity forms
-  (RouteForm, StopForm, PatternForm, ScheduleForm,
-  ServiceTypeForm, BlockForm).
 
 The procedure. Every generated UI follows it in order, and a step
 that is not done blocks the next. A UI's open work is its unit,
@@ -948,10 +905,9 @@ unit is written before any code and deleted when the UI lands.
 
 Gates (`just test`, GENERATED UIs and the WEB GATES): every `src/uis/<id>/`
 has its `ui.json` (with fields complete, and id equal to the
-directory), its page, and its spec. No generated UI or picker file
-imports the resolver from a `.svelte` file, or imports planner,
-actions, capdemo, App, or the `app` object. Every component a UI
-imports is thin. The build also refuses a UI directory without
+directory), its page, and its spec. No `.svelte` file imports the
+resolver; no UI imports another UI's files; no component imports a
+UI's host layer. The build also refuses a UI directory without
 its page (`vite.config.js`), and the picker's spec
 (`e2e/picker.spec.mjs`) checks one card per `ui.json`.
 
@@ -1294,11 +1250,12 @@ cap-streets    The street-graph capability: where along the
                 graph is built on first walks, the street graph on
                 first snap — a host that only walks never builds the
                 other. The domain code lives in the shared
-                transit-streets library; the module writes nothing. Its consumer
-                today is the detour editor (the original app's
-                DataSources import; the map draws the document, so it
-                shows exactly what routes); drawing a pattern on
-                streets is the next (`docs/units/streets-model.md`).
+                transit-streets library; the module writes nothing. Its consumers
+                today are the server (the streets and walk table it
+                publishes) and ride-now (walks from a point to the
+                stops near it); drawing a detour or a pattern on
+                streets is next (`docs/units/streets-model.md`,
+                `docs/units/ui-disruptions.md`).
 ```
 
 ### Bus rules (load-bearing)

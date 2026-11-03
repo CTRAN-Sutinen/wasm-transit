@@ -14,7 +14,10 @@ units it depends on are:
 - **Memory and the main thread** — eviction, the bus worker, and
   reclaiming memory, [module-runtime.md](module-runtime.md); the
   measured ceilings, [runtime-cost-gate.md](runtime-cost-gate.md).
-  The budgets those ceilings must come under — Blocked: D-68.
+  The budgets those ceilings must come under (D-68): wasm + JS heap
+  at most 40 MB on the display, flat across 24 h; at most 80 MB for
+  ride-now, its first board under 3 s cold and 1 s cached, no
+  main-thread task over 50 ms after first paint.
 - **Versioning** — [document-versioning.md](document-versioning.md).
 
 ## Scope (owned here)

@@ -1,7 +1,7 @@
 // The front door: / lists every generated UI (one card per
-// src/uis/<id>/ui.json, discovered at build time) and demotes the
-// original app to a link. The expected set is read from the source
-// tree, so a new UI is covered without editing this spec.
+// src/uis/<id>/ui.json, discovered at build time). The expected set
+// is read from the source tree, so a new UI is covered without
+// editing this spec.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -14,7 +14,7 @@ const uis = fs
   .filter((d) => d.isDirectory())
   .map((d) => JSON.parse(fs.readFileSync(path.join(uisDir, d.name, "ui.json"), "utf8")));
 
-test("the picker lists every generated UI and links the original app", async ({ page }) => {
+test("the picker lists every generated UI", async ({ page }) => {
   await page.goto("/");
   const list = page.getByTestId("ui-list");
   for (const ui of uis) {
@@ -23,10 +23,6 @@ test("the picker lists every generated UI and links the original app", async ({ 
     await expect(card).toHaveAttribute("href", `${ui.id}.html`);
   }
   await expect(list.locator("a.card")).toHaveCount(uis.length);
-
-  await page.getByTestId("original-app").click();
-  await expect(page).toHaveURL(/\/app\.html$/);
-  await page.waitForFunction(() => typeof window.__setNow === "function");
 });
 
 for (const ui of uis) {

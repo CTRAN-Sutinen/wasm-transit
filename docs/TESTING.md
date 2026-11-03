@@ -80,11 +80,13 @@ size the run).
    a running Pelias, and the e2e servers list none, so the
    no-geocoder path is the default. A runner gate stands in for an
    oracle with a `data:` URL (`--ask`).
-   The capability bus keeps its own spec (`web/e2e/caps.spec.mjs`:
-   assembly, composition, degraded state, migrate/rollback) —
-   extend it for bus-visible changes; capability law tests
-   (migration laws, validator mutation law, the dispatch
-   diversion laws) follow expectation 1.
+   The bus as a page sees it is pinned by the generated UIs' specs
+   (assembly and per-frame degraded state, `ui-ride-now` and
+   `ui-service-design`) and `web/e2e/published-network.spec.mjs`
+   (a document refused unless it registers under the pinned hash);
+   extend those for bus-visible changes. Capability law tests
+   (migration laws, validator mutation law, the dispatch diversion
+   laws) follow expectation 1.
 5. **Web parity ratchets** (`just test`, "WEB GATES"): components
    never import the capability resolver, no host code reads raw
    rt `stop_updates`, and nothing clones a document to mutate it
