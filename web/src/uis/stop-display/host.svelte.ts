@@ -10,25 +10,18 @@
 /// and how long until it does, live or scheduled, from which bay, which
 /// routes have stopped for the day, and the alerts and detours here.
 ///
-/// A capability the bus cannot assemble turns its frames OFF (`off`),
-/// and they say so — nothing here answers in its place.
+/// It asks every question through the engine (src/engine.ts) and holds
+/// documents, never modules or hashes. A capability the bus cannot
+/// assemble turns its frames OFF (`off`), and they say so — nothing
+/// here answers in its place.
 
-import {
-  boardCap,
-  boardModule,
-  directoryCap,
-  directoryModule,
-  networkCap,
-  networkModule,
-  rtCap,
-  rtModule,
-  type Live,
-} from "../../capabilities.svelte";
-import { answer, answerGraph, hashIn, rememberHash, servedNetwork, today, type CapModule } from "../kit";
+import { ask, available, load, produced, servedNetwork, Doc } from "../../engine";
+import { answerGraph, today } from "../kit";
 import type { Boundary } from "../../types/Boundary";
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
 import type { EditRecord } from "../../types/EditRecord";
 import type { GroupedBoard } from "../../types/GroupedBoard";
+import type { LiveDay } from "../../types/LiveDay";
 import type { Network } from "../../types/Network";
 
 /// The three layouts — placements of one answer, any of them at any
@@ -59,7 +52,8 @@ export const display = $state({
   routes: [] as DirectoryRoute[],
   board: null as GroupedBoard | null,
   boardError: "",
-  live: null as Live | null,
+  /// Whether the live document answered (the header's live mark).
+  live: false,
   liveAt: "",
   liveError: "",
   /// The host's clock, seconds since local midnight, for the header.
@@ -71,12 +65,18 @@ export const display = $state({
 // server's), the live snapshots (decoded per poll)
 // ---------------------------------------------------------------------
 
-let network: Network | null = null;
-let boundary: Boundary | null = null;
-let edits: EditRecord[] = [];
+let network: Doc<Network> | null = null;
+let boundary: Doc<Boundary> | null = null;
+/// The edit document over the network — null when empty (schedule
+/// only, the day views' contract).
+let edits: Doc<EditRecord[]> | null = null;
 let editsText = "[]";
+/// THE live document (rt's answer over the snapshots), by which every
+/// board reads the live feeds.
+let live: Doc<LiveDay> | null = null;
 let urls: LiveUrls = { trips: "", vehicles: "", alerts: "" };
-const snapshots = { trips: null as string | null, vehicles: null as string | null, alerts: null as string | null };
+/// The decoded live feeds, one document per poll's bytes.
+const snapshots = { trips: null as Doc | null, vehicles: null as Doc | null, alerts: null as Doc | null };
 /// The stop asked for, by id (the URL's), until the directory names it.
 let stopId: string | null = null;
 let query = "";
@@ -97,31 +97,6 @@ function fail(e: unknown): void {
   console.error(e);
 }
 
-/// The edit document registered once per version (null when empty —
-/// schedule-only, the day views' contract), and the live document
-/// registered once (its identity asserted equal to rt's).
-const editRegs = new WeakMap<EditRecord[], string>();
-function editsIn(module: CapModule): string | null {
-  if (!network || edits.length === 0) return null;
-  let hash = editRegs.get(edits);
-  if (!hash) editRegs.set(edits, (hash = boardCap(module).loadEdits(hashIn(module, network), edits).editsHash));
-  return hash;
-}
-
-const liveSeen = new Set<string>();
-function liveIn(module: CapModule): string | null {
-  const live = display.live;
-  if (!live) return null;
-  if (!liveSeen.has(live.liveHash)) {
-    const hash = boardCap(module).loadLive(live.live);
-    if (hash !== live.liveHash) throw new Error(`live identity disagrees across capabilities: ${hash} != ${live.liveHash}`);
-    liveSeen.add(hash);
-  }
-  return live.liveHash;
-}
-
-let boundaryHash: string | null = null;
-
 // ---------------------------------------------------------------------
 // TRANSIENT — this UI's answer graph (src/uis/kit.ts, "the answer
 // graph"): the first draft of its flow map. Inputs: "network",
@@ -138,11 +113,9 @@ const request = answerGraph(
       frame: "DisplayAlerts",
       needs: ["network"],
       run: async () => {
-        const directory = await directoryModule();
-        display.off.directory = !directory;
-        if (!network || !directory) return;
-        const hash = hashIn(directory, network);
-        display.routes = answer(directory, "routes", [hash], () => directoryCap(directory).routes(hash));
+        display.off.directory = !(await available("directory"));
+        if (!network || display.off.directory) return;
+        display.routes = (await ask("directory", "routes", { network_hash: network })).routes;
       },
     },
     {
@@ -155,14 +128,12 @@ const request = answerGraph(
         display.found = null;
       },
       run: async () => {
-        const directory = await directoryModule();
         const text = query.trim();
-        if (!network || !directory || !text) {
+        if (!network || !text || !(await available("directory"))) {
           display.found = null;
           return;
         }
-        const hash = hashIn(directory, network);
-        const stops = answer(directory, "stops", [hash, text, FOUND], () => directoryCap(directory).stops(hash, FOUND, text));
+        const { stops } = await ask("directory", "stops", { network_hash: network, limit: FOUND, query: text });
         display.found = { text, places: stops.map((s) => ({ id: s.stop_id, name: s.name })) };
       },
     },
@@ -172,15 +143,13 @@ const request = answerGraph(
       frame: "DisplayHeader",
       needs: ["network", "stop"],
       run: async () => {
-        const directory = await directoryModule();
-        display.off.directory = !directory;
-        if (!network || !directory || !stopId) {
+        display.off.directory = !(await available("directory"));
+        if (!network || display.off.directory || !stopId) {
           display.stop = null;
           return;
         }
-        const hash = hashIn(directory, network);
         const id = stopId;
-        const [stop] = answer(directory, "stops_by_ids", [hash, id], () => directoryCap(directory).stopsByIds(hash, [id]));
+        const [stop] = (await ask("directory", "stops_by_ids", { network_hash: network, ids: [id] })).stops;
         display.stop = stop ? { id: stop.stop_id, name: stop.name } : { id, name: id };
       },
     },
@@ -191,18 +160,22 @@ const request = answerGraph(
       frame: "DisplayHeader",
       needs: ["network", "snapshot"],
       run: async () => {
-        const rt = await rtModule();
-        display.off.rt = !rt;
+        display.off.rt = !(await available("rt"));
         const { trips, vehicles, alerts } = snapshots;
-        if (!network || !boundary || !rt || (!trips && !vehicles && !alerts)) {
-          display.live = null;
+        if (!network || !boundary || display.off.rt || (!trips && !vehicles && !alerts)) {
+          live = null;
+          display.live = false;
           return;
         }
-        const cap = rtCap(rt);
-        const networkHash = hashIn(rt, network);
-        boundaryHash ??= cap.loadBoundary(boundary);
-        const bh = boundaryHash;
-        display.live = answer(rt, "live", [networkHash, bh, trips, vehicles, alerts], () => cap.live(networkHash, bh, trips, vehicles, alerts));
+        const answer = await ask("rt", "live", {
+          network_hash: network,
+          boundary_hash: boundary,
+          rt_hash: trips ?? undefined,
+          vp_hash: vehicles ?? undefined,
+          alerts_hash: alerts ?? undefined,
+        });
+        live = produced("live", answer.live, "rt", answer.live_hash);
+        display.live = true;
       },
     },
     {
@@ -212,15 +185,22 @@ const request = answerGraph(
       frame: "DisplayGroup",
       needs: ["network", "edits", "rt.live", "stop", "clock"],
       run: async () => {
-        const board = await boardModule();
-        display.off.board = !board;
-        if (!network || !board || !stopId) {
+        display.off.board = !(await available("board"));
+        if (!network || display.off.board || !stopId) {
           display.board = null;
           return;
         }
         try {
-          const args = [hashIn(board, network), editsIn(board), stopId, today(), nowSecs(), null, liveIn(board)] as const;
-          display.board = answer(board, "grouped_board", [...args], () => boardCap(board).groupedBoard(...args));
+          display.board = (
+            await ask("board", "grouped_board", {
+              network_hash: network,
+              edits_hash: edits ?? undefined,
+              stop_id: stopId,
+              date: today(),
+              from_secs: nowSecs(),
+              live_hash: live ?? undefined,
+            })
+          ).board;
           display.boardError = "";
         } catch (e) {
           console.error(e);
@@ -240,8 +220,8 @@ const request = answerGraph(
 export async function boot(): Promise<void> {
   readUrl();
   await restoreUrls();
-  await withNetworkModule("the agency's network", async (module) => {
-    const served = await servedNetwork(module);
+  await adoptNetwork("the agency's network", async () => {
+    const served = await servedNetwork();
     if (served) return served;
     display.status = "This server publishes no network — load the agency's GTFS zip to begin.";
     return null;
@@ -254,34 +234,37 @@ export async function boot(): Promise<void> {
 /// A GTFS zip loaded here becomes the network document (and its
 /// boundary, the stop_sequence numbering the live feeds name).
 export function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
-  return withNetworkModule(label, (module) => {
-    const cap = networkCap(module);
-    const imported = cap.import(cap.loadFeed(bytes).feedHash);
-    rememberHash(module, imported.network, imported.networkHash);
-    return imported;
+  return adoptNetwork(label, async () => {
+    const feed = new Doc("feed", { bytes });
+    const imported = await ask("network", "import", { feed_hash: feed });
+    return {
+      network: produced("network", imported.network, "network", imported.network_hash),
+      boundary: new Doc<Boundary>("boundary", { value: imported.boundary }),
+    };
   });
 }
 
 /// Adopt the network (and boundary) `obtain` answers, then answer
 /// everything over it.
-async function withNetworkModule(
+async function adoptNetwork(
   label: string,
-  obtain: (module: CapModule) => Promise<{ network: Network; boundary: Boundary } | null> | { network: Network; boundary: Boundary },
+  obtain: () => Promise<{ network: Doc<Network>; boundary: Doc<Boundary> } | null>,
 ): Promise<void> {
   display.busy = true;
   display.status = `Loading ${label}…`;
   await new Promise((r) => setTimeout(r, 20));
   try {
-    const module = await networkModule();
-    if (!module) {
+    if (!(await available("network"))) {
       display.status = "The network capability is unavailable — nothing can be answered without it.";
       return;
     }
-    const got = await obtain(module);
+    const got = await obtain();
     if (!got) return;
     network = got.network;
     boundary = got.boundary;
-    display.feed = network.name || label;
+    edits = null;
+    editsText = "[]";
+    display.feed = network.value?.name || label;
     display.status = "";
     await Promise.all([syncEdits(), fetchLive()]);
     await request("network", "edits", "snapshot", "clock", "query", "stop", "setup");
@@ -307,6 +290,7 @@ export async function poll(): Promise<void> {
 /// server, or an unreadable answer, keeps the last good document.
 /// True when it changed.
 async function syncEdits(): Promise<boolean> {
+  if (!network) return false;
   try {
     const resp = await fetch("/edits");
     if (!resp.ok) return false;
@@ -314,7 +298,7 @@ async function syncEdits(): Promise<boolean> {
     const records = JSON.parse(text) as EditRecord[];
     if (text === editsText) return false;
     editsText = text;
-    edits = Array.isArray(records) ? records : [];
+    edits = Array.isArray(records) && records.length > 0 ? new Doc("edits", { value: records }, { over: network }) : null;
     return true;
   } catch (e) {
     console.warn("edit sync failed:", e);
@@ -328,18 +312,20 @@ async function syncEdits(): Promise<boolean> {
 async function fetchLive(): Promise<boolean> {
   const kinds = (["trips", "vehicles", "alerts"] as const).filter((k) => urls[k]);
   if (kinds.length === 0) return false;
-  const rt = await rtModule();
-  display.off.rt = !rt;
-  if (!rt) return false;
+  display.off.rt = !(await available("rt"));
+  if (display.off.rt) return false;
   let changed = false;
   const errors: string[] = [];
   for (const kind of kinds) {
     try {
       const resp = await fetch(`/rt?url=${encodeURIComponent(urls[kind])}`);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const hash = rtCap(rt).decode(new Uint8Array(await resp.arrayBuffer())).rtHash;
-      if (hash !== snapshots[kind]) changed = true;
-      snapshots[kind] = hash;
+      const snapshot = new Doc("gtfs_rt", { bytes: new Uint8Array(await resp.arrayBuffer()) });
+      const { hash } = await load("rt", snapshot);
+      if (hash !== snapshots[kind]?.hash) {
+        changed = true;
+        snapshots[kind] = snapshot;
+      }
     } catch (e) {
       errors.push(`${kind}: ${(e as Error).message}`);
     }

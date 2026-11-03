@@ -410,6 +410,18 @@ test: caps
         echo "$violations"
         exit 1
     fi
+    # DETERMINISM (docs/units/host-discipline.md): modules are pure — no
+    # clock, randomness, or environment in any crate's library code;
+    # hosts pass time in (`now_ms`, dates, seconds since midnight), so
+    # an answer is a function of its inputs and the engine's journal
+    # key is sound. Binaries (src/bin/) and build scripts are hosts.
+    violations=$(grep -rnE 'SystemTime|Instant::now|Utc::now|Local::now|std::env::|env::var|thread_rng|rand::|getrandom|OsRng' crates/*/src --include='*.rs' \
+        | grep -v '/src/bin/' || true)
+    if [ -n "$violations" ]; then
+        echo "ARCH FAIL: a clock, randomness, or the environment inside a module (hosts pass time in):"
+        echo "$violations"
+        exit 1
+    fi
     # WEB GATES — parity (docs/ARCHITECTURE.md, web section, "Parity"): the
     # browser runs the same ops as caps-run and the Go server, so
     # web/ holds host glue and render components, never answers.
@@ -448,6 +460,17 @@ test: caps
         "" \
         "$(grep -rl 'structuredClone' web/src --include='*.ts' --include='*.svelte' | grep -v '^web/src/types/' | sort | tr '\n' ' ')" \
         "clones a document to mutate it; send NetworkEdits through cap-author"
+    # W0d: one op caller (docs/units/host-discipline.md) — the engine
+    # (src/engine.ts) is the only importer of the resolver and the only
+    # caller of a module's ABI; hosts ask it, holding documents.
+    ratchet resolver-outside-engine \
+        "" \
+        "$(grep -rl 'capabilities\.svelte' web/src --include='*.ts' --include='*.svelte' | grep -v '^web/src/engine\.ts$' | grep -v '^web/src/types/' | sort | tr '\n' ' ')" \
+        "imports the capability resolver; ask through the engine (src/engine.ts)"
+    ratchet abi-outside-engine \
+        "" \
+        "$(grep -rlE 'invokeText|invokeBytes|transit_invoke' web/src --include='*.ts' --include='*.svelte' | grep -vE '^web/src/(engine|capabilities\.svelte)\.ts$' | grep -v '^web/src/types/' | sort | tr '\n' ' ')" \
+        "calls a module's ABI; ask through the engine (src/engine.ts)"
     # GENERATED UIs (docs/ARCHITECTURE.md, "Generated UIs"): each
     # src/uis/<id>/ carries its descriptor, its page, and its e2e spec,
     # and owns its host layer: nothing reaches into another UI's

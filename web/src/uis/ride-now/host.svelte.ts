@@ -28,35 +28,9 @@
 /// is a trip end like a dropped pin, carrying the name it was shown
 /// with; nothing durable keeps the query.
 
-import {
-  boardCap,
-  boardModule,
-  currentDocument,
-  directoryCap,
-  directoryModule,
-  networkCap,
-  networkModule,
-  putDocument,
-  restoreDocuments,
-  routerCap,
-  routerModule,
-  rtCap,
-  rtModule,
-  streetsCap,
-  streetsModule,
-  type Live,
-} from "../../capabilities.svelte";
-import {
-  answer,
-  answerGraph,
-  hashIn,
-  rememberHash,
-  servedNetwork,
-  servedStreets,
-  servedWalks,
-  today,
-  type CapModule,
-} from "../kit";
+import { ask, available, load, produced, servedNetwork, servedStreets, servedWalks, Doc } from "../../engine";
+import { currentDocument, putDocument, restoreDocuments } from "../../documents.svelte";
+import { answerGraph, today } from "../kit";
 import type { DirectWalk } from "../../types/DirectWalk";
 import type { End } from "../../types/End";
 import type { PointWalk } from "../../types/PointWalk";
@@ -70,6 +44,8 @@ import type { EditRecord } from "../../types/EditRecord";
 import type { EntityFocus } from "../../types/EntityFocus";
 import type { Itinerary } from "../../types/Itinerary";
 import type { LegPath } from "../../types/LegPath";
+import type { LiveDay } from "../../types/LiveDay";
+import type { LiveSummary } from "../../types/LiveSummary";
 import type { Network } from "../../types/Network";
 import type { StopBoard } from "../../types/StopBoard";
 import type { WatchBoardStop } from "../../types/cap_board/WatchBoardStop";
@@ -183,17 +159,24 @@ export const ride = $state({
 // sync server's), the live snapshots (decoded per poll), the watchlist
 // ---------------------------------------------------------------------
 
-let network: Network | null = null;
-let boundary: Boundary | null = null;
-let edits: EditRecord[] = [];
+let network: Doc<Network> | null = null;
+let boundary: Doc<Boundary> | null = null;
+/// The edit document over the network — null when empty (schedule
+/// only, the day views' contract).
+let edits: Doc<EditRecord[]> | null = null;
 let editsText = "[]";
-let watchlist: Watchlist | null = null;
-const snapshots = { trips: null as string | null, vehicles: null as string | null, alerts: null as string | null };
+/// The rider's saved stops, as the document the board reads.
+let watchlist: Doc<Watchlist> | null = null;
+/// THE live document (rt's answer over the snapshots), by which the
+/// boards and the router read the live feeds.
+let live: Doc<LiveDay> | null = null;
+/// The decoded live feeds, one document per poll's bytes.
+const snapshots = { trips: null as Doc | null, vehicles: null as Doc | null, alerts: null as Doc | null };
 /// The published streets (registered in the streets module) and walk
-/// table (registered in the router), by hash — null when the server
-/// publishes none.
-let streetsHash: string | null = null;
-let walksHash: string | null = null;
+/// table (registered in the router) — null when the server publishes
+/// none.
+let streets: Doc | null = null;
+let walks: Doc | null = null;
 /// The near point's walks to the stops (streets `access`).
 let nearWalks: PointWalk[] | null = null;
 /// The trip asked: its ends and its time, fixed when asked (a "now"
@@ -202,6 +185,9 @@ let trip: { from: Place; to: Place; date: string; when: When } | null = null;
 /// The planned trip's ends as the router took them — what
 /// itinerary_paths draws a place's walks from.
 let planEnds: { from: End; to: End; direct: DirectWalk | null } | null = null;
+
+/// What the live frames draw: the live document and its summary.
+type Live = { live: LiveDay; summary: LiveSummary };
 
 const HERE_ID = "@here";
 
@@ -219,14 +205,18 @@ function herePlace(): Place | null {
 /// The walks from a point to the stops (and straight to `to`), along
 /// the published streets.
 async function accessFrom(p: Place, to: Place | null): Promise<{ walks: PointWalk[]; direct: DirectWalk | null } | null> {
-  const streets = await streetsModule();
-  if (!network || !streets || !streetsHash || p.lat == null || p.lon == null) return null;
-  const [cap, sh, nh] = [streetsCap(streets), streetsHash, hashIn(streets, network)];
+  if (!network || !streets || p.lat == null || p.lon == null || !(await available("streets"))) return null;
   const point = { lat: p.lat, lon: p.lon };
   const target = to?.lat != null && to.lon != null ? { lat: to.lat, lon: to.lon } : null;
-  return answer(streets, "access", [sh, nh, point.lat, point.lon, target?.lat ?? null, target?.lon ?? null], () =>
-    cap.access(sh, nh, point, target),
-  );
+  const { walks, direct } = await ask("streets", "access", {
+    streets_hash: streets,
+    network_hash: network,
+    point,
+    to: target,
+    speed_mps: null,
+    max_walk_secs: null,
+  });
+  return { walks, direct };
 }
 
 /// A trip's ends as the router takes them: a stop by id, a point as a
@@ -240,12 +230,6 @@ async function routerEnds(from: Place, to: Place): Promise<{ from: End; to: End;
   };
   const [f, t] = [await end(from, to), await end(to, null)];
   return { from: f.end, to: t.end, direct: f.direct };
-}
-
-/// What determines a trip's end, for the answer cache: a stop's id, a
-/// point's place and the name the router repeats.
-function endKey(p: Place): string {
-  return p.point ? `${p.id}@${p.lat},${p.lon}:${p.name}` : p.id;
 }
 
 /// The clock: seconds since local midnight. Hosts own the clock; ops
@@ -264,48 +248,18 @@ function fail(e: unknown): void {
   console.error(e);
 }
 
-/// The edit document registered once per module per version (null
-/// when empty — schedule-only, the day views' contract), and the live
-/// document registered once per module (its identity asserted equal
-/// to rt's).
-const editRegs = new WeakMap<CapModule, WeakMap<EditRecord[], string>>();
-function editsIn(module: CapModule, load: (n: string, r: EditRecord[]) => { editsHash: string }): string | null {
-  if (!network || edits.length === 0) return null;
-  let docs = editRegs.get(module);
-  if (!docs) editRegs.set(module, (docs = new WeakMap()));
-  let hash = docs.get(edits);
-  if (!hash) docs.set(edits, (hash = load(hashIn(module, network), edits).editsHash));
-  return hash;
-}
-
-const liveRegs = new WeakMap<CapModule, Set<string>>();
-function liveIn(module: CapModule, load: (live: Live["live"]) => string): string | null {
-  const live = ride.live;
-  if (!live) return null;
-  let seen = liveRegs.get(module);
-  if (!seen) liveRegs.set(module, (seen = new Set()));
-  if (!seen.has(live.liveHash)) {
-    const hash = load(live.live);
-    if (hash !== live.liveHash) throw new Error(`live identity disagrees across capabilities: ${hash} != ${live.liveHash}`);
-    seen.add(hash);
-  }
-  return live.liveHash;
-}
-
-const boundaries = new WeakMap<CapModule, string>();
-
-/// The board's arguments for one stop, now.
-function boardArgs(board: CapModule, stopId: string, rows: number) {
-  const cap = boardCap(board);
-  return [
-    hashIn(board, network!),
-    editsIn(board, cap.loadEdits),
-    stopId,
-    today(),
-    nowSecs(),
-    rows,
-    liveIn(board, cap.loadLive),
-  ] as const;
+/// One stop's board, now.
+async function stopBoard(stopId: string, rows: number): Promise<StopBoard> {
+  const answer = await ask("board", "stop_board", {
+    network_hash: network!,
+    edits_hash: edits ?? undefined,
+    stop_id: stopId,
+    date: today(),
+    from_secs: nowSecs(),
+    limit: rows,
+    live_hash: live ?? undefined,
+  });
+  return answer.board;
 }
 
 // ---------------------------------------------------------------------
@@ -326,13 +280,10 @@ const request = answerGraph(
       frame: "RideMap",
       needs: ["network"],
       run: async () => {
-        const directory = await directoryModule();
-        ride.off.directory = !directory;
-        if (!network || !directory) return;
-        const dir = directoryCap(directory);
-        const hash = hashIn(directory, network);
-        ride.stops = answer(directory, "stops", [hash], () => dir.stops(hash, null));
-        ride.routes = answer(directory, "routes", [hash], () => dir.routes(hash));
+        ride.off.directory = !(await available("directory"));
+        if (!network || ride.off.directory) return;
+        ride.stops = (await ask("directory", "stops", { network_hash: network, limit: null })).stops;
+        ride.routes = (await ask("directory", "routes", { network_hash: network })).routes;
       },
     },
     {
@@ -341,14 +292,13 @@ const request = answerGraph(
       frame: "PlaceSearch",
       needs: ["network", "query"],
       run: async () => {
-        const [q, directory] = [ride.query, await directoryModule()];
-        if (!network || !directory || !q || !q.text.trim()) {
+        const q = ride.query;
+        if (!network || !q || !q.text.trim() || !(await available("directory"))) {
           ride.found = null;
           return;
         }
-        const hash = hashIn(directory, network);
         const text = q.text.trim();
-        const stops = answer(directory, "stops", [hash, text, FOUND], () => directoryCap(directory).stops(hash, FOUND, text));
+        const { stops } = await ask("directory", "stops", { network_hash: network, limit: FOUND, query: text });
         ride.found = { field: q.field, text, places: stops.map((s) => ({ id: s.stop_id, name: s.name, lat: s.lat, lon: s.lon })) };
       },
     },
@@ -369,16 +319,18 @@ const request = answerGraph(
       frame: "NearbyList",
       needs: ["network", "near", "streets.access[near]"],
       run: async () => {
-        const [near, directory] = [ride.near, await directoryModule()];
-        if (!network || !directory || !near) {
+        const near = ride.near;
+        if (!network || !near || !(await available("directory"))) {
           ride.nearby = null;
           return;
         }
-        const hash = hashIn(directory, network);
-        const walks = nearWalks ?? undefined;
-        const stops = answer(directory, "stops_near", [hash, near.lat, near.lon, NEARBY, walks ? streetsHash : null], () =>
-          directoryCap(directory).stopsNear(hash, near.lat, near.lon, NEARBY, undefined, walks),
-        );
+        const { stops } = await ask("directory", "stops_near", {
+          network_hash: network,
+          lat: near.lat,
+          lon: near.lon,
+          limit: NEARBY,
+          walks: nearWalks ?? undefined,
+        });
         ride.nearby = stops.map((s) => ({
           id: s.stop_id,
           name: s.name,
@@ -396,22 +348,25 @@ const request = answerGraph(
       frame: "LiveFeeds",
       needs: ["network", "snapshot"],
       run: async (touch) => {
-        const rt = await rtModule();
-        ride.off.rt = !rt;
+        ride.off.rt = !(await available("rt"));
         const { trips, vehicles, alerts } = snapshots;
-        if (!network || !boundary || !rt || (!trips && !vehicles && !alerts)) {
+        if (!network || !boundary || ride.off.rt || (!trips && !vehicles && !alerts)) {
+          live = null;
           ride.live = null;
           return;
         }
-        const cap = rtCap(rt);
-        const networkHash = hashIn(rt, network);
-        let boundaryHash = boundaries.get(rt);
-        if (!boundaryHash) boundaries.set(rt, (boundaryHash = cap.loadBoundary(boundary)));
-        const bh = boundaryHash;
-        ride.live = answer(rt, "live", [networkHash, bh, trips, vehicles, alerts], () => cap.live(networkHash, bh, trips, vehicles, alerts));
+        const answer = await ask("rt", "live", {
+          network_hash: network,
+          boundary_hash: boundary,
+          rt_hash: trips ?? undefined,
+          vp_hash: vehicles ?? undefined,
+          alerts_hash: alerts ?? undefined,
+        });
+        live = produced("live", answer.live, "rt", answer.live_hash);
+        ride.live = { live: answer.live, summary: answer.summary };
         // A picked bus that moved on to its next trip is followed onto it.
         const v = ride.vehicle;
-        const now = v && ride.live.live.vehicles.find((x) => x.key === v.key);
+        const now = v && answer.live.vehicles.find((x) => x.key === v.key);
         if (v && now && (now.trip !== v.trip || now.route !== v.route)) {
           ride.vehicle = { key: v.key, trip: now.trip, route: now.route };
           touch("vehicle");
@@ -427,15 +382,14 @@ const request = answerGraph(
         ride.board = null;
       },
       run: async (touch) => {
-        const [stop, board] = [ride.stop, await boardModule()];
-        ride.off.board = !board;
-        if (!network || !board || !stop) {
+        const stop = ride.stop;
+        ride.off.board = !(await available("board"));
+        if (!network || ride.off.board || !stop) {
           ride.board = null;
           return;
         }
         try {
-          const args = boardArgs(board, stop.id, BOARD_ROWS);
-          ride.board = answer(board, "stop_board", [...args], () => boardCap(board).stopBoard(...args));
+          ride.board = await stopBoard(stop.id, BOARD_ROWS);
           ride.boardError = "";
         } catch (e) {
           console.error(e);
@@ -459,17 +413,15 @@ const request = answerGraph(
       needs: ["network", "edits", "rt.live", "directory.stops_near", "clock", "view"],
       visible: () => ride.view === "home",
       run: async () => {
-        const board = await boardModule();
-        ride.off.board = !board;
-        if (!network || !board || !ride.nearby) {
+        ride.off.board = !(await available("board"));
+        if (!network || ride.off.board || !ride.nearby) {
           ride.nearbyBoards = {};
           return;
         }
         const boards: Record<string, StopBoard | null> = {};
         for (const place of ride.nearby) {
           try {
-            const args = boardArgs(board, place.id, CARD_ROWS);
-            boards[place.id] = answer(board, "stop_board", [...args], () => boardCap(board).stopBoard(...args));
+            boards[place.id] = await stopBoard(place.id, CARD_ROWS);
           } catch (e) {
             console.error(e);
             boards[place.id] = null;
@@ -484,24 +436,21 @@ const request = answerGraph(
       needs: ["network", "edits", "rt.live", "saved", "clock", "view"],
       visible: () => ride.view === "home",
       run: async () => {
-        const board = await boardModule();
-        ride.off.board = !board;
-        if (!network || !board || !watchlist || ride.saved.length === 0) {
+        ride.off.board = !(await available("board"));
+        if (!network || ride.off.board || !watchlist || ride.saved.length === 0) {
           ride.savedBoards = null;
           return;
         }
-        const cap = boardCap(board);
-        const { watchlistHash } = cap.loadWatchlist(watchlist);
-        const args = [
-          watchlistHash,
-          hashIn(board, network),
-          editsIn(board, cap.loadEdits),
-          today(),
-          nowSecs(),
-          CARD_ROWS,
-          liveIn(board, cap.loadLive),
-        ] as const;
-        ride.savedBoards = answer(board, "watchlist_board", [...args], () => cap.watchlistBoard(...args));
+        const answer = await ask("board", "watchlist_board", {
+          watchlist_hash: watchlist,
+          network_hash: network,
+          edits_hash: edits,
+          date: today(),
+          from_secs: nowSecs(),
+          limit: CARD_ROWS,
+          live_hash: live ?? undefined,
+        });
+        ride.savedBoards = answer.stops;
       },
     },
     {
@@ -511,15 +460,13 @@ const request = answerGraph(
       frame: "RideMap",
       needs: ["network", "departure", "route", "vehicle", "view"],
       run: async () => {
-        const directory = await directoryModule();
         const route = focusRoute();
         ride.focusRoute = route;
-        if (!network || !directory || !route) {
+        if (!network || !route || !(await available("directory"))) {
           ride.routeFocus = null;
           return;
         }
-        const hash = hashIn(directory, network);
-        ride.routeFocus = answer(directory, "focus", [hash, "route", route], () => directoryCap(directory).focus(hash, "route", route));
+        ride.routeFocus = (await ask("directory", "focus", { network_hash: network, kind: "route", id: route })).focus;
       },
     },
     {
@@ -529,15 +476,13 @@ const request = answerGraph(
       needs: ["network", "routeQuery", "view"],
       visible: () => ride.view === "routes",
       run: async () => {
-        const directory = await directoryModule();
-        ride.off.directory = !directory;
-        if (!network || !directory) {
+        ride.off.directory = !(await available("directory"));
+        if (!network || ride.off.directory) {
           ride.routeRows = null;
           return;
         }
-        const hash = hashIn(directory, network);
-        const q = ride.routeQuery.trim();
-        ride.routeRows = answer(directory, "entities", [hash, "route", q], () => directoryCap(directory).entities(hash, "route", q));
+        const query = ride.routeQuery.trim();
+        ride.routeRows = (await ask("directory", "entities", { network_hash: network, kind: "route", query })).rows;
       },
     },
     {
@@ -548,13 +493,12 @@ const request = answerGraph(
       needs: ["network", "route", "view"],
       visible: () => ride.view === "route",
       run: async () => {
-        const [route, directory] = [ride.route, await directoryModule()];
-        if (!network || !directory || !route) {
+        const route = ride.route;
+        if (!network || !route || !(await available("directory"))) {
           ride.routeInfo = null;
           return;
         }
-        const hash = hashIn(directory, network);
-        ride.routeInfo = { detail: answer(directory, "route_detail", [hash, route], () => directoryCap(directory).routeDetail(hash, route)) };
+        ride.routeInfo = { detail: (await ask("directory", "route_detail", { network_hash: network, route_id: route })).detail };
       },
     },
     {
@@ -566,22 +510,21 @@ const request = answerGraph(
       needs: ["network", "snapshot", "vehicle", "view"],
       visible: () => ride.view === "bus",
       run: async () => {
-        const [v, rt, directory] = [ride.vehicle, await rtModule(), await directoryModule()];
-        if (!network || !boundary || !rt || !v?.trip || !snapshots.trips) {
+        const v = ride.vehicle;
+        if (!network || !boundary || !v?.trip || !snapshots.trips || !(await available("rt"))) {
           ride.progress = v ? { progress: null, names: [] } : null;
           return;
         }
-        const cap = rtCap(rt);
-        const networkHash = hashIn(rt, network);
-        let bh = boundaries.get(rt);
-        if (!bh) boundaries.set(rt, (bh = cap.loadBoundary(boundary)));
-        const [b, rtHash, trip] = [bh, snapshots.trips, v.trip];
-        const progress = answer(rt, "trip_progress", [networkHash, b, rtHash, trip], () => cap.tripProgress(networkHash, b, rtHash, trip));
+        const { progress } = await ask("rt", "trip_progress", {
+          network_hash: network,
+          boundary_hash: boundary,
+          rt_hash: snapshots.trips,
+          trip_id: v.trip,
+        });
         let names: DirectoryStop[] = [];
-        if (progress && directory) {
-          const hash = hashIn(directory, network);
+        if (progress && (await available("directory"))) {
           const ids = progress.stops.map((s) => s.stop_id);
-          names = answer(directory, "stops_by_ids", [hash, ...ids], () => directoryCap(directory).stopsByIds(hash, ids));
+          names = (await ask("directory", "stops_by_ids", { network_hash: network, ids })).stops;
         }
         ride.progress = { progress, names };
       },
@@ -594,33 +537,32 @@ const request = answerGraph(
       frame: "TripPlan",
       needs: ["network", "edits", "rt.live", "trip", "streets", "walks"],
       run: async () => {
-        const router = await routerModule();
-        ride.off.router = !router;
-        if (!network || !router || !trip) {
+        ride.off.router = !(await available("router"));
+        if (!network || ride.off.router || !trip) {
           ride.plan = null;
           return;
         }
-        const cap = routerCap(router);
         const t = trip;
         try {
-          const net = hashIn(router, network);
-          const ed = editsIn(router, cap.loadEdits);
-          const lv = liveIn(router, cap.loadLive);
           const ends = await routerEnds(t.from, t.to);
           planEnds = ends;
-          // The ends cross by what determines them, never as documents.
-          const key = [endKey(t.from), endKey(t.to), streetsHash, walksHash];
+          const common = {
+            network_hash: network,
+            edits_hash: edits,
+            from: ends.from,
+            to: ends.to,
+            date: t.date,
+            max_legs: MAX_LEGS,
+            live_hash: live,
+            walks_hash: walks,
+            direct: ends.direct,
+          };
           if (t.when.mode === "now" || t.when.mode === "depart") {
-            const secs = t.when.secs ?? nowSecs();
-            const { active, notice } = answer(router, "plan_compare", [net, ed, t.date, secs, MAX_LEGS, lv, ...key], () =>
-              cap.planCompare(net, ed, ends.from, ends.to, t.date, secs, MAX_LEGS, lv, walksHash, ends.direct),
-            );
-            ride.plan = { itinerary: active, notice };
+            const { active, notice } = await ask("router", "plan_compare", { ...common, depart_secs: t.when.secs ?? nowSecs() });
+            ride.plan = { itinerary: active, notice: notice?.text ?? null };
           } else {
             const deadline = t.when.mode === "arrive" ? t.when.secs : null;
-            const { itinerary } = answer(router, "plan_arrive_by", [net, ed, t.date, deadline, MAX_LEGS, lv, ...key], () =>
-              cap.planArriveBy(net, ed, ends.from, ends.to, t.date, deadline, MAX_LEGS, lv, walksHash, ends.direct),
-            );
+            const { itinerary } = await ask("router", "plan_arrive_by", { ...common, arrive_by_secs: deadline });
             ride.plan = { itinerary, notice: null };
           }
         } catch (e) {
@@ -636,13 +578,21 @@ const request = answerGraph(
       frame: "RideMap",
       needs: ["router.plan"],
       run: async () => {
-        const [it, router] = [ride.plan?.itinerary, await routerModule()];
-        if (!network || !router || !it || !trip) {
+        const it = ride.plan?.itinerary;
+        if (!network || !it || !trip || !(await available("router"))) {
           ride.paths = null;
           return;
         }
-        const cap = routerCap(router);
-        ride.paths = cap.itineraryPaths(hashIn(router, network), editsIn(router, cap.loadEdits), trip.date, it, planEnds);
+        const answer = await ask("router", "itinerary_paths", {
+          network_hash: network,
+          edits_hash: edits,
+          date: trip.date,
+          itinerary: it,
+          from: planEnds?.from ?? null,
+          to: planEnds?.to ?? null,
+          direct: planEnds?.direct ?? null,
+        });
+        ride.paths = answer.paths;
       },
     },
   ],
@@ -659,8 +609,8 @@ export async function boot(): Promise<void> {
   restoreRecent();
   void locateIfAllowed();
   void discoverServices();
-  await withNetworkModule("the agency's network", async (module) => {
-    const served = await servedNetwork(module);
+  await adoptNetwork("the agency's network", async () => {
+    const served = await servedNetwork();
     if (served) return served;
     ride.status = "This server publishes no network — load the agency's GTFS zip to begin.";
     return null;
@@ -677,12 +627,14 @@ export async function boot(): Promise<void> {
 /// stop to stop.
 async function loadStreets(): Promise<void> {
   try {
-    const [streets, router] = await Promise.all([streetsModule(), routerModule()]);
-    const [sh, wh] = await Promise.all([streets ? servedStreets(streets) : null, router ? servedWalks(router) : null]);
-    if (!sh && !wh) return;
-    streetsHash = sh;
-    walksHash = wh;
-    ride.walking = !!sh;
+    const [s, w] = await Promise.all([
+      (await available("streets")) ? servedStreets() : null,
+      (await available("router")) ? servedWalks() : null,
+    ]);
+    if (!s && !w) return;
+    streets = s;
+    walks = w;
+    ride.walking = !!s;
     await request("streets", "walks");
   } catch (e) {
     console.warn("the published streets did not load:", e);
@@ -692,34 +644,36 @@ async function loadStreets(): Promise<void> {
 /// A GTFS zip the rider loads becomes the network document (and its
 /// boundary, the stop_sequence numbering the live feeds name).
 export function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
-  return withNetworkModule(label, (module) => {
-    const cap = networkCap(module);
-    const imported = cap.import(cap.loadFeed(bytes).feedHash);
-    rememberHash(module, imported.network, imported.networkHash);
-    return imported;
+  return adoptNetwork(label, async () => {
+    const imported = await ask("network", "import", { feed_hash: new Doc("feed", { bytes }) });
+    return {
+      network: produced("network", imported.network, "network", imported.network_hash),
+      boundary: new Doc<Boundary>("boundary", { value: imported.boundary }),
+    };
   });
 }
 
 /// Adopt the network (and boundary) `obtain` answers, then answer
 /// everything over it.
-async function withNetworkModule(
+async function adoptNetwork(
   label: string,
-  obtain: (module: CapModule) => Promise<{ network: Network; boundary: Boundary } | null> | { network: Network; boundary: Boundary },
+  obtain: () => Promise<{ network: Doc<Network>; boundary: Doc<Boundary> } | null>,
 ): Promise<void> {
   ride.busy = true;
   ride.status = `Loading ${label}…`;
   await new Promise((r) => setTimeout(r, 20));
   try {
-    const module = await networkModule();
-    if (!module) {
+    if (!(await available("network"))) {
       ride.status = "The network capability is unavailable — nothing can be answered without it.";
       return;
     }
-    const got = await obtain(module);
+    const got = await obtain();
     if (!got) return;
     network = got.network;
     boundary = got.boundary;
-    ride.feed = network.name || label;
+    edits = null;
+    editsText = "[]";
+    ride.feed = network.value?.name || label;
     ride.status = "";
     await Promise.all([syncEdits(), fetchLive()]);
     await request("network", "edits", "snapshot", "clock", "query", "near", "stop", "departure", "trip", "saved", "view");
@@ -749,6 +703,7 @@ export async function poll(): Promise<void> {
 /// never writes edits. No sync server, or an unreadable answer, keeps
 /// the last good document. True when it changed.
 async function syncEdits(): Promise<boolean> {
+  if (!network) return false;
   try {
     const resp = await fetch("/edits");
     if (!resp.ok) return false;
@@ -756,7 +711,7 @@ async function syncEdits(): Promise<boolean> {
     const records = JSON.parse(text) as EditRecord[];
     if (text === editsText) return false;
     editsText = text;
-    edits = Array.isArray(records) ? records : [];
+    edits = Array.isArray(records) && records.length > 0 ? new Doc("edits", { value: records }, { over: network }) : null;
     return true;
   } catch (e) {
     console.warn("edit sync failed:", e);
@@ -774,9 +729,8 @@ async function fetchLive(): Promise<boolean> {
     snapshots.trips = snapshots.vehicles = snapshots.alerts = null;
     return !!had;
   }
-  const rt = await rtModule();
-  ride.off.rt = !rt;
-  if (!rt) return false;
+  ride.off.rt = !(await available("rt"));
+  if (ride.off.rt) return false;
   const results = await Promise.all(
     kinds.map(async (kind) => {
       try {
@@ -796,9 +750,12 @@ async function fetchLive(): Promise<boolean> {
       continue;
     }
     try {
-      const hash = rtCap(rt).decode(r.bytes).rtHash;
-      if (hash !== snapshots[r.kind]) changed = true;
-      snapshots[r.kind] = hash;
+      const snapshot = new Doc("gtfs_rt", { bytes: r.bytes });
+      const { hash } = await load("rt", snapshot);
+      if (hash !== snapshots[r.kind]?.hash) {
+        changed = true;
+        snapshots[r.kind] = snapshot;
+      }
     } catch (e) {
       errors.push(`${r.kind}: ${(e as Error).message}`);
     }
@@ -1148,18 +1105,19 @@ function replan(): Promise<void> {
 // ---------------------------------------------------------------------
 
 async function restoreSaved(): Promise<void> {
+  let doc: Watchlist | null = null;
   try {
     await restoreDocuments();
     const record = currentDocument("watchlist");
-    watchlist = record ? (JSON.parse(record.bytes) as Watchlist) : null;
+    doc = record ? (JSON.parse(record.bytes) as Watchlist) : null;
   } catch (e) {
     console.warn("watchlist restore failed:", e);
-    watchlist = null;
   }
-  ride.saved = watchlist
-    ? watchlist.version === "v2"
-      ? watchlist.stops.map((s) => ({ id: s.id, label: s.label }))
-      : watchlist.stops.map((s) => ({ id: s.id, label: s.note }))
+  watchlist = doc ? new Doc("watchlist", { value: doc }) : null;
+  ride.saved = doc
+    ? doc.version === "v2"
+      ? doc.stops.map((s) => ({ id: s.id, label: s.label }))
+      : doc.stops.map((s) => ({ id: s.id, label: s.note }))
     : [];
 }
 
@@ -1171,7 +1129,7 @@ async function writeSaved(stops: { id: string; label: string }[]): Promise<void>
     console.warn("watchlist save failed:", e);
     ride.status = "Couldn't save on this device — your saved stops last until you leave.";
   }
-  watchlist = doc;
+  watchlist = new Doc("watchlist", { value: doc });
   ride.saved = stops;
   await request("saved");
 }

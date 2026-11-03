@@ -541,7 +541,7 @@ Its HTTP surface:
   takes); gzipped, its ETag the streets hash, re-imported when the
   file changes (mtime-checked). A client refuses it unless the
   module answers the ETag's hash (`servedStreets` in
-  `src/uis/kit.ts`).
+  `src/engine.ts`).
 - `/walks` — the walk table over the published streets and network
   (both `-streets` and `-feed`), derived again when either changes;
   gzipped, its ETag the walks hash, refused by a client the same
@@ -553,7 +553,7 @@ Its HTTP surface:
   Republishing the zip is re-imported on the next request
   (mtime-checked). A client registers the network with
   `load_network` and refuses it unless the module answers the
-  pinned hash (`servedNetwork` in `src/uis/kit.ts`).
+  pinned hash (`servedNetwork` in `src/engine.ts`).
 - **Authentication/authorization** (D-58..D-61): with any `-oidc-*`
   flag set, the server verifies bearer JWTs — JWKS (`-oidc-jwks-url`,
   cached by `kid`, refetched on unknown kid) or a pinned PEM
@@ -626,10 +626,14 @@ Two rulings that follow from it:
   it is handed.
 
 The WEB GATES in `just test` hold it: no component imports the
-resolver, no host code reads raw rt `stop_updates`, and nothing
-clones a document to mutate it (every change is a NetworkEdit
-through cap-author). Each gate's allowlist only shrinks, and all
-are empty.
+resolver, no host code reads raw rt `stop_updates`, nothing clones a
+document to mutate it (every change is a NetworkEdit through
+cap-author), and the engine is the one op caller — no file but
+`src/engine.ts` imports the resolver or calls a module's ABI. Each
+gate's allowlist only shrinks, and all are empty. Beside them, the
+DETERMINISM gate holds the modules pure: no clock, randomness, or
+environment in any crate's library code (hosts pass time in), so an
+answer is a function of its inputs.
 
 File ownership:
 
@@ -640,13 +644,30 @@ File ownership:
 - Components are RENDER-ONLY: props in, events out. No component
   imports the resolver or a UI's host layer (the WEB GATES and the
   GENERATED UIs gates in `just test`).
+- `src/engine.ts` is THE ENGINE — the one caller of a module's ops.
+  A host asks `ask(capability, op, args)`, the generated request
+  types with every `*_hash` argument taking a `Doc` (a document
+  version: its kind, its value or bytes, the document it is read
+  over, the hash its server pins). The engine registers a `Doc` in a
+  module on first use through its kind's load op (`load` answers the
+  load's whole answer — an edit document's reports, a decoded rt
+  snapshot's overview), asserts every module answers the same
+  identity, and caches answers under the journal's key (the
+  module's pinned hash and the request's bytes). `produced` adopts a
+  document an op answered (an import, an `apply`, the live
+  document) as registered where it was made; `available` says
+  whether a capability assembled, and `ask` throws `Unavailable`
+  when it did not. `servedNetwork`, `servedStreets`, and
+  `servedWalks` read the deployment's published documents and refuse
+  one that does not answer its pinned hash. Every call is async and
+  data-shaped, so the modules can move to a worker behind it.
 - `src/capabilities.svelte.ts` is the bus resolver — the ONLY wasm
-  loader (components never see the ABI): manifest validation,
+  loader, imported only by the engine: manifest validation,
   demand-driven load, byte verification against pinned hashes,
-  per-capability degradation, the typed `*Cap(module)` wrappers and
-  `*Module()` getters the hosts call, and the IMMUTABLE document
-  store (every version hash-chained by `produced_by`; `current` is a
-  pointer; IndexedDB-persisted — ride-now's watchlist lives there).
+  per-capability degradation, and the ABI's two calls.
+- `src/documents.svelte.ts` is the device's document store (every
+  version hash-chained by `produced_by`; `current` is a pointer;
+  IndexedDB-persisted — ride-now's watchlist lives there).
 - `src/plans.svelte.ts` owns the service plans (the authored
   network documents service-design keeps on the device: plain data,
   wholesale-replaced, IndexedDB-persisted). Stored plans restore
@@ -736,7 +757,7 @@ web/src/uis/<id>/main.ts       imports ../base.css (+ maplibre css if it maps), 
                                Shell, then awaits the host's boot (the layout paints first)
 web/src/uis/<id>/Shell.svelte  PLACEMENT ONLY: reads the host's answers state, passes
                                props, routes events to host functions
-web/src/uis/<id>/host.svelte.ts the ONLY file of the UI that calls the resolver; owns
+web/src/uis/<id>/host.svelte.ts the ONLY file of the UI that asks the engine; owns
                                I/O, the selection, and one $state object of answers
 web/e2e/ui-<id>.spec.mjs       the UI's e2e spec (fixture feed: e2e/fixtures/)
 ```
@@ -749,22 +770,17 @@ Shared by every generated UI:
   box with an opaque sticky header), and the class names the shared
   components render with (`.muted`, `.table-scroll`, `.chip`,
   `.picker-row`).
-- `src/uis/kit.ts` (host layer only): `hashIn(module, doc)` gives a
-  document's hash in one module, registered once per module per
-  document version; `rememberHash` adopts a hash cap-author's
-  `apply` already answered; `today()` is the host's date. Host
-  layers call the resolver's `*Cap(module)` wrappers and
-  `*Module()` getters (`src/capabilities.svelte.ts`) directly.
-  The answer graph is TRANSIENT — hand-built ahead of the engine
-  `docs/units/host-discipline.md` designs, which replaces it: a host
-  declares its answers as `AnswerNode`s (the inputs each reads, the
-  frame that renders it, when that frame is on screen), and
+- `src/uis/kit.ts` (host layer only): `today()` is the host's date,
+  and the answer graph is TRANSIENT — hand-built ahead of the flow
+  maps `docs/units/host-discipline.md` designs, which replace it: a
+  host declares its answers as `AnswerNode`s (the inputs each reads,
+  the frame that renders it, when that frame is on screen), and
   `answerGraph` answers the nodes downstream of a changed input in
   declared order, yielding between nodes so each frame paints as
   its answer lands; a request made mid-pass supersedes the pass,
-  and a hidden frame's node waits until it shows. `answer(module,
-  op, args, run)` caches an answer by (module bytes, op, argument
-  hashes) — the journal's key. Neither carries domain knowledge.
+  and a hidden frame's node waits until it shows. It carries no
+  domain knowledge. Every op a node runs is asked of the engine
+  (`src/engine.ts`).
 - `src/plans.svelte.ts` (`getAllPlans`, `putPlan`,
   `setActivePlan`, `restorePlans`, `readPlan`): the service plans.
   JS owns the documents. A host reads every plan it uses through
@@ -883,7 +899,8 @@ unit is written before any code and deleted when the UI lands.
    `kit.ts`'s transient runner is NOT extended to cover it.
 6. **Write the host from the table.** `host.svelte.ts` declares the
    table's nodes as `AnswerNode`s and requests inputs from event
-   handlers. The only things a host may do: read and write I/O
+   handlers; every op a node runs is `ask`ed of the engine, over the
+   `Doc`s the host holds. The only things a host may do: read and write I/O
    (files, fetch, IndexedDB), read the clock and pass it as an op
    argument, hold the selection (including repairing a selection
    the new answer no longer holds), track which frames are on
@@ -1262,8 +1279,10 @@ cap-streets    The street-graph capability: where along the
 
 - Capabilities compose through DOCUMENTS addressed by content hash,
   never module-to-module — the host loads the same bytes into each
-  module and ASSERTS the returned hashes agree (`assertSameDocument`
-  is the law).
+  module and ASSERTS the returned hashes agree. In the browser this
+  holds by construction: a document is one engine `Doc`, and every
+  module it is registered in must answer the identity the first one
+  did (and a served document the hash its server pins).
 - The MODULE is the hash authority — hosts never mint document
   identity (JS JSON.stringify differs from the module's canonical
   serde bytes in float formatting; query with the hash the module
@@ -1272,7 +1291,8 @@ cap-streets    The street-graph capability: where along the
   layers, rt payloads); kernel ops number from 256 and mean the same
   thing in every module that answers them. Every network consumer
   answers 256, and the browser host registers networks only that
-  way (`CapModule.loadNetwork`, the document encoded once).
+  way (the engine's loader for kind `network`, the document encoded
+  once however many modules register it).
 - One Request enum per capability is the whole surface (networks
   are minted only by cap-author's apply and cap-network's import —
   readers have no authoring ops by construction).

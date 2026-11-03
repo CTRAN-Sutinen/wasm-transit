@@ -1,92 +1,12 @@
 /// The generated UIs' shared host glue — what every UI's host layer
 /// needs and none should rewrite. Host layer only: shells and
-/// components never import this (it reaches the resolver).
+/// components never import this.
 ///
 /// A generated UI lives in `src/uis/<id>/` (docs/ARCHITECTURE.md,
 /// "Generated UIs"): `ui.json` (what it answers), `main.ts` (mount,
 /// then boot), `Shell.svelte` (placement only), `host.svelte.ts` (the
-/// only file that calls the bus), and `<id>.html` at the web root.
-
-import { analysisModule, routerCap, streetsCap } from "../capabilities.svelte";
-import type { Boundary } from "../types/Boundary";
-import type { Network } from "../types/Network";
-import type { WalkTable } from "../types/WalkTable";
-
-/// Any assembled module (the resolver keeps the class private).
-export type CapModule = NonNullable<Awaited<ReturnType<typeof analysisModule>>>;
-
-const registered = new WeakMap<CapModule, WeakMap<Network, string>>();
-
-/// A document's hash in one module — registered on first use, once
-/// per module per document version. THE MODULE IS THE HASH AUTHORITY:
-/// the host never mints a document's identity.
-export function hashIn(module: CapModule, doc: Network): string {
-  let docs = registered.get(module);
-  if (!docs) registered.set(module, (docs = new WeakMap()));
-  let hash = docs.get(doc);
-  if (!hash) docs.set(doc, (hash = module.loadNetwork(doc)));
-  return hash;
-}
-
-/// The deployment's published network: `GET /network`, the server's
-/// import of its GTFS zip (cap-network, the same module), registered
-/// in `module` — refused unless the module answers the hash the
-/// server pins. Null when the server publishes no network.
-export async function servedNetwork(module: CapModule): Promise<{ network: Network; boundary: Boundary } | null> {
-  const resp = await fetch("/network").catch(() => null);
-  if (!resp?.ok) return null;
-  const served = (await resp.json()) as { network: Network; boundary: Boundary; network_hash: string };
-  const hash = module.loadNetwork(served.network);
-  if (hash !== served.network_hash) {
-    throw new Error(`the served network registers as ${hash}, the server pins ${served.network_hash}`);
-  }
-  rememberHash(module, served.network, hash);
-  return { network: served.network, boundary: served.boundary };
-}
-
-/// The hash a published document's ETag pins (`"<hash>"`, weakened or
-/// not by a proxy).
-function pinned(resp: Response): string | null {
-  return resp.headers.get("ETag")?.replace(/^W\//, "").replace(/"/g, "") || null;
-}
-
-/// The deployment's published streets: `GET /streets`, the server's
-/// import of its street layer (cap-streets, the same module) — its
-/// BYTES handed to `module` (cap-streets' `load_streets`): the module
-/// parses the document, the page never does. Refused unless the
-/// module answers the hash the server pins. Null when the server
-/// publishes no streets.
-export async function servedStreets(module: CapModule): Promise<string | null> {
-  const resp = await fetch("/streets").catch(() => null);
-  if (!resp?.ok) return null;
-  const bytes = new Uint8Array(await resp.arrayBuffer());
-  const hash = streetsCap(module).loadStreetsBytes(bytes);
-  const pin = pinned(resp);
-  if (hash !== pin) throw new Error(`the served streets register as ${hash}, the server pins ${pin}`);
-  return hash;
-}
-
-/// The deployment's walk table: `GET /walks`, derived on the server
-/// from its streets and network (cap-streets' `walks`), registered in
-/// `router` — refused unless it answers the hash the server pins.
-/// Null when the server publishes none.
-export async function servedWalks(router: CapModule): Promise<string | null> {
-  const resp = await fetch("/walks").catch(() => null);
-  if (!resp?.ok) return null;
-  const hash = routerCap(router).loadWalks((await resp.json()) as WalkTable);
-  const pin = pinned(resp);
-  if (hash !== pin) throw new Error(`the served walk table registers as ${hash}, the server pins ${pin}`);
-  return hash;
-}
-
-/// Record a document a module already registered (cap-author's
-/// `apply` answers the next document under its hash) — the next
-/// query skips the re-registration.
-export function rememberHash(module: CapModule, doc: Network, hash: string): void {
-  let docs = registered.get(module);
-  if (!docs) registered.set(module, (docs = new WeakMap()));
-  docs.set(doc, hash);
-}
+/// only file that asks the bus — through the engine, src/engine.ts),
+/// and `<id>.html` at the web root.
 
 /// The local date, "YYYY-MM-DD" — hosts own the clock; dates cross
 /// every boundary as strings.
@@ -96,22 +16,20 @@ export function today(): string {
 }
 
 // ---------------------------------------------------------------------
-// TRANSIENT — the answer graph, hand-built ahead of the engine.
+// TRANSIENT — the answer graph, hand-built ahead of flow maps.
 //
-// docs/units/host-discipline.md designs the real composition layer:
-// one engine that makes every op call, interpreting flow maps (data
-// in the UI manifest, docs/units/wire-time-assembly.md) with
-// generations and a hash-keyed journal. Until it lands, a host
-// declares what it answers as nodes and this runner schedules them.
-// It is shaped to be REPLACED by that engine, not grown into it:
+// The engine (src/engine.ts) makes every op call;
+// docs/units/host-discipline.md has it interpret flow maps next (data
+// in the UI manifest, docs/units/wire-time-assembly.md). Until then,
+// a host declares what it answers as nodes and this runner schedules
+// them. It is shaped to be REPLACED by flow maps, not grown into them:
 //
 // - a node is what a flow-map entry will be — the inputs it reads,
 //   the frame that renders it, when that frame is on screen, and
 //   the op calls — so a host's node list is the first draft of its
-//   flow map;
-// - `answer`'s key is the journal's (module bytes, input hashes,
-//   arguments), so the cache it stands in for is the journal's;
-// - neither knows anything about transit. If a node name, a field,
+//   flow map (the engine's answers are already cached by the
+//   journal's key);
+// - it knows nothing about transit. If a node name, a field,
 //   or a rule of the domain appears in this section, it leaked.
 //
 // Do not add features here; add them to the unit.
@@ -200,27 +118,4 @@ export function answerGraph(nodes: AnswerNode[], onerror: (e: unknown) => void) 
     })();
     return draining;
   };
-}
-
-const answers = new Map<string, unknown>();
-const ANSWERS_KEPT = 256;
-
-/// An op's answer, cached by what determines it: the module's bytes,
-/// the op, and its arguments. `args` are content hashes and plain
-/// values only — never a document (a document crosses by its hash).
-/// Ops are pure functions of those (modules carry no clock and no
-/// randomness), so a hit is the same answer by construction. Errors
-/// are not cached.
-export function answer<T>(module: CapModule, op: string, args: unknown[], run: () => T): T {
-  const key = JSON.stringify([module.cap.hash, op, args]);
-  if (answers.has(key)) {
-    const hit = answers.get(key) as T;
-    answers.delete(key);
-    answers.set(key, hit);
-    return hit;
-  }
-  const value = run();
-  answers.set(key, value);
-  if (answers.size > ANSWERS_KEPT) answers.delete(answers.keys().next().value as string);
-  return value;
 }

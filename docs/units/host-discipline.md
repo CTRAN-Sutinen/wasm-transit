@@ -2,17 +2,17 @@
 
 Documents-only composition moved every sequenced decision into the
 host. The host pays that debt as a designed layer, or it rots into
-glue copied per component. Today the resolver
-(`web/src/capabilities.svelte.ts`) loads modules and each generated
-UI's host layer (`web/src/uis/<id>/host.svelte.ts`) calls ops
-directly.
+glue copied per component. The engine (`web/src/engine.ts`) is that
+layer's execution half: the one caller of a module's ops, with
+documents as `Doc` handles registered and identity-checked per
+module, and answers cached under the journal's key — gated in `just
+test` (the one-op-caller web gate and the DETERMINISM gate;
+`docs/ARCHITECTURE.md`, web section). What is left is the
+describing half (flow maps), the journal written down, replay, and
+the worker behind the engine.
 
 ## Scope
 
-- **The choke point.** Exactly one piece of host code calls a
-  module op — the ENGINE, the resolver grown an execution half.
-  Host layers request flows by name; they never see the ABI, the
-  op surface, or an unverified hash.
 - **The engine interprets; flow maps describe.** A flow map —
   which documents, which ops, which order, which renderer, which
   DECLARED degrade — is data in the UI manifest
@@ -24,15 +24,12 @@ directly.
   selection that would blank a screen fails at assembly, not at
   runtime. Every flow request carries a generation; superseded
   generations never land.
-- **Verified documents by construction.** Query ops take a branded
-  `VerifiedDoc` minted by the engine's load-and-assert step, so
-  `assertSameDocument` holds by construction, not discipline.
 - **The Merkle journal.** Every session is a log written at the
-  choke point: per op, the input document hashes, the module
+  engine: per op, the input document hashes, the module
   bytes' hashes, the output hashes — hashes only. Ephemeral inputs
   (rt snapshots) are marked so replay degrades honestly. One
-  journal, three uses: the trace, the answer-cache key, the
-  migration witness.
+  journal, three uses: the trace, the answer-cache key (the engine
+  already keys its cache this way), the migration witness.
 - **Replay is the proof procedure.** The runner replays journals
   natively (same module bytes, same input hashes, compare output
   hashes). Module replacement becomes re-pin + replay against the
@@ -40,30 +37,23 @@ directly.
 - **Registry eviction.** Each module keeps every registered
   document for the session; eviction (a kernel keep-set op, the
   ephemeral-kind defaults) is [module-runtime.md](module-runtime.md)'s.
-- **Two gates.** No op call outside the engine; and determinism in
-  the modules — no clocks, randomness, or environment inside a
-  cap crate (hosts pass time in; `now_ms` is the only route).
 
 ## Order
 
-The engine lands first (the rider apps' deployment needs it: the
-bus worker of [module-runtime.md](module-runtime.md) sits behind
-it), keyed from the start by the journal's entry — module bytes'
-hash, op, input hashes — so the journal slots in without rework.
-Ride-now and the stop display move onto it first, then
-service-design; then the worker behind it; then the journal and
-replay in the runner (`caps-run`'s chained-session format becomes
-the journal format, closing [caps-run-sessions.md](caps-run-sessions.md)'s
-session store); flow maps as data last, with
+The engine landed first, keyed by the journal's entry. Next the
+worker behind it ([module-runtime.md](module-runtime.md)); then the
+journal and replay in the runner (`caps-run`'s chained-session
+format becomes the journal format, closing
+[caps-run-sessions.md](caps-run-sessions.md)'s session store); flow
+maps as data last, with
 [wire-time-assembly.md](wire-time-assembly.md)'s UI manifest.
 
-The engine replaces the TRANSIENT answer graph in
-`web/src/uis/kit.ts` (`answerGraph`, `answer`) — it does not grow
-out of it — and the change that lands it deletes both. A node is a
-flow-map entry's draft (inputs, frame, visibility, op calls), and
-`answer`'s key is the journal's. The generated-UI units (`ui-*.md`)
+Flow maps replace the TRANSIENT answer graph in `web/src/uis/kit.ts`
+(`answerGraph`) — they do not grow out of it — and the change that
+lands them deletes it. A node is a flow-map entry's draft (inputs,
+frame, visibility, op calls). The generated-UI units (`ui-*.md`)
 each carry an answer-graph table (`docs/ARCHITECTURE.md`,
-"Generated UIs", step 5), and the engine is designed from those
+"Generated UIs", step 5), and flow maps are designed from those
 tables. What a table cannot express (a timer-driven live input, for
 one) is written here as an engine requirement. The store's log and
 pointer CAS landed in the Go server (`server/store/`,
@@ -88,11 +78,9 @@ Engine requirements the tables cannot express:
 
 ## Done when
 
-- The two gates are in `just test`, each with an empty allowlist.
 - A C-TRAN session journal replays through `caps-run` to the same
   output hashes.
 - The UIs request flows through the engine (e2e green), and
-  `answerGraph` / `answer` are gone from `web/src/uis/kit.ts`.
-- The engine's thread boundary matches
-  [module-runtime.md](module-runtime.md) (one Worker, at the choke
-  point — never per component).
+  `answerGraph` is gone from `web/src/uis/kit.ts`.
+- The modules run behind the engine on one Worker
+  ([module-runtime.md](module-runtime.md)) — never per component.

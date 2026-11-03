@@ -1,8 +1,8 @@
 # Runtime cost gate
 
 Every network consumer registers each document version itself
-(kernel bulk op 256; `hashIn` in `web/src/uis/kit.ts` caches per
-module per version). On C-TRAN a scratch Chromium bench measured
+(kernel bulk op 256; the engine, `web/src/engine.ts`, registers a
+document once per module per version). On C-TRAN a scratch Chromium bench measured
 5.8–8.4 MB of wasm memory per consumer and ~300 ms per
 registration at 4× CPU throttle — the direct parse plus the
 canonical re-hash every module repeats for a document the import

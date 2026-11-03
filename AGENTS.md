@@ -207,8 +207,8 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
 - The **base feed is immutable**. Diversions produce patched copies
   per service date; patching never mutates its input.
 - **JS owns the documents** (plan set, watchlist): `$state.raw` in
-  the host layer (`src/plans.svelte.ts`, the resolver's document
-  store), wholesale-replaced, never mutated in place — that is what makes IndexedDB cloning and sync work. wasm
+  the host layer (`src/plans.svelte.ts`, `src/documents.svelte.ts`),
+  wholesale-replaced, never mutated in place — that is what makes IndexedDB cloning and sync work. wasm
   holds only materialized views. A service change is a FORK (the
   next pick copies the whole world it changes); the chain (who is
   in force, governing periods) is always derived by the artifact,
@@ -244,6 +244,10 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
   same ops and get the same bytes — `web/` is host glue plus
   render components, never answers (`docs/ARCHITECTURE.md`, web
   section, "Parity"; ratcheted in `just test`).
+- **One op caller**: a host asks through the engine
+  (`web/src/engine.ts`) — `ask(capability, op, args)`, holding
+  documents (`Doc`), never modules or hashes; nothing else imports
+  the resolver or calls a module (a web gate in `just test`).
 - **External services** are sources, presentation, or oracles — an
   oracle (the geocoder) answers an input the user could have given
   by hand; a host sends it the user's input only, shows its answer

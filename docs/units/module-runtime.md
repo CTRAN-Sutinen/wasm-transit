@@ -50,9 +50,11 @@ ratchets the numbers; this unit builds the mechanisms.
   each module's bulk op: today the page parses the 9.6 MB network
   with `resp.json()`, then `JSON.stringify`s it back to bytes for
   the modules — the page never needs the network object, only
-  answers. The thread boundary lands in the engine choke point
-  ([host-discipline.md](host-discipline.md)), never per component;
-  op calls become async there. The runner (`tools/caps-run.mjs`) is
+  answers. The thread boundary is the engine
+  (`web/src/engine.ts`, [host-discipline.md](host-discipline.md)),
+  never per component: its calls are already async and data-shaped
+  (an op request with documents by handle), so the modules move
+  behind it without a host changing. The runner (`tools/caps-run.mjs`) is
   process-per-session and is unaffected.
 - **Reclaiming memory.** Wasm linear memory never shrinks: eviction
   lets a module reuse what it freed, but a peak stays allocated for

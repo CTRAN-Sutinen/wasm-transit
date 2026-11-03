@@ -19,23 +19,8 @@
 /// answers (a production failure, shown gracefully).
 
 import { getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
-import {
-  analysisCap,
-  analysisModule,
-  authorCap,
-  authorModule,
-  directoryCap,
-  directoryModule,
-  ensureAnalysisLayer,
-  gtfsCap,
-  gtfsModule,
-  networkCap,
-  networkModule,
-  plansChain,
-  readStoredNetwork,
-  type AnalysisLayerHandle,
-} from "../../capabilities.svelte";
-import { answer, answerGraph, hashIn, rememberHash, servedNetwork, today, type CapModule } from "../kit";
+import { ask, available, load, produced, servedNetwork, Doc } from "../../engine";
+import { answerGraph, today } from "../kit";
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
 import type { DirectoryStop } from "../../types/cap_directory/DirectoryStop";
 import type { EntityFocus } from "../../types/EntityFocus";
@@ -97,7 +82,7 @@ export const sd = $state({
   focus: null as EntityFocus | null,
   selectedStop: "",
   window: null as HourWindow | null,
-  layer: null as AnalysisLayerHandle | null,
+  layer: null as LayerInfo | null,
   coverageParams: { radius_m: 400, frequent_secs: 900, min_departures: 2 } as CoverageParams,
   coverage: null as TypeCoverage[] | null,
   unserved: null as UnservedPoint[] | null,
@@ -151,6 +136,31 @@ function syncPlanRows(): void {
 /// cap-network to ask again.
 const authoredIssues = new WeakMap<Network, NetworkError[]>();
 
+/// A population layer as the coverage frame shows it.
+type LayerInfo = { points: number; pop_field: string; total_pop: number };
+/// The layer's document, by which the coverage ops read it.
+let layer: Doc | null = null;
+
+/// One engine document per plan version (JS owns the documents; the
+/// engine registers each version once per module).
+const docs = new WeakMap<Network, Doc<Network>>();
+function docOf(network: Network): Doc<Network> {
+  let doc = docs.get(network);
+  if (!doc) docs.set(network, (doc = new Doc("network", { value: network })));
+  return doc;
+}
+
+/// A stored plan read into the current shape: cap-author's `apply`
+/// with no edits answers the canonical document (a plan saved under
+/// older field names comes back in the current shape). Null when the
+/// authoring capability did not assemble.
+async function readStoredNetwork(stored: unknown): Promise<Network | null> {
+  if (!(await available("author"))) return null;
+  const answer = await ask("author", "apply", { network_hash: new Doc("network", { value: stored as Network }), edits: [] });
+  docs.set(answer.network, produced("network", answer.network, "author", answer.network_hash));
+  return answer.network;
+}
+
 /// Earlier versions of each plan (JS owns the documents): undo puts
 /// the last one back; nothing is inverted.
 const undo: Record<string, Network[]> = {};
@@ -167,12 +177,6 @@ function syncHistory(): void {
 
 function message(e: unknown): string {
   return (e as Error)?.message ?? String(e);
-}
-
-/// A capability the frame needs, or the frame's failure.
-function need<T>(module: T | null, name: string): T {
-  if (!module) throw new Error(`The ${name} capability did not load.`);
-  return module;
 }
 
 /// Run one frame's answer: a throw becomes that frame's failure and
@@ -215,9 +219,7 @@ const request = answerGraph(
         framed("Groups", () => (sd.groups = []), async () => {
           const doc = active();
           if (!doc) return;
-          const analysis = need(await analysisModule(), "analysis");
-          const hash = hashIn(analysis, doc);
-          sd.groups = answer(analysis, "service_groups", [hash], () => analysisCap(analysis).serviceGroups(hash));
+          sd.groups = (await ask("analysis", "service_groups", { network_hash: docOf(doc) })).groups;
           // The selection keys on a group's base; it stays while the
           // new answer still heads a row with it.
           if (!sd.groups.some((g) => g.service_type === sd.group)) {
@@ -234,9 +236,7 @@ const request = answerGraph(
         framed("ContextBar", () => (sd.routes = []), async () => {
           const doc = active();
           if (!doc) return;
-          const directory = need(await directoryModule(), "directory");
-          const hash = hashIn(directory, doc);
-          sd.routes = answer(directory, "routes", [hash], () => directoryCap(directory).routes(hash));
+          sd.routes = (await ask("directory", "routes", { network_hash: docOf(doc) })).routes;
         }),
     },
     {
@@ -248,9 +248,7 @@ const request = answerGraph(
         framed("FrequencyGrid", () => (sd.frequency = null), async () => {
           const doc = active();
           if (!doc || !sd.group) return void (sd.frequency = null);
-          const analysis = need(await analysisModule(), "analysis");
-          const args = [hashIn(analysis, doc), sd.group] as const;
-          sd.frequency = answer(analysis, "route_frequency", [...args], () => analysisCap(analysis).routeFrequency(...args));
+          sd.frequency = (await ask("analysis", "route_frequency", { network_hash: docOf(doc), service_type: sd.group })).frequency;
         }),
     },
     {
@@ -263,9 +261,7 @@ const request = answerGraph(
           const doc = active();
           const date = groupDate();
           if (!doc || !date) return void (sd.hourly = null);
-          const analysis = need(await analysisModule(), "analysis");
-          const args = [hashIn(analysis, doc), date] as const;
-          sd.hourly = answer(analysis, "hourly_trips", [...args], () => analysisCap(analysis).hourlyTrips(...args));
+          sd.hourly = (await ask("analysis", "hourly_trips", { network_hash: docOf(doc), date })).hours;
         }),
     },
     {
@@ -284,11 +280,9 @@ const request = answerGraph(
         framed("Comparison", () => (sd.comparison = null), async () => {
           const [doc, base] = [active(), baseline()];
           if (!doc || !base || !sd.group) return void (sd.comparison = null);
-          const analysis = need(await analysisModule(), "analysis");
-          const args = [hashIn(analysis, base), hashIn(analysis, doc), sd.group] as const;
-          sd.comparison = answer(analysis, "service_type_compare", [...args], () =>
-            analysisCap(analysis).serviceTypeCompare(...args),
-          );
+          sd.comparison = (
+            await ask("analysis", "service_type_compare", { base_hash: docOf(base), network_hash: docOf(doc), service_type: sd.group })
+          ).comparison;
         }),
     },
     {
@@ -300,10 +294,7 @@ const request = answerGraph(
         framed("RouteHeader", () => (sd.routeDetail = null), async () => {
           const doc = active();
           if (!doc || !sd.route) return void (sd.routeDetail = null);
-          const directory = need(await directoryModule(), "directory");
-          const hash = hashIn(directory, doc);
-          const route = sd.route;
-          sd.routeDetail = answer(directory, "route_detail", [hash, route], () => directoryCap(directory).routeDetail(hash, route));
+          sd.routeDetail = (await ask("directory", "route_detail", { network_hash: docOf(doc), route_id: sd.route })).detail;
           const directions = sd.routeDetail?.directions ?? [];
           if (!directions.some((d) => d.direction === sd.direction)) {
             sd.direction = directions[0]?.direction ?? null;
@@ -320,9 +311,15 @@ const request = answerGraph(
         framed("StringLine", () => (sd.timetable = null), async () => {
           const [doc, base] = [active(), baseline()];
           if (!doc || !sd.route || !sd.group) return void (sd.timetable = null);
-          const directory = need(await directoryModule(), "directory");
-          const args = [hashIn(directory, doc), sd.route, sd.direction, sd.group, base ? hashIn(directory, base) : null] as const;
-          sd.timetable = answer(directory, "timetable", [...args], () => directoryCap(directory).timetable(...args));
+          sd.timetable = (
+            await ask("directory", "timetable", {
+              network_hash: docOf(doc),
+              route_id: sd.route,
+              direction: sd.direction ?? undefined,
+              service_type: sd.group,
+              compare_hash: base ? docOf(base) : undefined,
+            })
+          ).timetable;
         }),
     },
     {
@@ -334,10 +331,7 @@ const request = answerGraph(
         framed("RouteMap", () => (sd.focus = null), async () => {
           const doc = active();
           if (!doc || !sd.route) return void (sd.focus = null);
-          const directory = need(await directoryModule(), "directory");
-          const hash = hashIn(directory, doc);
-          const route = sd.route;
-          sd.focus = answer(directory, "focus", [hash, "route", route], () => directoryCap(directory).focus(hash, "route", route));
+          sd.focus = (await ask("directory", "focus", { network_hash: docOf(doc), kind: "route", id: sd.route })).focus;
         }),
     },
     {
@@ -348,12 +342,19 @@ const request = answerGraph(
       run: () =>
         framed("Coverage", () => (sd.coverage = null), async () => {
           const doc = active();
-          if (!doc || !sd.layer) return void (sd.coverage = null);
-          const analysis = need(await analysisModule(), "analysis");
+          if (!doc || !layer) return void (sd.coverage = null);
           const p = sd.coverageParams;
-          const window = sd.window ? { start_secs: sd.window.from * 3600, end_secs: sd.window.to * 3600 } : null;
-          const args = [hashIn(analysis, doc), sd.layer.layer_hash, p.radius_m, p.frequent_secs, p.min_departures, window] as const;
-          sd.coverage = answer(analysis, "type_coverage", [...args], () => analysisCap(analysis).typeCoverage(...args));
+          const window = sd.window ? { start_secs: sd.window.from * 3600, end_secs: sd.window.to * 3600 } : undefined;
+          sd.coverage = (
+            await ask("analysis", "type_coverage", {
+              network_hash: docOf(doc),
+              layer_hash: layer,
+              radius_m: p.radius_m,
+              frequent_secs: p.frequent_secs,
+              min_departures: p.min_departures,
+              window,
+            })
+          ).coverage;
         }),
     },
     {
@@ -365,10 +366,10 @@ const request = answerGraph(
         framed("Unserved", () => (sd.unserved = null), async () => {
           const doc = active();
           const date = groupDate();
-          if (!doc || !sd.layer || !date) return void (sd.unserved = null);
-          const analysis = need(await analysisModule(), "analysis");
-          const args = [hashIn(analysis, doc), sd.layer.layer_hash, sd.coverageParams.radius_m, date] as const;
-          sd.unserved = answer(analysis, "unserved_points", [...args], () => analysisCap(analysis).unservedPoints(...args));
+          if (!doc || !layer || !date) return void (sd.unserved = null);
+          sd.unserved = (
+            await ask("analysis", "unserved_points", { network_hash: docOf(doc), layer_hash: layer, radius_m: sd.coverageParams.radius_m, date })
+          ).points;
         }),
     },
     {
@@ -380,9 +381,7 @@ const request = answerGraph(
         framed("HubPicker", () => (sd.stops = []), async () => {
           const doc = active();
           if (!doc) return;
-          const directory = need(await directoryModule(), "directory");
-          const hash = hashIn(directory, doc);
-          sd.stops = answer(directory, "stops", [hash, null], () => directoryCap(directory).stops(hash, null));
+          sd.stops = (await ask("directory", "stops", { network_hash: docOf(doc), limit: null })).stops;
         }),
     },
     {
@@ -395,9 +394,7 @@ const request = answerGraph(
           const doc = active();
           const date = groupDate();
           if (!doc || !date) return void (sd.overlaps = null);
-          const analysis = need(await analysisModule(), "analysis");
-          const args = [hashIn(analysis, doc), date] as const;
-          sd.overlaps = answer(analysis, "route_overlap", [...args], () => analysisCap(analysis).routeOverlap(...args));
+          sd.overlaps = (await ask("analysis", "route_overlap", { network_hash: docOf(doc), date })).overlaps;
         }),
     },
     {
@@ -410,9 +407,7 @@ const request = answerGraph(
           const doc = active();
           const date = groupDate();
           if (!doc || !date || !sd.stop) return void (sd.connections = null);
-          const analysis = need(await analysisModule(), "analysis");
-          const args = [hashIn(analysis, doc), date, sd.stop] as const;
-          sd.connections = answer(analysis, "hub_connections", [...args], () => analysisCap(analysis).hubConnections(...args));
+          sd.connections = (await ask("analysis", "hub_connections", { network_hash: docOf(doc), date, stop_id: sd.stop })).connections;
         }),
     },
     {
@@ -425,9 +420,7 @@ const request = answerGraph(
           const doc = active();
           const date = groupDate();
           if (!doc || !date || !sd.stop) return void (sd.gaps = null);
-          const analysis = need(await analysisModule(), "analysis");
-          const args = [hashIn(analysis, doc), date, sd.stop] as const;
-          sd.gaps = answer(analysis, "stop_gaps", [...args], () => analysisCap(analysis).stopGaps(...args));
+          sd.gaps = (await ask("analysis", "stop_gaps", { network_hash: docOf(doc), date, stop_id: sd.stop })).gaps;
         }),
     },
     {
@@ -437,7 +430,12 @@ const request = answerGraph(
       run: () =>
         framed("PickTimeline", () => (sd.chain = null), async () => {
           const infos = sd.plans.filter((p) => p.id).map((p) => ({ id: p.id, name: p.name, effective_from: p.effectiveFrom }));
-          sd.chain = need(await plansChain(infos, today()), "plans");
+          const date = today();
+          sd.chain = {
+            inForce: (await ask("plans", "resolve", { plans: infos, date })).plan,
+            periods: (await ask("plans", "periods", { plans: infos })).periods,
+            issues: (await ask("plans", "validate", { plans: infos })).issues,
+          };
         }),
     },
     {
@@ -453,9 +451,7 @@ const request = answerGraph(
           if (!doc) return;
           const authored = authoredIssues.get(doc);
           if (authored) return void (sd.issues = authored);
-          const network = need(await networkModule(), "network");
-          const hash = hashIn(network, doc);
-          sd.issues = answer(network, "validate", [hash], () => networkCap(network).validate(hash));
+          sd.issues = (await ask("network", "validate", { network_hash: docOf(doc) })).issues;
         }),
     },
   ],
@@ -545,12 +541,13 @@ export async function boot(): Promise<void> {
   // A server started with -feed publishes its network: the base
   // every fork copies, with no import here.
   const key = await step("Loading the published network…", async () => {
-    const network = need(await networkModule(), "network");
-    const served = await servedNetwork(network);
-    if (!served) return null;
+    const served = await servedNetwork();
+    if (!served?.network.value) return null;
+    const network = served.network.value;
+    docs.set(network, served.network);
     const key = `plan-${crypto.randomUUID()}`;
-    putPlan(key, served.network);
-    sd.feed = { label: served.network.name || "the published network", info: null };
+    putPlan(key, network);
+    sd.feed = { label: network.name || "the published network", info: null };
     syncPlanRows();
     return key;
   });
@@ -562,12 +559,11 @@ export async function boot(): Promise<void> {
 /// unframed document (the base every fork copies).
 export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
   const key = await step(`Importing ${label}…`, async () => {
-    const network = need(await networkModule(), "network");
-    const gtfs = await gtfsModule();
-    const info = gtfs ? gtfsCap(gtfs).feedInfo(gtfsCap(gtfs).loadFeed(bytes).feedHash) : null;
-    const cap = networkCap(network);
-    const { network: doc, networkHash } = cap.import(cap.loadFeed(bytes).feedHash);
-    rememberHash(network, doc, networkHash);
+    const feed = new Doc("feed", { bytes });
+    const info = (await available("gtfs")) ? (await ask("gtfs", "feed_info", { feed_hash: feed })).info : null;
+    const imported = await ask("network", "import", { feed_hash: feed });
+    const doc = imported.network;
+    docs.set(doc, produced("network", doc, "network", imported.network_hash));
     const key = `plan-${crypto.randomUUID()}`;
     putPlan(key, doc);
     sd.feed = { label, info };
@@ -578,8 +574,11 @@ export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<v
 }
 
 export async function loadLayerBytes(bytes: Uint8Array): Promise<void> {
-  await framed("Coverage", () => (sd.layer = null), async () => {
-    sd.layer = need(await ensureAnalysisLayer(bytes), "analysis");
+  await framed("Coverage", () => ((sd.layer = null), (layer = null)), async () => {
+    const doc = new Doc("layer", { bytes });
+    const loaded = await load("analysis", doc);
+    layer = doc;
+    sd.layer = { points: Number(loaded.points), pop_field: String(loaded.pop_field), total_pop: Number(loaded.total_pop) };
   });
   await select("layer");
 }
@@ -709,15 +708,13 @@ export function setCoverageParams(params: CoverageParams): Promise<void> {
 // ---------------------------------------------------------------------
 
 async function apply(doc: Network, edits: NetworkEdit[]) {
-  const module = await authorModule();
-  if (!module) {
+  if (!(await available("author"))) {
     sd.status = "The authoring capability did not load — changes are off.";
     return null;
   }
-  const cap = authorCap(module);
   try {
-    const applied = cap.apply(hashIn(module, doc), edits);
-    rememberHash(module, applied.network, applied.networkHash);
+    const applied = await ask("author", "apply", { network_hash: docOf(doc), edits });
+    docs.set(applied.network, produced("network", applied.network, "author", applied.network_hash));
     return applied;
   } catch (e) {
     sd.status = `Change refused: ${message(e)}`;
@@ -800,14 +797,13 @@ export async function exportPlan(): Promise<void> {
   const doc = active();
   if (!doc) return;
   await framed("Export", () => (sd.exported = ""), async () => {
-    const network: CapModule = need(await networkModule(), "network");
-    const out = networkCap(network).export(hashIn(network, doc));
-    const bytes = Uint8Array.from(atob(out.zipB64), (c) => c.charCodeAt(0));
+    const out = await ask("network", "export", { network_hash: docOf(doc) });
+    const bytes = Uint8Array.from(atob(out.zip_b64), (c) => c.charCodeAt(0));
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
     link.download = `${doc.plan?.name || "network"}.zip`;
     link.click();
     URL.revokeObjectURL(link.href);
-    sd.exported = out.feedHash;
+    sd.exported = out.feed_hash;
   });
 }
