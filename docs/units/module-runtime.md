@@ -33,14 +33,34 @@ ratchets the numbers; this unit builds the mechanisms.
   The rt registry is the pin case.
 - **The router's graph cache** bounds by the same op (the keep-set
   covers the day keys, not only documents).
-- **Off-thread instantiation.** The resolver instantiates modules
-  and registers documents in a Worker and posts answers back;
-  modules are pure (no clocks, no randomness — hosts pass time in),
-  so no shared state is needed. The thread boundary lands in the
-  engine choke point ([host-discipline.md](host-discipline.md)),
-  never per component. The skip-the-re-hash candidate stays the
-  cost gate's. The runner (`tools/caps-run.mjs`) is process-per-
-  session and is unaffected.
+- **The registry is one shared type.** Every module hand-rolls the
+  same `OnceLock<Mutex<HashMap<String, Arc<T>>>>` per document kind
+  (cap-board has four, cap-rt three). One registry type in `cap-abi`
+  carries the kind's default (keep-last-N or host-evicted) and
+  answers the eviction op, so a module declares its registries and
+  never re-implements eviction.
+- **Off-thread: one bus worker per page.** The resolver
+  instantiates every module a page assembles in ONE Worker and
+  registers documents there; the main thread sends op requests and
+  receives answers. One worker, not one per module: documents cross
+  between modules by hash inside it, and a network handed to N
+  workers would be copied N times. Modules are pure (no clocks, no
+  randomness — hosts pass time in), so no shared state is needed.
+  The worker fetches a published document's BYTES and hands them to
+  each module's bulk op: today the page parses the 9.6 MB network
+  with `resp.json()`, then `JSON.stringify`s it back to bytes for
+  the modules — the page never needs the network object, only
+  answers. The thread boundary lands in the engine choke point
+  ([host-discipline.md](host-discipline.md)), never per component;
+  op calls become async there. The runner (`tools/caps-run.mjs`) is
+  process-per-session and is unaffected.
+- **Reclaiming memory.** Wasm linear memory never shrinks: eviction
+  lets a module reuse what it freed, but a peak stays allocated for
+  the instance's life. A module whose memory passes a ceiling is
+  dropped and re-instantiated in the worker, and the host
+  re-registers its keep-set (modules are pure, so the new instance
+  answers the same bytes). This is the bound a stop display open
+  for weeks relies on.
 
 ## Done when
 
@@ -53,6 +73,9 @@ ratchets the numbers; this unit builds the mechanisms.
 - A C-TRAN dogfood record: a dispatcher-length session (hours of
   polls) stays bounded (the record, not the gate — the feed is not
   committed).
-- The resolver registers off the main thread, and the cost gate's
-  ratchet numbers are recorded on the Worker path (e2e).
+- The resolver registers off the main thread, the page never parses
+  a published document, and the cost gate's ratchet numbers are
+  recorded on the Worker path (e2e).
+- e2e: a module forced past its memory ceiling is re-instantiated
+  and answers the same bytes for the same request.
 - QAF-49 is deleted in the change that lands this.

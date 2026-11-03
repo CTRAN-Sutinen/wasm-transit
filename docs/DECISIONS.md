@@ -38,7 +38,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-62**.
+- IDs are never reused; the next new decision is **D-69**.
 
 ## Summary
 
@@ -102,6 +102,13 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-59 | Which JWT claim carries the roles? | decided | nothing |
 | D-60 | How are JWTs verified (JWKS vs pinned key)? | decided | nothing |
 | D-61 | Where does the authz policy live and how is it changed? | decided | nothing |
+| D-62 | Where does a document's schema version live? | decided | nothing |
+| D-63 | What does an open page do when the deployment moves past it? | decided | nothing |
+| D-64 | Which devices must the rider apps run well on? | decided | nothing |
+| D-65 | Do ride-now and the stop display work offline? | decided | nothing |
+| D-66 | How long is a migration kept? | decided | nothing |
+| D-67 | Whose feeds does the server's proxy fetch? | decided | nothing |
+| D-68 | What are ride-now's and the stop display's performance budgets? | unanswered | `deploy-rider-apps` budgets |
 
 ## The trip model
 
@@ -1189,6 +1196,146 @@ fail-closed (no policy, no valid token, or no matching rule → deny).
 Options: store pointer seeded from file (chosen); file re-read per
 request (not audited); store pointer only (needs break-glass bootstrap).
 Blocks: nothing.
+
+## Versioning and deployment
+
+### D-62 — Where does a document's schema version live?
+State: Decided.
+Answer: 2026-11-03 — "field inside each document." Every document carries a top-level version field; the hash covers it.
+Context: `docs/units/document-versioning.md`. The watchlist and the
+policy carry their version inside the document; `edit_records`
+carries it only in the store's envelope sidecar, so the copy in
+IndexedDB, a POST body, or a file `caps-run` loads has none; the
+network carries none anywhere and `read_network` sniffs its shape.
+A document's hash is its canonical bytes, so a tag inside is part of
+its identity.
+Options:
+- Inside every document, a top-level version field (recommended):
+  every copy anywhere says what it is; two versions of the same
+  content never share a hash. Costs: `edit_records` stops being a
+  bare array (its own v1 → v2 migration), and every network hash
+  changes once.
+- In the envelope only: the store and HTTP headers carry it; every
+  other copy needs a wrapper or a shape sniff, the way the network
+  is read today.
+Blocks: `document-versioning` scope 2 (the tag) and the first
+migrations.
+
+### D-63 — What does an open page do when the deployment moves past it?
+State: Decided.
+Answer: 2026-11-03 — "these are truly web apps, so they benefit from proper 'update' semantics." Encoded as the web-app update lifecycle: a new build downloads in the background and waits; a rider's page applies it at the next cold start or navigation, or when the rider accepts "a new version is ready"; a display (nobody to tap) applies it itself at its next poll while the server answers; no page applies it over unsaved device data. Data (a new network_hash) re-pins without a reload.
+Context: `docs/units/deploy-rider-apps.md`. A stop display stays
+open for weeks; a rider's tab for days. A publish moves either the
+data (a new `network_hash`, the same modules) or the code (a module
+hash, the kernel, the app build). Data re-pins without a reload in
+every option below; the question is code.
+Options:
+- Riders see "a new version is ready" and it applies at the next
+  cold start or navigation; displays reload themselves at the next
+  poll while the server answers; neither reloads over unsaved device
+  data (recommended).
+- Every page reloads as soon as it sees new code.
+- Nothing until the person reloads (today) — an old page may meet a
+  document it does not speak and goes read-only.
+Also open: a scheduled nightly reload for displays as a safety net
+(e.g. 03:00, outside service).
+Blocks: `deploy-rider-apps` following a publish.
+
+### D-64 — Which devices must the rider apps run well on?
+State: Decided.
+Answer: 2026-11-03 — the stop displays run on Raspberry Pi 4s. Ride-now targets browsers: "it shouldn't be about 'minimum support' most phones these days can handle a properly optimized page." So ride-now has performance budgets, not a device floor; the numbers are D-68.
+Context: `docs/units/runtime-cost-gate.md` ratchets the measured
+numbers down but sets no target. The scratch bench measured
+5.8–8.4 MB of wasm memory per consumer and ~300 ms per C-TRAN
+registration at 4× CPU throttle; ride-now assembles five consumers.
+Mobile browsers kill a tab well before a desktop would, and the
+stop display's hardware is not named anywhere.
+Options: name the floor — a phone (e.g. a mid-range Android three
+years old, and the smallest supported iPhone), the display's player
+hardware and browser, and a cold-load network (e.g. throttled 4G) —
+and the budgets on it (e.g. first board under 3 s cold, the page
+under 150 MB).
+Blocks: `deploy-rider-apps` budgets (the ceilings' targets) and its
+phone dogfood.
+
+### D-65 — Do ride-now and the stop display work offline?
+State: Decided.
+Answer: 2026-11-03 — "yes." Both pages are installable and work offline: the shell, the modules, and the last network cached; boards answer from the schedule, marked as the schedule.
+Context: `docs/units/deploy-rider-apps.md`. The modules and the
+network are content-addressed, so a service worker can cache them
+forever without staleness; the app shell and `/manifest` are what
+would go stale (D-63 governs those). A rider at a stop with no
+signal is the common case the project's local-first claim is for;
+a display whose uplink drops keeps its in-memory network until it
+reloads.
+Options:
+- Installable and offline at launch: the shell, the modules, and the
+  last network cached; boards answer from the schedule, marked as
+  the schedule (recommended).
+- The HTTP cache only at launch; offline is a later unit.
+Blocks: `deploy-rider-apps` offline.
+
+### D-66 — How long is a migration kept?
+State: Decided.
+Answer: 2026-11-03 — "forever … i imagined they'd just be their own wasm caps that don't take much space to store. you keep migrations for a regular application forever as sql files." Every authored kind's migration chain is kept forever, wrapped as its own capability module (the library crate holds the steps; the capability is assembled only when an older document needs it), so consumers speak only the current version.
+Context: `docs/units/document-versioning.md`. Derived documents
+(an import, the walk table) re-derive and need no migrations.
+Authored ones (edits, plans, a planner's fork, a watchlist) can sit
+on an unopened device or in an old file for years. A migration is a
+pure function with a frozen fixture, so keeping it costs a test.
+Options:
+- Forever for authored kinds (recommended).
+- A floor (e.g. a year, or N versions): older documents are refused
+  with a message naming the last build that reads them.
+Blocks: `document-versioning` the support window.
+
+### D-67 — Whose feeds does the server's proxy fetch?
+State: Decided.
+Answer: 2026-11-03 — "I'd prefer to get rid of the proxy honestly, it is just there for local dev/testing" and "we control the feeds, so we just need to fix those issues properly on the feed side." The `/rt` proxy is removed; the agency's feeds serve HTTPS with CORS and pages fetch them directly.
+Context: `docs/units/deploy-rider-apps.md`. `/rt?url=` fetches any
+http(s) URL for any caller, with no timeout or size cap — beyond
+localhost it is an open relay into the server's network. Ride-now
+lets a rider set their own feed URLs, which only work through an
+open proxy unless the upstream sends CORS headers. Where the
+deployment names its feeds is D-39.
+Options:
+- Only the deployment's own feeds (recommended): an allowlist from
+  its configuration, a timeout and a size cap; a rider's own feed
+  works only when its upstream allows CORS.
+- The deployment's feeds for anyone, any URL for an authenticated
+  role (D-58).
+- Any URL, localhost deployments only.
+Blocks: `deploy-rider-apps` the proxy.
+
+### D-68 — What are ride-now's and the stop display's performance budgets?
+State: Unanswered.
+Context: D-64 sets no device floor for ride-now and names the
+display hardware (a Raspberry Pi 4). Budgets are what the cost
+gate's ratchet must come under; the costs that matter are bytes on
+a cold load, main-thread blocking, memory (each consumer module
+holds its own parsed network, 5.8–8.4 MB on C-TRAN), and polling a
+hidden page (battery and data).
+Options (proposed): budgets on what the page controls — wasm
+linear memory plus the JS heap — never on what the device has; the
+browser's own overhead is outside them. Set from what each page
+needs, not from the hardware's headroom: a display assembles three
+consumers (directory, rt, board), each with its own parsed network
+(5.8–8.4 MB on C-TRAN), plus one live snapshot each once eviction
+lands (~388 KB) — about 30 MB.
+- The display (measured on a Pi 4): wasm + JS heap at most 40 MB,
+  flat across 24 h; a board refresh never drops a frame.
+- Ride-now (4× CPU throttle, "Fast 4G"): wasm + JS heap at most
+  80 MB (five consumers and a map); first board under 3 s cold and
+  under 1 s cached (D-65); no main-thread task over 50 ms after
+  first paint; no polling while hidden.
+These are starting ceilings: the cost gate only lowers them. The
+larger saving is a candidate, not part of this answer: a display
+shows one stop, so a stop-scoped derived document (the day's
+departures there) would replace three whole-network copies — a new
+document kind (`docs/units/runtime-cost-gate.md`, splitting the
+network document).
+Blocks: `deploy-rider-apps` budgets (the ceilings' targets) and its
+dogfood.
 
 ## Agency data
 

@@ -12,8 +12,11 @@ numbers, so the next regression is invisible.
 ## Scope
 
 - A ratchet spec in `web/e2e` over the fixture feed: linear memory
-  per consumer after `load_network`, and ms per registration,
-  against recorded ceilings that may only come down.
+  per consumer after `load_network`, ms per registration, the JS
+  heap after boot, and the bytes a cold boot transfers, against
+  recorded ceilings that may only come down. The ceilings ratchet;
+  the absolute budgets the rider apps must meet are D-68's
+  ([deploy-rider-apps.md](deploy-rider-apps.md)).
 - The same measurement on C-TRAN as a dogfood record (not a gate —
   the feed is not committed).
 - Candidates once it is measured, not before: skip the re-hash
