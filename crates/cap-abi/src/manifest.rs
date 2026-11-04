@@ -2,8 +2,8 @@
 //! manifest; "ship capabilities to match the user" is a statement
 //! about this document.
 //!
-//! The types are the contract three things hang off — the browser
-//! resolver, the (future) Go assembler, and the registry tooling —
+//! The types are the contract three things hang off — the browser's
+//! bus worker, the (future) Go assembler, and the registry tooling —
 //! so they live here, next to the ABI, with TS bindings generated
 //! into `types/cap_abi/`.
 //!
@@ -11,7 +11,7 @@
 //!
 //! * **Compatibility** — `speaks` (which document versions a module
 //!   understands directly) and `migrates` (which version steps it can
-//!   bridge). The resolver's version arithmetic is: local document at
+//!   bridge). The assembler's version arithmetic is: local document at
 //!   version V, module speaking W, migration path V→…→W available →
 //!   migrate (immutably — the old bytes stay addressable), else the
 //!   module is unavailable FOR THAT DOCUMENT and the assembly
@@ -37,7 +37,23 @@ use ts_rs::TS;
 #[ts(export, export_to = "cap_abi/")]
 pub struct CapManifest {
     pub kernel: u32,
+    /// The kernel ops: bulk ops numbered from 256 that mean the same
+    /// thing in every module that answers them (the registry ops in
+    /// every module), each with its worked example.
+    #[serde(default)]
+    pub kernel_ops: Vec<KernelOp>,
     pub capabilities: Vec<Capability>,
+}
+
+/// One kernel op: its bulk op code, its name, what it does, and a
+/// worked request (the bytes, as JSON) → response pair.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "cap_abi/")]
+pub struct KernelOp {
+    pub code: u32,
+    pub name: String,
+    pub description: String,
+    pub example: Option<OpExample>,
 }
 
 /// One capability module: what it is, the exact bytes it is (hash-

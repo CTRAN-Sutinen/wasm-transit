@@ -11,8 +11,8 @@ holds the gotchas, Rust/wasm/ops and frontend alike.
 - **Add new operations as a library + capability module**: the
   domain logic lands in a library crate, the module's
   `Request`/`Response` (serde-tagged; JSON form is `{"op": ...}`)
-  is the seam, and hosts load the module (the browser through the
-  resolver, the Go server via `NewWasmHost`). Response payloads
+  is the seam, and hosts load the module (the browser in its bus
+  worker, the Go server via `NewWasmHost`). Response payloads
   must be typed serde structs.
 - **Model vocabulary is planner vocabulary, not GTFS's**: a
   `ServiceType` IS the service (the GTFS service_id — the day-linked

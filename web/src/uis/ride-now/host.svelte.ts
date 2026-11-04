@@ -28,7 +28,7 @@
 /// is a trip end like a dropped pin, carrying the name it was shown
 /// with; nothing durable keeps the query.
 
-import { ask, available, load, produced, servedNetwork, servedStreets, servedWalks, Doc } from "../../engine";
+import { ask, available, keep, load, produced, servedNetwork, servedStreets, servedWalks, Doc } from "../../engine";
 import { currentDocument, putDocument, restoreDocuments } from "../../documents.svelte";
 import { answerGraph, today } from "../kit";
 import type { DirectWalk } from "../../types/DirectWalk";
@@ -676,6 +676,7 @@ async function adoptNetwork(
     ride.feed = network.value?.name || label;
     ride.status = "";
     await Promise.all([syncEdits(), fetchLive()]);
+    await release();
     await request("network", "edits", "snapshot", "clock", "query", "near", "stop", "departure", "trip", "saved", "view");
   } catch (e) {
     fail(e);
@@ -684,13 +685,24 @@ async function adoptNetwork(
   }
 }
 
+/// Name what the modules keep: the documents this page holds now —
+/// everything else (a replaced network, a superseded edit document)
+/// is dropped from every module (the engine's `keep`). The live
+/// documents and rt snapshots bound themselves between calls.
+function release(): Promise<void> {
+  return keep([network, boundary, edits, live, snapshots.trips, snapshots.vehicles, snapshots.alerts, streets, walks, watchlist]);
+}
+
 /// One tick: the edit document, the live feeds, and the clock; a trip
 /// asked for "now" is asked again from the new now.
 export async function poll(): Promise<void> {
   if (!network || ride.busy) return;
   const changed = ["clock"];
   const [e, l] = await Promise.all([syncEdits(), fetchLive()]);
-  if (e) changed.push("edits");
+  if (e) {
+    changed.push("edits");
+    await release();
+  }
   if (l) changed.push("snapshot");
   if (trip?.when.mode === "now") {
     trip = { ...trip, date: today() };

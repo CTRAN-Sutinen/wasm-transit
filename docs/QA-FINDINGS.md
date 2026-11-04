@@ -283,8 +283,10 @@ time, last bus home, is there a detour.
 ## Live operations
 
 - **QAF-49 OP GAP** — the live document is 388 KB per snapshot,
-  re-minted every poll, and each module keeps every registered
-  document. Eviction is `docs/units/module-runtime.md`'s.
+  re-minted every poll, and it crosses from the bus worker to the
+  page and back into the board and the router each time (the
+  modules keep only their last few — the registries are bounded).
+  The page never reads it. `docs/units/module-runtime.md`'s.
   Pin: `JSON.stringify(live).length` on a C-TRAN snapshot.
 
 ## Beyond blocks (runs, work rules)

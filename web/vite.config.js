@@ -27,6 +27,8 @@ const input = {
 export default defineConfig({
   plugins: [svelte()],
   build: { target: "esnext", rollupOptions: { input } },
+  // The bus worker (src/bus.worker.ts) is a module worker.
+  worker: { format: "es" },
   server: {
     // `npm run dev` proxies the sync server's routes (server/main.go):
     // the published documents, the manifest, edit sync and the store,

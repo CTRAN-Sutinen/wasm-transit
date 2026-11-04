@@ -17,14 +17,22 @@
 /// - An answer is cached under the journal's key: the module's bytes
 ///   (its pinned hash) and the exact request bytes, which name every
 ///   input by hash. Modules are pure, so a hit is the same answer.
-/// - Every call is async and every argument is data, so the modules
-///   can live on another thread behind this file
-///   (docs/units/module-runtime.md) without a host noticing.
+/// - The modules live on the bus worker (src/bus.worker.ts), off the
+///   thread the page renders on; every call here is async data.
+/// - A module may drop what it holds: an ephemeral kind bounds itself
+///   (rt snapshots and live documents keep their last few), the host
+///   names what survives (`keep`), and the worker replaces an instance
+///   whose memory passed its ceiling. Asking for a dropped document is
+///   the module's unknown-hash error; the engine registers the
+///   document again and asks once more, so a host never sees it.
 ///
 /// It knows the ABI (which op loads which kind) and nothing of the
 /// domain: if a departure, a trip, or a stop appears here, it leaked.
 
-import { ensure, type CapModule } from "./capabilities.svelte";
+import { call, type Assembly } from "./bus";
+import type { Capability } from "./types/cap_abi/Capability";
+import type { Evicted } from "./types/cap_abi/Evicted";
+import type { Holding } from "./types/cap_abi/Holding";
 import type { Request as AnalysisRequest } from "./types/cap_analysis/Request";
 import type { Response as AnalysisResponse } from "./types/cap_analysis/Response";
 import type { Request as AuthorRequest } from "./types/cap_author/Request";
@@ -142,15 +150,21 @@ export class Doc<V = unknown> {
     this.#hash = hash;
   }
 
-  /// The registration in one capability (memoized).
-  loadIn(cap: string, run: () => Promise<LoadAnswer>): Promise<LoadAnswer> {
-    let load = this.#loads.get(cap);
+  /// The registration in one module instance (memoized by `slot`: the
+  /// capability and its instance generation).
+  loadIn(slot: string, run: () => Promise<LoadAnswer>): Promise<LoadAnswer> {
+    let load = this.#loads.get(slot);
     if (!load) {
       load = run();
-      this.#loads.set(cap, load);
-      load.catch(() => this.#loads.delete(cap));
+      this.#loads.set(slot, load);
+      load.catch(() => this.#loads.delete(slot));
     }
     return load;
+  }
+
+  /// The module dropped it: the next use registers it again.
+  forget(slot: string): void {
+    this.#loads.delete(slot);
   }
 }
 
@@ -201,31 +215,106 @@ const LOADERS: Record<Kind, Loader> = {
 // the calls
 // ---------------------------------------------------------------------
 
-/// The module a capability id assembles to, or Unavailable.
-async function moduleOf(cap: CapId): Promise<CapModule> {
-  const module = (await ensure([cap]))[cap];
-  if (!module) throw new Unavailable(cap);
-  return module;
+/// The capabilities asked for so far: their manifest entries (null when
+/// one did not assemble).
+const assembly = new Map<string, Promise<Capability | null>>();
+
+/// The capability's manifest entry once the worker assembled it, or
+/// Unavailable.
+async function capOf(cap: CapId): Promise<Capability> {
+  let got = assembly.get(cap);
+  if (!got) {
+    got = call({ type: "ensure", caps: [cap] }).then(({ ok }) => (ok as Assembly).caps[cap] ?? null);
+    assembly.set(cap, got);
+  }
+  const entry = await got;
+  if (!entry) throw new Unavailable(cap);
+  return entry;
 }
 
 /// Whether a capability assembles (a frame's `off` flag reads this).
 export async function available(cap: CapId): Promise<boolean> {
-  return (await ensure([cap]))[cap] != null;
+  return capOf(cap).then(
+    () => true,
+    () => false,
+  );
 }
 
-/// Register a document in a capability (once per document version),
-/// answering the load op's whole answer — its hash, and what the load
-/// reported.
+/// Per capability, its instance generation: the worker replaced the
+/// instance (the memory ceiling) when it rises, and every registration
+/// memo of the old generation is void.
+const generations = new Map<string, number>();
+const slot = (cap: string): string => `${cap}@${generations.get(cap) ?? 0}`;
+
+/// One call into a module: its outcome's value, or its error thrown. A
+/// reset instance voids the generation's registrations first.
+async function invoke(
+  cap: CapId,
+  call_: { text: string } | { op: number; bytes: Uint8Array },
+  load: boolean,
+): Promise<unknown> {
+  await capOf(cap);
+  const { ok, reset } = await call(
+    "text" in call_ ? { type: "text", cap, text: call_.text, load } : { type: "bytes", cap, op: call_.op, bytes: call_.bytes, load },
+  );
+  if (reset) generations.set(cap, (generations.get(cap) ?? 0) + 1);
+  const outcome = JSON.parse(ok as string) as { ok: unknown } | { error: string };
+  if ("error" in outcome) throw new Error(outcome.error);
+  return outcome.ok;
+}
+
+/// The module's unknown-hash error (`unknown <kind> <hash>: <load op>
+/// first`, cap_abi::registry): the hash it no longer holds.
+function unknownHash(error: unknown): string | null {
+  const match = /^unknown .+ (sha256:[0-9a-f]{64}): .+ first$/.exec(error instanceof Error ? error.message : "");
+  return match ? match[1] : null;
+}
+
+/// The documents a call names, and what each is read over.
+function docsOf(values: unknown[]): Doc[] {
+  const out: Doc[] = [];
+  for (let value of values) {
+    while (value instanceof Doc && !out.includes(value)) {
+      out.push(value);
+      value = value.over;
+    }
+  }
+  return out;
+}
+
+/// Run `attempt` (which registers `docs` and asks): when the module
+/// answers that it no longer holds one of them, the document is
+/// registered again and the call made once more — at most once per
+/// document, so a module that keeps refusing surfaces its error.
+async function recovering<T>(cap: CapId, docs: Doc[], attempt: () => Promise<T>): Promise<T> {
+  for (let tries = 0; ; tries++) {
+    try {
+      return await attempt();
+    } catch (error) {
+      const hash = unknownHash(error);
+      const dropped = hash ? docs.find((d) => d.hash === hash) : undefined;
+      if (!dropped || tries > docs.length) throw error;
+      dropped.forget(slot(cap));
+    }
+  }
+}
+
+/// Register a document in a capability (once per document version and
+/// module instance), answering the load op's whole answer — its hash,
+/// and what the load reported.
 export function load(cap: CapId, doc: Doc): Promise<LoadAnswer> {
-  return doc.loadIn(cap, async () => {
-    const module = await moduleOf(cap);
+  return recovering(cap, docsOf([doc.over]), () => register(cap, doc));
+}
+
+function register(cap: CapId, doc: Doc): Promise<LoadAnswer> {
+  return doc.loadIn(slot(cap), async () => {
     const loader = LOADERS[doc.kind];
-    const over = doc.over ? (await load(cap, doc.over)).hash : null;
-    const answer = (
-      "bytes" in loader
-        ? module.invokeBytes(loader.bytes(cap), doc.bytes())
-        : module.invokeText(JSON.stringify(loader.json(doc, over)))
-    ) as Record<string, unknown>;
+    const over = doc.over ? (await register(cap, doc.over)).hash : null;
+    const answer = (await invoke(
+      cap,
+      "bytes" in loader ? { op: loader.bytes(cap), bytes: doc.bytes() } : { text: JSON.stringify(loader.json(doc, over)) },
+      true,
+    )) as Record<string, unknown>;
     const hash = answer[loader.hash];
     if (typeof hash !== "string") throw new Error(`${cap} answered no ${loader.hash} for a ${doc.kind} document`);
     doc.witness(cap, hash);
@@ -236,11 +325,11 @@ export function load(cap: CapId, doc: Doc): Promise<LoadAnswer> {
 /// A document an op produced (an import's network, an applied edit's
 /// next network, the live document): the module that answered it
 /// already holds it under `hash`, so it is never registered there
-/// again.
+/// again (while that instance lives).
 export function produced<V>(kind: Kind, value: V, cap: CapId, hash: string, opts: { over?: Doc } = {}): Doc<V> {
   const doc = new Doc<V>(kind, { value }, opts);
   doc.witness(cap, hash);
-  void doc.loadIn(cap, () => Promise.resolve({ hash }));
+  void doc.loadIn(slot(cap), () => Promise.resolve({ hash }));
   return doc;
 }
 
@@ -248,30 +337,85 @@ export function produced<V>(kind: Kind, value: V, cap: CapId, hash: string, opts
 const answers = new Map<string, unknown>();
 const ANSWERS_KEPT = 256;
 
+/// The last op asked of each capability (the e2e replays it).
+const lastAsked = new Map<string, { op: string; args: Record<string, unknown> }>();
+
 /// Ask a capability one op. Every `*_hash` argument may be a document
 /// (registered in that module first); the answer is cached by the
 /// module's bytes and the request's bytes. Throws Unavailable when the
 /// capability did not assemble, and the module's error when it
 /// refuses.
 export async function ask<C extends CapId, O extends OpOf<C>>(cap: C, op: O, args: Args<C, O>): Promise<Answer<C, O>> {
-  const module = await moduleOf(cap);
-  const request: Record<string, unknown> = { op };
-  for (const [field, value] of Object.entries(args as Record<string, unknown>)) {
-    request[field] = value instanceof Doc ? (await load(cap, value)).hash : value;
-  }
-  const text = JSON.stringify(request);
-  const key = `${module.cap.hash}\n${text}`;
-  if (answers.has(key)) {
-    const hit = answers.get(key);
-    answers.delete(key);
-    answers.set(key, hit);
-    return hit as Answer<C, O>;
-  }
-  const answer = module.invokeText(text) as Answer<C, O>;
-  answers.set(key, answer);
-  if (answers.size > ANSWERS_KEPT) answers.delete(answers.keys().next().value as string);
-  return answer;
+  return (await asked(cap, op, args as Record<string, unknown>, true)) as Answer<C, O>;
 }
+
+async function asked(cap: CapId, op: string, args: Record<string, unknown>, cached: boolean): Promise<unknown> {
+  const { hash: moduleHash } = await capOf(cap);
+  lastAsked.set(cap, { op, args });
+  return recovering(cap, docsOf(Object.values(args)), async () => {
+    const request: Record<string, unknown> = { op };
+    for (const [field, value] of Object.entries(args)) {
+      request[field] = value instanceof Doc ? (await register(cap, value)).hash : value;
+    }
+    const text = JSON.stringify(request);
+    const key = `${moduleHash}\n${text}`;
+    if (cached && answers.has(key)) {
+      const hit = answers.get(key);
+      answers.delete(key);
+      answers.set(key, hit);
+      return hit;
+    }
+    const answer = await invoke(cap, { text }, false);
+    answers.set(key, answer);
+    if (answers.size > ANSWERS_KEPT) answers.delete(answers.keys().next().value as string);
+    return answer;
+  });
+}
+
+/// The kernel's registry ops (cap_abi::registry), answered by every
+/// module.
+const OP_EVICT = 257;
+const OP_HELD = 258;
+
+/// Name what survives: every module this page assembled drops every
+/// document not named here (nor read over by one named — an edit
+/// document keeps its network). A host calls it when it lets documents
+/// go (a new network replaces the old); the kinds that bound
+/// themselves (rt snapshots, live documents) need no call. A dropped
+/// document a host still holds is registered again on its next use.
+export async function keep(docs: (Doc | null | undefined)[]): Promise<void> {
+  const hashes = docsOf(docs.filter((d): d is Doc => d instanceof Doc))
+    .map((d) => d.hash)
+    .filter((h): h is string => h !== null);
+  const bytes = new TextEncoder().encode(JSON.stringify({ keep: hashes }));
+  await Promise.all(
+    [...assembly.keys()].map(async (cap) => {
+      if (!(await available(cap as CapId))) return;
+      (await invoke(cap as CapId, { op: OP_EVICT, bytes }, true)) as Evicted;
+    }),
+  );
+}
+
+/// Inspection the e2e reads (window.__bus): what a module holds, its
+/// linear memory and resets, the ceiling, and the last op asked of a
+/// capability asked again past the answer cache.
+const inspection = {
+  held: async (cap: CapId): Promise<Holding> => (await invoke(cap, { op: OP_HELD, bytes: new Uint8Array() }, true)) as Holding,
+  memory: async (cap: CapId): Promise<{ memory: number; resets: number }> => {
+    await capOf(cap);
+    return (await call({ type: "inspect", cap })).ok as { memory: number; resets: number };
+  },
+  ceiling: async (bytes: number, minResetMs: number): Promise<void> => {
+    await call({ type: "ceiling", bytes, minResetMs });
+  },
+  replay: async (cap: CapId): Promise<string> => {
+    const last = lastAsked.get(cap);
+    if (!last) throw new Error(`nothing was asked of ${cap}`);
+    return JSON.stringify(await asked(cap, last.op, last.args, false));
+  },
+};
+if (typeof window !== "undefined") window.__bus = inspection;
+export type Inspection = typeof inspection;
 
 // ---------------------------------------------------------------------
 // the deployment's published documents

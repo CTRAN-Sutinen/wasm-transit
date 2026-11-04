@@ -12,7 +12,7 @@ came from. The old bytes stay addressable; rollback is a pointer
 moved back, never an inverse migration.
 
 What already exists, and is the shape the rest follows: the
-manifest's `kernel` version (the resolver refuses a mismatched
+manifest's `kernel` version (the bus worker refuses a mismatched
 manifest); each capability's `speaks` and `migrates`, with
 migration-path reachability proven at compose time (`cap-abi`
 `validate.rs`); the watchlist (a version tag in the document, a

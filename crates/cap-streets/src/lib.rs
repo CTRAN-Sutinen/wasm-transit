@@ -18,8 +18,9 @@
 //! are the same hash. Every query addresses it. The module writes
 //! nothing.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
+
+use cap_abi::registry::{Registry, Retain};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -125,7 +126,7 @@ pub enum Response {
 /// A registered streets document and the graphs built over it on
 /// first use: the street graph (snap, route) and the walking graph
 /// (walks) — a host that only walks never builds the other.
-struct Registered {
+pub struct Registered {
     streets: Streets,
     graph: OnceLock<StreetNetwork>,
     walking: OnceLock<WalkGraph>,
@@ -141,26 +142,16 @@ impl Registered {
     }
 }
 
-/// Streets documents by their hash.
-fn registry() -> &'static Mutex<HashMap<String, Arc<Registered>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Registered>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+/// Streets documents by their hash (with the graphs built over them —
+/// evicting the document drops its graphs).
+pub static STREETS: Registry<Registered> = Registry::documents("street network", "import or load_streets", Retain::Host);
 
 /// A network's stops (id, lat, lon) by the network's hash — all the
 /// walk table reads of it.
-fn networks() -> &'static Mutex<HashMap<String, Arc<Vec<(String, f64, f64)>>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Vec<(String, f64, f64)>>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+pub static NETWORKS: Registry<Vec<(String, f64, f64)>> = Registry::documents("network", "load_network", Retain::Host);
 
 fn registered(streets_hash: &str) -> Result<Arc<Registered>, String> {
-    registry()
-        .lock()
-        .expect("streets registry lock")
-        .get(streets_hash)
-        .cloned()
-        .ok_or_else(|| format!("unknown street network {streets_hash}: import or load_streets first"))
+    STREETS.require(streets_hash)
 }
 
 /// Register a canonical document: its hash, its way count, and its
@@ -168,12 +159,7 @@ fn registered(streets_hash: &str) -> Result<Arc<Registered>, String> {
 fn register(streets: Streets) -> Result<(String, Streets, u32, u32, u32), String> {
     let hash = cap_abi::canonical_hash(&streets)?;
     let ways = streets.ways.len() as u32;
-    let entry = registry()
-        .lock()
-        .expect("streets registry lock")
-        .entry(hash.clone())
-        .or_insert_with(|| Arc::new(Registered { streets, graph: OnceLock::new(), walking: OnceLock::new() }))
-        .clone();
+    let entry = STREETS.insert(hash.clone(), Registered { streets, graph: OnceLock::new(), walking: OnceLock::new() });
     // The graph's size, counted off the document — registering builds
     // no graph.
     let segments = entry.streets.ways.iter().map(|w| w.points.len() as u32 - 1).sum();
@@ -195,12 +181,7 @@ fn pace(speed_mps: Option<f64>, max_walk_secs: Option<u32>) -> Result<(f64, u32)
 }
 
 fn network_stops(network_hash: &str) -> Result<Arc<Vec<(String, f64, f64)>>, String> {
-    networks()
-        .lock()
-        .expect("network registry lock")
-        .get(network_hash)
-        .cloned()
-        .ok_or_else(|| format!("unknown network {network_hash}: load_network first"))
+    NETWORKS.require(network_hash)
 }
 
 fn walks(streets_hash: &str, network_hash: &str, speed_mps: Option<f64>, max_walk_secs: Option<u32>) -> Result<Response, String> {
@@ -265,7 +246,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::LoadNetwork { network } => {
             let hash = cap_abi::canonical_hash(&network)?;
             let stops = network.stops.iter().map(|(id, s)| (id.clone(), s.lat, s.lon)).collect();
-            networks().lock().expect("network registry lock").entry(hash.clone()).or_insert_with(|| Arc::new(stops));
+            NETWORKS.insert(hash.clone(), stops);
             Ok(Response::LoadNetwork { network_hash: hash })
         }
         Request::Walks { streets_hash, network_hash, speed_mps, max_walk_secs } => {
@@ -328,4 +309,5 @@ pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
 cap_abi::capability! {
     json: dispatch_json,
     bytes: dispatch_bytes,
+    registries: [STREETS, NETWORKS],
 }

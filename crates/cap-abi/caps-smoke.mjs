@@ -1398,4 +1398,41 @@ for (const id of ["network", "analysis", "board", "runcut", "calendar", "router"
   assert(refused?.includes("invalid document"), `${id} refuses a garbage document on the bulk op`);
 }
 
+// THE REGISTRY KERNEL OPS — EVERY module answers held (258) and evict
+// (257) over the registries it declares: a module reports what it
+// holds, a keep-set drops the rest, and asking for an evicted document
+// is the unknown-hash error (re-registering answers the same hash).
+const OP_EVICT = 257;
+const OP_HELD = 258;
+const kernelOps = Object.fromEntries((manifest.kernel_ops ?? []).map((k) => [k.name, k]));
+assert(kernelOps.evict?.code === OP_EVICT && kernelOps.held?.code === OP_HELD, "the manifest documents the registry kernel ops");
+assert(kernelOps.evict.example?.response?.ok?.dropped?.length === 1, "evict's worked example is computed");
+for (const cap of manifest.capabilities) {
+  const fresh = shell(loadModule(cap));
+  const empty = fresh.invokeBytes(OP_HELD, Buffer.alloc(0));
+  assert(Array.isArray(empty.held) && empty.held.length === 0, `${cap.id} answers held: a fresh instance holds nothing`);
+  const none = fresh.invokeBytes(OP_EVICT, Buffer.from(JSON.stringify({ keep: [] })));
+  assert(none.dropped.length === 0 && none.held.length === 0, `${cap.id} answers evict`);
+  let refused = null;
+  try {
+    fresh.invokeBytes(OP_EVICT, Buffer.from("{not a keep-set"));
+  } catch (error) {
+    refused = String(error);
+  }
+  assert(refused?.includes("invalid request"), `${cap.id} refuses a garbage keep-set`);
+}
+{
+  const board = shell(loadModule(byId.board));
+  const net = board.invokeBytes(OP_LOAD_NETWORK, networkBytes).network_hash;
+  const held = board.invokeBytes(OP_HELD, Buffer.alloc(0)).held;
+  assert(held.length === 1 && held[0].kind === "network" && held[0].key === net, "board holds the network it registered");
+  const kept = board.invokeBytes(OP_EVICT, Buffer.from(JSON.stringify({ keep: [net] })));
+  assert(kept.dropped.length === 0 && kept.held.length === 1, "a kept document never drops");
+  const gone = board.invokeBytes(OP_EVICT, Buffer.from(JSON.stringify({ keep: [] })));
+  assert(gone.dropped.length === 1 && gone.held.length === 0, "an unkept document drops");
+  const asked = board.raw({ op: "stop_board", network_hash: net, stop_id: "A", date: DATE, from_secs: 0, limit: 3 });
+  assert(asked.error === `unknown network ${net}: load_network first`, "evicted-then-asked is the unknown-hash error");
+  assert(board.invokeBytes(OP_LOAD_NETWORK, networkBytes).network_hash === net, "re-registering answers the same hash");
+}
+
 console.log("capability modules: ABI smoke ok");

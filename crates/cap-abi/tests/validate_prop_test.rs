@@ -52,6 +52,7 @@ fn valid_manifest() -> CapManifest {
     let hex = |n: u8| format!("{}{:0>63}", n, "");
     CapManifest {
         kernel: 1,
+        kernel_ops: vec![],
         capabilities: vec![
             cap("gtfs", &format!("sha256:{}", hex(1)),
                 &["load_feed", "departures"], &[],
@@ -95,7 +96,7 @@ proptest! {
                 op_docs: HashMap::new(),
             })
             .collect();
-        let manifest = CapManifest { kernel, capabilities };
+        let manifest = CapManifest { kernel, kernel_ops: vec![], capabilities };
         let _ = validate_assembly(&manifest); // a verdict, never a panic
     }
 

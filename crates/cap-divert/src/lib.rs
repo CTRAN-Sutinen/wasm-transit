@@ -20,8 +20,9 @@
 //! validating a record against the network every day view's
 //! load_edits — never this module's.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
+
+use cap_abi::registry::{Registry, Retain};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -94,29 +95,17 @@ pub enum Response {
     Sanitize { records: Vec<EditRecord>, dropped: u32 },
 }
 
-fn networks() -> &'static Mutex<HashMap<String, Arc<Network>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Network>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+pub static NETWORKS: Registry<Network> = Registry::documents("network", "load_network", Retain::Host);
 
 /// Canonical serialization → content hash, registered (idempotent).
 fn register(network: Network) -> Result<String, String> {
     let hash = cap_abi::canonical_hash(&network)?;
-    networks()
-        .lock()
-        .expect("network registry lock")
-        .entry(hash.clone())
-        .or_insert_with(|| Arc::new(network));
+    NETWORKS.insert(hash.clone(), network);
     Ok(hash)
 }
 
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    networks()
-        .lock()
-        .expect("network registry lock")
-        .get(network_hash)
-        .cloned()
-        .ok_or_else(|| format!("unknown network {network_hash}: load_network first"))
+    NETWORKS.require(network_hash)
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
@@ -186,4 +175,5 @@ pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
 cap_abi::capability! {
     json: dispatch_json,
     bytes: dispatch_bytes,
+    registries: [NETWORKS],
 }

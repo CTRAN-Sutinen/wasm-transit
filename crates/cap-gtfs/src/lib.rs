@@ -25,8 +25,7 @@
 //! The TS types that cross the boundary are generated into
 //! `types/cap_gtfs/`.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use cap_abi::registry::{Registry, Retain};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -60,11 +59,8 @@ pub enum Response {
 }
 
 /// The registry: content hash -> parsed feed. One instance per module
-/// (wasm modules never share state); the mutex only guards the map.
-fn registry() -> &'static Mutex<HashMap<String, Arc<Feed>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Feed>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+/// (wasm modules never share state).
+pub static FEEDS: Registry<Feed> = Registry::documents("feed", "load_feed", Retain::Host);
 
 /// "sha256:<hex>" — the manifest's document-hash format everywhere.
 pub fn content_hash(bytes: &[u8]) -> String {
@@ -76,31 +72,18 @@ fn with_feed<T>(
     feed_hash: &str,
     f: impl FnOnce(&Feed) -> Result<T, String>,
 ) -> Result<T, String> {
-    let guard = registry().lock().expect("registry lock");
-    let feed = guard
-        .get(feed_hash)
-        .ok_or_else(|| format!("unknown feed {feed_hash}: load_feed first"))?;
-    f(&feed)
+    f(&*FEEDS.require(feed_hash)?)
 }
 
 /// Load a feed into the registry; idempotent by content hash.
 fn load_feed(bytes: &[u8]) -> Result<Response, String> {
     let hash = content_hash(bytes);
-    {
-        let guard = registry().lock().expect("registry lock");
-        if let Some(feed) = guard.get(&hash) {
-            return Ok(Response::LoadFeed {
-                feed_hash: hash,
-                summary: feed.summary(),
-            });
-        }
+    if let Some(feed) = FEEDS.get(&hash) {
+        return Ok(Response::LoadFeed { feed_hash: hash, summary: feed.summary() });
     }
     let feed = Feed::from_zip_bytes(bytes).map_err(|e| format!("parse: {e}"))?;
     let summary = feed.summary();
-    registry()
-        .lock()
-        .expect("registry lock")
-        .insert(hash.clone(), Arc::new(feed));
+    FEEDS.insert(hash.clone(), feed);
     Ok(Response::LoadFeed { feed_hash: hash, summary })
 }
 
@@ -143,4 +126,5 @@ pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
 cap_abi::capability! {
     json: dispatch_json,
     bytes: dispatch_bytes,
+    registries: [FEEDS],
 }

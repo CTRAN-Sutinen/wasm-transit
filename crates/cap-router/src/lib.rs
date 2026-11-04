@@ -22,11 +22,11 @@
 //! materialization apart, no second document — with the rider's
 //! notice whenever the diversion changes the trip).
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 
-use chrono::NaiveDate;
 use cap_abi::canonical_hash;
+use cap_abi::registry::{Registry, Retain};
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_live::LiveDay;
@@ -205,76 +205,41 @@ pub enum Response {
 }
 
 /// Networks by content hash (canonical serialization).
-fn networks() -> &'static Mutex<HashMap<String, Arc<Network>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Network>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+pub static NETWORKS: Registry<Network> = Registry::documents("network", "load_network", Retain::Host);
 
 /// Edit documents by content hash (canonical serialization).
-fn edits() -> &'static Mutex<HashMap<String, Arc<Vec<EditRecord>>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Vec<EditRecord>>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+pub static EDITS: Registry<Vec<EditRecord>> = Registry::documents("edits", "load_edits", Retain::Host);
 
 /// Live documents by content hash (canonical serialization).
-fn lives() -> &'static Mutex<HashMap<String, Arc<LiveDay>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<LiveDay>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+pub static LIVES: Registry<LiveDay> = Registry::documents("live document", "load_live", Retain::Last(4));
 
 /// Walk tables by content hash (canonical serialization).
-fn walk_tables() -> &'static Mutex<HashMap<String, Arc<WalkTable>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<WalkTable>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// A graph's identity: (network, edits, live, date, walks).
-type GraphKey = (String, Option<String>, Option<String>, NaiveDate, Option<String>);
+pub static WALKS: Registry<WalkTable> = Registry::documents("walk table", "load_walks", Retain::Host);
 
 /// RAPTOR graphs by (network, edits, live, date, walks), built on first
-/// use — the graph is a pure function of the day and its
-/// predictions, so it caches per day.
-fn graphs() -> &'static Mutex<HashMap<GraphKey, Arc<transit_router::RouterNetwork>>> {
-    static GRAPHS: OnceLock<Mutex<HashMap<GraphKey, Arc<transit_router::RouterNetwork>>>> = OnceLock::new();
-    GRAPHS.get_or_init(|| Mutex::new(HashMap::new()))
-}
+/// use — the graph is a pure function of the day and its predictions,
+/// so it caches per day. Derived from the documents it names: a
+/// keep-set that drops any of them drops the graph, and at most eight
+/// stay (a long session's dates and edit generations would otherwise
+/// each leave one behind in linear memory that never shrinks).
+pub static GRAPHS: Registry<transit_router::RouterNetwork> = Registry::derived("graph", Retain::Last(8));
 
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    networks()
-        .lock()
-        .expect("network registry lock")
-        .get(network_hash)
-        .cloned()
-        .ok_or_else(|| format!("unknown network {network_hash}: load_network first"))
+    NETWORKS.require(network_hash)
 }
 
 fn edits_arc(edits_hash: &str) -> Result<Arc<Vec<EditRecord>>, String> {
-    edits()
-        .lock()
-        .expect("edits registry lock")
-        .get(edits_hash)
-        .cloned()
-        .ok_or_else(|| format!("unknown edits {edits_hash}: load_edits first"))
+    EDITS.require(edits_hash)
 }
 
 fn live_arc(live_hash: &str) -> Result<Arc<LiveDay>, String> {
-    lives()
-        .lock()
-        .expect("live registry lock")
-        .get(live_hash)
-        .cloned()
-        .ok_or_else(|| format!("unknown live document {live_hash}: load_live first"))
+    LIVES.require(live_hash)
 }
 
 /// A registered walk table, refused when it was derived for another
 /// network: its stops would be another network's.
 fn walks_arc(walks_hash: &str, network_hash: &str) -> Result<Arc<WalkTable>, String> {
-    let table = walk_tables()
-        .lock()
-        .expect("walk table registry lock")
-        .get(walks_hash)
-        .cloned()
-        .ok_or_else(|| format!("unknown walk table {walks_hash}: load_walks first"))?;
+    let table = WALKS.require(walks_hash)?;
     if table.network_hash != network_hash {
         return Err(format!(
             "walk table {walks_hash} walks network {}, not {network_hash}",
@@ -321,15 +286,16 @@ fn graph(
     };
     let live = live_hash.map(live_arc).transpose()?;
     let walks = walks_hash.map(|h| walks_arc(h, network_hash)).transpose()?;
-    let key = (
-        network_hash.to_string(),
-        edits_hash.map(str::to_string),
-        live_hash.map(str::to_string),
-        date,
-        walks_hash.map(str::to_string),
+    // The key leads with the live hash ("" for none): the newest-live
+    // rule below reads it back.
+    let key = format!(
+        "{}|{network_hash}|{}|{date}|{}",
+        live_hash.unwrap_or(""),
+        edits_hash.unwrap_or(""),
+        walks_hash.unwrap_or("")
     );
-    if let Some(cached) = graphs().lock().expect("graph cache lock").get(&key) {
-        return Ok(cached.clone());
+    if let Some(cached) = GRAPHS.get(&key) {
+        return Ok(cached);
     }
     let day = effective_day(&network, &records, date)?;
     let mut built = transit_router::RouterNetwork::build(&network, &day, date, live.as_deref());
@@ -337,14 +303,14 @@ fn graph(
         built = built.with_walks(walks);
     }
     let built = Arc::new(built);
-    let mut cache = graphs().lock().expect("graph cache lock");
     // Live documents are ephemeral (one per rt moment): only the
     // newest live document's graphs stay cached, or every snapshot
-    // would leave a graph behind in linear memory that never shrinks.
-    if let Some(current) = &key.2 {
-        cache.retain(|k, _| k.2.as_ref().is_none_or(|h| h == current));
+    // would leave a graph behind.
+    if let Some(current) = live_hash {
+        GRAPHS.retain(|key, _| key.split('|').next().is_none_or(|live| live.is_empty() || live == current));
     }
-    cache.insert(key, built.clone());
+    let inputs = [Some(network_hash), edits_hash, live_hash, walks_hash].into_iter().flatten().map(str::to_string).collect();
+    GRAPHS.insert_derived(key, inputs, built.clone());
     Ok(built)
 }
 
@@ -354,11 +320,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::LoadNetwork { network } => {
             let hash = canonical_hash(&network)?;
-            networks()
-                .lock()
-                .expect("network registry lock")
-                .entry(hash.clone())
-                .or_insert_with(|| Arc::new(network));
+            NETWORKS.insert(hash.clone(), network);
             Ok(Response::LoadNetwork { network_hash: hash })
         }
         Request::LoadEdits { network_hash, records } => {
@@ -366,20 +328,17 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let network = network_arc(&network_hash)?;
             let reports = transit_dispatch::report_against_network(&network, &records);
             let hash = canonical_hash(&records)?;
-            edits()
-                .lock()
-                .expect("edits registry lock")
-                .insert(hash.clone(), Arc::new(records));
+            EDITS.insert(hash.clone(), records);
             Ok(Response::LoadEdits { edits_hash: hash, reports })
         }
         Request::LoadLive { live } => {
             let hash = canonical_hash(&live)?;
-            lives().lock().expect("live registry lock").entry(hash.clone()).or_insert_with(|| Arc::new(live));
+            LIVES.insert(hash.clone(), live);
             Ok(Response::LoadLive { live_hash: hash })
         }
         Request::LoadWalks { walks } => {
             let hash = canonical_hash(&walks)?;
-            walk_tables().lock().expect("walk table registry lock").entry(hash.clone()).or_insert_with(|| Arc::new(walks));
+            WALKS.insert(hash.clone(), walks);
             Ok(Response::LoadWalks { walks_hash: hash })
         }
         Request::PlanArriveBy {
@@ -518,4 +477,5 @@ pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
 cap_abi::capability! {
     json: dispatch_json,
     bytes: dispatch_bytes,
+    registries: [NETWORKS, EDITS, LIVES, WALKS, GRAPHS],
 }

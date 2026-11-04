@@ -19,8 +19,9 @@
 //! * **network** — the same identity cap-network's import produces
 //!   and cap-analysis consumes (the module is the hash authority).
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
+
+use cap_abi::registry::{Registry, Retain};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -223,18 +224,10 @@ pub enum Response {
 pub const STOPS_NEAR_LIMIT: u32 = 10;
 
 /// Networks by content hash (canonical serialization).
-fn networks() -> &'static Mutex<HashMap<String, Arc<Network>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Network>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+pub static NETWORKS: Registry<Network> = Registry::documents("network", "load_network", Retain::Host);
 
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    networks()
-        .lock()
-        .expect("network registry lock")
-        .get(network_hash)
-        .cloned()
-        .ok_or_else(|| format!("unknown network {network_hash}: load_network first"))
+    NETWORKS.require(network_hash)
 }
 
 fn directory_stop(network: &Network, id: &str) -> Option<DirectoryStop> {
@@ -254,11 +247,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::LoadNetwork { network } => {
             let hash = cap_abi::canonical_hash(&network)?;
-            networks()
-                .lock()
-                .expect("network registry lock")
-                .entry(hash.clone())
-                .or_insert_with(|| Arc::new(network));
+            NETWORKS.insert(hash.clone(), network);
             Ok(Response::LoadNetwork { network_hash: hash })
         }
         Request::Stops { network_hash, query, limit } => {
@@ -417,4 +406,5 @@ pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
 cap_abi::capability! {
     json: dispatch_json,
     bytes: dispatch_bytes,
+    registries: [NETWORKS],
 }

@@ -15,7 +15,7 @@
 /// assemble turns its frames OFF (`off`), and they say so — nothing
 /// here answers in its place.
 
-import { ask, available, load, produced, servedNetwork, Doc } from "../../engine";
+import { ask, available, keep, load, produced, servedNetwork, Doc } from "../../engine";
 import { answerGraph, today } from "../kit";
 import type { Boundary } from "../../types/Boundary";
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
@@ -267,6 +267,7 @@ async function adoptNetwork(
     display.feed = network.value?.name || label;
     display.status = "";
     await Promise.all([syncEdits(), fetchLive()]);
+    await release();
     await request("network", "edits", "snapshot", "clock", "query", "stop", "setup");
   } catch (e) {
     fail(e);
@@ -275,13 +276,24 @@ async function adoptNetwork(
   }
 }
 
+/// Name what the modules keep: the documents this page holds now —
+/// everything else (a replaced network, a superseded edit document)
+/// is dropped from every module (the engine's `keep`). The live
+/// documents and rt snapshots bound themselves between calls.
+function release(): Promise<void> {
+  return keep([network, boundary, edits, live, snapshots.trips, snapshots.vehicles, snapshots.alerts]);
+}
+
 /// One tick: the edit document, the live feeds, and the clock.
 export async function poll(): Promise<void> {
   if (!network || display.busy) return;
   display.nowSecs = nowSecs();
   const changed = ["clock"];
   const [e, l] = await Promise.all([syncEdits(), fetchLive()]);
-  if (e) changed.push("edits");
+  if (e) {
+    changed.push("edits");
+    await release();
+  }
   if (l) changed.push("snapshot");
   await request(...changed);
 }

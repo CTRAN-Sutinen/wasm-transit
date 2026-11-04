@@ -5,11 +5,11 @@ host. The host pays that debt as a designed layer, or it rots into
 glue copied per component. The engine (`web/src/engine.ts`) is that
 layer's execution half: the one caller of a module's ops, with
 documents as `Doc` handles registered and identity-checked per
-module, and answers cached under the journal's key — gated in `just
-test` (the one-op-caller web gate and the DETERMINISM gate;
+module, answers cached under the journal's key, and the modules on
+the page's one bus worker behind it — gated in `just test` (the
+one-op-caller web gates and the DETERMINISM gate;
 `docs/ARCHITECTURE.md`, web section). What is left is the
-describing half (flow maps), the journal written down, replay, and
-the worker behind the engine.
+describing half (flow maps), the journal written down, and replay.
 
 ## Scope
 
@@ -34,15 +34,11 @@ the worker behind the engine.
   natively (same module bytes, same input hashes, compare output
   hashes). Module replacement becomes re-pin + replay against the
   candidate.
-- **Registry eviction.** Each module keeps every registered
-  document for the session; eviction (a kernel keep-set op, the
-  ephemeral-kind defaults) is [module-runtime.md](module-runtime.md)'s.
 
 ## Order
 
-The engine landed first, keyed by the journal's entry. Next the
-worker behind it ([module-runtime.md](module-runtime.md)); then the
-journal and replay in the runner (`caps-run`'s chained-session
+The engine landed first, keyed by the journal's entry, and the
+worker behind it. Next the journal and replay in the runner (`caps-run`'s chained-session
 format becomes the journal format, closing
 [caps-run-sessions.md](caps-run-sessions.md)'s session store); flow
 maps as data last, with
@@ -82,5 +78,3 @@ Engine requirements the tables cannot express:
   output hashes.
 - The UIs request flows through the engine (e2e green), and
   `answerGraph` is gone from `web/src/uis/kit.ts`.
-- The modules run behind the engine on one Worker
-  ([module-runtime.md](module-runtime.md)) — never per component.

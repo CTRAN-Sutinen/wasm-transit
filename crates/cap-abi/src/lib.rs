@@ -15,7 +15,11 @@
 //!   and for the kernel's own documents ([`OP_LOAD_NETWORK`]).
 //!
 //! A capability's own bulk ops number from 0; kernel ops number from
-//! 256 and mean the same thing in every module that answers them.
+//! 256 and mean the same thing in every module that answers them:
+//! [`OP_LOAD_NETWORK`] (256) in every module that reads networks, and
+//! the registry ops [`registry::OP_EVICT`] (257) and
+//! [`registry::OP_HELD`] (258) in EVERY module — the macro answers
+//! them over the registries the module declares.
 //!
 //! Usage:
 //!
@@ -29,7 +33,8 @@
 //! // In the capability crate's lib.rs:
 //! cap_abi::capability! {
 //!     json: my_cap::dispatch_json,
-//!     bytes: (my_cap::OP_LOAD_FEED, my_cap::dispatch_bytes),
+//!     bytes: my_cap::dispatch_bytes,
+//!     registries: [my_cap::FEEDS],
 //! }
 //! ```
 //!
@@ -41,10 +46,17 @@
 /// `json` is `fn(&str) -> String`; `bytes` is `fn(u32, &[u8]) ->
 /// String` (the op code is the module's own public const, advertised
 /// in the manifest; hosts pass it through to `transit_invoke_bytes`
-/// uninterpreted).
+/// uninterpreted). `registries` names every [`registry::Registry`]
+/// static the module keeps (`[]` for a stateless module): the kernel
+/// registry ops answer over them before `bytes` sees the op, and they
+/// are `REGISTRIES` for the crate's own tests.
 #[macro_export]
 macro_rules! capability {
-    (json: $json:path, bytes: $bytes:path $(,)?) => {
+    (json: $json:path, bytes: $bytes:path, registries: [$($registry:path),* $(,)?] $(,)?) => {
+        /// Every registry this module keeps — what the kernel registry
+        /// ops (evict, held) answer over.
+        pub static REGISTRIES: &[&dyn $crate::registry::Held] = &[$(&$registry),*];
+
         /// Result buffers carry a u32 length prefix.
         const LEN_PREFIX: usize = 4;
 
@@ -103,7 +115,10 @@ macro_rules! capability {
         #[no_mangle]
         pub unsafe extern "C" fn transit_invoke_bytes(op: u32, ptr: *const u8, len: usize) -> *mut u8 {
             let bytes = std::slice::from_raw_parts(ptr, len);
-            write_result($bytes(op, bytes))
+            write_result(match $crate::registry::kernel(op, bytes, REGISTRIES) {
+                Some(answer) => answer,
+                None => $bytes(op, bytes),
+            })
         }
     };
 }
@@ -209,4 +224,5 @@ pub fn outcome<T: serde::Serialize>(result: Result<T, String>) -> String {
 }
 
 pub mod manifest;
+pub mod registry;
 pub mod validate;

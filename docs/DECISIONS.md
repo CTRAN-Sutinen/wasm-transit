@@ -38,7 +38,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-70**.
+- IDs are never reused; the next new decision is **D-71**.
 
 ## Summary
 
@@ -1355,6 +1355,33 @@ Blocks: nothing. The gaps it left are lines in
 `docs/units/grade-debt.md` ("Not read by a UI"), paid by
 `ui-disruptions` and `ui-runcut`; the migrate/rollback pin is
 `docs/units/document-versioning.md`'s browser e2e.
+
+### D-70 — How do the module runtime's bounds default?
+State: Provisional.
+Context: `docs/units/module-runtime.md` puts eviction in the module
+(a kernel op over a keep-set the host names) and leaves the
+defaults open: how many ephemeral documents a module keeps with no
+host steering, when an instance is replaced for its memory, and
+what a host sees when a document it holds was dropped.
+Encoded (provisional, change by editing the constants):
+- Ephemeral kinds keep their most recent N registrations: rt
+  snapshots 8 (a live answer reads at most three per poll), live
+  documents 4 (board, router, runcut), router graphs 8 (and only the
+  newest live document's). Durable kinds (networks, feeds, edits,
+  boundaries, layers, walk tables, streets, watchlists) stay until a
+  keep-set drops them.
+- The memory ceiling is 256 MiB per instance, checked before an op
+  (never a registration); an instance is replaced only after it has
+  answered an op since it was made, and at most once a minute.
+- A dropped document is invisible to the host: the engine
+  registers it again and asks once more.
+Pins: `cap_abi::registry` (its keep-last-N and keep-set
+properties), `crates/cap-rt/tests/registry_test.rs`,
+`crates/cap-router/tests/registry_test.rs`, and
+`e2e/ui-stop-display.spec.mjs` ("a display left polling stays
+bounded").
+Blocks: nothing — the C-TRAN record in `module-runtime.md` measures
+the working set the ceiling should sit above.
 
 ## Agency data
 

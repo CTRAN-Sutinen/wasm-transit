@@ -183,7 +183,9 @@ transit-streets  THE streets document (canonical: its hash is the streets', not 
                  its import from street layers (GeoJSON: agency exports, TIGER, OSM),
                  the graph over it (snap, route), and walking (the walk table between stops,
                  a point's walks to the stops near it)
-cap-abi          the capability seam (ABI macro, manifest, validator, gen-manifest)
+cap-abi          the capability seam (ABI macro, manifest, validator, gen-manifest,
+                 the document registry every module keeps its documents in and
+                 the kernel ops over it — evict, held)
 cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert
                  the capability modules (docs/ARCHITECTURE.md, bus section)
 server/          Go + wazero host over cap-sync, cap-network and cap-streets (the
@@ -193,7 +195,8 @@ server/          Go + wazero host over cap-sync, cap-network and cap-streets (th
 web/             Svelte 5 + Vite frontend: / is a picker over the GENERATED UIs
                  (src/uis/<id>/, each its own page and host layer; every page
                  is one) (docs/ARCHITECTURE.md, web section, "Generated UIs" —
-                 the recipe a fresh agent follows)
+                 the recipe a fresh agent follows); the modules run in the
+                 page's one bus worker, behind the engine
 ```
 
 Per-crate detail: `docs/ARCHITECTURE.md`.
@@ -247,7 +250,9 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
 - **One op caller**: a host asks through the engine
   (`web/src/engine.ts`) — `ask(capability, op, args)`, holding
   documents (`Doc`), never modules or hashes; nothing else imports
-  the resolver or calls a module (a web gate in `just test`).
+  the bus or calls a module, and the modules live in the page's one
+  bus worker (`web/src/bus.worker.ts`), off the render thread (web
+  gates in `just test`).
 - **External services** are sources, presentation, or oracles — an
   oracle (the geocoder) answers an input the user could have given
   by hand; a host sends it the user's input only, shows its answer

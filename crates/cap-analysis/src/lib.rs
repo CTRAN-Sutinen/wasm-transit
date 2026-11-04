@@ -15,8 +15,9 @@
 //! network capability would be loaded here by the SAME hash the
 //! producer returned, asserted at the host.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
+
+use cap_abi::registry::{Registry, Retain};
 
 use serde::{Deserialize, Serialize};
 use cap_abi::content_hash;
@@ -201,16 +202,10 @@ pub enum Response {
 
 /// Networks by content hash — canonical serialization, so byte
 /// variants of one logical document land on one entry.
-fn networks() -> &'static Mutex<HashMap<String, Arc<Network>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Network>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+pub static NETWORKS: Registry<Network> = Registry::documents("network", "load_network", Retain::Host);
 
 /// Population layers by content hash of the input bytes.
-fn layers() -> &'static Mutex<HashMap<String, Arc<PopLayer>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<PopLayer>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+pub static LAYERS: Registry<PopLayer> = Registry::documents("layer", "load_population_layer", Retain::Host);
 
 fn default_true() -> bool {
     true
@@ -229,22 +224,13 @@ fn with_network<T>(
     network_hash: &str,
     f: impl FnOnce(&Network) -> Result<T, String>,
 ) -> Result<T, String> {
-    let guard = networks().lock().expect("network registry lock");
-    let network = guard
-        .get(network_hash)
-        .ok_or_else(|| format!("unknown network {network_hash}: load_network first"))?;
-    f(&network)
+    f(&*NETWORKS.require(network_hash)?)
 }
 
 /// The registered document itself (for ops that compose across
 /// registries).
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    networks()
-        .lock()
-        .expect("network registry lock")
-        .get(network_hash)
-        .cloned()
-        .ok_or_else(|| format!("unknown network {network_hash}: load_network first"))
+    NETWORKS.require(network_hash)
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
@@ -254,24 +240,18 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::LoadNetwork { network } => {
             let hash = network_hash(&network)?;
-            networks()
-                .lock()
-                .expect("network registry lock")
-                .entry(hash.clone())
-                .or_insert_with(|| Arc::new(network));
+            NETWORKS.insert(hash.clone(), network);
             Ok(Response::LoadNetwork { network_hash: hash })
         }
         Request::LoadPopulationLayer { bytes, pop_field } => {
             let hash = content_hash(&bytes);
-            let mut registry = layers().lock().expect("layer lock");
-            if !registry.contains_key(&hash) {
-                let layer = parse_pop_layer(&bytes, pop_field.as_deref())
-                    .map_err(|e| format!("population layer: {e}"))?;
-                registry.insert(hash.clone(), Arc::new(layer));
-            }
-            let layer = registry
-                .get(&hash)
-                .expect("layer was just inserted under its hash");
+            let layer = match LAYERS.get(&hash) {
+                Some(layer) => layer,
+                None => LAYERS.insert(
+                    hash.clone(),
+                    parse_pop_layer(&bytes, pop_field.as_deref()).map_err(|e| format!("population layer: {e}"))?,
+                ),
+            };
             Ok(Response::LoadPopulationLayer {
                 layer_hash: hash,
                 points: layer.points.len() as u64,
@@ -327,13 +307,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::TypeCoverage { network_hash, layer_hash, radius_m, frequent_secs, min_departures, window } => {
             let network_arc = network_arc(&network_hash)?;
-            let layer_arc = {
-                let guard = layers().lock().expect("layer lock");
-                guard
-                    .get(&layer_hash)
-                    .cloned()
-                    .ok_or_else(|| format!("unknown layer {layer_hash}: load_population_layer first"))?
-            };
+            let layer_arc = LAYERS.require(&layer_hash)?;
             Ok(Response::TypeCoverage {
                 coverage: type_coverage(
                     &network_arc,
@@ -395,13 +369,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::UnservedPoints { network_hash, layer_hash, radius_m, date } => {
             let parsed = parse_date(&date)?;
             let network_arc = network_arc(&network_hash)?;
-            let layer_arc = {
-                let guard = layers().lock().expect("layer lock");
-                guard
-                    .get(&layer_hash)
-                    .cloned()
-                    .ok_or_else(|| format!("unknown layer {layer_hash}: load_population_layer first"))?
-            };
+            let layer_arc = LAYERS.require(&layer_hash)?;
             Ok(Response::UnservedPoints {
                 points: transit_analysis::unserved_points(&network_arc, parsed, &layer_arc, radius_m),
             })
@@ -457,17 +425,12 @@ pub fn coverage_on(
 ) -> Result<transit_analysis::CoverageStats, String> {
     let parsed = parse_date(date)?;
     let network_arc = network_arc(network_hash)?;
-    let layer_arc = {
-        let guard = layers().lock().expect("layer lock");
-        guard
-            .get(layer_hash)
-            .cloned()
-            .ok_or_else(|| format!("unknown layer {layer_hash}: load_population_layer first"))?
-    };
+    let layer_arc = LAYERS.require(&layer_hash)?;
     Ok(coverage(&network_arc, parsed, &layer_arc, radius_m, frequent_secs, min_departures, None))
 }
 
 cap_abi::capability! {
     json: dispatch_json,
     bytes: dispatch_bytes,
+    registries: [NETWORKS, LAYERS],
 }

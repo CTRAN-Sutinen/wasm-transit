@@ -73,9 +73,10 @@ The poll (every 30 s) re-reads the edit document and the live feeds
 and requests `clock` plus whichever changed; a trip asked for "now"
 is re-asked from the new now. That is a timer input, written into
 `docs/units/host-discipline.md` as an engine requirement. Each poll
-registers a new live document in rt, board, and router (QAF-49); a
-rider-length session is bounded only when
-`docs/units/module-runtime.md`'s eviction lands.
+registers a new live document in the board and the router; the
+modules keep their last few, and the page names its keep-set when it
+adopts a network and when the edit document changes. The live
+document still crosses the page each poll (QAF-49).
 
 ## Scope beyond the ops
 

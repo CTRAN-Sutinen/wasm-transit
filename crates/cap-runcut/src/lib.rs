@@ -28,8 +28,9 @@
 //! * **live** — cap-rt's live document (the snapshot in model
 //!   vocabulary), which the chain's ripple reads.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
+
+use cap_abi::registry::{Registry, Retain};
 
 use cap_abi::canonical_hash;
 use serde::{Deserialize, Serialize};
@@ -163,48 +164,24 @@ pub enum Response {
 }
 
 /// Networks by content hash (canonical serialization).
-fn networks() -> &'static Mutex<HashMap<String, Arc<Network>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Network>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+pub static NETWORKS: Registry<Network> = Registry::documents("network", "load_network", Retain::Host);
 
 /// Operator edit documents by content hash (canonical serialization).
-fn edits() -> &'static Mutex<HashMap<String, Arc<Vec<transit_sync::EditRecord>>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Vec<transit_sync::EditRecord>>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+pub static EDITS: Registry<Vec<transit_sync::EditRecord>> = Registry::documents("edits", "load_edits", Retain::Host);
 
 /// Live documents by content hash (canonical serialization).
-fn lives() -> &'static Mutex<HashMap<String, Arc<LiveDay>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<LiveDay>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+pub static LIVES: Registry<LiveDay> = Registry::documents("live document", "load_live", Retain::Last(4));
 
 fn live_arc(live_hash: &str) -> Result<Arc<LiveDay>, String> {
-    lives()
-        .lock()
-        .expect("live registry lock")
-        .get(live_hash)
-        .cloned()
-        .ok_or_else(|| format!("unknown live document {live_hash}: load_live first"))
+    LIVES.require(live_hash)
 }
 
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    networks()
-        .lock()
-        .expect("network registry lock")
-        .get(network_hash)
-        .cloned()
-        .ok_or_else(|| format!("unknown network {network_hash}: load_network first"))
+    NETWORKS.require(network_hash)
 }
 
 fn edits_arc(edits_hash: &str) -> Result<Arc<Vec<transit_sync::EditRecord>>, String> {
-    edits()
-        .lock()
-        .expect("edits registry lock")
-        .get(edits_hash)
-        .cloned()
-        .ok_or_else(|| format!("unknown edits {edits_hash}: load_edits first"))
+    EDITS.require(edits_hash)
 }
 
 fn parse_date(date: &str) -> Result<chrono::NaiveDate, String> {
@@ -238,11 +215,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::LoadNetwork { network } => {
             let hash = canonical_hash(&network)?;
-            networks()
-                .lock()
-                .expect("network registry lock")
-                .entry(hash.clone())
-                .or_insert_with(|| Arc::new(network));
+            NETWORKS.insert(hash.clone(), network);
             Ok(Response::LoadNetwork { network_hash: hash })
         }
         Request::LoadEdits { network_hash, records } => {
@@ -251,15 +224,12 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let network = network_arc(&network_hash)?;
             let reports = transit_dispatch::report_against_network(&network, &records);
             let hash = canonical_hash(&records)?;
-            edits()
-                .lock()
-                .expect("edits registry lock")
-                .insert(hash.clone(), Arc::new(records));
+            EDITS.insert(hash.clone(), records);
             Ok(Response::LoadEdits { edits_hash: hash, reports })
         }
         Request::LoadLive { live } => {
             let hash = canonical_hash(&live)?;
-            lives().lock().expect("live registry lock").entry(hash.clone()).or_insert_with(|| Arc::new(live));
+            LIVES.insert(hash.clone(), live);
             Ok(Response::LoadLive { live_hash: hash })
         }
         Request::Blocks { network_hash, edits_hash, date } => {
@@ -339,4 +309,5 @@ pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
 cap_abi::capability! {
     json: dispatch_json,
     bytes: dispatch_bytes,
+    registries: [NETWORKS, EDITS, LIVES],
 }

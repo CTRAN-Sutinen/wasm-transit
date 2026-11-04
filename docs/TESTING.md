@@ -71,6 +71,13 @@ size the run).
    build `caps` first). The manifest is generated with REAL
    computed examples — extend `gen_manifest`'s `example_for` so an
    op's docs cannot drift from the module.
+   A new document kind lands in a `cap_abi::registry::Registry`
+   with its bound (`Retain::Host` or `Retain::Last(n)`) and in the
+   module's `registries: [...]`; caps-smoke holds that every module
+   answers the registry kernel ops (evict, held). A bound that
+   matters to a long session is pinned in the owning crate's own
+   test binary (`tests/registry_test.rs` — the registries are
+   process-global, and eviction would race the dispatch tests).
 3. **A Go round-trip test** if server-visible behavior changes.
 4. **Playwright e2e for user-visible flows** (Svelte components
    should not need changes when only the ABI underneath changes).
@@ -80,6 +87,11 @@ size the run).
    a running Pelias, and the e2e servers list none, so the
    no-geocoder path is the default. A runner gate stands in for an
    oracle with a `data:` URL (`--ask`).
+   The runtime's bounds are pinned there too: a display left
+   polling distinct rt snapshots plateaus the rt module's registry
+   and linear memory, and a module forced past its memory ceiling
+   answers the same bytes from a fresh instance
+   (`ui-stop-display`, through `window.__bus`).
    The bus as a page sees it is pinned by the generated UIs' specs
    (assembly and per-frame degraded state, `ui-ride-now` and
    `ui-service-design`) and `web/e2e/published-network.spec.mjs`
@@ -88,7 +100,7 @@ size the run).
    (migration laws, validator mutation law, the dispatch diversion
    laws) follow expectation 1.
 5. **Web parity ratchets** (`just test`, "WEB GATES"): components
-   never import the capability resolver, no host code reads raw
+   never import the engine or the bus, no host code reads raw
    rt `stop_updates`, and nothing clones a document to mutate it
    — each against an allowlist that only shrinks, all empty
    (`docs/ARCHITECTURE.md`, web section, "Parity"). Logic a view needs

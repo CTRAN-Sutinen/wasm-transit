@@ -151,4 +151,5 @@ pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
 cap_abi::capability! {
     json: dispatch_json,
     bytes: dispatch_bytes,
+    registries: [],
 }

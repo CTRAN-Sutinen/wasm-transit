@@ -35,7 +35,8 @@ session has asked these questions as one sequence.
 ## Scope beyond the ops
 
 - **Live input**, as in `docs/units/ui-ride-now.md`: a timer
-  refreshes the snapshot; QAF-49 bounds the session length.
+  refreshes the snapshot; the registries bound themselves, and the
+  host names its keep-set (`keep`) when its documents change.
 - **The edit document is shared state.** Retire is the tombstone,
   and every next document is cap-divert's answer.
 

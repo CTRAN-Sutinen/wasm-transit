@@ -11,9 +11,10 @@ recovers without a person.
 This unit owns what no other unit does, and is done only when the
 units it depends on are:
 
-- **Memory and the main thread** — eviction, the bus worker, and
-  reclaiming memory, [module-runtime.md](module-runtime.md); the
-  measured ceilings, [runtime-cost-gate.md](runtime-cost-gate.md).
+- **Memory and the main thread** — the published documents the page
+  still parses and the C-TRAN bounded-session record,
+  [module-runtime.md](module-runtime.md); the measured ceilings,
+  [runtime-cost-gate.md](runtime-cost-gate.md).
   The budgets those ceilings must come under (D-68): wasm + JS heap
   at most 40 MB on the display, flat across 24 h; at most 80 MB for
   ride-now, its first board under 3 s cold and 1 s cached, no

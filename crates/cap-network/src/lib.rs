@@ -21,8 +21,9 @@
 //! spec-shaped GTFS zip out, deterministic bytes so the produced
 //! artifact has one identity everywhere.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
+
+use cap_abi::registry::{Registry, Retain};
 
 use serde::{Deserialize, Serialize};
 use cap_abi::content_hash;
@@ -84,25 +85,16 @@ pub enum Response {
 }
 
 /// Feeds by content hash of the zip bytes.
-fn feeds() -> &'static Mutex<HashMap<String, Arc<Feed>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Feed>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+pub static FEEDS: Registry<Feed> = Registry::documents("feed", "load_feed", Retain::Host);
 
 /// Authored network documents by content hash of their canonical
 /// serialization — the module is the hash authority.
-fn networks() -> &'static Mutex<HashMap<String, Arc<Network>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Network>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+pub static NETWORKS: Registry<Network> = Registry::documents("network", "load_network", Retain::Host);
 
 /// The import's boundary residue, keyed by the network it belongs
 /// to — captured at import (an edited or authored document exports
 /// with the default boundary).
-fn boundaries() -> &'static Mutex<HashMap<String, Arc<Boundary>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Boundary>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
+pub static BOUNDARIES: Registry<Boundary> = Registry::documents("boundary", "load_boundary", Retain::Host);
 
 fn network_hash(network: &Network) -> Result<String, String> {
     cap_abi::canonical_hash(network)
@@ -110,37 +102,22 @@ fn network_hash(network: &Network) -> Result<String, String> {
 
 fn register_network(network: Network) -> Result<String, String> {
     let hash = network_hash(&network)?;
-    networks()
-        .lock()
-        .expect("network registry lock")
-        .entry(hash.clone())
-        .or_insert_with(|| Arc::new(network));
+    NETWORKS.insert(hash.clone(), network);
     Ok(hash)
 }
 
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    networks()
-        .lock()
-        .expect("network registry lock")
-        .get(network_hash)
-        .cloned()
-        .ok_or_else(|| format!("unknown network {network_hash}: load_network first"))
+    NETWORKS.require(network_hash)
 }
 
 fn load_feed(bytes: &[u8]) -> Result<Response, String> {
     let hash = content_hash(bytes);
-    {
-        let guard = feeds().lock().expect("feed registry lock");
-        if let Some(feed) = guard.get(&hash) {
-            return Ok(Response::LoadFeed { feed_hash: hash, summary: feed.summary() });
-        }
+    if let Some(feed) = FEEDS.get(&hash) {
+        return Ok(Response::LoadFeed { feed_hash: hash, summary: feed.summary() });
     }
     let feed = Feed::from_zip_bytes(bytes).map_err(|e| format!("feed does not parse: {e}"))?;
     let counts = feed.summary();
-    feeds()
-        .lock()
-        .expect("feed registry lock")
-        .insert(hash.clone(), Arc::new(feed));
+    FEEDS.insert(hash.clone(), feed);
     Ok(Response::LoadFeed { feed_hash: hash, summary: counts })
 }
 
@@ -150,21 +127,13 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::LoadFeed { bytes } => load_feed(&bytes),
         Request::Import { feed_hash } => {
-            let feed = feeds()
-                .lock()
-                .expect("feed registry lock")
-                .get(&feed_hash)
-                .cloned()
-                .ok_or_else(|| format!("unknown feed {feed_hash}: load_feed first"))?;
+            let feed = FEEDS.require(&feed_hash)?;
             let ImportOutcome { network, boundary, notes } = transit_codec::import(&feed);
             // The document registers itself: import's answer is
             // immediately addressable for validate and export, and its
             // boundary rides along under the same hash.
             let network_hash = register_network(network.clone())?;
-            boundaries()
-                .lock()
-                .expect("boundary registry lock")
-                .insert(network_hash.clone(), Arc::new(boundary.clone()));
+            BOUNDARIES.insert(network_hash.clone(), boundary.clone());
             Ok(Response::Import { network, boundary, notes, network_hash })
         }
         Request::LoadNetwork { network } => {
@@ -180,7 +149,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::Export { network_hash } => {
             let network = network_arc(&network_hash)?;
-            let boundary = boundaries().lock().expect("boundary registry lock").get(&network_hash).cloned();
+            let boundary = BOUNDARIES.get(&network_hash);
             let feed = transit_codec::export(&network, boundary.as_deref().unwrap_or(&Boundary::default()))?;
             let counts = feed.summary();
             let bytes = feed.to_zip_bytes();
@@ -188,10 +157,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             // the exported artifact is a first-class feed document,
             // importable in this module and loadable in any other.
             let feed_hash = content_hash(&bytes);
-            feeds()
-                .lock()
-                .expect("feed registry lock")
-                .insert(feed_hash.clone(), Arc::new(feed));
+            FEEDS.insert(feed_hash.clone(), feed);
             Ok(Response::Export { feed_hash, summary: counts, zip_b64: transit_codec::base64_encode(&bytes) })
         }
     }
@@ -234,4 +200,5 @@ pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
 cap_abi::capability! {
     json: dispatch_json,
     bytes: dispatch_bytes,
+    registries: [FEEDS, NETWORKS, BOUNDARIES],
 }

@@ -128,6 +128,15 @@ test: caps
       --op '{"op":"load_watchlist","document":{"version":"v2","stops":[{"id":"A","label":"home"}]}}' \
       --op '{"op":"watchlist_board","watchlist_hash":"$load_watchlist.watchlist_hash","network_hash":"$load_network.network_hash","date":"2026-10-23","from_secs":25200,"limit":3}' \
       | grep -q '"label":"home"'
+    # The registry kernel ops through the runner (any module, same
+    # ops): held names the registered network, a keep-set without it
+    # drops it, and the next ask is the unknown-hash error.
+    node tools/caps-run.mjs board \
+      --op @web/public/caps/sample-network-load.json \
+      --load 258:/dev/null \
+      --load 257:<(echo '{"keep":[]}') \
+      --op '{"op":"stop_board","network_hash":"$load_network.network_hash","stop_id":"A","date":"2026-10-23","from_secs":0,"limit":1}' \
+      | tr '\n' ' ' | grep -Eq '"held":\[\{"kind":"network".*"dropped":\[\{"kind":"network".*"error":"unknown network sha256:[0-9a-f]+: load_network first"'
     # The network capability's gate: load → import, chained; the
     # dropped single-stop trip must be REPORTED (never silent).
     node tools/caps-run.mjs network --load web/public/caps/sample-gtfs.zip \
@@ -422,6 +431,17 @@ test: caps
         echo "$violations"
         exit 1
     fi
+    # ONE REGISTRY (docs/ARCHITECTURE.md, the bus rules): a module keeps
+    # its documents in cap_abi::registry::Registry, declared in its
+    # capability!'s `registries` — the kernel ops (evict, held) answer
+    # only over those, so a hand-rolled map is a document no keep-set
+    # can drop.
+    violations=$(grep -rnE 'Mutex<(std::collections::)?(HashMap|BTreeMap)' crates/cap-*/src --include='*.rs' || true)
+    if [ -n "$violations" ]; then
+        echo "ARCH FAIL: a module keeps documents outside cap_abi::registry::Registry:"
+        echo "$violations"
+        exit 1
+    fi
     # WEB GATES — parity (docs/ARCHITECTURE.md, web section, "Parity"): the
     # browser runs the same ops as caps-run and the Go server, so
     # web/ holds host glue and render components, never answers.
@@ -444,10 +464,10 @@ test: caps
     # W0a: components never call the bus — the host layer does (the
     # allowlist reached empty with W6: a hard gate now). Every shell's
     # layout is held to it too (each generated UI's shell, the picker).
-    ratchet resolver-in-components \
+    ratchet bus-in-components \
         "" \
-        "$(grep -l 'capabilities\.svelte' web/src/components/*.svelte web/src/uis/*/*.svelte web/src/picker/*.svelte | tr '\n' ' ')" \
-        "a component imports the capability resolver; take node values as props"
+        "$(grep -lE "from \"[./]*(engine|bus)\"" web/src/components/*.svelte web/src/uis/*/*.svelte web/src/picker/*.svelte | tr '\n' ' ')" \
+        "a component imports the engine or the bus; take node values as props"
     # W0b: no host-side rt join — delays come from cap-rt's live
     # document (the allowlist reached empty with W1: a hard gate now).
     ratchet rt-join-in-web \
@@ -461,16 +481,22 @@ test: caps
         "$(grep -rl 'structuredClone' web/src --include='*.ts' --include='*.svelte' | grep -v '^web/src/types/' | sort | tr '\n' ' ')" \
         "clones a document to mutate it; send NetworkEdits through cap-author"
     # W0d: one op caller (docs/units/host-discipline.md) — the engine
-    # (src/engine.ts) is the only importer of the resolver and the only
-    # caller of a module's ABI; hosts ask it, holding documents.
-    ratchet resolver-outside-engine \
+    # (src/engine.ts) is the only importer of the bus (src/bus.ts), the
+    # bus the only spawner of the bus worker, and the worker the only
+    # wasm loader and caller of a module's ABI; hosts ask the engine,
+    # holding documents.
+    ratchet bus-outside-engine \
         "" \
-        "$(grep -rl 'capabilities\.svelte' web/src --include='*.ts' --include='*.svelte' | grep -v '^web/src/engine\.ts$' | grep -v '^web/src/types/' | sort | tr '\n' ' ')" \
-        "imports the capability resolver; ask through the engine (src/engine.ts)"
-    ratchet abi-outside-engine \
+        "$(grep -rlE "from \"\\./bus\"|from \"(\\.\\./)+bus\"" web/src --include='*.ts' --include='*.svelte' | grep -vE '^web/src/(engine|bus\.worker)\.ts$' | sort | tr '\n' ' ')" \
+        "imports the bus; ask through the engine (src/engine.ts)"
+    ratchet worker-outside-bus \
         "" \
-        "$(grep -rlE 'invokeText|invokeBytes|transit_invoke' web/src --include='*.ts' --include='*.svelte' | grep -vE '^web/src/(engine|capabilities\.svelte)\.ts$' | grep -v '^web/src/types/' | sort | tr '\n' ' ')" \
-        "calls a module's ABI; ask through the engine (src/engine.ts)"
+        "$(grep -rl 'new Worker(' web/src --include='*.ts' --include='*.svelte' | grep -v '^web/src/bus\.ts$' | sort | tr '\n' ' ')" \
+        "spawns the bus worker; ask through the engine (src/engine.ts)"
+    ratchet abi-outside-worker \
+        "" \
+        "$(grep -rlE 'WebAssembly\.|transit_invoke' web/src --include='*.ts' --include='*.svelte' | grep -v '^web/src/bus\.worker\.ts$' | grep -v '^web/src/types/' | sort | tr '\n' ' ')" \
+        "loads or calls a module outside the bus worker; ask through the engine (src/engine.ts)"
     # GENERATED UIs (docs/ARCHITECTURE.md, "Generated UIs"): each
     # src/uis/<id>/ carries its descriptor, its page, and its e2e spec,
     # and owns its host layer: nothing reaches into another UI's

@@ -41,7 +41,7 @@ archive — nothing here records what is finished.
 | [sync-persistence.md](sync-persistence.md) | self-describing blobs + pointers, pointer CAS, the store reflog, TLC-checked, generated schemas + `docs/FORMATS.md` |
 | [cap-authz.md](cap-authz.md) | JWT verification at the server, the policy document on the store, cap-authz fail-closed |
 | [runtime-cost-gate.md](runtime-cost-gate.md) | a ratchet on per-module memory and registration time |
-| [module-runtime.md](module-runtime.md) | bounded registries (a kernel eviction op), the bus worker, reclaiming memory |
+| [module-runtime.md](module-runtime.md) | the page never parses a published document; service-design's keep-set; the C-TRAN bounded-session record and the ceiling it sets |
 | [document-versioning.md](document-versioning.md) | every persisted document versioned, migrated forward at receive, the schema-lock gate |
 | [deploy-rider-apps.md](deploy-rider-apps.md) | ride-now and the stop display beyond localhost: updates, offline, polling, the service day, recovery, caching, the proxy's removal and the feed fixes |
 | [streets-model.md](streets-model.md) | streets as a model document: serving it, the bus profile, walking for riders, drawing on streets, the geography release |

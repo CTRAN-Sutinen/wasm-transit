@@ -605,7 +605,7 @@ run the SAME ops and get the SAME bytes. Any answer the browser
 computes in TypeScript is an answer the other two hosts cannot
 give — so `web/` holds host glue (I/O, fetch and pagination,
 IndexedDB, the clock, settings, polling, the sync POST, the
-capability resolver) and RENDER components (props in, events out,
+bus worker) and RENDER components (props in, events out,
 formatting), and nothing else. A join, fallback, threshold, record
 builder, or geometry rule in TypeScript is a parity break, however
 small: it lands as an op instead.
@@ -626,10 +626,12 @@ Two rulings that follow from it:
   it is handed.
 
 The WEB GATES in `just test` hold it: no component imports the
-resolver, no host code reads raw rt `stop_updates`, nothing clones a
+bus, no host code reads raw rt `stop_updates`, nothing clones a
 document to mutate it (every change is a NetworkEdit through
 cap-author), and the engine is the one op caller — no file but
-`src/engine.ts` imports the resolver or calls a module's ABI. Each
+`src/engine.ts` imports the bus (`src/bus.ts`), no file but the bus
+spawns the bus worker, and no file but the worker loads or calls a
+module. Each
 gate's allowlist only shrinks, and all are empty. Beside them, the
 DETERMINISM gate holds the modules pure: no clock, randomness, or
 environment in any crate's library code (hosts pass time in), so an
@@ -642,7 +644,7 @@ File ownership:
   cap-directory `focus`); it turns `[{lat, lon}]` into
   `[lon, lat]` and computes no geometry.
 - Components are RENDER-ONLY: props in, events out. No component
-  imports the resolver or a UI's host layer (the WEB GATES and the
+  imports the bus or a UI's host layer (the WEB GATES and the
   GENERATED UIs gates in `just test`).
 - `src/engine.ts` is THE ENGINE — the one caller of a module's ops.
   A host asks `ask(capability, op, args)`, the generated request
@@ -659,12 +661,19 @@ File ownership:
   whether a capability assembled, and `ask` throws `Unavailable`
   when it did not. `servedNetwork`, `servedStreets`, and
   `servedWalks` read the deployment's published documents and refuse
-  one that does not answer its pinned hash. Every call is async and
-  data-shaped, so the modules can move to a worker behind it.
-- `src/capabilities.svelte.ts` is the bus resolver — the ONLY wasm
-  loader, imported only by the engine: manifest validation,
-  demand-driven load, byte verification against pinned hashes,
-  per-capability degradation, and the ABI's two calls.
+  one that does not answer its pinned hash. A module may drop what
+  it holds (see "The bus worker"): asking for a dropped document is
+  the module's unknown-hash error, and the engine registers the
+  document again and asks once more — a host never sees it. `keep`
+  names what survives: every assembled module drops every document
+  not named (nor read over by one named); the rider pages call it
+  when they adopt a network and when the edit document changes.
+  `window.__bus` is the e2e's inspection (what a module holds, its
+  memory and resets, the ceiling, a replay of the last op asked of a
+  capability past the answer cache).
+- `src/bus.ts` is the page's side of the bus worker, imported only by
+  the engine: the one Worker, spawned on first use, and its calls as
+  promises — it carries messages and decides nothing.
 - `src/documents.svelte.ts` is the device's document store (every
   version hash-chained by `produced_by`; `current` is a pointer;
   IndexedDB-persisted — ride-now's watchlist lives there).
@@ -680,6 +689,35 @@ File ownership:
 - `src/basemap.ts` is the basemap choice every map view shares
   (local pmtiles, else OpenFreeMap) and the MapLibre worker wiring;
   each map component owns its map (`window.__map` is the e2e hook).
+
+### The bus worker
+
+`src/bus.worker.ts` is the ONLY wasm loader: every capability module
+a page assembles lives in ONE module Worker, off the thread the page
+renders on — one, not one per module, because documents cross
+between modules by hash inside it. It validates the manifest at the
+seam, fetches each module demand-driven, verifies its bytes against
+the pinned hash, compiles and instantiates it, and degrades per
+capability (a module that fails to assemble is `Unavailable`; the
+rest answer). Document bytes cross to it per registration (copied,
+never kept there: the page owns the documents, and a reset
+re-registers from them).
+
+Wasm linear memory never shrinks — eviction lets a module reuse what
+it freed, but a peak stays allocated for the instance's life. So the
+worker holds a MEMORY CEILING per instance (256 MiB, far above one
+agency's working set): before an op (never a registration), an
+instance past it that has answered an op since it was made — and was
+not reset in the last minute — is replaced by a fresh instance of the
+same compiled module. The reply says so; the engine voids that
+capability's registrations (a generation per capability) and its
+recovery registers what the op names again. Modules are pure, so the
+fresh instance answers the same bytes; the guards keep a working set
+above the ceiling from looping. The e2e pins both bounds
+(`e2e/ui-stop-display.spec.mjs`, "a display left polling stays
+bounded"): sixty polls of distinct rt snapshots plateau the rt
+module's registry and linear memory, and a forced ceiling replaces
+the board's instance once per op with the same answer.
 
 ### External services
 
@@ -795,7 +833,7 @@ Shared by every generated UI:
   worker wiring, for any map view.
 
 The component catalog. Every component is THIN: props in, events
-out, formatting only; it imports neither the resolver nor a UI's
+out, formatting only; it imports neither the bus nor a UI's
 host layer (the gates check both).
 
 - Thin, usable by any generated UI: Unavailable (a frame with no
@@ -923,7 +961,7 @@ unit is written before any code and deleted when the UI lands.
 Gates (`just test`, GENERATED UIs and the WEB GATES): every `src/uis/<id>/`
 has its `ui.json` (with fields complete, and id equal to the
 directory), its page, and its spec. No `.svelte` file imports the
-resolver; no UI imports another UI's files; no component imports a
+bus; no UI imports another UI's files; no component imports a
 UI's host layer. The build also refuses a UI directory without
 its page (`vite.config.js`), and the picker's spec
 (`e2e/picker.spec.mjs`) checks one card per `ui.json`.
@@ -1043,6 +1081,19 @@ cap-abi         The seam crate: the flat C ABI as a macro (every
                 parse via load_network_json) and canonical_hash,
                 the one identity formula (streamed into the
                 digest, never a second copy of the document).
+                The document registry (registry.rs) is the one type
+                every module keeps its documents in: `Registry::documents`
+                by content hash, `Registry::derived` for what a
+                module computed from documents (the router's graph
+                per day, remembering the hashes it read), each with
+                its kind's bound (`Retain::Host` — durable, dropped
+                only by a keep-set; `Retain::Last(n)` — ephemeral,
+                the oldest dropped past n). `capability!` takes the
+                module's `registries: [...]` and answers the
+                registry kernel ops over them (257 evict, 258 held)
+                before the module's dispatch sees the op; the
+                manifest's `kernel_ops` documents them, with
+                examples computed through the same kernel.
                 Also caps-smoke.mjs: Node ABI smoke + the law that
                 every advertised op is documented (undocumented ops
                 fail the build — agent context cannot drift).
@@ -1292,7 +1343,23 @@ cap-streets    The street-graph capability: where along the
   thing in every module that answers them. Every network consumer
   answers 256, and the browser host registers networks only that
   way (the engine's loader for kind `network`, the document encoded
-  once however many modules register it).
+  once however many modules register it). EVERY module answers the
+  registry ops: 257 (evict — `{"keep": [hash, …]}` drops every
+  document not kept, and every derived entry whose inputs are not
+  all kept; it answers what dropped and what is held) and 258 (held
+  — what the module holds, per registry, oldest first).
+- A module keeps its documents in `cap_abi::registry::Registry`
+  statics, never a hand-rolled map: the module owns what it holds
+  (it is the hash authority), the host names what survives (it owns
+  the documents). Ephemeral kinds bound themselves — rt snapshots
+  keep their last 8 (cap-rt), live documents their last 4 (board,
+  router, runcut), router graphs their last 8 (and only the newest
+  live document's) — so a poll loop plateaus with no host steering;
+  durable kinds (networks, feeds, edits, boundaries, layers, walk
+  tables, streets, watchlists) stay until a keep-set drops them.
+  An evicted document asked for is the unknown-hash error every
+  module speaks — `unknown <kind> <hash>: <load op> first` — never a
+  wrong answer.
 - One Request enum per capability is the whole surface (networks
   are minted only by cap-author's apply and cap-network's import —
   readers have no authoring ops by construction).

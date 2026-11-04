@@ -117,3 +117,67 @@ test("a route that has stopped for the day stays on the display", async ({ page 
   await expect(group(page, "10", "Downtown").getByTestId("display-none")).toHaveText("No more service today");
   await expect(group(page, "20", "Downtown").getByTestId("display-none")).toHaveText("No more service today");
 });
+
+// 4. A display left running (docs/units/module-runtime.md): the agency
+//    re-mints its live feeds every poll, so each poll here serves a new
+//    snapshot (the fixture plus an unknown field carrying the poll's
+//    number — the decode ignores it, its hash does not). The rt module
+//    keeps its last few snapshots and its linear memory plateaus; a
+//    module forced past its memory ceiling is replaced by a fresh
+//    instance that answers the same bytes for the same request.
+test("a display left polling stays bounded, and a module past its ceiling answers the same", async ({ page }) => {
+  const rt = fs.readFileSync(path.join(fixtures, "sample-rt.pb"));
+  let polls = 0;
+  /// Field 1000, varint: the tag (1000 << 3 = 8000) and the value.
+  const varint = (n) => {
+    const out = [];
+    do {
+      out.push((n & 0x7f) | (n > 0x7f ? 0x80 : 0));
+      n >>>= 7;
+    } while (n > 0);
+    return Buffer.from(out);
+  };
+  await page.clock.install({ time: new Date("2026-10-23T07:55:00Z") });
+  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
+  await page.route(/\/rt\?url=/, (route) => {
+    polls += 1;
+    route.fulfill({ contentType: "application/octet-stream", body: Buffer.concat([rt, varint(8000), varint(polls)]) });
+  });
+  await page.goto("/stop-display.html?stop=A&layout=routes");
+  await page.getByLabel("Agency GTFS zip").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
+  const ten = group(page, "10", "Downtown");
+  await expect(ten.getByTestId("display-time").first()).toContainText("2 min late", { timeout: 10_000 });
+
+  const bus = (fn, ...args) => page.evaluate(([fn, args]) => window.__bus[fn](...args), [fn, args]);
+  const snapshots = async () => (await bus("held", "rt")).held.filter((e) => e.kind === "rt snapshot").length;
+  /// One poll: the display's interval fires and both feeds are fetched.
+  const poll = async () => {
+    const before = polls;
+    await page.clock.fastForward(20_000);
+    await expect.poll(() => polls).toBeGreaterThanOrEqual(before + 2);
+    await expect(page.getByTestId("display-live")).toContainText("Live");
+  };
+
+  for (let i = 0; i < 15; i++) await poll();
+  const half = await bus("memory", "rt");
+  expect(await snapshots()).toBeLessThanOrEqual(8);
+  for (let i = 0; i < 15; i++) await poll();
+  const full = await bus("memory", "rt");
+  expect(polls).toBeGreaterThanOrEqual(60);
+  expect(await snapshots()).toBeLessThanOrEqual(8);
+  expect(full.memory, "the rt module's linear memory plateaus").toBe(half.memory);
+  // Ten minutes on, the late 10 has left: the display moved with the clock.
+  await expect(ten.getByTestId("display-time").first()).toContainText("Scheduled");
+
+  // The ceiling: forced below the board's working set, the next op
+  // finds its instance past it — replaced, the documents registered
+  // again, the same answer — once per op, never in a loop.
+  const answer = await bus("replay", "board");
+  await bus("ceiling", 1, 0);
+  expect(await bus("replay", "board")).toBe(answer);
+  expect((await bus("memory", "board")).resets).toBe(1);
+  expect(await bus("replay", "board")).toBe(answer);
+  expect((await bus("memory", "board")).resets).toBe(2);
+  const held = (await bus("held", "board")).held.map((e) => e.kind);
+  expect(held).toContain("network");
+});

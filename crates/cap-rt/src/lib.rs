@@ -20,8 +20,9 @@
 //! snapshot) so later ops can address it. The capability writes
 //! nothing.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
+
+use cap_abi::registry::{Registry, Retain};
 
 use serde::{Deserialize, Serialize};
 use transit_codec::Boundary;
@@ -128,74 +129,47 @@ pub enum Response {
     Live { live_hash: String, live: LiveDay, summary: LiveSummary },
 }
 
-fn registry<T>() -> Mutex<HashMap<String, Arc<T>>> {
-    Mutex::new(HashMap::new())
-}
-
 /// Networks by content hash (canonical serialization).
-fn networks() -> &'static Mutex<HashMap<String, Arc<Network>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Network>>>> = OnceLock::new();
-    REGISTRY.get_or_init(registry)
-}
+pub static NETWORKS: Registry<Network> = Registry::documents("network", "load_network", Retain::Host);
 
 /// Boundaries by content hash (canonical serialization).
-fn boundaries() -> &'static Mutex<HashMap<String, Arc<Boundary>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<Boundary>>>> = OnceLock::new();
-    REGISTRY.get_or_init(registry)
-}
+pub static BOUNDARIES: Registry<Boundary> = Registry::documents("boundary", "load_boundary", Retain::Host);
 
 /// Decoded rt snapshots by content hash of the payload bytes —
-/// ephemeral documents, addressable while the session lives.
-fn snapshots() -> &'static Mutex<HashMap<String, Arc<RtOverview>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<RtOverview>>>> = OnceLock::new();
-    REGISTRY.get_or_init(registry)
-}
+/// ephemeral: an agency re-mints them every poll, and a live answer
+/// reads at most three (trip updates, positions, alerts), so the last
+/// eight are kept and a poll loop plateaus with no host steering.
+pub static SNAPSHOTS: Registry<RtOverview> = Registry::documents("rt snapshot", "decode (bulk op 0)", Retain::Last(8));
 
 fn content_hash(bytes: &[u8]) -> String {
     use sha2::Digest;
     format!("sha256:{:x}", sha2::Sha256::digest(bytes))
 }
 
-fn lookup<T>(registry: &Mutex<HashMap<String, Arc<T>>>, hash: &str, what: &str, how: &str) -> Result<Arc<T>, String> {
-    registry
-        .lock()
-        .expect("registry lock")
-        .get(hash)
-        .cloned()
-        .ok_or_else(|| format!("unknown {what} {hash}: {how} first"))
-}
-
 fn network_arc(hash: &str) -> Result<Arc<Network>, String> {
-    lookup(networks(), hash, "network", "load_network")
+    NETWORKS.require(hash)
 }
 
 /// The boundary a join pairs rt sequences by: the registered one, or
 /// 1..n numbering.
 fn boundary_arc(hash: Option<&str>) -> Result<Arc<Boundary>, String> {
     match hash {
-        Some(hash) => lookup(boundaries(), hash, "boundary", "load_boundary"),
+        Some(hash) => BOUNDARIES.require(hash),
         None => Ok(Arc::new(Boundary::default())),
     }
 }
 
 fn snapshot_arc(rt_hash: &str) -> Result<Arc<RtOverview>, String> {
-    lookup(snapshots(), rt_hash, "rt snapshot", "decode (bulk op 0)")
+    SNAPSHOTS.require(rt_hash)
 }
 
 fn decode(bytes: &[u8]) -> Result<Response, String> {
     let hash = content_hash(bytes);
-    {
-        let guard = snapshots().lock().expect("snapshot registry lock");
-        if let Some(overview) = guard.get(&hash) {
-            return Ok(Response::Decode { overview: (**overview).clone(), rt_hash: hash });
-        }
+    if let Some(overview) = SNAPSHOTS.get(&hash) {
+        return Ok(Response::Decode { overview: (*overview).clone(), rt_hash: hash });
     }
-    let overview = transit_rt::decode_overview(bytes)?;
-    snapshots()
-        .lock()
-        .expect("snapshot registry lock")
-        .insert(hash.clone(), Arc::new(overview.clone()));
-    Ok(Response::Decode { overview, rt_hash: hash })
+    let overview = SNAPSHOTS.insert(hash.clone(), transit_rt::decode_overview(bytes)?);
+    Ok(Response::Decode { overview: (*overview).clone(), rt_hash: hash })
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
@@ -206,12 +180,12 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::Decode { bytes } => decode(&bytes),
         Request::LoadNetwork { network } => {
             let hash = cap_abi::canonical_hash(&network)?;
-            networks().lock().expect("network registry lock").entry(hash.clone()).or_insert_with(|| Arc::new(network));
+            NETWORKS.insert(hash.clone(), network);
             Ok(Response::LoadNetwork { network_hash: hash })
         }
         Request::LoadBoundary { boundary } => {
             let hash = cap_abi::canonical_hash(&boundary)?;
-            boundaries().lock().expect("boundary registry lock").entry(hash.clone()).or_insert_with(|| Arc::new(boundary));
+            BOUNDARIES.insert(hash.clone(), boundary);
             Ok(Response::LoadBoundary { boundary_hash: hash })
         }
         Request::TripProgress { network_hash, boundary_hash, rt_hash, trip_id } => {
@@ -284,5 +258,6 @@ pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
 cap_abi::capability! {
     json: dispatch_json,
     bytes: dispatch_bytes,
+    registries: [NETWORKS, BOUNDARIES, SNAPSHOTS],
 }
 

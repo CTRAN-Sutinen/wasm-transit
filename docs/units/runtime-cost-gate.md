@@ -6,8 +6,9 @@ document once per module per version). On C-TRAN a scratch Chromium bench measur
 5.8–8.4 MB of wasm memory per consumer and ~300 ms per
 registration at 4× CPU throttle — the direct parse plus the
 canonical re-hash every module repeats for a document the import
-already hashed, all on the main thread. Nothing gates these
-numbers, so the next regression is invisible.
+already hashed (measured on the main thread; the modules now run in
+the page's bus worker). Nothing gates these numbers, so the next
+regression is invisible.
 
 ## Scope
 
@@ -22,7 +23,6 @@ numbers, so the next regression is invisible.
 - Candidates once it is measured, not before: skip the re-hash
   when the host passes the hash the import answered (the module
   stays the hash authority — it verifies, never trusts).
-  Off-thread instantiation is [module-runtime.md](module-runtime.md)'s.
   cap-author keeps a buffered decoder beside the direct one
   (+77 KiB) because `apply` edits carry network sub-types.
   Splitting the network document: the whole GTFS spec lands in it

@@ -4,7 +4,7 @@
 //! under that hash, and writes both surfaces hosts and agents read:
 //!
 //! * `web/public/caps/` — the browser's manifest + hash-addressed
-//!   module files (the assembly the resolver loads);
+//!   module files (the assembly the bus worker loads);
 //! * `registry/` — the REGISTRY: immutable blobs, one evidence record
 //!   per capability (contracts + agent context + which gates ran when
 //!   these exact bytes were published), and a registry pointer. An
@@ -20,7 +20,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use cap_abi::manifest::{CapManifest, Capability, MigrationSpec, OpDoc, OpExample};
+use cap_abi::manifest::{CapManifest, Capability, KernelOp, MigrationSpec, OpDoc, OpExample};
 use cap_abi::validate::validate_assembly;
 use sha2::{Digest as _, Sha256};
 
@@ -348,6 +348,44 @@ const MODULES: &[ModuleSpec] = &[
     },
 ];
 
+/// The kernel ops, documented once for every module. The registry
+/// ops' examples are COMPUTED: two registries (one durable, one
+/// keep-last-N) answer them through the same kernel the macro wires
+/// into every module.
+fn kernel_ops() -> Vec<KernelOp> {
+    use cap_abi::registry::{kernel, Registry, Retain, OP_EVICT, OP_HELD};
+    static NETWORKS: Registry<()> = Registry::documents("network", "load_network", Retain::Host);
+    static SNAPSHOTS: Registry<()> = Registry::documents("rt snapshot", "decode (bulk op 0)", Retain::Last(8));
+    let registries: &[&dyn cap_abi::registry::Held] = &[&NETWORKS, &SNAPSHOTS];
+    NETWORKS.insert("sha256:a1…".into(), ());
+    NETWORKS.insert("sha256:b2…".into(), ());
+    SNAPSHOTS.insert("sha256:c3…".into(), ());
+    let answer = |text: String| serde_json::from_str::<serde_json::Value>(&text).expect("kernel answers JSON");
+    let held = answer(kernel(OP_HELD, b"", registries).expect("held is a kernel op"));
+    let keep = serde_json::json!({ "keep": ["sha256:b2…", "sha256:c3…"] });
+    let evicted = answer(kernel(OP_EVICT, keep.to_string().as_bytes(), registries).expect("evict is a kernel op"));
+    vec![
+        KernelOp {
+            code: cap_abi::OP_LOAD_NETWORK,
+            name: "load_network".into(),
+            description: "Register the network document from its bare JSON bytes (no request envelope), answering what the JSON op load_network answers — the same hash in every module that reads networks.".into(),
+            example: None,
+        },
+        KernelOp {
+            code: OP_EVICT,
+            name: "evict".into(),
+            description: "EVERY module. Drop everything the keep-set does not name, answering what dropped and what is held after. The bytes are {\"keep\": [hash, …]}: a document stays when its hash is kept; a derived entry (the router's graph per day) stays only while every document it was computed from is kept. The host names what survives — it owns the documents; the module enforces — it is the hash authority. Asking for an evicted document is the unknown-hash error (`unknown <kind> <hash>: <load op> first`), never a wrong answer: register it again. Ephemeral kinds also bound themselves with no host steering — rt snapshots keep their last 8, live documents their last 4, router graphs their last 8.".into(),
+            example: Some(OpExample { request: keep, response: evicted }),
+        },
+        KernelOp {
+            code: OP_HELD,
+            name: "held".into(),
+            description: "EVERY module. What the module holds, per registry in declaration order, oldest first (the bytes are ignored) — the inspection a memory gate reads.".into(),
+            example: Some(OpExample { request: serde_json::json!(null), response: held }),
+        },
+    ]
+}
+
 fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
     let target = root.join("target/wasm32-unknown-unknown/release");
@@ -438,7 +476,7 @@ fn main() {
         println!("cap {}: sha256:{hex} ({:.1} KiB)", module.id, bytes.len() as f64 / 1024.0);
     }
 
-    let manifest = CapManifest { kernel: KERNEL, capabilities };
+    let manifest = CapManifest { kernel: KERNEL, kernel_ops: kernel_ops(), capabilities };
 
     // The compose-time proof, applied to our own assembly before it
     // is written: generation is the validator's first consumer.

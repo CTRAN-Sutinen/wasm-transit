@@ -135,13 +135,19 @@ The extraction pattern, always in this order:
 2. capability wrapper second — a thin module over the library.
 
 A new domain op is a library and a capability module, never a
-host.
+host. A document kind the module keeps lands in a
+`cap_abi::registry::Registry` static with its bound, named in the
+module's `capability! { registries: [...] }` — the registry kernel
+ops (evict, held) answer over exactly those.
 
 ## Enforcement
 
 The justfile `test` recipe asserts laws 1 and 2: model-side
 capabilities may not depend on transit-codec, and
-`transit_codec::export` may not appear outside the codec's homes. Law 3
+`transit_codec::export` may not appear outside the codec's homes;
+no module keeps documents outside `cap_abi::registry::Registry`
+(ONE REGISTRY), and no library code reads a clock, randomness, or
+the environment (DETERMINISM). Law 3
 is a review gate (the criteria above are the checklist — every
 new module's ops must each name one need). If a gate fails your
 change, reread this file — do not widen the gate.
