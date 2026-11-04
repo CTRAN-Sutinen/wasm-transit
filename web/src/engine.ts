@@ -396,10 +396,16 @@ export async function keep(docs: (Doc | null | undefined)[]): Promise<void> {
   );
 }
 
-/// Inspection the e2e reads (window.__bus): what a module holds, its
-/// linear memory and resets, the ceiling, and the last op asked of a
-/// capability asked again past the answer cache.
+/// Inspection the e2e and the perf probe read (window.__bus): the
+/// capabilities asked for, what a module holds, its linear memory and
+/// resets, the ceiling, and the last op asked of a capability asked
+/// again past the answer cache.
 const inspection = {
+  caps: async (): Promise<CapId[]> => {
+    const ids = [...assembly.keys()] as CapId[];
+    const ok = await Promise.all(ids.map((cap) => available(cap)));
+    return ids.filter((_, i) => ok[i]);
+  },
   held: async (cap: CapId): Promise<Holding> => (await invoke(cap, { op: OP_HELD, bytes: new Uint8Array() }, true)) as Holding,
   memory: async (cap: CapId): Promise<{ memory: number; resets: number }> => {
     await capOf(cap);

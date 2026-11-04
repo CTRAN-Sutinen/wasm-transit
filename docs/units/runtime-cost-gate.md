@@ -22,7 +22,16 @@ regression is invisible.
   the feed is not committed).
 - Candidates once it is measured, not before: skip the re-hash
   when the host passes the hash the import answered (the module
-  stays the hash authority — it verifies, never trusts).
+  stays the hash authority — it verifies, never trusts). Measured on
+  C-TRAN (`just perf`, ride-now "plan a trip leaving now"): the
+  router's first registration of the network is ~300 ms of the
+  step's 533 ms on the bus worker — the parse (serde_json 126 ms)
+  and the canonical re-hash (sha2 100 ms, `canonical_hash` 46 ms).
+  Each module's linear memory is ~17 MB, its parse's peak (QAF-93,
+  the rider pages over D-68's budgets): the display's `network`
+  module holds a copy only to check the served hash, and a
+  stop-scoped document would replace the display's whole-network
+  copies.
   cap-author keeps a buffered decoder beside the direct one
   (+77 KiB) because `apply` edits carry network sub-types.
   Splitting the network document: the whole GTFS spec lands in it

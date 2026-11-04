@@ -538,7 +538,9 @@ check: test e2e
 # CPU profile names Rust functions) and serves an unminified frontend
 # from web/dist-perf; the next `just caps` (or `just test`) restores
 # the stripped modules. PERF_RT picks the recording
-# (`node web/perf/record-rt.mjs`), PERF_FEED the feed.
+# (`node web/perf/record-rt.mjs`), PERF_FEED the feed; the stop
+# display's soak takes PERF_STOP (the stop, by name) and PERF_LOOPS
+# (how many times the recording replays).
 perf *args:
     #!/usr/bin/env bash
     set -e

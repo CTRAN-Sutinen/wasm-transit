@@ -154,20 +154,25 @@ among them):
 `just perf` drives a generated UI in Chromium against the real feed
 and reports what it costs the browser; it fails only when the UI
 cannot be driven, never on a number (timings on a dev box are noisy).
-Its spec is `web/perf/<ui>.perf.mjs`, its probe `web/perf/probe.mjs`
-(the DevTools protocol, test-side only — the page is the shipped page,
-observed).
+Its specs are `web/perf/<ui>.perf.mjs` (ride-now; the stop display,
+left running at a transit center — `PERF_STOP` names it, `PERF_LOOPS`
+replays the recording that many times over), its probe
+`web/perf/probe.mjs` (the DevTools protocol, test-side only — the page
+is the shipped page, observed).
 
 - **What it measures, per step:** wall time; main-thread, script,
   layout and style time; long tasks and long animation frames (their
-  scripts named); a sampled CPU profile, summarized by self time per
-  bucket — a capability module's crate (`wasm:transit_router`), a JS
-  bundle file, the engine (GC, compile) — and saved as a
-  `.cpuprofile` for DevTools' Performance panel. Memory, after a
-  forced collection: the JS heap, the array buffers outside it, each
-  capability module's linear memory by manifest id (the JS heap
-  counters do not see it, and it never shrinks), DOM nodes and
-  listeners.
+  scripts named); two sampled CPU profiles — the page's and the bus
+  worker's (where the capability modules run; the probe attaches to
+  it through the browser's DevTools session) — each summarized by
+  self time per bucket (a capability module's crate,
+  `wasm:transit_router`; a JS bundle file; the engine's GC and
+  compile) and saved as a `.cpuprofile` for DevTools' Performance
+  panel. Memory, after a forced collection: the page's JS heap and
+  the worker's, the array buffers outside them, and per capability
+  module (read through the engine's `window.__bus`) its linear
+  memory (the JS heap counters do not see it, and it never shrinks),
+  the documents it holds, and its resets; DOM nodes and listeners.
 - **The build it measures** is a profiling build: the capability
   modules keep their name sections (`CARGO_PROFILE_RELEASE_STRIP=
   debuginfo`; the code is the shipped code) and the frontend is

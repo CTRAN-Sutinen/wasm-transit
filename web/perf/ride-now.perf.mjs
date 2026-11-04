@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import fs from "node:fs";
 import { Probe } from "./probe.mjs";
+import { headerSecs, snapshots } from "./live.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const rtDir = path.resolve(root, process.env.PERF_RT ?? "testdata/perf-rt");
@@ -33,51 +34,8 @@ test.use({
   permissions: ["geolocation"],
 });
 
-/// The recorded snapshots, in order: [{ trips, vehicles }] as bytes.
-function snapshots() {
-  const byN = new Map();
-  for (const f of fs.readdirSync(rtDir).sort()) {
-    const m = /^(\d+)-(\w+)\.pb$/.exec(f);
-    if (!m) continue;
-    if (!byN.has(m[1])) byN.set(m[1], {});
-    byN.get(m[1])[m[2]] = fs.readFileSync(path.join(rtDir, f));
-  }
-  return [...byN.values()];
-}
-
-/// The FeedHeader's timestamp (FeedMessage field 1, header field 3):
-/// the clock starts where the recording did.
-function headerSecs(buf) {
-  const varint = (i) => {
-    let x = 0, s = 1;
-    for (;;) {
-      const c = buf[i++];
-      x += (c & 0x7f) * s;
-      s *= 128;
-      if (!(c & 0x80)) return [x, i];
-    }
-  };
-  let [tag, i] = varint(0);
-  if (tag !== 0x0a) throw new Error("no FeedHeader");
-  let len;
-  [len, i] = varint(i);
-  const end = i + len;
-  while (i < end) {
-    let t, v;
-    [t, i] = varint(i);
-    if ((t & 7) === 0) {
-      [v, i] = varint(i);
-      if (t >> 3 === 3) return v;
-    } else if ((t & 7) === 2) {
-      [v, i] = varint(i);
-      i += v;
-    } else throw new Error(`unexpected wire type in FeedHeader`);
-  }
-  throw new Error("FeedHeader has no timestamp");
-}
-
 test("ride now: boot, a rider's session, the poll, the soak", async ({ page }) => {
-  const snaps = snapshots();
+  const snaps = snapshots(rtDir);
   expect(snaps.length, `recorded snapshots in ${rtDir} (node web/perf/record-rt.mjs)`).toBeGreaterThan(4);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const probe = new Probe(page, path.join(root, "web/perf-results", stamp));

@@ -7,29 +7,13 @@
 import fs from "node:fs";
 import path from "node:path";
 
-/// Installed before any page script: records each capability module's
-/// memory by its manifest id (the wasm response's url names it), and
-/// observes long animation frames (with their script attribution) and
-/// long tasks.
+/// Installed before any page script: observes long animation frames
+/// (with their script attribution) and long tasks. The capability
+/// modules run in the page's bus worker, so their memory is read
+/// through the engine's inspection (`window.__bus`) and their CPU from
+/// the worker's own profiler.
 function pageProbe() {
-  const perf = (window.__perf = { wasm: [], loaf: [], longtasks: [] });
-  const ids = new WeakMap();
-  const arrayBuffer = Response.prototype.arrayBuffer;
-  Response.prototype.arrayBuffer = async function () {
-    const buf = await arrayBuffer.call(this);
-    const m = /\/caps\/([a-z_]+)-[0-9a-f]+\.wasm$/.exec(new URL(this.url, location.href).pathname);
-    if (m) ids.set(buf, m[1]);
-    return buf;
-  };
-  const instantiate = WebAssembly.instantiate;
-  WebAssembly.instantiate = async function (source, imports) {
-    const result = await instantiate.call(this, source, imports);
-    const memory = (result.instance ?? result).exports?.memory;
-    if (memory instanceof WebAssembly.Memory) {
-      perf.wasm.push({ id: ids.get(source?.buffer ?? source) ?? `module${perf.wasm.length}`, memory });
-    }
-    return result;
-  };
+  const perf = (window.__perf = { loaf: [], longtasks: [] });
   try {
     new PerformanceObserver((list) => {
       for (const e of list.getEntries()) {
@@ -68,6 +52,40 @@ export class Probe {
     await this.cdp.send("Profiler.setSamplingInterval", { interval: 200 });
   }
 
+  /// The bus worker's own DevTools session (once the page spawned it):
+  /// the capability modules run there, so their CPU is profiled there.
+  /// Attached through the browser session, unflattened — Playwright's
+  /// CDP sessions reach pages, not workers.
+  async worker() {
+    if (this.bus) return this.bus;
+    const browser = await this.page.context().browser().newBrowserCDPSession();
+    const { targetInfos } = await browser.send("Target.getTargets");
+    const target = targetInfos.find((t) => t.type === "worker" && /bus\.worker/.test(t.url));
+    if (!target) return null;
+    const { sessionId } = await browser.send("Target.attachToTarget", { targetId: target.targetId, flatten: false });
+    let next = 1;
+    const waiting = new Map();
+    browser.on("Target.receivedMessageFromTarget", (e) => {
+      if (e.sessionId !== sessionId) return;
+      const msg = JSON.parse(e.message);
+      const w = waiting.get(msg.id);
+      if (!w) return;
+      waiting.delete(msg.id);
+      if (msg.error) w.reject(new Error(msg.error.message));
+      else w.resolve(msg.result);
+    });
+    const send = (method, params = {}) =>
+      new Promise((resolve, reject) => {
+        const id = next++;
+        waiting.set(id, { resolve, reject });
+        browser.send("Target.sendMessageToTarget", { sessionId, message: JSON.stringify({ id, method, params }) }).catch(reject);
+      });
+    await send("Profiler.enable");
+    await send("Profiler.setSamplingInterval", { interval: 200 });
+    this.bus = { send };
+    return this.bus;
+  }
+
   async counters() {
     const { metrics } = await this.cdp.send("Performance.getMetrics");
     const m = Object.fromEntries(metrics.map((x) => [x.name, x.value]));
@@ -86,15 +104,30 @@ export class Probe {
     const heap = await this.cdp.send("Runtime.getHeapUsage");
     const { metrics } = await this.cdp.send("Performance.getMetrics");
     const m = Object.fromEntries(metrics.map((x) => [x.name, x.value]));
-    const wasm = await this.page.evaluate(() =>
-      Object.fromEntries((window.__perf?.wasm ?? []).map((w) => [w.id, w.memory.buffer.byteLength])),
-    );
-    const wasmTotal = Object.values(wasm).reduce((a, b) => a + b, 0);
+    const wasm = await this.page.evaluate(async () => {
+      if (!window.__bus) return {};
+      const caps = await window.__bus.caps();
+      return Object.fromEntries(
+        await Promise.all(
+          caps.map(async (cap) => {
+            const [{ memory, resets }, { held }] = await Promise.all([window.__bus.memory(cap), window.__bus.held(cap)]);
+            return [cap, { memory, resets, held: held.length }];
+          }),
+        ),
+      );
+    });
+    const wasmTotal = Object.values(wasm).reduce((a, b) => a + b.memory, 0);
+    const bus = await this.worker().catch(() => null);
+    const workerHeap = bus ? await bus.send("Runtime.getHeapUsage").catch(() => null) : null;
     return {
       jsHeapMB: round(heap.usedSize / MB),
+      workerHeapMB: workerHeap ? round(workerHeap.usedSize / MB) : null,
       arrayBuffersMB: round((heap.backingStorageSize ?? 0) / MB),
       wasmMB: round(wasmTotal / MB),
-      wasmByCapMB: Object.fromEntries(Object.entries(wasm).map(([k, v]) => [k, round(v / MB)])),
+      wasmByCapMB: Object.fromEntries(Object.entries(wasm).map(([k, v]) => [k, round(v.memory / MB)])),
+      /// Per module: documents held (every registry) and instance resets.
+      heldByCap: Object.fromEntries(Object.entries(wasm).map(([k, v]) => [k, v.held])),
+      resetsByCap: Object.fromEntries(Object.entries(wasm).map(([k, v]) => [k, v.resets])),
       domNodes: m.Nodes,
       listeners: m.JSEventListeners,
     };
@@ -114,7 +147,9 @@ export class Probe {
       window.__perf.longtasks.length = 0;
     });
     const before = await this.counters();
+    const bus = profile ? await this.worker() : null;
     if (profile) await this.cdp.send("Profiler.start");
+    if (bus) await bus.send("Profiler.start");
     const t0 = performance.now();
     await fn();
     const wallMs = performance.now() - t0;
@@ -125,6 +160,12 @@ export class Probe {
       fs.writeFileSync(path.join(this.outDir, "profiles", file), JSON.stringify(p));
       top = summarize(p);
       top.file = `profiles/${file}`;
+      if (bus) {
+        const { profile: w } = await bus.send("Profiler.stop");
+        const wfile = file.replace(/\.cpuprofile$/, "-worker.cpuprofile");
+        fs.writeFileSync(path.join(this.outDir, "profiles", wfile), JSON.stringify(w));
+        top.worker = { ...summarize(w), file: `profiles/${wfile}` };
+      }
     }
     const after = await this.counters();
     const frames = await this.page.evaluate(() => ({ loaf: window.__perf.loaf.slice(), longtasks: window.__perf.longtasks.slice() }));
@@ -239,10 +280,10 @@ function bucketOf(fn, url) {
 
 function markdown(r) {
   const out = [`# Perf baseline — ${r.ui}`, "", `${r.when} · feed ${r.feed} · live ${r.live} · ${r.build}`, ""];
-  out.push("## Steps", "", "| step | wall ms | main-thread ms | script ms | layout+style ms | long tasks (max ms) | JS heap MB | wasm MB | DOM nodes |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|");
+  out.push("## Steps", "", "| step | wall ms | main-thread ms | script ms | layout+style ms | long tasks (max ms) | worker busy ms | JS heap MB | wasm MB | DOM nodes |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
   for (const s of r.steps) {
     out.push(
-      `| ${s.name} | ${s.wallMs} | ${s.mainThreadMs} | ${s.scriptMs} | ${round(s.layoutMs + s.styleMs)} | ${s.longTasks} (${s.longestTaskMs}) | ${s.memory.jsHeapMB} | ${s.memory.wasmMB} | ${s.memory.domNodes} |`,
+      `| ${s.name} | ${s.wallMs} | ${s.mainThreadMs} | ${s.scriptMs} | ${round(s.layoutMs + s.styleMs)} | ${s.longTasks} (${s.longestTaskMs}) | ${s.profile?.worker?.busyMs ?? ""} | ${s.memory.jsHeapMB} | ${s.memory.wasmMB} | ${s.memory.domNodes} |`,
     );
   }
   out.push("", "## Where the CPU went (self time, per step)", "");
@@ -251,12 +292,19 @@ function markdown(r) {
     out.push(s.profile.buckets.map((b) => `${b.name} ${b.ms}`).join(" · "), "");
     for (const f of s.profile.functions.slice(0, 8)) out.push(`- ${f.ms} ms ${f.name}`);
     out.push("");
+    const w = s.profile.worker;
+    if (w) {
+      out.push(`#### the bus worker — ${w.busyMs} ms attributed (\`${w.file}\`)`, "");
+      out.push(w.buckets.map((b) => `${b.name} ${b.ms}`).join(" · "), "");
+      for (const f of w.functions.slice(0, 8)) out.push(`- ${f.ms} ms ${f.name}`);
+      out.push("");
+    }
   }
   if (r.samples.length) {
     const caps = [...new Set(r.samples.flatMap((s) => Object.keys(s.wasmByCapMB)))];
-    out.push("## Memory over time (after GC)", "", `| sample | JS heap MB | array buffers MB | DOM nodes | listeners | ${caps.join(" | ")} |`, `|---|---:|---:|---:|---:|${caps.map(() => "---:").join("|")}|`);
+    out.push("## Memory over time (after GC; per module: linear MB (documents held, resets))", "", `| sample | JS heap MB | worker heap MB | array buffers MB | DOM nodes | listeners | ${caps.join(" | ")} |`, `|---|---:|---:|---:|---:|---:|${caps.map(() => "---:").join("|")}|`);
     for (const s of r.samples) {
-      out.push(`| ${s.label} | ${s.jsHeapMB} | ${s.arrayBuffersMB} | ${s.domNodes} | ${s.listeners} | ${caps.map((c) => s.wasmByCapMB[c] ?? "").join(" | ")} |`);
+      out.push(`| ${s.label} | ${s.jsHeapMB} | ${s.workerHeapMB ?? ""} | ${s.arrayBuffersMB} | ${s.domNodes} | ${s.listeners} | ${caps.map((c) => (s.wasmByCapMB[c] == null ? "" : `${s.wasmByCapMB[c]} (${s.heldByCap?.[c] ?? "?"} held${s.resetsByCap?.[c] ? `, ${s.resetsByCap[c]} resets` : ""})`)).join(" | ")} |`);
     }
     out.push("");
   }

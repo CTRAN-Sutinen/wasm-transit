@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-93**. A
+IDs are never reused; the next new finding is **QAF-94**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -288,6 +288,25 @@ time, last bus home, is there a detour.
   modules keep only their last few — the registries are bounded).
   The page never reads it. `docs/units/module-runtime.md`'s.
   Pin: `JSON.stringify(live).length` on a C-TRAN snapshot.
+  Re-confirmed: 2026-11-04, `just perf` (stop display): each new
+  snapshot's `live` answer lands in the engine's answer cache, and
+  the page heap climbs 11 → 18.2 MB until the cache's 256 entries
+  fill, flat after.
+- **QAF-93 DEFECT** — both rider pages are over D-68's memory
+  budget on C-TRAN, about twice over. The stop display holds 68 MB of
+  wasm (four modules × ~17 MB, each its own parsed network) plus an
+  18 MB page heap, against 40 MB; ride-now holds 86 MB (five
+  modules) plus a 33 MB page heap, against 80 MB. A module's linear
+  memory is ~17 MB, not the 5.8–8.4 MB the cost-gate bench measured:
+  it keeps the peak of the parse (memory never shrinks). The
+  display's `network` module holds a whole copy only to check the
+  served hash (`servedNetwork` registers there first). Both are
+  bounded — every module's memory and held documents are flat
+  across 318 polls (106 min) on the display and the ride-now soak.
+  `docs/units/runtime-cost-gate.md` owns the reduction.
+  Pin: `PERF_RT=testdata/perf-rt-10m just perf` — the "Memory over
+  time" table of each summary (`stop-display.perf.mjs`,
+  `ride-now.perf.mjs`).
 
 ## Beyond blocks (runs, work rules)
 
