@@ -53,7 +53,9 @@ units it depends on are:
   addressed, so cached forever), and the last network; boards
   answer from the schedule and say so. The service worker IS the
   update mechanism above — one lifecycle, not two. The map's labels
-  still come from protomaps.github.io (D-49, QAF-84).
+  come from `basemap-assets/` when `just basemap-assets` installed it
+  (D-49) — the service worker caches it with the shell — and from
+  protomaps.github.io when not, which offline means no labels.
 - **Polling.** A hidden page does not poll (`visibilitychange`); it
   re-reads on return. Today both hosts poll on a bare `setInterval`.
 - **The service day.** The hosts pass the calendar date and the

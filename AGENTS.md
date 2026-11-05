@@ -134,6 +134,8 @@ just dev                   # vite hot reload + server alongside
 just geocoder-build        # once: a local Pelias (portland-metro) in .pelias/
 just geocoder              # start it on :4000 (GEOCODER=http://127.0.0.1:4000
                            # just serve|dev proxies it at /geocode); geocoder-stop
+just basemap-assets        # once: the basemap's glyphs + sprites into web/public/
+                           # (gitignored; labels read them locally, else the network)
 just fixtures              # regenerate the e2e GTFS fixture
 just soak                  # real-data soak (COUNTY_GEOJSON=… county roads)
 just spec                  # OPTIONAL: TLC model-check of the sync store engine

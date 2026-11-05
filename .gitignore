@@ -16,6 +16,8 @@ playwright-report
 
 # Basemap extract — regenerate with `just basemap` (~94 MB at z15)
 web/public/basemap.pmtiles
+# Basemap glyphs and sprites — fetch with `just basemap-assets` (~14 MB)
+web/public/basemap-assets/
 
 mutants.out/
 # Real C-TRAN GTFS — licensed agency data, fetched for dogfood QA only (docs/TESTING.md)

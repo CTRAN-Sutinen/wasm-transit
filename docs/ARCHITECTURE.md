@@ -779,7 +779,10 @@ File ownership:
   use. The host never sniffs a shape.
 - `src/basemap.ts` is the basemap choice every map view shares
   (local pmtiles, else OpenFreeMap) and the MapLibre worker wiring;
-  each map component owns its map (`window.__map` is the e2e hook).
+  the local style's glyphs and sprites are `basemap-assets/` beside
+  the tiles when `just basemap-assets` installed them (probed, never
+  configured), else protomaps.github.io; each map component owns
+  its map (`window.__map` is the e2e hook).
 
 ### The bus worker
 
@@ -934,8 +937,9 @@ Shared by every generated UI:
   opens). The UI reads documents in JavaScript, which has no serde
   aliases; only the `plan` frame, which every stored shape spells
   alike, may be read before.
-- `src/basemap.ts`: the basemap style choice and the MapLibre
-  worker wiring, for any map view.
+- `src/basemap.ts`: the basemap style choice (tiles, and glyphs and
+  sprites local or remote) and the MapLibre worker wiring, for any
+  map view.
 
 The component catalog. Every component is THIN: props in, events
 out, formatting only; it imports neither the bus nor a UI's

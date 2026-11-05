@@ -93,6 +93,13 @@ Rebuild the frontend afterwards (`just build`). A metro extract is
 small enough to keep next to the GTFS zip, which makes the whole app
 — feed, queries, basemap — work offline.
 
+Labels and icons need two more things the tiles do not carry: fonts
+(glyphs) and a sprite sheet. `just basemap-assets` fetches them once
+into `web/public/basemap-assets/` (about 14 MB, gitignored, pinned to
+a commit of github.com/protomaps/basemaps-assets); the map reads them
+from there when present, and from protomaps.github.io when not — so
+without the recipe, labels need an uplink.
+
 ## Address search
 
 Stop search is the network's; addresses and places come from a

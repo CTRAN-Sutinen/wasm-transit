@@ -89,7 +89,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-46 | How many more vehicles does a proposal need? | unanswered | QAF-3 |
 | D-47 | Which layers does coverage take? | unanswered | QAF-18, QAF-28 |
 | D-48 | Does a stop answer to a name its sign does not carry? | unanswered | QAF-70 |
-| D-49 | Where do the basemap's glyphs and sprites come from? | unanswered | QAF-84 |
+| D-49 | Where do the basemap's glyphs and sprites come from? | decided | nothing |
 | D-50 | What are the work rules a run is cut under? | unanswered | QAF-11, QAF-12, QAF-14, QAF-15 |
 | D-51 | What does a revenue hour, a revenue mile, and a vehicle cost? | unanswered | `ui-service-design` questions 2, 18 (cost) |
 | D-52 | How is a route-hour's frequency judged and drawn? | encoded | nothing |
@@ -1118,20 +1118,32 @@ Blocks: live-feed discovery (ride-now's and the stop display's
 `restoreUrls`, `web/perf/record-rt.mjs`).
 
 ### D-49 — Where do the basemap's glyphs and sprites come from?
-State: Unanswered.
-Context: QAF-84. With `basemap.pmtiles` served, the style still
+State: Decided.
+Answer: 2026-11-05 — "lets do option 2": a recipe fetches them once
+into `web/public/basemap-assets/` (gitignored); the style reads them
+locally when present and falls back to the network.
+Context: With `basemap.pmtiles` served, the style still
 fetches its fonts (glyphs) and icons (sprites) from
 protomaps.github.io, so a stop display that loses its uplink loses
 every map label. Installs and downloads are the user's job.
 Options:
 - Vendor them into the repo (the Protomaps font PBFs and sprite
   sheets, a few MB, OFL/BSD licensed), served beside the tiles.
-- A recipe that fetches them once into web/public (like `just
-  geocoder-build`), gitignored; the style reads them locally when
-  present and falls back to the network.
+- **Decided:** a recipe that fetches them once into web/public (like
+  `just geocoder-build`), gitignored; the style reads them locally
+  when present and falls back to the network. `just basemap-assets`
+  fetches `protomaps/basemaps-assets` at a pinned commit (the light
+  sprites and every font stack, ~14 MB, licenses included);
+  `pickStyle` probes for `basemap-assets/sprites/v4/light.json`
+  beside the tiles. The assets are an install: a checkout without
+  them still draws labels from protomaps.github.io, so it needs an
+  uplink for them until the recipe has run.
 - Keep the network fetch; the finding is documented as a known
   offline limit.
-Blocks: QAF-84.
+Blocks: nothing. Pins: `web/e2e/basemap-assets.spec.mjs` (installed:
+the style's glyph and sprite URLs are the app's own origin and
+nothing is asked of protomaps.github.io; absent: the network
+fallback).
 
 ## Sync and persistence
 

@@ -108,7 +108,9 @@ size the run).
    and `web/e2e/published-picks.spec.mjs` (its own store-mode server
    on a pinned date, `-today`: a published pick is the network a rider
    page loads on its date, a retired one never is, and the planner
-   publishes from service design);
+   publishes from service design), and `web/e2e/basemap-assets.spec.mjs`
+   (the map's glyphs and sprites are local when installed, networked
+   when not; skipped without a local `basemap.pmtiles`);
    extend those for bus-visible changes. Capability law tests
    (migration laws, validator mutation law, the dispatch diversion
    laws) follow expectation 1.

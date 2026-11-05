@@ -13,19 +13,39 @@ maplibregl.setWorkerUrl(workerUrl);
 
 let protocolAdded = false;
 
+/// Where the style's labels and icons come from: `basemap-assets/`
+/// beside the tiles when `just basemap-assets` installed it, else the
+/// Protomaps host. The URLs are absolute — MapLibre fetches glyphs in
+/// its worker, where a relative URL would resolve against the
+/// worker's own path.
+const LOCAL_ASSETS = "basemap-assets";
+const REMOTE_ASSETS = "https://protomaps.github.io/basemaps-assets";
+
+/// Whether a file the build serves is there. A dev server answers a
+/// missing file with its index page (200, text/html), so the type
+/// is checked as well as the status.
+async function served(url: string): Promise<boolean> {
+  return fetch(url, { method: "HEAD" })
+    .then((r) => r.ok && !/text\/html/.test(r.headers.get("content-type") ?? ""))
+    .catch(() => false);
+}
+
 /// Basemap choice, in order of preference:
 /// 1. basemap.pmtiles served next to the app (built with planetiler or
 ///    pmtiles extract) — the fully local option; the map opens on the
-///    archive's bounds, since tiles only exist inside them.
+///    archive's bounds, since tiles only exist inside them. Its
+///    glyphs and sprites are `basemap-assets/` when installed (it is
+///    probed, never configured), else protomaps.github.io.
 /// 2. OpenFreeMap — free vector tiles, no API key.
 /// The pmtiles viewer and basemap style are bundled (real npm deps,
-/// no runtime CDN import on every map mount); only the glyph/sprite
-/// assets still come from protomaps.github.io.
+/// no runtime CDN import on every map mount).
 /// Returns { style, initialView }.
 export async function pickStyle(): Promise<{ style: any; initialView: { center: [number, number]; zoom: number } }> {
-  const hasLocal = await fetch("basemap.pmtiles", { method: "HEAD" })
-    .then((r) => r.ok)
-    .catch(() => false);
+  const [hasLocal, hasAssets] = await Promise.all([
+    served("basemap.pmtiles"),
+    served(`${LOCAL_ASSETS}/sprites/v4/light.json`),
+  ]);
+  const assets = hasAssets ? new URL(LOCAL_ASSETS, document.baseURI).href : REMOTE_ASSETS;
   if (hasLocal) {
     try {
       // Once per page — two map views share the protocol.
@@ -46,8 +66,8 @@ export async function pickStyle(): Promise<{ style: any; initialView: { center: 
       return {
         style: {
           version: 8,
-          glyphs: "https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf",
-          sprite: "https://protomaps.github.io/basemaps-assets/sprites/v4/light",
+          glyphs: `${assets}/fonts/{fontstack}/{range}.pbf`,
+          sprite: `${assets}/sprites/v4/light`,
           sources: {
             protomaps: {
               type: "vector",

@@ -371,14 +371,6 @@ work rules, and the bid over them.
   within 300 m straight-line have none. Router `plan` 812 → 852 on
   2026-10-29 at 08:20 walks 158 s in a straight line, and over the
   walk table rides route 007 around, arriving 08:51.
-- **QAF-84 DEFECT** — the basemap is not local: with
-  `basemap.pmtiles` served, the style still fetches its glyphs and
-  sprites from `protomaps.github.io` (`web/src/basemap.ts`), and
-  without it the map is OpenFreeMap's. A stop display that loses
-  its uplink loses every map label.
-  Pin: `pickStyle` in `web/src/basemap.ts` — the `glyphs` and
-  `sprite` URLs of the local style.
-  Blocked: D-49.
 
 ## Data the bus does not have
 

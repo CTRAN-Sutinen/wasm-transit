@@ -639,6 +639,37 @@ basemap bbox maxzoom="15":
     pmtiles extract "https://build.protomaps.com/$(date +%Y%m%d).pmtiles" \
         web/public/basemap.pmtiles --bbox={{ bbox }} --maxzoom={{ maxzoom }}
 
+# Fetch the basemap's glyphs (fonts) and sprites (icons) once into
+# web/public/basemap-assets/ (gitignored, ~14 MB: protomaps/basemaps-assets
+# at a pinned commit, the light sprites and every font stack; fonts are
+# SIL OFL, sprites derive from MIT tangrams/icons — the licenses ride
+# along). The map probes for them beside the tiles and reads labels
+# from there, so a display that loses its uplink loses no label; without
+# them the style reads protomaps.github.io (D-49, option 2). Rebuild the
+# frontend afterwards (`just build`). A re-run at the same pin is a no-op.
+#
+#   just basemap-assets
+basemap_assets_commit := "028c18f713baecad011301ff7a69acc39bcc2ae7"
+
+basemap-assets:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dest="{{ justfile_directory() }}/web/public/basemap-assets"
+    if [ "$(cat "$dest/.commit" 2>/dev/null)" = "{{ basemap_assets_commit }}" ]; then
+        echo "basemap-assets already at {{ basemap_assets_commit }}"
+        exit 0
+    fi
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    curl -fsSL "https://codeload.github.com/protomaps/basemaps-assets/tar.gz/{{ basemap_assets_commit }}" \
+        | tar -xz -C "$tmp" --strip-components=1 --wildcards '*/fonts' '*/sprites/v4/light*'
+    echo "{{ basemap_assets_commit }}" > "$tmp/.commit"
+    chmod 755 "$tmp"
+    rm -rf "$dest"
+    mv "$tmp" "$dest"
+    trap - EXIT
+    du -sh "$dest"
+
 # ---------------------------------------------------------------
 # geocoder
 # ---------------------------------------------------------------

@@ -59,8 +59,7 @@ cap-streets). What is left:
    not have. Blocked: D-31.
 6. **The geography release.** The basemap and the streets document,
    built from one source snapshot and
-   pinned together in the manifest beside `feed_hash`, the
-   basemap's glyphs and sprites in it (closes QAF-84). Blocked:
+   pinned together in the manifest beside `feed_hash`. Blocked:
    D-29.
 
 Geocoding is not this unit's: it is an external service the host
