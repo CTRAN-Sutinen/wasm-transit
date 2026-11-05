@@ -1,5 +1,5 @@
 ---------------------------- MODULE store ----------------------------
-(* The sync store engine (docs/units/sync-persistence.md), model-checked
+(* The sync store engine (docs/FORMATS.md), model-checked
    by `just spec` (TLC, explicit enumeration at small bounds — `just test`
    never requires Java).
 

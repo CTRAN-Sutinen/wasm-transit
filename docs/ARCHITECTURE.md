@@ -370,9 +370,12 @@ transit-plans  THE service-plan chain: resolve (which pick is in
                 kind `plans`, `PublishedPlans`): every published
                 pick's metadata and network hash, canonical
                 ((effective_from, id) order, one entry per id) —
-                publish (the next set, or every reason the pick would
-                break the chain) and in_force (the pick, and so the
-                network, governing a date). Cross-document logic, the
+                publish (the next set, or every reason the pick is
+                refused: the chain, or a new, restored or moved pick
+                dated before today, D-76), retire (a pick that has not
+                taken effect, kept as the tombstone, D-75) and
+                in_force (the published pick, and so the network,
+                governing a date — retired picks never do). Cross-document logic, the
                 counterpart of transit-sync's cross-record merge;
                 cap-plans is the seam.
 transit-streets THE streets model. `model.rs`: the streets document
@@ -442,8 +445,9 @@ cap-sync        The sync capability: the converged state of an edit
                 module — one question, one answer).
 cap-plans       The plan-chain capability: which service plan
                 governs a date — resolve / periods / validate over
-                the plan set's metadata, and publish / in_force over
-                the published plan set (transit-plans is the
+                the plan set's metadata, and publish / retire /
+                in_force over the published plan set (publish and
+                retire take the host's date) (transit-plans is the
                 library). Pure ops, no registries: the host owns
                 the plan set and pushes its metadata per call;
                 publish answers the next set's canonical bytes and
@@ -521,7 +525,7 @@ document in 0.47 s; the first `access` builds the walking graph in
 0.32 s, later ones answer in ~14 ms.
 
 With `-store <dir>` the server keeps a content-addressed store
-(`docs/units/sync-persistence.md`, `docs/FORMATS.md`): immutable blobs
+(`docs/FORMATS.md`): immutable blobs
 under `blobs/<hex>` with a typed envelope sidecar, and one append-only
 log per pointer under `pointers/<name>.log` — the pointer is the log's
 last entry, and a commit is blob-write + one log append, CAS'd on the
@@ -624,13 +628,22 @@ Its HTTP surface:
   `effective`) — the only client-readable form of the policy.
 - `POST /plans` (store mode) — publish a pick (docs/ROADMAP.md 1,
   D-74): the body is the pick's network in any serialization. A fresh
-  cap-network registers and validates it (a network with issues is
-  refused, 422) and answers its canonical bytes and plan frame;
-  cap-plans `publish` answers the next published set or the reasons
-  the chain refuses the pick (422). The server commits the network to
+  cap-network registers it and answers what refuses it (`publishable`:
+  its issues, and a pick with no service in its period — 422 with
+  `issues` and `refusals`) and its canonical bytes and plan frame;
+  cap-plans `publish` answers the next published set or why the pick
+  is refused (422: the chain, or a pick dated before today, D-76).
+  `POST /plans/retire` `{"id"}` retires a pick that has not taken
+  effect (D-75). "Today" is the server's local date; `-today` pins it
+  on a test server. The server commits the network to
   `plan.<id>`, then the set to `plans`, and the manifest pins it as
   `plans_hash`. Clients read the set and each pick's network from
   `/blobs`.
+- `GET /feed?date=` — the GTFS zip in force on the date (default the
+  server's today): cap-network `export` of the published pick in
+  force (cap-plans `in_force` answers which), kept by network hash;
+  before the first pick takes effect, the configured `-feed` zip
+  itself (D-74); 404 when neither runs. ETag the zip's hash.
 
 `go test ./...` in `server/` proves the server runs the exact
 module bytes the manifest pins and answers what the browser does.
@@ -917,7 +930,8 @@ host layer (the gates check both).
   event each), ChangeLedger (`service_type_compare` routes, undo and
   redo events), ProposalScore and Redline
   (`service_type_compare`), Readiness (issues, warnings, the export
-  event); RouteCard (`route_detail`), ScheduleChange (one
+  and publish events — Publish posts the plan to `POST /plans` and
+  shows the server's answer as given: published, or each refusal); RouteCard (`route_detail`), ScheduleChange (one
   pattern trips' starts with add and remove events), DirectionTabs
   (`route_detail` directions), TimetableGrid (directory `timetable`,
   added, retimed, and removed trips when asked against a baseline; a stop
@@ -1040,7 +1054,8 @@ gaps by hour, running time by start, the change ledger with undo
 and redo, the route's map, and (edit mode, E) the gestures: span,
 running time, one trip moved alone (picked or dragged), stops. A
 frequency target is shown as waiting on D-54. Proposal: the
-scorecard, the redline, readiness, and the export. The selection
+scorecard, the redline, readiness, the export, and publishing the
+pick to the deployment (D-74). The selection
 lives in the URL hash. With no stored plan it opens the server's
 `/network` as the base plan. Its host answers through the answer
 graph; a view's nodes answer only while it is open, each frame
@@ -1227,8 +1242,10 @@ cap-network     The network codec capability: load_feed (zip bytes →
                 publish path — deterministic GTFS zip bytes under
                 their content hash, base64 across the JSON seam, with
                 the import's boundary when it is the imported
-                document itself), document (a registered network's
-                canonical bytes, hash and plan frame — what the
+                document itself), publishable (what refuses it as a
+                published pick: its issues, and a pick with no
+                service in its period, D-76), document (a registered
+                network's canonical bytes, hash and plan frame — what the
                 server stores when it publishes a pick it was sent
                 in any serialization). The domain code lives in the
                 shared transit-codec library.

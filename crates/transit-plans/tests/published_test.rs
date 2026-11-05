@@ -9,7 +9,7 @@
 use chrono::NaiveDate;
 use proptest::prelude::*;
 use transit_plans::{
-    in_force, publish, resolve, PlanInfo, PlanIssue, PublishedPlans, PUBLISHED_SCHEMA_VERSION,
+    in_force, publish, resolve, retire, PickStatus, PlanInfo, PlanIssue, PublishedPlans, PUBLISHED_SCHEMA_VERSION,
 };
 
 fn info(id: &str, from: Option<&str>) -> PlanInfo {
@@ -24,8 +24,14 @@ fn date(s: &str) -> NaiveDate {
     NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
 }
 
+/// A "today" before every fixture date: the laws that are not about
+/// the clock publish every pick as a future one.
+fn early() -> NaiveDate {
+    date("2000-01-01")
+}
+
 fn published(steps: &[(PlanInfo, String)]) -> PublishedPlans {
-    steps.iter().fold(PublishedPlans::empty(), |set, (plan, h)| publish(&set, plan, h).expect("valid publish"))
+    steps.iter().fold(PublishedPlans::empty(), |set, (plan, h)| publish(&set, plan, h, early()).expect("valid publish"))
 }
 
 #[test]
@@ -64,7 +70,7 @@ fn republishing_a_pick_replaces_it() {
 fn publishing_never_mutates_its_input() {
     let before = published(&[(info("spring", Some("2026-03-01")), hash(1))]);
     let copy = before.clone();
-    let _ = publish(&before, &info("fall", Some("2026-09-07")), &hash(2)).unwrap();
+    let _ = publish(&before, &info("fall", Some("2026-09-07")), &hash(2), early()).unwrap();
     assert_eq!(before, copy);
 }
 
@@ -73,19 +79,19 @@ fn a_pick_that_would_break_the_chain_is_refused() {
     let set = published(&[(info("spring", Some("2026-03-01")), hash(1))]);
 
     // A standalone import (no id) is not a pick.
-    let issues = publish(&set, &info("", Some("2026-09-07")), &hash(2)).unwrap_err();
+    let issues = publish(&set, &info("", Some("2026-09-07")), &hash(2), early()).unwrap_err();
     assert!(issues.iter().any(|i| matches!(i, PlanIssue::UnversionedPlan)), "{issues:?}");
 
     // A pick must be dated.
-    let issues = publish(&set, &info("fall", None), &hash(2)).unwrap_err();
+    let issues = publish(&set, &info("fall", None), &hash(2), early()).unwrap_err();
     assert!(issues.iter().any(|i| matches!(i, PlanIssue::PlanMissingEffectiveDate { .. })), "{issues:?}");
 
     // Two picks never take effect the same day.
-    let issues = publish(&set, &info("fall", Some("2026-03-01")), &hash(2)).unwrap_err();
+    let issues = publish(&set, &info("fall", Some("2026-03-01")), &hash(2), early()).unwrap_err();
     assert!(issues.iter().any(|i| matches!(i, PlanIssue::DuplicateEffectiveDate { .. })), "{issues:?}");
 
     // A date that does not parse is refused, not guessed.
-    assert!(publish(&set, &info("fall", Some("2026-13-01")), &hash(2)).is_err());
+    assert!(publish(&set, &info("fall", Some("2026-13-01")), &hash(2), early()).is_err());
 }
 
 fn arb_steps() -> impl Strategy<Value = Vec<(PlanInfo, String)>> {
@@ -121,7 +127,7 @@ proptest! {
     #[test]
     fn publish_is_idempotent(steps in arb_steps()) {
         let once = published(&steps);
-        let twice = steps.iter().fold(once.clone(), |set, (p, h)| publish(&set, p, h).unwrap());
+        let twice = steps.iter().fold(once.clone(), |set, (p, h)| publish(&set, p, h, early()).unwrap());
         prop_assert_eq!(once, twice);
     }
 
@@ -138,6 +144,129 @@ proptest! {
         if let (Some(p), Some(id)) = (found, chain) {
             let (_, h) = steps.iter().find(|(i, _)| i.id == id).unwrap();
             prop_assert_eq!(&p.network_hash, h);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
+// D-75: retiring a pick (the tombstone), future picks only.
+// D-76: a pick that is new, restored, or moved never lands before
+// today; a correction under its own date always publishes.
+// ---------------------------------------------------------------------
+
+fn today() -> NaiveDate {
+    date("2026-11-05")
+}
+
+fn fall_and_spring() -> PublishedPlans {
+    published(&[
+        (info("fall", Some("2026-09-07")), hash(1)),
+        (info("spring", Some("2027-03-01")), hash(2)),
+    ])
+}
+
+#[test]
+fn retiring_a_future_pick_takes_it_out_of_force_and_keeps_it() {
+    let set = fall_and_spring();
+    let retired = retire(&set, "spring", today()).unwrap();
+    let spring = retired.plans.iter().find(|p| p.id == "spring").expect("the tombstone stays in the set");
+    assert_eq!(spring.status, PickStatus::Retired);
+    assert_eq!(spring.network_hash, hash(2), "the record keeps what was published");
+    let after = in_force(&retired, date("2027-03-02")).unwrap().unwrap();
+    assert_eq!(after.id, "fall", "the pick before it governs on");
+    assert_eq!(retire(&retired, "spring", today()).unwrap(), retired, "retiring twice is retiring once");
+    assert_eq!(set, fall_and_spring(), "the input is never mutated");
+}
+
+#[test]
+fn a_pick_that_has_taken_effect_cannot_be_retired() {
+    let set = fall_and_spring();
+    let issues = retire(&set, "fall", today()).unwrap_err();
+    assert!(issues.iter().any(|i| matches!(i, PlanIssue::PickTookEffect { .. })), "{issues:?}");
+    // Its own date is the day it takes effect.
+    let issues = retire(&set, "spring", date("2027-03-01")).unwrap_err();
+    assert!(issues.iter().any(|i| matches!(i, PlanIssue::PickTookEffect { .. })), "{issues:?}");
+    let issues = retire(&set, "nope", today()).unwrap_err();
+    assert!(issues.iter().any(|i| matches!(i, PlanIssue::UnknownPick { .. })), "{issues:?}");
+}
+
+#[test]
+fn republishing_a_retired_pick_restores_it() {
+    let retired = retire(&fall_and_spring(), "spring", today()).unwrap();
+    let restored = publish(&retired, &info("spring", Some("2027-03-01")), &hash(3), today()).unwrap();
+    let spring = restored.plans.iter().find(|p| p.id == "spring").unwrap();
+    assert_eq!((spring.status, spring.network_hash.as_str()), (PickStatus::Published, hash(3).as_str()));
+    assert_eq!(in_force(&restored, date("2027-03-02")).unwrap().unwrap().id, "spring");
+}
+
+#[test]
+fn a_retired_pick_is_not_a_chain_member() {
+    // Its date is free for another pick.
+    let retired = retire(&fall_and_spring(), "spring", today()).unwrap();
+    let other = publish(&retired, &info("spring-b", Some("2027-03-01")), &hash(4), today()).unwrap();
+    assert_eq!(in_force(&other, date("2027-03-01")).unwrap().unwrap().id, "spring-b");
+    // Restoring the retired one would now put two picks on that day.
+    let issues = publish(&other, &info("spring", Some("2027-03-01")), &hash(2), today()).unwrap_err();
+    assert!(issues.iter().any(|i| matches!(i, PlanIssue::DuplicateEffectiveDate { .. })), "{issues:?}");
+}
+
+#[test]
+fn a_new_pick_never_lands_before_today() {
+    let set = fall_and_spring();
+    let issues = publish(&set, &info("winter", Some("2026-11-04")), &hash(5), today()).unwrap_err();
+    assert!(issues.iter().any(|i| matches!(i, PlanIssue::PickDatedInPast { .. })), "{issues:?}");
+    // Today itself is not the past: the pick takes effect at once.
+    let now = publish(&set, &info("winter", Some("2026-11-05")), &hash(5), today()).unwrap();
+    assert_eq!(in_force(&now, today()).unwrap().unwrap().id, "winter");
+}
+
+#[test]
+fn a_pick_never_moves_into_the_past() {
+    let set = fall_and_spring();
+    let issues = publish(&set, &info("spring", Some("2026-10-01")), &hash(2), today()).unwrap_err();
+    assert!(issues.iter().any(|i| matches!(i, PlanIssue::PickDatedInPast { .. })), "{issues:?}");
+    // Moving the in-force pick to another past date is a move too.
+    let issues = publish(&set, &info("fall", Some("2026-09-01")), &hash(1), today()).unwrap_err();
+    assert!(issues.iter().any(|i| matches!(i, PlanIssue::PickDatedInPast { .. })), "{issues:?}");
+    // Moving a pick later is free.
+    assert!(publish(&set, &info("spring", Some("2027-04-01")), &hash(2), today()).is_ok());
+}
+
+#[test]
+fn a_correction_under_its_own_date_always_publishes() {
+    // The pick in force, fixed: its date is in the past and unchanged.
+    let set = fall_and_spring();
+    let fixed = publish(&set, &info("fall", Some("2026-09-07")), &hash(9), today()).unwrap();
+    assert_eq!(in_force(&fixed, today()).unwrap().unwrap().network_hash, hash(9));
+}
+
+#[test]
+fn restoring_a_pick_whose_date_has_passed_is_refused() {
+    let retired = retire(&fall_and_spring(), "spring", today()).unwrap();
+    let issues = publish(&retired, &info("spring", Some("2027-03-01")), &hash(2), date("2027-03-05")).unwrap_err();
+    assert!(issues.iter().any(|i| matches!(i, PlanIssue::PickDatedInPast { .. })), "{issues:?}");
+}
+
+proptest! {
+    /// A retired pick never governs: in_force is the chain over the
+    /// published picks alone.
+    #[test]
+    fn retired_picks_never_resolve(steps in arb_steps(), retire_mask in any::<u16>(), day in 0u32..500) {
+        let mut set = published(&steps);
+        for (i, (plan, _)) in steps.iter().enumerate() {
+            if retire_mask & (1 << (i % 16)) != 0 {
+                set = retire(&set, &plan.id, early()).unwrap();
+            }
+        }
+        let d = date("2025-12-01") + chrono::Days::new(day as u64);
+        let live: Vec<PlanInfo> = set.plans.iter()
+            .filter(|p| p.status == PickStatus::Published)
+            .map(|p| info(&p.id, Some(&p.effective_from)))
+            .collect();
+        let found = in_force(&set, d).unwrap();
+        prop_assert_eq!(found.map(|p| p.id.clone()), resolve(&live, d).unwrap());
+        if let Some(p) = found {
+            prop_assert_eq!(p.status, PickStatus::Published);
         }
     }
 }

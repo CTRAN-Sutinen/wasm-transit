@@ -38,7 +38,6 @@ archive — nothing here records what is finished.
 |---|---|
 | [host-discipline.md](host-discipline.md) | the composition layer: one op caller, flow maps as data, the journal, replay |
 | [wire-time-assembly.md](wire-time-assembly.md) | per-user selection over the manifest; layouts as documents |
-| [sync-persistence.md](sync-persistence.md) | publishing a pick from the planner, withdrawing one, the pick in force as GTFS, the device journal on the store |
 | [cap-authz.md](cap-authz.md) | JWT verification at the server, the policy document on the store, cap-authz fail-closed |
 | [linked-assembly.md](linked-assembly.md) | one module and one kernel-owned registry per page: each document held once, the shared code shipped once, capabilities still unable to call each other |
 | [runtime-cost-gate.md](runtime-cost-gate.md) | a ratchet on per-module memory and registration time |

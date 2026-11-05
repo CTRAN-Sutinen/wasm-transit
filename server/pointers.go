@@ -2,7 +2,7 @@ package main
 
 // The generic store surface (store mode, -store <dir>): pointers and
 // blobs over the content-addressed store (docs/FORMATS.md,
-// docs/units/sync-persistence.md). /edits is the edit_records
+// docs/ARCHITECTURE.md, server section). /edits is the edit_records
 // specialization of POST /pointers/edits (edits.go).
 //
 //	GET  /pointers/{name}              -> {name, hash, seq, envelope} (404 when absent)

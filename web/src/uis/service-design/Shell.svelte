@@ -14,7 +14,7 @@
   import {
     sd, VIEWS, setView, openPlan, setCompare, fork, loadFeedBytes, loadLayerBytes, selectGroup, openRoute, clearRoute,
     selectDirection, selectTimetableStop, openStop, clearStop, setWindow, setCoverageParams, gestures, undoChange,
-    redoChange, exportPlan, toggleEdit, selectTrip, pickUnserved, retry, type View,
+    redoChange, exportPlan, publishPlan, toggleEdit, selectTrip, pickUnserved, retry, type View,
   } from "./host.svelte";
   import { today } from "../kit";
   import DesignRail from "../../components/DesignRail.svelte";
@@ -295,7 +295,8 @@
           {#if sd.failed.Readiness}
             {@render failure("Readiness", "Ready to publish?")}
           {:else}
-            <Readiness issues={sd.issues} warnings={sd.warnings} {framed} exported={sd.exported} exportError={sd.failed.Export ?? ""} onexport={exportPlan} />
+            <Readiness issues={sd.issues} warnings={sd.warnings} {framed} exported={sd.exported} exportError={sd.failed.Export ?? ""} onexport={exportPlan}
+              published={sd.published} publishRefused={sd.publishRefused} publishError={sd.failed.Publish ?? ""} onpublish={publishPlan} />
           {/if}
         </div>
       {/if}

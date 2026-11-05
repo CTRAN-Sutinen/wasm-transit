@@ -101,8 +101,8 @@ done; `just e2e` adds the browser runner, for UI-visible changes;
 
 ```
 just build                 # frontend (type-checks first — the TS layer is a gate)
-just caps                  # capability modules + manifest (+ cap_sync.wasm,
-                           # cap_network.wasm and cap_streets.wasm for the server)
+just caps                  # capability modules + manifest (+ cap_sync, cap_network,
+                           # cap_streets, cap_authz and cap_plans .wasm for the server)
 just registry              # publish the capability registry (gates → blobs + evidence;
                            # every `just caps` republishes it ungated)
 node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op ...
@@ -111,7 +111,9 @@ node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op .
                            # --as NAME names a result; $refs ($name.x, $load.x,
                            # $op.x, $N.path) + $TODAY/$NOW_SECS (a number);
                            # --load [N:]FILE for bulk ops; --op @FILE for big JSON;
-                           # --ask URL asks an oracle ($ask.x)
+                           # --ask URL asks an oracle ($ask.x); --post URL REF
+                           # writes a document to the deployment ($post.x —
+                           # e.g. POST /plans '$apply.network' publishes a pick)
 just test                  # the host-side runner (Rust + smokes + runner gates + web
                            # parity ratchets + Go -race) — no browser
 just e2e                   # the browser runner (Playwright, builds first) — UI changes

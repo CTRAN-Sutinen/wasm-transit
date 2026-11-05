@@ -21,9 +21,9 @@
 //! answer (reported, never rejected — the sync contract). A second
 //! answer here would be two answers to one question on the bus.
 //! The module is stateless: no registries, no persistence —
-//! document storage is the host's, and the sync-persistence
-//! design (blobs + pointers, pointer CAS) is the host discipline's,
-//! never a module's.
+//! document storage is the host's, and the sync store's design
+//! (blobs + pointers, pointer CAS — docs/FORMATS.md) is the host
+//! discipline's, never a module's.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

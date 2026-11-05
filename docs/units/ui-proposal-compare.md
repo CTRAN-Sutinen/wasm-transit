@@ -20,7 +20,7 @@ UIs"). It is at step 2.
 
 | # | op(s) | state |
 |---|---|---|
-| 1 | plans `resolve` / `periods` | op exists; serving proposals to the public waits on the server (`docs/ROADMAP.md` 1, `docs/units/sync-persistence.md`) |
+| 1 | plans `resolve` / `periods` | op exists; the server publishes adopted picks (`POST /plans`, D-74), not proposals — serving a proposal to the public is not built |
 | 2 | analysis `service_type_compare`, directory `timetable` (`compare_hash`) | op exists; a retime reads retimed, never as a cut; branch directions read as one, QAF-63 |
 | 3 | analysis `stop_gaps` ×2 | gap: two answers and a host diff (log it in the session) |
 | 4 | router `plan` ×2 | gap: `plan_compare` compares edits, not two networks (log it in the session) |

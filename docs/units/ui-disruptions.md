@@ -30,7 +30,7 @@ session has asked these questions as one sequence.
 | 4 | divert `draft`, streets `snap` / `route`, divert `propose` | op exists; cap-streets is not dogfooded on real data (`docs/units/grade-debt.md`, needs the county export) |
 | 5 | runcut `trip_path`, board `stop_board`, router `plan_compare` with `edits_hash` | op exists (a diverted trip's line splices the traced detour into its alignment) |
 | 6 | none | gap, QAF-36 (the edit document is diversions only) |
-| 7 | sync `sync_edits` | op exists; not dogfooded, rides with `docs/units/sync-persistence.md` |
+| 7 | sync `sync_edits` | op exists; dogfooded on C-TRAN through a restarted store server (2026-11-05); no page writes one |
 
 ## Scope beyond the ops
 

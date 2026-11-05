@@ -75,6 +75,11 @@ pub enum Request {
     /// authority, the host stores exactly these bytes and never reads
     /// them.
     Document { network_hash: String },
+    /// What refuses a registered network as a published pick: its
+    /// validation issues, and the warnings that refuse publication (a
+    /// pick that runs no service in its period, D-76). The remaining
+    /// warnings ride along and never refuse.
+    Publishable { network_hash: String },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -90,6 +95,11 @@ pub enum Response {
     Validate { issues: Vec<transit_network::NetworkError>, warnings: Vec<transit_network::NetworkWarning> },
     Export { feed_hash: String, summary: FeedSummary, zip_b64: String },
     Document { document: String, document_hash: String, plan: transit_network::PlanMeta },
+    Publishable {
+        issues: Vec<transit_network::NetworkError>,
+        refusals: Vec<transit_network::NetworkWarning>,
+        warnings: Vec<transit_network::NetworkWarning>,
+    },
 }
 
 /// Feeds by content hash of the zip bytes.
@@ -176,6 +186,13 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 return Err(format!("registered under {network_hash} but serializes to {document_hash}"));
             }
             Ok(Response::Document { document, document_hash, plan: network.plan.clone() })
+        }
+        Request::Publishable { network_hash } => {
+            let network = network_arc(&network_hash)?;
+            let refusals = transit_network::publish_refusals(&network);
+            let warnings =
+                transit_network::validation_warnings(&network).into_iter().filter(|w| !refusals.contains(w)).collect();
+            Ok(Response::Publishable { issues: transit_network::validation_issues(&network), refusals, warnings })
         }
     }
 }

@@ -565,3 +565,30 @@ fn warnings_name_what_validity_lets_through() {
     pick.plan.effective_from = net.service_types["weekday"].rule.ranges.first().map(|r| r.start);
     assert!(validation_warnings(&pick).is_empty(), "{:?}", validation_warnings(&pick));
 }
+
+/// D-76: a pick that runs no service in its period is refused
+/// publication — on its date every rider would load a network that
+/// runs nothing. Every other warning publishes; issues never do.
+#[test]
+fn a_pick_with_no_service_in_its_period_is_refused_publication() {
+    use transit_network::{publish_refusals, validation_warnings, NetworkWarning};
+    let net = valid_network();
+    // The fixture warns (an unassigned trip) and still publishes.
+    assert!(!validation_warnings(&net).is_empty());
+    assert!(publish_refusals(&net).is_empty(), "warnings other than no-service never refuse");
+
+    let mut pick = net.clone();
+    pick.blocks.clear();
+    pick.plan = transit_network::PlanMeta {
+        id: "spring".into(),
+        name: "Spring".into(),
+        effective_from: Some(date(2030, 1, 7)),
+    };
+    assert_eq!(
+        publish_refusals(&pick),
+        vec![NetworkWarning::NoServiceInPlanPeriod { plan_name: "Spring".into(), effective_from: "2030-01-07".into() }]
+    );
+    // Inside its calendar the same pick publishes.
+    pick.plan.effective_from = net.service_types["weekday"].rule.ranges.first().map(|r| r.start);
+    assert!(publish_refusals(&pick).is_empty());
+}

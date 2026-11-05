@@ -754,7 +754,7 @@ mutants:
 # Model-check the sync store engine (server/store/store.tla, run with
 # TLC) — the engine's invariants: ref integrity, an append-only chained
 # log, GC safety, CAS authority, crash safety
-# (docs/units/sync-persistence.md). OPTIONAL: run it only when a change
+# (docs/FORMATS.md). OPTIONAL: run it only when a change
 # touches the sync engine (server/store/, the /pointers + /blobs +
 # /edits store surface, or the spec itself) — nothing else needs Java.
 # Needs Java 11+ (current tla2tools) and tla2tools.jar from

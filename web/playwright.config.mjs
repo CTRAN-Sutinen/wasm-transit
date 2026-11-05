@@ -7,7 +7,8 @@ import { defineConfig } from "@playwright/test";
 // second server publishes the fixture feed's network and the walking
 // fixture's streets and walk table (e2e/published-network.spec.mjs);
 // the first publishes none. The third runs the durable store (a fresh
-// directory per run) so a spec can publish picks to it
+// directory per run) on a pinned date (-today: before the spec's picks,
+// inside the fixture's calendar) so a spec can publish picks to it
 // (e2e/published-picks.spec.mjs).
 export default defineConfig({
   testDir: "./e2e",
@@ -36,7 +37,7 @@ export default defineConfig({
     },
     {
       command:
-        'bash -c \'exec go run . -addr 127.0.0.1:8084 -store "$(mktemp -d)" -feed ../web/e2e/fixtures/sample-gtfs.zip\'',
+        'bash -c \'exec go run . -addr 127.0.0.1:8084 -today 2026-08-01 -store "$(mktemp -d)" -feed ../web/e2e/fixtures/sample-gtfs.zip\'',
       cwd: "../server",
       url: "http://127.0.0.1:8084",
       reuseExistingServer: false,

@@ -249,3 +249,36 @@ fn document_answers_the_canonical_bytes_the_hash_names() {
     }
     assert!(dispatch(Request::Document { network_hash: "sha256:00".into() }).is_err());
 }
+
+/// What stops a network from being published, answered by the module
+/// (D-76): its validation issues, and the warnings that refuse
+/// publication — a pick that runs no service in its period. The other
+/// warnings ride along and never refuse.
+#[test]
+fn publishable_answers_what_refuses_a_pick() {
+    let mut doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
+    let start = doc.service_types.values().flat_map(|st| st.rule.ranges.iter().map(|r| r.start)).min().unwrap();
+    doc.plan = transit_network::PlanMeta { id: "fall".into(), name: "Fall".into(), effective_from: Some(start) };
+    let in_calendar = match dispatch(Request::LoadNetwork { network: doc.clone() }).unwrap() {
+        Response::LoadNetwork { network_hash } => network_hash,
+        _ => panic!("load_network"),
+    };
+    match dispatch(Request::Publishable { network_hash: in_calendar }).unwrap() {
+        Response::Publishable { issues, refusals, .. } => {
+            assert!(issues.is_empty() && refusals.is_empty(), "{issues:?} {refusals:?}")
+        }
+        other => panic!("publishable: {other:?}"),
+    }
+    doc.plan.effective_from = chrono::NaiveDate::from_ymd_opt(2099, 1, 5);
+    let past_calendar = match dispatch(Request::LoadNetwork { network: doc }).unwrap() {
+        Response::LoadNetwork { network_hash } => network_hash,
+        _ => panic!("load_network"),
+    };
+    match dispatch(Request::Publishable { network_hash: past_calendar }).unwrap() {
+        Response::Publishable { refusals, .. } => assert!(
+            refusals.iter().any(|w| matches!(w, transit_network::NetworkWarning::NoServiceInPlanPeriod { .. })),
+            "{refusals:?}"
+        ),
+        other => panic!("publishable: {other:?}"),
+    }
+}

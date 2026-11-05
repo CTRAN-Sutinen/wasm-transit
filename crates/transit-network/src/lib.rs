@@ -60,6 +60,6 @@ pub use model::{
 };
 pub use signs::visit_destination;
 pub use validate::{
-    routes_meeting_at, stop_route_index, validate, validation_issues, validation_warnings,
+    publish_refusals, routes_meeting_at, stop_route_index, validate, validation_issues, validation_warnings,
     walking_group,
 };

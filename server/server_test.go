@@ -188,9 +188,11 @@ func TestEditsSyncEndpoint(t *testing.T) {
 	}
 
 	// A second push with a newer tombstone for the same id: LWW. The
-	// timestamp must beat the server's submit stamp (real epoch ms),
-	// so date it in the future.
-	code, body = post(editJSON("e1", "retired", 2, time.Now().UnixMilli()+60_000))
+	// receive path clamps the future stamp to the server's now (D-56),
+	// which can equal the submit stamp to the millisecond — the retire
+	// bumps the rev past the submitted rev 2, as a client's retire does,
+	// so it wins the tie.
+	code, body = post(editJSON("e1", "retired", 3, time.Now().UnixMilli()+60_000))
 	if code != 200 {
 		t.Fatalf("post 2: %d %s", code, body)
 	}

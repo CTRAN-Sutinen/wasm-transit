@@ -68,7 +68,7 @@ fn publish_answers_the_canonical_document_and_its_hash() {
     let fall = info("fall", "Fall 2026", Some("2026-09-07"));
     let h = format!("sha256:{}", "ab".repeat(32));
     let (document, document_hash, published) =
-        match dispatch(Request::Publish { published: None, plan: fall.clone(), network_hash: h.clone() }).unwrap() {
+        match dispatch(Request::Publish { published: None, plan: fall.clone(), network_hash: h.clone(), today: "2026-08-01".into() }).unwrap() {
             Response::Publish { document: Some(d), document_hash: Some(dh), published: Some(p), issues } => {
                 assert!(issues.is_empty());
                 (d, dh, p)
@@ -91,7 +91,7 @@ fn publish_answers_the_canonical_document_and_its_hash() {
     }
 
     // A refusal is an answer with its reasons, never a stored document.
-    match dispatch(Request::Publish { published: Some(published.clone()), plan: info("", "import", None), network_hash: h.clone() }).unwrap() {
+    match dispatch(Request::Publish { published: Some(published.clone()), plan: info("", "import", None), network_hash: h.clone(), today: "2026-08-01".into() }).unwrap() {
         Response::Publish { issues, document: None, document_hash: None, published: None } => assert!(!issues.is_empty()),
         other => panic!("refusal: {other:?}"),
     }
@@ -100,4 +100,48 @@ fn publish_answers_the_canonical_document_and_its_hash() {
     let mut newer = published;
     newer.schema_version = 99;
     assert!(dispatch(Request::InForce { published: newer, date: "2026-11-05".into() }).unwrap_err().contains("schema_version"));
+}
+
+/// Retiring through the seam (D-75): a future pick is retired and the
+/// answer is the next canonical set; a pick that took effect is refused
+/// with its reason. The host passes its date, as it does to publish.
+#[test]
+fn retire_answers_the_next_set_or_why_not() {
+    let h = format!("sha256:{}", "cd".repeat(32));
+    let published = match dispatch(Request::Publish {
+        published: None,
+        plan: info("spring", "Spring 2027", Some("2027-03-01")),
+        network_hash: h,
+        today: "2026-11-05".into(),
+    })
+    .unwrap()
+    {
+        Response::Publish { published: Some(p), .. } => p,
+        other => panic!("publish: {other:?}"),
+    };
+    match dispatch(Request::Retire { published: published.clone(), id: "spring".into(), today: "2026-11-05".into() }).unwrap() {
+        Response::Retire { document: Some(d), document_hash: Some(dh), published: Some(p), issues } => {
+            assert!(issues.is_empty());
+            assert_eq!(dh, cap_abi::content_hash(d.as_bytes()));
+            assert_eq!(p.plans[0].status, cap_plans::PickStatus::Retired);
+        }
+        other => panic!("retire: {other:?}"),
+    }
+    match dispatch(Request::Retire { published, id: "spring".into(), today: "2027-03-01".into() }).unwrap() {
+        Response::Retire { issues, document: None, .. } => assert!(!issues.is_empty()),
+        other => panic!("a pick that took effect is refused: {other:?}"),
+    }
+    // A publish dated before the host's today is refused, not stored.
+    match dispatch(Request::Publish {
+        published: None,
+        plan: info("old", "Old", Some("2026-01-01")),
+        network_hash: format!("sha256:{}", "ef".repeat(32)),
+        today: "2026-11-05".into(),
+    })
+    .unwrap()
+    {
+        Response::Publish { issues, document: None, .. } => assert!(!issues.is_empty()),
+        other => panic!("a past pick: {other:?}"),
+    }
+    assert!(dispatch_json(r#"{"op":"retire","published":{"schema_version":1,"plans":[]},"id":"x","today":"nope"}"#).contains("error"));
 }

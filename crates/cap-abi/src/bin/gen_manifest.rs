@@ -97,7 +97,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "network",
         file: "cap_network.wasm",
-        ops: &["load_feed", "import", "load_network", "validate", "export", "document"],
+        ops: &["load_feed", "import", "load_network", "validate", "export", "document", "publishable"],
         consumes: &[],
         speaks: &[("feed", &[1]), ("network", &[1]), ("boundary", &[1])],
         migrates: &[],
@@ -108,6 +108,7 @@ const MODULES: &[ModuleSpec] = &[
             ("load_network", "Register an authored network document (the planner's JSON document) under its content hash; idempotent. The same registration every model-side capability names load_network — one op file feeds them all. Kernel bulk op 256 takes the bare document's JSON bytes, or those bytes gzipped (decoded as they parse — the text never exists whole in the module), on transit_invoke_bytes — the same answer and hash, no request envelope; hosts send real-size networks this way, gzipped."),
             ("validate", "Every issue of a registered document — the authoring UI's feedback loop, the whole list, never thrown. issues gate (export refuses an invalid document; a block trip its pattern trips do not run is one — the runcut and the publish path would disagree). warnings never gate: they name what validity lets through — trips no block carries (unassigned_trips, once the document has a runcut) and a versioned plan with no service in its first week (no_service_in_plan_period {plan_name, effective_from} — the plan by its name: the calendars a fork inherited end before its pick date)."),
             ("export", "The publish path: write a registered document as a GTFS zip (deterministic bytes) — every trip under its own id with its own times, the calendar as authored, with the import's boundary when it is the imported document itself — and return it base64-encoded under the content hash of those bytes, the same identity any capability returns for the same bytes. Invalid documents are refused."),
+            ("publishable", "What refuses a registered network as a published pick: its validation issues, and the warnings that refuse publication — refusals: a pick that runs no service in its period would hand every rider an empty schedule on its date (D-76). The remaining warnings ride along in warnings and never refuse. The sync server asks it before POST /plans stores a pick."),
             ("document", "A registered document's canonical bytes — its serialization, the bytes its network_hash names — with that hash and its plan frame. What a host stores when it persists a network it was sent in any serialization (the sync server publishing a pick): the module is the hash authority, the host stores exactly these bytes and never reads them."),
         ],
     },
@@ -342,7 +343,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "plans",
         file: "cap_plans.wasm",
-        ops: &["resolve", "validate", "periods", "publish", "in_force"],
+        ops: &["resolve", "validate", "periods", "publish", "in_force", "retire"],
         consumes: &[],
         speaks: &[("plan_set", &[1])],
         migrates: &[],
@@ -351,8 +352,9 @@ const MODULES: &[ModuleSpec] = &[
             ("resolve", "Which plan is in force on the date: the latest pick at or before it, ties broken by id (deterministic, order-insensitive). Unversioned plans never resolve; no pick yet answers null."),
             ("validate", "Chain validity: unique plan ids, every versioned plan effective-dated, pick dates unique. Every violation is reported (kind-tagged); unversioned plans are standalone and never flagged."),
             ("periods", "Every chain member's governing period — [effective_from, until the next pick) — derived and sorted by pick date. The until end is computed, never stored."),
-            ("publish", "Publish a pick: the published plan set (null for the first publish) with the plan (re)placed by id and naming its network by hash, picks in (effective_from, id) order — one set of picks is one byte sequence however it was published. Answers the canonical document and its document_hash (the module is the hash authority; the sync server stores exactly these bytes under its plans pointer), or — when the plan is unversioned, undated, or would put two picks on one day — every reason in issues and no document."),
-            ("in_force", "Which published pick governs the date, with its network_hash — how a client chooses the network to load from the published plan set the manifest pins as plans_hash. Null before the first pick takes effect. A set whose schema_version this build does not speak is an error, never a guess."),
+            ("publish", "Publish a pick: the published plan set (null for the first publish) with the plan (re)placed by id and naming its network by hash, picks in (effective_from, id) order — one set of picks is one byte sequence however it was published. A republish is the pick's next revision; republishing a retired pick restores it. today is the host's date: a pick that is new, restored, or moved never lands before it, while a pick republished under its own date (a correction to the pick in force) always publishes (D-76). Answers the canonical document and its document_hash (the module is the hash authority; the sync server stores exactly these bytes under its plans pointer), or — when the plan is unversioned, undated, dated before today, or would put two picks on one day — every reason in issues and no document."),
+            ("retire", "Retire a pick that has not taken effect (dated after today, the host's date — D-75): the set with it marked retired, the tombstone — it stays in the set and never governs, and republishing it restores it. A pick that has taken effect is refused (correct it by republishing). Answers like publish."),
+            ("in_force", "Which published pick governs the date — retired picks never do — with its network_hash — how a client chooses the network to load from the published plan set the manifest pins as plans_hash. Null before the first pick takes effect. A set whose schema_version this build does not speak is an error, never a guess."),
         ],
     },
 ];
@@ -620,7 +622,7 @@ fn kind<T: schemars::JsonSchema>(
 fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<DocumentKind> {
     let plans_example = net.and_then(|n| {
         let set = fixture_plan_set().iter().fold(transit_plans::PublishedPlans::empty(), |set, plan| {
-            transit_plans::publish(&set, plan, &n.network_hash).unwrap_or(set)
+            transit_plans::publish(&set, plan, &n.network_hash, fixture_today()).unwrap_or(set)
         });
         serde_json::to_value(set).ok()
     });
@@ -1153,6 +1155,17 @@ fn example_for(
                 json!({ "op": "document", "network_hash": ctx.network_hash }),
                 json!({ "ok": { "op": "document", "document": document,
                     "document_hash": cap_abi::content_hash(document.as_bytes()), "plan": ctx.network.plan } }),
+            )
+        }
+        ("network", "publishable") => {
+            let ctx = net?;
+            let refusals = transit_network::publish_refusals(&ctx.network);
+            let warnings: Vec<_> =
+                transit_network::validation_warnings(&ctx.network).into_iter().filter(|w| !refusals.contains(w)).collect();
+            (
+                json!({ "op": "publishable", "network_hash": ctx.network_hash }),
+                json!({ "ok": { "op": "publishable", "issues": transit_network::validation_issues(&ctx.network),
+                    "refusals": refusals, "warnings": warnings } }),
             )
         }
         ("network", "export") => {
@@ -2028,10 +2041,11 @@ fn example_for(
         ("plans", "publish") => {
             let net = net?;
             let first = &fixture_plan_set()[0];
-            let published = transit_plans::publish(&transit_plans::PublishedPlans::empty(), first, &net.network_hash).ok()?;
+            let published =
+                transit_plans::publish(&transit_plans::PublishedPlans::empty(), first, &net.network_hash, fixture_today()).ok()?;
             let document = serde_json::to_string(&published).ok()?;
             (
-                json!({ "op": "publish", "published": null, "plan": first, "network_hash": net.network_hash }),
+                json!({ "op": "publish", "published": null, "plan": first, "network_hash": net.network_hash, "today": "2026-01-01" }),
                 json!({ "ok": { "op": "publish", "issues": [], "published": published,
                     "document": document, "document_hash": cap_abi::content_hash(document.as_bytes()) } }),
             )
@@ -2039,12 +2053,25 @@ fn example_for(
         ("plans", "in_force") => {
             let net = net?;
             let published = fixture_plan_set().iter().fold(transit_plans::PublishedPlans::empty(), |set, plan| {
-                transit_plans::publish(&set, plan, &net.network_hash).unwrap_or(set)
+                transit_plans::publish(&set, plan, &net.network_hash, fixture_today()).unwrap_or(set)
             });
             let plan = transit_plans::in_force(&published, chrono::NaiveDate::from_ymd_opt(2026, 10, 23)?).ok()?.cloned();
             (
                 json!({ "op": "in_force", "published": published, "date": "2026-10-23" }),
                 json!({ "ok": { "op": "in_force", "plan": plan } }),
+            )
+        }
+        ("plans", "retire") => {
+            let net = net?;
+            let published = fixture_plan_set().iter().fold(transit_plans::PublishedPlans::empty(), |set, plan| {
+                transit_plans::publish(&set, plan, &net.network_hash, fixture_today()).unwrap_or(set)
+            });
+            let retired = transit_plans::retire(&published, "fall", fixture_today()).ok()?;
+            let document = serde_json::to_string(&retired).ok()?;
+            (
+                json!({ "op": "retire", "published": published, "id": "fall", "today": "2026-01-01" }),
+                json!({ "ok": { "op": "retire", "issues": [], "published": retired,
+                    "document": document, "document_hash": cap_abi::content_hash(document.as_bytes()) } }),
             )
         }
         ("plans", "periods") => {
@@ -2067,6 +2094,12 @@ fn example_for(
 /// The plan-chain examples' plan set: a two-pick chain around the
 /// fixture's dates — the spring pick in force on the fixture Friday,
 /// the fall pick taking over after it.
+/// The host's date in the plan examples: before every fixture pick, so
+/// each publishes as a future one.
+fn fixture_today() -> chrono::NaiveDate {
+    chrono::NaiveDate::from_ymd_opt(2026, 1, 1).expect("a date")
+}
+
 fn fixture_plan_set() -> Vec<transit_plans::PlanInfo> {
     vec![
         transit_plans::PlanInfo {

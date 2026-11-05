@@ -56,10 +56,10 @@ each carry an answer-graph table (`docs/ARCHITECTURE.md`,
 "Generated UIs", step 5), and flow maps are designed from those
 tables. What a table cannot express (a timer-driven live input, for
 one) is written here as an engine requirement. The store's log and
-pointer CAS landed in the Go server (`server/store/`,
-[sync-persistence.md](sync-persistence.md)) — the per-device journal
-reuses the same envelope + hash-chained log shape
-(`docs/FORMATS.md`); a second persistence design is rejected on sight.
+pointer CAS live in the Go server (`server/store/`,
+`docs/FORMATS.md`) — the per-device journal reuses the same envelope
++ hash-chained log shape, so a device journal replays against the
+server store; a second persistence design is rejected on sight.
 
 Engine requirements the tables cannot express:
 
@@ -80,5 +80,7 @@ Engine requirements the tables cannot express:
 
 - A C-TRAN session journal replays through `caps-run` to the same
   output hashes.
+- A device journal, in the store's envelope + log shape, replays
+  against a server store (a Go round trip over its log).
 - The UIs request flows through the engine (e2e green), and
   `answerGraph` is gone from `web/src/uis/kit.ts`.

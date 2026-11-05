@@ -434,6 +434,17 @@ pub fn validation_warnings(network: &Network) -> Vec<NetworkWarning> {
     warnings
 }
 
+/// The warnings that refuse publication (D-76): a pick that runs no
+/// service in its period would hand every rider an empty schedule on
+/// its date. Every other warning names what validity lets through and
+/// publishes; issues never publish (validate first).
+pub fn publish_refusals(network: &Network) -> Vec<NetworkWarning> {
+    validation_warnings(network)
+        .into_iter()
+        .filter(|w| matches!(w, NetworkWarning::NoServiceInPlanPeriod { .. }))
+        .collect()
+}
+
 /// First-issue gate: `Ok` iff the network is valid.
 pub fn validate(network: &Network) -> Result<(), NetworkError> {
     network.validate()

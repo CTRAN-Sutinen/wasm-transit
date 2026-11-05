@@ -36,8 +36,11 @@ content hash), plan persistence in the browser, the durable store,
 and publish → serve → resolve itself: `POST /plans` stores a pick and
 the published plan set, the manifest pins it (`plans_hash`), and the
 rider pages load the pick in force.
-**Needs:** the planner's publish gesture, withdrawing a pick, and the
-pick in force as GTFS (`docs/units/sync-persistence.md`).
+The planner publishes from the service-design UI (or `caps-run
+--post`), retires a pick that has not taken effect (D-75), and the
+server serves the pick in force as GTFS (`GET /feed`).
+**Needs:** nothing — it runs; a deployment beyond localhost is
+`docs/units/deploy-rider-apps.md`.
 **Unblocks:** 6, and multi-client deployments at all.
 
 ## 2. The runcut as a first-class tool

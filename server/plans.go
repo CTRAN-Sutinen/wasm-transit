@@ -18,17 +18,32 @@ package main
 // set by hash, asks cap-plans in_force for the date, and loads that
 // network by hash from /blobs.
 //
-//	POST /plans   body: the network document
-//	              200 {plan_id, network_hash, plans_hash, warnings}
-//	              422 {issues} (invalid network, or a pick the chain refuses)
-//	              400 (not a network; a plan id that is not a pointer name)
+//	POST /plans          body: the network document
+//	                     200 {plan_id, network_hash, plans_hash, warnings}
+//	                     422 {issues, refusals} (an invalid network, a pick that
+//	                         runs no service in its period, or a pick the chain
+//	                         refuses — one dated before today, D-76)
+//	                     400 (not a network; a plan id that is not a pointer name)
+//	GET  /feed?date=     the GTFS zip in force on the date (default today):
+//	                     cap-network's export of the pick in force, or the
+//	                     -feed zip before the first pick takes effect
+//	POST /plans/retire   body: {"id"} — retire a pick that has not taken
+//	                     effect (D-75): 200 {plans_hash}, 422 {issues}, 404
+//	                     when nothing is published
+//
+// "Today" is the host's: the server's local date, or -today on a test
+// server. The modules decide what it means.
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"rustwasm/server/store"
@@ -41,8 +56,10 @@ func (s *server) plansEnvelope() store.Envelope {
 }
 
 // canonicalPick runs a received network through a fresh cap-network:
-// register (kernel op 256; gzip or plain), validate, and the canonical
-// document with its plan frame. The instance closes with the call.
+// register (kernel op 256; gzip or plain), what refuses it as a pick
+// (`publishable`: its issues and refusing warnings, answered as the
+// 422 body), and the canonical document with its plan frame. The
+// instance closes with the call.
 func canonicalPick(ctx context.Context, wasmPath string, body []byte) (doc canonicalNetwork, issues json.RawMessage, err error) {
 	host, err := NewWasmHost(ctx, wasmPath)
 	if err != nil {
@@ -56,14 +73,16 @@ func canonicalPick(ctx context.Context, wasmPath string, body []byte) (doc canon
 		return doc, nil, fmt.Errorf("not a network document: %w", err)
 	}
 	var checked struct {
-		Issues   json.RawMessage `json:"issues"`
-		Warnings json.RawMessage `json:"warnings"`
+		Issues   []json.RawMessage `json:"issues"`
+		Refusals []json.RawMessage `json:"refusals"`
+		Warnings json.RawMessage   `json:"warnings"`
 	}
-	if err := host.Invoke(ctx, map[string]any{"op": "validate", "network_hash": loaded.NetworkHash}, &checked); err != nil {
+	if err := host.Invoke(ctx, map[string]any{"op": "publishable", "network_hash": loaded.NetworkHash}, &checked); err != nil {
 		return doc, nil, err
 	}
-	if len(checked.Issues) > 2 { // anything but []
-		return doc, checked.Issues, nil
+	if len(checked.Issues)+len(checked.Refusals) > 0 {
+		refused, _ := json.Marshal(map[string]any{"issues": checked.Issues, "refusals": checked.Refusals})
+		return doc, refused, nil
 	}
 	if err := host.Invoke(ctx, map[string]any{"op": "document", "network_hash": loaded.NetworkHash}, &doc); err != nil {
 		return doc, nil, err
@@ -103,7 +122,9 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if issues != nil {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"issues": issues})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		w.Write(issues)
 		return
 	}
 	var frame struct {
@@ -133,7 +154,7 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		DocumentHash *string         `json:"document_hash"`
 	}
 	if err := s.plans.Invoke(r.Context(), map[string]any{
-		"op": "publish", "published": current, "plan": pick.Plan, "network_hash": pick.DocumentHash,
+		"op": "publish", "published": current, "plan": pick.Plan, "network_hash": pick.DocumentHash, "today": s.today(),
 	}, &next); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -174,6 +195,184 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"plan_id": frame.ID, "network_hash": pick.DocumentHash, "plans_hash": plansHash, "warnings": pick.Warnings,
 	})
+}
+
+// today is the host's date, "YYYY-MM-DD" — the server's local date, or
+// -today on a test server.
+func (s *server) today() string {
+	if s.fixedToday != "" {
+		return s.fixedToday
+	}
+	return time.Now().Format("2006-01-02")
+}
+
+// handleRetire retires a pick (D-75): cap-plans answers the next set —
+// the pick kept as the tombstone — or why not, and the host commits it.
+func (s *server) handleRetire(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil || s.plans == nil {
+		http.Error(w, "publishing needs the store (start with -store <dir>)", http.StatusNotFound)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || req.ID == "" {
+		http.Error(w, `body: {"id": "<plan id>"}`, http.StatusBadRequest)
+		return
+	}
+	s.plansMu.Lock()
+	defer s.plansMu.Unlock()
+	head, found, err := s.store.Head("plans")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		http.Error(w, "nothing is published", http.StatusNotFound)
+		return
+	}
+	current, _, err := s.store.GetBlob(head.Hash)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var next struct {
+		Issues       json.RawMessage `json:"issues"`
+		Document     *string         `json:"document"`
+		DocumentHash *string         `json:"document_hash"`
+	}
+	if err := s.plans.Invoke(r.Context(), map[string]any{
+		"op": "retire", "published": json.RawMessage(current), "id": req.ID, "today": s.today(),
+	}, &next); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if next.Document == nil {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"issues": next.Issues})
+		return
+	}
+	plansHash, _, err := s.store.CAS("plans", head.Hash, []byte(*next.Document), s.plansEnvelope(), *next.DocumentHash, writerOf(r, "anonymous"), time.Now().UnixMilli())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"plans_hash": plansHash})
+}
+
+// handleFeed serves the GTFS feed in force on a date (?date=, default
+// today): the zip cap-network `export` writes for the published pick
+// governing it — cap-plans `in_force` answers which — or, before the
+// first pick takes effect, the configured -feed zip itself (D-74).
+// 404 when neither runs. The export runs in a fresh cap-network and is
+// kept by the pick's network hash: a pick's zip is one set of bytes.
+func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
+	date := r.URL.Query().Get("date")
+	if date == "" {
+		date = s.today()
+	}
+	if _, err := time.Parse("2006-01-02", date); err != nil {
+		http.Error(w, "date: YYYY-MM-DD", http.StatusBadRequest)
+		return
+	}
+	var pick *struct {
+		ID          string `json:"id"`
+		NetworkHash string `json:"network_hash"`
+	}
+	if s.store != nil && s.plans != nil {
+		if head, found, err := s.store.Head("plans"); err == nil && found {
+			set, _, err := s.store.GetBlob(head.Hash)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			var ans struct {
+				Plan *struct {
+					ID          string `json:"id"`
+					NetworkHash string `json:"network_hash"`
+				} `json:"plan"`
+			}
+			if err := s.plans.Invoke(r.Context(), map[string]any{"op": "in_force", "published": json.RawMessage(set), "date": date}, &ans); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			pick = ans.Plan
+		}
+	}
+	var zipBytes []byte
+	name := "gtfs.zip"
+	switch {
+	case pick != nil:
+		var err error
+		if zipBytes, err = s.exportedPick(r.Context(), pick.NetworkHash); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		name = "gtfs-" + pick.ID + ".zip"
+	case s.feeder != nil:
+		var err error
+		if zipBytes, err = os.ReadFile(s.feeder.path); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	default:
+		http.Error(w, "no feed is in force on "+date, http.StatusNotFound)
+		return
+	}
+	sum := sha256.Sum256(zipBytes)
+	etag := `"sha256:` + hex.EncodeToString(sum[:]) + `"`
+	w.Header().Set("ETag", etag)
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Write(zipBytes)
+}
+
+// exportedPick is cap-network's export of a published pick's network,
+// by network hash (kept for the process: the bytes never change).
+func (s *server) exportedPick(ctx context.Context, networkHash string) ([]byte, error) {
+	s.feedMu.Lock()
+	defer s.feedMu.Unlock()
+	if zipBytes, ok := s.feedCache[networkHash]; ok {
+		return zipBytes, nil
+	}
+	blob, _, err := s.store.GetBlob(networkHash)
+	if err != nil {
+		return nil, err
+	}
+	host, err := NewWasmHost(ctx, s.networkWasm)
+	if err != nil {
+		return nil, fmt.Errorf("network module: %w", err)
+	}
+	defer host.Close(ctx)
+	var loaded struct {
+		NetworkHash string `json:"network_hash"`
+	}
+	if err := host.InvokeBytes(ctx, opLoadNetwork, blob, &loaded); err != nil {
+		return nil, err
+	}
+	var exported struct {
+		FeedHash string `json:"feed_hash"`
+		ZipB64   string `json:"zip_b64"`
+	}
+	if err := host.Invoke(ctx, map[string]any{"op": "export", "network_hash": loaded.NetworkHash}, &exported); err != nil {
+		return nil, err
+	}
+	zipBytes, err := base64.StdEncoding.DecodeString(exported.ZipB64)
+	if err != nil {
+		return nil, err
+	}
+	if s.feedCache == nil || len(s.feedCache) >= 4 {
+		s.feedCache = map[string][]byte{}
+	}
+	s.feedCache[networkHash] = zipBytes
+	return zipBytes, nil
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

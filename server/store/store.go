@@ -1,5 +1,5 @@
 // Package store is the content-addressed document store the sync
-// server keeps when run with -store (docs/units/sync-persistence.md,
+// server keeps when run with -store (docs/ARCHITECTURE.md, server section;
 // docs/FORMATS.md).
 //
 // Layout:

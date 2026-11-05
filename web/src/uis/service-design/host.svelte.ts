@@ -98,6 +98,10 @@ export const sd = $state({
   canUndo: false,
   canRedo: false,
   exported: "",
+  /// The last publish's answer, as the server gave it: the published
+  /// set's hash, or why the pick was refused (D-74, D-76).
+  published: null as { plans_hash: string } | null,
+  publishRefused: [] as object[],
   /// Each frame's failure, by frame: why it has no answer (a
   /// capability that did not assemble, or an op that refused).
   failed: {} as Record<string, string>,
@@ -790,8 +794,29 @@ export const gestures = {
 };
 
 // ---------------------------------------------------------------------
-// the publish path — the network's export, downloaded
+// the publish path — the network's export, downloaded; and the pick
+// published to the deployment (POST /plans), its answer shown as given
 // ---------------------------------------------------------------------
+
+/// Publish the active plan as a pick: the server's modules validate it
+/// and decide whether it is refused (docs/FORMATS.md, POST /plans); the
+/// page sends the document and shows what came back.
+export async function publishPlan(): Promise<void> {
+  const doc = active();
+  if (!doc) return;
+  sd.published = null;
+  sd.publishRefused = [];
+  await framed("Publish", () => {}, async () => {
+    const resp = await fetch("/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(doc) });
+    if (resp.status === 422) {
+      const answer = (await resp.json()) as { issues?: object[]; refusals?: object[] };
+      sd.publishRefused = [...(answer.issues ?? []), ...(answer.refusals ?? [])];
+      return;
+    }
+    if (!resp.ok) throw new Error(`the server did not publish it: ${(await resp.text()).trim() || resp.status}`);
+    sd.published = (await resp.json()) as { plans_hash: string };
+  });
+}
 
 export async function exportPlan(): Promise<void> {
   const doc = active();

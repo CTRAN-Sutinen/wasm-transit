@@ -81,7 +81,7 @@ document still crosses the page each poll (QAF-49).
 ## Scope beyond the ops
 
 - **Where edits come from.** Detours reach a rider through the sync
-  server (`docs/units/sync-persistence.md`); the UI only reads.
+  server (`/edits`, `docs/FORMATS.md`); the UI only reads.
 - **Addresses.** Not an op: an oracle (D-38) the manifest lists —
   the server's `/geocode` proxy to Pelias (D-36), its answer shown
   under the stops (D-28), a dropped pin named by it (D-37).

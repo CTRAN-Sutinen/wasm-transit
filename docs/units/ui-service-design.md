@@ -102,7 +102,7 @@ that variation as information, never as error.
 | 17 | author `apply` (`add_route`, `add_pattern`, `update_pattern`, `upsert_*`, `remove_*`), streets `route` | not in the UI: no gesture draws a pattern along the streets; D-11, D-26 (a bus) |
 | 18 | analysis `service_type_compare` | answered (ProposalScore, Redline) for the selected group; cost, Blocked: D-51; vehicles, QAF-3 (Blocked: D-46) |
 | 19 | none | QAF-20 (Blocked: D-43); no transfer delta |
-| 20 | network `validate`, author `apply` issues, network `export` | answered (Readiness); QAF-62 (Blocked: D-9), QAF-54 (Blocked: D-41) |
+| 20 | network `validate`, author `apply` issues, network `export`, `POST /plans` | answered (Readiness: export and publish); QAF-62 (Blocked: D-9), QAF-54 (Blocked: D-41) |
 
 ## Answer graph
 

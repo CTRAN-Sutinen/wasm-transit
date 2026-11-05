@@ -1,7 +1,7 @@
 # Formats — what the store persists
 
 The at-rest contract of the sync store
-(`docs/units/sync-persistence.md`). Everything here is readable
+(`docs/ARCHITECTURE.md`, server section). Everything here is readable
 without any wasm: the blobs are plain bytes, the envelopes and logs
 plain JSON, and the hash is sha256. The JSON Schemas generated from
 the serde types pin the *document payloads*: `just caps` publishes
@@ -105,8 +105,17 @@ commit's two writes.
   compressed. A `policy` blob is never served.
 - `POST /plans` body: a network document, any serialization, gzipped
   or not → `200 {plan_id, network_hash, plans_hash, warnings}`, `422
-  {issues}` (the network does not validate, or the pick would break
-  the chain), or `400`. The server commits the module's canonical
+  {issues, refusals}` (the network does not validate, or runs no
+  service in its period — D-76) or `422 {issues}` (cap-plans refuses
+  the pick: the chain, or a new, restored or moved pick dated before
+  the server's today), or `400`.
+- `GET /feed?date=YYYY-MM-DD` → the GTFS zip in force on the date
+  (default the server's today; `application/zip`, ETag its hash):
+  cap-network `export` of the pick in force, or the `-feed` zip before
+  the first pick takes effect.
+- `POST /plans/retire` body `{"id"}` → `200 {plans_hash}`, or `422
+  {issues}` (the pick has taken effect, or no pick has the id), `404`
+  when nothing is published (D-75). The server commits the module's canonical
   network to `plan.<id>`, then cap-plans' next set to `plans`.
 - `/edits` is the `edit_records` specialization: `GET` reads the head
   blob, `POST` runs the merge with a CAS retry loop, so the legacy
@@ -149,10 +158,11 @@ the optional ones omitted when empty),
 sidecar `{"kind":"manifest","schema_version":1,"produced_by":"server"}`.
 
 A `plans` blob is the published plan set, its version inside it
-(D-62), picks in (effective_from, id) order:
+(D-62), picks in (effective_from, id) order; a retired pick stays in
+it as the tombstone (D-75; `status` reads `published` when absent):
 
 ```json
-{"schema_version":1,"plans":[{"id":"fall-2026","name":"Fall 2026 pick","effective_from":"2026-09-13","network_hash":"sha256:5206f419…"},{"id":"winter-2027","name":"Winter 2027 pick","effective_from":"2027-01-10","network_hash":"sha256:d122b6af…"}]}
+{"schema_version":1,"plans":[{"id":"fall-2026","name":"Fall 2026 pick","effective_from":"2026-09-13","network_hash":"sha256:5206f419…","status":"published"},{"id":"winter-2027","name":"Winter 2027 pick","effective_from":"2027-03-01","network_hash":"sha256:d122b6af…","status":"retired"}]}
 ```
 
 with sidecar `{"kind":"plans","schema_version":1,"produced_by":"cap-plans@sha256:<hex>"}`;

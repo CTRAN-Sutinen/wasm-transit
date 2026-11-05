@@ -115,8 +115,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-72 | Is the release profile tuned for size or for speed? | encoded | nothing |
 | D-73 | What does a stop's board show for a trip the live feed cancels? | decided | nothing |
 | D-74 | How is a pick published, and what runs before the first one? | encoded | nothing |
-| D-75 | How does a published pick come back out? | unanswered | withdrawing a pick (`sync-persistence`) |
-| D-76 | What does publishing refuse beyond an invalid chain? | unanswered | QAF-95 |
+| D-75 | How does a published pick come back out? | decided | nothing |
+| D-76 | What does publishing refuse beyond an invalid chain? | decided | nothing |
 | D-77 | How do the capabilities a page uses share one network? | decided | nothing |
 | D-78 | Does the Go server host linked assemblies? | unanswered | the server part of `linked-assembly` |
 
@@ -1197,24 +1197,40 @@ Encoded (provisional):
   and answers its canonical bytes; cap-plans `publish` answers the
   next set, or refuses an unversioned plan, an undated one, or one
   whose date another pick already has. Republishing an id replaces
-  the pick: it is the pick's next revision, and its date may move.
-  A plan id that cannot name a pointer is refused.
+  the pick: it is the pick's next revision, and its date may move
+  (never into the past, D-76); republishing a retired pick restores it
+  (D-75). A plan id that cannot name a pointer is refused.
 - A page resolves the pick in force on its local date through
   cap-plans `in_force` and loads that network by hash. Before the
   first pick takes effect, and when none is published, it loads the
-  server's `-feed` import. A published pick's boundary is the default
-  one: it is an authored document, numbered the way its export is.
+  server's `-feed` import, and `GET /feed` serves the `-feed` zip the
+  same way. A published pick's boundary is the default one: it is an
+  authored document, numbered the way its export is.
 Options: the encoded design; picks only as pointers with no set
 document (every client lists pointers and resolves over them — no
 single hash pins what is published); or the set embedding each
 network (one blob per publish, every client downloads every pick).
 Pinned by: `crates/transit-plans/tests/published_test.rs`, the
-cap-plans and cap-network dispatch tests, `server/plans_test.go`,
-`server/reader_test.go`, `web/e2e/published-picks.spec.mjs`.
+cap-plans and cap-network dispatch tests, `server/plans_test.go`
+(`TestThePickInForceAsGTFS` pins `/feed`),
+`server/reader_test.go`,
+`web/e2e/published-picks.spec.mjs`.
 Blocks: nothing.
 
 ### D-75 — How does a published pick come back out?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — "Retire (tombstone)", and "Future picks only":
+a retired pick stays in the published set marked
+`status: "retired"`, never governs, and republishing its id restores
+it. Only a pick that has not taken effect (dated after today, the
+host's date) is retired; a pick already in force is corrected by
+republishing it. Encoded: `transit_plans::retire`, cap-plans
+`retire`, `POST /plans/retire`.
+Pinned by: `crates/transit-plans/tests/published_test.rs` (retiring,
+took effect, restore, not a chain member, `retired_picks_never_resolve`),
+the cap-plans dispatch test `retire_answers_the_next_set_or_why_not`,
+`TestRetiringAPick` in `server/plans_test.go`, and "a retired pick
+never reaches a rider" in `web/e2e/published-picks.spec.mjs`.
 Context: a pick published by mistake, or a service change the agency
 cancels, stays in the published set; republishing can move its date
 but not remove it. Retirement is the tombstone everywhere else
@@ -1224,12 +1240,26 @@ Options:
   never resolves, and a later publish of the same id restores it.
 - Removal from the set: the set's log still names it (the store's
   history keeps every revision), but the current set does not.
-- Nothing until a later pick supersedes it (today).
-Blocks: withdrawing a pick (`docs/units/sync-persistence.md`).
+- Nothing until a later pick supersedes it (the behavior before).
+Blocks: nothing.
 
 ### D-76 — What does publishing refuse beyond an invalid chain?
-State: Unanswered.
-Context: QAF-95. cap-network `validate` warnings never gate
+State: Decided.
+Answer: 2026-11-05 — "No-service + new past dates": a pick that runs
+no service in its period is refused (cap-network `publishable`'s
+`refusals`; every other warning still publishes), and a pick that is
+new, restored, or moved never lands before today, the host's date
+(cap-plans `publish`, `pick_dated_in_past`); a pick republished under
+its own date — a correction to the pick in force — always publishes.
+"Today" is the server's local date (`-today` pins it on a test
+server).
+Pinned by: `a_pick_with_no_service_in_its_period_is_refused_publication`
+(transit-network), the date laws in
+`crates/transit-plans/tests/published_test.rs`, the dispatch tests
+`publishable_answers_what_refuses_a_pick` (cap-network) and
+`retire_answers_the_next_set_or_why_not` (cap-plans), and
+`TestPublishRefusalsNameTheirReasons` in `server/plans_test.go`.
+Context: QAF-95 (fixed by this answer). cap-network `validate` warnings never gate
 (they name what validity lets through), so a pick whose service
 types' calendars end before its effective date publishes with a
 `no_service_in_plan_period` warning, and on that date every rider
@@ -1237,12 +1267,12 @@ page loads a network that runs nothing. A pick dated in the past also
 publishes and governs at once, changing what the deployment says ran
 on past dates.
 Options:
-- Publish with the warnings in the answer (today).
+- Publish with the warnings in the answer (the behavior before).
 - Refuse a pick with no service in its period; publish other
   warnings.
 - Also refuse a pick dated before today (the server's clock, the way
   D-56 bounds the LWW clock), or before the pick in force.
-Blocks: QAF-95.
+Blocks: nothing.
 
 ## Authentication and authorization
 

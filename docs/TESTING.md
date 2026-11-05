@@ -96,8 +96,10 @@ size the run).
    (assembly and per-frame degraded state, `ui-ride-now` and
    `ui-service-design`), `web/e2e/published-network.spec.mjs`
    (a document refused unless it registers under the pinned hash)
-   and `web/e2e/published-picks.spec.mjs` (its own store-mode server:
-   a published pick is the network a rider page loads on its date);
+   and `web/e2e/published-picks.spec.mjs` (its own store-mode server
+   on a pinned date, `-today`: a published pick is the network a rider
+   page loads on its date, a retired one never is, and the planner
+   publishes from service design);
    extend those for bus-visible changes. Capability law tests
    (migration laws, validator mutation law, the dispatch diversion
    laws) follow expectation 1.

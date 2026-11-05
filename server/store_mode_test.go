@@ -3,11 +3,10 @@ package main
 // Store-mode round trips (server with -store): the edit document lives
 // in the content-addressed store as the edits pointer, /edits is its
 // specialization, the generic /pointers and /blobs surface serves CAS
-// and delta sync, and the manifest is the root pointer. The pins are
-// docs/units/sync-persistence.md's Done-when: persistence through a
-// restart, CAS conflict answering the current hash, idempotent
-// redelivery, delta sync over the log, and the D-56 clock clamp
-// through the receive path.
+// and delta sync, and the manifest is the root pointer
+// (docs/FORMATS.md). Pinned here: persistence through a restart, CAS
+// conflict answering the current hash, idempotent redelivery, delta
+// sync over the log, and the D-56 clock clamp through the receive path.
 
 import (
 	"encoding/json"
@@ -89,7 +88,9 @@ func TestStoreEditsSurviveRestart(t *testing.T) {
 	}
 	etag := strings.Trim(hdr.Get("ETag"), `"`)
 
-	code, _, body = httpPost(t, base+"/edits", editDoc("e1", "retired", 2, time.Now().UnixMilli()))
+	// The retire bumps the rev past the submitted rev 2 (a same-
+	// millisecond stamp ties on updated_at).
+	code, _, body = httpPost(t, base+"/edits", editDoc("e1", "retired", 3, time.Now().UnixMilli()))
 	if code != 200 || !strings.Contains(body, `"status":"retired"`) {
 		t.Fatalf("post tombstone: %d %s", code, body)
 	}

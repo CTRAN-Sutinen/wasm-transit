@@ -48,6 +48,7 @@ func main() {
 	storeDir := flag.String("store", "", "directory of the durable sync store (blobs + pointers, docs/FORMATS.md): enables /pointers, /blobs and store-backed /edits and /manifest; empty = legacy mode")
 	retentionDays := flag.Int("retention-days", 90, "tombstone retention horizon (days) for the store's D-57 compaction commits")
 	gcInterval := flag.Duration("gc-interval", time.Hour, "how often the store sweeps crash-torn orphan blobs past their grace period (store mode; 0 = only at startup)")
+	today := flag.String("today", "", "pin the server's date (YYYY-MM-DD) for hermetic test servers; empty = the host clock. Publishing reads it: a new pick never lands before today, and only a pick after today is retired (D-75, D-76)")
 	plansWasm := flag.String("plans-wasm", "../web/pkg/cap_plans.wasm", "the plan-chain capability module (cap-plans) hosted in store mode: it answers the published plan set POST /plans commits")
 	authzWasm := flag.String("authz-wasm", "../web/pkg/cap_authz.wasm", "the authorization capability module (cap-authz) hosted when OIDC is configured")
 	oidcIssuer := flag.String("oidc-issuer", "", "expected JWT iss (D-60); with any -oidc flag this turns authentication on")
@@ -77,6 +78,7 @@ func main() {
 		publisher:     *publisher,
 		editsPath:     *editsPath,
 		retentionDays: *retentionDays,
+		fixedToday:    *today,
 	}
 	if *storeDir != "" {
 		st, err := store.Open(*storeDir)
@@ -143,6 +145,8 @@ func main() {
 	mux.HandleFunc("/edits", s.protectWrite(func(*http.Request) string { return "edits" }, s.handleEdits))
 	mux.HandleFunc("/pointers/", s.protectWrite(pointerNameOf, s.handlePointers))
 	mux.HandleFunc("/plans", s.protectWrite(func(*http.Request) string { return "plans" }, s.handlePlans))
+	mux.HandleFunc("/plans/retire", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleRetire))
+	mux.HandleFunc("/feed", s.handleFeed)
 	mux.HandleFunc("/permissions", s.requireAuth(s.handlePermissions))
 	mux.HandleFunc("/blobs/", s.handleBlob)
 	mux.HandleFunc("/geocode/", s.handleGeocode)
@@ -183,6 +187,11 @@ type server struct {
 	plans       *WasmHost
 	networkWasm string
 	plansMu     sync.Mutex
+	fixedToday  string // -today: the date publishing reads, for test servers; "" = the host clock
+
+	// The picks' GTFS exports, by network hash (exportedPick).
+	feedMu    sync.Mutex
+	feedCache map[string][]byte
 
 	// Gzipped blobs for transport, by hash (gzippedBlob).
 	gzMu    sync.Mutex
@@ -361,7 +370,7 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 	}
 	// Store mode: the manifest is the ROOT pointer — publishing is one
 	// CAS on it, and clients resolve the published set through it
-	// (docs/units/sync-persistence.md). GET serves the pointer's blob.
+	// (docs/FORMATS.md). GET serves the pointer's blob.
 	s.manifestMu.Lock()
 	key := manifestKeyOf(manifest)
 	if key != s.manifestKey {

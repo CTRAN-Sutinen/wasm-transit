@@ -59,6 +59,14 @@ pub enum PlanIssue {
     /// A standalone import (no plan id) is not a pick: only a
     /// versioned plan is published.
     UnversionedPlan,
+    /// No published pick has this id.
+    UnknownPick { id: String },
+    /// A pick that has taken effect (its date is today or earlier) is
+    /// not retired: it is corrected by republishing it (D-75).
+    PickTookEffect { id: String, effective_from: String },
+    /// A pick that is new, restored, or moved never lands before today
+    /// (D-76); a pick republished under its own date always publishes.
+    PickDatedInPast { id: String, effective_from: String, today: String },
 }
 
 fn parse_date(s: &str) -> Result<NaiveDate, String> {
@@ -161,6 +169,18 @@ pub fn periods(plans: &[PlanInfo]) -> Vec<PlanPeriod> {
 /// (D-62): every copy anywhere says what it is.
 pub const PUBLISHED_SCHEMA_VERSION: u32 = 1;
 
+/// Whether a published pick is in the chain. Retirement is the
+/// tombstone (D-75): a retired pick stays in the set, never governs,
+/// and republishing its id restores it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export, export_to = "cap_plans/")]
+#[serde(rename_all = "snake_case")]
+pub enum PickStatus {
+    #[default]
+    Published,
+    Retired,
+}
+
 /// One published pick: its chain metadata and the network document it
 /// is, by content hash (the store's `plan.<id>` pointer holds the
 /// document itself).
@@ -173,6 +193,19 @@ pub struct PublishedPlan {
     pub effective_from: String,
     /// "sha256:<hex>" of the pick's canonical network document.
     pub network_hash: String,
+    #[serde(default)]
+    pub status: PickStatus,
+}
+
+impl PublishedPlan {
+    fn info(&self) -> PlanInfo {
+        PlanInfo { id: self.id.clone(), name: self.name.clone(), effective_from: Some(self.effective_from.clone()) }
+    }
+}
+
+/// The chain members of a published set: its picks that are not retired.
+fn chain(plans: &[PublishedPlan]) -> Vec<PlanInfo> {
+    plans.iter().filter(|p| p.status == PickStatus::Published).map(PublishedPlan::info).collect()
 }
 
 /// The published plan set: every pick the deployment publishes — the
@@ -194,18 +227,38 @@ impl PublishedPlans {
 }
 
 /// Publish a pick: the set with `plan` (re)placed by id and naming
-/// `network_hash`, in canonical order. Refused, with every reason, when
-/// the plan is not a dated pick or the chain it would make is invalid.
-/// The input is never mutated.
-pub fn publish(set: &PublishedPlans, plan: &PlanInfo, network_hash: &str) -> Result<PublishedPlans, Vec<PlanIssue>> {
+/// `network_hash`, in canonical order — a republish is the pick's next
+/// revision, and republishing a retired pick restores it. `today` is
+/// the host's date: a pick that is new, restored, or moved never lands
+/// before it, while a published pick republished under its own date (a
+/// correction to the pick in force) always does (D-76). Refused, with
+/// every reason, when the plan is not a dated pick, lands in the past,
+/// or would make an invalid chain. The input is never mutated.
+pub fn publish(
+    set: &PublishedPlans,
+    plan: &PlanInfo,
+    network_hash: &str,
+    today: NaiveDate,
+) -> Result<PublishedPlans, Vec<PlanIssue>> {
     if plan.id.is_empty() {
         return Err(vec![PlanIssue::UnversionedPlan]);
     }
     let Some(from) = &plan.effective_from else {
         return Err(vec![PlanIssue::PlanMissingEffectiveDate { id: plan.id.clone() }]);
     };
-    if parse_date(from).is_err() {
+    let Ok(date) = parse_date(from) else {
         return Err(vec![PlanIssue::PlanMissingEffectiveDate { id: plan.id.clone() }]);
+    };
+    let correction = set
+        .plans
+        .iter()
+        .any(|p| p.id == plan.id && p.status == PickStatus::Published && &p.effective_from == from);
+    if date < today && !correction {
+        return Err(vec![PlanIssue::PickDatedInPast {
+            id: plan.id.clone(),
+            effective_from: from.clone(),
+            today: today.format("%Y-%m-%d").to_string(),
+        }]);
     }
     let mut plans: Vec<PublishedPlan> = set.plans.iter().filter(|p| p.id != plan.id).cloned().collect();
     plans.push(PublishedPlan {
@@ -213,27 +266,46 @@ pub fn publish(set: &PublishedPlans, plan: &PlanInfo, network_hash: &str) -> Res
         name: plan.name.clone(),
         effective_from: from.clone(),
         network_hash: network_hash.to_string(),
+        status: PickStatus::Published,
     });
     plans.sort_by(|a, b| (a.effective_from.as_str(), a.id.as_str()).cmp(&(b.effective_from.as_str(), b.id.as_str())));
-    let infos: Vec<PlanInfo> = plans
-        .iter()
-        .map(|p| PlanInfo { id: p.id.clone(), name: p.name.clone(), effective_from: Some(p.effective_from.clone()) })
-        .collect();
-    let issues = validate(&infos);
+    let issues = validate(&chain(&plans));
     if !issues.is_empty() {
         return Err(issues);
     }
     Ok(PublishedPlans { schema_version: PUBLISHED_SCHEMA_VERSION, plans })
 }
 
-/// The published pick in force on `date` — the chain's `resolve` over
-/// the set, answering the pick (and so its network). None before the
-/// first pick takes effect.
-pub fn in_force(set: &PublishedPlans, date: NaiveDate) -> Result<Option<&PublishedPlan>, String> {
-    let infos: Vec<PlanInfo> = set
+/// Retire a pick (D-75): the set with it marked retired — it stays in
+/// the set and never governs. Only a pick that has not taken effect
+/// (dated after `today`, the host's date) is retired; one that has is
+/// corrected by republishing it. Retiring a retired pick changes
+/// nothing. The input is never mutated.
+pub fn retire(set: &PublishedPlans, id: &str, today: NaiveDate) -> Result<PublishedPlans, Vec<PlanIssue>> {
+    let Some(pick) = set.plans.iter().find(|p| p.id == id) else {
+        return Err(vec![PlanIssue::UnknownPick { id: id.to_string() }]);
+    };
+    if pick.status == PickStatus::Retired {
+        return Ok(set.clone());
+    }
+    let from = parse_date(&pick.effective_from).map_err(|_| {
+        vec![PlanIssue::PlanMissingEffectiveDate { id: id.to_string() }]
+    })?;
+    if from <= today {
+        return Err(vec![PlanIssue::PickTookEffect { id: id.to_string(), effective_from: pick.effective_from.clone() }]);
+    }
+    let plans = set
         .plans
         .iter()
-        .map(|p| PlanInfo { id: p.id.clone(), name: p.name.clone(), effective_from: Some(p.effective_from.clone()) })
+        .map(|p| if p.id == id { PublishedPlan { status: PickStatus::Retired, ..p.clone() } } else { p.clone() })
         .collect();
-    Ok(resolve(&infos, date)?.and_then(|id| set.plans.iter().find(|p| p.id == id)))
+    Ok(PublishedPlans { schema_version: PUBLISHED_SCHEMA_VERSION, plans })
+}
+
+/// The published pick in force on `date` — the chain's `resolve` over
+/// the set's published picks (a retired pick never governs), answering
+/// the pick (and so its network). None before the first pick takes
+/// effect.
+pub fn in_force(set: &PublishedPlans, date: NaiveDate) -> Result<Option<&PublishedPlan>, String> {
+    Ok(resolve(&chain(&set.plans), date)?.and_then(|id| set.plans.iter().find(|p| p.id == id)))
 }

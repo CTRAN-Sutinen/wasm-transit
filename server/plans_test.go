@@ -44,8 +44,11 @@ func newPlansServer(t *testing.T, dir string) (*server, string) {
 	s := newStoreServer(t, dir)
 	s.plans = newPlansHost(t)
 	s.networkWasm = networkWasm
+	s.fixedToday = "2026-08-01" // before every pick below; the fixture runs through 2026-12-31
 	mux := storeMux(s)
 	mux.HandleFunc("/plans", s.handlePlans)
+	mux.HandleFunc("/plans/retire", s.handleRetire)
+	mux.HandleFunc("/feed", s.handleFeed)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return s, srv.URL
@@ -152,14 +155,14 @@ func TestPublishedPicksResolveThroughTheManifest(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("publish fall: %d %v", code, out)
 	}
-	spring := fixtureNetwork(t, "spring-2027", "Spring 2027", "2027-03-01")
-	spring["name"] = "spring network" // a different document, a different hash
-	if code, out = publishPick(t, base, spring); code != 200 {
-		t.Fatalf("publish spring: %d %v", code, out)
+	winter := fixtureNetwork(t, "winter-2026", "Winter 2026", "2026-12-01")
+	winter["name"] = "winter network" // a different document, a different hash
+	if code, out = publishPick(t, base, winter); code != 200 {
+		t.Fatalf("publish winter: %d %v", code, out)
 	}
 	plansHash, _ := out["plans_hash"].(string)
-	springHash, _ := out["network_hash"].(string)
-	if plansHash == "" || springHash == "" {
+	winterHash, _ := out["network_hash"].(string)
+	if plansHash == "" || winterHash == "" {
 		t.Fatalf("publish answers the set and the network by hash: %v", out)
 	}
 	s.store.Close()
@@ -177,7 +180,7 @@ func TestPublishedPicksResolveThroughTheManifest(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &set); err != nil || set.SchemaVersion != 1 || len(set.Plans) != 2 {
 		t.Fatalf("published set: %v %+v", err, set)
 	}
-	if set.Plans[0].ID != "fall-2026" || set.Plans[1].ID != "spring-2027" {
+	if set.Plans[0].ID != "fall-2026" || set.Plans[1].ID != "winter-2026" {
 		t.Fatalf("picks in date order: %+v", set.Plans)
 	}
 
@@ -205,8 +208,8 @@ func TestPublishedPicksResolveThroughTheManifest(t *testing.T) {
 	if id != "fall-2026" || networkHash != set.Plans[0].NetworkHash {
 		t.Fatalf("in force 2026-11-05: %q %q", id, networkHash)
 	}
-	if id, h := inForce("2027-03-01"); id != "spring-2027" || h != springHash {
-		t.Fatalf("in force on the spring pick date: %q %q", id, h)
+	if id, h := inForce("2026-12-01"); id != "winter-2026" || h != winterHash {
+		t.Fatalf("in force on the winter pick date: %q %q", id, h)
 	}
 
 	// The pick's network, by hash: canonical bytes the hash names, and
@@ -253,7 +256,11 @@ func TestPublishRefusesWhatWouldBreakTheChain(t *testing.T) {
 			n["name"] = "other"
 			return n
 		}(),
-		"an id that is not a pointer name": fixtureNetwork(t, "../escape", "Bad", "2027-01-01"),
+		"an id that is not a pointer name": fixtureNetwork(t, "../escape", "Bad", "2026-10-15"),
+		// D-76: a pick that runs no service in its period (the
+		// fixture's calendar ends 2026-12-31), and one before today.
+		"a pick with no service in its period": fixtureNetwork(t, "spring-2027", "Spring", "2027-03-01"),
+		"a pick dated before today":            fixtureNetwork(t, "summer", "Summer", "2026-07-01"),
 	}
 	for what, network := range cases {
 		code, out := publishPick(t, base, network)
@@ -265,7 +272,7 @@ func TestPublishRefusesWhatWouldBreakTheChain(t *testing.T) {
 		}
 	}
 	// An invalid network (validation issues) never publishes.
-	broken := fixtureNetwork(t, "broken", "Broken", "2027-02-01")
+	broken := fixtureNetwork(t, "broken", "Broken", "2026-10-20")
 	for _, p := range broken["patterns"].(map[string]any) {
 		p.(map[string]any)["route"] = "ghost" // UnknownRoute on every pattern
 	}
@@ -331,5 +338,115 @@ func TestPicksPublishOnlyThroughPlans(t *testing.T) {
 	}
 	if _, found, _ := s.store.Head("elsewhere"); found {
 		t.Fatal("a plans document landed under another pointer")
+	}
+}
+
+// D-76 through the server: what refuses a pick is answered by the
+// modules and returned as given — the network's refusals from
+// cap-network, the date from cap-plans.
+func TestPublishRefusalsNameTheirReasons(t *testing.T) {
+	_, base := newPlansServer(t, t.TempDir())
+	code, out := publishPick(t, base, fixtureNetwork(t, "spring-2027", "Spring", "2027-03-01"))
+	if code != http.StatusUnprocessableEntity || !strings.Contains(toJSON(out), "no_service_in_plan_period") {
+		t.Fatalf("no service in its period: %d %v", code, out)
+	}
+	code, out = publishPick(t, base, fixtureNetwork(t, "summer", "Summer", "2026-07-01"))
+	if code != http.StatusUnprocessableEntity || !strings.Contains(toJSON(out), "pick_dated_in_past") {
+		t.Fatalf("dated before today: %d %v", code, out)
+	}
+}
+
+// D-75 through the server: a pick that has not taken effect is
+// retired (kept in the set, never in force); one that has is refused;
+// republishing restores it.
+func TestRetiringAPick(t *testing.T) {
+	s, base := newPlansServer(t, t.TempDir())
+	if code, out := publishPick(t, base, fixtureNetwork(t, "fall", "Fall", "2026-09-07")); code != 200 {
+		t.Fatalf("publish: %d %v", code, out)
+	}
+	winter := fixtureNetwork(t, "winter", "Winter", "2026-12-01")
+	winter["name"] = "winter"
+	if code, out := publishPick(t, base, winter); code != 200 {
+		t.Fatalf("publish: %d %v", code, out)
+	}
+	if code, _, body := httpPost(t, base+"/plans/retire", `{"id":"winter"}`); code != 200 {
+		t.Fatalf("retire: %d %s", code, body)
+	}
+	_, _, body := httpGet(t, base+"/blobs/"+mustHead(t, s, "plans"))
+	if !strings.Contains(body, `"id":"winter"`) || !strings.Contains(body, `"status":"retired"`) {
+		t.Fatalf("the retired pick stays in the set as the tombstone: %s", body)
+	}
+	// Once fall has taken effect it is not retired.
+	s.fixedToday = "2026-10-01"
+	if code, _, body := httpPost(t, base+"/plans/retire", `{"id":"fall"}`); code != http.StatusUnprocessableEntity || !strings.Contains(body, "pick_took_effect") {
+		t.Fatalf("retiring a pick in force: %d %s", code, body)
+	}
+	// Republishing restores the retired one.
+	if code, out := publishPick(t, base, winter); code != 200 {
+		t.Fatalf("restore: %d %v", code, out)
+	}
+	_, _, body = httpGet(t, base+"/blobs/"+mustHead(t, s, "plans"))
+	if strings.Contains(body, `"status":"retired"`) {
+		t.Fatalf("restored: %s", body)
+	}
+}
+
+// The pick in force as GTFS (docs/ROADMAP.md 1): GET /feed?date= is the
+// zip cap-network `export` writes for the pick governing the date —
+// the same bytes a module answers — under its content hash. Before the
+// first pick takes effect it is the configured -feed zip itself (D-74:
+// the import runs until a pick does); with no feed configured, nothing.
+func TestThePickInForceAsGTFS(t *testing.T) {
+	s, base := newPlansServer(t, t.TempDir())
+	fall := fixtureNetwork(t, "fall", "Fall", "2026-09-07")
+	fall["name"] = "fall as gtfs"
+	code, out := publishPick(t, base, fall)
+	if code != 200 {
+		t.Fatalf("publish: %d %v", code, out)
+	}
+	networkHash := out["network_hash"].(string)
+
+	code, hdr, zipBody := httpGet(t, base+"/feed?date=2026-10-01")
+	if code != 200 || hdr.Get("Content-Type") != "application/zip" {
+		t.Fatalf("feed: %d %s", code, hdr.Get("Content-Type"))
+	}
+	if hdr.Get("ETag") != `"`+sha([]byte(zipBody))+`"` {
+		t.Fatalf("the ETag is the zip's hash: %s", hdr.Get("ETag"))
+	}
+	// The module's own export of the same pick, through a fresh instance.
+	host := newNetworkHost(t)
+	blob, _, err := s.store.GetBlob(networkHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var loaded struct {
+		NetworkHash string `json:"network_hash"`
+	}
+	if err := host.InvokeBytes(context.Background(), opLoadNetwork, blob, &loaded); err != nil {
+		t.Fatal(err)
+	}
+	var exported struct {
+		FeedHash string `json:"feed_hash"`
+	}
+	if err := host.Invoke(context.Background(), map[string]any{"op": "export", "network_hash": loaded.NetworkHash}, &exported); err != nil {
+		t.Fatal(err)
+	}
+	if exported.FeedHash != sha([]byte(zipBody)) {
+		t.Fatalf("served %s, cap-network exports %s", sha([]byte(zipBody)), exported.FeedHash)
+	}
+
+	// Before the first pick, with no -feed: nothing runs.
+	if code, _, _ := httpGet(t, base+"/feed?date=2026-08-15"); code != http.StatusNotFound {
+		t.Fatalf("before the first pick, no feed configured: %d", code)
+	}
+	// With -feed, the configured zip itself.
+	zipBytes, _ := os.ReadFile("../web/e2e/fixtures/sample-gtfs.zip")
+	s.feeder = &fileFeed{path: "../web/e2e/fixtures/sample-gtfs.zip", networkWasm: networkWasm}
+	code, _, body := httpGet(t, base+"/feed?date=2026-08-15")
+	if code != 200 || body != string(zipBytes) {
+		t.Fatalf("before the first pick: the configured zip (%d, %d bytes)", code, len(body))
+	}
+	if code, _, _ := httpGet(t, base+"/feed?date=not-a-date"); code != http.StatusBadRequest {
+		t.Fatalf("a bad date: %d", code)
 	}
 }

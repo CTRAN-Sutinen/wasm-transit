@@ -23,7 +23,7 @@ cap-streets). What is left:
    a street layer itself, and a UI that draws on streets (the
    detour, [ui-disruptions.md](ui-disruptions.md)) registers the
    published document the same way. Left: persisting the document
-   in the store follows [sync-persistence.md](sync-persistence.md).
+   in the store follows the store's formats (`docs/FORMATS.md`).
    A compact encoding (delta-coded varints, names in a table: about
    3.4 MB before compression against the JSON's 4.5 MB gzipped) is a
    later step if the gzipped JSON is not enough.

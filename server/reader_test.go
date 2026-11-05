@@ -1,8 +1,8 @@
 package main
 
-// A reader outside the wasm (docs/units/sync-persistence.md, Done
-// when): the store directory, the generated JSON Schemas the registry
-// publishes (registry/documents.json), and docs/FORMATS.md are enough
+// A reader outside the wasm (docs/FORMATS.md): the store directory,
+// the generated JSON Schemas the registry publishes
+// (registry/documents.json), and docs/FORMATS.md are enough
 // to read what the store holds. Nothing below the setup calls a module
 // or links Rust: the pointer is the log's last line, the blob is the
 // file its hash names, the envelope sidecar names the kind and schema
@@ -175,7 +175,7 @@ func schemaFor(t *testing.T, idx documentIndex, kind string, version uint32) *js
 func TestStoreReadsWithoutTheModules(t *testing.T) {
 	dir := t.TempDir()
 	s, base := newPlansServer(t, dir)
-	for _, p := range []struct{ id, from string }{{"spring-2027", "2027-03-01"}, {"fall-2026", "2026-09-07"}} {
+	for _, p := range []struct{ id, from string }{{"winter-2026", "2026-12-01"}, {"fall-2026", "2026-09-07"}} {
 		n := fixtureNetwork(t, p.id, p.id, p.from)
 		n["name"] = p.id
 		if code, out := publishPick(t, base, n); code != 200 {
@@ -214,7 +214,7 @@ func TestStoreReadsWithoutTheModules(t *testing.T) {
 			t.Fatalf("pick %s: the set and its pointer disagree", p.ID)
 		}
 	}
-	if strings.Join(chain, ",") != "2026-09-07 fall-2026,2027-03-01 spring-2027" {
+	if strings.Join(chain, ",") != "2026-09-07 fall-2026,2026-12-01 winter-2026" {
 		t.Fatalf("the chain in date order: %v", chain)
 	}
 
