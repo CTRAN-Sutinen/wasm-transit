@@ -490,7 +490,8 @@ Go + wazero host: scaffolding only (HTTP, manifest, proxies). It must
 never make a domain decision; the host reads the feed's own
 feed_info.txt version field (one boundary CSV field — I/O, not
 domain). It instantiates the single-capability modules it needs
-(whether it links assemblies is D-78, unanswered), all rebuilt by
+(it links no assemblies — D-78: nothing it holds long is a network,
+and authz keeps its own instance), all rebuilt by
 `just caps` into web/pkg/: cap-sync (the -wasm flag, cap_sync.wasm),
 the op behind POST /edits, held for the server's lifetime; cap-authz
 (-authz-wasm) when authentication is on; cap-plans (-plans-wasm) in

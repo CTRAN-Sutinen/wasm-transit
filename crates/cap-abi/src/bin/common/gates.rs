@@ -1,6 +1,6 @@
 //! The architecture gates that keep "capabilities never call
 //! capabilities" true once they link into one binary (D-77,
-//! `docs/units/linked-assembly.md`): in one binary a crate can still
+//! `docs/ARCHITECTURE.md`, "Bus rules"): in one binary a crate can still
 //! name only the code of the crates it depends on, so the rule is the
 //! dependency graph, the kernel's private registry constructor, and no
 //! `unsafe` outside the kernel. `arch-gates` runs them in `just test`;

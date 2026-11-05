@@ -30,9 +30,9 @@ deployed is retired, never deleted.
 - **Hash churn.** Adding one dependency on 2026-11-05 changed all 15
   module hashes, and a changed hash means every client downloads the
   module again: a Pi display on a cellular link pays that for every
-  release. Measure the churn and cut it where it is cheap. Under
-  [linked-assembly.md](linked-assembly.md) any capability change
-  rebuilds a page's whole assembly, so measure there.
+  release. Measure the churn and cut it where it is cheap. A page
+  runs one linked assembly (D-77), so any of its capabilities'
+  changes rebuilds the whole assembly: measure there.
 - **Canonical bytes across upgrades.** A document's identity is its
   serde_json bytes, so a serde, serde_json, or Rust upgrade can change
   every document hash. Upgrading the toolchain or a serialization
@@ -43,8 +43,8 @@ deployed is retired, never deleted.
   response have no version of their own; the kernel version is one
   number for the whole ABI. Example: cap-plans `publish` gained a
   required `today` (2026-11-05), and nothing would catch a host still
-  sending the old shape. Under linked-assembly the browser runs
-  assemblies while the server runs single-capability modules (D-78),
+  sending the old shape. The browser runs linked assemblies while
+  the server runs single-capability modules (D-78),
   so the two can run different builds. The rule is expand, then
   contract: a new field is optional, or the change is a new op; the
   old shape is accepted until no deployed host sends it; then it is
@@ -64,10 +64,10 @@ deployed is retired, never deleted.
 
 ## Order
 
-Retention and the toolchain pin first (independent). Op and HTTP
-contract versioning follow [linked-assembly.md](linked-assembly.md),
-which changes the artifact's shape (one assembly per page) and the
-request envelope (`{"cap": …}`).
+Retention and the toolchain pin first (independent), then op and
+HTTP contract versioning, over the artifacts as they are: one
+assembly per page, single-capability modules on the server, and the
+`{"cap": …}` request envelope.
 
 ## Done when
 

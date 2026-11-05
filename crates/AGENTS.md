@@ -67,7 +67,7 @@ design a module around who will use it, and do not merge ops
 because the same users end up wiring them together. Linking the
 capabilities a selection assembles into one binary (a generated
 UI's at build time, a user's at wire time — D-77,
-`docs/units/linked-assembly.md`) assembles BYTES and merges no
+`docs/ARCHITECTURE.md`, "Bus rules") assembles BYTES and merges no
 surface: each capability keeps its crate, its Request enum, and its
 manifest entry, and stays independently retirable.
 

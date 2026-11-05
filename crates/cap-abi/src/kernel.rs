@@ -23,7 +23,7 @@
 //! computes it, bounded per [`Derivation`], and drops it when a
 //! keep-set drops any document it was computed from. The answer is
 //! the same either way: an entry is a cache, never a dependency
-//! (assembly independence, `docs/units/linked-assembly.md`).
+//! (assembly independence, `crates/cap-abi/independence.mjs`).
 //!
 //! **Routing.** An assembly is one or more [`Cap`]s. A JSON request
 //! names its capability (`{"cap": "board", "op": …}`) unless the

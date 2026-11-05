@@ -118,7 +118,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-75 | How does a published pick come back out? | decided | nothing |
 | D-76 | What does publishing refuse beyond an invalid chain? | decided | nothing |
 | D-77 | How do the capabilities a page uses share one network? | decided | nothing |
-| D-78 | Does the Go server host linked assemblies? | unanswered | the server part of `linked-assembly` |
+| D-78 | Does the Go server host linked assemblies? | decided | nothing |
 | D-79 | How is a document version rolled back? | unanswered | rollback in `document-versioning` |
 | D-80 | Where do retired build artifacts live? | unanswered | retention in `release-artifacts` |
 | D-81 | How are op and HTTP contracts versioned? | unanswered | contract versioning in `release-artifacts` |
@@ -1638,16 +1638,28 @@ Options:
   an option on top of linking, if a measured query needs more cores.
 - A compact zero-parse document format: smaller, faster copies,
   still one per module.
-Blocks: nothing. The work is `docs/units/linked-assembly.md`; Law 3
+Blocks: nothing. The design is `docs/ARCHITECTURE.md`, "Bus rules"; Law 3
 in `crates/AGENTS.md` carries the answer (linking assembles bytes,
 not surfaces).
 Update 2026-11-05: built — the kernel owns the registries and the
 loads, `assembly!` emits the exports, each generated UI loads one
 linked module, and the four gates run in `just test`
-(`docs/ARCHITECTURE.md`, "Bus rules").
+(`docs/ARCHITECTURE.md`, "Bus rules"). Measured on C-TRAN the same
+day: the stop display 41.5 → 21.0 MB (wasm 31.8 → 16.2), ride-now's
+wasm 45.7 → 17.8 MB (`docs/units/runtime-cost-gate.md`); the server
+stays on single-capability modules (D-78).
 
 ### D-78 — Does the Go server host linked assemblies?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — no: the server keeps single-capability modules;
+only the browser links. The long-lived modules (sync, plans, authz)
+hold no network, so there is nothing to share; every network or
+streets consumer is a fresh instance per call, which is the server's
+memory hygiene; authz stays in its own instance (a trap or reset in
+another capability never takes the fail-closed check with it); and
+sync's pinned `wasm_hash` changes only when sync does. Revisit if the
+server hosts a long-lived network reader (a server-side board or
+router): link those readers together, authz still apart.
 Context: the server keeps cap-sync, cap-plans, and cap-authz for its
 lifetime, and instantiates cap-network and cap-streets fresh for each
 published feed or street layer, closing each after
@@ -1656,13 +1668,15 @@ fresh instance hands its memory back, because wasm memory never
 shrinks. The long-lived modules hold no network.
 Options:
 - Keep single-capability modules on the server; only the browser
-  links. The per-import instance stays the memory hygiene.
+  links (decided). The per-import instance stays the memory hygiene.
 - One assembly for the long-lived modules (sync, plans, authz), the
   per-import instances single: the base ships once; there is no
   network to share.
 - One assembly for everything: one compile and one registry; loses
   the fresh instance per import.
-Blocks: the server part of `docs/units/linked-assembly.md`.
+Blocks: nothing. Pinned by `server/main.go` (one module flag per
+capability) and the `caps` recipe (each `module_<cap>.wasm` copied to
+`web/pkg/`).
 
 ### D-85 — Are the generated assembly crates committed?
 State: Decided.
@@ -1688,7 +1702,7 @@ the `caps` recipe.
 State: Encoded provisionally.
 Context: `load_edits` answered per-record validation reports in the
 board, runcut, calendar, and router alike — one answer four times
-(`docs/units/linked-assembly.md`). Loads became the kernel's, which
+(D-77). Loads became the kernel's, which
 answer an identity, never a domain report.
 Options:
 - cap-divert `reports` (encoded): the capability that answers the

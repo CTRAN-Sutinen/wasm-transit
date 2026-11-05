@@ -39,7 +39,6 @@ archive — nothing here records what is finished.
 | [host-discipline.md](host-discipline.md) | the composition layer: one op caller, flow maps as data, the journal, replay |
 | [wire-time-assembly.md](wire-time-assembly.md) | per-user selection over the manifest; layouts as documents |
 | [cap-authz.md](cap-authz.md) | JWT verification at the server, the policy document on the store, cap-authz fail-closed |
-| [linked-assembly.md](linked-assembly.md) | the server's modules (D-78) |
 | [runtime-cost-gate.md](runtime-cost-gate.md) | a ratchet on per-module memory and registration time |
 | [module-runtime.md](module-runtime.md) | the page never parses a published document; service-design's keep-set; the C-TRAN bounded-session record and the ceiling it sets |
 | [document-versioning.md](document-versioning.md) | every persisted document versioned, migrated forward at receive, rolled back under one rule, the schema-lock gate |
