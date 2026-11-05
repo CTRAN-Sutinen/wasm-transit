@@ -44,6 +44,9 @@ transit-plans = { path = "../transit-plans" }
 # fail-closed decision through the same library the module dispatches
 # through.
 transit-authz = { path = "../transit-authz" }
+# …and the registry publishes every document kind's JSON Schema,
+# generated from those libraries' serde types (never hand-written).
+schemars = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"

@@ -309,45 +309,44 @@ func TestStoreManifestPointer(t *testing.T) {
 	}
 }
 
-// The generic raw-commit path: a host-owned document kind (plans) posts
-// verbatim with a from-CAS, and a wrong document_hash is rejected.
+// The generic raw-commit path: a host-owned document kind (policy, the
+// kind an admin rotates through POST /pointers/policy) posts verbatim
+// with a from-CAS, and a wrong document_hash is rejected.
 func TestStoreRawPointerCommit(t *testing.T) {
 	s := newStoreServer(t, t.TempDir())
 	base := httptest.NewServer(storeMux(s)).URL
 
 	mk := func(from, doc, hash string) (int, string) {
-		req, _ := json.Marshal(map[string]any{"from": from, "kind": "plans", "document": doc, "document_hash": hash})
-		code, _, body := httpPost(t, base+"/pointers/plans", string(req))
+		req, _ := json.Marshal(map[string]any{"from": from, "kind": "policy", "document": doc, "document_hash": hash})
+		code, _, body := httpPost(t, base+"/pointers/policy", string(req))
 		return code, body
 	}
-	code, body := mk("", `[{"id":"spring"}]`, "")
+	code, body := mk("", `{"schema_version":1,"rules":[]}`, "")
 	if code != 200 {
-		t.Fatalf("create plans: %d %s", code, body)
+		t.Fatalf("create policy: %d %s", code, body)
 	}
 	// A wrong asserted hash fails loudly (the store never mints identity).
-	code, body = mk("", `[]`, "sha256:"+strings.Repeat("ff", 32))
+	code, body = mk("", `{}`, "sha256:"+strings.Repeat("ff", 32))
 	if code == 200 {
 		t.Fatalf("wrong document_hash must fail: %s", body)
 	}
 	// Move with the right from: create answered the head hash.
-	_, _, headBody := httpGet(t, base+"/pointers/plans")
+	_, _, headBody := httpGet(t, base+"/pointers/policy")
 	var head struct {
 		Hash string `json:"hash"`
 	}
 	json.Unmarshal([]byte(headBody), &head)
-	code, body = mk(head.Hash, `[{"id":"spring"},{"id":"fall"}]`, "")
+	code, body = mk(head.Hash, `{"schema_version":1,"rules":[{"name":"r","roles":["a"],"pointers":["edits"],"actions":["read"]}]}`, "")
 	if code != 200 {
-		t.Fatalf("move plans: %d %s", code, body)
+		t.Fatalf("move policy: %d %s", code, body)
 	}
-	_, _, blob := httpGet(t, base+"/blobs/"+head.Hash)
-	_ = blob
-	_, _, head2 := httpGet(t, base+"/pointers/plans")
+	_, _, head2 := httpGet(t, base+"/pointers/policy")
 	var head3 struct {
 		Hash string `json:"hash"`
 		Seq  int64  `json:"seq"`
 	}
 	json.Unmarshal([]byte(head2), &head3)
 	if head3.Seq != 2 || head3.Hash == head.Hash {
-		t.Fatalf("plans pointer: %+v", head3)
+		t.Fatalf("policy pointer: %+v", head3)
 	}
 }

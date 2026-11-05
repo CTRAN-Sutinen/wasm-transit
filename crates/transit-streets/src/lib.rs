@@ -36,7 +36,7 @@ const CELL: f64 = 0.001;
 /// and point pair by point pair, so an address holds for one streets
 /// document (one hash) — it is never committed to another document.
 /// `dist_m` is how far the query point was from the street.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct StreetPosition {
     pub lat: f64,
@@ -47,7 +47,7 @@ pub struct StreetPosition {
 }
 
 /// A point: of a routed path, or a place a query starts from.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct StreetPoint {
     pub lat: f64,

@@ -96,8 +96,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-53 | What ridership data does the planner bring? | unanswered | `ui-service-design` question 10 |
 | D-54 | What does a frequency change keep of the trips already there? | unanswered | QAF-90, `ui-service-design` question 16 |
 | D-55 | Which members does a service group count on a day? | unanswered | QAF-91 |
-| D-56 | Whose clock is the LWW clock? | encoded | the receive path of sync-persistence |
-| D-57 | How long does a tombstone live? | encoded | the GC/retention section of sync-persistence |
+| D-56 | Whose clock is the LWW clock? | encoded | nothing |
+| D-57 | How long does a tombstone live? | encoded | nothing |
 | D-58 | Which endpoints require a token by default? | decided | nothing |
 | D-59 | Which JWT claim carries the roles? | decided | nothing |
 | D-60 | How are JWTs verified (JWKS vs pinned key)? | decided | nothing |
@@ -114,6 +114,9 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-71 | May a module register a document under a pinned hash it did not compute? | unanswered | the re-hash candidate in `runtime-cost-gate` |
 | D-72 | Is the release profile tuned for size or for speed? | encoded | nothing |
 | D-73 | What does a stop's board show for a trip the live feed cancels? | decided | nothing |
+| D-74 | How is a pick published, and what runs before the first one? | encoded | nothing |
+| D-75 | How does a published pick come back out? | unanswered | withdrawing a pick (`sync-persistence`) |
+| D-76 | What does publishing refuse beyond an invalid chain? | unanswered | QAF-95 |
 
 ## The trip model
 
@@ -1144,8 +1147,8 @@ Pinned by: `transit-sync` law test
 `a_future_dated_record_is_clamped_at_receive`, cap-sync dispatch test
 `sync_edits_clamps_the_client_clock`, and the store's clock-skew
 session through a restarted server.
-Blocks: the receive path of `docs/units/sync-persistence.md` (being
-built on the encoded answer).
+Blocks: nothing (the receive path is built on the encoded answer; a
+different answer rewrites the pins above).
 
 ### D-57 — How long does a tombstone live?
 State: Encoded provisionally.
@@ -1170,7 +1173,74 @@ Options:
 Pinned by: `transit-sync` law test
 `compact_drops_only_retired_records_past_the_horizon`, cap-sync
 `compact_edits` dispatch test, and the store GC test.
-Blocks: the GC/retention section of `docs/units/sync-persistence.md`.
+Blocks: nothing (compaction is built on the encoded answer; a
+different answer rewrites the pins above).
+
+### D-74 — How is a pick published, and what runs before the first one?
+State: Encoded provisionally.
+Context: docs/ROADMAP.md 1 — a pick that cannot be published is just
+a document. The store holds content-addressed blobs under pointers,
+and GC keeps only blobs a pointer's log names; the module is the hash
+authority for every bus document; the host makes no domain decision.
+Encoded (provisional):
+- The published plan set is its own document (store kind `plans`,
+  `transit_plans::PublishedPlans`, its `schema_version` inside it per
+  D-62): every pick's id, name, effective date and network hash, in
+  (effective_from, id) order, one entry per id. It lives at the
+  `plans` pointer and the manifest pins it as `plans_hash`. Each
+  pick's network lives at its own `plan.<id>` pointer, so every
+  revision stays referenced and GC never collects a published network.
+- `POST /plans` takes the network in any serialization. cap-network
+  registers and validates it (a network with issues never publishes)
+  and answers its canonical bytes; cap-plans `publish` answers the
+  next set, or refuses an unversioned plan, an undated one, or one
+  whose date another pick already has. Republishing an id replaces
+  the pick: it is the pick's next revision, and its date may move.
+  A plan id that cannot name a pointer is refused.
+- A page resolves the pick in force on its local date through
+  cap-plans `in_force` and loads that network by hash. Before the
+  first pick takes effect, and when none is published, it loads the
+  server's `-feed` import. A published pick's boundary is the default
+  one: it is an authored document, numbered the way its export is.
+Options: the encoded design; picks only as pointers with no set
+document (every client lists pointers and resolves over them — no
+single hash pins what is published); or the set embedding each
+network (one blob per publish, every client downloads every pick).
+Pinned by: `crates/transit-plans/tests/published_test.rs`, the
+cap-plans and cap-network dispatch tests, `server/plans_test.go`,
+`server/reader_test.go`, `web/e2e/published-picks.spec.mjs`.
+Blocks: nothing.
+
+### D-75 — How does a published pick come back out?
+State: Unanswered.
+Context: a pick published by mistake, or a service change the agency
+cancels, stays in the published set; republishing can move its date
+but not remove it. Retirement is the tombstone everywhere else
+(AGENTS.md: no hard deletes).
+Options:
+- A retired pick: it stays in the set marked `status: "retired"`,
+  never resolves, and a later publish of the same id restores it.
+- Removal from the set: the set's log still names it (the store's
+  history keeps every revision), but the current set does not.
+- Nothing until a later pick supersedes it (today).
+Blocks: withdrawing a pick (`docs/units/sync-persistence.md`).
+
+### D-76 — What does publishing refuse beyond an invalid chain?
+State: Unanswered.
+Context: QAF-95. cap-network `validate` warnings never gate
+(they name what validity lets through), so a pick whose service
+types' calendars end before its effective date publishes with a
+`no_service_in_plan_period` warning, and on that date every rider
+page loads a network that runs nothing. A pick dated in the past also
+publishes and governs at once, changing what the deployment says ran
+on past dates.
+Options:
+- Publish with the warnings in the answer (today).
+- Refuse a pick with no service in its period; publish other
+  warnings.
+- Also refuse a pick dated before today (the server's clock, the way
+  D-56 bounds the LWW clock), or before the pick in force.
+Blocks: QAF-95.
 
 ## Authentication and authorization
 

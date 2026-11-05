@@ -12,6 +12,7 @@
     "Is there an alert or a detour at this stop?"
   ],
   "ops": [
+    "plans.in_force",
     "network.import",
     "directory.routes",
     "directory.stops",

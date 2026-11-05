@@ -21,7 +21,7 @@ only), D-61 (policy = store pointer seeded from `-policy`).
   pinned PEM key; `alg: none`/HS* rejected; iss/aud exact, exp/nbf with
   60 s leeway; roles read at `-oidc-roles-claim` (dotted path, default
   `roles`). `protectWrite` wraps the write endpoints (`/edits`,
-  `/pointers/*`): 401 without a valid token, 403 when cap-authz denies,
+  `/pointers/*`, `/plans` — write on `plans`): 401 without a valid token, 403 when cap-authz denies,
   and the verified `sub` becomes the store log's `writer`. With no
   `-oidc-*` flags auth is OFF and the server logs that loudly (dev only).
   Policy lives at the store's `policy` pointer, seeded from `-policy`

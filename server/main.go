@@ -7,9 +7,9 @@
 // flat ABI. This host is scaffolding only: HTTP routing, static
 // serving with Range support, the CORS proxy, the geocoder proxy
 // (geocode.go), the published network
-// (network.go) and streets (streets.go), and the manifest that pins
-// their hashes and the sync module's. No
-// domain decision is ever made here.
+// (network.go) and streets (streets.go), publishing picks to the store
+// (plans.go), and the manifest that pins their hashes and the sync
+// module's. No domain decision is ever made here.
 package main
 
 import (
@@ -47,6 +47,8 @@ func main() {
 	editsPath := flag.String("edits", "", "path to persist the edit document (JSON); empty = in-memory only (legacy mode; with -store it seeds the edits pointer once)")
 	storeDir := flag.String("store", "", "directory of the durable sync store (blobs + pointers, docs/FORMATS.md): enables /pointers, /blobs and store-backed /edits and /manifest; empty = legacy mode")
 	retentionDays := flag.Int("retention-days", 90, "tombstone retention horizon (days) for the store's D-57 compaction commits")
+	gcInterval := flag.Duration("gc-interval", time.Hour, "how often the store sweeps crash-torn orphan blobs past their grace period (store mode; 0 = only at startup)")
+	plansWasm := flag.String("plans-wasm", "../web/pkg/cap_plans.wasm", "the plan-chain capability module (cap-plans) hosted in store mode: it answers the published plan set POST /plans commits")
 	authzWasm := flag.String("authz-wasm", "../web/pkg/cap_authz.wasm", "the authorization capability module (cap-authz) hosted when OIDC is configured")
 	oidcIssuer := flag.String("oidc-issuer", "", "expected JWT iss (D-60); with any -oidc flag this turns authentication on")
 	oidcJWKS := flag.String("oidc-jwks-url", "", "the IdP's JWKS URL: keys are fetched, cached by kid, refetched on an unknown kid (rate-limited)")
@@ -82,10 +84,17 @@ func main() {
 			log.Fatalf("store: %v", err)
 		}
 		s.store = st
+		if s.plans, err = NewWasmHost(ctx, *plansWasm); err != nil {
+			log.Fatalf("plans module: %v", err)
+		}
+		s.networkWasm = *networkWasm
 		s.seedStore(*editsPath)
 		s.seedPolicy(*policyFile)
 		s.maybeCompactEdits()
-		log.Printf("sync store open: %s", *storeDir)
+		if *gcInterval > 0 {
+			st.Sweep(*gcInterval, store.OrphanGraceMs)
+		}
+		log.Printf("sync store open: %s (orphan sweep every %s)", *storeDir, *gcInterval)
 	}
 	if *oidcIssuer != "" || *oidcJWKS != "" || *oidcKey != "" {
 		if *oidcJWKS != "" && (*oidcIssuer == "" || *oidcAud == "") {
@@ -133,6 +142,7 @@ func main() {
 	mux.HandleFunc("/walks", s.handleWalks)
 	mux.HandleFunc("/edits", s.protectWrite(func(*http.Request) string { return "edits" }, s.handleEdits))
 	mux.HandleFunc("/pointers/", s.protectWrite(pointerNameOf, s.handlePointers))
+	mux.HandleFunc("/plans", s.protectWrite(func(*http.Request) string { return "plans" }, s.handlePlans))
 	mux.HandleFunc("/permissions", s.requireAuth(s.handlePermissions))
 	mux.HandleFunc("/blobs/", s.handleBlob)
 	mux.HandleFunc("/geocode/", s.handleGeocode)
@@ -166,6 +176,17 @@ type server struct {
 	// Authorization state (nil = auth off, dev only): the IdP config,
 	// the hosted cap-authz module, and the policy source.
 	authz *authzState
+
+	// Publishing picks (store mode): the hosted cap-plans module, the
+	// cap-network module each publish instantiates, and the lock that
+	// makes one publish one step.
+	plans       *WasmHost
+	networkWasm string
+	plansMu     sync.Mutex
+
+	// Gzipped blobs for transport, by hash (gzippedBlob).
+	gzMu    sync.Mutex
+	gzCache map[string][]byte
 
 	// The manifest pointer's last committed key (store mode): the
 	// manifest is re-committed when the published set changes.
@@ -231,7 +252,8 @@ func (s *server) handleProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 // Manifest pins the published network, the GTFS zip it was imported
-// from, the published streets and walk table, and the sync module
+// from, the published plan set (the picks clients resolve), the
+// published streets and walk table, and the sync module
 // this server runs, and lists the external services it proxies. `feed_version` is read
 // from the feed's own feed_info.txt by the host (the host owns files
 // and I/O; the module owns the format's domain).
@@ -244,6 +266,7 @@ type Manifest struct {
 	WasmHash    string  `json:"wasm_hash"`              // sha256 of the sync module this server runs
 	AuthzHash   string  `json:"authz_hash,omitempty"`   // sha256 of the cap-authz module, when auth is on
 	PolicyHash  string  `json:"policy_hash,omitempty"`  // the store's policy pointer head, store mode (D-61)
+	PlansHash   string  `json:"plans_hash,omitempty"`   // the published plan set (the plans pointer head), store mode
 	GeneratedAt int64   `json:"generated_at"`
 	Publisher   *string `json:"publisher,omitempty"`
 	// The external services this deployment offers, by name — a
@@ -299,6 +322,9 @@ func (s *server) buildManifest() (Manifest, error) {
 		if head, found, err := s.store.Head("policy"); err == nil && found {
 			manifest.PolicyHash = head.Hash
 		}
+		if head, found, err := s.store.Head("plans"); err == nil && found {
+			manifest.PlansHash = head.Hash
+		}
 	}
 	return manifest, nil
 }
@@ -308,7 +334,7 @@ func (s *server) buildManifest() (Manifest, error) {
 func manifestKeyOf(m Manifest) string {
 	services, _ := json.Marshal(m.Services)
 	sum := sha256.Sum256([]byte(strings.Join([]string{
-		m.WasmHash, m.AuthzHash, m.PolicyHash, m.NetworkHash, m.FeedHash, orEmpty(m.FeedVersion),
+		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.NetworkHash, m.FeedHash, orEmpty(m.FeedVersion),
 		m.StreetsHash, m.WalksHash, orEmpty(m.Publisher), string(services),
 	}, "|")))
 	return hex.EncodeToString(sum[:])

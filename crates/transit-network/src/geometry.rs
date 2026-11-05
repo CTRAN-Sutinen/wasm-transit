@@ -61,7 +61,7 @@ pub fn stops_line<'a>(network: &Network, stops: impl IntoIterator<Item = &'a str
 }
 
 /// What a drill-down can frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum EntityKind {
@@ -74,7 +74,7 @@ pub enum EntityKind {
 }
 
 /// An entity on the map: the lines it runs and the stops it serves.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct EntityFocus {
     pub lines: Vec<Vec<Coord>>,

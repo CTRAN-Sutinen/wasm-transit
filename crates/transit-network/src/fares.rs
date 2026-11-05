@@ -22,7 +22,7 @@ pub type FareProductId = String;
 pub type LegGroupId = String;
 
 /// Every fare the network describes.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Fares {
     /// Zone fares, by id.
@@ -72,7 +72,7 @@ impl Fares {
 }
 
 /// A zone fare: its price and how it may be used.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct ZoneFare {
     pub price: f64,
@@ -94,7 +94,7 @@ pub struct ZoneFare {
 
 /// Where a zone fare applies: on a route, from a zone to a zone, or
 /// through a zone. Unset parts match anything.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct ZoneFareRule {
     pub fare: FareId,
@@ -113,7 +113,7 @@ pub struct ZoneFareRule {
 }
 
 /// A fare area: a set of stops.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Area {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -124,7 +124,7 @@ pub struct Area {
     pub stops: Vec<StopId>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct FareNetwork {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -134,7 +134,7 @@ pub struct FareNetwork {
 
 /// A span of a service type's day fares treat alike (peak, off-peak).
 /// No start and end means the whole day.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Timeframe {
     pub service_type: ServiceTypeId,
@@ -147,7 +147,7 @@ pub struct Timeframe {
 }
 
 /// Who a fare is for (adult, senior, youth).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct RiderCategory {
     pub name: String,
@@ -161,7 +161,7 @@ pub struct RiderCategory {
 }
 
 /// What a fare is held on.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum FareMediaKind {
@@ -175,7 +175,7 @@ pub enum FareMediaKind {
     MobileApp,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct FareMedia {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -186,7 +186,7 @@ pub struct FareMedia {
 
 /// One way a fare product is sold: its price for a rider category on
 /// a medium (unset: any).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct FareOffer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -204,7 +204,7 @@ pub struct FareOffer {
 
 /// Which product a leg costs: by network, areas, and timeframes
 /// (unset: any), the most specific (highest priority) rule winning.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct FareLegRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -233,7 +233,7 @@ pub struct FareLegRule {
 }
 
 /// Two consecutive legs that fares count as one.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct FareLegJoinRule {
     pub from_network: FareNetworkId,
@@ -247,7 +247,7 @@ pub struct FareLegJoinRule {
 }
 
 /// How the time limit of a fare transfer is measured.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum DurationLimit {
@@ -258,7 +258,7 @@ pub enum DurationLimit {
 }
 
 /// What a transfer between legs costs.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum FareTransferKind {
@@ -272,7 +272,7 @@ pub enum FareTransferKind {
 }
 
 /// What changing from one leg group to another costs.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct FareTransferRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]

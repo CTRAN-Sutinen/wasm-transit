@@ -23,9 +23,11 @@ default:
 # manifest — hash-pinned modules in web/public/caps/, served under
 # their content hash so the HTTP cache holds them forever. The sync
 # server's modules also land at stable paths in web/pkg/ (cap_sync,
-# cap_network, cap_streets — the server's default -wasm,
-# -network-wasm and -streets-wasm flags; rebuilt with the modules,
-# never by hand).
+# cap_network, cap_streets, cap_authz, cap_plans — the server's
+# default -wasm, -network-wasm, -streets-wasm, -authz-wasm and
+# -plans-wasm flags; rebuilt with the modules, never by hand). The
+# registry also publishes every document kind's JSON Schema and a
+# worked example (registry/documents.json, docs/FORMATS.md).
 caps:
     #!/usr/bin/env bash
     set -e
@@ -36,6 +38,7 @@ caps:
     cp target/wasm32-unknown-unknown/release/cap_network.wasm web/pkg/cap_network.wasm
     cp target/wasm32-unknown-unknown/release/cap_streets.wasm web/pkg/cap_streets.wasm
     cp target/wasm32-unknown-unknown/release/cap_authz.wasm web/pkg/cap_authz.wasm
+    cp target/wasm32-unknown-unknown/release/cap_plans.wasm web/pkg/cap_plans.wasm
 
 # Publish the registry: gates first (the records report them), then
 # build and publish — immutable blobs, evidence records per

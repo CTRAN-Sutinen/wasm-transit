@@ -7,10 +7,14 @@ package main
 // transit_invoke_bytes. Results are [u32 LE length][payload] buffers
 // holding {"ok": ...} or {"error": ...}.
 //
-// This server hosts three modules: the SYNC CAPABILITY (cap-sync),
+// This server hosts these modules: the SYNC CAPABILITY (cap-sync),
 // the op behind POST /edits, held for the server's lifetime; the
-// NETWORK CAPABILITY (cap-network), instantiated once per published
-// feed to import it and then closed (network.go); and the STREETS
+// AUTHORIZATION CAPABILITY (cap-authz) when auth is on (authz.go); the
+// PLANS CAPABILITY (cap-plans) in store mode, the op behind POST /plans
+// (plans.go); the NETWORK CAPABILITY (cap-network), instantiated once
+// per published feed to import it — and once per published pick to
+// validate and canonicalize it — and then closed (network.go,
+// plans.go); and the STREETS
 // CAPABILITY (cap-streets), instantiated once per published street
 // layer (and network) to import it and derive the walk table, then
 // closed (streets.go). This file is the

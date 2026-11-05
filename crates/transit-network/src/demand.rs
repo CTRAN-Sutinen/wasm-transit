@@ -14,7 +14,7 @@ pub type ZoneId = String;
 pub type BookingRuleId = String;
 
 /// Everything demand-responsive the network describes.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct DemandResponsive {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -42,7 +42,7 @@ impl DemandResponsive {
 }
 
 /// Stops served as one: a rider may board or alight at any of them.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LocationGroup {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -54,7 +54,7 @@ pub struct LocationGroup {
 }
 
 /// How far ahead a ride must be booked.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum BookingKind {
@@ -68,7 +68,7 @@ pub enum BookingKind {
 }
 
 /// How riders book a demand-responsive ride.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct BookingRule {
     pub kind: BookingKind,
@@ -118,7 +118,7 @@ pub struct BookingRule {
 }
 
 /// Where a demand-responsive visit happens.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub enum VisitPlace {
@@ -135,7 +135,7 @@ impl Default for VisitPlace {
 
 /// One visit of a demand-responsive trip: a place, served at times or
 /// within a window (seconds after the service day's anchor).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Visit {
     pub place: VisitPlace,
@@ -185,7 +185,7 @@ pub struct Visit {
 
 /// A demand-responsive trip: a route's service under a service type,
 /// visiting places in order.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct DemandTrip {
     pub route: RouteId,

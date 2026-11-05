@@ -1,6 +1,10 @@
 //! cap-plans — the plan-chain capability.
 //!
-//! One question: **which service plan governs a date?** The domain
+//! One question: **which service plan governs a date?** — over the
+//! plan set a planner holds (resolve / validate / periods) and over
+//! the PUBLISHED plan set the server's `plans` pointer holds (publish
+//! answers its next canonical document; in_force answers the pick
+//! and network a client loads). The domain
 //! code (resolution, governing periods, chain validity) lives in the
 //! shared `transit-plans` library — the cross-document counterpart
 //! of transit-sync's merge; this module is the seam. Pure,
@@ -11,7 +15,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub use transit_plans::{PlanInfo, PlanIssue, PlanPeriod};
+pub use transit_plans::{PlanInfo, PlanIssue, PlanPeriod, PublishedPlan, PublishedPlans};
 
 /// One operation call. Tagged like every capability's seam.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -27,6 +31,17 @@ pub enum Request {
     /// Every chain member's governing period — [effective_from,
     /// until the next pick) — derived, sorted by pick date.
     Periods { plans: Vec<PlanInfo> },
+    /// Publish a pick: the published plan set (`null` for the first
+    /// publish) with `plan` (re)placed by id, naming its network by
+    /// hash. Answers the canonical document and its hash — the module
+    /// is the hash authority; a host stores exactly those bytes — or,
+    /// when the pick is not a dated plan or would break the chain,
+    /// every reason and no document.
+    Publish { published: Option<PublishedPlans>, plan: PlanInfo, network_hash: String },
+    /// The published pick in force on `date` and its network hash —
+    /// how a client chooses which network to load. Null before the
+    /// first pick takes effect.
+    InForce { published: PublishedPlans, date: String },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -36,6 +51,25 @@ pub enum Response {
     Resolve { plan: Option<String> },
     Validate { issues: Vec<PlanIssue> },
     Periods { periods: Vec<PlanPeriod> },
+    Publish {
+        issues: Vec<PlanIssue>,
+        published: Option<PublishedPlans>,
+        document: Option<String>,
+        document_hash: Option<String>,
+    },
+    InForce { plan: Option<PublishedPlan> },
+}
+
+/// A published set this build does not speak is refused, never guessed.
+fn spoken(published: &PublishedPlans) -> Result<(), String> {
+    if published.schema_version != transit_plans::PUBLISHED_SCHEMA_VERSION {
+        return Err(format!(
+            "published plans schema_version {} is not {} (this build speaks only that)",
+            published.schema_version,
+            transit_plans::PUBLISHED_SCHEMA_VERSION
+        ));
+    }
+    Ok(())
 }
 
 fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
@@ -56,6 +90,28 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::Periods { plans } => {
             Ok(Response::Periods { periods: transit_plans::periods(&plans) })
+        }
+        Request::Publish { published, plan, network_hash } => {
+            let base = published.unwrap_or_else(PublishedPlans::empty);
+            spoken(&base)?;
+            match transit_plans::publish(&base, &plan, &network_hash) {
+                Ok(next) => {
+                    let document = serde_json::to_string(&next).map_err(|e| e.to_string())?;
+                    let document_hash = cap_abi::content_hash(document.as_bytes());
+                    Ok(Response::Publish {
+                        issues: vec![],
+                        published: Some(next),
+                        document: Some(document),
+                        document_hash: Some(document_hash),
+                    })
+                }
+                Err(issues) => Ok(Response::Publish { issues, published: None, document: None, document_hash: None }),
+            }
+        }
+        Request::InForce { published, date } => {
+            spoken(&published)?;
+            let parsed = parse_date(&date)?;
+            Ok(Response::InForce { plan: transit_plans::in_force(&published, parsed)?.cloned() })
         }
     }
 }

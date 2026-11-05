@@ -30,11 +30,14 @@ reality: three picks a year, no merged feeds, no day-of scrambling.
 It is the feature that makes the architecture something an agency
 could run.
 
-**Exists already:** the plan chain (cap-plans), the publish path
-(cap-network `export`: deterministic GTFS zip bytes under their
-content hash), the manifest concept, plan persistence in the
-browser.
-**Needs:** server-side persistence (`docs/units/sync-persistence.md`).
+**Exists already:** the plan chain (cap-plans), the GTFS publish
+path (cap-network `export`: deterministic GTFS zip bytes under their
+content hash), plan persistence in the browser, the durable store,
+and publish → serve → resolve itself: `POST /plans` stores a pick and
+the published plan set, the manifest pins it (`plans_hash`), and the
+rider pages load the pick in force.
+**Needs:** the planner's publish gesture, withdrawing a pick, and the
+pick in force as GTFS (`docs/units/sync-persistence.md`).
 **Unblocks:** 6, and multi-client deployments at all.
 
 ## 2. The runcut as a first-class tool

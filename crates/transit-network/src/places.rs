@@ -13,7 +13,7 @@ pub type PathwayId = String;
 
 /// What kind of place a [`crate::Stop`] is: a stop or platform riders
 /// board at, or a station grouping them.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum StopKind {
@@ -30,7 +30,7 @@ impl StopKind {
 
 /// What a rider can know about a place beyond its name and point.
 /// Shared by stops and station parts.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct StopInfo {
     /// The short code riders see on the sign or type into a phone.
@@ -81,7 +81,7 @@ impl StopInfo {
 }
 
 /// A part of a station riders walk through but never board at.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum StationPartKind {
@@ -95,7 +95,7 @@ pub enum StationPartKind {
 
 /// An entrance, node, or boarding area: part of a station (a boarding
 /// area is part of its platform), linked to the rest by pathways.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct StationPart {
     pub kind: StationPartKind,
@@ -114,7 +114,7 @@ pub struct StationPart {
 }
 
 /// One floor of a station.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Level {
     /// Order of the levels: 0 is the ground, negative is below it.
@@ -125,7 +125,7 @@ pub struct Level {
 }
 
 /// How a pathway is walked.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum PathwayMode {
@@ -142,7 +142,7 @@ pub enum PathwayMode {
 }
 
 /// A way between two places of a station (stops, station parts).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Pathway {
     pub from: StopId,
@@ -179,7 +179,7 @@ pub struct Pathway {
 }
 
 /// What a transfer rule says about changing vehicles.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum TransferKind {
@@ -200,7 +200,7 @@ pub enum TransferKind {
 
 /// One side of a transfer rule: where (and from or onto what) the
 /// rider changes. Unset parts match anything.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct TransferEnd {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -215,7 +215,7 @@ pub struct TransferEnd {
 }
 
 /// How riders change vehicles between two places, routes, or trips.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct TransferRule {
     pub from: TransferEnd,

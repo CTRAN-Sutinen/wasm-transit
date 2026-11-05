@@ -58,3 +58,46 @@ fn garbage_and_bulk_bytes_are_errors_not_panics() {
     let ok = dispatch_json(r#"{"op":"validate","plans":[]}"#);
     assert!(ok.contains(r#""issues":[]"#), "{ok}");
 }
+
+/// Publishing through the seam: the module is the hash authority for
+/// the published plan set — its answer carries the canonical bytes and
+/// their hash, and a host stores exactly those (docs/FORMATS.md).
+#[test]
+fn publish_answers_the_canonical_document_and_its_hash() {
+    use cap_plans::PublishedPlans;
+    let fall = info("fall", "Fall 2026", Some("2026-09-07"));
+    let h = format!("sha256:{}", "ab".repeat(32));
+    let (document, document_hash, published) =
+        match dispatch(Request::Publish { published: None, plan: fall.clone(), network_hash: h.clone() }).unwrap() {
+            Response::Publish { document: Some(d), document_hash: Some(dh), published: Some(p), issues } => {
+                assert!(issues.is_empty());
+                (d, dh, p)
+            }
+            other => panic!("publish: {other:?}"),
+        };
+    assert_eq!(document, serde_json::to_string(&published).unwrap(), "the document is the canonical serialization");
+    assert_eq!(document_hash, cap_abi::content_hash(document.as_bytes()), "the hash names those exact bytes");
+    let reread: PublishedPlans = serde_json::from_str(&document).unwrap();
+    assert_eq!(reread, published);
+
+    // in_force answers the pick and its network.
+    match dispatch(Request::InForce { published: published.clone(), date: "2026-11-05".into() }).unwrap() {
+        Response::InForce { plan: Some(p) } => assert_eq!((p.id.as_str(), p.network_hash.as_str()), ("fall", h.as_str())),
+        other => panic!("in_force: {other:?}"),
+    }
+    match dispatch(Request::InForce { published: published.clone(), date: "2026-01-01".into() }).unwrap() {
+        Response::InForce { plan: None } => {}
+        other => panic!("before the first pick nothing is in force: {other:?}"),
+    }
+
+    // A refusal is an answer with its reasons, never a stored document.
+    match dispatch(Request::Publish { published: Some(published.clone()), plan: info("", "import", None), network_hash: h.clone() }).unwrap() {
+        Response::Publish { issues, document: None, document_hash: None, published: None } => assert!(!issues.is_empty()),
+        other => panic!("refusal: {other:?}"),
+    }
+
+    // A set from a newer schema is refused, not guessed at.
+    let mut newer = published;
+    newer.schema_version = 99;
+    assert!(dispatch(Request::InForce { published: newer, date: "2026-11-05".into() }).unwrap_err().contains("schema_version"));
+}

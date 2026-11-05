@@ -28,7 +28,7 @@ use ts_rs::TS;
 /// The agency's on-time policy: how early and how late still count
 /// as on time, and where late becomes very late. A policy INPUT, never
 /// a constant in a view.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct OnTimeWindow {
     /// Seconds early that still count as on time. Early is not on
@@ -52,7 +52,7 @@ impl Default for OnTimeWindow {
 }
 
 /// A delay, classified under a window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum LiveStatus {
@@ -82,7 +82,7 @@ pub fn classify(delay: Option<i32>, window: &OnTimeWindow) -> LiveStatus {
 /// One stop of a live trip: the delay the rt feed states (or carries
 /// downstream — GTFS-rt's propagation rule) and the predicted
 /// departure. Stops before the first stated delay are absent.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LiveStop {
     pub stop: String,
@@ -103,7 +103,7 @@ pub struct LiveStop {
 
 /// One trip instance the snapshot speaks about: the network's trip
 /// (the rt trip id is the model's) and the instance's start.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LiveTrip {
     pub trip: String,
@@ -125,7 +125,7 @@ pub struct LiveTrip {
 }
 
 /// One live vehicle, on its trip instance when the trip resolves.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LiveVehicle {
     /// Stable per snapshot: the vehicle id, else the rt entity id.
@@ -151,7 +151,7 @@ pub struct LiveVehicle {
 }
 
 /// Why an alert was raised (GTFS-rt's cause, by name).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum AlertCause {
@@ -172,7 +172,7 @@ pub enum AlertCause {
 }
 
 /// What an alert does to service (GTFS-rt's effect, by name).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum AlertEffect {
@@ -191,7 +191,7 @@ pub enum AlertEffect {
 }
 
 /// How serious the agency says an alert is.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum AlertSeverity {
@@ -203,7 +203,7 @@ pub enum AlertSeverity {
 }
 
 /// A span of time in Unix seconds; an open end is unbounded.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct AlertPeriod {
     #[ts(type = "number | null")]
@@ -215,7 +215,7 @@ pub struct AlertPeriod {
 /// One informed entity, resolved: every present field must match
 /// (route 12 AT stop 6277); all absent means the whole agency. A trip
 /// without a start names every instance of the trip.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct AlertScope {
     pub route: Option<String>,
@@ -245,7 +245,7 @@ impl AlertScope {
 /// A service alert in force at the document's moment, in model
 /// vocabulary. The text is the feed's untagged translation, else its
 /// first.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LiveAlert {
     /// The rt entity id.
@@ -280,7 +280,7 @@ impl LiveAlert {
 }
 
 /// THE live document: one rt moment, in model vocabulary.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LiveDay {
     /// The window every status in this document was classified under.
@@ -328,7 +328,7 @@ impl LiveDay {
 }
 
 /// Vehicles per status.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct StatusCounts {
     pub early: u32,
@@ -339,7 +339,7 @@ pub struct StatusCounts {
 }
 
 /// One row of the "what's late" list.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LateEntry {
     pub key: String,
@@ -355,7 +355,7 @@ pub struct LateEntry {
 
 /// The live overview a status panel reads: the fleet by status and
 /// the late list, worst first.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LiveSummary {
     pub vehicles: u32,

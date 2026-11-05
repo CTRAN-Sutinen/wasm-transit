@@ -68,6 +68,13 @@ pub enum Request {
     /// module returns for the same bytes, so the host can assert the
     /// handoff. Invalid documents are refused (validate first).
     Export { network_hash: String },
+    /// A registered document's canonical bytes (its serialization, the
+    /// bytes its hash names) and its plan frame — what a host stores
+    /// when it persists a network it was sent in any serialization
+    /// (the server publishing a pick): the module is the hash
+    /// authority, the host stores exactly these bytes and never reads
+    /// them.
+    Document { network_hash: String },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -82,6 +89,7 @@ pub enum Response {
     /// no vehicle, a pick with no service in its period).
     Validate { issues: Vec<transit_network::NetworkError>, warnings: Vec<transit_network::NetworkWarning> },
     Export { feed_hash: String, summary: FeedSummary, zip_b64: String },
+    Document { document: String, document_hash: String, plan: transit_network::PlanMeta },
 }
 
 /// Feeds by content hash of the zip bytes.
@@ -159,6 +167,15 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let feed_hash = content_hash(&bytes);
             FEEDS.insert(feed_hash.clone(), feed);
             Ok(Response::Export { feed_hash, summary: counts, zip_b64: transit_codec::base64_encode(&bytes) })
+        }
+        Request::Document { network_hash } => {
+            let network = network_arc(&network_hash)?;
+            let document = serde_json::to_string(&*network).map_err(|e| e.to_string())?;
+            let document_hash = content_hash(document.as_bytes());
+            if document_hash != network_hash {
+                return Err(format!("registered under {network_hash} but serializes to {document_hash}"));
+            }
+            Ok(Response::Document { document, document_hash, plan: network.plan.clone() })
         }
     }
 }

@@ -361,7 +361,7 @@ impl ZipWriter {
 }
 
 /// A feed's counts at a glance.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct FeedSummary {
     pub agencies: usize,
@@ -372,7 +372,7 @@ pub struct FeedSummary {
 }
 
 /// `feed_info.txt`: which dataset this is, and who publishes it.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, ts_rs::TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct FeedInfo {
     pub feed_publisher_name: Option<String>,

@@ -35,7 +35,7 @@ export default defineConfig({
     // the geocoder, and the /rt feed proxy (dev only, until the
     // agency's feeds serve HTTPS with CORS — docs/units/deploy-rider-apps.md).
     proxy: Object.fromEntries(
-      ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/geocode"].map(
+      ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/plans", "/geocode"].map(
         (route) => [route, "http://127.0.0.1:8080"],
       ),
     ),

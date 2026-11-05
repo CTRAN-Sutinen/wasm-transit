@@ -366,7 +366,13 @@ transit-plans  THE service-plan chain: resolve (which pick is in
                 force), periods (each member's governing window),
                 validate (chain invariants) over the plan set's
                 metadata — DERIVED, never stored, deterministic and
-                order-insensitive. Cross-document logic, the
+                order-insensitive. And the PUBLISHED plan set (store
+                kind `plans`, `PublishedPlans`): every published
+                pick's metadata and network hash, canonical
+                ((effective_from, id) order, one entry per id) —
+                publish (the next set, or every reason the pick would
+                break the chain) and in_force (the pick, and so the
+                network, governing a date). Cross-document logic, the
                 counterpart of transit-sync's cross-record merge;
                 cap-plans is the seam.
 transit-streets THE streets model. `model.rs`: the streets document
@@ -436,9 +442,12 @@ cap-sync        The sync capability: the converged state of an edit
                 module — one question, one answer).
 cap-plans       The plan-chain capability: which service plan
                 governs a date — resolve / periods / validate over
-                the plan set's metadata (transit-plans is the
+                the plan set's metadata, and publish / in_force over
+                the published plan set (transit-plans is the
                 library). Pure ops, no registries: the host owns
-                the plan set and pushes its metadata per call.
+                the plan set and pushes its metadata per call;
+                publish answers the next set's canonical bytes and
+                hash, which the server stores as given.
 cap-author      The authoring capability: what does this network
                 become after these edits? apply (typed edits,
                 atomic) answers the next document under its hash,
@@ -469,20 +478,23 @@ exports (no wasm-bindgen — do not reintroduce host glue).
 Go + wazero host: scaffolding only (HTTP, manifest, proxies). It must
 never make a domain decision; the host reads the feed's own
 feed_info.txt version field (one boundary CSV field — I/O, not
-domain). It instantiates three modules, all rebuilt by `just caps`
-into web/pkg/: cap-sync (the -wasm flag, cap_sync.wasm), the op
-behind POST /edits, held for the server's lifetime; cap-network
+domain). It instantiates the modules it needs, all rebuilt by
+`just caps` into web/pkg/: cap-sync (the -wasm flag, cap_sync.wasm),
+the op behind POST /edits, held for the server's lifetime; cap-authz
+(-authz-wasm) when authentication is on; cap-plans (-plans-wasm) in
+store mode, the op behind POST /plans; cap-network
 (the -network-wasm flag, cap_network.wasm), which imports the
-configured GTFS zip (`load_feed` + `import`) in a fresh instance
-that is closed afterwards — the import's working memory goes with
+configured GTFS zip (`load_feed` + `import`) — and canonicalizes and
+validates each published pick — in a fresh instance
+that is closed afterwards, so its working memory goes with
 it; and cap-streets (the -streets-wasm flag, cap_streets.wasm),
 which imports the configured street layer (`import`) and derives
 the walk table over it and the published network (`load_network`
 + `walks`) in a fresh instance, closed the same way. Machine code
 is cached per module bytes for the process, so a re-import does
 not recompile. The manifest pins the network it publishes, the zip
-it was imported from, the streets and walk table it publishes, and
-the sync module's hash. (Reentrancy and the Go-host serialization live in
+it was imported from, the published plan set (store mode), the
+streets and walk table it publishes, and the sync module's hash. (Reentrancy and the Go-host serialization live in
 `docs/CONVENTIONS.md`.)
 
 **The deployment publishes the network, not the feed.** Browsers
@@ -514,7 +526,10 @@ under `blobs/<hex>` with a typed envelope sidecar, and one append-only
 log per pointer under `pointers/<name>.log` — the pointer is the log's
 last entry, and a commit is blob-write + one log append, CAS'd on the
 `from` hash. The `manifest` pointer is the root (publishing is one CAS
-on it); the `edits` pointer is the multi-writer LWW document. Without
+on it); the `edits` pointer is the multi-writer LWW document; the
+`plans` pointer is the published plan set, and each pick's network
+is its own `plan.<id>` pointer (D-74). GC collects crash-torn orphans
+at startup and every `-gc-interval` (default 1 h). Without
 `-store`, `-edits <path>` persists the edit document as one flat file
 and everything else is in process.
 
@@ -539,11 +554,13 @@ Its HTTP surface:
   `GEOCODER=http://127.0.0.1:4000 just serve …` (or `just dev`)
   proxies it.
 - `/manifest` — `{network_hash, feed_hash, feed_version,
-  streets_hash, walks_hash, wasm_hash, generated_at, publisher,
-  services}`: which network is authoritative, the
-  GTFS zip it was imported from, which sync module bytes the server
-  runs, who says so, and the external services it proxies
-  (`services.geocoder: {path, query}` with `-geocoder`).
+  plans_hash, streets_hash, walks_hash, wasm_hash, authz_hash,
+  policy_hash, generated_at, publisher, services}` (the optional ones
+  omitted when empty): which network is authoritative, the
+  GTFS zip it was imported from, the published plan set, which sync
+  module bytes the server runs, who says so, and the external
+  services it proxies (`services.geocoder: {path, query}` with
+  `-geocoder`).
 - `/streets` — the canonical streets document imported from the
   configured layer (`-streets`), bare (the bytes `load_streets`
   takes); gzipped, its ETag the streets hash, re-imported when the
@@ -570,15 +587,16 @@ Its HTTP surface:
   network hash's ETag. The document's bytes are the import's
   canonical serialization (unzipped, they hash to the pin). A
   client registers the document and refuses it unless the module
-  answers the pinned hash (`servedNetwork`).
+  answers the pinned hash (`servedNetwork`) — when no published pick
+  is in force; a page loads the pick in force instead (web section).
 - **Authentication/authorization** (D-58..D-61): with any `-oidc-*`
   flag set, the server verifies bearer JWTs — JWKS (`-oidc-jwks-url`,
   cached by `kid`, refetched on unknown kid) or a pinned PEM
   (`-oidc-key`), RS256/ES256 only, iss/aud exact, exp/nbf with leeway —
   and asks the hosted cap-authz module (`-authz-wasm`) over the policy
   document before any write: reads stay public (D-58), writes
-  (`POST /edits`, `POST /pointers/*`) need a role the policy grants
-  write on that pointer. 401 bad/missing token, 403 denied; the
+  (`POST /edits`, `POST /pointers/*`, `POST /plans` — write on
+  `plans`) need a role the policy grants write on that pointer. 401 bad/missing token, 403 denied; the
   verified `sub` is the store log's `writer`. The policy is the store's
   `policy` pointer, seeded from `-policy <file>` at first boot (D-61);
   later changes are authenticated CAS commits. No `-oidc-*` = auth off,
@@ -595,14 +613,24 @@ Its HTTP surface:
   `GET /pointers/{name}`, `GET /pointers/{name}/log?since=<hash>`
   (delta sync over the append-only log), `POST /pointers/{name}`
   (`{from, …}` → 200 + new head, 409 + current on conflict), and
-  `GET /blobs/{hash}` (raw bytes, ETag the hash, envelope in headers —
-  except kind `policy` blobs, which are never served: 404). `GET
+  `GET /blobs/{hash}` (raw bytes, ETag the hash, envelope in headers;
+  gzipped as `application/gzip` for `Accept: application/gzip` — except
+  kind `policy` blobs, which are never served: 404). `GET
   /manifest` serves the `manifest` pointer's blob, re-committed when the
   published feed, streets, module, or services change. With auth on, the
   log endpoint requires a read (an `audit` rule implies it) and redacts
   `writer` unless audit is granted; `GET /permissions` (any valid token)
   returns the caller's effective-permissions projection (cap-authz
   `effective`) — the only client-readable form of the policy.
+- `POST /plans` (store mode) — publish a pick (docs/ROADMAP.md 1,
+  D-74): the body is the pick's network in any serialization. A fresh
+  cap-network registers and validates it (a network with issues is
+  refused, 422) and answers its canonical bytes and plan frame;
+  cap-plans `publish` answers the next published set or the reasons
+  the chain refuses the pick (422). The server commits the network to
+  `plan.<id>`, then the set to `plans`, and the manifest pins it as
+  `plans_hash`. Clients read the set and each pick's network from
+  `/blobs`.
 
 `go test ./...` in `server/` proves the server runs the exact
 module bytes the manifest pins and answers what the browser does.
@@ -680,8 +708,15 @@ File ownership:
   `servedWalks` read the deployment's published documents and refuse
   one that does not answer its pinned hash — `servedNetwork` in the
   first of the page's named readers that assembles, so no module
-  holds a copy only to check it. `servedNetwork` holds the network
-  as the gzipped bytes the server sends (`/network/document`): the
+  holds a copy only to check it. `servedNetwork` takes the page's local
+  date: when the manifest pins a published plan set (`plans_hash`) it
+  asks the plans module which pick is in force (`in_force`) and loads
+  that pick's network by hash (`/blobs/<network_hash>`, gzipped) with
+  the default boundary; before the first pick takes effect it loads
+  the import (`/network/document` and `/network/boundary`). It throws
+  Unavailable when picks are published and the plans module does not
+  assemble — a page never guesses which schedule runs. Either way it
+  holds the network as the gzipped bytes the server sends: the
   page never unzips, parses, or re-encodes it, and every module it
   registers in decodes the stream itself (a heading asks the
   directory's `about` for the network's name). `servedNetworkValue`
@@ -1192,7 +1227,10 @@ cap-network     The network codec capability: load_feed (zip bytes →
                 publish path — deterministic GTFS zip bytes under
                 their content hash, base64 across the JSON seam, with
                 the import's boundary when it is the imported
-                document itself). The domain code lives in the
+                document itself), document (a registered network's
+                canonical bytes, hash and plan frame — what the
+                server stores when it publishes a pick it was sent
+                in any serialization). The domain code lives in the
                 shared transit-codec library.
 cap-rt          The realtime capability: decode — a GTFS-rt protobuf
                 payload (bulk-bytes op 0, the ephemeral bytes an

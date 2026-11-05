@@ -119,7 +119,8 @@ just check                 # both runners — changes touching both sides
 just types                 # regenerate TS bindings (gitignored; build runs it)
 just serve [feed.zip [streets.geojson ["Publisher" [addr]]]]   # sync server on :8080
                            # STORE=dir adds the durable sync store (-store; blobs +
-                           # pointers under dir, docs/FORMATS.md)
+                           # pointers under dir, docs/FORMATS.md; POST /plans
+                           # publishes a pick)
                            # OIDC_ISSUER/OIDC_JWKS_URL/OIDC_AUDIENCE/OIDC_KEY/POLICY=…
                            # turn on JWT auth + policy (D-58..D-61; see
                            # docs/units/cap-authz.md)
@@ -180,6 +181,7 @@ transit-live     THE live document (rt in model vocabulary, the on-time window, 
                  not run — a cancelled trip, a skipped stop — pure)
 transit-sync     THE sync document (EditRecord, Diversion, merge, the record envelope — pure)
 transit-plans    THE service-plan chain (resolve, periods, validity — pure, derived)
+                 and the published plan set (publish, the pick in force)
 transit-streets  THE streets document (canonical: its hash is the streets', not a file's),
                  its import from street layers (GeoJSON: agency exports, TIGER, OSM),
                  the graph over it (snap, route), and walking (the walk table between stops,
@@ -189,8 +191,9 @@ cap-abi          the capability seam (ABI macro, manifest, validator, gen-manife
                  the kernel ops over it — evict, held)
 cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert
                  the capability modules (docs/ARCHITECTURE.md, bus section)
-server/          Go + wazero host over cap-sync, cap-network and cap-streets (the
-                 network, streets and walk table it publishes) and the proxies
+server/          Go + wazero host over cap-sync, cap-network, cap-plans and
+                 cap-streets (the network, picks, streets and walk table it
+                 publishes), cap-authz when auth is on, and the proxies
                  (/rt, /geocode to a Pelias geocoder) — scaffolding, never a
                  domain decision
 web/             Svelte 5 + Vite frontend: / is a picker over the GENERATED UIs
@@ -223,8 +226,9 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
   planner publishes a new zip; the server imports it once
   (cap-network) and publishes the NETWORK — browsers never parse
   GTFS the server has; the manifest pins `network_hash` (with the
-  zip's `feed_hash` as provenance) + the sync module's `wasm_hash`;
-  everyone re-pins and revalidates.
+  zip's `feed_hash` as provenance) + the published picks
+  (`plans_hash`; a page loads the pick in force) + the sync module's
+  `wasm_hash`; everyone re-pins and revalidates.
 - The sync protocol is **LWW per record id + tombstones**, not CRDT
   (deliberate — the terminal authority is the agency scheduling
   system; propose → review → accept). `transit_sync::merge` is a
@@ -291,9 +295,10 @@ e2e, real-data dogfood) are spelled out in `docs/TESTING.md`.
 - The geocoder is an oracle, not a document on the bus — no
   gazetteer capability ("External services").
 - The Go server stays scaffolding; domain logic the server needs
-  becomes a capability module (it hosts cap-sync, and cap-network
-  for the import it publishes, cap-streets for the streets and walk
-  table it publishes).
+  becomes a capability module (it hosts cap-sync, cap-network for
+  the import and the picks it publishes, cap-plans for the published
+  plan set, cap-streets for the streets and walk table it
+  publishes).
 - The bus is the architecture: no capability grows a private
   document format — shared data crosses modules as kernel
   documents addressed by content hash only.

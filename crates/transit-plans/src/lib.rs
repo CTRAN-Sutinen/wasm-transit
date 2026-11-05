@@ -20,7 +20,7 @@ use ts_rs::TS;
 
 /// One plan's chain metadata — the plan set's per-pick distillation
 /// (the `plan` field of each network document).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "cap_plans/")]
 pub struct PlanInfo {
     pub id: String,
@@ -33,7 +33,7 @@ pub struct PlanInfo {
 /// the next pick takes over. The `until` end is DERIVED, never
 /// stored — a plan's date is a target that may move while the pick
 /// is in development, and the chain recomputes the windows.
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "cap_plans/")]
 pub struct PlanPeriod {
     pub id: String,
@@ -45,7 +45,7 @@ pub struct PlanPeriod {
 }
 
 /// A service-plan chain invariant violation.
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "cap_plans/")]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PlanIssue {
@@ -56,6 +56,9 @@ pub enum PlanIssue {
     /// Two plans take effect the same day — a chain is strictly
     /// increasing.
     DuplicateEffectiveDate { date: String, a: String, b: String },
+    /// A standalone import (no plan id) is not a pick: only a
+    /// versioned plan is published.
+    UnversionedPlan,
 }
 
 fn parse_date(s: &str) -> Result<NaiveDate, String> {
@@ -148,4 +151,89 @@ pub fn periods(plans: &[PlanInfo]) -> Vec<PlanPeriod> {
             until: members.get(i + 1).and_then(|n| n.effective_from.clone()),
         })
         .collect()
+}
+
+// ---------------------------------------------------------------------
+// The published plan set (store kind `plans`).
+// ---------------------------------------------------------------------
+
+/// The published plan set's schema version, inside the document
+/// (D-62): every copy anywhere says what it is.
+pub const PUBLISHED_SCHEMA_VERSION: u32 = 1;
+
+/// One published pick: its chain metadata and the network document it
+/// is, by content hash (the store's `plan.<id>` pointer holds the
+/// document itself).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export, export_to = "cap_plans/")]
+pub struct PublishedPlan {
+    pub id: String,
+    pub name: String,
+    /// "YYYY-MM-DD": a published pick is always dated.
+    pub effective_from: String,
+    /// "sha256:<hex>" of the pick's canonical network document.
+    pub network_hash: String,
+}
+
+/// The published plan set: every pick the deployment publishes — the
+/// document the server's `plans` pointer holds and the manifest pins
+/// as `plans_hash`. Every client resolves the pick in force from it.
+/// Canonical: picks sorted by (effective_from, id), one entry per id,
+/// so one set of picks is one byte sequence however it was published.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export, export_to = "cap_plans/")]
+pub struct PublishedPlans {
+    pub schema_version: u32,
+    pub plans: Vec<PublishedPlan>,
+}
+
+impl PublishedPlans {
+    pub fn empty() -> Self {
+        PublishedPlans { schema_version: PUBLISHED_SCHEMA_VERSION, plans: Vec::new() }
+    }
+}
+
+/// Publish a pick: the set with `plan` (re)placed by id and naming
+/// `network_hash`, in canonical order. Refused, with every reason, when
+/// the plan is not a dated pick or the chain it would make is invalid.
+/// The input is never mutated.
+pub fn publish(set: &PublishedPlans, plan: &PlanInfo, network_hash: &str) -> Result<PublishedPlans, Vec<PlanIssue>> {
+    if plan.id.is_empty() {
+        return Err(vec![PlanIssue::UnversionedPlan]);
+    }
+    let Some(from) = &plan.effective_from else {
+        return Err(vec![PlanIssue::PlanMissingEffectiveDate { id: plan.id.clone() }]);
+    };
+    if parse_date(from).is_err() {
+        return Err(vec![PlanIssue::PlanMissingEffectiveDate { id: plan.id.clone() }]);
+    }
+    let mut plans: Vec<PublishedPlan> = set.plans.iter().filter(|p| p.id != plan.id).cloned().collect();
+    plans.push(PublishedPlan {
+        id: plan.id.clone(),
+        name: plan.name.clone(),
+        effective_from: from.clone(),
+        network_hash: network_hash.to_string(),
+    });
+    plans.sort_by(|a, b| (a.effective_from.as_str(), a.id.as_str()).cmp(&(b.effective_from.as_str(), b.id.as_str())));
+    let infos: Vec<PlanInfo> = plans
+        .iter()
+        .map(|p| PlanInfo { id: p.id.clone(), name: p.name.clone(), effective_from: Some(p.effective_from.clone()) })
+        .collect();
+    let issues = validate(&infos);
+    if !issues.is_empty() {
+        return Err(issues);
+    }
+    Ok(PublishedPlans { schema_version: PUBLISHED_SCHEMA_VERSION, plans })
+}
+
+/// The published pick in force on `date` — the chain's `resolve` over
+/// the set, answering the pick (and so its network). None before the
+/// first pick takes effect.
+pub fn in_force(set: &PublishedPlans, date: NaiveDate) -> Result<Option<&PublishedPlan>, String> {
+    let infos: Vec<PlanInfo> = set
+        .plans
+        .iter()
+        .map(|p| PlanInfo { id: p.id.clone(), name: p.name.clone(), effective_from: Some(p.effective_from.clone()) })
+        .collect();
+    Ok(resolve(&infos, date)?.and_then(|id| set.plans.iter().find(|p| p.id == id)))
 }

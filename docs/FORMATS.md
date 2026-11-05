@@ -4,9 +4,16 @@ The at-rest contract of the sync store
 (`docs/units/sync-persistence.md`). Everything here is readable
 without any wasm: the blobs are plain bytes, the envelopes and logs
 plain JSON, and the hash is sha256. The JSON Schemas generated from
-the serde types (published with the registry's evidence) pin the
-*document payloads*; this file pins the *storage envelope* and the
-invariants the schema cannot say.
+the serde types pin the *document payloads*: `just caps` publishes
+them in the registry as `registry/schemas/<kind>.v<N>.schema.json`,
+each with a worked example (`registry/examples/<kind>.v<N>.json`),
+indexed by `registry/documents.json` — each entry's bus `kind`, its
+`store_kind` (the envelope's `kind`, when the store persists it), its
+`schema_version`, and the files' hashes. A reader maps a blob's
+envelope (`kind`, `schema_version`) to its schema there. This file
+pins the *storage envelope* and the invariants the schema cannot say.
+The manifest is the Go host's own document and has no generated
+schema; its shape is below.
 
 ## Addressing and hash
 
@@ -31,7 +38,9 @@ invariants the schema cannot say.
 ```
 
 - `kind` — one of `network_document`, `edit_records`,
-  `diversion_draft`, `manifest`, `plans`, `policy`.
+  `diversion_draft`, `manifest`, `plans`, `policy`. `produced_by` on a
+  `network_document` is `cap-network@sha256:…`; on `plans`,
+  `cap-plans@sha256:…`.
 - `schema_version` — the payload schema's version; a reader pins a
   version and ignores newer ones, and a writer bumps it deliberately.
   Migrations happen at receive, never at read.
@@ -49,6 +58,12 @@ commit:
 
 - The pointer's current value is the last record's `to` — there is no
   separate pointer file.
+- A pointer's name is a file name: letters, digits, `.`, `_` and `-`,
+  starting with a letter or digit, at most 128 bytes. The store
+  refuses any other name.
+- The pointers the server keeps: `edits`, `policy`, `manifest`,
+  `plans` (the published plan set), and `plan.<id>` per published pick
+  (its network document; every revision stays in the log).
 - `from` is the hash the writer last saw; a commit appends only when
   the last `to` equals it (empty `from` = the pointer must not exist
   yet). A failed CAS changes nothing.
@@ -63,9 +78,11 @@ commit:
   server processes on one store cannot interleave a commit.
 
 A commit is two fsync'd writes: the blob (+ sidecar), then one log
-record. A crash between them orphans the blob; GC (at `Open` and
-after commits) deletes blobs no log record names and older than the
-grace period (24 h).
+record. A crash between them orphans the blob; GC deletes blobs no log
+record names and older than the grace period (24 h) — at `Open`, and
+every `-gc-interval` (default 1 h) while the server runs. A GC pass
+holds the store lock a commit holds, so it never lands between a
+commit's two writes.
 
 ## The HTTP surface (store mode, `-store <dir>`)
 
@@ -82,7 +99,15 @@ grace period (24 h).
   `{"from", "document": <value>}` verbatim.
 - `GET /blobs/{hash}` → the raw bytes; ETag is the full `sha256:…`
   hash (304 on match); `X-Document-Kind` and `X-Schema-Version` carry
-  the envelope.
+  the envelope. With `Accept: application/gzip` the same bytes come
+  gzipped as `Content-Type: application/gzip` (transport only, never
+  `Content-Encoding`), for a page that registers a document
+  compressed. A `policy` blob is never served.
+- `POST /plans` body: a network document, any serialization, gzipped
+  or not → `200 {plan_id, network_hash, plans_hash, warnings}`, `422
+  {issues}` (the network does not validate, or the pick would break
+  the chain), or `400`. The server commits the module's canonical
+  network to `plan.<id>`, then cap-plans' next set to `plans`.
 - `/edits` is the `edit_records` specialization: `GET` reads the head
   blob, `POST` runs the merge with a CAS retry loop, so the legacy
   whole-document protocol is unchanged.
@@ -119,5 +144,17 @@ and, after a second commit, log record
 `{"seq":2,"from":"sha256:<first>","to":"sha256:<this>","kind":"edit_records","schema_version":1,"produced_by":"cap-sync@sha256:<hex>","writer":"anonymous","policy":null,"at_ms":2000}`.
 
 A `manifest` blob is the manifest object itself
-(`{"network_hash","feed_hash","feed_version","streets_hash","walks_hash","wasm_hash","generated_at","publisher","services"}`),
+(`{"network_hash","feed_hash","feed_version","streets_hash","walks_hash","wasm_hash","authz_hash","policy_hash","plans_hash","generated_at","publisher","services"}`,
+the optional ones omitted when empty),
 sidecar `{"kind":"manifest","schema_version":1,"produced_by":"server"}`.
+
+A `plans` blob is the published plan set, its version inside it
+(D-62), picks in (effective_from, id) order:
+
+```json
+{"schema_version":1,"plans":[{"id":"fall-2026","name":"Fall 2026 pick","effective_from":"2026-09-13","network_hash":"sha256:5206f419…"},{"id":"winter-2027","name":"Winter 2027 pick","effective_from":"2027-01-10","network_hash":"sha256:d122b6af…"}]}
+```
+
+with sidecar `{"kind":"plans","schema_version":1,"produced_by":"cap-plans@sha256:<hex>"}`;
+each `network_hash` is the head of that pick's `plan.<id>` pointer, a
+`network_document` blob.

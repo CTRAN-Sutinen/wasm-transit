@@ -10,7 +10,7 @@ use crate::model::{RouteId, TripId};
 pub type OperatorId = String;
 
 /// An agency that runs service.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Operator {
     pub name: String,
@@ -37,7 +37,7 @@ pub struct Operator {
 }
 
 /// Whether contactless bank cards are accepted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum Contactless {
@@ -47,7 +47,7 @@ pub enum Contactless {
 }
 
 /// Who publishes the dataset, and what it covers.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Publisher {
     pub name: String,
@@ -76,7 +76,7 @@ pub struct Publisher {
 
 /// What an attribution credits: the whole dataset (`None` on the
 /// attribution), or one operator, route, or trip.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub enum AttributionScope {
@@ -86,7 +86,7 @@ pub enum AttributionScope {
 }
 
 /// An organization credited for the data.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Attribution {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -121,7 +121,7 @@ pub struct Attribution {
 /// "stop_name"); the text is found by record (`record`, and
 /// `sub_record` where a record needs two keys) or by its value in the
 /// original language.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Translation {
     pub table: String,

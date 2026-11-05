@@ -36,7 +36,7 @@ use crate::model::{
 
 /// One change to a network document. Upserts insert or replace the
 /// whole entity under its id; removes refuse while referenced.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(tag = "edit", rename_all = "snake_case")]
 pub enum NetworkEdit {
@@ -386,7 +386,7 @@ pub enum NetworkEdit {
 }
 
 /// A day of the week, as a service type's rule names it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum Day {
@@ -400,7 +400,7 @@ pub enum Day {
 }
 
 /// An entity a change created, with the id it was given.
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct CreatedEntity {
     /// stop | route | pattern | service_type | pattern_trips | block | trip
@@ -410,7 +410,7 @@ pub struct CreatedEntity {
 
 /// Why a change did not apply: the edit's position in the list and
 /// what it collided with. The input document is untouched.
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct EditError {
     pub index: usize,

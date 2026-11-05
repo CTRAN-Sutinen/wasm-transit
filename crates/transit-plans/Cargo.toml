@@ -8,7 +8,9 @@ license.workspace = true
 [dependencies]
 serde = { workspace = true }
 ts-rs = { workspace = true }
+schemars = { workspace = true }
 chrono = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+proptest = "1"

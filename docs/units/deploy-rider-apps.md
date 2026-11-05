@@ -30,7 +30,9 @@ units it depends on are:
   - A new `network_hash` re-pins without a reload: the worker
     fetches and registers the new network, the boards re-answer, and
     the old network leaves every registry through the eviction op's
-    keep-set.
+    keep-set. So does a new pick in force — a new `plans_hash`, or the
+    page's date crossing a pick's effective date (`servedNetwork`
+    resolves the pick only when it loads).
   - A new build (a module hash, the kernel, the app shell) downloads
     in the background and waits. A rider's page applies it at the
     next cold start or navigation, or when the rider accepts "a new

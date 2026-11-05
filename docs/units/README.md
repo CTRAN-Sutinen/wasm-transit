@@ -38,7 +38,7 @@ archive — nothing here records what is finished.
 |---|---|
 | [host-discipline.md](host-discipline.md) | the composition layer: one op caller, flow maps as data, the journal, replay |
 | [wire-time-assembly.md](wire-time-assembly.md) | per-user selection over the manifest; layouts as documents |
-| [sync-persistence.md](sync-persistence.md) | self-describing blobs + pointers, pointer CAS, the store reflog, TLC-checked, generated schemas + `docs/FORMATS.md` |
+| [sync-persistence.md](sync-persistence.md) | publishing a pick from the planner, withdrawing one, the pick in force as GTFS, the device journal on the store |
 | [cap-authz.md](cap-authz.md) | JWT verification at the server, the policy document on the store, cap-authz fail-closed |
 | [runtime-cost-gate.md](runtime-cost-gate.md) | a ratchet on per-module memory and registration time |
 | [module-runtime.md](module-runtime.md) | the page never parses a published document; service-design's keep-set; the C-TRAN bounded-session record and the ceiling it sets |

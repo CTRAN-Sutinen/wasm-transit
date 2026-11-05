@@ -24,7 +24,7 @@ pub const SCHEMA_VERSION: u32 = 1;
 /// audit read (the pointer log WITH writer identities — the only
 /// place a user identity leaves the store). `"*"` in a rule matches
 /// all.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "lowercase")]
 pub enum Action {
@@ -48,7 +48,7 @@ impl Action {
 /// The verified identity a host hands over after authenticating the
 /// token: the subject and the roles read from the configured claim
 /// path (D-59). Nothing else is trusted.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Identity {
     pub sub: String,
@@ -59,7 +59,7 @@ pub struct Identity {
 /// of `actions` on any of `pointers`. `"*"` matches all actions /
 /// pointers. A rule with EMPTY `roles` never matches — an empty
 /// intersection is not an intersection.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Rule {
     pub name: String,
@@ -82,7 +82,7 @@ impl Rule {
 
 /// The policy document: a versioned rule list, evaluated in order.
 /// Fail-closed by construction — see `authorize`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Policy {
     pub schema_version: u32,
@@ -97,7 +97,7 @@ impl Policy {
 }
 
 /// The answer to one authorize question.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Decision {
     pub allow: bool,
@@ -142,7 +142,7 @@ pub fn authorize(policy: &Policy, identity: &Identity, action: Action, pointer: 
 
 /// One effective capability entry: the actions an identity may perform
 /// on one pointer (`"*"` = all pointers).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Capability {
     pub pointer: String,
@@ -154,7 +154,7 @@ pub struct Capability {
 /// rule. It never contains other roles, other rules, or the policy's
 /// structure beyond what applies to this identity, so a client can
 /// drive its UI from it without learning anything about anyone else.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct EffectivePolicy {
     pub roles: Vec<String>,

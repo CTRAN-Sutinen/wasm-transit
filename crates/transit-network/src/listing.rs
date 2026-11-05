@@ -25,7 +25,7 @@ use crate::model::{Departs, Network};
 /// One entity as a list shows it. `context` is what places it (a
 /// pattern's route, a schedule's pattern and service type); `trips`
 /// is what a schedule runs or a block chains.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct EntityRow {
     pub id: String,
@@ -41,7 +41,7 @@ pub struct EntityRow {
 }
 
 /// One service type's schedules on a route.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct PatternTripsGroup {
     pub service_type: String,
@@ -53,7 +53,7 @@ pub struct PatternTripsGroup {
 /// visit order, pattern by pattern), its pattern trips by service
 /// type (the design axis), and its patterns by direction (what a
 /// timetable is asked for).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct RouteDetail {
     pub patterns: Vec<EntityRow>,
@@ -64,7 +64,7 @@ pub struct RouteDetail {
 
 /// One direction's patterns on a route. `direction` is `None` for the
 /// patterns placed in none (listed last, when there are any).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct DirectionGroup {
     pub direction: Option<String>,
@@ -81,7 +81,7 @@ pub struct DirectionGroup {
 /// that differ only by the bay they use read as one. Any other
 /// difference (a branch, a stop served only at some hours, a short
 /// trip) is its own variant.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct RouteVariant {
     /// "First place → last place"; when another variant of the
@@ -101,7 +101,7 @@ pub struct RouteVariant {
 /// One place on a variant: the station (or the stop, when it is in no
 /// station the network holds), and the stops its patterns use there
 /// (a station's bays, in pattern order).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct VariantStop {
     pub place: String,
@@ -110,7 +110,7 @@ pub struct VariantStop {
 }
 
 /// A timetable: one route, one direction, one service type.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Timetable {
     pub route: String,
@@ -138,7 +138,7 @@ pub struct Timetable {
 /// A baseline trip instance the proposal no longer runs. A trip the
 /// proposal keeps under a new start is not removed — it reads
 /// retimed (`TimetableTrip::retimed_from_secs`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct RemovedTrip {
     pub trip: String,
@@ -148,7 +148,7 @@ pub struct RemovedTrip {
 }
 
 /// One timetable column.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct TimetableStop {
     pub stop: String,
@@ -160,7 +160,7 @@ pub struct TimetableStop {
 
 /// One pattern in a timetable, with the pattern trips that run it
 /// under the service type.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct TimetablePattern {
     pub pattern: String,
@@ -174,7 +174,7 @@ pub struct TimetablePattern {
 /// One trip instance: its trip's id, its pattern trips, start and
 /// pattern, the block carrying it, and its departure at each column
 /// (`None` where its pattern does not stop).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct TimetableTrip {
     pub trip: String,
@@ -196,7 +196,7 @@ pub struct TimetableTrip {
 }
 
 /// A stop's composition: the routes whose patterns visit it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct StopDetail {
     pub routes: Vec<EntityRow>,
@@ -652,7 +652,7 @@ pub fn stop_detail(network: &Network, stop: &str) -> Option<StopDetail> {
 /// it from a location: the stop's identity, name, point and
 /// walking-group structure (the same fields a `stops` row carries),
 /// and how far it is.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct NearbyStop {
     pub stop_id: String,

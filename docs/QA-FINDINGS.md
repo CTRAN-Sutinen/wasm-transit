@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-94**. A
+IDs are never reused; the next new finding is **QAF-96**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -244,6 +244,31 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   C-TRAN).
   Pin: the same Winter 2027 fork.
   Blocked: D-41.
+  Re-confirmed: 2026-11-05, the import published as a winter-2027
+  pick runs nothing on its date (QAF-95).
+
+## Publishing
+
+- **QAF-94 OP GAP / UI GAP** — nothing publishes a pick but a
+  hand-built `POST /plans`. A planner's pick is an `apply` answer
+  (cap-author `set_plan`); `caps-run` has no step that sends an
+  answer's network to the server, so a session extracts it with a
+  script, and the service-design UI has no publish gesture at all.
+  Pin: `caps-run author --load 256:<GET /network/document> --op
+  '{"op":"apply","network_hash":"$load.network_hash","edits":[{"edit":"set_plan","plan":{"id":"fall-2026","name":"Fall 2026 pick","effective_from":"2026-09-13"}}]}'`
+  answers the pick (`sha256:5206f419…` on C-TRAN); getting it to
+  `POST /plans` takes glue.
+- **QAF-95 DEFECT** — a pick dated after its service types' calendars
+  end publishes and governs a day that runs nothing. On C-TRAN (the
+  import's calendar ends 2027-01-09) the import framed as
+  `winter-2027` from 2027-01-10 publishes with only a
+  `no_service_in_plan_period` warning; `in_force` on 2027-01-10
+  answers it, so every rider page loads a network with no service.
+  Blocked: D-76 (and D-41, what carries a calendar into a fork).
+  Pin: `POST /plans` with that pick → 200 with the warning;
+  `caps-run plans --ask <server>/blobs/<plans_hash> --op
+  '{"op":"in_force","published":"$ask","date":"2027-01-10"}'` →
+  `winter-2027`.
 
 ## The rider's questions
 

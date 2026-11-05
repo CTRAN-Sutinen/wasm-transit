@@ -30,14 +30,14 @@ use ts_rs::TS;
 use crate::StreetError;
 
 /// The street network: its ways, in canonical order.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Streets {
     pub ways: Vec<Way>,
 }
 
 /// One street line.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Way {
     /// `[lat, lon]` in microdegrees.
@@ -54,7 +54,7 @@ pub struct Way {
 
 /// What kind of street a way is (D-30). What each mode may use is a
 /// mode profile's question (D-26), never the import's.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum StreetClass {

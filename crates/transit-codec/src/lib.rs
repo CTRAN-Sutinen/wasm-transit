@@ -64,7 +64,7 @@ use transit_network::{
 /// serialization, never planner intent. Emitted with the imported
 /// document; `Boundary::default()` for an authored one (stop_sequence
 /// 1..=n, a frequency trip's rows based at its first band).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Boundary {
     /// Per trip, the feed's stop_sequence numbers — kept only where
@@ -97,7 +97,7 @@ pub struct Boundary {
 /// One thing the import could not carry into the document. Reported,
 /// never silent — the planner needs to see what the bootstrap did to
 /// their feed.
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ImportNote {
@@ -120,7 +120,7 @@ pub enum ImportNote {
 
 /// What [`import`] hands back: the document, its boundary residue,
 /// and the notes describing what could not cross.
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct ImportOutcome {
     pub network: Network,

@@ -48,7 +48,7 @@ pub type AlignmentId = String;
 /// model data — `lat` first, matching `Stop`'s field order. (GeoJSON
 /// views at the boundary reorder to [lon, lat]; the model never
 /// stores GeoJSON order.)
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Coord {
     pub lat: f64,
@@ -60,7 +60,7 @@ pub struct Coord {
 /// materialization only uses it for drawing, never for scheduling.
 /// Patterns run one by reference ([`Pattern::alignment`]); any number
 /// may share one, and one no pattern runs still stands.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Alignment {
     pub points: Vec<AlignmentPoint>,
@@ -68,7 +68,7 @@ pub struct Alignment {
 
 /// One point of an [`Alignment`], with the distance along it where
 /// one was published (in the units of the pattern stops' distances).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct AlignmentPoint {
     pub lat: f64,
@@ -127,7 +127,7 @@ pub mod iso_opt_date {
 /// compatibility: no DST transition occurs near noon, so offsets
 /// stay unambiguous on change days. The authored model makes the
 /// convention *explicit* where GTFS leaves it to inference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum Anchor {
@@ -144,7 +144,7 @@ impl Default for Anchor {
 /// A stop as a planner authors it: one name, one location, optional
 /// parent (platform-in-station groupings) — a stop riders board at,
 /// or a station grouping stops.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Stop {
     pub name: String,
@@ -170,7 +170,7 @@ pub struct Stop {
 /// A route as a planner authors it: its public name (the short one
 /// riders see, "12"), its long name ("Lincoln"), a closed mode set.
 /// Display it by [`Route::label`].
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Route {
     /// The short public name; empty for a route known only by its
@@ -244,7 +244,7 @@ impl Route {
 
 /// Whether, and how, riders may board or alight: at a stop (pickup,
 /// drop-off) or anywhere along the line (continuous stopping).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum StopRule {
@@ -264,14 +264,14 @@ impl StopRule {
 }
 
 /// One direction of a route, as a planner names it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Direction {
     pub name: String,
 }
 
 /// Vehicle modes as a domain concept, not GTFS's numeric codes.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
@@ -290,7 +290,7 @@ pub enum Mode {
 }
 
 /// One stop visit within a pattern.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct PatternStop {
     pub stop: StopId,
@@ -341,7 +341,7 @@ pub struct PatternStop {
 /// `at_timepoints` is cumulative seconds from the first timepoint at
 /// each of the pattern's timepoints, in pattern order (the first
 /// entry is 0).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct TimingProfile {
     pub start_secs: u32,
@@ -361,7 +361,7 @@ impl TimingProfile {
 /// runs a pattern. Unknown fields are refused, so a document written
 /// before alignments (an inline `path`) migrates rather than losing
 /// its line (`migrate.rs`).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(deny_unknown_fields)]
 pub struct Pattern {
@@ -403,7 +403,7 @@ impl Pattern {
 /// Weekday, Saturday, Sunday, a holiday — linked to the days it
 /// runs by its calendar rule. This, not the day-of-month, is the
 /// axis planners design on (GTFS calls it service_id).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct ServiceType {
     /// Display name ("Weekday", "Saturday service", …).
@@ -416,7 +416,7 @@ pub struct ServiceType {
 /// Which days a service type runs on, as authored rules rather than
 /// GTFS exception rows: weekday flags plus date ranges, with explicit
 /// per-date exceptions that always win.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct CalendarRule {
     #[serde(default)]
@@ -443,27 +443,30 @@ impl CalendarRule {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct DateRange {
     #[serde(with = "iso_date")]
+    #[schemars(with = "chrono::NaiveDate")]
     #[ts(type = "string")]
     pub start: NaiveDate,
     #[serde(with = "iso_date")]
+    #[schemars(with = "chrono::NaiveDate")]
     #[ts(type = "string")]
     pub end: NaiveDate,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct CalendarException {
     #[serde(with = "iso_date")]
+    #[schemars(with = "chrono::NaiveDate")]
     #[ts(type = "string")]
     pub date: NaiveDate,
     pub state: DayState,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum DayState {
@@ -476,7 +479,7 @@ pub enum DayState {
 
 /// Authored weekday flags. A rule with no flags still runs on dates
 /// explicitly `Added` (special-event service) — see `runs_on`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct WeekdaySet {
     #[serde(default)]
@@ -536,7 +539,7 @@ impl WeekdaySet {
 }
 
 /// When a trip departs: once, or as a frequency.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Departs {
@@ -585,7 +588,7 @@ impl Departs {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct HeadwayBand {
     pub start_secs: u32,
@@ -597,7 +600,7 @@ pub struct HeadwayBand {
 /// start. `None` = not scheduled there (the stop materializes between
 /// its scheduled neighbours). The first arrival is 0; the first and
 /// last stops, and every timepoint, carry both.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct StopOffset {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -610,7 +613,7 @@ pub struct StopOffset {
 
 /// One trip: the agency's id, when it departs, and its own time at
 /// every stop of its pattern (`times[i]` is `pattern.stops[i]`).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Trip {
     pub id: TripId,
@@ -648,7 +651,7 @@ impl Trip {
 /// dispatch consume derives from these. Not a planner's "schedule":
 /// the timetable a planner reads is a route's direction under one
 /// service type, across all its patterns (`listing::timetable`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct PatternTrips {
     pub pattern: PatternId,
@@ -660,7 +663,7 @@ pub struct PatternTrips {
 /// them. Authored (runcutting), not derived from trip rows. A block
 /// may hold trips of service types that never share a day; on each
 /// day it is the trips running that day, in this order.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Block {
     pub trips: Vec<TripRef>,
@@ -670,14 +673,14 @@ pub struct Block {
 /// A block's reference to a trip, by id. A block runs a trip whole
 /// (as GTFS has it): a frequency trip in a block is every one of its
 /// instances, back to back.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct TripRef {
     pub trip: TripId,
 }
 
 /// Recovery time between two trips of a block.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Layover {
     /// Index into the block's trips: the layover follows that trip.
@@ -694,7 +697,7 @@ pub struct Layover {
 /// pick is one of these documents, effective from its service
 /// change date until superseded by the next. A document without
 /// plan metadata is unversioned (e.g. a fresh GTFS import).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct PlanMeta {
     /// The plan's identity — the sync key (LWW per plan). Empty on
@@ -707,13 +710,14 @@ pub struct PlanMeta {
     /// The service change date this plan takes effect, "YYYY-MM-DD".
     /// None on unversioned documents; a plan in a chain must have one.
     #[serde(default, with = "iso_opt_date", skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<chrono::NaiveDate>")]
     #[ts(type = "string | null")]
     pub effective_from: Option<NaiveDate>,
 }
 
 /// The authored network document. BTreeMap-keyed so serialization is
 /// canonical and per-entity sync falls out later.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Network {
     pub name: String,

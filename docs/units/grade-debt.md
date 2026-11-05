@@ -11,9 +11,6 @@ empty.
   path is the county soak (`just soak`, COUNTY_GEOJSON), which
   needs the licensed county export. Done when a soak session runs
   and its findings are logged.
-- **cap-sync and cap-plans** — no real-data session has synced an
-  edit document or resolved a real plan chain through the modules.
-  Rides with [sync-persistence.md](sync-persistence.md).
 
 ## Not read by a UI
 
@@ -32,6 +29,9 @@ UI that reads the op pays the line instead.
   ([ui-runcut.md](ui-runcut.md)).
 - cap-calendar (`active_services`, `service_dates`) — no UI asks
   which services run on a date.
+- Publishing a pick: cap-plans `publish` and cap-network `document`
+  run behind the server's `POST /plans`, but no page publishes
+  (QAF-94, [sync-persistence.md](sync-persistence.md)).
 - network `validate` warnings — service-design shows the issues
   and `apply`'s warnings, not `validate`'s.
 - analysis `network_stats` — no UI renders it (the window, the

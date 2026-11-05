@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 serde = { workspace = true }
 ts-rs = { workspace = true }
+schemars = { workspace = true }
 chrono = { workspace = true }
 transit-network = { path = "../transit-network" }
 # The whole-spec feed layer (src/feed.rs): zip members, CSV tables,

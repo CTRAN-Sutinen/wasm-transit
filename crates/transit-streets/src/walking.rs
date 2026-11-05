@@ -33,7 +33,7 @@ pub fn walkable(class: StreetClass) -> bool {
 }
 
 /// One walk: `from` to `to`, in seconds.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Walk {
     pub from: String,
@@ -44,7 +44,7 @@ pub struct Walk {
 /// One walk from a point to a stop, and the path the rider walks: the
 /// point, its street, along the streets to the stop's street, the
 /// stop.
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct PointWalk {
     pub stop_id: String,
@@ -54,7 +54,7 @@ pub struct PointWalk {
 
 /// The walk from a point straight to another, and its path (empty
 /// when the walk was given by its seconds alone).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct DirectWalk {
     pub walk_secs: u32,
@@ -65,7 +65,7 @@ pub struct DirectWalk {
 /// Every walk between a network's stops within the limit, and what
 /// it was derived from: the streets and network documents' hashes,
 /// the speed, the limit. Walks in (from, to) order; symmetric.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct WalkTable {
     pub streets_hash: String,

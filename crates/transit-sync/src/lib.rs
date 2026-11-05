@@ -21,7 +21,7 @@ use ts_rs::TS;
 use serde::{Deserialize, Serialize};
 
 /// One vertex of a drawn detour polyline.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct DetourPoint {
     pub lat: f64,
@@ -34,7 +34,7 @@ pub struct DetourPoint {
 /// the GTFS codec (GTFS is a serialization spec for external data
 /// sharing; this document never crosses that boundary). Its fields
 /// reference routes and stops by the ids the network model carries.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Diversion {
     pub id: String,
@@ -58,9 +58,11 @@ pub struct Diversion {
     #[serde(default)]
     pub added_secs: u32,
     #[serde(with = "iso_date")]
+    #[schemars(with = "chrono::NaiveDate")]
     #[ts(type = "string")]
     pub start_date: chrono::NaiveDate,
     #[serde(with = "iso_date")]
+    #[schemars(with = "chrono::NaiveDate")]
     #[ts(type = "string")]
     pub end_date: chrono::NaiveDate,
 }
@@ -96,7 +98,7 @@ mod iso_date {
 /// Lifecycle of an edit record. `retired` is the tombstone: the record
 /// stays in the document (sync needs to see the deletion), but it is
 /// no longer in force and the UI hides it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "lowercase")]
 pub enum EditStatus {
@@ -124,7 +126,7 @@ impl EditStatus {
 /// is the domain content; the envelope fields are what any sync
 /// partner needs to merge, order, and retire records without
 /// understanding the domain.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct EditRecord {
     pub id: String,
@@ -144,7 +146,7 @@ pub struct EditRecord {
 /// report only carries the verdict. The verdict is model-native,
 /// against an authored network document (transit-dispatch); nothing
 /// validates an edit against a feed.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct EditReport {
     pub id: String,
@@ -160,7 +162,7 @@ pub struct EditReport {
 /// whom, when. Schedules change by artifact replacement — the planner
 /// persona publishes a new manifest with a new `feed_hash`; everyone
 /// else re-pins and revalidates their edits against it.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct FeedManifest {
     /// Content hash (sha256) of the authoritative GTFS zip.
@@ -312,7 +314,7 @@ pub const SCHEMA_VERSION: u32 = 1;
 /// The kind of a stored document, as its envelope sidecar spells it
 /// (`docs/FORMATS.md`). GTFS stays the interchange for published
 /// products; these kinds cover what GTFS cannot express.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum DocumentKind {
@@ -328,7 +330,7 @@ pub enum DocumentKind {
 /// bytes, the envelope says how to read them. `produced_by` pins the
 /// producing module's hash (`cap-sync@sha256:…`), or `server` for
 /// host-owned documents.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Envelope {
     pub kind: DocumentKind,

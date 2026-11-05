@@ -14,7 +14,8 @@
 // log record, appended only when the log's last `to` equals the
 // writer's `from` (pointer CAS). A crash between the writes orphans the
 // blob; GC deletes blobs no log record names and older than the grace
-// period. The store never mints document identity for bus documents:
+// period — at Open, and on the Sweep cadence while the store is open.
+// Pointer names are file names (ValidPointerName). The store never mints document identity for bus documents:
 // callers pass the module-produced hash and the store asserts
 // sha256(bytes) == hash, failing loudly on mismatch.
 //
@@ -46,7 +47,7 @@ const OrphanGraceMs = 24 * 3600 * 1000
 // Envelope is the typed sidecar stored next to every blob: the hash
 // names the bytes, the envelope says how to read them.
 type Envelope struct {
-	Kind          string `json:"kind"` // network_document, edit_records, diversion_draft, manifest, plans
+	Kind          string `json:"kind"` // network_document, edit_records, diversion_draft, manifest, plans, policy
 	SchemaVersion uint32 `json:"schema_version"`
 	ProducedBy    string `json:"produced_by"` // "cap-sync@sha256:<hex>", or "server" for host-owned documents
 }
@@ -179,6 +180,26 @@ func (s *Store) loadLogs() error {
 	return nil
 }
 
+// ValidPointerName reports whether name may be a pointer: a file name
+// under pointers/ that cannot leave it or hide as a dotfile — letters,
+// digits, '.', '_' and '-', starting with a letter or digit, at most
+// 128 bytes.
+func ValidPointerName(name string) bool {
+	if name == "" || len(name) > 128 {
+		return false
+	}
+	for i, c := range name {
+		alnum := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+		if i == 0 && !alnum {
+			return false
+		}
+		if !alnum && c != '.' && c != '_' && c != '-' {
+			return false
+		}
+	}
+	return true
+}
+
 // ParseHash validates "sha256:<hex>" and returns the hex.
 func ParseHash(hash string) (string, error) {
 	if !strings.HasPrefix(hash, "sha256:") {
@@ -308,6 +329,9 @@ func (s *Store) Head(name string) (Head, bool, error) {
 // written first, then ONE log record is appended (the commit); the
 // in-memory head follows.
 func (s *Store) CAS(name, from string, data []byte, env Envelope, wantHash, writer string, atMs int64) (string, int64, error) {
+	if !ValidPointerName(name) {
+		return "", 0, fmt.Errorf("store: %q is not a pointer name", name)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st, exists := s.logs[name]
@@ -430,4 +454,33 @@ func (s *Store) GC(graceMs int64) (int, error) {
 		removed++
 	}
 	return removed, nil
+}
+
+// Sweep runs GC every interval in the background until the returned
+// stop is called (stop is idempotent and waits for a running pass).
+// GC at Open alone leaves a long-running server's crash-torn orphans in
+// place until the next restart; the sweep is the cadence. A pass holds
+// the store lock like a commit does, so it never lands between a
+// commit's blob write and its log append.
+func (s *Store) Sweep(interval time.Duration, graceMs int64) (stop func()) {
+	done := make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				s.GC(graceMs)
+			}
+		}
+	}()
+	var once sync.Once
+	return func() {
+		once.Do(func() { close(done) })
+		<-finished
+	}
 }

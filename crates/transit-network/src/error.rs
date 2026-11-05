@@ -10,7 +10,7 @@ use thiserror::Error;
 /// failure modes of materialization. One enum so callers (and the
 /// wasm seam) match on a single type. Serializes as the payload of
 /// the `network_validate` op.
-#[derive(Debug, Clone, PartialEq, Error, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Error, Serialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum NetworkError {
@@ -168,7 +168,7 @@ pub enum NetworkError {
 /// materialization still succeeds, export still publishes — but that
 /// the planner almost certainly did not intend. Reported beside the
 /// issues so nothing about a document goes silent; never a gate.
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum NetworkWarning {

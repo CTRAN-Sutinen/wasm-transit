@@ -239,3 +239,84 @@ func TestGetBlobRoundTrip(t *testing.T) {
 		t.Fatalf("missing blob: %v", err)
 	}
 }
+
+// The GC cadence: a store that stays open (the server runs for weeks)
+// still collects crash-torn orphans — a periodic in-process sweep, not
+// only the sweep at Open. The sweep keeps every guarantee of GC: it
+// never removes a referenced blob or one inside the grace period, and
+// commits racing it stay intact (go test -race).
+func TestSweepCollectsAgedOrphansWhileOpen(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	h1, _, err := s.CAS("edits", "", []byte(`[1]`), env("edit_records"), "", "w", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aged, _ := s.PutBlob([]byte(`["aged"]`), env("edit_records"), "")
+	fresh, _ := s.PutBlob([]byte(`["fresh"]`), env("edit_records"), "")
+	old := time.Now().Add(-48 * time.Hour)
+	h, _ := ParseHash(aged)
+	os.Chtimes(filepath.Join(dir, "blobs", h), old, old)
+	os.Chtimes(filepath.Join(dir, "blobs", h+".meta.json"), old, old)
+
+	stop := s.Sweep(5*time.Millisecond, OrphanGraceMs)
+	defer stop()
+
+	// Commits race the sweep: every committed head stays readable.
+	var wg sync.WaitGroup
+	for w := 0; w < 4; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < 20; i++ {
+				head, _, _ := s.Head("edits")
+				body := []byte(`[` + strings.Repeat("0", w+1) + `,` + strings.Repeat("1", i+1) + `]`)
+				s.CAS("edits", head.Hash, body, env("edit_records"), "", "w", int64(i))
+			}
+		}(w)
+	}
+	wg.Wait()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, _, err := s.GetBlob(aged); errors.Is(err, ErrNotFound) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the sweep never collected the aged orphan")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, _, err := s.GetBlob(fresh); err != nil {
+		t.Fatalf("an orphan inside the grace period must survive the sweep: %v", err)
+	}
+	if _, _, err := s.GetBlob(h1); err != nil {
+		t.Fatalf("a referenced blob must survive the sweep: %v", err)
+	}
+	entries, _, _ := s.Log("edits", "")
+	for _, e := range entries {
+		if _, _, err := s.GetBlob(e.To); err != nil {
+			t.Fatalf("log entry %d names a blob the sweep removed: %v", e.Seq, err)
+		}
+	}
+	stop()
+	stop() // idempotent
+}
+
+// A pointer name is a file name under pointers/: only names that cannot
+// leave that directory (or hide as a dotfile) are pointers. Plan ids
+// become pointer names (plan.<id>), so the store refuses the rest
+// rather than trusting every caller to.
+func TestPointerNamesStayInsideTheStore(t *testing.T) {
+	s := open(t, t.TempDir())
+	for _, bad := range []string{"", ".", "..", "../x", "a/b", `a\b`, ".hidden", "a b", strings.Repeat("x", 129)} {
+		if _, _, err := s.CAS(bad, "", []byte(`[]`), env("edit_records"), "", "w", 0); err == nil {
+			t.Fatalf("pointer name %q must be refused", bad)
+		}
+	}
+	for _, good := range []string{"edits", "manifest", "plans", "plan.3f2c9a1e-0b7d-4c55-9e0a-1d2f3a4b5c6d", "plan.fall_2026"} {
+		if _, _, err := s.CAS(good, "", []byte(`[]`), env("edit_records"), "", "w", 0); err != nil {
+			t.Fatalf("pointer name %q: %v", good, err)
+		}
+	}
+}

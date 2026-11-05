@@ -25,7 +25,7 @@ use crate::error::NetworkError;
 use crate::model::{Departs, Network, Pattern, Trip};
 
 /// One trip instance for one service date.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct MaterializedTrip {
     /// The stored trip's id (a frequency trip's instances share it).
@@ -39,7 +39,7 @@ pub struct MaterializedTrip {
 }
 
 /// One stop visit. Times are seconds after the service-day anchor.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct StopTime {
     pub stop: String,

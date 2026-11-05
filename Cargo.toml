@@ -58,6 +58,12 @@ protoc-bin-vendored = "3"
 # truth — hand-written .d.ts drifts). serde-compat makes the derives
 # mirror the serde attributes (tags, renames).
 ts-rs = { version = "12", features = ["serde-compat"] }
+# JSON Schema for every document kind, generated from the same serde
+# types (never hand-written) and published with the registry's
+# evidence (gen-manifest): a reader outside the wasm validates a
+# stored blob with no Rust (docs/FORMATS.md). chrono04: dates are
+# "YYYY-MM-DD" strings (format: date).
+schemars = { version = "1", features = ["chrono04"] }
 # Capability modules address documents by content hash (the manifest
 # format) — sha256 is the hash everywhere (Rust, JS crypto.subtle,
 # Go crypto).

@@ -9,7 +9,12 @@
 //!   per capability (contracts + agent context + which gates ran when
 //!   these exact bytes were published), and a registry pointer. An
 //!   agent (or a human dogfooding `caps run`) pulls compute from
-//!   here and verifies the bytes against the record.
+//!   here and verifies the bytes against the record. Beside them, the
+//!   DOCUMENTS: every document kind's JSON Schema, generated from its
+//!   serde type, and a worked example computed from the fixtures
+//!   (`registry/documents.json` indexes them by kind, store kind and
+//!   schema version) — what lets a reader with no Rust or wasm read a
+//!   stored blob (docs/FORMATS.md).
 //!
 //! Before writing, the manifest is run through the compose-time
 //! validator (cap_abi::validate): a manifest this crate assembles
@@ -92,7 +97,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "network",
         file: "cap_network.wasm",
-        ops: &["load_feed", "import", "load_network", "validate", "export"],
+        ops: &["load_feed", "import", "load_network", "validate", "export", "document"],
         consumes: &[],
         speaks: &[("feed", &[1]), ("network", &[1]), ("boundary", &[1])],
         migrates: &[],
@@ -103,6 +108,7 @@ const MODULES: &[ModuleSpec] = &[
             ("load_network", "Register an authored network document (the planner's JSON document) under its content hash; idempotent. The same registration every model-side capability names load_network — one op file feeds them all. Kernel bulk op 256 takes the bare document's JSON bytes, or those bytes gzipped (decoded as they parse — the text never exists whole in the module), on transit_invoke_bytes — the same answer and hash, no request envelope; hosts send real-size networks this way, gzipped."),
             ("validate", "Every issue of a registered document — the authoring UI's feedback loop, the whole list, never thrown. issues gate (export refuses an invalid document; a block trip its pattern trips do not run is one — the runcut and the publish path would disagree). warnings never gate: they name what validity lets through — trips no block carries (unassigned_trips, once the document has a runcut) and a versioned plan with no service in its first week (no_service_in_plan_period {plan_name, effective_from} — the plan by its name: the calendars a fork inherited end before its pick date)."),
             ("export", "The publish path: write a registered document as a GTFS zip (deterministic bytes) — every trip under its own id with its own times, the calendar as authored, with the import's boundary when it is the imported document itself — and return it base64-encoded under the content hash of those bytes, the same identity any capability returns for the same bytes. Invalid documents are refused."),
+            ("document", "A registered document's canonical bytes — its serialization, the bytes its network_hash names — with that hash and its plan frame. What a host stores when it persists a network it was sent in any serialization (the sync server publishing a pick): the module is the hash authority, the host stores exactly these bytes and never reads them."),
         ],
     },
     ModuleSpec {
@@ -336,7 +342,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "plans",
         file: "cap_plans.wasm",
-        ops: &["resolve", "validate", "periods"],
+        ops: &["resolve", "validate", "periods", "publish", "in_force"],
         consumes: &[],
         speaks: &[("plan_set", &[1])],
         migrates: &[],
@@ -345,6 +351,8 @@ const MODULES: &[ModuleSpec] = &[
             ("resolve", "Which plan is in force on the date: the latest pick at or before it, ties broken by id (deterministic, order-insensitive). Unversioned plans never resolve; no pick yet answers null."),
             ("validate", "Chain validity: unique plan ids, every versioned plan effective-dated, pick dates unique. Every violation is reported (kind-tagged); unversioned plans are standalone and never flagged."),
             ("periods", "Every chain member's governing period — [effective_from, until the next pick) — derived and sorted by pick date. The until end is computed, never stored."),
+            ("publish", "Publish a pick: the published plan set (null for the first publish) with the plan (re)placed by id and naming its network by hash, picks in (effective_from, id) order — one set of picks is one byte sequence however it was published. Answers the canonical document and its document_hash (the module is the hash authority; the sync server stores exactly these bytes under its plans pointer), or — when the plan is unversioned, undated, or would put two picks on one day — every reason in issues and no document."),
+            ("in_force", "Which published pick governs the date, with its network_hash — how a client chooses the network to load from the published plan set the manifest pins as plans_hash. Null before the first pick takes effect. A set whose schema_version this build does not speak is an error, never a guess."),
         ],
     },
 ];
@@ -492,7 +500,8 @@ fn main() {
     let json = serde_json::to_string_pretty(&manifest).expect("manifest serializes");
     fs::write(dist.join("manifest.json"), json + "\n").expect("write manifest");
 
-    publish_registry(&root, &manifest);
+    let documents = document_kinds(net_ctx.as_ref(), &feed_hash);
+    publish_registry(&root, &manifest, &documents);
 
     println!("manifest: {} capabilities, kernel v{KERNEL}, assembly valid", MODULES.len());
 }
@@ -503,7 +512,7 @@ fn main() {
 /// the publish recipe ran against them, at which commit. That
 /// record is what makes "known good" a checkable claim for an agent
 /// (or a human dogfooding `caps run`) rather than a marketing one.
-fn publish_registry(root: &Path, manifest: &CapManifest) {
+fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKind]) {
     let registry = root.join("registry");
     let blobs = registry.join("blobs");
     let caps_dir = registry.join("capabilities");
@@ -572,10 +581,125 @@ fn publish_registry(root: &Path, manifest: &CapManifest) {
     let json = serde_json::to_string_pretty(&pointer).expect("pointer serializes");
     fs::write(registry.join("registry.json"), json + "\n").expect("write pointer");
 
+    publish_documents(&registry, documents, &evidence);
+
     println!(
         "registry: {} capabilities published (blobs + records + pointer)",
         manifest.capabilities.len()
     );
+}
+
+/// One document kind the registry describes: its bus name (the
+/// manifest's `speaks`), its store kind when the sync store persists
+/// it (the envelope's `kind`, docs/FORMATS.md), the schema version this
+/// build speaks, the JSON Schema generated from its serde type, and a
+/// worked example computed from the fixtures through the owning
+/// library — so the example is exactly a document the modules make.
+struct DocumentKind {
+    kind: &'static str,
+    store_kind: Option<&'static str>,
+    schema_version: u32,
+    schema: schemars::Schema,
+    example: Option<serde_json::Value>,
+}
+
+fn kind<T: schemars::JsonSchema>(
+    kind: &'static str,
+    store_kind: Option<&'static str>,
+    schema_version: u32,
+    example: Option<serde_json::Value>,
+) -> DocumentKind {
+    DocumentKind { kind, store_kind, schema_version, schema: schemars::schema_for!(T), example }
+}
+
+/// Every JSON document kind on the bus and in the store. Not here: the
+/// feed (a GTFS zip) and the rt snapshot (protobuf) are bytes with
+/// their own specs; the manifest is the Go host's own document
+/// (docs/FORMATS.md pins it); the watchlist is device-only and its
+/// type lives in cap-board, a module this generator cannot depend on.
+fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<DocumentKind> {
+    let plans_example = net.and_then(|n| {
+        let set = fixture_plan_set().iter().fold(transit_plans::PublishedPlans::empty(), |set, plan| {
+            transit_plans::publish(&set, plan, &n.network_hash).unwrap_or(set)
+        });
+        serde_json::to_value(set).ok()
+    });
+    let walks_example = example_for("streets", "walks", feed_hash, net)
+        .and_then(|ex| ex.response.get("ok").and_then(|ok| ok.get("walks")).cloned());
+    vec![
+        kind::<transit_network::Network>("network", Some("network_document"), 1, net.map(|n| n.derived.clone())),
+        kind::<transit_codec::Boundary>("boundary", None, 1, net.map(|n| n.boundary.clone())),
+        kind::<Vec<transit_sync::EditRecord>>(
+            "operator_edits",
+            Some("edit_records"),
+            transit_sync::SCHEMA_VERSION,
+            Some(value(&dispatch_fixture_edits())),
+        ),
+        kind::<Vec<transit_plans::PlanInfo>>("plan_set", None, 1, Some(value(&fixture_plan_set()))),
+        kind::<transit_plans::PublishedPlans>("plans", Some("plans"), transit_plans::PUBLISHED_SCHEMA_VERSION, plans_example),
+        kind::<transit_authz::Policy>(
+            "policy",
+            Some("policy"),
+            transit_authz::SCHEMA_VERSION,
+            Some(value(&transit_authz::Policy::current(vec![transit_authz::Rule {
+                name: "ops-write-edits".into(),
+                roles: vec!["dispatcher".into()],
+                pointers: vec!["edits".into()],
+                actions: vec!["write".into()],
+            }]))),
+        ),
+        kind::<transit_streets::Streets>(
+            "streets",
+            None,
+            1,
+            streets_example_context().map(|c| value(&c.streets)),
+        ),
+        kind::<transit_streets::walking::WalkTable>("walks", None, 1, walks_example),
+        kind::<transit_live::LiveDay>("live", None, 1, live_example().map(|(live, _)| value(&live))),
+    ]
+}
+
+/// A worked example as a JSON value.
+fn value<T: serde::Serialize>(example: &T) -> serde_json::Value {
+    serde_json::to_value(example).expect("example serializes")
+}
+
+/// Publish the documents: `schemas/<kind>.v<N>.schema.json`, the
+/// worked example `examples/<kind>.v<N>.json`, and the index
+/// `documents.json` (each entry names its files and their hashes, with
+/// the registry's evidence). `go test ./server/...` validates every
+/// example against its schema with no Rust (docs/FORMATS.md).
+fn publish_documents(registry: &Path, documents: &[DocumentKind], evidence: &serde_json::Value) {
+    let schemas = registry.join("schemas");
+    let examples = registry.join("examples");
+    fs::create_dir_all(&schemas).expect("create registry schemas");
+    fs::create_dir_all(&examples).expect("create registry examples");
+    let mut index = Vec::new();
+    for doc in documents {
+        let stem = format!("{}.v{}", doc.kind, doc.schema_version);
+        let schema = serde_json::to_string_pretty(&doc.schema).expect("schema serializes") + "\n";
+        let schema_path = format!("schemas/{stem}.schema.json");
+        fs::write(registry.join(&schema_path), &schema).expect("write schema");
+        let mut entry = serde_json::json!({
+            "kind": doc.kind,
+            "store_kind": doc.store_kind,
+            "schema_version": doc.schema_version,
+            "schema": schema_path,
+            "schema_hash": cap_abi::content_hash(schema.as_bytes()),
+        });
+        if let Some(example) = &doc.example {
+            let text = serde_json::to_string(example).expect("example serializes");
+            let example_path = format!("examples/{stem}.json");
+            fs::write(registry.join(&example_path), &text).expect("write example");
+            entry["example"] = example_path.into();
+            entry["example_hash"] = cap_abi::content_hash(text.as_bytes()).into();
+        }
+        index.push(entry);
+    }
+    let json = serde_json::to_string_pretty(&serde_json::json!({ "documents": index, "evidence": evidence }))
+        .expect("documents index serializes");
+    fs::write(registry.join("documents.json"), json + "\n").expect("write documents index");
+    println!("registry: {} document kinds published (schemas + worked examples)", documents.len());
 }
 
 /// The digest of the source the modules are built from — every file
@@ -1020,6 +1144,15 @@ fn example_for(
                 json!({ "ok": { "op": "validate",
                     "issues": transit_network::validation_issues(ctx.derived_network()),
                     "warnings": transit_network::validation_warnings(ctx.derived_network()) } }),
+            )
+        }
+        ("network", "document") => {
+            let ctx = net?;
+            let document = serde_json::to_string(&ctx.network).ok()?;
+            (
+                json!({ "op": "document", "network_hash": ctx.network_hash }),
+                json!({ "ok": { "op": "document", "document": document,
+                    "document_hash": cap_abi::content_hash(document.as_bytes()), "plan": ctx.network.plan } }),
             )
         }
         ("network", "export") => {
@@ -1890,6 +2023,28 @@ fn example_for(
             (
                 json!({ "op": "validate", "plans": plan_set }),
                 json!({ "ok": { "op": "validate", "issues": transit_plans::validate(&plan_set) } }),
+            )
+        }
+        ("plans", "publish") => {
+            let net = net?;
+            let first = &fixture_plan_set()[0];
+            let published = transit_plans::publish(&transit_plans::PublishedPlans::empty(), first, &net.network_hash).ok()?;
+            let document = serde_json::to_string(&published).ok()?;
+            (
+                json!({ "op": "publish", "published": null, "plan": first, "network_hash": net.network_hash }),
+                json!({ "ok": { "op": "publish", "issues": [], "published": published,
+                    "document": document, "document_hash": cap_abi::content_hash(document.as_bytes()) } }),
+            )
+        }
+        ("plans", "in_force") => {
+            let net = net?;
+            let published = fixture_plan_set().iter().fold(transit_plans::PublishedPlans::empty(), |set, plan| {
+                transit_plans::publish(&set, plan, &net.network_hash).unwrap_or(set)
+            });
+            let plan = transit_plans::in_force(&published, chrono::NaiveDate::from_ymd_opt(2026, 10, 23)?).ok()?.cloned();
+            (
+                json!({ "op": "in_force", "published": published, "date": "2026-10-23" }),
+                json!({ "ok": { "op": "in_force", "plan": plan } }),
             )
         }
         ("plans", "periods") => {

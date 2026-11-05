@@ -94,9 +94,9 @@ no version (`transit-network`'s `read_network` sniffs the shape),
    older fixture no longer migrates to the current one, or when the
    current fixture's canonical hash moves (a byte change is an
    identity change for every document of the kind, so it is a
-   version change too). The generator is the one
-   [sync-persistence.md](sync-persistence.md)'s registry evidence
-   uses — one schema emitter, not two.
+   version change too). The generator is the one the registry's
+   documents use (gen-manifest's schemas, `registry/documents.json`,
+   `docs/FORMATS.md`) — one schema emitter, not two.
 7. **Rolling a version out.** The server's modules learn the new
    version first (accept old and new at receive, store new); the
    manifest then pins them; clients follow the manifest (D-63).

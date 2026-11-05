@@ -6,7 +6,9 @@ import { defineConfig } from "@playwright/test";
 // should test records land in a dev server someone is using). The
 // second server publishes the fixture feed's network and the walking
 // fixture's streets and walk table (e2e/published-network.spec.mjs);
-// the first publishes none.
+// the first publishes none. The third runs the durable store (a fresh
+// directory per run) so a spec can publish picks to it
+// (e2e/published-picks.spec.mjs).
 export default defineConfig({
   testDir: "./e2e",
   timeout: 20_000,
@@ -28,6 +30,15 @@ export default defineConfig({
         "go run . -addr 127.0.0.1:8083 -feed ../web/e2e/fixtures/sample-gtfs.zip -streets ../web/e2e/fixtures/walk-streets.geojson",
       cwd: "../server",
       url: "http://127.0.0.1:8083",
+      reuseExistingServer: false,
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+    {
+      command:
+        'bash -c \'exec go run . -addr 127.0.0.1:8084 -store "$(mktemp -d)" -feed ../web/e2e/fixtures/sample-gtfs.zip\'',
+      cwd: "../server",
+      url: "http://127.0.0.1:8084",
       reuseExistingServer: false,
       stdout: "ignore",
       stderr: "pipe",

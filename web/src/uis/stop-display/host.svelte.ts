@@ -221,10 +221,11 @@ export async function boot(): Promise<void> {
   readUrl();
   await restoreUrls();
   await adoptNetwork("the agency's network", async () => {
-    // Its pin is checked in a module this page reads it with (the
+    // The pick in force today when the deployment publishes picks,
+    // else its import. Its pin is checked in a module this page reads it with (the
     // directory answers the first question; the board and rt when the
     // directory did not assemble): none holds a copy only to check it.
-    const served = await servedNetwork("directory", "board", "rt");
+    const served = await servedNetwork(today(), "directory", "board", "rt");
     if (served) return served;
     display.status = "This server publishes no network — load the agency's GTFS zip to begin.";
     return null;

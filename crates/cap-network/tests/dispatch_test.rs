@@ -223,3 +223,29 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     let bad = cap_network::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
 }
+
+/// The publish path's identity: a host that stores a network (the
+/// server's `plan.<id>` pointer) stores the module's canonical bytes
+/// under the module's hash — never the bytes it was sent, which may
+/// be any serialization of the same document (a browser's
+/// JSON.stringify writes 1.0 as 1). The answer carries the plan frame
+/// so the host never reads the document.
+#[test]
+fn document_answers_the_canonical_bytes_the_hash_names() {
+    let doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
+    // Any serialization of the same document: pretty-printed here.
+    let pretty = serde_json::to_string_pretty(&doc).unwrap();
+    let loaded: serde_json::Value =
+        serde_json::from_str(&cap_network::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, pretty.as_bytes())).unwrap();
+    let network_hash = loaded["ok"]["network_hash"].as_str().expect("load_network answers").to_string();
+    match dispatch(Request::Document { network_hash: network_hash.clone() }).unwrap() {
+        Response::Document { document, document_hash, plan } => {
+            assert_eq!(document_hash, network_hash, "the document hash IS the network hash");
+            assert_eq!(cap_abi::content_hash(document.as_bytes()), network_hash, "the bytes are the ones the hash names");
+            assert_ne!(document, pretty, "canonical bytes, not the bytes it was sent");
+            assert_eq!(plan, doc.plan, "the plan frame rides along");
+        }
+        other => panic!("document: {other:?}"),
+    }
+    assert!(dispatch(Request::Document { network_hash: "sha256:00".into() }).is_err());
+}

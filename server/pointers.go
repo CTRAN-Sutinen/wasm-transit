@@ -8,12 +8,18 @@ package main
 //	GET  /pointers/{name}              -> {name, hash, seq, envelope} (404 when absent)
 //	GET  /pointers/{name}/log?since=H  -> {entries, since_found, current}
 //	POST /pointers/{name}              -> the CAS: 200 + new head, 409 + {current}
-//	GET  /blobs/{hash}                 -> raw bytes, ETag the hash, envelope in headers
+//	GET  /blobs/{hash}                 -> raw bytes, ETag the hash, envelope in headers;
+//	                                      Accept: application/gzip -> the same bytes gzipped
+//	                                      (transport only), for a page that registers a
+//	                                      document compressed (kernel op 256)
 //
 // POST bodies: for kind edit_records, {"from", "client": <document>}
 // — the server runs cap-sync's read_edits (migrate-at-receive) on both
 // sides and sync_edits (receive-clamped, D-56), and stores the canonical
-// converged bytes. Other kinds take {"from", "kind"? (on create),
+// converged bytes. The published plan set and the picks' networks
+// (kinds plans and network_document, pointers plans and plan.<id>) are
+// refused here: they publish through POST /plans (plans.go). Other
+// kinds take {"from", "kind"? (on create),
 // "document": "<raw text>", "document_hash"?} verbatim; document_hash,
 // when present, is asserted against sha256 of the bytes.
 
@@ -245,6 +251,14 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 		return
 	}
 
+	// The published set and the picks' networks are written only by
+	// POST /plans (plans.go): their identity is a module's, and a raw
+	// write would skip cap-network's validation and cap-plans' chain.
+	if kind == "plans" || kind == "network_document" || name == "plans" || strings.HasPrefix(name, "plan.") {
+		http.Error(w, "picks publish through POST /plans", http.StatusBadRequest)
+		return
+	}
+
 	if kind == "edit_records" {
 		if len(req.Client) == 0 {
 			http.Error(w, "edit_records takes a client document", http.StatusBadRequest)
@@ -285,7 +299,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 		return
 	}
 
-	// Host-owned document kinds (manifest, plans): raw bytes verbatim,
+	// Host-owned document kinds (manifest, policy): raw bytes verbatim,
 	// hashed by the host with the shared formula (no module claims
 	// their identity), document_hash asserted when present.
 	if req.Document == "" {
@@ -352,10 +366,37 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "max-age=31536000, immutable") // content-addressed: cache forever
 	w.Header().Set("X-Document-Kind", env.Kind)
 	w.Header().Set("X-Schema-Version", fmt.Sprintf("%d", env.SchemaVersion))
+	w.Header().Set("Vary", "Accept")
 	if r.Header.Get("If-None-Match") == etag {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
+	if strings.Contains(r.Header.Get("Accept"), "application/gzip") {
+		// Content-Type, never Content-Encoding: the page hands the
+		// compressed bytes to the modules without unzipping them, as
+		// GET /network/document serves the import.
+		w.Header().Set("Content-Type", "application/gzip")
+		w.Write(s.gzippedBlob(hash, data))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(data)
+}
+
+// gzippedBlob compresses a blob for transport, caching the last few:
+// a published network is fetched by every page that loads it, and
+// compressing 10 MB per request would be the server's whole budget.
+// Never durable — compression is transport only (docs/FORMATS.md).
+func (s *server) gzippedBlob(hash string, data []byte) []byte {
+	s.gzMu.Lock()
+	defer s.gzMu.Unlock()
+	if gz, ok := s.gzCache[hash]; ok {
+		return gz
+	}
+	gz := gzipped(data)
+	if s.gzCache == nil || len(s.gzCache) >= 8 {
+		s.gzCache = map[string][]byte{}
+	}
+	s.gzCache[hash] = gz
+	return gz
 }

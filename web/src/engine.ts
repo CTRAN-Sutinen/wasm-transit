@@ -55,6 +55,8 @@ import type { Request as StreetsRequest } from "./types/cap_streets/Request";
 import type { Response as StreetsResponse } from "./types/cap_streets/Response";
 import type { Boundary } from "./types/Boundary";
 import type { Network } from "./types/Network";
+import type { PublishedPlan } from "./types/cap_plans/PublishedPlan";
+import type { PublishedPlans } from "./types/cap_plans/PublishedPlans";
 import type { WalkTable } from "./types/WalkTable";
 
 // ---------------------------------------------------------------------
@@ -433,27 +435,60 @@ function etag(resp: Response): string | null {
   return resp.headers.get("ETag")?.replace(/^W\//, "").replace(/"/g, "") || null;
 }
 
-/// The deployment's published network, for a page that READS it:
-/// `GET /network/document`, the server's import of its GTFS zip
-/// (cap-network, the same module) as gzipped bytes the page never
-/// unzips or parses — every module registers them compressed (kernel
-/// op 256 decodes as it parses, so the document's text never exists
-/// whole anywhere on the page) — and its boundary
-/// (`GET /network/boundary`, under the same pin). Registered in a
-/// reader now, so a network that does not answer the hash the server
-/// pins is refused before anything is asked of it. A page names the
-/// modules that read it, in order, and the pin is checked in the first
-/// that assembles — registering it in a module the page never asks
-/// would hold a whole copy only to check it. The network's name is a
-/// question for the directory (`about`). Throws Unavailable when none
-/// assembles; null when the server publishes none.
+/// The published pick in force on `date`: the manifest's `plans_hash`
+/// names the published plan set (`GET /blobs/<hash>`), and the plans
+/// module answers which pick governs the date and its network's hash.
+/// Null when the deployment publishes no picks or none has taken
+/// effect yet; throws Unavailable when it publishes picks and the plans
+/// module does not assemble — a page never guesses which schedule runs.
+async function pickInForce(date: string): Promise<PublishedPlan | null> {
+  const manifest = await fetch("/manifest").catch(() => null);
+  if (!manifest?.ok) return null;
+  const plansHash = ((await manifest.json()) as { plans_hash?: string }).plans_hash;
+  if (!plansHash) return null;
+  if (!(await available("plans"))) throw new Unavailable("plans");
+  const set = await fetch(`/blobs/${plansHash}`).catch(() => null);
+  if (!set?.ok) return null;
+  const published = (await set.json()) as PublishedPlans;
+  return (await ask("plans", "in_force", { published, date })).plan;
+}
+
+/// The deployment's published network on `date`, for a page that READS
+/// it. When the deployment publishes picks (docs/ROADMAP.md 1), the
+/// pick in force on the date (`pickInForce`): its network by hash
+/// (`GET /blobs/<network_hash>`, gzipped), with the default boundary —
+/// a published pick is an authored document, numbered 1..n the way its
+/// export is. Otherwise, and before the first pick takes effect,
+/// `GET /network/document`: the server's import of its GTFS zip
+/// (cap-network, the same module), and its boundary
+/// (`GET /network/boundary`, under the same pin). Either way the bytes
+/// arrive gzipped and the page never unzips or parses them — every
+/// module registers them compressed (kernel op 256 decodes as it
+/// parses, so the document's text never exists whole anywhere on the
+/// page). Registered in a reader now, so a network that does not answer
+/// the hash the server pins is refused before anything is asked of it.
+/// A page names the modules that read it, in order, and the pin is
+/// checked in the first that assembles — registering it in a module the
+/// page never asks would hold a whole copy only to check it. The
+/// network's name is a question for the directory (`about`). Throws
+/// Unavailable when none assembles; null when the server publishes none.
 export async function servedNetwork(
+  date: string,
   ...readers: CapId[]
 ): Promise<{ network: Doc<Network>; boundary: Doc<Boundary> } | null> {
   const candidates: CapId[] = readers.length ? readers : ["network"];
   let cap: CapId | null = null;
   for (const c of candidates) if (!cap && (await available(c))) cap = c;
   if (!cap) throw new Unavailable(candidates[0]);
+  const pick = await pickInForce(date);
+  if (pick) {
+    const doc = await fetch(`/blobs/${pick.network_hash}`, { headers: { Accept: "application/gzip" } }).catch(() => null);
+    if (!doc?.ok) return null;
+    const network = new Doc<Network>("network", { bytes: new Uint8Array(await doc.arrayBuffer()) }, { pin: pick.network_hash });
+    const boundary = new Doc<Boundary>("boundary", { value: {} });
+    await load(cap, network);
+    return { network, boundary };
+  }
   // The two answer one import: a republish between the requests is
   // read again, so the boundary always belongs to the network.
   for (let tries = 0; tries < 3; tries++) {
