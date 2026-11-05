@@ -113,6 +113,7 @@ name = "cap-abi"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "flate2",
  "proptest",
  "serde",
  "serde_json",

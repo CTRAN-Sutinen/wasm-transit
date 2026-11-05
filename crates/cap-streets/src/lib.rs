@@ -276,14 +276,7 @@ pub fn dispatch_json(text: &str) -> String {
     if let Some(answer) = cap_abi::load_network_json(text, |doc| dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc)) {
         return answer;
     }
-    let outcome = match serde_json::from_str::<Request>(text) {
-        Ok(request) => match dispatch(request) {
-            Ok(response) => serde_json::json!({ "ok": response }),
-            Err(error) => serde_json::json!({ "error": error }),
-        },
-        Err(error) => serde_json::json!({ "error": format!("invalid request: {error}") }),
-    };
-    serde_json::to_string(&outcome).expect("dispatch outcomes serialize")
+    cap_abi::answer(text, dispatch)
 }
 
 /// The bulk-bytes seam: op 0 imports a street layer, op 1 registers
@@ -299,11 +292,7 @@ pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
         }
         other => Err(format!("unknown bulk op {other}")),
     };
-    let outcome = match result {
-        Ok(response) => serde_json::json!({ "ok": response }),
-        Err(error) => serde_json::json!({ "error": error }),
-    };
-    serde_json::to_string(&outcome).expect("dispatch outcomes serialize")
+    cap_abi::outcome(result)
 }
 
 cap_abi::capability! {

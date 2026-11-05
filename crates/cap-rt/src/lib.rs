@@ -233,14 +233,7 @@ pub fn dispatch_json(text: &str) -> String {
     if let Some(answer) = cap_abi::load_network_json(text, |doc| dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc)) {
         return answer;
     }
-    let outcome = match serde_json::from_str::<Request>(text) {
-        Ok(request) => match dispatch(request) {
-            Ok(response) => serde_json::json!({ "ok": response }),
-            Err(error) => serde_json::json!({ "error": error }),
-        },
-        Err(error) => serde_json::json!({ "error": format!("invalid request: {error}") }),
-    };
-    serde_json::to_string(&outcome).expect("dispatch outcomes serialize")
+    cap_abi::answer(text, dispatch)
 }
 
 /// The bulk-bytes seam: op 0 decodes a payload; the kernel's

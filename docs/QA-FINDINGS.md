@@ -290,19 +290,16 @@ time, last bus home, is there a detour.
   Pin: `JSON.stringify(live).length` on a C-TRAN snapshot.
   Re-confirmed: 2026-11-04, `just perf` (stop display): each new
   snapshot's `live` answer lands in the engine's answer cache, and
-  the page heap climbs 11 → 18.2 MB until the cache's 256 entries
-  fill, flat after.
-- **QAF-93 DEFECT** — both rider pages are over D-68's memory
-  budget on C-TRAN, about twice over. The stop display holds 68 MB of
-  wasm (four modules × ~17 MB, each its own parsed network) plus an
-  18 MB page heap, against 40 MB; ride-now holds 86 MB (five
-  modules) plus a 33 MB page heap, against 80 MB. A module's linear
-  memory is ~17 MB, not the 5.8–8.4 MB the cost-gate bench measured:
-  it keeps the peak of the parse (memory never shrinks). The
-  display's `network` module holds a whole copy only to check the
-  served hash (`servedNetwork` registers there first). Both are
+  the page heap climbs 3.5 → 9.7 MB until the cache's 256 entries
+  fill, flat after — most of the display's page heap.
+- **QAF-93 DEFECT** — the stop display is over D-68's memory
+  budget on C-TRAN: 31.8 MB of wasm (directory 8.6, board 11.9, rt
+  11.3 — each its own parsed network) plus a 9.7 MB page heap after
+  118 polls, 41.5 MB against 40 (33.3 MB at boot; the climb is
+  QAF-49's answer cache). Ride-now is within its 80 MB: 45.7 MB of
+  wasm (four modules) plus a 22 MB heap after its session. Both are
   bounded — every module's memory and held documents are flat
-  across 318 polls (106 min) on the display and the ride-now soak.
+  across the display's 118 polls and the ride-now soak.
   `docs/units/runtime-cost-gate.md` owns the reduction.
   Pin: `PERF_RT=testdata/perf-rt-10m just perf` — the "Memory over
   time" table of each summary (`stop-display.perf.mjs`,

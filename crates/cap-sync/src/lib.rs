@@ -131,14 +131,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
 /// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
 /// out — byte-compatible with every other capability module.
 pub fn dispatch_json(text: &str) -> String {
-    let outcome = match serde_json::from_str::<Request>(text) {
-        Ok(request) => match dispatch(request) {
-            Ok(response) => serde_json::json!({ "ok": response }),
-            Err(error) => serde_json::json!({ "error": error }),
-        },
-        Err(error) => serde_json::json!({ "error": format!("invalid request: {error}") }),
-    };
-    serde_json::to_string(&outcome).expect("dispatch outcomes serialize")
+    cap_abi::answer(text, dispatch)
 }
 
 /// The edit document is a JSON document — no bulk-bytes op exists;

@@ -188,7 +188,7 @@ test: caps
     node tools/caps-run.mjs analysis \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"hourly_trips","network_hash":"$load_network.network_hash","date":"2026-10-23"}' \
-      | grep -q '"hour":8,"service_types":\[{"service_type":"WK","trips":5}\],"trips":5'
+      | grep -q '"hour":8,"trips":5,"service_types":\[{"service_type":"WK","trips":5}\]'
     # The schedule texture (QAF-16): WK's five fixture schedules —
     # each a single trip (no gaps to read), two starts on the
     # quarter-hour grid (28800, 29700), three off it.
@@ -202,7 +202,7 @@ test: caps
     node tools/caps-run.mjs analysis \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"route_overlap","network_hash":"$load_network.network_hash","date":"2026-10-23"}' \
-      | grep -q '"a":"10","b":"20","shared_segments":1,"shared_stops":2,"stack_departures":3,"stack_stop":"A"'
+      | grep -q '"a":"10","b":"20","shared_stops":2,"shared_segments":1,"stack_stop":"A","stack_departures":3'
     # The timed-transfer view (QAF-27): route 10's 08:00 arrival at
     # A meets route 20's 08:20 departure under a caller-brought
     # 25-minute window (the default convention caps at 15) — the
@@ -210,7 +210,7 @@ test: caps
     node tools/caps-run.mjs analysis \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"timed_transfers","network_hash":"$load_network.network_hash","date":"2026-10-23","stop_id":"A","window":{"min_secs":60,"max_secs":1500}}' \
-      | grep -q '"from_route":"10","to_route":"20","wait_secs":1200'
+      | grep -q '"from_route":"10","to_route":"20","arrival_secs":28800,"arrival_stop":"A","departure_secs":30000,"departure_stop":"A","wait_secs":1200'
     # The cross-capability session: one session imports the fixture
     # feed, hands the DOCUMENT to the board by reference (no file in
     # between), addresses results by --as name, and feeds the numeric
@@ -341,7 +341,7 @@ test: caps
       --op '{"op":"access","streets_hash":"$load.streets_hash","network_hash":"$load_network.network_hash","point":{"lat":45.5152,"lon":-73.5165}}' \
       --cap router --op @web/public/caps/sample-network-load.json \
       --op '{"op":"plan","network_hash":"$load_network.network_hash","from":{"id":"pin","name":"Dropped pin","walks":"$access.walks"},"to":"SB","date":"2026-10-23","depart_secs":18000,"max_legs":2}' \
-      | grep '"arrival_secs":18138,"depart_secs":18000,"from_stop_id":"pin"' > /dev/null
+      | grep '"from_stop_id":"pin","from_stop_name":"Dropped pin","to_stop_id":"SB","to_stop_name":"Main Station: Bay B","depart_secs":18000,"arrival_secs":18138' > /dev/null
     # The sync capability's gate: the protocol's one step — a draft
     # client against an empty server converges to the submitted
     # document (rev bumped, host clock stamped).

@@ -610,7 +610,10 @@ export async function boot(): Promise<void> {
   void locateIfAllowed();
   void discoverServices();
   await adoptNetwork("the agency's network", async () => {
-    const served = await servedNetwork();
+    // Its pin is checked in a module this page reads it with (the
+    // directory answers the first question; the board and rt when the
+    // directory did not assemble): none holds a copy only to check it.
+    const served = await servedNetwork("directory", "board", "rt");
     if (served) return served;
     ride.status = "This server publishes no network — load the agency's GTFS zip to begin.";
     return null;
@@ -645,6 +648,12 @@ async function loadStreets(): Promise<void> {
 /// boundary, the stop_sequence numbering the live feeds name).
 export function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
   return adoptNetwork(label, async () => {
+    // The import is the network module's: the only time this page
+    // assembles it.
+    if (!(await available("network"))) {
+      ride.status = "The network capability is unavailable — a GTFS zip cannot be imported without it.";
+      return null;
+    }
     const imported = await ask("network", "import", { feed_hash: new Doc("feed", { bytes }) });
     return {
       network: produced("network", imported.network, "network", imported.network_hash),
@@ -663,17 +672,16 @@ async function adoptNetwork(
   ride.status = `Loading ${label}…`;
   await new Promise((r) => setTimeout(r, 20));
   try {
-    if (!(await available("network"))) {
-      ride.status = "The network capability is unavailable — nothing can be answered without it.";
-      return;
-    }
     const got = await obtain();
     if (!got) return;
     network = got.network;
     boundary = got.boundary;
     edits = null;
     editsText = "[]";
-    ride.feed = network.value?.name || label;
+    // The heading: the network's name, which the directory answers
+    // (a published network is bytes this page never parsed).
+    const about = (await available("directory")) ? await ask("directory", "about", { network_hash: network }) : null;
+    ride.feed = about?.name || network.value?.name || label;
     ride.status = "";
     await Promise.all([syncEdits(), fetchLive()]);
     await release();

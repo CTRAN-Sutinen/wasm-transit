@@ -9,6 +9,7 @@
 // Also `just test`.
 
 import { createHash } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -1381,14 +1382,26 @@ assert(unready.error && unready.error.includes("first stop"), "an unready draft 
 
 
 // THE KERNEL BULK OP — every network consumer registers the bare
-// document on transit_invoke_bytes op 256 (no request envelope),
-// answering the import's identity; garbage is an error, never a trap.
+// document on transit_invoke_bytes op 256 (no request envelope), as
+// its JSON or that JSON gzipped (how a server publishes it), answering
+// the import's identity either way; garbage — a truncated gzip too —
+// is an error, never a trap.
 const OP_LOAD_NETWORK = 256;
 const networkBytes = Buffer.from(JSON.stringify(imported.network));
-for (const id of ["network", "analysis", "board", "runcut", "calendar", "router", "directory", "author", "divert"]) {
+const networkGzip = gzipSync(networkBytes, { level: 9 });
+for (const id of ["network", "analysis", "board", "runcut", "calendar", "router", "directory", "author", "divert", "rt", "streets"]) {
   const fresh = shell(loadModule(byId[id]));
   const viaBytes = fresh.invokeBytes(OP_LOAD_NETWORK, networkBytes);
   assert(viaBytes.network_hash === imported.network_hash, `${id} answers the kernel's load_network bulk op with the import's identity`);
+  const zipped = shell(loadModule(byId[id])).invokeBytes(OP_LOAD_NETWORK, networkGzip);
+  assert(zipped.network_hash === imported.network_hash, `${id} registers the gzipped document under the same identity`);
+  let cut = null;
+  try {
+    fresh.invokeBytes(OP_LOAD_NETWORK, networkGzip.subarray(0, networkGzip.length >> 1));
+  } catch (error) {
+    cut = String(error);
+  }
+  assert(cut?.includes("invalid document"), `${id} refuses a truncated gzip on the bulk op`);
   let refused = null;
   try {
     fresh.invokeBytes(OP_LOAD_NETWORK, Buffer.from("{not a network"));

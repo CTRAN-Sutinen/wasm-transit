@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -46,6 +48,8 @@ func networkServer(t *testing.T, path string) string {
 	s := &server{wasm: newTestHost(t), feeder: &fileFeed{path: path, networkWasm: networkWasm}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/network", s.handleNetwork)
+	mux.HandleFunc("/network/document", s.handleNetworkDocument)
+	mux.HandleFunc("/network/boundary", s.handleNetworkBoundary)
 	mux.HandleFunc("/manifest", s.handleManifest)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -225,4 +229,82 @@ func TestRepublishedFeedServesTheNewNetwork(t *testing.T) {
 	if !strings.Contains(string(after.Network), `"99"`) {
 		t.Fatalf("republished network lacks route 99")
 	}
+}
+
+// The rider's wire: the bare network document gzipped, as bytes (no
+// Content-Encoding — the browser hands them to the modules compressed
+// and never unzips or parses them), under the network hash; its
+// boundary beside it. The document is the import's own serialization
+// (unzipped, it hashes to the pin), and a fresh module registers the
+// compressed bytes under the pin.
+func TestServedDocumentIsTheGzippedNetwork(t *testing.T) {
+	ctx := context.Background()
+	base := networkServer(t, writeFeed(t, fixtureZip(t)))
+	envelope := getNetwork(t, base)
+
+	resp, err := http.DefaultTransport.RoundTrip(mustRequest(t, base+"/network/document", "Accept-Encoding", "gzip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zipped, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "application/gzip" || resp.Header.Get("Content-Encoding") != "" {
+		t.Fatalf("/network/document: %d, Content-Type %q, Content-Encoding %q", resp.StatusCode, resp.Header.Get("Content-Type"), resp.Header.Get("Content-Encoding"))
+	}
+	etag := resp.Header.Get("ETag")
+	if etag != `"`+envelope.NetworkHash+`"` {
+		t.Fatalf("ETag %s, want the network hash", etag)
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(zipped))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, _ := io.ReadAll(zr)
+	if !bytes.Equal(text, envelope.Network) {
+		t.Fatal("the document is not the import's network")
+	}
+	if sum := sha256.Sum256(text); "sha256:"+hex.EncodeToString(sum[:]) != envelope.NetworkHash {
+		t.Fatal("the document's bytes do not hash to the pin")
+	}
+
+	fresh := newNetworkHost(t)
+	var registered struct {
+		NetworkHash string `json:"network_hash"`
+	}
+	if err := fresh.InvokeBytes(ctx, opLoadNetwork, zipped, &registered); err != nil {
+		t.Fatalf("load_network (gzip): %v", err)
+	}
+	if registered.NetworkHash != envelope.NetworkHash {
+		t.Fatalf("the gzipped document registers as %s, pinned %s", registered.NetworkHash, envelope.NetworkHash)
+	}
+
+	resp, err = http.DefaultClient.Do(mustRequest(t, base+"/network/document", "If-None-Match", etag))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotModified || len(body) != 0 {
+		t.Fatalf("revalidation: %d with %d bytes, want 304 and none", resp.StatusCode, len(body))
+	}
+
+	resp, err = http.Get(base + "/network/boundary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundary, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || resp.Header.Get("ETag") != etag || !bytes.Equal(boundary, envelope.Boundary) {
+		t.Fatalf("/network/boundary: %d, ETag %q, body is the import's boundary: %v", resp.StatusCode, resp.Header.Get("ETag"), bytes.Equal(boundary, envelope.Boundary))
+	}
+}
+
+func mustRequest(t *testing.T, url, header, value string) *http.Request {
+	t.Helper()
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set(header, value)
+	return req
 }

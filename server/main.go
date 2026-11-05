@@ -127,6 +127,8 @@ func main() {
 	mux.HandleFunc("/rt", s.handleProxy)
 	mux.HandleFunc("/manifest", s.handleManifest)
 	mux.HandleFunc("/network", s.handleNetwork)
+	mux.HandleFunc("/network/document", s.handleNetworkDocument)
+	mux.HandleFunc("/network/boundary", s.handleNetworkBoundary)
 	mux.HandleFunc("/streets", s.handleStreets)
 	mux.HandleFunc("/walks", s.handleWalks)
 	mux.HandleFunc("/edits", s.protectWrite(func(*http.Request) string { return "edits" }, s.handleEdits))

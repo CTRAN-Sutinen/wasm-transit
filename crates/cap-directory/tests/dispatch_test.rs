@@ -15,7 +15,9 @@
 //!    resolved names (route_detail groups them by direction, the
 //!    timetable runs across one direction's patterns);
 //! 6. unknown hashes and unknown routes are honest errors and
-//!    empty answers, never panics.
+//!    empty answers, never panics;
+//! 7. `about` names the network a host holds only as bytes (its
+//!    name and plan, as the document carries them).
 
 use cap_directory::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
 use proptest::prelude::*;
@@ -418,5 +420,34 @@ proptest! {
             .is_err(),
             "an unknown hash must error, never answer empty"
         );
+    }
+}
+
+/// A page that registered the network from bytes it never parsed
+/// still heads itself with the network's name: `about` answers it,
+/// and the plan the document is, as the document carries them.
+#[test]
+fn about_names_the_network_as_the_document_does() {
+    let network = derived_network();
+    match dispatch(Request::About { network_hash: load_network() }).unwrap() {
+        Response::About { name, plan } => {
+            assert_eq!(name, network.name);
+            assert_eq!(plan, network.plan);
+        }
+        _ => panic!("about"),
+    }
+    let mut named = derived_network();
+    named.name = "C-TRAN".into();
+    named.plan.name = "Fall 2026 pick".into();
+    let hash = match dispatch(Request::LoadNetwork { network: named }).unwrap() {
+        Response::LoadNetwork { network_hash } => network_hash,
+        _ => panic!("load_network"),
+    };
+    match dispatch(Request::About { network_hash: hash }).unwrap() {
+        Response::About { name, plan } => {
+            assert_eq!(name, "C-TRAN");
+            assert_eq!(plan.name, "Fall 2026 pick");
+        }
+        _ => panic!("about"),
     }
 }

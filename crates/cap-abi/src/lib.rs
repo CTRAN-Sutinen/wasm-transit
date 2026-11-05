@@ -123,9 +123,10 @@ macro_rules! capability {
     };
 }
 
-/// Kernel bulk op: register the network document from its JSON bytes.
-/// Every capability that answers `load_network` answers this too,
-/// with the same response and the same hash.
+/// Kernel bulk op: register the network document from its JSON bytes,
+/// or those bytes gzipped (a published network crosses compressed —
+/// [`parse_document`]). Every capability that answers `load_network`
+/// answers this too, with the same response and the same hash.
 ///
 /// The bytes are the bare document (no request envelope), parsed
 /// straight into the typed model. The JSON op's `{"op": ..,
@@ -190,24 +191,63 @@ pub fn canonical_hash<T: serde::Serialize>(value: &T) -> Result<String, String> 
     Ok(format!("sha256:{:x}", digest.0.finalize()))
 }
 
-/// Parse a kernel document from bulk bytes, straight into its type.
-pub fn parse_document<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
-    serde_json::from_slice(bytes).map_err(|e| format!("invalid document: {e}"))
+/// Whether bulk bytes are a gzip stream (its magic bytes — no JSON
+/// document starts with 0x1f).
+pub fn is_gzip(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0x1f, 0x8b])
 }
 
-/// Parse a network document from bulk bytes: straight into the type,
-/// and — only when that fails — through `read_network`, which reads
-/// documents written before trips were stored (a host's saved
-/// documents load after the model changed).
+/// Parse a kernel document from bulk bytes, straight into its type:
+/// the document's JSON, or that JSON gzipped. A gzipped document is
+/// decoded AS IT PARSES — its text never exists whole in the module,
+/// so registration's peak is the parsed document plus the compressed
+/// input, not the text beside it (wasm memory never shrinks back from
+/// a peak). The identity is the parsed document's canonical hash
+/// either way, so both forms register the same document.
+pub fn parse_document<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
+    let source: Box<dyn std::io::Read + '_> = if is_gzip(bytes) { Box::new(flate2::read::GzDecoder::new(bytes)) } else { Box::new(bytes) };
+    serde_json::from_reader(std::io::BufReader::with_capacity(64 * 1024, source)).map_err(|e| format!("invalid document: {e}"))
+}
+
+/// Parse a network document from bulk bytes (JSON or gzipped JSON):
+/// straight into the type, and — only when that fails — through
+/// `read_network`, which reads documents written before trips were
+/// stored (a host's saved documents load after the model changed).
 pub fn parse_network(bytes: &[u8]) -> Result<transit_network::Network, String> {
     parse_document(bytes).or_else(|typed: String| {
-        let text = std::str::from_utf8(bytes).map_err(|e| format!("invalid document: {e}"))?;
+        let unzipped;
+        let text = if is_gzip(bytes) {
+            use std::io::Read;
+            let mut text = String::new();
+            flate2::read::GzDecoder::new(bytes).read_to_string(&mut text).map_err(|e| format!("invalid document: {e}"))?;
+            unzipped = text;
+            unzipped.as_str()
+        } else {
+            std::str::from_utf8(bytes).map_err(|e| format!("invalid document: {e}"))?
+        };
         transit_network::read_network(text).map_err(|_| typed)
     })
 }
 
+/// The JSON lane every module answers: `{"op": ...}` in, the
+/// request decoded into the module's typed `Request` and answered by
+/// its `dispatch`, as [`outcome`] — `{"ok": ...}` / `{"error": ...}`,
+/// a total seam (an undecodable request is an error, never a panic).
+pub fn answer<Q: serde::de::DeserializeOwned, A: serde::Serialize>(
+    text: &str,
+    dispatch: impl FnOnce(Q) -> Result<A, String>,
+) -> String {
+    match serde_json::from_str::<Q>(text) {
+        Ok(request) => outcome(dispatch(request)),
+        Err(error) => outcome::<()>(Err(format!("invalid request: {error}"))),
+    }
+}
+
 /// The `{"ok": ..} | {"error": ..}` outcome every op answers,
-/// serialized directly (no intermediate `serde_json::Value`).
+/// serialized directly: no intermediate `serde_json::Value` — which
+/// would hold a second copy of the answer and sort its keys, so a
+/// document inside it (an import's network) would not cross as its
+/// canonical bytes (struct field order, docs/FORMATS.md).
 pub fn outcome<T: serde::Serialize>(result: Result<T, String>) -> String {
     #[derive(serde::Serialize)]
     enum Outcome<T> {

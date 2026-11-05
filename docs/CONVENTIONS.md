@@ -57,9 +57,15 @@ holds the gotchas, Rust/wasm/ops and frontend alike.
   prost; nested types live in modules (`gtfs_rt::trip_update::*`).
 - A date can have **multiple active service keys**; every
   departure/block row carries its service_id. Don't assume one.
-- `#[profile.release]` in the root Cargo.toml is tuned for module
-  size (opt-level "s", LTO, panic=abort, strip). Measure before
+- `#[profile.release]` in the root Cargo.toml is tuned for
+  registration speed (opt-level 3, LTO, panic=abort, strip; D-72):
+  the streamed network decode is per-byte code "s" leaves
+  un-inlined. Measure (`just perf`, and the module sizes) before
   changing it.
+- **An op answers through `cap_abi::answer` / `outcome`**, never a
+  `serde_json::json!` tree: the tree is a second copy of the answer
+  and sorts its keys, so a document inside it stops being its
+  canonical bytes. Runner gates grep answers in struct field order.
 - **A whole document never decodes through the tagged `Request`
   envelope.** `#[serde(tag = "op")]` is internally tagged: serde
   buffers the ENTIRE input into a generic tree before it knows the

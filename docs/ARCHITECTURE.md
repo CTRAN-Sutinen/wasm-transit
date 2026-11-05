@@ -484,8 +484,9 @@ zip, on the server, through the module the browser runs (same
 bytes, same `network_hash`), and every client registers the
 answer. On the real C-TRAN feed that is the difference between
 ~2.7 s of import and a ~187 MB network module on every rider's
-page, and ~0.4 s and ~17 MB (the import's high-water mark never
-shrinks; the parsed feed stays registered). A zip loaded by hand
+page, and ~0.45 s and ~9–12 MB per module that reads the network
+(registered from its 680 KB gzip stream; wasm memory keeps a
+module's high-water mark). A zip loaded by hand
 (the UIs' file input) still imports in the browser.
 
 **The deployment publishes the streets the same way.** The street
@@ -551,9 +552,18 @@ Its HTTP surface:
   network_hash}`. Gzipped when the client takes it; its ETag is the
   network hash, so a client holding it revalidates for a 304.
   Republishing the zip is re-imported on the next request
-  (mtime-checked). A client registers the network with
-  `load_network` and refuses it unless the module answers the
-  pinned hash (`servedNetwork` in `src/engine.ts`).
+  (mtime-checked). The planner's page takes it (it forks the
+  network into a plan — `servedNetworkValue` in `src/engine.ts`).
+- `/network/document` and `/network/boundary` — the same answer's
+  two documents, split off for pages that register them without
+  reading them: the bare network as gzipped bytes
+  (`application/gzip`, never `Content-Encoding`, so the browser
+  hands them to the modules compressed — kernel op 256 decodes the
+  stream as it parses), and the boundary as JSON, both under the
+  network hash's ETag. The document's bytes are the import's
+  canonical serialization (unzipped, they hash to the pin). A
+  client registers the document and refuses it unless the module
+  answers the pinned hash (`servedNetwork`).
 - **Authentication/authorization** (D-58..D-61): with any `-oidc-*`
   flag set, the server verifies bearer JWTs — JWKS (`-oidc-jwks-url`,
   cached by `kid`, refetched on unknown kid) or a pinned PEM
@@ -661,7 +671,14 @@ File ownership:
   whether a capability assembled, and `ask` throws `Unavailable`
   when it did not. `servedNetwork`, `servedStreets`, and
   `servedWalks` read the deployment's published documents and refuse
-  one that does not answer its pinned hash. A module may drop what
+  one that does not answer its pinned hash — `servedNetwork` in the
+  first of the page's named readers that assembles, so no module
+  holds a copy only to check it. `servedNetwork` holds the network
+  as the gzipped bytes the server sends (`/network/document`): the
+  page never unzips, parses, or re-encodes it, and every module it
+  registers in decodes the stream itself (a heading asks the
+  directory's `about` for the network's name). `servedNetworkValue`
+  is the planner's: the network as a value it forks. A module may drop what
   it holds (see "The bus worker"): asking for a dropped document is
   the module's unknown-hash error, and the engine registers the
   document again and asks once more — a host never sees it. `keep`
@@ -1014,8 +1031,9 @@ here" on a tapped spot does the same; a point end plans
 as a router place over cap-streets `access`, its walks drawn along
 the streets; leave now, leave at, arrive by, or the last bus; the
 itinerary as a timeline, drawn on the map), and the alerts in
-force. It boots from the server's `/network` (or a zip the rider
-loads), then loads the server's `/streets` and `/walks` in the
+force. It boots from the server's published network
+(`servedNetwork`, bytes it never parses; or a zip the rider loads),
+then loads the server's `/streets` and `/walks` in the
 background (`servedStreets`, `servedWalks`; until they land, or
 where none is published, walks are straight lines and trips run
 stop to stop; a hand-loaded zip walks no streets — the walk table
@@ -1041,7 +1059,8 @@ screen's height, its type scaled to the band); the alerts slot is
 always on screen. Any layout shows any stop. The stop and the layout live in the page's URL
 (`?stop=<id>&layout=center|route|routes`), so a screen reopens on its
 stop; without a stop, the setup picks both. It boots from the
-server's `/network` (or a zip), reads `GET /edits` and the deployment's
+server's published network (`servedNetwork`, bytes it never parses;
+or a zip), reads `GET /edits` and the deployment's
 live feeds (`public/live-feeds.json`, through `/rt`), and polls them
 and the clock every 20 s. Its open work is
 `docs/units/ui-stop-display.md`.
@@ -1076,11 +1095,19 @@ cap-abi         The seam crate: the flat C ABI as a macro (every
                 stops applying, fails the build).
                 The kernel registration lives here too: bulk op 256
                 (OP_LOAD_NETWORK — the bare network document on
-                transit_invoke_bytes, parsed straight into the
-                model; the JSON load_network routes to the same
-                parse via load_network_json) and canonical_hash,
-                the one identity formula (streamed into the
-                digest, never a second copy of the document).
+                transit_invoke_bytes, its JSON or that JSON
+                gzipped, parsed straight into the model; a gzip
+                stream is decoded as it parses, so its text never
+                exists whole in the module — parse_document; the
+                JSON load_network routes to the same parse via
+                load_network_json) and canonical_hash, the one
+                identity formula (streamed into the digest, never
+                a second copy of the document). Every module's JSON
+                lane answers through `answer` / `outcome`,
+                serialized straight from the typed response — no
+                generic tree, so an answer carrying a document (an
+                import's network) carries its canonical bytes
+                (struct field order, docs/FORMATS.md).
                 The document registry (registry.rs) is the one type
                 every module keeps its documents in: `Registry::documents`
                 by content hash, `Registry::derived` for what a
@@ -1260,7 +1287,9 @@ cap-calendar    The calendar capability — TWO READS of one relation:
                 shared transit-dispatch library; no GTFS layer (arch
                 gate).
 cap-directory   The directory capability — ONE QUESTION: what
-                exists in the network? The stop list (name-sorted,
+                exists in the network? What the network is (about:
+                its name and plan — the heading of a page that holds
+                the network only as bytes), the stop list (name-sorted,
                 with the walking-group structure the station board
                 keys on; an optional query narrows it the way a
                 picker's typing does), the names join (stops_by_ids),

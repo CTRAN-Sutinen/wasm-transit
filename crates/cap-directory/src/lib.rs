@@ -104,6 +104,10 @@ pub enum Request {
     /// ~8× the document in peak memory and a second decoder).
     #[serde(skip_deserializing)]
     LoadNetwork { network: Network },
+    /// What the network is: its name and the plan it is (as the
+    /// document carries them) — the heading a host shows over a
+    /// network it holds only as bytes it never parsed.
+    About { network_hash: String },
     /// The stop list, name-sorted (the pickers' shape): every stop
     /// with its walking-group structure. `query` narrows it the way
     /// a picker's typing does — every whitespace-separated term must
@@ -207,6 +211,7 @@ pub enum Request {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     LoadNetwork { network_hash: String },
+    About { name: String, plan: transit_network::PlanMeta },
     Stops { stops: Vec<DirectoryStop> },
     StopsNear { stops: Vec<transit_network::listing::NearbyStop> },
     StopsByIds { stops: Vec<DirectoryStop> },
@@ -299,6 +304,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .collect();
             Ok(Response::StopsByIds { stops })
         }
+        Request::About { network_hash } => {
+            let network = network_arc(&network_hash)?;
+            Ok(Response::About { name: network.name.clone(), plan: network.plan.clone() })
+        }
         Request::Routes { network_hash } => {
             let network = network_arc(&network_hash)?;
             let mut routes: Vec<DirectoryRoute> = network
@@ -381,14 +390,7 @@ pub fn dispatch_json(text: &str) -> String {
     if let Some(answer) = cap_abi::load_network_json(text, |doc| dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc)) {
         return answer;
     }
-    let outcome = match serde_json::from_str::<Request>(text) {
-        Ok(request) => match dispatch(request) {
-            Ok(response) => serde_json::json!({ "ok": response }),
-            Err(error) => serde_json::json!({ "error": error }),
-        },
-        Err(error) => serde_json::json!({ "error": format!("invalid request: {error}") }),
-    };
-    serde_json::to_string(&outcome).expect("dispatch outcomes serialize")
+    cap_abi::answer(text, dispatch)
 }
 
 /// The directory module takes a JSON document (the network) — no

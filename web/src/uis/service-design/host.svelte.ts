@@ -19,7 +19,7 @@
 /// answers (a production failure, shown gracefully).
 
 import { getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
-import { ask, available, load, produced, servedNetwork, Doc } from "../../engine";
+import { ask, available, load, produced, servedNetworkValue, Doc } from "../../engine";
 import { answerGraph, today } from "../kit";
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
 import type { DirectoryStop } from "../../types/cap_directory/DirectoryStop";
@@ -541,7 +541,7 @@ export async function boot(): Promise<void> {
   // A server started with -feed publishes its network: the base
   // every fork copies, with no import here.
   const key = await step("Loading the published network…", async () => {
-    const served = await servedNetwork();
+    const served = await servedNetworkValue();
     if (!served?.network.value) return null;
     const network = served.network.value;
     docs.set(network, served.network);

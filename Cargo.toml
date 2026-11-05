@@ -45,6 +45,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
 csv = "1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# Gzip streams: a published document crosses into a module compressed
+# and is decoded as it parses (cap_abi::parse_document).
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 thiserror = "1"
 prost = "0.13"
@@ -62,12 +65,15 @@ sha2 = "0.10"
 wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"
 
-# Size the wasm artifact: without wasm-pack's wasm-opt pass, the
-# release profile does the work in-repo. opt-level "s" beats 3 on wasm
-# by a wide margin here; LTO + one codegen unit + abort-on-panic
-# (traps are host errors, never caught) strip the rest.
+# The wasm artifact: opt-level 3, LTO, one codegen unit, abort-on-panic
+# (traps are host errors, never caught). 3 over "s" is measured on the
+# C-TRAN network (docs/units/runtime-cost-gate.md): registration is
+# the hot path every module runs on every page, and its streamed
+# decode (cap_abi::parse_document) is per-byte code that "s" leaves
+# un-inlined — 3 registers in ~60% of the time for modules ~25% larger.
+# Per-crate opt levels measured worse on both (they fight LTO).
 [profile.release]
-opt-level = "s"
+opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"

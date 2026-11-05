@@ -38,7 +38,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-71**.
+- IDs are never reused; the next new decision is **D-72**.
 
 ## Summary
 
@@ -110,6 +110,9 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-67 | Whose feeds does the server's proxy fetch? | decided | nothing |
 | D-68 | What are ride-now's and the stop display's performance budgets? | decided | nothing |
 | D-69 | What happens to the original app when host calls move into the engine? | decided | nothing |
+| D-70 | How do the module runtime's bounds default? | encoded | nothing |
+| D-71 | May a module register a document under a pinned hash it did not compute? | unanswered | the re-hash candidate in `runtime-cost-gate` |
+| D-72 | Is the release profile tuned for size or for speed? | encoded | nothing |
 
 ## The trip model
 
@@ -1357,7 +1360,7 @@ Blocks: nothing. The gaps it left are lines in
 `docs/units/document-versioning.md`'s browser e2e.
 
 ### D-70 — How do the module runtime's bounds default?
-State: Provisional.
+State: Encoded provisionally.
 Context: `docs/units/module-runtime.md` puts eviction in the module
 (a kernel op over a keep-set the host names) and leaves the
 defaults open: how many ephemeral documents a module keeps with no
@@ -1382,6 +1385,57 @@ properties), `crates/cap-rt/tests/registry_test.rs`,
 bounded").
 Blocks: nothing — the C-TRAN record in `module-runtime.md` measures
 the working set the ceiling should sit above.
+
+### D-71 — May a module register a document under a pinned hash it did not compute?
+State: Unanswered.
+Context: registering the C-TRAN network costs ~300 ms per module on
+the bus worker (`docs/units/runtime-cost-gate.md`): the parse
+(~126 ms), then the canonical hash — the document re-serialized
+(~50–100 ms) and SHA-256 over it (~100 ms). The module is the hash
+authority (the bus rules): it derives identity, a host never mints
+it. A module cannot VERIFY a pin cheaper than computing it — bytes
+that hash to the pin are the pin's bytes, but only re-serializing
+proves they are canonical, which is the cost to be saved.
+Options:
+- Keep full verification in every module (today): sound, ~300 ms per
+  registration on C-TRAN.
+- Trust a pin for bytes that hash to it: the module skips the
+  re-serialization and registers under the pin (saves ~50–100 ms per
+  registration; the SHA-256 stays). A host passing non-canonical
+  bytes with their own hash would mint an identity no module derived.
+- Hash once per page: the first module derives the identity, the
+  engine passes it with the same bytes to the rest, which trust it —
+  the same trust, saving the whole hash in every later module.
+- A strict canonical parser that refuses anything but the canonical
+  serialization, so the bytes' SHA-256 IS the identity with no
+  re-serialization and no trust — sound, and a parser to keep in
+  lockstep with serde's output.
+Blocks: the re-hash candidate in `docs/units/runtime-cost-gate.md`.
+Update 2026-11-04: modules now register the network from its gzip
+stream, and every op answers in struct field order, so the server's
+`/network/document` bytes ARE the canonical serialization (a server
+test hashes them to the pin). The parse is ~290 ms of the router's
+first registration on C-TRAN (serde_json 240, inflate 49), the
+canonical hash ~145 ms (sha2 79 over the re-serialization).
+
+### D-72 — Is the release profile tuned for size or for speed?
+State: Encoded provisionally.
+Context: registration is the hot path every module runs on every
+page, and the network is registered from its gzip stream
+(`cap_abi::parse_document`), a per-byte decode that opt-level "s"
+leaves un-inlined. Measured in Node on the C-TRAN network
+(`docs/units/runtime-cost-gate.md`): board at "s" registers the
+gzip stream in 302 ms (1.75 MB module); at 3 in 187 ms (2.17 MB).
+The plain-JSON slice parse at "s" was 168 ms and 1.70 MB.
+Encoded (provisional): `opt-level = 3` for the whole workspace's
+release profile — modules ~25–40% larger (cap-network 3.2 MB,
+cap-author 2.8 MB), registration ~40% faster than "s" over the same
+stream. Per-package opt levels measured worse on both (they fight
+LTO).
+Options: keep 3; return to "s" and accept the slower streamed
+registration (~2× today's worker time per module); or keep the
+plain-JSON slice decoder beside the stream decoder (164 ms, 2.43 MB).
+Pins: the profile in the root `Cargo.toml`; `just perf`.
 
 ## Agency data
 

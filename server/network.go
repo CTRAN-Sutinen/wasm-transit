@@ -6,7 +6,10 @@ package main
 // same bytes everywhere — and serves the import's answer at
 // GET /network. Browsers register the network; nobody downstream
 // parses GTFS. The answer is opaque here: the host reads only its
-// network_hash, to pin it.
+// network_hash, to pin it, and splits off its two documents for the
+// pages that register them without reading them —
+// GET /network/document (the bare network, gzipped bytes) and
+// GET /network/boundary.
 
 import (
 	"archive/zip"
@@ -57,6 +60,43 @@ func (s *server) handleNetwork(w http.ResponseWriter, r *http.Request) {
 	w.Write(feed.network)
 }
 
+// handleNetworkDocument serves the bare network document as gzipped
+// bytes — Content-Type application/gzip, never Content-Encoding, so
+// the browser hands them to the modules compressed (kernel op 256
+// decodes gzip as it parses) and never unzips or parses them — under
+// the network hash as its ETag.
+func (s *server) handleNetworkDocument(w http.ResponseWriter, r *http.Request) {
+	s.servePublished(w, r, "application/gzip", func(f *loadedFeed) []byte { return f.documentGzip })
+}
+
+// handleNetworkBoundary serves the import's boundary (the feed's
+// numbering the live feeds name) under the same ETag: it belongs to
+// that network.
+func (s *server) handleNetworkBoundary(w http.ResponseWriter, r *http.Request) {
+	s.servePublished(w, r, "application/json", func(f *loadedFeed) []byte { return f.boundary })
+}
+
+func (s *server) servePublished(w http.ResponseWriter, r *http.Request, contentType string, body func(*loadedFeed) []byte) {
+	if s.feeder == nil {
+		http.Error(w, "no feed configured (start with -feed <gtfs.zip>)", http.StatusNotFound)
+		return
+	}
+	feed, err := s.feeder.Load()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("network unavailable: %v", err), http.StatusInternalServerError)
+		return
+	}
+	etag := `"` + feed.networkHash + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "no-cache")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Write(body(feed))
+}
+
 // loadedFeed is one published state: the zip (hashed, for provenance)
 // and the network imported from it.
 type loadedFeed struct {
@@ -65,6 +105,10 @@ type loadedFeed struct {
 	networkHash string          // the import's network_hash
 	network     json.RawMessage // the import's answer, served as-is
 	networkGzip []byte
+	// The answer's two documents, split off as they are: the bare
+	// network gzipped, and the boundary.
+	documentGzip []byte
+	boundary     json.RawMessage
 }
 
 // importFeed runs load_feed + import in a fresh cap-network instance
@@ -162,22 +206,35 @@ func (f *fileFeed) Load() (*loadedFeed, error) {
 	if err != nil {
 		return nil, err
 	}
-	var gz bytes.Buffer
-	zw, _ := gzip.NewWriterLevel(&gz, gzip.BestCompression)
-	zw.Write(network)
-	zw.Close()
+	var parts struct {
+		Network  json.RawMessage `json:"network"`
+		Boundary json.RawMessage `json:"boundary"`
+	}
+	if err := json.Unmarshal(network, &parts); err != nil || len(parts.Network) == 0 {
+		return nil, fmt.Errorf("import answered no network document")
+	}
 	sum := sha256.Sum256(body)
 
 	f.loaded = true
 	f.mtime = info.ModTime()
 	f.feed = &loadedFeed{
-		hash:        "sha256:" + hex.EncodeToString(sum[:]),
-		version:     feedInfoVersion(body),
-		networkHash: networkHash,
-		network:     network,
-		networkGzip: gz.Bytes(),
+		hash:         "sha256:" + hex.EncodeToString(sum[:]),
+		version:      feedInfoVersion(body),
+		networkHash:  networkHash,
+		network:      network,
+		networkGzip:  gzipped(network),
+		documentGzip: gzipped(parts.Network),
+		boundary:     parts.Boundary,
 	}
 	log.Printf("network imported from %s in %s: %s (%d KB, %d KB gzipped)",
-		f.path, time.Since(started).Round(time.Millisecond), networkHash, len(network)/1024, gz.Len()/1024)
+		f.path, time.Since(started).Round(time.Millisecond), networkHash, len(parts.Network)/1024, len(f.feed.documentGzip)/1024)
 	return f.feed, nil
+}
+
+func gzipped(b []byte) []byte {
+	var gz bytes.Buffer
+	zw, _ := gzip.NewWriterLevel(&gz, gzip.BestCompression)
+	zw.Write(b)
+	zw.Close()
+	return gz.Bytes()
 }

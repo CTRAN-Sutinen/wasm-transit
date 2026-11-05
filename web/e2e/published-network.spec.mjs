@@ -1,8 +1,10 @@
 // The published network (docs/ARCHITECTURE.md, server section): a
 // server started with -feed imports its zip once and serves the
-// network at /network; every generated UI boots from it with no GTFS
-// in the browser, and refuses a network that does not register under
-// the hash the server pins.
+// network; every generated UI boots from it with no GTFS in the
+// browser, and refuses a network that does not register under the
+// hash the server pins. The rider pages read it as gzipped bytes they
+// never parse (/network/document, /network/boundary); the planner
+// takes the whole answer (/network) to fork.
 //
 // Its own server (playwright.config.mjs, :8083) publishes the fixture
 // feed and the walking fixture's streets (Station Rd through the
@@ -49,7 +51,12 @@ test("ride now boots from the published network", async ({ page }) => {
   const first = page.getByTestId("nearby").getByTestId("stop-card").first();
   await expect(first).toContainText("Main Station", { timeout: 10_000 });
   await expect(first).toContainText("8:15");
-  expect(asked).toContain("/network");
+  // The bytes, never the parsed answer — and the heading is the
+  // network's name, which the directory answers.
+  expect(asked).toEqual(expect.arrayContaining(["/network/document", "/network/boundary"]));
+  expect(asked).not.toContain("/network");
+  const { network } = await (await page.request.get("/network")).json();
+  await expect(page.locator("h1")).toHaveText(network.name);
 });
 
 test.describe("ride now walks the published streets", () => {
@@ -214,11 +221,14 @@ test.describe("ride now searches addresses through the geocoder", () => {
 
 test("the stop display boots from the published network", async ({ page }) => {
   await live(page);
+  const asked = requests(page);
   await page.goto("/stop-display.html?stop=A&layout=routes");
 
   await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
   const ten = page.locator('[data-testid="display-group"][data-route="10"]').first();
   await expect(ten.getByTestId("display-time").first()).toContainText("2 min late");
+  expect(asked).toContain("/network/document");
+  expect(asked).not.toContain("/network");
 });
 
 test("service design opens the published network as a plan", async ({ page }) => {
@@ -232,10 +242,12 @@ test("service design opens the published network as a plan", async ({ page }) =>
 
 test("a network that does not register under the pinned hash is refused", async ({ page }) => {
   await live(page);
-  await page.route("**/network", async (route) => {
-    const served = await (await route.fetch()).json();
-    served.network_hash = "sha256:" + "0".repeat(64);
-    await route.fulfill({ contentType: "application/json", body: JSON.stringify(served) });
+  // Both answers name the same (wrong) pin, so the page takes them as
+  // one import and registers the document against it.
+  const wrong = `"sha256:${"0".repeat(64)}"`;
+  await page.route(/\/network\/(document|boundary)$/, async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, headers: { ...response.headers(), etag: wrong } });
   });
   await page.goto("/ride-now.html");
 

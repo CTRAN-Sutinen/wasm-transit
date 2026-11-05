@@ -433,17 +433,52 @@ function etag(resp: Response): string | null {
   return resp.headers.get("ETag")?.replace(/^W\//, "").replace(/"/g, "") || null;
 }
 
-/// The deployment's published network: `GET /network`, the server's
-/// import of its GTFS zip (cap-network, the same module) — registered
-/// in `cap` now, so a network that does not answer the hash the server
-/// pins is refused before anything is asked of it. Null when the
-/// server publishes none.
-export async function servedNetwork(cap: CapId = "network"): Promise<{ network: Doc<Network>; boundary: Doc<Boundary> } | null> {
+/// The deployment's published network, for a page that READS it:
+/// `GET /network/document`, the server's import of its GTFS zip
+/// (cap-network, the same module) as gzipped bytes the page never
+/// unzips or parses — every module registers them compressed (kernel
+/// op 256 decodes as it parses, so the document's text never exists
+/// whole anywhere on the page) — and its boundary
+/// (`GET /network/boundary`, under the same pin). Registered in a
+/// reader now, so a network that does not answer the hash the server
+/// pins is refused before anything is asked of it. A page names the
+/// modules that read it, in order, and the pin is checked in the first
+/// that assembles — registering it in a module the page never asks
+/// would hold a whole copy only to check it. The network's name is a
+/// question for the directory (`about`). Throws Unavailable when none
+/// assembles; null when the server publishes none.
+export async function servedNetwork(
+  ...readers: CapId[]
+): Promise<{ network: Doc<Network>; boundary: Doc<Boundary> } | null> {
+  const candidates: CapId[] = readers.length ? readers : ["network"];
+  let cap: CapId | null = null;
+  for (const c of candidates) if (!cap && (await available(c))) cap = c;
+  if (!cap) throw new Unavailable(candidates[0]);
+  // The two answer one import: a republish between the requests is
+  // read again, so the boundary always belongs to the network.
+  for (let tries = 0; tries < 3; tries++) {
+    const [doc, bnd] = await Promise.all([fetch("/network/document"), fetch("/network/boundary")]).catch(() => [null, null]);
+    if (!doc?.ok || !bnd?.ok) return null;
+    if (etag(doc) !== etag(bnd)) continue;
+    const network = new Doc<Network>("network", { bytes: new Uint8Array(await doc.arrayBuffer()) }, { pin: etag(doc) });
+    const boundary = new Doc<Boundary>("boundary", { value: (await bnd.json()) as Boundary });
+    await load(cap, network);
+    return { network, boundary };
+  }
+  throw new Error("the server republished its network while it loaded — reload to try again");
+}
+
+/// The deployment's published network as a VALUE, for a page that
+/// edits it (the planner forks it into a plan; JS owns the documents
+/// it authors): `GET /network`, the import's whole answer, registered
+/// in the network module under the pin it serves. Null when the server
+/// publishes none.
+export async function servedNetworkValue(): Promise<{ network: Doc<Network>; boundary: Doc<Boundary> } | null> {
   const resp = await fetch("/network").catch(() => null);
   if (!resp?.ok) return null;
   const served = (await resp.json()) as { network: Network; boundary: Boundary; network_hash: string };
   const network = new Doc<Network>("network", { value: served.network }, { pin: served.network_hash });
-  await load(cap, network);
+  await load("network", network);
   return { network, boundary: new Doc<Boundary>("boundary", { value: served.boundary }) };
 }
 
