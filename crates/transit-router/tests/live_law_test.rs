@@ -22,7 +22,10 @@
 //!    does not, and `secs - delay` is the scheduled time;
 //! 4. scenarios: a predicted-late bus makes a connection the schedule
 //!    says is missed, and a predicted-late bus misses a connection
-//!    the schedule says is made.
+//!    the schedule says is made;
+//! 5. a trip the live document cancels is never ridden: the live plan
+//!    is the schedule plan of the world without it; a stop it skips is
+//!    never boarded or alighted at (D-73).
 
 use chrono::NaiveDate;
 use proptest::collection::vec;
@@ -36,6 +39,8 @@ use support::{build_zip_timed, model_day};
 
 const DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(); // Friday
 const MAX_LEGS: usize = 12;
+/// Stop spacing (degrees) no walk crosses — law 5's plans ride.
+const SPREAD: f64 = 0.05;
 
 /// One generated trip: its stops, scheduled start and step, and its
 /// live state — `None` (no prediction) or (first stated position,
@@ -261,4 +266,76 @@ fn a_late_second_bus_makes_a_connection_the_schedule_misses() {
         }
         other => panic!("t0 then t1, got {other:?}"),
     }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    /// Law 5: cancelled trips are not in the world the router plans.
+    #[test]
+    fn a_cancelled_trip_is_never_ridden(
+        (n_stops, trips, from, to, depart) in feed(),
+        cancel in vec(any::<bool>(), 10),
+    ) {
+        let timed: Vec<_> = trips.iter().map(|t| (t.stops.clone(), t.scheduled())).collect();
+        let (network, day) = model_day(&build_zip_timed(n_stops, SPREAD, &timed), DATE);
+        let cancelled: Vec<serde_json::Value> = trips
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| cancel[*i])
+            .map(|(i, _)| {
+                let id = format!("t{i}");
+                let start = day.iter().find(|m| m.trip == id).unwrap().start_secs;
+                serde_json::json!({ "trip": id, "start_secs": start, "route": "1", "route_name": "R",
+                    "worst_delay_secs": null, "status": "no_prediction", "canceled": true, "stops": [] })
+            })
+            .collect();
+        let net = RouterNetwork::build(&network, &day, DATE, Some(&empty_live_with(cancelled)));
+        // Stops too far apart to walk between: the plan rides.
+
+        // The oracle world: only the trips that run (the stops stay —
+        // a stop no trip serves is still a place to walk from).
+        let running: Vec<_> = trips.iter().enumerate().filter(|(i, _)| !cancel[*i]).map(|(_, t)| t).collect();
+        let got = plan(&net, from, to, depart);
+        for leg in got.iter().flat_map(|i| &i.legs) {
+            if let Leg::Transit { trip, .. } = leg {
+                prop_assert!(!cancel[trip[1..].parse::<usize>().unwrap()], "rode cancelled {}", trip);
+            }
+        }
+        if !running.is_empty() {
+            let timed: Vec<_> = running.iter().map(|t| (t.stops.clone(), t.scheduled())).collect();
+            let (onet, oday) = model_day(&build_zip_timed(n_stops, SPREAD, &timed), DATE);
+            let oracle = RouterNetwork::build_from_day(&onet, &oday, DATE);
+            prop_assert_eq!(got.map(|i| i.arrival_secs), plan(&oracle, from, to, depart).map(|i| i.arrival_secs));
+        }
+    }
+}
+
+#[test]
+fn a_cancelled_connection_waits_for_the_next_bus() {
+    // t1 (08:12 → 08:30) is cancelled: t0 then t2, arriving 08:50.
+    let it = connection(|day| {
+        let start = day.iter().find(|m| m.trip == "t1").unwrap().start_secs;
+        vec![serde_json::json!({ "trip": "t1", "start_secs": start, "route": "1", "route_name": "R",
+            "worst_delay_secs": null, "status": "no_prediction", "canceled": true, "stops": [] })]
+    })
+    .unwrap();
+    assert_eq!(it.arrival_secs, 8 * 3600 + 3000);
+    assert!(it.legs.iter().all(|l| !matches!(l, Leg::Transit { trip, .. } if trip == "t1")));
+}
+
+#[test]
+fn a_skipped_stop_is_not_boarded() {
+    // t1 skips s1 — where the rider would board it: t0 then t2.
+    let it = connection(|day| {
+        let start = day.iter().find(|m| m.trip == "t1").unwrap().start_secs;
+        vec![serde_json::json!({ "trip": "t1", "start_secs": start, "route": "1", "route_name": "R",
+            "worst_delay_secs": null, "status": "no_prediction", "stops": [
+                { "stop": "s1", "scheduled_departure": 8 * 3600 + 720, "arrival_delay": null,
+                  "departure_delay": null, "predicted_departure": 8 * 3600 + 720, "skipped": true }
+            ] })]
+    })
+    .unwrap();
+    assert_eq!(it.arrival_secs, 8 * 3600 + 3000);
+    assert!(it.legs.iter().all(|l| !matches!(l, Leg::Transit { trip, .. } if trip == "t1")));
 }

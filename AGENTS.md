@@ -176,7 +176,8 @@ transit-dispatch the operator's day library (patched materialized day, boards,
                  authored block chains with the layover ripple, diversion drafts)
 transit-rt       GTFS-rt prost types + the joins over the network (an rt trip id is a
                  model trip id; a trip instance is (trip, start))
-transit-live     THE live document (rt in model vocabulary, the on-time window — pure)
+transit-live     THE live document (rt in model vocabulary, the on-time window, what does
+                 not run — a cancelled trip, a skipped stop — pure)
 transit-sync     THE sync document (EditRecord, Diversion, merge, the record envelope — pure)
 transit-plans    THE service-plan chain (resolve, periods, validity — pure, derived)
 transit-streets  THE streets document (canonical: its hash is the streets', not a file's),

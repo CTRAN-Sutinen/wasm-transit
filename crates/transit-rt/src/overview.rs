@@ -7,6 +7,9 @@
 use ts_rs::TS;
 use serde::Serialize;
 
+use crate::gtfs_rt::trip_descriptor::ScheduleRelationship as TripRelationship;
+use crate::gtfs_rt::trip_update::stop_time_update::ScheduleRelationship as StopRelationship;
+
 /// Flat view of one trip update in a feed.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
@@ -16,6 +19,10 @@ pub struct TripUpdateView {
     /// The instance's start ("HH:MM:SS") — how a frequency trip's
     /// update names which run it is.
     pub start_time: Option<String>,
+    /// The instance does not run: the descriptor's
+    /// schedule_relationship is CANCELED, or DELETED (cancelled and
+    /// not to be shown to riders).
+    pub canceled: bool,
     pub stop_updates: Vec<StopUpdateView>,
 }
 
@@ -27,6 +34,9 @@ pub struct StopUpdateView {
     /// Seconds of delay; positive = late.
     pub arrival_delay: Option<i32>,
     pub departure_delay: Option<i32>,
+    /// The vehicle does not stop here (schedule_relationship
+    /// SKIPPED); the trip still runs.
+    pub skipped: bool,
 }
 
 /// One live vehicle from a VehiclePositions feed.
@@ -132,6 +142,7 @@ pub fn decode_overview(bytes: &[u8]) -> Result<RtOverview, String> {
                     trip_id: tu.trip.trip_id.clone(),
                     route_id: tu.trip.route_id.clone(),
                     start_time: tu.trip.start_time.clone(),
+                    canceled: matches!(tu.trip.schedule_relationship(), TripRelationship::Canceled | TripRelationship::Deleted),
                     stop_updates: tu
                         .stop_time_update
                         .iter()
@@ -140,6 +151,7 @@ pub fn decode_overview(bytes: &[u8]) -> Result<RtOverview, String> {
                             stop_sequence: s.stop_sequence,
                             arrival_delay: s.arrival.as_ref().and_then(|e| e.delay),
                             departure_delay: s.departure.as_ref().and_then(|e| e.delay),
+                            skipped: s.schedule_relationship() == StopRelationship::Skipped,
                         })
                         .collect(),
                 });

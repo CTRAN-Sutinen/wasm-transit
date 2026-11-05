@@ -38,6 +38,10 @@ pub struct ProgressStop {
     /// actually be here.
     pub predicted_arrival: Option<u32>,
     pub predicted_departure: Option<u32>,
+    /// The update says the vehicle does not stop here (SKIPPED). A
+    /// skipped stop states no delay of its own; the delay before it
+    /// carries past it.
+    pub skipped: bool,
 }
 
 /// One trip's progress: the joined board for a single vehicle.
@@ -140,8 +144,10 @@ pub(crate) fn progress_of(network: &Network, boundary: &Boundary, update: &TripU
             Some(q) => q == seq,
             None => first_visit && s.stop_id.as_deref() == Some(row.stop.as_str()),
         });
+        let skipped = upd.is_some_and(|s| s.skipped);
         let (arrival_delay, departure_delay) = match upd {
-            Some(s) => (s.arrival_delay, s.departure_delay),
+            Some(s) if !s.skipped => (s.arrival_delay, s.departure_delay),
+            Some(_) => (None, None),
             None => (carried, carried),
         };
         if let Some(d) = departure_delay.or(arrival_delay) {
@@ -157,6 +163,7 @@ pub(crate) fn progress_of(network: &Network, boundary: &Boundary, update: &TripU
             departure_delay,
             predicted_arrival: predicted(Some(row.arrival_secs), arrival_delay),
             predicted_departure: predicted(Some(row.departure_secs), departure_delay),
+            skipped,
         });
     }
     TripProgress {
@@ -182,7 +189,7 @@ fn block_of(network: &Network, trip: &str) -> Option<String> {
 /// instance of it, or — a frequency trip with no update — no instance
 /// is named at all.
 pub fn trip_progress(network: &Network, boundary: &Boundary, overview: &RtOverview, trip_id: &str) -> Option<TripProgress> {
-    let quiet = TripUpdateView { trip_id: Some(trip_id.to_string()), route_id: None, start_time: None, stop_updates: vec![] };
+    let quiet = TripUpdateView { trip_id: Some(trip_id.to_string()), route_id: None, start_time: None, canceled: false, stop_updates: vec![] };
     let update = overview.trips.iter().find(|t| t.trip_id.as_deref() == Some(trip_id)).unwrap_or(&quiet);
     let instance = resolve_instance(network, trip_id, update.start_time.as_deref())?;
     Some(progress_of(network, boundary, update, &instance))
@@ -223,10 +230,12 @@ pub fn late_trips(
 
     let mut late: Vec<LateTrip> = Vec::new();
     for update in &delays.trips {
-        let Some(trip_id) = update.trip_id.as_deref() else { continue };
+        // A cancelled trip is not late — it does not run.
+        let Some(trip_id) = update.trip_id.as_deref().filter(|_| !update.canceled) else { continue };
         let worst = update
             .stop_updates
             .iter()
+            .filter(|s| !s.skipped)
             .map(|s| (s.arrival_delay).max(s.departure_delay).unwrap_or(0))
             .max()
             .unwrap_or(0);

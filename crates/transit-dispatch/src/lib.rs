@@ -439,7 +439,8 @@ const MAX_LOOKBACK_SECS: u32 = 3 * 3600;
 /// Every departure of the day's (patched) trips from the stop, ordered
 /// by when it will actually leave: a late bus scheduled before
 /// `from_secs` that has not left yet is on the board; an early one
-/// that already left is not. With the day's `edits`, the departures
+/// that already left is not; one the live document cancels or skips
+/// here is not either (silently — D-73). With the day's `edits`, the departures
 /// they took away from the stop are listed as `skipped`, each with
 /// the diversion that skips it; with a live document, its alerts
 /// about the board ride along. A stop with nothing of its own —
@@ -664,6 +665,13 @@ fn live_rows(
             }
         })
         .filter(|r| r.expected_secs.unwrap_or(r.departure.departure_secs) >= from_secs)
+        // A visit the live document says does not happen — its trip
+        // cancelled, the stop skipped — leaves the board silently
+        // (D-73).
+        .filter(|r| {
+            let d = &r.departure;
+            live.is_none_or(|l| l.runs(&d.trip, d.start_secs, &d.stop, d.departure_secs))
+        })
         .collect();
     rows.sort_by(|a, b| {
         let at = |r: &BoardRow| r.expected_secs.unwrap_or(r.departure.departure_secs);

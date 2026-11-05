@@ -16,8 +16,11 @@
 //! threshold per view). It also carries the SERVICE ALERTS in force at
 //! that moment, their informed entities resolved to routes, stops, and
 //! trip instances of the network, so a reader asks "does this alert
-//! touch this visit?" in model vocabulary. Pure data plus the
-//! classification and alert-matching rules; nothing here reads GTFS.
+//! touch this visit?" in model vocabulary. It says what does not run
+//! — a cancelled trip instance, a skipped stop — so every reader asks
+//! one question, [`LiveDay::runs`], before it shows or rides a visit.
+//! Pure data plus the classification, alert-matching and runs rules;
+//! nothing here reads GTFS.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -90,6 +93,12 @@ pub struct LiveStop {
     pub departure_delay: Option<i32>,
     /// When the vehicle should actually leave: schedule + delay.
     pub predicted_departure: Option<u32>,
+    /// The vehicle does not stop here (GTFS-rt SKIPPED) — the visit
+    /// does not happen; the trip still runs. A skipped stop states no
+    /// delay of its own. Absent when false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(optional, as = "Option<bool>")]
+    pub skipped: bool,
 }
 
 /// One trip instance the snapshot speaks about: the network's trip
@@ -106,6 +115,12 @@ pub struct LiveTrip {
     /// the trip's headline lateness.
     pub worst_delay_secs: Option<i32>,
     pub status: LiveStatus,
+    /// The instance does not run (GTFS-rt CANCELED or DELETED): no
+    /// visit of it happens, and it is not late or on time
+    /// (`no_prediction`). Absent when false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(optional, as = "Option<bool>")]
+    pub canceled: bool,
     pub stops: Vec<LiveStop>,
 }
 
@@ -297,6 +312,18 @@ impl LiveDay {
         let mut at_stop = trip.stops.iter().filter(|s| s.stop == stop);
         let first = at_stop.clone().next();
         at_stop.find(|s| s.scheduled_departure == Some(scheduled_departure)).or(first)
+    }
+
+    /// Does this visit of a trip instance happen? Not when the
+    /// document cancels the instance or skips the visit (the entry
+    /// [`LiveDay::visit`] finds); every visit the document says
+    /// nothing against happens. THE rule every reader asks — a board
+    /// drops a visit that does not happen, a router never rides it.
+    pub fn runs(&self, trip: &str, start_secs: u32, stop: &str, scheduled_departure: u32) -> bool {
+        if self.trips.iter().any(|t| t.trip == trip && t.start_secs == start_secs && t.canceled) {
+            return false;
+        }
+        self.visit(trip, start_secs, stop, scheduled_departure).is_none_or(|s| !s.skipped)
     }
 }
 

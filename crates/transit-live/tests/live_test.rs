@@ -45,6 +45,7 @@ fn stop(stop: &str, scheduled: u32, delay: i32) -> LiveStop {
         arrival_delay: Some(delay),
         departure_delay: Some(delay),
         predicted_departure: Some((scheduled as i32 + delay) as u32),
+        skipped: false,
     }
 }
 
@@ -56,6 +57,7 @@ fn trip(id: &str, start: u32, worst: i32, stops: Vec<LiveStop>) -> LiveTrip {
         route_name: Some("10".into()),
         worst_delay_secs: Some(worst),
         status: classify(Some(worst), &OnTimeWindow::default()),
+        canceled: false,
         stops,
     }
 }

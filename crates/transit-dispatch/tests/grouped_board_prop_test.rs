@@ -17,7 +17,11 @@
 //! 5. every board row says how long until it leaves: due under a
 //!    minute, whole minutes (rounded down — D-24) under an hour, then
 //!    the clock time it leaves at; live when predicted, else the
-//!    schedule.
+//!    schedule;
+//! 6. a departure the live document says does not happen — its trip
+//!    cancelled, or the stop skipped — leaves the board silently
+//!    (D-73): it is no row and takes no group's place, and the group
+//!    stays (the stop is still served today).
 //!
 //! The oracle recomputes each answer from the generated schedule
 //! (start + offset + the live delay), sharing nothing with the board.
@@ -57,6 +61,21 @@ struct GenPattern {
     starts: Vec<u32>,
     /// Per start: the live delay at X, if predicted.
     delays: Vec<Option<i32>>,
+    /// Per start: whether it runs at X, as the live document says.
+    gone: Vec<Gone>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Gone {
+    Runs,
+    /// The trip is cancelled.
+    Canceled,
+    /// The trip runs but skips X.
+    Skipped,
+}
+
+fn gone() -> impl Strategy<Value = Gone> {
+    prop_oneof![4 => Just(Gone::Runs), 1 => Just(Gone::Canceled), 1 => Just(Gone::Skipped)]
 }
 
 #[derive(Debug, Clone)]
@@ -86,9 +105,14 @@ fn gen_pattern() -> impl Strategy<Value = GenPattern> {
         .prop_flat_map(|(shape, starts)| {
             let starts: Vec<u32> = starts.into_iter().collect();
             let n = starts.len();
-            (Just(shape), Just(starts), prop::collection::vec(prop::option::of(-300i32..1_800), n))
+            (
+                Just(shape),
+                Just(starts),
+                prop::collection::vec(prop::option::of(-300i32..1_800), n),
+                prop::collection::vec(gone(), n),
+            )
         })
-        .prop_map(|(shape, starts, delays)| GenPattern { shape, starts, delays })
+        .prop_map(|(shape, starts, delays, gone)| GenPattern { shape, starts, delays, gone })
 }
 
 fn gen_routes() -> impl Strategy<Value = Vec<GenRoute>> {
@@ -188,30 +212,55 @@ fn build(routes: &[GenRoute]) -> Network {
     net
 }
 
-/// The live document: each predicted visit to X, at its delay.
+/// The live document: each predicted visit to X, at its delay; each
+/// cancelled trip; each visit to X skipped.
 fn live(routes: &[GenRoute]) -> LiveDay {
     let mut trips = Vec::new();
     for (r, route) in routes.iter().enumerate() {
         for (p, gp) in route.patterns.iter().enumerate() {
             let Some(at_x) = stops_of(gp.shape).1 else { continue };
-            for (&s, &delay) in gp.starts.iter().zip(&gp.delays) {
-                let Some(delay) = delay else { continue };
+            for ((&s, &delay), &gone) in gp.starts.iter().zip(&gp.delays).zip(&gp.gone) {
                 let scheduled = s + at_x;
-                trips.push(LiveTrip {
+                let trip = |stops: Vec<LiveStop>, canceled: bool, worst: Option<i32>| LiveTrip {
                     trip: trip_id(r, p, s),
                     start_secs: s,
                     route: None,
                     route_name: None,
-                    worst_delay_secs: Some(delay),
-                    status: LiveStatus::Late,
-                    stops: vec![LiveStop {
-                        stop: "X".into(),
-                        scheduled_departure: Some(scheduled),
-                        arrival_delay: Some(delay),
-                        departure_delay: Some(delay),
-                        predicted_departure: Some((scheduled as i32 + delay) as u32),
-                    }],
-                });
+                    worst_delay_secs: worst,
+                    status: if worst.is_some() { LiveStatus::Late } else { LiveStatus::NoPrediction },
+                    canceled,
+                    stops,
+                };
+                match gone {
+                    Gone::Canceled => trips.push(trip(vec![], true, None)),
+                    Gone::Skipped => trips.push(trip(
+                        vec![LiveStop {
+                            stop: "X".into(),
+                            scheduled_departure: Some(scheduled),
+                            arrival_delay: None,
+                            departure_delay: None,
+                            predicted_departure: Some(scheduled),
+                            skipped: true,
+                        }],
+                        false,
+                        None,
+                    )),
+                    Gone::Runs => {
+                        let Some(delay) = delay else { continue };
+                        trips.push(trip(
+                            vec![LiveStop {
+                                stop: "X".into(),
+                                scheduled_departure: Some(scheduled),
+                                arrival_delay: Some(delay),
+                                departure_delay: Some(delay),
+                                predicted_departure: Some((scheduled as i32 + delay) as u32),
+                                skipped: false,
+                            }],
+                            false,
+                            Some(delay),
+                        ))
+                    }
+                }
             }
         }
     }
@@ -235,6 +284,9 @@ struct Expected {
     /// When it leaves: the prediction when live, else the schedule.
     at: u32,
     expected: Option<u32>,
+    /// It leaves at all: with the live document, neither cancelled
+    /// nor skipping X.
+    runs: bool,
 }
 
 fn departures(routes: &[GenRoute], with_live: bool) -> Vec<Expected> {
@@ -246,8 +298,9 @@ fn departures(routes: &[GenRoute], with_live: bool) -> Vec<Expected> {
                 Shape::Ends => continue,
             };
             let at_x = stops_of(gp.shape).1.unwrap();
-            for (&s, &delay) in gp.starts.iter().zip(&gp.delays) {
-                let expected = delay.filter(|_| with_live).map(|d| (s as i32 + at_x as i32 + d) as u32);
+            for ((&s, &delay), &gone) in gp.starts.iter().zip(&gp.delays).zip(&gp.gone) {
+                let runs = !with_live || gone == Gone::Runs;
+                let expected = delay.filter(|_| with_live && runs).map(|d| (s as i32 + at_x as i32 + d) as u32);
                 out.push(Expected {
                     route: route_id(r),
                     destination: terminal_name(k),
@@ -255,6 +308,7 @@ fn departures(routes: &[GenRoute], with_live: bool) -> Vec<Expected> {
                     start: s,
                     at: expected.unwrap_or(s + at_x),
                     expected,
+                    runs,
                 });
             }
         }
@@ -287,9 +341,10 @@ fn case() -> impl Strategy<Value = (Vec<GenRoute>, u32, usize, bool)> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// Laws 1 and 3: the groups are exactly the (route, destination)
+    /// Laws 1, 3 and 6: the groups are exactly the (route, destination)
     /// pairs that leave the stop at any time of the day — however late
-    /// it is asked — and none other (a pattern ending here makes none).
+    /// it is asked, and however many of their trips are cancelled — and
+    /// none other (a pattern ending here makes none).
     #[test]
     fn the_groups_are_the_days_routes_and_destinations((routes, from, per_group, with_live) in case()) {
         let net = build(&routes);
@@ -304,9 +359,10 @@ proptest! {
         prop_assert_eq!(board.live, with_live);
     }
 
-    /// Law 2: each group holds its next `per_group` departures, by when
-    /// the bus actually leaves (a late bus not yet gone is still next;
-    /// an early one already gone is not), soonest first.
+    /// Laws 2 and 6: each group holds its next `per_group` departures
+    /// that run, by when the bus actually leaves (a late bus not yet
+    /// gone is still next; an early one already gone is not; a
+    /// cancelled or skipping one never is), soonest first.
     #[test]
     fn each_group_holds_its_next_departures((routes, from, per_group, with_live) in case()) {
         let net = build(&routes);
@@ -317,7 +373,7 @@ proptest! {
         for g in &board.groups {
             let mut want: Vec<&Expected> = all
                 .iter()
-                .filter(|e| e.route == g.route && e.destination == g.destination && e.at >= from)
+                .filter(|e| e.runs && e.route == g.route && e.destination == g.destination && e.at >= from)
                 .collect();
             want.sort_by(|a, b| (a.at, &a.trip, a.start).cmp(&(b.at, &b.trip, b.start)));
             want.truncate(per_group);
@@ -373,6 +429,7 @@ proptest! {
                 .into_iter()
                 .find(|e| e.trip == r.departure.trip && e.start == r.departure.start_secs)
                 .expect("every row is a generated departure");
+            prop_assert!(e.runs, "{} is cancelled or skips X, yet is a row", &e.trip);
             prop_assert_eq!(&r.wait, &wait_for(e.at, from));
         }
     }
@@ -384,7 +441,7 @@ proptest! {
 fn the_wait_turns_at_a_minute_and_an_hour() {
     let routes = vec![GenRoute {
         sort_order: None,
-        patterns: vec![GenPattern { shape: Shape::Starts(0), starts: vec![36_000], delays: vec![None] }],
+        patterns: vec![GenPattern { shape: Shape::Starts(0), starts: vec![36_000], delays: vec![None], gone: vec![Gone::Runs] }],
     }];
     let net = build(&routes);
     let day = transit_network::materialize(&net, date()).unwrap();

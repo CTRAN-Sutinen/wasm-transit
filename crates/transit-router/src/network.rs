@@ -234,7 +234,9 @@ impl RouterNetwork {
     /// patches itself (Law 2: one composition, not per-module
     /// reimplementations). Trips whose stop sequence references
     /// unknown stops are skipped, never an error. With `live`, each
-    /// trip instance rides at its predicted times ([`live_times`]).
+    /// trip instance rides at its predicted times ([`live_times`]),
+    /// a cancelled one is not ridden, and a skipped stop is neither
+    /// boarded nor alighted at ([`LiveDay::runs`]).
     pub fn build(
         network: &Network,
         day: &[MaterializedTrip],
@@ -263,6 +265,20 @@ impl RouterNetwork {
         // own pattern), resolved to stop indices.
         let mut pattern_map: HashMap<Vec<u32>, Vec<PatternTrip>> = HashMap::new();
         for trip in day {
+            // What the live document says does not happen is not in
+            // the world planned over (D-73): a cancelled instance is
+            // gone, a skipped visit is not a stop of the trip — the
+            // trip runs as the pattern of the stops it still makes.
+            let kept;
+            let trip = match live {
+                Some(l) if trip.stop_times.iter().any(|st| !l.runs(&trip.trip, trip.start_secs, &st.stop, st.departure_secs)) => {
+                    let mut t = trip.clone();
+                    t.stop_times.retain(|st| l.runs(&trip.trip, trip.start_secs, &st.stop, st.departure_secs));
+                    kept = t;
+                    &kept
+                }
+                _ => trip,
+            };
             if trip.stop_times.len() < 2 {
                 continue;
             }

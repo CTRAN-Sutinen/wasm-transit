@@ -256,6 +256,7 @@ fn overview(spec: &Spec) -> RtOverview {
                 }),
                 route_id: None,
                 start_time: t.and_then(|t| picked_start(t, u)).map(hms),
+                canceled: false,
                 stop_updates: t
                     .map(|t| {
                         let mut named: Vec<(usize, i32, bool)> =
@@ -274,6 +275,7 @@ fn overview(spec: &Spec) -> RtOverview {
                                     stop_sequence: by_sequence.then(|| sequence(t, k)),
                                     arrival_delay: Some(delay),
                                     departure_delay: Some(delay),
+                                    skipped: false,
                                 }
                             })
                             .collect()

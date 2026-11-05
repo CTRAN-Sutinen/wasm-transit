@@ -16,10 +16,14 @@ use crate::overview::{AlertView, InformedView, RtOverview, TripUpdateView};
 use crate::progress::{progress_of, resolve_instance};
 
 /// The worst delay an update states anywhere (arrival or departure)
-/// — `None` when it states none. The same headline `late_trips` and
-/// `trip_progress` rank by.
+/// — `None` when it states none, and for a cancelled trip (it is not
+/// late: it does not run). A skipped stop states none. The same
+/// headline `late_trips` and `trip_progress` rank by.
 fn stated_worst(update: &TripUpdateView) -> Option<i32> {
-    update.stop_updates.iter().filter_map(|s| s.arrival_delay.max(s.departure_delay)).max()
+    if update.canceled {
+        return None;
+    }
+    update.stop_updates.iter().filter(|s| !s.skipped).filter_map(|s| s.arrival_delay.max(s.departure_delay)).max()
 }
 
 /// Resolve a snapshot. `delays` carries trip updates, `positions`
@@ -62,16 +66,18 @@ pub fn live_day(
                 route,
                 worst_delay_secs: worst,
                 status: classify(worst, &window),
+                canceled: update.canceled,
                 stops: progress
                     .stops
                     .into_iter()
-                    .filter(|s| s.arrival_delay.is_some() || s.departure_delay.is_some())
+                    .filter(|s| s.skipped || s.arrival_delay.is_some() || s.departure_delay.is_some())
                     .map(|s| LiveStop {
                         stop: s.stop_id,
                         scheduled_departure: s.scheduled_departure,
                         arrival_delay: s.arrival_delay,
                         departure_delay: s.departure_delay,
                         predicted_departure: s.predicted_departure,
+                        skipped: s.skipped,
                     })
                     .collect(),
             });

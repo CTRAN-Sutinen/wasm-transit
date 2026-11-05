@@ -16,6 +16,7 @@ fn overview(trip: &str, updates: Vec<StopUpdateView>) -> RtOverview {
             trip_id: Some(trip.into()),
             route_id: None,
             start_time: None,
+            canceled: false,
             stop_updates: updates,
         }],
         vehicle_positions: vec![],
@@ -29,6 +30,7 @@ fn update(stop: &str, seq: u32, delay: i32) -> StopUpdateView {
         stop_sequence: Some(seq),
         arrival_delay: Some(delay),
         departure_delay: Some(delay),
+        skipped: false,
     }
 }
 

@@ -38,7 +38,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-72**.
+- IDs are never reused; the next new decision is **D-74**.
 
 ## Summary
 
@@ -113,6 +113,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-70 | How do the module runtime's bounds default? | encoded | nothing |
 | D-71 | May a module register a document under a pinned hash it did not compute? | unanswered | the re-hash candidate in `runtime-cost-gate` |
 | D-72 | Is the release profile tuned for size or for speed? | encoded | nothing |
+| D-73 | What does a stop's board show for a trip the live feed cancels? | decided | nothing |
 
 ## The trip model
 
@@ -707,6 +708,7 @@ new edit kind is a sync-document change, and each kind needs a
 meaning on every reader: does a cancelled trip leave the board or
 show as cancelled, does the router skip it, does the live feed's
 own cancellation (SCHEDULED/CANCELED in GTFS-rt) agree with it.
+D-73 answers the board's reading for the live feed's cancellations.
 D-15 ("covered") depends on the answer.
 Options:
 - Cancel (whole trip) first; a cancelled trip shows on boards as
@@ -715,6 +717,31 @@ Options:
 - Cancel, cover (another block or vehicle takes it), hold, swap —
   the full set, landed together.
 Blocks: QAF-36, and with it D-15.
+
+### D-73 — What does a stop's board show for a trip the live feed cancels?
+State: Decided.
+Answer: 2026-11-04 — "Drop it silently" (asked on the stop display
+showing a cancelled 34 at Fisher's Landing as leaving in three
+minutes). A departure the live document says does not happen — its
+trip instance CANCELED or DELETED, or the stop SKIPPED — is no row on
+any board: no "Canceled" mark, no note on the group, and it takes no
+place among the group's next three. The group stays while the route
+still serves the stop that day. The router follows the same rule: it
+never rides a cancelled trip, and never boards or alights at a
+skipped stop.
+Context: the rt decode dropped GTFS-rt's schedule_relationship, so a
+cancelled trip reached the board as an ordinary trip with no
+prediction and showed at its scheduled time. The live document now
+carries `canceled` (trip) and `skipped` (stop), and every reader asks
+`LiveDay::runs`.
+Options:
+- Show it in place, marked Canceled (it uses one of the three slots).
+- Drop it, with a note on the group ("A trip was canceled").
+- Drop it silently (encoded).
+Blocks: nothing.
+Pinned by: `crates/transit-rt/tests/cancel_law_test.rs`; law 6 in
+`crates/transit-dispatch/tests/grouped_board_prop_test.rs`; law 5 in
+`crates/transit-router/tests/live_law_test.rs`.
 
 ## Geography
 

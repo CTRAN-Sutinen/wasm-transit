@@ -21,6 +21,7 @@ transit-live = { path = "../transit-live" }
 [dev-dependencies]
 proptest = "1"
 chrono = { workspace = true }
+serde_json = { workspace = true }
 
 [build-dependencies]
 prost-build = { workspace = true }

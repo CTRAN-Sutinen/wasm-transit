@@ -149,7 +149,9 @@ transit-router  RAPTOR planning over the network model's
                 each trip instance rides at its predicted times where
                 the document states them (delays against the
                 published schedule, clamped so a trip never runs
-                backwards), the day's own times elsewhere.
+                backwards), the day's own times elsewhere; a trip it
+                cancels is not in the world planned over, and a stop
+                it skips is not a stop of the trip (`LiveDay::runs`).
                 A plan's ends (`End`) are stops or PLACES off the
                 network (`Place`: an id never a stop's, a name, its
                 walks to the stops near it): from a place the rounds
@@ -273,7 +275,8 @@ transit-dispatch The materialized day's views, model-native: patch_day
                 NETWORK, THE board (stop_board: walking-group
                 pooling for a stop with nothing of its own,
                 realtime-first over the live document — rows
-                ordered by when the bus actually leaves, each with
+                ordered by when the bus actually leaves (a visit the
+                document cancels or skips is no row: D-73), each with
                 its expected time, delay, status, and wait (due,
                 minutes rounded down under an hour, then the clock
                 time — `wait`, the one rule), its route's short and
@@ -336,10 +339,14 @@ transit-live    THE live document: one rt moment in model vocabulary
                 on-time window the document records — one window,
                 never a threshold per view; by default ANY earliness
                 is early, because a bus leaving early is a missed
-                bus — and the service alerts in force, each a set of
+                bus — what does not run: a trip instance the feed
+                cancels (CANCELED/DELETED: `canceled`) and a stop it
+                skips (SKIPPED: `skipped`), asked through one rule,
+                `LiveDay::runs`, by every reader — and the service
+                alerts in force, each a set of
                 scopes: route / stop / trip instance, fields ANDed,
                 scopes ORed, all absent = the agency), the
-                classification and alert-matching rules, and the
+                classification, runs and alert-matching rules, and the
                 status summary. Pure data; no GTFS
                 layer (arch gate). Minted by cap-rt, read by
                 cap-board — no host computes a delay.
