@@ -56,7 +56,7 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   7802, 7804). The model has no split between required recovery
   and slack, so "does the cycle still work?" has no real answer.
   Pin: proposals A and C, author `apply` `issues`.
-  Blocked: D-9.
+  Decided: D-9 (policy wins over derived), free to start.
 - **QAF-63 DATA GAP** — GTFS direction_id groups branches, not only
   variants: 006 direction 1 holds Fruit Valley (8 min) and VA
   Medical Center (12 min) patterns leaving at the same minutes all
@@ -102,7 +102,7 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   trips, typical headway 1200 s at 9008; directory `timetable` 164
   "0" 1-WKDY — 40 trips, 18 from /30 + 18 from /31 + 4 from the
   base.
-  Blocked: D-8 (the gestures).
+  Decided: D-8 (per service type, the UI warns), free to start.
 - **QAF-88 DEFECT** — `service_groups` heads one row per member
   when the members' calendars are equal: 4-NYE, 4-NYE/31 and
   FARES_NYE each run only 2026-12-31, so each is a subset of the
@@ -148,14 +148,14 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   no "same as weekday, except" relation.
   Pin: the document's `4-NYE:pat-006-*` pattern trips equal
   `1-WKDY:pat-006-*` start for start.
-  Blocked: D-8.
+  Decided: D-8 (per service type, the UI warns), free to start.
 - **QAF-36 OP GAP** — the edit document is diversions only: no trip
   cancellation, hold, or vehicle swap. A dispatcher's first
   reaction to a 24-minute-late trip (cancel or cover it) has no
   vocabulary. A new edit kind is a sync-document change.
   Pin: `EditRecord` carries one payload, `diversion`; cancelling
   agency trip 755768 cannot be authored.
-  Blocked: D-45.
+  Decided: D-45 (cancel whole trip first), free to start.
 
 ## Resources and comparison (the planner's core loop)
 
@@ -170,7 +170,7 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   Pin: 2026-10-27 `fleet_summary` on the weekday import — 97 blocks,
   77 peak at 16:50, 1003.78 platform h = 803.61 revenue + 200.18
   layover (revenue cross-checks `network_stats` exactly).
-  Blocked: D-46, D-9.
+  Blocked: D-46. Decided: D-9 (policy wins over derived), free to start.
 - **QAF-20 OP GAP** — the scenario diff is half there: per route
   (analysis `service_type_compare`) and per timetable (directory
   `timetable {compare_hash}`) are answered. Coverage deltas still
@@ -178,14 +178,14 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   (QAF-3).
   Pin: two `type_coverage` calls on base and fork; no op takes two
   network hashes for coverage or fleet.
-  Blocked: D-43.
+  Encoded provisionally: D-43 (per representative date), free to start.
 - **QAF-26 OP GAP** — no recovery view: `block_trips` carries
   `layover_after_secs` and durations, but nothing folds them into
   layover-to-runtime per trip or pattern. (Meaningless until
   QAF-62 separates recovery from slack.)
   Pin: the 347.73 layover hours in QAF-3's pin were summed
   host-side.
-  Blocked: D-9.
+  Decided: D-9 (policy wins over derived), free to start.
 - **QAF-92 OP GAP** — `stop_gaps` reads one stop, not its walking
   group: asked for a station (99th Street Transit Center, stop 110)
   it answers 0 departures, while `timed_transfers` and
@@ -205,7 +205,7 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   `service_type_ops_expose_the_design_axis` — stop C (a terminal)
   counts toward `type_coverage` `frequent_pct` (150/180, not
   100/180).
-  Blocked: D-6.
+  Decided: D-6 (departures only), free to start.
 - **QAF-18 DATA/MODEL** — point layers bias coverage: a tract's
   population sits at its centroid, so rural tracts read unserved
   where their developed part has service, and the radius swings the
@@ -243,7 +243,7 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   and the fix is one `set_service_range` per service type (13 on
   C-TRAN).
   Pin: the same Winter 2027 fork.
-  Blocked: D-41.
+  Decided: D-41 (the fork extends), free to start.
   Re-confirmed: 2026-11-05, the import framed as a winter-2027 pick
   runs nothing on its date; publishing now refuses such a pick (D-76),
   so the gesture is what lets a planner publish past the calendar.
@@ -264,7 +264,7 @@ time, last bus home, is there a detour.
   sign's name only, and with no geocoder the everyday name has no
   answer.
   Pin: directory `stops` query "vancouver mall" → `[]`.
-  Blocked: D-48.
+  Decided: D-48 (fuzzy matching), free to start.
 - **QAF-81 OP GAP** — an itinerary is not relative to the moment
   asked: it carries its departure and arrival but not how long the
   trip takes, so a rider reading minutes has the host subtract. (A
@@ -272,7 +272,7 @@ time, last bus home, is there a detour.
   UI still shows clock times and does not read it yet.)
   Pin: router `plan` `Itinerary` (`depart_secs`, `arrival_secs`, no
   duration).
-  Blocked: D-40.
+  Decided: D-40 (door to door), free to start.
 - **QAF-82 OP GAP** — no op says when a route next runs at a stop
   once it has stopped for the day: `grouped_board` keeps the group
   with no departures, and the next one is on another service day
@@ -281,7 +281,7 @@ time, last bus home, is there a detour.
   tomorrow", "Next: Monday").
   Pin: board `grouped_board` stop 106, 2026-10-29, from_secs 86000 —
   nine of ten groups answer `departures: []`.
-  Blocked: D-42.
+  Decided: D-42 (a week), free to start.
 
 ## Live operations
 

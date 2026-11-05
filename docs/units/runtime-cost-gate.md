@@ -30,7 +30,8 @@ regression is invisible.
   49 ms) and the canonical hash (sha2 79 ms over the
   re-serialization, `canonical_hash` ~65 ms). Skipping the
   re-serialization when the host passes the pinned hash is not a
-  verification — the module would trust the pin (Blocked: D-71);
+  verification — the module would trust the pin (D-71: refused, full
+  verification stays);
   the served bytes ARE the canonical serialization (a server test
   hashes them to the pin), so a module could verify the pin over the
   bytes it decodes instead of re-serializing. A page's assembly is

@@ -88,7 +88,7 @@ that variation as information, never as error.
 | 3 | analysis `hourly_trips` (the group's representative date) | answered (DayProfile); it answers per date, not per group |
 | 4 | analysis `route_frequency` | answered (FrequencyGrid): each route's hours at its headway stop, the trips' own gaps; shading is continuous (D-52, encoded provisionally) |
 | 5 | analysis `route_frequency` (the row's `stats`) | answered: trips, span, revenue hours and miles; speed is a derived number no op answers |
-| 6 | analysis `type_coverage` (`window`), `unserved_points` | answered (CoveragePanel, CoverageMap), per service id rather than per group, QAF-89; QAF-78 (Blocked: D-6), QAF-18 and QAF-28 (Blocked: D-47) |
+| 6 | analysis `type_coverage` (`window`), `unserved_points` | answered (CoveragePanel, CoverageMap), per service id rather than per group, QAF-89; QAF-78 (D-6 decided), QAF-18 and QAF-28 (Blocked: D-47) |
 | 7 | analysis `route_overlap` | answered (CorridorTable); whether departures are spread along a shared segment has no op |
 | 8 | analysis `stop_gaps` | answered for one stop (StopWaits); not for a station's bays, QAF-92; no network-wide ranking in a window |
 | 9 | analysis `hub_connections` | answered (HubMatrix); a near-miss (arriving just after the departure) has no op |
@@ -96,13 +96,13 @@ that variation as information, never as error.
 | 11 | directory `route_detail`, `focus` | answered (DirectionTabs, FocusMap); branches read as one direction, QAF-63 (Blocked: D-44) |
 | 12 | directory `timetable` (`compare_hash`) | answered (StringLine, TimetableGrid), with the doubled trips of QAF-91; stop spacing is by order — the timetable carries no distance along the pattern |
 | 13 | directory `timetable` (`run_secs`) | each trip's end-to-end time answered (RunTimes); by segment and band, no op; the model keeps one profile per pattern, D-3 |
-| 14 | runcut `blocks`, `block_trips`, `fleet_summary` | not in the UI: no route scoping; QAF-62 (Blocked: D-9) |
-| 15 | author `apply` (`set_plan`) | answered (PlanList); QAF-54 (Blocked: D-41) |
-| 16 | author `apply` (`set_span`, `adjust_running_time`, `retime_trip`, `insert_direction_stop`, `remove_direction_stop`) | answered (GesturePanel, a dragged trip on StringLine); the frequency target is Blocked: D-54, D-3 (QAF-90); the gestures act on one service id, QAF-65 (Blocked: D-8) |
+| 14 | runcut `blocks`, `block_trips`, `fleet_summary` | not in the UI: no route scoping; QAF-62 (D-9 decided) |
+| 15 | author `apply` (`set_plan`) | answered (PlanList); QAF-54 (D-41 decided) |
+| 16 | author `apply` (`set_span`, `adjust_running_time`, `retime_trip`, `insert_direction_stop`, `remove_direction_stop`) | answered (GesturePanel, a dragged trip on StringLine); the frequency target is Blocked: D-54, D-3 (QAF-90); the gestures act on one service id, QAF-65 (D-8 decided: per service type, the UI warns) |
 | 17 | author `apply` (`add_route`, `add_pattern`, `update_pattern`, `upsert_*`, `remove_*`), streets `route` | not in the UI: no gesture draws a pattern along the streets; D-11, D-26 (a bus) |
 | 18 | analysis `service_type_compare` | answered (ProposalScore, Redline) for the selected group; cost, Blocked: D-51; vehicles, QAF-3 (Blocked: D-46) |
-| 19 | none | QAF-20 (Blocked: D-43); no transfer delta |
-| 20 | network `validate`, author `apply` issues, network `export`, `POST /plans` | answered (Readiness: export and publish); QAF-62 (Blocked: D-9), QAF-54 (Blocked: D-41) |
+| 19 | none | QAF-20 (D-43 provisional); no transfer delta |
+| 20 | network `validate`, author `apply` issues, network `export`, `POST /plans` | answered (Readiness: export and publish); QAF-62 (D-9 decided), QAF-54 (D-41 decided) |
 
 ## Answer graph
 

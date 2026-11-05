@@ -29,7 +29,7 @@ logs the layer's op gaps.
 |---|---|---|
 | 1 | runcut `blocks`, `block_trips` | op exists; no structure summary, QAF-15 |
 | 2 | runcut `fleet_summary` | op exists for a day; a proposal's vehicle need is a gap, QAF-3 |
-| 3 | author `apply` issues | gap: QAF-62 and QAF-26 (Blocked: D-9) |
+| 3 | author `apply` issues | gap: QAF-62 and QAF-26 (D-9 decided) |
 | 4 | author `apply` (`add_block`, `add_block_trip`, `remove_block_trip`, `set_layover`) | op exists; no op proposes a chaining (log it in the session) |
 | 5 | none | gap: deadhead estimation over cap-streets (`docs/ROADMAP.md` 2, 6) |
 

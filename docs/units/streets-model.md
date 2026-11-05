@@ -56,11 +56,11 @@ cap-streets). What is left:
    Blocked: D-26
    (the bus profile).
 5. **Planned streets.** A street a plan serves that the data does
-   not have. Blocked: D-31.
+   not have. D-31: freehand only for now.
 6. **The geography release.** The basemap and the streets document,
    built from one source snapshot and
-   pinned together in the manifest beside `feed_hash`. Blocked:
-   D-29.
+   pinned together in the manifest beside `feed_hash`. D-29: the
+   area is whatever the agency's GIS exports.
 
 Geocoding is not this unit's: it is an external service the host
 calls (D-36; `docs/ARCHITECTURE.md`, server section, `/geocode`).

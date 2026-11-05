@@ -14,7 +14,7 @@ UIs"). It is at step 2.
 3. How often does the bus come at my stop, before and after?
 4. How does my trip change: when do I leave, when do I arrive?
 5. Who gains service and who loses it: coverage, and where?
-6. How do I respond to a proposal? (Blocked: D-14.)
+6. How do I respond to a proposal? (D-14: read-only; the UI links to the agency's channels.)
 
 ## Op inventory (draft, before the session)
 
@@ -25,7 +25,7 @@ UIs"). It is at step 2.
 | 3 | analysis `stop_gaps` ×2 | gap: two answers and a host diff (log it in the session) |
 | 4 | router `plan` ×2 | gap: `plan_compare` compares edits, not two networks (log it in the session) |
 | 5 | analysis `type_coverage` / `unserved_points` ×2 | gap, QAF-20 (no coverage delta op); QAF-18, QAF-28 |
-| 6 | none | Blocked: D-14 |
+| 6 | none | D-14: read-only, links to agency channels |
 
 Every question here compares two documents. When the session shows
 that most of them need a delta op, that is one finding with a

@@ -17,7 +17,7 @@ session has asked these questions as one sequence.
 5. What does the detour do to the trip's path, the boards, and the
    trip plans?
 6. Which trips are covered and which are uncovered, and how do I
-   cancel or cover one? (Blocked: D-15, for what "covered" means.)
+   cancel or cover one? (D-15: covered means a vehicle on its block AND an operator holding its run; the operator half waits on the runs layer.)
 7. Have the others working today seen this change?
 
 ## Op inventory (draft, before the session)

@@ -48,14 +48,14 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-2 | What does a running-time change touch besides fixed-start trips? | encoded | nothing |
 | D-3 | Which timing profile does the import give a pattern? | encoded; re-opened | QAF-90 |
 | D-5 | Does the import keep a block that breaks the spec? | encoded | nothing |
-| D-6 | Does "frequent" count terminal arrivals? | unanswered | QAF-78 |
-| D-8 | Do timetable edits act on the whole service family? | unanswered | QAF-65 gestures, QAF-44 |
-| D-9 | Where does required recovery time come from? | unanswered | QAF-62, QAF-26 |
+| D-6 | Does "frequent" count terminal arrivals? | decided | nothing |
+| D-8 | Do timetable edits act on the whole service family? | decided | nothing |
+| D-9 | Where does required recovery time come from? | decided | nothing |
 | D-10 | Agency questions on C-TRAN's data | unanswered | QAF-9, QAF-48 |
-| D-11 | Does editing a shared alignment change every pattern on it? | unanswered | an alignment-authoring edit |
+| D-11 | Does editing a shared alignment change every pattern on it? | decided | nothing |
 | D-12 | What headsign does a new trip get? | encoded | nothing |
-| D-14 | Does the proposal comparison collect public responses? | unanswered | `ui-proposal-compare` question 6 |
-| D-15 | What makes a trip "covered"? | unanswered | `ui-disruptions` question 6 |
+| D-14 | Does the proposal comparison collect public responses? | decided | nothing |
+| D-15 | What makes a trip "covered"? | decided | the operator half: the runs layer |
 | D-16 | Where does the runs layer live? | encoded | nothing |
 | D-17 | What does "the last bus" mean with no deadline? | encoded | nothing |
 | D-18 | How do live delays meet a diverted trip? | encoded | nothing |
@@ -69,9 +69,9 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-26 | Which streets can each mode use? | decided (walking); unanswered (a bus) | drawing on streets |
 | D-27 | What does place search find? | decided | nothing |
 | D-28 | Where do stop and address results meet? | encoded | nothing |
-| D-29 | What area does a geography release cover? | unanswered | streets-model geography release |
+| D-29 | What area does a geography release cover? | decided | nothing |
 | D-30 | What does the streets import call a street, and what class is it? | encoded | nothing |
-| D-31 | Can a plan add a street the data does not have? | unanswered | streets-model planned streets |
+| D-31 | Can a plan add a street the data does not have? | decided | nothing |
 | D-32 | How does the router walk with no walk table? | encoded | nothing |
 | D-33 | How does a trip from a place walk? | encoded | nothing |
 | D-34 | Where does a stop no walk reaches go in the nearby list? | encoded | nothing |
@@ -79,16 +79,16 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-36 | Is geocoding a document on the bus or a service the host calls? | decided | nothing |
 | D-37 | What names a spot dropped on the map? | encoded | nothing |
 | D-38 | What may a host do with an external service's answer? | decided | nothing |
-| D-39 | Do the live feeds move into the manifest's services? | unanswered | live-feed discovery |
-| D-40 | How long does a planned trip take, and from when? | unanswered | QAF-81 |
-| D-41 | What carries a service type's calendar into a fork's period? | unanswered | QAF-54 |
-| D-42 | When a route has stopped for the day, how far ahead does a stop look? | unanswered | QAF-82 |
-| D-43 | What does a coverage comparison report? | unanswered | QAF-20 |
+| D-39 | Do the live feeds move into the manifest's services? | decided | nothing |
+| D-40 | How long does a planned trip take, and from when? | decided | nothing |
+| D-41 | What carries a service type's calendar into a fork's period? | decided | nothing |
+| D-42 | When a route has stopped for the day, how far ahead does a stop look? | decided | nothing |
+| D-43 | What does a coverage comparison report? | encoded | nothing |
 | D-44 | Is a branch of a direction its own thing? | unanswered | QAF-63 |
-| D-45 | Which dispatcher edits does the edit document carry beyond the diversion? | unanswered | QAF-36, D-15 |
+| D-45 | Which dispatcher edits does the edit document carry beyond the diversion? | decided | nothing |
 | D-46 | How many more vehicles does a proposal need? | unanswered | QAF-3 |
 | D-47 | Which layers does coverage take? | unanswered | QAF-18, QAF-28 |
-| D-48 | Does a stop answer to a name its sign does not carry? | unanswered | QAF-70 |
+| D-48 | Does a stop answer to a name its sign does not carry? | decided | nothing |
 | D-49 | Where do the basemap's glyphs and sprites come from? | decided | nothing |
 | D-50 | What are the work rules a run is cut under? | unanswered | QAF-11, QAF-12, QAF-14, QAF-15 |
 | D-51 | What does a revenue hour, a revenue mile, and a vehicle cost? | unanswered | `ui-service-design` questions 2, 18 (cost) |
@@ -111,7 +111,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-68 | What are ride-now's and the stop display's performance budgets? | decided | nothing |
 | D-69 | What happens to the original app when host calls move into the engine? | decided | nothing |
 | D-70 | How do the module runtime's bounds default? | encoded | nothing |
-| D-71 | May a module register a document under a pinned hash it did not compute? | unanswered | the re-hash candidate in `runtime-cost-gate` |
+| D-71 | May a module register a document under a pinned hash it did not compute? | decided | nothing |
 | D-72 | Is the release profile tuned for size or for speed? | encoded | nothing |
 | D-73 | What does a stop's board show for a trip the live feed cancels? | decided | nothing |
 | D-74 | How is a pick published, and what runs before the first one? | encoded | nothing |
@@ -196,10 +196,14 @@ needs, reliefs require flexibility. so please don't make a rigid
 timetable setup." That points to profiles per time band, which is
 the second option. It stays provisional until the user confirms it
 and names the band rule.
+Update 2026-11-05: the user, on timing profiles: "we need to rethink
+timing profiles all together". Neither option stands; it is a
+design conversation with D-44, not a choice among these.
 Blocks: QAF-90.
 
 ### D-11 — Does editing a shared alignment change every pattern on it?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — the edit names which: the gesture says whether it redraws one pattern or every pattern on the alignment, and reports the patterns it touched. Nothing moves silently.
 Context: patterns run alignments by reference (`Pattern::alignment`),
 and several patterns may run one: a feed may give one shape to
 trips with different stops. No edit authors an alignment yet. The
@@ -215,9 +219,7 @@ Options:
   made once per pattern.
 - The edit names which it does, and the gesture reports the
   patterns it touched.
-Blocks: an alignment-authoring edit (none exists; `UpsertPattern`
-can point a pattern at an existing alignment, but no edit adds or
-redraws one).
+Blocks: nothing.
 
 ### D-5 — Does the import keep a block that breaks the spec?
 State: Encoded provisionally.
@@ -269,23 +271,30 @@ Options:
   terminals into one direction per terminal.
 - The model names branches inside a direction (a pattern group with
   its own name and timetable), and the timetable can show one branch.
+Update 2026-11-05: the user — the model has to handle a branch, so
+leaving it as it is is out. GTFS `direction_id` has no meaning at
+C-TRAN beyond telling one route's directions apart; it is not
+consistent across routes, so nothing may read it as inbound/outbound.
+Naming a direction after its majority headsign is a bad pattern. "All
+this needs to be rethought" — a design conversation with D-3 (and
+D-22, D-12), not a choice among these options.
 Blocks: QAF-63.
 
 ## Analysis and live
 
 ### D-6 — Does "frequent" count terminal arrivals?
-State: Unanswered. The current answer is pinned as a finding, not
-as a law.
+State: Decided.
+Answer: 2026-11-05 — departures only, for both tests, so a terminal where nobody boards is not frequent.
 Context: QAF-78. The whole-day "frequent" test counts every visit
 to a stop, arrivals included, so a terminal where nobody boards can
 read as frequent. The windowed test counts departures only.
 Options: departures only, for both tests (the finding reads this
 way); or keep counting arrivals and document the difference.
-Blocks: the fix for QAF-78, and the `frequent_pct` number in
-`transit-analysis` `regression_test`.
+Blocks: nothing (the QAF-78 fix is free to start).
 
 ### D-43 — What does a coverage comparison report?
-State: Unanswered.
+State: Encoded provisionally.
+Answer: 2026-11-05 — per representative DATE, reporting population gained and lost separately (served and frequent). The user: "for now, I am not 100% sure on this one." The set of dates is open (weekday, Saturday, Sunday to start). A different decision rewrites the laws that pin it.
 Context: QAF-20. Comparing two plans' coverage takes two
 type_coverage answers and a host subtraction, and a net change hides
 churn: a proposal can serve 2,000 new people and drop 1,900 others
@@ -297,7 +306,7 @@ Options:
 - The same per representative DATE instead of per service type
   (a fork that renames or splits a type still compares).
 - Net change only (the two shares and their difference).
-Blocks: QAF-20 (the coverage half).
+Blocks: nothing (the coverage half of QAF-20 is free to start on this answer).
 
 ### D-47 — Which layers does coverage take?
 State: Unanswered.
@@ -319,7 +328,8 @@ Blocks: QAF-18, QAF-28.
 ## Service types
 
 ### D-8 — Do timetable edits act on the whole service family?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — gestures stay per service type, and the UI warns when the family has siblings. No "same as, except" relation for now.
 Context: QAF-65 and QAF-44. The reads pool a service family (a
 base service and the siblings that run on its days, such as 1-WKDY
 with /30 and /31), but the timetable gestures key on one service
@@ -331,10 +341,11 @@ Options:
   has siblings.
 - An authored "same as, except" relation between service types
   (QAF-44), which the gestures follow. This is a model change.
-Blocks: the remaining QAF-65 work (the gestures) and QAF-44.
+Blocks: nothing (QAF-65's UI warning and QAF-44 are free to start).
 
 ### D-41 — What carries a service type's calendar into a fork's period?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — the fork does it: `set_plan` with a period end extends every weekly service type to the period's end. Reading, not confirmed by the user: the end date is the fork's own period end, and dated exceptions (4-NYE and other holidays) are not carried forward; the planner adds next year's deliberately.
 Context: QAF-54. A fork picked after the import's calendar end
 (2027-01-09) runs nothing until every service type's date range is
 extended by hand — 13 set_service_range edits on C-TRAN. Holiday
@@ -349,7 +360,7 @@ Options:
   hand.
 Open inside the first two: which date the period ends on, and
 whether next year's holidays (new dated exceptions) are part of it.
-Blocks: QAF-54.
+Blocks: nothing (QAF-54 is free to start).
 
 ## Service design
 
@@ -452,7 +463,8 @@ service_type_detail, schedule_texture, the directory timetable).
 ## Blocks and runcutting
 
 ### D-9 — Where does required recovery time come from?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — a policy document (minutes and/or a percentage of run time, per route or service type) wins; the smallest layover seen at that terminal is the fallback where no policy applies.
 Context: QAF-62. Imported layovers are the whole observed gap
 between two trips, so any delay reads as infeasible. Separating
 required recovery from slack needs a rule the feed does not carry.
@@ -460,8 +472,7 @@ Options: a policy document (a minimum in minutes, a percentage of
 the run time, or both, per route or per service type); a value
 derived from the feed (for example, the smallest layover seen at
 that terminal); or both, with the policy winning.
-Blocks: QAF-62 and QAF-26 (the recovery view is meaningless until
-recovery is separated from slack).
+Blocks: nothing (QAF-62 and QAF-26 are free to start).
 
 ### D-16 — Where does the runs layer live?
 State: Encoded provisionally (in the docs; no code yet).
@@ -636,7 +647,8 @@ Pinned by: `every_row_says_how_long_until_it_leaves` and
 Blocks: nothing.
 
 ### D-40 — How long does a planned trip take, and from when?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — door to door: the itinerary carries `leave_secs` (the first ride's boarding minus the walk before it) and `duration_secs` (arrival minus leave); "leave in N min" uses the board's `wait` rule (D-24). "That matches what other trip planning services do today."
 Context: QAF-81. An itinerary carries depart_secs (the moment the
 plan was asked for) and arrival_secs; a walk leg carries only its
 seconds, so when the rider must leave is host arithmetic, and so is
@@ -650,10 +662,11 @@ Options:
 - From the moment asked: one `duration_secs` = arrival minus
   depart_secs (it counts the wait before leaving).
 - Both readings, named.
-Blocks: QAF-81.
+Blocks: nothing (QAF-81 is free to start).
 
 ### D-42 — When a route has stopped for the day, how far ahead does a stop look?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — look ahead day by day for up to a week, each day's in-force edits read and never the live feed; say nothing past a week. "A week sounds good to me."
 Context: QAF-82. grouped_board keeps a route and destination whose
 last departure has left, with no departures. The display says "No
 more service today" where a rider wants "Next: 5:12 am tomorrow" or
@@ -666,10 +679,11 @@ Options:
 - Until the calendar ends.
 Open inside each: whether a later day's answer reads that day's
 edits (yes, if they are in the document) and never the live feed.
-Blocks: QAF-82.
+Blocks: nothing (QAF-82 is free to start).
 
 ### D-48 — Does a stop answer to a name its sign does not carry?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — fuzzy matching on the stop names now (typos, abbreviations like "Van" for "Vancouver"). No authored aliases: they would be a hand-maintained separate dataset. A geocoder stays a possibility down the road where a deployment runs one (D-36).
 Context: QAF-70. directory `stops` matches the feed's names, so
 "vancouver mall" finds nothing (the sign says "Van Mall"). Where the
 server runs a geocoder (D-36), the everyday name finds the place and
@@ -682,12 +696,13 @@ Options:
   documentation.
 - Fuzzy matching on the stop names (typos, abbreviations like
   "Van" for "Vancouver").
-Blocks: QAF-70.
+Blocks: nothing (QAF-70 is free to start).
 
 ## Public comparison
 
 ### D-14 — Does the proposal comparison collect public responses?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — read-only. Responses go through the agency's existing channels and the UI links to them; no response document.
 Context: the comparison UI reads published proposals. Collecting
 comments or votes on them would add a new shared document, synced
 through the server, with its own retention and moderation
@@ -697,12 +712,13 @@ Options:
   and the UI links to them.
 - A response document on the bus (a new document kind, synced by
   LWW per record like the edit document).
-Blocks: question 6 of `docs/units/ui-proposal-compare.md`.
+Blocks: nothing.
 
 ## Live operations
 
 ### D-15 — What makes a trip "covered"?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — "you need both": a trip is covered only when a vehicle is on its block AND an operator holds its run. A trip missing either is uncovered, and the screen says which half is missing. Cancel (D-45) also marks a trip uncovered.
 Context: the disruptions UI asks which trips are covered and which
 are uncovered. The bus knows vehicles only through blocks and live
 positions. It holds no operator assignments (QAF-17), and the edit
@@ -713,10 +729,11 @@ Options:
   kinds (QAF-36).
 - A trip is covered when an operator holds its run. This needs the
   runs layer (`docs/ROADMAP.md` 7) and workforce data.
-Blocks: question 6 of `docs/units/ui-disruptions.md`.
+Blocks: the operator half waits on the runs layer and workforce data (`docs/ROADMAP.md` 7); the vehicle half is free to build.
 
 ### D-45 — Which dispatcher edits does the edit document carry beyond the diversion?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — cancel (whole trip) first: a cancelled trip shows on boards as cancelled and the router never rides it. Partial cancel, cover, hold and swap come later.
 Context: QAF-36. The edit document holds diversions only; a
 dispatcher's first answer to a 24-minute-late trip (cancel it,
 cover it, hold a connection, swap the vehicle) has no vocabulary. A
@@ -732,7 +749,7 @@ Options:
 - Cancel and partial cancel (from a stop on).
 - Cancel, cover (another block or vehicle takes it), hold, swap —
   the full set, landed together.
-Blocks: QAF-36, and with it D-15.
+Blocks: nothing (QAF-36 is free to start).
 
 ### D-73 — What does a stop's board show for a trip the live feed cancels?
 State: Decided.
@@ -853,7 +870,8 @@ Blocks: nothing. Pins: `web/e2e/published-network.spec.mjs`, "ride
 now searches addresses through the geocoder".
 
 ### D-29 — What area does a geography release cover?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — whatever the agency's GIS exports: "these datasets are inputs to the system", so the system sets no boundary of its own.
 Context: a geography release pins the basemap and the streets
 document, built from one source snapshot
 (`docs/units/streets-model.md`). C-TRAN runs into Portland. The
@@ -862,7 +880,7 @@ Trapeze export already reaches Portland (its first feature is NE
 Options: the service area plus a buffer (how far?); the counties
 served (Clark, plus Multnomah for the Portland trips); whatever
 the agency's GIS exports.
-Blocks: the geography release in `docs/units/streets-model.md`.
+Blocks: nothing.
 
 ### D-30 — What does the streets import call a street, and what class is it?
 State: Encoded provisionally.
@@ -902,7 +920,8 @@ Options:
 Blocks: nothing. Pins: `crates/transit-streets/tests/import_law_test.rs`.
 
 ### D-31 — Can a plan add a street the data does not have?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — freehand only for now: a planned street is drawn freehand on the pattern. A streets edit document stays an option if planners need walking or routing on planned streets.
 Context: a service change often serves streets that do not exist
 yet (a subdivision under construction, a new connector). Drawing a
 pattern on streets (`docs/units/streets-model.md`) can only follow
@@ -915,7 +934,7 @@ Options:
   streets the way network edits answer the next network. The
   streets document's ways then need identities that survive a
   re-import.
-Blocks: planned streets in `docs/units/streets-model.md`.
+Blocks: nothing.
 
 ### D-32 — How does the router walk with no walk table?
 State: Encoded provisionally.
@@ -1100,7 +1119,8 @@ page sends the text and the focus point only), the `--ask` runner
 gate in `just test`.
 
 ### D-39 — Do the live feeds move into the manifest's services?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — the feeds stay in the static `web/public/live-feeds.json`. The departure board must run as plain static files on a CDN with a static config document and no sync server, so a page's default feeds never depend on `/manifest`. If `services` ever carries them, it is a static file the same way.
 Context: D-38 makes the manifest's `services` the way a deployment
 says what it offers. The deployment's GTFS-rt feeds are still named
 in a static `web/public/live-feeds.json` beside the page (read by
@@ -1114,8 +1134,7 @@ Options:
 - Move them now: `services.live: {trips, vehicles, alerts}` from
   the server's configuration; `live-feeds.json` is retired.
 - Wait for a second deployment to need it; `live-feeds.json` stays.
-Blocks: live-feed discovery (ride-now's and the stop display's
-`restoreUrls`, `web/perf/record-rt.mjs`).
+Blocks: nothing.
 
 ### D-49 — Where do the basemap's glyphs and sprites come from?
 State: Decided.
@@ -1564,7 +1583,8 @@ every capability's state together. Pins add
 `cap_abi::kernel` (`a_derived_entry_is_a_cache_bounded_per_derivation`).
 
 ### D-71 — May a module register a document under a pinned hash it did not compute?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — keep full verification in every module. After D-77 a page registers each document once, so the cost is one canonical hash per document per page.
 Context: registering the C-TRAN network costs ~300 ms per module on
 the bus worker (`docs/units/runtime-cost-gate.md`): the parse
 (~126 ms), then the canonical hash — the document re-serialized
@@ -1587,7 +1607,7 @@ Options:
   serialization, so the bytes' SHA-256 IS the identity with no
   re-serialization and no trust — sound, and a parser to keep in
   lockstep with serde's output.
-Blocks: the re-hash candidate in `docs/units/runtime-cost-gate.md`.
+Blocks: nothing (the re-hash candidate in `runtime-cost-gate` is closed).
 Update 2026-11-04: modules now register the network from its gzip
 stream, and every op answers in struct field order, so the server's
 `/network/document` bytes ARE the canonical serialization (a server
