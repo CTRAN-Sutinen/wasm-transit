@@ -8,17 +8,12 @@ a dropped document; one bus worker per page runs the modules off the
 render thread, with a memory ceiling that replaces an instance
 (docs/ARCHITECTURE.md, "The bus worker", and the bus rules); the
 rider pages register the published network from gzipped bytes they
-never parse (`servedNetwork`). What remains are three measurements
-and two gaps.
+never parse (`servedNetwork`). What remains is one gap and two
+measurements. (The live document's round trip through the page,
+QAF-49, is [linked-assembly.md](linked-assembly.md)'s.)
 
 ## Scope
 
-- **The live document crosses the page.** Each poll, cap-rt answers
-  the live document (388 KB on C-TRAN) to the page; the engine
-  caches the answer and encodes it back to bytes for the board and
-  the router (QAF-49), and the page never reads it. The shape: a
-  document a module produced moves to the next module inside the
-  worker, and the page holds a handle to it.
 - **service-design names no keep-set.** Every `apply` mints a
   network document, and the planner's session keeps every one of
   them in every module (networks are durable). The keep-set is the
@@ -31,17 +26,17 @@ and two gaps.
   registered from its gzip stream, `just perf` 2026-11-04), ~1 MB
   for one that holds none, flat across 118 polls on the stop
   display — no reset fired. The ceiling lands at a measured multiple of that once
-  QAF-93's reduction sets the working set.
+  QAF-93's reduction sets the working set. Under
+  [linked-assembly.md](linked-assembly.md) an instance is a page's
+  assembly: the ceiling is per assembly, and a reset drops every
+  capability's state together.
 - **The cost gate on the worker path**: the ratchet numbers
   ([runtime-cost-gate.md](runtime-cost-gate.md)) are recorded with
   the modules in the worker.
 
 ## Done when
 
-- The live document reaches the board and the router without
-  crossing to the page and back.
 - service-design's session holds only its plan set's networks (an
   e2e applies edits and reads `window.__bus.held`).
 - D-70's ceiling is set from the measured working set.
 - The cost gate's numbers are recorded on the worker path.
-- QAF-49 is deleted in the change that lands the first item.

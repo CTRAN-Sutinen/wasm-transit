@@ -311,7 +311,7 @@ time, last bus home, is there a detour.
   re-minted every poll, and it crosses from the bus worker to the
   page and back into the board and the router each time (the
   modules keep only their last few — the registries are bounded).
-  The page never reads it. `docs/units/module-runtime.md`'s.
+  The page never reads it. `docs/units/linked-assembly.md`'s.
   Pin: `JSON.stringify(live).length` on a C-TRAN snapshot.
   Re-confirmed: 2026-11-04, `just perf` (stop display): each new
   snapshot's `live` answer lands in the engine's answer cache, and
@@ -325,7 +325,9 @@ time, last bus home, is there a detour.
   wasm (four modules) plus a 22 MB heap after its session. Both are
   bounded — every module's memory and held documents are flat
   across the display's 118 polls and the ride-now soak.
-  `docs/units/runtime-cost-gate.md` owns the reduction.
+  `docs/units/linked-assembly.md` owns the structural reduction
+  (one network copy per page); `docs/units/runtime-cost-gate.md`
+  the cost of each copy.
   Pin: `PERF_RT=testdata/perf-rt-10m just perf` — the "Memory over
   time" table of each summary (`stop-display.perf.mjs`,
   `ride-now.perf.mjs`).

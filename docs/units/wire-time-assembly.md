@@ -17,6 +17,13 @@ entry is ever keyed to a persona.
 - **The user's selection** — declared, persisted (IndexedDB),
   defaulting to the whole manifest, with a surface in every page
   to change it.
+- **The selection's bytes** — one linked module per selection, with
+  one registry (D-77). The per-UI assembly built ahead of time is
+  [linked-assembly.md](linked-assembly.md)'s; here a user's
+  selection links on demand and is pinned and cached by its content
+  hash. How it links — the registry publishing linkable objects
+  that the server links, or a prebuilt set of selections — is this
+  unit's design.
 - **Probe-based sections** — three states, not one "degraded":
   unassembled, starved (assembled, missing a document), ready.
 - **The UI manifest** — host-side, op → render | flow map
@@ -43,7 +50,5 @@ on the same hash-addressed documents through the same manifest.
   a page renders its sections in the three probe states (e2e).
 - At least one generated UI renders from a layout document
   instead of a hand-placed shell (e2e + the GENERATED UIs gate).
-- Measured, before more modules are split on the thesis: the cost
-  of the selection (per-module registration of each document
-  version — see [runtime-cost-gate.md](runtime-cost-gate.md))
-  against what a smaller assembly saves.
+- A user's selection loads as one linked module, pinned by its
+  hash, holding each document once (e2e).

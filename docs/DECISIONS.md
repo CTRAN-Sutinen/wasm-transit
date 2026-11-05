@@ -38,7 +38,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-74**.
+- IDs are never reused; the next new decision is **D-79**.
 
 ## Summary
 
@@ -117,6 +117,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-74 | How is a pick published, and what runs before the first one? | encoded | nothing |
 | D-75 | How does a published pick come back out? | unanswered | withdrawing a pick (`sync-persistence`) |
 | D-76 | What does publishing refuse beyond an invalid chain? | unanswered | QAF-95 |
+| D-77 | How do the capabilities a page uses share one network? | decided | nothing |
+| D-78 | Does the Go server host linked assemblies? | unanswered | the server part of `linked-assembly` |
 
 ## The trip model
 
@@ -1514,6 +1516,10 @@ stream, and every op answers in struct field order, so the server's
 test hashes them to the pin). The parse is ~290 ms of the router's
 first registration on C-TRAN (serde_json 240, inflate 49), the
 canonical hash ~145 ms (sha2 79 over the re-serialization).
+Update 2026-11-05: under D-77 a page registers each document once,
+in its assembly, so the repeat in every module that this entry weighs
+leaves the browser; what remains is one canonical hash per document
+per page, and one per single-capability instance elsewhere.
 
 ### D-72 — Is the release profile tuned for size or for speed?
 State: Encoded provisionally.
@@ -1533,6 +1539,60 @@ Options: keep 3; return to "s" and accept the slower streamed
 registration (~2× today's worker time per module); or keep the
 plain-JSON slice decoder beside the stream decoder (164 ms, 2.43 MB).
 Pins: the profile in the root `Cargo.toml`; `just perf`.
+
+### D-77 — How do the capabilities a page uses share one network?
+State: Decided.
+Answer: 2026-11-05 — sharing: "i actually prefer this, i don't see
+why we would need to have each cap hold a full copy of the network."
+On linking per generated UI at build time, with "capabilities never
+call capabilities" enforced by crate dependencies, a registry
+constructor private to the kernel, forbidden `unsafe`, and an
+assembly-independence test: "i agree with what you laid out."
+Context: each capability is its own wasm instance, with private
+linear memory and zero imports, so every network consumer parses and
+holds its own copy (~9–12 MB and ~300 ms each on C-TRAN; the stop
+display holds three — QAF-93). Each also ships the same ~550 KB
+(gzipped) base. Law 3 said a persona's bundle comes together at wire
+time, "never at build time".
+Options:
+- One module per capability: isolation of faults and memory by
+  construction; a network copy and a base per consumer.
+- Link a page's capabilities into one module with one kernel-owned
+  registry (decided): one copy and one base per page. Costs: the
+  capabilities in an assembly share one model version; one
+  instance's failure or memory reset is every capability's; the rule
+  is enforced by the compiler and gates instead of separate
+  memories. Linking is per generated UI at build time first, and per
+  user selection at wire time later.
+- Wasm threads with a shared, imported memory: lets instances of ONE
+  module share memory. Separately compiled modules cannot share a
+  heap or a parsed `Network` without linking, so it does not replace
+  linking. It breaks zero imports, and needs cross-origin isolation
+  (COOP/COEP) and a nightly toolchain with a rebuilt std. It remains
+  an option on top of linking, if a measured query needs more cores.
+- A compact zero-parse document format: smaller, faster copies,
+  still one per module.
+Blocks: nothing. The work is `docs/units/linked-assembly.md`; Law 3
+in `crates/AGENTS.md` carries the answer (linking assembles bytes,
+not surfaces).
+
+### D-78 — Does the Go server host linked assemblies?
+State: Unanswered.
+Context: the server keeps cap-sync, cap-plans, and cap-authz for its
+lifetime, and instantiates cap-network and cap-streets fresh for each
+published feed or street layer, closing each after
+(`server/network.go`, `server/streets.go`, `server/plans.go`). A
+fresh instance hands its memory back, because wasm memory never
+shrinks. The long-lived modules hold no network.
+Options:
+- Keep single-capability modules on the server; only the browser
+  links. The per-import instance stays the memory hygiene.
+- One assembly for the long-lived modules (sync, plans, authz), the
+  per-import instances single: the base ships once; there is no
+  network to share.
+- One assembly for everything: one compile and one registry; loses
+  the fresh instance per import.
+Blocks: the server part of `docs/units/linked-assembly.md`.
 
 ## Agency data
 

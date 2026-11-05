@@ -13,7 +13,9 @@ regression is invisible.
 ## Scope
 
 - A ratchet spec in `web/e2e` over the fixture feed: linear memory
-  per consumer after `load_network`, ms per registration, the JS
+  per instance after registration (each consumer's today, each
+  page's assembly once [linked-assembly.md](linked-assembly.md)
+  lands), ms per registration, the JS
   heap after boot, and the bytes a cold boot transfers, against
   recorded ceilings that may only come down. The ceilings ratchet;
   the absolute budgets the rider apps must meet are D-68's
@@ -79,35 +81,24 @@ spec once it exists); the estimates are not results.
   document version — `document-versioning.md`) cuts the bytes and
   the parse in every module; `alignments` (31%, shapes) leaves the
   copies of modules that never draw.
-- **Stop recomputing the day per call.** Each `stop_board`
-  materializes the whole day (~5 ms on C-TRAN); a ride-now home poll
-  asks for several boards. A derived registry entry per (network,
-  edits, date) — bounded like the router's graphs — answers them
-  from one. The router rebuilds its RAPTOR graph for every live
-  document (every poll); predictions overlaid on a per-day graph
-  would not.
+- **Stop rebuilding the router's graph per poll.** The router
+  rebuilds its RAPTOR graph for every live document (every poll);
+  predictions overlaid on a per-day graph would not. (The day each
+  `stop_board` materializes per call, ~5 ms on C-TRAN, becomes one
+  shared derived entry in [linked-assembly.md](linked-assembly.md).)
 - **String keys in the hot paths.** `memcmp` is the largest single
   bucket in a poll's worker profile (16–22 ms): id lookups through
   `BTreeMap<String, _>` (pattern trips, destinations). Interned or
   indexed ids in the materialized day and the router take it out.
-- **The live document's round trip** (QAF-49): cap-rt answers it to
-  the page, the page parses it, the engine re-encodes it for the
-  board and the router, each parses and hashes it — three SHA-256
-  passes and four JSON passes per poll. A document a module produced
-  could move to the next module inside the worker as bytes.
 - **Boot.** Modules are fetched, verified, and compiled one at a
-  time, as each is first asked; the page's capabilities are known
-  at load, so they can compile in parallel, streaming. Registration
-  is serial on one worker (~0.3 s per module on C-TRAN): every
-  module holds its own copy anyway, so a worker per module would
-  register in parallel on a multi-core device (the Pi 4 has four)
-  at the cost of a JS heap per worker. The map is ~100 ms of
-  ride-now's boot on the main thread and could wait for the first
-  answer.
-- **One copy per page.** The structural lever: the display's three
-  modules each hold the network. Capabilities linked into one
-  module per assembly (wire-time assembly of bytes) would share one
-  registry — a design question for the bus, not a tuning.
+  time, as each is first asked. With one assembly per page
+  ([linked-assembly.md](linked-assembly.md)) there is one module,
+  known at load, to compile streaming, and one registration per
+  document. The map is ~100 ms of ride-now's boot on the main
+  thread and could wait for the first answer.
+- The structural levers — one network copy per page, and the live
+  document's round trip through the page (QAF-49) — are
+  [linked-assembly.md](linked-assembly.md)'s.
 
 ## Done when
 

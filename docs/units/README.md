@@ -40,6 +40,7 @@ archive — nothing here records what is finished.
 | [wire-time-assembly.md](wire-time-assembly.md) | per-user selection over the manifest; layouts as documents |
 | [sync-persistence.md](sync-persistence.md) | publishing a pick from the planner, withdrawing one, the pick in force as GTFS, the device journal on the store |
 | [cap-authz.md](cap-authz.md) | JWT verification at the server, the policy document on the store, cap-authz fail-closed |
+| [linked-assembly.md](linked-assembly.md) | one module and one kernel-owned registry per page: each document held once, the shared code shipped once, capabilities still unable to call each other |
 | [runtime-cost-gate.md](runtime-cost-gate.md) | a ratchet on per-module memory and registration time |
 | [module-runtime.md](module-runtime.md) | the page never parses a published document; service-design's keep-set; the C-TRAN bounded-session record and the ceiling it sets |
 | [document-versioning.md](document-versioning.md) | every persisted document versioned, migrated forward at receive, the schema-lock gate |
@@ -67,6 +68,14 @@ before starting it.
   recurs, crystallize it; until then improvisations are findings.
   The journal ([host-discipline.md](host-discipline.md))
   crystallizes the chained-session format first.
+- **Law 3 re-cuts**, after [linked-assembly.md](linked-assembly.md)
+  makes a split cost no network copy: cap-analysis into service
+  numbers, headways, coverage, and connections; cap-directory into
+  the directory (lists and details), the timetable, and focus, with
+  `stops_near` joining `access` in walking and `route_stop_sequence`
+  deleted (no host calls it); cap-streets into the street graph and
+  walking. Where the service-group relation and `route_overlap`
+  belong goes to the user when this is scoped.
 - **Fuel metering** in the runner, once it may point at untrusted
   registry entries (the wall-clock guard is the stopgap).
 
