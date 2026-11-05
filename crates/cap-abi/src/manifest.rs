@@ -43,6 +43,29 @@ pub struct CapManifest {
     #[serde(default)]
     pub kernel_ops: Vec<KernelOp>,
     pub capabilities: Vec<Capability>,
+    /// The linked assemblies: per generated UI, ONE module linking the
+    /// capabilities it uses (D-77) — one kernel registry, so each
+    /// document registers once per page. Each capability above is also
+    /// built alone (its `url`), for runners, agents, and the server.
+    #[serde(default)]
+    pub assemblies: Vec<LinkedAssembly>,
+}
+
+/// One linked module: the capabilities it links (in index order — a
+/// capability's bulk op carries its index in the high 16 bits), and
+/// its exact bytes, pinned like a capability's.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "cap_abi/")]
+pub struct LinkedAssembly {
+    /// The generated UI it is for (`web/src/uis/<ui>/`).
+    pub ui: String,
+    /// "sha256:<hex>" of the module bytes.
+    pub hash: String,
+    /// Where the bytes are served (hash-addressed).
+    pub url: String,
+    pub bytes: u64,
+    /// The capability ids it links, in index order.
+    pub capabilities: Vec<String>,
 }
 
 /// One kernel op: its bulk op code, its name, what it does, and a
@@ -71,8 +94,13 @@ pub struct Capability {
     pub url: String,
     /// Module size in bytes — the size budget watches this.
     pub bytes: u64,
-    /// The JSON ops this module's dispatch answers.
+    /// The JSON ops this capability's dispatch answers (the kernel's
+    /// loads are not among them — they are `kernel_ops`).
     pub ops: Vec<String>,
+    /// The kernel document kinds it reads ("network", "edits", …): the
+    /// kernel loads every module linking it answers.
+    #[serde(default)]
+    pub documents: Vec<String>,
     /// Registry edges: document kind -> producing capability id.
     pub consumes: HashMap<String, String>,
     /// Document kinds -> versions the module understands directly.

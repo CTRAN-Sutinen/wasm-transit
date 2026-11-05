@@ -1,39 +1,27 @@
 //! cap-gtfs — the GTFS capability module.
 //!
-//! One subject: the FEED document. Parse a GTFS static zip, hold
-//! it in a registry keyed by the CONTENT HASH of the input bytes,
-//! and answer the feed's own questions: what it contains at a
-//! glance (`load_feed` returns the summary) and its identity
-//! (`feed_info.txt` — version, publisher). It has no ops that
-//! author anything — "only planners write networks, everything
-//! else imports" is enforced by the Request enum, not by
-//! convention — and no day views, no pickers, no names join:
-//! those are MODEL questions and answer over the NETWORK document
-//! (cap-board / cap-runcut / cap-calendar for the day,
-//! cap-directory for what exists — the bus's one-answer law: a
-//! duplicate feed-side answer is deleted, not kept).
+//! One subject: the FEED document. The kernel registers a GTFS
+//! static zip under the CONTENT HASH of its bytes (`load_feed`, which
+//! answers what the feed contains at a glance — its summary); this
+//! capability answers the feed's own question: its identity
+//! (`feed_info.txt` — version, publisher). It has no ops that author
+//! anything — "only planners write networks, everything else
+//! imports" is enforced by the Request enum, not by convention — and
+//! no day views, no pickers, no names join: those are MODEL questions
+//! and answer over the NETWORK document (cap-board / cap-runcut /
+//! cap-calendar for the day, cap-directory for what exists — the
+//! bus's one-answer law: a duplicate feed-side answer is deleted, not
+//! kept).
 //!
-//! The hash-keyed registry is the bus's core seam: capabilities
-//! compose through documents addressed by content hash, so the
-//! host (JS) can load the same bytes into any set of modules and
-//! assert they agree on the identity — "same document, same
-//! truth" is a checkable property, not a hope.
-//!
-//! The ABI is the same flat, import-free C ABI as every
-//! capability (via `cap_abi::capability!`): a capability differs
-//! in which ops its dispatch answers, never in how it is called.
 //! The TS types that cross the boundary are generated into
 //! `types/cap_gtfs/`.
 
-use cap_abi::registry::{Registry, Retain};
+#![forbid(unsafe_code)]
 
+use cap_abi::kernel::FEED;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use ts_rs::TS;
-use transit_codec::{Feed, FeedInfo, FeedSummary};
-
-/// The bulk-bytes op code (the only op that takes raw feed bytes).
-pub const OP_LOAD_FEED: u32 = 0;
+use transit_codec::FeedInfo;
 
 /// One operation call. Tagged like the monolith's seam: the serde form
 /// is `{"op": "<name>", ...fields}`.
@@ -41,10 +29,6 @@ pub const OP_LOAD_FEED: u32 = 0;
 #[ts(export, export_to = "cap_gtfs/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// Parse a GTFS zip from raw bytes; registers the feed under its
-    /// content hash. Loading the same bytes twice is idempotent —
-    /// same hash, same registry entry.
-    LoadFeed { bytes: Vec<u8> },
     /// `feed_info.txt` metadata (version, publisher) — the identity
     /// question: which feed is this?
     FeedInfo { feed_hash: String },
@@ -54,47 +38,14 @@ pub enum Request {
 #[ts(export, export_to = "cap_gtfs/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    LoadFeed { feed_hash: String, summary: FeedSummary },
     FeedInfo { info: Option<FeedInfo> },
-}
-
-/// The registry: content hash -> parsed feed. One instance per module
-/// (wasm modules never share state).
-pub static FEEDS: Registry<Feed> = Registry::documents("feed", "load_feed", Retain::Host);
-
-/// "sha256:<hex>" — the manifest's document-hash format everywhere.
-pub fn content_hash(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    format!("sha256:{:x}", digest)
-}
-
-fn with_feed<T>(
-    feed_hash: &str,
-    f: impl FnOnce(&Feed) -> Result<T, String>,
-) -> Result<T, String> {
-    f(&*FEEDS.require(feed_hash)?)
-}
-
-/// Load a feed into the registry; idempotent by content hash.
-fn load_feed(bytes: &[u8]) -> Result<Response, String> {
-    let hash = content_hash(bytes);
-    if let Some(feed) = FEEDS.get(&hash) {
-        return Ok(Response::LoadFeed { feed_hash: hash, summary: feed.summary() });
-    }
-    let feed = Feed::from_zip_bytes(bytes).map_err(|e| format!("parse: {e}"))?;
-    let summary = feed.summary();
-    FEEDS.insert(hash.clone(), feed);
-    Ok(Response::LoadFeed { feed_hash: hash, summary })
 }
 
 /// The typed dispatch (native hosts call this directly; the ABI shell
 /// wraps it in JSON). Failures are `{"error": ...}`, never panics.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
-        Request::LoadFeed { bytes } => load_feed(&bytes),
-        Request::FeedInfo { feed_hash } => with_feed(&feed_hash, |feed| {
-            Ok(Response::FeedInfo { info: feed.info() })
-        }),
+        Request::FeedInfo { feed_hash } => Ok(Response::FeedInfo { info: FEED.require(&feed_hash)?.info() }),
     }
 }
 
@@ -104,16 +55,16 @@ pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The bulk-bytes seam: op 0 loads a feed zip.
-pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
-    cap_abi::outcome(match op {
-        OP_LOAD_FEED => load_feed(bytes),
-        other => Err(format!("unknown bulk op {other}")),
-    })
+/// The feed capability has no bulk op of its own (a zip registers on
+/// the kernel's `load_feed`); the seam answers honestly instead of
+/// silently ignoring one.
+pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
+    cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: the feed capability has no bulk op of its own")))
 }
 
 cap_abi::capability! {
+    id: "gtfs",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    registries: [FEEDS],
+    documents: [FEED],
 }

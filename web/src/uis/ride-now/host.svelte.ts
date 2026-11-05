@@ -28,9 +28,13 @@
 /// is a trip end like a dropped pin, carrying the name it was shown
 /// with; nothing durable keeps the query.
 
-import { ask, available, keep, load, produced, servedNetwork, servedStreets, servedWalks, Doc } from "../../engine";
+import { ask, assemble, available, keep, load, produced, servedNetwork, servedStreets, servedWalks, Doc } from "../../engine";
 import { currentDocument, putDocument, restoreDocuments } from "../../documents.svelte";
 import { answerGraph, today } from "../kit";
+
+// This page's capabilities answer inside its linked assembly — one
+// module, one registry: each document registers once (D-77).
+assemble("ride-now");
 import type { DirectWalk } from "../../types/DirectWalk";
 import type { End } from "../../types/End";
 import type { PointWalk } from "../../types/PointWalk";
@@ -362,11 +366,16 @@ const request = answerGraph(
           vp_hash: vehicles ?? undefined,
           alerts_hash: alerts ?? undefined,
         });
-        live = produced("live", answer.live, "rt", answer.live_hash);
-        ride.live = { live: answer.live, summary: answer.summary };
+        // The page reads the document (its vehicles and alerts); linked
+        // beside rt, the board and the router read it by hash where rt
+        // minted it — it never crosses back.
+        const day = answer.live;
+        if (!day) throw new Error("the live answer carries no document");
+        live = produced("live", day, "rt", answer.live_hash);
+        ride.live = { live: day, summary: answer.summary };
         // A picked bus that moved on to its next trip is followed onto it.
         const v = ride.vehicle;
-        const now = v && answer.live.vehicles.find((x) => x.key === v.key);
+        const now = v && day.vehicles.find((x) => x.key === v.key);
         if (v && now && (now.trip !== v.trip || now.route !== v.route)) {
           ride.vehicle = { key: v.key, trip: now.trip, route: now.route };
           touch("vehicle");

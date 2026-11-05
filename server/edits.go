@@ -159,9 +159,10 @@ func (s *server) handlePostEdits(w http.ResponseWriter, r *http.Request) {
 
 	// One trip into the sync capability: merge + submit. The host
 	// passes the clock; the module owns every rule. Validation is
-	// NOT here — edit records validate against the network at
-	// load_edits in every model-side module (the client reads those
-	// reports through the bus).
+	// NOT here — what a record amounts to on the network is
+	// cap-divert's reports, asked through the bus (a record the
+	// network cannot answer is stored all the same, and patches
+	// nothing).
 	var resp struct {
 		Records json.RawMessage `json:"records"`
 	}

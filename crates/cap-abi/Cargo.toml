@@ -54,3 +54,11 @@ proptest = "1"
 [[bin]]
 name = "gen-manifest"
 path = "src/bin/gen_manifest.rs"
+
+[[bin]]
+name = "gen-assemblies"
+path = "src/bin/gen_assemblies.rs"
+
+[[bin]]
+name = "arch-gates"
+path = "src/bin/arch_gates.rs"

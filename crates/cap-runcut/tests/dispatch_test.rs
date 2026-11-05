@@ -31,10 +31,7 @@ fn derived_network() -> Network {
 }
 
 fn load_network() -> String {
-    match dispatch(Request::LoadNetwork { network: derived_network() }).unwrap() {
-        Response::LoadNetwork { network_hash } => network_hash,
-        _ => panic!("load_network"),
-    }
+    cap_abi::kernel::NETWORK.register(derived_network()).unwrap().0
 }
 
 /// The schedule id of route 10's pattern in the fixture-derived
@@ -76,11 +73,8 @@ fn record(status: EditStatus, added_secs: u32) -> EditRecord {
     }
 }
 
-fn load_edits(network_hash: &str, records: Vec<EditRecord>) -> (String, Vec<transit_sync::EditReport>) {
-    match dispatch(Request::LoadEdits { network_hash: network_hash.into(), records }).unwrap() {
-        Response::LoadEdits { edits_hash, reports } => (edits_hash, reports),
-        _ => panic!("load_edits"),
-    }
+fn load_edits(_network_hash: &str, records: Vec<EditRecord>) -> String {
+    cap_abi::kernel::EDITS.register(records).unwrap().0
 }
 
 #[test]
@@ -234,7 +228,7 @@ fn the_block_chain_ripples_under_the_edit() {
 
     // The ripple: t10 diverted +300 ends 08:16 — the connection
     // tightens from 10 min to 4 (the connection-health read).
-    let (edits_hash, _) = load_edits(&network_hash, vec![record(EditStatus::Accepted, 300)]);
+    let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 300)]);
     let ripped = match dispatch(Request::BlockTrips {
         network_hash,
         edits_hash: Some(edits_hash),
@@ -299,10 +293,7 @@ fn the_block_chain_ripples_under_a_live_prediction() {
         alerts: vec![],
         unmatched_alerts: 0,
     };
-    let live_hash = match dispatch(Request::LoadLive { live }).unwrap() {
-        Response::LoadLive { live_hash } => live_hash,
-        _ => panic!("load_live"),
-    };
+    let live_hash = cap_abi::kernel::LIVE.register(live).unwrap().0;
     let rippled = chain(Some(live_hash));
     assert_eq!(rippled[0].live_end_delay_secs, Some(370));
     assert_eq!(rippled[0].layover_remaining_secs, Some(230));
@@ -321,18 +312,15 @@ fn the_block_chain_ripples_under_a_live_prediction() {
 }
 
 #[test]
-fn invalid_edit_records_are_reported_not_rejected() {
+fn an_invalid_edit_record_moves_nothing() {
     let network_hash = load_network();
-    // A record whose anchors do not exist in the network: reported
-    // invalid, still registered (the sync contract — the host owns
-    // the document, the module reports).
+    // A record whose anchors do not exist in the network: registered
+    // all the same (the sync contract — the host owns the document;
+    // cap-divert's reports says what is wrong with it), and the day
+    // views simply find nothing to patch.
     let mut broken = record(EditStatus::Accepted, 60);
     broken.diversion.first_kept_stop = "ghost".into();
-    let (edits_hash, reports) = load_edits(&network_hash, vec![broken]);
-    assert_eq!(reports.len(), 1);
-    assert!(!reports[0].valid, "the broken record is reported: {reports:?}");
-    // Registered under its hash: the day views address it (and the
-    // invalid record simply matches nothing).
+    let edits_hash = load_edits(&network_hash, vec![broken]);
     let blocks = match dispatch(Request::Blocks {
         network_hash,
         edits_hash: Some(edits_hash),
@@ -414,7 +402,7 @@ fn the_trip_detail_answers_the_effective_day() {
 
     // The patched day: the diverted via-C trip keeps A→B, C skipped,
     // the added time on the kept segment (B at 08:55).
-    let (edits_hash, _) = load_edits(&network_hash, vec![record(EditStatus::Accepted, 300)]);
+    let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 300)]);
     let patched = match dispatch(Request::TripStops {
         network_hash: network_hash.clone(),
         edits_hash: Some(edits_hash),
@@ -437,13 +425,6 @@ fn the_trip_detail_answers_the_effective_day() {
 
 #[test]
 fn unknown_hashes_and_garbage_are_errors_not_panics() {
-    let err = dispatch(Request::LoadEdits {
-        network_hash: "sha256:missing".into(),
-        records: vec![],
-    })
-    .unwrap_err();
-    assert!(err.contains("unknown network"), "{err}");
-
     let network_hash = load_network();
     let err = dispatch(Request::BlockTrips {
         network_hash,
@@ -495,11 +476,11 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     // op answers; garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
-        serde_json::from_str(&cap_runcut::dispatch_json(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
+        serde_json::from_str(&cap_runcut::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
     let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_runcut::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
+        serde_json::from_str(&cap_runcut::invoke_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
     assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
     assert_eq!(via_bytes, via_json);
-    let bad = cap_runcut::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
+    let bad = cap_runcut::invoke_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
 }

@@ -12,6 +12,8 @@
 //! document) and pushes its distilled metadata per call, and the
 //! chain is derived on every answer, never stored.
 
+#![forbid(unsafe_code)]
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -151,7 +153,8 @@ pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
 }
 
 cap_abi::capability! {
+    id: "plans",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    registries: [],
+    documents: [],
 }

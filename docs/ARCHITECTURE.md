@@ -283,8 +283,10 @@ transit-dispatch The materialized day's views, model-native: patch_day
                 long names, its bay's name and platform code, and its
                 destination as the sign says there; the departures
                 the day's edits took away (`skipped`, each with the
-                diversion that skips it — day_edits holds the
-                unpatched day beside the patched one); the live
+                diversion that skips it — the `Day` holds the
+                unpatched day beside the patched one, one
+                materialization: `day` and its key, which the kernel
+                holds); the live
                 document's alerts about the board, each row naming
                 its own), the grouped board (grouped_board: THE
                 board's rows by route and destination for a stop's
@@ -440,9 +442,9 @@ cap-sync        The sync capability: the converged state of an edit
                 (migrate-at-receive: typed parse, defaults fill what
                 age removed, malformed dropped and counted), and
                 compact_edits (the D-57 tombstone-retention commit).
-                Stateless; validation is NOT here (load_edits
-                answers it against the network in every model-side
-                module — one question, one answer).
+                Stateless; validation is NOT here (what a record
+                amounts to on a network is cap-divert's reports —
+                one question, one answer).
 cap-plans       The plan-chain capability: which service plan
                 governs a date — resolve / periods / validate over
                 the plan set's metadata, and publish / retire /
@@ -464,7 +466,11 @@ cap-author      The authoring capability: what does this network
 cap-divert      The diversion-authoring capability: what does this
                 diversion draft amount to over the network (draft —
                 the editor's whole view; list — the edit document's
-                rows, names resolved), and what is the edit document
+                rows, names resolved; reports — what each record
+                amounts to on the network: valid, or what is wrong,
+                and the trip instances it touches — invalid records
+                REPORTED, never rejected, and a day view patches
+                nothing for them), and what is the edit document
                 after propose / retire / restore (the envelope rules)
                 — plus sanitize for stored copies. A separate need
                 from cap-sync's converge step (the Go server hosts
@@ -473,8 +479,9 @@ cap-divert      The diversion-authoring capability: what does this
                 diversion yet: drawing one is
                 `docs/units/ui-disruptions.md`'s question 4.
 
-Every module is the raw rustc output with the same four flat
-exports (no wasm-bindgen — do not reintroduce host glue).
+Every module is the raw rustc output of an assembly crate with the
+same four flat exports (no wasm-bindgen — do not reintroduce host
+glue).
 ```
 
 ## server/
@@ -482,19 +489,20 @@ exports (no wasm-bindgen — do not reintroduce host glue).
 Go + wazero host: scaffolding only (HTTP, manifest, proxies). It must
 never make a domain decision; the host reads the feed's own
 feed_info.txt version field (one boundary CSV field — I/O, not
-domain). It instantiates the modules it needs, all rebuilt by
+domain). It instantiates the single-capability modules it needs
+(whether it links assemblies is D-78, unanswered), all rebuilt by
 `just caps` into web/pkg/: cap-sync (the -wasm flag, cap_sync.wasm),
 the op behind POST /edits, held for the server's lifetime; cap-authz
 (-authz-wasm) when authentication is on; cap-plans (-plans-wasm) in
 store mode, the op behind POST /plans; cap-network
 (the -network-wasm flag, cap_network.wasm), which imports the
-configured GTFS zip (`load_feed` + `import`) — and canonicalizes and
+configured GTFS zip (the kernel's `load_feed` + `import`) — and canonicalizes and
 validates each published pick — in a fresh instance
 that is closed afterwards, so its working memory goes with
 it; and cap-streets (the -streets-wasm flag, cap_streets.wasm),
 which imports the configured street layer (`import`) and derives
-the walk table over it and the published network (`load_network`
-+ `walks`) in a fresh instance, closed the same way. Machine code
+the walk table over it and the published network (the kernel's
+`load_network` + `walks`) in a fresh instance, closed the same way. Machine code
 is cached per module bytes for the process, so a re-import does
 not recompile. The manifest pins the network it publishes, the zip
 it was imported from, the published plan set (store mode), the
@@ -507,16 +515,16 @@ zip, on the server, through the module the browser runs (same
 bytes, same `network_hash`), and every client registers the
 answer. On the real C-TRAN feed that is the difference between
 ~2.7 s of import and a ~187 MB network module on every rider's
-page, and ~0.45 s and ~9–12 MB per module that reads the network
-(registered from its 680 KB gzip stream; wasm memory keeps a
-module's high-water mark). A zip loaded by hand
+page, and ~0.45 s and ~9–12 MB per registration of the network
+(from its 680 KB gzip stream; wasm memory keeps a module's
+high-water mark) — once per page, in its linked assembly. A zip loaded by hand
 (the UIs' file input) still imports in the browser.
 
 **The deployment publishes the streets the same way.** The street
 layer is read once, on the server (`-streets`), and the walk table
 — every walk between the network's stops, 13 s of work on C-TRAN —
 is derived there too: a browser registers the canonical document
-by its BYTES (cap-streets' `load_streets` bulk op parses it in the
+by its BYTES (the kernel's `load_streets` bulk op parses it in the
 module; the page never parses it) and the table in the router. On
 C-TRAN's Trapeze roads (`sha256:48fe6c89…`) the server's startup
 spends 11.8 s on the import and the table; the page fetches 4.5 MB
@@ -708,14 +716,23 @@ File ownership:
   A host asks `ask(capability, op, args)`, the generated request
   types with every `*_hash` argument taking a `Doc` (a document
   version: its kind, its value or bytes, the document it is read
-  over, the hash its server pins). The engine registers a `Doc` in a
-  module on first use through its kind's load op (`load` answers the
-  load's whole answer — an edit document's reports, a decoded rt
-  snapshot's overview), asserts every module answers the same
-  identity, and caches answers under the journal's key (the
-  module's pinned hash and the request's bytes). `produced` adopts a
-  document an op answered (an import, an `apply`, the live
-  document) as registered where it was made; `available` says
+  over, the hash its server pins). A generated UI's host names its
+  page first (`assemble("<id>")`): every capability its linked
+  assembly links answers in that ONE module instance (the bus worker,
+  below), and a capability it does not link answers alone. The engine
+  registers a `Doc` in a module instance on first use through the
+  kernel's load of its kind (`load` answers the load's whole answer —
+  a feed's summary, a layer's headcount), so a document registers
+  once per page however many capabilities read it; it asserts every
+  instance answers the same identity, and caches answers under the
+  journal's key (the module's pinned hash — the assembly's — and the
+  request's bytes, which name the capability in a linked module).
+  `produced` adopts a document an op answered (an import, an `apply`,
+  the live document) as registered where it was made — for every
+  capability linked there; a document the page declined to receive
+  (the stop display's live document, `with_document: false`) carries
+  the ask that mints it again (`remint`), and `together` says whether
+  capabilities share an instance (so a host may decline it). `available` says
   whether a capability assembled, and `ask` throws `Unavailable`
   when it did not. `servedNetwork`, `servedStreets`, and
   `servedWalks` read the deployment's published documents and refuse
@@ -736,12 +753,13 @@ File ownership:
   is the planner's: the network as a value it forks. A module may drop what
   it holds (see "The bus worker"): asking for a dropped document is
   the module's unknown-hash error, and the engine registers the
-  document again and asks once more — a host never sees it. `keep`
-  names what survives: every assembled module drops every document
-  not named (nor read over by one named); the rider pages call it
-  when they adopt a network and when the edit document changes.
-  `window.__bus` is the e2e's inspection (what a module holds, its
-  memory and resets, the ceiling, a replay of the last op asked of a
+  document again (or mints it again) and asks once more — a host
+  never sees it. `keep` names what survives: every module instance
+  drops every document not named (nor read over by one named); the
+  rider pages call it when they adopt a network and when the edit
+  document changes. `window.__bus` is the e2e's inspection (the
+  module instance a capability answers in, what it holds, its memory
+  and resets, the ceiling, a replay of the last op asked of a
   capability past the answer cache).
 - `src/bus.ts` is the page's side of the bus worker, imported only by
   the engine: the one Worker, spawned on first use, and its calls as
@@ -764,16 +782,23 @@ File ownership:
 
 ### The bus worker
 
-`src/bus.worker.ts` is the ONLY wasm loader: every capability module
-a page assembles lives in ONE module Worker, off the thread the page
-renders on — one, not one per module, because documents cross
-between modules by hash inside it. It validates the manifest at the
-seam, fetches each module demand-driven, verifies its bytes against
-the pinned hash, compiles and instantiates it, and degrades per
-capability (a module that fails to assemble is `Unavailable`; the
-rest answer). Document bytes cross to it per registration (copied,
-never kept there: the page owns the documents, and a reset
-re-registers from them).
+`src/bus.worker.ts` is the ONLY wasm loader: every module a page
+assembles lives in ONE module Worker, off the thread the page renders
+on. A generated UI's page runs ONE module instance — its linked
+assembly (the manifest's `assemblies`, D-77): every capability it
+uses over one kernel registry, so a document registers once per page
+and crosses between capabilities by hash without leaving the
+instance. A capability the assembly does not link — or every one,
+when the assembly does not load — runs alone in its own module
+instance. The worker validates the manifest at the seam, fetches each
+module demand-driven, verifies its bytes against the pinned hash,
+compiles and instantiates it, and degrades per capability (a module
+that fails to assemble is `Unavailable` for the capabilities it
+would answer; the rest answer). Each `ensure` answers a capability's
+ROUTE: the instance it answers in, that module's hash, its index
+there, and whether the module links several. Document bytes cross to
+it per registration (copied, never kept there: the page owns the
+documents, and a reset re-registers from them).
 
 Wasm linear memory never shrinks — eviction lets a module reuse what
 it freed, but a peak stays allocated for the instance's life. So the
@@ -781,15 +806,19 @@ worker holds a MEMORY CEILING per instance (256 MiB, far above one
 agency's working set): before an op (never a registration), an
 instance past it that has answered an op since it was made — and was
 not reset in the last minute — is replaced by a fresh instance of the
-same compiled module. The reply says so; the engine voids that
-capability's registrations (a generation per capability) and its
-recovery registers what the op names again. Modules are pure, so the
+same compiled module, dropping every linked capability's state
+together. The reply says so; the engine voids that instance's
+registrations (a generation per instance) and its recovery registers
+what the op names again, each document once. Modules are pure, so the
 fresh instance answers the same bytes; the guards keep a working set
 above the ceiling from looping. The e2e pins both bounds
 (`e2e/ui-stop-display.spec.mjs`, "a display left polling stays
 bounded"): sixty polls of distinct rt snapshots plateau the rt
-module's registry and linear memory, and a forced ceiling replaces
-the board's instance once per op with the same answer.
+registry and the assembly's linear memory, and a forced ceiling
+replaces the instance once per op with the same answer. It pins the
+one instance too ("the display runs one linked module", and
+ride-now's first spec): every capability asked answers in the UI's
+assembly, holding the network once.
 
 ### External services
 
@@ -861,8 +890,11 @@ and the gates discover it. Nothing central is edited to add one.
 ```
 web/<id>.html                  the page (copy service-design.html; change the script src)
 web/src/uis/<id>/ui.json       the descriptor the picker renders: id (= the directory),
-                               title, summary, questions, ops, components, session (the
-                               dogfood session: date, feed, open findings), spec, generated
+                               title, summary, questions, ops ("<cap>.<op>" — the
+                               capabilities they name are what its linked assembly
+                               links; the kernel's loads are not ops), components,
+                               session (the dogfood session: date, feed, open
+                               findings), spec, generated
 web/src/uis/<id>/main.ts       imports ../base.css (+ maplibre css if it maps), mounts
                                Shell, then awaits the host's boot (the layout paints first)
 web/src/uis/<id>/Shell.svelte  PLACEMENT ONLY: reads the host's answers state, passes
@@ -1024,7 +1056,9 @@ unit is written before any code and deleted when the UI lands.
    `src/components/` (props in, events out, formatting only), then
    `Shell.svelte` (placement only).
 8. **Land it.** Add `ui.json`, the page, and
-   `e2e/ui-<id>.spec.mjs`. Run the UI in the browser on the real
+   `e2e/ui-<id>.spec.mjs`; the host layer names its page
+   (`assemble("<id>")`) and `just caps` generates its linked
+   assembly from `ui.json`'s `ops`. Run the UI in the browser on the real
    feed (`just serve testdata/ctran-gtfs.zip`) and check its numbers
    against the runner session's. Record the session in the
    descriptor's `session` field, and describe the UI below. Delete
@@ -1129,16 +1163,28 @@ Frontend conventions and gotchas: `docs/CONVENTIONS.md`.
 
 ## The capability bus
 
-The architecture: horizontal capability modules, one NEED per
-module, assembled per user at WIRE time from a manifest —
-capability bytes differ per user while the DOCUMENT and the
-contracts stay identical everywhere. Every host instantiates the
-modules it needs — the browser fetches them from the manifest,
-the sync server hosts cap-sync.
+The architecture: horizontal capabilities, one NEED per capability,
+assembled per user from a manifest — capability bytes differ per
+user while the DOCUMENT and the contracts stay identical everywhere.
+A MODULE is an assembly over the kernel (`cap-abi`): one capability
+alone (`module-<cap>` — what caps-run, agents, the registry's blobs,
+and the Go server run), or a generated UI's capabilities LINKED into
+one module (`module-ui-<id>`, D-77 — what that UI's page loads), so a
+document registers once per page and the shared code ships once.
+Linking assembles bytes and merges no surface: each capability keeps
+its crate, its Request enum, and its manifest entry. Linking a
+user's own selection at wire time is
+`docs/units/wire-time-assembly.md`'s. The assembly crates live in
+`assemblies/`, generated by `gen-assemblies` from the capability
+crates and each `web/src/uis/<id>/ui.json`'s `ops` (`just caps`
+writes them; `just test` checks they are current).
 
 ```
-cap-abi         The seam crate: the flat C ABI as a macro (every
-                capability module is the same four exports), the
+cap-abi         The kernel and the seam: the flat C ABI as a macro
+                (`assembly!` — every module is the same four exports,
+                emitted once per assembly crate; a capability crate
+                only REGISTERS with `capability!`, and forbids
+                `unsafe`), the
                 capability-manifest contract (speaks/migrates/
                 consumes + agent context), the ASSEMBLY VALIDATOR
                 (compose-time proof: closure, version coherence,
@@ -1150,41 +1196,69 @@ cap-abi         The seam crate: the flat C ABI as a macro (every
                 carry one example per edit kind, applied to the
                 fixture in order — a kind without one, or one that
                 stops applying, fails the build).
-                The kernel registration lives here too: bulk op 256
-                (OP_LOAD_NETWORK — the bare network document on
-                transit_invoke_bytes, its JSON or that JSON
-                gzipped, parsed straight into the model; a gzip
-                stream is decoded as it parses, so its text never
-                exists whole in the module — parse_document; the
-                JSON load_network routes to the same parse via
-                load_network_json) and canonical_hash, the one
-                identity formula (streamed into the digest, never
-                a second copy of the document). Every module's JSON
-                lane answers through `answer` / `outcome`,
-                serialized straight from the typed response — no
-                generic tree, so an answer carrying a document (an
-                import's network) carries its canonical bytes
+                THE KERNEL (kernel.rs) owns the registries: one per
+                document kind — network, edits, live, boundary,
+                walks, streets, watchlist, layer, feed, rt — and one
+                derived registry, each a `Registry` (registry.rs)
+                whose constructor is private to cap-abi, so a
+                capability cannot declare shared state. Each kind's
+                LOAD is a kernel op: a bulk op (256 network, 259
+                edits, 260 live, 261 boundary, 262 walks, 263
+                streets, 264 watchlist, 265 layer, 266 feed, 267 rt)
+                over its bytes, and the same JSON op
+                (`{"op": "load_network", "network": …}`) peeled
+                before any capability decodes the request (the
+                document left raw, never buffered into a generic
+                tree). A load answers the document's identity — the
+                canonical hash of the parsed document
+                (canonical_hash, streamed into the digest), or for a
+                feed, a layer and an rt payload the content hash of
+                its bytes — and what the host shows (a feed's
+                summary, a layer's headcount, a streets document's
+                size, a watchlist's version). A capability declares
+                the kinds it reads (`capability! { documents: [...] }`)
+                and reads them through the kind (`NETWORK.require`);
+                what an op mints registers where it is minted
+                (`NETWORK.register` — an import's network and
+                boundary, an apply's next network, cap-rt's live
+                document, a decoded snapshot). DERIVED entries are a
+                library's pure function and its key, held under a
+                `Derivation` and bounded per derivation (`derive`):
+                the day (`kernel::day` — transit-dispatch's `day`,
+                the effective trips and what the edits took away, one
+                materialization), the router's graph, the street and
+                walking graphs; a keep-set that drops any input drops
+                the entry. Every assembly answers the registry ops
+                (257 evict, 258 held) over the kinds its capabilities
+                read plus the derived entries, and 268 about (the
+                capabilities it links, each with its kinds). An
+                assembly's JSON request names its capability
+                (`"cap"`) when it links several; a capability's own
+                bulk op (0–255) carries its index in the high 16 bits.
+                The manifest's `kernel_ops` documents every kernel op
+                with an example computed through the same kernel; each
+                capability's entry names its `documents`, and
+                `assemblies` records each UI's linked module (its
+                capabilities in index order, its pinned bytes). Every
+                capability's JSON lane answers through `answer` /
+                `outcome`, serialized straight from the typed response
+                — no generic tree, so an answer carrying a document
+                (an import's network) carries its canonical bytes
                 (struct field order, docs/FORMATS.md).
-                The document registry (registry.rs) is the one type
-                every module keeps its documents in: `Registry::documents`
-                by content hash, `Registry::derived` for what a
-                module computed from documents (the router's graph
-                per day, remembering the hashes it read), each with
-                its kind's bound (`Retain::Host` — durable, dropped
-                only by a keep-set; `Retain::Last(n)` — ephemeral,
-                the oldest dropped past n). `capability!` takes the
-                module's `registries: [...]` and answers the
-                registry kernel ops over them (257 evict, 258 held)
-                before the module's dispatch sees the op; the
-                manifest's `kernel_ops` documents them, with
-                examples computed through the same kernel.
+                gen-assemblies writes the assembly crates;
+                arch-gates checks the dependency graph and every
+                capability crate's source (below, "Bus rules").
                 Also caps-smoke.mjs: Node ABI smoke + the law that
                 every advertised op is documented (undocumented ops
-                fail the build — agent context cannot drift).
-cap-gtfs        The feed-document capability: GTFS zip →
-                content-hash feed registry, and the feed's OWN
-                questions only — what it contains at a glance
-                (load_feed's summary) and its identity (feed_info).
+                fail the build — agent context cannot drift), every
+                module's `about` matches its manifest entry, and each
+                linked assembly registers a document once for every
+                capability; independence.mjs: the assembly-
+                independence law (below).
+cap-gtfs        The feed-document capability: the feed's OWN question
+                over a GTFS zip the kernel registered (load_feed
+                answers what it contains at a glance — its summary):
+                its identity (feed_info).
                 The day views, the watchlist, the pickers, and the
                 names join are NOT here: they answer over the NETWORK
                 document (cap-board / cap-runcut / cap-calendar /
@@ -1199,11 +1273,11 @@ cap-router      The router capability — ONE QUESTION: how do I get
                 patched with the edits in force (the same
                 transit-dispatch composition every day view starts
                 from), read at the live document's predictions when
-                live_hash names one (load_live), its transfers
-                walking the streets when walks_hash names a walk table
-                (load_walks — cap-streets' `walks` answer, refused
-                when derived for another network; straight lines
-                without one), the RAPTOR graph cached per (network,
+                live_hash names one (cap-rt's live answer), its
+                transfers walking the streets when walks_hash names a
+                walk table (cap-streets' `walks` answer, refused when
+                derived for another network; straight lines without
+                one), the RAPTOR graph a derived entry per (network,
                 edits, live, date, walks; only the newest live
                 document's graphs stay). A plan's `from` and `to`
                 are stop ids or places (`{id, name, walks}` —
@@ -1226,23 +1300,22 @@ cap-router      The router capability — ONE QUESTION: how do I get
                 writes nothing.
 cap-analysis    The analysis capability: planner numbers (stats,
                 service types, the frequency grid, hub connections,
-                coverage) over hash-keyed network and
-                population-layer registries. The domain code lives
+                coverage) over the kernel's networks and population
+                layers (load_population_layer answers the field the
+                parse picked and the people it found). The domain code lives
                 in the shared transit-analysis library. Consumes
                 network documents from cap-network (the registry
                 edge the manifest carries).
-cap-network     The network codec capability: load_feed (zip bytes →
-                content-hash feed registry), import (the planner's
-                bootstrap — the document registers itself with its
-                boundary residue, and its hash is in the response),
-                load_network (the
-                same registration name every model-side module uses),
-                validate (the authoring feedback loop: issues that
-                gate export, warnings that never gate), export (the
+cap-network     The network codec capability: import (the planner's
+                bootstrap over a feed the kernel registered — the
+                document and its boundary residue register
+                themselves, both hashes in the response), validate
+                (the authoring feedback loop: issues that gate
+                export, warnings that never gate), export (the
                 publish path — deterministic GTFS zip bytes under
-                their content hash, base64 across the JSON seam, with
-                the import's boundary when it is the imported
-                document itself), publishable (what refuses it as a
+                their content hash, base64 across the JSON seam,
+                numbered by the import's boundary when boundary_hash
+                names it; the zip registers as a feed), publishable (what refuses it as a
                 published pick: its issues, and a pick with no
                 service in its period, D-76), document (a registered
                 network's canonical bytes, hash and plan frame — what the
@@ -1254,12 +1327,12 @@ cap-rt          The realtime capability: decode — a GTFS-rt protobuf
                 agency serves every few seconds) into the overview
                 view (delays per trip/stop, live vehicles, service
                 alerts in the feed's ids), each
-                snapshot registered under its content hash; and the
-                SCHEDULE JOIN the dispatcher actually asks for, over
-                the NETWORK: load_network (the identity every
-                network consumer holds) and load_boundary (an
-                imported network's published stop_sequence
-                numbering; optional), trip_progress (one trip's scheduled/delay/predicted
+                snapshot registered under its content hash (the
+                kernel's load_rt registers one answering the hash
+                alone); and the SCHEDULE JOIN the dispatcher actually
+                asks for, over the NETWORK and, for an imported
+                network, its boundary (the published stop_sequence
+                numbering; optional): trip_progress (one trip's scheduled/delay/predicted
                 board; a stop the update skips carries the last
                 stated delay, GTFS-rt's propagation rule), late_trips (ranked, with the DELAYED-BUT-
                 DARK flag and vp_hash for agencies that serve the
@@ -1273,17 +1346,20 @@ cap-rt          The realtime capability: decode — a GTFS-rt protobuf
                 snapshots (alerts_hash; every snapshot's own alerts
                 count, one per entity id), with
                 the summary a status panel reads (vehicles by
-                status, the late list) — the browser's live views
-                render it; none joins rt.
+                status, the late list), registered where it is minted
+                — linked beside rt, the board and the router read it
+                by live_hash and it never crosses to the host and
+                back (with_document: false declines it in the answer
+                too — the stop display, QAF-49); the browser's live
+                views render it; none joins rt.
 cap-board       The board capability — ONE QUESTION: when does
                 service leave this stop? (at a stop, a station's
                 pooled bays, or a personal saved set — the WATCHLIST
                 document, v1/v2, migrated here: a personal
                 multi-stop board is the same question parameterized
-                by a personal document). load_network / load_edits
-                (validated per record against the network, invalid
-                records REPORTED never rejected) / load_live (cap-rt's
-                live document, by hash) then stop_board (THE board:
+                by a personal document), over the kernel's network,
+                edit document, live document (cap-rt's, by hash) and
+                watchlist: stop_board (THE board:
                 pooling, realtime-first order, row status, the
                 route's long name, the bay's name, the sign's
                 destination, the visits the in-force edits skip and
@@ -1291,15 +1367,16 @@ cap-board       The board capability — ONE QUESTION: when does
                 the board — the module's answer, never the host's) /
                 grouped_board (the same rows by route and
                 destination, the next three of each by default — the
-                stop display's answer) / load_watchlist /
-                migrate_watchlist / watchlist_board (each watched
+                stop display's answer) / migrate_watchlist (the
+                watchlist type is transit-dispatch's) /
+                watchlist_board (each watched
                 stop's stop_board, the same edits and live document;
                 a trip's FINAL
                 visit is an arrival, never a row) over ONE
                 MATERIALIZED DAY (materialize(net, date), patched
-                with the in-force edits — no derived registry, no
-                GTFS expansion, no effective cache; a day is computed
-                per call and a day is cheap). The domain code lives
+                with the in-force edits — the kernel's held day, one
+                materialization per (network, edits, date) however
+                many boards ask, no GTFS expansion). The domain code lives
                 in the shared transit-dispatch library; no GTFS
                 layer (arch gate). The UI's departure board renders
                 stop_board's answer; rows carry the trip instance's
@@ -1318,7 +1395,7 @@ cap-runcut      The runcut capability — ONE QUESTION: what does
                 chain (the detail
                 facet: the AUTHORED runcut with the layover ripple —
                 the in-force edits' added time, or with a live
-                document (load_live) a trip's predicted delay at its
+                document a trip's predicted delay at its
                 last stop, which wins (D-18) —
                 layover_remaining_secs going negative when a
                 connection is eaten, and layover_health classifying
@@ -1330,10 +1407,7 @@ cap-runcut      The runcut capability — ONE QUESTION: what does
                 LINE (trip_path — what the map's click-through draws:
                 the authored alignment, with an in-force diversion's
                 traced detour spliced between its kept stops). Same
-                document set as
-                cap-board
-                (load_network / load_edits / load_live + the day
-                views); the
+                documents and held day as cap-board; the
                 domain code lives in the shared transit-dispatch
                 library; no GTFS layer (arch gate). The UI's blocks
                 panel and trip lines answer through this module.
@@ -1344,8 +1418,8 @@ cap-calendar    The calendar capability — TWO READS of one relation:
                 the EFFECTIVE day (a key whose every trip is skipped
                 or unrepresentable is not running, however its
                 calendar reads — the same honesty as the runcut
-                view's empty hole). Same document set (load_network
-                / load_edits plumbing); the domain code lives in the
+                view's empty hole). Same documents and held day as
+                cap-board; the domain code lives in the
                 shared transit-dispatch library; no GTFS layer (arch
                 gate).
 cap-directory   The directory capability — ONE QUESTION: what
@@ -1373,8 +1447,8 @@ cap-directory   The directory capability — ONE QUESTION: what
                 both-directions case). The pickers are
                 model questions, never feed reads; the UI's
                 comboboxes and the map's name lookups read this
-                module (the feed line reads cap-gtfs's load_feed
-                summary + feed_info). focus answers where an entity
+                module (the feed line reads the kernel's load_feed
+                summary + cap-gtfs's feed_info). focus answers where an entity
                 is on the map — the planner's drill-down frames it.
                 entities, route_detail, and stop_detail answer the
                 planner's lists (filtered rows per kind — the forms'
@@ -1390,9 +1464,9 @@ cap-streets    The street-graph capability: where along the
                 streets. import (bulk-bytes op 0) reads a street
                 layer into the streets document and registers it,
                 answering the document (the host keeps it) with its
-                hash and size; load_streets (bulk op 1, or JSON)
-                registers a document the host holds under the same
-                hash, refused unless canonical; snap answers the
+                hash and size (the kernel's load_streets registers a
+                document the host holds under the same hash, refused
+                unless canonical); snap answers the
                 nearest street position (the graph address a trace's
                 waypoint commits to); route answers the street
                 geometry between two positions (shortest path,
@@ -1400,15 +1474,14 @@ cap-streets    The street-graph capability: where along the
                 its length along the graph; empty on disconnected
                 parts — the caller falls back to a straight line);
                 walks answers the walk table between a registered
-                network's stops (load_network, kernel op 256 — the
-                module keeps only the stops) with its hash, the
-                router's load_walks answering the same; access
+                network's stops with its hash (the kernel's
+                load_walks answers the same); access
                 answers a point's walks to those stops, each with
                 its path, nearest first, and the direct walk to a
                 second point — the router's place. The walking
-                graph is built on first walks, the street graph on
-                first snap — a host that only walks never builds the
-                other. The domain code lives in the shared
+                graph is a derived entry built on first walks, the
+                street graph on first snap — a host that only walks
+                never builds the other. The domain code lives in the shared
                 transit-streets library; the module writes nothing. Its consumers
                 today are the server (the streets and walk table it
                 publishes) and ride-now (walks from a point to the
@@ -1420,44 +1493,70 @@ cap-streets    The street-graph capability: where along the
 ### Bus rules (load-bearing)
 
 - Capabilities compose through DOCUMENTS addressed by content hash,
-  never module-to-module — the host loads the same bytes into each
-  module and ASSERTS the returned hashes agree. In the browser this
-  holds by construction: a document is one engine `Doc`, and every
-  module it is registered in must answer the identity the first one
-  did (and a served document the hash its server pins).
+  never capability-to-capability — linked in one module, they share
+  the kernel's registries; in separate modules the host loads the
+  same bytes into each and ASSERTS the returned hashes agree. In the
+  browser this holds by construction: a document is one engine `Doc`,
+  and every instance it is registered in must answer the identity
+  the first one did (and a served document the hash its server pins).
+- CAPABILITIES NEVER CALL CAPABILITIES — in one binary a crate can
+  still name only the code of crates it depends on, so the rule is
+  enforced by four gates in `just test`, each broken on a fixture in
+  its own test: the dependency graph (`arch-gates` over `cargo
+  metadata`, deny by default: a capability depends only on cap-abi
+  and libraries, only the generated assemblies depend on
+  capabilities, only the codec's homes read transit-codec —
+  `crates/cap-abi/tests/arch_gates_test.rs`); the kernel's private
+  registry constructor (the `compile_fail` doctests on
+  `cap_abi::registry::Registry`) with no state declared in a
+  capability crate (no static, no thread_local); `#![forbid(unsafe_code)]`
+  in every capability crate (the unsafe exports are `assembly!`'s);
+  and ASSEMBLY INDEPENDENCE (`crates/cap-abi/independence.mjs`, its
+  broken fixture `independence.test.mjs`): every worked example
+  answers identically from the capability alone and inside each UI's
+  assembly, in either order of its capabilities — a shared derived
+  entry is only a cache, never a dependency.
 - The MODULE is the hash authority — hosts never mint document
   identity (JS JSON.stringify differs from the module's canonical
   serde bytes in float formatting; query with the hash the module
   returned).
-- Bulk op numbers: a capability's own number from 0 (feeds,
-  layers, rt payloads); kernel ops number from 256 and mean the same
-  thing in every module that answers them. Every network consumer
-  answers 256, and the browser host registers networks only that
-  way (the engine's loader for kind `network`, the document encoded
-  once however many modules register it). EVERY module answers the
-  registry ops: 257 (evict — `{"keep": [hash, …]}` drops every
-  document not kept, and every derived entry whose inputs are not
-  all kept; it answers what dropped and what is held) and 258 (held
-  — what the module holds, per registry, oldest first).
-- A module keeps its documents in `cap_abi::registry::Registry`
-  statics, never a hand-rolled map: the module owns what it holds
-  (it is the hash authority), the host names what survives (it owns
-  the documents). Ephemeral kinds bound themselves — rt snapshots
-  keep their last 8 (cap-rt), live documents their last 4 (board,
-  router, runcut), router graphs their last 8 (and only the newest
-  live document's) — so a poll loop plateaus with no host steering;
-  durable kinds (networks, feeds, edits, boundaries, layers, walk
-  tables, streets, watchlists) stay until a keep-set drops them.
+- Bulk op numbers: a capability's own number from 0 (streets'
+  import, rt's decode) — in a module linking several, its index in
+  the high 16 bits; kernel ops number from 256 and mean the same thing
+  in every module that answers them: each kind's load (256 network,
+  259 edits, 260 live, 261 boundary, 262 walks, 263 streets, 264
+  watchlist, 265 layer, 266 feed, 267 rt) in every module whose
+  capabilities read the kind, the browser host registering every
+  document that way (the engine's loader per kind, the document
+  encoded once however many instances register it). EVERY module
+  answers the registry ops: 257 (evict — `{"keep": [hash, …]}` drops
+  every document not kept, and every derived entry whose inputs are
+  not all kept; it answers what dropped and what is held), 258 (held
+  — what the module holds, per registry, oldest first), and 268
+  (about — the capabilities it links, each with its kinds).
+- The kernel keeps every document, in `cap_abi::registry::Registry`
+  statics only it constructs: the module owns what it holds (it is
+  the hash authority), the host names what survives (it owns the
+  documents). Ephemeral kinds bound themselves — rt snapshots keep
+  their last 8, live documents their last 4 — and so does each
+  derivation (held days 4, router graphs 8 and only the newest live
+  document's, street and walking graphs 4), so a poll loop plateaus
+  with no host steering; durable kinds (networks, feeds, edits,
+  boundaries, layers, walk tables, streets, watchlists) stay until a
+  keep-set drops them.
   An evicted document asked for is the unknown-hash error every
   module speaks — `unknown <kind> <hash>: <load op> first` — never a
   wrong answer.
-- One Request enum per capability is the whole surface (networks
-  are minted only by cap-author's apply and cap-network's import —
-  readers have no authoring ops by construction).
-- `#[no_mangle]` ABI exports collide if one binary links two cap
-  crates (tests assert against the hash formula instead); cap
-  crates need `crate-type = ["cdylib", "rlib"]` for native tests to
-  link.
+- One Request enum per capability is the whole surface, and no
+  load is in it — registration is the kernel's (networks are minted
+  only by cap-author's apply and cap-network's import — readers have
+  no authoring ops by construction).
+- A capability crate is an rlib that registers (`capability!`
+  declares `CAPABILITY` and its native seam — `invoke`,
+  `invoke_bytes`, `registries`, the capability alone exactly as its
+  one-capability module answers, for tests); only an assembly crate
+  emits the `#[no_mangle]` exports (`assembly!`), so linking never
+  collides.
 - Do not let a capability grow a private document format — shared
   data crosses modules as kernel documents addressed by content hash
   only.

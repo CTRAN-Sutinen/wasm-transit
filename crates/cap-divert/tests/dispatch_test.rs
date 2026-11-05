@@ -16,10 +16,7 @@ use transit_sync::{EditRecord, EditStatus};
 
 fn load() -> String {
     let network: Network = serde_json::from_str(include_str!("../../../testdata/network.json")).unwrap();
-    match dispatch(Request::LoadNetwork { network }).unwrap() {
-        Response::LoadNetwork { network_hash } => network_hash,
-        _ => panic!("load_network"),
-    }
+    cap_abi::kernel::NETWORK.register(network).unwrap().0
 }
 
 fn draft() -> DiversionDraft {
@@ -114,11 +111,48 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     // op answers; garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
-        serde_json::from_str(&cap_divert::dispatch_json(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
+        serde_json::from_str(&cap_divert::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
     let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_divert::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
+        serde_json::from_str(&cap_divert::invoke_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
     assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
     assert_eq!(via_bytes, via_json);
-    let bad = cap_divert::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
+    let bad = cap_divert::invoke_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
 }
+
+/// What each record of an edit document amounts to on the network —
+/// the one answer (the loads report nothing): a valid record and the
+/// trips it touches, an invalid one REPORTED with what is wrong, never
+/// rejected, in document order.
+#[test]
+fn reports_say_what_each_record_amounts_to_on_the_network() {
+    let network_hash = load();
+    let record = |id: &str, route: &str| EditRecord {
+        id: id.into(),
+        diversion: transit_sync::Diversion {
+            id: format!("d-{id}"),
+            route_id: route.into(),
+            direction_id: None,
+            first_kept_stop: "A".into(),
+            last_kept_stop: "B".into(),
+            skipped_stops: vec!["C".into()],
+            detour: None,
+            added_secs: 300,
+            start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+        },
+        status: EditStatus::Accepted,
+        rev: 1,
+        updated_at: 1,
+    };
+    let records = vec![record("e1", "10"), record("e2", "ghost")];
+    let Response::Reports { reports } = dispatch(Request::Reports { network_hash, records }).unwrap() else {
+        panic!("reports")
+    };
+    assert_eq!(reports.len(), 2);
+    assert!(reports[0].valid && reports[0].affected_trips >= 1, "{reports:?}");
+    assert!(!reports[1].valid, "an edit against an unknown route is reported invalid: {reports:?}");
+    let err = dispatch(Request::Reports { network_hash: "sha256:missing".into(), records: vec![] }).unwrap_err();
+    assert!(err.contains("unknown network"), "{err}");
+}
+

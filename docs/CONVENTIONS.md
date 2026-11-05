@@ -72,12 +72,11 @@ holds the gotchas, Rust/wasm/ops and frontend alike.
   variant, then decodes again from the tree. On the C-TRAN network
   (2.7 MB) that peaks at ~19 MB against 2.3 MB for a direct parse —
   and wasm linear memory never shrinks, so the peak is a permanent
-  per-module tab cost. The network registers through
-  `cap_abi::load_network_json` / the kernel bulk op (the variant is
-  `#[serde(skip_deserializing)]`; ts-rs warns that it ignores that
-  attribute, which is intended — the variant stays in the TS
-  types). `load_edits` / `load_live` still take the envelope: fine
-  at their sizes, the same fix if they grow.
+  per-module tab cost. Every document registers through the
+  kernel's loads (`cap_abi::kernel`): the bulk op parses the bare
+  bytes straight into the type, and the JSON lane's envelope is
+  peeled with the document left raw (`RawValue`) — no capability's
+  Request carries a document to register.
 
 ## Frontend
 

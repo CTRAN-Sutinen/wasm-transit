@@ -2,7 +2,8 @@
 
 Local-first transit software: GTFS static + GTFS-rt, parsed by
 Rust, shipped as **capability modules** — one flat import-free
-wasm ABI everywhere. The same DOCUMENT and the same contracts on
+wasm ABI everywhere; a generated UI's capabilities link into ONE
+module over one kernel registry (D-77). The same DOCUMENT and the same contracts on
 every host (browser, Node, Go + wazero) is the point of the
 project; the bytes are assembled per user from the manifest. The
 bus is the architecture: every host instantiates the capability
@@ -101,8 +102,10 @@ done; `just e2e` adds the browser runner, for UI-visible changes;
 
 ```
 just build                 # frontend (type-checks first — the TS layer is a gate)
-just caps                  # capability modules + manifest (+ cap_sync, cap_network,
-                           # cap_streets, cap_authz and cap_plans .wasm for the server)
+just caps                  # assemblies/ (generated, gitignored) → the modules: each
+                           # capability alone and each UI's linked assembly + manifest
+                           # (+ cap_sync, cap_network, cap_streets, cap_authz and
+                           # cap_plans .wasm for the server)
 just registry              # publish the capability registry (gates → blobs + evidence;
                            # every `just caps` republishes it ungated)
 node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op ...
@@ -110,7 +113,8 @@ node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op .
                            # capability mid-session (documents cross by $ref);
                            # --as NAME names a result; $refs ($name.x, $load.x,
                            # $op.x, $N.path) + $TODAY/$NOW_SECS (a number);
-                           # --load [N:]FILE for bulk ops; --op @FILE for big JSON;
+                           # --load [N:|KIND:]FILE for bulk ops (feed:x.zip — the
+                           # kernel's loads); --op @FILE for big JSON;
                            # --ask URL asks an oracle ($ask.x); --post URL REF
                            # writes a document to the deployment ($post.x —
                            # e.g. POST /plans '$apply.network' publishes a pick)
@@ -188,11 +192,17 @@ transit-streets  THE streets document (canonical: its hash is the streets', not 
                  its import from street layers (GeoJSON: agency exports, TIGER, OSM),
                  the graph over it (snap, route), and walking (the walk table between stops,
                  a point's walks to the stops near it)
-cap-abi          the capability seam (ABI macro, manifest, validator, gen-manifest,
-                 the document registry every module keeps its documents in and
-                 the kernel ops over it — evict, held)
+cap-abi          the kernel and the seam: the registries (one per document kind,
+                 constructor private), each kind's load, derived entries (the held
+                 day, graphs), the routing an assembly's exports run (`assembly!`;
+                 a capability only registers with `capability!`), the kernel ops
+                 (loads, evict, held, about), manifest, validator, gen-manifest,
+                 gen-assemblies, arch-gates
 cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert
-                 the capability modules (docs/ARCHITECTURE.md, bus section)
+                 the capabilities: rlibs that register, forbid unsafe, declare no
+                 state, and never depend on each other (docs/ARCHITECTURE.md, bus section)
+assemblies/      GENERATED (gen-assemblies, gitignored): module-<cap> (one capability
+                 alone) and module-ui-<id> (a generated UI's capabilities linked)
 server/          Go + wazero host over cap-sync, cap-network, cap-plans and
                  cap-streets (the network, picks, streets and walk table it
                  publishes), cap-authz when auth is on, and the proxies
@@ -201,8 +211,8 @@ server/          Go + wazero host over cap-sync, cap-network, cap-plans and
 web/             Svelte 5 + Vite frontend: / is a picker over the GENERATED UIs
                  (src/uis/<id>/, each its own page and host layer; every page
                  is one) (docs/ARCHITECTURE.md, web section, "Generated UIs" —
-                 the recipe a fresh agent follows); the modules run in the
-                 page's one bus worker, behind the engine
+                 the recipe a fresh agent follows); each page runs its linked
+                 assembly in the page's one bus worker, behind the engine
 ```
 
 Per-crate detail: `docs/ARCHITECTURE.md`.
@@ -259,7 +269,9 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
   documents (`Doc`), never modules or hashes; nothing else imports
   the bus or calls a module, and the modules live in the page's one
   bus worker (`web/src/bus.worker.ts`), off the render thread (web
-  gates in `just test`).
+  gates in `just test`). A generated UI's host names its page
+  (`assemble("<id>")`) so its capabilities answer in its linked
+  assembly.
 - **External services** are sources, presentation, or oracles — an
   oracle (the geocoder) answers an input the user could have given
   by hand; a host sends it the user's input only, shows its answer
@@ -292,8 +304,8 @@ e2e, real-data dogfood) are spelled out in `docs/TESTING.md`.
 - transit-network is the authored model; GTFS stays OUT of it — the
   import/export codecs live at the boundary in transit-codec.
 - wasm-bindgen / JS glue is gone on purpose; every module is the
-  raw rustc output with the same four exports — no custom calling
-  conventions.
+  raw rustc output of an assembly crate with the same four exports —
+  no custom calling conventions.
 - The geocoder is an oracle, not a document on the bus — no
   gazetteer capability ("External services").
 - The Go server stays scaffolding; domain logic the server needs
@@ -302,5 +314,7 @@ e2e, real-data dogfood) are spelled out in `docs/TESTING.md`.
   plan set, cap-streets for the streets and walk table it
   publishes).
 - The bus is the architecture: no capability grows a private
-  document format — shared data crosses modules as kernel
-  documents addressed by content hash only.
+  document format — shared data crosses capabilities as kernel
+  documents addressed by content hash only, and capabilities never
+  call capabilities (linking assembles bytes, not surfaces — the
+  arch gates and assembly independence enforce it).

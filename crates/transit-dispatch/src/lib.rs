@@ -18,6 +18,7 @@
 //! legitimate after-midnight trips.
 
 pub mod divert;
+pub mod watchlist;
 pub mod geometry;
 pub use geometry::{trip_path, trip_segment, LegKind, LegPath};
 pub use divert::{diversion_of, diversion_rows, draft_view, DiversionDraft, DiversionRow, DraftPattern, DraftStop, DraftStopRole, DraftView};
@@ -417,18 +418,35 @@ pub struct DayEdits {
     pub diversions: Vec<Diversion>,
 }
 
-/// The day's edits for a date — `None` when no edit is in force (the
-/// effective day IS the materialized day; nothing was taken away).
-pub fn day_edits(
-    network: &Network,
-    date: NaiveDate,
-    records: &[EditRecord],
-) -> Result<Option<DayEdits>, transit_network::NetworkError> {
+/// THE day for (network, edits, date): the network materialized for
+/// the date, patched with the edits in force on it, and — when any is
+/// in force — what they took away. One materialization: the effective
+/// trips ARE the materialized day when nothing is in force. A pure
+/// function of the documents [`day_key`] names, so a host may hold it
+/// (the kernel's derived registry) and every reader answers the same.
+#[derive(Debug, Clone)]
+pub struct Day {
+    /// The trips that run: the materialized day, patched.
+    pub trips: Vec<MaterializedTrip>,
+    /// The unpatched day and the diversions in force — `None` when no
+    /// edit is in force (nothing was taken away).
+    pub edits: Option<DayEdits>,
+}
+
+/// The day (see [`Day`]).
+pub fn day(network: &Network, date: NaiveDate, records: &[EditRecord]) -> Result<Day, transit_network::NetworkError> {
+    let base = materialize(network, date)?;
     let diversions = transit_sync::in_force_on(records, date);
     if diversions.is_empty() {
-        return Ok(None);
+        return Ok(Day { trips: base, edits: None });
     }
-    Ok(Some(DayEdits { base: materialize(network, date)?, diversions }))
+    Ok(Day { trips: patch_day(&base, &diversions), edits: Some(DayEdits { base, diversions }) })
+}
+
+/// The key a held [`Day`] is found by: the documents and the date it
+/// is a function of.
+pub fn day_key(network_hash: &str, edits_hash: Option<&str>, date: &str) -> String {
+    format!("{network_hash}|{}|{date}", edits_hash.unwrap_or("-"))
 }
 
 /// Live delays never reach back further than this when looking for

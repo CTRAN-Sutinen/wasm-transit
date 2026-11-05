@@ -7,7 +7,7 @@ empty.
 
 ## Not dogfooded on real data
 
-- **cap-streets** (load_streets / snap / route). The real-data
+- **cap-streets** (the kernel's load_streets / snap / route). The real-data
   path is the county soak (`just soak`, COUNTY_GEOJSON), which
   needs the licensed county export. Done when a soak session runs
   and its findings are logged.

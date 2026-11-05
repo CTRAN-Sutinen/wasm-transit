@@ -59,8 +59,8 @@ selection, kept in the page's URL so a screen reopens on its stop).
 |---|---|---|---|
 | directory `stops` (query) | network, query | the setup's stop picker | the setup |
 | directory `stops_by_ids` | network, stop | the header | always |
-| rt `live` (+ `load_boundary`) | network, snapshot | the header's live mark | always |
-| board `grouped_board` (+ `load_edits`, `load_live`) | network, edits, rt.live, stop, clock | the layout's groups, the alerts slot | always |
+| rt `live` | network, snapshot | the header's live mark | always |
+| board `grouped_board` | network, edits, rt.live, stop, clock | the layout's groups, the alerts slot | always |
 
 The poll (every 30 s) re-reads the edit document and the live
 feeds and requests `clock` plus whichever changed — the same timer

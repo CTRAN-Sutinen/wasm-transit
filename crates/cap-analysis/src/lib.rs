@@ -6,49 +6,32 @@
 //! library under this module. A planner's bundle ships it; a
 //! rider's never hears of it.
 //!
-//! Documents are content-addressed like everywhere on the bus: an
-//! authored network (the JSON document) registers under its canonical
-//! hash, a population layer under the hash of its bytes, and every
-//! op addresses them by hash — never by carrying the whole document
-//! per request (the fix for the monolith's per-op serialization).
-//! Composition is through documents: a network produced by a future
-//! network capability would be loaded here by the SAME hash the
-//! producer returned, asserted at the host.
+//! The documents it reads are the kernel's, content-addressed like
+//! everywhere on the bus: an authored network (the JSON document)
+//! under its canonical hash, a population layer under the hash of its
+//! bytes (the kernel's `load_population_layer` answers the field the
+//! parse picked and the people it found), and every op addresses them
+//! by hash — never by carrying the whole document per request.
+//! Composition is through documents: a network produced by the network
+//! capability is read here by the SAME hash the producer returned.
+
+#![forbid(unsafe_code)]
 
 use std::sync::Arc;
 
-use cap_abi::registry::{Registry, Retain};
-
+use cap_abi::kernel::{LAYER, NETWORK};
 use serde::{Deserialize, Serialize};
-use cap_abi::content_hash;
 use ts_rs::TS;
 use transit_analysis::{
-    coverage, network_stats, parse_pop_layer, service_type_compare, service_type_detail, service_type_overview,
-    type_coverage, CoverageWindow, NetworkStats, PopLayer, ServiceTypeComparison, ServiceTypeDetail,
-    ServiceTypeSummary, TypeCoverage,
+    coverage, network_stats, service_type_compare, service_type_detail, service_type_overview, type_coverage,
+    CoverageWindow, NetworkStats, ServiceTypeComparison, ServiceTypeDetail, ServiceTypeSummary, TypeCoverage,
 };
 use transit_network::Network;
-
-/// The bulk-bytes op code (population layer GeoJSON).
-pub const OP_LOAD_LAYER: u32 = 0;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_analysis/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// Register an authored network document under its content hash
-    /// (idempotent by hash). The network is the PLANNER'S document —
-    /// this capability only ever reads it.
-    /// Decoded by `cap_abi::load_network_json` on either lane, never
-    /// through the tagged envelope (whose buffered decode would cost
-    /// ~8× the document in peak memory and a second decoder).
-    #[serde(skip_deserializing)]
-    LoadNetwork { network: Network },
-    /// Register a population layer (GeoJSON points) under its
-    /// content hash. The handle is the whole answer the import UI
-    /// shows — the field the parse picked and the people it found —
-    /// so the layer's owner never needs a second parse elsewhere.
-    LoadPopulationLayer { bytes: Vec<u8>, pop_field: Option<String> },
     /// The network's numbers on one service date. The optional
     /// include flags shape the response: the UI wants every route
     /// and stop inline; an agent asking the day-shape question wants
@@ -177,13 +160,6 @@ pub enum Request {
 #[ts(export, export_to = "cap_analysis/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    LoadNetwork { network_hash: String },
-    LoadPopulationLayer {
-        layer_hash: String,
-        points: u64,
-        pop_field: String,
-        total_pop: f64,
-    },
     NetworkStats { stats: NetworkStats },
     ServiceTypesOverview { service_types: Vec<ServiceTypeSummary> },
     ServiceGroups { groups: Vec<transit_analysis::ServiceGroup> },
@@ -200,19 +176,8 @@ pub enum Response {
     UnservedPoints { points: Vec<transit_analysis::UnservedPoint> },
 }
 
-/// Networks by content hash — canonical serialization, so byte
-/// variants of one logical document land on one entry.
-pub static NETWORKS: Registry<Network> = Registry::documents("network", "load_network", Retain::Host);
-
-/// Population layers by content hash of the input bytes.
-pub static LAYERS: Registry<PopLayer> = Registry::documents("layer", "load_population_layer", Retain::Host);
-
 fn default_true() -> bool {
     true
-}
-
-fn network_hash(network: &Network) -> Result<String, String> {
-    cap_abi::canonical_hash(network)
 }
 
 fn parse_date(date: &str) -> Result<chrono::NaiveDate, String> {
@@ -224,13 +189,13 @@ fn with_network<T>(
     network_hash: &str,
     f: impl FnOnce(&Network) -> Result<T, String>,
 ) -> Result<T, String> {
-    f(&*NETWORKS.require(network_hash)?)
+    f(&*NETWORK.require(network_hash)?)
 }
 
 /// The registered document itself (for ops that compose across
 /// registries).
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    NETWORKS.require(network_hash)
+    NETWORK.require(network_hash)
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
@@ -238,27 +203,6 @@ fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
 /// mid-edit documents, and unknown hashes are errors, not crashes.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
-        Request::LoadNetwork { network } => {
-            let hash = network_hash(&network)?;
-            NETWORKS.insert(hash.clone(), network);
-            Ok(Response::LoadNetwork { network_hash: hash })
-        }
-        Request::LoadPopulationLayer { bytes, pop_field } => {
-            let hash = content_hash(&bytes);
-            let layer = match LAYERS.get(&hash) {
-                Some(layer) => layer,
-                None => LAYERS.insert(
-                    hash.clone(),
-                    parse_pop_layer(&bytes, pop_field.as_deref()).map_err(|e| format!("population layer: {e}"))?,
-                ),
-            };
-            Ok(Response::LoadPopulationLayer {
-                layer_hash: hash,
-                points: layer.points.len() as u64,
-                pop_field: layer.pop_field.clone(),
-                total_pop: layer.points.iter().map(|p| p.pop).sum(),
-            })
-        }
         Request::NetworkStats { network_hash, date, include_routes, include_stops, include_service_types } => {
             let parsed = parse_date(&date)?;
             with_network(&network_hash, |network| {
@@ -307,7 +251,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::TypeCoverage { network_hash, layer_hash, radius_m, frequent_secs, min_departures, window } => {
             let network_arc = network_arc(&network_hash)?;
-            let layer_arc = LAYERS.require(&layer_hash)?;
+            let layer_arc = LAYER.require(&layer_hash)?;
             Ok(Response::TypeCoverage {
                 coverage: type_coverage(
                     &network_arc,
@@ -369,7 +313,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::UnservedPoints { network_hash, layer_hash, radius_m, date } => {
             let parsed = parse_date(&date)?;
             let network_arc = network_arc(&network_hash)?;
-            let layer_arc = LAYERS.require(&layer_hash)?;
+            let layer_arc = LAYER.require(&layer_hash)?;
             Ok(Response::UnservedPoints {
                 points: transit_analysis::unserved_points(&network_arc, parsed, &layer_arc, radius_m),
             })
@@ -381,21 +325,14 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
 /// out — byte-compatible with the monolith and every other
 /// capability module.
 pub fn dispatch_json(text: &str) -> String {
-    if let Some(answer) = cap_abi::load_network_json(text, |doc| dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc)) {
-        return answer;
-    }
     cap_abi::answer(text, dispatch)
 }
 
-/// The bulk-bytes seam: op 0 loads a population layer.
-pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
-    cap_abi::outcome(match op {
-        OP_LOAD_LAYER => dispatch(Request::LoadPopulationLayer { bytes: bytes.to_vec(), pop_field: None }),
-        cap_abi::OP_LOAD_NETWORK => {
-            cap_abi::parse_network(bytes).and_then(|network| dispatch(Request::LoadNetwork { network }))
-        }
-        other => Err(format!("unknown bulk op {other}")),
-    })
+/// The analysis capability has no bulk op of its own (a population
+/// layer registers on the kernel's `load_population_layer`); the seam
+/// answers honestly instead of silently ignoring one.
+pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
+    cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: analysis has no bulk op of its own")))
 }
 
 /// Coverage for a single network on a single date (the calendar
@@ -412,12 +349,13 @@ pub fn coverage_on(
 ) -> Result<transit_analysis::CoverageStats, String> {
     let parsed = parse_date(date)?;
     let network_arc = network_arc(network_hash)?;
-    let layer_arc = LAYERS.require(&layer_hash)?;
+    let layer_arc = LAYER.require(&layer_hash)?;
     Ok(coverage(&network_arc, parsed, &layer_arc, radius_m, frequent_secs, min_departures, None))
 }
 
 cap_abi::capability! {
+    id: "analysis",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    registries: [NETWORKS, LAYERS],
+    documents: [NETWORK, LAYER],
 }

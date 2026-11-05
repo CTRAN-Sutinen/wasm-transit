@@ -34,10 +34,7 @@ fn derived_network() -> Network {
 }
 
 fn load_network() -> String {
-    match dispatch(Request::LoadNetwork { network: derived_network() }).unwrap() {
-        Response::LoadNetwork { network_hash } => network_hash,
-        _ => panic!("load_network"),
-    }
+    cap_abi::kernel::NETWORK.register(derived_network()).unwrap().0
 }
 
 fn stops(limit: Option<u32>) -> Vec<cap_directory::DirectoryStop> {
@@ -362,12 +359,12 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     // op answers; garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
-        serde_json::from_str(&cap_directory::dispatch_json(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
+        serde_json::from_str(&cap_directory::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
     let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_directory::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
+        serde_json::from_str(&cap_directory::invoke_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
     assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
     assert_eq!(via_bytes, via_json);
-    let bad = cap_directory::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
+    let bad = cap_directory::invoke_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
@@ -439,10 +436,7 @@ fn about_names_the_network_as_the_document_does() {
     let mut named = derived_network();
     named.name = "C-TRAN".into();
     named.plan.name = "Fall 2026 pick".into();
-    let hash = match dispatch(Request::LoadNetwork { network: named }).unwrap() {
-        Response::LoadNetwork { network_hash } => network_hash,
-        _ => panic!("load_network"),
-    };
+    let hash = cap_abi::kernel::NETWORK.register(named).unwrap().0;
     match dispatch(Request::About { network_hash: hash }).unwrap() {
         Response::About { name, plan } => {
             assert_eq!(name, "C-TRAN");

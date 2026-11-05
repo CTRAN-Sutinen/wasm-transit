@@ -4,32 +4,44 @@
 /// modules or hashes:
 ///
 /// - A `Doc` is one document version: its kind, its bytes or its value
-///   (JS owns the documents), and what it depends on (an edit document
-///   is validated over a network). The host makes one when a document
-///   crosses in (a fetch, a file, IndexedDB) and passes it wherever an
-///   op argument is a `*_hash`; the engine registers it in that module
-///   on first use, through the kind's load op, and substitutes its hash.
+///   (JS owns the documents), and what it is read over (an edit
+///   document's network — kept with it). The host makes one when a
+///   document crosses in (a fetch, a file, IndexedDB) and passes it
+///   wherever an op argument is a `*_hash`; the engine registers it in
+///   that module instance on first use, through the kernel's load of
+///   its kind, and substitutes its hash.
+/// - A generated UI's page runs ONE module, its linked assembly (D-77;
+///   `assemble(ui)` names it before the first ask): every capability it
+///   uses over one kernel registry, so a document registers ONCE per
+///   page however many capabilities read it, and a document a
+///   capability mints there (the live document) is read by hash
+///   without crossing back. A capability outside it runs alone.
 /// - The engine is the hash authority's witness: the module answers a
 ///   document's identity, and every module must answer the same one (a
-///   served document must answer the hash its server pins). A
-///   disagreement is an error, never a quiet second identity — so
-///   "the same document" holds by construction, not by discipline.
+///   served document must answer the hash its server pins; the identity
+///   check holds between instances — a page's assembly against the
+///   server's pin). A disagreement is an error, never a quiet second
+///   identity — so "the same document" holds by construction, not by
+///   discipline.
 /// - An answer is cached under the journal's key: the module's bytes
-///   (its pinned hash) and the exact request bytes, which name every
-///   input by hash. Modules are pure, so a hit is the same answer.
+///   (its pinned hash — the assembly's, in a linked page) and the exact
+///   request bytes, which name the capability and every input by hash.
+///   Modules are pure, so a hit is the same answer.
 /// - The modules live on the bus worker (src/bus.worker.ts), off the
 ///   thread the page renders on; every call here is async data.
 /// - A module may drop what it holds: an ephemeral kind bounds itself
 ///   (rt snapshots and live documents keep their last few), the host
 ///   names what survives (`keep`), and the worker replaces an instance
-///   whose memory passed its ceiling. Asking for a dropped document is
-///   the module's unknown-hash error; the engine registers the
-///   document again and asks once more, so a host never sees it.
+///   whose memory passed its ceiling (every capability's state in it
+///   together). Asking for a dropped document is the module's
+///   unknown-hash error; the engine registers the document again (or
+///   mints it again, for one the page never received) and asks once
+///   more, so a host never sees it.
 ///
 /// It knows the ABI (which op loads which kind) and nothing of the
 /// domain: if a departure, a trip, or a stop appears here, it leaked.
 
-import { call, type Assembly } from "./bus";
+import { call, type Assembly, type Route } from "./bus";
 import type { Capability } from "./types/cap_abi/Capability";
 import type { Evicted } from "./types/cap_abi/Evicted";
 import type { Holding } from "./types/cap_abi/Holding";
@@ -115,16 +127,26 @@ export class Doc<V = unknown> {
   #bytes: Uint8Array | null;
   /// The identity, once a module answered it.
   #hash: string | null = null;
-  /// Per capability: the load op's answer (the hash plus what the load
-  /// reported — an edit document's reports, a feed's summary).
+  /// Per module instance: the load's answer (the hash plus what the
+  /// load reported — a feed's summary, a layer's headcount).
   readonly #loads = new Map<string, Promise<LoadAnswer>>();
+  /// For a document the page never received (minted by an op, declined
+  /// as an answer): the ask that mints it again where it was dropped.
+  remint: (() => Promise<unknown>) | null = null;
 
-  constructor(kind: Kind, source: { value: V } | { bytes: Uint8Array }, opts: { over?: Doc; pin?: string | null } = {}) {
+  /// `{ minted: true }`: a document an op minted that the page declined
+  /// to receive — it lives only in the instance that minted it.
+  constructor(kind: Kind, source: { value: V } | { bytes: Uint8Array } | { minted: true }, opts: { over?: Doc; pin?: string | null } = {}) {
     this.kind = kind;
     this.value = "value" in source ? source.value : undefined;
     this.#bytes = "bytes" in source ? source.bytes : null;
     this.over = opts.over ?? null;
     this.pin = opts.pin ?? null;
+  }
+
+  /// Whether the document crossed in as bytes.
+  get hasBytes(): boolean {
+    return this.#bytes !== null;
   }
 
   /// The document's identity, once any module has answered it (null
@@ -136,6 +158,9 @@ export class Doc<V = unknown> {
   /// The document's bytes: as they crossed in, or its value's JSON
   /// (encoded once, however many modules register it).
   bytes(): Uint8Array {
+    if (this.#bytes === null && this.value === undefined) {
+      throw new Error(`the ${this.kind} document never crossed to the page — it cannot be registered from here`);
+    }
     this.#bytes ??= new TextEncoder().encode(JSON.stringify(this.value));
     return this.#bytes;
   }
@@ -153,7 +178,7 @@ export class Doc<V = unknown> {
   }
 
   /// The registration in one module instance (memoized by `slot`: the
-  /// capability and its instance generation).
+  /// module and its instance generation).
   loadIn(slot: string, run: () => Promise<LoadAnswer>): Promise<LoadAnswer> {
     let load = this.#loads.get(slot);
     if (!load) {
@@ -188,50 +213,69 @@ export class Unavailable extends Error {
 // the ABI: how each kind is registered
 // ---------------------------------------------------------------------
 
-/// The kernel's bulk op (cap_abi::OP_LOAD_NETWORK): the bare network
-/// document's bytes, the same op and hash in every consumer.
-const OP_LOAD_NETWORK = 256;
-
-/// How a kind crosses into a module: a bulk op over its bytes (the
-/// module's own op code), or a JSON op carrying its value — and the
-/// answer's field that names its hash.
-type Loader =
-  | { bytes: (cap: CapId) => number; hash: string }
-  | { json: (doc: Doc, over: string | null) => Record<string, unknown>; hash: string };
+/// How a kind registers: the kernel's load (cap_abi::kernel — the same
+/// op and the same hash in every module whose capabilities read the
+/// kind), on its bulk op over the document's bytes or as its JSON op
+/// carrying its value — and the answer's field that names its hash.
+type Loader = { bytes: number; hash: string } | { json: (doc: Doc) => Record<string, unknown>; hash: string };
 
 const LOADERS: Record<Kind, Loader> = {
-  network: { bytes: () => OP_LOAD_NETWORK, hash: "network_hash" },
-  // gtfs and network both read a GTFS zip on their op 0.
-  feed: { bytes: () => 0, hash: "feed_hash" },
-  edits: { json: (d, over) => ({ op: "load_edits", network_hash: over, records: d.value }), hash: "edits_hash" },
+  network: { bytes: 256, hash: "network_hash" },
+  edits: { json: (d) => ({ op: "load_edits", records: d.value }), hash: "edits_hash" },
   live: { json: (d) => ({ op: "load_live", live: d.value }), hash: "live_hash" },
   boundary: { json: (d) => ({ op: "load_boundary", boundary: d.value }), hash: "boundary_hash" },
   walks: { json: (d) => ({ op: "load_walks", walks: d.value }), hash: "walks_hash" },
-  streets: { bytes: () => 1, hash: "streets_hash" }, // cap-streets' OP_LOAD_STREETS
+  streets: { bytes: 263, hash: "streets_hash" },
   watchlist: { json: (d) => ({ op: "load_watchlist", document: d.value }), hash: "watchlist_hash" },
-  layer: { bytes: () => 0, hash: "layer_hash" }, // cap-analysis' OP_LOAD_LAYER
-  gtfs_rt: { bytes: () => 0, hash: "rt_hash" }, // cap-rt's OP_RT_DECODE
+  layer: { bytes: 265, hash: "layer_hash" },
+  feed: { bytes: 266, hash: "feed_hash" },
+  gtfs_rt: { bytes: 267, hash: "rt_hash" },
 };
 
 // ---------------------------------------------------------------------
 // the calls
 // ---------------------------------------------------------------------
 
-/// The capabilities asked for so far: their manifest entries (null when
-/// one did not assemble).
-const assembly = new Map<string, Promise<Capability | null>>();
+/// The generated UI this page is (its linked assembly answers every
+/// capability it links).
+let page: string | null = null;
 
-/// The capability's manifest entry once the worker assembled it, or
-/// Unavailable.
-async function capOf(cap: CapId): Promise<Capability> {
+/// Name the page's generated UI, before its first ask: its capabilities
+/// answer inside its linked assembly (the manifest's `assemblies`).
+export function assemble(ui: string): void {
+  if (assembly.size > 0 && page !== ui) throw new Error(`assemble("${ui}") after the first ask — name the page first`);
+  page = ui;
+}
+
+/// A capability as the worker assembled it: its manifest entry and
+/// where it answers.
+type Placed = Capability & { route: Route };
+
+/// The capabilities asked for so far (null when one did not assemble).
+const assembly = new Map<string, Promise<Placed | null>>();
+
+/// The capability as the worker assembled it, or Unavailable.
+async function capOf(cap: CapId): Promise<Placed> {
   let got = assembly.get(cap);
   if (!got) {
-    got = call({ type: "ensure", caps: [cap] }).then(({ ok }) => (ok as Assembly).caps[cap] ?? null);
+    got = call({ type: "ensure", caps: [cap], ui: page }).then(({ ok }) => {
+      const answer = ok as Assembly;
+      const entry = answer.caps[cap];
+      return entry ? { ...entry, route: answer.routes[cap] } : null;
+    });
     assembly.set(cap, got);
   }
   const entry = await got;
   if (!entry) throw new Unavailable(cap);
   return entry;
+}
+
+/// Whether the capabilities answer in one module instance (the page's
+/// linked assembly): a document one of them mints is read by the others
+/// by hash, so the page need not receive it.
+export async function together(...caps: CapId[]): Promise<boolean> {
+  const placed = await Promise.all(caps.map((cap) => capOf(cap).then((p) => p.route.module, () => null)));
+  return placed.every((m) => m !== null && m === placed[0]);
 }
 
 /// Whether a capability assembles (a frame's `off` flag reads this).
@@ -242,11 +286,15 @@ export async function available(cap: CapId): Promise<boolean> {
   );
 }
 
-/// Per capability, its instance generation: the worker replaced the
+/// Per module instance, its generation: the worker replaced the
 /// instance (the memory ceiling) when it rises, and every registration
-/// memo of the old generation is void.
+/// memo of the old generation is void — for every capability in it.
 const generations = new Map<string, number>();
-const slot = (cap: string): string => `${cap}@${generations.get(cap) ?? 0}`;
+const modules = new Map<string, string>();
+const slot = (cap: string): string => {
+  const module = modules.get(cap) ?? `cap:${cap}`;
+  return `${module}@${generations.get(module) ?? 0}`;
+};
 
 /// One call into a module: its outcome's value, or its error thrown. A
 /// reset instance voids the generation's registrations first.
@@ -255,11 +303,12 @@ async function invoke(
   call_: { text: string } | { op: number; bytes: Uint8Array },
   load: boolean,
 ): Promise<unknown> {
-  await capOf(cap);
+  const { route } = await capOf(cap);
+  modules.set(cap, route.module);
   const { ok, reset } = await call(
     "text" in call_ ? { type: "text", cap, text: call_.text, load } : { type: "bytes", cap, op: call_.op, bytes: call_.bytes, load },
   );
-  if (reset) generations.set(cap, (generations.get(cap) ?? 0) + 1);
+  if (reset) generations.set(route.module, (generations.get(route.module) ?? 0) + 1);
   const outcome = JSON.parse(ok as string) as { ok: unknown } | { error: string };
   if ("error" in outcome) throw new Error(outcome.error);
   return outcome.ok;
@@ -286,8 +335,9 @@ function docsOf(values: unknown[]): Doc[] {
 
 /// Run `attempt` (which registers `docs` and asks): when the module
 /// answers that it no longer holds one of them, the document is
-/// registered again and the call made once more — at most once per
-/// document, so a module that keeps refusing surfaces its error.
+/// registered again — or minted again, for one the page never received
+/// — and the call made once more, at most once per document, so a
+/// module that keeps refusing surfaces its error.
 async function recovering<T>(cap: CapId, docs: Doc[], attempt: () => Promise<T>): Promise<T> {
   for (let tries = 0; ; tries++) {
     try {
@@ -310,11 +360,17 @@ export function load(cap: CapId, doc: Doc): Promise<LoadAnswer> {
 
 function register(cap: CapId, doc: Doc): Promise<LoadAnswer> {
   return doc.loadIn(slot(cap), async () => {
+    // A document the page never received is minted again where it is
+    // needed — the module that minted it registers it there.
+    if (doc.value === undefined && !doc.hasBytes) {
+      if (!doc.remint || !doc.hash) throw new Error(`the ${doc.kind} document never crossed to the page — it cannot be registered in ${cap}`);
+      await doc.remint();
+      return { hash: doc.hash };
+    }
     const loader = LOADERS[doc.kind];
-    const over = doc.over ? (await register(cap, doc.over)).hash : null;
     const answer = (await invoke(
       cap,
-      "bytes" in loader ? { op: loader.bytes(cap), bytes: doc.bytes() } : { text: JSON.stringify(loader.json(doc, over)) },
+      "bytes" in loader ? { op: loader.bytes, bytes: doc.bytes() } : { text: JSON.stringify(loader.json(doc)) },
       true,
     )) as Record<string, unknown>;
     const hash = answer[loader.hash];
@@ -326,11 +382,25 @@ function register(cap: CapId, doc: Doc): Promise<LoadAnswer> {
 
 /// A document an op produced (an import's network, an applied edit's
 /// next network, the live document): the module that answered it
-/// already holds it under `hash`, so it is never registered there
-/// again (while that instance lives).
-export function produced<V>(kind: Kind, value: V, cap: CapId, hash: string, opts: { over?: Doc } = {}): Doc<V> {
-  const doc = new Doc<V>(kind, { value }, opts);
+/// already holds it under `hash` — and so does every capability linked
+/// beside it — so it is never registered there again (while that
+/// instance lives). A document the page declined to receive (`value`
+/// undefined) carries the ask that mints it: `remint` names it, asked
+/// again past the answer cache when an instance dropped it.
+export function produced<V>(
+  kind: Kind,
+  value: V | undefined,
+  cap: CapId,
+  hash: string,
+  opts: { over?: Doc; remint?: { op: string; args: Record<string, unknown> } } = {},
+): Doc<V> {
+  const doc = new Doc<V>(kind, value === undefined ? { minted: true } : { value }, opts);
   doc.witness(cap, hash);
+  if (opts.remint) {
+    const { op, args } = opts.remint;
+    // A registration, not an op: it never resets the instance it mints in.
+    doc.remint = () => asked(cap, op, args, false, true);
+  }
   void doc.loadIn(slot(cap), () => Promise.resolve({ hash }));
   return doc;
 }
@@ -351,11 +421,13 @@ export async function ask<C extends CapId, O extends OpOf<C>>(cap: C, op: O, arg
   return (await asked(cap, op, args as Record<string, unknown>, true)) as Answer<C, O>;
 }
 
-async function asked(cap: CapId, op: string, args: Record<string, unknown>, cached: boolean): Promise<unknown> {
-  const { hash: moduleHash } = await capOf(cap);
+async function asked(cap: CapId, op: string, args: Record<string, unknown>, cached: boolean, load = false): Promise<unknown> {
+  const { route } = await capOf(cap);
+  const moduleHash = route.hash;
   lastAsked.set(cap, { op, args });
   return recovering(cap, docsOf(Object.values(args)), async () => {
-    const request: Record<string, unknown> = { op };
+    // A module linking several capabilities is told which one is asked.
+    const request: Record<string, unknown> = route.linked ? { cap, op } : { op };
     for (const [field, value] of Object.entries(args)) {
       request[field] = value instanceof Doc ? (await register(cap, value)).hash : value;
     }
@@ -367,7 +439,7 @@ async function asked(cap: CapId, op: string, args: Record<string, unknown>, cach
       answers.set(key, hit);
       return hit;
     }
-    const answer = await invoke(cap, { text }, false);
+    const answer = await invoke(cap, { text }, load);
     answers.set(key, answer);
     if (answers.size > ANSWERS_KEPT) answers.delete(answers.keys().next().value as string);
     return answer;
@@ -379,8 +451,8 @@ async function asked(cap: CapId, op: string, args: Record<string, unknown>, cach
 const OP_EVICT = 257;
 const OP_HELD = 258;
 
-/// Name what survives: every module this page assembled drops every
-/// document not named here (nor read over by one named — an edit
+/// Name what survives: every module instance this page assembled drops
+/// every document not named here (nor read over by one named — an edit
 /// document keeps its network). A host calls it when it lets documents
 /// go (a new network replaces the old); the kinds that bound
 /// themselves (rt snapshots, live documents) need no call. A dropped
@@ -390,12 +462,14 @@ export async function keep(docs: (Doc | null | undefined)[]): Promise<void> {
     .map((d) => d.hash)
     .filter((h): h is string => h !== null);
   const bytes = new TextEncoder().encode(JSON.stringify({ keep: hashes }));
-  await Promise.all(
-    [...assembly.keys()].map(async (cap) => {
-      if (!(await available(cap as CapId))) return;
-      (await invoke(cap as CapId, { op: OP_EVICT, bytes }, true)) as Evicted;
-    }),
-  );
+  // One call per module instance: a linked assembly holds every
+  // capability's documents in one registry.
+  const byModule = new Map<string, CapId>();
+  for (const cap of assembly.keys()) {
+    const placed = await assembly.get(cap);
+    if (placed && !byModule.has(placed.route.module)) byModule.set(placed.route.module, cap as CapId);
+  }
+  await Promise.all([...byModule.values()].map(async (cap) => (await invoke(cap, { op: OP_EVICT, bytes }, true)) as Evicted));
 }
 
 /// Inspection the e2e and the perf probe read (window.__bus): the
@@ -409,6 +483,9 @@ const inspection = {
     return ids.filter((_, i) => ok[i]);
   },
   held: async (cap: CapId): Promise<Holding> => (await invoke(cap, { op: OP_HELD, bytes: new Uint8Array() }, true)) as Holding,
+  /// The module instance a capability answers in ("ui:<id>" for the
+  /// page's linked assembly, "cap:<id>" alone).
+  module: async (cap: CapId): Promise<string> => (await capOf(cap)).route.module,
   memory: async (cap: CapId): Promise<{ memory: number; resets: number }> => {
     await capOf(cap);
     return (await call({ type: "inspect", cap })).ok as { memory: number; resets: number };

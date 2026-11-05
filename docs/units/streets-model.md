@@ -13,7 +13,7 @@ next; every item below is designed for both drawings.
 
 ## Scope
 
-The document, its import, and cap-streets' import / load_streets
+The document, its import, and cap-streets' import / the kernel's load_streets
 are on the bus (`docs/ARCHITECTURE.md`, transit-streets and
 cap-streets). What is left:
 
@@ -32,7 +32,7 @@ cap-streets). What is left:
    built: `docs/ARCHITECTURE.md`, transit-streets). Blocked: D-26.
 3. **Walking for riders.** The walk table and trips from any point
    are on the bus (cap-streets `walks` and `access`, the router's
-   `load_walks` / `walks_hash` and place ends; D-33), and ride-now
+   `walks_hash` (the kernel's `load_walks`) and place ends; D-33), and ride-now
    reads them (the nearby list by walk, D-34). Left:
    - **ride-now walks C-TRAN's streets.** ride-now walks the
      published streets, from the rider's location or a spot chosen

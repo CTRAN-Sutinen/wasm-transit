@@ -13,6 +13,8 @@
 //! Authorization is never cached across calls; the policy document's
 //! hash is the cache key if a host wants one.
 
+#![forbid(unsafe_code)]
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -81,7 +83,8 @@ pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
 }
 
 cap_abi::capability! {
+    id: "authz",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    registries: [],
+    documents: [],
 }

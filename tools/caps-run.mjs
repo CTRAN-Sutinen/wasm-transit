@@ -14,21 +14,23 @@
 //                                       per-kind examples where an op
 //                                       takes a tagged vocabulary)
 //   caps-run <capability> [--cap ID] [--as NAME]
-//          [--load FILE]... [--op '<json>|@FILE']... [--ask URL]...
+//          [--load [N:|KIND:]FILE]... [--op '<json>|@FILE']... [--ask URL]...
 //          [--post URL REF]... [--timeout MS]   run a session
 //
 // Every run compares the registry's recorded source digest with the
 // tree's and says on stderr when they differ — the registry runs the
 // code it was built from, not the code in the tree (`just caps`).
 //
-// --load [N:]FILE sends the file's bytes on bulk op N (default 0 —
-// feeds, layers; a module with a second bulk op spells it, e.g.
-// cap-rt's `--load 1:feed.zip` loads the static feed for joins;
-// `--load 256:network.json` registers a network document on the
-// kernel op any network consumer answers; every module answers the
-// registry kernel ops — `--load 258:/dev/null` lists what it holds,
-// `--load 257:keep.json` drops everything `{"keep": [hash, …]}` does
-// not name).
+// --load [N:|KIND:]FILE sends the file's bytes on a bulk op: KIND
+// names the kernel's load of a document kind (`--load feed:feed.zip`,
+// `layer:pop.geojson`, `rt:snapshot.pb`, `network:network.json.gz`,
+// `streets:streets.json` — the registry's kernel_ops, in every module
+// whose capabilities read the kind); N is the op code (the
+// capability's own bulk ops from 0 — the default: streets' import, rt's
+// decode; every module answers the registry kernel ops —
+// `--load 258:/dev/null` lists what it holds, `--load 257:keep.json`
+// drops everything `{"keep": [hash, …]}` does not name, `--load
+// 268:/dev/null` says what it links).
 // --op invokes one JSON op; repeatable; '@FILE' reads the JSON from
 // a file. Steps run in COMMAND-LINE ORDER, loads and ops alike;
 // results print as JSON, one per line, in that order.
@@ -87,6 +89,29 @@ const REGISTRY = join(HERE, "..", "registry");
 
 function registryPointer() {
   return JSON.parse(readFileSync(join(REGISTRY, "registry.json"), "utf8"));
+}
+
+/// A document kind's kernel load (the manifest's `documents` names the
+/// kinds a capability reads).
+const KIND_LOADS = {
+  network: "load_network",
+  edits: "load_edits",
+  live: "load_live",
+  boundary: "load_boundary",
+  walks: "load_walks",
+  streets: "load_streets",
+  watchlist: "load_watchlist",
+  layer: "load_population_layer",
+  feed: "load_feed",
+  rt: "load_rt",
+};
+
+/// A --load prefix as a bulk op code: a number, or a kind's load.
+function opCode(prefix) {
+  if (/^\d+$/.test(prefix)) return Number(prefix);
+  const load = (registryPointer().kernel_ops ?? []).find((k) => k.name === KIND_LOADS[prefix]);
+  if (!load) throw new Error(`--load ${prefix}:FILE — no kernel load for a ${prefix} document (kinds: ${Object.keys(KIND_LOADS).join(", ")})`);
+  return load.code;
 }
 
 // The digest of the source the registry's modules are built from,
@@ -333,8 +358,8 @@ async function runSession() {
       result.text = resp.ok ? JSON.stringify({ ok: answer }) : JSON.stringify({ error: `HTTP ${resp.status}`, answer });
     } else if (step.kind === "load") {
       const module = moduleFor(step.capability);
-      const match = /^(\d+):(.+)$/.exec(step.value);
-      const op = match ? Number(match[1]) : 0;
+      const match = /^(\d+|[a-z_]+):(.+)$/.exec(step.value);
+      const op = match ? opCode(match[1]) : 0;
       const file = match ? match[2] : step.value;
       result.load = file;
       result.text = module.invokeBytes(op, readFileSync(file));
@@ -370,7 +395,10 @@ export async function main(argv) {
   warnIfStale();
   if (argv[0] === "list") {
     const pointer = registryPointer();
-    console.log(JSON.stringify(pointer, null, 2));
+    // The kernel ops by name and code (their worked examples are in
+    // `tools <capability>`, under loads).
+    const kernel_ops = (pointer.kernel_ops ?? []).map(({ code, name, description }) => ({ code, name, description }));
+    console.log(JSON.stringify({ ...pointer, kernel_ops }, null, 2));
     return 0;
   }
   if (argv[0] === "tools") {
@@ -378,7 +406,13 @@ export async function main(argv) {
     const tools = Object.fromEntries(
       record.ops.map((op) => [op, record.op_docs[op] ?? { description: null, example: null }]),
     );
-    console.log(JSON.stringify({ id: record.id, purpose: record.purpose, tools }, null, 2));
+    // The kernel's loads of the documents it reads: every module
+    // linking it answers them.
+    const loadOps = new Set((record.documents ?? []).map((kind) => KIND_LOADS[kind]));
+    const loads = Object.fromEntries(
+      (registryPointer().kernel_ops ?? []).filter((k) => loadOps.has(k.name)).map((k) => [k.name, k]),
+    );
+    console.log(JSON.stringify({ id: record.id, purpose: record.purpose, documents: record.documents ?? [], loads, tools }, null, 2));
     return 0;
   }
 

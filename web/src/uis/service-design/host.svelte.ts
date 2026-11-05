@@ -19,8 +19,12 @@
 /// answers (a production failure, shown gracefully).
 
 import { getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
-import { ask, available, load, produced, servedNetworkValue, Doc } from "../../engine";
+import { ask, assemble, available, load, produced, servedNetworkValue, Doc } from "../../engine";
 import { answerGraph, today } from "../kit";
+
+// This page's capabilities answer inside its linked assembly — one
+// module, one registry: each document registers once (D-77).
+assemble("service-design");
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
 import type { DirectoryStop } from "../../types/cap_directory/DirectoryStop";
 import type { EntityFocus } from "../../types/EntityFocus";

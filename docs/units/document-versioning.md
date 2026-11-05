@@ -107,7 +107,17 @@ no version (`transit-network`'s `read_network` sniffs the shape),
    [module-runtime.md](module-runtime.md)) is listed in each
    capability's `ops`, so a host checks for it rather than the
    kernel number.
-9. **URLs are persisted data.** The stop display's `stop` and
+9. **Rolling a version back** (Blocked: D-79). Rollback is a
+   pointer moved back, never an inverse migration, so the bytes
+   before an upgrade stay addressable. But once a newer build has
+   written vN+1 documents, a build rolled back to vN cannot read them
+   (rule 5: it refuses them). The rollback rule says what the previous
+   build can read, and when a migration may start writing. The
+   candidates are in D-79. The server's startup commit-forward (rule
+   4) and the browser's restore are where the rule applies. Rolling
+   the CODE back is [release-artifacts.md](release-artifacts.md)'s;
+   both follow one compatibility policy.
+10. **URLs are persisted data.** The stop display's `stop` and
    `layout` parameters are configured into screens and printed
    into QR codes: they only gain optional parameters, and an
    unknown parameter is ignored.
@@ -134,6 +144,9 @@ The first migrations through the machinery: the untagged network
   `localStorage` records boots into the migrated documents with the
   old records kept; a page served a newer edit document than it
   speaks does not write it.
+- Go and e2e: an upgrade that writes vN+1 is rolled back to the vN
+  build under D-79's rule, and no document is lost or misread (the
+  older build reads, or the newer writes wait, as decided).
 - `docs/FORMATS.md` (the tag, the receive boundaries) and
   `docs/ARCHITECTURE.md` (the schema lock, the inventory) describe
   it.

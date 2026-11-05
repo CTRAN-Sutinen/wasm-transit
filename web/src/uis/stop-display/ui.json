@@ -18,10 +18,7 @@
     "directory.stops",
     "directory.stops_by_ids",
     "rt.decode",
-    "rt.load_boundary",
     "rt.live",
-    "board.load_edits",
-    "board.load_live",
     "board.grouped_board"
   ],
   "components": [

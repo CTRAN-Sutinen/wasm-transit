@@ -227,6 +227,7 @@ name = "cap-divert"
 version = "0.1.0"
 dependencies = [
  "cap-abi",
+ "chrono",
  "serde",
  "serde_json",
  "sha2",
@@ -620,6 +621,165 @@ checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
 dependencies = [
  "adler2",
  "simd-adler32",
+]
+
+[[package]]
+name = "module-analysis"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-analysis",
+]
+
+[[package]]
+name = "module-author"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-author",
+]
+
+[[package]]
+name = "module-authz"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-authz",
+]
+
+[[package]]
+name = "module-board"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-board",
+]
+
+[[package]]
+name = "module-calendar"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-calendar",
+]
+
+[[package]]
+name = "module-directory"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-directory",
+]
+
+[[package]]
+name = "module-divert"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-divert",
+]
+
+[[package]]
+name = "module-gtfs"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-gtfs",
+]
+
+[[package]]
+name = "module-network"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-network",
+]
+
+[[package]]
+name = "module-plans"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-plans",
+]
+
+[[package]]
+name = "module-router"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-router",
+]
+
+[[package]]
+name = "module-rt"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-rt",
+]
+
+[[package]]
+name = "module-runcut"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-runcut",
+]
+
+[[package]]
+name = "module-streets"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-streets",
+]
+
+[[package]]
+name = "module-sync"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-sync",
+]
+
+[[package]]
+name = "module-ui-ride-now"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-board",
+ "cap-directory",
+ "cap-network",
+ "cap-plans",
+ "cap-router",
+ "cap-rt",
+ "cap-streets",
+]
+
+[[package]]
+name = "module-ui-service-design"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-analysis",
+ "cap-author",
+ "cap-directory",
+ "cap-gtfs",
+ "cap-network",
+ "cap-plans",
+]
+
+[[package]]
+name = "module-ui-stop-display"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-board",
+ "cap-directory",
+ "cap-network",
+ "cap-plans",
+ "cap-rt",
 ]
 
 [[package]]

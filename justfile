@@ -18,9 +18,12 @@ default:
 # build
 # ---------------------------------------------------------------
 
-# Build the capability modules (the capability bus: horizontal
-# capabilities assembled per user) and regenerate the capability
-# manifest — hash-pinned modules in web/public/caps/, served under
+# Build the modules and regenerate the capability manifest. Every
+# module is an ASSEMBLY (gen-assemblies writes assemblies/, D-77): each
+# capability alone (module-<cap>: caps-run, agents, the registry's
+# blobs, the Go server), and each generated UI's capabilities linked
+# into one module over one kernel registry (module-ui-<id>: the page
+# loads it). Hash-pinned modules land in web/public/caps/, served under
 # their content hash so the HTTP cache holds them forever. The sync
 # server's modules also land at stable paths in web/pkg/ (cap_sync,
 # cap_network, cap_streets, cap_authz, cap_plans — the server's
@@ -31,14 +34,13 @@ default:
 caps:
     #!/usr/bin/env bash
     set -e
-    cargo build --release -p cap-gtfs -p cap-router -p cap-analysis -p cap-network -p cap-rt -p cap-board -p cap-runcut -p cap-calendar -p cap-directory -p cap-streets -p cap-sync -p cap-authz -p cap-plans -p cap-author -p cap-divert --target wasm32-unknown-unknown
+    cargo run --quiet -p cap-abi --bin gen-assemblies
+    cargo build --release $(ls assemblies | sed 's/^/-p /') --target wasm32-unknown-unknown
     cargo run --quiet -p cap-abi --bin gen-manifest
     mkdir -p web/pkg
-    cp target/wasm32-unknown-unknown/release/cap_sync.wasm web/pkg/cap_sync.wasm
-    cp target/wasm32-unknown-unknown/release/cap_network.wasm web/pkg/cap_network.wasm
-    cp target/wasm32-unknown-unknown/release/cap_streets.wasm web/pkg/cap_streets.wasm
-    cp target/wasm32-unknown-unknown/release/cap_authz.wasm web/pkg/cap_authz.wasm
-    cp target/wasm32-unknown-unknown/release/cap_plans.wasm web/pkg/cap_plans.wasm
+    for cap in sync network streets authz plans; do
+        cp "target/wasm32-unknown-unknown/release/module_$cap.wasm" "web/pkg/cap_$cap.wasm"
+    done
 
 # Publish the registry: gates first (the records report them), then
 # build and publish — immutable blobs, evidence records per
@@ -92,6 +94,13 @@ test: caps
     export TS_RS_EXPORT_DIR="$PWD/web/src/types"
     cargo test
     node crates/cap-abi/caps-smoke.mjs
+    # ASSEMBLY INDEPENDENCE (D-77): every worked example answers alike
+    # from the capability alone and inside each UI's linked assembly,
+    # in either order of its capabilities — a shared derived entry is
+    # only a cache, never a dependency. The check's broken fixture
+    # runs first.
+    node --test crates/cap-abi/independence.test.mjs
+    node crates/cap-abi/independence.mjs
     # The runner knows which tree its registry was built from
     # (QAF-77): just published, the registry's source digest (Rust,
     # gen-manifest) equals the tree's (JS, caps-run) — nothing on
@@ -140,9 +149,10 @@ test: caps
       --load 257:<(echo '{"keep":[]}') \
       --op '{"op":"stop_board","network_hash":"$load_network.network_hash","stop_id":"A","date":"2026-10-23","from_secs":0,"limit":1}' \
       | tr '\n' ' ' | grep -Eq '"held":\[\{"kind":"network".*"dropped":\[\{"kind":"network".*"error":"unknown network sha256:[0-9a-f]+: load_network first"'
-    # The network capability's gate: load → import, chained; the
-    # dropped single-stop trip must be REPORTED (never silent).
-    node tools/caps-run.mjs network --load web/public/caps/sample-gtfs.zip \
+    # The network capability's gate: the kernel's load_feed → import,
+    # chained; the dropped single-stop trip must be REPORTED (never
+    # silent).
+    node tools/caps-run.mjs network --load feed:web/public/caps/sample-gtfs.zip \
       --op '{"op":"import","feed_hash":"$load.feed_hash"}' | grep -q '"kind":"dropped_trips"'
     # The edit vocabulary reads through the runner: `tools author`
     # carries one worked example per edit kind (QAF-52), each applied
@@ -151,14 +161,14 @@ test: caps
       | node -e 'const apply = JSON.parse(require("fs").readFileSync(0, "utf8")).tools.apply; if (!apply.kinds?.some((k) => k.kind === "add_trip" && k.example.edit === "add_trip")) process.exit(1)'
     # The feed's identity — the feed document capability's one
     # question.
-    node tools/caps-run.mjs gtfs --load web/public/caps/sample-gtfs.zip \
+    node tools/caps-run.mjs gtfs --load feed:web/public/caps/sample-gtfs.zip \
       --op '{"op":"feed_info","feed_hash":"$load.feed_hash"}' \
       | grep -q '"feed_version":"2026.10.1"'
     # The realtime capability's gate: the dispatch leg as a JOIN — the
     # imported network and its boundary, the fixture payload on op 0,
     # and the dispatcher's most-asked question answered in one op
     # (t10's predicted departure at A: 08:00 + 120 s).
-    node tools/caps-run.mjs network --load web/public/caps/sample-gtfs.zip \
+    node tools/caps-run.mjs network --load feed:web/public/caps/sample-gtfs.zip \
       --as net --op '{"op":"import","feed_hash":"$load.feed_hash"}' \
       --cap rt --as rnet --op '{"op":"load_network","network":"$net.network"}' \
       --as bnd --op '{"op":"load_boundary","boundary":"$net.boundary"}' \
@@ -219,7 +229,7 @@ test: caps
     # between), addresses results by --as name, and feeds the numeric
     # clock to a seconds field — the identities must agree across the
     # two modules (one document, one truth).
-    node tools/caps-run.mjs network --load web/public/caps/sample-gtfs.zip \
+    node tools/caps-run.mjs network --load feed:web/public/caps/sample-gtfs.zip \
       --as net --op '{"op":"import","feed_hash":"$load.feed_hash"}' \
       --cap board --as board_net --op '{"op":"load_network","network":"$net.network"}' \
       --op '{"op":"stop_board","network_hash":"$board_net.network_hash","stop_id":"A","date":"$TODAY","from_secs":"$NOW_SECS","limit":1}' \
@@ -228,7 +238,7 @@ test: caps
     # runner, server): import → cap-rt resolves the rt snapshot against
     # the network into THE live document → the board reads it by hash.
     # 08:01 at A: t10 (08:00, +120 s) is still to come, expected 08:02.
-    node tools/caps-run.mjs network --as feed --load web/public/caps/sample-gtfs.zip \
+    node tools/caps-run.mjs network --as feed --load feed:web/public/caps/sample-gtfs.zip \
       --as net --op '{"op":"import","feed_hash":"$feed.feed_hash"}' \
       --cap rt --as rnet --op '{"op":"load_network","network":"$net.network"}' \
       --as bnd --op '{"op":"load_boundary","boundary":"$net.boundary"}' \
@@ -241,7 +251,7 @@ test: caps
     # The stop display's board: the same live chain into grouped_board.
     # 08:01 at A: the 10 → Downtown group leads with t10 (+120 s,
     # expected 08:02) — a minute away, "1 min" by the op's wait.
-    node tools/caps-run.mjs network --as feed --load web/public/caps/sample-gtfs.zip \
+    node tools/caps-run.mjs network --as feed --load feed:web/public/caps/sample-gtfs.zip \
       --as net --op '{"op":"import","feed_hash":"$feed.feed_hash"}' \
       --cap rt --as rnet --op '{"op":"load_network","network":"$net.network"}' \
       --as bnd --op '{"op":"load_boundary","boundary":"$net.boundary"}' \
@@ -257,7 +267,7 @@ test: caps
     node tools/caps-run.mjs runcut \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"blocks","network_hash":"$load_network.network_hash","date":"2026-10-23"}' \
-      --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
+      --op '{"op":"load_edits","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
       --op '{"op":"block_trips","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","block_id":"B1","date":"2026-10-23"}' \
       | grep -q '"layover_remaining_secs":300'
     # The map's geometry is answered, never computed by a host (W4):
@@ -269,7 +279,7 @@ test: caps
       --as plan --op '{"op":"plan","network_hash":"$load_network.network_hash","from":"A","to":"B","date":"2026-10-23","depart_secs":25200,"max_legs":4}' \
       --op '{"op":"itinerary_paths","network_hash":"$load_network.network_hash","date":"2026-10-23","itinerary":"$plan.itinerary"}' \
       --cap runcut --op @web/public/caps/sample-network-load.json \
-      --as edits --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":[{"lat":45.6,"lon":-73.6}],"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
+      --as edits --op '{"op":"load_edits","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":[{"lat":45.6,"lon":-73.6}],"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
       --as trip --op '{"op":"trip_path","network_hash":"$load_network.network_hash","edits_hash":"$edits.edits_hash","trip":"t30","start_secs":31200,"date":"2026-10-23"}' \
       --cap directory --op @web/public/caps/sample-network-load.json \
       --as focus --op '{"op":"focus","network_hash":"$load_network.network_hash","kind":"route","id":"10"}' \
@@ -297,7 +307,7 @@ test: caps
     node tools/caps-run.mjs router \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"plan","network_hash":"$load_network.network_hash","from":"A","to":"B","date":"2026-10-23","depart_secs":25200,"max_legs":4}' \
-      --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
+      --op '{"op":"load_edits","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
       --as cmp --op '{"op":"plan_compare","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","from":"A","to":"B","date":"2026-10-23","depart_secs":25200,"max_legs":4}' \
       --as last --op '{"op":"plan_arrive_by","network_hash":"$load_network.network_hash","from":"A","to":"B","date":"2026-10-23","max_legs":4}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const c = ok("cmp"); if (c.active?.arrival_hhmmss !== "08:15:00" || c.notice?.kind !== "later" || c.notice.minutes_lost !== 5 || ok("last").itinerary?.depart_secs !== 31200) process.exit(1)'
@@ -306,7 +316,7 @@ test: caps
     # geometry; the host's view code draws).
     node tools/caps-run.mjs runcut \
       --op @web/public/caps/sample-network-load.json \
-      --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
+      --op '{"op":"load_edits","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
       --op '{"op":"trip_stops","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","trip":"t30","start_secs":31200,"date":"2026-10-23"}' \
       | grep -q '"stop_id":"B"'
     # The street capability's gate: where along the streets, one
@@ -378,13 +388,13 @@ test: caps
       | grep -q '"services":\["WK"\]'
     # The diversion-authoring capability's gate: a draft anchored end
     # to end on route 10's default pattern, proposed into an empty
-    # edit document, and the answered document validated by the board
-    # in the same session — the record the browser's editor writes.
+    # edit document, and the answered document's record reported
+    # valid against the network in the same session — the record the
+    # browser's editor writes.
     node tools/caps-run.mjs divert \
       --op @web/public/caps/sample-network-load.json \
       --as prop --op '{"op":"propose","network_hash":"$load_network.network_hash","draft":{"route_id":"10","pattern":"pat-10-0-1","first_kept_stop":"A","last_kept_stop":"B","served_stops":[],"slices":[],"added_mins":5,"start_date":"2026-10-23","end_date":"2026-10-23"},"records":[],"record_id":"e1","now_ms":1000}' \
-      --cap board --op @web/public/caps/sample-network-load.json \
-      --op '{"op":"load_edits","network_hash":"$load_network.network_hash","records":"$prop.records"}' \
+      --op '{"op":"reports","network_hash":"$load_network.network_hash","records":"$prop.records"}' \
       | grep -q '"valid":true'
     # ARCHITECTURE GATES — the laws as assertions (spelled out in
     # crates/AGENTS.md), because prose does
@@ -394,22 +404,21 @@ test: caps
     #      not depend on the GTFS layer, and the boundary codec's
     #      whole-feed write never leaves the codec's homes.
     #   2. nobody reinvents the monolith inside a module.
-    # Law 1a: model-side capabilities (and their shared libraries) do
-    # not depend on the GTFS layer (transit-codec, the boundary codec)
-    # in [dependencies].
-    # Dev-dependencies may build fixture documents through the codec —
-    # tests compose over real documents; production code does not.
-    # Sanctioned consumers: cap-gtfs, cap-network, cap-rt and
-    # transit-rt (rt updates number stops as the published feed does —
-    # the import's Boundary). The router left the feed in U5 — it
-    # plans over the network document and the effective day.
-    for crate in cap-analysis cap-board cap-runcut cap-calendar cap-directory cap-sync cap-authz cap-plans cap-author cap-divert transit-analysis transit-dispatch transit-live transit-authz; do
-        for dep in transit-codec; do
-            if awk '/^\[dev-dependencies\]/{exit} /^'"$dep"' =/{found=1} END{exit !found}' "crates/$crate/Cargo.toml" 2>/dev/null; then
-                echo "ARCH FAIL: $crate depends on $dep — the network is the core model; compose over the network document (crates/AGENTS.md, Law 1)"; exit 1
-            fi
-        done
-    done
+    # Law 1a, and the rule that keeps capabilities from calling
+    # capabilities once they link into one binary (D-77): the
+    # dependency graph from `cargo metadata`, deny by default — a
+    # capability depends only on cap-abi and libraries, only the
+    # generated assemblies depend on capabilities, and only the
+    # codec's homes read the GTFS layer (transit-codec) in production
+    # code (dev-dependencies may build fixtures through it). The same
+    # bin checks every capability crate forbids `unsafe` (the unsafe
+    # exports are the kernel's `assembly!`) and declares no state of
+    # its own (no static, no thread_local: documents live in the
+    # kernel's registries, whose constructor is private to the kernel
+    # — the compile_fail doctests on cap_abi::registry::Registry).
+    # Each gate fails on a broken fixture in
+    # crates/cap-abi/tests/arch_gates_test.rs.
+    cargo run --quiet -p cap-abi --bin arch-gates
     # Law 1b: the whole-feed write (transit_codec::export) is the
     # codec's publish path — sanctioned only in the codec's homes. A
     # hit anywhere else is the monolith rebuilt with new clothes.
@@ -431,17 +440,6 @@ test: caps
         | grep -v '/src/bin/' || true)
     if [ -n "$violations" ]; then
         echo "ARCH FAIL: a clock, randomness, or the environment inside a module (hosts pass time in):"
-        echo "$violations"
-        exit 1
-    fi
-    # ONE REGISTRY (docs/ARCHITECTURE.md, the bus rules): a module keeps
-    # its documents in cap_abi::registry::Registry, declared in its
-    # capability!'s `registries` — the kernel ops (evict, held) answer
-    # only over those, so a hand-rolled map is a document no keep-set
-    # can drop.
-    violations=$(grep -rnE 'Mutex<(std::collections::)?(HashMap|BTreeMap)' crates/cap-*/src --include='*.rs' || true)
-    if [ -n "$violations" ]; then
-        echo "ARCH FAIL: a module keeps documents outside cap_abi::registry::Registry:"
         echo "$violations"
         exit 1
     fi
@@ -522,7 +520,9 @@ test: caps
     fi
     # -race: the artifact is one non-reentrant instance; the host must
     # serialize invokes (see server/race_test.go — the gate watches it).
-    cd server && go test -race ./...
+    # -timeout 20m: the race detector compiles every module per test
+    # host, and the suite outgrew go test's 10-minute default.
+    cd server && go test -race -timeout 20m ./...
 
 # Browser e2e (Chromium via Playwright, against the Go server).
 # Builds first; the runner starts the server unless :8080 is taken.

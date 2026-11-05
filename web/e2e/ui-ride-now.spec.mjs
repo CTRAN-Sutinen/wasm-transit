@@ -141,6 +141,16 @@ test("ride now answers near me, a stop, a save, and a trip", async ({ page }) =>
   await trip.getByRole("radio", { name: "Arrive by" }).click();
   await trip.locator("input[type=time]").fill("08:35");
   await expect(it).toContainText("Arrive Main & 2nd at 8:30 am");
+
+  // One linked module (D-77): every capability the session asked —
+  // the board, the directory, rt, the router — answers in ride-now's
+  // assembly, and the network they all read is held once.
+  const bus = (fn, ...args) => page.evaluate(([fn, args]) => window.__bus[fn](...args), [fn, args]);
+  const caps = await bus("caps");
+  expect(caps).toEqual(expect.arrayContaining(["board", "directory", "rt", "router"]));
+  for (const cap of caps) expect(await bus("module", cap)).toBe("ui:ride-now");
+  const networks = (await bus("held", "router")).held.filter((e) => e.kind === "network");
+  expect(networks).toHaveLength(1);
 });
 
 test("ride now keeps saved stops across a reload", async ({ page }) => {
@@ -171,7 +181,10 @@ test("ride now shows a detour on the board and on the trip", async ({ page }) =>
 });
 
 test("ride now degrades frame by frame when a capability fails to load", async ({ page }) => {
-  await page.route(/\/caps\/(board|router)-[0-9a-f]+\.wasm$/, (route) => route.abort());
+  // The page's linked assembly does not load (one module: its failure
+  // is every capability's — D-77), so each capability falls back to
+  // its own module, and two of those fail too.
+  await page.route(/\/caps\/(ui-ride-now|board|router)-[0-9a-f]+\.wasm$/, (route) => route.abort());
   await open(page);
 
   // Search still answers; the board says it is unavailable.

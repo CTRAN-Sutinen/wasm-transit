@@ -11,27 +11,29 @@
 //! graph).
 //!
 //! The streets document is the HOST's, like every document. `import`
-//! reads a street layer (GeoJSON lines) into the canonical document
-//! and answers it with its hash; `load_streets` registers a document
-//! the host already holds. THE MODULE IS THE HASH AUTHORITY: the hash
-//! is the canonical document's, so the same streets from another file
-//! are the same hash. Every query addresses it. The module writes
-//! nothing.
+//! reads a street layer (GeoJSON lines) into the canonical document,
+//! registers it, and answers it with its hash; the kernel's
+//! `load_streets` registers a document the host already holds. THE
+//! MODULE IS THE HASH AUTHORITY: the hash is the canonical document's,
+//! so the same streets from another file are the same hash. Every
+//! query addresses it. The graphs over a document (the street graph
+//! for snap and route, the walking graph for walks) are derived
+//! entries, built on first use (`cap_abi::kernel::STREET_GRAPH`,
+//! `WALK_GRAPH`). The module writes nothing.
 
-use std::sync::{Arc, OnceLock};
+#![forbid(unsafe_code)]
 
-use cap_abi::registry::{Registry, Retain};
+use std::sync::Arc;
 
+use cap_abi::kernel::{NETWORK, STREETS, STREET_GRAPH, WALK_GRAPH};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use transit_network::Network;
 use transit_streets::walking::{DirectWalk, PointWalk, WalkGraph, WalkTable, MAX_WALK_SECS, WALK_SPEED_MPS};
 use transit_streets::{StreetNetwork, StreetPoint, StreetPosition, Streets};
 
-/// The bulk-bytes op codes: 0 imports a street layer (GeoJSON), 1
-/// registers a streets document (its JSON).
+/// The bulk-bytes op code that imports a street layer (GeoJSON); a
+/// streets document registers on the kernel's `load_streets`.
 pub const OP_IMPORT: u32 = 0;
-pub const OP_LOAD_STREETS: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_streets/")]
@@ -42,16 +44,6 @@ pub enum Request {
     /// document, and register it under its hash. Lines that are not
     /// streets (railroads, water) are left out (D-30). Bulk-bytes op 0.
     Import { bytes: Vec<u8> },
-    /// Register a streets document the host holds (refused unless
-    /// canonical, so it hashes as its import did). Bulk-bytes op 1
-    /// takes its JSON.
-    LoadStreets { streets: Streets },
-    /// Register the NETWORK document under its content hash — the
-    /// same identity every model-side capability answers; the walk
-    /// table reads its stops. Decoded by `cap_abi::load_network_json`
-    /// on either lane (kernel bulk op 256).
-    #[serde(skip_deserializing)]
-    LoadNetwork { network: Network },
     /// How long a rider walks between the network's stops along the
     /// streets: the walk table (a document — the router plans
     /// transfers over it) and its hash. Walkable streets are every
@@ -109,8 +101,6 @@ pub enum Request {
 pub enum Response {
     /// The document the host now holds, its hash, and its size.
     Import { streets_hash: String, streets: Streets, ways: u32, segments: u32, nodes: u32 },
-    LoadStreets { streets_hash: String, ways: u32, segments: u32, nodes: u32 },
-    LoadNetwork { network_hash: String },
     /// The walk table and its hash (the router's `load_walks` answers
     /// the same).
     Walks { walks_hash: String, walks: WalkTable },
@@ -123,48 +113,19 @@ pub enum Response {
     Route { points: Vec<StreetPoint>, length_m: Option<f64> },
 }
 
-/// A registered streets document and the graphs built over it on
-/// first use: the street graph (snap, route) and the walking graph
-/// (walks) — a host that only walks never builds the other.
-pub struct Registered {
-    streets: Streets,
-    graph: OnceLock<StreetNetwork>,
-    walking: OnceLock<WalkGraph>,
+/// The street graph (snap, route) over a registered streets document,
+/// built on first use and held as a derived entry.
+fn graph(streets_hash: &str) -> Result<Arc<StreetNetwork>, String> {
+    let streets = STREETS.require(streets_hash)?;
+    cap_abi::kernel::derive(&STREET_GRAPH, streets_hash, &[streets_hash], || Ok(StreetNetwork::build(&streets)))
 }
 
-impl Registered {
-    fn graph(&self) -> &StreetNetwork {
-        self.graph.get_or_init(|| StreetNetwork::build(&self.streets))
-    }
-
-    fn walking(&self) -> &WalkGraph {
-        self.walking.get_or_init(|| WalkGraph::new(&self.streets))
-    }
-}
-
-/// Streets documents by their hash (with the graphs built over them —
-/// evicting the document drops its graphs).
-pub static STREETS: Registry<Registered> = Registry::documents("street network", "import or load_streets", Retain::Host);
-
-/// A network's stops (id, lat, lon) by the network's hash — all the
-/// walk table reads of it.
-pub static NETWORKS: Registry<Vec<(String, f64, f64)>> = Registry::documents("network", "load_network", Retain::Host);
-
-fn registered(streets_hash: &str) -> Result<Arc<Registered>, String> {
-    STREETS.require(streets_hash)
-}
-
-/// Register a canonical document: its hash, its way count, and its
-/// graph's size (idempotent — the same streets are the same graph).
-fn register(streets: Streets) -> Result<(String, Streets, u32, u32, u32), String> {
-    let hash = cap_abi::canonical_hash(&streets)?;
-    let ways = streets.ways.len() as u32;
-    let entry = STREETS.insert(hash.clone(), Registered { streets, graph: OnceLock::new(), walking: OnceLock::new() });
-    // The graph's size, counted off the document — registering builds
-    // no graph.
-    let segments = entry.streets.ways.iter().map(|w| w.points.len() as u32 - 1).sum();
-    let nodes = entry.streets.ways.iter().flat_map(|w| &w.points).collect::<std::collections::HashSet<_>>().len() as u32;
-    Ok((hash, entry.streets.clone(), ways, segments, nodes))
+/// The walking graph over a registered streets document, built on
+/// first use and held as a derived entry — a host that only walks
+/// never builds the street graph.
+fn walking(streets_hash: &str) -> Result<Arc<WalkGraph>, String> {
+    let streets = STREETS.require(streets_hash)?;
+    cap_abi::kernel::derive(&WALK_GRAPH, streets_hash, &[streets_hash], || Ok(WalkGraph::new(&streets)))
 }
 
 /// The walking speed and limit, defaulted and checked.
@@ -180,20 +141,21 @@ fn pace(speed_mps: Option<f64>, max_walk_secs: Option<u32>) -> Result<(f64, u32)
     Ok((speed_mps, max_walk_secs))
 }
 
-fn network_stops(network_hash: &str) -> Result<Arc<Vec<(String, f64, f64)>>, String> {
-    NETWORKS.require(network_hash)
+/// A registered network's stops (id, lat, lon) — all a walk reads of it.
+fn network_stops(network_hash: &str) -> Result<Vec<(String, f64, f64)>, String> {
+    Ok(NETWORK.require(network_hash)?.stops.iter().map(|(id, s)| (id.clone(), s.lat, s.lon)).collect())
 }
 
 fn walks(streets_hash: &str, network_hash: &str, speed_mps: Option<f64>, max_walk_secs: Option<u32>) -> Result<Response, String> {
     let (speed_mps, max_walk_secs) = pace(speed_mps, max_walk_secs)?;
-    let entry = registered(streets_hash)?;
+    let walking = walking(streets_hash)?;
     let stops = network_stops(network_hash)?;
     let table = WalkTable {
         streets_hash: streets_hash.to_string(),
         network_hash: network_hash.to_string(),
         speed_mps,
         max_walk_secs,
-        walks: entry.walking().walks(&stops, speed_mps, max_walk_secs),
+        walks: walking.walks(&stops, speed_mps, max_walk_secs),
     };
     Ok(Response::Walks { walks_hash: cap_abi::canonical_hash(&table)?, walks: table })
 }
@@ -212,9 +174,8 @@ fn access(
             return Err(format!("point ({}, {}) is not on the globe", p.lat, p.lon));
         }
     }
-    let entry = registered(streets_hash)?;
+    let walking = walking(streets_hash)?;
     let stops = network_stops(network_hash)?;
-    let walking = entry.walking();
     let walks = walking.walks_from(point.lat, point.lon, &stops, speed_mps, max_walk_secs);
     let direct = to.and_then(|to| {
         let target = [(String::new(), to.lat, to.lon)];
@@ -226,14 +187,11 @@ fn access(
 
 fn import(bytes: &[u8]) -> Result<Response, String> {
     let streets = transit_streets::geojson::import(bytes).map_err(|e| format!("street layer: {}", e.0))?;
-    let (streets_hash, streets, ways, segments, nodes) = register(streets)?;
-    Ok(Response::Import { streets_hash, streets, ways, segments, nodes })
-}
-
-fn load_streets(streets: Streets) -> Result<Response, String> {
-    streets.validate().map_err(|e| format!("streets document: {}", e.0))?;
-    let (streets_hash, _, ways, segments, nodes) = register(streets)?;
-    Ok(Response::LoadStreets { streets_hash, ways, segments, nodes })
+    // The document registers where it was minted: every query (and,
+    // in an assembly, every capability) addresses it by hash.
+    let (ways, segments, nodes) = streets.counts();
+    let (streets_hash, streets) = STREETS.register(streets)?;
+    Ok(Response::Import { streets_hash, streets: (*streets).clone(), ways, segments, nodes })
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
@@ -242,13 +200,6 @@ fn load_streets(streets: Streets) -> Result<Response, String> {
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Import { bytes } => import(&bytes),
-        Request::LoadStreets { streets } => load_streets(streets),
-        Request::LoadNetwork { network } => {
-            let hash = cap_abi::canonical_hash(&network)?;
-            let stops = network.stops.iter().map(|(id, s)| (id.clone(), s.lat, s.lon)).collect();
-            NETWORKS.insert(hash.clone(), stops);
-            Ok(Response::LoadNetwork { network_hash: hash })
-        }
         Request::Walks { streets_hash, network_hash, speed_mps, max_walk_secs } => {
             walks(&streets_hash, &network_hash, speed_mps, max_walk_secs)
         }
@@ -256,12 +207,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             access(&streets_hash, &network_hash, point, to, speed_mps, max_walk_secs)
         }
         Request::Snap { streets_hash, lat, lon } => {
-            let entry = registered(&streets_hash)?;
-            Ok(Response::Snap { position: entry.graph().snap(lat, lon) })
+            Ok(Response::Snap { position: graph(&streets_hash)?.snap(lat, lon) })
         }
         Request::Route { streets_hash, from, to } => {
-            let entry = registered(&streets_hash)?;
-            Ok(match entry.graph().route_with_length(from, to) {
+            Ok(match graph(&streets_hash)?.route_with_length(from, to) {
                 Some((points, length)) => Response::Route { points, length_m: Some(length) },
                 None => Response::Route { points: vec![], length_m: None },
             })
@@ -273,30 +222,20 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
 /// out — byte-compatible with the monolith and every other
 /// capability module.
 pub fn dispatch_json(text: &str) -> String {
-    if let Some(answer) = cap_abi::load_network_json(text, |doc| dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc)) {
-        return answer;
-    }
     cap_abi::answer(text, dispatch)
 }
 
-/// The bulk-bytes seam: op 0 imports a street layer, op 1 registers
-/// a streets document's JSON, the kernel's op 256 a network's.
+/// The bulk-bytes seam: op 0 imports a street layer.
 pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
-    let result = match op {
+    cap_abi::outcome(match op {
         OP_IMPORT => import(bytes),
-        OP_LOAD_STREETS => serde_json::from_slice::<Streets>(bytes)
-            .map_err(|e| format!("streets document: {e}"))
-            .and_then(load_streets),
-        cap_abi::OP_LOAD_NETWORK => {
-            cap_abi::parse_network(bytes).and_then(|network| dispatch(Request::LoadNetwork { network }))
-        }
         other => Err(format!("unknown bulk op {other}")),
-    };
-    cap_abi::outcome(result)
+    })
 }
 
 cap_abi::capability! {
+    id: "streets",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    registries: [STREETS, NETWORKS],
+    documents: [STREETS, NETWORK],
 }

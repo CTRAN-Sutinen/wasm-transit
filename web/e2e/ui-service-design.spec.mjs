@@ -131,7 +131,10 @@ test("hubs and coverage answer around a station and a layer", async ({ page }) =
 });
 
 test("a capability that fails to load fails its frames, not the page", async ({ page }) => {
-  await page.route(/\/caps\/analysis-[0-9a-f]+\.wasm$/, (route) => route.abort());
+  // The page's linked assembly does not load (one module: its failure
+  // is every capability's — D-77), so each capability falls back to
+  // its own module, and analysis's fails too.
+  await page.route(/\/caps\/(ui-service-design|analysis)-[0-9a-f]+\.wasm$/, (route) => route.abort());
   await page.goto("/service-design.html");
   await page.getByTestId("design-rail").getByRole("button", { name: "Plans" }).click();
   await page.getByTestId("feed-input").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));

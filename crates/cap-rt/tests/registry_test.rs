@@ -4,8 +4,10 @@
 //! kinds. Its own test binary: the registries are process-global, and
 //! eviction would race the dispatch tests' registrations.
 
-use cap_abi::registry::{kernel, OP_EVICT, OP_HELD};
-use cap_rt::{dispatch, dispatch_bytes, Request, Response, OP_DECODE, REGISTRIES, SNAPSHOTS};
+use cap_abi::kernel::{BOUNDARY, RT as SNAPSHOTS};
+use cap_abi::registry::{OP_EVICT, OP_HELD};
+// The module's seam, as a host calls it: the kernel's ops answer there.
+use cap_rt::{dispatch, invoke_bytes as dispatch_bytes, Request, OP_DECODE};
 use prost::Message;
 use transit_rt::gtfs_rt as rt;
 
@@ -54,17 +56,15 @@ fn the_rt_registry_plateaus_and_a_keep_set_bounds_the_rest() {
     let doc = serde_json::to_vec(&imported.network).unwrap();
     let loaded: serde_json::Value = serde_json::from_str(&dispatch_bytes(cap_abi::OP_LOAD_NETWORK, &doc)).unwrap();
     let network_hash = loaded["ok"]["network_hash"].as_str().unwrap().to_string();
-    let Response::LoadBoundary { boundary_hash } = dispatch(Request::LoadBoundary { boundary: imported.boundary }).unwrap() else {
-        panic!("load_boundary")
-    };
-    let before = held(&kernel(OP_HELD, b"", REGISTRIES).unwrap());
+    let (boundary_hash, _) = BOUNDARY.register(imported.boundary).unwrap();
+    let before = held(&dispatch_bytes(OP_HELD, b""));
     assert!(before.contains(&("network".into(), network_hash.clone())));
     assert!(before.contains(&("boundary".into(), boundary_hash.clone())));
 
     // The keep-set names the network and the newest snapshot: the
     // boundary and every older snapshot drop, the kept never do.
     let keep = serde_json::json!({ "keep": [network_hash, last] }).to_string();
-    let after = held(&dispatch_bytes_kernel(OP_EVICT, keep.as_bytes()));
+    let after = held(&dispatch_bytes(OP_EVICT, keep.as_bytes()));
     assert_eq!(after, vec![("network".into(), network_hash.clone()), ("rt snapshot".into(), last.clone())]);
 
     // Evicted-then-asked is the honest unknown-hash error, never a
@@ -77,18 +77,9 @@ fn the_rt_registry_plateaus_and_a_keep_set_bounds_the_rest() {
         alerts_hash: None,
         window: None,
         late_limit: None,
+        with_document: None,
     });
     assert_eq!(asked.unwrap_err(), format!("unknown boundary {boundary_hash}: load_boundary first"));
-    let Response::LoadBoundary { boundary_hash: again } =
-        dispatch(Request::LoadBoundary { boundary: transit_codec::import(&feed).boundary }).unwrap()
-    else {
-        panic!("load_boundary")
-    };
+    let (again, _) = BOUNDARY.register(transit_codec::import(&feed).boundary).unwrap();
     assert_eq!(again, boundary_hash);
-}
-
-/// The kernel op as a host reaches it (the macro's
-/// `transit_invoke_bytes` answers it before the module's dispatch).
-fn dispatch_bytes_kernel(op: u32, bytes: &[u8]) -> String {
-    kernel(op, bytes, REGISTRIES).expect("a kernel op")
 }

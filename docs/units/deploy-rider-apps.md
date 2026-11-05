@@ -19,7 +19,16 @@ units it depends on are:
   at most 40 MB on the display, flat across 24 h; at most 80 MB for
   ride-now, its first board under 3 s cold and 1 s cached, no
   main-thread task over 50 ms after first paint.
-- **Versioning** — [document-versioning.md](document-versioning.md).
+- **Versioning** — [document-versioning.md](document-versioning.md),
+  and the code's: retained builds, rollback, and contracts that do
+  not break, [release-artifacts.md](release-artifacts.md).
+- **Seeing production** — the display heartbeat, the fleet view,
+  canary rings and the automatic revert,
+  [observability-rollout.md](observability-rollout.md). The update
+  lifecycle below applies a build through its rings.
+- **The server's record** — torn-write recovery, offline
+  verification, and backup and restore,
+  [store-durability.md](store-durability.md).
 
 ## Scope (owned here)
 
@@ -48,7 +57,10 @@ units it depends on are:
 - **Polling.** A hidden page does not poll (`visibilitychange`); it
   re-reads on return. Today both hosts poll on a bare `setInterval`.
 - **The service day.** The hosts pass the calendar date and the
-  seconds since local midnight. Unpinned: whether a board at 00:30
+  seconds since local midnight — in the agency's time zone (the
+  network's operator `timezone`), never the host's: a server in a UTC
+  container or a device set to another zone must answer the same
+  service day (QAF-96). Unpinned: whether a board at 00:30
   shows the previous service day's after-midnight trips (a 24:45
   departure), and the answer on a DST change day (GTFS times count
   from noon minus 12 h). Pin both on the fixture first; a wrong
@@ -87,8 +99,11 @@ units it depends on are:
 ## Done when
 
 - [module-runtime.md](module-runtime.md),
-  [runtime-cost-gate.md](runtime-cost-gate.md), and
-  [document-versioning.md](document-versioning.md) are deleted,
+  [runtime-cost-gate.md](runtime-cost-gate.md),
+  [document-versioning.md](document-versioning.md),
+  [release-artifacts.md](release-artifacts.md),
+  [observability-rollout.md](observability-rollout.md), and
+  [store-durability.md](store-durability.md) are deleted,
   with ceilings under the D-68 budgets.
 - e2e: the server republishes the fixture network while a stop
   display and ride-now are open; both re-pin without a reload, and

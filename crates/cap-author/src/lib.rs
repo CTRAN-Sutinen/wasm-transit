@@ -4,8 +4,9 @@
 //! edits?** A planner's change — retime a schedule, add a stop, fork
 //! the plan into the next pick — is a list of typed edits
 //! (`transit_network::NetworkEdit`) applied atomically to a
-//! registered document. The answer is the NEXT document under its
-//! content hash, registered so the next change chains by hash, with
+//! registered document (the kernel's). The answer is the NEXT
+//! document under its content hash, registered so the next change
+//! chains by hash, with
 //! its validation issues and warnings: the authoring loop in one op.
 //! The last document is never touched; the host wholesale-replaces
 //! its copy (JS owns the documents).
@@ -14,10 +15,11 @@
 //! lives in transit-network; this module is the seam. Same identity
 //! as every capability: the module is the hash authority.
 
+#![forbid(unsafe_code)]
+
 use std::sync::Arc;
 
-use cap_abi::registry::{Registry, Retain};
-
+use cap_abi::kernel::NETWORK;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_network::{Network, NetworkEdit, NetworkError, NetworkWarning};
@@ -27,14 +29,6 @@ use transit_network::{Network, NetworkEdit, NetworkError, NetworkWarning};
 #[ts(export, export_to = "cap_author/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// Register the NETWORK document under its content hash
-    /// (idempotent) — the same identity every model-side capability
-    /// returns.
-    /// Decoded by `cap_abi::load_network_json` on either lane, never
-    /// through the tagged envelope (whose buffered decode would cost
-    /// ~8× the document in peak memory and a second decoder).
-    #[serde(skip_deserializing)]
-    LoadNetwork { network: Network },
     /// Apply `edits`, in order and atomically, to the registered
     /// document: the next document, registered under its own hash.
     Apply { network_hash: String, edits: Vec<NetworkEdit> },
@@ -44,7 +38,6 @@ pub enum Request {
 #[ts(export, export_to = "cap_author/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    LoadNetwork { network_hash: String },
     /// The next document and what it is: its hash (already
     /// registered — chain the next change on it), the issues that
     /// gate export, and the warnings that never gate.
@@ -59,32 +52,24 @@ pub enum Response {
     },
 }
 
-pub static NETWORKS: Registry<Network> = Registry::documents("network", "load_network", Retain::Host);
-
-/// Canonical serialization → content hash, registered (idempotent).
-fn register(network: Network) -> Result<String, String> {
-    let hash = cap_abi::canonical_hash(&network)?;
-    NETWORKS.insert(hash.clone(), network);
-    Ok(hash)
-}
-
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    NETWORKS.require(network_hash)
+    NETWORK.require(network_hash)
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
 /// are `{"error": ...}`, never panics — a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
-        Request::LoadNetwork { network } => Ok(Response::LoadNetwork { network_hash: register(network)? }),
         Request::Apply { network_hash, edits } => {
             let current = network_arc(&network_hash)?;
             let (next, created) =
                 transit_network::apply_edits_reporting(&current, &edits).map_err(|e| e.to_string())?;
             let issues = transit_network::validation_issues(&next);
             let warnings = transit_network::validation_warnings(&next);
-            let network_hash = register(next.clone())?;
-            Ok(Response::Apply { network_hash, network: next, issues, warnings, created })
+            // The next document registers where it was minted: the next
+            // change (and, in an assembly, every reader) chains on its hash.
+            let (network_hash, next) = NETWORK.register(next)?;
+            Ok(Response::Apply { network_hash, network: (*next).clone(), issues, warnings, created })
         }
     }
 }
@@ -92,25 +77,18 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
 /// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
 /// out — byte-compatible with every other capability module.
 pub fn dispatch_json(text: &str) -> String {
-    if let Some(answer) = cap_abi::load_network_json(text, |doc| dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc)) {
-        return answer;
-    }
     cap_abi::answer(text, dispatch)
 }
 
-/// Authoring takes documents and edits inline — no bulk-bytes op
-/// exists; the seam answers honestly instead of silently ignoring one.
-pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
-    match op {
-        cap_abi::OP_LOAD_NETWORK => cap_abi::outcome(
-            cap_abi::parse_network(bytes).and_then(|network| dispatch(Request::LoadNetwork { network })),
-        ),
-        _ => serde_json::json!({ "error": format!("unknown bulk op {op}: authoring answers the kernel's load_network bulk op; edits travel inline (apply)") }).to_string(),
-    }
+/// Authoring takes edits inline — no bulk op of its own; the seam
+/// answers honestly instead of silently ignoring one.
+pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
+    cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: author has no bulk op of its own")))
 }
 
 cap_abi::capability! {
+    id: "author",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    registries: [NETWORKS],
+    documents: [NETWORK],
 }

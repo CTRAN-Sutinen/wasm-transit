@@ -38,7 +38,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-79**.
+- IDs are never reused; the next new decision is **D-90**.
 
 ## Summary
 
@@ -119,6 +119,17 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-76 | What does publishing refuse beyond an invalid chain? | decided | nothing |
 | D-77 | How do the capabilities a page uses share one network? | decided | nothing |
 | D-78 | Does the Go server host linked assemblies? | unanswered | the server part of `linked-assembly` |
+| D-79 | How is a document version rolled back? | unanswered | rollback in `document-versioning` |
+| D-80 | Where do retired build artifacts live? | unanswered | retention in `release-artifacts` |
+| D-81 | How are op and HTTP contracts versioned? | unanswered | contract versioning in `release-artifacts` |
+| D-82 | Where do the store's backups go, and how often? | unanswered | backup in `store-durability` |
+| D-83 | What does each deployed device report, and to where? | unanswered | reporting in `observability-rollout` |
+| D-84 | Who takes a build first, and what counts as healthy? | unanswered | rings and revert in `observability-rollout` |
+| D-85 | Are the generated assembly crates committed? | decided | nothing |
+| D-86 | Which op answers what an edit record amounts to on the network? | encoded | nothing |
+| D-87 | How does an export name the import numbering it writes back? | encoded | nothing |
+| D-88 | What does a page run when its linked assembly does not load? | encoded | nothing |
+| D-89 | May a host decline a document an op minted? | encoded | nothing |
 
 ## The trip model
 
@@ -1274,6 +1285,24 @@ Options:
   D-56 bounds the LWW clock), or before the pick in force.
 Blocks: nothing.
 
+### D-82 — Where do the store's backups go, and how often?
+State: Unanswered.
+Context: the sync store is one directory on one node: the edit
+document, the policy, the published picks, and the manifest's
+history. Its shape makes a consistent copy simple (copy the
+append-only logs, then the blobs they name; blobs copy incrementally
+by name — `docs/units/store-durability.md`). Where the copies live
+and how much loss is acceptable is the agency's infrastructure.
+Options:
+- A copy on another disk of the same host, on a timer: cheap, and
+  lost with the host.
+- A copy off the host (an agency file share or object store), hourly
+  or daily: survives the host; at most that interval of edits is
+  lost.
+- A continuous replica (each commit shipped as it happens): no loss
+  window; the most to run.
+Blocks: backup and restore in `docs/units/store-durability.md`.
+
 ## Authentication and authorization
 
 ### D-58 — Which endpoints require a token by default?
@@ -1514,6 +1543,13 @@ properties), `crates/cap-rt/tests/registry_test.rs`,
 bounded").
 Blocks: nothing — the C-TRAN record in `module-runtime.md` measures
 the working set the ceiling should sit above.
+Update 2026-11-05: the bounds are the kernel's (D-77). Each
+derivation bounds its own entries: held days 4, router graphs 8 (and
+only the newest live document's), street and walking graphs 4
+(`cap_abi::kernel::DAY`, `GRAPH`, `STREET_GRAPH`, `WALK_GRAPH`); the
+ceiling is per module instance, so in a linked assembly a reset drops
+every capability's state together. Pins add
+`cap_abi::kernel` (`a_derived_entry_is_a_cache_bounded_per_derivation`).
 
 ### D-71 — May a module register a document under a pinned hash it did not compute?
 State: Unanswered.
@@ -1605,6 +1641,10 @@ Options:
 Blocks: nothing. The work is `docs/units/linked-assembly.md`; Law 3
 in `crates/AGENTS.md` carries the answer (linking assembles bytes,
 not surfaces).
+Update 2026-11-05: built — the kernel owns the registries and the
+loads, `assembly!` emits the exports, each generated UI loads one
+linked module, and the four gates run in `just test`
+(`docs/ARCHITECTURE.md`, "Bus rules").
 
 ### D-78 — Does the Go server host linked assemblies?
 State: Unanswered.
@@ -1623,6 +1663,178 @@ Options:
 - One assembly for everything: one compile and one registry; loses
   the fresh instance per import.
 Blocks: the server part of `docs/units/linked-assembly.md`.
+
+### D-85 — Are the generated assembly crates committed?
+State: Decided.
+Answer: 2026-11-05 — "looks like a lot of auto generated
+assets/packages aren't gitignored": they are generated, like the TS
+bindings, and gitignored.
+Context: `gen-assemblies` writes one crate per capability and per
+generated UI (`assemblies/module-*`), workspace members by glob. A
+committed tree would need a currency gate; an ignored one needs the
+directory to exist so the glob resolves (cargo refuses a glob whose
+directory is missing, and accepts an empty one).
+Options:
+- Commit them, with a `--check` gate in `just test`.
+- Generate and ignore them (decided): `.gitignore` ignores
+  `assemblies/*`, and `assemblies/.gitkeep` keeps the directory; `just caps` regenerates them
+  before every build. Cargo.lock carries their entries once
+  generated, and a plain `cargo` run in a fresh checkout before `just
+  caps` drops them again.
+Blocks: nothing. Pinned by `.gitignore`, `assemblies/.gitkeep`, and
+the `caps` recipe.
+
+### D-86 — Which op answers what an edit record amounts to on the network?
+State: Encoded provisionally.
+Context: `load_edits` answered per-record validation reports in the
+board, runcut, calendar, and router alike — one answer four times
+(`docs/units/linked-assembly.md`). Loads became the kernel's, which
+answer an identity, never a domain report.
+Options:
+- cap-divert `reports` (encoded): the capability that answers the
+  edit document's rows; the records travel inline, like `list`.
+- A field on each `list` row: one op fewer, but every list read pays
+  for validation.
+Pins: `crates/cap-divert/tests/dispatch_test.rs`
+(`reports_say_what_each_record_amounts_to_on_the_network`), the
+divert runner gate in `just test`, caps-smoke's reports.
+Blocks: nothing.
+
+### D-87 — How does an export name the import numbering it writes back?
+State: Encoded provisionally.
+Context: cap-network kept each import's boundary keyed by its
+network, and `export` used it implicitly. A capability declares no
+state of its own now (the gates, D-77), so the boundary registers in
+the kernel under its own hash.
+Options:
+- `export` takes an optional `boundary_hash` (encoded); `import`
+  answers it. Without it, 1..n numbering (an authored network).
+- A derived kernel entry from network to boundary: hidden state the
+  host never names, and not recomputable from the network.
+Pins: `crates/cap-network/tests/dispatch_test.rs`
+(`an_export_naming_the_import_boundary_round_trips`), caps-smoke.
+Blocks: nothing.
+
+### D-88 — What does a page run when its linked assembly does not load?
+State: Encoded provisionally.
+Context: a generated UI's page runs its linked assembly (D-77); one
+module's failure is every linked capability's.
+Options:
+- Fall back to each capability's own module (encoded): the page
+  degrades per capability, as before linking, at the old memory cost.
+- Every capability unavailable: simpler; the page fails whole.
+Pins: `web/src/bus.worker.ts` (`place`), the degrade specs in
+`e2e/ui-ride-now.spec.mjs` and `e2e/ui-service-design.spec.mjs`
+(they block the assembly and one capability's module).
+Blocks: nothing.
+
+### D-89 — May a host decline a document an op minted?
+State: Encoded provisionally.
+Context: QAF-49 — the live document is 388 KB a poll; the stop
+display never reads it. In its assembly, cap-rt's `live` registers it
+where the board reads it.
+Options:
+- `live` takes `with_document` (default true; encoded): a host whose
+  readers are linked beside rt declines it, and the engine mints it
+  again (`remint`) when an instance dropped it.
+- Never answer the document: a host in separate modules (caps-run,
+  a reader not linked) could not move it.
+Pins: `crates/cap-rt/tests/dispatch_test.rs` (the with_document law),
+`e2e/ui-stop-display.spec.mjs` ("a display left polling stays
+bounded" — the reset remints it).
+Blocks: nothing.
+
+### D-79 — How is a document version rolled back?
+State: Unanswered.
+Context: `docs/units/document-versioning.md`. Rollback is a pointer
+moved back, never an inverse migration, so the bytes from before an
+upgrade stay addressable. But a newer build that has written vN+1
+documents leaves a rolled-back vN build unable to read them (a module
+refuses a version it does not speak, and never rewrites it). The
+server commits each pointer forward at startup, and the browser moves
+each kind forward at restore, so the write happens on the upgrade's
+first run.
+Options:
+- Read one version ahead: a release that will write vN+1 is preceded
+  by a release that reads vN+1 (and keeps writing vN), so the build
+  before any upgrade can always read what the upgrade writes. Two
+  releases per format change.
+- Write after it holds: an upgrade reads and serves vN+1 but writes
+  vN until it has run cleanly for an agreed time, then commits
+  forward. One release; the window delays the new format.
+- Roll back the data too: a rollback moves every pointer back to its
+  pre-upgrade head; commits made since are replayed through the old
+  build or lost. Simplest code; it can lose edits.
+Blocks: rollback in `docs/units/document-versioning.md`.
+
+### D-80 — Where do retired build artifacts live?
+State: Unanswered.
+Context: `docs/units/release-artifacts.md`. Every `just caps` deletes
+and rewrites `registry/` and `web/public/caps/`; git keeps the source,
+not the bytes, and the bytes cannot yet be rebuilt exactly. Rolling
+code back, and expand-then-contract, need every deployed build kept.
+Options:
+- In the sync store: module, assembly, and app-shell bytes as blobs,
+  named by the manifests the `manifest` pointer already logs. One
+  store, one backup (D-82), the same verification; the store grows
+  by each release's bytes.
+- A separate artifact store (a directory or bucket keyed by hash),
+  beside the registry: keeps release bytes out of the agency's data.
+- Release archives (a tarball per release, with its manifest) kept
+  wherever the agency keeps releases.
+Blocks: retention in `docs/units/release-artifacts.md`.
+
+### D-81 — How are op and HTTP contracts versioned?
+State: Unanswered.
+Context: `docs/units/release-artifacts.md`. Op requests and responses
+have no version of their own (the kernel version is one number for
+the whole ABI), and neither does the server's HTTP surface. The
+parts of a deployment ship at different times, so a host can send an
+old shape to a newer module or server. Example: cap-plans `publish`
+gained a required `today` field on 2026-11-05.
+Options:
+- Additive only, enforced by a gate: a field is added optional or an
+  op is added; nothing changes meaning; removal happens only after no
+  deployed host sends the old shape. No version numbers on the wire;
+  the generated schemas are diffed against the last published
+  registry.
+- A version per op (and per endpoint), declared in the manifest; a
+  host names the version it speaks; a module answers each version it
+  keeps.
+- A version prefix on the HTTP surface (`/v1/…`) plus additive-only
+  ops.
+Blocks: contract versioning in `docs/units/release-artifacts.md`.
+
+### D-83 — What does each deployed device report, and to where?
+State: Unanswered.
+Context: `docs/units/observability-rollout.md`. Nothing reports what
+production runs. Stop displays are the agency's devices; riders'
+phones are not, and a rider's location or stops are theirs.
+Options:
+- Displays and the server only: displays send a heartbeat (builds,
+  pins, last good poll, memory, errors) to the server; riders' phones
+  send nothing.
+- The same, plus anonymous error reports from riders' phones (the
+  build and the error, no location, no stops), opt-in or opt-out.
+- An external monitoring service as the sink (the server forwards,
+  or devices send directly), instead of the agency's own server.
+Blocks: reporting in `docs/units/observability-rollout.md`.
+
+### D-84 — Who takes a build first, and what counts as healthy?
+State: Unanswered.
+Context: `docs/units/observability-rollout.md`. Under D-63 every
+display applies a new build at its next poll, so a bad build reaches
+every stop at once. Rings need a first cohort and a health rule a
+display can check about itself.
+Options:
+- A named canary set (a few displays the agency chooses, e.g. at the
+  transit centers staff pass daily), promoted after a fixed time
+  (e.g. a full service day) with no failed health check.
+- A percentage of displays, picked by id, widened in steps.
+- Health as: polls succeed, the board renders, memory stays under
+  the D-68 budget, no reset under the ceiling, for the window.
+Blocks: rings and the automatic revert in
+`docs/units/observability-rollout.md`.
 
 ## Agency data
 

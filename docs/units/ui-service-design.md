@@ -144,6 +144,12 @@ hash), `view` (which view is open), `layer`, `coverage-params`.
   frequency target with its preview (Blocked: D-54).
 - **The bar**: the jump box finds routes only — stops, plans, and
   views too.
+- **Proposal**: previewing the pick as a rider will see it, before
+  it is published: the rider pages opened as of the pick's date, over
+  the pick, not over what the deployment publishes. Publishing
+  reaches every rider at midnight on that date; this is the planner's
+  last look ([observability-rollout.md](observability-rollout.md)
+  watches the first day itself).
 
 ## Done when
 

@@ -1,18 +1,17 @@
 //! cap-router — the trip-planning capability module.
 //!
 //! Planning composes over the NETWORK document and the EFFECTIVE
-//! DAY, like every model-side capability: the network registers
-//! under its content hash (the same identity cap-network's import
-//! produces and every day view consumes), the edit document
-//! registers the same way, and a plan answers by hash pair + date.
-//! The day itself is transit-dispatch's composition — materialize,
-//! then patch with the edits in force — never a private calendar
-//! expansion (Law 2). A LIVE document (cap-rt's, registered by
-//! hash like cap-board's) makes the plan ride each trip instance's
-//! predicted times where the document states them. The RAPTOR graph
-//! is built lazily per (network, edits, live, date) and cached; a
-//! rider whose bundle stops at "know when the bus comes" ships
-//! gtfs/board and never downloads this module's planning code.
+//! DAY, like every model-side capability: the network and the edit
+//! document are the kernel's (registered by its loads, under their
+//! content hashes), and a plan answers by hash pair + date. The day
+//! itself is the kernel's held day — transit-dispatch's composition,
+//! materialize then patch with the edits in force — never a private
+//! calendar expansion (Law 2). A LIVE document (cap-rt's) makes the
+//! plan ride each trip instance's predicted times where the document
+//! states them. The RAPTOR graph is a derived entry
+//! (`cap_abi::kernel::GRAPH`) per (network, edits, live, date, walks),
+//! built on first use; a rider whose bundle stops at "know when the
+//! bus comes" never downloads this module's planning code.
 //!
 //! The question is one — how do I get from here to there — at its
 //! facets: leaving at a time (`plan`), arriving by a time
@@ -22,48 +21,20 @@
 //! materialization apart, no second document — with the rider's
 //! notice whenever the diversion changes the trip).
 
+#![forbid(unsafe_code)]
+
 use std::sync::Arc;
 
-use cap_abi::canonical_hash;
-use cap_abi::registry::{Registry, Retain};
+use cap_abi::kernel::{GRAPH, LIVE, NETWORK, WALKS};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use transit_live::LiveDay;
-use transit_network::Network;
 use transit_streets::walking::{DirectWalk, WalkTable};
-use transit_sync::EditRecord;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_router/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// Register the NETWORK document under its content hash
-    /// (idempotent by hash) — the same document identity
-    /// cap-network's import produces and every day view consumes.
-    /// Decoded by `cap_abi::load_network_json` on either lane, never
-    /// through the tagged envelope (whose buffered decode would cost
-    /// ~8× the document in peak memory and a second decoder).
-    #[serde(skip_deserializing)]
-    LoadNetwork { network: Network },
-    /// Register the OPERATOR EDIT document against a loaded
-    /// network, validated per record AGAINST THE NETWORK; the
-    /// response carries the reports and the document's content
-    /// hash, which plans address. Wholesale replacement, like the
-    /// host-owned store.
-    LoadEdits {
-        network_hash: String,
-        records: Vec<EditRecord>,
-    },
-    /// Register a LIVE document (minted by cap-rt's `live`) under its
-    /// content hash — the same identity cap-rt answered (assert at
-    /// the host). Ephemeral like the snapshot it came from.
-    LoadLive { live: LiveDay },
-    /// Register a WALK TABLE (minted by cap-streets' `walks` from a
-    /// streets document and this network) under its content hash —
-    /// the same identity cap-streets answered (assert at the host).
-    /// A plan naming it walks its transfers along the streets.
-    LoadWalks { walks: WalkTable },
     /// Earliest-arrival plan from `from` to `to`, leaving at
     /// `depart_secs` on `date`. Each end is a stop id (a bare string)
     /// or a PLACE off the network — `{id, name, walks}`, its walks to
@@ -180,13 +151,6 @@ pub enum Request {
 #[ts(export, export_to = "cap_router/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    LoadNetwork { network_hash: String },
-    LoadEdits {
-        edits_hash: String,
-        reports: Vec<transit_sync::EditReport>,
-    },
-    LoadLive { live_hash: String },
-    LoadWalks { walks_hash: String },
     Plan { itinerary: Option<transit_router::Itinerary> },
     /// The deadline answered (the request's, else the day's end) and
     /// the itinerary leaving as late as possible.
@@ -202,38 +166,6 @@ pub enum Response {
     /// One path per leg, in leg order (empty when a leg's stops are
     /// unknown to the network).
     ItineraryPaths { paths: Vec<transit_dispatch::LegPath> },
-}
-
-/// Networks by content hash (canonical serialization).
-pub static NETWORKS: Registry<Network> = Registry::documents("network", "load_network", Retain::Host);
-
-/// Edit documents by content hash (canonical serialization).
-pub static EDITS: Registry<Vec<EditRecord>> = Registry::documents("edits", "load_edits", Retain::Host);
-
-/// Live documents by content hash (canonical serialization).
-pub static LIVES: Registry<LiveDay> = Registry::documents("live document", "load_live", Retain::Last(4));
-
-/// Walk tables by content hash (canonical serialization).
-pub static WALKS: Registry<WalkTable> = Registry::documents("walk table", "load_walks", Retain::Host);
-
-/// RAPTOR graphs by (network, edits, live, date, walks), built on first
-/// use — the graph is a pure function of the day and its predictions,
-/// so it caches per day. Derived from the documents it names: a
-/// keep-set that drops any of them drops the graph, and at most eight
-/// stay (a long session's dates and edit generations would otherwise
-/// each leave one behind in linear memory that never shrinks).
-pub static GRAPHS: Registry<transit_router::RouterNetwork> = Registry::derived("graph", Retain::Last(8));
-
-fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    NETWORKS.require(network_hash)
-}
-
-fn edits_arc(edits_hash: &str) -> Result<Arc<Vec<EditRecord>>, String> {
-    EDITS.require(edits_hash)
-}
-
-fn live_arc(live_hash: &str) -> Result<Arc<LiveDay>, String> {
-    LIVES.require(live_hash)
 }
 
 /// A registered walk table, refused when it was derived for another
@@ -254,21 +186,10 @@ fn parse_date(date: &str) -> Result<NaiveDate, String> {
         .map_err(|e| format!("invalid date {date:?}: {e}"))
 }
 
-/// One effective day: the network materialized for the date,
-/// patched with the edits in force on it — transit-dispatch's one
-/// composition, never a private expansion.
-fn effective_day(
-    network: &Network,
-    records: &[EditRecord],
-    date: NaiveDate,
-) -> Result<Vec<transit_network::MaterializedTrip>, String> {
-    transit_dispatch::effective_day(network, date, records)
-        .map_err(|e| format!("the network does not materialize: {e}"))
-}
-
 /// The RAPTOR graph for (network, edits, live, date, walks), built
-/// on first use. No edits hash is the unpatched materialization — the
-/// compare facet's baseline; no walks hash, straight-line transfers.
+/// on first use and held as a derived entry. No edits hash is the
+/// unpatched materialization — the compare facet's baseline; no walks
+/// hash, straight-line transfers.
 fn graph(
     network_hash: &str,
     edits_hash: Option<&str>,
@@ -279,68 +200,39 @@ fn graph(
     // The request's own fields validate before any registry lookup —
     // a garbage date is a caller error, not a missing-document error.
     let date = parse_date(date_str)?;
-    let network = network_arc(network_hash)?;
-    let records = match edits_hash {
-        Some(hash) => edits_arc(hash)?,
-        None => Arc::new(Vec::new()),
-    };
-    let live = live_hash.map(live_arc).transpose()?;
+    let network = NETWORK.require(network_hash)?;
+    let live = live_hash.map(|h| LIVE.require(h)).transpose()?;
     let walks = walks_hash.map(|h| walks_arc(h, network_hash)).transpose()?;
-    // The key leads with the live hash ("" for none): the newest-live
-    // rule below reads it back.
+    // Live documents are ephemeral (one per rt moment): only the
+    // newest live document's graphs stay held, or every snapshot
+    // would leave a graph behind. The key leads with the live hash
+    // ("" for none), which this rule reads back.
+    if let Some(current) = live_hash {
+        cap_abi::kernel::retain_derived(&GRAPH, |key, _| {
+            key.split('|').next().is_none_or(|live| live.is_empty() || live == current)
+        });
+    }
     let key = format!(
         "{}|{network_hash}|{}|{date}|{}",
         live_hash.unwrap_or(""),
         edits_hash.unwrap_or(""),
         walks_hash.unwrap_or("")
     );
-    if let Some(cached) = GRAPHS.get(&key) {
-        return Ok(cached);
-    }
-    let day = effective_day(&network, &records, date)?;
-    let mut built = transit_router::RouterNetwork::build(&network, &day, date, live.as_deref());
-    if let Some(walks) = &walks {
-        built = built.with_walks(walks);
-    }
-    let built = Arc::new(built);
-    // Live documents are ephemeral (one per rt moment): only the
-    // newest live document's graphs stay cached, or every snapshot
-    // would leave a graph behind.
-    if let Some(current) = live_hash {
-        GRAPHS.retain(|key, _| key.split('|').next().is_none_or(|live| live.is_empty() || live == current));
-    }
-    let inputs = [Some(network_hash), edits_hash, live_hash, walks_hash].into_iter().flatten().map(str::to_string).collect();
-    GRAPHS.insert_derived(key, inputs, built.clone());
-    Ok(built)
+    let inputs: Vec<&str> = [Some(network_hash), edits_hash, live_hash, walks_hash].into_iter().flatten().collect();
+    cap_abi::kernel::derive(&GRAPH, &key, &inputs, || {
+        let day = cap_abi::kernel::day(network_hash, edits_hash, date_str)?;
+        let mut built = transit_router::RouterNetwork::build(&network, &day.trips, date, live.as_deref());
+        if let Some(walks) = &walks {
+            built = built.with_walks(walks);
+        }
+        Ok(built)
+    })
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
 /// are `{\"error\": ...}`, never panics.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
-        Request::LoadNetwork { network } => {
-            let hash = canonical_hash(&network)?;
-            NETWORKS.insert(hash.clone(), network);
-            Ok(Response::LoadNetwork { network_hash: hash })
-        }
-        Request::LoadEdits { network_hash, records } => {
-            // Validation is against the NETWORK — model vocabulary.
-            let network = network_arc(&network_hash)?;
-            let reports = transit_dispatch::report_against_network(&network, &records);
-            let hash = canonical_hash(&records)?;
-            EDITS.insert(hash.clone(), records);
-            Ok(Response::LoadEdits { edits_hash: hash, reports })
-        }
-        Request::LoadLive { live } => {
-            let hash = canonical_hash(&live)?;
-            LIVES.insert(hash.clone(), live);
-            Ok(Response::LoadLive { live_hash: hash })
-        }
-        Request::LoadWalks { walks } => {
-            let hash = canonical_hash(&walks)?;
-            WALKS.insert(hash.clone(), walks);
-            Ok(Response::LoadWalks { walks_hash: hash })
-        }
         Request::PlanArriveBy {
             network_hash, edits_hash, from, to, date, arrive_by_secs, max_legs, live_hash, walks_hash, direct,
         } => {
@@ -362,14 +254,9 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::Plan { itinerary })
         }
         Request::ItineraryPaths { network_hash, edits_hash, date, itinerary, from, to, direct } => {
-            let parsed = parse_date(&date)?;
-            let network = network_arc(&network_hash)?;
-            let records = match edits_hash.as_deref() {
-                Some(hash) => edits_arc(hash)?,
-                None => Arc::new(Vec::new()),
-            };
-            let day = effective_day(&network, &records, parsed)?;
-            let diversions = transit_sync::in_force_on(&records, parsed);
+            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = NETWORK.require(&network_hash)?;
+            let diversions = day.edits.as_ref().map(|e| e.diversions.as_slice()).unwrap_or(&[]);
             let paths = itinerary
                 .legs
                 .iter()
@@ -378,7 +265,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                         transit_dispatch::LegPath {
                             kind: transit_dispatch::LegKind::Transit,
                             path: transit_dispatch::trip_segment(
-                                &network, &day, &diversions, trip, *start_secs, board_stop_id, alight_stop_id,
+                                &network, &day.trips, diversions, trip, *start_secs, board_stop_id, alight_stop_id,
                             ),
                         }
                     }
@@ -404,32 +291,25 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         } => {
             // The request's own fields validate before any registry
             // lookup, so both worlds fail identically on bad input.
-            let parsed = parse_date(&date)?;
+            parse_date(&date)?;
             let legs = max_legs.max(1) as usize;
             let net = graph(&network_hash, edits_hash.as_deref(), live_hash.as_deref(), walks_hash.as_deref(), &date)?;
             let direct_secs = direct.map(|d| d.walk_secs);
             let active = transit_router::earliest_arrival_between(&net, &from, &to, direct_secs, depart_secs, legs)
                 .map_err(|e| e.to_string())?;
-            let network = network_arc(&network_hash)?;
+            let network = NETWORK.require(&network_hash)?;
             // The baseline is the unpatched materialization — one
             // materialization apart, never a second document — read
             // at the same predictions; the diverted trips are the
             // instances the patch moved.
-            let (baseline, diverted) = match edits_hash.as_deref() {
-                Some(hash) => {
-                    let records = edits_arc(hash)?;
-                    if transit_sync::in_force_on(&records, parsed).is_empty() {
-                        (None, transit_router::DivertedTrips::default())
-                    } else {
-                        let base = graph(&network_hash, None, live_hash.as_deref(), walks_hash.as_deref(), &date)?;
-                        let baseline =
-                            transit_router::earliest_arrival_between(&base, &from, &to, direct_secs, depart_secs, legs)
+            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
+            let (baseline, diverted) = match &day.edits {
+                Some(edits) => {
+                    let base = graph(&network_hash, None, live_hash.as_deref(), walks_hash.as_deref(), &date)?;
+                    let baseline =
+                        transit_router::earliest_arrival_between(&base, &from, &to, direct_secs, depart_secs, legs)
                             .map_err(|e| e.to_string())?;
-                        let unpatched = transit_network::materialize(&network, parsed)
-                            .map_err(|e| format!("the network does not materialize: {e}"))?;
-                        let patched = effective_day(&network, &records, parsed)?;
-                        (baseline, transit_router::diverted_instances(&unpatched, &patched))
-                    }
+                    (baseline, transit_router::diverted_instances(&edits.base, &day.trips))
                 }
                 None => (None, transit_router::DivertedTrips::default()),
             };
@@ -449,26 +329,19 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
 /// `{\"error\": ...}` out — byte-compatible with every other
 /// capability module.
 pub fn dispatch_json(text: &str) -> String {
-    if let Some(answer) = cap_abi::load_network_json(text, |doc| dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc)) {
-        return answer;
-    }
     cap_abi::answer(text, dispatch)
 }
 
-/// The router module takes JSON documents (network, edits, live) — no
-/// bulk-bytes op exists; the seam answers honestly instead of
-/// silently ignoring one.
-pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
-    match op {
-        cap_abi::OP_LOAD_NETWORK => cap_abi::outcome(
-            cap_abi::parse_network(bytes).and_then(|network| dispatch(Request::LoadNetwork { network })),
-        ),
-        _ => serde_json::json!({ "error": format!("unknown bulk op {op}: router answers the kernel's load_network bulk op; edits and live documents travel as JSON (load_edits, load_live)") }).to_string(),
-    }
+/// The router has no bulk op of its own (its documents register on
+/// the kernel's loads); the seam answers honestly instead of silently
+/// ignoring one.
+pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
+    cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: the router has no bulk op of its own")))
 }
 
 cap_abi::capability! {
+    id: "router",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    registries: [NETWORKS, EDITS, LIVES, WALKS, GRAPHS],
+    documents: [NETWORK, EDITS, LIVE, WALKS],
 }

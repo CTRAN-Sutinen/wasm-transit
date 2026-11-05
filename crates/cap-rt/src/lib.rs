@@ -7,27 +7,28 @@
 //! monolith keeps no copy; every host (web, runner, a future server
 //! leg) decodes through the same bytes.
 //!
-//! It also owns the JOIN the dispatcher actually asks for: load the
-//! NETWORK document (the kernel's load_network, the same identity
-//! every network consumer holds) and, for an imported network, its
-//! `Boundary` (the published stop_sequence numbering rt updates
-//! name), and `trip_progress` / `late_trips` / `live` answer over the
-//! network's own trips — an rt trip id IS a model trip id.
+//! It also owns the JOIN the dispatcher actually asks for: over the
+//! NETWORK document (the kernel's, the same identity every network
+//! consumer holds) and, for an imported network, its `Boundary` (the
+//! published stop_sequence numbering rt updates name),
+//! `trip_progress` / `late_trips` / `live` answer over the network's
+//! own trips — an rt trip id IS a model trip id.
 //!
 //! The rt payload is EPHEMERAL: snapshots are polled every few
-//! seconds, never persisted; decode registers each snapshot under
-//! its content hash (idempotent — the same bytes are the same
-//! snapshot) so later ops can address it. The capability writes
-//! nothing.
+//! seconds, never persisted; decode registers each snapshot in the
+//! kernel under its content hash (idempotent — the same bytes are the
+//! same snapshot) so later ops can address it, and `live` registers
+//! the live document it mints, so in an assembly the board and the
+//! router read it by hash without it crossing to the host and back.
+
+#![forbid(unsafe_code)]
 
 use std::sync::Arc;
 
-use cap_abi::registry::{Registry, Retain};
-
+use cap_abi::kernel::{BOUNDARY, LIVE, NETWORK, RT};
 use serde::{Deserialize, Serialize};
 use transit_codec::Boundary;
 use transit_live::{LiveDay, LiveSummary, OnTimeWindow};
-use transit_network::Network;
 use transit_rt::{LateTrip, RtOverview, TripProgress};
 use ts_rs::TS;
 
@@ -46,16 +47,6 @@ pub enum Request {
     /// the same bytes are the same snapshot) so the joins can
     /// address it. Bulk-bytes op 0.
     Decode { bytes: Vec<u8> },
-    /// Register the NETWORK document under its content hash — the
-    /// same identity every network consumer holds. Decoded by
-    /// `cap_abi::load_network_json` on either lane.
-    #[serde(skip_deserializing)]
-    LoadNetwork { network: Network },
-    /// Register an import's BOUNDARY (cap-network `import`'s
-    /// `boundary`) under its content hash: the stop_sequence numbering
-    /// the published feed — and so its rt updates — use. A network
-    /// published from its own export needs none (1..n).
-    LoadBoundary { boundary: Boundary },
     /// One trip's joined board: every scheduled stop of the instance
     /// the snapshot's update names, with the live delay and the
     /// PREDICTED time. Null when the snapshot has no update for the
@@ -114,6 +105,13 @@ pub enum Request {
         #[serde(default)]
         #[ts(optional)]
         late_limit: Option<u32>,
+        /// Whether the answer carries the document itself (default
+        /// true). It is registered where it was minted either way: a
+        /// host whose board and router are linked beside rt reads it by
+        /// `live_hash` and need not receive it (QAF-49).
+        #[serde(default)]
+        #[ts(optional)]
+        with_document: Option<bool>,
     },
 }
 
@@ -122,54 +120,28 @@ pub enum Request {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
     Decode { overview: RtOverview, rt_hash: String },
-    LoadNetwork { network_hash: String },
-    LoadBoundary { boundary_hash: String },
     TripProgress { progress: Option<TripProgress> },
     LateTrips { trips: Vec<LateTrip> },
-    Live { live_hash: String, live: LiveDay, summary: LiveSummary },
-}
-
-/// Networks by content hash (canonical serialization).
-pub static NETWORKS: Registry<Network> = Registry::documents("network", "load_network", Retain::Host);
-
-/// Boundaries by content hash (canonical serialization).
-pub static BOUNDARIES: Registry<Boundary> = Registry::documents("boundary", "load_boundary", Retain::Host);
-
-/// Decoded rt snapshots by content hash of the payload bytes —
-/// ephemeral: an agency re-mints them every poll, and a live answer
-/// reads at most three (trip updates, positions, alerts), so the last
-/// eight are kept and a poll loop plateaus with no host steering.
-pub static SNAPSHOTS: Registry<RtOverview> = Registry::documents("rt snapshot", "decode (bulk op 0)", Retain::Last(8));
-
-fn content_hash(bytes: &[u8]) -> String {
-    use sha2::Digest;
-    format!("sha256:{:x}", sha2::Sha256::digest(bytes))
-}
-
-fn network_arc(hash: &str) -> Result<Arc<Network>, String> {
-    NETWORKS.require(hash)
+    /// `live`: the document, unless the request declined it.
+    Live { live_hash: String, live: Option<LiveDay>, summary: LiveSummary },
 }
 
 /// The boundary a join pairs rt sequences by: the registered one, or
 /// 1..n numbering.
 fn boundary_arc(hash: Option<&str>) -> Result<Arc<Boundary>, String> {
     match hash {
-        Some(hash) => BOUNDARIES.require(hash),
+        Some(hash) => BOUNDARY.require(hash),
         None => Ok(Arc::new(Boundary::default())),
     }
 }
 
 fn snapshot_arc(rt_hash: &str) -> Result<Arc<RtOverview>, String> {
-    SNAPSHOTS.require(rt_hash)
+    RT.require(rt_hash)
 }
 
 fn decode(bytes: &[u8]) -> Result<Response, String> {
-    let hash = content_hash(bytes);
-    if let Some(overview) = SNAPSHOTS.get(&hash) {
-        return Ok(Response::Decode { overview: (*overview).clone(), rt_hash: hash });
-    }
-    let overview = SNAPSHOTS.insert(hash.clone(), transit_rt::decode_overview(bytes)?);
-    Ok(Response::Decode { overview: (*overview).clone(), rt_hash: hash })
+    let (rt_hash, overview) = RT.register_bytes(bytes, None)?;
+    Ok(Response::Decode { overview: (*overview).clone(), rt_hash })
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
@@ -178,37 +150,27 @@ fn decode(bytes: &[u8]) -> Result<Response, String> {
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Decode { bytes } => decode(&bytes),
-        Request::LoadNetwork { network } => {
-            let hash = cap_abi::canonical_hash(&network)?;
-            NETWORKS.insert(hash.clone(), network);
-            Ok(Response::LoadNetwork { network_hash: hash })
-        }
-        Request::LoadBoundary { boundary } => {
-            let hash = cap_abi::canonical_hash(&boundary)?;
-            BOUNDARIES.insert(hash.clone(), boundary);
-            Ok(Response::LoadBoundary { boundary_hash: hash })
-        }
         Request::TripProgress { network_hash, boundary_hash, rt_hash, trip_id } => {
-            let network = network_arc(&network_hash)?;
+            let network = NETWORK.require(&network_hash)?;
             let boundary = boundary_arc(boundary_hash.as_deref())?;
             let snapshot = snapshot_arc(&rt_hash)?;
             Ok(Response::TripProgress { progress: transit_rt::trip_progress(&network, &boundary, &snapshot, &trip_id) })
         }
         Request::LateTrips { network_hash, rt_hash, vp_hash, min_delay_secs } => {
-            let network = network_arc(&network_hash)?;
+            let network = NETWORK.require(&network_hash)?;
             let snapshot = snapshot_arc(&rt_hash)?;
             let positions = vp_hash.as_deref().map(snapshot_arc).transpose()?;
             Ok(Response::LateTrips {
                 trips: transit_rt::late_trips(&network, &snapshot, positions.as_deref(), min_delay_secs),
             })
         }
-        Request::Live { network_hash, boundary_hash, rt_hash, vp_hash, alerts_hash, window, late_limit } => {
+        Request::Live { network_hash, boundary_hash, rt_hash, vp_hash, alerts_hash, window, late_limit, with_document } => {
             if rt_hash.is_none() && vp_hash.is_none() && alerts_hash.is_none() {
                 return Err(
                     "live needs a snapshot: rt_hash (trip updates), vp_hash (vehicle positions), and/or alerts_hash (service alerts)".into(),
                 );
             }
-            let network = network_arc(&network_hash)?;
+            let network = NETWORK.require(&network_hash)?;
             let boundary = boundary_arc(boundary_hash.as_deref())?;
             let delays = rt_hash.as_deref().map(snapshot_arc).transpose()?;
             let positions = vp_hash.as_deref().map(snapshot_arc).transpose()?;
@@ -222,7 +184,11 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 window.unwrap_or_default(),
             );
             let summary = transit_live::summarize(&live, late_limit.unwrap_or(15) as usize);
-            Ok(Response::Live { live_hash: cap_abi::canonical_hash(&live)?, live, summary })
+            // The live document registers where it was minted: in an
+            // assembly, the board and the router read it by hash.
+            let (live_hash, live) = LIVE.register(live)?;
+            let live = with_document.unwrap_or(true).then(|| (*live).clone());
+            Ok(Response::Live { live_hash, live, summary })
         }
     }
 }
@@ -230,27 +196,21 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
 /// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
 /// out — byte-compatible with every other capability module.
 pub fn dispatch_json(text: &str) -> String {
-    if let Some(answer) = cap_abi::load_network_json(text, |doc| dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc)) {
-        return answer;
-    }
     cap_abi::answer(text, dispatch)
 }
 
-/// The bulk-bytes seam: op 0 decodes a payload; the kernel's
-/// load_network registers a network.
+/// The bulk-bytes seam: op 0 decodes a payload (the overview and its
+/// hash; the kernel's `load_rt` registers one answering the hash only).
 pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
     match op {
         OP_DECODE => cap_abi::outcome(decode(bytes)),
-        cap_abi::OP_LOAD_NETWORK => cap_abi::outcome(
-            cap_abi::parse_network(bytes).and_then(|network| dispatch(Request::LoadNetwork { network })),
-        ),
-        other => serde_json::json!({ "error": format!("unknown bulk op {other}") }).to_string(),
+        other => cap_abi::outcome::<()>(Err(format!("unknown bulk op {other}"))),
     }
 }
 
 cap_abi::capability! {
+    id: "rt",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    registries: [NETWORKS, BOUNDARIES, SNAPSHOTS],
+    documents: [NETWORK, BOUNDARY, RT, LIVE],
 }
-

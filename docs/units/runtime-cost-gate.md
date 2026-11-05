@@ -1,8 +1,9 @@
 # Runtime cost gate
 
-Every network consumer registers each document version itself
+A page registers each document version once, in its linked assembly
 (kernel bulk op 256; the engine, `web/src/engine.ts`, registers a
-document once per module per version). On C-TRAN a scratch Chromium bench measured
+document once per module instance per version); a single-capability
+module (runner, server) registers its own. On C-TRAN a scratch Chromium bench measured
 5.8–8.4 MB of wasm memory per consumer and ~300 ms per
 registration at 4× CPU throttle — the direct parse plus the
 canonical re-hash every module repeats for a document the import
@@ -13,9 +14,8 @@ regression is invisible.
 ## Scope
 
 - A ratchet spec in `web/e2e` over the fixture feed: linear memory
-  per instance after registration (each consumer's today, each
-  page's assembly once [linked-assembly.md](linked-assembly.md)
-  lands), ms per registration, the JS
+  per instance after registration (each page's assembly), ms per
+  registration, the JS
   heap after boot, and the bytes a cold boot transfers, against
   recorded ceilings that may only come down. The ceilings ratchet;
   the absolute budgets the rider apps must meet are D-68's
@@ -33,11 +33,11 @@ regression is invisible.
   verification — the module would trust the pin (Blocked: D-71);
   the served bytes ARE the canonical serialization (a server test
   hashes them to the pin), so a module could verify the pin over the
-  bytes it decodes instead of re-serializing. Each module's linear
-  memory is ~9–12 MB, the parsed network plus what it derives
-  (QAF-93): a stop-scoped document would replace the display's
-  whole-network copies, and documents without shapes the copies of
-  every module that never draws.
+  bytes it decodes instead of re-serializing. A page's assembly is
+  16–18 MB of linear memory on C-TRAN, the one parsed network plus
+  what its capabilities derive: a stop-scoped document would replace
+  the display's whole-network copy, and documents without shapes
+  would shrink every page that never draws.
   cap-author keeps a buffered decoder beside the direct one
   (+77 KiB) because `apply` edits carry network sub-types.
   Splitting the network document: the whole GTFS spec lands in it
@@ -62,6 +62,30 @@ worker time: ride-now's "plan a trip leaving now" (the router's
 first registration) 504 → 729 ms — the streamed parse (serde_json
 113 → 240 ms) and inflate (49 ms).
 
+## Measured on C-TRAN (2026-11-05): the linked assemblies
+
+One module and one network copy per page (D-77), same recording
+(`PERF_RT=testdata/perf-rt-10m just perf`; `web/perf-results/`
+2026-11-05T23-30-45 and 23-31-29). These are the ratchet's starting
+numbers:
+
+| | wasm MB | page heap MB | total vs D-68 | gzip module bytes |
+|---|---:|---:|---:|---:|
+| stop display, boot | 16.2 (was 29.8 in three modules) | 3.2 | 19.4 | 1.33 MB (2.8 in five) |
+| stop display, 118 polls | 16.2 (was 31.8) | 4.8 (was 9.7) | 21.0 of 40 (was 41.5) | |
+| ride-now, boot | 16.2 (was 32.0 in five) | 14.2 | 30.4 | 1.52 MB (4.1 in seven) |
+| ride-now, after its soak | 17.8 (was 45.7) | 25.7 | 43.5 of 80 (was 71.5) | |
+| service-design | | | | 1.52 MB (3.3 in six) |
+
+Every assembly's memory and held documents are flat across the
+display's 118 polls and ride-now's soak; no reset fired. Time: the
+display's boot main thread 221 → 164 ms and a poll's worker time
+28 → 9 ms (p50 main thread per poll 10.5 → 8.5 ms); ride-now's
+"plan a trip leaving now" worker time 729 → 355 ms (the network is
+already registered; the router derives its graph from it), its
+soak's p50 per poll 36 → 28 ms. Boot wall time is noise-bound
+(display 1.8 → 1.2 s, ride-now 4.1 → 3.6 s).
+
 ## Candidates
 
 Each lands with its before/after in `just perf` (or the ratchet
@@ -83,22 +107,19 @@ spec once it exists); the estimates are not results.
   copies of modules that never draw.
 - **Stop rebuilding the router's graph per poll.** The router
   rebuilds its RAPTOR graph for every live document (every poll);
-  predictions overlaid on a per-day graph would not. (The day each
-  `stop_board` materializes per call, ~5 ms on C-TRAN, becomes one
-  shared derived entry in [linked-assembly.md](linked-assembly.md).)
+  predictions overlaid on a per-day graph would not. (The day every
+  board reads is one held derived entry per (network, edits, date):
+  `cap_abi::kernel::day`.)
 - **String keys in the hot paths.** `memcmp` is the largest single
   bucket in a poll's worker profile (16–22 ms): id lookups through
   `BTreeMap<String, _>` (pattern trips, destinations). Interned or
   indexed ids in the materialized day and the router take it out.
-- **Boot.** Modules are fetched, verified, and compiled one at a
-  time, as each is first asked. With one assembly per page
-  ([linked-assembly.md](linked-assembly.md)) there is one module,
-  known at load, to compile streaming, and one registration per
-  document. The map is ~100 ms of ride-now's boot on the main
+- **Boot.** A page's one assembly is fetched, verified, and
+  compiled when its first capability is asked; it is known at load,
+  so it could compile streaming before then. The map is ~100 ms of ride-now's boot on the main
   thread and could wait for the first answer.
-- The structural levers — one network copy per page, and the live
-  document's round trip through the page (QAF-49) — are
-  [linked-assembly.md](linked-assembly.md)'s.
+- The per-page numbers the ratchet starts from are the 2026-11-05
+  record above.
 
 ## Done when
 

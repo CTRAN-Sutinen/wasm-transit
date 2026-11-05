@@ -42,15 +42,20 @@ Rejected on sight:
 - a whole GTFS feed written where a day would do
   (`transit_codec::export` inside a capability — it is the codec's
   publish path, nothing else);
-- derived/effective feed caches keyed by date (the monolith's
-  `FeedState`/`with_effective` shape);
+- derived/effective FEED caches keyed by date (the monolith's
+  `FeedState`/`with_effective` shape) — what is derived is the
+  model's day, a library's pure function held by the kernel;
 - GTFS-shaped registries or GTFS row types in responses
   (`transit_codec::feed::TripRow`, ...) — responses are
   model-native types.
 
 The day view is `transit_network::materialize(net, date)` — the
-day's trips, computed per call. Patch the DAY (operator edits
-over materialized stop_times), never the calendar.
+day's trips. Patch the DAY (operator edits over materialized
+stop_times), never the calendar: `transit_dispatch::day` is the
+effective day and what the edits took away, one materialization,
+held by the kernel per (network, edits, date) (`cap_abi::kernel::day`
+— a derived entry, bounded, dropped with its documents) so every
+capability that reads it finds the same day.
 
 ## Law 3: one NEED per module — personas assemble at wire time
 
@@ -76,10 +81,12 @@ Rejected on sight:
 - shared DAY MACHINERY is a LIBRARY's job (transit-dispatch), not
   a reason to merge module surfaces.
 
-Registration ops (`load_network`, `load_edits`, `load_feed`) are
-composition fabric, not authoring: the host owns every document,
-wholesale-replaced. Authoring ops MINT documents; readers have
-none by construction.
+Registration (`load_network`, `load_edits`, `load_feed`, …) is
+composition fabric, not authoring, and it is the KERNEL's: each
+document kind's load is a kernel op (`cap_abi::kernel`), never in a
+capability's Request. The host owns every document,
+wholesale-replaced. Authoring ops MINT documents (and register them
+where they are minted); readers have none by construction.
 
 ### The cut — criteria every capability must pass
 
@@ -105,8 +112,8 @@ A cut that fails one criterion is a bundle or a duplicate:
 6. **No two answers to one question** across the whole manifest.
    A duplicate answer is deleted with the change that obsoletes
    it, never kept "for compatibility".
-7. **Registration is plumbing.** `load_network` / `load_edits`
-   never justify a module and do not count toward its need.
+7. **Registration is plumbing.** The kernel's loads never justify
+   a capability and are not among its ops.
 8. **Independently retirable.** The module can die alone.
 
 ### The split — triggers that end a module's growth
@@ -139,20 +146,32 @@ The extraction pattern, always in this order:
    transit-plans) with the law tests;
 2. capability wrapper second — a thin module over the library.
 
-A new domain op is a library and a capability module, never a
-host. A document kind the module keeps lands in a
-`cap_abi::registry::Registry` static with its bound, named in the
-module's `capability! { registries: [...] }` — the registry kernel
-ops (evict, held) answer over exactly those.
+A new domain op is a library and a capability, never a host. A
+capability declares no state: the documents it reads are the
+kernel's kinds, named in its `capability! { documents: [...] }` (a
+new kind lands in `cap_abi::kernel` with its bound and its load);
+what it derives from documents is a library's pure function and its
+key, held through `cap_abi::kernel::derive` under a `Derivation` —
+a cache, never a dependency. Capabilities never call capabilities:
+a capability crate depends on cap-abi and libraries only; only a
+generated assembly (`assemblies/`) links capabilities.
 
 ## Enforcement
 
-The justfile `test` recipe asserts laws 1 and 2: model-side
-capabilities may not depend on transit-codec, and
-`transit_codec::export` may not appear outside the codec's homes;
-no module keeps documents outside `cap_abi::registry::Registry`
-(ONE REGISTRY), and no library code reads a clock, randomness, or
-the environment (DETERMINISM). Law 3
+The justfile `test` recipe asserts laws 1 and 2 and the linking
+rule: `arch-gates` reads the dependency graph (`cargo metadata`,
+deny by default — a capability depends only on cap-abi and
+libraries, only assemblies depend on capabilities, only the codec's
+homes read transit-codec), and every capability crate's source
+(`#![forbid(unsafe_code)]`, no static or thread_local of its own);
+the registry constructor is private to the kernel (its
+`compile_fail` doctests); `transit_codec::export` may not appear
+outside the codec's homes; no library code reads a clock,
+randomness, or the environment (DETERMINISM); and every worked
+example answers identically alone and inside each UI's assembly
+(`crates/cap-abi/independence.mjs`). Each gate fails on a broken
+fixture in its own test (`crates/cap-abi/tests/arch_gates_test.rs`,
+`independence.test.mjs`). Law 3
 is a review gate (the criteria above are the checklist — every
 new module's ops must each name one need). If a gate fails your
 change, reread this file — do not widen the gate.

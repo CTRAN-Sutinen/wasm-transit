@@ -181,3 +181,15 @@ test("a display left polling stays bounded, and a module past its ceiling answer
   const held = (await bus("held", "board")).held.map((e) => e.kind);
   expect(held).toContain("network");
 });
+
+test("the display runs one linked module, holding the network once", async ({ page }) => {
+  await open(page, { query: "?stop=A&layout=routes" });
+  await expect(group(page, "10", "Downtown").getByTestId("display-time").first()).toBeVisible({ timeout: 10_000 });
+  const bus = (fn, ...args) => page.evaluate(([fn, args]) => window.__bus[fn](...args), [fn, args]);
+  // Every capability the display asks answers in its linked assembly (D-77).
+  for (const cap of await bus("caps")) expect(await bus("module", cap)).toBe("ui:stop-display");
+  // One registry: the network the board, the directory and rt all read
+  // is held once.
+  const networks = (await bus("held", "board")).held.filter((e) => e.kind === "network");
+  expect(networks).toHaveLength(1);
+});

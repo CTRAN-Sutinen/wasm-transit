@@ -28,10 +28,7 @@ fn derived_network() -> Network {
 }
 
 fn load_network() -> String {
-    match dispatch(Request::LoadNetwork { network: derived_network() }).unwrap() {
-        Response::LoadNetwork { network_hash } => network_hash,
-        _ => panic!("load_network"),
-    }
+    cap_abi::kernel::NETWORK.register(derived_network()).unwrap().0
 }
 
 fn active_services(network_hash: &str, edits_hash: Option<String>, date: &str) -> Vec<String> {
@@ -137,16 +134,7 @@ fn edits_can_take_a_key_off_the_board() {
         rev: 1,
         updated_at: 1,
     }];
-    let (edits_hash, reports) = match dispatch(Request::LoadEdits {
-        network_hash: network_hash.clone(),
-        records,
-    })
-    .unwrap()
-    {
-        Response::LoadEdits { edits_hash, reports } => (edits_hash, reports),
-        _ => panic!("load_edits"),
-    };
-    assert!(reports.iter().all(|r| r.valid), "the fixture diversion is valid: {reports:?}");
+    let edits_hash = cap_abi::kernel::EDITS.register(records).unwrap().0;
     // WK still runs (route 10 carries it); the answer is unchanged —
     // the mechanism is pinned by construction: the answer derives
     // from the patched day, and a key only leaves when its every
@@ -241,18 +229,7 @@ fn the_reverse_read_comes_from_the_effective_day() {
         rev: 1,
         updated_at: 1,
     }];
-    let edits_hash = match dispatch(Request::LoadEdits {
-        network_hash: network_hash.clone(),
-        records,
-    })
-    .unwrap()
-    {
-        Response::LoadEdits { edits_hash, reports } => {
-            assert!(reports.iter().all(|r| r.valid), "{reports:?}");
-            edits_hash
-        }
-        _ => panic!("load_edits"),
-    };
+    let edits_hash = cap_abi::kernel::EDITS.register(records).unwrap().0;
     assert_eq!(
         service_dates(&network_hash, Some(edits_hash), "WK", "2026-10-23", "2026-10-26"),
         vec!["2026-10-23".to_string(), "2026-10-26".to_string()],
@@ -261,11 +238,12 @@ fn the_reverse_read_comes_from_the_effective_day() {
 }
 
 #[test]
-fn invalid_edit_records_are_reported_not_rejected() {
+fn an_invalid_edit_record_moves_nothing() {
     let network_hash = load_network();
-    // A record whose anchors do not exist in the network: reported
-    // invalid, still registered (the sync contract — the host owns
-    // the document, the module reports).
+    // A record whose anchors do not exist in the network: registered
+    // all the same (the sync contract — the host owns the document;
+    // cap-divert's reports says what is wrong with it), and the day
+    // view simply finds nothing to patch.
     let mut broken = EditRecord {
         id: "e1".into(),
         diversion: transit_sync::Diversion {
@@ -285,19 +263,7 @@ fn invalid_edit_records_are_reported_not_rejected() {
         updated_at: 1,
     };
     broken.diversion.first_kept_stop = "ghost".into();
-    let (edits_hash, reports) = match dispatch(Request::LoadEdits {
-        network_hash: network_hash.clone(),
-        records: vec![broken],
-    })
-    .unwrap()
-    {
-        Response::LoadEdits { edits_hash, reports } => (edits_hash, reports),
-        _ => panic!("load_edits"),
-    };
-    assert_eq!(reports.len(), 1);
-    assert!(!reports[0].valid, "the broken record is reported: {reports:?}");
-    // Registered under its hash: the day view addresses it (and the
-    // invalid record simply matches nothing).
+    let edits_hash = cap_abi::kernel::EDITS.register(vec![broken]).unwrap().0;
     assert_eq!(
         active_services(&network_hash, Some(edits_hash), DATE),
         vec!["WK".to_string()],
@@ -307,13 +273,6 @@ fn invalid_edit_records_are_reported_not_rejected() {
 
 #[test]
 fn unknown_hashes_and_garbage_are_errors_not_panics() {
-    let err = dispatch(Request::LoadEdits {
-        network_hash: "sha256:missing".into(),
-        records: vec![],
-    })
-    .unwrap_err();
-    assert!(err.contains("unknown network"), "{err}");
-
     let network_hash = load_network();
     let err = dispatch(Request::ActiveServices {
         network_hash,
@@ -338,11 +297,11 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     // op answers; garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
-        serde_json::from_str(&cap_calendar::dispatch_json(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
+        serde_json::from_str(&cap_calendar::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
     let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_calendar::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
+        serde_json::from_str(&cap_calendar::invoke_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
     assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
     assert_eq!(via_bytes, via_json);
-    let bad = cap_calendar::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
+    let bad = cap_calendar::invoke_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
 }

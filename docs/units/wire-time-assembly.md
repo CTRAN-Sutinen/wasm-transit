@@ -18,8 +18,8 @@ entry is ever keyed to a persona.
   defaulting to the whole manifest, with a surface in every page
   to change it.
 - **The selection's bytes** — one linked module per selection, with
-  one registry (D-77). The per-UI assembly built ahead of time is
-  [linked-assembly.md](linked-assembly.md)'s; here a user's
+  one registry (D-77). The per-UI assembly is built ahead of time
+  (`gen-assemblies`, from each `ui.json`); here a user's
   selection links on demand and is pinned and cached by its content
   hash. How it links — the registry publishing linkable objects
   that the server links, or a prebuilt set of selections — is this

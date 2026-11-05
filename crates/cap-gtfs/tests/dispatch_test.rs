@@ -25,35 +25,28 @@ fn dispatch(request: cap_gtfs::Request) -> cap_gtfs::Response {
     cap_gtfs::dispatch(request).expect("dispatch succeeds")
 }
 
+/// The module's seam, as a host calls it: the kernel's load_feed on
+/// its bulk op, the outcome parsed.
+fn load_feed(bytes: &[u8]) -> serde_json::Value {
+    serde_json::from_str(&cap_gtfs::invoke_bytes(cap_abi::kernel::OP_LOAD_FEED, bytes)).unwrap()
+}
+
 #[test]
 fn load_feed_returns_a_content_hash_and_summary() {
     let bytes = fixture_zip();
-    let cap_gtfs::Response::LoadFeed { feed_hash, summary } =
-        dispatch(cap_gtfs::Request::LoadFeed { bytes: bytes.clone() })
-    else {
-        panic!("load_feed response");
-    };
-    assert!(feed_hash.starts_with("sha256:"));
-    assert_eq!(summary.stops, 6, "A, B, C, the station pin, two bays");
-    assert_eq!(summary.trips, 7);
-
+    let ok = &load_feed(&bytes)["ok"];
+    assert_eq!(ok["op"], "load_feed");
+    assert_eq!(ok["summary"]["stops"], 6, "A, B, C, the station pin, two bays");
+    assert_eq!(ok["summary"]["trips"], 7);
     // The hash is the content hash of the input bytes.
-    assert_eq!(feed_hash, cap_gtfs::content_hash(&bytes));
+    assert_eq!(ok["feed_hash"], cap_abi::content_hash(&bytes));
 }
 
 #[test]
 fn loading_the_same_bytes_is_idempotent() {
     let bytes = fixture_zip();
-    let cap_gtfs::Response::LoadFeed { feed_hash: first, .. } =
-        dispatch(cap_gtfs::Request::LoadFeed { bytes: bytes.clone() })
-    else {
-        panic!("first load")
-    };
-    let cap_gtfs::Response::LoadFeed { feed_hash: second, .. } =
-        dispatch(cap_gtfs::Request::LoadFeed { bytes })
-    else {
-        panic!("second load")
-    };
+    let first = load_feed(&bytes)["ok"]["feed_hash"].clone();
+    let second = load_feed(&bytes)["ok"]["feed_hash"].clone();
     assert_eq!(first, second, "same bytes must land on one registry entry");
 }
 
@@ -65,22 +58,19 @@ fn unknown_hash_and_bad_input_are_errors_not_panics() {
     .expect_err("unknown hash must error");
     assert!(err.contains("unknown feed"));
 
-    let err = cap_gtfs::dispatch(cap_gtfs::Request::LoadFeed { bytes: b"not a zip".to_vec() })
-        .expect_err("garbage must error, not panic");
-    assert!(err.contains("parse"));
+    let err = load_feed(b"not a zip");
+    assert!(err["error"].as_str().unwrap().contains("parse"), "garbage must error, not panic: {err}");
 }
 
 #[test]
 fn json_seam_round_trips_the_tagged_form() {
     let bytes = fixture_zip();
     let request = serde_json::json!({ "op": "load_feed", "bytes": bytes });
-    let outcome: serde_json::Value =
-        serde_json::from_str(&cap_gtfs::dispatch_json(&request.to_string())).unwrap();
+    let outcome: serde_json::Value = serde_json::from_str(&cap_gtfs::invoke(&request.to_string())).unwrap();
     assert!(outcome["ok"]["op"] == "load_feed", "tagged response, got {outcome}");
-    assert!(outcome["ok"]["feed_hash"].as_str().unwrap().starts_with("sha256:"));
+    assert_eq!(outcome["ok"]["feed_hash"], cap_abi::content_hash(&bytes));
 
-    let bad: serde_json::Value =
-        serde_json::from_str(&cap_gtfs::dispatch_json(r#"{"op": "nope"}"#)).unwrap();
+    let bad: serde_json::Value = serde_json::from_str(&cap_gtfs::invoke(r#"{"op": "nope"}"#)).unwrap();
     assert!(bad["error"].as_str().unwrap().contains("invalid request"));
 
     // The retired day ops answer as REQUEST errors — the module no
@@ -94,7 +84,7 @@ fn json_seam_round_trips_the_tagged_form() {
         "stops",
         "stops_by_ids",
     ] {
-        let bad: serde_json::Value = serde_json::from_str(&cap_gtfs::dispatch_json(
+        let bad: serde_json::Value = serde_json::from_str(&cap_gtfs::invoke(
             &serde_json::json!({ "op": retired, "feed_hash": "sha256:x" }).to_string(),
         ))
         .unwrap();
@@ -104,12 +94,8 @@ fn json_seam_round_trips_the_tagged_form() {
         );
     }
 
-    // The bulk-bytes seam loads a feed zip without JSON-encoding it.
-    let outcome: serde_json::Value =
-        serde_json::from_str(&cap_gtfs::dispatch_bytes(0, &fixture_zip())).unwrap();
-    assert!(outcome["ok"]["feed_hash"].as_str().unwrap().starts_with("sha256:"));
-    let bad: serde_json::Value =
-        serde_json::from_str(&cap_gtfs::dispatch_bytes(9, b"")).unwrap();
+    // The capability has no bulk op of its own.
+    let bad: serde_json::Value = serde_json::from_str(&cap_gtfs::invoke_bytes(9, b"")).unwrap();
     assert!(bad["error"].as_str().unwrap().contains("unknown bulk op"));
 }
 
@@ -118,10 +104,7 @@ fn json_seam_round_trips_the_tagged_form() {
 #[test]
 fn feed_info_answers_the_feeds_identity() {
     let bytes = fixture_zip();
-    let feed_hash = match dispatch(cap_gtfs::Request::LoadFeed { bytes }) {
-        cap_gtfs::Response::LoadFeed { feed_hash, .. } => feed_hash,
-        _ => panic!("load"),
-    };
+    let feed_hash = load_feed(&bytes)["ok"]["feed_hash"].as_str().unwrap().to_string();
     let info = match dispatch(cap_gtfs::Request::FeedInfo { feed_hash }) {
         cap_gtfs::Response::FeedInfo { info } => info,
         _ => panic!("feed_info"),

@@ -58,10 +58,10 @@ onto it (the live node repairs the `vehicle` selection).
 | directory `stops` (query) | network, query | PlaceSearch | always |
 | streets `access` (the near point) | network, streets, near | the home panel's nearby cards | always |
 | directory `stops_near` (with the walks) | network, near, streets.access | the home panel's nearby cards | always |
-| rt `live` (+ `load_boundary`) | network, snapshot | LiveFeeds, RideMap | always |
-| board `stop_board` (+ `load_edits`, `load_live`) | network, edits, rt.live, stop, clock, view | RiderBoard | the stop panel |
+| rt `live` | network, snapshot | LiveFeeds, RideMap | always |
+| board `stop_board` | network, edits, rt.live, stop, clock, view | RiderBoard | the stop panel |
 | board `stop_board`, once per nearby place | network, edits, rt.live, stops_near, clock, view | StopCard | the home panel |
-| board `watchlist_board` (+ `load_watchlist`) | network, edits, rt.live, saved, clock, view | StopCard | the home panel |
+| board `watchlist_board` | network, edits, rt.live, saved, clock, view | StopCard | the home panel |
 | directory `focus` (route) | network, departure, route, vehicle, view | RideMap | always |
 | directory `entities` (routes) | network, routeQuery, view | RouteList | the routes panel |
 | directory `route_detail` | network, route, view | RouteView | the route panel |

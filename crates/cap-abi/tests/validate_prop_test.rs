@@ -31,6 +31,7 @@ fn valid_manifest() -> CapManifest {
             url: format!("caps/{}-{}.wasm", id, hash),
             bytes: 1024,
             ops: ops.iter().map(|s| s.to_string()).collect(),
+            documents: vec![],
             consumes: consumes
                 .iter()
                 .map(|(k, p)| ((*k).to_string(), (*p).to_string()))
@@ -62,7 +63,48 @@ fn valid_manifest() -> CapManifest {
                 &["load_feed", "plan"], &[("feed", "gtfs")],
                 &[("feed", &[1])], &[]),
         ],
+        assemblies: vec![],
     }
+}
+
+/// A linked assembly over the baseline's capabilities.
+fn linked(ui: &str, capabilities: &[&str]) -> cap_abi::manifest::LinkedAssembly {
+    let hex = format!("9{:0>63}", "");
+    cap_abi::manifest::LinkedAssembly {
+        ui: ui.into(),
+        hash: format!("sha256:{hex}"),
+        url: format!("caps/ui-{ui}-{hex}.wasm"),
+        bytes: 1024,
+        capabilities: capabilities.iter().map(|s| s.to_string()).collect(),
+    }
+}
+
+/// A linked assembly is closed (every producer a linked capability
+/// consumes from is linked beside it), links only what the manifest
+/// carries, and is pinned like a capability.
+#[test]
+fn a_linked_assembly_is_closed_known_and_pinned() {
+    let mut manifest = valid_manifest();
+    manifest.assemblies = vec![linked("rider", &["gtfs", "router"]), linked("feed", &["gtfs"])];
+    assert!(validate_assembly(&manifest).is_ok(), "{:?}", validate_assembly(&manifest));
+
+    let mut open = valid_manifest();
+    open.assemblies = vec![linked("rider", &["router"])];
+    assert!(rejects_with(&open, "closure"), "the router reads the feed the gtfs capability produces");
+
+    let mut unknown = valid_manifest();
+    unknown.assemblies = vec![linked("rider", &["gtfs", "ghost"])];
+    assert!(rejects_with(&unknown, "linked"));
+
+    let mut twice = valid_manifest();
+    twice.assemblies = vec![linked("rider", &["gtfs", "gtfs"])];
+    assert!(rejects_with(&twice, "linked"));
+
+    let mut unpinned = valid_manifest();
+    let mut asm = linked("rider", &["gtfs"]);
+    asm.url = "caps/ui-rider.wasm".into();
+    unpinned.assemblies = vec![asm];
+    assert!(rejects_with(&unpinned, "hash_pinned_url"));
 }
 
 fn rejects_with(manifest: &CapManifest, check: &str) -> bool {
@@ -89,6 +131,7 @@ proptest! {
                 url: format!("caps/{}", hashes.get(i).cloned().unwrap_or_default()),
                 bytes: 0,
                 ops: ops.get(i).cloned().unwrap_or_default(),
+                documents: vec![],
                 consumes: HashMap::new(),
                 speaks: HashMap::from([("feed".to_string(), speaks.get(i).cloned().unwrap_or_default())]),
                 migrates: HashMap::new(),
@@ -96,7 +139,7 @@ proptest! {
                 op_docs: HashMap::new(),
             })
             .collect();
-        let manifest = CapManifest { kernel, kernel_ops: vec![], capabilities };
+        let manifest = CapManifest { kernel, kernel_ops: vec![], capabilities, assemblies: vec![] };
         let _ = validate_assembly(&manifest); // a verdict, never a panic
     }
 

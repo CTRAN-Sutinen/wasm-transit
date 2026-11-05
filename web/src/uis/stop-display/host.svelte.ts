@@ -15,8 +15,12 @@
 /// assemble turns its frames OFF (`off`), and they say so — nothing
 /// here answers in its place.
 
-import { ask, available, keep, load, produced, servedNetwork, Doc } from "../../engine";
+import { ask, assemble, available, keep, load, produced, servedNetwork, together, Doc } from "../../engine";
 import { answerGraph, today } from "../kit";
+
+// This page's capabilities answer inside its linked assembly — one
+// module, one registry: each document registers once (D-77).
+assemble("stop-display");
 import type { Boundary } from "../../types/Boundary";
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
 import type { EditRecord } from "../../types/EditRecord";
@@ -167,14 +171,19 @@ const request = answerGraph(
           display.live = false;
           return;
         }
-        const answer = await ask("rt", "live", {
+        // The display never reads the live document: linked beside rt,
+        // the board reads it by hash where rt minted it, and it never
+        // crosses to the page (QAF-49).
+        const args = {
           network_hash: network,
           boundary_hash: boundary,
           rt_hash: trips ?? undefined,
           vp_hash: vehicles ?? undefined,
           alerts_hash: alerts ?? undefined,
-        });
-        live = produced("live", answer.live, "rt", answer.live_hash);
+          with_document: !(await together("rt", "board")),
+        };
+        const answer = await ask("rt", "live", args);
+        live = produced("live", answer.live ?? undefined, "rt", answer.live_hash, { remint: { op: "live", args } });
         display.live = true;
       },
     },

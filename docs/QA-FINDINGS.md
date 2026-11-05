@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-96**. A
+IDs are never reused; the next new finding is **QAF-97**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -285,30 +285,31 @@ time, last bus home, is there a detour.
 
 ## Live operations
 
-- **QAF-49 OP GAP** — the live document is 388 KB per snapshot,
-  re-minted every poll, and it crosses from the bus worker to the
-  page and back into the board and the router each time (the
-  modules keep only their last few — the registries are bounded).
-  The page never reads it. `docs/units/linked-assembly.md`'s.
-  Pin: `JSON.stringify(live).length` on a C-TRAN snapshot.
-  Re-confirmed: 2026-11-04, `just perf` (stop display): each new
-  snapshot's `live` answer lands in the engine's answer cache, and
-  the page heap climbs 3.5 → 9.7 MB until the cache's 256 entries
-  fill, flat after — most of the display's page heap.
-- **QAF-93 DEFECT** — the stop display is over D-68's memory
-  budget on C-TRAN: 31.8 MB of wasm (directory 8.6, board 11.9, rt
-  11.3 — each its own parsed network) plus a 9.7 MB page heap after
-  118 polls, 41.5 MB against 40 (33.3 MB at boot; the climb is
-  QAF-49's answer cache). Ride-now is within its 80 MB: 45.7 MB of
-  wasm (four modules) plus a 22 MB heap after its session. Both are
-  bounded — every module's memory and held documents are flat
-  across the display's 118 polls and the ride-now soak.
-  `docs/units/linked-assembly.md` owns the structural reduction
-  (one network copy per page); `docs/units/runtime-cost-gate.md`
-  the cost of each copy.
-  Pin: `PERF_RT=testdata/perf-rt-10m just perf` — the "Memory over
-  time" table of each summary (`stop-display.perf.mjs`,
-  `ride-now.perf.mjs`).
+- **QAF-96 DEFECT** — the server's "today" is the host's local date,
+  not the agency's. Publishing (D-76: a pick dated before today is
+  refused) and retiring (D-75: a pick dated after today) read it, and
+  so does `GET /feed`'s default date (`server/plans.go`, `today()`).
+  C-TRAN's operator timezone is America/Los_Angeles; a server in a
+  UTC container is a day ahead from 16:00 or 17:00 Pacific until
+  midnight, so in that window a pick dated the agency's today is
+  refused as past.
+  Pin: `TZ=UTC` server at 2026-11-05 17:30 PST (01:30Z on 11-06):
+  `POST /plans` with a pick dated 2026-11-05 →
+  `422 pick_dated_in_past` (`"today":"2026-11-06"`).
+
+- **QAF-49 OP GAP** — ride-now receives the whole live document
+  (388 KB per C-TRAN snapshot, re-minted every poll) to read two
+  things from it: the vehicles on the map and the alerts banner. Its
+  board and router read the document by hash inside the page's
+  assembly (it never crosses back), and the stop display declines it
+  (`with_document: false`), so this is ride-now's alone: each
+  snapshot's answer lands in the engine's answer cache, and the page
+  heap climbs until the cache's 256 entries fill (C-TRAN, 2026-11-05:
+  21.9 → 25.7 MB across ride-now's 36-poll soak). The vehicles and
+  alerts it shows want an op's answer (rt's) instead of the
+  document.
+  Pin: `JSON.stringify(live).length` on a C-TRAN snapshot; ride-now's
+  "Memory over time" table in `just perf`.
 
 ## Beyond blocks (runs, work rules)
 

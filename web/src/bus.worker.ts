@@ -1,11 +1,14 @@
 /// THE BUS WORKER — the page's one Worker, and the only wasm loader
 /// (docs/ARCHITECTURE.md, web section, "The bus worker").
 ///
-/// Every capability module a page assembles lives here, off the thread
-/// the UI renders on: the manifest is validated at the seam, each
-/// module's bytes are verified against its pinned hash, instantiated,
-/// and answer ops posted from the page. One worker, not one per
-/// module: documents cross between modules by hash inside it.
+/// Every module a page assembles lives here, off the thread the UI
+/// renders on: the manifest is validated at the seam, each module's
+/// bytes are verified against its pinned hash, instantiated, and answer
+/// ops posted from the page. A generated UI's page runs ONE module —
+/// its linked assembly (the manifest's `assemblies`, D-77): every
+/// capability it uses over one kernel registry, so a document registers
+/// once per page. A capability outside it (or every one, when the
+/// assembly does not load) runs in its own module.
 ///
 /// It answers nothing of its own: the engine (src/engine.ts, through
 /// src/bus.ts) is the one caller, and decides what every call means.
@@ -19,7 +22,8 @@
 
 import type { CapManifest } from "./types/cap_abi/CapManifest";
 import type { Capability } from "./types/cap_abi/Capability";
-import type { BusRequest, BusReply, CapStatus } from "./bus";
+import type { LinkedAssembly } from "./types/cap_abi/LinkedAssembly";
+import type { BusRequest, BusReply, CapStatus, Route } from "./bus";
 
 /// The flat ABI every capability module exports: four functions, no
 /// imports (a capability differs in which ops it answers, never in
@@ -73,9 +77,10 @@ class Instance {
   }
 }
 
-/// One assembled capability: its verified, compiled module (kept, so a
-/// reset re-instantiates without fetching) and its live instance.
-type Assembled = { cap: Capability; module: WebAssembly.Module; instance: Instance; resets: number; resetAt: number };
+/// One assembled module (a linked assembly or a capability alone): its
+/// verified, compiled bytes (kept, so a reset re-instantiates without
+/// fetching) and its live instance.
+type Assembled = { key: string; module: WebAssembly.Module; instance: Instance; resets: number; resetAt: number };
 
 /// The memory ceiling per instance, and the least time between two
 /// resets of one module (a working set above the ceiling must not
@@ -87,7 +92,10 @@ let minResetMs = 60_000;
 
 let base = "";
 let manifest: Promise<CapManifest> | null = null;
+/// Modules by key ("ui:<id>" for a linked assembly, "cap:<id>" alone).
 const assembled = new Map<string, Promise<Assembled | null>>();
+/// Where each assembled capability answers.
+const routes = new Map<string, Route>();
 const errors: Record<string, string> = {};
 
 /// sha256 of bytes as "sha256:<hex>" — the manifest's format, the
@@ -115,37 +123,52 @@ async function loadManifest(): Promise<CapManifest> {
   return loaded;
 }
 
-/// One capability, demand-driven and memoized: fetched by manifest url,
+/// One module, demand-driven and memoized: fetched by manifest url,
 /// VERIFIED against the pinned hash, compiled and instantiated. A
-/// failure resolves null — the assembly degrades per capability, never
-/// fails wholesale.
-function assemble(cap: Capability): Promise<Assembled | null> {
-  let pending = assembled.get(cap.id);
+/// failure resolves null — the assembly degrades, never fails
+/// wholesale.
+function assemble(key: string, entry: { url: string; hash: string }): Promise<Assembled | null> {
+  let pending = assembled.get(key);
   if (!pending) {
     pending = (async () => {
       try {
-        const bytes = new Uint8Array(await (await fetch(new URL(cap.url, base))).arrayBuffer());
+        const bytes = new Uint8Array(await (await fetch(new URL(entry.url, base))).arrayBuffer());
         // Integrity at the seam: the manifest pins the exact bytes.
         const hash = await contentHash(bytes);
-        if (hash !== cap.hash) {
-          throw new Error(`capability ${cap.id} hash mismatch: fetched ${hash}, manifest pins ${cap.hash}`);
+        if (hash !== entry.hash) {
+          throw new Error(`module ${key} hash mismatch: fetched ${hash}, manifest pins ${entry.hash}`);
         }
         const module = await WebAssembly.compile(bytes);
         const instance = new Instance(await WebAssembly.instantiate(module, {}).then((i) => i.exports));
-        return { cap, module, instance, resets: 0, resetAt: 0 };
+        return { key, module, instance, resets: 0, resetAt: 0 };
       } catch (error) {
-        errors[cap.id] = error instanceof Error ? error.message : String(error);
+        errors[key] = error instanceof Error ? error.message : String(error);
         return null;
       }
     })();
-    assembled.set(cap.id, pending);
+    assembled.set(key, pending);
   }
   return pending;
 }
 
-async function assembledOf(id: string): Promise<Assembled> {
-  const got = await assembled.get(id);
-  if (!got) throw new Error(`capability ${id} is not assembled`);
+/// The module a capability answers in: the page's linked assembly when
+/// it links the capability and loads, the capability alone otherwise.
+async function place(cap: Capability, linked: LinkedAssembly | undefined): Promise<Route | null> {
+  if (linked?.capabilities.includes(cap.id)) {
+    const key = `ui:${linked.ui}`;
+    if (await assemble(key, linked)) {
+      return { module: key, hash: linked.hash, index: linked.capabilities.indexOf(cap.id), linked: linked.capabilities.length > 1 };
+    }
+  }
+  const key = `cap:${cap.id}`;
+  return (await assemble(key, cap)) ? { module: key, hash: cap.hash, index: 0, linked: false } : null;
+}
+
+/// The module instance a capability answers in.
+async function assembledOf(cap: string): Promise<Assembled> {
+  const route = routes.get(cap);
+  const got = route && (await assembled.get(route.module));
+  if (!got) throw new Error(`capability ${cap} is not assembled`);
   return got;
 }
 
@@ -170,16 +193,22 @@ async function handle(request: BusRequest): Promise<BusReply> {
       manifest ??= loadManifest();
       const loaded = await manifest;
       const byId = new Map(loaded.capabilities.map((c) => [c.id, c]));
+      const linked = request.ui ? loaded.assemblies?.find((a) => a.ui === request.ui) : undefined;
       const statuses: Record<string, CapStatus> = {};
       const caps: Record<string, Capability> = {};
+      const placed: Record<string, Route> = {};
       for (const id of request.caps) {
         const cap = byId.get(id);
         if (!cap) throw new Error(`manifest has no capability ${id}`);
-        const got = await assemble(cap);
-        statuses[id] = got ? "ready" : "unavailable";
-        if (got) caps[id] = cap;
+        const route = routes.get(id) ?? (await place(cap, linked));
+        statuses[id] = route ? "ready" : "unavailable";
+        if (route) {
+          routes.set(id, route);
+          caps[id] = cap;
+          placed[id] = route;
+        }
       }
-      return { ok: { statuses, caps, errors: { ...errors } } };
+      return { ok: { statuses, caps, routes: placed, errors: { ...errors } } };
     }
     case "text": {
       const a = await assembledOf(request.cap);

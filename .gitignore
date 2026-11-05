@@ -31,6 +31,13 @@ testdata/perf-rt*/
 registry/
 web/public/caps/
 
+# The assembly crates (gen-assemblies, `just caps`): generated from the
+# capability crates and each web/src/uis/<id>/ui.json, never committed
+# (D-85). The .gitkeep keeps the directory, so the workspace glob
+# (Cargo.toml `assemblies/*`) resolves in a fresh checkout.
+assemblies/*
+!assemblies/.gitkeep
+
 # The TS bindings (ts-rs), generated from the Rust model by `just
 # types` (which `just build` runs first) and by every cargo test run.
 # Rust is the source of truth; the manifest's computed op examples are

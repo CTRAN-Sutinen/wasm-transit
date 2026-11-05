@@ -21,12 +21,11 @@
 //! honest unknown-hash error ([`Registry::require`]), never a wrong
 //! answer: the host registers it again.
 //!
-//! Registries are `const`-constructed statics (no lazy init):
-//!
-//! ```ignore
-//! static NETWORKS: Registry<Network> = Registry::documents("network", "load_network", Retain::Host);
-//! static LIVES: Registry<LiveDay> = Registry::documents("live document", "load_live", Retain::Last(4));
-//! ```
+//! Registries are `const`-constructed statics (no lazy init), and only
+//! the kernel constructs them ([`crate::kernel`]): one registry per
+//! document kind and one derived registry per instance, so every
+//! capability linked into an assembly reads the same `Arc` and none
+//! can declare shared state of its own.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
@@ -54,7 +53,7 @@ pub enum Retain {
     Last(usize),
 }
 
-struct Entry<T> {
+struct Entry<T: ?Sized> {
     /// Registration order — the age `Retain::Last` drops by.
     seq: u64,
     /// The document hashes a derived entry was computed from (empty
@@ -63,13 +62,26 @@ struct Entry<T> {
     value: Arc<T>,
 }
 
-struct Entries<T> {
+struct Entries<T: ?Sized> {
     next: u64,
     map: BTreeMap<String, Entry<T>>,
 }
 
 /// One kind's registry: values by key, bounded by its [`Retain`].
-pub struct Registry<T> {
+///
+/// Only the kernel constructs one — a capability that declares a
+/// registry of its own does not compile (the gate, D-77):
+///
+/// ```compile_fail
+/// use cap_abi::registry::{Registry, Retain};
+/// static NETWORKS: Registry<u32> = Registry::documents("network", "load_network", Retain::Host);
+/// ```
+///
+/// ```compile_fail
+/// use cap_abi::registry::{Registry, Retain};
+/// static GRAPHS: Registry<u32> = Registry::derived("graph", Retain::Last(8));
+/// ```
+pub struct Registry<T: ?Sized> {
     kind: &'static str,
     /// The op that registers this kind ("load_network") — the
     /// unknown-hash error names it. Empty for a derived registry.
@@ -79,14 +91,15 @@ pub struct Registry<T> {
     entries: Mutex<Entries<T>>,
 }
 
-impl<T> Registry<T> {
-    /// A document registry: values by their content hash.
-    pub const fn documents(kind: &'static str, load_op: &'static str, retain: Retain) -> Self {
+impl<T: ?Sized> Registry<T> {
+    /// A document registry: values by their content hash. Private to
+    /// the kernel — a capability cannot declare shared state.
+    pub(crate) const fn documents(kind: &'static str, load_op: &'static str, retain: Retain) -> Self {
         Registry { kind, load_op, derived: false, retain, entries: Mutex::new(Entries { next: 0, map: BTreeMap::new() }) }
     }
 
     /// A derived registry: values computed from documents, by any key.
-    pub const fn derived(kind: &'static str, retain: Retain) -> Self {
+    pub(crate) const fn derived(kind: &'static str, retain: Retain) -> Self {
         Registry { kind, load_op: "", derived: true, retain, entries: Mutex::new(Entries { next: 0, map: BTreeMap::new() }) }
     }
 
@@ -110,13 +123,31 @@ impl<T> Registry<T> {
 
     /// Register a document under its hash — idempotent: a document held
     /// already keeps its first copy (and its age).
-    pub fn insert(&self, hash: String, value: T) -> Arc<T> {
+    pub fn insert(&self, hash: String, value: T) -> Arc<T>
+    where
+        T: Sized,
+    {
         self.insert_arc(hash, Vec::new(), Arc::new(value))
     }
 
     /// Cache a derived value under `key`, computed from `inputs`.
     pub fn insert_derived(&self, key: String, inputs: Vec<String>, value: Arc<T>) -> Arc<T> {
         self.insert_arc(key, inputs, value)
+    }
+
+    /// Drop the oldest entries `within` approves until at most `n` of
+    /// them stay — a per-derivation bound inside one derived registry.
+    pub(crate) fn bound(&self, n: usize, within: impl Fn(&str) -> bool) {
+        let mut entries = self.lock();
+        loop {
+            let mut matching: Vec<(u64, String)> =
+                entries.map.iter().filter(|(k, _)| within(k)).map(|(k, e)| (e.seq, k.clone())).collect();
+            if matching.len() <= n.max(1) {
+                break;
+            }
+            matching.sort();
+            entries.map.remove(&matching[0].1);
+        }
     }
 
     fn insert_arc(&self, key: String, inputs: Vec<String>, value: Arc<T>) -> Arc<T> {
@@ -166,7 +197,7 @@ pub trait Held: Sync {
     fn evict(&self, keep: &BTreeSet<String>) -> Vec<String>;
 }
 
-impl<T: Send + Sync> Held for Registry<T> {
+impl<T: ?Sized + Send + Sync> Held for Registry<T> {
     fn kind(&self) -> &'static str {
         self.kind
     }

@@ -33,10 +33,7 @@ fn derived_network() -> Network {
 }
 
 fn load_network() -> String {
-    match dispatch(Request::LoadNetwork { network: derived_network() }).unwrap() {
-        Response::LoadNetwork { network_hash } => network_hash,
-        _ => panic!("load_network"),
-    }
+    cap_abi::kernel::NETWORK.register(derived_network()).unwrap().0
 }
 
 /// The fixture's diversion: route 10 keeps A→B, skips C, +N s.
@@ -61,11 +58,8 @@ fn record(status: EditStatus, added_secs: u32) -> EditRecord {
     }
 }
 
-fn load_edits(network_hash: &str, records: Vec<EditRecord>) -> (String, Vec<transit_sync::EditReport>) {
-    match dispatch(Request::LoadEdits { network_hash: network_hash.into(), records }).unwrap() {
-        Response::LoadEdits { edits_hash, reports } => (edits_hash, reports),
-        _ => panic!("load_edits"),
-    }
+fn load_edits(_network_hash: &str, records: Vec<EditRecord>) -> String {
+    cap_abi::kernel::EDITS.register(records).unwrap().0
 }
 
 fn stop_board(network_hash: &str, edits_hash: Option<String>, stop_id: &str, from_secs: u32, live_hash: Option<String>) -> transit_dispatch::StopBoard {
@@ -133,10 +127,7 @@ fn the_board_is_the_materialized_day_model_vocabulary() {
 
     // The edit in force: the diverted trip still serves B, +300 s
     // after its anchor; the rest of the board does not move.
-    let (edits_hash, reports) = load_edits(&network_hash, vec![record(EditStatus::Accepted, 300)]);
-    assert_eq!(reports.len(), 1);
-    assert!(reports[0].valid, "the fixture diversion is valid against the network: {reports:?}");
-    assert!(reports[0].affected_trips >= 1, "the report counts the touched trips");
+    let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 300)]);
 
     // Every fixture trip through B ENDS there: an arrival is not a
     // departure, so B's board is empty with or without the edit.
@@ -148,7 +139,7 @@ fn the_board_is_the_materialized_day_model_vocabulary() {
 
     // The skipped stop loses its service — the honest empty board.
     assert!(departures(&network_hash, None, "C").len() >= 1, "schedule-only, C is served");
-    let (edits_hash, _) = load_edits(&network_hash, vec![record(EditStatus::Accepted, 60)]);
+    let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 60)]);
     assert!(
         departures(&network_hash, Some(edits_hash), "C").is_empty(),
         "the diversion skips C: C's board goes empty, never errors"
@@ -231,10 +222,7 @@ fn late_at_a(network_hash: &str) -> (String, transit_live::LiveDay, transit_disp
         alerts: vec![],
         unmatched_alerts: 0,
     };
-    let live_hash = match dispatch(Request::LoadLive { live: live.clone() }).unwrap() {
-        Response::LoadLive { live_hash } => live_hash,
-        _ => panic!("load_live"),
-    };
+    let live_hash = cap_abi::kernel::LIVE.register(live.clone()).unwrap().0;
     (live_hash, live, row)
 }
 
@@ -270,19 +258,20 @@ fn the_board_reads_a_live_document() {
 }
 
 #[test]
-fn invalid_edit_records_are_reported_not_rejected() {
+fn an_invalid_edit_record_moves_nothing() {
     let network_hash = load_network();
-    // A record whose anchors do not exist in the network: reported
-    // invalid, still registered (the sync contract — the host owns
-    // the document, the module reports).
+    // A record whose anchors do not exist in the network: registered
+    // all the same (the sync contract — the host owns the document;
+    // cap-divert's reports says what is wrong with it), and the day
+    // views simply find nothing to patch.
     let mut broken = record(EditStatus::Accepted, 60);
     broken.diversion.first_kept_stop = "ghost".into();
-    let (edits_hash, reports) = load_edits(&network_hash, vec![broken]);
-    assert_eq!(reports.len(), 1);
-    assert!(!reports[0].valid, "the broken record is reported: {reports:?}");
-    // Registered under its hash: the day views address it (and the
-    // invalid record simply matches nothing).
-    assert!(!departures(&network_hash, Some(edits_hash), "A").is_empty(), "the board still answers");
+    let edits_hash = load_edits(&network_hash, vec![broken]);
+    assert_eq!(
+        departures(&network_hash, Some(edits_hash), "A"),
+        departures(&network_hash, None, "A"),
+        "the board answers as if no edit were in force"
+    );
 }
 
 // ---------------------------------------------------------------------
@@ -300,10 +289,11 @@ fn v1() -> Watchlist {
 }
 
 fn load_watchlist(document: &Watchlist) -> (String, u32) {
-    match dispatch(Request::LoadWatchlist { document: document.clone() }).unwrap() {
-        Response::LoadWatchlist { watchlist_hash, version } => (watchlist_hash, version),
-        _ => panic!("load_watchlist"),
-    }
+    // Through the module's seam, as every host registers it.
+    let request = serde_json::json!({ "op": "load_watchlist", "document": document }).to_string();
+    let outcome: serde_json::Value = serde_json::from_str(&cap_board::invoke(&request)).unwrap();
+    let ok = &outcome["ok"];
+    (ok["watchlist_hash"].as_str().expect("watchlist_hash").to_string(), ok["version"].as_u64().expect("version") as u32)
 }
 
 fn watchlist_board(watchlist_hash: &str, network_hash: &str) -> Vec<cap_board::WatchBoardStop> {
@@ -362,7 +352,7 @@ fn the_watchlist_migrates_with_loss_reported_and_both_versions_query() {
     assert_eq!(again, v1_hash);
 
     // The board composes with the edits document like every board.
-    let (edits_hash, _) = load_edits(&network_hash, vec![record(EditStatus::Accepted, 60)]);
+    let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 60)]);
     let patched = match dispatch(Request::WatchlistBoard {
         watchlist_hash: v1_hash,
         network_hash,
@@ -389,7 +379,7 @@ fn the_watchlist_migrates_with_loss_reported_and_both_versions_query() {
 fn the_watchlist_board_is_the_stop_board() {
     let network_hash = load_network();
     let (live_hash, _, row) = late_at_a(&network_hash);
-    let (edits_hash, _) = load_edits(&network_hash, vec![record(EditStatus::Accepted, 60)]);
+    let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 60)]);
     let watched = Watchlist::V2 {
         stops: ["A", "STN", "C"]
             .into_iter()
@@ -423,13 +413,6 @@ fn the_watchlist_board_is_the_stop_board() {
 
 #[test]
 fn unknown_hashes_and_garbage_are_errors_not_panics() {
-    let err = dispatch(Request::LoadEdits {
-        network_hash: "sha256:missing".into(),
-        records: vec![],
-    })
-    .unwrap_err();
-    assert!(err.contains("unknown network"), "{err}");
-
     let network_hash = load_network();
     let err = dispatch(Request::StopBoard {
         network_hash,
@@ -472,12 +455,12 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     // op answers; garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
-        serde_json::from_str(&cap_board::dispatch_json(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
+        serde_json::from_str(&cap_board::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
     let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_board::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
+        serde_json::from_str(&cap_board::invoke_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
     assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
     assert_eq!(via_bytes, via_json);
-    let bad = cap_board::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
+    let bad = cap_board::invoke_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
@@ -516,7 +499,7 @@ proptest! {
 #[test]
 fn a_skipped_stop_answers_its_diversion() {
     let network_hash = load_network();
-    let (edits_hash, _) = load_edits(&network_hash, vec![record(EditStatus::Accepted, 120)]);
+    let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 120)]);
     let board = stop_board(&network_hash, Some(edits_hash), "C", 0, None);
     assert!(board.rows.iter().all(|r| r.departure.route != "10"), "route 10 skips C");
     assert!(!board.skipped.is_empty(), "the board says what was taken away");

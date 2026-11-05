@@ -71,13 +71,22 @@ size the run).
    build `caps` first). The manifest is generated with REAL
    computed examples — extend `gen_manifest`'s `example_for` so an
    op's docs cannot drift from the module.
-   A new document kind lands in a `cap_abi::registry::Registry`
-   with its bound (`Retain::Host` or `Retain::Last(n)`) and in the
-   module's `registries: [...]`; caps-smoke holds that every module
-   answers the registry kernel ops (evict, held). A bound that
-   matters to a long session is pinned in the owning crate's own
-   test binary (`tests/registry_test.rs` — the registries are
-   process-global, and eviction would race the dispatch tests).
+   A new document kind lands in `cap_abi::kernel` (its registry and
+   bound — `Retain::Host` or `Retain::Last(n)` — and its load, with a
+   worked example in gen-manifest's `kernel_ops`) and in the
+   capability's `documents: [...]`; caps-smoke holds that every
+   module answers the kernel ops (evict, held, about — matching its
+   manifest entry) and that each UI's linked assembly registers a
+   document once for every capability. A bound that matters to a
+   long session is pinned in the owning crate's own test binary
+   (`tests/registry_test.rs` — the registries are process-global,
+   and eviction would race the dispatch tests). Capability tests
+   reach the module seam through `invoke` / `invoke_bytes` (the
+   capability alone, kernel loads included), or register documents
+   directly (`cap_abi::kernel::NETWORK.register`). Assembly
+   independence (`crates/cap-abi/independence.mjs`) re-runs every
+   worked example inside each UI's assembly: an op whose answer
+   leans on a derived entry another capability computed fails it.
 3. **A Go round-trip test** if server-visible behavior changes.
 4. **Playwright e2e for user-visible flows** (Svelte components
    should not need changes when only the ABI underneath changes).

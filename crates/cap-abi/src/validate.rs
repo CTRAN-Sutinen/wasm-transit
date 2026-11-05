@@ -155,6 +155,52 @@ pub fn validate_with_kernel(
         }
     }
 
+    // The linked assemblies (D-77): each links capabilities the
+    // manifest carries, once each, under pinned bytes, and is closed —
+    // every document kind a linked capability consumes is produced by a
+    // capability linked beside it.
+    let mut uis = BTreeSet::new();
+    for asm in &manifest.assemblies {
+        let name = format!("(assembly {})", asm.ui);
+        if !uis.insert(asm.ui.as_str()) {
+            issues.push(AssemblyIssue { capability: name.clone(), check: "unique_ids".into(), detail: "duplicate assembly".into() });
+        }
+        let hex = asm.hash.strip_prefix("sha256:").unwrap_or("");
+        if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) || !asm.url.contains(hex) {
+            issues.push(AssemblyIssue {
+                capability: name.clone(),
+                check: "hash_pinned_url".into(),
+                detail: format!("hash {:?} / url {:?} is not a pinned sha256", asm.hash, asm.url),
+            });
+        }
+        if asm.capabilities.is_empty() {
+            issues.push(AssemblyIssue { capability: name.clone(), check: "linked".into(), detail: "links no capability".into() });
+        }
+        let mut linked = BTreeSet::new();
+        for id in &asm.capabilities {
+            if !linked.insert(id.as_str()) {
+                issues.push(AssemblyIssue { capability: name.clone(), check: "linked".into(), detail: format!("links {id:?} twice") });
+            }
+            let Some(cap) = by_id.get(id.as_str()) else {
+                issues.push(AssemblyIssue {
+                    capability: name.clone(),
+                    check: "linked".into(),
+                    detail: format!("links {id:?}, which the manifest does not carry"),
+                });
+                continue;
+            };
+            for (kind, producer) in &cap.consumes {
+                if !asm.capabilities.contains(producer) {
+                    issues.push(AssemblyIssue {
+                        capability: name.clone(),
+                        check: "closure".into(),
+                        detail: format!("{id:?} consumes {kind:?} from {producer:?}, which is not linked"),
+                    });
+                }
+            }
+        }
+    }
+
     // Version coherence, per document kind: every version any
     // capability speaks must be READABLE by every consumer of the
     // kind — spoken directly, or reachable through the migration

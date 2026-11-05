@@ -98,20 +98,29 @@ export class Probe {
   }
 
   /// Memory after a full collection: the V8 heap, the array buffers
-  /// outside it, each capability module's linear memory, the DOM.
+  /// outside it, each module instance's linear memory, the DOM.
   async memory() {
     await this.cdp.send("HeapProfiler.collectGarbage");
     const heap = await this.cdp.send("Runtime.getHeapUsage");
     const { metrics } = await this.cdp.send("Performance.getMetrics");
     const m = Object.fromEntries(metrics.map((x) => [x.name, x.value]));
+    // Per MODULE INSTANCE (a linked assembly answers several
+    // capabilities from one linear memory — counted once): keyed by
+    // the instance ("ui:<id>" or "cap:<id>"), read through any
+    // capability that answers there.
     const wasm = await this.page.evaluate(async () => {
       if (!window.__bus) return {};
       const caps = await window.__bus.caps();
+      const byModule = new Map();
+      for (const cap of caps) {
+        const module = await window.__bus.module(cap);
+        if (!byModule.has(module)) byModule.set(module, cap);
+      }
       return Object.fromEntries(
         await Promise.all(
-          caps.map(async (cap) => {
+          [...byModule].map(async ([module, cap]) => {
             const [{ memory, resets }, { held }] = await Promise.all([window.__bus.memory(cap), window.__bus.held(cap)]);
-            return [cap, { memory, resets, held: held.length }];
+            return [module, { memory, resets, held: held.length }];
           }),
         ),
       );

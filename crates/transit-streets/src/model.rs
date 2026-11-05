@@ -36,6 +36,16 @@ pub struct Streets {
     pub ways: Vec<Way>,
 }
 
+impl Streets {
+    /// The document's size as its graph will be: (ways, segments,
+    /// distinct points) — counted off the document, no graph built.
+    pub fn counts(&self) -> (u32, u32, u32) {
+        let segments = self.ways.iter().map(|w| w.points.len().saturating_sub(1) as u32).sum();
+        let nodes = self.ways.iter().flat_map(|w| &w.points).collect::<std::collections::HashSet<_>>().len() as u32;
+        (self.ways.len() as u32, segments, nodes)
+    }
+}
+
 /// One street line.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]

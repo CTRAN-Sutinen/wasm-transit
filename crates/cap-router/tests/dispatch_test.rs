@@ -40,10 +40,7 @@ fn derived_network() -> Network {
 }
 
 fn load_network() -> String {
-    match cap_router::dispatch(cap_router::Request::LoadNetwork { network: derived_network() }) {
-        Ok(cap_router::Response::LoadNetwork { network_hash }) => network_hash,
-        _ => panic!("load_network"),
-    }
+    cap_abi::kernel::NETWORK.register(derived_network()).unwrap().0
 }
 
 /// The fixture's diversion: route 10 keeps A→B, skips C, +N s.
@@ -68,16 +65,8 @@ fn record(added_secs: u32) -> EditRecord {
     }
 }
 
-fn load_edits(network_hash: &str, records: Vec<EditRecord>) -> String {
-    match cap_router::dispatch(cap_router::Request::LoadEdits {
-        network_hash: network_hash.into(),
-        records,
-    })
-    .unwrap()
-    {
-        cap_router::Response::LoadEdits { edits_hash, .. } => edits_hash,
-        _ => panic!("load_edits"),
-    }
+fn load_edits(_network_hash: &str, records: Vec<EditRecord>) -> String {
+    cap_abi::kernel::EDITS.register(records).unwrap().0
 }
 
 #[test]
@@ -91,10 +80,10 @@ fn the_document_identity_is_the_canonical_hash_the_bus_agrees_on() {
     let canonical = serde_json::to_string(&network).unwrap();
     use sha2::Digest as _;
     let expected = format!("sha256:{:x}", sha2::Sha256::digest(canonical.as_bytes()));
-    match cap_router::dispatch(cap_router::Request::LoadNetwork { network }) {
-        Ok(cap_router::Response::LoadNetwork { network_hash }) => assert_eq!(network_hash, expected),
-        _ => panic!("router load_network"),
-    }
+    // Through the module's seam, as every host registers it.
+    let request = serde_json::json!({ "op": "load_network", "network": network }).to_string();
+    let outcome: serde_json::Value = serde_json::from_str(&cap_router::invoke(&request)).unwrap();
+    assert_eq!(outcome["ok"]["network_hash"], expected);
 }
 
 #[test]
@@ -254,14 +243,14 @@ fn json_seam_round_trips_the_tagged_form() {
         "max_legs": 4,
     });
     let outcome: serde_json::Value =
-        serde_json::from_str(&cap_router::dispatch_json(&request.to_string())).unwrap();
+        serde_json::from_str(&cap_router::invoke(&request.to_string())).unwrap();
     assert!(outcome["ok"]["op"] == "plan");
     assert_eq!(outcome["ok"]["itinerary"]["arrival_secs"], 29400);
 
     // The router takes JSON documents; a bulk-bytes call is an
     // honest error, never a silent ignore.
     let outcome: serde_json::Value =
-        serde_json::from_str(&cap_router::dispatch_bytes(0, b"{}")).unwrap();
+        serde_json::from_str(&cap_router::invoke_bytes(0, b"{}")).unwrap();
     assert!(outcome["error"].as_str().unwrap().contains("unknown bulk op"));
 }
 
@@ -308,12 +297,12 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     // op answers; garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
-        serde_json::from_str(&cap_router::dispatch_json(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
+        serde_json::from_str(&cap_router::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
     let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_router::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
+        serde_json::from_str(&cap_router::invoke_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
     assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
     assert_eq!(via_bytes, via_json);
-    let bad = cap_router::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
+    let bad = cap_router::invoke_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
@@ -339,10 +328,7 @@ fn live_t10(delay: i32) -> transit_live::LiveDay {
 }
 
 fn load_live(live: transit_live::LiveDay) -> String {
-    match cap_router::dispatch(cap_router::Request::LoadLive { live }).expect("load_live") {
-        cap_router::Response::LoadLive { live_hash } => live_hash,
-        _ => panic!("load_live"),
-    }
+    cap_abi::kernel::LIVE.register(live).expect("load_live").0
 }
 
 fn plan_a_b(network_hash: &str, live_hash: Option<String>) -> transit_router::Itinerary {
@@ -499,7 +485,7 @@ fn a_leg_names_its_route_and_its_sign() {
 fn the_json_seam_speaks_arrive_by_and_live() {
     let hash = load_network();
     let live = live_t10(60);
-    let outcome: serde_json::Value = serde_json::from_str(&cap_router::dispatch_json(
+    let outcome: serde_json::Value = serde_json::from_str(&cap_router::invoke(
         &serde_json::json!({ "op": "load_live", "live": live }).to_string(),
     ))
     .unwrap();
@@ -509,7 +495,7 @@ fn the_json_seam_speaks_arrive_by_and_live() {
         "date": DATE, "arrive_by_secs": 30600, "max_legs": 4, "live_hash": live_hash,
     });
     let outcome: serde_json::Value =
-        serde_json::from_str(&cap_router::dispatch_json(&request.to_string())).unwrap();
+        serde_json::from_str(&cap_router::invoke(&request.to_string())).unwrap();
     assert_eq!(outcome["ok"]["op"], "plan_arrive_by", "{outcome}");
     assert_eq!(outcome["ok"]["itinerary"]["depart_secs"], 8 * 3600 + 20 * 60);
     // The deadline is optional on the wire.
@@ -518,7 +504,7 @@ fn the_json_seam_speaks_arrive_by_and_live() {
         "date": DATE, "max_legs": 4,
     });
     let outcome: serde_json::Value =
-        serde_json::from_str(&cap_router::dispatch_json(&request.to_string())).unwrap();
+        serde_json::from_str(&cap_router::invoke(&request.to_string())).unwrap();
     assert_eq!(outcome["ok"]["arrive_by_secs"], 8 * 3600 + 50 * 60, "{outcome}");
 }
 
@@ -563,13 +549,9 @@ fn plan_bays(network_hash: &str, walks_hash: Option<String>) -> Result<Option<tr
 
 fn load_walks(table: transit_streets::walking::WalkTable) -> String {
     let want = cap_abi::canonical_hash(&table).unwrap();
-    match cap_router::dispatch(cap_router::Request::LoadWalks { walks: table }).unwrap() {
-        cap_router::Response::LoadWalks { walks_hash } => {
-            assert_eq!(walks_hash, want, "the walk table's identity is its canonical hash");
-            walks_hash
-        }
-        _ => panic!("load_walks"),
-    }
+    let walks_hash = cap_abi::kernel::WALKS.register(table).unwrap().0;
+    assert_eq!(walks_hash, want, "the walk table's identity is its canonical hash");
+    walks_hash
 }
 
 #[test]
@@ -610,7 +592,7 @@ fn a_plan_from_a_place_walks_from_it() {
         let mut req = json!({ "op": "plan", "network_hash": hash, "from": from, "to": "SB", "date": DATE,
                               "depart_secs": 5 * 3600, "max_legs": 2 });
         req.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
-        serde_json::from_str::<Value>(&cap_router::dispatch_json(&req.to_string())).unwrap()
+        serde_json::from_str::<Value>(&cap_router::invoke(&req.to_string())).unwrap()
     };
     let answer = plan(place("here"), json!({}));
     let it = &answer["ok"]["itinerary"];
@@ -641,7 +623,7 @@ fn a_place_s_walk_draws_along_its_path() {
             { "lat": 45.5152, "lon": -73.5165 }, { "lat": 45.515, "lon": -73.5165 }, { "lat": 45.515, "lon": -73.5155 } ] },
     ]});
     let call = |req: Value| -> Value {
-        let out: Value = serde_json::from_str(&cap_router::dispatch_json(&req.to_string())).unwrap();
+        let out: Value = serde_json::from_str(&cap_router::invoke(&req.to_string())).unwrap();
         assert!(out.get("error").is_none(), "{out}");
         out["ok"].clone()
     };

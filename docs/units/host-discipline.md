@@ -26,10 +26,10 @@ describing half (flow maps), the journal written down, and replay.
   generations never land.
 - **The Merkle journal.** Every session is a log written at the
   engine: per op, the input document hashes, the module
-  bytes' hashes, the output hashes — hashes only. Under
-  [linked-assembly.md](linked-assembly.md) the module is a page's
-  assembly, and the entry names the assembly and the capability
-  answering; the assembly-independence law is what lets the runner
+  bytes' hashes, the output hashes — hashes only. The module is a
+  page's assembly, and the entry names the assembly and the
+  capability answering (the engine's answer cache already keys on
+  the assembly's hash and a request that names its capability); the assembly-independence law is what lets the runner
   replay a page's journal on single-capability builds. Ephemeral inputs
   (rt snapshots) are marked so replay degrades honestly. One
   journal, three uses: the trace, the answer-cache key (the engine

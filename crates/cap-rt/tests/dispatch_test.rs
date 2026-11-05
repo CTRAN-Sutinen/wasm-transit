@@ -3,7 +3,8 @@
 //! the decoder uses (and, for the fixture leg, the e2e protobuf the
 //! browser tests replay).
 
-use cap_rt::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
+// The module's seam, as a host calls it: the kernel's loads answer there.
+use cap_rt::{dispatch, invoke as dispatch_json, invoke_bytes as dispatch_bytes, Request, Response};
 
 /// The fixture network and its boundary, registered: (network_hash,
 /// boundary_hash). The network goes on the kernel's bulk op, the way
@@ -14,9 +15,7 @@ fn load_fixture() -> (String, String) {
     let doc = serde_json::to_vec(&imported.network).unwrap();
     let loaded: serde_json::Value = serde_json::from_str(&dispatch_bytes(cap_abi::OP_LOAD_NETWORK, &doc)).unwrap();
     let network_hash = loaded["ok"]["network_hash"].as_str().unwrap_or_else(|| panic!("{loaded}")).to_string();
-    let Response::LoadBoundary { boundary_hash } = dispatch(Request::LoadBoundary { boundary: imported.boundary }).unwrap() else {
-        panic!("load_boundary")
-    };
+    let (boundary_hash, _) = cap_abi::kernel::BOUNDARY.register(imported.boundary).unwrap();
     (network_hash, boundary_hash)
 }
 
@@ -127,7 +126,7 @@ fn trip_progress_joins_schedule_and_delays() {
     let (network_hash, boundary_hash) = load_fixture();
 
     let payload = include_bytes!("../../../web/e2e/fixtures/sample-rt.pb");
-    let decoded = cap_rt::dispatch_bytes(cap_rt::OP_DECODE, payload);
+    let decoded = cap_rt::invoke_bytes(cap_rt::OP_DECODE, payload);
     let parsed: serde_json::Value = serde_json::from_str(&decoded).unwrap();
     let rt_hash = parsed["ok"]["rt_hash"].as_str().unwrap().to_string();
 
@@ -355,9 +354,11 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
             alerts_hash: None,
             window,
             late_limit: None,
+            with_document: None,
         })
     };
     let cap_rt::Response::Live { live_hash, live: day, summary } = live(None).unwrap() else { panic!("live") };
+    let day = day.expect("the document by default");
     let canonical = serde_json::to_string(&day).unwrap();
     assert_eq!(live_hash, format!("sha256:{:x}", <sha2::Sha256 as sha2::Digest>::digest(canonical.as_bytes())), "the module is the hash authority");
     assert!(day.trips.iter().any(|t| t.trip == "t10" && t.start_secs == 8 * 3600));
@@ -371,6 +372,25 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
     let cap_rt::Response::Live { summary, .. } = live(Some(strict)).unwrap() else { panic!("live") };
     assert_eq!(summary.counts.very_late, 1);
 
+    // The live document registers where it was minted: a host whose
+    // readers are linked beside rt declines it and reads it by hash —
+    // the same document, the same summary (QAF-49).
+    let bare = cap_rt::dispatch(cap_rt::Request::Live {
+        network_hash: network_hash.clone(),
+        boundary_hash: Some(boundary_hash.clone()),
+        rt_hash: Some(rt_hash.clone()),
+        vp_hash: None,
+        alerts_hash: None,
+        window: None,
+        late_limit: None,
+        with_document: Some(false),
+    })
+    .unwrap();
+    let cap_rt::Response::Live { live_hash: same, live: none, summary: again } = bare else { panic!("live") };
+    assert_eq!((same.as_str(), none.is_none()), (live_hash.as_str(), true));
+    assert_eq!(again.counts.late, 1);
+    assert_eq!(*cap_abi::kernel::LIVE.require(&live_hash).unwrap(), day, "registered under its hash");
+
     // No snapshot at all is a request error; an unknown boundary is a
     // missing-document error.
     let err = cap_rt::dispatch(cap_rt::Request::Live {
@@ -381,6 +401,7 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
         alerts_hash: None,
         window: None,
         late_limit: None,
+        with_document: None,
     })
     .unwrap_err();
     assert!(err.contains("needs a snapshot"), "{err}");
@@ -392,6 +413,7 @@ fn live_resolves_the_snapshot_into_model_vocabulary() {
         alerts_hash: None,
         window: None,
         late_limit: None,
+        with_document: None,
     })
     .unwrap_err();
     assert!(err.contains("unknown boundary"), "{err}");
@@ -421,7 +443,7 @@ fn live_carries_the_alerts_in_force() {
         cap_rt::dispatch(cap_rt::Request::Decode { bytes: feed.encode_to_vec() }).unwrap()
     else { panic!("decode") };
     assert_eq!(overview.service_alerts.len(), 1);
-    let cap_rt::Response::Live { live, .. } = cap_rt::dispatch(cap_rt::Request::Live {
+    let cap_rt::Response::Live { live: Some(live), .. } = cap_rt::dispatch(cap_rt::Request::Live {
         network_hash,
         boundary_hash: Some(boundary_hash),
         rt_hash: None,
@@ -429,6 +451,7 @@ fn live_carries_the_alerts_in_force() {
         alerts_hash: Some(alerts_hash),
         window: None,
         late_limit: None,
+        with_document: None,
     })
     .unwrap() else { panic!("live") };
     assert_eq!(live.alerts.len(), 1);

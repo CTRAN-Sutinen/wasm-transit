@@ -17,6 +17,12 @@ import path from "node:path";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, "../../web/public/caps");
 const DATE = "2026-10-23";
+// The kernel's loads (cap_abi::kernel): every module answers the loads
+// of the kinds its capabilities read, on these bulk ops.
+const OP_LOAD_STREETS = 263;
+const OP_LOAD_LAYER = 265;
+const OP_LOAD_FEED = 266;
+const OP_ABOUT = 268;
 
 const manifest = JSON.parse(readFileSync(path.join(DIST, "manifest.json"), "utf8"));
 const feed = readFileSync(path.join(DIST, "sample-gtfs.zip"));
@@ -118,8 +124,9 @@ assert(
 // retired ops must answer as request errors, never silently serve.
 const gtfs = shell(loadModule(byId.gtfs));
 
-const loadedGtfs = gtfs.invokeBytes(0, feed);
-assert(loadedGtfs.op === "load_feed", "gtfs load_feed answers on the bulk-bytes seam");
+const loadedGtfs = gtfs.invokeBytes(OP_LOAD_FEED, feed);
+assert(loadedGtfs.op === "load_feed" && loadedGtfs.summary.stops === 6, "the kernel's load_feed answers the feed's summary on its bulk op");
+assert(gtfs.raw({ op: "load_feed", bytes: [...feed] }).ok?.feed_hash === loadedGtfs.feed_hash, "load_feed answers the same hash on the JSON lane");
 
 // The feed's identity and its names — the feed document capability's
 // whole surface. The day views are NOT here (one question, one
@@ -288,7 +295,7 @@ const transfers = analysis.invoke({
 });
 assert(Array.isArray(transfers.transfers) && transfers.transfers.length === 0,
   "a one-route hub has no connections to pair");
-const layer = analysis.invokeBytes(0, Buffer.from(JSON.stringify({
+const layer = analysis.invokeBytes(OP_LOAD_LAYER, Buffer.from(JSON.stringify({
   type: "FeatureCollection",
   features: [
     { type: "Feature", properties: { pop: 500 }, geometry: { type: "Point", coordinates: [-73.5, 45.5] } },
@@ -338,8 +345,8 @@ assert(unknownNet.error && unknownNet.error.includes("unknown network"), "unknow
 // derives the document (hash returned, resolutions reported);
 // export produces a GTFS zip whose identity any module agrees on.
 const network = shell(loadModule(byId.network));
-const loadedNetCap = network.invokeBytes(0, feed);
-assert(loadedNetCap.op === "load_feed", "network load_feed answers on the bulk-bytes seam");
+const loadedNetCap = network.invokeBytes(OP_LOAD_FEED, feed);
+assert(loadedNetCap.op === "load_feed", "network answers the kernel's load_feed");
 assert(
   loadedNetCap.feed_hash === loadedGtfs.feed_hash,
   "three capabilities agree on the feed identity",
@@ -364,7 +371,8 @@ assert(
   loadedDoc.network_hash === imported.network_hash,
   "load_network is idempotent by content hash",
 );
-const exported = network.invoke({ op: "export", network_hash: imported.network_hash });
+assert(imported.boundary_hash?.startsWith("sha256:"), "import registers the boundary and answers its hash");
+const exported = network.invoke({ op: "export", network_hash: imported.network_hash, boundary_hash: imported.boundary_hash });
 const zip = Buffer.from(exported.zip_b64, "base64");
 assert(
   "sha256:" + createHash("sha256").update(zip).digest("hex") === exported.feed_hash,
@@ -377,7 +385,7 @@ assert(
 // The composition moment of the publish path: the exported artifact is
 // a first-class feed — cap-gtfs loads the SAME bytes and returns the
 // SAME identity the export advertised.
-const published = gtfs.invokeBytes(0, zip);
+const published = gtfs.invokeBytes(OP_LOAD_FEED, zip);
 assert(
   published.feed_hash === exported.feed_hash,
   "the exported zip loads into cap-gtfs under the advertised hash",
@@ -516,7 +524,6 @@ assert(
 );
 const routerEdits = router.invoke({
   op: "load_edits",
-  network_hash: loadedRouterNet.network_hash,
   records: [
     {
       id: "e1",
@@ -538,10 +545,7 @@ const routerEdits = router.invoke({
     },
   ],
 });
-assert(
-  routerEdits.reports.length === 1 && routerEdits.reports[0].valid,
-  "the edit validates against the network (reported, never rejected)",
-);
+assert(routerEdits.op === "load_edits" && routerEdits.edits_hash.startsWith("sha256:"), "the kernel registers the edit document");
 const compare = router.invoke({
   op: "plan_compare",
   network_hash: loadedRouterNet.network_hash,
@@ -713,7 +717,6 @@ assert(runcutChain.trips[0].layover_after_secs === 600, "the layover is model st
 assert(runcutChain.trips[0].layover_remaining_secs === 600, "no edits: the layover stands");
 const runcutEdits = runcut.invoke({
   op: "load_edits",
-  network_hash: loadedRuncutNet.network_hash,
   records: [
     {
       id: "e1",
@@ -735,10 +738,7 @@ const runcutEdits = runcut.invoke({
     },
   ],
 });
-assert(
-  runcutEdits.reports.length === 1 && runcutEdits.reports[0].valid,
-  "the edit validates against the network (reported, never rejected)",
-);
+assert(runcutEdits.edits_hash === routerEdits.edits_hash, "one edit document, one identity in every module");
 const rippedChain = runcut.invoke({
   op: "block_trips",
   network_hash: loadedRuncutNet.network_hash,
@@ -834,10 +834,7 @@ assert(
     JSON.stringify(tripLine.path) === JSON.stringify(chainAlignment.points.map(({ lat, lon }) => ({ lat, lon }))),
   "a trip that follows its pattern draws the alignment it runs",
 );
-const brokenEdit = runcut.invoke({
-  op: "load_edits",
-  network_hash: loadedRuncutNet.network_hash,
-  records: [
+const brokenRecords = [
     {
       id: "e2",
       diversion: {
@@ -856,12 +853,12 @@ const brokenEdit = runcut.invoke({
       rev: 1,
       updated_at: 1,
     },
-  ],
-});
-assert(
-  brokenEdit.reports[0].valid === false,
-  "an edit against an unknown route is reported invalid, never rejected",
-);
+];
+const brokenEdit = runcut.invoke({ op: "load_edits", records: brokenRecords });
+assert(brokenEdit.edits_hash.startsWith("sha256:"), "an edit against an unknown route registers (never rejected)");
+const brokenDay = runcut.invoke({ op: "blocks", network_hash: loadedRuncutNet.network_hash, edits_hash: brokenEdit.edits_hash, date: DATE });
+const plainDay = runcut.invoke({ op: "blocks", network_hash: loadedRuncutNet.network_hash, date: DATE });
+assert(JSON.stringify(brokenDay) === JSON.stringify(plainDay), "an edit the network cannot answer patches nothing");
 
 // THE CALENDAR — which service keys run today? From the effective
 // day: HOL's calendar exception runs, but its only trip never made
@@ -1033,8 +1030,8 @@ assert(loadedStreets.op === "import", "streets import answers on the bulk-bytes 
 assert(loadedStreets.ways === 3 && loadedStreets.segments === 5 && loadedStreets.nodes === 8, "the fixture imports: 3 ways, 5 segments, 8 nodes");
 assert(loadedStreets.streets_hash.startsWith("sha256:"), "the document registers under its content hash");
 assert(loadedStreets.streets.ways.length === 3, "the import answers the document the host keeps");
-const againStreets = streets.invokeBytes(1, new TextEncoder().encode(JSON.stringify(loadedStreets.streets)));
-assert(againStreets.op === "load_streets", "load_streets answers on bulk op 1");
+const againStreets = streets.invokeBytes(OP_LOAD_STREETS, new TextEncoder().encode(JSON.stringify(loadedStreets.streets)));
+assert(againStreets.op === "load_streets" && againStreets.segments === 5, "the kernel's load_streets answers the document's size");
 assert(againStreets.streets_hash === loadedStreets.streets_hash, "the document handed back is the same hash");
 const snappedA = streets.invoke({
   op: "snap",
@@ -1064,7 +1061,7 @@ assert(
 const nowhere = streets.invoke({ op: "snap", streets_hash: loadedStreets.streets_hash, lat: 44.0, lon: -70.0 });
 assert(nowhere.position === null, "no street nearby answers null, never an error");
 const unknownStreets = streets.raw({ op: "snap", streets_hash: "sha256:missing", lat: 0, lon: 0 });
-assert(unknownStreets.error && unknownStreets.error.includes("unknown street network"), "unknown hashes error, never panic");
+assert(unknownStreets.error && unknownStreets.error.includes("unknown street network sha256:missing: load_streets first"), "unknown hashes error, never panic");
 const garbageStreets = streets.raw({ op: "import", bytes: [0xff, 0xfe] });
 assert(garbageStreets.error && /street layer/.test(garbageStreets.error), "garbage bytes are an error outcome, never a trap");
 
@@ -1128,8 +1125,8 @@ assert(
 // diversion against an empty server converges to the submitted
 // document (LWW union, rev bumped, host clock stamped), and the
 // pair order never matters (client and server are roles, not
-// order). Validation is NOT here: load_edits answers it against
-// the network in every model-side module.
+// order). Validation is NOT here: divert's reports answers what each
+// record amounts to on the network.
 assert(byId.sync, "manifest advertises the sync capability");
 const sync = shell(loadModule(byId.sync));
 const draft = {
@@ -1356,6 +1353,17 @@ const divert = shell(loadModule(byId.divert));
 const divertNet = divert.invoke({ op: "load_network", network: imported.network });
 assert(divertNet.network_hash === imported.network_hash, "divert agrees on the imported document's identity");
 const divertDraft = { route_id: "10", served_stops: [], slices: [], added_mins: 5, start_date: DATE, end_date: DATE };
+// What each record amounts to on the network — one op, one answer
+// (the loads report nothing): the fixture's diversion is valid, an
+// edit against an unknown route is reported invalid, never rejected.
+const reported = divert.invoke({ op: "reports", network_hash: divertNet.network_hash, records: brokenRecords }).reports;
+assert(reported.length === 1 && reported[0].valid === false, "divert reports an edit against an unknown route invalid");
+const fine = divert.invoke({
+  op: "reports",
+  network_hash: divertNet.network_hash,
+  records: [{ ...brokenRecords[0], diversion: { ...brokenRecords[0].diversion, route_id: "10", skipped_stops: ["C"] } }],
+}).reports;
+assert(fine.length === 1 && fine[0].valid && fine[0].affected_trips >= 1, "divert reports a valid edit and the trips it touches");
 const blank = divert.invoke({ op: "draft", network_hash: divertNet.network_hash, draft: divertDraft }).view;
 assert(blank.pattern && blank.stops.length >= 3 && blank.problems.length === 1, "a route alone answers the default pattern and what is missing");
 const ends = { first_kept_stop: blank.stops[0].stop_id, last_kept_stop: blank.stops.at(-1).stop_id };
@@ -1446,6 +1454,58 @@ for (const cap of manifest.capabilities) {
   const asked = board.raw({ op: "stop_board", network_hash: net, stop_id: "A", date: DATE, from_secs: 0, limit: 3 });
   assert(asked.error === `unknown network ${net}: load_network first`, "evicted-then-asked is the unknown-hash error");
   assert(board.invokeBytes(OP_LOAD_NETWORK, networkBytes).network_hash === net, "re-registering answers the same hash");
+}
+
+// ABOUT — every module says what it links and the kinds each reads;
+// a capability's manifest entry says the same (the manifest's
+// `documents` is checked against the bytes, never trusted).
+for (const cap of manifest.capabilities) {
+  const about = shell(loadModule(cap)).invokeBytes(OP_ABOUT, Buffer.alloc(0));
+  assert(
+    about.capabilities.length === 1 && about.capabilities[0].id === cap.id &&
+      JSON.stringify(about.capabilities[0].documents) === JSON.stringify(cap.documents),
+    `${cap.id}'s module reads what its manifest entry says (${cap.documents.join(", ") || "nothing"})`,
+  );
+}
+
+// THE LINKED ASSEMBLIES (D-77) — per generated UI, one module over one
+// kernel registry: it links what the manifest says, a document
+// registers ONCE and every capability reads it, a JSON request names
+// its capability, a capability's bulk op carries its index in the high
+// 16 bits, and a capability answers inside the assembly exactly as it
+// does alone.
+assert(manifest.assemblies?.length >= 3, "the manifest records a linked assembly per generated UI");
+for (const asm of manifest.assemblies) {
+  const bytes = readFileSync(path.join(DIST, "..", asm.url));
+  assert("sha256:" + createHash("sha256").update(bytes).digest("hex") === asm.hash, `assembly ${asm.ui} bytes match the pinned hash`);
+  const mod = new WebAssembly.Module(bytes);
+  assert(WebAssembly.Module.imports(mod).length === 0, `assembly ${asm.ui} has zero imports`);
+  const linked = shell(new WebAssembly.Instance(mod, {}).exports);
+  const about = linked.invokeBytes(OP_ABOUT, Buffer.alloc(0));
+  assert(
+    JSON.stringify(about.capabilities.map((c) => c.id)) === JSON.stringify(asm.capabilities),
+    `assembly ${asm.ui} links ${asm.capabilities.join(", ")}, in index order`,
+  );
+  const unnamed = linked.raw({ op: "routes", network_hash: "sha256:none" });
+  assert(unnamed.error?.includes("name the capability"), `assembly ${asm.ui} asks a request to name its capability`);
+  if (asm.capabilities.includes("directory") && asm.capabilities.includes("network")) {
+    const net = linked.invokeBytes(OP_LOAD_NETWORK, networkGzip).network_hash;
+    assert(net === imported.network_hash, `assembly ${asm.ui} registers the network under the import's identity`);
+    const routesLinked = linked.invoke({ cap: "directory", op: "routes", network_hash: net });
+    const alone = shell(loadModule(byId.directory));
+    alone.invokeBytes(OP_LOAD_NETWORK, networkGzip);
+    const routesAlone = alone.invoke({ op: "routes", network_hash: net });
+    assert(JSON.stringify(routesLinked) === JSON.stringify(routesAlone), `directory answers alike in ${asm.ui} and alone`);
+    const issues = linked.invoke({ cap: "network", op: "validate", network_hash: net });
+    assert(issues.issues.length === 0, `assembly ${asm.ui}: the network capability reads the one registration`);
+    const held = linked.invokeBytes(OP_HELD, Buffer.alloc(0)).held.filter((e) => e.kind === "network");
+    assert(held.length === 1, `assembly ${asm.ui} holds the network once`);
+  }
+  if (asm.capabilities.includes("rt")) {
+    const index = asm.capabilities.indexOf("rt");
+    const decoded = linked.invokeBytes((index << 16) | 0, readFileSync(path.join(here, "../../web/e2e/fixtures/sample-rt.pb")));
+    assert(decoded.op === "decode" && decoded.rt_hash.startsWith("sha256:"), `assembly ${asm.ui}: rt's decode answers on its index's bulk op`);
+  }
 }
 
 console.log("capability modules: ABI smoke ok");

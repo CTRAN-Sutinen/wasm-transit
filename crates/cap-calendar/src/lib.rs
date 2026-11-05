@@ -10,52 +10,30 @@
 //! view's empty hole.
 //!
 //! The day is `materialize(net, date)`, patched with the edits in
-//! force on that date. No derived registry, no GTFS expansion, no
-//! date-keyed cache: a day is computed per call, and a day is
-//! cheap. The domain code lives in the shared transit-dispatch
-//! library; this module is the seam.
+//! force on that date — the kernel's held day
+//! (`cap_abi::kernel::day`); no GTFS expansion. The domain code lives
+//! in the shared transit-dispatch library; this module is the seam.
 //!
-//! Documents are content-addressed like everywhere on the bus:
+//! The documents it reads are the kernel's, registered by its loads
+//! and content-addressed like everywhere on the bus:
 //! * **network** — the same identity cap-network's import produces
 //!   and cap-analysis consumes (the module is the hash authority);
 //! * **edits** — the operator edit document, wholesale-replaced by
-//!   the host, validated per record against the NETWORK at load
-//!   (invalid records are REPORTED, not rejected — the sync
-//!   contract).
+//!   the host.
+
+#![forbid(unsafe_code)]
 
 use std::sync::Arc;
 
-use cap_abi::registry::{Registry, Retain};
-
-use cap_abi::canonical_hash;
+use cap_abi::kernel::{EDITS, NETWORK};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use transit_network::Network;
 
 /// One operation call. Tagged like every capability's seam.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_calendar/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// Register the NETWORK document under its content hash
-    /// (idempotent by hash) — the same document identity
-    /// cap-network's import produces and cap-analysis consumes.
-    /// Decoded by `cap_abi::load_network_json` on either lane, never
-    /// through the tagged envelope (whose buffered decode would cost
-    /// ~8× the document in peak memory and a second decoder).
-    #[serde(skip_deserializing)]
-    LoadNetwork { network: Network },
-    /// Register the OPERATOR EDIT document against a loaded network,
-    /// validated per record AGAINST THE NETWORK (model vocabulary —
-    /// no feed is expanded): the response carries the reports
-    /// (invalid records are REPORTED, not rejected) and the
-    /// document's content hash, which the day views address.
-    /// Wholesale replacement, like the host-owned store: the whole
-    /// document is pushed on every change.
-    LoadEdits {
-        network_hash: String,
-        records: Vec<transit_sync::EditRecord>,
-    },
     /// The service keys running on a date: the distinct service types
     /// the effective day's trips run under, sorted. Schedule-only
     /// when `edits_hash` is omitted.
@@ -84,27 +62,8 @@ pub enum Request {
 #[ts(export, export_to = "cap_calendar/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    LoadNetwork { network_hash: String },
-    LoadEdits {
-        edits_hash: String,
-        reports: Vec<transit_sync::EditReport>,
-    },
     ActiveServices { services: Vec<String> },
     ServiceDates { dates: Vec<String> },
-}
-
-/// Networks by content hash (canonical serialization).
-pub static NETWORKS: Registry<Network> = Registry::documents("network", "load_network", Retain::Host);
-
-/// Operator edit documents by content hash (canonical serialization).
-pub static EDITS: Registry<Vec<transit_sync::EditRecord>> = Registry::documents("edits", "load_edits", Retain::Host);
-
-fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    NETWORKS.require(network_hash)
-}
-
-fn edits_arc(edits_hash: &str) -> Result<Arc<Vec<transit_sync::EditRecord>>, String> {
-    EDITS.require(edits_hash)
 }
 
 fn parse_date(date: &str) -> Result<chrono::NaiveDate, String> {
@@ -112,49 +71,15 @@ fn parse_date(date: &str) -> Result<chrono::NaiveDate, String> {
         .map_err(|e| format!("invalid date {date:?}: {e}"))
 }
 
-/// One effective day: the network materialized for the date, patched
-/// with the edits in force on it. Computed per call — no cache, no
-/// calendar expansion, one date.
-fn effective_day(
-    network_hash: &str,
-    edits_hash: Option<&str>,
-    date_str: &str,
-) -> Result<Vec<transit_network::MaterializedTrip>, String> {
-    // The request's own fields validate before any registry lookup —
-    // a garbage date is a caller error, not a missing-document error.
-    let date = parse_date(date_str)?;
-    let network = network_arc(network_hash)?;
-    let records = match edits_hash {
-        Some(hash) => edits_arc(hash)?,
-        None => Arc::new(Vec::new()),
-    };
-    transit_dispatch::effective_day(&network, date, &records)
-        .map_err(|e| format!("the network does not materialize: {e}"))
-}
-
 /// The typed dispatch (native hosts call this directly). Failures
 /// are `{"error": ...}`, never panics — a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
-        Request::LoadNetwork { network } => {
-            let hash = canonical_hash(&network)?;
-            NETWORKS.insert(hash.clone(), network);
-            Ok(Response::LoadNetwork { network_hash: hash })
-        }
-        Request::LoadEdits { network_hash, records } => {
-            // Validation is against the NETWORK — model vocabulary;
-            // no feed is expanded to answer it.
-            let network = network_arc(&network_hash)?;
-            let reports = transit_dispatch::report_against_network(&network, &records);
-            let hash = canonical_hash(&records)?;
-            EDITS.insert(hash.clone(), records);
-            Ok(Response::LoadEdits { edits_hash: hash, reports })
-        }
         Request::ActiveServices { network_hash, edits_hash, date } => {
-let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
-            let network = network_arc(&network_hash)?;
+            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = NETWORK.require(&network_hash)?;
             Ok(Response::ActiveServices {
-                services: transit_dispatch::active_services(&network, &day),
+                services: transit_dispatch::active_services(&network, &day.trips),
             })
         }
         Request::ServiceDates { network_hash, edits_hash, service_type, from, to } => {
@@ -163,9 +88,9 @@ let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
             // missing-document error.
             let from = parse_date(&from)?;
             let to = parse_date(&to)?;
-            let network = network_arc(&network_hash)?;
+            let network = NETWORK.require(&network_hash)?;
             let records = match edits_hash.as_deref() {
-                Some(hash) => edits_arc(hash)?,
+                Some(hash) => EDITS.require(hash)?,
                 None => Arc::new(Vec::new()),
             };
             let dates = transit_dispatch::service_dates(&network, &records, &service_type, from, to)
@@ -180,26 +105,19 @@ let day = effective_day(&network_hash, edits_hash.as_deref(), &date)?;
 /// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
 /// out — byte-compatible with every other capability module.
 pub fn dispatch_json(text: &str) -> String {
-    if let Some(answer) = cap_abi::load_network_json(text, |doc| dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc)) {
-        return answer;
-    }
     cap_abi::answer(text, dispatch)
 }
 
-/// The calendar module takes JSON documents (network, edits) — no
-/// bulk-bytes op exists; the seam answers honestly instead of
-/// silently ignoring one.
-pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
-    match op {
-        cap_abi::OP_LOAD_NETWORK => cap_abi::outcome(
-            cap_abi::parse_network(bytes).and_then(|network| dispatch(Request::LoadNetwork { network })),
-        ),
-        _ => serde_json::json!({ "error": format!("unknown bulk op {op}: calendar answers the kernel's load_network bulk op; edits travel as JSON (load_edits)") }).to_string(),
-    }
+/// The calendar has no bulk op of its own (its documents register on
+/// the kernel's loads); the seam answers honestly instead of silently
+/// ignoring one.
+pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
+    cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: the calendar has no bulk op of its own")))
 }
 
 cap_abi::capability! {
+    id: "calendar",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    registries: [NETWORKS, EDITS],
+    documents: [NETWORK, EDITS],
 }

@@ -629,8 +629,9 @@ fn a_row_is_going_where_its_sign_says() {
 fn a_diverted_away_stop_says_what_skips_it() {
     let net = network();
     let records = vec![record(EditStatus::Accepted, 300)];
-    let edits = transit_dispatch::day_edits(&net, date(), &records).unwrap().expect("an edit is in force");
-    let day = effective_day(&net, date(), &records).unwrap();
+    let held = transit_dispatch::day(&net, date(), &records).unwrap();
+    let edits = held.edits.clone().expect("an edit is in force");
+    let day = held.trips;
     let c = stop_board(&net, &day, "C", 0, 10, None, Some(&edits));
     assert!(c.rows.iter().all(|r| r.departure.route != "10"), "the 10 no longer leaves C");
     assert_eq!(c.skipped.len(), 1);
@@ -643,7 +644,7 @@ fn a_diverted_away_stop_says_what_skips_it() {
     // A stop the diversion keeps lists nothing skipped.
     assert!(stop_board(&net, &day, "A", 0, 10, None, Some(&edits)).skipped.is_empty());
     // No edits in force: nothing to compare against.
-    assert!(transit_dispatch::day_edits(&net, date(), &[]).unwrap().is_none());
+    assert!(transit_dispatch::day(&net, date(), &[]).unwrap().edits.is_none());
     let plain = transit_network::materialize(&net, date()).unwrap();
     assert!(stop_board(&net, &plain, "C", 0, 10, None, None).skipped.is_empty());
 }
@@ -711,7 +712,7 @@ fn the_grouped_board_pools_skips_and_alerts() {
     // The diversion takes the 10 away from C: its group stays, empty,
     // and says what skipped it; the 20 still leaves.
     let records = vec![record(EditStatus::Accepted, 300)];
-    let edits = transit_dispatch::day_edits(&net, date(), &records).unwrap().expect("an edit is in force");
+    let edits = transit_dispatch::day(&net, date(), &records).unwrap().edits.expect("an edit is in force");
     let patched = effective_day(&net, date(), &records).unwrap();
     let c = grouped_board(&net, &patched, "C", 0, 3, None, Some(&edits));
     assert_eq!(
@@ -730,4 +731,37 @@ fn the_grouped_board_pools_skips_and_alerts() {
     let a = grouped_board(&net, &day, "A", 0, 3, Some(&live), None);
     assert_eq!(a.alerts.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), ["stop-a"], "route 20 only ends at A");
     assert_eq!(a.groups[0].departures[0].alerts, ["stop-a"]);
+}
+
+/// The held day is the day: its trips are the effective day, and what
+/// it says the edits took away is the unpatched day and the diversions
+/// in force on the date — one materialization, the same answer as
+/// computing each per call, for every edit status and date.
+#[test]
+fn the_held_day_is_the_effective_day_and_its_edits() {
+    let net = network();
+    let other = chrono::NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
+    for status in [EditStatus::Accepted, EditStatus::Draft, EditStatus::Retired] {
+        for when in [date(), other] {
+            let records = vec![record(status, 300)];
+            let held = transit_dispatch::day(&net, when, &records).unwrap();
+            assert_eq!(held.trips, effective_day(&net, when, &records).unwrap());
+            let diversions = transit_sync::in_force_on(&records, when);
+            match &held.edits {
+                None => assert!(diversions.is_empty()),
+                Some(edits) => {
+                    assert_eq!(edits.diversions, diversions);
+                    assert_eq!(edits.base, transit_network::materialize(&net, when).unwrap());
+                }
+            }
+        }
+    }
+    // The key names every input: two days differing in any one are two keys.
+    let keys = [
+        transit_dispatch::day_key("n1", None, "2026-10-23"),
+        transit_dispatch::day_key("n2", None, "2026-10-23"),
+        transit_dispatch::day_key("n1", Some("e1"), "2026-10-23"),
+        transit_dispatch::day_key("n1", None, "2026-10-24"),
+    ];
+    assert_eq!(keys.iter().collect::<std::collections::BTreeSet<_>>().len(), keys.len());
 }

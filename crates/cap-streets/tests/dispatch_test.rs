@@ -10,7 +10,9 @@
 //! ordered file. A document that is not canonical is refused, never
 //! registered under a second hash.
 
-use cap_streets::{dispatch, dispatch_bytes, dispatch_json, Request, Response, OP_IMPORT, OP_LOAD_STREETS};
+use cap_abi::kernel::OP_LOAD_STREETS;
+// The module's seam, as a host calls it: the kernel's loads answer there.
+use cap_streets::{dispatch, invoke as dispatch_json, invoke_bytes as dispatch_bytes, Request, Response, OP_IMPORT};
 use serde_json::{json, Value};
 
 /// The Elbow: one horizontal street, one vertical — routing A→B

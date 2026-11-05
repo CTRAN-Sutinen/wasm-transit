@@ -62,8 +62,8 @@ func newTestHost(t *testing.T) *WasmHost {
 // The sync capability's round trip through the Go host: the protocol's
 // one step — a draft client against an empty server converges to the
 // submitted document, a newer tombstone wins LWW, and validation is
-// NOT the op's business (load_edits answers it in every model-side
-// module — the browser reads those reports through the bus).
+// NOT the op's business (what a record amounts to on the network is
+// cap-divert's reports, asked through the bus).
 func TestSyncRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	host := newTestHost(t)

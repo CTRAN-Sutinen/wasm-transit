@@ -6,7 +6,7 @@ package main
 // browser runs) and serves the canonical streets document at
 // GET /streets; with a published network it also serves the WALK
 // TABLE derived from the two at GET /walks. Browsers register the
-// document by its bytes (cap-streets' load_streets bulk op) and the
+// document by its bytes (the kernel's load_streets bulk op) and the
 // table in the router — nobody downstream reads the layer, and no
 // browser computes the table. Both are opaque here: the host reads
 // only their hashes, to pin them.
@@ -25,11 +25,9 @@ import (
 	"time"
 )
 
-// cap-streets' bulk ops: a street layer, a streets document.
-const (
-	opImportStreets = 0
-	opLoadStreets   = 1
-)
+// cap-streets' own bulk op: import a street layer (a streets
+// document registers on the kernel's opLoadStreets).
+const opImportStreets = 0
 
 // servedDoc is one published document: its bytes (and gzipped), under
 // its hash.

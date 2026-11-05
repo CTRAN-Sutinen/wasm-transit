@@ -15,14 +15,16 @@
 //! (stop_detail), and the timetable — one route, one direction, one
 //! service type, every trip across the direction's patterns.
 //!
-//! Documents are content-addressed like everywhere on the bus:
+//! The document it reads is the kernel's, content-addressed like
+//! everywhere on the bus:
 //! * **network** — the same identity cap-network's import produces
 //!   and cap-analysis consumes (the module is the hash authority).
 
+#![forbid(unsafe_code)]
+
 use std::sync::Arc;
 
-use cap_abi::registry::{Registry, Retain};
-
+use cap_abi::kernel::NETWORK;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_network::Network;
@@ -96,14 +98,6 @@ pub struct StopWalk {
 #[ts(export, export_to = "cap_directory/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    /// Register the NETWORK document under its content hash
-    /// (idempotent by hash) — the same document identity
-    /// cap-network's import produces and cap-analysis consumes.
-    /// Decoded by `cap_abi::load_network_json` on either lane, never
-    /// through the tagged envelope (whose buffered decode would cost
-    /// ~8× the document in peak memory and a second decoder).
-    #[serde(skip_deserializing)]
-    LoadNetwork { network: Network },
     /// What the network is: its name and the plan it is (as the
     /// document carries them) — the heading a host shows over a
     /// network it holds only as bytes it never parsed.
@@ -210,7 +204,6 @@ pub enum Request {
 #[ts(export, export_to = "cap_directory/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    LoadNetwork { network_hash: String },
     About { name: String, plan: transit_network::PlanMeta },
     Stops { stops: Vec<DirectoryStop> },
     StopsNear { stops: Vec<transit_network::listing::NearbyStop> },
@@ -228,11 +221,8 @@ pub enum Response {
 /// limit — a screenful.
 pub const STOPS_NEAR_LIMIT: u32 = 10;
 
-/// Networks by content hash (canonical serialization).
-pub static NETWORKS: Registry<Network> = Registry::documents("network", "load_network", Retain::Host);
-
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    NETWORKS.require(network_hash)
+    NETWORK.require(network_hash)
 }
 
 fn directory_stop(network: &Network, id: &str) -> Option<DirectoryStop> {
@@ -250,11 +240,6 @@ fn directory_stop(network: &Network, id: &str) -> Option<DirectoryStop> {
 /// are `{"error": ...}`, never panics — a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
-        Request::LoadNetwork { network } => {
-            let hash = cap_abi::canonical_hash(&network)?;
-            NETWORKS.insert(hash.clone(), network);
-            Ok(Response::LoadNetwork { network_hash: hash })
-        }
         Request::Stops { network_hash, query, limit } => {
             let network = network_arc(&network_hash)?;
             let terms: Vec<String> = query
@@ -387,26 +372,19 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
 /// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`
 /// out — byte-compatible with every other capability module.
 pub fn dispatch_json(text: &str) -> String {
-    if let Some(answer) = cap_abi::load_network_json(text, |doc| dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc)) {
-        return answer;
-    }
     cap_abi::answer(text, dispatch)
 }
 
-/// The directory module takes a JSON document (the network) — no
-/// bulk-bytes op exists; the seam answers honestly instead of
-/// silently ignoring one.
-pub fn dispatch_bytes(op: u32, bytes: &[u8]) -> String {
-    match op {
-        cap_abi::OP_LOAD_NETWORK => cap_abi::outcome(
-            cap_abi::parse_network(bytes).and_then(|network| dispatch(Request::LoadNetwork { network })),
-        ),
-        _ => serde_json::json!({ "error": format!("unknown bulk op {op}: directory answers only the kernel's load_network bulk op") }).to_string(),
-    }
+/// The directory has no bulk op of its own (the network registers on
+/// the kernel's load); the seam answers honestly instead of silently
+/// ignoring one.
+pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
+    cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: directory has no bulk op of its own")))
 }
 
 cap_abi::capability! {
+    id: "directory",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    registries: [NETWORKS],
+    documents: [NETWORK],
 }

@@ -112,11 +112,13 @@ func (h *WasmHost) Invoke(ctx context.Context, request, out any) error {
 	return h.decode(raw, out)
 }
 
-// The bulk ops this host calls (cap-network's OP_LOAD_FEED, the
-// kernel's OP_LOAD_NETWORK): raw bytes on transit_invoke_bytes.
+// The kernel's loads this host calls (cap_abi::kernel — the same op in
+// every module whose capabilities read the kind): raw bytes on
+// transit_invoke_bytes.
 const (
-	opLoadFeed    = 0
 	opLoadNetwork = 256
+	opLoadStreets = 263
+	opLoadFeed    = 266
 )
 
 // InvokeBytes runs a bulk op: `payload` crosses as raw bytes (a GTFS

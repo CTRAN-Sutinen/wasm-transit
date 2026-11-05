@@ -10,7 +10,10 @@ export type CapStatus = "unavailable" | "ready";
 /// A call to the worker.
 export type BusRequest =
   | { type: "init"; base: string }
-  | { type: "ensure"; caps: string[] }
+  /// Assemble capabilities: inside the page's linked assembly when `ui`
+  /// names one that links them (the manifest's `assemblies`), each in
+  /// its own module otherwise.
+  | { type: "ensure"; caps: string[]; ui: string | null }
   /// A JSON op; `load` marks a registration (never preceded by a reset).
   | { type: "text"; cap: string; text: string; load: boolean }
   /// A bulk op over bytes (the module's own op, or a kernel op from 256).
@@ -23,11 +26,18 @@ export type BusRequest =
 /// replaced before it answered (it holds no documents now).
 export type BusReply = { ok: unknown; reset?: boolean } | { error: string };
 
+/// Where a capability answers: the module instance it lives in (its
+/// key, and the module's pinned hash), its index there (a capability
+/// bulk op carries it in the high 16 bits), and whether the module
+/// links several (a JSON request then names its capability).
+export type Route = { module: string; hash: string; index: number; linked: boolean };
+
 /// What `ensure` answers: per capability, whether it assembled, its
-/// manifest entry when it did, and why it did not.
+/// manifest entry and its route when it did, and why it did not.
 export type Assembly = {
   statuses: Record<string, CapStatus>;
   caps: Record<string, Capability>;
+  routes: Record<string, Route>;
   errors: Record<string, string>;
 };
 

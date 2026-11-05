@@ -91,7 +91,7 @@ func newStreetsHost(t *testing.T) *WasmHost {
 }
 
 // The served streets are the import's document: a fresh module
-// registers the bytes (load_streets, bulk op 1) under the ETag's
+// registers the bytes (the kernel's load_streets bulk op) under the ETag's
 // hash; the walk table registers in the router under its own; the
 // manifest pins both.
 func TestServedStreetsAndWalksRegisterUnderTheirPins(t *testing.T) {

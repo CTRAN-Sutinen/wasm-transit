@@ -25,6 +25,8 @@
 //! (blobs + pointers, pointer CAS — docs/FORMATS.md) is the host
 //! discipline's, never a module's.
 
+#![forbid(unsafe_code)]
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -142,7 +144,8 @@ pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
 }
 
 cap_abi::capability! {
+    id: "sync",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    registries: [],
+    documents: [],
 }

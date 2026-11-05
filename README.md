@@ -2,7 +2,8 @@
 
 GTFS static and GTFS-rt, read by Rust and shipped as **capability
 modules**: small WebAssembly modules with one flat, import-free ABI,
-each answering one question over hash-addressed documents. The same
+each capability answering one question over hash-addressed
+documents — linked, per page, into one module over one registry. The same
 modules, the same documents, and the same bytes run in the browser,
 in Node, and in a Go server — the browser is the main consumer, and
 nothing is uploaded.
@@ -26,8 +27,10 @@ whole GTFS Schedule spec.
   sessions found. `docs/ROADMAP.md` — where it is going.
 
 ```
-crates/   Rust: the domain libraries (transit-*) and the capability
-          modules (cap-*) over them
+crates/   Rust: the domain libraries (transit-*), the capabilities
+          (cap-*) over them, and the kernel (cap-abi)
+assemblies/ generated (just caps): the module crates — each
+          capability alone, each UI's capabilities linked
 server/   Go + wazero: the sync server — static files, the rt proxy,
           the manifest, the edit document
 web/      Svelte 5 + Vite: a picker over the generated UIs (ride-now,

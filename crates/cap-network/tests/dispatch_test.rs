@@ -6,7 +6,7 @@
 //! the produced artifact is a first-class feed document (the
 //! exported zip parses back to the same identity).
 
-use cap_network::{dispatch, dispatch_json, Request, Response};
+use cap_network::{dispatch, invoke as dispatch_json, Request, Response};
 use sha2::Digest;
 
 const FIXTURE: &[u8] = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip");
@@ -15,11 +15,17 @@ const FIXTURE: &[u8] = include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip
 /// and the manifest's sample load request carry.
 const NETWORK_DOC: &str = include_str!("../../../testdata/network.json");
 
+/// The kernel's load_feed, through the module's seam: its hash and summary.
+fn load_feed(bytes: &[u8]) -> (String, transit_codec::FeedSummary) {
+    let (hash, feed) = cap_abi::kernel::FEED.register_bytes(bytes, None).expect("the feed parses");
+    let outcome: serde_json::Value =
+        serde_json::from_str(&cap_network::invoke_bytes(cap_abi::kernel::OP_LOAD_FEED, bytes)).unwrap();
+    assert_eq!(outcome["ok"]["feed_hash"], hash.as_str(), "the seam answers the kernel's identity");
+    (hash, feed.summary())
+}
+
 fn load_fixture() -> (String, transit_codec::FeedSummary) {
-    match dispatch(Request::LoadFeed { bytes: FIXTURE.to_vec() }).unwrap() {
-        Response::LoadFeed { feed_hash, summary } => (feed_hash, summary),
-        _ => panic!("load_feed"),
-    }
+    load_feed(FIXTURE)
 }
 
 #[test]
@@ -61,17 +67,36 @@ fn import_infers_and_registers_the_document() {
     }
 }
 
+/// The import's boundary registers beside its document, and an export
+/// naming it writes the imported numbering back: the published feed
+/// re-imports to the same document and the same boundary.
+#[test]
+fn an_export_naming_the_import_boundary_round_trips() {
+    let (feed_hash, _) = load_fixture();
+    let Response::Import { network_hash, boundary, boundary_hash, .. } = dispatch(Request::Import { feed_hash }).unwrap()
+    else {
+        panic!("import")
+    };
+    assert_eq!(boundary_hash, cap_abi::canonical_hash(&boundary).unwrap(), "the boundary's identity is its canonical hash");
+    let Response::Export { zip_b64, .. } =
+        dispatch(Request::Export { network_hash: network_hash.clone(), boundary_hash: Some(boundary_hash.clone()) }).unwrap()
+    else {
+        panic!("export")
+    };
+    let (again, _) = load_feed(&base64_decode(&zip_b64));
+    let Response::Import { network_hash: same, boundary_hash: same_boundary, .. } =
+        dispatch(Request::Import { feed_hash: again }).unwrap()
+    else {
+        panic!("re-import")
+    };
+    assert_eq!((same, same_boundary), (network_hash, boundary_hash));
+}
+
 #[test]
 fn load_network_is_idempotent_by_hash() {
     let doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
-    let a = match dispatch(Request::LoadNetwork { network: doc.clone() }).unwrap() {
-        Response::LoadNetwork { network_hash } => network_hash,
-        _ => panic!("load_network"),
-    };
-    let b = match dispatch(Request::LoadNetwork { network: doc }).unwrap() {
-        Response::LoadNetwork { network_hash } => network_hash,
-        _ => panic!("load_network"),
-    };
+    let a = cap_abi::kernel::NETWORK.register(doc.clone()).unwrap().0;
+    let b = cap_abi::kernel::NETWORK.register(doc).unwrap().0;
     assert_eq!(a, b, "same document, same hash, one registry entry");
     assert!(a.starts_with("sha256:"));
 }
@@ -79,10 +104,7 @@ fn load_network_is_idempotent_by_hash() {
 #[test]
 fn validate_reports_every_issue_without_throwing() {
     let doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
-    let network_hash = match dispatch(Request::LoadNetwork { network: doc }).unwrap() {
-        Response::LoadNetwork { network_hash } => network_hash,
-        _ => panic!("load_network"),
-    };
+    let network_hash = cap_abi::kernel::NETWORK.register(doc).unwrap().0;
     match dispatch(Request::Validate { network_hash }).unwrap() {
         Response::Validate { issues, .. } => assert!(issues.is_empty(), "the fixture is valid"),
         _ => panic!("validate"),
@@ -91,10 +113,7 @@ fn validate_reports_every_issue_without_throwing() {
     // A referential break: one defect, the whole list, no throw.
     let broken = NETWORK_DOC.replace("\"stop\": \"B\"", "\"stop\": \"ghost\"");
     let doc: transit_network::Network = serde_json::from_str(&broken).unwrap();
-    let broken_hash = match dispatch(Request::LoadNetwork { network: doc }).unwrap() {
-        Response::LoadNetwork { network_hash } => network_hash,
-        _ => panic!("load_network"),
-    };
+    let broken_hash = cap_abi::kernel::NETWORK.register(doc).unwrap().0;
     match dispatch(Request::Validate { network_hash: broken_hash }).unwrap() {
         Response::Validate { issues, .. } => {
             assert!(!issues.is_empty(), "the broken document reports its issues");
@@ -129,12 +148,9 @@ fn base64_decode(text: &str) -> Vec<u8> {
 #[test]
 fn export_is_the_publish_path_and_the_identity_law() {
     let doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
-    let network_hash = match dispatch(Request::LoadNetwork { network: doc }).unwrap() {
-        Response::LoadNetwork { network_hash } => network_hash,
-        _ => panic!("load_network"),
-    };
+    let network_hash = cap_abi::kernel::NETWORK.register(doc).unwrap().0;
     let (feed_hash, summary, zip_b64) =
-        match dispatch(Request::Export { network_hash }).unwrap() {
+        match dispatch(Request::Export { network_hash, boundary_hash: None }).unwrap() {
             Response::Export { feed_hash, summary, zip_b64 } => (feed_hash, summary, zip_b64),
             _ => panic!("export"),
         };
@@ -150,28 +166,21 @@ fn export_is_the_publish_path_and_the_identity_law() {
     // The exported artifact is a first-class feed: loading the bytes
     // back lands on the SAME hash (the composition moment — the
     // handoff a host asserts).
-    match dispatch(Request::LoadFeed { bytes: zip }).unwrap() {
-        Response::LoadFeed { feed_hash: again, summary: reparsed } => {
-            assert_eq!(again, feed_hash, "the exported zip loads to its own advertised hash");
-            assert_eq!(
-                (reparsed.stops, reparsed.trips, reparsed.stop_times),
-                (summary.stops, summary.trips, summary.stop_times),
-                "the reparsed summary matches the export's"
-            );
-        }
-        _ => panic!("load_feed"),
-    }
+    let (again, reparsed) = load_feed(&zip);
+    assert_eq!(again, feed_hash, "the exported zip loads to its own advertised hash");
+    assert_eq!(
+        (reparsed.stops, reparsed.trips, reparsed.stop_times),
+        (summary.stops, summary.trips, summary.stop_times),
+        "the reparsed summary matches the export's"
+    );
 }
 
 #[test]
 fn export_refuses_invalid_documents() {
     let broken = NETWORK_DOC.replace("\"stop\": \"B\"", "\"stop\": \"ghost\"");
     let doc: transit_network::Network = serde_json::from_str(&broken).unwrap();
-    let network_hash = match dispatch(Request::LoadNetwork { network: doc }).unwrap() {
-        Response::LoadNetwork { network_hash } => network_hash,
-        _ => panic!("load_network"),
-    };
-    let err = dispatch(Request::Export { network_hash }).unwrap_err();
+    let network_hash = cap_abi::kernel::NETWORK.register(doc).unwrap().0;
+    let err = dispatch(Request::Export { network_hash, boundary_hash: None }).unwrap_err();
     assert!(err.contains("invalid network"), "{err}");
 }
 
@@ -181,8 +190,12 @@ fn unknown_hashes_are_errors_not_panics() {
     assert!(err.contains("unknown feed"), "{err}");
     let err = dispatch(Request::Validate { network_hash: "sha256:missing".into() }).unwrap_err();
     assert!(err.contains("unknown network"), "{err}");
-    let err = dispatch(Request::Export { network_hash: "sha256:missing".into() }).unwrap_err();
+    let err = dispatch(Request::Export { network_hash: "sha256:missing".into(), boundary_hash: None }).unwrap_err();
     assert!(err.contains("unknown network"), "{err}");
+    let (feed_hash, _) = load_fixture();
+    let Response::Import { network_hash, .. } = dispatch(Request::Import { feed_hash }).unwrap() else { panic!("import") };
+    let err = dispatch(Request::Export { network_hash, boundary_hash: Some("sha256:missing".into()) }).unwrap_err();
+    assert!(err.contains("unknown boundary"), "{err}");
 }
 
 #[test]
@@ -215,12 +228,12 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     // op answers; garbage bytes are an error outcome, never a trap.
     let doc = include_str!("../../../testdata/network.json");
     let via_json: serde_json::Value =
-        serde_json::from_str(&cap_network::dispatch_json(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
+        serde_json::from_str(&cap_network::invoke(&format!(r#"{{"op":"load_network","network":{doc}}}"#))).unwrap();
     let via_bytes: serde_json::Value =
-        serde_json::from_str(&cap_network::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
+        serde_json::from_str(&cap_network::invoke_bytes(cap_abi::OP_LOAD_NETWORK, doc.as_bytes())).unwrap();
     assert!(via_json["ok"]["network_hash"].as_str().is_some_and(|h| h.starts_with("sha256:")), "{via_json}");
     assert_eq!(via_bytes, via_json);
-    let bad = cap_network::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
+    let bad = cap_network::invoke_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
 }
 
@@ -236,7 +249,7 @@ fn document_answers_the_canonical_bytes_the_hash_names() {
     // Any serialization of the same document: pretty-printed here.
     let pretty = serde_json::to_string_pretty(&doc).unwrap();
     let loaded: serde_json::Value =
-        serde_json::from_str(&cap_network::dispatch_bytes(cap_abi::OP_LOAD_NETWORK, pretty.as_bytes())).unwrap();
+        serde_json::from_str(&cap_network::invoke_bytes(cap_abi::OP_LOAD_NETWORK, pretty.as_bytes())).unwrap();
     let network_hash = loaded["ok"]["network_hash"].as_str().expect("load_network answers").to_string();
     match dispatch(Request::Document { network_hash: network_hash.clone() }).unwrap() {
         Response::Document { document, document_hash, plan } => {
@@ -259,10 +272,7 @@ fn publishable_answers_what_refuses_a_pick() {
     let mut doc: transit_network::Network = serde_json::from_str(NETWORK_DOC).unwrap();
     let start = doc.service_types.values().flat_map(|st| st.rule.ranges.iter().map(|r| r.start)).min().unwrap();
     doc.plan = transit_network::PlanMeta { id: "fall".into(), name: "Fall".into(), effective_from: Some(start) };
-    let in_calendar = match dispatch(Request::LoadNetwork { network: doc.clone() }).unwrap() {
-        Response::LoadNetwork { network_hash } => network_hash,
-        _ => panic!("load_network"),
-    };
+    let in_calendar = cap_abi::kernel::NETWORK.register(doc.clone()).unwrap().0;
     match dispatch(Request::Publishable { network_hash: in_calendar }).unwrap() {
         Response::Publishable { issues, refusals, .. } => {
             assert!(issues.is_empty() && refusals.is_empty(), "{issues:?} {refusals:?}")
@@ -270,10 +280,7 @@ fn publishable_answers_what_refuses_a_pick() {
         other => panic!("publishable: {other:?}"),
     }
     doc.plan.effective_from = chrono::NaiveDate::from_ymd_opt(2099, 1, 5);
-    let past_calendar = match dispatch(Request::LoadNetwork { network: doc }).unwrap() {
-        Response::LoadNetwork { network_hash } => network_hash,
-        _ => panic!("load_network"),
-    };
+    let past_calendar = cap_abi::kernel::NETWORK.register(doc).unwrap().0;
     match dispatch(Request::Publishable { network_hash: past_calendar }).unwrap() {
         Response::Publishable { refusals, .. } => assert!(
             refusals.iter().any(|w| matches!(w, transit_network::NetworkWarning::NoServiceInPlanPeriod { .. })),
