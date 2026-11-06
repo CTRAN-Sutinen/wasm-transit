@@ -24,7 +24,7 @@ session has asked these questions as one sequence.
 
 | # | op(s) | state |
 |---|---|---|
-| 1 | rt `live`, `late_trips` | op exists; no UI reads `late_trips` (`docs/units/grade-debt.md`); vehicle labels are ids, QAF-48 (Blocked: D-10) |
+| 1 | rt `live`, `late_trips` | op exists; no UI reads `late_trips` (`docs/units/grade-debt.md`); a vehicle with no label shows its id (D-10) |
 | 2 | runcut `block_trips` (`live_hash`) | op exists: a trip's live delay at its last stop against its next layover |
 | 3 | divert `list` | op exists |
 | 4 | divert `draft`, streets `snap` / `route`, divert `propose` | op exists; cap-streets is not dogfooded on real data (`docs/units/grade-debt.md`, needs the county export) |

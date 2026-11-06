@@ -51,7 +51,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-6 | Does "frequent" count terminal arrivals? | decided | nothing |
 | D-8 | Do timetable edits act on the whole service family? | decided | nothing |
 | D-9 | Where does required recovery time come from? | decided | nothing |
-| D-10 | Agency questions on C-TRAN's data | unanswered | QAF-9, QAF-48 |
+| D-10 | Agency questions on C-TRAN's data | decided | nothing |
 | D-11 | Does editing a shared alignment change every pattern on it? | decided | nothing |
 | D-12 | What headsign does a new trip get? | encoded | nothing |
 | D-14 | Does the proposal comparison collect public responses? | decided | nothing |
@@ -66,7 +66,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-23 | In what order does a stop display list its groups? | encoded | nothing |
 | D-24 | How does a departure's countdown round? | encoded | nothing |
 | D-25 | Which streets are the source of truth? | decided | nothing |
-| D-26 | Which streets can each mode use? | decided (walking); unanswered (a bus) | drawing on streets |
+| D-26 | Which streets can each mode use? | decided | nothing |
 | D-27 | What does place search find? | decided | nothing |
 | D-28 | Where do stop and address results meet? | encoded | nothing |
 | D-29 | What area does a geography release cover? | decided | nothing |
@@ -86,16 +86,16 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-43 | What does a coverage comparison report? | encoded | nothing |
 | D-44 | Is a branch of a direction its own thing? | unanswered | QAF-63 |
 | D-45 | Which dispatcher edits does the edit document carry beyond the diversion? | decided | nothing |
-| D-46 | How many more vehicles does a proposal need? | unanswered | QAF-3 |
+| D-46 | How many more vehicles does a proposal need? | decided | the work-rule policy document (D-50's shape) |
 | D-47 | Which layers does coverage take? | decided | nothing |
 | D-48 | Does a stop answer to a name its sign does not carry? | decided | nothing |
 | D-49 | Where do the basemap's glyphs and sprites come from? | decided | nothing |
-| D-50 | What are the work rules a run is cut under? | unanswered | QAF-11, QAF-12, QAF-14, QAF-15 |
-| D-51 | What does a revenue hour, a revenue mile, and a vehicle cost? | unanswered | `ui-service-design` questions 2, 18 (cost) |
+| D-50 | What are the work rules a run is cut under? | decided | nothing |
+| D-51 | What does a revenue hour, a revenue mile, and a vehicle cost? | decided | nothing |
 | D-52 | How is a route-hour's frequency judged and drawn? | encoded | nothing |
-| D-53 | What ridership data does the planner bring? | unanswered | `ui-service-design` question 10 |
+| D-53 | What ridership data does the planner bring? | decided | nothing |
 | D-54 | What does a frequency change keep of the trips already there? | unanswered | QAF-90, `ui-service-design` question 16 |
-| D-55 | Which members does a service group count on a day? | unanswered | QAF-91 |
+| D-55 | Which members does a service group count on a day? | decided | nothing |
 | D-56 | Whose clock is the LWW clock? | encoded | nothing |
 | D-57 | How long does a tombstone live? | encoded | nothing |
 | D-58 | Which endpoints require a token by default? | decided | nothing |
@@ -373,7 +373,18 @@ Blocks: nothing (QAF-54 is free to start).
 ## Service design
 
 ### D-51 — What does a revenue hour, a revenue mile, and a vehicle cost?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — no dollars. "The anchor for a planner is actually
+operating/platform hours, not revenue hours. planners generally don't
+do $$$, they have an hours budget. they do look at total paid hours
+when it comes to run cutting. but the operators also vary in their pay
+rates due to seniority, etc. it doesn't make sense to cost in
+dollars." So no cost-model document and no rates: a proposal is
+measured in platform (operating) hours against an hours budget, with
+revenue hours and miles as secondary figures, and total paid hours
+come from the runs layer (D-50) at run cutting. Open: what an hours
+budget is (a number per service group or period a planner types, or a
+document on the bus).
 Context: `docs/units/ui-service-design.md` questions 2 and 18. The
 ops answer revenue hours and miles, and the fleet answers peak
 vehicles. A proposal's cost in dollars needs the agency's rates, and
@@ -386,7 +397,7 @@ Options:
 - Rates as op parameters with no default: the host passes what the
   planner types, and no dollar figure appears until they do.
 - No dollars: the UI answers hours, miles, and vehicles only.
-Blocks: the cost line in the service-design questions 2 and 18.
+Blocks: nothing (the dollar cost line in `ui-service-design` questions 2 and 18 is dropped; the hours line is free to start).
 
 ### D-52 — How is a route-hour's frequency judged and drawn?
 State: Encoded provisionally — the third option: the grid shades
@@ -413,7 +424,12 @@ Options:
 Blocks: nothing (the grid's shading is provisional).
 
 ### D-53 — What ridership data does the planner bring?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — none for now: no ridership document and no
+ridership layer. The user: "we would want to build ridership in, but
+it is something to address later." The question stays a recorded data
+gap, a planned feature and not a rejected one; the document-or-layer
+shape (the options above) is decided when it is taken up.
 Context: `docs/units/ui-service-design.md` question 10. Productivity
 (boardings per revenue hour) is a planner's first measure, and
 nothing on the bus carries a boarding. The GTFS-Ride extension and
@@ -426,7 +442,7 @@ Options:
 - A weighted point layer (boardings per stop), read the way coverage
   reads population (D-47).
 - None for now: the question stays open as a data gap.
-Blocks: the service-design question 10.
+Blocks: nothing (question 10 stays a recorded data gap).
 
 ### D-54 — What does a frequency change keep of the trips already there?
 State: Unanswered.
@@ -451,7 +467,27 @@ Blocks: QAF-90, the service-design question 16 (the frequency
 gesture).
 
 ### D-55 — Which members does a service group count on a day?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — a group is not a base type plus its calendar subsets.
+"What you're really seeing is exceptions to regular service. c-tran
+typically doesn't have that many, but this current period had a
+significant disruption to manage around. what a planner needs to be
+able to see is the actual representative combinations and on which
+dates they hold. so if they don't overlap on the same day, they
+shouldn't be shown together. they aren't *really* the same group." So
+a group is a combination of service types that run together on the
+same dates, shown with the dates on which it holds; members that never
+share a day are never pooled. This is the second option, with the
+period boundaries derived from the dates the combinations actually
+hold. The user, on the representative day: "i don't know that a
+'representative day' is useful" — a combination's numbers describe the
+service it runs, and its dates say when it holds; no day stands in for
+it. Then, on the code's `representative_date` (the first date a type's
+rule runs): "it shouldn't say representative day if it is anchoring
+to a specific date. if it just means 'this is WDKY-1 + WKDY/30'..
+then yeah that is fine" — a combination named by its members is fine;
+a date standing in for it is not (QAF-97). Reading, not confirmed: a
+dated exception (a holiday, a disruption day) is its own combination.
 Context: QAF-91 and QAF-65. A group pools a base service type and
 the types whose calendars are subsets of it. C-TRAN's 1-WKDY/30 and
 1-WKDY/31 are both subsets of 1-WKDY, but they run in successive
@@ -465,8 +501,9 @@ Options:
   change, each period with its own representative day and numbers.
 - Count every member, as now, and say so in the answer (a total over
   the members' authored service, not a day).
-Blocks: QAF-91 (every pooled read: service_groups,
-service_type_detail, schedule_texture, the directory timetable).
+Blocks: nothing (QAF-91 is free to start: every pooled read —
+service_groups, service_type_detail, schedule_texture, the directory
+timetable — pools by date combination).
 
 ## Blocks and runcutting
 
@@ -498,7 +535,15 @@ Pinned by: `docs/ROADMAP.md` 7, `docs/units/ui-runcut.md`.
 Blocks: nothing.
 
 ### D-46 — How many more vehicles does a proposal need?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — automatic blocking is the answer, but "blocking
+is the beginning of the run cutting process": it is not a naive
+standalone op on a proposal. It belongs to the runcut capability and
+is tunable by the policy (minimum layover from D-9, interlining across
+routes, and the rest), and its blocks are suggestions the planner
+adopts or edits, showing the slack they leave. A peak-vehicle estimate
+falls out of it. Interlining is set per route pair
+(the user, same day), not once per agency.
 Context: QAF-3. A proposal's added trips are unassigned (no block),
 so fleet_summary cannot say how many more vehicles it needs. A
 vehicle need is a block assignment, which the model does not make,
@@ -511,10 +556,16 @@ Options:
   allowance, with no blocks made.
 - The planner blocks by hand (add_block_trip) and fleet_summary
   answers; the finding becomes a UI affordance.
-Blocks: QAF-3 (and depends on D-9 for any automatic answer).
+Blocks: the policy document of D-50 (its blocking settings); no
+other decision. QAF-3 is free to start once that document exists.
 
 ### D-50 — What are the work rules a run is cut under?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — a generic policy document: the common rules
+(maximum platform and spread, report and pull, minimum and maximum
+piece, meal breaks, relief points, pay), each optional, with an
+agency's values as data in it. Nothing is coupled to C-TRAN; the
+blocking settings of D-46 sit in the same document.
 Context: QAF-11, QAF-12, QAF-14, and the rest of QAF-15. The runs
 layer (D-16: beside the network) needs a work-rule policy document,
 and its shape is the agency's rules: maximum platform and spread,
@@ -527,7 +578,7 @@ Options:
   section), and the policy document is shaped to them.
 - A generic policy document (the common rules above, each optional)
   lands first, and C-TRAN's values are data in it.
-Blocks: QAF-11, QAF-12, QAF-14, QAF-15 (the cut candidates).
+Blocks: nothing (QAF-11, QAF-12, QAF-14 and QAF-15 are free to start).
 
 ## Riding today
 
@@ -815,12 +866,18 @@ Options:
 Blocks: nothing.
 
 ### D-26 — Which streets can each mode use?
-State: Decided for walking; unanswered for a bus.
+State: Decided.
 Answer: 2026-10-29 — walking: "Also refuse unknown" (a rider walks
 every class but motorway, ramp, and unknown — strict); a rider walks
 a one-way street both ways ("agreed"); a walk is at most ten minutes
 by default, at 1.3 m/s, both op parameters. Pins:
 `crates/transit-streets/tests/walk_law_test.rs`.
+Answer (a bus): 2026-11-05 — a warning, not a refusal: "a planner
+needs to use good judgement. if it is a grey area then it is up to them
+to confirm whether it is a legal road or not." Drawing a bus on a
+street the data does not clearly allow (an unknown class, a path-like
+class) warns and draws. Reading, not confirmed by the user: no class
+is refused outright for a bus, and the warning names the class.
 Context: the import classifies every street (D-30). A rider cannot
 walk a motorway or a ramp; a bus cannot be drawn down a path,
 stairs, or a 4WD track, and a planner may not want one drawn down an
@@ -834,9 +891,9 @@ are the decision: which classes each mode may use, and whether an
 unknown class is allowed (permissive) or refused (strict).
 - **Decided (walking):** strict — every class but motorway, ramp,
   and unknown; one-way does not bind a rider.
-- Open (a bus): which classes a bus may be drawn on, and whether an
-  unknown class is allowed.
-Blocks: drawing on streets in `docs/units/streets-model.md`.
+- **Decided (a bus):** every class may be drawn; unknown and
+  path-like classes carry a warning the planner confirms.
+Blocks: nothing.
 
 ### D-27 — What does place search find?
 State: Decided.
@@ -1929,7 +1986,13 @@ Blocks: rings and the automatic revert in
 ## Agency data
 
 ### D-10 — Agency questions on C-TRAN's data
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — transfers: no caveat for what the feed does not
+carry. Station 106 is a transit center, but a transfer point is the
+feed's own flag; nothing infers one, and RAPTOR computes transfers
+regardless, so `transfer_stops: 0` on C-TRAN is the data, not a defect.
+Vehicle names: yes, the id is what C-TRAN calls a bus, but not coupled
+to C-TRAN — the rule is generic: with no label, fall back to the id.
 Context: two findings wait on facts only the agency has, not on a
 design choice.
 - QAF-9: should transfer inference fire on C-TRAN (station 106 and
@@ -1938,4 +2001,6 @@ design choice.
 - QAF-48: vehicle labels are empty, so the late list shows ids
   like "CTRAN7003". Is that id what a dispatcher calls the bus? If
   not, what is?
-Blocks: QAF-9 and QAF-48.
+Blocks: nothing. QAF-9 and QAF-48 are deleted; pins: analysis
+`network_stats` (`transfer_stops` counts flagged stops where two
+routes meet) and rt `live` summary `late[0].label` (the id fallback).

@@ -27,9 +27,10 @@ cap-streets). What is left:
    A compact encoding (delta-coded varints, names in a table: about
    3.4 MB before compression against the JSON's 4.5 MB gzipped) is a
    later step if the gzipped JSON is not enough.
-2. **The bus profile.** Which classes a bus may be drawn on, as an
-   op parameter with an op-owned default (walking's is decided and
-   built: `docs/ARCHITECTURE.md`, transit-streets). Blocked: D-26.
+2. **The bus profile.** Every class may be drawn on, as an op
+   parameter with an op-owned default; an unknown or path-like class
+   carries a warning the planner confirms (D-26; walking's profile
+   is built: `docs/ARCHITECTURE.md`, transit-streets).
 3. **Walking for riders.** The walk table and trips from any point
    are on the bus (cap-streets `walks` and `access`, the router's
    `walks_hash` (the kernel's `load_walks`) and place ends; D-33), and ride-now
@@ -53,8 +54,6 @@ cap-streets). What is left:
    import never breaks a plan. Street names name new stops and the
    trace's legs (a route answer that carries the names it follows).
    The service-design UI registers the published document (item 1).
-   Blocked: D-26
-   (the bus profile).
 5. **Planned streets.** A street a plan serves that the data does
    not have. D-31: freehand only for now.
 6. **The geography release.** The basemap and the streets document,

@@ -241,6 +241,9 @@ transit-codec   The network codec, both directions, over the whole
                 ImportNote (stops without coordinates and the trips
                 serving them, single-stop trips, a transfer point
                 where fewer than two routes meet) — never silent.
+                A transfer point is the feed's own flag: nothing infers
+                one, so a feed that never sets it counts none (RAPTOR
+                plans transfers regardless).
                 The laws: the import is valid by construction over
                 spec-valid feeds (tests/import_prop_test), keeps the
                 trips (tests/trip_import_law_test), and
@@ -1364,7 +1367,8 @@ cap-rt          The realtime capability: decode — a GTFS-rt protobuf
                 per BLOCK: a delay propagated to a block's next trip
                 while its bus runs the trip before is a located
                 vehicle (position_trip_id names the trip it is on;
-                vehicle_id rides beside the label). live mints THE
+                vehicle_id rides beside the label; a vehicle with no label is named by
+                its id). live mints THE
                 LIVE DOCUMENT (transit-live) from the
                 trip-updates, vehicle-positions, and/or service-alerts
                 snapshots (alerts_hash; every snapshot's own alerts

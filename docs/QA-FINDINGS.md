@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-97**. A
+IDs are never reused; the next new finding is **QAF-98**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -64,23 +64,6 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   A planner reads these as two branches.
   Pin: directory `timetable` 006 "1" 1-WKDY.
   Blocked: D-44.
-- **QAF-9 DATA/MODEL** — `transfer_stops: 0` across C-TRAN while
-  the station board pools bays through parent-based walking groups.
-  Is transfer inference expected to fire on real feeds, or is the
-  fixture the only world with transfers?
-  Pin: analysis `network_stats` (`transfer_stops`); board at stop
-  9021 pooling bays 9021–9027.
-  Re-confirmed: 2026-10-28, directory `stops` "fisher" — station 106
-  and all nine bays `transfer: false`.
-  Blocked: D-10.
-- **QAF-48 DATA GAP** — C-TRAN's vehicle labels are empty, so the
-  late list names buses by internal id ("CTRAN2269"). The fallback
-  is honest; whether that id is what a dispatcher calls the bus is
-  an agency question.
-  Pin: rt `live` summary `late[0].label`.
-  Re-confirmed: 2026-10-28 08:52 snapshot, `late[0].label`
-  "CTRAN7003" (route 105, +721 s).
-  Blocked: D-10.
 - **QAF-65 DATA GAP** — the I-5-closure-era service is modeled as
   sibling service ids (1-WKDY/30, /31, …) that ride along with the
   base weekday — same weekly pattern, every day they run a day
@@ -122,6 +105,19 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   Pin: 2026-10-30 analysis `type_coverage` on C-TRAN with
   `clark-population.geojson`, radius 400 m, frequent 900 s, min
   departures 2.
+- **QAF-97 DEFECT** — a service type's numbers are anchored to a
+  calendar date, which the user rules out (D-55): `representative_date`
+  in `transit-analysis` picks the first date the type's rule runs, and
+  `service_types_overview`, `service_groups`, `service_type_detail`
+  and `schedule_texture` compute on it and report it as `date`. A type
+  that holds in a later period (1-WKDY/31) is measured on whichever
+  date its rule first allows, and the answer names a date as if the
+  service were that day's. The numbers should describe the
+  combination of service types (e.g. 1-WKDY + 1-WKDY/30), with the
+  dates it holds beside it, and no date standing in for it.
+  Pin: `transit-analysis` `representative_date`; analysis
+  `service_groups` 1-WKDY on C-TRAN (`date` field).
+  Decided: D-55; free to start.
 - **QAF-91 DEFECT** — the service group pools members that never run
   on the same day: 1-WKDY/30 runs 2026-09-14 → 2026-10-09 and
   1-WKDY/31 runs 2026-10-12 → 2027-01-08 (no shared date). They are
@@ -137,7 +133,8 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   trips, 942.2 revenue hours; directory `timetable` 071 "0" 1-WKDY —
   trips 762788 and 758141 both at 07:12; calendar_dates.txt — /30 and
   /31 share no date.
-  Blocked: D-55.
+  Decided: D-55 (a group is a combination of service types that run
+  together, shown with the dates it holds); free to start.
 
 ## The model
 
@@ -170,7 +167,9 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   Pin: 2026-10-27 `fleet_summary` on the weekday import — 97 blocks,
   77 peak at 16:50, 1003.78 platform h = 803.61 revenue + 200.18
   layover (revenue cross-checks `network_stats` exactly).
-  Blocked: D-46. Decided: D-9 (policy wins over derived), free to start.
+  Decided: D-46 (automatic blocking, tunable, inside the runcut
+  capability, under the work-rule policy of D-50) and D-9 (policy
+  wins over derived); waits on that policy document, no other decision.
 - **QAF-20 OP GAP** — the scenario diff is half there: per route
   (analysis `service_type_compare`) and per timetable (directory
   `timetable {compare_hash}`) are answered. Coverage deltas still
@@ -326,22 +325,26 @@ work rules, and the bid over them.
   / 12 / 3 / 15 / 34 (14–18 h) / 7 (>18 h); the longest internal
   gaps are 88, 84, and 70 min (1-WKDY/311013, /311015, /311011),
   none ≥ 90, so every cut is a mid-layover policy cut.
-  Blocked: D-50.
+  Decided: D-50 (a generic work-rule policy document); the runs
+  layer is free to start.
 - **QAF-11 OP GAP** — no runs layer: blocks-to-runs cutting does
   not exist, so a priced run menu cannot be produced.
   Pin: 2026-10-26 by hand — 140 runs over 81 blocks + 25 trippers
   under assumed 8 h max platform / 15+15 report-pull / 2 h min
   piece.
-  Blocked: D-50.
+  Decided: D-50 (a generic work-rule policy document); the runs
+  layer is free to start.
 - **QAF-12 OP GAP** — no work-rule policy document: pay parameters
   have no home on the bus, so run legality cannot be validated.
   Pin: QAF-11's menu moves entirely with its assumed parameters.
-  Blocked: D-50.
+  Decided: D-50 (a generic work-rule policy document); the runs
+  layer is free to start.
 - **QAF-14 OP GAP** — no run view: report/pull time and place,
   platform, pay, pieces, deadhead per run.
   Pin: block 1-WKDY5004 cut by hand into three pieces reporting
   05:25 / 14:12 / 22:23.
-  Blocked: D-50.
+  Decided: D-50 (a generic work-rule policy document); the runs
+  layer is free to start.
 
 ## Geography
 
