@@ -23,7 +23,7 @@ fn load(network: Network) -> String {
 }
 
 fn apply(network_hash: &str, edits: Vec<NetworkEdit>) -> Result<Response, String> {
-    dispatch(Request::Apply { network_hash: network_hash.into(), edits })
+    dispatch(Request::Apply { network_hash: network_hash.into(), edits, work_rules_hash: None })
 }
 
 #[test]
@@ -38,7 +38,7 @@ fn changes_chain_by_hash_and_report_the_result() {
     let base = load(network());
     // Fork into a pick dated after the calendar ends: applied, and
     // the warning says the pick governs a period with no service.
-    let Response::Apply { network_hash: pick, network, issues, warnings, created } = apply(
+    let Response::Apply { network_hash: pick, network, issues, warnings, created, touched } = apply(
         &base,
         vec![NetworkEdit::SetPlan {
             plan: PlanMeta {
@@ -46,6 +46,7 @@ fn changes_chain_by_hash_and_report_the_result() {
                 name: "Spring 2027".into(),
                 effective_from: chrono::NaiveDate::from_ymd_opt(2027, 1, 10),
             },
+            through: None,
         }],
     )
     .unwrap() else {
@@ -53,6 +54,7 @@ fn changes_chain_by_hash_and_report_the_result() {
     };
     assert_ne!(pick, base, "a change is a new document");
     assert!(created.is_empty(), "a plan frame creates nothing");
+    assert!(touched.is_empty());
     assert_eq!(network.plan.id, "spring");
     assert!(issues.is_empty());
     // (The 25:30 trip was never in block 400: unassigned, warned.)
@@ -86,12 +88,49 @@ fn changes_chain_by_hash_and_report_the_result() {
                 name: "Spring 2027".into(),
                 effective_from: chrono::NaiveDate::from_ymd_opt(2027, 1, 10),
             },
+            through: None,
         }],
     )
     .unwrap() else {
         panic!("apply")
     };
     assert_eq!(again, pick, "the same change of the same document is the same document");
+
+    // D-41 (QAF-54): the fork carries the calendar — the same pick with
+    // its period end runs the weekday on its date, and the warning
+    // never fires.
+    let Response::Apply { network, warnings, .. } = apply(
+        &base,
+        vec![NetworkEdit::SetPlan {
+            plan: PlanMeta {
+                id: "spring".into(),
+                name: "Spring 2027".into(),
+                effective_from: chrono::NaiveDate::from_ymd_opt(2027, 1, 10),
+            },
+            through: Some("2027-05-29".into()),
+        }],
+    )
+    .unwrap() else {
+        panic!("apply")
+    };
+    let monday = chrono::NaiveDate::from_ymd_opt(2027, 1, 11).unwrap();
+    assert!(network.service_types["weekday"].rule.runs_on(monday));
+    assert_eq!(warnings, vec![NetworkWarning::UnassignedTrips { pattern_trips: "10-weekday".into(), trips: 1 }]);
+}
+
+/// D-11 through the seam: a redraw names the patterns it moved.
+#[test]
+fn a_redraw_reports_the_patterns_it_touched() {
+    let base = load(network());
+    let edit: NetworkEdit = serde_json::from_value(serde_json::json!({
+        "edit": "draw_alignment", "pattern": "10-inbound", "redraw": "one",
+        "points": [{"lat": 45.5, "lon": -73.5}, {"lat": 45.51, "lon": -73.51}]
+    }))
+    .unwrap();
+    let Response::Apply { network, created, touched, .. } = apply(&base, vec![edit]).unwrap() else { panic!("apply") };
+    let new_line = network.patterns["10-inbound"].alignment.clone().unwrap();
+    assert_eq!(created, vec![transit_network::CreatedEntity { kind: "alignment".into(), id: new_line }]);
+    assert_eq!(touched, vec![transit_network::TouchedEntity { kind: "pattern".into(), id: "10-inbound".into() }]);
 }
 
 #[test]
@@ -149,4 +188,35 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     assert_eq!(via_bytes, via_json);
     let bad = cap_author::invoke_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
+}
+
+/// D-9: with work rules, a block's waits are judged against what the
+/// rules require (they win over the terminal's floor); an unknown
+/// rules hash is the unknown-hash error.
+#[test]
+fn work_rules_judge_the_waits_of_the_next_document() {
+    let base = load(network());
+    let issues = |work_rules_hash: Option<String>| {
+        match dispatch(Request::Apply { network_hash: base.clone(), edits: vec![], work_rules_hash }).unwrap() {
+            Response::Apply { issues, .. } => issues,
+        }
+    };
+    assert_eq!(issues(None), vec![], "block 400 keeps the floor at its terminal");
+    let rules = transit_runs::WorkRules {
+        version: 1,
+        recovery: vec![transit_runs::RecoveryRule { route: None, service_type: None, min_secs: Some(86_400), pct_of_run: None }],
+        ..Default::default()
+    };
+    let loaded = cap_abi::kernel::invoke(
+        &[&cap_author::CAPABILITY],
+        &serde_json::json!({ "op": "load_work_rules", "work_rules": rules }).to_string(),
+    );
+    let hash = serde_json::from_str::<serde_json::Value>(&loaded).unwrap()["ok"]["work_rules_hash"].as_str().unwrap().to_string();
+    let ruled = issues(Some(hash));
+    assert!(
+        matches!(&ruled[..], [transit_network::NetworkError::LayoverInfeasible { block, required_secs: 86_400, required_by: transit_network::RecoverySource::Policy, .. }] if block == "400"),
+        "{ruled:?}"
+    );
+    let err = dispatch(Request::Apply { network_hash: base, edits: vec![], work_rules_hash: Some("sha256:nope".into()) }).unwrap_err();
+    assert!(err.contains("load_work_rules"), "{err}");
 }

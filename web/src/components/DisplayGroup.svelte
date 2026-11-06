@@ -3,10 +3,13 @@
   /// `grouped_board` group: the route (its authored colors), where it
   /// is going, and its next departures, each as the row's `wait` says
   /// it, live or scheduled, and (at a station) the bay it leaves from.
-  /// A group with none left says why: the edits took it from this
-  /// stop, or it has stopped for the day.
+  /// A group with none left says why: a detour took it from this
+  /// stop, its trips were cancelled (each skipped visit names the edit
+  /// that took it — `diversion` or `cancel`), or it has stopped for
+  /// the day — and when it next runs here (the op's `next`, D-42:
+  /// within a week, else nothing).
   import type { DepartureGroup } from "../types/DepartureGroup";
-  import { routeColor, statusText, statusTone, waitText } from "./rideFormat";
+  import { nextText, routeColor, statusText, statusTone, waitText } from "./rideFormat";
 
   let {
     group,
@@ -25,6 +28,8 @@
 
   const bg = $derived(routeColor(group.route_color) ?? "var(--accent)");
   const fg = $derived(routeColor(group.route_text_color) ?? "#fff");
+  const cancelled = $derived(group.skipped.filter((s) => s.cancel).length);
+  const detoured = $derived(group.skipped.length - cancelled);
 </script>
 
 <article class="group {variant}" data-testid="display-group" data-route={group.route}>
@@ -48,13 +53,22 @@
         </li>
       {/each}
     </ol>
-  {:else if group.skipped.length}
+  {:else if detoured}
     <p class="none detour" data-testid="display-none">Detoured — not serving this stop</p>
+    {#if group.next}<p class="none" data-testid="display-next">{nextText(group.next)}</p>{/if}
+  {:else if cancelled}
+    <p class="none detour" data-testid="display-none">Cancelled</p>
+    {#if group.next}<p class="none" data-testid="display-next">{nextText(group.next)}</p>{/if}
+  {:else if group.next}
+    <p class="none" data-testid="display-none">{nextText(group.next)}</p>
   {:else}
-    <p class="none" data-testid="display-none">No more service today</p>
+    <p class="none" data-testid="display-none">No more service this week</p>
   {/if}
-  {#if group.departures.length && group.skipped.length}
+  {#if group.departures.length && detoured}
     <p class="note">Some trips detoured away from this stop</p>
+  {/if}
+  {#if (group.departures.length || detoured) && cancelled}
+    <p class="note" data-testid="display-cancelled">{cancelled === 1 ? "A trip was cancelled" : `${cancelled} trips were cancelled`}</p>
   {/if}
 </article>
 

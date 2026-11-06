@@ -52,7 +52,11 @@ size the run).
 1. **Unit/property tests in the owning crate** (oracle style for
    laws — e.g. `transit-network`'s `trip_law_test` holds that trips
    are stored records (ids, times, edits that keep them, documents
-   written before trips were stored); `transit-codec`'s
+   written before trips were stored), and its
+   `combination_law_test` that every date with service is in exactly
+   one service combination (D-55); `transit-analysis`'s
+   `analysis_prop_test` that a combination's pooled numbers are the
+   service on each of its dates; `transit-codec`'s
    `import_prop_test` holds that the imported document is valid by
    construction over every spec-valid feed and deterministic, its
    `trip_import_law_test` that the feed's trips are the document's,
@@ -60,10 +64,23 @@ size the run).
    `spec_round_trip_test` that
    GTFS → network → GTFS loses nothing in the GTFS Schedule spec,
    one law per file, against a raw-table oracle independent of the
-   parser; `transit-plans`'s chain tests hold the
+   parser, and its `dated_calendar_law_test` that a service
+   published as dates alone imports as the weekly rule its dates read
+   as and exports as dates again (D-105); `transit-plans`'s chain tests hold the
    service-plan chain laws (resolution, windows, validity,
    order-insensitivity); transit-dispatch's `dispatch_laws_test`
-   holds the diversion/ripple laws).
+   holds the diversion/ripple laws and its `cancel_law_test` the
+   trip-cancel laws; `transit-network`'s
+   `recovery_law_test` holds that a block's wait is judged against
+   the recovery required there — the work rules' requirement wins,
+   else the terminal's floor — never its own authored layover (D-9);
+   `transit-runs`'s `work_rules_test` the work-rule document (every
+   rule optional, the most specific rule, order is not identity),
+   `recovery_view_test` that a wait is short exactly where validation
+   says layover_infeasible, and `suggest_law_test` that suggested
+   blocking covers every unassigned trip once, legally (one place, an
+   allowed pair, the required recovery), and adopts into a document
+   that validates clean with the peak it named).
 2. **A dispatch test if a new op exists** (native, JSON round-trip)
    — the module's `tests/dispatch_test.rs`, plus a flow in
    `crates/cap-abi/caps-smoke.mjs` and a chained runner gate in the

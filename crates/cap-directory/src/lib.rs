@@ -105,8 +105,12 @@ pub enum Request {
     /// The stop list, name-sorted (the pickers' shape): every stop
     /// with its walking-group structure. `query` narrows it the way
     /// a picker's typing does — every whitespace-separated term must
-    /// appear in the name or the id, case-insensitive ("fisher
-    /// landing" finds Fisher's Landing and its bays). `limit`
+    /// be answered, case-insensitive: inside the name or the id
+    /// ("fisher landing" finds Fisher's Landing and its bays), by an
+    /// abbreviation on the sign ("vancouver mall" finds Van Mall), or
+    /// within a typo of a name word (D-48; the thresholds are D-91,
+    /// `transit_network::listing::name_match`). Exact matches list
+    /// first, then abbreviations, then typos, each by name. `limit`
     /// truncates after the sort; `None` answers the whole list — a
     /// silently truncated directory would be a lie.
     Stops {
@@ -180,17 +184,19 @@ pub enum Request {
     /// id order. Null for an unknown stop.
     StopDetail { network_hash: String, stop_id: String },
     /// The planner's timetable: one route, one direction (null: its
-    /// patterns in no direction), one service type — every trip of
-    /// the direction's patterns, one row per trip by start, one
-    /// column per stop in route order. Null for an unknown route,
-    /// direction or service type.
+    /// patterns in no direction), one service COMBINATION (`members`,
+    /// the types that run together — analysis `service_groups`) —
+    /// every trip its members run on the direction's patterns, one
+    /// row per trip by start, one column per stop in route order.
+    /// Null for an unknown route or direction, or members that never
+    /// run together on a date.
     Timetable {
         network_hash: String,
         route_id: String,
         #[serde(default)]
         #[ts(optional)]
         direction: Option<String>,
-        service_type: String,
+        members: Vec<String>,
         /// A loaded baseline to mark the timetable against: trips it
         /// does not run are `added`, its trips this one no longer runs
         /// are `removed`.
@@ -242,24 +248,12 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Stops { network_hash, query, limit } => {
             let network = network_arc(&network_hash)?;
-            let terms: Vec<String> = query
-                .as_deref()
-                .unwrap_or("")
-                .split_whitespace()
-                .map(str::to_lowercase)
-                .collect();
-            let mut stops: Vec<DirectoryStop> = network
-                .stops
-                .keys()
+            // The pickers' order (exact, then abbreviation, then typo;
+            // by name, then id) is the library's (D-48).
+            let mut stops: Vec<DirectoryStop> = transit_network::listing::find_stops(&network, query.as_deref().unwrap_or(""))
+                .iter()
                 .filter_map(|id| directory_stop(&network, id))
-                .filter(|stop| {
-                    let haystack = format!("{} {}", stop.name, stop.stop_id).to_lowercase();
-                    terms.iter().all(|term| haystack.contains(term.as_str()))
-                })
                 .collect();
-            // Name-sorted for pickers; the id breaks ties so the
-            // order is total and deterministic.
-            stops.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.stop_id.cmp(&b.stop_id)));
             if let Some(limit) = limit {
                 stops.truncate(limit as usize);
             }
@@ -352,7 +346,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let network = network_arc(&network_hash)?;
             Ok(Response::StopDetail { detail: transit_network::stop_detail(&network, &stop_id) })
         }
-        Request::Timetable { network_hash, route_id, direction, service_type, compare_hash } => {
+        Request::Timetable { network_hash, route_id, direction, members, compare_hash } => {
             let network = network_arc(&network_hash)?;
             let timetable = match compare_hash {
                 Some(base) => transit_network::timetable_against(
@@ -360,9 +354,9 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                     &*network_arc(&base)?,
                     &route_id,
                     direction.as_deref(),
-                    &service_type,
+                    &members,
                 ),
-                None => transit_network::timetable(&network, &route_id, direction.as_deref(), &service_type),
+                None => transit_network::timetable(&network, &route_id, direction.as_deref(), &members),
             };
             Ok(Response::Timetable { timetable })
         }

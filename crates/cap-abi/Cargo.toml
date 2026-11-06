@@ -30,6 +30,9 @@ transit-live = { path = "../transit-live" }
 # through the same shared library the module dispatches through.
 transit-sync = { path = "../transit-sync" }
 transit-dispatch = { path = "../transit-dispatch" }
+# …and the work-rule document kind and the runcut's recovery and
+# suggested-blocking examples (the runs layer, beside the network).
+transit-runs = { path = "../transit-runs" }
 # …and the router's examples compute REAL itineraries over the same
 # composition (materialize, patch, build, query) the module runs.
 transit-router = { path = "../transit-router" }

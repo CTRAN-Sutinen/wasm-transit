@@ -28,6 +28,7 @@ members = [
     "crates/cap-divert",
     "crates/transit-analysis",
     "crates/transit-dispatch",
+    "crates/transit-runs",
     # The assembly crates (gen-assemblies, `just caps` — generated and
     # gitignored, assemblies/.gitkeep keeps the directory): the modules —
     # each capability alone, and each generated UI's capabilities linked.
@@ -88,3 +89,10 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# Dev and test builds (the test profile inherits dev) keep line tables
+# only: backtraces still name file and line, and the full DWARF, the bulk
+# of target/, is dropped. The release wasm above
+# is unaffected.
+[profile.dev]
+debug = "line-tables-only"

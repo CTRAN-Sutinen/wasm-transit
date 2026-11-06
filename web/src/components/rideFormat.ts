@@ -4,6 +4,7 @@
 
 import type { LiveStatus } from "../types/LiveStatus";
 import type { Wait } from "../types/Wait";
+import type { NextService } from "../types/NextService";
 
 /// "8:02" and "am" — a rider's clock, the suffix set apart so a
 /// board can size it down.
@@ -85,4 +86,30 @@ export function waitText(wait: Wait): string {
     default:
       return clockText(wait.secs);
   }
+}
+
+/// When to leave, from an itinerary's `leave` (the board's wait rule,
+/// D-40): "Leave now", "Leave in 7 min", or "Leave at 9:10 am".
+export function leaveText(wait: Wait): string {
+  switch (wait.kind) {
+    case "due":
+      return "Leave now";
+    case "minutes":
+      return `Leave in ${wait.minutes} min`;
+    default:
+      return `Leave at ${clockText(wait.secs)}`;
+  }
+}
+
+/// A trip's door-to-door length (`duration_secs`): "25 min", "1 h 5 min".
+export function durationText(secs: number): string {
+  const m = Math.round(secs / 60);
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
+}
+
+/// When a stopped route next runs, as the board's `next` says it
+/// (D-42): "Next: 5:12 am tomorrow", "Next: Monday 5:12 am".
+export function nextText(next: NextService): string {
+  const at = clockText(next.departure_secs);
+  return next.days_ahead === 1 ? `Next: ${at} tomorrow` : `Next: ${next.weekday} ${at}`;
 }

@@ -29,6 +29,7 @@ function setup(manifest, fixtures) {
     load_walks: "walks",
     load_streets: "streets",
     load_watchlist: "watchlist",
+    load_work_rules: "work_rules",
   };
   const steps = [];
   for (const op of manifest.kernel_ops ?? []) {

@@ -207,7 +207,7 @@ test: caps
     # quarter-hour grid (28800, 29700), three off it.
     node tools/caps-run.mjs analysis \
       --op @web/public/caps/sample-network-load.json \
-      --op '{"op":"schedule_texture","network_hash":"$load_network.network_hash","service_type":"WK"}' \
+      --op '{"op":"schedule_texture","network_hash":"$load_network.network_hash","members":["WK"]}' \
       | grep -q '"on_clockface":2,"pattern_trips":\['
     # The corridor read (QAF-22): routes 10 and 20 share the A→B
     # segment and stack three departures at A — the pair answered,
@@ -270,6 +270,23 @@ test: caps
       --op '{"op":"load_edits","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
       --op '{"op":"block_trips","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","block_id":"B1","date":"2026-10-23"}' \
       | grep -q '"layover_remaining_secs":300'
+    # Blocking where cutting the work begins (D-46, D-9): the work
+    # rules registered, the recovery view under them, the suggested
+    # blocking of the trips no block carries, adopted through author
+    # `apply` under the same rules (no layover_infeasible), and the
+    # adopted document's fleet peak is the one the suggestion named —
+    # one chained session across runcut and author.
+    node tools/caps-run.mjs runcut \
+      --op @web/public/caps/sample-network-load.json \
+      --as wr --op '{"op":"load_work_rules","work_rules":{"version":1,"recovery":[{"min_secs":300}],"interline":[{"a":"10","b":"20"}]}}' \
+      --as rec --op '{"op":"recovery","network_hash":"$load_network.network_hash","date":"2026-10-23","work_rules_hash":"$wr.work_rules_hash"}' \
+      --as s --op '{"op":"suggest_blocks","network_hash":"$load_network.network_hash","date":"2026-10-23","work_rules_hash":"$wr.work_rules_hash"}' \
+      --cap author --op @web/public/caps/sample-network-load.json \
+      --as awr --op '{"op":"load_work_rules","work_rules":{"version":1,"recovery":[{"min_secs":300}],"interline":[{"a":"10","b":"20"}]}}' \
+      --as a --op '{"op":"apply","network_hash":"$load_network.network_hash","edits":"$s.suggestion.edits","work_rules_hash":"$awr.work_rules_hash"}' \
+      --cap runcut --as adopted --op '{"op":"load_network","network":"$a.network"}' \
+      --as fleet --op '{"op":"fleet_summary","network_hash":"$adopted.network_hash","date":"2026-10-23"}' \
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const s = ok("s").suggestion; if (!ok("rec").recovery.waits.length || ok("a").issues.some((i) => i.layover_infeasible) || ok("fleet").summary.peak_vehicles !== s.peak_vehicles) process.exit(1)'
     # The map's geometry is answered, never computed by a host (W4):
     # a plan's ridden segment (router), the diverted 08:40 trip drawn
     # along the diversion's traced detour from A (runcut), and a route
@@ -295,7 +312,7 @@ test: caps
       --as detail --op '{"op":"route_detail","network_hash":"$load_network.network_hash","route_id":"10"}' \
       --as stops --op '{"op":"entities","network_hash":"$load_network.network_hash","kind":"stop","query":"main 2nd"}' \
       --as serving --op '{"op":"stop_detail","network_hash":"$load_network.network_hash","stop_id":"A"}' \
-      --as timetable --op '{"op":"timetable","network_hash":"$load_network.network_hash","route_id":"10","direction":"0","service_type":"WK"}' \
+      --as timetable --op '{"op":"timetable","network_hash":"$load_network.network_hash","route_id":"10","direction":"0","members":["WK"]}' \
       --cap router --op @web/public/caps/sample-network-load.json \
       --as late --op '{"op":"plan_compare","network_hash":"$load_network.network_hash","from":"A","to":"B","date":"2026-10-23","depart_secs":144000,"max_legs":6}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const d = ok("detail").detail; if (d.pattern_trips_by_type.map((g) => g.service_type).join() !== "SUN,WK" || !d.pattern_trips_by_type.every((g) => g.pattern_trips.every((s) => s.trips > 0)) || ok("stops").rows.map((s) => s.id).join() !== "B" || !ok("serving").detail.routes.some((r) => r.id === "10") || !(ok("timetable").timetable?.trips.length > 0) || !ok("late").notice?.text?.includes("within 6 legs")) process.exit(1)'
@@ -396,6 +413,17 @@ test: caps
       --as prop --op '{"op":"propose","network_hash":"$load_network.network_hash","draft":{"route_id":"10","pattern":"pat-10-0-1","first_kept_stop":"A","last_kept_stop":"B","served_stops":[],"slices":[],"added_mins":5,"start_date":"2026-10-23","end_date":"2026-10-23"},"records":[],"record_id":"e1","now_ms":1000}' \
       --op '{"op":"reports","network_hash":"$load_network.network_hash","records":"$prop.records"}' \
       | grep -q '"valid":true'
+    # A trip cancel, chained (D-45): divert cancels the 08:00 t10 on
+    # the Friday into an empty edit document, and the board in the
+    # same session lists its visit at A cancelled — never a row
+    # (D-100). grep reads the whole answer (no -q).
+    node tools/caps-run.mjs divert \
+      --op @web/public/caps/sample-network-load.json \
+      --as c --op '{"op":"cancel","network_hash":"$load_network.network_hash","records":[],"record_id":"c1","trip_id":"t10","date":"2026-10-23","now_ms":1000}' \
+      --cap board --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"load_edits","records":"$c.records"}' \
+      --op '{"op":"stop_board","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","stop_id":"A","date":"2026-10-23","from_secs":25200,"limit":10}' \
+      | grep '"cancel":"cancel-t10-1000"' > /dev/null
     # ARCHITECTURE GATES — the laws as assertions (spelled out in
     # crates/AGENTS.md), because prose does
     # not enforce:

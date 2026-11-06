@@ -150,8 +150,19 @@ pub enum NetworkError {
         start_secs: u32,
     },
 
-    #[error("block {block} layover after trip {after_trip} does not fit before the next trip")]
-    LayoverInfeasible { block: String, after_trip: usize },
+    /// The wait after trip `after_trip` is shorter than the recovery
+    /// required where the vehicle waits (D-9): a policy's requirement
+    /// when one applies (it wins), else the smallest authored layover
+    /// at that terminal. The layover's own authored length is not the
+    /// requirement — what is above the requirement is slack.
+    #[error("block {block}: {gap_secs} s after trip {after_trip}, under the {required_secs} s recovery required there")]
+    LayoverInfeasible {
+        block: String,
+        after_trip: usize,
+        gap_secs: u32,
+        required_secs: u32,
+        required_by: RecoverySource,
+    },
 
     #[error("trip {trip} appears in both block {a} and block {b}")]
     DuplicateBlockTrip { trip: String, a: String, b: String },
@@ -182,4 +193,16 @@ pub enum NetworkWarning {
     /// plan is the document's own, named as a reader knows it — its
     /// name, never its (often minted) id.
     NoServiceInPlanPeriod { plan_name: String, effective_from: String },
+}
+
+/// Where a required recovery came from (D-9).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, serde::Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoverySource {
+    /// The work-rule policy the caller supplied.
+    Policy,
+    /// The smallest authored layover at that terminal (no policy
+    /// applies).
+    Terminal,
 }

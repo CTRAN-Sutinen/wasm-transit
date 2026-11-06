@@ -1,0 +1,21 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "NAME": "Downtown", "jobs": 1200, "households": 300 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-73.503, 45.498], [-73.497, 45.498], [-73.497, 45.502], [-73.503, 45.502], [-73.503, 45.498]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "NAME": "Outskirts", "jobs": 80, "households": 900 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-73.62, 45.58], [-73.60, 45.58], [-73.60, 45.60], [-73.62, 45.60], [-73.62, 45.58]]]
+      }
+    }
+  ]
+}

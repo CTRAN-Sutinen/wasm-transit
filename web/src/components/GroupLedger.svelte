@@ -1,10 +1,10 @@
 <script lang="ts">
   /// The selected group's numbers against the baseline (analysis
-  /// `service_type_compare`: both sides on their representative
-  /// days), with the answers the bus cannot give yet named as such.
+  /// `service_type_compare`: both sides pooled over the combination's
+  /// members), with the answers the bus cannot give yet named as such.
   import type { ServiceTypeComparison } from "../types/ServiceTypeComparison";
   import type { ServiceGroup } from "../types/ServiceGroup";
-  import { count, fixed, change } from "./designFormat";
+  import { count, fixed, change, spansText } from "./designFormat";
 
   let {
     group,
@@ -31,7 +31,7 @@
   <div class="stat"><small>Peak vehicles</small><b class="muted">—</b><span class="blocker">D-46</span></div>
   <div class="stat"><small>Cost</small><b class="muted">—</b><span class="blocker">D-51</span></div>
   <p class="note muted">
-    {#if p && b}against {baselineName}, each on its representative day ({b.date} → {p.date}){:else if group}{group.name} on {group.date}{/if}
+    {#if p && b}against {baselineName}, over the same service types (it holds on {b.days} → {p.days} days){:else if group}{group.id}: {spansText(group.spans)}{/if}
   </p>
 </section>
 

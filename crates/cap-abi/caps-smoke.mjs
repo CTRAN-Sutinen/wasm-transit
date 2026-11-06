@@ -263,7 +263,7 @@ assert(quietHours.hours.length === 0, "a day nothing runs answers empty, never e
 const texture = analysis.invoke({
   op: "schedule_texture",
   network_hash: loadedNet.network_hash,
-  service_type: "WK",
+  members: ["WK"],
 });
 assert(texture.texture.pattern_trips.length === 1, "one schedule under WK");
 const row = texture.texture.pattern_trips[0];
@@ -273,9 +273,9 @@ assert(texture.texture.on_clockface === 1, "28800 s is on the quarter-hour grid"
 const unknownTexture = analysis.invoke({
   op: "schedule_texture",
   network_hash: loadedNet.network_hash,
-  service_type: "nope",
+  members: ["nope"],
 });
-assert(unknownTexture.texture == null, "an unknown service type answers null, never errors");
+assert(unknownTexture.texture == null, "members that never run together answer null, never errors");
 // The corridor read (QAF-22): a one-route document has no pairs —
 // the honest answer is empty, never an error.
 const overlaps = analysis.invoke({
@@ -302,24 +302,30 @@ const layer = analysis.invokeBytes(OP_LOAD_LAYER, Buffer.from(JSON.stringify({
     { type: "Feature", properties: { pop: 500 }, geometry: { type: "Point", coordinates: [-74.0, 46.0] } },
   ],
 })));
-assert(layer.points === 2, "analysis registers a population layer by content hash");
+assert(layer.points === 2 && layer.polygons === 0, "analysis registers a weighted layer by content hash");
 // The registration answer IS the import handle (U4: the monolith's
-// parse-only op is retired): the field the parse picked, the people
-// it found.
-assert(layer.pop_field === "pop", "the layer handle names the population field");
-assert(layer.total_pop === 1000, "the layer handle sums the population: " + layer.total_pop);
+// parse-only op is retired): the weights the layer can be read by,
+// each with its total — a coverage op names the field (D-47).
+assert(
+  layer.fields.length === 1 && layer.fields[0].name === "pop" && layer.fields[0].total === 1000,
+  "the layer handle names its weights: " + JSON.stringify(layer.fields),
+);
 const coverage = analysis.invoke({
   op: "type_coverage",
   network_hash: loadedNet.network_hash,
   layer_hash: layer.layer_hash,
+  members: ["WK"],
   radius_m: 500,
   frequent_secs: 3600,
   min_departures: 2,
 });
-assert(coverage.coverage.length === 1, "type coverage answers by hash pair");
+// One combination's coverage (D-55): named by its members, with the
+// dates it holds beside it — no date stands in for it.
+assert(coverage.coverage.group === "WK" && coverage.coverage.spans.length > 0, "type coverage answers the WK combination");
+assert(coverage.layer.field === "pop" && coverage.layer.label === "pop", "the answer says how it read the layer");
 assert(
-  coverage.coverage[0].served_pct === 50,
-  `half the layer is served (one point at a stop, one far away): ${coverage.coverage[0].served_pct}`,
+  coverage.coverage.served_pct === 50,
+  `half the layer is served (one point at a stop, one far away): ${coverage.coverage.served_pct}`,
 );
 // The windowed form crosses the seam (QAF-42): frequency judged as
 // the worst wait inside a window; the whole day is the widest one.
@@ -327,14 +333,34 @@ const windowed = analysis.invoke({
   op: "type_coverage",
   network_hash: loadedNet.network_hash,
   layer_hash: layer.layer_hash,
+  members: ["WK"],
   radius_m: 500,
   frequent_secs: 3600,
   min_departures: 2,
   window: { start_secs: 0, end_secs: 86400 },
 });
 assert(
-  windowed.coverage.length === 1 && windowed.coverage[0].served_pct === 50,
+  windowed.coverage.served_pct === 50,
   "the window changes frequency, never what is served",
+);
+// The comparison crosses the seam: the network's weekday type against
+// itself gains and loses nothing (the host names each side's types).
+const coverageDelta = analysis.invoke({
+  op: "coverage_compare",
+  base_hash: loadedNet.network_hash,
+  network_hash: loadedNet.network_hash,
+  layer_hash: layer.layer_hash,
+  label: "people",
+  base_members: ["WK"],
+  members: ["WK"],
+  radius_m: 500,
+  frequent_secs: 3600,
+  min_departures: 2,
+});
+assert(
+  coverageDelta.layer.label === "people" && coverageDelta.comparison.base.served === 500 &&
+    coverageDelta.comparison.served_gained === 0 && coverageDelta.comparison.served_lost === 0,
+  "a network coverageDelta with itself gains and loses nothing: " + JSON.stringify(coverageDelta.comparison),
 );
 const unknownNet = analysis.raw({ op: "network_stats", network_hash: "sha256:missing", date: "2026-01-05" });
 assert(unknownNet.error && unknownNet.error.includes("unknown network"), "unknown hashes error, never panic");
@@ -706,6 +732,26 @@ assert(
 );
 const parkedDay = runcut.raw({ op: "blocks", network_hash: loadedRuncutNet.network_hash, date: "2026-10-24" });
 assert(parkedDay.ok && parkedDay.ok.blocks.length === 0, "a no-service day has no blocks out");
+// The work rules on the kernel's load (checked and normalized: two
+// orderings, one identity), B1's wait under them (the recovery view:
+// 600 s against the rules' 900 s is 300 s short), and the suggested
+// blocking of the trips B1 does not carry.
+const rulesA = runcut.invoke({ op: "load_work_rules", work_rules: { version: 1, recovery: [{ min_secs: 900 }], interline: [{ a: "20", b: "10" }, { a: "10", b: "40" }] } });
+const rulesB = runcut.invoke({ op: "load_work_rules", work_rules: { version: 1, interline: [{ a: "10", b: "40" }, { a: "10", b: "20" }], recovery: [{ min_secs: 900 }] } });
+assert(rulesA.work_rules_hash === rulesB.work_rules_hash && rulesA.version === 1, "work rules: one document, one identity, however ordered");
+const refusedRules = runcut.raw({ op: "load_work_rules", work_rules: { version: 1, recovery: [{}] } });
+assert(refusedRules.error && refusedRules.error.includes("requires nothing"), "work rules that require nothing are refused at the load");
+const recoveryView = runcut.invoke({ op: "recovery", network_hash: loadedRuncutNet.network_hash, date: DATE, work_rules_hash: rulesA.work_rules_hash });
+assert(
+  recoveryView.recovery.waits.length === 1 && recoveryView.recovery.waits[0].required_secs === 900 && recoveryView.recovery.waits[0].slack_secs === -300,
+  "the recovery view: B1's 600 s wait is 300 s short of the rules' 900 s",
+);
+const suggestion = runcut.invoke({ op: "suggest_blocks", network_hash: loadedRuncutNet.network_hash, date: DATE }).suggestion;
+assert(
+  suggestion.blocks.length > 0 && suggestion.blocks.every((b) => b.block_id.startsWith("auto-")) && suggestion.edits.length > 0 &&
+    suggestion.authored_peak_vehicles === 1,
+  "the suggested blocking chains the trips B1 does not carry into new blocks, with the edits that adopt them",
+);
 const runcutChain = runcut.invoke({
   op: "block_trips",
   network_hash: loadedRuncutNet.network_hash,
@@ -998,14 +1044,14 @@ assert(
     routeDetail.directions[0].patterns.length === routeDetail.patterns.length,
   "a route lists its patterns by direction",
 );
-const table = dir.invoke({ op: "timetable", network_hash: loadedDirNet.network_hash, route_id: "10", direction: "0", service_type: "WK" }).timetable;
+const table = dir.invoke({ op: "timetable", network_hash: loadedDirNet.network_hash, route_id: "10", direction: "0", members: ["WK"] }).timetable;
 assert(
   table.trips.length > 0 && table.trips.every((t) => t.times.length === table.stops.length) &&
     table.trips.every((t, i, all) => i === 0 || all[i - 1].start_secs <= t.start_secs),
   "a timetable is every trip of one direction on one service type, by start",
 );
 assert(
-  dir.invoke({ op: "timetable", network_hash: loadedDirNet.network_hash, route_id: "10", direction: "9", service_type: "WK" }).timetable === null,
+  dir.invoke({ op: "timetable", network_hash: loadedDirNet.network_hash, route_id: "10", direction: "9", members: ["WK"] }).timetable === null,
   "an unknown direction has no timetable",
 );
 const stopDetail = dir.invoke({ op: "stop_detail", network_hash: loadedDirNet.network_hash, stop_id: "A" }).detail;
@@ -1326,19 +1372,19 @@ const frequent = author.invoke({
 });
 assert(frequent.issues.length === 0, "a higher frequency keeps the runcut valid");
 const frequentDir = dir.invoke({ op: "load_network", network: frequent.network });
-const frequentTable = dir.invoke({ op: "timetable", network_hash: frequentDir.network_hash, route_id: "10", direction: "0", service_type: "WK" }).timetable;
+const frequentTable = dir.invoke({ op: "timetable", network_hash: frequentDir.network_hash, route_id: "10", direction: "0", members: ["WK"] }).timetable;
 assert(
   frequentTable.trips.map((t) => `${t.start_secs}:${t.pattern}`).join() === "28800:pat-10-0-1,30000:pat-10-0-1,31200:pat-10-0-2",
   "set_headway fills the window on the neighbour's pattern, and the timetable reads it",
 );
-const marked = dir.invoke({ op: "timetable", network_hash: frequentDir.network_hash, route_id: "10", direction: "0", service_type: "WK", compare_hash: loadedDirNet.network_hash }).timetable;
+const marked = dir.invoke({ op: "timetable", network_hash: frequentDir.network_hash, route_id: "10", direction: "0", members: ["WK"], compare_hash: loadedDirNet.network_hash }).timetable;
 assert(
   marked.trips.map((t) => t.added).join() === "false,true,false" && marked.removed.length === 0,
   "against its baseline, the timetable marks the added trip",
 );
 analysis.invoke({ op: "load_network", network: imported.network });
 const analysisFrequent = analysis.invoke({ op: "load_network", network: frequent.network });
-const compared = analysis.invoke({ op: "service_type_compare", base_hash: imported.network_hash, network_hash: analysisFrequent.network_hash, service_type: "WK" }).comparison;
+const compared = analysis.invoke({ op: "service_type_compare", base_hash: imported.network_hash, network_hash: analysisFrequent.network_hash, members: ["WK"] }).comparison;
 assert(
   compared.proposal.trips === compared.base.trips + 1 && compared.routes.length === 1 && compared.routes[0].route_id === "10",
   "the comparison names the one route the change touched",
@@ -1387,6 +1433,24 @@ const stored = divert.invoke({ op: "sanitize", records: [restoredDoc[0], { id: "
 assert(stored.records.length === 1 && stored.dropped === 1, "a stored document drops what does not parse");
 const unready = divert.raw({ op: "propose", network_hash: divertNet.network_hash, draft: divertDraft, records: [], record_id: "x", now_ms: 1 });
 assert(unready.error && unready.error.includes("first stop"), "an unready draft is refused, naming why");
+// A trip cancel (D-45): the 08:00 t10 on the fixture's Friday — the
+// list names it, and the board lists its visit cancelled, never a row.
+const cancelled = divert.invoke({
+  op: "cancel", network_hash: divertNet.network_hash, records: proposed, record_id: "c9",
+  trip_id: "t10", date: DATE, now_ms: 8000,
+}).records;
+assert(cancelled.length === 2 && cancelled[1].cancel.trip_id === "t10" && !("diversion" in cancelled[1]), "cancel appends a cancel record");
+const listed = divert.invoke({ op: "list", network_hash: divertNet.network_hash, records: cancelled });
+assert(listed.rows.length === 1 && listed.cancels.length === 1 && listed.cancels[0].start_secs === 28800, "the list names a cancel apart");
+const notRunning = divert.raw({ op: "cancel", network_hash: divertNet.network_hash, records: [], record_id: "c", trip_id: "t10", date: "2026-10-25", now_ms: 1 });
+assert(notRunning.error && notRunning.error.includes("does not run"), "a cancel of a trip that does not run that day is refused");
+const cancelEdits = board.invoke({ op: "load_edits", records: [cancelled[1]] });
+const cancelledBoard = board.invoke({
+  op: "stop_board", network_hash: loadedBoardNet.network_hash, edits_hash: cancelEdits.edits_hash,
+  stop_id: "A", date: DATE, from_secs: 25200, limit: 10,
+}).board;
+assert(cancelledBoard.rows.every((r) => r.trip !== "t10"), "a cancelled trip is no row");
+assert(cancelledBoard.skipped.some((v) => v.trip === "t10" && v.cancel === cancelled[1].cancel.id && v.diversion === null), "the board lists it cancelled");
 
 
 // THE KERNEL BULK OP — every network consumer registers the bare

@@ -9,7 +9,8 @@
 ///
 /// The UI is six views over one selection (docs/units/ui-service-
 /// design.md, "The views"): plans, network, coverage, hubs, route,
-/// proposal. The selection — plan, baseline, service group, route,
+/// proposal. The selection — plan, baseline, service group (a
+/// combination of service types that run together, D-55), route,
 /// direction, stop, and the hour window — lives in the URL hash, so
 /// a view can be bookmarked and returned to.
 ///
@@ -42,8 +43,10 @@ import type { ServiceGroup } from "../../types/ServiceGroup";
 import type { ServiceTypeComparison } from "../../types/ServiceTypeComparison";
 import type { StopGaps } from "../../types/StopGaps";
 import type { Timetable } from "../../types/Timetable";
-import type { TypeCoverage } from "../../types/TypeCoverage";
+import type { CombinationCoverage } from "../../types/CombinationCoverage";
 import type { UnservedPoint } from "../../types/UnservedPoint";
+import type { LayerField } from "../../types/LayerField";
+import type { LayerReading } from "../../types/LayerReading";
 import type { PlanIssue } from "../../types/cap_plans/PlanIssue";
 import type { PlanPeriod } from "../../types/cap_plans/PlanPeriod";
 
@@ -74,7 +77,12 @@ export const sd = $state({
   issues: [] as NetworkError[],
   warnings: [] as NetworkWarning[],
   groups: [] as ServiceGroup[],
+  /// The selected group: a combination's id (its members joined " + ").
   group: "",
+  /// The service type the route view's gestures change — one member
+  /// of the group (D-8: gestures stay per service type; the panel
+  /// warns what else runs with it, D-95).
+  editType: "",
   hourly: null as HourlyTrips[] | null,
   frequency: null as RouteFrequency | null,
   comparison: null as ServiceTypeComparison | null,
@@ -88,7 +96,11 @@ export const sd = $state({
   window: null as HourWindow | null,
   layer: null as LayerInfo | null,
   coverageParams: { radius_m: 400, frequent_secs: 900, min_departures: 2 } as CoverageParams,
-  coverage: null as TypeCoverage[] | null,
+  /// The selected combination's coverage (null: none selected, or its
+  /// members never run together).
+  coverage: null as CombinationCoverage | null,
+  /// How the coverage op read the layer (its label, field, resolution).
+  coverageReading: null as LayerReading | null,
   unserved: null as UnservedPoint[] | null,
   overlaps: null as RouteOverlap[] | null,
   stops: [] as DirectoryStop[],
@@ -123,11 +135,29 @@ function baseline(): Network | null {
   return getAllPlans()[sd.compareKey] ?? null;
 }
 
-/// The selected group's representative day (the date its day-scoped
-/// ops answer on) — the group's own label, never a calendar nobody
-/// picked.
-function groupDate(): string {
-  return sd.groups.find((g) => g.service_type === sd.group)?.date ?? "";
+function selectedGroup(): ServiceGroup | null {
+  return sd.groups.find((g) => g.id === sd.group) ?? null;
+}
+
+/// The selected combination's members — what its pooled reads ask by.
+function groupMembers(): string[] {
+  return selectedGroup()?.members ?? [];
+}
+
+/// The date the day-scoped ops (hourly_trips, route_overlap, the hub
+/// reads) are asked on: the combination's first
+/// date. Every date a combination holds on runs exactly its members
+/// (the D-55 law: the date-scoped reads answer alike on each), so this
+/// is an address, never a label — the views name the combination and
+/// its spans.
+function groupDay(): string {
+  return selectedGroup()?.dates[0] ?? "";
+}
+
+/// Keep the gestures' service type a member of the selected group.
+function syncEditType(): void {
+  const members = groupMembers();
+  if (!members.includes(sd.editType)) sd.editType = members[0] ?? "";
 }
 
 function syncPlanRows(): void {
@@ -144,8 +174,10 @@ function syncPlanRows(): void {
 /// cap-network to ask again.
 const authoredIssues = new WeakMap<Network, NetworkError[]>();
 
-/// A population layer as the coverage frame shows it.
-type LayerInfo = { points: number; pop_field: string; total_pop: number };
+/// A weighted layer as the coverage frame shows it: what the load
+/// answered, and the planner's reading of it — which field is the
+/// weight and what it means (D-47).
+export type LayerInfo = { features: number; points: number; polygons: number; fields: LayerField[]; field: string; label: string };
 /// The layer's document, by which the coverage ops read it.
 let layer: Doc | null = null;
 
@@ -228,12 +260,13 @@ const request = answerGraph(
           const doc = active();
           if (!doc) return;
           sd.groups = (await ask("analysis", "service_groups", { network_hash: docOf(doc) })).groups;
-          // The selection keys on a group's base; it stays while the
-          // new answer still heads a row with it.
-          if (!sd.groups.some((g) => g.service_type === sd.group)) {
-            sd.group = sd.groups[0]?.service_type ?? "";
+          // The selection keys on a combination's id; it stays while
+          // the new answer still holds that combination.
+          if (!sd.groups.some((g) => g.id === sd.group)) {
+            sd.group = sd.groups[0]?.id ?? "";
             touch("group");
           }
+          syncEditType();
         }),
     },
     {
@@ -256,7 +289,7 @@ const request = answerGraph(
         framed("FrequencyGrid", () => (sd.frequency = null), async () => {
           const doc = active();
           if (!doc || !sd.group) return void (sd.frequency = null);
-          sd.frequency = (await ask("analysis", "route_frequency", { network_hash: docOf(doc), service_type: sd.group })).frequency;
+          sd.frequency = (await ask("analysis", "route_frequency", { network_hash: docOf(doc), members: groupMembers() })).frequency;
         }),
     },
     {
@@ -267,7 +300,7 @@ const request = answerGraph(
       run: () =>
         framed("DayProfile", () => (sd.hourly = null), async () => {
           const doc = active();
-          const date = groupDate();
+          const date = groupDay();
           if (!doc || !date) return void (sd.hourly = null);
           sd.hourly = (await ask("analysis", "hourly_trips", { network_hash: docOf(doc), date })).hours;
         }),
@@ -289,7 +322,7 @@ const request = answerGraph(
           const [doc, base] = [active(), baseline()];
           if (!doc || !base || !sd.group) return void (sd.comparison = null);
           sd.comparison = (
-            await ask("analysis", "service_type_compare", { base_hash: docOf(base), network_hash: docOf(doc), service_type: sd.group })
+            await ask("analysis", "service_type_compare", { base_hash: docOf(base), network_hash: docOf(doc), members: groupMembers() })
           ).comparison;
         }),
     },
@@ -324,7 +357,7 @@ const request = answerGraph(
               network_hash: docOf(doc),
               route_id: sd.route,
               direction: sd.direction ?? undefined,
-              service_type: sd.group,
+              members: groupMembers(),
               compare_hash: base ? docOf(base) : undefined,
             })
           ).timetable;
@@ -345,24 +378,27 @@ const request = answerGraph(
     {
       id: "analysis.type_coverage",
       frame: "Coverage",
-      needs: ["document.active", "layer", "coverage-params", "window", "view"],
+      needs: ["document.active", "group", "layer", "coverage-params", "window", "view"],
       visible: on("coverage"),
       run: () =>
         framed("Coverage", () => (sd.coverage = null), async () => {
           const doc = active();
-          if (!doc || !layer) return void (sd.coverage = null);
+          if (!doc || !layer || !sd.layer || !sd.group) return void ((sd.coverage = null), (sd.coverageReading = null));
           const p = sd.coverageParams;
           const window = sd.window ? { start_secs: sd.window.from * 3600, end_secs: sd.window.to * 3600 } : undefined;
-          sd.coverage = (
-            await ask("analysis", "type_coverage", {
-              network_hash: docOf(doc),
-              layer_hash: layer,
-              radius_m: p.radius_m,
-              frequent_secs: p.frequent_secs,
-              min_departures: p.min_departures,
-              window,
-            })
-          ).coverage;
+          const answer = await ask("analysis", "type_coverage", {
+            network_hash: docOf(doc),
+            layer_hash: layer,
+            members: groupMembers(),
+            field: sd.layer.field,
+            label: sd.layer.label,
+            radius_m: p.radius_m,
+            frequent_secs: p.frequent_secs,
+            min_departures: p.min_departures,
+            window,
+          });
+          sd.coverage = answer.coverage;
+          sd.coverageReading = answer.layer;
         }),
     },
     {
@@ -373,11 +409,18 @@ const request = answerGraph(
       run: () =>
         framed("Unserved", () => (sd.unserved = null), async () => {
           const doc = active();
-          const date = groupDate();
-          if (!doc || !layer || !date) return void (sd.unserved = null);
-          sd.unserved = (
-            await ask("analysis", "unserved_points", { network_hash: docOf(doc), layer_hash: layer, radius_m: sd.coverageParams.radius_m, date })
-          ).points;
+          if (!doc || !layer || !sd.layer || !sd.group) return void (sd.unserved = null);
+          sd.unserved =
+            (
+              await ask("analysis", "unserved_points", {
+                network_hash: docOf(doc),
+                layer_hash: layer,
+                field: sd.layer.field,
+                label: sd.layer.label,
+                radius_m: sd.coverageParams.radius_m,
+                members: groupMembers(),
+              })
+            ).unserved?.points ?? null;
         }),
     },
     {
@@ -400,7 +443,7 @@ const request = answerGraph(
       run: () =>
         framed("Corridors", () => (sd.overlaps = null), async () => {
           const doc = active();
-          const date = groupDate();
+          const date = groupDay();
           if (!doc || !date) return void (sd.overlaps = null);
           sd.overlaps = (await ask("analysis", "route_overlap", { network_hash: docOf(doc), date })).overlaps;
         }),
@@ -413,7 +456,7 @@ const request = answerGraph(
       run: () =>
         framed("HubMatrix", () => (sd.connections = null), async () => {
           const doc = active();
-          const date = groupDate();
+          const date = groupDay();
           if (!doc || !date || !sd.stop) return void (sd.connections = null);
           sd.connections = (await ask("analysis", "hub_connections", { network_hash: docOf(doc), date, stop_id: sd.stop })).connections;
         }),
@@ -426,7 +469,7 @@ const request = answerGraph(
       run: () =>
         framed("StopWaits", () => (sd.gaps = null), async () => {
           const doc = active();
-          const date = groupDate();
+          const date = groupDay();
           if (!doc || !date || !sd.stop) return void (sd.gaps = null);
           sd.gaps = (await ask("analysis", "stop_gaps", { network_hash: docOf(doc), date, stop_id: sd.stop })).gaps;
         }),
@@ -586,9 +629,28 @@ export async function loadLayerBytes(bytes: Uint8Array): Promise<void> {
     const doc = new Doc("layer", { bytes });
     const loaded = await load("analysis", doc);
     layer = doc;
-    sd.layer = { points: Number(loaded.points), pop_field: String(loaded.pop_field), total_pop: Number(loaded.total_pop) };
+    const fields = (loaded.fields ?? []) as LayerField[];
+    // The first weight until the planner picks one; its name until
+    // they say what it means.
+    const field = fields[0]?.name ?? "";
+    sd.layer = {
+      features: Number(loaded.features),
+      points: Number(loaded.points),
+      polygons: Number(loaded.polygons),
+      fields,
+      field,
+      label: field,
+    };
   });
   await select("layer");
+}
+
+/// The planner's reading of the layer: which field is the weight, and
+/// what it means.
+export function setLayerReading(field: string, label: string): Promise<void> {
+  if (!sd.layer) return Promise.resolve();
+  sd.layer = { ...sd.layer, field, label: label.trim() || field };
+  return select("layer");
 }
 
 // ---------------------------------------------------------------------
@@ -613,7 +675,9 @@ export function setCompare(key: string): Promise<void> {
 
 /// The service-change workflow: the fork is the active document under
 /// a new plan frame (a set_plan edit; the host mints the identity).
-export async function fork(name: string, effectiveFrom: string): Promise<void> {
+/// `through` (optional) is the period's last day: the edit carries every
+/// weekly calendar to it (D-41).
+export async function fork(name: string, effectiveFrom: string, through = ""): Promise<void> {
   const doc = active();
   if (!doc || !name.trim() || !effectiveFrom) {
     sd.status = "A fork needs a source plan, a name, and an effective date.";
@@ -621,7 +685,11 @@ export async function fork(name: string, effectiveFrom: string): Promise<void> {
   }
   const from = sd.activeKey;
   const applied = await apply(doc, [
-    { edit: "set_plan", plan: { id: crypto.randomUUID(), name: name.trim(), effective_from: effectiveFrom } },
+    {
+      edit: "set_plan",
+      plan: { id: crypto.randomUUID(), name: name.trim(), effective_from: effectiveFrom },
+      ...(through ? { through } : {}),
+    },
   ]);
   if (!applied) return;
   const key = `plan-${applied.network.plan.id}`;
@@ -645,7 +713,13 @@ export function setView(view: View): Promise<void> {
 
 export function selectGroup(group: string): Promise<void> {
   sd.group = group;
+  syncEditType();
   return select("group");
+}
+
+/// Which member of the group the gestures change (D-8).
+export function setEditType(type: string): void {
+  sd.editType = type;
 }
 
 /// A route chosen anywhere opens the route view.
@@ -772,9 +846,10 @@ export async function redoChange(): Promise<void> {
   await adopt(next, null, []);
 }
 
-/// The edits omit `direction` for the patterns in none.
+/// The edits omit `direction` for the patterns in none. A gesture
+/// acts on one service type (D-8), the member the panel names.
 function where() {
-  return { route: sd.route, direction: sd.direction ?? undefined, service_type: sd.group };
+  return { route: sd.route, direction: sd.direction ?? undefined, service_type: sd.editType };
 }
 
 /// The route view's gestures, stated against the selected route,

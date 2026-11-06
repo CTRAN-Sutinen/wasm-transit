@@ -7,7 +7,10 @@
 //! 2. propose → retire → restore walks the edit document's states,
 //!    the domain id stable across re-proposals;
 //! 3. an unready draft, an unknown record, an unknown hash, and
-//!    garbage are errors, never panics.
+//!    garbage are errors, never panics;
+//! 4. a trip cancel (D-45) walks the same envelope — cancel → list →
+//!    reports → retire — its domain id stable, and a trip that does
+//!    not run that day is refused.
 
 use cap_divert::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
 use transit_dispatch::DiversionDraft;
@@ -62,16 +65,16 @@ fn the_edit_document_walks_propose_retire_restore() {
     let hash = load();
     let records = propose(&hash, vec![], draft(), 1_000).unwrap();
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].diversion.id, "div-10-1000");
-    assert_eq!(records[0].diversion.added_secs, 300);
-    let Response::List { rows } =
+    assert_eq!(records[0].diversion.as_ref().unwrap().id, "div-10-1000");
+    assert_eq!(records[0].diversion.as_ref().unwrap().added_secs, 300);
+    let Response::List { rows, .. } =
         dispatch(Request::List { network_hash: hash.clone(), records: records.clone() }).unwrap()
     else {
         panic!("list")
     };
     assert_eq!((rows[0].route_name.as_str(), rows[0].skipped_names.len()), ("Route 10", 1));
     let again = propose(&hash, records, DiversionDraft { added_mins: 10.0, ..draft() }, 2_000).unwrap();
-    assert_eq!((again[0].rev, again[0].diversion.id.as_str()), (2, "div-10-1000"), "the domain id is stable");
+    assert_eq!((again[0].rev, again[0].diversion.as_ref().unwrap().id.as_str()), (2, "div-10-1000"), "the domain id is stable");
     let Response::Retire { records } =
         dispatch(Request::Retire { records: again, record_id: "e1".into(), now_ms: 3_000 }).unwrap()
     else {
@@ -129,7 +132,7 @@ fn reports_say_what_each_record_amounts_to_on_the_network() {
     let network_hash = load();
     let record = |id: &str, route: &str| EditRecord {
         id: id.into(),
-        diversion: transit_sync::Diversion {
+        diversion: Some(transit_sync::Diversion {
             id: format!("d-{id}"),
             route_id: route.into(),
             direction_id: None,
@@ -140,7 +143,8 @@ fn reports_say_what_each_record_amounts_to_on_the_network() {
             added_secs: 300,
             start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
             end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-        },
+        }),
+        cancel: None,
         status: EditStatus::Accepted,
         rev: 1,
         updated_at: 1,
@@ -156,3 +160,53 @@ fn reports_say_what_each_record_amounts_to_on_the_network() {
     assert!(err.contains("unknown network"), "{err}");
 }
 
+
+fn cancel(hash: &str, records: Vec<EditRecord>, start_secs: Option<u32>, date: &str, now_ms: u64) -> Result<Vec<EditRecord>, String> {
+    let request = Request::Cancel {
+        network_hash: hash.into(),
+        records,
+        record_id: "c1".into(),
+        trip_id: "10-weekday@28800".into(),
+        start_secs,
+        date: date.into(),
+        now_ms,
+    };
+    match dispatch(request)? {
+        Response::Cancel { records } => Ok(records),
+        _ => panic!("cancel"),
+    }
+}
+
+#[test]
+fn a_trip_cancel_walks_the_edit_document() {
+    let hash = load();
+    let diverted = propose(&hash, vec![], draft(), 1_000).unwrap();
+    let records = cancel(&hash, diverted, None, "2026-10-23", 2_000).unwrap();
+    assert_eq!(records.len(), 2);
+    let c = records[1].cancel.as_ref().unwrap();
+    assert_eq!((c.id.as_str(), c.trip_id.as_str(), records[1].status), ("cancel-10-weekday@28800-2000", "10-weekday@28800", EditStatus::Draft));
+    assert!(records[1].diversion.is_none());
+
+    let Response::List { rows, cancels } = dispatch(Request::List { network_hash: hash.clone(), records: records.clone() }).unwrap() else {
+        panic!("list")
+    };
+    assert_eq!((rows.len(), cancels.len()), (1, 1), "each payload lists in its own rows");
+    assert_eq!((cancels[0].record_id.as_str(), cancels[0].start_secs, cancels[0].date.as_str()), ("c1", Some(28_800), "2026-10-23"));
+
+    let Response::Reports { reports } = dispatch(Request::Reports { network_hash: hash.clone(), records: records.clone() }).unwrap() else {
+        panic!("reports")
+    };
+    assert_eq!((reports[1].valid, reports[1].affected_trips), (true, 1));
+
+    let again = cancel(&hash, records, Some(28_800), "2026-10-23", 3_000).unwrap();
+    assert_eq!((again[1].rev, again[1].cancel.as_ref().unwrap().id.as_str()), (2, "cancel-10-weekday@28800-2000"), "the domain id is stable");
+    let Response::Retire { records } = dispatch(Request::Retire { records: again, record_id: "c1".into(), now_ms: 4_000 }).unwrap() else {
+        panic!("retire")
+    };
+    assert_eq!(records[1].status, EditStatus::Retired);
+
+    let err = cancel(&hash, vec![], None, "2026-11-26", 1).unwrap_err();
+    assert!(err.contains("does not run on 2026-11-26"), "Thanksgiving is removed: {err}");
+    let err = cancel("sha256:missing", vec![], None, "2026-10-23", 1).unwrap_err();
+    assert!(err.contains("unknown network"), "{err}");
+}

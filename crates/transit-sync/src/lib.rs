@@ -74,6 +74,44 @@ impl Diversion {
     }
 }
 
+/// A whole trip taken out of service on one service date (D-45): the
+/// trip does not run, so no board offers it as a departure and the
+/// router never rides it — the boards list it as cancelled among the
+/// visits the day's edits took away (D-100). The trip is the model's
+/// stored trip (`Network::trip`); a frequency trip's instances share
+/// it, so `start_secs` names one instance, and `None` cancels every
+/// instance it runs that day. Partial cancellation (from a stop on),
+/// cover, hold, and swap are not this payload's (D-45: later).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct TripCancel {
+    /// The cancel's own domain id (stable across re-proposals of one
+    /// record, like a diversion's).
+    pub id: String,
+    pub trip_id: String,
+    /// One instance (seconds after the service-day anchor); `None` =
+    /// every instance of the trip on the date.
+    #[serde(default)]
+    pub start_secs: Option<u32>,
+    /// The one service date it is cancelled on (D-101).
+    #[serde(with = "iso_date")]
+    #[schemars(with = "chrono::NaiveDate")]
+    #[ts(type = "string")]
+    pub date: chrono::NaiveDate,
+}
+
+impl TripCancel {
+    /// Is this cancel in force on `date`?
+    pub fn covers(&self, date: chrono::NaiveDate) -> bool {
+        self.date == date
+    }
+
+    /// Does it take away the instance (`trip`, `start_secs`)?
+    pub fn cancels(&self, trip: &str, start_secs: u32) -> bool {
+        self.trip_id == trip && self.start_secs.is_none_or(|s| s == start_secs)
+    }
+}
+
 /// Serialize/deserialize dates on the JS boundary as "YYYY-MM-DD",
 /// matching the string format every wasm entry point takes.
 mod iso_date {
@@ -122,15 +160,22 @@ impl EditStatus {
     }
 }
 
-/// One operator edit plus its sync envelope. The `diversion` payload
-/// is the domain content; the envelope fields are what any sync
-/// partner needs to merge, order, and retire records without
-/// understanding the domain.
+/// One operator edit plus its sync envelope. The payload is the domain
+/// content — exactly one of `diversion` and `cancel` (a record with
+/// neither or both is not a record: [`sanitize`] drops it); the
+/// envelope fields are what any sync partner needs to merge, order,
+/// and retire records without understanding the domain. An absent
+/// payload is omitted, never `null`, so a diversion record's bytes
+/// (and every edit document's hash) are the ones it had before the
+/// cancel payload existed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct EditRecord {
     pub id: String,
-    pub diversion: Diversion,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diversion: Option<Diversion>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cancel: Option<TripCancel>,
     pub status: EditStatus,
     /// Monotonic per id; bumped on every change by the writer.
     #[ts(type = "number")]
@@ -138,6 +183,13 @@ pub struct EditRecord {
     /// Unix epoch milliseconds, stamped by the writer.
     #[ts(type = "number")]
     pub updated_at: u64,
+}
+
+impl EditRecord {
+    /// Exactly one payload — the shape every record must have.
+    pub fn well_formed(&self) -> bool {
+        self.diversion.is_some() != self.cancel.is_some()
+    }
 }
 
 /// Validation result for one record — what a client needs after
@@ -181,8 +233,22 @@ pub struct FeedManifest {
 pub fn in_force_on(records: &[EditRecord], date: chrono::NaiveDate) -> Vec<Diversion> {
     records
         .iter()
-        .filter(|r| r.status.in_force() && r.diversion.covers(date))
-        .map(|r| r.diversion.clone())
+        .filter(|r| r.status.in_force())
+        .filter_map(|r| r.diversion.as_ref())
+        .filter(|d| d.covers(date))
+        .cloned()
+        .collect()
+}
+
+/// The trip cancels of a document in force on a given service date —
+/// the instances the effective day does not run.
+pub fn cancels_in_force_on(records: &[EditRecord], date: chrono::NaiveDate) -> Vec<TripCancel> {
+    records
+        .iter()
+        .filter(|r| r.status.in_force())
+        .filter_map(|r| r.cancel.as_ref())
+        .filter(|c| c.covers(date))
+        .cloned()
         .collect()
 }
 
@@ -263,10 +329,28 @@ pub fn submit(records: Vec<EditRecord>, now_ms: u64) -> Vec<EditRecord> {
 /// an existing id is replaced whole (LWW per record — the record is
 /// the unit) with its rev bumped. The input is never mutated.
 pub fn propose(records: &[EditRecord], record_id: &str, diversion: Diversion, now_ms: u64) -> Vec<EditRecord> {
+    put(records, record_id, Some(diversion), None, now_ms)
+}
+
+/// Propose a trip cancel: the same envelope rule as [`propose`] — a
+/// new id appends at rev 1 as a draft, an existing one is replaced
+/// whole with its rev bumped, the input never mutated.
+pub fn propose_cancel(records: &[EditRecord], record_id: &str, cancel: TripCancel, now_ms: u64) -> Vec<EditRecord> {
+    put(records, record_id, None, Some(cancel), now_ms)
+}
+
+fn put(
+    records: &[EditRecord],
+    record_id: &str,
+    diversion: Option<Diversion>,
+    cancel: Option<TripCancel>,
+    now_ms: u64,
+) -> Vec<EditRecord> {
     let mut next = records.to_vec();
     match next.iter_mut().find(|r| r.id == record_id) {
         Some(r) => {
             r.diversion = diversion;
+            r.cancel = cancel;
             r.status = EditStatus::Draft;
             r.rev += 1;
             r.updated_at = now_ms;
@@ -274,6 +358,7 @@ pub fn propose(records: &[EditRecord], record_id: &str, diversion: Diversion, no
         None => next.push(EditRecord {
             id: record_id.to_string(),
             diversion,
+            cancel,
             status: EditStatus::Draft,
             rev: 1,
             updated_at: now_ms,
@@ -378,16 +463,21 @@ pub fn compact(records: &[EditRecord], now_ms: u64, horizon_ms: u64) -> (Vec<Edi
 /// Read a stored edit document (IndexedDB, a server response, a file):
 /// every record that deserializes under the CURRENT schema — serde
 /// fills the defaults a record from before a field existed lacks —
-/// and how many did not. A malformed record is dropped and counted,
-/// never allowed to wedge the document; anything but an array is an
-/// empty document with nothing dropped.
+/// and carries exactly one payload, and how many did not. A malformed
+/// record is dropped and counted, never allowed to wedge the document;
+/// anything but an array is an empty document with nothing dropped.
 pub fn sanitize(document: &serde_json::Value) -> (Vec<EditRecord>, usize) {
     let Some(items) = document.as_array() else { return (Vec::new(), 0) };
     let mut kept = Vec::new();
     let mut dropped = 0;
     for item in items {
         match serde_json::from_value::<EditRecord>(item.clone()) {
-            Ok(r) if r.diversion.detour.iter().flatten().all(|p| p.lat.is_finite() && p.lon.is_finite()) => kept.push(r),
+            Ok(r)
+                if r.well_formed()
+                    && r.diversion.iter().flat_map(|d| d.detour.iter().flatten()).all(|p| p.lat.is_finite() && p.lon.is_finite()) =>
+            {
+                kept.push(r)
+            }
             _ => dropped += 1,
         }
     }
@@ -402,7 +492,7 @@ mod tests {
     fn record(status: EditStatus) -> EditRecord {
         EditRecord {
             id: "e1".into(),
-            diversion: Diversion {
+            diversion: Some(Diversion {
                 id: "d1".into(),
                 route_id: "r1".into(),
                 direction_id: None,
@@ -413,7 +503,8 @@ mod tests {
                 added_secs: 60,
                 start_date: NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
                 end_date: NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-            },
+            }),
+            cancel: None,
             status,
             rev: 1,
             updated_at: 1_000,
@@ -429,20 +520,20 @@ mod tests {
         let back: EditRecord = serde_json::from_str(&json).unwrap();
         assert_eq!(back.id, rec.id);
         assert_eq!(back.status, EditStatus::Accepted);
-        assert_eq!(back.diversion.first_kept_stop, "s0");
+        assert_eq!(back.diversion.as_ref().unwrap().first_kept_stop, "s0");
     }
 
     #[test]
     fn propose_appends_new_ids_and_replaces_known_ones() {
         let base = vec![record(EditStatus::Accepted)];
-        let next = propose(&base, "e2", base[0].diversion.clone(), 2_000);
+        let next = propose(&base, "e2", base[0].diversion.clone().unwrap(), 2_000);
         assert_eq!(next.len(), 2);
         assert_eq!((next[1].rev, next[1].status, next[1].updated_at), (1, EditStatus::Draft, 2_000));
-        let mut changed = base[0].diversion.clone();
+        let mut changed = base[0].diversion.clone().unwrap();
         changed.added_secs = 120;
         let again = propose(&next, &base[0].id, changed, 3_000);
         assert_eq!(again.len(), 2);
-        assert_eq!((again[0].rev, again[0].status, again[0].diversion.added_secs), (2, EditStatus::Draft, 120));
+        assert_eq!((again[0].rev, again[0].status, again[0].diversion.as_ref().unwrap().added_secs), (2, EditStatus::Draft, 120));
         assert_eq!(base[0].rev, 1, "the input is never mutated");
     }
 
@@ -470,8 +561,77 @@ mod tests {
         let doc = serde_json::json!([good, old, bad_date, {"id": "x"}, 7]);
         let (kept, dropped) = sanitize(&doc);
         assert_eq!((kept.len(), dropped), (2, 3));
-        assert_eq!(kept[1].diversion.added_secs, 0, "a record from before the field existed");
+        assert_eq!(kept[1].diversion.as_ref().unwrap().added_secs, 0, "a record from before the field existed");
         assert_eq!(sanitize(&serde_json::json!({"not": "an array"})), (vec![], 0));
+    }
+
+    fn cancel(trip: &str, start_secs: Option<u32>, date: NaiveDate) -> TripCancel {
+        TripCancel { id: format!("c-{trip}"), trip_id: trip.into(), start_secs, date }
+    }
+
+    #[test]
+    fn a_diversion_record_keeps_its_bytes_and_a_cancel_omits_the_diversion() {
+        // The cancel payload is additive: a diversion record serializes
+        // exactly as it did before it existed (no "cancel" key, no
+        // null), so every existing edit document keeps its hash.
+        let json = serde_json::to_string(&record(EditStatus::Submitted)).unwrap();
+        assert_eq!(
+            json,
+            r#"{"id":"e1","diversion":{"id":"d1","route_id":"r1","direction_id":null,"first_kept_stop":"s0","last_kept_stop":"s1","skipped_stops":[],"detour":null,"added_secs":60,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"submitted","rev":1,"updated_at":1000}"#
+        );
+        let day = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+        let c = EditRecord { diversion: None, cancel: Some(cancel("755768", None, day)), ..record(EditStatus::Draft) };
+        let json = serde_json::to_string(&c).unwrap();
+        assert_eq!(
+            json,
+            r#"{"id":"e1","cancel":{"id":"c-755768","trip_id":"755768","start_secs":null,"date":"2026-10-23"},"status":"draft","rev":1,"updated_at":1000}"#
+        );
+        assert_eq!(serde_json::from_str::<EditRecord>(&json).unwrap(), c);
+    }
+
+    #[test]
+    fn sanitize_keeps_only_records_with_exactly_one_payload() {
+        let day = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+        let div = record(EditStatus::Draft);
+        let can = EditRecord { diversion: None, cancel: Some(cancel("t", Some(60), day)), ..record(EditStatus::Draft) };
+        let both = EditRecord { cancel: Some(cancel("t", None, day)), ..record(EditStatus::Draft) };
+        let neither = EditRecord { diversion: None, ..record(EditStatus::Draft) };
+        let doc = serde_json::to_value(vec![div.clone(), can.clone(), both, neither]).unwrap();
+        let (kept, dropped) = sanitize(&doc);
+        assert_eq!((kept, dropped), (vec![div, can], 2));
+    }
+
+    #[test]
+    fn cancels_are_in_force_on_their_one_date_and_never_retired() {
+        let day = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+        let next = NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
+        let docs = propose_cancel(&[record(EditStatus::Accepted)], "e2", cancel("t1", None, day), 2_000);
+        assert_eq!(cancels_in_force_on(&docs, day), vec![cancel("t1", None, day)]);
+        assert!(cancels_in_force_on(&docs, next).is_empty(), "a cancel holds on its one date");
+        assert_eq!(in_force_on(&docs, day).len(), 1, "diversions read only the diversion records");
+        let retired = set_retired(&docs, "e2", true, 3_000).unwrap();
+        assert!(cancels_in_force_on(&retired, day).is_empty(), "a retired cancel never applies");
+    }
+
+    #[test]
+    fn a_cancel_names_its_instance_or_every_instance() {
+        let day = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+        assert!(cancel("t", None, day).cancels("t", 100) && cancel("t", None, day).cancels("t", 200));
+        assert!(cancel("t", Some(100), day).cancels("t", 100));
+        assert!(!cancel("t", Some(100), day).cancels("t", 200), "another instance runs");
+        assert!(!cancel("t", None, day).cancels("u", 100), "another trip runs");
+    }
+
+    #[test]
+    fn propose_cancel_follows_the_envelope_rule() {
+        let day = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+        let base = vec![record(EditStatus::Accepted)];
+        let next = propose_cancel(&base, "e2", cancel("t1", None, day), 2_000);
+        assert_eq!((next[1].rev, next[1].status, next[1].updated_at), (1, EditStatus::Draft, 2_000));
+        assert!(next[1].well_formed() && next[1].diversion.is_none());
+        let again = propose_cancel(&next, "e2", cancel("t1", Some(60), day), 3_000);
+        assert_eq!((again.len(), again[1].rev, again[1].cancel.as_ref().unwrap().start_secs), (2, 2, Some(60)));
+        assert_eq!(base.len(), 1, "the input is never mutated");
     }
 
     #[test]
@@ -502,8 +662,9 @@ mod tests {
         let other = NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
         let mut docs = vec![record(EditStatus::Draft), record(EditStatus::Accepted)];
         docs[1].id = "e2".into();
-        docs[1].diversion.start_date = other;
-        docs[1].diversion.end_date = other;
+        let d = docs[1].diversion.as_mut().unwrap();
+        d.start_date = other;
+        d.end_date = other;
 
         let live = in_force_on(&docs, date);
         assert_eq!(live.len(), 1, "only the covering-date record applies");
@@ -521,7 +682,7 @@ mod receive_tests {
     fn rec(id: &str, status: EditStatus, rev: u64, updated_at: u64) -> EditRecord {
         EditRecord {
             id: id.into(),
-            diversion: Diversion {
+            diversion: Some(Diversion {
                 id: format!("d-{id}"),
                 route_id: "r1".into(),
                 direction_id: None,
@@ -532,7 +693,8 @@ mod receive_tests {
                 added_secs: 60,
                 start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
                 end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-            },
+            }),
+            cancel: None,
             status,
             rev,
             updated_at,
@@ -616,7 +778,7 @@ mod merge_tests {
     fn sample_record(id: u8, rev: u64, updated_at: u64, status: EditStatus) -> EditRecord {
         EditRecord {
             id: format!("e{id}"),
-            diversion: Diversion {
+            diversion: Some(Diversion {
                 id: format!("d{id}"),
                 route_id: "r1".into(),
                 direction_id: None,
@@ -627,15 +789,32 @@ mod merge_tests {
                 added_secs: (updated_at % 300) as u32,
                 start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
                 end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 24).unwrap(),
-            },
+            }),
+            cancel: None,
             status,
             rev,
             updated_at,
         }
     }
 
+    /// The same envelope carrying a trip cancel instead (D-45): one id
+    /// may hold a diversion on one replica and a cancel on another.
+    fn sample_cancel(id: u8, rev: u64, updated_at: u64, status: EditStatus) -> EditRecord {
+        EditRecord {
+            diversion: None,
+            cancel: Some(TripCancel {
+                id: format!("c{id}"),
+                trip_id: format!("t{}", updated_at % 3),
+                start_secs: (updated_at % 2 == 0).then_some(3_600),
+                date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+            }),
+            ..sample_record(id, rev, updated_at, status)
+        }
+    }
+
     fn doc_strategy() -> impl Strategy<Value = Vec<EditRecord>> {
-        // Small id space forces collisions; the clock range forces ties.
+        // Small id space forces collisions; the clock range forces ties;
+        // both payloads compete for one id.
         vec(
             (
                 0u8..4,
@@ -647,12 +826,15 @@ mod merge_tests {
                     EditStatus::Accepted,
                     EditStatus::Retired,
                 ]),
+                proptest::bool::ANY,
             ),
             0..8,
         )
             .prop_map(|rows| {
                 rows.into_iter()
-                    .map(|(id, rev, at, status)| sample_record(id, rev, at, status))
+                    .map(|(id, rev, at, status, is_cancel)| {
+                        if is_cancel { sample_cancel(id, rev, at, status) } else { sample_record(id, rev, at, status) }
+                    })
                     .collect()
             })
     }
@@ -684,9 +866,9 @@ mod merge_tests {
         // Same clock tick and rev, differing content: only a buggy
         // writer produces this, but convergence still must hold.
         let mut a = sample_record(1, 5, 100, EditStatus::Draft);
-        a.diversion.added_secs = 1;
+        a.diversion.as_mut().unwrap().added_secs = 1;
         let mut b = a.clone();
-        b.diversion.added_secs = 2;
+        b.diversion.as_mut().unwrap().added_secs = 2;
         assert_eq!(merge(&[a.clone()], &[b.clone()]), merge(&[b], &[a]));
     }
 
@@ -734,6 +916,16 @@ mod merge_tests {
             a in doc_strategy(), b in doc_strategy(), c in doc_strategy(),
         ) {
             assert_eq!(merge(&merge(&a, &b), &c), merge(&a, &merge(&b, &c)));
+        }
+
+        /// Merging never changes a record's payload: every merged record
+        /// is one of the inputs, whole, so a cancel stays a cancel.
+        #[test]
+        fn merge_keeps_records_whole(a in doc_strategy(), b in doc_strategy()) {
+            for r in merge(&a, &b) {
+                assert!(a.iter().chain(&b).any(|x| x == &r));
+                assert!(r.well_formed());
+            }
         }
 
         /// A document never gains or loses records through merging,

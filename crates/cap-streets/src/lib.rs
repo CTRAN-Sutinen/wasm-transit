@@ -6,7 +6,8 @@
 //! freehand chords — and how long a rider walks along them: between
 //! a network's stops (the walk table the router plans transfers
 //! over), and from any point to the stops near it (the ends of a trip
-//! from anywhere). The domain code lives in the shared
+//! from anywhere). A route names the streets it follows, and the bus
+//! profile's streets to confirm (D-26). The domain code lives in the shared
 //! `transit-streets` library (the streets document, its import, the
 //! graph).
 //!
@@ -29,7 +30,7 @@ use cap_abi::kernel::{NETWORK, STREETS, STREET_GRAPH, WALK_GRAPH};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_streets::walking::{DirectWalk, PointWalk, WalkGraph, WalkTable, MAX_WALK_SECS, WALK_SPEED_MPS};
-use transit_streets::{StreetNetwork, StreetPoint, StreetPosition, Streets};
+use transit_streets::{StreetClass, StreetNetwork, StreetPoint, StreetPosition, StreetUse, Streets};
 
 /// The bulk-bytes op code that imports a street layer (GeoJSON); a
 /// streets document registers on the kernel's `load_streets`.
@@ -87,11 +88,18 @@ pub enum Request {
     /// AFTER `from` (a trace chains legs: each leg's start is the
     /// previous leg's committed end — prepend `from` for a standalone
     /// trace). Empty when the positions sit on disconnected parts of
-    /// the network — the caller falls back to a straight line.
+    /// the network — the caller falls back to a straight line. The
+    /// answer names the streets the path follows, and — the bus
+    /// profile (D-26): a bus is drawn down any street, never refused —
+    /// the ones of a class in `confirm` for the planner to confirm
+    /// (default: unknown, path, steps, track).
     Route {
         streets_hash: String,
         from: StreetPosition,
         to: StreetPosition,
+        #[serde(default)]
+        #[ts(optional)]
+        confirm: Option<Vec<StreetClass>>,
     },
 }
 
@@ -109,8 +117,11 @@ pub enum Response {
     Access { walks: Vec<PointWalk>, direct: Option<DirectWalk> },
     Snap { position: Option<StreetPosition> },
     /// `length_m`: the path's length along the graph from `from` to
-    /// `to` — null when no path exists.
-    Route { points: Vec<StreetPoint>, length_m: Option<f64> },
+    /// `to` — null when no path exists. `streets`: the streets the path
+    /// follows, in order (class, name, meters along it); `to_confirm`:
+    /// those of them whose class the profile asks the planner to
+    /// confirm — drawn all the same.
+    Route { points: Vec<StreetPoint>, length_m: Option<f64>, streets: Vec<StreetUse>, to_confirm: Vec<StreetUse> },
 }
 
 /// The street graph (snap, route) over a registered streets document,
@@ -209,10 +220,14 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::Snap { streets_hash, lat, lon } => {
             Ok(Response::Snap { position: graph(&streets_hash)?.snap(lat, lon) })
         }
-        Request::Route { streets_hash, from, to } => {
-            Ok(match graph(&streets_hash)?.route_with_length(from, to) {
-                Some((points, length)) => Response::Route { points, length_m: Some(length) },
-                None => Response::Route { points: vec![], length_m: None },
+        Request::Route { streets_hash, from, to, confirm } => {
+            let confirm = confirm.unwrap_or_else(|| transit_streets::bus::CONFIRM.to_vec());
+            Ok(match graph(&streets_hash)?.route_along(from, to) {
+                Some(route) => {
+                    let to_confirm = route.streets.iter().filter(|s| confirm.contains(&s.class)).cloned().collect();
+                    Response::Route { points: route.points, length_m: Some(route.length_m), streets: route.streets, to_confirm }
+                }
+                None => Response::Route { points: vec![], length_m: None, streets: vec![], to_confirm: vec![] },
             })
         }
     }

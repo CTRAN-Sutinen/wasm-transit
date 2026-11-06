@@ -36,7 +36,7 @@
   {#if !comparison}
     <p class="muted pad">Choose a baseline to see what this plan changes.</p>
   {:else if comparison.routes.length === 0}
-    <p class="muted pad">No route changes under {comparison.name}.</p>
+    <p class="muted pad">No route changes under {comparison.group}.</p>
   {:else}
     <ul>
       {#each comparison.routes as r (r.route_id)}

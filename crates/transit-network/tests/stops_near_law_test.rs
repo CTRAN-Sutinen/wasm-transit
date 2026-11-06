@@ -1,5 +1,5 @@
 //! The directory's stop question, asked from a POINT: the places a
-//! rider can walk to, nearest first (QAF-70). The laws, from the
+//! rider can walk to, nearest first. The laws, from the
 //! intent ("stops near me"), never from the implementation:
 //!
 //! 1. rows are ordered by great-circle distance (meters, haversine)

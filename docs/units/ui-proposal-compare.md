@@ -24,7 +24,7 @@ UIs"). It is at step 2.
 | 2 | analysis `service_type_compare`, directory `timetable` (`compare_hash`) | op exists; a retime reads retimed, never as a cut; branch directions read as one, QAF-63 |
 | 3 | analysis `stop_gaps` ×2 | gap: two answers and a host diff (log it in the session) |
 | 4 | router `plan` ×2 | gap: `plan_compare` compares edits, not two networks (log it in the session) |
-| 5 | analysis `type_coverage` / `unserved_points` ×2 | gap, QAF-20 (no coverage delta op); QAF-18, QAF-28 |
+| 5 | analysis `coverage_compare`, `unserved_points` ×2 | `coverage_compare` answers gained and lost between two sides the host names (D-99); which combination answers to which across the plans waits on D-43's matching rule (QAF-20) |
 | 6 | none | D-14: read-only, links to agency channels |
 
 Every question here compares two documents. When the session shows

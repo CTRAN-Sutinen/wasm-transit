@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-98**. A
+IDs are never reused; the next new finding is **QAF-99**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -25,9 +25,11 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   licensed; fetch from c-tran.com), `sha256:aa8dbc62833237d754
   96b6ec04c2a45fe10ca2a957f63d63b51ddaae85a7dc4f`, version
   20260913-20270109. rt payloads from gtfs-rt.c-tran.org.
-- Network import: `sha256:2beddcb309d356f027d5d8281ef1a61d02580a43
-  be2292e2fc6f97ba374ed504` (the whole spec: every file round-trips;
-  findings from
+- Network import: `sha256:c6847464f1b9f7b882abac3e458d54105d92f698
+  e7a903d7d195e26e4bb68b37` (the whole spec: every file round-trips;
+  C-TRAN's dated calendars read as weekly rules, D-105; findings
+  before 2026-11-06 were seen on `2beddcb3…`, the import that kept them
+  dated; findings from
   2026-10-27–28 were seen on `2e27c511…`, the import before stored
   trips; before 2026-10-27 on `89631f1a…`, the
   import before per-trip run times and the fidelity columns; before that on
@@ -49,14 +51,6 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
 
 ## Import fidelity
 
-- **QAF-62 DATA GAP** — imported layovers are the whole observed
-  gap between two trips, so any later arrival or earlier start
-  reads as infeasible: C's +3 min breaks 6 blocks, and A's
-  two-minute clockface moves break 3 layovers on 019 (1-WKDY7801,
-  7802, 7804). The model has no split between required recovery
-  and slack, so "does the cycle still work?" has no real answer.
-  Pin: proposals A and C, author `apply` `issues`.
-  Decided: D-9 (policy wins over derived), free to start.
 - **QAF-63 DATA GAP** — GTFS direction_id groups branches, not only
   variants: 006 direction 1 holds Fruit Valley (8 min) and VA
   Medical Center (12 min) patterns leaving at the same minutes all
@@ -64,127 +58,41 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   A planner reads these as two branches.
   Pin: directory `timetable` 006 "1" 1-WKDY.
   Blocked: D-44.
-- **QAF-65 DATA GAP** — the I-5-closure-era service is modeled as
-  sibling service ids (1-WKDY/30, /31, …) that ride along with the
-  base weekday — same weekly pattern, every day they run a day
-  1-WKDY runs — not as calendar exceptions on it. The weekday
-  family is ONE service (2130 pooled trips across 571 patterns on
-  the representative day), and a per-service-id read slices routes
-  into thin, wrong headways (route 164: 77 pooled weekday trips,
-  20-minute typical headway at stop 9008, vs 14 trips under the
-  bare id). The model now answers the family
-  (`transit_network::service_family`: same weekly pattern + a
-  calendar subset — a Tuesday-only or Mon+Wed service is its own
-  family), and the reads pool it: service_groups,
-  service_type_detail, schedule_texture, the directory timetable.
-  What does not pool yet: the timetable GESTURES still key on one
-  service type (a set_headway under 1-WKDY retimes only the base's
-  trips, not /30 /31's), and QAF-44's authored "same as, except"
-  relation remains open.
-  Pin: analysis `service_type_detail` 1-WKDY — route 164: 77
-  trips, typical headway 1200 s at 9008; directory `timetable` 164
-  "0" 1-WKDY — 40 trips, 18 from /30 + 18 from /31 + 4 from the
-  base.
-  Decided: D-8 (per service type, the UI warns), free to start.
-- **QAF-88 DEFECT** — `service_groups` heads one row per member
-  when the members' calendars are equal: 4-NYE, 4-NYE/31 and
-  FARES_NYE each run only 2026-12-31, so each is a subset of the
-  others, and the answer carries three rows with the same family
-  and the same pooled numbers (1853 trips, 829.4 revenue hours).
-  FARES_NYE's row has an empty date. A planner reads New Year's Eve
-  three times over. A family of equal calendars needs one base.
-  Pin: 2026-10-30 analysis `service_groups` on C-TRAN (feed
-  sha256:aa8dbc62…) — rows 4-NYE, 4-NYE/31 and FARES_NYE, each with
-  members [4-NYE, 4-NYE/31, FARES_NYE].
-- **QAF-89 OP GAP** — `type_coverage` answers per service id, not
-  per service group: the weekday family reads as five rows (1-WKDY
-  served 18.6% and frequent 3.2%, 1-WKDY/30 6.9%, 1-WKDY/31 6.9%, and
-  the rest), so "who does the weekday network reach" has no answer
-  without a host union of the members' served stops. The other
-  reads pool the family (QAF-65).
-  Pin: 2026-10-30 analysis `type_coverage` on C-TRAN with
-  `clark-population.geojson`, radius 400 m, frequent 900 s, min
-  departures 2.
-- **QAF-97 DEFECT** — a service type's numbers are anchored to a
-  calendar date, which the user rules out (D-55): `representative_date`
-  in `transit-analysis` picks the first date the type's rule runs, and
-  `service_types_overview`, `service_groups`, `service_type_detail`
-  and `schedule_texture` compute on it and report it as `date`. A type
-  that holds in a later period (1-WKDY/31) is measured on whichever
-  date its rule first allows, and the answer names a date as if the
-  service were that day's. The numbers should describe the
-  combination of service types (e.g. 1-WKDY + 1-WKDY/30), with the
-  dates it holds beside it, and no date standing in for it.
-  Pin: `transit-analysis` `representative_date`; analysis
-  `service_groups` 1-WKDY on C-TRAN (`date` field).
-  Decided: D-55; free to start.
-- **QAF-91 DEFECT** — the service group pools members that never run
-  on the same day: 1-WKDY/30 runs 2026-09-14 → 2026-10-09 and
-  1-WKDY/31 runs 2026-10-12 → 2027-01-08 (no shared date). They are
-  successive periods of the I-5 closure service, not overlays of each
-  other, yet both count on the representative day. The weekday group
-  answers 2130 trips; 1774 run on 2026-09-14 (1-WKDY 1425 + /30 349),
-  and no weekday runs more than 1782. Route 071's timetable shows
-  eleven trips twice at identical times (/30's 762788 beside /31's
-  758141), and every pooled read (service_groups,
-  service_type_detail, schedule_texture, the directory timetable, and
-  service_type_compare through them) is inflated the same way.
-  Pin: 2026-10-30 analysis `service_groups` 1-WKDY on C-TRAN — 2130
-  trips, 942.2 revenue hours; directory `timetable` 071 "0" 1-WKDY —
-  trips 762788 and 758141 both at 07:12; calendar_dates.txt — /30 and
-  /31 share no date.
-  Decided: D-55 (a group is a combination of service types that run
-  together, shown with the dates it holds); free to start.
-
-## The model
-
 - **QAF-44 MODEL GAP** — service types duplicate rather than
   relate: 4-NYE carries a full copy of 1-WKDY's pattern trips
   (identical starts on all four 006 patterns), so a weekday change
-  is mirrored by hand and silently misses New Year's Eve. There is
-  no "same as weekday, except" relation.
+  is mirrored by hand and silently misses New Year's Eve. D-8 keeps
+  no "same as, except" relation; the gesture panel's warning (D-95)
+  names the types that RUN with the edited one, but 4-NYE never runs
+  with 1-WKDY (they share no date), so nothing tells the planner the
+  copy exists. What is left: a read that names the types carrying
+  copies of the trips a gesture changes.
   Pin: the document's `4-NYE:pat-006-*` pattern trips equal
   `1-WKDY:pat-006-*` start for start.
-  Decided: D-8 (per service type, the UI warns), free to start.
-- **QAF-36 OP GAP** — the edit document is diversions only: no trip
-  cancellation, hold, or vehicle swap. A dispatcher's first
-  reaction to a 24-minute-late trip (cancel or cover it) has no
-  vocabulary. A new edit kind is a sync-document change.
-  Pin: `EditRecord` carries one payload, `diversion`; cancelling
-  agency trip 755768 cannot be authored.
-  Decided: D-45 (cancel whole trip first), free to start.
 
 ## Resources and comparison (the planner's core loop)
 
-- **QAF-3 OP GAP** — the fleet summary op exists (`runcut
-  fleet_summary`: blocks, peak vehicles and when, platform /
-  revenue / layover hours, over the effective day), but the
-  PROPOSAL question is still host arithmetic: a proposal's added
-  trips are `unassigned_trips`, so "how many more vehicles does it
-  need" has no answer — unassigned trips have no block, and a
-  vehicle-need is a block assignment the model does not make.
-  Per-service-type scoping of the summary is open too.
+- **QAF-3 OP GAP** — the fleet summary answers a DATE (`runcut
+  fleet_summary`; a proposal's vehicle need is `suggest_blocks`'
+  `added_vehicles`), never one service type: a planner asking
+  "what does the weekday network need" picks a date and gets
+  whatever combination of service types runs on it.
   Pin: 2026-10-27 `fleet_summary` on the weekday import — 97 blocks,
   77 peak at 16:50, 1003.78 platform h = 803.61 revenue + 200.18
   layover (revenue cross-checks `network_stats` exactly).
-  Decided: D-46 (automatic blocking, tunable, inside the runcut
-  capability, under the work-rule policy of D-50) and D-9 (policy
-  wins over derived); waits on that policy document, no other decision.
 - **QAF-20 OP GAP** — the scenario diff is half there: per route
   (analysis `service_type_compare`) and per timetable (directory
-  `timetable {compare_hash}`) are answered. Coverage deltas still
-  take two `type_coverage` answers and fleet deltas have no op
+  `timetable {compare_hash}`) are answered, and analysis
+  `coverage_compare` answers the coverage churn (gained and lost,
+  served and frequent) between two sides the host names (D-99). What
+  is missing is which of one plan's service combinations answers to
+  which of the other's when a fork renames or splits a type (D-43's
+  matching rule), so no UI asks it yet; fleet deltas have no op
   (QAF-3).
-  Pin: two `type_coverage` calls on base and fork; no op takes two
-  network hashes for coverage or fleet.
-  Encoded provisionally: D-43 (per representative date), free to start.
-- **QAF-26 OP GAP** — no recovery view: `block_trips` carries
-  `layover_after_secs` and durations, but nothing folds them into
-  layover-to-runtime per trip or pattern. (Meaningless until
-  QAF-62 separates recovery from slack.)
-  Pin: the 347.73 layover hours in QAF-3's pin were summed
-  host-side.
-  Decided: D-9 (policy wins over derived), free to start.
+  Pin: the service-design coverage frame and ProposalScore's
+  "Coverage gained and lost" say so; no op takes two network hashes
+  for fleet.
+  Blocked: D-43 (the matching rule).
 - **QAF-92 OP GAP** — `stop_gaps` reads one stop, not its walking
   group: asked for a station (99th Street Transit Center, stop 110)
   it answers 0 departures, while `timed_transfers` and
@@ -193,33 +101,22 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   planner looks first.
   Pin: 2026-10-30 analysis `stop_gaps` 110 on 2026-09-14 — 0
   departures; `hub_connections` 110 — 82 route pairs.
+
 ## Coverage
 
-- **QAF-78 DEFECT** — whole-day "frequent" counts a stop's visits,
-  arrivals included: a terminal with four arrivals in two hours
-  reads frequent, though nobody boards there. The windowed test
-  counts departures only, so the two answers disagree on the same
-  stop.
-  Pin: `transit-analysis` `regression_test`
-  `service_type_ops_expose_the_design_axis` — stop C (a terminal)
-  counts toward `type_coverage` `frequent_pct` (150/180, not
-  100/180).
-  Decided: D-6 (departures only), free to start.
-- **QAF-18 DATA/MODEL** — point layers bias coverage: a tract's
-  population sits at its centroid, so rural tracts read unserved
-  where their developed part has service, and the radius swings the
-  answer by 20 points (28.9% at 500 m, 49.1% at 800 m). Support
-  areal layers, or document the resolution floor.
-  Pin: `type_coverage` on the population layer at 500 and 800 m;
-  `load_population_layer` answers `points: 115` with no resolution
-  guidance.
-  Decided: D-47 (a labelled weighted layer, polygon or point), free to start.
-- **QAF-28 OP + DATA GAP** — coverage is population-shaped: the
-  machinery takes any weighted layer (jobs, seniors, zero-car
-  households), but the vocabulary is population and no other layer
-  exists. Job access is the standard companion.
-  Pin: `load_population_layer` is the only layer op.
-  Decided: D-47 (a labelled weighted layer, polygon or point), free to start.
+- **QAF-98 MODEL** — nothing pins that adding service never lowers
+  the whole-day "frequent" answer. The weekday read 3.2% frequent as
+  1-WKDY alone (per service id, import `2beddcb3…`) and 3.1% as the
+  combination 1-WKDY + 1-WKDY/31 (import `c6847464…`), though a
+  combination only adds trips. Not confirmed as one cause: the two
+  reads differ in import and grouping, and the suspected mechanism is
+  the whole-day test reading headway over a stop's first-to-last
+  span, so an extra early or late departure can stretch it. A law
+  (more trips at a stop never make it less frequent, or the test says
+  why) decides it.
+  Pin: 2026-11-06 analysis `type_coverage` members [1-WKDY, 1-WKDY/31]
+  on C-TRAN (`c6847464…`, `clark-population.geojson`, 400 m, 900 s,
+  min 2) — frequent 15,882 of 516,959, 82 stops.
 
 ## Authoring contract
 
@@ -237,50 +134,6 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   `1-WKDY:pat-071-1-4@64800` 64800→66180, trip 758239 64620→66360.
   Blocked: D-3 (re-opened), D-54.
 
-- **QAF-54 OP GAP** — no gesture carries a calendar into a pick: a
-  fork after the import's calendar end (2027-01-09) runs nothing,
-  and the fix is one `set_service_range` per service type (13 on
-  C-TRAN).
-  Pin: the same Winter 2027 fork.
-  Decided: D-41 (the fork extends), free to start.
-  Re-confirmed: 2026-11-05, the import framed as a winter-2027 pick
-  runs nothing on its date; publishing now refuses such a pick (D-76),
-  so the gesture is what lets a planner publish past the calendar.
-
-## The rider's questions
-
-Findings from the 2026-10-28 rider session on the import
-(`2e27c511…`) and live rt fetched 08:52 PDT (63 vehicles, 0
-unmatched trips): find my stop, next bus, plan a trip, is it on
-time, last bus home, is there a detour.
-
-- **QAF-70 OP GAP** — the colloquial name finds nothing:
-  `directory.stops` matches the feed's names exactly, so "vancouver
-  mall" answers `[]` (the feed says "Van Mall"). A rider with a
-  location asks `stops_near` instead; where the server runs a
-  geocoder (D-36), the everyday name finds the place, and picking it
-  answers the stops near it — the stop itself is still found by its
-  sign's name only, and with no geocoder the everyday name has no
-  answer.
-  Pin: directory `stops` query "vancouver mall" → `[]`.
-  Decided: D-48 (fuzzy matching), free to start.
-- **QAF-81 OP GAP** — an itinerary is not relative to the moment
-  asked: it carries its departure and arrival but not how long the
-  trip takes, so a rider reading minutes has the host subtract. (A
-  board row says how long until it leaves — its `wait`; the ride-now
-  UI still shows clock times and does not read it yet.)
-  Pin: router `plan` `Itinerary` (`depart_secs`, `arrival_secs`, no
-  duration).
-  Decided: D-40 (door to door), free to start.
-- **QAF-82 OP GAP** — no op says when a route next runs at a stop
-  once it has stopped for the day: `grouped_board` keeps the group
-  with no departures, and the next one is on another service day
-  the board does not ask. The stop display says "No more service
-  today" where it should say when service resumes ("Next: 5:12 am
-  tomorrow", "Next: Monday").
-  Pin: board `grouped_board` stop 106, 2026-10-29, from_secs 86000 —
-  nine of ten groups answer `departures: []`.
-  Decided: D-42 (a week), free to start.
 
 ## Live operations
 
@@ -325,26 +178,25 @@ work rules, and the bid over them.
   / 12 / 3 / 15 / 34 (14–18 h) / 7 (>18 h); the longest internal
   gaps are 88, 84, and 70 min (1-WKDY/311013, /311015, /311011),
   none ≥ 90, so every cut is a mid-layover policy cut.
-  Decided: D-50 (a generic work-rule policy document); the runs
-  layer is free to start.
-- **QAF-11 OP GAP** — no runs layer: blocks-to-runs cutting does
+  The runs cut: `docs/units/runs-layer.md`.
+- **QAF-11 OP GAP** — no runs cut: blocks-to-runs cutting does
   not exist, so a priced run menu cannot be produced.
   Pin: 2026-10-26 by hand — 140 runs over 81 blocks + 25 trippers
   under assumed 8 h max platform / 15+15 report-pull / 2 h min
   piece.
-  Decided: D-50 (a generic work-rule policy document); the runs
-  layer is free to start.
-- **QAF-12 OP GAP** — no work-rule policy document: pay parameters
-  have no home on the bus, so run legality cannot be validated.
-  Pin: QAF-11's menu moves entirely with its assumed parameters.
-  Decided: D-50 (a generic work-rule policy document); the runs
-  layer is free to start.
+  The runs cut: `docs/units/runs-layer.md`.
+- **QAF-12 OP GAP** — the work rules have a home (the kernel's
+  `work_rules` document: platform, spread, report and clear,
+  pieces, meals, relief points, pay — D-50), but nothing judges a
+  run against them, so run legality cannot be validated.
+  Pin: QAF-11's menu moves entirely with its assumed parameters;
+  no op takes a run.
+  The runs cut: `docs/units/runs-layer.md`.
 - **QAF-14 OP GAP** — no run view: report/pull time and place,
   platform, pay, pieces, deadhead per run.
   Pin: block 1-WKDY5004 cut by hand into three pieces reporting
   05:25 / 14:12 / 22:23.
-  Decided: D-50 (a generic work-rule policy document); the runs
-  layer is free to start.
+  The runs cut: `docs/units/runs-layer.md`.
 
 ## Geography
 

@@ -140,7 +140,7 @@ fn snapshot_arc(rt_hash: &str) -> Result<Arc<RtOverview>, String> {
 }
 
 fn decode(bytes: &[u8]) -> Result<Response, String> {
-    let (rt_hash, overview) = RT.register_bytes(bytes, None)?;
+    let (rt_hash, overview) = RT.register_bytes(bytes)?;
     Ok(Response::Decode { overview: (*overview).clone(), rt_hash })
 }
 

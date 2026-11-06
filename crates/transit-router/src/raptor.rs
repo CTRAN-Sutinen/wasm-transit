@@ -101,10 +101,64 @@ pub struct Itinerary {
     pub from_stop_name: String,
     pub to_stop_id: String,
     pub to_stop_name: String,
+    /// The moment the plan was asked to leave at (arrive-by: the
+    /// origin's latest moment).
     pub depart_secs: u32,
     pub arrival_secs: u32,
     pub arrival_hhmmss: String,
+    /// When the rider leaves the origin, door to door (D-40): the
+    /// first ride's boarding minus the walk before it; with no ride,
+    /// `depart_secs`.
+    pub leave_secs: u32,
+    /// Door to door: `arrival_secs - leave_secs`.
+    pub duration_secs: u32,
+    /// "Leave in N min": the board's one wait rule (D-24,
+    /// [`transit_dispatch::wait`]) from `depart_secs` to `leave_secs`.
+    pub leave: transit_dispatch::Wait,
     pub legs: Vec<Leg>,
+}
+
+impl Itinerary {
+    /// An itinerary from its ends and legs: the door-to-door facts
+    /// (D-40) are derived here, the one place, from the legs.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        from_stop_id: String,
+        from_stop_name: String,
+        to_stop_id: String,
+        to_stop_name: String,
+        depart_secs: u32,
+        arrival_secs: u32,
+        legs: Vec<Leg>,
+    ) -> Itinerary {
+        let leave_secs = leave_secs(&legs, depart_secs);
+        Itinerary {
+            from_stop_id,
+            from_stop_name,
+            to_stop_id,
+            to_stop_name,
+            depart_secs,
+            arrival_secs,
+            arrival_hhmmss: fmt_time(arrival_secs),
+            leave_secs,
+            duration_secs: arrival_secs.saturating_sub(leave_secs),
+            leave: transit_dispatch::wait(leave_secs, depart_secs),
+            legs,
+        }
+    }
+}
+
+/// When the rider leaves: the first ride's boarding minus every walk
+/// before it; with no ride, when asked.
+fn leave_secs(legs: &[Leg], depart_secs: u32) -> u32 {
+    let mut walked = 0u32;
+    for leg in legs {
+        match leg {
+            Leg::Walk { walk_secs, .. } => walked += walk_secs,
+            Leg::Transit { board_secs, .. } => return board_secs.saturating_sub(walked),
+        }
+    }
+    depart_secs
 }
 
 /// How `tau[k][s]` was improved — the reconstruction pointers.
@@ -240,15 +294,16 @@ pub fn earliest_arrival_between(
 ) -> Result<Option<Itinerary>> {
     let origin = resolve(net, from)?;
     let target = resolve(net, to)?;
-    let itinerary = |arrival: u32, legs: Vec<Leg>| Itinerary {
-        from_stop_id: origin.id.clone(),
-        from_stop_name: origin.name.clone(),
-        to_stop_id: target.id.clone(),
-        to_stop_name: target.name.clone(),
-        depart_secs,
-        arrival_secs: arrival,
-        arrival_hhmmss: fmt_time(arrival),
-        legs: merge_walks(legs),
+    let itinerary = |arrival: u32, legs: Vec<Leg>| {
+        Itinerary::new(
+            origin.id.clone(),
+            origin.name.clone(),
+            target.id.clone(),
+            target.name.clone(),
+            depart_secs,
+            arrival,
+            merge_walks(legs),
+        )
     };
 
     // A stop to itself: no legs.

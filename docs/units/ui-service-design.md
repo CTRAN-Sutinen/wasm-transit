@@ -83,26 +83,26 @@ that variation as information, never as error.
 
 | # | op(s) | state |
 |---|---|---|
-| 1 | plans `resolve` / `periods` / `validate` | answered (PickTimeline); the groups a plan lists repeat equal-calendar families, QAF-88 |
-| 2 | analysis `service_groups`, `service_type_compare` | answered (GroupTable, GroupLedger); groups count members that never run on the same day, QAF-91 (D-55 decided: a group is a combination of types that run together, with its dates); peak vehicles, QAF-3 (D-46 decided: automatic blocking in the runcut capability, under D-50's policy); no dollar cost (D-51: platform hours against an hours budget) |
-| 3 | analysis `hourly_trips` (the group's representative date) | answered (DayProfile); it answers per date, not per group |
+| 1 | plans `resolve` / `periods` / `validate` | answered (PickTimeline) |
+| 2 | analysis `service_groups`, `service_type_compare` | answered (GroupTable, GroupLedger): each group a combination of the types that run together, with its date spans (D-55); peak vehicles: runcut `suggest_blocks` `added_vehicles` (D-46), unread by the UI; no dollar cost (D-51: platform hours against an hours budget — what a budget is, Blocked: D-108) |
+| 3 | analysis `hourly_trips` (on the group's first date — every date of a combination answers alike) | answered (DayProfile) |
 | 4 | analysis `route_frequency` | answered (FrequencyGrid): each route's hours at its headway stop, the trips' own gaps; shading is continuous (D-52, encoded provisionally) |
 | 5 | analysis `route_frequency` (the row's `stats`) | answered: trips, span, revenue hours and miles; speed is a derived number no op answers |
-| 6 | analysis `type_coverage` (`window`), `unserved_points` | answered (CoveragePanel, CoverageMap), per service id rather than per group, QAF-89; QAF-78 (D-6 decided), QAF-18 and QAF-28 (D-47 decided) |
+| 6 | analysis `type_coverage` (`window`), `unserved_points` | answered (CoveragePanel, CoverageMap) for the selected group — a combination's pooled service, named by its members with its dates (D-55) — over any weighted layer, points or polygons, its field and label the planner's (D-47) |
 | 7 | analysis `route_overlap` | answered (CorridorTable); whether departures are spread along a shared segment has no op |
 | 8 | analysis `stop_gaps` | answered for one stop (StopWaits); not for a station's bays, QAF-92; no network-wide ranking in a window |
 | 9 | analysis `hub_connections` | answered (HubMatrix); a near-miss (arriving just after the departure) has no op |
 | 10 | none | data gap: no ridership (D-53: to be built in, later); adherence history is `docs/ROADMAP.md` 3 |
 | 11 | directory `route_detail`, `focus` | answered (DirectionTabs, FocusMap); branches read as one direction, QAF-63 (Blocked: D-44) |
-| 12 | directory `timetable` (`compare_hash`) | answered (StringLine, TimetableGrid), with the doubled trips of QAF-91; stop spacing is by order — the timetable carries no distance along the pattern |
+| 12 | directory `timetable` (`compare_hash`) | answered (StringLine, TimetableGrid), pooled over the group's members; stop spacing is by order — the timetable carries no distance along the pattern |
 | 13 | directory `timetable` (`run_secs`) | each trip's end-to-end time answered (RunTimes); by segment and band, no op; the model keeps one profile per pattern, D-3 |
-| 14 | runcut `blocks`, `block_trips`, `fleet_summary` | not in the UI: no route scoping; QAF-62 (D-9 decided) |
-| 15 | author `apply` (`set_plan`) | answered (PlanList); QAF-54 (D-41 decided) |
-| 16 | author `apply` (`set_span`, `adjust_running_time`, `retime_trip`, `insert_direction_stop`, `remove_direction_stop`) | answered (GesturePanel, a dragged trip on StringLine); the frequency target is Blocked: D-54, D-3 (QAF-90); the gestures act on one service id, QAF-65 (D-8 decided: per service type, the UI warns) |
-| 17 | author `apply` (`add_route`, `add_pattern`, `update_pattern`, `upsert_*`, `remove_*`), streets `route` | not in the UI: no gesture draws a pattern along the streets; D-11 and D-26 decided (the bus profile warns, never refuses) |
-| 18 | analysis `service_type_compare` | answered (ProposalScore, Redline) for the selected group; no dollar cost (D-51: platform hours against an hours budget); vehicles, QAF-3 (D-46 decided: automatic blocking in the runcut capability, under D-50's policy) |
-| 19 | none | QAF-20 (D-43 provisional); no transfer delta |
-| 20 | network `validate`, author `apply` issues, network `export`, `POST /plans` | answered (Readiness: export and publish); QAF-62 (D-9 decided), QAF-54 (D-41 decided) |
+| 14 | runcut `blocks`, `block_trips`, `fleet_summary` | not in the UI: no route scoping; runcut `recovery` and `suggest_blocks` answer required recovery and a proposal's added vehicles (D-9, D-46), unread by a UI |
+| 15 | author `apply` (`set_plan`, its `through`) | answered (PlanList: a fork's period end carries the weekly calendars still running, D-41, D-112; C-TRAN's dated calendars import as weekly, D-105) |
+| 16 | author `apply` (`set_span`, `adjust_running_time`, `retime_trip`, `insert_direction_stop`, `remove_direction_stop`) | answered (GesturePanel, a dragged trip on StringLine); the frequency target is Blocked: D-54, D-3 (QAF-90); each gesture acts on one service type of the group, picked in the panel, which warns what else runs with it (D-8, D-95) |
+| 17 | author `apply` (`add_route`, `add_pattern`, `update_pattern`, `draw_alignment`, `upsert_*`, `remove_*`), streets `route` (`streets`, `to_confirm`) | ops exist; not in the UI: no gesture draws a pattern along the streets (`docs/units/streets-model.md` item 4) |
+| 18 | analysis `service_type_compare` | answered (ProposalScore, Redline) for the selected group; no dollar cost (D-51: platform hours against an hours budget — what a budget is, Blocked: D-108); vehicles: runcut `suggest_blocks` `added_vehicles` (D-46), unread by the UI |
+| 19 | analysis `coverage_compare` | on the bus (gained and lost between two named sides, D-99), not in the UI: which combination answers to which across the plans waits on D-43's matching rule (QAF-20); no transfer delta |
+| 20 | network `validate`, author `apply` issues, network `export`, `POST /plans` | answered (Readiness: export and publish); a block's waits judged against the recovery required there (D-9; `work_rules_hash` unread by the UI) |
 
 ## Answer graph
 
@@ -121,7 +121,7 @@ hash), `view` (which view is open), `layer`, `coverage-params`.
 | directory.route_detail | document.active, route, view | DirectionTabs | route |
 | directory.timetable | documents, route, direction, group, view | StringLine, TimetableGrid, RunTimes | route |
 | directory.focus | document.active, route, view | FocusMap | route |
-| analysis.type_coverage | document.active, layer, coverage-params, window, view | CoveragePanel | coverage |
+| analysis.type_coverage | document.active, group, layer, coverage-params, window, view | CoveragePanel | coverage |
 | analysis.unserved_points | document.active, group, layer, coverage-params, view | CoveragePanel, CoverageMap | coverage |
 | directory.stops | document.active, view | the hub picker | hubs |
 | analysis.route_overlap | document.active, group, view | CorridorTable | hubs |

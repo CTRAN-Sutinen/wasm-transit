@@ -33,3 +33,9 @@ export function parseClock(text: string): number | null {
   const m = text.trim().match(/^(\d{1,2}):(\d{2})$/);
   return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 : null;
 }
+
+/// A combination's dates by its spans (analysis `service_groups`):
+/// "2026-09-14 – 2026-10-09 (20 days)", a one-date span as its date.
+export function spansText(spans: { start: string; end: string; days: number }[]): string {
+  return spans.map((s) => (s.start === s.end ? s.start : `${s.start} – ${s.end} (${s.days} days)`)).join(", ");
+}

@@ -1,7 +1,9 @@
 <script lang="ts">
   /// The plan set: each plan with its pick date, which is open and
   /// which is the baseline; open, set as baseline, fork the open plan
-  /// into a dated pick, or import a feed as a new base.
+  /// into a dated pick (with the day its period runs through, the fork
+  /// carries every weekly calendar to it — D-41), or import a feed as a
+  /// new base.
   let {
     plans,
     activeKey,
@@ -18,12 +20,13 @@
     feed: { label: string; info: { feed_version?: string | null } | null } | null;
     onopen: (key: string) => void;
     oncompare: (key: string) => void;
-    onfork: (name: string, effectiveFrom: string) => void;
+    onfork: (name: string, effectiveFrom: string, through: string) => void;
     onfeed: (file: File) => void;
   } = $props();
 
   let name = $state("");
   let date = $state("");
+  let through = $state("");
 </script>
 
 <section class="panel" aria-label="Plans" data-testid="plan-list">
@@ -52,10 +55,11 @@
       {/each}
     </tbody>
   </table>
-  <form class="fork" onsubmit={(e) => { e.preventDefault(); onfork(name, date); name = ""; }}>
+  <form class="fork" onsubmit={(e) => { e.preventDefault(); onfork(name, date, through); name = ""; }}>
     <strong>Fork the open plan</strong>
     <label>Name <input bind:value={name} placeholder="Winter 2027" data-testid="fork-name" /></label>
     <label>Picks on <input type="date" bind:value={date} data-testid="fork-date" /></label>
+    <label title="Every weekly service type still running at the calendar's end runs through this day; holidays and closed periods are not carried">Runs through <input type="date" bind:value={through} min={date} data-testid="fork-through" /></label>
     <button type="submit" class="pri" disabled={!name.trim() || !date}>Fork</button>
   </form>
   <label class="feed">

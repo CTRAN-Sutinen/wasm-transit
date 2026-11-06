@@ -15,7 +15,8 @@
 //   4. The selection lives in the URL hash: a reload returns to the
 //      same view, route, and group.
 //   5. Hubs answer a station's connections and corridors; coverage
-//      answers against a population layer.
+//      answers the selected group (a combination of service types)
+//      against a weighted layer (points or polygons).
 //   6. A capability that fails to load fails its frames only, each
 //      saying so, while the plan set keeps working.
 
@@ -30,12 +31,17 @@ async function importFixture(page) {
   await page.goto("/service-design.html");
   await page.getByTestId("design-rail").getByRole("button", { name: "Plans" }).click();
   await page.getByTestId("feed-input").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
-  await expect(page.getByTestId("group-table").locator("tbody tr")).toHaveCount(3, { timeout: 10_000 });
+  // The groups are the combinations that run together (D-55): WK
+  // alone and SUN alone — HOL runs no trip, so it is in none.
+  await expect(page.getByTestId("group-table").locator("tbody tr")).toHaveCount(2, { timeout: 10_000 });
 }
 
 test("service design chains its views over a plan, a fork, and a change", async ({ page }) => {
   await importFixture(page);
-  await page.getByTestId("group-table").locator("tbody tr", { hasText: "WK" }).click();
+  const wk = page.getByTestId("group-table").locator("tbody tr", { hasText: "WK" });
+  // A group is shown with the dates it holds on, never a day standing in for it.
+  await expect(wk.getByTestId("group-dates")).toContainText("2026-01-01 – 2026-12-31");
+  await wk.click();
 
   // Network: the group's ledger, the day's shape, and the grid.
   await page.keyboard.press("2");
@@ -57,6 +63,10 @@ test("service design chains its views over a plan, a fork, and a change", async 
   const gestures = page.getByTestId("gestures");
   await expect(gestures).toContainText("Fork the import");
   await expect(gestures).toContainText("D-54");
+  // A gesture changes one service type of the group (D-8); WK runs
+  // alone, so nothing else is named.
+  await expect(page.getByTestId("gesture-scope")).toContainText("Changes the trips of");
+  await expect(page.getByTestId("sibling-warning")).toHaveCount(0);
 
   // Fork it from the Plans view.
   await page.keyboard.press("1");
@@ -105,6 +115,29 @@ test("service design chains its views over a plan, a fork, and a change", async 
   await expect(page.getByTestId("string-line")).toContainText("2 trips", { timeout: 10_000 });
 });
 
+test("a fork past the calendar carries its weekly service through its period", async ({ page }) => {
+  // D-41 (QAF-54): the fixture's calendar ends 2026-12-31. A pick in
+  // 2027 forked without a period end runs nothing; with one, the fork
+  // carries every weekly calendar to it and the warning never fires.
+  await importFixture(page);
+  await page.keyboard.press("1");
+  await page.getByTestId("fork-name").fill("Late");
+  await page.getByTestId("fork-date").fill("2027-01-11");
+  await page.getByRole("button", { name: "Fork" }).click();
+  await expect(page.getByTestId("status")).toContainText("Forked");
+  await page.keyboard.press("6");
+  await expect(page.getByTestId("readiness")).toContainText(/no service in plan period/i);
+
+  await page.keyboard.press("1");
+  await page.getByTestId("fork-name").fill("Winter 2027");
+  await page.getByTestId("fork-date").fill("2027-01-11");
+  await page.getByTestId("fork-through").fill("2027-05-28");
+  await page.getByRole("button", { name: "Fork" }).click();
+  await expect(page.getByTestId("status")).toContainText("Forked \"Winter 2027\"");
+  await page.keyboard.press("6");
+  await expect(page.getByTestId("readiness")).not.toContainText(/no service in plan period/i);
+});
+
 test("hubs and coverage answer around a station and a layer", async ({ page }) => {
   await importFixture(page);
   await page.getByTestId("group-table").locator("tbody tr", { hasText: "WK" }).click();
@@ -125,9 +158,34 @@ test("hubs and coverage answer around a station and a layer", async ({ page }) =
   await page.keyboard.press("3");
   await page.getByTestId("layer-input").setInputFiles(path.join(fixtures, "population.geojson"));
   const panel = page.getByTestId("coverage-panel");
-  // WK and SUN: HOL runs no trip, so coverage has no row for it.
-  await expect(panel.locator("tbody tr")).toHaveCount(2);
-  await expect(panel).toContainText("points beyond 400 m");
+  // Coverage is the selected group's (D-55, QAF-89): the WK
+  // combination, pooled, named by its members with the dates it holds
+  // — no date stands in for it.
+  const group = page.getByTestId("group-coverage");
+  await expect(group).toContainText("Served by WK");
+  await expect(page.getByTestId("coverage-dates")).toContainText("2026-01-01 – 2026-12-31");
+  await expect(page.getByTestId("served-pct")).toContainText("%");
+  await expect(panel).toContainText("places beyond 400 m");
+  // Another group re-asks for its own combination.
+  await page.getByTestId("group-select").selectOption("SUN");
+  await expect(group).toContainText("Served by SUN");
+  await page.getByTestId("group-select").selectOption("WK");
+  await expect(group).toContainText("Served by WK");
+  // A point layer of one numeric field reads by it, and the answer
+  // states its resolution (D-47).
+  await expect(page.getByTestId("layer-field")).toHaveValue("POP");
+  await expect(page.getByTestId("layer-resolution")).toContainText("Points about");
+
+  // Any weighted geography (D-47): a polygon layer carrying two
+  // weights; the planner picks jobs and says what it means.
+  await page.getByTestId("layer-input").setInputFiles(path.join(fixtures, "jobs-areas.geojson"));
+  await expect(panel).toContainText("2 polygons");
+  await page.getByTestId("layer-field").selectOption("jobs");
+  await page.getByTestId("layer-label").fill("jobs");
+  await page.getByTestId("layer-label").press("Enter");
+  await expect(page.getByTestId("layer-resolution")).toContainText("weighted by area");
+  await expect(group).toContainText("Served by WK");
+  await expect(group.locator("thead")).toContainText("jobs");
 });
 
 test("a capability that fails to load fails its frames, not the page", async ({ page }) => {

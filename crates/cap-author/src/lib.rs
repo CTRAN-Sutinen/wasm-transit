@@ -12,14 +12,17 @@
 //! its copy (JS owns the documents).
 //!
 //! The domain code (the edit vocabulary, the referential refusals)
-//! lives in transit-network; this module is the seam. Same identity
+//! lives in transit-network; this module is the seam. With a
+//! `work_rules_hash`, a block's waits are judged against the recovery
+//! the work rules require (D-9: the rules win; without them, the
+//! smallest authored layover at each terminal). Same identity
 //! as every capability: the module is the hash authority.
 
 #![forbid(unsafe_code)]
 
 use std::sync::Arc;
 
-use cap_abi::kernel::NETWORK;
+use cap_abi::kernel::{NETWORK, WORK_RULES};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_network::{Network, NetworkEdit, NetworkError, NetworkWarning};
@@ -31,7 +34,15 @@ use transit_network::{Network, NetworkEdit, NetworkError, NetworkWarning};
 pub enum Request {
     /// Apply `edits`, in order and atomically, to the registered
     /// document: the next document, registered under its own hash.
-    Apply { network_hash: String, edits: Vec<NetworkEdit> },
+    Apply {
+        network_hash: String,
+        edits: Vec<NetworkEdit>,
+        /// The work rules whose recovery requirement judges each wait
+        /// (D-9); without them, each terminal's floor does.
+        #[serde(default)]
+        #[ts(optional)]
+        work_rules_hash: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -49,6 +60,10 @@ pub enum Response {
         /// What the change created, with the ids it was given (minted
         /// when the edit named none) — what an authoring host opens.
         created: Vec<transit_network::CreatedEntity>,
+        /// What the change altered beyond what it created: the
+        /// patterns a `draw_alignment` redrew (D-11 — nothing moves
+        /// silently).
+        touched: Vec<transit_network::TouchedEntity>,
     },
 }
 
@@ -60,16 +75,17 @@ fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
 /// are `{"error": ...}`, never panics — a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
-        Request::Apply { network_hash, edits } => {
+        Request::Apply { network_hash, edits, work_rules_hash } => {
+            let rules = work_rules_hash.as_deref().map(|h| WORK_RULES.require(h)).transpose()?;
             let current = network_arc(&network_hash)?;
-            let (next, created) =
+            let transit_network::Applied { network: next, created, touched } =
                 transit_network::apply_edits_reporting(&current, &edits).map_err(|e| e.to_string())?;
-            let issues = transit_network::validation_issues(&next);
+            let issues = transit_network::validation_issues_under(&next, &transit_runs::required(rules.as_deref()));
             let warnings = transit_network::validation_warnings(&next);
             // The next document registers where it was minted: the next
             // change (and, in an assembly, every reader) chains on its hash.
             let (network_hash, next) = NETWORK.register(next)?;
-            Ok(Response::Apply { network_hash, network: (*next).clone(), issues, warnings, created })
+            Ok(Response::Apply { network_hash, network: (*next).clone(), issues, warnings, created, touched })
         }
     }
 }
@@ -90,5 +106,5 @@ cap_abi::capability! {
     id: "author",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [NETWORK],
+    documents: [NETWORK, WORK_RULES],
 }

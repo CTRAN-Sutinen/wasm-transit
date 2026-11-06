@@ -10,12 +10,87 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::NaiveDate;
 
-use crate::error::{NetworkError, NetworkWarning};
+use crate::error::{NetworkError, NetworkWarning, RecoverySource};
 use crate::model::{Departs, Network, Trip};
 
 /// All issues, in a deterministic order (entity map order, then
-/// check order). Empty = valid.
+/// check order). Empty = valid. A layover is judged against the
+/// terminal's floor ([`recovery_floors`]); a caller holding a
+/// work-rule policy asks [`validation_issues_under`].
 pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
+    validation_issues_under(network, &|_| None)
+}
+
+/// What a recovery requirement is asked about: the trip before the
+/// wait (its route, service type, and run time) and where the vehicle
+/// waits (the layover's `at`, else the stop the trip ends at).
+#[derive(Debug, Clone, Copy)]
+pub struct RecoveryAt<'a> {
+    pub route: &'a str,
+    pub service_type: &'a str,
+    pub run_secs: u32,
+    pub terminal: &'a str,
+}
+
+/// The derived recovery floor (D-9): per terminal, the smallest
+/// authored layover waiting there — the recovery the network itself
+/// shows is enough at that stop. A layover waits at its `at`, else at
+/// the last stop of the trip before it.
+pub fn recovery_floors(network: &Network) -> BTreeMap<String, u32> {
+    let ends = trip_ends(network);
+    let mut floors: BTreeMap<String, u32> = BTreeMap::new();
+    for block in network.blocks.values() {
+        for layover in &block.layovers {
+            let terminal = layover
+                .at
+                .as_deref()
+                .or_else(|| block.trips.get(layover.after_trip).and_then(|t| ends.get(t.trip.as_str())).map(|e| e.1));
+            if let Some(terminal) = terminal {
+                let floor = floors.entry(terminal.to_string()).or_insert(layover.secs);
+                *floor = (*floor).min(layover.secs);
+            }
+        }
+    }
+    floors
+}
+
+/// The recovery required after a trip (D-9), the one rule every
+/// reader applies: the policy's requirement when it has one (it
+/// wins); else, for a pair carrying an authored layover, the floor at
+/// the terminal; else none (the pair is judged for order only).
+pub fn required_recovery(
+    floors: &BTreeMap<String, u32>,
+    policy: Option<u32>,
+    authored_layover: bool,
+    terminal: &str,
+) -> Option<(u32, RecoverySource)> {
+    match policy {
+        Some(secs) => Some((secs, RecoverySource::Policy)),
+        None if authored_layover => floors.get(terminal).map(|&secs| (secs, RecoverySource::Terminal)),
+        None => None,
+    }
+}
+
+/// Trip id → (route, last stop) for trips whose pattern resolves.
+fn trip_ends(network: &Network) -> BTreeMap<&str, (&str, &str)> {
+    network
+        .pattern_trips
+        .values()
+        .filter_map(|pt| network.patterns.get(&pt.pattern).map(|p| (pt, p)))
+        .flat_map(|(pt, p)| {
+            let last = p.stops.last().map(|s| s.stop.as_str()).unwrap_or("");
+            pt.trips.iter().map(move |t| (t.id.as_str(), (p.route.as_str(), last)))
+        })
+        .collect()
+}
+
+/// [`validation_issues`] with a work-rule policy's recovery
+/// requirement: `policy` answers the seconds required after a trip
+/// (and wins), or `None` where no rule applies — there the terminal's
+/// floor judges a pair carrying an authored layover, and a pair with
+/// none is judged for order only. With a requirement, every adjacent
+/// pair of distinct trips is judged.
+pub fn validation_issues_under(network: &Network, policy: &dyn Fn(&RecoveryAt) -> Option<u32>) -> Vec<NetworkError> {
     let mut issues = Vec::new();
 
     // --- Stops: parent references -------------------------------
@@ -191,6 +266,8 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
         .values()
         .flat_map(|pt| pt.trips.iter().map(move |t| (t.id.as_str(), (pt.service_type.as_str(), t))))
         .collect();
+    let ends = trip_ends(network);
+    let floors = recovery_floors(network);
     let mut days = DaySignatures::new(network);
     let mut owner: BTreeMap<&str, &str> = BTreeMap::new();
     for (block_id, block) in &network.blocks {
@@ -258,10 +335,22 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
                 starts.sort_unstable();
                 for start in starts {
                     if let Some((pi, ptrip, pstart, arrival)) = prev {
-                        let layover: u32 = if pi + 1 == i {
-                            block.layovers.iter().filter(|l| l.after_trip == pi).map(|l| l.secs).sum()
+                        // The recovery required after the trip before,
+                        // when the two are adjacent in the block.
+                        let required = if pi + 1 == i && arrival <= start {
+                            let authored = block.layovers.iter().find(|l| l.after_trip == pi);
+                            let (pservice, ptrip_model) = index[ptrip];
+                            let (route, last) = ends.get(ptrip).copied().unwrap_or(("", ""));
+                            let terminal = authored.and_then(|l| l.at.as_deref()).unwrap_or(last);
+                            let at = RecoveryAt {
+                                route,
+                                service_type: pservice,
+                                run_secs: ptrip_model.run_secs().unwrap_or(0),
+                                terminal,
+                            };
+                            required_recovery(&floors, policy(&at), authored.is_some(), terminal)
                         } else {
-                            0
+                            None
                         };
                         let issue = if start <= pstart {
                             Some(NetworkError::BlockOutOfOrder { block: block_id.clone(), trip: r.trip.clone() })
@@ -273,8 +362,16 @@ pub fn validation_issues(network: &Network) -> Vec<NetworkError> {
                                 next: r.trip.clone(),
                                 start_secs: start,
                             })
-                        } else if pi != i && arrival.saturating_add(layover) > start {
-                            Some(NetworkError::LayoverInfeasible { block: block_id.clone(), after_trip: pi })
+                        } else if let Some((required_secs, source)) =
+                            required.filter(|&(secs, _)| arrival.saturating_add(secs) > start)
+                        {
+                            Some(NetworkError::LayoverInfeasible {
+                                block: block_id.clone(),
+                                after_trip: pi,
+                                gap_secs: start - arrival,
+                                required_secs,
+                                required_by: source,
+                            })
                         } else {
                             None
                         };

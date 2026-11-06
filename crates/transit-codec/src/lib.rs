@@ -22,7 +22,10 @@
 //!
 //! * a GTFS service_id is a service type id, its calendar row the
 //!   rule's weekday flags and range, its calendar_dates rows the
-//!   rule's exceptions;
+//!   rule's exceptions — except a service published as dates alone
+//!   (no weekday flagged, every row an added date), whose weekly rule
+//!   is read out of its dates where one reads (D-105, D-111:
+//!   [`read_weekly_rule`]) and which exports as dates again;
 //! * a trip's times are offsets from its first arrival: a one-start
 //!   trip starts there, a frequency trip's instances start on its
 //!   bands;
@@ -92,6 +95,69 @@ pub struct Boundary {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(optional, as = "Option<bool>")]
     pub fare_networks_on_routes: bool,
+    /// The services the feed published as dates alone whose weekly
+    /// rule the import read (D-105): the export writes them back as
+    /// dates, under the calendar.txt row they had (zero flags, its
+    /// range as written), if any.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(optional, as = "Option<BTreeMap<String, DatedCalendar>>")]
+    pub dated_calendars: BTreeMap<String, DatedCalendar>,
+}
+
+/// How a feed wrote a service it published as dates alone.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct DatedCalendar {
+    /// The calendar.txt row's start_date and end_date as written; none
+    /// when the feed had no row for the service.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub row: Option<(String, String)>,
+}
+
+/// D-111: a weekday is part of a dated service's weekly rule when the
+/// service runs on at least this many of them…
+pub const WEEKLY_MIN_DAYS: u32 = 4;
+/// …and on at least this share (numerator, denominator) of that
+/// weekday's occurrences between its first and last date.
+pub const WEEKLY_MIN_SHARE: (u32, u32) = (3, 4);
+
+/// D-105: the weekly rule a service published as dates alone runs, when
+/// one reads out of them (D-111) — the qualifying weekdays, one range
+/// from the first to the last date on them, a removed date for each of
+/// them it skips, an added date for each other date. It runs on exactly
+/// `dates`. None when no weekday qualifies: the service stays dated.
+pub fn read_weekly_rule(dates: &BTreeSet<NaiveDate>) -> Option<CalendarRule> {
+    use chrono::Datelike;
+    let (first, last) = (*dates.first()?, *dates.last()?);
+    let index = |d: NaiveDate| d.weekday().num_days_from_monday() as usize;
+    let (mut occurrences, mut ran) = ([0u32; 7], [0u32; 7]);
+    let mut d = first;
+    while d <= last {
+        occurrences[index(d)] += 1;
+        ran[index(d)] += dates.contains(&d) as u32;
+        d += Duration::days(1);
+    }
+    let (num, den) = WEEKLY_MIN_SHARE;
+    let on: [bool; 7] = std::array::from_fn(|w| ran[w] >= WEEKLY_MIN_DAYS && den * ran[w] >= num * occurrences[w]);
+    if !on.iter().any(|&b| b) {
+        return None;
+    }
+    let flagged: Vec<NaiveDate> = dates.iter().copied().filter(|&d| on[index(d)]).collect();
+    let range = DateRange { start: flagged[0], end: *flagged.last().expect("a weekday qualified") };
+    let mut exceptions = Vec::new();
+    let (mut d, end) = (first.min(range.start), last.max(range.end));
+    while d <= end {
+        let by_rule = on[index(d)] && range.start <= d && d <= range.end;
+        match (by_rule, dates.contains(&d)) {
+            (true, false) => exceptions.push(CalendarException { date: d, state: DayState::Removed }),
+            (false, true) => exceptions.push(CalendarException { date: d, state: DayState::Added }),
+            _ => {}
+        }
+        d += Duration::days(1);
+    }
+    let [mon, tue, wed, thu, fri, sat, sun] = on;
+    Some(CalendarRule { days: WeekdaySet { mon, tue, wed, thu, fri, sat, sun }, ranges: vec![range], exceptions })
 }
 
 /// One thing the import could not carry into the document. Reported,
@@ -568,6 +634,24 @@ pub fn import(feed: &Feed) -> ImportOutcome {
     }
     for (id, mut rule) in rules {
         rule.exceptions.sort_by_key(|e| e.date);
+        // D-105: a service published as dates alone (no weekday flagged,
+        // every exception an added date) runs the weekly rule its dates
+        // read as, where one does; the boundary keeps how it was written.
+        let dated = rule.days == WeekdaySet::none()
+            && !rule.exceptions.is_empty()
+            && rule.exceptions.iter().all(|e| e.state == DayState::Added);
+        if dated {
+            let dates: BTreeSet<NaiveDate> = rule.exceptions.iter().map(|e| e.date).collect();
+            if let Some(weekly) = read_weekly_rule(&dates) {
+                let row = feed
+                    .calendar
+                    .iter()
+                    .find(|r| r.service_id.as_deref() == Some(id.as_str()))
+                    .map(|r| (r.start_date.clone().unwrap_or_default(), r.end_date.clone().unwrap_or_default()));
+                boundary.dated_calendars.insert(id.clone(), DatedCalendar { row });
+                rule = weekly;
+            }
+        }
         net.service_types.insert(id.clone(), ServiceType { name: id, rule });
     }
 
@@ -864,6 +948,41 @@ pub fn export(net: &Network, boundary: &Boundary) -> Result<Feed, String> {
     for (id, st) in &net.service_types {
         let rule = &st.rule;
         let bit = |b: bool| Some(if b { "1" } else { "0" }.to_string());
+        // A service the feed published as dates (D-105) goes back as
+        // dates: its calendar row as written (zero flags), and every date
+        // the rule runs as an added date.
+        if let Some(dated) = boundary.dated_calendars.get(id) {
+            if let Some((start, end)) = &dated.row {
+                let zero = || bit(false);
+                feed.calendar.push(CalendarRow {
+                    service_id: s(id),
+                    monday: zero(),
+                    tuesday: zero(),
+                    wednesday: zero(),
+                    thursday: zero(),
+                    friday: zero(),
+                    saturday: zero(),
+                    sunday: zero(),
+                    start_date: Some(start.clone()),
+                    end_date: Some(end.clone()),
+                });
+            }
+            let named = rule.ranges.iter().flat_map(|r| [r.start, r.end]).chain(rule.exceptions.iter().map(|e| e.date));
+            if let (Some(from), Some(to)) = (named.clone().min(), named.max()) {
+                let mut date = from;
+                while date <= to {
+                    if rule.runs_on(date) {
+                        feed.calendar_dates.push(CalendarDateRow {
+                            service_id: s(id),
+                            date: Some(format_date(date)),
+                            exception_type: s("1"),
+                        });
+                    }
+                    date += Duration::days(1);
+                }
+            }
+            continue;
+        }
         if let Some(first) = rule.ranges.first() {
             feed.calendar.push(CalendarRow {
                 service_id: s(id),

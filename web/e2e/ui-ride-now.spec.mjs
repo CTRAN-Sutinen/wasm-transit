@@ -8,8 +8,9 @@
 //
 //   1. Near you answers on open (directory `stops_near` + a board per
 //      place): the station first, its pooled bays' departures.
-//   2. The type-ahead answers as you type (directory `stops`); a name
-//      no stop carries says how stops are named (QAF-70); Enter picks.
+//   2. The type-ahead answers as you type (directory `stops`), a typo
+//      included (D-48); a name no stop carries says how stops are
+//      named; Enter picks.
 //   3. The stop's board is realtime-first: t10 leaves 8:02, two
 //      minutes late (board `stop_board` over rt `live`).
 //   4. A saved stop answers on home (`watchlist_board`: the stop
@@ -17,11 +18,15 @@
 //      recent ones; it is still saved after a reload (the store's
 //      watchlist document).
 //   5. Directions: leaving now rides t10 at its prediction
-//      (`plan_compare`), the map draws the leg (`itinerary_paths`);
+//      (`plan_compare`) — leave in 7 min, 11 min door to door (D-40) —
+//      the map draws the leg (`itinerary_paths`);
 //      the last bus leaves 8:40 and arriving by 8:35 rides route 20
 //      (`plan_arrive_by`).
 //   6. A detour in the edit document: the skipped stop's board says
 //      what no longer stops there; the trip to it carries the notice.
+//      A cancel of t10 (D-45): the board lists its 8:00 as cancelled,
+//      not as a departure (the router's law pins that plans never ride
+//      it: cap-router `a_cancelled_trip_is_never_ridden`).
 //   7. A capability that fails to load turns its frames off, and they
 //      say so; the rest answers.
 //   8. The network: the routes filter by long name (directory
@@ -44,6 +49,16 @@ test.use({
   geolocation: { latitude: 45.515, longitude: -73.515 },
   permissions: ["geolocation"],
 });
+
+const cancelT10 = [
+  {
+    id: "c-ride-now",
+    rev: 1,
+    status: "accepted",
+    updated_at: 1,
+    cancel: { id: "cancel-t10", trip_id: "t10", start_secs: null, date: "2026-10-23" },
+  },
+];
 
 const detour = [
   {
@@ -97,9 +112,12 @@ test("ride now answers near me, a stop, a save, and a trip", async ({ page }) =>
   await expect(first).toContainText("Main Station");
   await expect(first).toContainText("8:15");
 
-  // 2. The type-ahead, and a name no stop carries.
-  await page.getByLabel("stop name").fill("vancouver mall");
-  await expect(page.getByRole("listbox")).toContainText("No stop is named “vancouver mall”");
+  // 2. The type-ahead, a typo it still answers (D-48), and a name no
+  // stop carries.
+  await page.getByLabel("stop name").fill("mian 2nd");
+  await expect(page.getByRole("option").first()).toContainText("Main & 2nd");
+  await page.getByLabel("stop name").fill("zebra crossing");
+  await expect(page.getByRole("listbox")).toContainText("No stop is named “zebra crossing”");
   await pick(page, "stop name", "main 1s", "Main & 1st");
 
   // 3. The board, realtime-first.
@@ -132,6 +150,10 @@ test("ride now answers near me, a stop, a save, and a trip", async ({ page }) =>
   await expect(it).toContainText("8:02");
   await expect(it).toContainText("2 min late");
   await expect(it).toContainText("Arrive Main & 2nd at 8:13 am");
+  // Door to door (D-40): leave at the boarding, 11 minutes to 8:13,
+  // and "leave in" by the board's wait rule from 07:55.
+  await expect(trip.getByTestId("duration")).toHaveText("11 min");
+  await expect(trip.getByTestId("leave")).toHaveText("Leave in 7 min");
   await expect(page.getByTestId("ride-map")).toHaveAttribute("data-legs", "1");
 
   await trip.getByRole("radio", { name: "Last bus" }).click();
@@ -178,6 +200,16 @@ test("ride now shows a detour on the board and on the trip", async ({ page }) =>
   await board.getByRole("button", { name: "Directions to here" }).click();
   await pick(page, "From", "main 1", "Main & 1st");
   await expect(page.getByTestId("plan-notice")).toBeVisible();
+});
+
+test("ride now lists a cancelled trip as cancelled, never as a departure", async ({ page }) => {
+  await open(page, { edits: cancelT10 });
+
+  await pick(page, "stop name", "main 1s", "Main & 1st");
+  const board = page.getByTestId("rider-board");
+  await expect(board.getByTestId("board-cancelled")).toContainText("8:00");
+  await expect(board.getByTestId("board-skipped")).toHaveCount(0);
+  await expect(board.getByTestId("board-rows")).not.toContainText("8:02");
 });
 
 test("ride now degrades frame by frame when a capability fails to load", async ({ page }) => {

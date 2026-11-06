@@ -394,7 +394,8 @@ fn rejects_broken_runcut() {
     assert!(matches!(defect(|n| {
         n.blocks.get_mut("b1").unwrap().trips[1].trip = "t0900".into();
     }), UnknownBlockTrip { trip, .. } if trip == "t0900"));
-    // Arrives in time, but the layover does not fit before 8:00.
+    // Arrives in time, but the wait is under the 3 h recovery its
+    // terminal's floor requires (the only layover there, D-9).
     assert!(matches!(defect(|n| {
         n.blocks.get_mut("b1").unwrap().layovers[0].secs = 3 * 3600;
     }), LayoverInfeasible { .. }));

@@ -12,11 +12,12 @@
   /// Every panel is a render component fed from the host's `sd`;
   /// this file only places them and routes their events to the host.
   import {
-    sd, VIEWS, setView, openPlan, setCompare, fork, loadFeedBytes, loadLayerBytes, selectGroup, openRoute, clearRoute,
+    sd, VIEWS, setView, openPlan, setCompare, fork, loadFeedBytes, loadLayerBytes, setLayerReading, selectGroup, openRoute, clearRoute,
     selectDirection, selectTimetableStop, openStop, clearStop, setWindow, setCoverageParams, gestures, undoChange,
-    redoChange, exportPlan, publishPlan, toggleEdit, selectTrip, pickUnserved, retry, type View,
+    redoChange, exportPlan, publishPlan, toggleEdit, selectTrip, pickUnserved, retry, setEditType, type View,
   } from "./host.svelte";
   import { today } from "../kit";
+  import { spansText } from "../../components/designFormat";
   import DesignRail from "../../components/DesignRail.svelte";
   import ContextBar from "../../components/ContextBar.svelte";
   import Unavailable from "../../components/Unavailable.svelte";
@@ -48,7 +49,10 @@
   const bytesOf = async (f: File) => new Uint8Array(await f.arrayBuffer());
   const planName = (key: string) => sd.plans.find((p) => p.key === key)?.name ?? "";
   const framed = $derived(!!sd.plans.find((p) => p.key === sd.activeKey)?.id);
-  const group = $derived(sd.groups.find((g) => g.service_type === sd.group) ?? null);
+  const group = $derived(sd.groups.find((g) => g.id === sd.group) ?? null);
+  /// The other groups the gestures' service type runs in (D-95: a
+  /// sibling is a type sharing a combination with it).
+  const alsoIn = $derived(sd.groups.filter((g) => g.id !== sd.group && g.members.includes(sd.editType)).map((g) => g.id));
   const routeRow = $derived(sd.routes.find((r) => r.route_id === sd.route) ?? null);
   const changed = $derived(sd.comparison?.routes.map((r) => r.route_id) ?? []);
   let tableMode = $state(false);
@@ -128,7 +132,7 @@
           {/if}
         </div>
       {:else if sd.view === "network"}
-        <h1>Network <span>{group ? `${group.name} on its representative day, ${group.date}` : ""}</span></h1>
+        <h1>Network <span>{group ? `${group.id} — ${spansText(group.spans)}` : ""}</span></h1>
         {#if sd.failed.Comparison}{@render failure("Comparison", "Against the baseline")}{/if}
         <GroupLedger {group} comparison={sd.comparison} baselineName={planName(sd.compareKey)} />
         {#if sd.failed.DayProfile}
@@ -145,25 +149,26 @@
         <div class="split">
           <CoveragePanel
             coverage={sd.coverage}
+            reading={sd.coverageReading}
             unserved={sd.unserved}
-            members={group?.members ?? []}
             layer={sd.layer}
             params={sd.coverageParams}
             window={sd.window}
             selected={sd.unservedPick}
             onparams={setCoverageParams}
             onlayer={async (f) => loadLayerBytes(await bytesOf(f))}
+            onreading={setLayerReading}
             onselect={pickUnserved}
           />
           <div class="map-area">
             {#if sd.failed.Coverage}{@render failure("Coverage", "Coverage")}{/if}
             {#if sd.failed.Unserved}{@render failure("Unserved", "Unserved points")}{/if}
-            <Unavailable title="Gained and lost against the baseline" reason="No op compares two plans' coverage." blockers={["D-43", "QAF-20"]} />
+            <Unavailable title="Gained and lost against the baseline" reason="coverage_compare answers two named sides; which of one plan's service combinations answers to which of the other's, when a fork renames or splits a type, is not decided." blockers={["D-43", "QAF-20"]} />
             <div class="map"><CoverageMap points={sd.unserved ?? []} selected={sd.unservedPick} onselect={pickUnserved} /></div>
           </div>
         </div>
       {:else if sd.view === "hubs"}
-        <h1>Hubs &amp; corridors <span>{group ? `${group.name}, ${group.date}` : ""}</span></h1>
+        <h1>Hubs &amp; corridors <span>{group ? `${group.id} — ${spansText(group.spans)}` : ""}</span></h1>
         <div class="picker">
           {#if sd.failed.HubPicker}
             {@render failure("HubPicker", "Stops")}
@@ -210,7 +215,7 @@
             route={sd.route}
             routeName={routeRow?.name ?? sd.route}
             longName={routeRow?.long_name ?? null}
-            groupName={group?.name ?? sd.group}
+            groupName={group?.id ?? sd.group}
             frequency={sd.frequency}
             comparison={sd.comparison}
             editing={sd.editing}
@@ -247,6 +252,10 @@
                 {#if sd.editing}
                   <GesturePanel
                     {framed}
+                    members={group?.members ?? []}
+                    editType={sd.editType}
+                    {alsoIn}
+                    onedittype={setEditType}
                     stops={sd.timetable.stops}
                     selectedStop={sd.selectedStop}
                     trips={sd.timetable.trips}

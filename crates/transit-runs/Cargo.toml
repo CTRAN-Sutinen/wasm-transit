@@ -1,0 +1,18 @@
+[package]
+name = "transit-runs"
+description = "The runs layer as a shared library, beside the network (D-16): the work-rule document (generic, every rule optional — recovery, interlining per route pair, the run rules, pay; D-50), the recovery a wait requires and the slack above it (D-9), and the suggested blocking a planner adopts or edits (D-46). Pure; the runcut and author capabilities dispatch through it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+ts-rs = { workspace = true }
+schemars = { workspace = true }
+transit-network = { path = "../transit-network" }
+transit-dispatch = { path = "../transit-dispatch" }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+chrono = { workspace = true }
+proptest = "1"

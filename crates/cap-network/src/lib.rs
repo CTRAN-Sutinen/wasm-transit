@@ -127,7 +127,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             // The produced feed registers under its own bytes' hash:
             // the exported artifact is a first-class feed document,
             // importable here and loadable in any other module.
-            let (feed_hash, _) = FEED.register_bytes(&bytes, None)?;
+            let (feed_hash, _) = FEED.register_bytes(&bytes)?;
             Ok(Response::Export { feed_hash, summary: counts, zip_b64: transit_codec::base64_encode(&bytes) })
         }
         Request::Document { network_hash } => {

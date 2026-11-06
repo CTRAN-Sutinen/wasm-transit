@@ -30,10 +30,10 @@ browser.
 
 | # | op(s) | state |
 |---|---|---|
-| 1 | directory `stops` (query), `stops_near` (a point: the rider, a tapped spot, or an address the geocoder answers; by walk over streets `access` when the server publishes streets) | answered; a colloquial name answers no stop, QAF-70 (the geocoder's places answer it where one runs); by walk and addresses pinned on the fixture only |
+| 1 | directory `stops` (query), `stops_near` (a point: the rider, a tapped spot, or an address the geocoder answers; by walk over streets `access` when the server publishes streets) | answered; the query is fuzzy (D-48: "vancouver mall" finds Van Mall, a typo still finds); by walk and addresses pinned on the fixture only |
 | 2 | rt `live` → board `stop_board` (`live_hash`) | answered; each row's `wait` says "leaves in N min", which the UI does not read yet |
 | 3 | the board row's `status` / `delay_secs`; the map's buses by status | answered |
-| 4 | router `plan_compare` (`live_hash`, `edits_hash`, `walks_hash`; a point end as a place over streets `access`) → `itinerary_paths` (the ends, so a place's walks draw along the streets) | answered; a trip's duration has no op, QAF-81; walking pinned on the fixture only |
+| 4 | router `plan_compare` (`live_hash`, `edits_hash`, `walks_hash`; a point end as a place over streets `access`) → `itinerary_paths` (the ends, so a place's walks draw along the streets) | answered, door to door (D-40): the itinerary's `leave_secs`, `duration_secs`, and `leave` ("Leave in 7 min" for a trip leaving now); walking pinned on the fixture only |
 | 5 | router `plan_arrive_by` (no deadline; or a deadline) | answered |
 | 6 | board `stop_board` (`alerts`, `skipped`); router `plan_compare` (`notice`) | skipped + notice answered on the fixture; no alert has been read (no fixture carries one, and no alerts URL is configured) |
 | 7 | board `watchlist_board` (`live_hash`) | answered: each saved stop's stop board, live; saved stops survive a reload |
@@ -100,5 +100,4 @@ document still crosses the page each poll (QAF-49).
   testdata/ctran-gtfs.zip`) equal the session's for the same
   snapshot, an alert has been read on a board, and `ui.json`'s
   `session` records it.
-- Then this file is deleted, or edited down to the questions still
-  blocked (QAF-70, QAF-81 while open).
+- Then this file is deleted.

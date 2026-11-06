@@ -17,7 +17,7 @@ const NETWORK_DOC: &str = include_str!("../../../testdata/network.json");
 
 /// The kernel's load_feed, through the module's seam: its hash and summary.
 fn load_feed(bytes: &[u8]) -> (String, transit_codec::FeedSummary) {
-    let (hash, feed) = cap_abi::kernel::FEED.register_bytes(bytes, None).expect("the feed parses");
+    let (hash, feed) = cap_abi::kernel::FEED.register_bytes(bytes).expect("the feed parses");
     let outcome: serde_json::Value =
         serde_json::from_str(&cap_network::invoke_bytes(cap_abi::kernel::OP_LOAD_FEED, bytes)).unwrap();
     assert_eq!(outcome["ok"]["feed_hash"], hash.as_str(), "the seam answers the kernel's identity");

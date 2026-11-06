@@ -198,7 +198,7 @@ fn diversion(added_secs: u32) -> Diversion {
 }
 
 fn record(status: EditStatus, added_secs: u32) -> EditRecord {
-    EditRecord { id: "e1".into(), diversion: diversion(added_secs), status, rev: 1, updated_at: 1 }
+    EditRecord { id: "e1".into(), diversion: Some(diversion(added_secs)), cancel: None, status, rev: 1, updated_at: 1 }
 }
 
 fn find_trip<'a>(day: &'a [MaterializedTrip], pattern_trips: &str) -> &'a MaterializedTrip {
@@ -267,7 +267,7 @@ fn boards_read_the_patched_day() {
     // A delay-only diversion (anchors A..C, nothing skipped): C is a
     // departure for route 10, so the board shows it 5 minutes late.
     let delay = EditRecord {
-        diversion: Diversion { last_kept_stop: "C".into(), skipped_stops: vec![], ..diversion(300) },
+        diversion: Some(Diversion { last_kept_stop: "C".into(), skipped_stops: vec![], ..diversion(300) }), cancel: None,
         ..record(EditStatus::Accepted, 300)
     };
     let late_day = effective_day(&net, date(), &[delay]).unwrap();
@@ -555,7 +555,7 @@ fn validation_reports_against_the_network() {
 
 fn unknown_record(record: &mut EditRecord, edit: impl FnOnce(&mut Diversion)) {
     record.id = format!("{}-x", record.id);
-    edit(&mut record.diversion);
+    edit(record.diversion.as_mut().unwrap());
 }
 
 #[test]

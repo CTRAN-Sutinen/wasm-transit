@@ -22,9 +22,9 @@ op answers any of its questions yet.
 
 | # | state |
 |---|---|
-| 1 | gap, QAF-11 (no runs layer) |
+| 1 | gap, QAF-11 (no runs cut: `docs/units/runs-layer.md`) |
 | 2 | gap, QAF-14 (no run view) and QAF-12 (no work-rule document) |
-| 3, 4 | gap: no workforce or seniority data, QAF-17; a bid is a new shared document (a sync-document change, as QAF-36 is) |
+| 3, 4 | gap: no workforce or seniority data, QAF-17; a bid is a new shared document (a sync-document change) |
 
 ## Done when
 

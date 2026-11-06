@@ -152,8 +152,8 @@ fn the_list_names_what_the_network_names() {
     let mut gone = diversion_of(&net, &d, "d2").unwrap();
     gone.first_kept_stop = "Z".into();
     let records = vec![
-        EditRecord { id: "e1".into(), diversion: diversion_of(&net, &d, "d1").unwrap(), status: EditStatus::Draft, rev: 1, updated_at: 1 },
-        EditRecord { id: "e2".into(), diversion: gone, status: EditStatus::Retired, rev: 2, updated_at: 2 },
+        EditRecord { id: "e1".into(), diversion: Some(diversion_of(&net, &d, "d1").unwrap()), cancel: None, status: EditStatus::Draft, rev: 1, updated_at: 1 },
+        EditRecord { id: "e2".into(), diversion: Some(gone), cancel: None, status: EditStatus::Retired, rev: 2, updated_at: 2 },
     ];
     let rows = diversion_rows(&net, &records);
     assert_eq!((rows[0].first_kept_name.as_str(), rows[0].skipped_names.clone()), ("Main & 1st", vec!["Main & 2nd".to_string()]));

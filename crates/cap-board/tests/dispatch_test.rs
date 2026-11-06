@@ -40,7 +40,7 @@ fn load_network() -> String {
 fn record(status: EditStatus, added_secs: u32) -> EditRecord {
     EditRecord {
         id: "e1".into(),
-        diversion: transit_sync::Diversion {
+        diversion: Some(transit_sync::Diversion {
             id: "d1".into(),
             route_id: "10".into(),
             direction_id: None,
@@ -51,7 +51,8 @@ fn record(status: EditStatus, added_secs: u32) -> EditRecord {
             added_secs,
             start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
             end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-        },
+        }),
+        cancel: None,
         status,
         rev: 1,
         updated_at: 1,
@@ -265,7 +266,7 @@ fn an_invalid_edit_record_moves_nothing() {
     // cap-divert's reports says what is wrong with it), and the day
     // views simply find nothing to patch.
     let mut broken = record(EditStatus::Accepted, 60);
-    broken.diversion.first_kept_stop = "ghost".into();
+    broken.diversion.as_mut().unwrap().first_kept_stop = "ghost".into();
     let edits_hash = load_edits(&network_hash, vec![broken]);
     assert_eq!(
         departures(&network_hash, Some(edits_hash), "A"),

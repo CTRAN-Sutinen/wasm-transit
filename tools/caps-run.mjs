@@ -23,7 +23,7 @@
 //
 // --load [N:|KIND:]FILE sends the file's bytes on a bulk op: KIND
 // names the kernel's load of a document kind (`--load feed:feed.zip`,
-// `layer:pop.geojson`, `rt:snapshot.pb`, `network:network.json.gz`,
+// `layer:jobs.geojson`, `rt:snapshot.pb`, `network:network.json.gz`,
 // `streets:streets.json` — the registry's kernel_ops, in every module
 // whose capabilities read the kind); N is the op code (the
 // capability's own bulk ops from 0 — the default: streets' import, rt's
@@ -101,9 +101,10 @@ const KIND_LOADS = {
   walks: "load_walks",
   streets: "load_streets",
   watchlist: "load_watchlist",
-  layer: "load_population_layer",
+  layer: "load_layer",
   feed: "load_feed",
   rt: "load_rt",
+  work_rules: "load_work_rules",
 };
 
 /// A --load prefix as a bulk op code: a number, or a kind's load.

@@ -2,15 +2,16 @@
 //!
 //! The first capability extracted from the MONOLITH: the analysis
 //! functions (network stats, service-type overview and detail,
-//! population coverage) live in `transit-analysis`, shared as a
+//! coverage of a weighted layer) live in `transit-analysis`, shared as a
 //! library under this module. A planner's bundle ships it; a
 //! rider's never hears of it.
 //!
 //! The documents it reads are the kernel's, content-addressed like
 //! everywhere on the bus: an authored network (the JSON document)
-//! under its canonical hash, a population layer under the hash of its
-//! bytes (the kernel's `load_population_layer` answers the field the
-//! parse picked and the people it found), and every op addresses them
+//! under its canonical hash, a weighted layer under the hash of its
+//! bytes (the kernel's `load_layer` answers its features and the
+//! numeric fields it can be read by; a coverage op names the field and
+//! the planner's label), and every op addresses them
 //! by hash — never by carrying the whole document per request.
 //! Composition is through documents: a network produced by the network
 //! capability is read here by the SAME hash the producer returned.
@@ -23,8 +24,9 @@ use cap_abi::kernel::{LAYER, NETWORK};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_analysis::{
-    coverage, network_stats, service_type_compare, service_type_detail, service_type_overview, type_coverage,
-    CoverageWindow, NetworkStats, ServiceTypeComparison, ServiceTypeDetail, ServiceTypeSummary, TypeCoverage,
+    coverage_compare, network_stats, service_type_compare, service_type_detail, service_type_overview,
+    type_coverage, CoverageDelta, CoverageWindow, LayerReading, NetworkStats, ServiceTypeComparison,
+    ServiceTypeDetail, ServiceTypeSummary, CombinationCoverage,
 };
 use transit_network::Network;
 
@@ -47,27 +49,44 @@ pub enum Request {
         #[serde(default = "default_true")]
         include_service_types: bool,
     },
-    /// Every service type's numbers, each on its representative day —
-    /// the planner's design axis.
+    /// Every service type's own numbers: its authored service, on no
+    /// date (the per-id read under the service groups).
     ServiceTypesOverview { network_hash: String },
-    /// The service groups: one row per base type with the family
-    /// that rides along (calendar subset — the overlays are really
-    /// part of the base's service) and the family's pooled numbers.
-    /// The axis a planner designs; the drill-down keys on the base.
+    /// The service groups (D-55): one row per COMBINATION of service
+    /// types that run together on the same dates — its members, the
+    /// dates it holds on and their spans, and the members' pooled
+    /// numbers (the service on each of those dates). Most days first.
+    /// The axis a planner designs; the drill-down keys on `members`.
     ServiceGroups { network_hash: String },
-    /// One service type expanded on its representative day.
-    ServiceTypeDetail { network_hash: String, service_type: String },
+    /// One combination (`members`, any order) expanded: its routes,
+    /// stops and schedules pooled. Null for members that never run
+    /// together on a date.
+    ServiceTypeDetail { network_hash: String, members: Vec<String> },
     /// A proposal (`network_hash`) against its baseline (`base_hash`)
-    /// under one service type: both sides' totals and the routes
-    /// whose numbers changed.
-    ServiceTypeCompare { base_hash: String, network_hash: String, service_type: String },
-    /// Population coverage per service type. `window` judges
+    /// under one combination: both sides' totals over its members
+    /// (with the dates it holds on each side) and the routes whose
+    /// numbers changed. Null when the members never run together in
+    /// the proposal.
+    ServiceTypeCompare { base_hash: String, network_hash: String, members: Vec<String> },
+    /// Coverage of a weighted layer by one service COMBINATION
+    /// (`members`, any order — a service_groups row's): its members'
+    /// pooled authored service with no date standing in, its dates
+    /// beside it (D-55); null when they never run together. `field` names
+    /// the weight (omitted: the layer's one numeric property) and
+    /// `label` what it means (omitted: the field). `window` judges
     /// frequency inside a time window ("every 15 min 07:00–19:00":
     /// the worst wait in the window fits frequent_secs); omitted, it
-    /// is the whole-day average headway.
+    /// is the whole-day average headway over departures.
     TypeCoverage {
         network_hash: String,
         layer_hash: String,
+        members: Vec<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        field: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        label: Option<String>,
         radius_m: f64,
         frequent_secs: u32,
         min_departures: u32,
@@ -93,14 +112,14 @@ pub enum Request {
         network_hash: String,
         date: String,
     },
-    /// One service type's schedule texture on its representative
-    /// day: every pattern trips entry that runs under the type, with
-    /// headway uniformity (min/median/max gap between starts) and
-    /// clockface alignment (starts on the quarter-hour grid). Null
-    /// for an unknown type — lookups answer empty, never error.
+    /// One combination's schedule texture: every pattern its members
+    /// run, with the pooled starts' headway uniformity (min/median/max
+    /// gap) and clockface alignment (starts on the quarter-hour grid).
+    /// Null for members that never run together — lookups answer
+    /// empty, never error.
     ScheduleTexture {
         network_hash: String,
-        service_type: String,
+        members: Vec<String>,
     },
     /// The corridor read: every pair of routes that shares at least
     /// one stop on the date — shared stops, shared segments (same-
@@ -137,22 +156,56 @@ pub enum Request {
         window: Option<transit_analysis::TransferWindow>,
     },
     /// The SERVICE GROUP's frequency grid: every route that departs
-    /// under the group, hour by hour at its headway stop — departures
-    /// and the shortest, longest and median gap starting in the hour,
-    /// the trips' own (never regularized). Null for an unknown type.
+    /// under the combination, hour by hour at its headway stop —
+    /// departures and the shortest, longest and median gap starting
+    /// in the hour, the trips' own (never regularized). Null for
+    /// members that never run together.
     RouteFrequency {
         network_hash: String,
-        service_type: String,
+        members: Vec<String>,
     },
     /// The unserved WHERE of coverage: every layer point beyond the
-    /// radius of every stop with service on the date, with the
-    /// nearest served stop and its distance — "which part, and
-    /// where", not just the share. Sorted by population descending.
+    /// radius of every stop one combination (`members`, any order)
+    /// serves, with the nearest served stop and its distance — "which part, and
+    /// where", not just the share. A polygon answers its unserved
+    /// part (its share, its centre, its rings). Sorted by unserved
+    /// weight descending.
     UnservedPoints {
         network_hash: String,
         layer_hash: String,
+        #[serde(default)]
+        #[ts(optional)]
+        field: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        label: Option<String>,
         radius_m: f64,
-        date: String,
+        members: Vec<String>,
+    },
+    /// A proposal's coverage against its base, each side the service
+    /// types the host names (`base_members` of the base, `members` of
+    /// the proposal, each pooled over its authored service): each
+    /// side's served and frequent weight, and what the proposal gains
+    /// and loses — the churn a net change hides. The op never matches
+    /// one plan's types to the other's (QAF-20).
+    CoverageCompare {
+        base_hash: String,
+        network_hash: String,
+        layer_hash: String,
+        #[serde(default)]
+        #[ts(optional)]
+        field: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        label: Option<String>,
+        base_members: Vec<String>,
+        members: Vec<String>,
+        radius_m: f64,
+        frequent_secs: u32,
+        min_departures: u32,
+        #[serde(default)]
+        #[ts(optional)]
+        window: Option<CoverageWindow>,
     },
 }
 
@@ -165,7 +218,7 @@ pub enum Response {
     ServiceGroups { groups: Vec<transit_analysis::ServiceGroup> },
     ServiceTypeDetail { detail: Option<ServiceTypeDetail> },
     ServiceTypeCompare { comparison: Option<ServiceTypeComparison> },
-    TypeCoverage { coverage: Vec<TypeCoverage> },
+    TypeCoverage { layer: LayerReading, coverage: Option<CombinationCoverage> },
     StopGaps { gaps: transit_analysis::StopGaps },
     HourlyTrips { hours: Vec<transit_analysis::HourlyTrips> },
     ScheduleTexture { texture: Option<transit_analysis::ScheduleTexture> },
@@ -173,7 +226,8 @@ pub enum Response {
     TimedTransfers { transfers: Vec<transit_analysis::TimedTransfer> },
     HubConnections { connections: Vec<transit_analysis::RouteConnections> },
     RouteFrequency { frequency: Option<transit_analysis::RouteFrequency> },
-    UnservedPoints { points: Vec<transit_analysis::UnservedPoint> },
+    UnservedPoints { layer: LayerReading, unserved: Option<transit_analysis::UnservedPlaces> },
+    CoverageCompare { layer: LayerReading, comparison: CoverageDelta },
 }
 
 fn default_true() -> bool {
@@ -234,33 +288,30 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 groups: transit_analysis::service_groups(network),
             })
         }),
-        Request::ServiceTypeDetail { network_hash, service_type } => {
+        Request::ServiceTypeDetail { network_hash, members } => {
             with_network(&network_hash, |network| {
                 // Unknown ids answer empty (QAF-19's convention);
                 // only hash addresses error.
-                Ok(Response::ServiceTypeDetail { detail: service_type_detail(network, &service_type) })
+                Ok(Response::ServiceTypeDetail { detail: service_type_detail(network, &members) })
             })
         }
-        Request::ServiceTypeCompare { base_hash, network_hash, service_type } => {
+        Request::ServiceTypeCompare { base_hash, network_hash, members } => {
             let base = network_arc(&base_hash)?;
             let proposal = network_arc(&network_hash)?;
             // Unknown ids answer empty (QAF-19's convention);
             // only hash addresses error.
-            let comparison = service_type_compare(&base, &proposal, &service_type);
+            let comparison = service_type_compare(&base, &proposal, &members);
             Ok(Response::ServiceTypeCompare { comparison })
         }
-        Request::TypeCoverage { network_hash, layer_hash, radius_m, frequent_secs, min_departures, window } => {
+        Request::TypeCoverage { network_hash, layer_hash, members, field, label, radius_m, frequent_secs, min_departures, window } => {
             let network_arc = network_arc(&network_hash)?;
             let layer_arc = LAYER.require(&layer_hash)?;
+            let weights = layer_arc.weights(field.as_deref(), label.as_deref())?;
             Ok(Response::TypeCoverage {
-                coverage: type_coverage(
-                    &network_arc,
-                    &layer_arc,
-                    radius_m,
-                    frequent_secs,
-                    min_departures,
-                    window,
-                ),
+                // Members that never run together answer null, as the
+                // other pooled reads do.
+                coverage: type_coverage(&network_arc, &weights, &members, radius_m, frequent_secs, min_departures, window),
+                layer: weights.reading,
             })
         }
         Request::StopGaps { network_hash, date, stop_id } => {
@@ -277,10 +328,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 hours: transit_analysis::hourly_trips(&network_arc, parsed),
             })
         }
-        Request::ScheduleTexture { network_hash, service_type } => {
+        Request::ScheduleTexture { network_hash, members } => {
             let network_arc = network_arc(&network_hash)?;
             Ok(Response::ScheduleTexture {
-                texture: transit_analysis::schedule_texture(&network_arc, &service_type),
+                texture: transit_analysis::schedule_texture(&network_arc, &members),
             })
         }
         Request::RouteOverlap { network_hash, date } => {
@@ -297,10 +348,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 connections: transit_analysis::hub_connections(&network_arc, parsed, &stop_id, window),
             })
         }
-        Request::RouteFrequency { network_hash, service_type } => {
+        Request::RouteFrequency { network_hash, members } => {
             let network_arc = network_arc(&network_hash)?;
             Ok(Response::RouteFrequency {
-                frequency: transit_analysis::route_frequency(&network_arc, &service_type),
+                frequency: transit_analysis::route_frequency(&network_arc, &members),
             })
         }
         Request::TimedTransfers { network_hash, date, stop_id, window } => {
@@ -310,12 +361,45 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 transfers: transit_analysis::timed_transfers(&network_arc, parsed, &stop_id, window),
             })
         }
-        Request::UnservedPoints { network_hash, layer_hash, radius_m, date } => {
-            let parsed = parse_date(&date)?;
+        Request::UnservedPoints { network_hash, layer_hash, field, label, radius_m, members } => {
             let network_arc = network_arc(&network_hash)?;
             let layer_arc = LAYER.require(&layer_hash)?;
+            let weights = layer_arc.weights(field.as_deref(), label.as_deref())?;
             Ok(Response::UnservedPoints {
-                points: transit_analysis::unserved_points(&network_arc, parsed, &layer_arc, radius_m),
+                unserved: transit_analysis::unserved_points(&network_arc, &weights, &members, radius_m),
+                layer: weights.reading,
+            })
+        }
+        Request::CoverageCompare {
+            base_hash,
+            network_hash,
+            layer_hash,
+            field,
+            label,
+            base_members,
+            members,
+            radius_m,
+            frequent_secs,
+            min_departures,
+            window,
+        } => {
+            let base = network_arc(&base_hash)?;
+            let proposal = network_arc(&network_hash)?;
+            let layer_arc = LAYER.require(&layer_hash)?;
+            let weights = layer_arc.weights(field.as_deref(), label.as_deref())?;
+            Ok(Response::CoverageCompare {
+                comparison: coverage_compare(
+                    &base,
+                    &proposal,
+                    &weights,
+                    &base_members,
+                    &members,
+                    radius_m,
+                    frequent_secs,
+                    min_departures,
+                    window,
+                ),
+                layer: weights.reading,
             })
         }
     }
@@ -328,29 +412,11 @@ pub fn dispatch_json(text: &str) -> String {
     cap_abi::answer(text, dispatch)
 }
 
-/// The analysis capability has no bulk op of its own (a population
-/// layer registers on the kernel's `load_population_layer`); the seam
+/// The analysis capability has no bulk op of its own (a weighted
+/// layer registers on the kernel's `load_layer`); the seam
 /// answers honestly instead of silently ignoring one.
 pub fn dispatch_bytes(op: u32, _bytes: &[u8]) -> String {
     cap_abi::outcome::<()>(Err(format!("unknown bulk op {op}: analysis has no bulk op of its own")))
-}
-
-/// Coverage for a single network on a single date (the calendar
-/// view, as the monolith's `coverage` op computes it) — exposed so
-/// the composition can answer "what share of the population does
-/// this network cover on THIS date".
-pub fn coverage_on(
-    network_hash: &str,
-    layer_hash: &str,
-    date: &str,
-    radius_m: f64,
-    frequent_secs: u32,
-    min_departures: u32,
-) -> Result<transit_analysis::CoverageStats, String> {
-    let parsed = parse_date(date)?;
-    let network_arc = network_arc(network_hash)?;
-    let layer_arc = LAYER.require(&layer_hash)?;
-    Ok(coverage(&network_arc, parsed, &layer_arc, radius_m, frequent_secs, min_departures, None))
 }
 
 cap_abi::capability! {

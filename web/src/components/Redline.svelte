@@ -11,7 +11,7 @@
 <section class="panel" aria-label="What changes, route by route" data-testid="redline">
   <header>
     <h2>What changes, route by route</h2>
-    <span class="muted">{comparison.name} · {comparison.routes.length} changed, {comparison.unchanged_routes} unchanged</span>
+    <span class="muted">{comparison.group} · {comparison.routes.length} changed, {comparison.unchanged_routes} unchanged</span>
   </header>
   {#if comparison.routes.length}
     <div class="scroll">
@@ -33,7 +33,7 @@
     </div>
     <p class="muted foot">A whole-day typical gap can hide an evening change — the Network view's hour cells show it.</p>
   {:else}
-    <p class="muted foot">This plan changes no route under {comparison.name}.</p>
+    <p class="muted foot">This plan changes no route under {comparison.group}.</p>
   {/if}
 </section>
 

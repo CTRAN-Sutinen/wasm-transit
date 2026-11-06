@@ -2,27 +2,27 @@
   /// One trip, as a timeline — a RENDER component over cap-router's
   /// itinerary: each ride (its route, the sign the bus shows, where you
   /// board and get off, and how far a live prediction moved each time)
-  /// and each walk between. Nothing is added up here.
+  /// and each walk between. Nothing is added up here: the trip's span
+  /// is door to door (D-40) — the router's `leave_secs` (the first
+  /// boarding minus the walk before it), `duration_secs`, and, for a
+  /// trip leaving now, its `leave` wait ("Leave in 7 min").
   import type { Itinerary } from "../types/Itinerary";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
-  import { clock, clockText, delayText, routeColor, walkText } from "./rideFormat";
+  import { clock, clockText, delayText, durationText, leaveText, routeColor, walkText } from "./rideFormat";
 
-  let { itinerary, routes }: { itinerary: Itinerary; routes: DirectoryRoute[] } = $props();
+  let { itinerary, routes, now = false }: { itinerary: Itinerary; routes: DirectoryRoute[]; now?: boolean } = $props();
 
   const colors = $derived(new Map(routes.map((r) => [r.route_id, routeColor(r.color)])));
-  const first = $derived(itinerary.legs.find((l) => l.type === "transit"));
 </script>
 
 <div class="itinerary" data-testid="itinerary">
   <p class="span">
-    {#if first && first.type === "transit"}
-      <b>{clock(first.board_secs).hm}<small>{clock(first.board_secs).ap}</small></b>
-    {:else}
-      <b>{clock(itinerary.depart_secs).hm}<small>{clock(itinerary.depart_secs).ap}</small></b>
-    {/if}
+    <b>{clock(itinerary.leave_secs).hm}<small>{clock(itinerary.leave_secs).ap}</small></b>
     <span class="arrow">→</span>
     <b>{clock(itinerary.arrival_secs).hm}<small>{clock(itinerary.arrival_secs).ap}</small></b>
+    <span class="duration" data-testid="duration">{durationText(itinerary.duration_secs)}</span>
   </p>
+  {#if now}<p class="leave" data-testid="leave">{leaveText(itinerary.leave)}</p>{/if}
 
   <ol class="legs">
     {#each itinerary.legs as leg, i (i)}
@@ -58,6 +58,8 @@
   .span { font-size: 1.5rem; margin: 0 0 0.6rem; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; display: flex; align-items: baseline; gap: 0.5rem; }
   .span small { font-size: 0.55em; color: var(--muted); margin-left: 0.1em; font-weight: 600; }
   .arrow { color: var(--muted); font-size: 1.1rem; }
+  .duration { font-size: 0.9rem; color: var(--muted); font-weight: 600; margin-left: auto; }
+  .leave { margin: -0.3rem 0 0.6rem; font-weight: 650; color: var(--accent); }
   .legs { list-style: none; margin: 0; padding: 0; display: grid; }
   .ride { position: relative; padding: 0.1rem 0 0.1rem 1.4rem; }
   .ride::before {

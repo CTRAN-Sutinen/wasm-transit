@@ -2,9 +2,10 @@
 //! from an authored document on one service date — at the network
 //! level (how much service runs), the route level (span, frequency,
 //! trips), and the stop level (what serves this corner, how often) —
-//! plus population coverage against an imported layer of population
-//! points ("what percent of the population does this network serve?
-//! what percent with frequent service?").
+//! plus coverage against an imported weighted layer — people, jobs,
+//! households, points or polygons ("what share of the jobs does this
+//! network serve? with frequent service? what does a proposal gain
+//! and lose?"; the `coverage` module).
 //!
 //! All of it is computed here, in the artifact, never in a host:
 //! the same numbers everywhere is the point. Stats are best-effort
@@ -19,6 +20,13 @@ use serde::Serialize;
 use ts_rs::TS;
 
 use transit_network::Network;
+
+mod coverage;
+pub use coverage::{
+    coverage, coverage_compare, parse_layer, unserved_points, CoverageDelta, CoverageSide, CoverageStats,
+    CoverageWindow, LayerField, LayerReading, Rings, UnservedPlaces, UnservedPoint, WeightedLayer, Weights,
+};
+use coverage::coverage_of_members;
 
 /// One stop's activity on a service date.
 #[derive(Debug, Clone, Serialize, TS)]
@@ -85,39 +93,20 @@ pub struct RouteStats {
     pub revenue_miles: f64,
 }
 
-/// A service type's numbers on its representative day — the first
-/// date its rule runs. Planners design service types (Weekday,
-/// Saturday, …) and link them to days; this is the axis they scan,
-/// independent of whichever calendar date the rest of the analysis
-/// is pinned to.
+/// One service type's own numbers: its authored service (every trip
+/// it keys), on no date — a date never stands in for a type (D-55).
+/// The service a rider gets on a day is a COMBINATION of types
+/// ([`service_groups`]).
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ServiceTypeSummary {
     pub service_type: String,
     pub name: String,
-    /// The representative date these numbers were computed on.
-    pub date: String,
     pub trips: u32,
     pub active_routes: u32,
     pub active_stops: u32,
     pub revenue_hours: f64,
     pub revenue_miles: f64,
-}
-
-/// The first date a rule runs on (deterministic), or None when the
-/// rule runs on no date at all (an authored type with no days yet).
-fn representative_date(rule: &transit_network::CalendarRule) -> Option<NaiveDate> {
-    use chrono::Duration;
-    for range in &rule.ranges {
-        let mut date = range.start;
-        while date <= range.end {
-            if rule.runs_on(date) {
-                return Some(date);
-            }
-            date += Duration::days(1);
-        }
-    }
-    None
 }
 
 /// One schedule of a service type, counted: the drill-down's
@@ -131,20 +120,17 @@ pub struct PatternTripsSummary {
     pub trips: u32,
 }
 
-/// The SERVICE GROUP's drill-down (keyed by the base): the family
-/// that rides along with the base — same weekly pattern, calendar
-/// subset — pooled over its authored service. Routes and headways
-/// answer for the FAMILY, not the bare id (service ids key TRIPS,
-/// never routes — the 164 lesson). The representative day is the
-/// label; the members' pooled trips are the read.
+/// The SERVICE GROUP's drill-down: a combination of service types
+/// that run together (D-55), pooled over its members' authored
+/// service. Routes and headways answer for the combination, not a
+/// bare id (service ids key TRIPS, never routes — the 164 lesson),
+/// and they ARE the service on every date the combination holds.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ServiceTypeDetail {
-    pub service_type: String,
-    pub name: String,
-    /// The representative day this describes: the first date the
-    /// type's rule runs. Planners design types, not calendar dates.
-    pub date: String,
+    /// The combination: its id (members joined " + ") and members.
+    pub group: String,
+    pub members: Vec<String>,
     pub trips: u32,
     pub revenue_hours: f64,
     pub revenue_miles: f64,
@@ -156,25 +142,21 @@ pub struct ServiceTypeDetail {
     pub pattern_trips: Vec<PatternTripsSummary>,
 }
 
-/// The drill-down: one service type expanded on its representative
-/// day. `None` for an unknown type, or one that runs on no date (an
-/// authored type with no days yet) — lookups answer empty for
-/// unknown ids; errors are for hash addresses (QAF-19's convention).
-pub fn service_type_detail(net: &Network, type_id: &str) -> Option<ServiceTypeDetail> {
-    let service_type = net.service_types.get(type_id)?;
-    let date = representative_date(&service_type.rule)?;
-    // The SERVICE GROUP's read: the family that rides along with
-    // this base (same weekly pattern, calendar subset), pooled —
-    // the routes and headways answer for the family, not the bare
-    // id (the 164 headway defect: the overlays are part of the
-    // route's service, and service ids key TRIPS, never routes).
-    let group: BTreeSet<String> = net
-        .service_types
-        .keys()
-        .filter(|&other| transit_network::service_family(net, type_id).contains(other))
-        .cloned()
-        .collect();
-    let stats = family_stats(net, &group, date);
+/// The drill-down: one service combination expanded. `None` for a
+/// member set that never runs together on a date — lookups answer
+/// empty for unknown ids; errors are for hash addresses (QAF-19's
+/// convention).
+pub fn service_type_detail(net: &Network, members: &[String]) -> Option<ServiceTypeDetail> {
+    let combination = transit_network::service_combination(net, members)?;
+    Some(pooled_detail(net, &combination.members))
+}
+
+/// The members' pooled authored service, whether or not they run
+/// together in `net` (a baseline the combination is new to runs what
+/// its members run there).
+fn pooled_detail(net: &Network, members: &[String]) -> ServiceTypeDetail {
+    let group: BTreeSet<String> = members.iter().cloned().collect();
+    let stats = family_stats(net, &group);
 
     let mut pattern_trips = Vec::new();
     for (id, entry) in &net.pattern_trips {
@@ -193,10 +175,9 @@ pub fn service_type_detail(net: &Network, type_id: &str) -> Option<ServiceTypeDe
         });
     }
 
-    Some(ServiceTypeDetail {
-        service_type: type_id.to_string(),
-        name: service_type.name.clone(),
-        date: date.format("%Y-%m-%d").to_string(),
+    ServiceTypeDetail {
+        group: group.iter().cloned().collect::<Vec<_>>().join(" + "),
+        members: group.into_iter().collect(),
         trips: stats.trips,
         revenue_hours: stats.revenue_hours,
         revenue_miles: stats.revenue_miles,
@@ -204,7 +185,7 @@ pub fn service_type_detail(net: &Network, type_id: &str) -> Option<ServiceTypeDe
         routes: stats.routes.into_iter().filter(|r| r.trips > 0).collect(),
         stops: stats.stops.into_iter().filter(|s| s.departures > 0).collect(),
         pattern_trips,
-    })
+    }
 }
 
 /// One pattern's schedule texture on the day: the headway
@@ -234,40 +215,28 @@ pub struct PatternTexture {
     pub on_clockface: u32,
 }
 
-/// The SERVICE GROUP's schedule texture on its representative day —
-/// the planner's unit (a planner designs "weekday service", not a
-/// calendar date, and not a service id): the base type plus every
-/// type that rides along with it (its calendar is a subset — the
-/// overlays, 1-WKDY/30 and /31 and the rest, are really part of
-/// ONE weekday service), one row per pattern (sorted by id) with
-/// the group's POOLED starts. Keying by service id would slice the
-/// corridor into thin, wrong headways (route 164's weekday trips
-/// split across the family). `None` for an unknown type or one
-/// with no representative day — the convention of
-/// service_type_detail (QAF-19).
+/// The SERVICE GROUP's schedule texture — the planner's unit (a
+/// planner designs "weekday service", not a service id): a
+/// combination of the types that run together (D-55), one row per
+/// pattern (sorted by id) with the members' POOLED starts. Keying by
+/// service id would slice the corridor into thin, wrong headways
+/// (route 164's weekday trips split across 1-WKDY and its overlays).
+/// `None` for a member set that never runs together — the convention
+/// of service_type_detail (QAF-19).
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ScheduleTexture {
-    pub service_type: String,
-    pub name: String,
-    pub date: String,
+    pub group: String,
+    pub members: Vec<String>,
     pub trips: u32,
     pub on_clockface: u32,
     pub pattern_trips: Vec<PatternTexture>,
 }
 
-pub fn schedule_texture(net: &Network, type_id: &str) -> Option<ScheduleTexture> {
-    let service_type = net.service_types.get(type_id)?;
-    let date = representative_date(&service_type.rule)?;
-    // The service group: the base plus every type that rides along
-    // with it (its calendar is a subset — the overlays that are
-    // really part of this service, disruption-era or not).
-    let group: BTreeSet<String> = net
-        .service_types
-        .keys()
-        .filter(|&other| transit_network::service_family(net, type_id).contains(other))
-        .cloned()
-        .collect();
+pub fn schedule_texture(net: &Network, members: &[String]) -> Option<ScheduleTexture> {
+    let combination = transit_network::service_combination(net, members)?;
+    // The combination: the types that run together on its dates.
+    let group: BTreeSet<String> = combination.members.iter().cloned().collect();
     // The scope: every pattern the group's schedules run.
     let mut patterns: BTreeSet<String> = BTreeSet::new();
     for entry in net.pattern_trips.values() {
@@ -279,9 +248,8 @@ pub fn schedule_texture(net: &Network, type_id: &str) -> Option<ScheduleTexture>
     let mut trips = 0u32;
     let mut on_clockface = 0u32;
     for pattern in &patterns {
-        // The group's POOLED starts: every schedule the group runs
-        // on this pattern — the overlays fold into the base's day
-        // (each member runs only on days the base runs).
+        // The combination's POOLED starts: every schedule its members
+        // run on this pattern — they all run on each of its dates.
         let mut starts: Vec<u32> = Vec::new();
         let mut schedules = 0u32;
         for entry in net.pattern_trips.values() {
@@ -321,25 +289,24 @@ pub fn schedule_texture(net: &Network, type_id: &str) -> Option<ScheduleTexture>
         });
     }
     Some(ScheduleTexture {
-        service_type: type_id.to_string(),
-        name: service_type.name.clone(),
-        date: date.format("%Y-%m-%d").to_string(),
+        group: combination.id,
+        members: combination.members,
         trips,
         on_clockface,
         pattern_trips: rows,
     })
 }
 
-/// A proposal against its baseline under one service type: both
-/// sides' numbers on their representative days, and the routes whose
-/// numbers changed (route id order) — a route only one side runs
-/// has `None` on the other. What a planner reads first when asking
-/// "what does this change do?".
+/// A proposal against its baseline under one service combination
+/// (D-55): both sides' pooled numbers over its members, and the
+/// routes whose numbers changed (route id order) — a route only one
+/// side runs has `None` on the other. What a planner reads first when
+/// asking "what does this change do?".
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ServiceTypeComparison {
-    pub service_type: String,
-    pub name: String,
+    pub group: String,
+    pub members: Vec<String>,
     pub base: ComparedTotals,
     pub proposal: ComparedTotals,
     pub routes: Vec<RouteChange>,
@@ -347,11 +314,14 @@ pub struct ServiceTypeComparison {
     pub unchanged_routes: u32,
 }
 
-/// One side's totals under the service type.
+/// One side's totals under the combination.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ComparedTotals {
-    pub date: String,
+    /// The dates the combination holds on this side (0: its members
+    /// never run together here — a baseline the combination is new
+    /// to still counts what its members run).
+    pub days: u32,
     pub trips: u32,
     pub revenue_hours: f64,
     pub revenue_miles: f64,
@@ -369,12 +339,16 @@ pub struct RouteChange {
     pub proposal: Option<RouteStats>,
 }
 
-/// The comparison: `None` when either side lacks the type or it
-/// runs on no date there — unknown ids answer empty, never an error
-/// (QAF-19's convention; errors are for hash addresses).
-pub fn service_type_compare(base: &Network, proposal: &Network, type_id: &str) -> Option<ServiceTypeComparison> {
-    let b = service_type_detail(base, type_id)?;
-    let p = service_type_detail(proposal, type_id)?;
+/// The comparison: `None` when the members never run together in the
+/// proposal — unknown ids answer empty, never an error (QAF-19's
+/// convention; errors are for hash addresses). The baseline side
+/// pools the same members, whether or not they run together there.
+pub fn service_type_compare(base: &Network, proposal: &Network, members: &[String]) -> Option<ServiceTypeComparison> {
+    let combination = transit_network::service_combination(proposal, members)?;
+    let p = pooled_detail(proposal, &combination.members);
+    let b = pooled_detail(base, &combination.members);
+    let base_days = transit_network::service_combination(base, &combination.members).map_or(0, |c| c.dates.len() as u32);
+    let proposal_days = combination.dates.len() as u32;
     let same = |x: &RouteStats, y: &RouteStats| {
         (x.name.as_str(), x.patterns, x.stops, x.trips, x.first_start_secs, x.last_arrival_secs, x.typical_headway_secs)
             == (y.name.as_str(), y.patterns, y.stops, y.trips, y.first_start_secs, y.last_arrival_secs, y.typical_headway_secs)
@@ -399,40 +373,39 @@ pub fn service_type_compare(base: &Network, proposal: &Network, type_id: &str) -
         let name = proposal.as_ref().or(base.as_ref()).map(|r| r.name.clone()).unwrap_or_default();
         routes.push(RouteChange { route_id, name, base, proposal });
     }
-    let totals = |d: &ServiceTypeDetail| ComparedTotals {
-        date: d.date.clone(),
+    let totals = |d: &ServiceTypeDetail, days: u32| ComparedTotals {
+        days,
         trips: d.trips,
         revenue_hours: d.revenue_hours,
         revenue_miles: d.revenue_miles,
         routes: d.routes.len() as u32,
     };
     Some(ServiceTypeComparison {
-        service_type: type_id.to_string(),
-        name: p.name.clone(),
-        base: totals(&b),
-        proposal: totals(&p),
+        group: combination.id,
+        members: combination.members,
+        base: totals(&b, base_days),
+        proposal: totals(&p, proposal_days),
         routes,
         unchanged_routes,
     })
 }
 
-/// One SERVICE GROUP: a base service type plus every type that
-/// rides along with it (its calendar is a subset of the base's) —
-/// the planner's unit. C-TRAN's weekday family (1-WKDY and its
-/// overlays) is ONE weekday service here, with the members named
-/// and the numbers POOLED over the family's authored service: the
-/// base's representative day is the label, the members' trips are
-/// the texture the group actually runs (QAF-65's lesson).
+/// One SERVICE GROUP: a combination of service types that run
+/// together on the same dates (D-55), shown with the dates on which
+/// it holds, and its members' POOLED authored service — which IS the
+/// service on every one of those dates (no date stands in for it).
+/// Members that never share a day are never pooled: C-TRAN's weekday
+/// is 1-WKDY + 1-WKDY/30 in one period and 1-WKDY + 1-WKDY/31 in the
+/// next, two rows.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct ServiceGroup {
-    /// The base type — the group's key and the drill-down's address.
-    pub service_type: String,
-    pub name: String,
-    /// The base's representative day (the family's typical day).
-    pub date: String,
-    /// The family: every member, sorted (the base included).
-    pub members: Vec<String>,
+    /// The combination: id (members joined " + "), members, the dates
+    /// it holds on and their spans — the drill-down's address is its
+    /// members.
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub combination: transit_network::ServiceCombination,
     pub trips: u32,
     pub active_routes: u32,
     pub active_stops: u32,
@@ -440,133 +413,118 @@ pub struct ServiceGroup {
     pub revenue_miles: f64,
 }
 
-/// The service groups: one row per BASE type (one whose calendar no
-/// other type properly contains), each with the family that rides
-/// along and the family's pooled numbers. This — not the bare
-/// service id — is the axis a planner designs (QAF-65: the
-/// disruption-era overlays are really part of the base's service).
+/// The service groups: one row per combination
+/// (`transit_network::service_combinations`, most days first), each
+/// with its members' pooled numbers. This — not the bare service id,
+/// and not a calendar date — is the axis a planner designs.
 pub fn service_groups(net: &Network) -> Vec<ServiceGroup> {
-    let mut out = Vec::with_capacity(net.service_types.len());
-    for (base_id, base) in &net.service_types {
-        // A base: no other type's days are a proper superset of
-        // this one's (equal calendars are both bases).
-        let is_base = !net.service_types.keys().any(|u| {
-            u != base_id
-                && transit_network::service_family(net, u).contains(base_id) // base's days ⊆ u's days
-                && !transit_network::service_family(net, base_id).contains(u) // and not the reverse
-        });
-        if !is_base {
-            continue;
-        }
-        let members: BTreeSet<String> = net
-            .service_types
-            .keys()
-            .filter(|&m| transit_network::service_family(net, base_id).contains(m))
-            .cloned()
-            .collect();
-        // The family's pooled authored service: every member's
-        // schedules, their trips, routes, stops, runtime and miles.
-        let mut trips = 0u32;
-        let mut routes: BTreeSet<String> = BTreeSet::new();
-        let mut stops: BTreeSet<String> = BTreeSet::new();
-        let mut runtime_secs = 0u64;
-        let mut meters = 0f64;
-        for (schedule_id, entry) in &net.pattern_trips {
-            if !members.contains(&entry.service_type) {
-                continue;
-            }
-            routes.insert(
-                net.patterns
-                    .get(&entry.pattern)
-                    .map(|p| p.route.clone())
-                    .unwrap_or_default(),
-            );
-            // A mid-edit document can carry services that fail to
-            // materialize; analysis skips them (validation reports
-            // them).
-            let Ok(materialized) = transit_network::materialize_service(net, schedule_id) else {
-                continue;
-            };
-            for trip in materialized {
-                trips += 1;
-                stops.extend(trip.stop_times.iter().map(|st| st.stop.clone()));
-                if let Some(end) = trip.stop_times.last() {
-                    runtime_secs += end.arrival_secs.saturating_sub(trip.start_secs) as u64;
+    transit_network::service_combinations(net)
+        .into_iter()
+        .map(|combination| {
+            let members: BTreeSet<&str> = combination.members.iter().map(String::as_str).collect();
+            // The combination's pooled authored service: every
+            // member's schedules, their trips, routes, stops, runtime
+            // and miles.
+            let mut trips = 0u32;
+            let mut routes: BTreeSet<String> = BTreeSet::new();
+            let mut stops: BTreeSet<String> = BTreeSet::new();
+            let mut runtime_secs = 0u64;
+            let mut meters = 0f64;
+            for (schedule_id, entry) in &net.pattern_trips {
+                if !members.contains(entry.service_type.as_str()) {
+                    continue;
                 }
-                meters += trip_distance_m(net, &trip);
+                // A mid-edit document can carry services that fail to
+                // materialize; analysis skips them (validation reports
+                // them).
+                let Ok(materialized) = transit_network::materialize_service(net, schedule_id) else {
+                    continue;
+                };
+                for trip in materialized {
+                    if let Some(p) = net.patterns.get(&trip.pattern) {
+                        routes.insert(p.route.clone());
+                    }
+                    trips += 1;
+                    stops.extend(trip.stop_times.iter().map(|st| st.stop.clone()));
+                    if let Some(end) = trip.stop_times.last() {
+                        runtime_secs += end.arrival_secs.saturating_sub(trip.start_secs) as u64;
+                    }
+                    meters += trip_distance_m(net, &trip);
+                }
             }
-        }
-        out.push(ServiceGroup {
-            service_type: base_id.clone(),
-            name: base.name.clone(),
-            date: representative_date(&base.rule)
-                .map(|d| d.format("%Y-%m-%d").to_string())
-                .unwrap_or_default(),
-            members: members.into_iter().collect(),
-            trips,
-            active_routes: routes.len() as u32,
-            active_stops: stops.len() as u32,
-            revenue_hours: runtime_secs as f64 / 3600.0,
-            revenue_miles: meters / METERS_PER_MILE,
-        });
-    }
-    out
+            ServiceGroup {
+                combination,
+                trips,
+                active_routes: routes.len() as u32,
+                active_stops: stops.len() as u32,
+                revenue_hours: runtime_secs as f64 / 3600.0,
+                revenue_miles: meters / METERS_PER_MILE,
+            }
+        })
+        .collect()
 }
 
-/// The overview table: every service type's numbers, each on its own
-/// representative day. This — not a calendar date — is the planner's
-/// design axis.
+/// The overview table: every service type's own numbers (its authored
+/// service, on no date). The planner's design axis is the combinations
+/// ([`service_groups`]); this is the per-id read under them.
 pub fn service_type_overview(net: &Network) -> Vec<ServiceTypeSummary> {
     service_type_summaries(net, None)
 }
 
-/// One service type's population coverage on its representative day.
+/// One service COMBINATION's coverage of a weighted layer (D-55): the
+/// service types that run together, pooled over their authored service
+/// with no date standing in, and the dates it holds on beside it.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
-pub struct TypeCoverage {
-    pub service_type: String,
-    pub name: String,
-    /// The representative day the coverage was measured on.
-    pub date: String,
+pub struct CombinationCoverage {
+    /// The combination's name: its members joined " + ".
+    pub group: String,
+    /// The service types that run together, sorted.
+    pub members: Vec<String>,
+    /// The dates it holds on, folded into spans.
+    pub spans: Vec<transit_network::DateSpan>,
+    /// The layer weight within the radius of a stop it serves, and of
+    /// a stop it serves frequently.
+    pub served: f64,
+    pub frequent: f64,
     pub served_pct: f64,
     pub frequent_pct: f64,
     pub served_stops: u32,
     pub frequent_stops: u32,
 }
 
-/// Coverage per service type — "what share of the population does
-/// WEEKDAY service cover? Saturday service?" — each measured on the
-/// type's representative day. `window` judges frequency inside a
-/// time window (see [`CoverageWindow`]); `None` is the whole-day
-/// average.
+/// A combination's coverage — "what share of the jobs (people,
+/// households: the layer's weight) does WEEKDAY service cover?" — over
+/// the members' pooled authored service: on any date the combination
+/// holds exactly its members run, so this is what each of those dates
+/// covers. `window` judges frequency inside a time window (see
+/// [`CoverageWindow`]); `None` is the whole-day average. None when the
+/// members never run together.
 pub fn type_coverage(
     net: &Network,
-    layer: &PopLayer,
+    weights: &Weights,
+    members: &[String],
     radius_m: f64,
     frequent_secs: u32,
     min_departures: u32,
     window: Option<CoverageWindow>,
-) -> Vec<TypeCoverage> {
-    let mut out = Vec::with_capacity(net.service_types.len());
-    for (type_id, service_type) in &net.service_types {
-        let Some(date) = representative_date(&service_type.rule) else {
-            continue; // a type with no running days covers nothing
-        };
-        let stats = coverage_for_type(net, date, layer, radius_m, frequent_secs, min_departures, window, Some(type_id.as_str()));
-        out.push(TypeCoverage {
-            service_type: type_id.clone(),
-            name: service_type.name.clone(),
-            date: date.format("%Y-%m-%d").to_string(),
-            served_pct: stats.served_pct,
-            frequent_pct: stats.frequent_pct,
-            served_stops: stats.served_stops,
-            frequent_stops: stats.frequent_stops,
-        });
-    }
-    out
+) -> Option<CombinationCoverage> {
+    let combination = transit_network::service_combination(net, members)?;
+    let stats = coverage_of_members(net, &combination.members, weights, radius_m, frequent_secs, min_departures, window);
+    Some(CombinationCoverage {
+        group: combination.id,
+        members: combination.members,
+        spans: combination.spans,
+        served: stats.served,
+        frequent: stats.frequent,
+        served_pct: stats.served_pct,
+        frequent_pct: stats.frequent_pct,
+        served_stops: stats.served_stops,
+        frequent_stops: stats.frequent_stops,
+    })
 }
 
-/// Per-type numbers, each on its own representative day. With
+/// Per-type numbers: each type's authored service. With
 /// `running_on`, only the types whose calendar runs on that date
 /// are listed — the date-scoped read (QAF-2: the field used to
 /// answer every type on any date); `None` lists every type (the
@@ -577,19 +535,6 @@ fn service_type_summaries(net: &Network, running_on: Option<NaiveDate>) -> Vec<S
         if running_on.is_some_and(|date| !service_type.rule.runs_on(date)) {
             continue;
         }
-        let Some(date) = representative_date(&service_type.rule) else {
-            out.push(ServiceTypeSummary {
-                service_type: type_id.clone(),
-                name: service_type.name.clone(),
-                date: String::new(),
-                trips: 0,
-                active_routes: 0,
-                active_stops: 0,
-                revenue_hours: 0.0,
-                revenue_miles: 0.0,
-            });
-            continue;
-        };
         let mut trips = 0u32;
         let mut routes: BTreeSet<String> = BTreeSet::new();
         let mut stops: BTreeSet<String> = BTreeSet::new();
@@ -617,7 +562,6 @@ fn service_type_summaries(net: &Network, running_on: Option<NaiveDate>) -> Vec<S
         out.push(ServiceTypeSummary {
             service_type: type_id.clone(),
             name: service_type.name.clone(),
-            date: date.format("%Y-%m-%d").to_string(),
             trips,
             active_routes: routes.len() as u32,
             active_stops: stops.len() as u32,
@@ -649,9 +593,9 @@ pub struct NetworkStats {
     /// walking group is served by at least two routes today).
     pub transfer_stops: u32,
     /// The design axis, date-scoped: the service types whose
-    /// calendar RUNS on this date, each with its own
-    /// representative-day numbers (QAF-2 — the field used to list
-    /// every type on any date).
+    /// calendar RUNS on this date, each with its own authored
+    /// service's numbers (QAF-2 — the field used to list every type
+    /// on any date).
     pub service_types: Vec<ServiceTypeSummary>,
     /// Every route, sorted by id — zero-trip routes are analysis too.
     pub routes: Vec<RouteStats>,
@@ -756,17 +700,12 @@ fn trip_distance_m(net: &Network, trip: &transit_network::MaterializedTrip) -> f
     }
 }
 
-/// The stats engine: one service day, optionally scoped to a single
-/// service type (the drill-down view — the type's own representative
-/// day), in which case only that type's schedules count.
 /// The stats engine's fold: one pass over the schedules the
 /// `include` filter names. The date-scoped views filter by
-/// calendar (a type running that date); the FAMILY view pools the
-/// group's authored service with no date filter — every member
-/// runs only on days the base runs, so the pooled starts ARE the
-/// family's typical service (the 164 lesson: a date-scoped read
-/// on the representative day misses overlays whose own ranges
-/// start later).
+/// calendar (a type running that date); the COMBINATION view pools
+/// its members' authored service with no date filter — on every date
+/// the combination holds exactly its members run, so the pooled
+/// starts ARE that day's service (D-55).
 fn stats_fold(net: &Network, include: impl Fn(&str) -> bool, date: NaiveDate) -> NetworkStats {
     // Per-pattern trip starts on the date: per-direction headways.
     let mut pattern_starts: BTreeMap<String, Vec<u32>> = BTreeMap::new();
@@ -966,14 +905,13 @@ fn day_stats(net: &Network, date: NaiveDate, only_type: Option<&str>) -> Network
     stats
 }
 
-/// The FAMILY view: the group's authored service, pooled with no
-/// date filter — every member runs only on days the base runs, so
-/// the pooled trips ARE the family's typical service. The date is
-/// the label (the base's representative day), never the filter —
-/// a date-scoped read on the representative day would miss the
-/// overlays whose own ranges start later (the 164 headway defect).
-fn family_stats(net: &Network, group: &BTreeSet<String>, date: NaiveDate) -> NetworkStats {
-    stats_fold(net, |sid| group.contains(sid), date)
+/// The COMBINATION view: the members' authored service, pooled with
+/// no date filter — on every date a combination holds, exactly its
+/// members run, so the pooled trips ARE that day's service (the laws
+/// pin the equality with `network_stats` on each of its dates). The
+/// fold's `date` is unused here (the detail reports no date).
+fn family_stats(net: &Network, group: &BTreeSet<String>) -> NetworkStats {
+    stats_fold(net, |sid| group.contains(sid), NaiveDate::MIN)
 }
 
 // ---------------------------------------------------------------------
@@ -1450,27 +1388,24 @@ pub struct RouteFrequencyRow {
 }
 
 /// The SERVICE GROUP's frequency grid: every route that departs
-/// under the group (route id order), hour by hour.
+/// under the combination (route id order), hour by hour.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 pub struct RouteFrequency {
-    pub service_type: String,
-    pub name: String,
-    /// The representative day (the label, as in `service_type_detail`).
-    pub date: String,
+    pub group: String,
+    pub members: Vec<String>,
     pub routes: Vec<RouteFrequencyRow>,
 }
 
-/// How often each route comes, hour by hour, under a service group —
-/// the family `service_type_detail` pools (base plus the types that
-/// ride along), read at each route's headway stop. `None` for an
-/// unknown type or one with no representative day (QAF-19).
-pub fn route_frequency(net: &Network, type_id: &str) -> Option<RouteFrequency> {
-    let service_type = net.service_types.get(type_id)?;
-    let date = representative_date(&service_type.rule)?;
-    let group = transit_network::service_family(net, type_id);
+/// How often each route comes, hour by hour, under a service
+/// combination — the members `service_type_detail` pools, read at each
+/// route's headway stop. `None` for a member set that never runs
+/// together (QAF-19).
+pub fn route_frequency(net: &Network, members: &[String]) -> Option<RouteFrequency> {
+    let combination = transit_network::service_combination(net, members)?;
+    let group: BTreeSet<String> = combination.members.iter().cloned().collect();
     let mut stats: BTreeMap<String, RouteStats> =
-        family_stats(net, &group, date).routes.into_iter().map(|r| (r.route_id.clone(), r)).collect();
+        family_stats(net, &group).routes.into_iter().map(|r| (r.route_id.clone(), r)).collect();
     // route → stop → departures (final visits are arrivals).
     let mut departures: BTreeMap<String, BTreeMap<String, Vec<u32>>> = BTreeMap::new();
     for (id, entry) in &net.pattern_trips {
@@ -1539,377 +1474,8 @@ pub fn route_frequency(net: &Network, type_id: &str) -> Option<RouteFrequency> {
         })
         .collect();
     Some(RouteFrequency {
-        service_type: type_id.to_string(),
-        name: service_type.name.clone(),
-        date: date.format("%Y-%m-%d").to_string(),
+        group: combination.id,
+        members: combination.members,
         routes,
     })
-}
-
-// ---------------------------------------------------------------------
-// Population coverage
-// ---------------------------------------------------------------------
-
-/// One population point: a census block centroid with its headcount.
-/// Point features keep coverage honest and cheap — polygon layers
-/// would need point-in-polygon against every block, and the numbers
-/// barely move for block-sized polygons.
-#[derive(Debug, Clone)]
-pub struct PopPoint {
-    pub lat: f64,
-    pub lon: f64,
-    pub pop: f64,
-}
-
-/// An imported population layer: GeoJSON points plus the property
-/// name the headcounts came from.
-#[derive(Debug, Clone)]
-pub struct PopLayer {
-    pub pop_field: String,
-    pub points: Vec<PopPoint>,
-}
-
-/// Property names tried, in order, when the caller does not name the
-/// population field (common open-data spellings).
-const POP_FIELD_CANDIDATES: [&str; 8] = [
-    "POP", "POPULATION", "TOTAL_POP", "TOTAL_POPULATION", "POP10", "POP20", "pop", "population",
-];
-
-/// Parse a population layer from GeoJSON. Point features only;
-/// features without the population property (or with a non-numeric
-/// one) are skipped. `pop_field` picks the property; `None` tries the
-/// common candidates and fails if none of them holds a number.
-pub fn parse_pop_layer(bytes: &[u8], pop_field: Option<&str>) -> Result<PopLayer, String> {
-    let value: serde_json::Value =
-        serde_json::from_slice(bytes).map_err(|e| format!("population layer: {e}"))?;
-    let features = value
-        .get("features")
-        .and_then(|f| f.as_array())
-        .ok_or("population layer: not a FeatureCollection (no features array)")?;
-
-    let points_of = |field: &str| -> Vec<PopPoint> {
-        features
-            .iter()
-            .filter_map(|feature| {
-                let coords = feature
-                    .get("geometry")?
-                    .get("coordinates")?
-                    .as_array()?;
-                // GeoJSON is [lon, lat].
-                let lon = coords.first()?.as_f64()?;
-                let lat = coords.get(1)?.as_f64()?;
-                let pop = feature
-                    .get("properties")?
-                    .get(field)?
-                    .as_f64()
-                    .or_else(|| {
-                        feature
-                            .get("properties")?
-                            .get(field)?
-                            .as_str()
-                            .and_then(|s| s.trim().parse::<f64>().ok())
-                    })?;
-                Some(PopPoint { lat, lon, pop })
-            })
-            .collect()
-    };
-
-    let (pop_field, points) = match pop_field {
-        Some(field) => (field.to_string(), points_of(field)),
-        None => {
-            let mut found = None;
-            for candidate in POP_FIELD_CANDIDATES {
-                let points = points_of(candidate);
-                if !points.is_empty() {
-                    found = Some((candidate.to_string(), points));
-                    break;
-                }
-            }
-            found.ok_or(
-                "population layer: no population property found (tried \
-                 POP, POPULATION, TOTAL_POP, TOTAL_POPULATION, POP10, POP20); \
-                 name it explicitly",
-            )?
-        }
-    };
-    if points.is_empty() {
-        return Err(format!(
-            "population layer: no usable point features with property {pop_field:?}"
-        ));
-    }
-    Ok(PopLayer { pop_field, points })
-}
-
-/// "Frequent" inside a time window — the way planners state it:
-/// "every 15 minutes, 07:00–19:00". A stop is frequent in the window
-/// when no rider waits longer than `frequent_secs` anywhere in it:
-/// the gap from the window's start to the first departure, every gap
-/// between departures, and the gap from the last departure to the
-/// window's end all fit. Departures only (a trip's final visit is an
-/// arrival); every route at the stop pools, as a rider sees it.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, serde::Deserialize, TS)]
-#[ts(export)]
-pub struct CoverageWindow {
-    pub start_secs: u32,
-    pub end_secs: u32,
-}
-
-impl CoverageWindow {
-    /// The longest wait inside the window over sorted departures; None
-    /// when nothing departs inside it.
-    fn worst_wait_secs(&self, sorted: &[u32]) -> Option<u32> {
-        let inside: Vec<u32> = sorted
-            .iter()
-            .copied()
-            .filter(|t| (self.start_secs..=self.end_secs).contains(t))
-            .collect();
-        let first = *inside.first()?;
-        let last = *inside.last()?;
-        let between = inside.windows(2).map(|w| w[1] - w[0]).max().unwrap_or(0);
-        Some((first - self.start_secs).max(between).max(self.end_secs - last))
-    }
-}
-
-/// Coverage answers for one service date: what share of the layer's
-/// population is within `radius_m` of a stop with service, and what
-/// share is near *frequent* service (headway at or under
-/// `frequent_secs`, with at least `min_departures` visits so a
-/// 2-trip pocket cannot read as frequent).
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
-pub struct CoverageStats {
-    pub date: String,
-    pub pop_field: String,
-    pub radius_m: f64,
-    pub frequent_secs: u32,
-    pub min_departures: u32,
-    /// The window frequency was judged in; null = the whole-day
-    /// average headway.
-    pub window: Option<CoverageWindow>,
-    pub total_pop: f64,
-    pub served_pop: f64,
-    pub frequent_pop: f64,
-    pub served_pct: f64,
-    pub frequent_pct: f64,
-    pub served_stops: u32,
-    pub frequent_stops: u32,
-}
-
-/// Great-circle distance in meters (haversine, mean earth radius).
-fn distance_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
-    let (p1, p2) = (lat1.to_radians(), lat2.to_radians());
-    let dlat = p2 - p1;
-    let dlon = (lon2 - lon1).to_radians();
-    let a = (dlat / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dlon / 2.0).sin().powi(2);
-    6_371_000.0 * 2.0 * a.sqrt().asin()
-}
-
-pub fn coverage(
-    net: &Network,
-    date: NaiveDate,
-    layer: &PopLayer,
-    radius_m: f64,
-    frequent_secs: u32,
-    min_departures: u32,
-    window: Option<CoverageWindow>,
-) -> CoverageStats {
-    coverage_for_type(net, date, layer, radius_m, frequent_secs, min_departures, window, None)
-}
-
-fn coverage_for_type(
-    net: &Network,
-    date: NaiveDate,
-    layer: &PopLayer,
-    radius_m: f64,
-    frequent_secs: u32,
-    min_departures: u32,
-    window: Option<CoverageWindow>,
-    only_type: Option<&str>,
-) -> CoverageStats {
-    // Which stops have service today, and which are frequent. Visits
-    // aggregate across every service and route calling at the stop —
-    // two routes at 30 minutes each make one 15-minute stop.
-    let mut activity: BTreeMap<String, StopActivity> = BTreeMap::new();
-    // Departure times per stop (final visits excluded) — what the
-    // windowed frequency test reads.
-    let mut departures_at: BTreeMap<String, Vec<u32>> = BTreeMap::new();
-    for (service_id, service) in &net.pattern_trips {
-        let runs = net
-            .service_types
-            .get(&service.service_type)
-            .is_some_and(|st| st.rule.runs_on(date))
-            && only_type.map_or(true, |t| service.service_type == t);
-        if !runs {
-            continue;
-        }
-        let Ok(materialized) = transit_network::materialize_service(net, service_id) else {
-            continue;
-        };
-        for trip in &materialized {
-            let Some(route) = net.patterns.get(&trip.pattern).map(|p| p.route.clone()) else {
-                continue;
-            };
-            for st in &trip.stop_times {
-                activity
-                    .entry(st.stop.clone())
-                    .or_default()
-                    .visit(&route, st.arrival_secs);
-            }
-            for st in trip.stop_times.iter().take(trip.stop_times.len().saturating_sub(1)) {
-                departures_at.entry(st.stop.clone()).or_default().push(st.departure_secs);
-            }
-        }
-    }
-    for times in departures_at.values_mut() {
-        times.sort_unstable();
-    }
-    let mut served: Vec<(f64, f64)> = Vec::new();
-    let mut frequent: Vec<(f64, f64)> = Vec::new();
-    for (stop_id, act) in &activity {
-        if act.departures == 0 {
-            continue;
-        }
-        let Some(stop) = net.stops.get(stop_id) else { continue };
-        served.push((stop.lat, stop.lon));
-        let is_frequent = match window {
-            // Inside the window: the worst wait fits, with enough
-            // departures that a lone pair cannot pass.
-            Some(window) => {
-                let departs = departures_at.get(stop_id).map(Vec::as_slice).unwrap_or(&[]);
-                let inside = departs.iter().filter(|t| (window.start_secs..=window.end_secs).contains(t)).count();
-                inside as u32 >= min_departures
-                    && window.worst_wait_secs(departs).is_some_and(|w| w <= frequent_secs)
-            }
-            None => {
-                act.departures >= min_departures
-                    && act.typical_headway_secs().is_some_and(|h| h <= frequent_secs)
-            }
-        };
-        if is_frequent {
-            frequent.push((stop.lat, stop.lon));
-        }
-    }
-    let served_stops = served.len() as u32;
-    let frequent_stops = frequent.len() as u32;
-
-    // Population within radius of a served stop / a frequent stop.
-    // A cheap bounding check first: lat/lon degrees are bounded apart.
-    let deg_lat = radius_m / 111_320.0;
-    let mut total_pop = 0.0;
-    let mut served_pop = 0.0;
-    let mut frequent_pop = 0.0;
-    for point in &layer.points {
-        total_pop += point.pop;
-        let near = |targets: &[(f64, f64)]| {
-            targets.iter().any(|(lat, lon)| {
-                (lat - point.lat).abs() <= deg_lat
-                    && distance_m(point.lat, point.lon, *lat, *lon) <= radius_m
-            })
-        };
-        if near(&served) {
-            served_pop += point.pop;
-            if near(&frequent) {
-                frequent_pop += point.pop;
-            }
-        }
-    }
-
-    let pct = |part: f64| if total_pop > 0.0 { 100.0 * part / total_pop } else { 0.0 };
-    CoverageStats {
-        date: date.format("%Y-%m-%d").to_string(),
-        pop_field: layer.pop_field.clone(),
-        radius_m,
-        frequent_secs,
-        min_departures,
-        window,
-        total_pop,
-        served_pop,
-        frequent_pop,
-        served_pct: pct(served_pop),
-        frequent_pct: pct(frequent_pop),
-        served_stops,
-        frequent_stops,
-    }
-}
-
-/// One layer point nothing serves on the date — the WHERE of the
-/// unserved share ("which 71%, and where?"), with the nearest
-/// served stop and how far out the point sits.
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
-pub struct UnservedPoint {
-    pub lat: f64,
-    pub lon: f64,
-    pub pop: f64,
-    /// The served stop nearest the point, and the distance to it.
-    pub nearest_stop: Option<String>,
-    pub nearest_m: f64,
-}
-
-/// The unserved points of a layer on a service date: every point
-/// beyond `radius_m` of every stop with service that day (the same
-/// served set [`coverage`] measures against), sorted by population
-/// descending then by position — the biggest unserved communities
-/// first. Together with the coverage share they answer "which part,
-/// and where".
-pub fn unserved_points(
-    net: &Network,
-    date: NaiveDate,
-    layer: &PopLayer,
-    radius_m: f64,
-) -> Vec<UnservedPoint> {
-    // The served stops (any visit on the date), with coordinates —
-    // id order, so a distance tie names the lowest id.
-    let mut served: BTreeMap<String, (f64, f64)> = BTreeMap::new();
-    for (service_id, service) in &net.pattern_trips {
-        if !net
-            .service_types
-            .get(&service.service_type)
-            .is_some_and(|st| st.rule.runs_on(date))
-        {
-            continue;
-        }
-        let Ok(materialized) = transit_network::materialize_service(net, service_id) else {
-            continue;
-        };
-        for trip in &materialized {
-            for st in &trip.stop_times {
-                if let Some(stop) = net.stops.get(&st.stop) {
-                    served.insert(st.stop.clone(), (stop.lat, stop.lon));
-                }
-            }
-        }
-    }
-    let mut out = Vec::new();
-    for point in &layer.points {
-        let mut nearest: Option<(&str, f64)> = None;
-        for (id, (lat, lon)) in &served {
-            let d = distance_m(point.lat, point.lon, *lat, *lon);
-            if nearest.map_or(true, |(_, nd)| d < nd) {
-                nearest = Some((id, d));
-            }
-        }
-        let (nearest_stop, nearest_m) = match nearest {
-            // Served means within radius of SOME served stop —
-            // unserved means beyond radius of ALL of them.
-            Some((id, d)) if d > radius_m => (Some(id.to_string()), d),
-            Some(_) => continue,
-            None => (None, 0.0),
-        };
-        out.push(UnservedPoint {
-            lat: point.lat,
-            lon: point.lon,
-            pop: point.pop,
-            nearest_stop,
-            nearest_m,
-        });
-    }
-    out.sort_by(|a, b| {
-        b.pop
-            .partial_cmp(&a.pop)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.lat.partial_cmp(&b.lat).unwrap_or(std::cmp::Ordering::Equal))
-            .then_with(|| a.lon.partial_cmp(&b.lon).unwrap_or(std::cmp::Ordering::Equal))
-    });
-    out
 }

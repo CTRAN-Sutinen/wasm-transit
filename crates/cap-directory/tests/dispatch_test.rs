@@ -101,6 +101,8 @@ fn a_query_narrows_the_list_like_a_pickers_typing() {
     assert_eq!(search("bay sb"), vec!["SB".to_string()]);
     assert_eq!(search("3rd"), vec!["C".to_string()]);
     assert!(search("nowhere").is_empty(), "no match answers empty, never an error");
+    // Fuzzy (D-48): a typo still finds the station and its bays.
+    assert_eq!(search("main statoin"), vec!["STN", "SA", "SB"].into_iter().map(String::from).collect::<Vec<_>>());
     assert_eq!(search("  ").len(), 6, "an empty query is the whole list");
 }
 
@@ -200,7 +202,7 @@ fn near(lat: f64, lon: f64, limit: Option<u32>, radius_m: Option<f64>) -> Result
     })
 }
 
-/// QAF-70: the stop question from a point — places nearest first,
+/// The stop question from a point — places nearest first,
 /// the station's bays answering as the station (one place), each
 /// row with its distance in meters.
 #[test]
@@ -309,14 +311,15 @@ fn the_planners_lists_are_directory_answers() {
     assert!(!detail.patterns.is_empty() && !detail.stops.is_empty());
     assert!(detail.pattern_trips_by_type.iter().flat_map(|g| &g.pattern_trips).all(|s| s.trips.unwrap_or(0) > 0));
     // The timetable of its first direction under its first service
-    // type: every trip, by start, one time per column.
+    // type, which runs alone on its dates (a combination of one):
+    // every trip, by start, one time per column.
     let direction = detail.directions[0].direction.clone();
-    let service_type = detail.pattern_trips_by_type[0].service_type.clone();
+    let members = vec![detail.pattern_trips_by_type[0].service_type.clone()];
     let request = Request::Timetable {
         network_hash: hash.clone(),
         route_id: "10".into(),
         direction: direction.clone(),
-        service_type: service_type.clone(),
+        members: members.clone(),
         compare_hash: None,
     };
     let table = match dispatch(request).unwrap() {
@@ -327,12 +330,12 @@ fn the_planners_lists_are_directory_answers() {
     assert!(table.trips.windows(2).all(|w| w[0].start_secs <= w[1].start_secs), "rows by start");
     assert!(table.trips.iter().all(|t| t.times.len() == table.stops.len()));
     // Against itself: nothing added, nothing removed.
-    let against = Request::Timetable { network_hash: hash.clone(), route_id: "10".into(), direction, service_type, compare_hash: Some(hash.clone()) };
+    let against = Request::Timetable { network_hash: hash.clone(), route_id: "10".into(), direction, members, compare_hash: Some(hash.clone()) };
     match dispatch(against).unwrap() {
         Response::Timetable { timetable: Some(t) } => assert!(t.trips.iter().all(|x| !x.added) && t.removed.is_empty()),
         _ => panic!("timetable"),
     }
-    let unknown = Request::Timetable { network_hash: hash.clone(), route_id: "10".into(), direction: Some("ghost".into()), service_type: String::new(), compare_hash: None };
+    let unknown = Request::Timetable { network_hash: hash.clone(), route_id: "10".into(), direction: Some("ghost".into()), members: vec![], compare_hash: None };
     match dispatch(unknown).unwrap() {
         Response::Timetable { timetable } => assert!(timetable.is_none()),
         _ => panic!("timetable"),
@@ -390,19 +393,19 @@ proptest! {
             network_hash: hash.clone(),
             route_id: id.clone(),
             direction: None,
-            service_type: "WK".into(),
+            members: vec!["WK".into()],
             compare_hash: None,
         }) {
             Ok(Response::Timetable { timetable }) => prop_assert!(timetable.is_none()),
             other => panic!("timetable on an unknown id must answer, not {other:?}"),
         }
-        // The known route under an unknown service type is the same
-        // lookup miss.
+        // The known route under members that never run together is
+        // the same lookup miss.
         match dispatch(Request::Timetable {
             network_hash: hash,
             route_id: "10".into(),
             direction: None,
-            service_type: id,
+            members: vec![id],
             compare_hash: None,
         }) {
             Ok(Response::Timetable { timetable }) => prop_assert!(timetable.is_none()),

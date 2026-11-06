@@ -273,8 +273,8 @@ fn a_timetable_is_one_direction_on_one_service_type_across_its_patterns() {
         &[NetworkEdit::UpdatePattern { id: "10-bay".into(), name: None, route: None, direction: Some("in".into()) }],
     )
     .unwrap();
-    let t = timetable(&net, "10", Some("in"), "weekday").unwrap();
-    assert_eq!((t.direction_name.as_str(), t.service_type_name.as_str()), ("To Downtown", "Weekday"));
+    let t = timetable(&net, "10", Some("in"), &["weekday".to_string()]).unwrap();
+    assert_eq!((t.direction_name.as_str(), t.group.as_str()), ("To Downtown", "weekday"));
     // The variant's bay sits where it leaves the others.
     assert_eq!(t.stops.iter().map(|s| s.stop.as_str()).collect::<Vec<_>>(), ["A", "B", "D", "C"]);
     assert_eq!(t.stops.iter().map(|s| s.timepoint).collect::<Vec<_>>(), [true, false, true, true]);
@@ -303,11 +303,11 @@ fn a_timetable_is_one_direction_on_one_service_type_across_its_patterns() {
 
     // The patterns in no direction are their own timetable; an
     // unknown route, direction or type is no timetable.
-    assert!(timetable(&net, "10", None, "weekday").unwrap().trips.is_empty());
-    assert_eq!(timetable(&with_a_bay_variant(), "10", None, "weekday").unwrap().trips.len(), 2);
-    assert!(timetable(&net, "10", Some("out"), "weekday").is_none());
-    assert!(timetable(&net, "ghost", Some("in"), "weekday").is_none());
-    assert!(timetable(&net, "10", Some("in"), "ghost").is_none());
+    assert!(timetable(&net, "10", None, &["weekday".to_string()]).unwrap().trips.is_empty());
+    assert_eq!(timetable(&with_a_bay_variant(), "10", None, &["weekday".to_string()]).unwrap().trips.len(), 2);
+    assert!(timetable(&net, "10", Some("out"), &["weekday".to_string()]).is_none());
+    assert!(timetable(&net, "ghost", Some("in"), &["weekday".to_string()]).is_none());
+    assert!(timetable(&net, "10", Some("in"), &["ghost".to_string()]).is_none());
 }
 
 #[test]
@@ -326,7 +326,7 @@ fn a_timetable_against_its_baseline_marks_what_changed() {
         pattern: None,
     };
     let next = apply_edits(&base, &[edit]).unwrap();
-    let t = timetable_against(&next, &base, "10", None, "weekday").unwrap();
+    let t = timetable_against(&next, &base, "10", None, &["weekday".to_string()]).unwrap();
     let marks: Vec<_> = t.trips.iter().map(|x| (x.start_secs, x.added, x.retimed_from_secs)).collect();
     assert_eq!(
         marks,
@@ -334,7 +334,7 @@ fn a_timetable_against_its_baseline_marks_what_changed() {
     );
     assert!(t.removed.is_empty(), "nothing is cut: {:?}", t.removed);
     assert_eq!(t.trips[0].trip, "10-weekday@28800", "the moved trip keeps its id");
-    let plain = timetable(&next, "10", None, "weekday").unwrap();
+    let plain = timetable(&next, "10", None, &["weekday".to_string()]).unwrap();
     assert!(
         plain.trips.iter().all(|x| !x.added && x.retimed_from_secs.is_none()) && plain.removed.is_empty(),
         "no baseline, no marks"
@@ -351,13 +351,13 @@ fn a_route_row_answers_its_long_name_when_it_has_one() {
     let mut net = network();
     assert_eq!(entity_rows(&net, EntityKind::Route, "")[0].long_name, None, "no long name, none answered");
     assert_eq!(stop_detail(&net, "B").unwrap().routes[0].long_name, None);
-    assert_eq!(timetable(&net, "10", None, "weekday").unwrap().route_long_name, None);
+    assert_eq!(timetable(&net, "10", None, &["weekday".to_string()]).unwrap().route_long_name, None);
 
     net.routes.get_mut("10").unwrap().long_name = Some("Lincoln".into());
     let route = &entity_rows(&net, EntityKind::Route, "")[0];
     assert_eq!((route.name.as_str(), route.long_name.as_deref()), ("Route 10", Some("Lincoln")));
     assert_eq!(stop_detail(&net, "B").unwrap().routes[0].long_name.as_deref(), Some("Lincoln"));
-    assert_eq!(timetable(&net, "10", None, "weekday").unwrap().route_long_name.as_deref(), Some("Lincoln"));
+    assert_eq!(timetable(&net, "10", None, &["weekday".to_string()]).unwrap().route_long_name.as_deref(), Some("Lincoln"));
     // Rows naming no route carry none.
     assert!(entity_rows(&net, EntityKind::Stop, "").iter().all(|r| r.long_name.is_none()));
 }

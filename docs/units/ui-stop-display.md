@@ -9,7 +9,8 @@ display (PID). It follows the generated-UI procedure
 (`web/src/uis/stop-display/`, `e2e/ui-stop-display.spec.mjs`) and has
 run in the browser on C-TRAN in all three layouts, its groups equal
 to the session's below for the same snapshot. What is left is an
-alert read on the display, and when a stopped route runs next.
+alert read on the display, and a session reading a stopped route's
+next run on C-TRAN in the browser.
 
 Three layouts, picked on the display and taking the whole screen:
 a transit center (a station's bays pooled, each group naming its
@@ -42,10 +43,10 @@ pin), Andresen & Van Mall Dr (2676, one route), and Van Mall Dr &
 |---|---|---|
 | 1 | directory `stops_by_ids` | answered |
 | 2 | board `grouped_board` (`per_group`, default 3) | answered (`stop_board` alone would need the whole day asked and grouped by the host: 106 answers 191 rows in 9 groups) |
-| 3 | the row's `wait` (due, minutes, or a clock time) | answered on every board row (QAF-81's board half) |
+| 3 | the row's `wait` (due, minutes, or a clock time) | answered on every board row |
 | 4 | the row's `status` / `expected_secs` | answered |
 | 5 | the row's `stop_name` on a pooled board | answered |
-| 6 | a group with no departures left | "stopped" answered; "when next" has no op, QAF-82 — the display says "No more service today" |
+| 6 | a group with no departures left; its `next` | answered: the first of the next seven days whose patched day carries it (D-42) — the display says "Next: 5:12 am tomorrow" / "Next: Monday 5:12 am", else "No more service this week"; pinned on the fixture (`e2e/ui-stop-display.spec.mjs`) and by caps-run on C-TRAN, not yet read in the browser on real data |
 | 7 | the board's `alerts`, a group's `skipped` | answered on the fixture; C-TRAN publishes no alerts feed (its Alerts URL answers 404), so no alert has been read on real data |
 
 ## Answer graph
@@ -71,6 +72,6 @@ input `docs/units/ui-ride-now.md` names.
 - An alert has been read on the display from a live feed that
   publishes one (C-TRAN's Alerts URL answers 404), and `ui.json`'s
   `session` records it.
-- QAF-82 is closed (a stopped group says when it runs next) and the
-  display reads it.
+- A stopped group's next run has been read on the display on C-TRAN
+  late in the service day, and `ui.json`'s `session` records it.
 - Then this file is deleted.

@@ -1,8 +1,11 @@
 <script lang="ts">
   /// The unserved WHERE (analysis `unserved_points`): every layer
-  /// point beyond the radius of every served stop, a circle sized by
-  /// its people; the selected one ringed and framed. A RENDER
-  /// component — points in, a tapped point out.
+  /// feature with weight beyond the radius of every stop the selected
+  /// service group (a combination of service types, D-55) serves — a
+  /// point as a circle sized by its unserved weight, a polygon as its
+  /// shape, shaded by the share of its area unserved; the selected one
+  /// outlined and framed. A RENDER component — places in, a tapped
+  /// place out.
   import { onMount } from "svelte";
   import * as maplibregl from "maplibre-gl";
   import { pickStyle } from "../basemap";
@@ -22,8 +25,8 @@
     type: "FeatureCollection",
     features: ps.map((p, i) => ({
       type: "Feature",
-      properties: { i, pop: p.pop },
-      geometry: { type: "Point", coordinates: [p.lon, p.lat] },
+      properties: { i, weight: p.weight, share: p.share },
+      geometry: p.polygon ? { type: "MultiPolygon", coordinates: p.polygon } : { type: "Point", coordinates: [p.lon, p.lat] },
     })),
   });
 
@@ -37,11 +40,30 @@
       map.on("load", () => {
         map!.addSource("unserved", { type: "geojson", data: collection([]) as any });
         map!.addLayer({
+          id: "unserved-area",
+          type: "fill",
+          source: "unserved",
+          filter: ["==", ["geometry-type"], "Polygon"],
+          paint: {
+            "fill-color": "#f97316",
+            "fill-opacity": ["interpolate", ["linear"], ["get", "share"], 0, 0.1, 1, 0.5],
+            "fill-outline-color": "#c2410c",
+          },
+        });
+        map!.addLayer({
+          id: "unserved-area-selected",
+          type: "line",
+          source: "unserved",
+          filter: ["==", ["get", "i"], -1],
+          paint: { "line-color": "#1c1917", "line-width": 3 },
+        });
+        map!.addLayer({
           id: "unserved",
           type: "circle",
           source: "unserved",
+          filter: ["==", ["geometry-type"], "Point"],
           paint: {
-            "circle-radius": ["interpolate", ["linear"], ["sqrt", ["get", "pop"]], 0, 3, 100, 18],
+            "circle-radius": ["interpolate", ["linear"], ["sqrt", ["get", "weight"]], 0, 3, 100, 18],
             "circle-color": "#f97316",
             "circle-opacity": 0.4,
             "circle-stroke-color": "#c2410c",
@@ -54,16 +76,18 @@
           source: "unserved",
           filter: ["==", ["get", "i"], -1],
           paint: {
-            "circle-radius": ["interpolate", ["linear"], ["sqrt", ["get", "pop"]], 0, 8, 100, 24],
+            "circle-radius": ["interpolate", ["linear"], ["sqrt", ["get", "weight"]], 0, 8, 100, 24],
             "circle-color": "transparent",
             "circle-stroke-color": "#1c1917",
             "circle-stroke-width": 3,
           },
         });
-        map!.on("click", "unserved", (e) => {
-          const i = e.features?.[0]?.properties?.i;
-          if (typeof i === "number") onselect(i);
-        });
+        for (const layer of ["unserved", "unserved-area"]) {
+          map!.on("click", layer, (e) => {
+            const i = e.features?.[0]?.properties?.i;
+            if (typeof i === "number") onselect(i);
+          });
+        }
         map!.resize();
         loaded = true;
       });
@@ -85,7 +109,8 @@
 
   $effect(() => {
     if (!loaded || !map) return;
-    map.setFilter("unserved-selected", ["==", ["get", "i"], selected ?? -1]);
+    map.setFilter("unserved-selected", ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "i"], selected ?? -1]]);
+    map.setFilter("unserved-area-selected", ["==", ["get", "i"], selected ?? -1]);
     const p = selected != null ? points[selected] : null;
     if (p) map.easeTo({ center: [p.lon, p.lat], zoom: Math.max(map.getZoom(), 12), duration: 400 });
   });

@@ -97,8 +97,9 @@ test("a retired pick never reaches a rider", async ({ page, request }) => {
 test("a planner publishes a fork from service design", async ({ page, request }) => {
   await page.goto("/service-design.html");
   await page.getByTestId("design-rail").getByRole("button", { name: "Plans" }).click();
-  // The server's import is the base; fork it as a pick.
-  await expect(page.getByTestId("group-table").locator("tbody tr")).toHaveCount(3, { timeout: 10_000 });
+  // The server's import is the base (its combinations, D-55: WK and
+  // SUN); fork it as a pick.
+  await expect(page.getByTestId("group-table").locator("tbody tr")).toHaveCount(2, { timeout: 10_000 });
   await page.getByTestId("fork-name").fill("Holiday 2026");
   await page.getByTestId("fork-date").fill("2026-11-23");
   await page.getByRole("button", { name: "Fork" }).click();

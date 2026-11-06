@@ -4,7 +4,10 @@
   /// own, a stop inserted or dropped. A frequency target the trips
   /// flex around is not offered: what it keeps of the trips already
   /// there waits on a decision. On the unframed import every form is
-  /// off until it is forked.
+  /// off until it is forked. Every gesture acts on ONE service type
+  /// (D-8), a member of the selected group the planner picks; the
+  /// panel says what else runs with it and where else it runs (D-95),
+  /// since those trips stay as they are.
   import Unavailable from "./Unavailable.svelte";
   import type { TimetableStop } from "../types/TimetableStop";
   import type { TimetableTrip } from "../types/TimetableTrip";
@@ -12,6 +15,10 @@
 
   let {
     framed,
+    members,
+    editType,
+    alsoIn,
+    onedittype,
     stops,
     selectedStop,
     trips,
@@ -24,6 +31,12 @@
     onremovestop,
   }: {
     framed: boolean;
+    /// The selected group's service types, and the one edited.
+    members: string[];
+    editType: string;
+    /// The other groups `editType` runs in.
+    alsoIn: string[];
+    onedittype: (type: string) => void;
     stops: TimetableStop[];
     selectedStop: string;
     trips: TimetableTrip[];
@@ -62,6 +75,18 @@
     <h2>Change this direction</h2>
     {#if !framed}<span class="warn">Fork the import into a plan to change it.</span>{/if}
   </header>
+  <div class="scope" data-testid="gesture-scope">
+    <label>Changes the trips of
+      <select value={editType} onchange={(e) => onedittype((e.target as HTMLSelectElement).value)} aria-label="service type to change">
+        {#each members as m (m)}<option value={m}>{m}</option>{/each}
+      </select>
+    </label>
+    {#if members.length > 1 || alsoIn.length > 0}
+      <p class="warn" data-testid="sibling-warning">
+        Only {editType}'s trips change.{#if members.length > 1} In this group it runs with {members.filter((m) => m !== editType).join(", ")}, whose trips stay as they are.{/if}{#if alsoIn.length > 0} {editType} also runs in {alsoIn.join("; ")}, which this change reaches too.{/if}
+      </p>
+    {/if}
+  </div>
   <fieldset disabled={!framed}>
     <div class="forms">
       <div class="g">
@@ -118,6 +143,8 @@
   h2 { margin: 0; font-size: 0.9rem; }
   h3 { margin: 0; font-size: 0.8rem; }
   .warn { color: var(--warn); font-size: 0.8rem; }
+  .scope { padding: 0.5rem 1rem; border-bottom: 1px solid var(--line); font-size: 0.85rem; }
+  .scope p { margin: 0.35rem 0 0; }
   fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
   .forms { display: flex; flex-wrap: wrap; gap: 0.6rem; padding: 0.7rem 0.9rem; }
   .g { flex: 1 1 13rem; min-width: 0; display: flex; flex-direction: column; gap: 0.35rem; border: 1px solid var(--line); border-radius: 8px; padding: 0.55rem 0.7rem; font-size: 0.8rem; }

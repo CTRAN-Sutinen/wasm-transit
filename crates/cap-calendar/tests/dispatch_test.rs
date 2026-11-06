@@ -118,7 +118,7 @@ fn edits_can_take_a_key_off_the_board() {
     // a key with no running trips.)
     let records = vec![EditRecord {
         id: "e1".into(),
-        diversion: transit_sync::Diversion {
+        diversion: Some(transit_sync::Diversion {
             id: "d1".into(),
             route_id: "20".into(),
             direction_id: None,
@@ -129,7 +129,8 @@ fn edits_can_take_a_key_off_the_board() {
             added_secs: 60,
             start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
             end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-        },
+        }),
+        cancel: None,
         status: EditStatus::Accepted,
         rev: 1,
         updated_at: 1,
@@ -213,7 +214,7 @@ fn the_reverse_read_comes_from_the_effective_day() {
     // and the edits window answers from the patched day.
     let records = vec![EditRecord {
         id: "e1".into(),
-        diversion: transit_sync::Diversion {
+        diversion: Some(transit_sync::Diversion {
             id: "d1".into(),
             route_id: "20".into(),
             direction_id: None,
@@ -224,7 +225,8 @@ fn the_reverse_read_comes_from_the_effective_day() {
             added_secs: 60,
             start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
             end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-        },
+        }),
+        cancel: None,
         status: EditStatus::Accepted,
         rev: 1,
         updated_at: 1,
@@ -246,7 +248,7 @@ fn an_invalid_edit_record_moves_nothing() {
     // view simply finds nothing to patch.
     let mut broken = EditRecord {
         id: "e1".into(),
-        diversion: transit_sync::Diversion {
+        diversion: Some(transit_sync::Diversion {
             id: "d1".into(),
             route_id: "ghost".into(),
             direction_id: None,
@@ -257,12 +259,13 @@ fn an_invalid_edit_record_moves_nothing() {
             added_secs: 60,
             start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
             end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-        },
+        }),
+        cancel: None,
         status: EditStatus::Accepted,
         rev: 1,
         updated_at: 1,
     };
-    broken.diversion.first_kept_stop = "ghost".into();
+    broken.diversion.as_mut().unwrap().first_kept_stop = "ghost".into();
     let edits_hash = cap_abi::kernel::EDITS.register(vec![broken]).unwrap().0;
     assert_eq!(
         active_services(&network_hash, Some(edits_hash), DATE),

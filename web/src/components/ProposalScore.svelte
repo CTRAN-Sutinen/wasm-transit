@@ -22,7 +22,7 @@
   <div class="blocked">
     <Unavailable title="Peak vehicles" reason="Added trips have no block, so the vehicles a proposal needs has no answer." blockers={["D-46", "QAF-3"]} />
     <Unavailable title="Cost" reason="The agency's rates per revenue hour, mile, and vehicle are not on the bus." blockers={["D-51"]} />
-    <Unavailable title="Coverage gained and lost" reason="No op compares two plans' coverage." blockers={["D-43", "QAF-20"]} />
+    <Unavailable title="Coverage gained and lost" reason="coverage_compare answers two named sides; which of one plan's service combinations answers to which of the other's is not decided." blockers={["D-43", "QAF-20"]} />
     <Unavailable title="Connections made and broken" reason="No op compares two plans' timed transfers." blockers={["Q19"]} />
   </div>
 </section>

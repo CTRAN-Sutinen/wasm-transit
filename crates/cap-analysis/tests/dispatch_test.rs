@@ -19,10 +19,10 @@ struct GenTrip {
     leg_min: u8,
 }
 
-/// Register a population layer through the module's seam (the kernel's
+/// Register a weighted layer through the module's seam (the kernel's
 /// load, as every host sends it): the load's answer.
-fn load_layer(bytes: Vec<u8>, pop_field: Option<&str>) -> serde_json::Value {
-    let request = serde_json::json!({ "op": "load_population_layer", "bytes": bytes, "pop_field": pop_field });
+fn load_layer(bytes: Vec<u8>) -> serde_json::Value {
+    let request = serde_json::json!({ "op": "load_layer", "bytes": bytes });
     let outcome: serde_json::Value = serde_json::from_str(&cap_analysis::invoke(&request.to_string())).expect("an outcome");
     outcome["ok"].clone()
 }
@@ -166,15 +166,13 @@ proptest! {
     ) {
         let net = network(&trips);
         let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
-        let layer = load_layer(layer_geojson(), Some("pop"));
+        let layer = load_layer(layer_geojson());
         let layer_hash = layer["layer_hash"].as_str().expect("layer_hash").to_string();
-        let pop_field = layer["pop_field"].as_str().expect("pop_field");
-        let total_pop = layer["total_pop"].as_f64().expect("total_pop");
         prop_assert_eq!(layer["points"].as_u64(), Some(6));
-        // The handle is the whole import answer: the field the parse
-        // picked and the people it found (100..600 at the six points).
-        prop_assert_eq!(pop_field, "pop");
-        prop_assert!((total_pop - 2100.0).abs() < 1e-9);
+        prop_assert_eq!(layer["polygons"].as_u64(), Some(0));
+        // The handle is the whole import answer: the weights it can be
+        // read by, each with its total (100..600 at the six points).
+        prop_assert_eq!(&layer["fields"], &serde_json::json!([{ "name": "pop", "total": 2100.0 }]));
 
         let overview = cap_analysis::dispatch(cap_analysis::Request::ServiceTypesOverview {
             network_hash: network_hash.clone(),
@@ -183,20 +181,43 @@ proptest! {
         let cap_analysis::Response::ServiceTypesOverview { service_types } = overview else { panic!("ov") };
         prop_assert!(!service_types.is_empty());
 
+        // Each combination answers its own coverage (D-55); a set that
+        // never runs together answers null.
+        let groups = cap_analysis::dispatch(cap_analysis::Request::ServiceGroups { network_hash: network_hash.clone() })
+            .expect("groups");
+        let cap_analysis::Response::ServiceGroups { groups } = groups else { panic!("groups") };
+        for group in &groups {
+            let one = cap_analysis::dispatch(cap_analysis::Request::TypeCoverage {
+                network_hash: network_hash.clone(),
+                layer_hash: layer_hash.clone(),
+                members: group.combination.members.clone(),
+                field: None,
+                label: None,
+                radius_m: 500.0,
+                frequent_secs: 3600,
+                min_departures: 2,
+                window: None,
+            })
+            .expect("coverage");
+            let cap_analysis::Response::TypeCoverage { coverage: Some(c), .. } = one else { panic!("a combination answers") };
+            prop_assert_eq!(&c.group, &group.combination.id);
+            prop_assert!(c.served_pct >= 0.0 && c.served_pct <= 100.0);
+        }
         let coverage = cap_analysis::dispatch(cap_analysis::Request::TypeCoverage {
             network_hash,
             layer_hash,
+            members: vec!["0".into(), "1".into()],
+            field: None,
+            label: Some("people".into()),
             radius_m: 500.0,
             frequent_secs: 3600,
             min_departures: 2,
             window: None,
         })
         .expect("coverage");
-        let cap_analysis::Response::TypeCoverage { coverage } = coverage else { panic!("cov") };
-        prop_assert!(!coverage.is_empty());
-        for entry in &coverage {
-            prop_assert!(entry.served_pct >= 0.0 && entry.served_pct <= 100.0);
-        }
+        let cap_analysis::Response::TypeCoverage { layer, coverage } = coverage else { panic!("cov") };
+        prop_assert_eq!((layer.field.as_str(), layer.label.as_str()), ("pop", "people"));
+        prop_assert!(coverage.is_none(), "weekday and weekend service never run together");
     }
 
     /// QAF-19: unknown IDs answer empty, unknown HASHES error — one
@@ -211,10 +232,11 @@ proptest! {
         let net = network(&trips);
         let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
         // The generator's service keys are "0" and "1", so any
-        // alphabetic id is unknown to the document.
+        // alphabetic id is unknown to the document, and no set holding
+        // it runs together on a date.
         let detail = cap_analysis::dispatch(cap_analysis::Request::ServiceTypeDetail {
             network_hash: network_hash.clone(),
-            service_type: id.clone(),
+            members: vec![id.clone()],
         })
         .expect("an unknown id answers, never errors");
         let cap_analysis::Response::ServiceTypeDetail { detail } = detail else { panic!("detail") };
@@ -223,7 +245,7 @@ proptest! {
         let comparison = cap_analysis::dispatch(cap_analysis::Request::ServiceTypeCompare {
             base_hash: network_hash.clone(),
             network_hash: network_hash.clone(),
-            service_type: id,
+            members: vec!["0".into(), id],
         })
         .expect("an unknown id answers, never errors");
         let cap_analysis::Response::ServiceTypeCompare { comparison } = comparison else { panic!("cmp") };
@@ -233,7 +255,7 @@ proptest! {
         prop_assert!(
             cap_analysis::dispatch(cap_analysis::Request::ServiceTypeDetail {
                 network_hash: "sha256:missing".into(),
-                service_type: "0".into(),
+                members: vec!["0".into()],
             })
             .is_err(),
             "an unknown hash must error, never answer empty"
@@ -258,11 +280,10 @@ fn unknown_hashes_are_errors_not_panics() {
 fn a_network_compares_against_itself_as_unchanged() {
     let net = network(&[GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
     let hash = cap_abi::kernel::NETWORK.register(net).unwrap().0;
-    let service_type = "0".to_string();
-    let same = cap_analysis::Request::ServiceTypeCompare { base_hash: hash.clone(), network_hash: hash.clone(), service_type };
+    let same = cap_analysis::Request::ServiceTypeCompare { base_hash: hash.clone(), network_hash: hash.clone(), members: vec!["0".into()] };
     match cap_analysis::dispatch(same).unwrap() {
         cap_analysis::Response::ServiceTypeCompare { comparison } => {
-            let comparison = comparison.expect("the fixture carries service type 0");
+            let comparison = comparison.expect("service type 0 runs alone on its dates");
             assert!(comparison.routes.is_empty());
             assert_eq!(comparison.unchanged_routes, comparison.base.routes);
         }
@@ -271,7 +292,7 @@ fn a_network_compares_against_itself_as_unchanged() {
     let unknown = cap_analysis::Request::ServiceTypeCompare {
         base_hash: "sha256:missing".into(),
         network_hash: hash,
-        service_type: "0".into(),
+        members: vec!["0".into()],
     };
     assert!(cap_analysis::dispatch(unknown).unwrap_err().contains("unknown network"));
 }
@@ -418,7 +439,7 @@ fn hourly_trips_answer_through_the_seam() {
 }
 
 /// The schedule texture (QAF-16): headway uniformity and clockface
-/// alignment per pattern trips on the type's representative day.
+/// alignment per pattern trips of a service combination (D-55).
 /// The deep oracle law lives in the library's prop suite; this pins
 /// the SEAM: the two-trip fixture's one 1800 s gap, the quarter-hour
 /// grid count, and the unknown-type honesty.
@@ -433,11 +454,12 @@ fn schedule_texture_answers_through_the_seam() {
 
     let texture = cap_analysis::dispatch(cap_analysis::Request::ScheduleTexture {
         network_hash: network_hash.clone(),
-        service_type: "0".into(),
+        members: vec!["0".into()],
     })
     .expect("schedule_texture");
     let cap_analysis::Response::ScheduleTexture { texture } = texture else { panic!("schedule_texture") };
-    let texture = texture.expect("the weekday type has a representative day");
+    let texture = texture.expect("the weekday type runs alone on its dates");
+    assert_eq!((texture.group.as_str(), texture.members.as_slice()), ("0", ["0".to_string()].as_slice()));
     assert_eq!(texture.trips, 2);
     assert_eq!(texture.on_clockface, 2, "4800 and 6600 are both on the grid");
     assert_eq!(texture.pattern_trips.len(), 1, "one schedule");
@@ -448,10 +470,10 @@ fn schedule_texture_answers_through_the_seam() {
     assert_eq!(row.median_gap_secs, None, "one gap is no median (the QAF-55 floor)");
     assert_eq!(row.on_clockface, 2);
 
-    // An unknown type answers null, never an error (QAF-19).
+    // Unknown members answer null, never an error (QAF-19).
     let unknown = cap_analysis::dispatch(cap_analysis::Request::ScheduleTexture {
         network_hash,
-        service_type: "nope".into(),
+        members: vec!["nope".into()],
     })
     .expect("schedule_texture");
     let cap_analysis::Response::ScheduleTexture { texture: unknown } = unknown else { panic!("schedule_texture") };
@@ -589,7 +611,7 @@ fn hub_connections_and_route_frequency_answer_through_the_seam() {
 
     let grid = cap_analysis::dispatch(cap_analysis::Request::RouteFrequency {
         network_hash: network_hash.clone(),
-        service_type: "0".into(),
+        members: vec!["0".into()],
     })
     .expect("route_frequency");
     let cap_analysis::Response::RouteFrequency { frequency: Some(grid) } = grid else { panic!("route_frequency") };
@@ -597,7 +619,7 @@ fn hub_connections_and_route_frequency_answer_through_the_seam() {
     assert_eq!((route0.route_id.as_str(), route0.headway_stop.as_deref()), ("0", Some("s0")));
     let hour = &route0.hours[0];
     assert_eq!((hour.hour, hour.departures, hour.shortest_gap_secs, hour.longest_gap_secs), (1, 2, Some(600), Some(600)));
-    let unknown = cap_analysis::dispatch(cap_analysis::Request::RouteFrequency { network_hash, service_type: "nope".into() })
+    let unknown = cap_analysis::dispatch(cap_analysis::Request::RouteFrequency { network_hash, members: vec!["nope".into()] })
         .expect("route_frequency");
     assert!(matches!(unknown, cap_analysis::Response::RouteFrequency { frequency: None }));
 }
@@ -685,51 +707,77 @@ fn unserved_points_answer_the_where() {
             {"type":"Feature","properties":{"pop":50},"geometry":{"type":"Point","coordinates":[-74.0,46.0]}}
         ]}"#
             .to_vec(),
-        Some("pop"),
     );
     let layer_hash = layer["layer_hash"].as_str().expect("layer_hash").to_string();
 
     let points = cap_analysis::dispatch(cap_analysis::Request::UnservedPoints {
         network_hash: network_hash.clone(),
         layer_hash: layer_hash.clone(),
+        field: None,
+        label: None,
         radius_m: 500.0,
-        date: "2026-01-05".into(),
+        members: vec!["0".into()],
     })
     .expect("unserved_points");
-    let cap_analysis::Response::UnservedPoints { points } = points else { panic!("unserved_points") };
+    let cap_analysis::Response::UnservedPoints { unserved: Some(unserved), .. } = points else { panic!("unserved_points") };
+    assert_eq!(unserved.group, "0");
+    let points = unserved.points;
     assert_eq!(points.len(), 1, "the point at s0 is served; the far one is not");
     assert_eq!(points[0].nearest_stop.as_deref(), Some("s1"), "s1 is marginally nearer than s0");
     assert!((points[0].lat - 46.0).abs() < 1e-9 && (points[0].lon - -74.0).abs() < 1e-9);
     assert!(points[0].nearest_m > 60_000.0, "the far point is ~70 km out: {}", points[0].nearest_m);
 
-    // A day nothing runs: every point is unserved, and no stop is
-    // nearest (there is no service to be near).
-    let saturday = cap_analysis::dispatch(cap_analysis::Request::UnservedPoints {
-        network_hash,
-        layer_hash,
+    // The weekend service carries no trip here, so it is in no
+    // combination: null, never a day of empty service standing in.
+    let weekend = cap_analysis::dispatch(cap_analysis::Request::UnservedPoints {
+        network_hash: network_hash.clone(),
+        layer_hash: layer_hash.clone(),
+        field: None,
+        label: None,
         radius_m: 500.0,
-        date: "2026-01-10".into(),
+        members: vec!["1".into()],
     })
     .expect("unserved_points");
-    let cap_analysis::Response::UnservedPoints { points: saturday } = saturday else { panic!("unserved_points") };
-    assert_eq!(saturday.len(), 2, "nothing runs: every point is unserved");
-    assert!(saturday.iter().all(|p| p.nearest_stop.is_none()));
+    let cap_analysis::Response::UnservedPoints { unserved, .. } = weekend else { panic!("unserved_points") };
+    assert!(unserved.is_none(), "a service with no trips is in no combination");
+
+    // The comparison at the seam: the network's weekday type against
+    // a copy with nothing in it. The empty proposal loses the point at
+    // s0 and gains nothing; the Saturday type against itself runs
+    // nothing on either side.
+    let mut empty = cap_abi::kernel::NETWORK.require(&network_hash).expect("held").as_ref().clone();
+    empty.pattern_trips.clear();
+    let empty_hash = cap_abi::kernel::NETWORK.register(empty).expect("load").0;
+    let compared = cap_analysis::dispatch(cap_analysis::Request::CoverageCompare {
+        base_hash: network_hash,
+        network_hash: empty_hash,
+        layer_hash,
+        field: Some("pop".into()),
+        label: Some("people".into()),
+        base_members: vec!["0".into()],
+        members: vec!["0".into()],
+        radius_m: 500.0,
+        frequent_secs: 3600,
+        min_departures: 2,
+        window: None,
+    })
+    .expect("coverage_compare");
+    let cap_analysis::Response::CoverageCompare { layer, comparison } = compared else { panic!("coverage_compare") };
+    assert_eq!(layer.label, "people");
+    assert_eq!((comparison.base.served, comparison.proposal.served), (100.0, 0.0));
+    assert_eq!((comparison.served_gained, comparison.served_lost), (0.0, 100.0));
+    assert_eq!(comparison.base.members, ["0"]);
 }
 
-/// The service groups (QAF-65): the families behind the ids. A
-/// rider-along type — the SAME weekly pattern, a narrower calendar
-/// — folds into the base's row and never heads one of its own; a
-/// DIFFERENT weekly pattern (Mon+Wed) is its own family, however
-/// few days it runs. The deep oracle law lives in the library's
-/// prop suite; this pins the SEAM.
+/// The service groups (D-55): the COMBINATIONS of service types
+/// that run together on the same dates, with those dates. A
+/// narrower overlay (Mon–Fri, Mar–Jun) and a Mon+Wed service each
+/// meet the weekday base only on the dates they run with it — every
+/// distinct set is its own row, and a type with no trips (the feed's
+/// weekend calendar) is no member of any. The deep oracle law lives
+/// in the library's prop suite; this pins the SEAM.
 #[test]
-fn service_groups_answer_the_families() {
-    // Route 0 runs under the weekday service (every weekday, all
-    // 2026) and a SAME-PATTERN overlay (Mon–Fri, Mar–Jun) — one
-    // weekday family, the overlay folded in — plus a Mon+Wed
-    // service, which is NOT the weekday family. The feed's weekend
-    // calendar is a service type too (the import keeps every
-    // calendar), running nothing.
+fn service_groups_answer_the_combinations() {
     let net = network(&[
         GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
         GenTrip { route: 0, service: 3, block: None, start_slot: 11, stops: vec![0, 1], leg_min: 5 },
@@ -742,26 +790,25 @@ fn service_groups_answer_the_families() {
     })
     .expect("service_groups");
     let cap_analysis::Response::ServiceGroups { groups } = groups else { panic!("service_groups") };
-    assert_eq!(groups.len(), 3, "the weekday family, the Mon+Wed family, the empty weekend");
-    let weekend = groups.iter().find(|g| g.service_type == "1").expect("weekend row");
-    assert_eq!(weekend.trips, 0);
-    let weekday = groups.iter().find(|g| g.service_type == "0").expect("weekday row");
-    assert_eq!(weekday.members, vec!["0".to_string(), "3".to_string()], "the same-pattern rider is named");
-    assert_eq!(weekday.trips, 2, "the family's schedules are pooled in");
-    assert_eq!(weekday.active_routes, 1);
-    let tue = groups.iter().find(|g| g.service_type == "2").expect("Mon+Wed row");
-    assert_eq!(tue.members, vec!["2".to_string()], "a different weekly pattern is its own family");
+    let rows: std::collections::BTreeMap<&str, u32> =
+        groups.iter().map(|g| (g.combination.id.as_str(), g.trips)).collect();
+    assert_eq!(
+        rows,
+        [("0", 1), ("0 + 2", 2), ("0 + 3", 2), ("0 + 2 + 3", 3)].into_iter().collect(),
+        "each set that runs together, with its pooled trips"
+    );
+    assert!(groups.windows(2).all(|w| w[0].combination.dates.len() >= w[1].combination.dates.len()), "most days first");
+    assert!(groups.iter().all(|g| !g.combination.members.contains(&"1".to_string())), "the trip-less weekend runs nothing");
+    let overlay = groups.iter().find(|g| g.combination.id == "0 + 3").unwrap();
+    assert_eq!(overlay.combination.spans.len(), 1, "Mar–Jun Tue/Thu/Fri is one span");
+    assert_eq!(overlay.combination.spans[0].start, "2026-03-03", "the first Tuesday in range");
 
-    // A weekend-only service: the weekend type is its own base.
-    let weekend = network(&[GenTrip { route: 0, service: 1, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 }]);
-    let network_hash = cap_abi::kernel::NETWORK.register(weekend).expect("load").0;
-    let groups = cap_analysis::dispatch(cap_analysis::Request::ServiceGroups {
+    // The drill-down answers a row by its members.
+    let detail = cap_analysis::dispatch(cap_analysis::Request::ServiceTypeDetail {
         network_hash,
+        members: overlay.combination.members.clone(),
     })
-    .expect("service_groups");
-    let cap_analysis::Response::ServiceGroups { groups } = groups else { panic!("service_groups") };
-    let weekend = groups.iter().find(|g| g.service_type == "1").expect("weekend row");
-    assert_eq!(weekend.members, vec!["1".to_string()]);
-    assert_eq!(weekend.trips, 1);
-    assert!(groups.iter().filter(|g| g.service_type != "1").all(|g| g.trips == 0), "{groups:?}");
+    .expect("service_type_detail");
+    let cap_analysis::Response::ServiceTypeDetail { detail: Some(detail) } = detail else { panic!("detail") };
+    assert_eq!((detail.group.as_str(), detail.trips), ("0 + 3", 2));
 }

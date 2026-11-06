@@ -38,7 +38,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-91**.
+- IDs are never reused; the next new decision is **D-113**.
 
 ## Summary
 
@@ -83,7 +83,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-40 | How long does a planned trip take, and from when? | decided | nothing |
 | D-41 | What carries a service type's calendar into a fork's period? | decided | nothing |
 | D-42 | When a route has stopped for the day, how far ahead does a stop look? | decided | nothing |
-| D-43 | What does a coverage comparison report? | encoded | nothing |
+| D-43 | What does a coverage comparison report? | encoded | QAF-20's matching rule |
 | D-44 | Is a branch of a direction its own thing? | unanswered | QAF-63 |
 | D-45 | Which dispatcher edits does the edit document carry beyond the diversion? | decided | nothing |
 | D-46 | How many more vehicles does a proposal need? | decided | the work-rule policy document (D-50's shape) |
@@ -131,6 +131,26 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-88 | What does a page run when its linked assembly does not load? | encoded | nothing |
 | D-89 | May a host decline a document an op minted? | encoded | nothing |
 | D-90 | What may a rider's device remember to open the map where it will end up? | encoded | nothing |
+| D-91 | What does fuzzy stop search accept, and in what order? | encoded | nothing |
+| D-92 | When does a plan say "leave in N min"? | encoded | nothing |
+| D-94 | Which types make a combination, and how are its dates folded? | encoded | nothing |
+| D-95 | Which service type does a gesture change, and what does its warning name? | encoded | nothing |
+| D-97 | Where does a layer's weight field and label live? | encoded | nothing |
+| D-98 | How finely is a polygon's area sampled? | encoded | nothing |
+| D-99 | Who names the two sides of a coverage comparison? | encoded | nothing |
+| D-100 | How does a board show a trip the dispatcher cancelled? | encoded | nothing |
+| D-101 | What does a trip cancel name, and how does it enter the edit document? | encoded | nothing |
+| D-102 | Which capability authors a trip cancel? | encoded | nothing |
+| D-103 | Which street classes does the bus profile ask a planner to confirm? | encoded | nothing |
+| D-104 | Where does a fork's period end come from? | encoded | nothing |
+| D-105 | What does a fork carry when a feed's calendars are all dated? | decided | nothing |
+| D-106 | Does a recovery rule judge a trip that continues with no wait? | encoded | nothing |
+| D-107 | Which routes may interline when the rules do not say? | encoded | nothing |
+| D-108 | What is an hours budget? | unanswered | `ui-service-design` questions 2, 18 (hours against budget) |
+| D-109 | What does a suggested blocking change? | encoded | nothing |
+| D-110 | Which waits does a recovery requirement judge, and after which trip? | encoded | nothing |
+| D-111 | When does a dated service read as a weekly rule? | encoded | nothing |
+| D-112 | Which weekly service types does a fork carry? | encoded | nothing |
 
 ## The trip model
 
@@ -205,6 +225,18 @@ Blocks: QAF-90.
 ### D-11 — Does editing a shared alignment change every pattern on it?
 State: Decided.
 Answer: 2026-11-05 — the edit names which: the gesture says whether it redraws one pattern or every pattern on the alignment, and reports the patterns it touched. Nothing moves silently.
+Built: author `apply` `draw_alignment {pattern, points, redraw: one|all,
+id?}`; `one` mints the pattern its own alignment (reported in
+`created`), `all` redraws the shared one; the redrawn patterns come
+back in `touched`, and their stop distances keep their meters but
+stop claiming to be published (they were measured along the old
+line). Pins: `crates/transit-network/tests/alignment_edit_law_test.rs`,
+`crates/cap-author/tests/dispatch_test.rs`
+(`a_redraw_reports_the_patterns_it_touched`). Reading, encoded and
+not confirmed by the user: the line `one` leaves behind when no other
+pattern ran it stays in the document (an alignment no pattern runs
+still stands; no edit removes one yet), so the export writes it as an
+unused shape.
 Context: patterns run alignments by reference (`Pattern::alignment`),
 and several patterns may run one: a feed may give one shape to
 trips with different stops. No edit authors an alignment yet. The
@@ -291,11 +323,23 @@ to a stop, arrivals included, so a terminal where nobody boards can
 read as frequent. The windowed test counts departures only.
 Options: departures only, for both tests (the finding reads this
 way); or keep counting arrivals and document the difference.
-Blocks: nothing (the QAF-78 fix is free to start).
+Pins: `crates/transit-analysis/tests/coverage_law_test.rs`
+(`a_terminal_nobody_boards_at_is_never_frequent`),
+`crates/transit-analysis/tests/regression_test.rs`
+(`service_type_ops_expose_the_design_axis`: frequent_pct 100/180).
+Blocks: nothing.
 
 ### D-43 — What does a coverage comparison report?
 State: Encoded provisionally.
-Answer: 2026-11-05 — per representative DATE, reporting population gained and lost separately (served and frequent). The user: "for now, I am not 100% sure on this one." The set of dates is open (weekday, Saturday, Sunday to start). A different decision rewrites the laws that pin it.
+Answer: 2026-11-05 — per representative DATE was the first answer
+("for now, I am not 100% sure on this one"). Withdrawn the same day:
+asked which dates count as representative, the user said "none",
+consistent with D-55 (no date stands in for a combination of service
+types). The unit of comparison is the combination of service types
+with the dates it holds, gained and lost population reported
+separately (served and frequent). Not decided: how a combination in
+one plan matches the other's when a fork renames or splits a type
+(by id, or by the days it runs, and what a partial overlap does).
 Context: QAF-20. Comparing two plans' coverage takes two
 type_coverage answers and a host subtraction, and a net change hides
 churn: a proposal can serve 2,000 new people and drop 1,900 others
@@ -307,7 +351,7 @@ Options:
 - The same per representative DATE instead of per service type
   (a fork that renames or splits a type still compares).
 - Net change only (the two shares and their difference).
-Blocks: nothing (the coverage half of QAF-20 is free to start on this answer).
+Blocks: the matching rule above for the coverage half of QAF-20.
 
 ### D-47 — Which layers does coverage take?
 State: Decided.
@@ -331,7 +375,14 @@ Options:
   the resolution stated in the answer.
 - Either, and the vocabulary becomes "a weighted layer" (any field:
   population, jobs, households).
-Blocks: nothing (QAF-18 and QAF-28 are free to start).
+Pins: `crates/transit-analysis/tests/coverage_law_test.rs` (areal
+weighting conserves the layer, serves a polygon by the share of its
+area inside the radius, a point layer states its resolution, any
+numeric property is a weight), `crates/cap-analysis/tests/dispatch_test.rs`
+(the load's `fields`, the answer's `layer` reading), the caps smoke,
+`web/e2e/ui-service-design.spec.mjs` (a polygon layer read by `jobs`).
+How a layer is read and sampled: D-97, D-98.
+Blocks: nothing.
 
 ## Service types
 
@@ -349,11 +400,70 @@ Options:
   has siblings.
 - An authored "same as, except" relation between service types
   (QAF-44), which the gestures follow. This is a model change.
-Blocks: nothing (QAF-65's UI warning and QAF-44 are free to start).
+Pins: `web/src/components/GesturePanel.svelte` (the panel names the
+one type it changes; the warning, D-95), `web/e2e/ui-service-design.spec.mjs`
+("Changes the trips of"). QAF-65 is deleted; QAF-44 stays open for
+what no warning reaches (D-95).
+Blocks: nothing.
+
+### D-94 — Which types make a combination, and how are its dates folded?
+State: Encoded provisionally.
+Context: D-55 makes a service group a combination of the types that
+run together, shown with its dates. Three readings were needed to
+build it:
+- **Members carry trips (encoded).** A type that keys no trip runs
+  no service, so it is in no combination (C-TRAN's FARES_NYE, the
+  fixture's HOL). Otherwise a fare-only calendar would split every
+  combination it overlaps into two rows with the same numbers.
+- **Spans (encoded).** The dates are listed whole (`dates`) and folded
+  into spans: a new span starts where the next date is more than
+  seven days after the last, so a weekly pattern reads as one span
+  and a period that comes back later as another. Alternatives: no
+  folding (the planner reads the list), or calendar-month periods.
+- **Order (encoded).** Most days first, then the first date, then the
+  id — the first row is the service that holds most often.
+  On C-TRAN the every-other-week overlays (1-WKDY/15, /16) hold on
+  dates fourteen days apart, so their combinations read as a list of
+  one-date spans (1-WKDY + 1-WKDY/15 + 1-WKDY/31: seven Tuesdays) —
+  honest, but a planner may want "every other Tuesday".
+- **A dated exception is its own combination** (D-55's reading): it
+  falls out of the construction — a date's members are what runs that
+  date.
+Pins: `crates/transit-network/tests/combination_law_test.rs`.
+Blocks: nothing (a different answer changes `service_combinations`
+and its laws).
+
+### D-95 — Which service type does a gesture change, and what does its warning name?
+State: Encoded provisionally.
+Context: D-8 keeps gestures per service type and has the UI warn when
+the type has siblings; D-55 replaced the family with combinations, so
+"sibling" needed a reading, and a combination of several types needed
+one of them picked for the gesture.
+- **Encoded:** the gesture panel picks one member of the selected
+  group (the first, sorted, by default — C-TRAN's base sorts first)
+  and says it changes that type's trips only. A sibling is a type
+  sharing a combination with it: the warning names the group's other
+  members (their trips stay as they are) and the other groups the
+  edited type runs in (the change reaches them too).
+- Not covered: a type that COPIES another's trips without ever
+  running with it (4-NYE carries 1-WKDY's trips for one day; they
+  share no date, so they share no combination) — QAF-44 stays open.
+Pins: `web/src/components/GesturePanel.svelte`, `web/e2e/ui-service-design.spec.mjs`.
+Blocks: nothing.
 
 ### D-41 — What carries a service type's calendar into a fork's period?
 State: Decided.
 Answer: 2026-11-05 — the fork does it: `set_plan` with a period end extends every weekly service type to the period's end. Reading, not confirmed by the user: the end date is the fork's own period end, and dated exceptions (4-NYE and other holidays) are not carried forward; the planner adds next year's deliberately.
+Built: `set_plan {plan, through?}` — a weekly type (a flagged day and
+a range) still running in the calendar's final week (D-112) whose last
+range ends before `through` ends on it; dated-only
+types and every exception stay. Where `through` comes from is D-104.
+Pins: `crates/transit-network/tests/plan_period_law_test.rs`,
+`crates/cap-author/tests/dispatch_test.rs`
+(`changes_chain_by_hash_and_report_the_result`),
+`web/e2e/ui-service-design.spec.mjs` ("a fork past the calendar carries
+its weekly service through its period"); on C-TRAN, once the import
+reads its dated calendars as weekly (D-105), see D-105's pins.
 Context: QAF-54. A fork picked after the import's calendar end
 (2027-01-09) runs nothing until every service type's date range is
 extended by hand — 13 set_service_range edits on C-TRAN. Holiday
@@ -368,7 +478,7 @@ Options:
   hand.
 Open inside the first two: which date the period ends on, and
 whether next year's holidays (new dated exceptions) are part of it.
-Blocks: nothing (QAF-54 is free to start).
+Blocks: nothing (QAF-54 is free to start on D-105).
 
 ## Service design
 
@@ -382,9 +492,8 @@ rates due to seniority, etc. it doesn't make sense to cost in
 dollars." So no cost-model document and no rates: a proposal is
 measured in platform (operating) hours against an hours budget, with
 revenue hours and miles as secondary figures, and total paid hours
-come from the runs layer (D-50) at run cutting. Open: what an hours
-budget is (a number per service group or period a planner types, or a
-document on the bus).
+come from the runs layer (D-50) at run cutting. What an hours budget
+is: D-108.
 Context: `docs/units/ui-service-design.md` questions 2 and 18. The
 ops answer revenue hours and miles, and the fleet answers peak
 vehicles. A proposal's cost in dollars needs the agency's rates, and
@@ -397,7 +506,22 @@ Options:
 - Rates as op parameters with no default: the host passes what the
   planner types, and no dollar figure appears until they do.
 - No dollars: the UI answers hours, miles, and vehicles only.
-Blocks: nothing (the dollar cost line in `ui-service-design` questions 2 and 18 is dropped; the hours line is free to start).
+Blocks: nothing (the dollar cost line in `ui-service-design` questions 2 and 18 is dropped; the hours line waits on D-108).
+
+### D-108 — What is an hours budget?
+State: Unanswered.
+Context: D-51 — a planner measures a proposal in platform hours
+against an hours budget, not dollars. The ops answer platform,
+revenue, and layover hours per day (`fleet_summary`) and per service
+type; nothing on the bus holds a budget to measure them against.
+Options:
+- A number the planner types per service group or period, passed as
+  an op parameter (no document; the answer is hours against it).
+- A field of the plan's metadata (each pick carries its budget).
+- A budget document on the bus (per service group, period, or pick),
+  read by hash like the work rules.
+Blocks: the hours-against-budget line in `ui-service-design`
+questions 2 and 18.
 
 ### D-52 — How is a route-hour's frequency judged and drawn?
 State: Encoded provisionally — the third option: the grid shades
@@ -501,9 +625,34 @@ Options:
   change, each period with its own representative day and numbers.
 - Count every member, as now, and say so in the answer (a total over
   the members' authored service, not a day).
-Blocks: nothing (QAF-91 is free to start: every pooled read —
-service_groups, service_type_detail, schedule_texture, the directory
-timetable — pools by date combination).
+Pins: `crates/transit-network/tests/combination_law_test.rs` (the
+partition, never pooled apart, successive overlays as separate
+combinations), `crates/transit-analysis/tests/analysis_prop_test.rs`
+`service_groups_are_the_combinations` (a combination's numbers equal
+`network_stats` and `hourly_trips` on every one of its dates), and the
+ops that take `members` (service_type_detail, service_type_compare,
+schedule_texture, route_frequency, directory timetable). QAF-88,
+QAF-91 and QAF-97 are deleted. Measured 2026-11-06 on the C-TRAN
+import `sha256:2beddcb3…` (QA-FINDINGS' reference): analysis
+`service_groups` answers eleven combinations — 1-WKDY + 1-WKDY/31
+(49 days, 2026-10-12 → 2027-01-08, 1773 trips) and 1-WKDY + 1-WKDY/30
+(17 days, 2026-09-14 → 2026-10-09, 1774 trips) instead of one
+2130-trip weekday; no row pools /30 with /31; 4-NYE + 4-NYE/31 is one
+row (FARES_NYE carries no trips); directory `timetable` 071 "0" on
+1-WKDY + 1-WKDY/31 answers 57 trips with no start twice (758141 at
+07:12 alone). Coverage answers a combination too (QAF-89, closed
+2026-11-06): analysis `type_coverage` and `unserved_points` take
+`members` and pool their authored service with no date — on C-TRAN
+(import `sha256:c6847464…`, `clark-population.geojson`, radius 400 m,
+frequent 900 s, min departures 2) 1-WKDY + 1-WKDY/31 serves 18.6%
+(96,152 people, 886 stops) and 3.1% frequently (15,882, 82 stops), its
+91 unserved places the remaining 420,807; 1-WKDY alone runs on no date,
+so it answers null. Pins: `crates/transit-analysis/tests/coverage_law_test.rs`
+(`a_combination_covers_what_each_of_its_dates_covers`),
+`analysis_prop_test.rs` (`type_coverage_agrees_with_coverage`,
+`unserved_points_match_the_radius_oracle`), `web/e2e/ui-service-design.spec.mjs`
+("hubs and coverage answer around a station and a layer").
+Blocks: nothing.
 
 ## Blocks and runcutting
 
@@ -517,10 +666,15 @@ Options: a policy document (a minimum in minutes, a percentage of
 the run time, or both, per route or per service type); a value
 derived from the feed (for example, the smallest layover seen at
 that terminal); or both, with the policy winning.
-Blocks: nothing (QAF-62 and QAF-26 are free to start).
+Pins: `crates/transit-network/tests/recovery_law_test.rs` (the floor,
+the policy winning both ways), `crates/transit-runs/tests/recovery_view_test.rs`
+(short exactly where validation says layover_infeasible). The policy is
+the work-rule document's `recovery` (D-50); which waits each
+requirement judges is D-110.
+Blocks: nothing.
 
 ### D-16 — Where does the runs layer live?
-State: Encoded provisionally (in the docs; no code yet).
+State: Encoded provisionally.
 Context: runcutting grows into runs and bidding (the user's
 decision; `docs/ROADMAP.md` 7). A run is cut from blocks, so the
 layer could hang off `Block` or stand beside the network.
@@ -531,7 +685,10 @@ Options:
   core model, and one need per module.
 - A `Block` extension: runs as fields on blocks in the network
   document. Every network consumer then carries operator work.
-Pinned by: `docs/ROADMAP.md` 7, `docs/units/ui-runcut.md`.
+Pinned by: `docs/ROADMAP.md` 7, `docs/units/ui-runcut.md`,
+`crates/transit-runs` (the work-rule document is its own kernel kind,
+`work_rules`, read by hash; nothing in the network document carries
+operator work).
 Blocks: nothing.
 
 ### D-46 — How many more vehicles does a proposal need?
@@ -556,8 +713,13 @@ Options:
   allowance, with no blocks made.
 - The planner blocks by hand (add_block_trip) and fleet_summary
   answers; the finding becomes a UI affordance.
-Blocks: the policy document of D-50 (its blocking settings); no
-other decision. QAF-3 is free to start once that document exists.
+Pins: `crates/transit-runs/tests/suggest_law_test.rs` (every
+unassigned trip once; each wait at one place, on an interlined pair,
+at least the required recovery; the edits adopt into a document that
+validates clean with the peak named), runcut `suggest_blocks` (the
+`work_rules` gate in the justfile). What a suggestion changes is
+D-109; which pairs interline with no rule is D-107.
+Blocks: nothing.
 
 ### D-50 — What are the work rules a run is cut under?
 State: Decided.
@@ -578,7 +740,92 @@ Options:
   section), and the policy document is shaped to them.
 - A generic policy document (the common rules above, each optional)
   lands first, and C-TRAN's values are data in it.
-Blocks: nothing (QAF-11, QAF-12, QAF-14 and QAF-15 are free to start).
+Pins: `crates/transit-runs/tests/work_rules_test.rs` (every rule
+optional, the round trip, the most specific rule, order is not
+identity, the refusals); the kernel kind `work_rules` (load 269). The
+runs cut that reads the run rules is `docs/units/runs-layer.md`.
+Blocks: nothing.
+
+### D-106 — Does a recovery rule judge a trip that continues with no wait?
+State: Encoded provisionally.
+Context: C-TRAN's import chains many trips at the same stop with
+little or no gap (a route that loops, or a trip continuing as the
+next): under a flat rule of 5 minutes or 10 % of the run, the base
+import reads 292 waits short, every one on the same route at the same
+stop, gaps 0–240 s (author `apply` with `work_rules_hash`, 2026-11-06,
+network `sha256:2beddcb3…`). Without rules, none (the terminal's floor
+is what the data shows).
+Options:
+- **Every adjacent wait (encoded).** A rule judges every wait it
+  applies to; a planner scopes it (a route's own rule of 0 for a loop
+  route — the most specific rule answers).
+- A through-run is exempt: a wait of 0 s at the same stop on the same
+  route is a continuation, not a recovery point.
+- A rule field that names its exemptions (through-runs, loops).
+Pins: `crates/transit-network/tests/recovery_law_test.rs`
+(`a_policy_requirement_wins_over_the_floor`).
+Blocks: nothing (a different answer changes `required_recovery`).
+
+### D-107 — Which routes may interline when the rules do not say?
+State: Encoded provisionally.
+Context: D-46 sets interlining per route pair. A suggested blocking
+needs an answer for a pair the rules do not list, and for no rules at
+all.
+Options:
+- **An allow-list (encoded).** A route always follows itself; a
+  listed pair (either order) may interline; an unlisted pair never;
+  no work rules, no interlining.
+- A deny-list: every pair may, unless listed.
+- A document-level default with per-pair exceptions.
+Pins: `crates/transit-runs/tests/work_rules_test.rs`
+(`interlining_is_per_route_pair_either_way`, `every_rule_is_optional`),
+`crates/transit-runs/tests/suggest_law_test.rs`
+(`routes_interline_only_where_the_rules_allow_it`).
+Blocks: nothing.
+
+### D-109 — What does a suggested blocking change?
+State: Encoded provisionally.
+Context: D-46 makes blocks suggestions a planner adopts or edits. A
+suggestion could leave authored blocks alone, extend them, or re-block
+the day.
+Options:
+- **Unassigned trips into new blocks (encoded).** Authored blocks are
+  kept as authored; the trips no block carries are chained by start,
+  each after the vehicle that leaves it the least slack where it
+  starts. A vehicle waits at one place: the same stop or a bay of the
+  same station (there are no deadheads yet). A frequency trip is not
+  chained (named as unblocked). Adoption is add_block, add_block_trip,
+  and set_layover (each wait authored as its gap).
+- Also append to an authored block's idle end.
+- A full re-blocking of the day, authored blocks included.
+Pins: `crates/transit-runs/tests/suggest_law_test.rs`
+(`authored_blocks_are_kept`, `a_proposal_names_the_vehicles_it_adds`).
+On C-TRAN (2026-10-27), proposal A's 9 added 019 trips suggest 3
+blocks and add no vehicles to the 77 peak (16:50): they run in the
+morning.
+Blocks: nothing (the rest is `docs/units/runs-layer.md` step 5).
+
+### D-110 — Which waits does a recovery requirement judge, and after which trip?
+State: Encoded provisionally.
+Context: D-9 says where the requirement comes from, not which waits it
+judges. A block may pair trips with no authored layover between them
+(the import authors none between trips of different service types),
+and a percentage needs a run to be a percent of.
+Options:
+- **(encoded)** The requirement follows the trip BEFORE the wait —
+  its route, service type, and run time (the percentage is of that
+  run) — at the place the vehicle waits (the layover's `at`, else the
+  stop that trip ends at). A work rule judges every pair of adjacent
+  trips; the terminal's floor judges only a pair carrying an authored
+  layover (a pair without one has no recovery point in the data), and
+  a pair without one and with no rule is judged for order only.
+- The floor judges every adjacent pair (imported blocks across
+  service types would then fail validation).
+- The requirement follows the trip after the wait.
+Pins: `crates/transit-network/tests/recovery_law_test.rs`
+(`a_policy_judges_a_pair_with_no_authored_layover`,
+`the_policy_is_asked_about_the_trip_before_and_where_it_waits`).
+Blocks: nothing.
 
 ## Riding today
 
@@ -721,7 +968,13 @@ Options:
 - From the moment asked: one `duration_secs` = arrival minus
   depart_secs (it counts the wait before leaving).
 - Both readings, named.
-Blocks: nothing (QAF-81 is free to start).
+Pins: `crates/transit-router/tests/door_to_door_law_test.rs` (leave,
+duration, and the wait rule, leave-at and arrive-by over generated
+feeds and places); `web/e2e/ui-ride-now.spec.mjs` ("Leave in 7 min",
+"11 min"); C-TRAN (import `2beddcb3…`) router `plan` 106 → 110 on
+2026-10-29 asked at 08:00 — a 35 s walk to a 08:15 boarding: leave
+29665, 4663 s door to door, leave in 14 min. How "leave in" reads on a plan not asked for now is D-92.
+Blocks: nothing.
 
 ### D-42 — When a route has stopped for the day, how far ahead does a stop look?
 State: Decided.
@@ -738,7 +991,18 @@ Options:
 - Until the calendar ends.
 Open inside each: whether a later day's answer reads that day's
 edits (yes, if they are in the document) and never the live feed.
-Blocks: nothing (QAF-82 is free to start).
+Pins: `crates/transit-dispatch/tests/next_service_law_test.rs` (the
+first later day that serves the group, patched by that day's
+diversions; nothing past seven days; unmoved by the live document;
+nothing that has already left); `web/e2e/ui-stop-display.spec.mjs`
+("Next: Sunday 9:00 am", "Next: Monday 8:20 am"); C-TRAN (import
+`2beddcb3…`) board `grouped_board` 106 on 2026-10-29 from 86000 —
+nine of ten groups stopped, each with Friday's first departure and
+its bay (164 → Portland 18000 at 9008), the tenth (065) with one
+departure left and no next. Only a group the
+stop is served by today (the board's own groups) is given a next; a
+group with nothing within the week reads "No more service this week".
+Blocks: nothing.
 
 ### D-48 — Does a stop answer to a name its sign does not carry?
 State: Decided.
@@ -755,7 +1019,55 @@ Options:
   documentation.
 - Fuzzy matching on the stop names (typos, abbreviations like
   "Van" for "Vancouver").
-Blocks: nothing (QAF-70 is free to start).
+Pins: `crates/transit-network/tests/stop_search_law_test.rs`;
+`crates/cap-directory/tests/dispatch_test.rs` (a typo finds the
+station); `web/e2e/ui-ride-now.spec.mjs` ("mian 2nd"); C-TRAN (import
+`2beddcb3…`) directory `stops` "vancouver mall" answers the 21 stops
+"van mall" answers (it answered none), and "fishers landng" finds
+Fisher's Landing Transit Center and its bays. What counts as an
+abbreviation or a typo, and the order, is D-91.
+Blocks: nothing.
+
+### D-91 — What does fuzzy stop search accept, and in what order?
+State: Encoded provisionally.
+Context: D-48 decided fuzzy matching on stop names (typos, a sign's
+abbreviations) and left the rules to the code. Too loose and a short
+word on many signs answers everything ("NE" for "newport"); too
+strict and "vancouver mall" misses "Van Mall".
+Options:
+- **Three tiers, listed in order (encoded).** Each typed term must be
+  answered. Exact: a substring of the name or the id (the picker's
+  typing, as before). Abbreviation: a name word of three letters or
+  more that begins the term ("Van" → "vancouver"), or a word that is
+  a subsequence of the term with its first and last letter ("St" →
+  "street", "Blvd" → "boulevard"; "Dr" does not answer "drive").
+  Typo: one edit (substitute, add, drop, swap neighbours) of a name
+  word or its start from four letters, two from eight; never under
+  four. The stop's tier is its worst term's; exact stops list first,
+  then abbreviations, then typos, each by name then id.
+- One tier: fuzzy matches interleaved by name (the old order).
+- A score (edit distance, prefix length) ranking every stop.
+Pins: `crates/transit-network/tests/stop_search_law_test.rs`.
+Blocks: nothing (a different answer rewrites `name_match` and its laws).
+
+### D-92 — When does a plan say "leave in N min"?
+State: Encoded provisionally.
+Context: D-40 makes "leave in N min" the board's wait rule. A rule
+needs a "from": the op knows only the moment the plan was asked to
+leave at (`depart_secs`), not the clock — a plan asked for 6 pm at
+noon, or an arrive-by plan (whose `depart_secs` is the origin's
+latest moment), has no "now" in it.
+Options:
+- **From `depart_secs`, shown for a trip leaving now (encoded).** The
+  itinerary's `leave` is the wait from `depart_secs` to `leave_secs`
+  on every plan; ride-now shows it only when the rider asked to leave
+  now, where `depart_secs` is now. Other plans show their clock
+  times.
+- The request carries the clock (`now_secs`) and `leave` is from it
+  on every plan, arrive-by included.
+Pins: `crates/transit-router/tests/door_to_door_law_test.rs`;
+`web/src/components/Itinerary.svelte` (`now`).
+Blocks: nothing.
 
 ## Public comparison
 
@@ -808,7 +1120,83 @@ Options:
 - Cancel and partial cancel (from a stop on).
 - Cancel, cover (another block or vehicle takes it), hold, swap —
   the full set, landed together.
-Blocks: nothing (QAF-36 is free to start).
+Blocks: nothing.
+Pins: `crates/transit-sync` (the cancel payload's laws, the merge
+semilattice over both payloads), `crates/transit-dispatch/tests/cancel_law_test.rs`
+(the day drops exactly the cancelled instances, the base untouched;
+boards list them cancelled, never as rows; reports; `cancel_of`),
+`crates/cap-router/tests/dispatch_test.rs`
+(`a_cancelled_trip_is_never_ridden`), `crates/cap-divert/tests/dispatch_test.rs`
+(`a_trip_cancel_walks_the_edit_document`), `web/e2e/ui-ride-now.spec.mjs`
+and `web/e2e/ui-stop-display.spec.mjs` (the cancelled trip on the boards).
+The shape is D-100..D-102.
+
+### D-100 — How does a board show a trip the dispatcher cancelled?
+State: Encoded provisionally.
+Context: D-45 says a cancelled trip "shows on boards as cancelled";
+D-73 says a trip the LIVE FEED cancels is dropped silently. The two
+sources differ: the dispatcher's cancel is the agency's own decision
+in its own document, the live feed's is a report.
+Options:
+- **Listed among the visits the day's edits took away (encoded):**
+  the trip is out of the effective day, so it is no row and takes no
+  place among a group's next departures; the board's `skipped` lists
+  its visit with `cancel` (the cancel's id) beside `diversion`. Ride
+  now lists it under "Cancelled"; the stop display's group says "A
+  trip was cancelled" (or "Cancelled" when nothing else is left). The
+  live feed's own cancellation stays silent (D-73).
+- In place among the rows, marked cancelled (it takes one of a
+  group's three places).
+- Silent, as D-73 (contradicts D-45's "shows as cancelled").
+Pins: `cancel_law_test.rs` (`a_cancelled_visit_is_listed_cancelled_never_a_row`,
+`a_group_whose_only_trip_is_cancelled_stays_with_it`), the e2e specs
+named under D-45.
+Blocks: nothing (a different answer moves the visit into the rows).
+
+### D-101 — What does a trip cancel name, and how does it enter the edit document?
+State: Encoded provisionally.
+Context: D-45 cancels a whole trip. A trip instance is (trip, start);
+a frequency trip's instances share one stored trip. A diversion
+spans a date range; the edit document has no version tag inside it
+yet (`docs/units/document-versioning.md`).
+Options:
+- **One trip on one service date (encoded):** `{id, trip_id,
+  start_secs, date}` — `start_secs` one instance, null every instance
+  the trip runs that day; authored only when the trip's service runs
+  on the date. A second payload beside `diversion` on the record
+  (exactly one present, the absent one omitted so existing documents
+  keep their bytes and hashes), under `schema_version` 1 — a module
+  built before it drops a cancel record at read and counts it.
+- A date range, like a diversion (a trip cancelled for a week).
+- A schema bump to v2 with a tagged payload enum (needs the
+  document-versioning migration machinery first).
+Pins: `crates/transit-sync` (`a_diversion_record_keeps_its_bytes_and_a_cancel_omits_the_diversion`,
+`sanitize_keeps_only_records_with_exactly_one_payload`,
+`cancels_are_in_force_on_their_one_date_and_never_retired`),
+`cancel_law_test.rs` (`a_cancel_is_authored_only_for_an_instance_that_runs_that_day`).
+Blocks: nothing.
+
+### D-102 — Which capability authors a trip cancel?
+State: Encoded provisionally.
+Context: law 3 (one need per module). cap-divert answered "what does
+this diversion amount to?"; its list, reports, retire, restore, and
+sanitize already range over every record of the edit document.
+Options:
+- **cap-divert, its question widened to "what does this operator
+  edit amount to?" (encoded):** a `cancel` op beside `propose`; `list`
+  answers `rows` (diversions) and `cancels`; `reports` validates both.
+  The crate keeps its name. The next edit kind (partial cancel,
+  cover, hold, swap — D-45's later set) re-judges the cut: a module
+  whose ops split into diversion drafting and the edit document's
+  envelope is the split trigger.
+- A new capability for cancels (its own crate and manifest entry),
+  retiring and listing through cap-divert's envelope ops.
+- Split now: the edit document's envelope (list, reports, retire,
+  restore, sanitize) in one capability, each edit kind's drafting in
+  its own.
+Pins: `crates/cap-divert/tests/dispatch_test.rs`; the manifest's
+divert entry (`cancel` op and worked example).
+Blocks: nothing.
 
 ### D-73 — What does a stop's board show for a trip the live feed cancels?
 State: Decided.
@@ -878,6 +1266,16 @@ to confirm whether it is a legal road or not." Drawing a bus on a
 street the data does not clearly allow (an unknown class, a path-like
 class) warns and draws. Reading, not confirmed by the user: no class
 is refused outright for a bus, and the warning names the class.
+Built: streets `route` answers `streets` (the streets a path follows:
+class, name, meters) and `to_confirm` (those whose class is in the op's
+`confirm` parameter, default D-103's); the path never depends on a
+class. Pins: `crates/transit-streets/tests/bus_profile_law_test.rs`,
+`crates/cap-streets/tests/dispatch_test.rs`
+(`a_route_names_its_streets_and_the_ones_to_confirm`); C-TRAN session
+2026-11-06 on the Trapeze roads (`sha256:48fe6c89…`, 112,662 ways):
+streets `route` from (45.49755, -122.5900) to (45.49755, -122.5750)
+draws 1,194 m — SE 71st Ave (secondary) 12 m, SE Powell Blvd (unknown)
+1,166 m, SE 85th Ave (local) 16 m — with `to_confirm` SE Powell Blvd.
 Context: the import classifies every street (D-30). A rider cannot
 walk a motorway or a ramp; a bus cannot be drawn down a path,
 stairs, or a 4WD track, and a planner may not want one drawn down an
@@ -1890,6 +2288,208 @@ load opens on the frame the network was given, and does not move"),
 `web/e2e/viewport.spec.mjs` (the start view and the framing rules).
 Blocks: nothing (a different answer removes the keys and the `start`
 and `framed` props).
+
+### D-97 — Where does a layer's weight field and label live?
+State: Encoded provisionally.
+Context: D-47 makes coverage take any weighted layer, each with a
+label giving its meaning. The kernel registers a layer under the hash
+of its bytes; a load hint (the old `pop_field`) was parsed into the
+document, so the same bytes loaded with another field answered the
+first parse — one file carrying people AND jobs could not be read
+both ways.
+Options:
+- **The question's (encoded).** The layer document is the bytes:
+  every Point, Polygon and MultiPolygon feature with its numeric
+  properties. `load_layer` answers the fields it can be read by (each
+  property that is a JSON number, with its total). Each coverage op
+  takes `field` (omitted: the layer's one numeric property; a layer
+  with several is an error naming them) and `label` (omitted: the
+  field), and answers its `layer` reading. A numeric string is read
+  only when named.
+- The load's: field and label in the load request, the identity the
+  hash of bytes plus reading (the bulk lane would need an envelope).
+Pins: `coverage_law_test.rs` (`a_layer_with_several_weights_needs_one_named`,
+`a_point_layer_states_its_resolution`), `cap-analysis` dispatch test.
+Blocks: nothing.
+
+### D-98 — How finely is a polygon's area sampled?
+State: Encoded provisionally.
+Context: D-47's areal weighting needs the share of a polygon's area
+within a radius of the served stops. An exact polygon ∩ union-of-disks
+area is costly; a lattice is exact enough and conserves the weight.
+Options:
+- **A lattice at parse time (encoded).** Cell centres inside the
+  polygon, each an equal share of its weight; the spacing is the
+  coarser of 25 m and the side that gives about 4,096 samples over its
+  area (a bounding box holds at most 65,536 cells); a polygon smaller
+  than a cell is one sample at its outer ring's mean. The answer
+  states the coarsest spacing (`sample_spacing_m`). A point layer
+  states the side of its average area per point (`point_spacing_m`).
+- Exact clipping against circles (no resolution to state, much more
+  code and time).
+Pins: `coverage_law_test.rs` (`areal_weighting_serves_the_share_of_the_area`:
+a 2 km square straddling a 400 m radius is served within 1 point of
+π·400²/2000²; `served_and_unserved_conserve_the_layer`).
+Blocks: nothing.
+
+### D-99 — Who names the two sides of a coverage comparison?
+State: Encoded provisionally.
+Context: D-43 makes the unit of a comparison the combination of
+service types with the dates it holds, and leaves open how one plan's
+combination matches the other's when a fork renames or splits a type.
+The churn itself (weight gained and lost) does not depend on that
+rule once each side is named.
+Options:
+- **The host names both (encoded).** analysis `coverage_compare`
+  takes `base_members` and `members` (service type ids of each side),
+  pools each side over its authored service with no date, and answers
+  both sides and the gained and lost weight (served and frequent).
+  The op never matches; no UI asks it until the matching rule is
+  decided (the service-design and proposal-compare frames say so).
+- The op matches combinations itself — waits on D-43's matching rule.
+Pins: `coverage_law_test.rs` (`a_comparison_is_gains_and_losses`),
+`cap-analysis` dispatch test (`unserved_points_answer_the_where`, the
+comparison at the seam), the caps smoke.
+Blocks: nothing (the coverage half of QAF-20 waits on D-43's
+matching rule, not on this).
+
+### D-103 — Which street classes does the bus profile ask a planner to confirm?
+State: Encoded provisionally.
+Context: D-26 (a bus) says a bus is drawn down any street, and an
+unknown or "path-like" class warns. The import's classes (D-30) are
+motorway, primary, secondary, local, ramp, service, track, path,
+steps, unknown; which of them are path-like is not said, and D-26's
+context also names an alley or a private drive (`service`) as a
+street a planner may not want a bus on.
+Options:
+- **unknown, path, steps, track (encoded)** — the classes a bus
+  cannot legally use or the data cannot classify; a service road is
+  an ordinary street to draw on.
+- The same plus `service` (alleys, private drives, parking aisles).
+- unknown alone.
+The list is the op's `confirm` parameter, so a planner's host can ask
+for another; this is the default. A different answer changes
+`transit_streets::bus::CONFIRM` and its law
+(`the_bus_profile_asks_to_confirm_the_grey_classes`).
+Blocks: nothing.
+
+### D-104 — Where does a fork's period end come from?
+State: Encoded provisionally.
+Context: D-41 has the fork carry every weekly calendar to "the
+period's end", read as the fork's own period end. A pick's period is
+derived from the plan set (it ends the day before the next pick), and
+at fork time the next pick usually does not exist yet, so the end
+cannot be derived when the fork is made.
+Options:
+- **The planner names it (encoded).** `set_plan` takes `through`; the
+  service-design fork form asks "Runs through" (optional). Without
+  it, nothing is carried and the no-service warning names the
+  problem.
+- A default length (a pick's usual four months) when none is named.
+- Derive it from the published plan set at publish time, carrying
+  calendars then rather than at the fork.
+Blocks: nothing.
+
+### D-105 — What does a fork carry when a feed's calendars are all dated?
+State: Decided.
+Answer: 2026-11-06 — the first option, as recommended: the import reads
+a weekly rule out of dated service — a type whose added dates are every
+flagged weekday of a span, except a few removed dates, imports as days
++ range + those exceptions — and the export writes it back as the feed
+had it. D-41's fork then carries 1-WKDY, 2-SAT and 3-SUN; a closed
+period such as 1-WKDY/30 ends where its dates end and is not carried.
+How a rule is recognized is D-111; which weekly types a fork carries,
+D-112.
+Pins: `crates/transit-codec/tests/dated_calendar_law_test.rs` (exact,
+recognition, the rule's shape, only dated service read, lossless, the
+publisher's form after a carry), `crates/transit-codec/tests/
+spec_round_trip_test.rs` (the generator's dated weekly service "3"),
+`crates/transit-network/tests/plan_period_law_test.rs`, and the C-TRAN
+session that closed QAF-54 (2026-11-06): network `import` of
+`testdata/ctran-gtfs.zip` → `sha256:c6847464…`, 1-WKDY Mon–Fri
+2026-09-14 → 2027-01-08 with four removed holidays, 3-SUN Sunday with
+three added, the /30 types closed in October, /15, /16 and the NYE
+types dated; author `apply` `set_plan` "Winter 2027" effective
+2027-01-25 through 2027-05-29 carries 1-WKDY, 2-SAT, 3-SUN and the /31
+types and warns nothing; network `publishable` → no refusals (without
+`through`: `no_service_in_plan_period`); network `export` with the
+import's boundary writes calendar.txt (13 rows) and calendar_dates.txt
+(255 rows) back unchanged.
+Context: QAF-54 and D-41. The fork carries every WEEKLY service type
+(a flagged day and a range) to its period end. C-TRAN has none: its
+calendar.txt flags no day for any service, and every type runs only on
+added dates (1-WKDY: 81 dates, 2026-09-14 → 2027-01-08; 1-WKDY/30
+closes 2026-10-09; 4-NYE one date). A Winter 2027 fork through
+2027-05-29 carries nothing and is still refused for publishing
+(C-TRAN session 2026-11-06: import `sha256:2beddcb3…`, author `apply`
+`set_plan` with and without `through` answer the same document,
+network `publishable` refusals `no_service_in_plan_period`). Setting
+ranges by hand does not help either: with no day flagged a range runs
+nothing.
+The rhythm is in the dates, only not written as a rule: by weekday,
+1-WKDY runs 17 Mondays, Tuesdays and Wednesdays and 15 Thursdays and
+Fridays (the gaps are holidays); 2-SAT 17 Saturdays; 3-SUN 17 Sundays
+plus three holiday weekdays; 1-WKDY/30 and /31 weekdays in two
+successive spans; 1-WKDY/15 and /16 Tuesdays only.
+Options:
+- **Recommended.** The import reads a weekly rule out of dated service: a type whose
+  added dates are every flagged weekday of a span, but for a few
+  removed dates, imports as days + range + those exceptions (a codec
+  normalization; export writes it back as the feed had it). D-41's
+  fork then carries 1-WKDY, 2-SAT, 3-SUN; a closed period such as
+  1-WKDY/30 ends where its dates end and is not carried.
+- The fork carries dated service by its rhythm: a dated type whose
+  dates reach the calendar's last week repeats its weekdays through
+  `through` (no import change; the rule is inferred at the fork).
+- Nothing is inferred: the planner flags a type's days
+  (`toggle_service_day`) and the fork carries it from there; the UI
+  says which types are dated.
+Blocks: nothing.
+
+### D-111 — When does a dated service read as a weekly rule?
+State: Encoded provisionally.
+Context: D-105. The import reads a weekly rule out of a service
+published as dates alone (no weekday flagged, every row an added date).
+C-TRAN: 1-WKDY runs 17 each of Mon–Wed and 15 each of Thu/Fri (holiday
+gaps); 2-SAT 17 Saturdays; 3-SUN 17 Sundays plus two Fridays and a
+Thursday (holidays running Sunday service); 1-WKDY/15 and /16 every
+other Tuesday or so (a school calendar); the New Year's Eve types one
+date each.
+Options:
+- **A share and a floor (encoded).** Over the span of the dates, a
+  weekday qualifies when the service runs on at least 4 of them and on
+  at least three quarters of that weekday's occurrences
+  (`transit_codec::WEEKLY_MIN_DAYS`, `WEEKLY_MIN_SHARE`). The rule is
+  those weekdays over one range from the first to the last date on
+  them; a skipped one is a removed date, every other date an added one,
+  so the rule runs on exactly the feed's dates. C-TRAN reads as
+  1-WKDY Mon–Fri, 2-SAT Saturday, 3-SUN Sunday with three added
+  holidays, the /30 and /31 periods weekly over their own spans; /15,
+  /16 and the one-day types stay dated.
+- A higher share (every occurrence but one or two), so a weekday with
+  more gaps stays dated.
+- Weeks rather than days: a weekday qualifies when it runs in most
+  weeks of the span.
+A different threshold changes the two constants and their law
+(`dated_calendar_law_test`, "Recognition").
+Blocks: nothing.
+
+### D-112 — Which weekly service types does a fork carry?
+State: Encoded provisionally.
+Context: D-41 carries every weekly type to the fork's period end;
+D-105 says a closed period (1-WKDY/30, ended 2026-10-09) is not
+carried. A rule has to say which types are still running.
+Options:
+- **Those running in the calendar's final week (encoded).** The
+  calendar's end is the latest date any type names (a weekly type's
+  last range end, or an added date); a weekly type is carried when its
+  last range ends within six days of it. On C-TRAN (end 2027-01-09):
+  1-WKDY (01-08), 2-SAT (01-09), 3-SUN (01-03) and the /31 period types
+  are carried; the /30 period types are not.
+- Those whose last range ends on or after the fork's `effective_from`
+  minus a margin.
+- Only the types the planner names in the fork.
+Blocks: nothing.
 
 ### D-79 — How is a document version rolled back?
 State: Unanswered.

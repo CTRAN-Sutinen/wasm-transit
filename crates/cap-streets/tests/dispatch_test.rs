@@ -67,8 +67,8 @@ fn snap_and_route_follow_street_geometry() {
         Response::Snap { position: Some(p) } => p,
         _ => panic!("snap b"),
     };
-    match dispatch(Request::Route { streets_hash, from: a, to: b }).unwrap() {
-        Response::Route { points, length_m } => {
+    match dispatch(Request::Route { streets_hash, from: a, to: b, confirm: None }).unwrap() {
+        Response::Route { points, length_m, .. } => {
             // Around the Elbow's corner: 0.005° of longitude (~390 m
             // at 45.5°N) plus 0.004° of latitude (~445 m) — about
             // 835 m along the streets, where the diagonal is ~592 m.
@@ -115,8 +115,8 @@ fn route_between_disconnected_parts_answers_empty() {
         Response::Snap { position: Some(p) } => p,
         _ => panic!("snap b"),
     };
-    match dispatch(Request::Route { streets_hash, from: a, to: b }).unwrap() {
-        Response::Route { points, length_m } => {
+    match dispatch(Request::Route { streets_hash, from: a, to: b, confirm: None }).unwrap() {
+        Response::Route { points, length_m, .. } => {
             assert!(points.is_empty(), "no path: empty, the caller falls back");
             assert_eq!(length_m, None, "no path, no length");
         }
@@ -330,4 +330,41 @@ fn a_point_walks_to_the_stops_near_it_nearest_first() {
     assert!(access(json!({ "lat": 91.0, "lon": 0.0 }), json!({})).contains("not on the globe"));
     assert!(access(point.clone(), json!({ "max_walk_secs": 7200 })).contains("at most an hour"));
     assert!(access(point.clone(), json!({ "network_hash": "sha256:missing" })).contains("load_network first"));
+}
+
+/// The bus profile (D-26): a bus is drawn down any street, and the
+/// streets the data does not clearly allow come back to confirm. The
+/// Elbow carries no class, so it is `unknown` — drawn, and named.
+#[test]
+fn a_route_names_its_streets_and_the_ones_to_confirm() {
+    let (streets_hash, _, _) = load_elbow();
+    let snap = |lat: f64, lon: f64| match dispatch(Request::Snap { streets_hash: streets_hash.clone(), lat, lon }).unwrap() {
+        Response::Snap { position: Some(p) } => p,
+        _ => panic!("snap"),
+    };
+    let (a, b) = (snap(45.5040, -73.5030), snap(45.5080, -73.5080));
+    let route = |confirm: Option<Vec<transit_streets::StreetClass>>| {
+        match dispatch(Request::Route { streets_hash: streets_hash.clone(), from: a, to: b, confirm }).unwrap() {
+            Response::Route { points, length_m, streets, to_confirm } => (points, length_m, streets, to_confirm),
+            _ => panic!("route"),
+        }
+    };
+    let (points, length_m, streets, to_confirm) = route(None);
+    assert_eq!(points.len(), 2, "drawn, never refused");
+    assert_eq!(streets.len(), 1, "one street, however many segments");
+    assert_eq!(streets[0].class, transit_streets::StreetClass::Unknown);
+    assert!((streets[0].length_m - length_m.unwrap()).abs() < 1e-9);
+    assert_eq!(to_confirm, streets, "the default profile confirms an unknown class");
+    // The profile is the op's parameter: an empty list confirms nothing,
+    // and the path is the same.
+    let (same, _, _, none) = route(Some(vec![]));
+    assert_eq!(same, points);
+    assert!(none.is_empty());
+    let (_, _, _, local) = route(Some(vec![transit_streets::StreetClass::Local]));
+    assert!(local.is_empty(), "only the classes asked are confirmed");
+    // On the wire: omitted means the bus profile's default.
+    let wire: Value = serde_json::from_str(&dispatch_json(&json!({
+        "op": "route", "streets_hash": streets_hash, "from": a, "to": b
+    }).to_string())).unwrap();
+    assert_eq!(wire["ok"]["to_confirm"][0]["class"], "unknown");
 }

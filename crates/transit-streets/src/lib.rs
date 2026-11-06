@@ -14,6 +14,7 @@
 //! cap-streets capability registers documents under their content
 //! hash, hosts keep the documents.
 
+pub mod bus;
 pub mod geojson;
 mod model;
 pub mod walking;
@@ -57,6 +58,29 @@ pub struct StreetPoint {
 #[derive(Debug)]
 pub struct StreetError(pub String);
 
+/// One street a routed path follows: its class, its name (none where
+/// the layer gave none), and the meters the path runs along it.
+/// Consecutive segments of the same street are one entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct StreetUse {
+    pub class: StreetClass,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub name: Option<String>,
+    pub length_m: f64,
+}
+
+/// A routed path ([`StreetNetwork::route_along`]): the committed
+/// points, the length along the graph, and the streets it follows in
+/// order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StreetRoute {
+    pub points: Vec<StreetPoint>,
+    pub length_m: f64,
+    pub streets: Vec<StreetUse>,
+}
+
 /// Equirectangular meters between two positions — accurate at the
 /// street scales this module works at.
 fn meters_between(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> f64 {
@@ -76,6 +100,7 @@ struct Builder {
     seg_len: Vec<f64>,
     seg_node: Vec<u32>,
     seg_oneway: Vec<bool>,
+    seg_way: Vec<u32>,
     node_coords: Vec<f64>,
     nodes: HashMap<[i32; 2], u32>,
     cells: HashMap<i64, Vec<u32>>,
@@ -91,13 +116,14 @@ impl Builder {
         })
     }
 
-    fn add_segment(&mut self, a: [i32; 2], b: [i32; 2], oneway: bool) {
+    fn add_segment(&mut self, a: [i32; 2], b: [i32; 2], oneway: bool, way: u32) {
         let (a_lat, a_lon) = (a[0] as f64 / 1e6, a[1] as f64 / 1e6);
         let (b_lat, b_lon) = (b[0] as f64 / 1e6, b[1] as f64 / 1e6);
         let id = self.coords.len() as u32 / 4;
         self.coords.extend_from_slice(&[a_lat, a_lon, b_lat, b_lon]);
         self.seg_len.push(meters_between(a_lat, a_lon, b_lat, b_lon));
         self.seg_oneway.push(oneway);
+        self.seg_way.push(way);
         let node_a = self.node_of(a);
         let node_b = self.node_of(b);
         self.seg_node.extend_from_slice(&[node_a, node_b]);
@@ -127,6 +153,10 @@ pub struct StreetNetwork {
     seg_node: Vec<u32>,
     /// Per segment: travel only from its first point to its second.
     seg_oneway: Vec<bool>,
+    /// Per segment: the document's way it belongs to.
+    seg_way: Vec<u32>,
+    /// Per way: its class and name — what a path names it by.
+    way_street: Vec<(StreetClass, Option<String>)>,
     node_coords: Vec<f64>,
     adj_offset: Vec<u32>,
     adj_seg: Vec<u32>,
@@ -146,15 +176,17 @@ impl StreetNetwork {
             seg_len: Vec::new(),
             seg_node: Vec::new(),
             seg_oneway: Vec::new(),
+            seg_way: Vec::new(),
             node_coords: Vec::new(),
             nodes: HashMap::new(),
             cells: HashMap::new(),
         };
-        for way in &streets.ways {
+        for (w, way) in streets.ways.iter().enumerate() {
             for pair in way.points.windows(2) {
-                b.add_segment(pair[0], pair[1], way.oneway);
+                b.add_segment(pair[0], pair[1], way.oneway, w as u32);
             }
         }
+        let way_street = streets.ways.iter().map(|w| (w.class, w.name.clone())).collect();
         let segment_count = b.coords.len() as u32 / 4;
 
         // CSR adjacency: each segment contributes the edges its
@@ -199,6 +231,8 @@ impl StreetNetwork {
             seg_len: b.seg_len,
             seg_node: b.seg_node,
             seg_oneway: b.seg_oneway,
+            seg_way: b.seg_way,
+            way_street,
             node_coords: b.node_coords,
             adj_offset,
             adj_seg,
@@ -282,6 +316,33 @@ impl StreetNetwork {
     /// shortest-path cost the search settled on, so "how far by
     /// road?" is the router's own answer, never a host-side sum.
     pub fn route_with_length(&self, from: StreetPosition, to: StreetPosition) -> Option<(Vec<StreetPoint>, f64)> {
+        self.route_along(from, to).map(|r| (r.points, r.length_m))
+    }
+
+    /// [`route_with_length`](Self::route_with_length) plus the streets
+    /// the path follows, in order ([`StreetUse`]): every street it runs
+    /// along, whatever its class — a profile reads the classes (the bus
+    /// profile, [`bus`]); the path never depends on them.
+    pub fn route_along(&self, from: StreetPosition, to: StreetPosition) -> Option<StreetRoute> {
+        let (points, length_m, segments) = self.shortest(from, to)?;
+        let mut streets: Vec<StreetUse> = Vec::new();
+        for (seg, meters) in segments {
+            if meters <= 0.0 {
+                continue;
+            }
+            let (class, name) = &self.way_street[self.seg_way[seg as usize] as usize];
+            match streets.last_mut() {
+                Some(last) if last.class == *class && last.name == *name => last.length_m += meters,
+                _ => streets.push(StreetUse { class: *class, name: name.clone(), length_m: meters }),
+            }
+        }
+        Some(StreetRoute { points, length_m, streets })
+    }
+
+    /// The shortest path: its points, its length, and the segments it
+    /// runs in order with the meters along each (the partial first and
+    /// last included) — they add up to the length.
+    fn shortest(&self, from: StreetPosition, to: StreetPosition) -> Option<(Vec<StreetPoint>, f64, Vec<(u32, f64)>)> {
         let from_oneway = self.seg_oneway[from.seg as usize];
         let to_oneway = self.seg_oneway[to.seg as usize];
 
@@ -293,7 +354,7 @@ impl StreetNetwork {
             let reachable = !from_oneway || to.t >= from.t;
             if reachable {
                 let length = (to.t - from.t).abs() * self.seg_len[from.seg as usize];
-                return Some((vec![StreetPoint { lat: to.lat, lon: to.lon }], length));
+                return Some((vec![StreetPoint { lat: to.lat, lon: to.lon }], length, vec![(from.seg, length)]));
             }
         }
 
@@ -380,15 +441,24 @@ impl StreetNetwork {
         // be committed too (callers dedupe against the previous
         // trace point when the position sits on that node).
         let mut chain: Vec<usize> = Vec::new();
+        let mut segments: Vec<(u32, f64)> = Vec::new();
         let mut node = best_entry as usize;
         loop {
             chain.push(node);
             if parent_seg[node] < 0 {
                 break; // seed: entered via the from-segment
             }
+            let seg = parent_seg[node] as usize;
+            segments.push((seg as u32, self.seg_len[seg]));
             node = parent_node[node] as usize;
         }
         chain.reverse();
+        // The walk-in along the from-segment to its seed, the segments
+        // between, the walk into the target segment.
+        let seed_cost = if node == from_b { (1.0 - from.t) * from_len } else { from.t * from_len };
+        segments.push((from.seg, seed_cost));
+        segments.reverse();
+        segments.push((to.seg, inside_cost(best_entry as u32).unwrap_or(0.0)));
         let mut points: Vec<StreetPoint> = chain
             .into_iter()
             .map(|id| StreetPoint {
@@ -397,7 +467,7 @@ impl StreetNetwork {
             })
             .collect();
         points.push(StreetPoint { lat: to.lat, lon: to.lon });
-        Some((points, best_cost))
+        Some((points, best_cost, segments))
     }
 
     /// Street meters from `from` to every node within `limit_m`, into

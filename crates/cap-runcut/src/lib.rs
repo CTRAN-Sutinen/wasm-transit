@@ -24,11 +24,18 @@
 //! * **edits** — the operator edit document, wholesale-replaced by
 //!   the host;
 //! * **live** — cap-rt's live document (the snapshot in model
-//!   vocabulary), which the chain's ripple reads.
+//!   vocabulary), which the chain's ripple reads;
+//! * **work_rules** — the rules work is cut under (transit-runs): the
+//!   recovery a wait requires and the route pairs a vehicle may
+//!   interline, which the recovery view and the suggested blocking
+//!   read. Blocking is where cutting the work begins (D-46): the
+//!   suggestion answers which vehicles the trips no block carries
+//!   need, as blocks the planner adopts (author `apply` over its
+//!   edits) or edits.
 
 #![forbid(unsafe_code)]
 
-use cap_abi::kernel::{LIVE, NETWORK};
+use cap_abi::kernel::{LIVE, NETWORK, WORK_RULES};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_dispatch::{BlockChainTrip, DayBlock};
@@ -97,6 +104,36 @@ pub enum Request {
         start_secs: u32,
         date: String,
     },
+    /// Every wait between a block's adjacent running trips on a date:
+    /// the recovery required there (D-9: the work rules' when one
+    /// applies, else the smallest authored layover at that terminal)
+    /// and the slack above it, folded per pattern into
+    /// layover-to-runtime.
+    Recovery {
+        network_hash: String,
+        #[serde(default)]
+        edits_hash: Option<String>,
+        date: String,
+        #[serde(default)]
+        #[ts(optional)]
+        work_rules_hash: Option<String>,
+    },
+    /// The trips running on a date that no block carries, chained into
+    /// suggested blocks (D-46): each follows the vehicle that leaves it
+    /// the least slack where it starts (no deadheads), on a route the
+    /// work rules let it interline with, after the recovery required.
+    /// The answer carries each wait's slack, the peak with the
+    /// suggestion adopted against the authored peak, and the edits
+    /// that adopt it.
+    SuggestBlocks {
+        network_hash: String,
+        #[serde(default)]
+        edits_hash: Option<String>,
+        date: String,
+        #[serde(default)]
+        #[ts(optional)]
+        work_rules_hash: Option<String>,
+    },
     /// One trip instance's LINE on a service date, over the effective
     /// day: its pattern's authored alignment, and for a trip a
     /// diversion in force reroutes, the alignment to the first kept
@@ -126,6 +163,8 @@ pub enum Response {
     BlockTrips { block_id: String, trips: Vec<BlockChainTrip> },
     TripStops { stops: Vec<transit_dispatch::TripStopView> },
     TripPath { path: Vec<transit_network::Coord> },
+    Recovery { recovery: transit_runs::Recovery },
+    SuggestBlocks { suggestion: transit_runs::Suggestion },
 }
 
 /// The typed dispatch (native hosts call this directly). Failures
@@ -166,6 +205,20 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 stops: transit_dispatch::trip_stops(&network, &day.trips, &trip, start_secs),
             })
         }
+        Request::Recovery { network_hash, edits_hash, date, work_rules_hash } => {
+            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = NETWORK.require(&network_hash)?;
+            let rules = work_rules_hash.as_deref().map(|h| WORK_RULES.require(h)).transpose()?;
+            Ok(Response::Recovery { recovery: transit_runs::recovery(&network, &day.trips, rules.as_deref()) })
+        }
+        Request::SuggestBlocks { network_hash, edits_hash, date, work_rules_hash } => {
+            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
+            let network = NETWORK.require(&network_hash)?;
+            let rules = work_rules_hash.as_deref().map(|h| WORK_RULES.require(h)).transpose()?;
+            Ok(Response::SuggestBlocks {
+                suggestion: transit_runs::suggest_blocks(&network, &day.trips, rules.as_deref()),
+            })
+        }
         Request::TripPath { network_hash, edits_hash, trip, start_secs, date } => {
             let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = NETWORK.require(&network_hash)?;
@@ -192,5 +245,5 @@ cap_abi::capability! {
     id: "runcut",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [NETWORK, EDITS, LIVE],
+    documents: [NETWORK, EDITS, LIVE, WORK_RULES],
 }

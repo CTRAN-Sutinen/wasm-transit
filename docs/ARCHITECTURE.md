@@ -23,8 +23,18 @@ transit-network The authored network model (planner authority):
                 rule), pattern trips (`PatternTrips`: one pattern's
                 trips under one service type — NOT a planner's
                 schedule; the timetable a planner reads is a route's
-                direction under one service type, across its
-                patterns), runcut. A TRIP is a stored record: its
+                direction under one service COMBINATION, across its
+                patterns), runcut. A service COMBINATION
+                (`service_combinations`, D-55) is a set of service
+                types that run together on the same dates, named by
+                its members joined " + " and shown with the dates it
+                holds on (folded into spans: a new span where the next
+                date is more than seven days on, D-94): every date
+                with service is in exactly one, whose members are
+                exactly the types with trips that run that date, so
+                types that never share a day are never pooled and a
+                dated exception is a combination of its own
+                (tests/combination_law_test). A TRIP is a stored record: its
                 own id, its own departure (`Departs::At` one start,
                 or `Departs::Every` a frequency — one instance per
                 band slot, sharing the trip's id and times), and its
@@ -37,6 +47,17 @@ transit-network The authored network model (planner authority):
                 by id and runs each whole (a frequency trip's
                 instances back to back); it may hold service types
                 that never share a day, and is judged day by day.
+                A wait between two adjacent trips of a block is
+                judged against the recovery REQUIRED there (D-9,
+                `required_recovery` — the one rule every reader
+                applies): a work rule's requirement when the caller
+                holds one (`validation_issues_under`; it wins), else,
+                for a pair carrying an authored layover, the smallest
+                authored layover at that terminal (`recovery_floors`;
+                the layover's `at`, else the stop the trip before ends
+                at). A layover's own authored length is slack, never
+                the requirement: an imported layover is the whole
+                observed gap, and a later arrival spends slack.
                 An ALIGNMENT is a line on the ground, its own record
                 (`Network::alignments`: its id, its points, the
                 distances published along it); a pattern runs one by
@@ -102,7 +123,12 @@ transit-network The authored network model (planner authority):
                 rule (timing aligned with timepoints, every trip's
                 times aligned with its pattern's stops, layovers only
                 between trips, ids minted and reported, the plan
-                frame merged field-wise) —
+                frame merged field-wise; a fork given its period end
+                carries every weekly calendar still running in the
+                calendar's final week to it while dated service and
+                closed periods stay as they are, D-41, D-112; a redrawn line names
+                whether it moves one pattern or every pattern on its
+                alignment and reports the patterns it touched, D-11) —
                 and the TIMETABLE's gestures (`timetable_edit.rs`:
                 headway, span, running time, and stops, stated
                 for a route + direction (+ service type) and
@@ -122,9 +148,12 @@ transit-network The authored network model (planner authority):
                 route, pattern trips, service type, or block runs). The
                 planner's LISTS live here too (`listing.rs`): rows
                 of any kind narrowed by every filter term (id, name,
-                and a route's long name), the places near a point
-                (`stops_near`; `stops_near_walked` ranks them by the
-                point's walks), and a route's composition
+                and a route's long name), the stops a rider's typing
+                finds (`find_stops` / `name_match`, D-48: exact, then
+                an abbreviation on the sign — "Van" for "vancouver" —
+                then a typo; the thresholds D-91), the places near a
+                point (`stops_near`; `stops_near_walked` ranks them by
+                the point's walks), and a route's composition
                 (patterns, the stops they visit, pattern trips by
                 service type, patterns by direction, and each
                 direction's VARIANTS — the ways a rider rides it:
@@ -134,8 +163,8 @@ transit-network The authored network model (planner authority):
                 count is its trips' instances, the materialized
                 day's own expansion — a stop's serving routes, and the
                 planner's TIMETABLE (`timetable`: one route, one
-                direction, one service type — every trip of the
-                direction's patterns by start, one column per stop
+                direction, one service combination — every trip its
+                members run on the direction's patterns by start, one column per stop
                 in route order, a variant's stops slotted where it
                 leaves the others; rows are `materialize_service`'s
                 trips, never a second derivation, each with its own
@@ -171,7 +200,14 @@ transit-router  RAPTOR planning over the network model's
                 the route's label and long name, the sign at the
                 boarding visit (`visit_destination`), and how far
                 each predicted time moved (board/alight_delay_secs,
-                null without a prediction). `notice::plan_notice` is
+                null without a prediction). An itinerary is door to
+                door (D-40): `leave_secs` (the first boarding minus the
+                walk before it; with no ride, `depart_secs`),
+                `duration_secs` (arrival minus leave), and `leave` — the
+                board's one wait rule (`transit_dispatch::wait`) from
+                `depart_secs` to `leave_secs`, "leave in 7 min";
+                `Itinerary::new` is the one place they are derived.
+                `notice::plan_notice` is
                 the one place a compared plan's notice is computed:
                 structured (no_trip / unreachable / later / diverted,
                 minutes lost, routes, skipped stops) plus a text
@@ -222,12 +258,26 @@ transit-codec   The network codec, both directions, over the whole
                 serialization residue (stop_sequence and
                 shape_pt_sequence numbering, a frequency trip's
                 stop_times base, the id given an agency published
-                without one, and which file names a route's fare
-                network); an authored
-                document exports with the default. Service ids are
-                service types, written back as authored (the
+                without one, which file names a route's fare
+                network, and the services published as dates); an
+                authored document exports with the default. Service
+                ids are service types, written back as authored (the
                 calendar row, exceptions as calendar_dates); the
-                import keeps every calendar the feed names. Each
+                import keeps every calendar the feed names. A service
+                published as DATES alone (no weekday flagged, every
+                calendar_dates row an added date — C-TRAN's whole
+                calendar) imports as the weekly rule its dates read
+                as (D-105): a weekday qualifies when it runs on at
+                least 4 of them and three quarters of that weekday's
+                occurrences in the span (D-111); one range over the
+                dates on those weekdays, a removed date for each one
+                skipped, an added date for each other date — it runs
+                on exactly the feed's dates. No weekday qualifying,
+                it stays dated. The boundary keeps how it was written,
+                so the export writes it back as dates (its zero-flag
+                calendar row as written, every running date added),
+                after a fork has carried it too
+                (tests/dated_calendar_law_test). Each
                 pattern gets one all-day timing profile from its
                 earliest trip (the production tool), and each block
                 layover is the observed gap between consecutive
@@ -258,24 +308,46 @@ transit-codec   The network codec, both directions, over the whole
                 second. The C-TRAN import regressions live in its
                 own test suite (tests/import_regression_test).
 transit-analysis Planner analysis over an authored network document:
-                stats, service-type overview/detail, schedule
-                texture (hourly profile, headway gaps, clockface),
+                stats, the service groups (service_groups: one row
+                per service combination, its dates and its members'
+                pooled numbers — which ARE the service on each of its
+                dates, the laws pin it against the date-scoped reads;
+                no date stands in for a group, D-55), the per-type
+                overview (each type's authored service, on no date),
+                a combination's detail and schedule texture (hourly
+                profile, headway gaps, clockface),
                 route corridors (shared stops and segments), the
                 frequency grid (route_frequency: each route of a
-                service group hour by hour at its headway stop —
+                service combination hour by hour at its headway stop —
                 the trips' own shortest, longest and median gaps,
                 never regularized — with the route's numbers), a
                 hub's connections by route pair (hub_connections:
-                timed_transfers folded), population coverage — the share AND the unserved
-                where (unserved_points: the complement, named).
+                timed_transfers folded), and coverage of a WEIGHTED LAYER
+                (its `coverage` module, D-47): any GeoJSON points and
+                polygons, weighted by whichever numeric property the
+                question names (`field`, with the planner's `label`) —
+                the share a service COMBINATION serves and serves
+                frequently (type_coverage: its members' pooled
+                authored service, no date standing in — on every date
+                it holds, that date's coverage; frequent counts
+                departures only, D-6), the unserved where
+                (unserved_points: the complement, named — a polygon by
+                its unserved part), and the churn between two sides the
+                host names (coverage_compare: gained and lost, D-99). A
+                polygon's weight spreads over its area on a lattice
+                (D-98) and is served by the share of it within the
+                radius; every answer states the layer's resolution
+                (point_spacing_m, sample_spacing_m).
                 A LIBRARY under the
                 cap-analysis module; the planner's regression
                 numbers live in its own
                 test suite (tests/regression_test).
 transit-dispatch The materialized day's views, model-native: patch_day
                 (skip/shift over MATERIALIZED stop times — the day,
-                never the calendar), edit validation against the
-                NETWORK, THE board (stop_board: walking-group
+                never the calendar) and cancel_day (a cancelled trip
+                instance out of the day, every other trip whole),
+                edit validation against the NETWORK (a cancel's trip
+                must exist and run the instance it names), THE board (stop_board: walking-group
                 pooling for a stop with nothing of its own,
                 realtime-first over the live document — rows
                 ordered by when the bus actually leaves (a visit the
@@ -286,7 +358,9 @@ transit-dispatch The materialized day's views, model-native: patch_day
                 long names, its bay's name and platform code, and its
                 destination as the sign says there; the departures
                 the day's edits took away (`skipped`, each with the
-                diversion that skips it — the `Day` holds the
+                diversion that skips it or the cancel that took its
+                trip — a dispatcher's cancel is listed, unlike the
+                live document's, D-100 — the `Day` holds the
                 unpatched day beside the patched one, one
                 materialization: `day` and its key, which the kernel
                 holds); the live
@@ -296,7 +370,11 @@ transit-dispatch The materialized day's views, model-native: patch_day
                 display — every group the stop is served by all day,
                 one that has stopped kept with none, its next
                 per_group, its skipped visits; in route_sort_order,
-                then id, then destination), the day's
+                then id, then destination; `with_next_service` gives a
+                stopped group its `next` — the first of the next seven
+                days, D-42, whose patched day carries it, each day
+                asked through a closure so the capability decides where
+                the days come from, never the live document), the day's
                 blocks list, the fleet summary (peak concurrent
                 vehicles and when, platform / revenue / layover
                 hours), the service keys
@@ -308,7 +386,10 @@ transit-dispatch The materialized day's views, model-native: patch_day
                 as default, each visit's role, the interior skipped
                 unless served, the alignment, the flattened trace
                 and its length, the problems — the record a ready
-                draft becomes, and the edit document's named rows),
+                draft becomes, the trip cancel a pick becomes
+                (cancel_of: the trip, one instance or all, on a date
+                its service runs), and the edit document's named rows
+                — diversion rows and cancel rows),
                 and WHERE SERVICE RUNS TODAY (geometry.rs: a trip's
                 line over the effective day — the authored alignment,
                 and for a diverted trip the alignment to the first
@@ -356,15 +437,22 @@ transit-live    THE live document: one rt moment in model vocabulary
                 layer (arch gate). Minted by cap-rt, read by
                 cap-board — no host computes a delay.
 transit-sync   THE sync document: EditRecord, FeedManifest, EditReport,
-                the Diversion edit document (THE DISPATCHER'S OWN —
-                it lives in the sync contract, not the GTFS codec),
+                the edit document (THE DISPATCHER'S OWN — it lives in
+                the sync contract, not the GTFS codec) whose records
+                carry exactly one payload: a Diversion or a
+                TripCancel (a whole trip — one instance or all — out
+                of service on one date, D-45, D-101; an absent
+                payload is omitted, so a diversion record's bytes
+                predate the cancel),
                 pure validation/merge logic (merge is a
                 property-tested semilattice; submit transitions
                 drafts with the host-passed clock), and the record
-                envelope every writer follows (propose: rev 1 or
-                bumped; set_retired: the tombstone and restore;
-                sanitize: a stored document read under the current
-                schema, the unparseable dropped and counted). Shared
+                envelope every writer follows (propose and
+                propose_cancel: rev 1 or bumped; set_retired: the
+                tombstone and restore; sanitize: a stored document
+                read under the current schema, the unparseable and
+                any record without exactly one payload dropped and
+                counted). Shared
                 by every host — cap-sync is the seam the Go server
                 calls, cap-divert the authoring seam.
 transit-plans  THE service-plan chain: resolve (which pick is in
@@ -383,6 +471,34 @@ transit-plans  THE service-plan chain: resolve (which pick is in
                 governing a date — retired picks never do). Cross-document logic, the
                 counterpart of transit-sync's cross-record merge;
                 cap-plans is the seam.
+transit-runs   THE runs layer, beside the network (D-16). The
+                WORK-RULE document (`WorkRules`, kernel kind
+                `work_rules`; D-50): generic, every rule optional, an
+                agency's values as data — recovery per route and/or
+                service type (minutes and/or a whole percent of the
+                run before the wait, the larger; the most specific
+                rule answers), the route pairs one vehicle may
+                interline (D-46; a route always follows itself, an
+                unlisted pair never), the run rules (platform, spread,
+                report and clear, pieces, a meal break, relief
+                points) and pay (in time — no dollars, D-51);
+                `checked` validates and normalizes it (the kernel's
+                load runs it, so two orderings are one identity).
+                The RECOVERY view (recovery): every wait between a
+                block's adjacent running trips on a day, the recovery
+                required there and the slack above it, folded per
+                pattern into layover-to-runtime — short exactly where
+                validation says layover_infeasible. SUGGESTED BLOCKING
+                (suggest_blocks): the trips no block carries, by
+                start, each following the vehicle that leaves it the
+                least slack where it starts (the same stop, or a bay
+                of the same station — no deadheads yet), on a pair the
+                rules interline, after the recovery required; with the
+                peak the adoption needs against the authored peak and
+                the edits (add_block, add_block_trip, set_layover)
+                that adopt it. The runs cut itself is open
+                (`docs/units/runs-layer.md`). Pure; cap-runcut and
+                cap-author are the seams.
 transit-streets THE streets model. `model.rs`: the streets document
                 (`Streets`: ways — points as [lat, lon] microdegrees,
                 one-way, class, name), CANONICAL so its hash is the
@@ -408,7 +524,12 @@ transit-streets THE streets model. `model.rs`: the streets document
                 document) — snap (nearest street position) and
                 shortest-path route (one-way aware; turn restrictions
                 are a non-goal until a restriction table ships in the
-                data). `walking.rs`: how long a rider walks — the
+                data), naming the streets the path follows in order
+                (class, name, meters along each). `bus.rs`: the bus
+                profile (D-26) — a bus is drawn along every class,
+                never refused; unknown and the path-like classes
+                (path, steps, track) are the streets a planner
+                confirms. `walking.rs`: how long a rider walks — the
                 walking profile is every class but motorway, ramp and
                 unknown, both ways along one-way streets; a walk is
                 each stop's walk to its nearest walkable street, the
@@ -461,26 +582,35 @@ cap-author      The authoring capability: what does this network
                 become after these edits? apply (typed edits,
                 atomic) answers the next document under its hash,
                 registered for the next change, with its issues
-                and warnings. transit-network's edit module is the
-                library; `created` names the entities a change made.
+                and warnings (with work_rules_hash, a block's waits
+                judged under the work rules' recovery — D-9).
+                transit-network's edit module is the library;
+                `created` names the entities a change made,
+                `touched` the ones it altered beyond that (the
+                patterns a redrawn alignment moves).
                 Every host authors through it — the service-design
                 UI included (its host sends edits and adopts the
                 answer; it never edits a document).
-cap-divert      The diversion-authoring capability: what does this
-                diversion draft amount to over the network (draft —
-                the editor's whole view; list — the edit document's
-                rows, names resolved; reports — what each record
+cap-divert      The operator-edit authoring capability: what does
+                this operator edit — a diversion or a trip cancel
+                (D-102) — amount to over the network (draft — a
+                diversion editor's whole view; list — the edit
+                document's rows, names resolved: diversions in
+                `rows`, trip cancels in `cancels`; reports — what each record
                 amounts to on the network: valid, or what is wrong,
                 and the trip instances it touches — invalid records
                 REPORTED, never rejected, and a day view patches
                 nothing for them), and what is the edit document
-                after propose / retire / restore (the envelope rules)
+                after propose / cancel / retire / restore (the
+                envelope rules; cancel refuses an unknown trip, an
+                instance it never runs, a date it does not run)
                 — plus sanitize for stored copies. A separate need
                 from cap-sync's converge step (the Go server hosts
                 that one without a network). The host passes the
-                clock and the record ids. No browser UI authors a
-                diversion yet: drawing one is
-                `docs/units/ui-disruptions.md`'s question 4.
+                clock and the record ids. No browser UI authors an
+                edit yet: drawing a diversion is
+                `docs/units/ui-disruptions.md`'s question 4, and
+                cancelling a trip its question 6.
 
 Every module is the raw rustc output of an assembly crate with the
 same four flat exports (no wasm-bindgen — do not reintroduce host
@@ -972,12 +1102,15 @@ host layer (the gates check both).
   ContextBar (plan, baseline, group, route, stop, hours, health, a
   route jump), PickTimeline (plans `periods` as bars, `resolve`'s
   plan named), PlanList (the plan set, fork, feed import),
-  GroupTable (`service_groups`), GroupLedger
-  (`service_type_compare` totals), DayProfile (`hourly_trips`, a
+  GroupTable (`service_groups`: each combination with its date
+  spans), GroupLedger (`service_type_compare` totals), DayProfile (`hourly_trips`, a
   drag sets the hour window), FrequencyGrid (`route_frequency`:
   hours as cells, shaded continuously by the longest wait),
-  CoveragePanel (`type_coverage` with its parameters and window,
-  `unserved_points` listed), CoverageMap (`unserved_points` drawn),
+  CoveragePanel (the group's `type_coverage` with its parameters and window, the
+  layer's weight field and label picked from the load's `fields`, its
+  resolution from the answer's reading, the group's `unserved_points` listed),
+  CoverageMap (`unserved_points` drawn: points as circles, polygons as
+  their shape shaded by the share unserved),
   HubMatrix (`hub_connections`), CorridorTable (`route_overlap`),
   StopWaits (`stop_gaps`), RouteHeader (a route's `route_frequency`
   numbers, before → after), StringLine (directory `timetable` as
@@ -1005,9 +1138,10 @@ host layer (the gates check both).
   `stop_board`, or a watched stop's from `watchlist_board` — with
   their expected time and status),
   StopCard (a stop at a glance), RiderBoard (one stop's board, its
-  alerts and skipped visits), AlertList (the live document's
+  alerts, its cancelled trips, and the visits a detour skips), AlertList (the live document's
   alerts), TripPlan (the trip's ends, when, and the router's answer)
-  with Itinerary (the answer as a timeline), RouteList (directory
+  with Itinerary (the answer as a timeline, door to door: leave → arrive,
+  the trip's length, and for a trip leaving now "Leave in N min"), RouteList (directory
   `entities` for routes, filtered as typed), RouteView (one route's
   directions and their variants, as line diagrams), BusView (one
   live bus and its trip's `trip_progress`, stop by stop), and
@@ -1017,7 +1151,10 @@ host layer (the gates check both).
   scheduled), DisplayGroup (one `grouped_board` group as a station
   list's row, one route large, or a band across the screen; each
   time its `wait`, its status, and at a station its bay; a group with none left says it
-  is detoured or has stopped for the day), DisplayAlerts (the alerts
+  is detoured, cancelled, or when it runs next — the board's `next`,
+  "Next: 5:12 am tomorrow", "Next: Monday 5:12 am" — or that nothing
+  runs this week, and one with times left says when a trip of it was
+  cancelled), DisplayAlerts (the alerts
   slot, always on screen), and DisplaySetup (the three layouts and
   the stop type-ahead). `rideFormat.ts` holds their formatting
   (clock times, a row's wait, status words and tones). Each
@@ -1104,17 +1241,23 @@ The UIs today: `service-design` (`src/uis/service-design/`): six
 views over one selection — a rail of views (keys 1–6) and a context
 bar (plan, baseline, service group, route, stop, hour window) frame
 whichever is open. Plans: the pick timeline, the plan set (fork,
-baseline, feed import), the service groups. Network: the group's
+baseline, feed import), the service groups (the combinations of
+service types that run together, each with its dates; the
+day-scoped frames ask on a group's first date — any of its dates
+answers alike). Network: the group's
 numbers against the baseline, trips per hour (a drag sets the hour
 window every view reads), and the frequency grid; a row opens the
-route. Coverage: the parameters and window, shares per service id,
-the unserved points listed and mapped. Hubs: a stop's connection
+route. Coverage: the parameters and window, the selected group's
+served and frequent share (named by its members, with its dates), and
+the places its stops leave unserved, listed and mapped. Hubs: a stop's connection
 matrix and waits, and the shared corridors. Route: the string-line
 workbench — directions, the string-line or the timetable grid,
 gaps by hour, running time by start, the change ledger with undo
 and redo, the route's map, and (edit mode, E) the gestures: span,
-running time, one trip moved alone (picked or dragged), stops. A
-frequency target is shown as waiting on D-54. Proposal: the
+running time, one trip moved alone (picked or dragged), stops —
+each acting on one service type of the group, which the panel picks
+and names, warning what else runs with it and the other groups it
+runs in (D-8, D-95). A frequency target is shown as waiting on D-54. Proposal: the
 scorecard, the redline, readiness, the export, and publishing the
 pick to the deployment (D-74). The selection
 lives in the URL hash. With no stored plan it opens the server's
@@ -1225,14 +1368,15 @@ cap-abi         The kernel and the seam: the flat C ABI as a macro
                 stops applying, fails the build).
                 THE KERNEL (kernel.rs) owns the registries: one per
                 document kind — network, edits, live, boundary,
-                walks, streets, watchlist, layer, feed, rt — and one
+                walks, streets, watchlist, layer, feed, rt,
+                work_rules — and one
                 derived registry, each a `Registry` (registry.rs)
                 whose constructor is private to cap-abi, so a
                 capability cannot declare shared state. Each kind's
                 LOAD is a kernel op: a bulk op (256 network, 259
                 edits, 260 live, 261 boundary, 262 walks, 263
-                streets, 264 watchlist, 265 layer, 266 feed, 267 rt)
-                over its bytes, and the same JSON op
+                streets, 264 watchlist, 265 layer, 266 feed, 267 rt,
+                269 work_rules) over its bytes, and the same JSON op
                 (`{"op": "load_network", "network": …}`) peeled
                 before any capability decodes the request (the
                 document left raw, never buffered into a generic
@@ -1327,9 +1471,10 @@ cap-router      The router capability — ONE QUESTION: how do I get
                 writes nothing.
 cap-analysis    The analysis capability: planner numbers (stats,
                 service types, the frequency grid, hub connections,
-                coverage) over the kernel's networks and population
-                layers (load_population_layer answers the field the
-                parse picked and the people it found). The domain code lives
+                coverage) over the kernel's networks and weighted
+                layers (load_layer answers the features and the numeric
+                fields a layer can be read by; a coverage op names the
+                field and label, D-97). The domain code lives
                 in the shared transit-analysis library. Consumes
                 network documents from cap-network (the registry
                 edge the manifest carries).
@@ -1395,7 +1540,11 @@ cap-board       The board capability — ONE QUESTION: when does
                 the board — the module's answer, never the host's) /
                 grouped_board (the same rows by route and
                 destination, the next three of each by default — the
-                stop display's answer) / migrate_watchlist (the
+                stop display's answer; a group that has stopped says
+                when it runs next within a week, from later days it
+                materializes itself rather than holding them, since the
+                kernel's few held days would be pushed out by a week of
+                them) / migrate_watchlist (the
                 watchlist type is transit-dispatch's) /
                 watchlist_board (each watched
                 stop's stop_board, the same edits and live document;
@@ -1434,10 +1583,18 @@ cap-runcut      The runcut capability — ONE QUESTION: what does
                 stops on the date (the trip detail facet) and its
                 LINE (trip_path — what the map's click-through draws:
                 the authored alignment, with an in-force diversion's
-                traced detour spliced between its kept stops). Same
+                traced detour spliced between its kept stops).
+                Blocking is where cutting the work begins (D-46), so
+                the same question answers, under the WORK RULES (the
+                kernel's `work_rules` kind), what each wait requires
+                (recovery: required vs slack, per wait and per
+                pattern) and which vehicles the trips no block carries
+                need (suggest_blocks: suggested blocks, each wait's
+                slack, the adopted peak against the authored one, and
+                the edits author `apply` adopts). Same
                 documents and held day as cap-board; the
-                domain code lives in the shared transit-dispatch
-                library; no GTFS layer (arch gate). The UI's blocks
+                domain code lives in the shared transit-dispatch and
+                transit-runs libraries; no GTFS layer (arch gate). The UI's blocks
                 panel and trip lines answer through this module.
 cap-calendar    The calendar capability — TWO READS of one relation:
                 which service keys run today (active_services), and
@@ -1456,7 +1613,9 @@ cap-directory   The directory capability — ONE QUESTION: what
                 the network only as bytes), the stop list (name-sorted,
                 with the walking-group structure the station board
                 keys on; an optional query narrows it the way a
-                picker's typing does), the names join (stops_by_ids),
+                picker's typing does, fuzzy — exact matches first,
+                then a sign's abbreviations, then typos, D-48), the
+                names join (stops_by_ids),
                 the PLACES nearest a point (stops_near: great-circle
                 meters, nearest first, ties by id, at most `limit`,
                 within `radius_m` when given; a station's bays answer
@@ -1465,7 +1624,8 @@ cap-directory   The directory capability — ONE QUESTION: what
                 the point's `walks` (cap-streets `access`), the
                 places a walk reaches first, by walk — the shortest
                 to any member — and the rest by distance, D-34; names
-                are matched exactly, never by alias), the route list
+                are matched by the sign's own words, never by an
+                alias), the route list
                 (the model's closed mode set; every row that names a
                 route carries its long name — routes, entities,
                 stop_detail's routes, the timetable header), and one route's
@@ -1499,8 +1659,11 @@ cap-streets    The street-graph capability: where along the
                 waypoint commits to); route answers the street
                 geometry between two positions (shortest path,
                 starting after `from` — trace legs chain — with
-                its length along the graph; empty on disconnected
-                parts — the caller falls back to a straight line);
+                its length along the graph and the streets it
+                follows; empty on disconnected parts — the caller
+                falls back to a straight line; the bus profile's
+                streets to confirm come back named, `confirm` the
+                op's parameter);
                 walks answers the walk table between a registered
                 network's stops with its hash (the kernel's
                 load_walks answers the same); access
@@ -1553,7 +1716,7 @@ cap-streets    The street-graph capability: where along the
   the high 16 bits; kernel ops number from 256 and mean the same thing
   in every module that answers them: each kind's load (256 network,
   259 edits, 260 live, 261 boundary, 262 walks, 263 streets, 264
-  watchlist, 265 layer, 266 feed, 267 rt) in every module whose
+  watchlist, 265 layer, 266 feed, 267 rt, 269 work_rules) in every module whose
   capabilities read the kind, the browser host registering every
   document that way (the engine's loader per kind, the document
   encoded once however many instances register it). EVERY module

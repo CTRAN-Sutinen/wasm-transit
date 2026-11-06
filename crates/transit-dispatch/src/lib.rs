@@ -21,7 +21,7 @@ pub mod divert;
 pub mod watchlist;
 pub mod geometry;
 pub use geometry::{trip_path, trip_segment, LegKind, LegPath};
-pub use divert::{diversion_of, diversion_rows, draft_view, DiversionDraft, DiversionRow, DraftPattern, DraftStop, DraftStopRole, DraftView};
+pub use divert::{cancel_of, cancel_rows, diversion_of, diversion_rows, draft_view, CancelRow, DiversionDraft, DiversionRow, DraftPattern, DraftStop, DraftStopRole, DraftView};
 
 use std::collections::BTreeSet;
 
@@ -30,7 +30,7 @@ use ts_rs::TS;
 
 use transit_network::{materialize, MaterializedTrip, Network, StopTime};
 use transit_live::{classify, LiveAlert, LiveDay, LiveStatus, Visit};
-use transit_sync::{Diversion, EditRecord, EditReport};
+use transit_sync::{Diversion, EditRecord, EditReport, TripCancel};
 
 /// One row on a departure board. Model vocabulary: the trip instance
 /// is its (trip, start) identity, the stop is the CONCRETE stop the row
@@ -194,6 +194,14 @@ fn patch_trip(trip: &mut MaterializedTrip, d: &Diversion) {
     }
 }
 
+/// Take cancelled trips out of a day, producing a NEW day — the input
+/// is never mutated. A trip instance any cancel names
+/// ([`TripCancel::cancels`]) does not run; every other trip is kept
+/// whole, in order (D-45).
+pub fn cancel_day(day: &[MaterializedTrip], cancels: &[TripCancel]) -> Vec<MaterializedTrip> {
+    day.iter().filter(|t| !cancels.iter().any(|c| c.cancels(&t.trip, t.start_secs))).cloned().collect()
+}
+
 /// Anchor positions in a trip's stop times: first occurrence of each
 /// anchor, in order. `None` = this trip is not affected.
 fn anchor_positions(stop_times: &[StopTime], d: &Diversion) -> Option<(usize, usize)> {
@@ -216,23 +224,34 @@ pub fn report_against_network(network: &Network, records: &[EditRecord]) -> Vec<
     records
         .iter()
         .map(|record| {
-            let d = &record.diversion;
-            match validate_against_network(network, d) {
+            let verdict = match (&record.diversion, &record.cancel) {
+                (Some(d), None) => validate_against_network(network, d).map(|()| affected_trips(network, d)),
+                (None, Some(c)) => cancelled_instances(network, c),
+                _ => Err("a record carries exactly one edit".into()),
+            };
+            match verdict {
                 Err(error) => EditReport {
                     id: record.id.clone(),
                     valid: false,
                     error: Some(error),
                     affected_trips: 0,
                 },
-                Ok(()) => EditReport {
-                    id: record.id.clone(),
-                    valid: true,
-                    error: None,
-                    affected_trips: affected_trips(network, d),
-                },
+                Ok(affected_trips) => EditReport { id: record.id.clone(), valid: true, error: None, affected_trips },
             }
         })
         .collect()
+}
+
+/// How many instances a cancel takes away, over the network: its trip
+/// must exist, and a named instance must be one the trip runs.
+fn cancelled_instances(network: &Network, c: &TripCancel) -> Result<usize, String> {
+    let (_, _, trip) = network.trip(&c.trip_id).ok_or_else(|| format!("unknown trip {}", c.trip_id))?;
+    let starts = trip.departs.instances();
+    match c.start_secs {
+        None => Ok(starts.len()),
+        Some(s) if starts.contains(&s) => Ok(1),
+        Some(s) => Err(format!("trip {} has no instance starting at {s}", c.trip_id)),
+    }
 }
 
 fn validate_against_network(network: &Network, d: &Diversion) -> Result<(), String> {
@@ -379,8 +398,11 @@ pub fn wait(at_secs: u32, from_secs: u32) -> Wait {
 }
 
 /// A departure the day's edits took away from this stop: the visit as
-/// scheduled, and the diversion that skips it (none when the trip no
-/// longer reaches the stop for another reason).
+/// scheduled, and why — the diversion that skips the stop, or the
+/// cancel that takes the whole trip out of service (D-100: the
+/// dispatcher's cancel is shown, unlike a live-feed cancellation,
+/// D-73). Neither when the trip no longer reaches the stop for another
+/// reason.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct SkippedVisit {
@@ -388,6 +410,8 @@ pub struct SkippedVisit {
     #[ts(flatten)]
     pub departure: BoardDeparture,
     pub diversion: Option<String>,
+    /// The cancel's id when the trip is cancelled.
+    pub cancel: Option<String>,
     pub alerts: Vec<String>,
 }
 
@@ -396,8 +420,9 @@ pub struct SkippedVisit {
 #[ts(export)]
 pub struct StopBoard {
     pub rows: Vec<BoardRow>,
-    /// Scheduled departures the in-force edits skip here, soonest
-    /// first — why a detoured-away stop is empty.
+    /// Scheduled departures the in-force edits take away here, soonest
+    /// first — a detour skipping the stop, or a cancelled trip: why a
+    /// stop is emptier than its schedule.
     pub skipped: Vec<SkippedVisit>,
     /// The live document's alerts about this board: any that speak
     /// about a row, a skipped visit, or the stop itself.
@@ -410,26 +435,29 @@ pub struct StopBoard {
 }
 
 /// The edits behind an effective day: the unpatched day and the
-/// diversions in force — what a board compares against to say what
-/// was taken away.
+/// diversions and trip cancels in force — what a board compares
+/// against to say what was taken away.
 #[derive(Debug, Clone)]
 pub struct DayEdits {
     pub base: Vec<MaterializedTrip>,
     pub diversions: Vec<Diversion>,
+    pub cancels: Vec<TripCancel>,
 }
 
 /// THE day for (network, edits, date): the network materialized for
-/// the date, patched with the edits in force on it, and — when any is
+/// the date, patched with the diversions in force on it, the trips
+/// cancelled on it taken out, and — when any is
 /// in force — what they took away. One materialization: the effective
 /// trips ARE the materialized day when nothing is in force. A pure
 /// function of the documents [`day_key`] names, so a host may hold it
 /// (the kernel's derived registry) and every reader answers the same.
 #[derive(Debug, Clone)]
 pub struct Day {
-    /// The trips that run: the materialized day, patched.
+    /// The trips that run: the materialized day, patched, cancelled
+    /// trips out.
     pub trips: Vec<MaterializedTrip>,
-    /// The unpatched day and the diversions in force — `None` when no
-    /// edit is in force (nothing was taken away).
+    /// The unpatched day and the edits in force — `None` when no edit
+    /// is in force (nothing was taken away).
     pub edits: Option<DayEdits>,
 }
 
@@ -437,10 +465,12 @@ pub struct Day {
 pub fn day(network: &Network, date: NaiveDate, records: &[EditRecord]) -> Result<Day, transit_network::NetworkError> {
     let base = materialize(network, date)?;
     let diversions = transit_sync::in_force_on(records, date);
-    if diversions.is_empty() {
+    let cancels = transit_sync::cancels_in_force_on(records, date);
+    if diversions.is_empty() && cancels.is_empty() {
         return Ok(Day { trips: base, edits: None });
     }
-    Ok(Day { trips: patch_day(&base, &diversions), edits: Some(DayEdits { base, diversions }) })
+    let trips = cancel_day(&patch_day(&base, &diversions), &cancels);
+    Ok(Day { trips, edits: Some(DayEdits { base, diversions, cancels }) })
 }
 
 /// The key a held [`Day`] is found by: the documents and the date it
@@ -460,7 +490,8 @@ const MAX_LOOKBACK_SECS: u32 = 3 * 3600;
 /// that already left is not; one the live document cancels or skips
 /// here is not either (silently — D-73). With the day's `edits`, the departures
 /// they took away from the stop are listed as `skipped`, each with
-/// the diversion that skips it; with a live document, its alerts
+/// the diversion that skips it or the cancel that took its trip; with
+/// a live document, its alerts
 /// about the board ride along. A stop with nothing of its own —
 /// nothing leaving and nothing skipped — that belongs to a walking
 /// group (a station pin) answers its group's board instead; a plain
@@ -505,6 +536,79 @@ pub struct DepartureGroup {
     /// group's last departure of the day has left.
     pub departures: Vec<BoardRow>,
     pub skipped: Vec<SkippedVisit>,
+    /// When the group next runs here once it has stopped for the day
+    /// (no departures left): [`with_next_service`] fills it from the
+    /// next seven days' patched days; `None` when departures are left,
+    /// or none within the week.
+    pub next: Option<NextService>,
+}
+
+/// How many days past the board's date [`with_next_service`] looks
+/// (D-42: a week, then nothing).
+pub const NEXT_SERVICE_DAYS: u32 = 7;
+
+/// A stopped group's next departure on a later day (D-42).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct NextService {
+    /// The service date it runs on, "YYYY-MM-DD".
+    pub date: String,
+    /// Days after the board's date: 1 is tomorrow, at most
+    /// [`NEXT_SERVICE_DAYS`].
+    pub days_ahead: u32,
+    /// The date's weekday, in English ("Monday").
+    pub weekday: String,
+    /// Seconds after that date's service-day midnight.
+    pub departure_secs: u32,
+    /// The stop it leaves from (a bay, when the board pools).
+    pub stop: String,
+}
+
+/// Fill each stopped group's [`DepartureGroup::next`]: the earliest
+/// departure of its route to its destination from the board's stops
+/// on the first of the next [`NEXT_SERVICE_DAYS`] dates whose day
+/// carries one — each date's day as `day_on` answers it (the
+/// materialized day patched by that date's in-force edits; never the
+/// live document). A later day's departure counts only if it leaves at
+/// or after `from_secs` (which may run past midnight). Dates are asked
+/// in order and only while a stopped group still has no answer.
+pub fn with_next_service<D: std::ops::Deref<Target = Day>>(
+    network: &Network,
+    board: &mut GroupedBoard,
+    stop_id: &str,
+    date: NaiveDate,
+    from_secs: u32,
+    mut day_on: impl FnMut(NaiveDate) -> Result<D, String>,
+) -> Result<(), String> {
+    let stops: Vec<String> = if board.pooled {
+        transit_network::walking_group(network, stop_id).into_keys().collect()
+    } else {
+        vec![stop_id.to_string()]
+    };
+    let mut pending: Vec<usize> = (0..board.groups.len()).filter(|&i| board.groups[i].departures.is_empty()).collect();
+    for k in 1..=NEXT_SERVICE_DAYS {
+        if pending.is_empty() {
+            break;
+        }
+        let Some(on) = date.checked_add_days(chrono::Days::new(k as u64)) else { break };
+        let day = day_on(on)?;
+        let rows = board_over(network, &day.trips, &stops, from_secs.saturating_sub(k * 86_400), usize::MAX);
+        pending.retain(|&i| {
+            let group = &mut board.groups[i];
+            let Some(row) = rows.iter().find(|r| r.route == group.route && r.destination == group.destination) else {
+                return true;
+            };
+            group.next = Some(NextService {
+                date: on.format("%Y-%m-%d").to_string(),
+                days_ahead: k,
+                weekday: on.format("%A").to_string(),
+                departure_secs: row.departure_secs,
+                stop: row.stop.clone(),
+            });
+            false
+        });
+    }
+    Ok(())
 }
 
 /// The board by route and destination, answered whole.
@@ -523,7 +627,8 @@ pub struct GroupedBoard {
 /// destination the stop is served by on the day (its whole day — a
 /// group whose last departure has left stays, with none), each holding
 /// its next `per_group` departures by THE board's realtime-first rule
-/// and the visits the edits skip. Groups list in the route's display
+/// and the visits the edits took away (a detour's skips, a cancelled
+/// trip's visits). Groups list in the route's display
 /// order (`sort_order`, lower first; routes without one after, by id),
 /// then by destination. A stop with nothing of its own all day that
 /// belongs to a walking group pools it, like THE board.
@@ -578,6 +683,7 @@ pub fn grouped_board(
                 route_text_color: r.and_then(|r| r.text_color.clone()),
                 departures: board.rows.iter().filter(|x| ours(&x.departure)).take(per_group).cloned().collect(),
                 skipped: board.skipped.iter().filter(|x| ours(&x.departure)).take(per_group).cloned().collect(),
+                next: None,
                 route,
                 destination,
             }
@@ -638,14 +744,18 @@ fn skipped_visits(
         .into_iter()
         .filter(|d| !kept.contains(&(d.trip.clone(), d.start_secs, d.stop.clone())))
         .take(limit)
-        .map(|d| SkippedVisit {
-            diversion: edits
-                .diversions
-                .iter()
-                .find(|v| v.route_id == d.route && v.skipped_stops.contains(&d.stop))
-                .map(|v| v.id.clone()),
-            departure: d,
-            alerts: Vec::new(),
+        .map(|d| {
+            let cancel = edits.cancels.iter().find(|c| c.cancels(&d.trip, d.start_secs)).map(|c| c.id.clone());
+            SkippedVisit {
+                diversion: cancel
+                    .is_none()
+                    .then(|| edits.diversions.iter().find(|v| v.route_id == d.route && v.skipped_stops.contains(&d.stop)))
+                    .flatten()
+                    .map(|v| v.id.clone()),
+                cancel,
+                departure: d,
+                alerts: Vec::new(),
+            }
         })
         .collect()
 }
@@ -845,8 +955,8 @@ pub fn block_chain(
 }
 
 /// Convenience: the effective day for a date — materialized, then
-/// patched with the edits in force on that date. What every dispatch
-/// view starts from.
+/// patched with the edits in force on that date, cancelled trips out.
+/// What every dispatch view starts from.
 pub fn effective_day(
     network: &Network,
     date: NaiveDate,
@@ -854,7 +964,7 @@ pub fn effective_day(
 ) -> Result<Vec<MaterializedTrip>, transit_network::NetworkError> {
     let day = materialize(network, date)?;
     let diversions = transit_sync::in_force_on(records, date);
-    Ok(patch_day(&day, &diversions))
+    Ok(cancel_day(&patch_day(&day, &diversions), &transit_sync::cancels_in_force_on(records, date)))
 }
 
 // ---------------------------------------------------------------------

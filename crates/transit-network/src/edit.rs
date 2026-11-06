@@ -29,7 +29,7 @@ use chrono::NaiveDate;
 use crate::materialize::produce_times;
 use crate::timetable_edit;
 use crate::model::{
-    Block, CalendarException, CalendarRule, DateRange, DayState, Departs, Direction, HeadwayBand, Layover, Mode,
+    Alignment, AlignmentPoint, Block, Coord, CalendarException, CalendarRule, DateRange, DayState, Departs, Direction, HeadwayBand, Layover, Mode,
     Network, Pattern, PatternStop, PatternTrips, PlanMeta, Route, ServiceType, Stop, StopOffset, TimingProfile, Trip,
     TripRef, WeekdaySet,
 };
@@ -42,8 +42,19 @@ use crate::model::{
 pub enum NetworkEdit {
     /// The plan frame: identity, name, pick date. Forking a plan into
     /// the next pick, or stamping a fresh import into the chain, is
-    /// this edit.
-    SetPlan { plan: PlanMeta },
+    /// this edit. With `through` ("YYYY-MM-DD", the period's last day,
+    /// not before `effective_from`) the fork carries the calendar
+    /// (D-41): every WEEKLY service type (a flagged day and a date
+    /// range) still running in the calendar's final week (D-112) whose
+    /// last range ends before `through` now ends on it;
+    /// dated-only types (holidays, events) and every exception stay as
+    /// they are — next year's holidays are the planner's to add.
+    SetPlan {
+        plan: PlanMeta,
+        #[serde(default)]
+        #[ts(optional)]
+        through: Option<String>,
+    },
     /// Change the plan frame field-wise: `name`; `effective_from`
     /// ("YYYY-MM-DD", or "" to clear the date); `id` only stamps an
     /// UNVERSIONED plan (an empty id) — a framed pick keeps its
@@ -195,6 +206,23 @@ pub enum NetworkEdit {
         #[serde(default)]
         #[ts(optional)]
         direction: Option<String>,
+    },
+    /// Redraw a pattern's line (D-11). The edit names what it redraws:
+    /// `one` gives the pattern a new alignment of its own (`id`, else
+    /// minted `al{n}`; reported in `created`) and the other patterns on
+    /// its old line keep it; `all` redraws the alignment the pattern
+    /// runs, so every pattern on it moves (a pattern with no alignment
+    /// gets a new one, as with `one`). The patterns redrawn are
+    /// reported in `touched`; their stop distances keep their meters
+    /// and stop claiming to be published (they were measured along the
+    /// old line). Two points or more, each on the globe.
+    DrawAlignment {
+        pattern: String,
+        points: Vec<Coord>,
+        redraw: Redraw,
+        #[serde(default)]
+        #[ts(optional)]
+        id: Option<String>,
     },
     /// Add a direction to a route, or rename one.
     SetDirection { route: String, id: String, name: String },
@@ -399,11 +427,40 @@ pub enum Day {
     Sun,
 }
 
+/// What a [`NetworkEdit::DrawAlignment`] redraws: the pattern's line
+/// alone, or the alignment every pattern on it runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum Redraw {
+    One,
+    All,
+}
+
+/// An entity a change altered beyond what it was asked to (today: the
+/// patterns a `draw_alignment` redrew), so nothing moves silently.
+#[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct TouchedEntity {
+    /// pattern
+    pub kind: String,
+    pub id: String,
+}
+
+/// A change applied: the next document, what it created, and what it
+/// touched.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Applied {
+    pub network: Network,
+    pub created: Vec<CreatedEntity>,
+    pub touched: Vec<TouchedEntity>,
+}
+
 /// An entity a change created, with the id it was given.
 #[derive(Debug, Clone, PartialEq, Serialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct CreatedEntity {
-    /// stop | route | pattern | service_type | pattern_trips | block | trip
+    /// stop | route | pattern | service_type | pattern_trips | block | trip | alignment
     pub kind: String,
     pub id: String,
 }
@@ -427,23 +484,104 @@ impl std::fmt::Display for EditError {
 /// touched. All or nothing: the first edit that cannot apply rejects
 /// the change.
 pub fn apply_edits(network: &Network, edits: &[NetworkEdit]) -> Result<Network, EditError> {
-    apply_edits_reporting(network, edits).map(|(next, _)| next)
+    apply_edits_reporting(network, edits).map(|applied| applied.network)
 }
 
 /// [`apply_edits`], also naming what the change created (minted ids
-/// included) — what an authoring host opens next.
-pub fn apply_edits_reporting(
-    network: &Network,
-    edits: &[NetworkEdit],
-) -> Result<(Network, Vec<CreatedEntity>), EditError> {
+/// included) — what an authoring host opens next — and what it
+/// touched beyond that.
+pub fn apply_edits_reporting(network: &Network, edits: &[NetworkEdit]) -> Result<Applied, EditError> {
     let mut next = network.clone();
     let mut created = Vec::new();
+    let mut touched = Vec::new();
     for (index, edit) in edits.iter().enumerate() {
-        if let Some(entity) = apply_one(&mut next, edit).map_err(|reason| EditError { index, reason })? {
+        let entity = match edit {
+            NetworkEdit::DrawAlignment { pattern, points, redraw, id } => {
+                draw_alignment(&mut next, pattern, points, *redraw, id, &mut touched)
+            }
+            _ => apply_one(&mut next, edit),
+        }
+        .map_err(|reason| EditError { index, reason })?;
+        if let Some(entity) = entity {
             created.push(entity);
         }
     }
-    Ok((next, created))
+    Ok(Applied { network: next, created, touched })
+}
+
+/// D-11: redraw one pattern's line, or the alignment it runs.
+fn draw_alignment(
+    net: &mut Network,
+    pattern: &str,
+    points: &[Coord],
+    redraw: Redraw,
+    id: &Option<String>,
+    touched: &mut Vec<TouchedEntity>,
+) -> Result<Option<CreatedEntity>, String> {
+    let current = net.patterns.get(pattern).ok_or_else(|| format!("unknown pattern {pattern}"))?.alignment.clone();
+    if points.len() < 2 {
+        return Err(format!("a line is two points or more; {} given", points.len()));
+    }
+    if let Some(p) = points.iter().find(|p| !(p.lat.is_finite() && p.lon.is_finite() && p.lat.abs() <= 90.0 && p.lon.abs() <= 180.0)) {
+        return Err(format!("point ({}, {}) is not on the globe", p.lat, p.lon));
+    }
+    let line = Alignment { points: points.iter().map(|p| AlignmentPoint { lat: p.lat, lon: p.lon, distance: None }).collect() };
+    let (redrawn, created) = match (redraw, current) {
+        (Redraw::All, Some(shared)) => {
+            if id.is_some() {
+                return Err(format!("redraw all keeps the alignment's id ({shared}); an id names a new line"));
+            }
+            net.alignments.insert(shared.clone(), line);
+            let on: Vec<String> =
+                net.patterns.iter().filter(|(_, p)| p.alignment.as_ref() == Some(&shared)).map(|(id, _)| id.clone()).collect();
+            (on, None)
+        }
+        _ => {
+            let new_id = mint(&net.alignments, id, "al", "alignment")?;
+            net.alignments.insert(new_id.clone(), line);
+            net.patterns.get_mut(pattern).expect("checked").alignment = Some(new_id.clone());
+            (vec![pattern.to_string()], created("alignment", &new_id))
+        }
+    };
+    for id in redrawn {
+        for stop in &mut net.patterns.get_mut(&id).expect("listed from the patterns").stops {
+            stop.distance_published = false;
+        }
+        touched.push(TouchedEntity { kind: "pattern".into(), id });
+    }
+    Ok(created)
+}
+
+/// D-41: every weekly service type still running at the document's
+/// end (its last range ends in the calendar's final week, D-112) whose
+/// last range ends before `through` ends on it; dated-only types and
+/// closed periods are left alone.
+fn carry_calendars(net: &mut Network, through: NaiveDate) {
+    let weekly = |rule: &CalendarRule| rule.days != WeekdaySet::none() && !rule.ranges.is_empty();
+    // The calendar's end: the latest date any type names.
+    let Some(calendar_end) = net
+        .service_types
+        .values()
+        .flat_map(|t| {
+            let weekly_end = weekly(&t.rule).then(|| t.rule.ranges.iter().map(|r| r.end).max()).flatten();
+            weekly_end.into_iter().chain(t.rule.exceptions.iter().filter(|e| e.state == DayState::Added).map(|e| e.date))
+        })
+        .max()
+    else {
+        return;
+    };
+    let final_week = calendar_end - chrono::Duration::days(6);
+    for service_type in net.service_types.values_mut() {
+        let rule = &mut service_type.rule;
+        if !weekly(rule) {
+            continue;
+        }
+        if let Some(last) = rule.ranges.iter_mut().max_by_key(|r| r.end) {
+            if last.end >= final_week && last.end < through {
+                last.end = through;
+            }
+        }
+    }
 }
 
 /// The first free `{prefix}{n}`, n from 1 — or the caller's id, when
@@ -540,7 +678,16 @@ fn apply_one(net: &mut Network, edit: &NetworkEdit) -> Result<Option<CreatedEnti
         return Ok(entity);
     }
     match edit {
-        NetworkEdit::SetPlan { plan } => net.plan = plan.clone(),
+        NetworkEdit::SetPlan { plan, through } => {
+            if let Some(through) = through {
+                let through = date(through)?;
+                if let Some(from) = plan.effective_from.filter(|from| through < *from) {
+                    return Err(format!("through {through} is before the pick's effective_from {from}"));
+                }
+                carry_calendars(net, through);
+            }
+            net.plan = plan.clone();
+        }
         NetworkEdit::SetName { name } => net.name = name.clone(),
         NetworkEdit::UpsertStop { id, stop } => {
             net.stops.insert(id.clone(), stop.clone());
@@ -621,7 +768,7 @@ fn apply_one(net: &mut Network, edit: &NetworkEdit) -> Result<Option<CreatedEnti
             exists(net.blocks.contains_key(id), "block", id)?;
             net.blocks.remove(id);
         }
-        _ => unreachable!("gestures apply in apply_gesture"),
+        _ => unreachable!("gestures apply in apply_gesture; draw_alignment in apply_edits_reporting"),
     }
     Ok(None)
 }

@@ -7,7 +7,8 @@ A generated UI for cutting a service plan's work, in two layers:
   This is inside the network model (`docs/ROADMAP.md` 2).
 - **Runs**: cut blocks into operator runs under work rules. This is
   the runs layer (`docs/ROADMAP.md` 7): its own documents and
-  modules beside the network (D-16), none of which exist yet.
+  library beside the network (D-16). The work-rule document is on
+  the bus; the runs cut is [runs-layer.md](runs-layer.md).
 
 It follows the generated-UI procedure (`docs/ARCHITECTURE.md`,
 "Generated UIs"). The blocking questions are at step 2; the runs
@@ -28,9 +29,9 @@ logs the layer's op gaps.
 | # | op(s) | state |
 |---|---|---|
 | 1 | runcut `blocks`, `block_trips` | op exists; no structure summary, QAF-15 |
-| 2 | runcut `fleet_summary` | op exists for a day; a proposal's vehicle need is a gap, QAF-3 |
-| 3 | author `apply` issues | gap: QAF-62 and QAF-26 (D-9 decided) |
-| 4 | author `apply` (`add_block`, `add_block_trip`, `remove_block_trip`, `set_layover`) | op exists; no op proposes a chaining (log it in the session) |
+| 2 | runcut `fleet_summary`, `suggest_blocks` | op exists: a proposal's vehicle need is `suggest_blocks`' added_vehicles (D-46); fleet summary per service type, QAF-3 |
+| 3 | author `apply` issues (`work_rules_hash`), runcut `recovery` | op exists: a wait is judged against the recovery required there, and the recovery view shows required vs slack (D-9) |
+| 4 | author `apply` (`add_block`, `add_block_trip`, `remove_block_trip`, `set_layover`), runcut `suggest_blocks` | op exists: a suggested chaining, adopted through its edits |
 | 5 | none | gap: deadhead estimation over cap-streets (`docs/ROADMAP.md` 2, 6) |
 
 ## Questions (runs), in the order asked
@@ -43,9 +44,9 @@ logs the layer's op gaps.
 
 | # | state |
 |---|---|
-| 6 | gap, QAF-11 (no runs layer); block structure, QAF-15 |
-| 7 | gap, QAF-14 (no run view); relief points and garages, QAF-17 |
-| 8 | gap, QAF-12 (no work-rule document) |
+| 6 | gap, QAF-11 (no runs cut); block structure, QAF-15 |
+| 7 | gap, QAF-14 (no run view); garages, QAF-17 |
+| 8 | gap, QAF-12 (the work-rule document exists; nothing judges a run) |
 | 9 | gap: no run edits (they follow the runs document) |
 
 ## Done when

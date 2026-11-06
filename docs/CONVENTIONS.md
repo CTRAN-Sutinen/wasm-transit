@@ -24,7 +24,8 @@ holds the gotchas, Rust/wasm/ops and frontend alike.
   (`Departs`: one start, or a frequency) and its own times; a
   `Network` document is a service plan. "Schedule" is NOT a model
   word: to a planner a schedule or timetable is a route's direction
-  under one service type across all its patterns — that is the
+  under one service combination (the types that run together, D-55)
+  across all its patterns — that is the
   derived `Timetable` (directory `timetable`) — so the model never
   names the per-pattern list that way (documents written before trips
   were stored still read, through `read_network`). Do not rename
@@ -62,6 +63,11 @@ holds the gotchas, Rust/wasm/ops and frontend alike.
   the streamed network decode is per-byte code "s" leaves
   un-inlined. Measure (`just perf`, and the module sizes) before
   changing it.
+- `[profile.dev]` (and test, which inherits it) keeps
+  `debug = "line-tables-only"`: backtraces name file and line, and
+  `target/` stays a fraction of full-DWARF size. Don't raise it to
+  full debug info in the shared profile; a local debugging session
+  sets `CARGO_PROFILE_DEV_DEBUG=true` for itself.
 - **An op answers through `cap_abi::answer` / `outcome`**, never a
   `serde_json::json!` tree: the tree is a second copy of the answer
   and sorts its keys, so a document inside it stops being its

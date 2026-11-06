@@ -23,7 +23,9 @@
 //!    boarding visit;
 //! 9. with a walk table, a plan's transfers are its walks (the graph
 //!    keyed by the walks hash too); a table derived for another
-//!    network is refused.
+//!    network is refused;
+//! 10. a trip the edit document cancels on the date (D-45) is never
+//!    ridden — the plan takes the next trip, or none.
 
 use serde_json::{json, Value};
 use transit_network::Network;
@@ -47,7 +49,7 @@ fn load_network() -> String {
 fn record(added_secs: u32) -> EditRecord {
     EditRecord {
         id: "e1".into(),
-        diversion: transit_sync::Diversion {
+        diversion: Some(transit_sync::Diversion {
             id: "d1".into(),
             route_id: "10".into(),
             direction_id: None,
@@ -58,7 +60,8 @@ fn record(added_secs: u32) -> EditRecord {
             added_secs,
             start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
             end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-        },
+        }),
+        cancel: None,
         status: EditStatus::Accepted,
         rev: 1,
         updated_at: 1,
@@ -650,4 +653,49 @@ fn a_place_s_walk_draws_along_its_path() {
                               "depart_secs": 5 * 3600, "max_legs": 2, "direct": direct }))["itinerary"].clone();
     assert_eq!(walked["arrival_secs"], 5 * 3600 + 40);
     assert_eq!(paths(place.clone(), there, direct.clone(), &walked)[0]["path"], direct["path"]);
+}
+
+#[test]
+fn a_cancelled_trip_is_never_ridden() {
+    let hash = load_network();
+    let plan = |edits_hash: Option<String>| {
+        let answer = cap_router::dispatch(cap_router::Request::Plan {
+            network_hash: hash.clone(),
+            edits_hash,
+            from: "A".into(),
+            to: "B".into(),
+            date: DATE.into(),
+            depart_secs: 7 * 3600,
+            max_legs: 4,
+            live_hash: None,
+            walks_hash: None,
+            direct: None,
+        })
+        .unwrap();
+        let cap_router::Response::Plan { itinerary } = answer else { panic!("plan") };
+        itinerary
+    };
+    let rides = |it: &Option<transit_router::Itinerary>, want: &str| {
+        it.iter().flat_map(|i| &i.legs).any(|l| matches!(l, transit_router::Leg::Transit { trip, .. } if trip == want))
+    };
+    assert!(rides(&plan(None), "t10"), "without the cancel, t10 is the ride");
+    let cancel = EditRecord {
+        id: "c1".into(),
+        diversion: None,
+        cancel: Some(transit_sync::TripCancel {
+            id: "cancel-t10".into(),
+            trip_id: "t10".into(),
+            start_secs: None,
+            date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
+        }),
+        status: EditStatus::Submitted,
+        rev: 1,
+        updated_at: 1,
+    };
+    let edits = load_edits(&hash, vec![cancel]);
+    let after = plan(Some(edits));
+    assert!(!rides(&after, "t10"), "a cancelled trip is never ridden: {after:?}");
+    if let Some(it) = &after {
+        assert!(it.arrival_secs > 8 * 3600 + 10 * 60, "a later trip, never the cancelled 08:10 arrival");
+    }
 }

@@ -47,7 +47,7 @@ fn starts(net: &Network, pattern_trips: &str) -> Vec<u32> {
 #[test]
 fn creation_mints_ids_and_reports_them() {
     let net = network();
-    let (next, created) = apply_edits_reporting(
+    let transit_network::Applied { network: next, created, touched } = apply_edits_reporting(
         &net,
         &[
             NetworkEdit::AddStop { id: None, lat: None, lon: None },
@@ -60,6 +60,7 @@ fn creation_mints_ids_and_reports_them() {
         ],
     )
     .unwrap();
+    assert!(touched.is_empty(), "creation touches nothing beyond what it creates");
     let ids: Vec<(&str, &str)> = created.iter().map(|c| (c.kind.as_str(), c.id.as_str())).collect();
     assert_eq!(
         ids,

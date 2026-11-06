@@ -2,7 +2,9 @@
   /// One stop, live — a RENDER component over cap-board's `stop_board`:
   /// the service alerts about it on top, its departures realtime-first
   /// (each with the expected time and its status under the live
-  /// document's window), and what a detour took away from it. Picking
+  /// document's window), and what the day's edits took away from it —
+  /// a detour skipping it, a trip cancelled (each skipped visit names
+  /// its `diversion` or `cancel`). Picking
   /// a departure is an event (the map draws its route and its bus).
   import type { StopBoard } from "../types/StopBoard";
   import type { BoardRow } from "../types/BoardRow";
@@ -98,11 +100,23 @@
       <p class="quiet">No more departures from here today.</p>
     {/if}
 
-    {#if board.skipped.length}
+    {#if board.skipped.some((s) => s.cancel)}
+      <div class="detour" data-testid="board-cancelled">
+        <h3><span class="sign" aria-hidden="true">✕</span> Cancelled</h3>
+        <ul>
+          {#each board.skipped.filter((s) => s.cancel) as s (s.trip + s.start_secs + s.stop)}
+            {@const c = clock(s.departure_secs)}
+            <li><span class="t">{c.hm}<small>{c.ap}</small></span> <b>{s.route_name}</b> {s.destination}</li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
+    {#if board.skipped.some((s) => !s.cancel)}
       <div class="detour" data-testid="board-skipped">
         <h3><span class="sign" aria-hidden="true">⤳</span> Detour — not stopping here</h3>
         <ul>
-          {#each board.skipped as s (s.trip + s.start_secs + s.stop)}
+          {#each board.skipped.filter((s) => !s.cancel) as s (s.trip + s.start_secs + s.stop)}
             {@const c = clock(s.departure_secs)}
             <li><span class="t">{c.hm}<small>{c.ap}</small></span> <b>{s.route_name}</b> {s.destination}</li>
           {/each}

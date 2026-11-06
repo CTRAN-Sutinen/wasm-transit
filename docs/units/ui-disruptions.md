@@ -26,10 +26,10 @@ session has asked these questions as one sequence.
 |---|---|---|
 | 1 | rt `live`, `late_trips` | op exists; no UI reads `late_trips` (`docs/units/grade-debt.md`); a vehicle with no label shows its id (D-10) |
 | 2 | runcut `block_trips` (`live_hash`) | op exists: a trip's live delay at its last stop against its next layover |
-| 3 | divert `list` | op exists |
+| 3 | divert `list` | op exists (diversions in `rows`, trip cancels in `cancels`) |
 | 4 | divert `draft`, streets `snap` / `route`, divert `propose` | op exists; cap-streets is not dogfooded on real data (`docs/units/grade-debt.md`, needs the county export) |
 | 5 | runcut `trip_path`, board `stop_board`, router `plan_compare` with `edits_hash` | op exists (a diverted trip's line splices the traced detour into its alignment) |
-| 6 | none | gap, QAF-36 (the edit document is diversions only) |
+| 6 | divert `cancel`, `list`, `retire`; board `stop_board` / router `plan` with `edits_hash` | cancel (whole trip, one instance or all, one date) exists: boards list it cancelled (D-100), the router never rides it; cover, hold, swap, partial cancel come later (D-45). Covered / uncovered has no op: the vehicle half (a vehicle on the trip's block) needs a rule for what puts a vehicle on a block before it reports a position, the operator half waits on the runs layer (D-15) |
 | 7 | sync `sync_edits` | op exists; dogfooded on C-TRAN through a restarted store server (2026-11-05); no page writes one |
 
 ## Scope beyond the ops

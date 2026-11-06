@@ -41,7 +41,7 @@
 <section class="timetable" data-testid="timetable">
   <header>
     <h3>
-      {timetable.route_name} · {timetable.direction_name} · {timetable.service_type_name}
+      {timetable.route_name} · {timetable.direction_name} · {timetable.group}
       <span class="muted">{timetable.trips.length} trips</span>
     </h3>
     <label class="muted"><input type="checkbox" bind:checked={timepointsOnly} /> timepoints only</label>

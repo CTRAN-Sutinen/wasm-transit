@@ -174,22 +174,27 @@ transit-network  THE authored network model — trips are stored records (own id
                  where things are (pattern alignments, entity focus);
                  what exists, as the planner lists it (rows, route and stop composition,
                  a direction's rider variants — a station's bays one place,
-                the timetable: one route, one direction, one service type)
+                the timetable: one route, one direction, one service combination;
+                 the service combinations: the types that run together, and when)
 transit-codec   the network codec: the whole-spec GTFS feed (every file and column,
                  deterministic zip bytes) ⇄ network document, losslessly
 transit-router  RAPTOR planning over the network model's materialized day (leave-at and
                  arrive-by, live predictions, the diversion notice, transfers over a walk table,
                  trips from and to any place)
 transit-analysis planner analysis library (stats, service types, coverage)
-transit-dispatch the operator's day library (patched materialized day, boards,
-                 authored block chains with the layover ripple, diversion drafts)
+transit-dispatch the operator's day library (patched materialized day — diversions
+                 patched, cancelled trips out — boards, authored block chains with
+                 the layover ripple, diversion drafts and trip cancels)
 transit-rt       GTFS-rt prost types + the joins over the network (an rt trip id is a
                  model trip id; a trip instance is (trip, start))
 transit-live     THE live document (rt in model vocabulary, the on-time window, what does
                  not run — a cancelled trip, a skipped stop — pure)
-transit-sync     THE sync document (EditRecord, Diversion, merge, the record envelope — pure)
+transit-sync     THE sync document (EditRecord: a Diversion or a TripCancel, merge, the record envelope — pure)
 transit-plans    THE service-plan chain (resolve, periods, validity — pure, derived)
                  and the published plan set (publish, the pick in force)
+transit-runs     THE runs layer beside the network: the work-rule document (recovery,
+                 interlining per route pair, run rules, pay — every rule optional), the
+                 recovery a wait requires and its slack, the suggested blocking — pure
 transit-streets  THE streets document (canonical: its hash is the streets', not a file's),
                  its import from street layers (GeoJSON: agency exports, TIGER, OSM),
                  the graph over it (snap, route), and walking (the walk table between stops,

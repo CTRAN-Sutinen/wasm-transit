@@ -625,7 +625,7 @@ proptest! {
             edits.insert(0, NetworkEdit::RetimeTrip { trip: id, to_secs: start + by * 60 });
         }
         let next = apply_edits(&net, &edits).expect("the edits apply");
-        let Some(t) = transit_network::timetable_against(&next, &net, "r0", None, "wk") else {
+        let Some(t) = transit_network::timetable_against(&next, &net, "r0", None, &["wk".to_string()]) else {
             return Ok(());
         };
 

@@ -13,8 +13,10 @@
 //   2. A transit center opened from its URL: the station pin pools its
 //      bays, each time naming the bay it leaves from.
 //   3. A single route: a detour in the edit document takes the 10 from
-//      C, and its group says so; after the day's last departure at A,
-//      its groups stay and say service has stopped.
+//      C, and its group says so; a cancel of the 08:00 10 (t10) takes
+//      it out of the group's times and the group says a trip was
+//      cancelled (D-45, D-100); after the day's last departure at A,
+//      its groups stay and say when each next runs (board `next`, D-42).
 //
 // The live feeds and the edit document are served by the test (the
 // shared e2e server holds other specs' edits).
@@ -46,6 +48,16 @@ const detour = [
       added_secs: 300,
       detour: null,
     },
+  },
+];
+
+const cancel = [
+  {
+    id: "c-stop-display",
+    rev: 1,
+    status: "accepted",
+    updated_at: 1,
+    cancel: { id: "cancel-t10", trip_id: "t10", start_secs: null, date: "2026-10-23" },
   },
 ];
 
@@ -111,11 +123,22 @@ test("a single route says when the edits detour it away", async ({ page }) => {
   await expect(group(page, "10", "Downtown").getByTestId("display-none")).toHaveText("Detoured — not serving this stop");
 });
 
+test("a cancelled trip leaves the group's times, and the group says so", async ({ page }) => {
+  await open(page, { query: "?stop=A&layout=route", edits: cancel });
+  await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
+  const ten = group(page, "10", "Downtown");
+  await expect(ten.getByTestId("display-time")).toHaveCount(1);
+  await expect(ten.getByTestId("display-time").first()).not.toContainText("7 min");
+  await expect(ten.getByTestId("display-cancelled")).toHaveText("A trip was cancelled");
+});
+
 test("a route that has stopped for the day stays on the display", async ({ page }) => {
+  // Friday night: the 10 next runs Sunday (t11), the 20 Monday (t20) —
+  // the board's `next` (D-42), the display only formats it.
   await open(page, { query: "?stop=A&layout=route", at: "2026-10-23T23:00:00Z" });
   await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
-  await expect(group(page, "10", "Downtown").getByTestId("display-none")).toHaveText("No more service today");
-  await expect(group(page, "20", "Downtown").getByTestId("display-none")).toHaveText("No more service today");
+  await expect(group(page, "10", "Downtown").getByTestId("display-none")).toHaveText("Next: Sunday 9:00 am");
+  await expect(group(page, "20", "Downtown").getByTestId("display-none")).toHaveText("Next: Monday 8:20 am");
 });
 
 // 4. A display left running (docs/units/module-runtime.md): the agency

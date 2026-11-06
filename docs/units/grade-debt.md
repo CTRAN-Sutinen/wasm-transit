@@ -25,14 +25,21 @@ UI that reads the op pays the line instead.
   no page writes a detour; ride-now and the stop display only read
   them ([ui-disruptions.md](ui-disruptions.md) questions 3–5, 7).
 - cap-runcut (`blocks`, `fleet_summary`, `block_trips`,
-  `trip_stops`, `trip_path`) — no UI shows a day's blocks
-  ([ui-runcut.md](ui-runcut.md)).
+  `trip_stops`, `trip_path`, `recovery`, `suggest_blocks`) and the
+  kernel's `load_work_rules` — no UI shows a day's blocks, a wait's
+  recovery, or a suggested blocking, and no page holds a work-rule
+  document (the engine has no `work_rules` loader); author `apply`'s
+  `work_rules_hash` is unread too ([ui-runcut.md](ui-runcut.md)).
 - cap-calendar (`active_services`, `service_dates`) — no UI asks
   which services run on a date.
 - network `validate` warnings — service-design shows the issues
   and `apply`'s warnings, not `validate`'s.
 - analysis `network_stats` — no UI renders it (the window, the
   per-route hours).
+- analysis `coverage_compare` — no UI asks it until D-43's matching
+  rule says which of one plan's combinations answers to which of the
+  other's ([ui-service-design.md](ui-service-design.md) question 19,
+  [ui-proposal-compare.md](ui-proposal-compare.md) question 5).
 - The map draws merged walks through their via stops, but no e2e
   pins that drawing.
 

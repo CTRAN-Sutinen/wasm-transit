@@ -143,6 +143,7 @@ The extraction pattern, always in this order:
 
 1. crate boundary first — the domain logic lands in a shared
    library crate (transit-analysis, transit-rt, transit-dispatch,
+   transit-runs,
    transit-plans) with the law tests;
 2. capability wrapper second — a thin module over the library.
 

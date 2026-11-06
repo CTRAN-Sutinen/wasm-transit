@@ -4,7 +4,8 @@
 //! spans, coverage. Its failure mode is silent plausibility: wrong
 //! numbers that neither panic nor look wrong. These laws hold for
 //! every generated network (the adversarial import generator, as in
-//! `codec_prop_test.rs`) and every generated population layer:
+//! `codec_prop_test.rs`) and every generated point layer (the
+//! polygon and comparison laws are `coverage_law_test.rs`):
 //!
 //! * **Stats oracle** — every number `network_stats` reports is
 //!   recomputed from `materialize` output with independent
@@ -16,12 +17,12 @@
 //!   follows, per-hour departures and the max/median gap starting
 //!   in each hour.
 //! * **Coverage monotonicity and bounds** — a bigger radius never
-//!   serves less population; served/frequent population stay
+//!   serves less weight; served/frequent weight stay
 //!   within [0, total]; the served-stop counts are radius-
 //!   independent.
-//! * **Cross-function agreement** — `type_coverage` (the design
-//!   axis) agrees with `coverage` (the calendar view) on the same
-//!   representative date.
+//! * **Cross-function agreement** — `type_coverage` (a combination
+//!   of service types, the design axis) agrees with `coverage` (the
+//!   calendar view) on every date the combination holds.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
@@ -339,23 +340,24 @@ proptest! {
     #[test]
     fn coverage_is_monotone_and_bounded(
         (net, points) in spec_and_layer(),
-    ) {        let layer = transit_analysis::parse_pop_layer(&build_layer(&net, &points), Some("pop"))
+    ) {        let layer = transit_analysis::parse_layer(&build_layer(&net, &points))
             .expect("generated layer parses");
+        let weights = layer.weights(Some("pop"), None).expect("the pop weight reads");
         let date = EPOCH + Duration::days(0); // a weekday: service 0 runs
 
-        let c50 = transit_analysis::coverage(&net, date, &layer, 50.0, 3600, 2, None);
-        let c200 = transit_analysis::coverage(&net, date, &layer, 200.0, 3600, 2, None);
-        let c1000 = transit_analysis::coverage(&net, date, &layer, 1000.0, 3600, 2, None);
+        let c50 = transit_analysis::coverage(&net, date, &weights, 50.0, 3600, 2, None);
+        let c200 = transit_analysis::coverage(&net, date, &weights, 200.0, 3600, 2, None);
+        let c1000 = transit_analysis::coverage(&net, date, &weights, 1000.0, 3600, 2, None);
 
-        prop_assert!(c200.served_pop >= c50.served_pop - 1e-9, "served pop not monotone 50->200");
-        prop_assert!(c1000.served_pop >= c200.served_pop - 1e-9, "served pop not monotone 200->1000");
-        prop_assert!(c200.frequent_pop >= c50.frequent_pop - 1e-9, "frequent pop not monotone 50->200");
-        prop_assert!(c1000.frequent_pop >= c200.frequent_pop - 1e-9, "frequent pop not monotone 200->1000");
+        prop_assert!(c200.served >= c50.served - 1e-9, "served pop not monotone 50->200");
+        prop_assert!(c1000.served >= c200.served - 1e-9, "served pop not monotone 200->1000");
+        prop_assert!(c200.frequent >= c50.frequent - 1e-9, "frequent pop not monotone 50->200");
+        prop_assert!(c1000.frequent >= c200.frequent - 1e-9, "frequent pop not monotone 200->1000");
 
         for c in [&c50, &c200, &c1000] {
-            prop_assert!(c.total_pop >= 0.0);
-            prop_assert!(c.served_pop >= 0.0 && c.served_pop <= c.total_pop + 1e-9);
-            prop_assert!(c.frequent_pop >= 0.0 && c.frequent_pop <= c.served_pop + 1e-9);
+            prop_assert!(c.total >= 0.0);
+            prop_assert!(c.served >= 0.0 && c.served <= c.total + 1e-9);
+            prop_assert!(c.frequent >= 0.0 && c.frequent <= c.served + 1e-9);
             prop_assert!(c.served_pct >= 0.0 && c.served_pct <= 100.0);
             prop_assert!(c.frequent_pct >= 0.0 && c.frequent_pct <= c.served_pct + 1e-9);
         }
@@ -363,35 +365,34 @@ proptest! {
         prop_assert_eq!(c50.frequent_stops, c1000.frequent_stops, "frequent stops must not depend on radius");
     }
 
-    /// Agreement: what type_coverage reports per service type equals
-    /// what coverage reports on that type's representative day.
+    /// Agreement (D-55, QAF-89): what type_coverage reports for a
+    /// combination of service types equals what coverage reports on
+    /// every date the combination holds — on such a date exactly its
+    /// members run, so the combination's pooled served stops are the
+    /// union of that day's. Calendars here carry exceptions, so a
+    /// holiday is a combination of its own and agrees on its date.
     #[test]
     fn type_coverage_agrees_with_coverage(
         (net, points) in spec_and_layer(),
     ) {
-        let layer = transit_analysis::parse_pop_layer(&build_layer(&net, &points), Some("pop"))
+        let layer = transit_analysis::parse_layer(&build_layer(&net, &points))
             .expect("generated layer parses");
-        let per_type = transit_analysis::type_coverage(&net, &layer, 500.0, 3600, 2, None);
-        prop_assert!(!per_type.is_empty() || net.service_types.is_empty(), "every type answers");
-        for entry in &per_type {
-            let date = NaiveDate::parse_from_str(&entry.date, "%Y-%m-%d")
-                .expect("representative dates are ISO");
-            // Several service ids can run on the same service day
-            // (the 164 defect's lesson: a weekday is 1-WKDY AND its
-            // overlays), so the per-type answer cannot be compared to
-            // the WHOLE-day coverage. The oracle scopes the document
-            // to the type's own schedules and runs the same coverage
-            // over it — the design axis, judged alone.
-            let mut scoped = net.clone();
-            scoped.pattern_trips
-                .retain(|_, s| s.service_type == entry.service_type);
-            let own = transit_analysis::coverage(&scoped, date, &layer, 500.0, 3600, 2, None);
-            prop_assert!(close(entry.served_pct, own.served_pct, 1e-9),
-                "served_pct disagrees for {}", entry.service_type);
-            prop_assert!(close(entry.frequent_pct, own.frequent_pct, 1e-9),
-                "frequent_pct disagrees for {}", entry.service_type);
-            prop_assert_eq!(entry.served_stops, own.served_stops, "served stops disagree for {}", entry.service_type);
-            prop_assert_eq!(entry.frequent_stops, own.frequent_stops, "frequent stops disagree for {}", entry.service_type);
+        let weights = layer.weights(Some("pop"), None).expect("the pop weight reads");
+        for c in transit_network::service_combinations(&net) {
+            let entry = transit_analysis::type_coverage(&net, &weights, &c.members, 500.0, 3600, 2, None)
+                .expect("every combination answers");
+            prop_assert_eq!(&entry.group, &c.id);
+            let n = c.dates.len();
+            for i in [0, n / 2, n - 1] {
+                let date = NaiveDate::parse_from_str(&c.dates[i], "%Y-%m-%d").expect("ISO dates");
+                let day = transit_analysis::coverage(&net, date, &weights, 500.0, 3600, 2, None);
+                prop_assert!(close(entry.served_pct, day.served_pct, 1e-9),
+                    "served_pct disagrees for {} on {}", c.id, date);
+                prop_assert!(close(entry.frequent_pct, day.frequent_pct, 1e-9),
+                    "frequent_pct disagrees for {} on {}", c.id, date);
+                prop_assert_eq!(entry.served_stops, day.served_stops, "served stops disagree for {}", c.id);
+                prop_assert_eq!(entry.frequent_stops, day.frequent_stops, "frequent stops disagree for {}", c.id);
+            }
         }
     }
 
@@ -570,94 +571,25 @@ proptest! {
 
     /// QAF-16 (+ the 164 defect): the schedule texture — headway
     /// uniformity and clockface alignment per PATTERN, keyed by the
-    /// SERVICE TYPE on its representative day (the planner's unit —
-    /// a planner designs "weekday service", not a calendar date),
-    /// with the day's starts POOLED across every service id running
-    /// the pattern that day. Several service ids share one service
-    /// day and one route (route 164's weekday trips split across
-    /// 1-WKDY and its disruption-era overlays), and keying by
-    /// service id would slice the corridor into thin, wrong
-    /// headways. The oracle recomputes the pooling independently:
-    /// raw trip counts, a distinct-start spine for gaps and grid,
-    /// the feeding schedule count, and the totals.
+    /// service COMBINATION (D-55: the types that run together on the
+    /// same dates — the planner's unit, never a calendar date), with
+    /// the starts POOLED across every member running the pattern.
+    /// Several service ids share one service day and one route (route
+    /// 164's weekday trips split across 1-WKDY and its overlays), and
+    /// keying by service id would slice the corridor into thin, wrong
+    /// headways. The oracle recomputes the pooling independently: raw
+    /// trip counts, a distinct-start spine for gaps and grid, the
+    /// feeding schedule count, and the totals.
     #[test]
     fn schedule_texture_matches_the_starts_oracle(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
         let net = transit_codec::import(&feed).network;
 
-        for type_id in ["0", "1", "2", "3"] {
-            let texture = transit_analysis::schedule_texture(&net, type_id);
-            // The representative day: the first 2026 date the rule
-            // runs, by the hand-rolled rule walk.
-            let mut rep = None;
-            let Some(st) = net.service_types.get(type_id) else {
-                // A generated feed can leave a service unused — the
-                // import creates no such type, and the op must agree.
-                prop_assert!(transit_analysis::schedule_texture(&net, type_id).is_none());
-                continue;
-            };
-            for day in 0..365i64 {
-                let date = EPOCH + Duration::days(day);
-                let iso = date.format("%u").to_string();
-                let flagged = match iso.as_str() {
-                    "1" => st.rule.days.mon,
-                    "2" => st.rule.days.tue,
-                    "3" => st.rule.days.wed,
-                    "4" => st.rule.days.thu,
-                    "5" => st.rule.days.fri,
-                    "6" => st.rule.days.sat,
-                    _ => st.rule.days.sun,
-                };
-                let in_range = st.rule.ranges.iter().any(|r| date >= r.start && date <= r.end);
-                let exception = st.rule.exceptions.iter().find(|e| e.date == date);
-                let runs = match exception {
-                    Some(e) => matches!(e.state, transit_network::DayState::Added),
-                    None => flagged && in_range,
-                };
-                if runs {
-                    rep = Some(date);
-                    break;
-                }
-            }
-            match (texture.clone(), rep) {
-                (None, None) => continue,
-                (Some(t), Some(date)) => assert_eq!(t.date, date.format("%Y-%m-%d").to_string()),
-                (t, r) => panic!("texture {:?} vs representative {:?}", t, r),
-            }
-            let texture = texture.unwrap();
-
-            // Oracle: the service GROUP — the base plus every type
-            // whose running days are a subset of the base's
-            // (computed by an independent day walk) — and the
-            // group's POOLED starts per pattern.
-            let runs_day = |sid: &str, date: chrono::NaiveDate| {
-                net.service_types.get(sid).is_some_and(|st| st.rule.runs_on(date))
-            };
-            let day_set = |sid: &str| -> BTreeSet<chrono::NaiveDate> {
-                let st = &net.service_types[sid];
-                let mut days: BTreeSet<chrono::NaiveDate> = BTreeSet::new();
-                for r in &st.rule.ranges {
-                    let mut d = r.start;
-                    while d <= r.end {
-                        if st.rule.runs_on(d) {
-                            days.insert(d);
-                        }
-                        d += Duration::days(1);
-                    }
-                }
-                days.retain(|d| runs_day(sid, *d));
-                days
-            };
-            let base_days = day_set(type_id);
-            let group: BTreeSet<&String> = net
-                .service_types
-                .keys()
-                .filter(|other| {
-                    net.service_types[other.as_str()].rule.days == net.service_types[type_id].rule.days
-                        && day_set(other).iter().all(|d| base_days.contains(d))
-                })
-                .collect();
-            prop_assert!(group.iter().any(|s| s.as_str() == type_id), "the base is in its own group");
+        for combination in transit_network::service_combinations(&net) {
+            let texture = transit_analysis::schedule_texture(&net, &combination.members).expect("a combination answers");
+            prop_assert_eq!(&texture.group, &combination.id);
+            let type_id = &combination.id;
+            let group: BTreeSet<&String> = combination.members.iter().collect();
             let mut oracle: BTreeMap<String, (u32, Vec<u32>)> = BTreeMap::new();
             for entry in net.pattern_trips.values() {
                 if !group.contains(&entry.service_type) {
@@ -696,8 +628,8 @@ proptest! {
             prop_assert!(texture.on_clockface <= texture.trips);
         }
 
-        // Unknown types answer None, never an error (QAF-19).
-        prop_assert!(transit_analysis::schedule_texture(&net, "nope").is_none());
+        // Unknown members answer None, never an error (QAF-19).
+        prop_assert!(transit_analysis::schedule_texture(&net, &["nope".to_string()]).is_none());
     }
 
     /// QAF-22: the corridor read — `route_overlap` matches an
@@ -858,21 +790,33 @@ proptest! {
     }
 
     /// QAF-23: the unserved WHERE — `unserved_points` names every
-    /// layer point beyond the radius of every served stop, with the
-    /// nearest served stop and its distance. The oracle recomputes
-    /// the served set and the distances independently, and the
-    /// unserved population plus the coverage answer's served
-    /// population conserves the layer total.
+    /// layer point beyond the radius of every stop the combination
+    /// serves, with the nearest served stop and its distance. The
+    /// oracle recomputes the served set on a date the combination
+    /// holds (D-55: exactly its members run then) and the distances
+    /// independently, and the unserved population plus the coverage
+    /// answer's served population conserves the layer total.
     #[test]
     fn unserved_points_match_the_radius_oracle(
         (net, points) in spec_and_layer(),
         radius in 50f64..1000.0,
     ) {
-        let layer = transit_analysis::parse_pop_layer(&build_layer(&net, &points), Some("pop"))
+        let layer = transit_analysis::parse_layer(&build_layer(&net, &points))
             .expect("generated layer parses");
+        let weights = layer.weights(Some("pop"), None).expect("the pop weight reads");
         let date = EPOCH + Duration::days(0); // a weekday: service 0 runs
 
-        let unserved = transit_analysis::unserved_points(&net, date, &layer, radius);
+        // The combination that runs on the date; a date nothing runs
+        // on has none to ask.
+        let Some(combination) = transit_network::service_combinations(&net)
+            .into_iter()
+            .find(|c| c.dates.contains(&date.format("%Y-%m-%d").to_string()))
+        else {
+            return Ok(());
+        };
+        let unserved = transit_analysis::unserved_points(&net, &weights, &combination.members, radius)
+            .expect("a combination answers")
+            .points;
 
         // Oracle: the served stops (any visit on the date), then
         // every point's nearest one.
@@ -886,7 +830,9 @@ proptest! {
             }
         }
         let mut expected: Vec<(f64, f64, f64, Option<String>, f64)> = Vec::new();
-        for p in &layer.points {
+        for (lat_p, lon_p, pop_p) in points.iter().map(|p| pop_point(&net, p)) {
+            struct P { lat: f64, lon: f64, pop: f64 }
+            let p = P { lat: lat_p, lon: lon_p, pop: pop_p };
             let nearest = served
                 .iter()
                 .map(|(id, (lat, lon))| {
@@ -914,88 +860,45 @@ proptest! {
         for (row, exp) in unserved.iter().zip(&expected) {
             prop_assert!((row.lat - exp.0).abs() < 1e-9, "lat");
             prop_assert!((row.lon - exp.1).abs() < 1e-9, "lon");
-            prop_assert!((row.pop - exp.2).abs() < 1e-9, "pop");
+            prop_assert!((row.weight - exp.2).abs() < 1e-9, "weight");
             prop_assert_eq!(&row.nearest_stop, &exp.3, "the nearest served stop");
             prop_assert!((row.nearest_m - exp.4).abs() < 1.0, "nearest distance within a meter");
         }
 
         // Conservation with the coverage answer: the unserved
         // population is exactly what the served share leaves out.
-        let c = transit_analysis::coverage(&net, date, &layer, radius, 3600, 2, None);
-        let unserved_pop: f64 = unserved.iter().map(|p| p.pop).sum();
+        let c = transit_analysis::coverage(&net, date, &weights, radius, 3600, 2, None);
+        let unserved_pop: f64 = unserved.iter().map(|p| p.weight).sum();
         prop_assert!(
-            (c.total_pop - c.served_pop - unserved_pop).abs() < 1e-6,
+            (c.total - c.served - unserved_pop).abs() < 1e-6,
             "served + unserved conserves the layer total"
         );
     }
 
-    /// QAF-65: the service groups — the families behind the ids. A
-    /// base type (no other type's days properly contain it) heads
-    /// one row; every type whose calendar is a subset of the base's
-     /// rides along (the overlays are really part of the base's
-    /// service). The oracle computes day-sets independently, then
-    /// the bases, the members, and the family's pooled numbers.
+    /// D-55 (QAF-91, QAF-97): the service groups are the COMBINATIONS
+    /// of service types that run together on the same dates — one row
+    /// per combination (`transit_network::service_combinations`, whose
+    /// partition laws are transit-network's), each with its members'
+    /// pooled authored service. No date stands in for a combination:
+    /// its numbers ARE the service on EVERY date it holds — the
+    /// date-scoped `network_stats` and `hourly_trips` on each of its
+    /// dates answer exactly the pooled trips, revenue hours, routes,
+    /// and stops, and the drill-down's per-route rows. Members that
+    /// never share a day are never pooled.
     #[test]
-    fn service_groups_are_the_families(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
+    fn service_groups_are_the_combinations(trips in proptest::collection::vec(gen_trip(), 0..=14)) {
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
         let net = transit_codec::import(&feed).network;
         let groups = transit_analysis::service_groups(&net);
-
-        // Oracle: day-sets per type (2026 walk over ranges +
-        // Added exceptions), then bases and members by subset.
-        let day_set = |sid: &str| -> BTreeSet<chrono::NaiveDate> {
-            let st = &net.service_types[sid];
-            let mut days: BTreeSet<chrono::NaiveDate> = BTreeSet::new();
-            for r in &st.rule.ranges {
-                let mut d = r.start;
-                while d <= r.end {
-                    if st.rule.runs_on(d) {
-                        days.insert(d);
-                    }
-                    d += Duration::days(1);
-                }
-            }
-            days
-        };
-        let ids: Vec<&String> = net.service_types.keys().collect();
-        // Same WEEKLY PATTERN and a day-set subset: the flags are
-        // the family's identity (a Tuesday-only service is its own
-        // family however few days it runs), the subset says it
-        // never runs a day the base does not.
-        let same_days_pattern = |a: &str, b: &str| {
-            net.service_types[a].rule.days == net.service_types[b].rule.days
-        };
-        let is_base = |t: &str| {
-            let dt = day_set(t);
-            !ids.iter().any(|u| {
-                u.as_str() != t
-                    && same_days_pattern(u, t)
-                    && {
-                        let du = day_set(u);
-                        dt.iter().all(|d| du.contains(d)) && !du.iter().all(|d| dt.contains(d))
-                    }
-            })
-        };
-        let expected_bases: Vec<&String> =
-            ids.iter().copied().filter(|t| is_base(t)).collect();
-        prop_assert_eq!(groups.len(), expected_bases.len(), "one row per base");
+        let combinations = transit_network::service_combinations(&net);
+        prop_assert_eq!(
+            groups.iter().map(|g| &g.combination).collect::<Vec<_>>(),
+            combinations.iter().collect::<Vec<_>>(),
+            "one row per combination, in its order"
+        );
         for group in &groups {
-            let base_days = day_set(&group.service_type);
-            let members: BTreeSet<String> = ids
-                .iter()
-                .filter(|m| {
-                    same_days_pattern(m, &group.service_type)
-                        && day_set(m).iter().all(|d| base_days.contains(d))
-                })
-                .map(|m| (*m).clone())
-                .collect();
-            prop_assert_eq!(
-                group.members.iter().collect::<BTreeSet<_>>(),
-                members.iter().collect::<BTreeSet<_>>(),
-                "{} members", group.service_type
-            );
-            assert!(members.contains(&group.service_type), "the base is in its own family");
-            // The family's pooled numbers, recomputed.
+            let members: BTreeSet<&String> = group.combination.members.iter().collect();
+            // The pooled numbers, recomputed from the members' trips.
             let mut trips_n = 0u32;
             let mut routes: BTreeSet<String> = BTreeSet::new();
             let mut stops: BTreeSet<String> = BTreeSet::new();
@@ -1004,10 +907,8 @@ proptest! {
                 if !members.contains(&entry.service_type) {
                     continue;
                 }
-                if let Some(p) = net.patterns.get(&entry.pattern) {
-                    routes.insert(p.route.clone());
-                }
                 for trip in transit_network::materialize_service(&net, schedule_id).expect("valid document") {
+                    routes.insert(net.patterns[&trip.pattern].route.clone());
                     trips_n += 1;
                     stops.extend(trip.stop_times.iter().map(|st| st.stop.clone()));
                     if let Some(end) = trip.stop_times.last() {
@@ -1015,32 +916,39 @@ proptest! {
                     }
                 }
             }
-            prop_assert_eq!(group.trips, trips_n, "{} trips", group.service_type);
-            prop_assert_eq!(group.active_routes, routes.len() as u32, "{} routes", group.service_type);
-            prop_assert_eq!(group.active_stops, stops.len() as u32, "{} stops", group.service_type);
-            prop_assert!(
-                (group.revenue_hours - runtime as f64 / 3600.0).abs() < 1e-9,
-                "{} revenue hours", group.service_type
-            );
-        }
-        // A non-base type appears only as a member, never as a row.
-        for t in &ids {
-            if !is_base(t) {
-                prop_assert!(
-                    !groups.iter().any(|g| g.service_type == t.as_str()),
-                    "{} is a rider, not a row", t
-                );
-                prop_assert!(
-                    groups.iter().any(|g| g.members.contains(t)),
-                    "{} rides in exactly some family", t
-                );
+            let id = &group.combination.id;
+            prop_assert_eq!(group.trips, trips_n, "{} trips", id);
+            prop_assert_eq!(group.active_routes, routes.len() as u32, "{} routes", id);
+            prop_assert_eq!(group.active_stops, stops.len() as u32, "{} stops", id);
+            prop_assert!(close(group.revenue_hours, runtime as f64 / 3600.0, 1e-9), "{} revenue hours", id);
+
+            // Every date it holds on runs exactly this service.
+            let detail = transit_analysis::service_type_detail(&net, &group.combination.members).expect("its detail");
+            prop_assert_eq!(detail.trips, group.trips);
+            for d in &group.combination.dates {
+                let date = NaiveDate::parse_from_str(d, "%Y-%m-%d").unwrap();
+                let day = transit_analysis::network_stats(&net, date);
+                prop_assert_eq!(day.trips, group.trips, "{} on {}: trips", id, d);
+                prop_assert_eq!(day.active_routes, group.active_routes, "{} on {}: routes", id, d);
+                prop_assert_eq!(day.active_stops, group.active_stops, "{} on {}: stops", id, d);
+                prop_assert!(close(day.revenue_hours, group.revenue_hours, 1e-9), "{} on {}: revenue hours", id, d);
+                prop_assert!(close(day.revenue_miles, group.revenue_miles, 1e-9), "{} on {}: revenue miles", id, d);
+                let active: Vec<_> = day.routes.iter().filter(|r| r.trips > 0)
+                    .map(|r| (r.route_id.clone(), r.trips, r.first_start_secs, r.last_arrival_secs, r.typical_headway_secs, r.headway_stop.clone()))
+                    .collect();
+                let pooled: Vec<_> = detail.routes.iter()
+                    .map(|r| (r.route_id.clone(), r.trips, r.first_start_secs, r.last_arrival_secs, r.typical_headway_secs, r.headway_stop.clone()))
+                    .collect();
+                prop_assert_eq!(active, pooled, "{} on {}: the routes", id, d);
+                let hourly: u32 = transit_analysis::hourly_trips(&net, date).iter().map(|h| h.trips).sum();
+                prop_assert_eq!(hourly, group.trips, "{} on {}: the day profile", id, d);
             }
         }
     }
 
     /// The frequency grid's read — `route_frequency` matches an
-    /// independent fold of the service GROUP's pooled trips (the
-    /// family `schedule_texture` reads, no date filter): one row per
+    /// independent fold of the service COMBINATION's pooled trips (the
+    /// members `schedule_texture` reads, no date filter): one row per
     /// route with departures, at the route's headway stop (the most
     /// departures, lowest id on a tie — the stop `service_type_detail`
     /// reads its headway at), and that stop's day by hour — every
@@ -1053,14 +961,15 @@ proptest! {
         let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
         let net = transit_codec::import(&feed).network;
 
-        for type_id in ["0", "1", "2", "3"] {
-            let answer = transit_analysis::route_frequency(&net, type_id);
-            let detail = transit_analysis::service_type_detail(&net, type_id);
-            prop_assert_eq!(answer.is_some(), detail.is_some(), "{} answers like the detail", type_id);
+        for combination in transit_network::service_combinations(&net) {
+            let answer = transit_analysis::route_frequency(&net, &combination.members);
+            let detail = transit_analysis::service_type_detail(&net, &combination.members);
+            let type_id = &combination.id;
+            prop_assert!(answer.is_some() && detail.is_some(), "{} answers, like the detail", type_id);
             let (Some(answer), Some(detail)) = (answer, detail) else { continue };
-            prop_assert_eq!(&answer.date, &detail.date);
+            prop_assert_eq!(&answer.group, &detail.group);
 
-            let group = transit_network::service_family(&net, type_id);
+            let group: BTreeSet<&String> = combination.members.iter().collect();
             let mut departures: BTreeMap<String, BTreeMap<String, Vec<u32>>> = BTreeMap::new();
             for (id, entry) in &net.pattern_trips {
                 if !group.contains(&entry.service_type) {
@@ -1116,7 +1025,7 @@ proptest! {
                 }
             }
         }
-        prop_assert!(transit_analysis::route_frequency(&net, "nope").is_none(), "an unknown type answers None");
+        prop_assert!(transit_analysis::route_frequency(&net, &["nope".to_string()]).is_none(), "unknown members answer None");
     }
 
     /// The hub's route-pair read — `hub_connections` is the fold of
@@ -1160,7 +1069,7 @@ fn an_hours_gaps_are_the_trips_own() {
     let trip = |start_slot| GenTrip { route: 0, service: 0, block: None, start_slot, stops: vec![0, 1], leg_min: 5 };
     let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&[trip(0), trip(1), trip(3), trip(6)])).expect("parse");
     let net = transit_codec::import(&feed).network;
-    let answer = transit_analysis::route_frequency(&net, "0").expect("a weekday type");
+    let answer = transit_analysis::route_frequency(&net, &["0".to_string()]).expect("a weekday combination");
     let hours: Vec<_> = answer.routes[0]
         .hours
         .iter()

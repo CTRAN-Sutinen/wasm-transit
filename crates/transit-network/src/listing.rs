@@ -13,7 +13,9 @@
 //! timetable is the day the model runs, never a second derivation.
 //!
 //! And the stop question asked from a POINT: the places nearest it,
-//! a station's bays answering as the station.
+//! a station's bays answering as the station — and from what a rider
+//! TYPES: the stops a query finds, exact matches first, then a sign's
+//! abbreviations, then typos (D-48, [`find_stops`]).
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -109,7 +111,8 @@ pub struct VariantStop {
     pub stops: Vec<String>,
 }
 
-/// A timetable: one route, one direction, one service type.
+/// A timetable: one route, one direction, one service COMBINATION
+/// (D-55: the service types that run together on the same dates).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Timetable {
@@ -119,8 +122,11 @@ pub struct Timetable {
     pub route_long_name: Option<String>,
     pub direction: Option<String>,
     pub direction_name: String,
-    pub service_type: String,
-    pub service_type_name: String,
+    /// The combination this timetable pools: its id (members joined
+    /// " + ") and its members — the service ids key trips, the
+    /// combination is the day a rider gets.
+    pub group: String,
+    pub members: Vec<String>,
     /// The columns: every stop the direction's patterns visit, in
     /// route order (a variant's stops sit where it leaves and rejoins
     /// the others).
@@ -401,76 +407,40 @@ fn variants(network: &Network, pattern_ids: &[&String]) -> Vec<RouteVariant> {
     out.into_iter().map(|(_, v)| v).collect()
 }
 
-/// The SERVICE FAMILY: the base plus every service type that rides
-/// along with it — the SAME WEEKLY PATTERN (a rider runs the same
-/// KIND of days: the overlays are Mon–Fri like their 1-WKDY), and
-/// never a day the base does not run (calendar subset, Added
-/// exceptions included). A Tuesday-only or Mon+Wed service is its
-/// own family however few days it runs. The agency's ids say the
-/// family (1-WKDY/30, /31), the model's calendars prove it; service
-/// ids key TRIPS, and the trips of one family are ONE service.
-/// Empty for an unknown base.
-pub fn service_family(network: &Network, base_id: &str) -> std::collections::BTreeSet<String> {
-    let Some(base) = network.service_types.get(base_id) else {
-        return Default::default();
-    };
-    let mut members = std::collections::BTreeSet::new();
-    for (id, other) in &network.service_types {
-        if other.rule.days != base.rule.days {
-            continue;
-        }
-        let rides_along = other
-            .rule
-            .ranges
-            .iter()
-            .flat_map(|r| {
-                let mut out = Vec::new();
-                let mut d = r.start;
-                while d <= r.end {
-                    out.push(d);
-                    d += chrono::Duration::days(1);
-                }
-                out
-            })
-            .chain(
-                other
-                    .rule
-                    .exceptions
-                    .iter()
-                    .filter(|e| e.state == crate::DayState::Added)
-                    .map(|e| e.date),
-            )
-            .all(|d| !other.rule.runs_on(d) || base.rule.runs_on(d));
-        if rides_along {
-            members.insert(id.clone());
-        }
-    }
-    members
+/// The timetable of `route` in `direction` (`None`: its patterns in
+/// no direction) under the service COMBINATION `members` (D-55): every
+/// member's trips on the direction's patterns pooled — the types that
+/// run together on its dates, the service ids keying trips, never
+/// owning the route. `None` for an unknown route or direction, or a
+/// member set that never runs together on a date. A pattern whose
+/// trips cannot materialize (an invalid document mid-edit) contributes
+/// none — validation names it.
+pub fn timetable(network: &Network, route: &str, direction: Option<&str>, members: &[String]) -> Option<Timetable> {
+    let combination = crate::service_combination(network, members)?;
+    pooled_timetable(network, route, direction, &combination.members)
 }
 
-/// The timetable of `route` in `direction` (`None`: its patterns in
-/// no direction) under `service_type` — the base's SERVICE FAMILY
-/// pooled: every member's trips on the direction's patterns, the
-/// service ids keying trips, never owning the route. `None` for an
-/// unknown route, direction or service type. A pattern whose trips
-/// cannot materialize (an invalid document mid-edit) contributes
-/// none — validation names it.
-pub fn timetable(network: &Network, route: &str, direction: Option<&str>, service_type: &str) -> Option<Timetable> {
+/// The timetable over `members`' trips, whether or not they run
+/// together in this network (a baseline the combination is new to
+/// runs what its members run there).
+fn pooled_timetable(network: &Network, route: &str, direction: Option<&str>, members: &[String]) -> Option<Timetable> {
     let r = network.routes.get(route)?;
     let direction_name = match direction {
         Some(d) => r.directions.get(d)?.name.clone(),
         None => "No direction".to_string(),
     };
-    let service = network.service_types.get(service_type)?;
+    let mut members: Vec<String> = members.to_vec();
+    members.sort();
+    members.dedup();
 
-    // The direction's patterns under the base's FAMILY, with their
+    // The direction's patterns under the combination, with their
     // trips — every member's schedules pool (service ids key trips).
-    let family = service_family(network, service_type);
+    let family: std::collections::BTreeSet<&str> = members.iter().map(String::as_str).collect();
     let mut by_pattern: std::collections::BTreeMap<&str, (Vec<String>, Vec<crate::MaterializedTrip>, bool)> =
         Default::default();
     for (id, pt) in &network.pattern_trips {
         let Some(p) = network.patterns.get(&pt.pattern) else { continue };
-        if !family.contains(&pt.service_type) || p.route != route || p.direction.as_deref() != direction {
+        if !family.contains(pt.service_type.as_str()) || p.route != route || p.direction.as_deref() != direction {
             continue;
         }
         let entry = by_pattern.entry(pt.pattern.as_str()).or_default();
@@ -573,8 +543,8 @@ pub fn timetable(network: &Network, route: &str, direction: Option<&str>, servic
         route_long_name: r.long_name.clone(),
         direction: direction.map(str::to_string),
         direction_name,
-        service_type: service_type.to_string(),
-        service_type_name: service.name.clone(),
+        group: members.join(" + "),
+        members,
         stops,
         patterns,
         trips,
@@ -587,18 +557,19 @@ pub fn timetable(network: &Network, route: &str, direction: Option<&str>, servic
 /// RETIMED (it carries its baseline start), one only the proposal runs
 /// is `added`, and one only the baseline runs is `removed`. A
 /// frequency trip's instances share its id, so each instance is
-/// matched by (trip, start) — kept, added, or removed. A baseline
-/// without this route, direction, or service type runs none of them.
+/// matched by (trip, start) — kept, added, or removed. The baseline
+/// side runs what the combination's members run there (a baseline
+/// without this route, direction, or members runs none of them).
 pub fn timetable_against(
     network: &Network,
     base: &Network,
     route: &str,
     direction: Option<&str>,
-    service_type: &str,
+    members: &[String],
 ) -> Option<Timetable> {
     use std::collections::{BTreeMap, BTreeSet};
-    let mut t = timetable(network, route, direction, service_type)?;
-    let before = timetable(base, route, direction, service_type).map(|b| b.trips).unwrap_or_default();
+    let mut t = timetable(network, route, direction, members)?;
+    let before = pooled_timetable(base, route, direction, &t.members).map(|b| b.trips).unwrap_or_default();
     // A trip id with exactly one instance is a one-start trip.
     let singles = |trips: &[TimetableTrip]| -> BTreeMap<String, u32> {
         let mut seen: BTreeMap<String, Option<u32>> = BTreeMap::new();
@@ -749,4 +720,116 @@ pub fn stops_near_walked(
             }
         })
         .collect()
+}
+
+/// How a typed query answers a stop's name (D-48; thresholds D-91),
+/// best first: the order a picker lists matches in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum NameMatch {
+    /// Every term is a substring of the name or the id.
+    Exact,
+    /// At least one term is answered by an abbreviation on the sign
+    /// ("Van" for "vancouver", "St" for "street"), the rest exactly.
+    Abbreviation,
+    /// At least one term is answered only within a typo of a name word.
+    Typo,
+}
+
+/// How `query` answers a stop named `name` with id `id`: each
+/// whitespace-separated term, case-insensitive, must be answered —
+/// as a substring of the name or the id (exact); by a name word that
+/// abbreviates it (a word of three letters or more that begins the
+/// term, or a word that is a subsequence of the term sharing its first
+/// and last letter); or within a typo of a name word or of a word's
+/// start (one edit — a letter substituted, added, dropped, or two
+/// neighbours swapped — from four letters, two from eight; never
+/// under four). The worst term's answer is the stop's; `None` when a
+/// term has none. An empty query answers every stop exactly.
+pub fn name_match(query: &str, name: &str, id: &str) -> Option<NameMatch> {
+    let haystack = format!("{name} {id}").to_lowercase();
+    let words: Vec<Vec<char>> = name
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(|w| w.chars().collect())
+        .collect();
+    let mut worst = NameMatch::Exact;
+    for term in query.split_whitespace().map(str::to_lowercase) {
+        let answer = if haystack.contains(term.as_str()) {
+            NameMatch::Exact
+        } else {
+            let t: Vec<char> = term.chars().collect();
+            if words.iter().any(|w| abbreviates(w, &t)) {
+                NameMatch::Abbreviation
+            } else if words.iter().any(|w| within_typo(&t, w)) {
+                NameMatch::Typo
+            } else {
+                return None;
+            }
+        };
+        worst = worst.max(answer);
+    }
+    Some(worst)
+}
+
+/// The stops `query` finds ([`name_match`]), best match first, then by
+/// name, then id — the pickers' order; no query, every stop by name.
+pub fn find_stops(network: &Network, query: &str) -> Vec<String> {
+    let mut found: Vec<(NameMatch, &str, &String)> = network
+        .stops
+        .iter()
+        .filter_map(|(id, s)| name_match(query, &s.name, id).map(|m| (m, s.name.as_str(), id)))
+        .collect();
+    found.sort();
+    found.into_iter().map(|(_, _, id)| id.clone()).collect()
+}
+
+/// A sign's word `w` abbreviates the typed term `t`.
+fn abbreviates(w: &[char], t: &[char]) -> bool {
+    if w.len() >= t.len() || w.len() < 2 {
+        return false;
+    }
+    if w.len() >= 3 && t.starts_with(w) {
+        return true;
+    }
+    if w[0] != t[0] || w.last() != t.last() {
+        return false;
+    }
+    let mut rest = t.iter();
+    w.iter().all(|c| rest.any(|x| x == c))
+}
+
+/// The typed term `t` is within a typo of the word `w` or of its start.
+fn within_typo(t: &[char], w: &[char]) -> bool {
+    let budget = match t.len() {
+        0..=3 => return false,
+        4..=7 => 1,
+        _ => 2,
+    };
+    let lo = t.len().saturating_sub(budget).max(1);
+    let hi = (t.len() + budget).min(w.len());
+    (lo..=hi).any(|k| edits(t, &w[..k]) <= budget)
+}
+
+/// The optimal-string-alignment distance: substitutions, insertions,
+/// deletions, and adjacent transpositions.
+fn edits(a: &[char], b: &[char]) -> usize {
+    let (n, m) = (a.len(), b.len());
+    let mut d = vec![vec![0usize; m + 1]; n + 1];
+    for (i, row) in d.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for j in 0..=m {
+        d[0][j] = j;
+    }
+    for i in 1..=n {
+        for j in 1..=m {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            d[i][j] = (d[i - 1][j] + 1).min(d[i][j - 1] + 1).min(d[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
+            }
+        }
+    }
+    d[n][m]
 }

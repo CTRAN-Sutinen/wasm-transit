@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use transit_network::{Coord, Network};
-use transit_sync::{DetourPoint, Diversion, EditRecord, EditStatus};
+use transit_sync::{DetourPoint, Diversion, EditRecord, EditStatus, TripCancel};
 
 /// The editor's form state. Every field but the route may be unset
 /// while the dispatcher works.
@@ -236,6 +236,33 @@ pub fn diversion_of(network: &Network, draft: &DiversionDraft, id: &str) -> Resu
     })
 }
 
+/// The trip cancel a dispatcher's pick becomes (D-45): the trip, one
+/// instance or all of them, on one service date. The trip must exist,
+/// a named instance must be one it runs, and its service type must run
+/// on the date — a cancel of a trip that does not run takes nothing
+/// away, so it is refused with the reason. `id` is the domain id the
+/// host mints.
+pub fn cancel_of(
+    network: &Network,
+    id: &str,
+    trip_id: &str,
+    start_secs: Option<u32>,
+    date: &str,
+) -> Result<TripCancel, String> {
+    let on = parse_date(date).ok_or_else(|| format!("invalid date {date:?} (YYYY-MM-DD)"))?;
+    let (_, pattern_trips, trip) = network.trip(trip_id).ok_or_else(|| format!("unknown trip {trip_id}"))?;
+    if let Some(s) = start_secs {
+        if !trip.departs.instances().contains(&s) {
+            return Err(format!("trip {trip_id} has no instance starting at {s}"));
+        }
+    }
+    let runs = network.service_types.get(&pattern_trips.service_type).is_some_and(|t| t.rule.runs_on(on));
+    if !runs {
+        return Err(format!("trip {trip_id} does not run on {date}"));
+    }
+    Ok(TripCancel { id: id.to_string(), trip_id: trip_id.to_string(), start_secs, date: on })
+}
+
 /// One record of the edit document as the dispatcher's list shows it:
 /// ids resolved to the network's names (an id the network lacks shows
 /// as itself — the record's own validation report says why).
@@ -256,12 +283,13 @@ pub struct DiversionRow {
     pub end_date: String,
 }
 
-/// The edit document's rows, in document order.
+/// The edit document's diversion rows, in document order (its cancels
+/// are [`cancel_rows`]).
 pub fn diversion_rows(network: &Network, records: &[EditRecord]) -> Vec<DiversionRow> {
     records
         .iter()
-        .map(|r| {
-            let d = &r.diversion;
+        .filter_map(|r| Some((r, r.diversion.as_ref()?)))
+        .map(|(r, d)| {
             DiversionRow {
                 record_id: r.id.clone(),
                 status: r.status,
@@ -274,6 +302,60 @@ pub fn diversion_rows(network: &Network, records: &[EditRecord]) -> Vec<Diversio
                 detour_drawn: d.detour.as_ref().is_some_and(|p| !p.is_empty()),
                 start_date: d.start_date.format("%Y-%m-%d").to_string(),
                 end_date: d.end_date.format("%Y-%m-%d").to_string(),
+            }
+        })
+        .collect()
+}
+
+/// One trip cancel of the edit document as the list shows it: the
+/// trip by its route and its ends, and when it would have left (an
+/// id the network lacks shows as itself — the record's validation
+/// report says why).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CancelRow {
+    pub record_id: String,
+    pub status: EditStatus,
+    /// Retired is the tombstone: out of the working list.
+    pub in_force: bool,
+    pub trip_id: String,
+    /// The instance cancelled: the one named, else the trip's only
+    /// start; `None` for every instance of a frequency trip.
+    pub start_secs: Option<u32>,
+    pub route_name: String,
+    /// The trip's first and last stops, by name.
+    pub from_name: String,
+    pub to_name: String,
+    pub date: String,
+}
+
+/// The edit document's trip cancels, in document order.
+pub fn cancel_rows(network: &Network, records: &[EditRecord]) -> Vec<CancelRow> {
+    records
+        .iter()
+        .filter_map(|r| Some((r, r.cancel.as_ref()?)))
+        .map(|(r, c)| {
+            let found = network.trip(&c.trip_id);
+            let pattern = found.and_then(|(_, pt, _)| network.patterns.get(&pt.pattern));
+            let end = |last: bool| {
+                pattern
+                    .and_then(|p| if last { p.stops.last() } else { p.stops.first() })
+                    .map(|ps| stop_name(network, &ps.stop))
+                    .unwrap_or_default()
+            };
+            let only_start = found.map(|(_, _, t)| t.departs.instances()).filter(|s| s.len() == 1).map(|s| s[0]);
+            CancelRow {
+                record_id: r.id.clone(),
+                status: r.status,
+                in_force: r.status != EditStatus::Retired,
+                trip_id: c.trip_id.clone(),
+                start_secs: c.start_secs.or(only_start),
+                route_name: pattern
+                    .map(|p| network.routes.get(&p.route).map(|x| x.label().to_string()).unwrap_or_else(|| p.route.clone()))
+                    .unwrap_or_else(|| c.trip_id.clone()),
+                from_name: end(false),
+                to_name: end(true),
+                date: c.date.format("%Y-%m-%d").to_string(),
             }
         })
         .collect()

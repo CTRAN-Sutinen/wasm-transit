@@ -2,9 +2,10 @@
 //! notice is computed.
 //!
 //! A compared plan is the same query over two worlds: the day with
-//! the diversions in force (active) and the unpatched day (baseline).
-//! The rider hears about ANY change the diversion makes to their
-//! trip: no trip at all, a later arrival, or a ride on a diverted
+//! the edits in force (active: diversions patched, cancelled trips
+//! out) and the unpatched day (baseline). The rider hears about ANY
+//! change the edits make to their trip: no trip at all, a later
+//! arrival (a cancelled trip's rider takes the next), or a ride on a diverted
 //! trip (a trip instance whose patched stop times differ from its
 //! unpatched instance) — not only when the active world has no trip.
 

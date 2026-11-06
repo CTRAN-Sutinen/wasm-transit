@@ -32,7 +32,7 @@
     plans: { key: string; name: string }[];
     activeKey: string;
     compareKey: string;
-    groups: { service_type: string; name: string; members: string[] }[];
+    groups: { id: string; dates: string[] }[];
     group: string;
     routes: Opt[];
     route: string;
@@ -72,8 +72,8 @@
   <label class="chip sel">
     <small>Group</small>
     <select value={group} onchange={(e) => ongroup(e.currentTarget.value)} data-testid="group-select">
-      {#each groups as g (g.service_type)}
-        <option value={g.service_type}>{g.name}{g.members.length > 1 ? ` +${g.members.length - 1}` : ""}</option>
+      {#each groups as g (g.id)}
+        <option value={g.id}>{g.id} · {g.dates.length} days</option>
       {/each}
     </select>
   </label>

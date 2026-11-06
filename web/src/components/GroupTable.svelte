@@ -1,28 +1,29 @@
 <script lang="ts">
-  /// The service groups (analysis `service_groups`): one row per base
-  /// with the members that ride along and the group's pooled numbers.
-  /// A row selects the group every view reads.
+  /// The service groups (analysis `service_groups`): one row per
+  /// combination of service types that run together (D-55), with the
+  /// dates it holds on and its members' pooled numbers. A row selects
+  /// the group every view reads.
   import type { ServiceGroup } from "../types/ServiceGroup";
-  import { count, fixed } from "./designFormat";
+  import { count, fixed, spansText } from "./designFormat";
 
   let { groups, selected, onselect }: { groups: ServiceGroup[]; selected: string; onselect: (group: string) => void } = $props();
 </script>
 
 <section class="panel" aria-label="Service groups" data-testid="group-table">
-  <header><h2>Service groups</h2><span class="muted">the families behind the service ids</span></header>
+  <header><h2>Service groups</h2><span class="muted">the service types that run together, and when</span></header>
   <div class="scroll">
     <table>
-      <thead><tr><th>Group</th><th>Members</th><th class="n">Trips</th><th class="n">Routes</th><th class="n">Rev. h</th><th class="n">Rev. mi</th><th>Rep. day</th></tr></thead>
+      <thead><tr><th>Group</th><th>Dates</th><th class="n">Days</th><th class="n">Trips</th><th class="n">Routes</th><th class="n">Rev. h</th><th class="n">Rev. mi</th></tr></thead>
       <tbody>
-        {#each groups as g (g.service_type)}
-          <tr class:sel={g.service_type === selected} onclick={() => onselect(g.service_type)}>
-            <td><button type="button" onclick={() => onselect(g.service_type)}>{g.name}</button></td>
-            <td class="muted">{g.members.join(", ")}</td>
+        {#each groups as g (g.id)}
+          <tr class:sel={g.id === selected} onclick={() => onselect(g.id)}>
+            <td><button type="button" onclick={() => onselect(g.id)}>{g.id}</button></td>
+            <td class="muted" data-testid="group-dates">{spansText(g.spans)}</td>
+            <td class="n">{g.dates.length}</td>
             <td class="n">{count(g.trips)}</td>
             <td class="n">{g.active_routes}</td>
             <td class="n">{fixed(g.revenue_hours)}</td>
             <td class="n">{count(Math.round(g.revenue_miles))}</td>
-            <td class="muted">{g.date || "none"}</td>
           </tr>
         {/each}
       </tbody>

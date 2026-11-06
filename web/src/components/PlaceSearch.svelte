@@ -141,7 +141,7 @@
         {:else}
           {#if !addresses?.places.length}
             <li class="none">
-              No stop is named “{found.text}”. Stop names follow the sign (“Van Mall”, not “Vancouver Mall”) — try another word, the stop number, or tap the map.
+              No stop is named “{found.text}”. Stop names follow the sign — try another word, the stop number, or tap the map.
             </li>
           {/if}
         {/each}

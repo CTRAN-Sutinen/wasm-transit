@@ -11,6 +11,8 @@ transit-network = { path = "../transit-network" }
 transit-live = { path = "../transit-live" }
 # The walk table (read-only): street walks between the network's stops.
 transit-streets = { path = "../transit-streets" }
+# The board's one wait rule (D-24): "leave in N min" (D-40).
+transit-dispatch = { path = "../transit-dispatch" }
 chrono = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }

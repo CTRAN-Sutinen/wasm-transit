@@ -27,7 +27,7 @@ const DATE: &str = "2026-10-23";
 fn record(id: &str, status: EditStatus, rev: u64, updated_at: u64) -> EditRecord {
     EditRecord {
         id: id.into(),
-        diversion: Diversion {
+        diversion: Some(Diversion {
             id: format!("d-{id}"),
             route_id: "10".into(),
             direction_id: None,
@@ -38,7 +38,8 @@ fn record(id: &str, status: EditStatus, rev: u64, updated_at: u64) -> EditRecord
             added_secs: 300,
             start_date: chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap(),
             end_date: chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap(),
-        },
+        }),
+        cancel: None,
         status,
         rev,
         updated_at,
@@ -173,7 +174,7 @@ fn read_edits_migrates_a_received_document_at_receive() {
         Response::ReadEdits { records, dropped, schema_version, document, document_hash } => {
             assert_eq!(records.len(), 2, "defaults fill what age removed");
             assert_eq!(dropped, 3, "malformed records are counted, never wedging the document");
-            assert_eq!(records[1].diversion.added_secs, 0);
+            assert_eq!(records[1].diversion.as_ref().unwrap().added_secs, 0);
             assert_eq!(schema_version, transit_sync::SCHEMA_VERSION);
             assert_eq!(document, serde_json::to_string(&records).unwrap());
             assert_eq!(document_hash, cap_abi::canonical_hash(&records).unwrap());

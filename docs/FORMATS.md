@@ -132,6 +132,17 @@ commit's two writes.
   greater canonical record. The receive path clamps
   `updated_at = min(updated_at, now_ms)` (D-56), so the server clock
   bounds the order and redelivery is idempotent.
+- An edit record carries exactly one payload, `diversion` or `cancel`
+  (D-45); the absent one is omitted, never `null`, so a diversion
+  record's bytes — and every edit document's hash — are the ones they
+  were before the cancel payload existed (D-101). The LWW unit is the
+  whole record: a later write may replace a diversion with a cancel
+  under one id. A reader drops a record with neither or both. The
+  payload is additive under `schema_version` 1: a module built before
+  it drops a cancel record at read and counts it, and the record
+  survives on the server, whose merge unions ids
+  (`docs/units/document-versioning.md`: the version tag inside the
+  document is what turns that into a refusal).
 - `status: "retired"` is the only tombstone: the record stays in the
   document, is no longer in force, and deletions propagate through
   sync. Compaction (D-57) drops retired records older than the horizon
@@ -145,6 +156,13 @@ An `edit_records` blob is the canonical JSON array of records:
 
 ```json
 [{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"submitted","rev":2,"updated_at":1000}]
+```
+
+and a trip cancel (one service date; `start_secs` null = every
+instance the trip runs that day) is a record of its own:
+
+```json
+{"id":"e2","cancel":{"id":"cancel-t10","trip_id":"t10","start_secs":null,"date":"2026-10-23"},"status":"draft","rev":1,"updated_at":2000}
 ```
 
 with sidecar

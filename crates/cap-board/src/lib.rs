@@ -67,7 +67,8 @@ pub enum Request {
     /// status). Each row names its route (short and long), the stop it
     /// leaves from, and where it is going as the sign says there. The
     /// departures the in-force edits took away from the stop are
-    /// `skipped`, each with the diversion that skips it; the live
+    /// `skipped`, each with the diversion that skips it or the cancel
+    /// that took its trip (a cancelled trip is never a row); the live
     /// document's service alerts about the board ride along (the board
     /// carries them, each row names the ones about it). A stop with
     /// nothing of its own — nothing leaving, nothing skipped — that
@@ -88,9 +89,12 @@ pub enum Request {
     },
     /// THE board grouped for a stop's display: one group per route
     /// and destination the stop is served by on the date (a group
-    /// whose last departure has left stays, with none), each holding
+    /// whose last departure has left stays, with none, and says when
+    /// it next runs here — the first of the next seven days whose
+    /// patched day carries it, never the live document, D-42), each holding
     /// its next `per_group` departures (default 3) by the board's
-    /// realtime-first rule and the visits the in-force edits skip,
+    /// realtime-first rule and the visits the in-force edits took away
+    /// (a detour's skips, a cancelled trip's visits),
     /// in the route's display order (`route_sort_order`, then id),
     /// then by destination. Every row says how long until it leaves
     /// (`wait`). A stop with nothing of its own all day that belongs
@@ -173,17 +177,31 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = NETWORK.require(&network_hash)?;
             let live = live_hash.as_deref().map(|h| LIVE.require(h)).transpose()?;
-            Ok(Response::GroupedBoard {
-                board: transit_dispatch::grouped_board(
-                    &network,
-                    &day.trips,
-                    &stop_id,
-                    from_secs,
-                    per_group.unwrap_or(PER_GROUP) as usize,
-                    live.as_deref(),
-                    day.edits.as_ref(),
-                ),
-            })
+            let mut board = transit_dispatch::grouped_board(
+                &network,
+                &day.trips,
+                &stop_id,
+                from_secs,
+                per_group.unwrap_or(PER_GROUP) as usize,
+                live.as_deref(),
+                day.edits.as_ref(),
+            );
+            // A stopped group's next run (D-42): the later days are
+            // materialized here, not held — the kernel keeps a few days
+            // per derivation, and a week of them would push out the
+            // day every other op reads. Asked only while a stopped
+            // group has no answer; never the live document.
+            if board.groups.iter().any(|g| g.departures.is_empty()) {
+                let records = edits_hash.as_deref().map(|h| cap_abi::kernel::EDITS.require(h)).transpose()?;
+                let records = records.as_deref().map(Vec::as_slice).unwrap_or(&[]);
+                let date = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d").map_err(|e| format!("invalid date {date:?}: {e}"))?;
+                transit_dispatch::with_next_service(&network, &mut board, &stop_id, date, from_secs, |on| {
+                    transit_dispatch::day(&network, on, records)
+                        .map(Box::new)
+                        .map_err(|e| format!("the network does not materialize on {on}: {e}"))
+                })?;
+            }
+            Ok(Response::GroupedBoard { board })
         }
         Request::MigrateWatchlist { document } => {
             let (migrated, notes) = migrate_watchlist(&document)?;

@@ -55,7 +55,7 @@ fn route10_schedule(net: &Network) -> String {
 fn record(status: EditStatus, added_secs: u32) -> EditRecord {
     EditRecord {
         id: "e1".into(),
-        diversion: transit_sync::Diversion {
+        diversion: Some(transit_sync::Diversion {
             id: "d1".into(),
             route_id: "10".into(),
             direction_id: None,
@@ -66,7 +66,8 @@ fn record(status: EditStatus, added_secs: u32) -> EditRecord {
             added_secs,
             start_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
             end_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap(),
-        },
+        }),
+        cancel: None,
         status,
         rev: 1,
         updated_at: 1,
@@ -319,7 +320,7 @@ fn an_invalid_edit_record_moves_nothing() {
     // cap-divert's reports says what is wrong with it), and the day
     // views simply find nothing to patch.
     let mut broken = record(EditStatus::Accepted, 60);
-    broken.diversion.first_kept_stop = "ghost".into();
+    broken.diversion.as_mut().unwrap().first_kept_stop = "ghost".into();
     let edits_hash = load_edits(&network_hash, vec![broken]);
     let blocks = match dispatch(Request::Blocks {
         network_hash,
@@ -483,4 +484,93 @@ fn the_kernel_bulk_op_registers_the_same_identity_as_load_network() {
     assert_eq!(via_bytes, via_json);
     let bad = cap_runcut::invoke_bytes(cap_abi::OP_LOAD_NETWORK, b"{not a network");
     assert!(bad.contains("invalid document"), "{bad}");
+}
+
+fn load_rules(min_secs: u32) -> String {
+    let rules = transit_runs::WorkRules {
+        version: 1,
+        recovery: vec![transit_runs::RecoveryRule { route: None, service_type: None, min_secs: Some(min_secs), pct_of_run: None }],
+        ..Default::default()
+    };
+    // The kernel's load: checked, normalized, under its canonical hash.
+    let answer = cap_abi::kernel::invoke(
+        &[&cap_runcut::CAPABILITY],
+        &serde_json::json!({ "op": "load_work_rules", "work_rules": rules }).to_string(),
+    );
+    let value: serde_json::Value = serde_json::from_str(&answer).unwrap();
+    assert_eq!(value["ok"]["version"], 1, "{answer}");
+    value["ok"]["work_rules_hash"].as_str().unwrap().to_string()
+}
+
+/// The recovery view: B1 waits 600 s after t10, which is the
+/// smallest authored layover there (the floor) — no slack; work rules
+/// requiring 900 s win and leave it 300 s short.
+#[test]
+fn the_recovery_view_answers_what_a_wait_requires_and_its_slack() {
+    let network_hash = load_network();
+    let view = |work_rules_hash: Option<String>| match dispatch(Request::Recovery {
+        network_hash: network_hash.clone(),
+        edits_hash: None,
+        date: DATE.into(),
+        work_rules_hash,
+    })
+    .unwrap()
+    {
+        Response::Recovery { recovery } => recovery,
+        _ => panic!("recovery"),
+    };
+    let floor = view(None);
+    let w = &floor.waits[0];
+    assert_eq!((w.block_id.as_str(), w.gap_secs, w.required_secs, w.slack_secs), ("B1", 600, Some(600), Some(0)));
+    assert_eq!(w.required_by, Some(transit_network::RecoverySource::Terminal));
+    let ruled = view(Some(load_rules(900)));
+    let w = &ruled.waits[0];
+    assert_eq!((w.required_secs, w.slack_secs), (Some(900), Some(-300)));
+    assert_eq!(ruled.patterns[0].short, 1);
+    // An unknown rules hash is the unknown-hash error.
+    let err = dispatch(Request::Recovery {
+        network_hash,
+        edits_hash: None,
+        date: DATE.into(),
+        work_rules_hash: Some("sha256:nope".into()),
+    })
+    .unwrap_err();
+    assert!(err.contains("load_work_rules"), "{err}");
+}
+
+/// Suggested blocking (D-46): with the runcut cleared, every trip the
+/// day runs is suggested into a block, and adopting the answer's edits
+/// makes a document whose fleet peak is the answer's.
+#[test]
+fn a_suggestion_adopts_into_the_fleet_it_names() {
+    let mut cleared = derived_network();
+    cleared.blocks.clear();
+    let network_hash = cap_abi::kernel::NETWORK.register(cleared.clone()).unwrap().0;
+    let suggestion = match dispatch(Request::SuggestBlocks {
+        network_hash,
+        edits_hash: None,
+        date: DATE.into(),
+        work_rules_hash: None,
+    })
+    .unwrap()
+    {
+        Response::SuggestBlocks { suggestion } => suggestion,
+        _ => panic!("suggest_blocks"),
+    };
+    let date = chrono::NaiveDate::parse_from_str(DATE, "%Y-%m-%d").unwrap();
+    let day = transit_network::materialize(&cleared, date).unwrap();
+    let suggested: usize = suggestion.blocks.iter().map(|b| b.trips.len()).sum();
+    assert_eq!(suggested + suggestion.unblocked.len(), day.len());
+    assert_eq!(suggestion.authored_peak_vehicles, 0);
+    let adopted = transit_network::apply_edits(&cleared, &suggestion.edits).unwrap();
+    assert_eq!(transit_network::validation_issues(&adopted), vec![]);
+    let adopted_hash = cap_abi::kernel::NETWORK.register(adopted).unwrap().0;
+    let fleet = match dispatch(Request::FleetSummary { network_hash: adopted_hash, edits_hash: None, date: DATE.into() })
+        .unwrap()
+    {
+        Response::FleetSummary { summary } => summary,
+        _ => panic!("fleet_summary"),
+    };
+    assert_eq!(fleet.peak_vehicles, suggestion.peak_vehicles);
+    assert_eq!(suggestion.added_vehicles, suggestion.peak_vehicles);
 }

@@ -163,7 +163,7 @@
       {/if}
       {#if plan.itinerary}
         {#if when.mode === "last"}<p class="label" data-testid="last-bus">The last trip today</p>{/if}
-        <Itinerary itinerary={plan.itinerary} {routes} />
+        <Itinerary itinerary={plan.itinerary} {routes} now={when.mode === "now"} />
       {:else if when.mode === "last" || when.mode === "arrive"}
         <p class="hint">No bus gets you to {to.name} {when.mode === "arrive" ? "by then" : "today"}.</p>
       {:else}

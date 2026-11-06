@@ -27,10 +27,15 @@ cap-streets). What is left:
    A compact encoding (delta-coded varints, names in a table: about
    3.4 MB before compression against the JSON's 4.5 MB gzipped) is a
    later step if the gzipped JSON is not enough.
-2. **The bus profile.** Every class may be drawn on, as an op
-   parameter with an op-owned default; an unknown or path-like class
-   carries a warning the planner confirms (D-26; walking's profile
-   is built: `docs/ARCHITECTURE.md`, transit-streets).
+2. **The bus profile, read by a UI.** On the bus: a route names the
+   streets it follows and, under the bus profile (D-26: every class
+   drawn, never refused), the streets to confirm (cap-streets `route`
+   `streets` / `to_confirm`, `confirm` the op's parameter;
+   `crates/transit-streets/tests/bus_profile_law_test.rs`; on C-TRAN's
+   roads a route along SE Powell Blvd, which the layer leaves
+   unclassed, draws and names it to confirm — D-26's pins). Left: the
+   drawing gesture of item 4 shows `to_confirm` for the planner to
+   confirm before it commits.
 3. **Walking for riders.** The walk table and trips from any point
    are on the bus (cap-streets `walks` and `access`, the router's
    `walks_hash` (the kernel's `load_walks`) and place ends; D-33), and ride-now
@@ -45,15 +50,19 @@ cap-streets). What is left:
      OSM-sourced one (QAF-85).
    - **Walksheds.** Coverage over the walking graph instead of 400 m
      circles (`docs/ROADMAP.md` 4).
-4. **Drawing on streets.** The future consumer the document is
-   designed for: a planner draws a new pattern by tracing between
-   waypoints along the streets a bus may use, the way a dispatcher
-   traces a detour (cap-streets `snap` / `route`). The committed alignment is GEOMETRY in the
-   network document and never references the streets document or a
-   graph position (`crates/AGENTS.md`, Law 1), so a new streets
-   import never breaks a plan. Street names name new stops and the
-   trace's legs (a route answer that carries the names it follows).
-   The service-design UI registers the published document (item 1).
+4. **Drawing on streets.** A planner draws a pattern's line by
+   tracing between waypoints along the streets (cap-streets `snap` /
+   `route`), the way a dispatcher traces a detour, and commits it with
+   author `draw_alignment` (D-11: the edit names whether it redraws one
+   pattern or every pattern on the alignment, and reports the patterns
+   it touched). The committed alignment is GEOMETRY in the network
+   document and never references the streets document or a graph
+   position (`crates/AGENTS.md`, Law 1), so a new streets import never
+   breaks a plan. The route answer names the streets each leg follows.
+   Left: the service-design gesture (registering the published
+   document, item 1; the trace; the confirmation of item 2; the
+   commit and its `touched` patterns shown), its e2e spec, and street
+   names naming new stops.
 5. **Planned streets.** A street a plan serves that the data does
    not have. D-31: freehand only for now.
 6. **The geography release.** The basemap and the streets document,

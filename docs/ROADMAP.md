@@ -49,8 +49,7 @@ server serves the pick in force as GTFS (`GET /feed`).
 estimate **deadheads via the street graph** (the differentiated
 piece — no GTFS toolchain does this), author layovers, and answer
 the question every runcut ends in: **peak vehicle requirement** per
-service type (QAF-3; the layover recovery/slack split, QAF-62, is
-what makes a cut's feasibility real).
+service type (QAF-3).
 
 **Why.** Blocks exist but are imported, not cut. This is the
 planner's daily work; the deadhead integration (design domain ×
@@ -58,7 +57,11 @@ geometry domain, mediated by the host) is also the first real
 exercise of the module-composition thesis.
 
 **Exists already:** blocks + layovers in the model, feasibility
-checks, the street graph with routing, service-type analysis.
+checks judged against the recovery required at each terminal (the
+work rules', else the terminal's floor — D-9), the recovery view,
+suggested blocking of unassigned trips under the work rules with the
+peak it needs (D-46; no deadheads yet), the street graph with
+routing, service-type analysis.
 **Unblocks:** 7 (runs are cut from blocks), fleet planning.
 
 ## 3. The operations → planning feedback loop
@@ -78,7 +81,7 @@ feature here.
 ## 4. Walkshed coverage (not crow-flies)
 
 **What.** Compute real walksheds from stops through the street
-graph (bounded by walk time), and re-run population coverage against
+graph (bounded by walk time), and re-run layer coverage against
 them.
 
 **Why.** The planner's opening question ("what share of the
@@ -86,8 +89,8 @@ population does this network serve?") deserves an answer that
 survives scrutiny. 400 m circles are a placeholder.
 
 **Exists already:** the streets document and its graph, the walk
-table (walking along the streets, between stops), population layer,
-coverage ops parameterized already.
+table (walking along the streets, between stops), weighted layers
+(points and polygons, D-47), coverage ops parameterized already.
 **Needs:** a walkshed op over the walking graph
 (`docs/units/streets-model.md`), and an OSM-sourced streets document
 for walking (QAF-85).
@@ -119,11 +122,12 @@ what the vehicles do; runs answer what the people do, and the bid
 is how a pick reaches them.
 
 **Exists already:** blocks + layovers, the block chain with the
-layover ripple, the sync document's LWW-per-record discipline (a
-bid is shared state).
-**Needs:** 2 (runs are cut from blocks); the work-rule policy
-(QAF-12) and workforce data (QAF-17); the open findings QAF-11,
-QAF-14, QAF-15.
+layover ripple, the work-rule document (D-50: run rules and pay,
+every rule optional), the sync document's LWW-per-record discipline
+(a bid is shared state).
+**Needs:** 2 (runs are cut from blocks); workforce data (QAF-17);
+the runs cut (`docs/units/runs-layer.md`: QAF-11, QAF-12, QAF-14,
+QAF-15).
 **Unblocks:** `docs/units/ui-runcut.md`'s runs questions and
 `docs/units/ui-work-bid.md`.
 

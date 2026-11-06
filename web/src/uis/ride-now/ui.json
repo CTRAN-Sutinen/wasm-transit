@@ -47,7 +47,7 @@
     "RouteView",
     "BusView"
   ],
-  "session": "2026-10-28 16:47 PDT in the browser on C-TRAN (feed sha256:aa8dbc62…) with the live trip updates and vehicle positions (68 buses): nearby boards, a pooled station board (Fisher's Landing), a two-ride trip, and the last bus answered. The caps-run session and the numbers comparison are docs/units/ui-ride-now.md's; no alert has been read. Open findings QAF-70, QAF-79, QAF-80, QAF-81.",
+  "session": "2026-10-28 16:47 PDT in the browser on C-TRAN (feed sha256:aa8dbc62…) with the live trip updates and vehicle positions (68 buses): nearby boards, a pooled station board (Fisher's Landing), a two-ride trip, and the last bus answered. The caps-run session and the numbers comparison are docs/units/ui-ride-now.md's; no alert has been read.",
   "spec": "web/e2e/ui-ride-now.spec.mjs",
   "generated": "2026-10-28"
 }

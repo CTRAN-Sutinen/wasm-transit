@@ -603,6 +603,28 @@ fn build(feed: &SpecFeed) -> Builder {
                 vec![("service_id", s(service)), ("date", s(date)), ("exception_type", s(kind))],
             );
         }
+        // A weekly service published as dates alone, as C-TRAN does:
+        // a zero-flag calendar row, every Monday and Wednesday of March
+        // to May an added date but for one, and a Saturday (D-105: the
+        // import reads its weekly rule; it must come back as dates).
+        let mut row: Row = vec![("service_id", s("3"))];
+        for name in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] {
+            row.push((name, s("0")));
+        }
+        row.push(("start_date", s("20260301")));
+        row.push(("end_date", s("20260531")));
+        b.push("calendar.txt", row);
+        let mut date = chrono::NaiveDate::from_ymd_opt(2026, 3, 2).unwrap();
+        while date <= chrono::NaiveDate::from_ymd_opt(2026, 5, 27).unwrap() {
+            if date != chrono::NaiveDate::from_ymd_opt(2026, 4, 6).unwrap() {
+                let d = date.format("%Y%m%d").to_string();
+                b.push("calendar_dates.txt", vec![("service_id", s("3")), ("date", d.clone()), ("exception_type", s("1"))]);
+                let wed = (date + chrono::Duration::days(2)).format("%Y%m%d").to_string();
+                b.push("calendar_dates.txt", vec![("service_id", s("3")), ("date", wed), ("exception_type", s("1"))]);
+            }
+            date += chrono::Duration::days(7);
+        }
+        b.push("calendar_dates.txt", vec![("service_id", s("3")), ("date", s("20260404")), ("exception_type", s("1"))]);
     }
 
     // ---- trips.txt + stop_times.txt (the scheduled core) ----

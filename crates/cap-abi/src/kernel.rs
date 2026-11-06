@@ -15,7 +15,7 @@
 //! before any capability decodes the request. A load answers the
 //! document's identity (`<kind>_hash`, the module is the hash
 //! authority) and what the host shows about it (a feed's summary, a
-//! layer's headcount). A capability's `Request` carries no load op.
+//! layer's fields). A capability's `Request` carries no load op.
 //!
 //! **Derived data is held here too.** A derivation — the day patched
 //! with the edits in force, the router's graph, a street graph — is a
@@ -42,7 +42,7 @@ use ts_rs::TS;
 
 use crate::registry::{Held, Registry, Retain, OP_EVICT, OP_HELD};
 
-pub use transit_analysis::PopLayer;
+pub use transit_analysis::WeightedLayer;
 pub use transit_codec::{Boundary, Feed, FeedSummary};
 pub use transit_live::LiveDay;
 pub use transit_network::Network;
@@ -51,6 +51,7 @@ pub use transit_streets::Streets;
 pub use transit_streets::walking::WalkTable;
 pub use transit_sync::EditRecord;
 pub use transit_dispatch::watchlist::Watchlist;
+pub use transit_runs::WorkRules;
 
 // ---------------------------------------------------------------------
 // the kernel ops
@@ -72,6 +73,9 @@ pub const OP_LOAD_RT: u32 = 267;
 /// index order, each with the document kinds it reads (the bytes are
 /// ignored). The answer is [`About`].
 pub const OP_ABOUT: u32 = 268;
+
+/// The work rules' load (after [`OP_ABOUT`], which took 268).
+pub const OP_LOAD_WORK_RULES: u32 = 269;
 
 /// [`OP_ABOUT`]'s answer.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -107,17 +111,23 @@ pub enum Loaded {
     /// segments, and their distinct points.
     LoadStreets { streets_hash: String, ways: u32, segments: u32, nodes: u32 },
     LoadWatchlist { watchlist_hash: String, version: u32 },
-    /// The field the parse picked and the people it found — the whole
-    /// answer the layer's import shows.
-    LoadPopulationLayer {
+    /// What the layer holds and the weights it can be read by (each
+    /// numeric property, with its total) — the whole answer the
+    /// layer's import shows; a coverage op names the field.
+    LoadLayer {
         layer_hash: String,
         #[ts(type = "number")]
+        features: u64,
+        #[ts(type = "number")]
         points: u64,
-        pop_field: String,
-        total_pop: f64,
+        #[ts(type = "number")]
+        polygons: u64,
+        fields: Vec<transit_analysis::LayerField>,
     },
     LoadFeed { feed_hash: String, summary: FeedSummary },
     LoadRt { rt_hash: String },
+    /// The version the rules speak.
+    LoadWorkRules { work_rules_hash: String, version: u32 },
 }
 
 /// The JSON lane's envelope: the op, the capability it names, and the
@@ -144,9 +154,9 @@ pub struct Envelope<'a> {
     #[serde(borrow, default)]
     document: Option<&'a RawValue>,
     #[serde(borrow, default)]
+    work_rules: Option<&'a RawValue>,
+    #[serde(borrow, default)]
     bytes: Option<&'a RawValue>,
-    #[serde(default)]
-    pop_field: Option<String>,
 }
 
 impl<'a> Envelope<'a> {
@@ -187,9 +197,8 @@ pub struct Kind<T: 'static> {
     pub op: u32,
     identity: Identity<T>,
     registry: Registry<T>,
-    /// The document from bulk bytes (`pop_field` is the layer's hint,
-    /// ignored by every other kind).
-    parse: fn(&[u8], Option<&str>) -> Result<T, String>,
+    /// The document from bulk bytes.
+    parse: fn(&[u8]) -> Result<T, String>,
     /// The document's bytes from the JSON lane's envelope.
     json: for<'a> fn(&Envelope<'a>) -> Result<Cow<'a, [u8]>, String>,
     answer: fn(String, &T) -> Loaded,
@@ -221,12 +230,12 @@ impl<T: Send + Sync + 'static> Kind<T> {
 
     /// Register a byte document under the content hash of its bytes
     /// (idempotent: bytes held already are not parsed again).
-    pub fn register_bytes(&self, bytes: &[u8], hint: Option<&str>) -> Result<(String, Arc<T>), String> {
+    pub fn register_bytes(&self, bytes: &[u8]) -> Result<(String, Arc<T>), String> {
         let hash = crate::content_hash(bytes);
         if let Some(held) = self.registry.get(&hash) {
             return Ok((hash, held));
         }
-        let held = self.registry.insert(hash.clone(), (self.parse)(bytes, hint)?);
+        let held = self.registry.insert(hash.clone(), (self.parse)(bytes)?);
         Ok((hash, held))
     }
 
@@ -239,14 +248,14 @@ impl<T: Send + Sync + 'static> Kind<T> {
         self.registry.is_empty()
     }
 
-    fn load(&self, bytes: &[u8], hint: Option<&str>) -> Result<Loaded, String> {
+    fn load(&self, bytes: &[u8]) -> Result<Loaded, String> {
         let (hash, held) = match self.identity {
             Identity::Canonical(identity) => {
-                let document = (self.parse)(bytes, hint)?;
+                let document = (self.parse)(bytes)?;
                 let hash = identity(&document)?;
                 (hash.clone(), self.registry.insert(hash, document))
             }
-            Identity::Bytes => self.register_bytes(bytes, hint)?,
+            Identity::Bytes => self.register_bytes(bytes)?,
         };
         Ok((self.answer)(hash, &held))
     }
@@ -280,14 +289,14 @@ impl<T: Send + Sync + 'static> Load for Kind<T> {
         &self.registry
     }
     fn load_bytes(&self, bytes: &[u8]) -> String {
-        crate::outcome(self.load(bytes, None))
+        crate::outcome(self.load(bytes))
     }
     fn load_json(&self, envelope: &Envelope) -> String {
-        crate::outcome((self.json)(envelope).and_then(|bytes| self.load(&bytes, envelope.pop_field.as_deref())))
+        crate::outcome((self.json)(envelope).and_then(|bytes| self.load(&bytes)))
     }
 }
 
-fn canonical<T: serde::de::DeserializeOwned>(bytes: &[u8], _: Option<&str>) -> Result<T, String> {
+fn canonical<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
     crate::parse_document(bytes)
 }
 
@@ -299,7 +308,7 @@ pub static NETWORK: Kind<Network> = Kind {
     op: crate::OP_LOAD_NETWORK,
     identity: Identity::Canonical(crate::canonical_hash),
     registry: Registry::documents("network", "load_network", Retain::Host),
-    parse: |bytes, _| crate::parse_network(bytes),
+    parse: |bytes| crate::parse_network(bytes),
     json: |e| e.field(e.network, "network").map(Cow::Borrowed),
     answer: |network_hash, _| Loaded::LoadNetwork { network_hash },
 };
@@ -368,7 +377,7 @@ pub static STREETS: Kind<Streets> = Kind {
     op: OP_LOAD_STREETS,
     identity: Identity::Canonical(crate::canonical_hash),
     registry: Registry::documents("street network", "load_streets", Retain::Host),
-    parse: |bytes, _| {
+    parse: |bytes| {
         let streets: Streets = crate::parse_document(bytes).map_err(|e| format!("streets document: {e}"))?;
         streets.validate().map_err(|e| format!("streets document: {}", e.0))?;
         Ok(streets)
@@ -393,21 +402,43 @@ pub static WATCHLIST: Kind<Watchlist> = Kind {
     answer: |watchlist_hash, watchlist| Loaded::LoadWatchlist { watchlist_hash, version: watchlist.version() },
 };
 
-/// Population layers (GeoJSON points), by the hash of their bytes.
-pub static LAYER: Kind<PopLayer> = Kind {
+/// Work rules (transit-runs): the rules work is cut under, checked
+/// and normalized at the load, so two orderings of one document are
+/// one identity.
+pub static WORK_RULES: Kind<WorkRules> = Kind {
+    id: "work_rules",
+    name: "work rules",
+    load_op: "load_work_rules",
+    op: OP_LOAD_WORK_RULES,
+    identity: Identity::Canonical(crate::canonical_hash),
+    registry: Registry::documents("work rules", "load_work_rules", Retain::Host),
+    parse: |bytes| {
+        let rules: WorkRules = crate::parse_document(bytes).map_err(|e| format!("work rules: {e}"))?;
+        rules.checked().map_err(|e| format!("work rules: {e}"))
+    },
+    json: |e| e.field(e.work_rules, "work_rules").map(Cow::Borrowed),
+    answer: |work_rules_hash, rules| Loaded::LoadWorkRules { work_rules_hash, version: rules.version },
+};
+
+/// Weighted layers (GeoJSON points and polygons — people, jobs,
+/// households; D-47), by the hash of their bytes: which property is
+/// the weight is the coverage op's question, so the bytes are the
+/// whole document.
+pub static LAYER: Kind<WeightedLayer> = Kind {
     id: "layer",
     name: "layer",
-    load_op: "load_population_layer",
+    load_op: "load_layer",
     op: OP_LOAD_LAYER,
     identity: Identity::Bytes,
-    registry: Registry::documents("layer", "load_population_layer", Retain::Host),
-    parse: |bytes, pop_field| transit_analysis::parse_pop_layer(bytes, pop_field).map_err(|e| format!("population layer: {e}")),
+    registry: Registry::documents("layer", "load_layer", Retain::Host),
+    parse: transit_analysis::parse_layer,
     json: |e| e.byte_field().map(Cow::Owned),
-    answer: |layer_hash, layer| Loaded::LoadPopulationLayer {
+    answer: |layer_hash, layer| Loaded::LoadLayer {
         layer_hash,
-        points: layer.points.len() as u64,
-        pop_field: layer.pop_field.clone(),
-        total_pop: layer.points.iter().map(|p| p.pop).sum(),
+        features: layer.features() as u64,
+        points: layer.points() as u64,
+        polygons: layer.polygons() as u64,
+        fields: layer.fields().to_vec(),
     },
 };
 
@@ -419,7 +450,7 @@ pub static FEED: Kind<Feed> = Kind {
     op: OP_LOAD_FEED,
     identity: Identity::Bytes,
     registry: Registry::documents("feed", "load_feed", Retain::Host),
-    parse: |bytes, _| Feed::from_zip_bytes(bytes).map_err(|e| format!("parse: {e}")),
+    parse: |bytes| Feed::from_zip_bytes(bytes).map_err(|e| format!("parse: {e}")),
     json: |e| e.byte_field().map(Cow::Owned),
     answer: |feed_hash, feed| Loaded::LoadFeed { feed_hash, summary: feed.summary() },
 };
@@ -434,7 +465,7 @@ pub static RT: Kind<RtOverview> = Kind {
     op: OP_LOAD_RT,
     identity: Identity::Bytes,
     registry: Registry::documents("rt snapshot", "load_rt", Retain::Last(8)),
-    parse: |bytes, _| transit_rt::decode_overview(bytes),
+    parse: |bytes| transit_rt::decode_overview(bytes),
     json: |e| e.byte_field().map(Cow::Owned),
     answer: |rt_hash, _| Loaded::LoadRt { rt_hash },
 };
