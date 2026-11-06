@@ -30,7 +30,7 @@
 
 import { ask, assemble, available, keep, load, produced, servedNetwork, servedStreets, servedWalks, Doc } from "../../engine";
 import { currentDocument, putDocument, restoreDocuments } from "../../documents.svelte";
-import { answerGraph, today } from "../kit";
+import { answerGraph, clockLabel, deploymentManifest, nowSecs, readAgencyZone, setAgencyZone, today, whileVisible } from "../kit";
 
 // This page's capabilities answer inside its linked assembly — one
 // module, one registry: each document registers once (D-77).
@@ -284,16 +284,6 @@ async function routerEnds(from: Place, to: Place): Promise<{ from: End; to: End;
   return { from: f.end, to: t.end, direct: f.direct };
 }
 
-/// The clock: seconds since local midnight. Hosts own the clock; ops
-/// take it as arguments.
-function nowSecs(): number {
-  const d = new Date();
-  return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
-}
-
-function clockLabel(): string {
-  return new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
 
 function fail(e: unknown): void {
   ride.status = `Something went wrong: ${(e as Error)?.message ?? e}`;
@@ -661,7 +651,9 @@ const request = answerGraph(
 // ---------------------------------------------------------------------
 
 export async function boot(): Promise<void> {
-  await restoreUrls();
+  // The agency's zone before anything reads the date: the pick in
+  // force is the agency's today's.
+  await Promise.all([restoreUrls(), readAgencyZone()]);
   await restoreSaved();
   restoreRecent();
   void locateIfAllowed();
@@ -677,7 +669,8 @@ export async function boot(): Promise<void> {
     return null;
   });
   if (network) void loadStreets();
-  setInterval(() => void poll(), POLL_MS);
+  // A hidden page makes no requests; it re-reads on return.
+  whileVisible(POLL_MS, () => void poll());
 }
 
 /// The published streets and walk table, in the background once the
@@ -713,6 +706,7 @@ export function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
       return null;
     }
     const imported = await ask("network", "import", { feed_hash: new Doc("feed", { bytes }) });
+    setAgencyZone(imported.timezone);
     return {
       network: produced("network", imported.network, "network", imported.network_hash),
       boundary: new Doc<Boundary>("boundary", { value: imported.boundary }),
@@ -798,8 +792,9 @@ async function syncEdits(): Promise<boolean> {
 }
 
 /// Fetch each configured live feed through the server's proxy and
-/// decode it (cap-rt registers the snapshot). A failed fetch keeps the
-/// last good snapshot. True when any snapshot changed.
+/// decode it (cap-rt registers the snapshot). A feed that does not
+/// answer drops its snapshot: answers read the schedule and say so —
+/// never a stale prediction as live. True when any snapshot changed.
 async function fetchLive(): Promise<boolean> {
   const kinds = (["trips", "vehicles", "alerts"] as const).filter((k) => ride.urls[k]);
   if (kinds.length === 0) {
@@ -825,6 +820,10 @@ async function fetchLive(): Promise<boolean> {
   for (const r of results) {
     if ("error" in r) {
       errors.push(`${r.kind}: ${r.error}`);
+      if (snapshots[r.kind]) {
+        snapshots[r.kind] = null;
+        changed = true;
+      }
       continue;
     }
     try {
@@ -956,13 +955,8 @@ let geocodeAsked = 0;
 
 /// The services the deployment offers, read once at boot.
 async function discoverServices(): Promise<void> {
-  try {
-    const resp = await fetch("/manifest");
-    const manifest = resp.ok ? ((await resp.json()) as { services?: Record<string, { path: string }> }) : null;
-    geocoderPath = manifest?.services?.geocoder?.path ?? null;
-  } catch {
-    geocoderPath = null;
-  }
+  const manifest = await deploymentManifest<{ services?: Record<string, { path: string }> }>();
+  geocoderPath = manifest?.services?.geocoder?.path ?? null;
   ride.geocoding = geocoderPath !== null;
 }
 

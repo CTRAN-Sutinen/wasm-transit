@@ -177,7 +177,7 @@ and, after a second commit, log record
 `{"seq":2,"from":"sha256:<first>","to":"sha256:<this>","kind":"edit_records","schema_version":1,"produced_by":"cap-sync@sha256:<hex>","writer":"anonymous","policy":null,"at_ms":2000}`.
 
 A `manifest` blob is the manifest object itself
-(`{"network_hash","feed_hash","feed_version","streets_hash","walks_hash","wasm_hash","authz_hash","policy_hash","plans_hash","generated_at","publisher","services"}`,
+(`{"network_hash","feed_hash","feed_version","streets_hash","walks_hash","wasm_hash","authz_hash","policy_hash","plans_hash","generated_at","publisher","timezone","services"}`,
 the optional ones omitted when empty),
 sidecar `{"kind":"manifest","schema_version":1,"produced_by":"server"}`.
 

@@ -684,7 +684,11 @@ and everything else is in process.
 Its HTTP surface:
 
 - `/` — `web/dist` (stdlib `http.ServeContent`, so the Range
-  requests PMTiles needs work).
+  requests PMTiles needs work). A file whose name carries its content
+  hash (Vite's `assets/<name>-<hash>.<ext>`, the modules'
+  `caps/<name>-<sha256>.wasm`) is served `immutable`; everything else
+  (the pages, `caps/manifest.json`, `live-feeds.json`) `no-cache`, so
+  an open page meets a new build on its next load.
 - `/rt?url=<encoded>` — a proxy that fetches an agency's realtime
   feed and returns it with CORS headers, so feeds without
   `Access-Control-Allow-Origin` can be polled from the page (the
@@ -703,12 +707,14 @@ Its HTTP surface:
   proxies it.
 - `/manifest` — `{network_hash, feed_hash, feed_version,
   plans_hash, streets_hash, walks_hash, wasm_hash, authz_hash,
-  policy_hash, generated_at, publisher, services}` (the optional ones
-  omitted when empty): which network is authoritative, the
-  GTFS zip it was imported from, the published plan set, which sync
-  module bytes the server runs, who says so, and the external
-  services it proxies (`services.geocoder: {path, query}` with
-  `-geocoder`).
+  policy_hash, generated_at, publisher, timezone, services}` (the
+  optional ones omitted when empty): which network is authoritative,
+  the GTFS zip it was imported from, the published plan set, which
+  sync module bytes the server runs, who says so, the agency's zone
+  (the one the server counts its today in, and every page reads its
+  clock in), and the external services it proxies
+  (`services.geocoder: {path, query}` with `-geocoder`). Served
+  `no-cache`.
 - `/streets` — the canonical streets document imported from the
   configured layer (`-streets`), bare (the bytes `load_streets`
   takes); gzipped, its ETag the streets hash, re-imported when the
@@ -1079,8 +1085,15 @@ Shared by every generated UI:
   box with an opaque sticky header), and the class names the shared
   components render with (`.muted`, `.table-scroll`, `.chip`,
   `.picker-row`).
-- `src/uis/kit.ts` (host layer only): `today()` is the host's date,
-  and the answer graph is TRANSIENT — hand-built ahead of the flow
+- `src/uis/kit.ts` (host layer only): the clock — `today()` and
+  `nowSecs()` read the instant in the AGENCY's zone (the manifest's
+  `timezone`, read once at boot by `readAgencyZone()` before the page
+  picks its network; a loaded zip's by `setAgencyZone()`), never the
+  device's, through `src/clock.ts`: the agency's date, and seconds from
+  noon minus 12 h on it (the GTFS anchor — midnight except on a
+  clock-change day; the fall-back hour before it clamps to 0).
+  `whileVisible()` is every page's poll: a hidden page makes no
+  requests and re-reads on its return. The answer graph is TRANSIENT — hand-built ahead of the flow
   maps `docs/units/host-discipline.md` designs, which replace it: a
   host declares its answers as `AnswerNode`s (the inputs each reads,
   the frame that renders it, when that frame is on screen), and

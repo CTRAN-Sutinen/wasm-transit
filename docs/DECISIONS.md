@@ -38,7 +38,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-114**.
+- IDs are never reused; the next new decision is **D-115**.
 
 ## Summary
 
@@ -152,6 +152,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-111 | When does a dated service read as a weekly rule? | encoded | nothing |
 | D-112 | Which weekly service types does a fork carry? | encoded | nothing |
 | D-113 | Where does the sync store live in production? | decided | nothing |
+| D-114 | What does the clock answer in the hour before a fall-back day's anchor? | encoded | nothing |
 
 ## The trip model
 
@@ -2521,6 +2522,24 @@ Options:
   minus a margin.
 - Only the types the planner names in the fork.
 Blocks: nothing.
+
+### D-114 — What does the clock answer in the hour before a fall-back day's anchor?
+State: Encoded provisionally.
+Context: GTFS counts a service day's times from noon minus 12 h,
+local. On the day the clocks go back that anchor is 01:00 daylight
+time, so 00:00–01:00 is before the day's first second; seconds cross
+every boundary unsigned (AGENTS.md). The exact answer is the previous
+service day at 24:00–25:00, which a board cannot read until it reads
+two days (`docs/units/deploy-rider-apps.md`).
+Options:
+- **The day's first second (encoded):** the date is the calendar
+  date, the seconds 0. A board in that hour starts at the day's first
+  trips, and their waits read up to an hour short.
+- The previous date at 86400 and up: that day's after-midnight trips
+  answer, the current day's first trips do not.
+Pinned by: `web/src/clock.test.mjs` ("fall back: the hour before the
+anchor clamps to the day's start").
+Blocks: nothing (the two-day board replaces the clamp).
 
 ### D-79 — How is a document version rolled back?
 State: Unanswered.

@@ -16,7 +16,7 @@
 /// here answers in its place.
 
 import { ask, assemble, available, keep, load, produced, servedNetwork, together, Doc } from "../../engine";
-import { answerGraph, today } from "../kit";
+import { answerGraph, clockLabel, nowSecs, readAgencyZone, setAgencyZone, today, whileVisible } from "../kit";
 
 // This page's capabilities answer inside its linked assembly — one
 // module, one registry: each document registers once (D-77).
@@ -40,6 +40,10 @@ const LAYOUTS: Layout[] = ["center", "route", "routes"];
 /// docs/units/host-discipline.md).
 const POLL_MS = 20_000;
 const FOUND = 25;
+/// How long a board whose op threw stays on screen (marked) before the
+/// error replaces it: its waits were counted from the moment it was
+/// answered, so it is right only briefly.
+const STALE_BOARD_MS = 2 * POLL_MS;
 
 export const display = $state({
   status: "Loading the agency's feed…",
@@ -56,11 +60,14 @@ export const display = $state({
   routes: [] as DirectoryRoute[],
   board: null as GroupedBoard | null,
   boardError: "",
+  /// An answer that failed after the board was up: shown beside the
+  /// board, never instead of it.
+  problem: "",
   /// Whether the live document answered (the header's live mark).
   live: false,
   liveAt: "",
   liveError: "",
-  /// The host's clock, seconds since local midnight, for the header.
+  /// The agency's clock, seconds into the service day, for the header.
   nowSecs: nowSecs(),
 });
 
@@ -85,19 +92,16 @@ const snapshots = { trips: null as Doc | null, vehicles: null as Doc | null, ale
 let stopId: string | null = null;
 let query = "";
 
-/// The clock: seconds since local midnight. Hosts own the clock; ops
-/// take it as arguments.
-function nowSecs(): number {
-  const d = new Date();
-  return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
-}
+/// When the board last answered (ms), for STALE_BOARD_MS.
+let boardAt = 0;
 
-function clockLabel(): string {
-  return new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
+/// A failed answer. Before the network is up it is the page's status;
+/// after, it sits beside the board — a display never blanks over one
+/// failed answer.
 function fail(e: unknown): void {
-  display.status = `Something went wrong: ${(e as Error)?.message ?? e}`;
+  const message = `Something went wrong: ${(e as Error)?.message ?? e}`;
+  if (network) display.problem = message;
+  else display.status = message;
   console.error(e);
 }
 
@@ -200,7 +204,7 @@ const request = answerGraph(
           return;
         }
         try {
-          display.board = (
+          const board = (
             await ask("board", "grouped_board", {
               network_hash: network,
               edits_hash: edits ?? undefined,
@@ -210,10 +214,15 @@ const request = answerGraph(
               live_hash: live ?? undefined,
             })
           ).board;
+          display.board = board;
           display.boardError = "";
+          display.problem = "";
+          boardAt = Date.now();
         } catch (e) {
+          // The last board stays, marked, while its waits are still
+          // near right; then the error replaces it.
           console.error(e);
-          display.board = null;
+          if (Date.now() - boardAt > STALE_BOARD_MS) display.board = null;
           display.boardError = (e as Error).message ?? String(e);
         }
       },
@@ -228,7 +237,9 @@ const request = answerGraph(
 
 export async function boot(): Promise<void> {
   readUrl();
-  await restoreUrls();
+  // The agency's zone before anything reads the date: the pick in
+  // force is the agency's today's.
+  await Promise.all([restoreUrls(), readAgencyZone()]);
   await adoptNetwork("the agency's network", async () => {
     // The pick in force today when the deployment publishes picks,
     // else its import. Its pin is checked in a module this page reads it with (the
@@ -239,9 +250,10 @@ export async function boot(): Promise<void> {
     display.status = "This server publishes no network — load the agency's GTFS zip to begin.";
     return null;
   });
-  setInterval(() => void poll(), POLL_MS);
-  // The header's clock reads the host's clock between polls.
-  setInterval(() => (display.nowSecs = nowSecs()), 5_000);
+  // A hidden display makes no requests; it re-reads on return.
+  whileVisible(POLL_MS, () => void poll());
+  // The header's clock reads the agency's clock between polls.
+  whileVisible(5_000, () => (display.nowSecs = nowSecs()));
 }
 
 /// A GTFS zip loaded here becomes the network document (and its
@@ -256,6 +268,7 @@ export function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
     }
     const feed = new Doc("feed", { bytes });
     const imported = await ask("network", "import", { feed_hash: feed });
+    setAgencyZone(imported.timezone);
     return {
       network: produced("network", imported.network, "network", imported.network_hash),
       boundary: new Doc<Boundary>("boundary", { value: imported.boundary }),
@@ -277,6 +290,8 @@ async function adoptNetwork(
     if (!got) return;
     network = got.network;
     boundary = got.boundary;
+    // The zone may have just become known (a loaded zip's).
+    display.nowSecs = nowSecs();
     edits = null;
     editsText = "[]";
     // The heading: the network's name, which the directory answers
@@ -337,8 +352,10 @@ async function syncEdits(): Promise<boolean> {
 }
 
 /// Fetch each configured live feed through the server's proxy and
-/// decode it (cap-rt registers the snapshot). A failed fetch keeps the
-/// last good snapshot. True when any snapshot changed.
+/// decode it (cap-rt registers the snapshot). A feed that does not
+/// answer drops its snapshot: the board reads the schedule and says so
+/// — a display never shows a stale prediction as live. True when any
+/// snapshot changed.
 async function fetchLive(): Promise<boolean> {
   const kinds = (["trips", "vehicles", "alerts"] as const).filter((k) => urls[k]);
   if (kinds.length === 0) return false;
@@ -358,6 +375,10 @@ async function fetchLive(): Promise<boolean> {
       }
     } catch (e) {
       errors.push(`${kind}: ${(e as Error).message}`);
+      if (snapshots[kind]) {
+        snapshots[kind] = null;
+        changed = true;
+      }
     }
   }
   display.liveError = errors.join("; ");

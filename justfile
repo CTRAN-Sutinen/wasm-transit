@@ -101,6 +101,11 @@ test: caps
     # runs first.
     node --test crates/cap-abi/independence.test.mjs
     node crates/cap-abi/independence.mjs
+    # The pages' service clock (web/src/clock.ts): the agency's date
+    # and GTFS seconds (noon minus 12 h) in the agency's zone, never the
+    # device's — across midnight and both 2026 clock changes, from a
+    # host in another zone.
+    TZ=Asia/Kolkata node --test web/src/clock.test.mjs
     # The runner knows which tree its registry was built from
     # (QAF-77): just published, the registry's source digest (Rust,
     # gen-manifest) equals the tree's (JS, caps-run) — nothing on

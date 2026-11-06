@@ -2,7 +2,8 @@
 // screen at a stop (docs/ARCHITECTURE.md, web section, "Generated
 // UIs"), in three full-screen layouts over one answer.
 //
-// Friday 2026-10-23 at 07:55 (UTC in the browser), the fixture feed,
+// Friday 2026-10-23 at 07:55 at the agency (the fixture's America/
+// Montreal; the browser in UTC, which never decides), the fixture feed,
 // and its trip updates (sample-rt.pb: t10 +120 s at A — served for
 // every live feed URL):
 //
@@ -61,7 +62,7 @@ const cancel = [
   },
 ];
 
-async function open(page, { query = "", at = "2026-10-23T07:55:00Z", edits = [] } = {}) {
+async function open(page, { query = "", at = "2026-10-23T07:55:00-04:00", edits = [] } = {}) {
   await page.clock.setFixedTime(new Date(at));
   await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(edits) }));
   await page.route(/\/rt\?url=/, (route) =>
@@ -135,7 +136,7 @@ test("a cancelled trip leaves the group's times, and the group says so", async (
 test("a route that has stopped for the day stays on the display", async ({ page }) => {
   // Friday night: the 10 next runs Sunday (t11), the 20 Monday (t20) —
   // the board's `next` (D-42), the display only formats it.
-  await open(page, { query: "?stop=A&layout=route", at: "2026-10-23T23:00:00Z" });
+  await open(page, { query: "?stop=A&layout=route", at: "2026-10-23T23:00:00-04:00" });
   await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
   await expect(group(page, "10", "Downtown").getByTestId("display-none")).toHaveText("Next: Sunday 9:00 am");
   await expect(group(page, "20", "Downtown").getByTestId("display-none")).toHaveText("Next: Monday 8:20 am");
@@ -160,7 +161,7 @@ test("a display left polling stays bounded, and a module past its ceiling answer
     } while (n > 0);
     return Buffer.from(out);
   };
-  await page.clock.install({ time: new Date("2026-10-23T07:55:00Z") });
+  await page.clock.install({ time: new Date("2026-10-23T07:55:00-04:00") });
   await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
   await page.route(/\/rt\?url=/, (route) => {
     polls += 1;
@@ -215,4 +216,77 @@ test("the display runs one linked module, holding the network once", async ({ pa
   // is held once.
   const networks = (await bus("held", "board")).held.filter((e) => e.kind === "network");
   expect(networks).toHaveLength(1);
+});
+
+// The deployment (docs/units/deploy-rider-apps.md): a display reads
+// the AGENCY's clock (the zip's zone, as the manifest names it for a
+// served network), stops polling while hidden, and when a live feed
+// stops answering it keeps its board, read from the schedule and
+// saying so.
+test.describe("a display set to another zone", () => {
+  test.use({ timezoneId: "Asia/Tokyo" });
+  test("reads the agency's clock, never the device's", async ({ page }) => {
+    // 07:55 in Montreal is 20:55 in Tokyo: the board and the header
+    // answer Montreal's 07:55.
+    await open(page, { query: "?stop=A&layout=routes" });
+    const ten = group(page, "10", "Downtown");
+    await expect(ten.getByTestId("display-time").first()).toContainText("7 min", { timeout: 10_000 });
+    await expect(page.getByTestId("display-clock")).toContainText("7:55");
+  });
+});
+
+test("a hidden display makes no requests, and re-reads on its return", async ({ page }) => {
+  let requests = 0;
+  await page.clock.install({ time: new Date("2026-10-23T07:55:00-04:00") });
+  await page.route("**/edits", (route) => {
+    requests += 1;
+    route.fulfill({ contentType: "application/json", body: "[]" });
+  });
+  await page.route(/\/rt\?url=/, (route) => {
+    requests += 1;
+    route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")) });
+  });
+  await page.goto("/stop-display.html?stop=A&layout=routes");
+  await page.getByLabel("Agency GTFS zip").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
+  await expect(group(page, "10", "Downtown").getByTestId("display-time").first()).toContainText("2 min late", { timeout: 10_000 });
+
+  const visibility = (hidden) =>
+    page.evaluate((hidden) => {
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+      document.dispatchEvent(new Event("visibilitychange"));
+    }, hidden);
+  await visibility(true);
+  const before = requests;
+  await page.clock.fastForward(5 * 20_000);
+  expect(requests, "a hidden page polls nothing").toBe(before);
+  await visibility(false);
+  await expect.poll(() => requests).toBeGreaterThan(before);
+});
+
+test("a live feed that stops answering turns the board to the schedule, and the board stays", async ({ page }) => {
+  let down = false;
+  await page.clock.install({ time: new Date("2026-10-23T07:55:00-04:00") });
+  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
+  await page.route(/\/rt\?url=/, (route) =>
+    down
+      ? route.fulfill({ status: 502, body: "upstream down" })
+      : route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")) }),
+  );
+  await page.goto("/stop-display.html?stop=A&layout=routes");
+  await page.getByLabel("Agency GTFS zip").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
+  const ten = group(page, "10", "Downtown");
+  await expect(ten.getByTestId("display-time").first()).toContainText("2 min late", { timeout: 10_000 });
+  await expect(page.getByTestId("display-live")).toContainText("Live");
+
+  down = true;
+  await page.clock.fastForward(20_000);
+  // Never a stale prediction as live: the schedule, said so; the
+  // groups stay on screen.
+  await expect(page.getByTestId("display-live")).toContainText("Scheduled times");
+  await expect(ten.getByTestId("display-time").first()).toContainText("Scheduled");
+  await expect(group(page, "20", "Downtown").getByTestId("display-time").first()).toBeVisible();
+
+  down = false;
+  await page.clock.fastForward(20_000);
+  await expect(page.getByTestId("display-live")).toContainText("Live");
 });

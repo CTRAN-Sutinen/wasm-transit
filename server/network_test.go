@@ -152,6 +152,26 @@ func TestManifestPinsTheServedNetwork(t *testing.T) {
 	}
 }
 
+// The manifest names the zone a page reads its clock in — the
+// agency's, as the server counts its own today — so a page knows it at
+// boot, before it picks the network in force on its date. The e2e
+// fixture's agency is in America/Montreal.
+func TestManifestNamesTheAgencysZone(t *testing.T) {
+	base := networkServer(t, "../web/e2e/fixtures/sample-gtfs.zip")
+	resp, err := http.Get(base + "/manifest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var m Manifest
+	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Timezone != "America/Montreal" {
+		t.Fatalf("manifest timezone %q, want the fixture agency's America/Montreal", m.Timezone)
+	}
+}
+
 // The wire: gzip when the client takes it, the network hash as the
 // ETag, and a revalidation that matches answers 304 with no body.
 func TestNetworkWire(t *testing.T) {

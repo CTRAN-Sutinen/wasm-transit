@@ -226,8 +226,9 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
 
 **Ownership rules** (violations here caused real bugs; keep them):
 
-- Hosts own I/O, files, and the clock. The wasm module owns domain
-  logic. Dates cross every boundary as "YYYY-MM-DD" strings, times
+- Hosts own I/O, files, and the clock — read in the agency's zone
+  (the manifest's `timezone`; `web/src/clock.ts`), never the
+  device's. The wasm module owns domain logic. Dates cross every boundary as "YYYY-MM-DD" strings, times
   as u32 seconds since service-day midnight (values past 86400 are
   legitimate — after-midnight trips).
 - The **base feed is immutable**. Diversions produce patched copies

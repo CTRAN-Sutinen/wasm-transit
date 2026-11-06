@@ -8,11 +8,68 @@
 /// only file that asks the bus — through the engine, src/engine.ts),
 /// and `<id>.html` at the web root.
 
-/// The local date, "YYYY-MM-DD" — hosts own the clock; dates cross
-/// every boundary as strings.
+import { serviceClock } from "../clock";
+
+// ---------------------------------------------------------------------
+// the clock — hosts own it; ops take it as arguments. Read in the
+// AGENCY's zone (src/clock.ts), never the device's.
+// ---------------------------------------------------------------------
+
+/// The agency's zone: the manifest's `timezone` (readAgencyZone, at
+/// boot, before the page picks the network in force on its date), or a
+/// loaded zip's (setAgencyZone). Unknown, the clock reads the device's.
+let agencyZone: string | undefined;
+
+/// The deployment's manifest, read once per page.
+let manifestRead: Promise<Record<string, unknown> | null> | null = null;
+export function deploymentManifest<T>(): Promise<T | null> {
+  manifestRead ??= fetch("/manifest")
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+  return manifestRead as Promise<T | null>;
+}
+
+export async function readAgencyZone(): Promise<void> {
+  const manifest = await deploymentManifest<{ timezone?: string }>();
+  if (manifest?.timezone) agencyZone = manifest.timezone;
+}
+
+export function setAgencyZone(zone: string | null | undefined): void {
+  if (zone) agencyZone = zone;
+}
+
+/// The agency's date, "YYYY-MM-DD" — dates cross every boundary as
+/// strings.
 export function today(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return serviceClock(Date.now(), agencyZone).date;
+}
+
+/// Seconds into the agency's service day (from noon minus 12 h, the
+/// GTFS anchor).
+export function nowSecs(): number {
+  return serviceClock(Date.now(), agencyZone).secs;
+}
+
+/// The agency's wall clock, "4:05 PM", for a status line.
+export function clockLabel(): string {
+  const opts: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
+  try {
+    return new Date().toLocaleTimeString([], { ...opts, timeZone: agencyZone });
+  } catch {
+    return new Date().toLocaleTimeString([], opts);
+  }
+}
+
+/// Run `tick` every `ms` while the page is visible: a hidden page makes
+/// no requests, and on its return it ticks at once, re-reading what it
+/// missed.
+export function whileVisible(ms: number, tick: () => void): void {
+  setInterval(() => {
+    if (!document.hidden) tick();
+  }, ms);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) tick();
+  });
 }
 
 // ---------------------------------------------------------------------

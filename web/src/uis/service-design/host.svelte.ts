@@ -21,7 +21,7 @@
 
 import { getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
 import { ask, assemble, available, keep, load, produced, servedNetworkValue, Doc } from "../../engine";
-import { answerGraph, today } from "../kit";
+import { answerGraph, readAgencyZone, today } from "../kit";
 
 // This page's capabilities answer inside its linked assembly — one
 // module, one registry: each document registers once (D-77).
@@ -617,7 +617,9 @@ async function select(...inputs: string[]): Promise<void> {
 /// The plan set restores as stored; a plan is read into the current
 /// shape when it is first opened (`document.*` nodes).
 export async function boot(): Promise<void> {
-  await restorePlans();
+  // The agency's zone before anything reads the date (the pick in
+  // force is the agency's today's).
+  await Promise.all([restorePlans(), readAgencyZone()]);
   syncPlanRows();
   sd.activeKey = getAllPlans()[getActivePlanId()] ? getActivePlanId() : (sd.plans[0]?.key ?? "");
   readHash();

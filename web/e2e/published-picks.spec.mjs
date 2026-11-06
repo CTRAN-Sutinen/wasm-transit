@@ -54,7 +54,7 @@ test("ride now loads the pick in force today", async ({ page, request }) => {
   expect((await (await request.get("/manifest")).json()).plans_hash).toBe(winter.plans_hash);
 
   // 2026-10-23: the fall pick governs.
-  await live(page, "2026-10-23T07:55:00Z");
+  await live(page, "2026-10-23T07:55:00-04:00");
   const asked = requests(page);
   await page.goto("/ride-now.html");
   await expect(page.locator("h1")).toHaveText("Fall 2026 pick", { timeout: 10_000 });
@@ -64,7 +64,7 @@ test("ride now loads the pick in force today", async ({ page, request }) => {
 
   // Before the first pick takes effect: the import, as before.
   const early = await page.context().newPage();
-  await live(early, "2026-09-01T07:55:00Z");
+  await live(early, "2026-09-01T07:55:00-04:00");
   await early.goto("/ride-now.html");
   await expect(early.locator("h1")).toHaveText(imported, { timeout: 10_000 });
 });
@@ -72,7 +72,7 @@ test("ride now loads the pick in force today", async ({ page, request }) => {
 test("the stop display loads the pick in force today", async ({ page, request }) => {
   await publish(request, "fall-2026", "Fall 2026 pick", "2026-10-01");
   await publish(request, "winter-2026", "Winter 2026 pick", "2026-12-01");
-  await live(page, "2026-12-02T07:55:00Z");
+  await live(page, "2026-12-02T07:55:00-05:00");
   const asked = requests(page);
   await page.goto("/stop-display.html?stop=STN");
   await expect.poll(() => asked.some((p) => p.startsWith("/blobs/")), { timeout: 10_000 }).toBe(true);
@@ -84,7 +84,7 @@ test("a retired pick never reaches a rider", async ({ page, request }) => {
   await publish(request, "winter-2026", "Winter 2026 pick", "2026-12-01");
   const retired = await request.post("/plans/retire", { data: { id: "winter-2026" } });
   expect(retired.status(), await retired.text()).toBe(200);
-  await live(page, "2026-12-02T07:55:00Z");
+  await live(page, "2026-12-02T07:55:00-05:00");
   await page.goto("/ride-now.html");
   await expect(page.locator("h1")).toHaveText("Fall 2026 pick", { timeout: 10_000 });
   // Republishing restores it (the next spec run starts from a fresh store).

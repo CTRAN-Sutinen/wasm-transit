@@ -44,7 +44,8 @@ units it depends on are:
     in the background and waits. A rider's page applies it at the
     next cold start or navigation, or when the rider accepts "a new
     version is ready"; a display applies it itself at its next poll
-    while the server answers. No page applies it over unsaved device
+    while the server answers, so an outage never reloads a working
+    display into an empty one. No page applies it over unsaved device
     data.
 - **Offline (D-65).** Both pages install and work with no
   connection: a service worker caches the shell, the modules (hash-
@@ -54,29 +55,19 @@ units it depends on are:
   come from `basemap-assets/` when `just basemap-assets` installed it
   (D-49) — the service worker caches it with the shell — and from
   protomaps.github.io when not, which offline means no labels.
-- **Polling.** A hidden page does not poll (`visibilitychange`); it
-  re-reads on return. Today both hosts poll on a bare `setInterval`.
-- **The service day.** The hosts pass the calendar date and the
-  seconds since local midnight — in the agency's time zone (the
-  network's operator `timezone`), never the host's: a server in a UTC
-  container or a device set to another zone must answer the same
-  service day. The server does (cap-network answers the network's
-  `timezone`; `TestTodayIsTheAgencysDate`); the pages still take the
-  device's (`src/uis/kit.ts`, `today()`). Unpinned: whether a board at 00:30
-  shows the previous service day's after-midnight trips (a 24:45
-  departure), and the answer on a DST change day (GTFS times count
-  from noon minus 12 h). Pin both on the fixture first; a wrong
-  answer is a finding against the board's library, not host
-  arithmetic.
-- **A display that recovers.** A failed poll keeps the last board
-  and says it is the schedule, never live; a thrown answer node does
-  not blank the screen; an update applies only while the server
-  answers, so an outage never reloads a working display into an
-  empty one.
-- **The shell's caching.** Vite's hashed assets and the
-  hash-addressed modules are served `immutable`; the HTML pages and
-  `/manifest` `no-cache`. Today `handleStatic` serves everything by
-  modification time.
+- **The previous service day's after-midnight trips.** The pages read
+  the agency's clock (`src/clock.ts`: the date, and seconds from noon
+  minus 12 h), but a board answers one service date: at 00:30 it does
+  not show yesterday's 24:45 departure, which the GTFS spec says leaves
+  at 00:45 today. The same gap is the fall-back hour (00:00–01:00 on
+  the day the clocks go back precedes that day's anchor, and the clock
+  clamps it to the day's first second). The board's library answers
+  both by reading the previous date's day beside the current one; the
+  live document cannot join it yet — a live trip instance is
+  `(trip, start_secs)` with no service date, so yesterday's 24:45 and
+  a trip today could not be told apart. The instance gains its date
+  (transit-rt's join, transit-live's document — a document version,
+  [document-versioning.md](document-versioning.md)) first.
 - **The proxy goes (D-67).** `/rt?url=` (the server's
   `handleProxy`, Vite's dev proxy, and the hosts that call it) is
   removed; pages fetch the agency's feeds directly.
@@ -113,11 +104,11 @@ units it depends on are:
   applies it at the next navigation, a display applies it at its
   next poll, and neither applies it over unsaved device data.
 - e2e: both pages boot offline from the service worker and answer a
-  board from the schedule, marked as the schedule; a hidden page
-  makes no requests.
-- e2e: a board on the fixture across midnight and on a DST day
-  answers as the GTFS spec reads.
-- Go: `/rt` is gone; static responses carry the cache headers above.
+  board from the schedule, marked as the schedule.
+- transit-dispatch law tests and an e2e: a board at 00:30 on the
+  fixture shows the previous day's after-midnight trips, live where
+  the feed predicts them, and so does the fall-back hour.
+- Go: `/rt` is gone.
 - Dogfood on C-TRAN, recorded here: a stop display on a Pi 4 left
   open 24 h across a service-day rollover and one republish (memory
   sampled, plateaued), reading the fixed feeds directly; a ride-now

@@ -42,11 +42,16 @@
       onsetup={openSetup}
     />
     <div class="groups">
+      {#if display.board && (display.boardError || display.problem)}
+        <p class="note" data-testid="display-note">
+          {display.boardError ? `Departures could not be updated: ${display.boardError}` : display.problem}
+        </p>
+      {/if}
       {#if display.status}
         <p class="status" data-testid="display-status">{display.status}</p>
       {:else if display.off.board}
         <p class="status">Departures are unavailable — the board capability could not be assembled.</p>
-      {:else if display.boardError}
+      {:else if display.boardError && !display.board}
         <p class="status">Departures could not be answered: {display.boardError}</p>
       {:else if display.board && display.board.groups.length === 0}
         <p class="status" data-testid="display-status">No routes serve this stop today.</p>
@@ -73,6 +78,7 @@
   .groups { min-height: 0; overflow: auto; padding: 0.4rem 1rem; }
   .alerts { padding: 0.6rem 1rem; border-top: 1px solid var(--line); max-height: 28vh; overflow: auto; }
   .feed { display: grid; gap: 0.6rem; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; color: var(--muted); }
+  .note { margin: 0 0 0.4rem; color: var(--muted); font-size: clamp(0.8rem, 2vh, 1.2rem); }
   .status { padding: 1rem; color: var(--muted); font-size: clamp(1rem, 3vh, 2rem); }
 
   /* a transit center: the list, the alerts beside it on a wide screen */

@@ -28,6 +28,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -233,8 +234,28 @@ func (s *server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	w.Header().Set("Cache-Control", staticCacheControl(name))
 	// ServeContent sniffs the content type by extension.
 	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
+}
+
+// A file whose name carries its content hash never changes: Vite's
+// build output under assets/ (name-<8 chars>.ext) and the
+// hash-addressed modules under caps/ (name-<sha256 hex>.wasm).
+var (
+	viteHashed   = regexp.MustCompile(`^assets/[^/]+-[A-Za-z0-9_-]{8}\.[a-z0-9]+$`)
+	moduleHashed = regexp.MustCompile(`^caps/[^/]+-[0-9a-f]{64}\.wasm$`)
+)
+
+// staticCacheControl: content-addressed files are cached forever;
+// everything else — the pages, caps/manifest.json, the deployment's
+// config — revalidates on every use (a 304 by modification time), so
+// an open page meets the new build on its next load.
+func staticCacheControl(name string) string {
+	if viteHashed.MatchString(name) || moduleHashed.MatchString(name) {
+		return "public, max-age=31536000, immutable"
+	}
+	return "no-cache"
 }
 
 // handleProxy is the CORS proxy for agency feeds the browser can't
@@ -284,6 +305,10 @@ type Manifest struct {
 	PlansHash   string  `json:"plans_hash,omitempty"`   // the published plan set (the plans pointer head), store mode
 	GeneratedAt int64   `json:"generated_at"`
 	Publisher   *string `json:"publisher,omitempty"`
+	// The agency's zone (the network's operator timezone, as today()
+	// counts in it): a page reads its clock there, never in the
+	// device's zone (web/src/clock.ts). Empty while none is known.
+	Timezone string `json:"timezone,omitempty"`
 	// The external services this deployment offers, by name — a
 	// service it does not list is off, and the frames that need it
 	// say so (docs/ARCHITECTURE.md, web section, "External services").
@@ -327,6 +352,9 @@ func (s *server) buildManifest() (Manifest, error) {
 	if s.publisher != "" {
 		manifest.Publisher = &s.publisher
 	}
+	if loc := s.agencyZone(); loc != nil {
+		manifest.Timezone = loc.String()
+	}
 	if s.geocoder != nil {
 		manifest.Services = map[string]Service{"geocoder": s.geocoder.service()}
 	}
@@ -350,7 +378,7 @@ func manifestKeyOf(m Manifest) string {
 	services, _ := json.Marshal(m.Services)
 	sum := sha256.Sum256([]byte(strings.Join([]string{
 		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.NetworkHash, m.FeedHash, orEmpty(m.FeedVersion),
-		m.StreetsHash, m.WalksHash, orEmpty(m.Publisher), string(services),
+		m.StreetsHash, m.WalksHash, orEmpty(m.Publisher), m.Timezone, string(services),
 	}, "|")))
 	return hex.EncodeToString(sum[:])
 }
@@ -371,6 +399,7 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		// Legacy mode: the manifest is ephemeral, served as built.
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-cache")
 		json.NewEncoder(w).Encode(manifest)
 		return
 	}

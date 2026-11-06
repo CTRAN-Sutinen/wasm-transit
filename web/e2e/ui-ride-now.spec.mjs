@@ -2,7 +2,8 @@
 // taking a trip today: a map with a panel over it
 // (docs/ARCHITECTURE.md, web section, "Generated UIs").
 //
-// Friday 2026-10-23 at 07:55 (UTC in the browser), the fixture feed,
+// Friday 2026-10-23 at 07:55 at the agency (the fixture's America/
+// Montreal; the browser in UTC, which never decides), the fixture feed,
 // the rider at Main Station, and its trip updates (sample-rt.pb: t10
 // +120 s at A, +180 s at B — served for every live feed URL):
 //
@@ -82,7 +83,7 @@ const detour = [
 ];
 
 async function open(page, { edits = [] } = {}) {
-  await page.clock.setFixedTime(new Date("2026-10-23T07:55:00Z"));
+  await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
   await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(edits) }));
   await page.route(/\/rt\?url=/, (route) =>
     route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")) }),
