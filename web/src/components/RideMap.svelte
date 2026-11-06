@@ -12,6 +12,7 @@
   import { pickStyle } from "../basemap";
   import { lineFeature, lonLat, stopsFeatures } from "../mapview";
   import { routeColor as css } from "./rideFormat";
+  import { RIDER_ZOOM, boundsOf, sameView, shouldFrameNetwork, type View } from "../viewport";
   import type { DirectoryStop } from "../types/cap_directory/DirectoryStop";
   import type { LiveVehicle } from "../types/LiveVehicle";
   import type { EntityFocus } from "../types/EntityFocus";
@@ -36,6 +37,10 @@
     from,
     to,
     here,
+    start,
+    framed,
+    onframed,
+    locating,
     padding,
     onstop,
     onpoint,
@@ -64,6 +69,19 @@
     from: Place | null;
     to: Place | null;
     here: Point | null;
+    /// The rider's last known fix, if the device remembers one: the
+    /// map opens on it, so the camera is already where the rider will
+    /// be when the first fix lands.
+    start: Point | null;
+    /// The view the network was last framed on, if the device
+    /// remembers one: where the map opens when there is no fix, so a
+    /// rider who shares no location sees no move at all.
+    framed: View | null;
+    /// The network was framed (on this view): the host remembers it.
+    onframed: (view: View) => void;
+    /// A fix is pending: the map waits for it before framing the
+    /// network, so it makes one move, not two.
+    locating: boolean;
     /// The screen the panel covers, so framing avoids it.
     padding: { top: number; right: number; bottom: number; left: number };
     onstop: (place: Place) => void;
@@ -75,6 +93,11 @@
   let map: maplibregl.Map | null = null;
   let loaded = $state(false);
   let framedStops = false;
+  /// Where the camera opened, when that was the rider's last fix
+  /// (null: it opened on the archive's or the world's view).
+  let openedOn: Point | null = null;
+  /// The camera has been taken to the whole network.
+  let framedNetwork = false;
   const EMPTY = { type: "FeatureCollection", features: [] } as const;
 
   /// The theme's tokens, read once the map exists (MapLibre paints
@@ -120,9 +143,14 @@
   onMount(() => {
     let gone = false;
     (async () => {
-      const { style, initialView } = await pickStyle();
+      const { style, initialView } = await pickStyle(start, framed);
       if (gone) return;
+      if (start && initialView.center[0] === start.lon && initialView.center[1] === start.lat) openedOn = start;
       map = new maplibregl.Map({ container, style, center: initialView.center, zoom: initialView.zoom, attributionControl: { compact: true } });
+      // The panel's padding from the first frame: the view the map
+      // opens on is the view it keeps (a later move to the same place
+      // would shift it by the panel and fetch the edge's tiles).
+      map.setPadding(padding);
       map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
       map.on("load", () => {
         const m = map!;
@@ -274,14 +302,38 @@
     };
   });
 
-  // Every stop; the first answer frames the network.
+  // Every stop.
   $effect(() => {
     if (!loaded || !map) return;
     set("stops", stopsFeatures(stops));
-    if (!framedStops && stops.length) {
-      framedStops = true;
-      const b = bounds(stops.map((s) => [s.lon, s.lat]));
-      if (b && !selected && !here) map.fitBounds(b, { padding, duration: 0, maxZoom: 15 });
+  });
+
+  // The first answer frames the network — only when nothing better is
+  // known (viewport.ts): not while a fix is pending, not when the
+  // camera opened on the rider already, not once the rider is
+  // somewhere. The camera is then decided, once.
+  $effect(() => {
+    if (!loaded || !map || framedStops || !stops.length || locating) return;
+    framedStops = true;
+    const frame = shouldFrameNetwork({
+      stops: boundsOf(stops),
+      start: openedOn,
+      here,
+      selected: !!selected,
+      locating,
+    });
+    const b = frame ? bounds(stops.map((s) => [s.lon, s.lat])) : null;
+    if (b) {
+      framedNetwork = true;
+      // The frame the network gets; the camera moves only if it is not
+      // already there (it opened on the last frame, when it is the same
+      // network).
+      const cam = map.cameraForBounds(b, { padding, maxZoom: 15 });
+      const at = cam?.center ? maplibregl.LngLat.convert(cam.center) : null;
+      const view: View | null = at ? { center: [at.lng, at.lat], zoom: cam?.zoom ?? map.getZoom() } : null;
+      const now: View = { center: [map.getCenter().lng, map.getCenter().lat], zoom: map.getZoom() };
+      if (!view || !sameView(now, view)) map.fitBounds(b, { padding, duration: 0, maxZoom: 15 });
+      if (view) onframed(view);
     }
   });
 
@@ -289,7 +341,7 @@
     if (!loaded || !map) return;
     map.setFilter("stop-selected", ["==", ["get", "stop_id"], selected?.id ?? ""]);
     if (selected?.lat != null && selected.lon != null) {
-      map.easeTo({ center: [selected.lon, selected.lat], zoom: Math.max(map.getZoom(), 15.5), padding, duration: 500 });
+      map.easeTo({ center: [selected.lon, selected.lat], zoom: Math.max(map.getZoom(), RIDER_ZOOM), padding, duration: 500 });
     }
   });
 
@@ -354,14 +406,20 @@
     set("ends", collection(ends));
   });
 
-  // The rider's location; the first fix brings the map to them.
+  // The rider's location; the first fix brings the map to them — in
+  // one jump when the camera has not been anywhere else (it opened on
+  // the last fix, or was waiting for this one), eased from the network
+  // when it has.
   let wentHome = false;
   $effect(() => {
     if (!loaded || !map) return;
     set("here", collection(here ? [point(here)] : []));
     if (here && !wentHome && !selected) {
       wentHome = true;
-      map.easeTo({ center: [here.lon, here.lat], zoom: 15.5, padding, duration: 600 });
+      // Nowhere to go when the camera opened on this very fix.
+      const target: View = { center: [here.lon, here.lat], zoom: RIDER_ZOOM };
+      const now: View = { center: [map.getCenter().lng, map.getCenter().lat], zoom: map.getZoom() };
+      if (!sameView(now, target)) map.easeTo({ center: target.center, zoom: target.zoom, padding, duration: framedNetwork ? 600 : 0 });
     }
   });
 </script>

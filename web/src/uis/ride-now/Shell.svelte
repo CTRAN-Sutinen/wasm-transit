@@ -15,7 +15,7 @@
   import {
     ride, loadFeedBytes, setLiveUrls, typed, clearFound, show, openStop, pickDeparture, directions, setEnd, swapEnds,
     setWhen, toggleSaved, locate, nearPoint, showRoutes, filterRoutes, openRoute, openVehicle, setFollow, directionsToSpot,
-    fromHere, chooseOnMap, type Place,
+    fromHere, chooseOnMap, rememberFramed, type Place,
   } from "./host.svelte";
   import RideMap from "../../components/RideMap.svelte";
   import LiveFeeds from "../../components/LiveFeeds.svelte";
@@ -98,6 +98,10 @@
       from={ride.view === "trip" ? ride.from : null}
       to={ride.view === "trip" ? ride.to : null}
       here={ride.here}
+      start={ride.start}
+      framed={ride.framed}
+      onframed={rememberFramed}
+      locating={ride.locating}
       {padding}
       onstop={stopFromMap}
       onpoint={spotFromMap}

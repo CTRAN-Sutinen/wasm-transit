@@ -214,13 +214,13 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   Pin: `type_coverage` on the population layer at 500 and 800 m;
   `load_population_layer` answers `points: 115` with no resolution
   guidance.
-  Blocked: D-47.
+  Decided: D-47 (a labelled weighted layer, polygon or point), free to start.
 - **QAF-28 OP + DATA GAP** — coverage is population-shaped: the
   machinery takes any weighted layer (jobs, seniors, zero-car
   households), but the vocabulary is population and no other layer
   exists. Job access is the standard companion.
   Pin: `load_population_layer` is the only layer op.
-  Blocked: D-47.
+  Decided: D-47 (a labelled weighted layer, polygon or point), free to start.
 
 ## Authoring contract
 

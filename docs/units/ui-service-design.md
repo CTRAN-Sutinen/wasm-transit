@@ -88,7 +88,7 @@ that variation as information, never as error.
 | 3 | analysis `hourly_trips` (the group's representative date) | answered (DayProfile); it answers per date, not per group |
 | 4 | analysis `route_frequency` | answered (FrequencyGrid): each route's hours at its headway stop, the trips' own gaps; shading is continuous (D-52, encoded provisionally) |
 | 5 | analysis `route_frequency` (the row's `stats`) | answered: trips, span, revenue hours and miles; speed is a derived number no op answers |
-| 6 | analysis `type_coverage` (`window`), `unserved_points` | answered (CoveragePanel, CoverageMap), per service id rather than per group, QAF-89; QAF-78 (D-6 decided), QAF-18 and QAF-28 (Blocked: D-47) |
+| 6 | analysis `type_coverage` (`window`), `unserved_points` | answered (CoveragePanel, CoverageMap), per service id rather than per group, QAF-89; QAF-78 (D-6 decided), QAF-18 and QAF-28 (D-47 decided) |
 | 7 | analysis `route_overlap` | answered (CorridorTable); whether departures are spread along a shared segment has no op |
 | 8 | analysis `stop_gaps` | answered for one stop (StopWaits); not for a station's bays, QAF-92; no network-wide ranking in a window |
 | 9 | analysis `hub_connections` | answered (HubMatrix); a near-miss (arriving just after the departure) has no op |

@@ -108,9 +108,16 @@ size the run).
    and `web/e2e/published-picks.spec.mjs` (its own store-mode server
    on a pinned date, `-today`: a published pick is the network a rider
    page loads on its date, a retired one never is, and the planner
-   publishes from service design), and `web/e2e/basemap-assets.spec.mjs`
+   publishes from service design), `web/e2e/basemap-assets.spec.mjs`
    (the map's glyphs and sprites are local when installed, networked
-   when not; skipped without a local `basemap.pmtiles`);
+   when not; skipped without a local `basemap.pmtiles`),
+   `web/e2e/viewport.spec.mjs` (the pure camera rules — where a map
+   opens, when it frames the network) and
+   `web/e2e/ride-map-load.spec.mjs` (the ride map opens on the last
+   fix, or with none on the last network frame, and makes no move whose
+   tiles are thrown away; the tile
+   archive's header is fetched once, with no probe — that last one
+   skips without a local `basemap.pmtiles`);
    extend those for bus-visible changes. Capability law tests
    (migration laws, validator mutation law, the dispatch diversion
    laws) follow expectation 1.

@@ -24,7 +24,7 @@ no version (`transit-network`'s `read_network` sniffs the shape),
 `edit_records` carries its version only in the store's sidecar
 (the copy in IndexedDB has none), every capability declares
 `network` v1 that nothing checks, and the rider apps' device data
-(`ride-now:recent`, `ride-now:live-urls`) is untagged
+(`ride-now:recent`, `ride-now:live-urls`, `ride-now:last-fix`, `ride-now:network-view`) is untagged
 `localStorage`.
 
 ## Scope

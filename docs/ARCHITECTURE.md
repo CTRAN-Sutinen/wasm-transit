@@ -778,11 +778,28 @@ File ownership:
   stored, and `readPlan(id, readStoredNetwork)` reads one on first
   use. The host never sniffs a shape.
 - `src/basemap.ts` is the basemap choice every map view shares
-  (local pmtiles, else OpenFreeMap) and the MapLibre worker wiring;
-  the local style's glyphs and sprites are `basemap-assets/` beside
-  the tiles when `just basemap-assets` installed them (probed, never
-  configured), else protomaps.github.io; each map component owns
-  its map (`window.__map` is the e2e hook).
+  (local pmtiles, else OpenFreeMap) and the MapLibre worker wiring.
+  The archive is probed by reading its header with the one `PMTiles`
+  instance the protocol then serves every tile from (no separate
+  probe request, the header fetched once per page); the local
+  style's glyphs and sprites are `basemap-assets/` beside the tiles
+  when `just basemap-assets` installed them (probed, never
+  configured), else protomaps.github.io. `pickStyle(near)` returns
+  the view the map opens on. Each map component owns its map
+  (`window.__map` is the e2e hook).
+- `src/viewport.ts` is where a map's camera starts and when it
+  frames the whole network — pure presentation rules (`startView`:
+  the rider's last fix where tiles cover it, else the view the
+  network was last framed on, else the archive's view;
+  `shouldFrameNetwork`: only when nothing better is known — no fix
+  pending, none arrived, the camera not opened inside the network;
+  `sameView`: a camera already on a view is not moved to it). The
+  point is that no camera move precedes the one the rider ends on:
+  each fetches tiles that are thrown away. The last fix and the last
+  network frame are the rider app's own device data
+  (`ride-now:last-fix`, `ride-now:network-view`, D-90), kept in
+  `localStorage` by its host layer and passed to RideMap as `start`
+  and `framed` (RideMap reports a frame it gave as `onframed`).
 
 ### The bus worker
 
@@ -976,8 +993,10 @@ host layer (the gates check both).
   directory `focus` drawn and framed),
   Combobox (a searchable picker), and the rider's set: RideMap (every
   stop, the live buses by status, a route's `focus`, a trip's
-  `itinerary_paths`, the rider's location; a tapped stop or spot is
-  an event), PlaceSearch (a debounced type-ahead over directory
+  `itinerary_paths`, the rider's location; it opens on the last fix,
+  else the last network frame, and frames the network only by
+  `viewport.ts`'s rules; a tapped
+  stop or spot is an event), PlaceSearch (a debounced type-ahead over directory
   `stops`, and under them the geocoder's addresses when the host
   passes them — two lists, one box, D-28 — keyboard-driven), DepartureRows (a board's rows —
   `stop_board`, or a watched stop's from `watchlist_board` — with

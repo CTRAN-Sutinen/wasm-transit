@@ -89,6 +89,49 @@ const FOUND = 25;
 const MAX_LEGS = 4;
 const URLS_KEY = "ride-now:live-urls";
 const RECENT_KEY = "ride-now:recent";
+const FIX_KEY = "ride-now:last-fix";
+const FRAME_KEY = "ride-now:network-view";
+
+/// The view the network was last framed on: where the map opens for
+/// a rider who shares no location, so it makes no move on load. Not
+/// the rider's — the network's; a network that moved is framed again.
+function readFramed(): { center: [number, number]; zoom: number } | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(FRAME_KEY) ?? "null");
+    const [lon, lat] = v?.center ?? [];
+    if (Number.isFinite(lon) && Number.isFinite(lat) && Number.isFinite(v?.zoom) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+      return { center: [lon, lat], zoom: v.zoom };
+    }
+  } catch {
+    // no storage, or not ours: no frame
+  }
+  return null;
+}
+
+export function rememberFramed(view: { center: [number, number]; zoom: number }): void {
+  ride.framed = view;
+  try {
+    localStorage.setItem(FRAME_KEY, JSON.stringify(view));
+  } catch {
+    // not remembered: the map frames the network again next time
+  }
+}
+
+/// The last location this device shared, kept on the device only: the
+/// map opens on it (RideMap `start`), so its camera is already where
+/// the rider will be when the first fix lands. Anything else in
+/// storage — or none — is no start.
+function readLastFix(): { lat: number; lon: number } | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(FIX_KEY) ?? "null");
+    if (Number.isFinite(v?.lat) && Number.isFinite(v?.lon) && Math.abs(v.lat) <= 90 && Math.abs(v.lon) <= 180) {
+      return { lat: v.lat, lon: v.lon };
+    }
+  } catch {
+    // no storage, or not ours: no start
+  }
+  return null;
+}
 
 export const ride = $state({
   status: "Loading the agency's feed…",
@@ -111,6 +154,11 @@ export const ride = $state({
   geocoding: false,
   /// The device's location, once the rider shares it.
   here: null as { lat: number; lon: number } | null,
+  /// The location the device shared last time: where the map opens.
+  start: readLastFix(),
+  /// The view the network was last framed on: where the map opens
+  /// when there is no fix.
+  framed: readFramed(),
   /// The published streets are registered: walks follow the streets,
   /// and a trip can start or end at a point.
   walking: false,
@@ -852,6 +900,11 @@ export function locate(): void {
     (pos) => {
       ride.locating = false;
       ride.here = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+      try {
+        localStorage.setItem(FIX_KEY, JSON.stringify(ride.here));
+      } catch {
+        // not remembered: the map opens on the archive next time
+      }
       ride.near = { ...ride.here, mine: true };
       void request("near");
     },

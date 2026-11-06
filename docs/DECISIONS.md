@@ -38,7 +38,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-90**.
+- IDs are never reused; the next new decision is **D-91**.
 
 ## Summary
 
@@ -87,7 +87,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-44 | Is a branch of a direction its own thing? | unanswered | QAF-63 |
 | D-45 | Which dispatcher edits does the edit document carry beyond the diversion? | decided | nothing |
 | D-46 | How many more vehicles does a proposal need? | unanswered | QAF-3 |
-| D-47 | Which layers does coverage take? | unanswered | QAF-18, QAF-28 |
+| D-47 | Which layers does coverage take? | decided | nothing |
 | D-48 | Does a stop answer to a name its sign does not carry? | decided | nothing |
 | D-49 | Where do the basemap's glyphs and sprites come from? | decided | nothing |
 | D-50 | What are the work rules a run is cut under? | unanswered | QAF-11, QAF-12, QAF-14, QAF-15 |
@@ -130,6 +130,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-87 | How does an export name the import numbering it writes back? | encoded | nothing |
 | D-88 | What does a page run when its linked assembly does not load? | encoded | nothing |
 | D-89 | May a host decline a document an op minted? | encoded | nothing |
+| D-90 | What may a rider's device remember to open the map where it will end up? | encoded | nothing |
 
 ## The trip model
 
@@ -309,7 +310,14 @@ Options:
 Blocks: nothing (the coverage half of QAF-20 is free to start on this answer).
 
 ### D-47 — Which layers does coverage take?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-05 — a general weighted layer, polygons or points (the
+third option, as recommended). The system is not opinionated about how
+a planner weights a population layer: a planner imports several
+layers, each with a label giving its analytical meaning (population,
+jobs, zero-car households, ...). Areal weighting applies to polygon
+layers; point layers stay valid, with their resolution stated in the
+answer.
 Context: QAF-18 and QAF-28. Coverage takes one weighted POINT layer
 and calls the weight population. A tract's people sit at its
 centroid, so a rural tract reads unserved where its developed part
@@ -323,7 +331,7 @@ Options:
   the resolution stated in the answer.
 - Either, and the vocabulary becomes "a weighted layer" (any field:
   population, jobs, households).
-Blocks: QAF-18, QAF-28.
+Blocks: nothing (QAF-18 and QAF-28 are free to start).
 
 ## Service types
 
@@ -1789,6 +1797,42 @@ Pins: `crates/cap-rt/tests/dispatch_test.rs` (the with_document law),
 `e2e/ui-stop-display.spec.mjs` ("a display left polling stays
 bounded" — the reset remints it).
 Blocks: nothing.
+
+### D-90 — What may a rider's device remember to open the map where it will end up?
+State: Encoded provisionally.
+Context: the ride map opened on the archive's metro-wide view, then
+framed the network, then moved to the rider — three views, the first
+two's tiles thrown away, and the rider's own tiles requested only
+about two seconds in. Opening on the rider needs to know where they
+are before the first fix lands (a fix can take seconds) — and a
+rider who never shares a location (the browser asks first; the page
+only locates on its own where permission is already granted) still
+saw the map open on the archive and then move to the network, every
+load.
+Options:
+- **Remember two things on the device (encoded).** (1) The last
+  shared fix, `localStorage` `ride-now:last-fix`: the rider's
+  location, written when a fix arrives, read at boot, never sent
+  anywhere (the map is the only reader; no op, no sync, no server).
+  The map opens on it only where tiles cover it, and frames the
+  network instead when the stops show it stale (outside them). No fix
+  shared, no key. (2) The view the network was last framed on,
+  `ride-now:network-view` — the network's, not the rider's: a rider
+  with no fix opens on it and the camera does not move; a network
+  that moved is framed again (the camera is compared with the frame
+  the stops give, and moves only when they differ). A device's first
+  load, with neither, still opens on the archive and moves once.
+- Remember nothing: a first move to the rider after every fix, the
+  throwaway tile waves stay.
+- Open on the network (the planner's service area) always: no stored
+  location, but a repeat rider still waits for the fix to see their
+  street.
+Pins: `web/e2e/ride-map-load.spec.mjs` ("a rider who shared a
+location before opens on it and the camera never leaves", "the next
+load opens on the frame the network was given, and does not move"),
+`web/e2e/viewport.spec.mjs` (the start view and the framing rules).
+Blocks: nothing (a different answer removes the keys and the `start`
+and `framed` props).
 
 ### D-79 — How is a document version rolled back?
 State: Unanswered.
