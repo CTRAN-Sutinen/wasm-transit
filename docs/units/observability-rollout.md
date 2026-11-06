@@ -19,9 +19,8 @@ depends on it for its canary and revert.
     has pinned, its last good poll, its memory against the D-68
     budget, and its errors;
   - the server: structured logs of imports, publishes, store commits
-    (the store log already audits writes and their writers), torn-log
-    recoveries ([store-durability.md](store-durability.md)), and
-    failed requests;
+    and conflicts (the store log already audits writes and their
+    writers), and failed requests;
   - a rider's phone: nothing until D-83 says otherwise. A rider's
     device is not the agency's to watch.
 - **A fleet view.** Which display runs which build, which is stale or

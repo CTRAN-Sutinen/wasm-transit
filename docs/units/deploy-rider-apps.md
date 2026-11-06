@@ -24,7 +24,7 @@ units it depends on are:
   canary rings and the automatic revert,
   [observability-rollout.md](observability-rollout.md). The update
   lifecycle below applies a build through its rings.
-- **The server's record** — torn-write recovery, offline
+- **The server's record** — the store on object storage, offline
   verification, and backup and restore,
   [store-durability.md](store-durability.md).
 

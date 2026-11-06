@@ -15,6 +15,12 @@ pins the *storage envelope* and the invariants the schema cannot say.
 The manifest is the Go host's own document and has no generated
 schema; its shape is below.
 
+The store is a directory today (the layout below). Its production
+home is object storage — S3 and S3-compatible, Azure Blob, GCS
+(D-113) — where the same blobs, envelopes, and log records become
+create-only objects (`docs/units/store-durability.md`). A live store
+in production is never a local or network-mounted directory.
+
 ## Addressing and hash
 
 - A hash is `sha256:<hex>` of the exact bytes —

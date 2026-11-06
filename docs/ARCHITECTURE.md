@@ -675,7 +675,9 @@ last entry, and a commit is blob-write + one log append, CAS'd on the
 on it); the `edits` pointer is the multi-writer LWW document; the
 `plans` pointer is the published plan set, and each pick's network
 is its own `plan.<id>` pointer (D-74). GC collects crash-torn orphans
-at startup and every `-gc-interval` (default 1 h). Without
+at startup and every `-gc-interval` (default 1 h). The directory is
+the store today; production requires an object-storage backend (S3,
+Azure Blob, GCS — D-113; `docs/units/store-durability.md`). Without
 `-store`, `-edits <path>` persists the edit document as one flat file
 and everything else is in process.
 

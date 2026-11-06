@@ -239,6 +239,11 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
   next pick copies the whole world it changes); the chain (who is
   in force, governing periods) is always derived by the artifact,
   never stored.
+- **The sync store's production home is object storage** (S3 and
+  S3-compatible, Azure Blob, GCS — D-113). The engine may assume only
+  whole-object writes and a conditional create of an absent key —
+  never an append, a rename, an fsync, or a file lock (the directory
+  store assumes all four, and goes when the object backend lands).
 - **Retirement is the tombstone**: "delete" means
   `status: "retired"`, rev bumped. No hard deletes.
 - Schedules change by **artifact replacement, not mutation**: the

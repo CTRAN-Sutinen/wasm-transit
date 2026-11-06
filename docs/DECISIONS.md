@@ -38,7 +38,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-113**.
+- IDs are never reused; the next new decision is **D-114**.
 
 ## Summary
 
@@ -151,6 +151,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-110 | Which waits does a recovery requirement judge, and after which trip? | encoded | nothing |
 | D-111 | When does a dated service read as a weekly rule? | encoded | nothing |
 | D-112 | Which weekly service types does a fork carry? | encoded | nothing |
+| D-113 | Where does the sync store live in production? | decided | nothing |
 
 ## The trip model
 
@@ -1781,21 +1782,49 @@ Blocks: nothing.
 
 ### D-82 — Where do the store's backups go, and how often?
 State: Unanswered.
-Context: the sync store is one directory on one node: the edit
-document, the policy, the published picks, and the manifest's
-history. Its shape makes a consistent copy simple (copy the
-append-only logs, then the blobs they name; blobs copy incrementally
-by name — `docs/units/store-durability.md`). Where the copies live
-and how much loss is acceptable is the agency's infrastructure.
+Context: the sync store holds the edit document, the policy, the
+published picks, and the manifest's history, as objects in a bucket
+(D-113). Every object is create-only and the store never overwrites
+one, so a copy taken records-first, then the blobs they name, is
+consistent, and blobs copy incrementally by key
+(`docs/units/store-durability.md`). Where the copies live and how much
+loss is acceptable is the agency's infrastructure.
 Options:
-- A copy on another disk of the same host, on a timer: cheap, and
-  lost with the host.
-- A copy off the host (an agency file share or object store), hourly
-  or daily: survives the host; at most that interval of edits is
-  lost.
-- A continuous replica (each commit shipped as it happens): no loss
-  window; the most to run.
+- The provider's own: bucket versioning plus replication to a second
+  bucket in another zone or site (S3 replication, GCS dual-region,
+  Azure GRS, RGW multi-site): no loss window to run, and a bad write
+  replicates too — versioning is what undoes it.
+- A periodic copy to a second bucket or provider, hourly or daily: a
+  copy the primary's credentials cannot touch; at most that interval
+  of edits is lost.
+- Both: replication for the site, a periodic copy for the account.
 Blocks: backup and restore in `docs/units/store-durability.md`.
+
+### D-113 — Where does the sync store live in production?
+State: Decided.
+Answer: 2026-11-06 — object storage: "I want it to store to S3/Blob/GCS";
+"make the design explicit that it needs to use an object storage
+backend." The user tests against a Ceph RGW instance (S3-compatible).
+2026-11-06 — MinIO is cut ("explicitly cut Minio, minio is dead"),
+for dev and production; RustFS is the local dev and test server
+("maybe rustfs for local testing dev").
+Context: the store is a directory on one node. Its guarantees rest on
+a local POSIX filesystem: `flock` keeps one writer process, a commit is
+a file append, and blobs land by `rename` — so a host crash can tear a
+log tail, and network filesystems and object stores provide none of
+the three. Object stores write whole objects atomically and offer a
+conditional create (S3 `If-None-Match: *`, GCS `ifGenerationMatch=0`,
+Azure Blob `If-None-Match: *`), which is enough to hold the pointer
+CAS across processes.
+Options:
+- A local directory hardened against crashes (torn-tail recovery,
+  directory fsyncs, an offline verify): one node, one process, the
+  disk's failure is the store's.
+- **Object storage (S3 and S3-compatible, Azure Blob, GCS) — decided.**
+  Blobs, envelopes, and log records become create-only objects; the
+  conditional create is the CAS and the lock; several server processes
+  may share a bucket; the provider carries durability and replication.
+Blocks: nothing (`docs/units/store-durability.md` carries the work).
 
 ## Authentication and authorization
 
