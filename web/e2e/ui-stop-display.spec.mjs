@@ -141,7 +141,7 @@ test("a route that has stopped for the day stays on the display", async ({ page 
   await expect(group(page, "20", "Downtown").getByTestId("display-none")).toHaveText("Next: Monday 8:20 am");
 });
 
-// 4. A display left running (docs/units/module-runtime.md): the agency
+// 4. A display left running (docs/ARCHITECTURE.md, "The bus worker"): the agency
 //    re-mints its live feeds every poll, so each poll here serves a new
 //    snapshot (the fixture plus an unknown field carrying the poll's
 //    number — the decode ignores it, its hash does not). The rt module

@@ -38,9 +38,7 @@ archive — nothing here records what is finished.
 |---|---|
 | [host-discipline.md](host-discipline.md) | the composition layer: one op caller, flow maps as data, the journal, replay |
 | [wire-time-assembly.md](wire-time-assembly.md) | per-user selection over the manifest; layouts as documents |
-| [cap-authz.md](cap-authz.md) | JWT verification at the server, the policy document on the store, cap-authz fail-closed |
 | [runtime-cost-gate.md](runtime-cost-gate.md) | a ratchet on per-module memory and registration time |
-| [module-runtime.md](module-runtime.md) | the page never parses a published document; service-design's keep-set; the C-TRAN bounded-session record and the ceiling it sets |
 | [document-versioning.md](document-versioning.md) | every persisted document versioned, migrated forward at receive, rolled back under one rule, the schema-lock gate |
 | [release-artifacts.md](release-artifacts.md) | every build kept and rebuildable, op and HTTP contracts changed by expand-then-contract, rolling code back |
 | [store-durability.md](store-durability.md) | the store surviving a torn write, verified offline, backed up and restored |
@@ -49,8 +47,6 @@ archive — nothing here records what is finished.
 | [streets-model.md](streets-model.md) | streets as a model document: serving it, the bus profile, walking for riders, drawing on streets, the geography release |
 | [caps-run-sessions.md](caps-run-sessions.md) | the runner across sessions; shaping the import's output |
 | [grade-debt.md](grade-debt.md) | on the bus, but not yet read by a UI or dogfooded |
-| [ui-ride-now.md](ui-ride-now.md) | generated UI: riding today (stops, live boards, trip plans, last bus, detours) |
-| [ui-stop-display.md](ui-stop-display.md) | generated UI: the screen at a stop (next three per route and destination, three layouts, alerts) |
 | [ui-disruptions.md](ui-disruptions.md) | generated UI: running today's service through disruptions (late buses, detours, coverage) |
 | [ui-proposal-compare.md](ui-proposal-compare.md) | generated UI: the public comparing service proposals |
 | [ui-service-design.md](ui-service-design.md) | generated UI: designing a service change in six chained views — the blocked questions and the views' remaining parts |

@@ -63,7 +63,7 @@ server store; a second persistence design is rejected on sight.
 
 Engine requirements the tables cannot express:
 
-- **A polled input** ([ui-ride-now.md](ui-ride-now.md)): a timer
+- **A polled input** (ride-now and the stop display): a timer
   re-reads external documents (the live feeds, the edit document)
   and the clock, and only the inputs whose content hash changed
   re-answer their nodes. Each poll mints an ephemeral document

@@ -11,9 +11,7 @@ recovers without a person.
 This unit owns what no other unit does, and is done only when the
 units it depends on are:
 
-- **Memory and the main thread** — the published documents the page
-  still parses and the C-TRAN bounded-session record,
-  [module-runtime.md](module-runtime.md); the measured ceilings,
+- **Memory and the main thread** — the measured ceilings,
   [runtime-cost-gate.md](runtime-cost-gate.md).
   The budgets those ceilings must come under (D-68): wasm + JS heap
   at most 40 MB on the display, flat across 24 h; at most 80 MB for
@@ -81,9 +79,11 @@ units it depends on are:
   `handleProxy`, Vite's dev proxy, and the hosts that call it) is
   removed; pages fetch the agency's feeds directly.
 - **The feeds are fixed at the source (D-67), the agency's work,
-  not this repo's.** Today C-TRAN's GTFS-rt endpoints
-  (`gtfs-rt.c-tran.org/gtfsrealtime/…`) answer on plain HTTP only
-  (HTTPS does not connect) and send no CORS header, so an HTTPS page
+  not this repo's.** Today C-TRAN's trip updates and vehicle
+  positions (`gtfs-rt.c-tran.org/gtfsrealtime/…`) answer on plain
+  HTTP only (HTTPS does not connect); its alerts
+  (`https://gtfs-rt.c-tran.com/Alerts`)
+  answer over HTTPS. None sends a CORS header, so an HTTPS page
   cannot read them. A deployed page needs each feed it reads to:
   - answer over HTTPS;
   - send `Access-Control-Allow-Origin` (the deployment's origin, or
@@ -91,17 +91,13 @@ units it depends on are:
   - send a short `Cache-Control: max-age` (about the feed's refresh
     interval), so a CDN absorbs every screen and phone polling the
     same bytes;
-  - publish service alerts (the Alerts URL answers 404; no alert has
-    been read on real data, `ui-ride-now.md` and
-    `ui-stop-display.md`).
   The proxy is removed in the same change that points
   `web/public/live-feeds.json` at the fixed URLs; until then dev
   keeps it.
 
 ## Done when
 
-- [module-runtime.md](module-runtime.md),
-  [runtime-cost-gate.md](runtime-cost-gate.md),
+- [runtime-cost-gate.md](runtime-cost-gate.md),
   [document-versioning.md](document-versioning.md),
   [release-artifacts.md](release-artifacts.md),
   [observability-rollout.md](observability-rollout.md), and

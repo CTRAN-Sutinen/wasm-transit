@@ -106,7 +106,7 @@ drops a cancel record at read rather than refusing the document — every capabi
    manifest, no client writes a version the server does not speak.
 8. **The kernel version** bumps only when an existing kernel op
    changes meaning. A new kernel op (the eviction op,
-   [module-runtime.md](module-runtime.md)) is listed in each
+   `docs/ARCHITECTURE.md`, "The bus worker") is listed in each
    capability's `ops`, so a host checks for it rather than the
    kernel number.
 9. **Rolling a version back** (Blocked: D-79). Rollback is a

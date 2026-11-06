@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-99**. A
+IDs are never reused; the next new finding is **QAF-100**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -136,6 +136,21 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
 
 
 ## Live operations
+
+- **QAF-99 DEFECT** — a stop closed by a service alert still lists
+  departures. GTFS-rt's `NO_SERVICE` effect on an informed entity
+  that names a stop (and a route) says that route does not serve that
+  stop, but the board lists the stop's departures as usual: it
+  attaches the alert to each row (`alerts`) and shows it above them,
+  never marking the rows not served. C-TRAN closes stops this way
+  (2095, 619, 7065, 730, 1352, 805, 1030, and route 7's detour), and
+  its trip updates do not mark those stops skipped, so a rider is
+  told to wait at a closed stop.
+  Pin: C-TRAN 2026-11-06 13:40 snapshot (alerts 2498d547…), board
+  `stop_board` at 2095 with `live_hash` → the alert
+  (`effect: no_service`, routes 025 and 078) and ten rows of 025 and
+  078 departures, none skipped; ride-now's board at 2095 shows the
+  same.
 
 - **QAF-96 DEFECT** — the server's "today" is the host's local date,
   not the agency's. Publishing (D-76: a pick dated before today is

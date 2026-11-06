@@ -128,8 +128,8 @@ just serve [feed.zip [streets.geojson ["Publisher" [addr]]]]   # sync server on 
                            # pointers under dir, docs/FORMATS.md; POST /plans
                            # publishes a pick)
                            # OIDC_ISSUER/OIDC_JWKS_URL/OIDC_AUDIENCE/OIDC_KEY/POLICY=…
-                           # turn on JWT auth + policy (D-58..D-61; see
-                           # docs/units/cap-authz.md)
+                           # turn on JWT auth + policy (D-58..D-61;
+                           # docs/ARCHITECTURE.md, server section)
 just dev                   # vite hot reload + server alongside
 just geocoder-build        # once: a local Pelias (portland-metro) in .pelias/
 just geocoder              # start it on :4000 (GEOCODER=http://127.0.0.1:4000

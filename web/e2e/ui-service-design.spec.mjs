@@ -11,7 +11,8 @@
 //   3. The fork exports (the network's publish path), and one trip
 //      moves on its own (retime_trip): the string-line marks it moved,
 //      the change ledger names the route, and undo / redo put the
-//      document versions back.
+//      document versions back; the modules hold only the plan set's
+//      networks (the keep-set).
 //   4. The selection lives in the URL hash: a reload returns to the
 //      same view, route, and group.
 //   5. Hubs answer a station's connections and corridors; coverage
@@ -101,6 +102,16 @@ test("service design chains its views over a plan, a fork, and a change", async 
   await expect(line.locator("g.trip.moved")).toHaveCount(0);
   await ledger.getByRole("button", { name: "Redo" }).click();
   await expect(line.locator("g.trip.moved")).toHaveCount(1);
+
+  // The session holds only the plan set's networks: the import, the
+  // fork, and the moved version were all minted, and the keep-set drops
+  // each one the plans no longer name. A kept version may be absent
+  // too (redo answered from the engine's answer cache, so nothing
+  // registered it again); its next ask registers it.
+  const bus = (fn, ...args) => page.evaluate(([fn, args]) => window.__bus[fn](...args), [fn, args]);
+  const plans = await page.getByTestId("plan-select").locator("option").count();
+  const networks = (await bus("held", "author")).held.filter((e) => e.kind === "network");
+  expect(networks.length).toBeLessThanOrEqual(plans);
 
   // The proposal reads the change route by route.
   await page.keyboard.press("6");

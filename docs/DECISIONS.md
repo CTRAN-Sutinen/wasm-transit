@@ -2013,7 +2013,7 @@ Blocks: nothing. The gaps it left are lines in
 
 ### D-70 — How do the module runtime's bounds default?
 State: Encoded provisionally.
-Context: `docs/units/module-runtime.md` puts eviction in the module
+Context: the module runtime puts eviction in the module
 (a kernel op over a keep-set the host names) and leaves the
 defaults open: how many ephemeral documents a module keeps with no
 host steering, when an instance is replaced for its memory, and
@@ -2025,7 +2025,10 @@ Encoded (provisional, change by editing the constants):
   newest live document's). Durable kinds (networks, feeds, edits,
   boundaries, layers, walk tables, streets, watchlists) stay until a
   keep-set drops them.
-- The memory ceiling is 256 MiB per instance, checked before an op
+- The memory ceiling is 128 MiB per instance — twice the largest
+  working set measured on C-TRAN (2026-11-06: service-design holding
+  1/2/3/5 networks at 24/48/57/66 MB; the rider pages 16–18 MB,
+  2026-11-05) — checked before an op
   (never a registration); an instance is replaced only after it has
   answered an op since it was made, and at most once a minute.
 - A dropped document is invisible to the host: the engine
@@ -2035,8 +2038,7 @@ properties), `crates/cap-rt/tests/registry_test.rs`,
 `crates/cap-router/tests/registry_test.rs`, and
 `e2e/ui-stop-display.spec.mjs` ("a display left polling stays
 bounded").
-Blocks: nothing — the C-TRAN record in `module-runtime.md` measures
-the working set the ceiling should sit above.
+Blocks: nothing.
 Update 2026-11-05: the bounds are the kernel's (D-77). Each
 derivation bounds its own entries: held days 4, router graphs 8 (and
 only the newest live document's), street and walking graphs 4

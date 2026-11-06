@@ -84,10 +84,11 @@ type Assembled = { key: string; module: WebAssembly.Module; instance: Instance; 
 
 /// The memory ceiling per instance, and the least time between two
 /// resets of one module (a working set above the ceiling must not
-/// thrash). The defaults sit far above one agency's working set and
-/// far below the 4 GB address space; the engine may lower them (the
-/// e2e forces a reset).
-let ceiling = 256 * 1024 * 1024;
+/// thrash). The ceiling sits at twice the largest measured working
+/// set (D-70: service-design holding five C-TRAN networks, 66 MB; a
+/// rider page holds one, 16–18 MB); the engine may lower it (the e2e
+/// forces a reset).
+let ceiling = 128 * 1024 * 1024;
 let minResetMs = 60_000;
 
 let base = "";

@@ -20,7 +20,7 @@
 /// answers (a production failure, shown gracefully).
 
 import { getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
-import { ask, assemble, available, load, produced, servedNetworkValue, Doc } from "../../engine";
+import { ask, assemble, available, keep, load, produced, servedNetworkValue, Doc } from "../../engine";
 import { answerGraph, today } from "../kit";
 
 // This page's capabilities answer inside its linked assembly — one
@@ -199,6 +199,15 @@ async function readStoredNetwork(stored: unknown): Promise<Network | null> {
   const answer = await ask("author", "apply", { network_hash: new Doc("network", { value: stored as Network }), edits: [] });
   docs.set(answer.network, produced("network", answer.network, "author", answer.network_hash));
   return answer.network;
+}
+
+/// Name what the modules keep: each plan's current network (the
+/// compare baseline is one of them) and the layer. Every `apply` mints
+/// a network, and networks are durable, so without this a session
+/// would hold every version it made. A version on the undo stack is
+/// dropped too; undo registers it again (the engine's recovery).
+function release(): Promise<void> {
+  return keep([...Object.values(getAllPlans()).map(docOf), layer]);
 }
 
 /// Earlier versions of each plan (JS owns the documents): undo puts
@@ -808,6 +817,7 @@ async function adopt(next: Network, issues: NetworkError[] | null, warnings: Net
   if (issues) authoredIssues.set(next, issues);
   putPlan(sd.activeKey, next);
   syncHistory();
+  await release();
   await step("Answering the change…", () => select("active"));
   sd.warnings = warnings;
   planStatus();

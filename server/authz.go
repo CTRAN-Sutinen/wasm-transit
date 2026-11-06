@@ -1,6 +1,6 @@
 package main
 
-// Authentication + authorization (docs/units/cap-authz.md,
+// Authentication + authorization (docs/ARCHITECTURE.md, server section;
 // D-58..D-61).
 //
 // Authentication is the IdP's: this file only VERIFIES the bearer JWT —

@@ -6,7 +6,7 @@
 /// time, status, line, and notice it writes into `ride` is an op's
 /// answer, adopted as-is.
 ///
-/// The questions it answers (docs/units/ui-ride-now.md): which stop is
+/// The questions it answers (its ui.json): which stop is
 /// mine (typed — or an address typed, through the server's geocoder —, near me — by walk along the streets when the server
 /// publishes them — or tapped on the map), what leaves next from it
 /// live, is my bus on time, how do I get there (now, at a time, by a

@@ -747,7 +747,11 @@ Its HTTP surface:
   `policy` pointer, seeded from `-policy <file>` at first boot (D-61);
   later changes are authenticated CAS commits. No `-oidc-*` = auth off,
   logged loudly (dev only). `STORE`/`OIDC_*`/`POLICY` env vars pass the
-  flags through `just serve`/`just dev`.
+  flags through `just serve`/`just dev`. What the server leaves to the
+  deployment: the first JWKS fetch trusts the IdP's HTTPS (pin its
+  certificate at the proxy for more), throttling repeated 401s is the
+  reverse proxy's, and a browser gets and refreshes its IdP token on
+  its own, presenting it on writes only.
 - `/edits` — the edit document: `POST` a client document, receive
   the LWW-merged result (cap-sync's `sync_edits`, with the receive
   path clamping client timestamps to the server clock, D-56); `GET`
@@ -891,7 +895,9 @@ File ownership:
   never sees it. `keep` names what survives: every module instance
   drops every document not named (nor read over by one named); the
   rider pages call it when they adopt a network and when the edit
-  document changes. `window.__bus` is the e2e's inspection (the
+  document changes, and service-design after every change it adopts
+  (the plan set's current networks and the layer — each `apply` mints
+  a network, and undo registers a dropped version again). `window.__bus` is the e2e's inspection (the
   module instance a capability answers in, what it holds, its memory
   and resets, the ceiling, a replay of the last op asked of a
   capability past the answer cache).
@@ -956,8 +962,10 @@ documents, and a reset re-registers from them).
 
 Wasm linear memory never shrinks — eviction lets a module reuse what
 it freed, but a peak stays allocated for the instance's life. So the
-worker holds a MEMORY CEILING per instance (256 MiB, far above one
-agency's working set): before an op (never a registration), an
+worker holds a MEMORY CEILING per instance (128 MiB, D-70: twice the
+largest working set measured on C-TRAN — service-design holding five
+plans' networks, 66 MB; a rider page holds one network, 16–18 MB):
+before an op (never a registration), an
 instance past it that has answered an op since it was made — and was
 not reset in the last minute — is replaced by a fresh instance of the
 same compiled module, dropping every linked capability's state
@@ -1306,8 +1314,8 @@ walks the published network), reads the edit document from
 the manifest lists (read once on boot; "External services"): the
 host sends the typed text and the near point or the rider's, shows
 Pelias's answer as given, and a point it answers keeps the name it
-was shown with; nothing keeps the query. Its open work is
-`docs/units/ui-ride-now.md`.
+was shown with; nothing keeps the query. Its questions and session
+are its `ui.json`.
 
 `stop-display` (`src/uis/stop-display/`): the screen at a stop, a
 passenger information display, in three full-screen layouts over
@@ -1323,8 +1331,8 @@ stop; without a stop, the setup picks both. It boots from the
 server's published network (`servedNetwork`, bytes it never parses;
 or a zip), reads `GET /edits` and the deployment's
 live feeds (`public/live-feeds.json`, through `/rt`), and polls them
-and the clock every 20 s. Its open work is
-`docs/units/ui-stop-display.md`.
+and the clock every 20 s. Its questions and session are its
+`ui.json`.
 
 Layouts are hand-placed Svelte; layouts as documents are
 `docs/units/wire-time-assembly.md`.

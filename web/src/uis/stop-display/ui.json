@@ -29,7 +29,7 @@
     "DisplayAlerts",
     "AlertList"
   ],
-  "session": "2026-10-29 08:53 PDT on C-TRAN (feed sha256:aa8dbc62…, import 2beddcb3…) with the live trip updates (160 trips, live bfb2259d…): caps-run grouped_board at Fisher's Landing TC (106, 10 groups pooled over its bays), Andresen & Van Mall Dr (2676, one route) and Van Mall Dr & 94th Ave (701, five routes) equals the browser's display in the center, route, and routes layouts at the same clock and snapshot. No alert has been read (C-TRAN publishes no alerts feed).",
+  "session": "2026-10-29 08:53 PDT on C-TRAN (feed sha256:aa8dbc62…, import 2beddcb3…) with the live trip updates (160 trips, live bfb2259d…): caps-run grouped_board at Fisher's Landing TC (106, 10 groups pooled over its bays), Andresen & Van Mall Dr (2676, one route) and Van Mall Dr & 94th Ave (701, five routes) equals the browser's display in the center, route, and routes layouts at the same clock and snapshot. 2026-11-06 13:38 PST in the browser on C-TRAN (network c6847464…) with the live trip updates and service alerts (https://gtfs-rt.c-tran.com/Alerts, 15 alerts): Saint Johns 7900 Block (2095) shows its no-service alert for routes 025 and 078, 99th Street TC (110) route 19's construction delays, Van Mall TC (6137) route 72's detour; at 99th Street TC the 105X to Portland, done for the day, reads \"Next: Monday 5:27 am\" (its afternoon trips end there) and a Fisher's Landing TC (106) group \"Next: Monday 7:16 am\".",
   "spec": "web/e2e/ui-stop-display.spec.mjs",
   "generated": "2026-10-29"
 }

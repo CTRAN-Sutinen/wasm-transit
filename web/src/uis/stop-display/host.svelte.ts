@@ -5,7 +5,7 @@
 /// and the layout); every group, time, status, and alert it writes
 /// into `display` is an op's answer, adopted as-is.
 ///
-/// The questions it answers (docs/units/ui-stop-display.md): which
+/// The questions it answers (its ui.json): which
 /// stop this is, what leaves next on each route to each destination
 /// and how long until it does, live or scheduled, from which bay, which
 /// routes have stopped for the day, and the alerts and detours here.
