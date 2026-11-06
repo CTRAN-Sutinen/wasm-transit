@@ -84,6 +84,18 @@ test.describe("ride now walks the published streets", () => {
     await expect(page.getByLabel("From", { exact: true })).toHaveValue("My location");
     const plan = page.getByTestId("plan-now");
     await expect(plan).toContainText("min walk to Main Station");
+    // The map draws a walk as the router answers it (`itinerary_paths`;
+    // the path through a merged walk's via stops is pinned by cap-router's
+    // `a_place_s_walk_draws_along_its_path`): to Bay B, my location, its
+    // street (Station Rd), then the bay — along the streets, never a
+    // straight line.
+    const to = page.getByLabel("To", { exact: true });
+    await to.fill("bay b");
+    await page.getByRole("option", { name: /Bay B/ }).click();
+    await expect(page.getByTestId("ride-map")).toHaveAttribute("data-legs", "1");
+    await expect
+      .poll(() => page.evaluate(() => window.__map.getSource("legs")?.serialize().data.features.map((f) => [f.properties.kind, f.geometry.coordinates])))
+      .toEqual([["walk", [[-73.5165, 45.5152], [-73.5165, 45.515], [-73.5145, 45.515]]]]);
   });
 });
 

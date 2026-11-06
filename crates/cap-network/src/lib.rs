@@ -83,13 +83,24 @@ pub enum Request {
 #[ts(export, export_to = "cap_network/")]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Response {
-    Import { network: Network, boundary: Boundary, notes: Vec<ImportNote>, network_hash: String, boundary_hash: String },
+    /// `timezone`: the zone the network's dates are counted in (its
+    /// operators' one zone, absent when they name none or disagree) —
+    /// what a host needs to turn its clock into the agency's date.
+    Import {
+        network: Network,
+        boundary: Boundary,
+        notes: Vec<ImportNote>,
+        network_hash: String,
+        boundary_hash: String,
+        timezone: Option<String>,
+    },
     /// `issues` gate (invalid documents never export); `warnings`
     /// never gate — they name what validity lets through (trips with
     /// no vehicle, a pick with no service in its period).
     Validate { issues: Vec<transit_network::NetworkError>, warnings: Vec<transit_network::NetworkWarning> },
     Export { feed_hash: String, summary: FeedSummary, zip_b64: String },
-    Document { document: String, document_hash: String, plan: transit_network::PlanMeta },
+    /// `timezone` as on import: the zone the pick's dates are counted in.
+    Document { document: String, document_hash: String, plan: transit_network::PlanMeta, timezone: Option<String> },
     Publishable {
         issues: Vec<transit_network::NetworkError>,
         refusals: Vec<transit_network::NetworkWarning>,
@@ -109,7 +120,8 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             // in an assembly, for every capability that reads them).
             let (network_hash, _) = NETWORK.register(network.clone())?;
             let (boundary_hash, _) = BOUNDARY.register(boundary.clone())?;
-            Ok(Response::Import { network, boundary, notes, network_hash, boundary_hash })
+            let timezone = network.timezone().map(str::to_string);
+            Ok(Response::Import { network, boundary, notes, network_hash, boundary_hash, timezone })
         }
         Request::Validate { network_hash } => {
             let network = NETWORK.require(&network_hash)?;
@@ -137,7 +149,12 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             if document_hash != network_hash {
                 return Err(format!("registered under {network_hash} but serializes to {document_hash}"));
             }
-            Ok(Response::Document { document, document_hash, plan: network.plan.clone() })
+            Ok(Response::Document {
+                document,
+                document_hash,
+                plan: network.plan.clone(),
+                timezone: network.timezone().map(str::to_string),
+            })
         }
         Request::Publishable { network_hash } => {
             let network = NETWORK.require(&network_hash)?;

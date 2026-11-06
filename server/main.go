@@ -187,7 +187,13 @@ type server struct {
 	plans       *WasmHost
 	networkWasm string
 	plansMu     sync.Mutex
-	fixedToday  string // -today: the date publishing reads, for test servers; "" = the host clock
+	fixedToday  string           // -today: the date publishing reads, for test servers; "" = the host clock
+	now         func() time.Time // the host clock (nil = time.Now); tests pin it
+	// The agency's zone, as the last published pick answered it
+	// (cap-network's document answer): today() reads it when no feed
+	// is configured.
+	zoneMu sync.Mutex
+	zone   string
 
 	// The picks' GTFS exports, by network hash (exportedPick).
 	feedMu    sync.Mutex

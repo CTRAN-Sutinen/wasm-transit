@@ -780,8 +780,11 @@ Its HTTP surface:
   cap-plans `publish` answers the next published set or why the pick
   is refused (422: the chain, or a pick dated before today, D-76).
   `POST /plans/retire` `{"id"}` retires a pick that has not taken
-  effect (D-75). "Today" is the server's local date; `-today` pins it
-  on a test server. The server commits the network to
+  effect (D-75). "Today" is the agency's date: the host clock read in
+  the network's zone, as cap-network answers it beside the hash (the
+  feed's import, else the last published pick's `document`) — the
+  host's own zone only until one is known; `-today` pins it on a test
+  server. The server commits the network to
   `plan.<id>`, then the set to `plans`, and the manifest pins it as
   `plans_hash`. Clients read the set and each pick's network from
   `/blobs`.
@@ -1112,7 +1115,8 @@ host layer (the gates check both).
   plan named), PlanList (the plan set, fork, feed import),
   GroupTable (`service_groups`: each combination with its date
   spans), GroupLedger (`service_type_compare` totals), DayProfile (`hourly_trips`, a
-  drag sets the hour window), FrequencyGrid (`route_frequency`:
+  drag sets the hour window; `network_stats` on the same date: the
+  service window, stops served, transfer points), FrequencyGrid (`route_frequency`:
   hours as cells, shaded continuously by the longest wait),
   CoveragePanel (the group's `type_coverage` with its parameters and window, the
   layer's weight field and label picked from the load's `fields`, its
@@ -1127,7 +1131,9 @@ host layer (the gates check both).
   hours), GesturePanel (span, running time, one trip, stops — one
   event each), ChangeLedger (`service_type_compare` routes, undo and
   redo events), ProposalScore and Redline
-  (`service_type_compare`), Readiness (issues, warnings, the export
+  (`service_type_compare`), Readiness (the document's issues and
+  warnings — network `validate`'s, or cap-author's for a version it
+  just authored — the export
   and publish events — Publish posts the plan to `POST /plans` and
   shows the server's answer as given: published, or each refusal); RouteCard (`route_detail`), ScheduleChange (one
   pattern trips' starts with add and remove events), DirectionTabs
@@ -1273,7 +1279,9 @@ lives in the URL hash. With no stored plan it opens the server's
 graph; a view's nodes answer only while it is open, each frame
 records its own failure (`sd.failed`) and renders Unavailable with
 a retry while the rest answers, and the plan's health adopts
-cap-author's issues for a document it authored. Undo restores an
+cap-author's issues and warnings for a document it authored. After
+every change it adopts, the host names its keep-set (the plan set's
+current networks and the layer). Undo restores an
 earlier document version the host keeps; nothing is inverted.
 `ride-now` (`src/uis/ride-now/`): a full-bleed map with a panel over
 it (a card at the left on a wide screen, a sheet over the bottom of
@@ -1489,7 +1497,9 @@ cap-analysis    The analysis capability: planner numbers (stats,
 cap-network     The network codec capability: import (the planner's
                 bootstrap over a feed the kernel registered — the
                 document and its boundary residue register
-                themselves, both hashes in the response), validate
+                themselves, both hashes in the response, with the
+                network's timezone: its operators' one zone, the
+                one a host counts the agency's date in), validate
                 (the authoring feedback loop: issues that gate
                 export, warnings that never gate), export (the
                 publish path — deterministic GTFS zip bytes under
@@ -1498,7 +1508,7 @@ cap-network     The network codec capability: import (the planner's
                 names it; the zip registers as a feed), publishable (what refuses it as a
                 published pick: its issues, and a pick with no
                 service in its period, D-76), document (a registered
-                network's canonical bytes, hash and plan frame — what the
+                network's canonical bytes, hash, plan frame and timezone — what the
                 server stores when it publishes a pick it was sent
                 in any serialization). The domain code lives in the
                 shared transit-codec library.

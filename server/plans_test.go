@@ -24,6 +24,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 const plansWasm = "../web/pkg/cap_plans.wasm"
@@ -448,5 +449,32 @@ func TestThePickInForceAsGTFS(t *testing.T) {
 	}
 	if code, _, _ := httpGet(t, base+"/feed?date=not-a-date"); code != http.StatusBadRequest {
 		t.Fatalf("a bad date: %d", code)
+	}
+}
+
+// The server's today is the agency's date — the clock read in
+// the network's zone (cap-network answers it beside the hash), never
+// the host's. At 2026-11-06 04:30Z the fixture's agency (America/
+// Montreal) is still at 23:30 on the 5th while a UTC host is on the
+// 6th: a pick dated the 5th publishes, and the feed's zone and the
+// pick's agree on the date.
+func TestTodayIsTheAgencysDate(t *testing.T) {
+	instant := time.Date(2026, 11, 6, 4, 30, 0, 0, time.UTC)
+
+	s, base := newPlansServer(t, t.TempDir())
+	s.fixedToday = ""
+	s.now = func() time.Time { return instant }
+	code, out := publishPick(t, base, fixtureNetwork(t, "nov-5", "November", "2026-11-05"))
+	if code != http.StatusOK {
+		t.Fatalf("a pick dated the agency's today publishes: %d %v", code, out)
+	}
+	if got := s.today(); got != "2026-11-05" {
+		t.Fatalf("today after a publish: %s, want the agency's 2026-11-05", got)
+	}
+
+	fed := &server{feeder: &fileFeed{path: "../web/e2e/fixtures/sample-gtfs.zip", networkWasm: networkWasm}}
+	fed.now = func() time.Time { return instant }
+	if got := fed.today(); got != "2026-11-05" {
+		t.Fatalf("today from the feed's zone: %s, want 2026-11-05", got)
 	}
 }

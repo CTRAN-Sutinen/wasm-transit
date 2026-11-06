@@ -1,15 +1,20 @@
 <script lang="ts">
   /// The day's shape (analysis `hourly_trips`): trips starting in each
-  /// hour, as bars. Dragging across the bars sets the hour window
+  /// hour, as bars, with the day's numbers (analysis `network_stats`,
+  /// the same date): its service window, stops served, transfer points. Dragging across the bars sets the hour window
   /// every view reads; a click on a single bar selects that hour.
   import type { HourlyTrips } from "../types/HourlyTrips";
+  import type { NetworkStats } from "../types/NetworkStats";
+  import { clock } from "./designFormat";
 
   let {
     hours,
+    stats = null,
     window,
     onwindow,
   }: {
     hours: HourlyTrips[];
+    stats?: NetworkStats | null;
     window: { from: number; to: number } | null;
     onwindow: (w: { from: number; to: number } | null) => void;
   } = $props();
@@ -37,6 +42,9 @@
     <span class="muted">drag across the bars to set the hours every view reads</span>
     {#if window}<button type="button" onclick={() => onwindow(null)}>Clear hours</button>{/if}
   </header>
+  {#if stats}
+    <p class="stats" data-testid="day-stats">Service {clock(stats.first_start_secs)} – {clock(stats.last_arrival_secs)} · {stats.active_stops} stops served · {stats.transfer_stops} transfer points</p>
+  {/if}
   <div class="bars">
     {#each hours as h (h.hour)}
       <button
@@ -60,6 +68,7 @@
   .profile { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; user-select: none; }
   header { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: baseline; padding: 0.55rem 0.9rem; }
   h2 { margin: 0; font-size: 0.9rem; }
+  .stats { margin: 0; padding: 0 0.9rem 0.4rem; font-size: 0.78rem; color: var(--muted); }
   .muted { color: var(--muted); font-size: 0.78rem; }
   header button { margin-left: auto; font: inherit; font-size: 0.78rem; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); padding: 0.15rem 0.5rem; cursor: pointer; }
   .bars { display: flex; gap: 2px; align-items: stretch; height: 5.5rem; padding: 0 0.9rem 0.5rem; }

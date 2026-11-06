@@ -25,16 +25,10 @@ UI that reads the op pays the line instead.
   `work_rules_hash` is unread too ([ui-runcut.md](ui-runcut.md)).
 - cap-calendar (`active_services`, `service_dates`) — no UI asks
   which services run on a date.
-- network `validate` warnings — service-design shows the issues
-  and `apply`'s warnings, not `validate`'s.
-- analysis `network_stats` — no UI renders it (the window, the
-  per-route hours).
 - analysis `coverage_compare` — no UI asks it until D-43's matching
   rule says which of one plan's combinations answers to which of the
   other's ([ui-service-design.md](ui-service-design.md) question 19,
   [ui-proposal-compare.md](ui-proposal-compare.md) question 5).
-- The map draws merged walks through their via stops, but no e2e
-  pins that drawing.
 
 ## Done when
 

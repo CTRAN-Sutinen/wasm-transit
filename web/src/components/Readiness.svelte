@@ -1,7 +1,7 @@
 <script lang="ts">
-  /// Is the pick ready to publish: the document's issues (network
-  /// `validate`, or cap-author's answer for a document it authored),
-  /// the last change's warnings, the export — the network's GTFS
+  /// Is the pick ready to publish: the document's issues and warnings
+  /// (network `validate`, or cap-author's answer for a document it
+  /// authored), the export — the network's GTFS
   /// path, which refuses an invalid document itself — and publishing
   /// the pick to the deployment, its answer as the server gave it.
   import Unavailable from "./Unavailable.svelte";

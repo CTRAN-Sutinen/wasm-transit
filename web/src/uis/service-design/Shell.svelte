@@ -138,7 +138,7 @@
         {#if sd.failed.DayProfile}
           {@render failure("DayProfile", "Trips per hour")}
         {:else if sd.hourly}
-          <DayProfile hours={sd.hourly} window={sd.window} onwindow={setWindow} />
+          <DayProfile hours={sd.hourly} stats={sd.dayStats} window={sd.window} onwindow={setWindow} />
         {/if}
         {#if sd.failed.FrequencyGrid}
           {@render failure("FrequencyGrid", "Frequency by hour")}

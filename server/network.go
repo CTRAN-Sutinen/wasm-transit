@@ -109,6 +109,9 @@ type loadedFeed struct {
 	// network gzipped, and the boundary.
 	documentGzip []byte
 	boundary     json.RawMessage
+	// The zone the network's dates are counted in, as the import
+	// answered it ("" when its operators name none): today()'s zone.
+	timezone string
 }
 
 // importFeed runs load_feed + import in a fresh cap-network instance
@@ -209,6 +212,7 @@ func (f *fileFeed) Load() (*loadedFeed, error) {
 	var parts struct {
 		Network  json.RawMessage `json:"network"`
 		Boundary json.RawMessage `json:"boundary"`
+		Timezone string          `json:"timezone"`
 	}
 	if err := json.Unmarshal(network, &parts); err != nil || len(parts.Network) == 0 {
 		return nil, fmt.Errorf("import answered no network document")
@@ -225,6 +229,7 @@ func (f *fileFeed) Load() (*loadedFeed, error) {
 		networkGzip:  gzipped(network),
 		documentGzip: gzipped(parts.Network),
 		boundary:     parts.Boundary,
+		timezone:     parts.Timezone,
 	}
 	log.Printf("network imported from %s in %s: %s (%d KB, %d KB gzipped)",
 		f.path, time.Since(started).Round(time.Millisecond), networkHash, len(parts.Network)/1024, len(f.feed.documentGzip)/1024)

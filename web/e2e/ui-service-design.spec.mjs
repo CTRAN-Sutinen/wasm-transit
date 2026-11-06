@@ -44,10 +44,20 @@ test("service design chains its views over a plan, a fork, and a change", async 
   await expect(wk.getByTestId("group-dates")).toContainText("2026-01-01 – 2026-12-31");
   await wk.click();
 
+  // The import is unchanged, so its warnings are network `validate`'s:
+  // the fixture's four trips no block carries.
+  await page.keyboard.press("6");
+  await expect(page.getByTestId("readiness").locator("li.warn")).toHaveCount(4);
+  await expect(page.getByTestId("readiness")).toContainText("unassigned trips");
+
   // Network: the group's ledger, the day's shape, and the grid.
   await page.keyboard.press("2");
   await expect(page.getByTestId("group-ledger")).toContainText("Trips");
   await expect(page.getByTestId("day-profile")).toBeVisible();
+  // The day's numbers (analysis `network_stats`) on the group's first
+  // date, the day the profile reads: 8:00 – 8:50, five stops, no
+  // stop where routes meet.
+  await expect(page.getByTestId("day-stats")).toHaveText("Service 8:00 – 8:50 · 5 stops served · 0 transfer points");
   const grid = page.getByTestId("frequency-grid");
   await expect(grid.locator("tbody tr")).toHaveCount(3);
 

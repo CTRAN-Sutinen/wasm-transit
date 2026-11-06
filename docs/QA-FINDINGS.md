@@ -24,7 +24,9 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
 - Feed: `testdata/ctran-gtfs.zip` (C-TRAN GTFS, NOT COMMITTED —
   licensed; fetch from c-tran.com), `sha256:aa8dbc62833237d754
   96b6ec04c2a45fe10ca2a957f63d63b51ddaae85a7dc4f`, version
-  20260913-20270109. rt payloads from gtfs-rt.c-tran.org.
+  20260913-20270109. rt payloads: trip updates and vehicle positions
+  from gtfs-rt.c-tran.org, service alerts from
+  https://gtfs-rt.c-tran.com/Alerts.
 - Network import: `sha256:c6847464f1b9f7b882abac3e458d54105d92f698
   e7a903d7d195e26e4bb68b37` (the whole spec: every file round-trips;
   C-TRAN's dated calendars read as weekly rules, D-105; findings
@@ -136,33 +138,6 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
 
 
 ## Live operations
-
-- **QAF-99 DEFECT** — a stop closed by a service alert still lists
-  departures. GTFS-rt's `NO_SERVICE` effect on an informed entity
-  that names a stop (and a route) says that route does not serve that
-  stop, but the board lists the stop's departures as usual: it
-  attaches the alert to each row (`alerts`) and shows it above them,
-  never marking the rows not served. C-TRAN closes stops this way
-  (2095, 619, 7065, 730, 1352, 805, 1030, and route 7's detour), and
-  its trip updates do not mark those stops skipped, so a rider is
-  told to wait at a closed stop.
-  Pin: C-TRAN 2026-11-06 13:40 snapshot (alerts 2498d547…), board
-  `stop_board` at 2095 with `live_hash` → the alert
-  (`effect: no_service`, routes 025 and 078) and ten rows of 025 and
-  078 departures, none skipped; ride-now's board at 2095 shows the
-  same.
-
-- **QAF-96 DEFECT** — the server's "today" is the host's local date,
-  not the agency's. Publishing (D-76: a pick dated before today is
-  refused) and retiring (D-75: a pick dated after today) read it, and
-  so does `GET /feed`'s default date (`server/plans.go`, `today()`).
-  C-TRAN's operator timezone is America/Los_Angeles; a server in a
-  UTC container is a day ahead from 16:00 or 17:00 Pacific until
-  midnight, so in that window a pick dated the agency's today is
-  refused as past.
-  Pin: `TZ=UTC` server at 2026-11-05 17:30 PST (01:30Z on 11-06):
-  `POST /plans` with a pick dated 2026-11-05 →
-  `422 pick_dated_in_past` (`"today":"2026-11-06"`).
 
 - **QAF-49 OP GAP** — ride-now receives the whole live document
   (388 KB per C-TRAN snapshot, re-minted every poll) to read two

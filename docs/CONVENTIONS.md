@@ -71,7 +71,10 @@ holds the gotchas, Rust/wasm/ops and frontend alike.
 - **An op answers through `cap_abi::answer` / `outcome`**, never a
   `serde_json::json!` tree: the tree is a second copy of the answer
   and sorts its keys, so a document inside it stops being its
-  canonical bytes. Runner gates grep answers in struct field order.
+  canonical bytes. Runner gates grep answers in struct field order,
+  and read the whole answer (`grep … > /dev/null`, never `grep -q`:
+  quitting at the first match closes the pipe while the runner is
+  still writing, and it dies with EPIPE).
 - **A whole document never decodes through the tagged `Request`
   envelope.** `#[serde(tag = "op")]` is internally tagged: serde
   buffers the ENTIRE input into a generic tree before it knows the

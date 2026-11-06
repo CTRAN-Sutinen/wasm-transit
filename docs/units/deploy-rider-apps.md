@@ -60,7 +60,9 @@ units it depends on are:
   seconds since local midnight — in the agency's time zone (the
   network's operator `timezone`), never the host's: a server in a UTC
   container or a device set to another zone must answer the same
-  service day (QAF-96). Unpinned: whether a board at 00:30
+  service day. The server does (cap-network answers the network's
+  `timezone`; `TestTodayIsTheAgencysDate`); the pages still take the
+  device's (`src/uis/kit.ts`, `today()`). Unpinned: whether a board at 00:30
   shows the previous service day's after-midnight trips (a 24:45
   departure), and the answer on a DST change day (GTFS times count
   from noon minus 12 h). Pin both on the fixture first; a wrong

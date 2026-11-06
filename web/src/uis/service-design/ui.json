@@ -27,6 +27,7 @@
     "analysis.service_groups",
     "analysis.route_frequency",
     "analysis.hourly_trips",
+    "analysis.network_stats",
     "analysis.service_type_compare",
     "analysis.type_coverage",
     "analysis.unserved_points",

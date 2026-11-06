@@ -31,6 +31,7 @@ import type { DirectoryStop } from "../../types/cap_directory/DirectoryStop";
 import type { EntityFocus } from "../../types/EntityFocus";
 import type { FeedInfo } from "../../types/FeedInfo";
 import type { HourlyTrips } from "../../types/HourlyTrips";
+import type { NetworkStats } from "../../types/NetworkStats";
 import type { Network } from "../../types/Network";
 import type { NetworkEdit } from "../../types/NetworkEdit";
 import type { NetworkError } from "../../types/NetworkError";
@@ -84,6 +85,7 @@ export const sd = $state({
   /// warns what else runs with it, D-95).
   editType: "",
   hourly: null as HourlyTrips[] | null,
+  dayStats: null as NetworkStats | null,
   frequency: null as RouteFrequency | null,
   comparison: null as ServiceTypeComparison | null,
   routes: [] as DirectoryRoute[],
@@ -169,10 +171,11 @@ function syncPlanRows(): void {
   }));
 }
 
-/// The issues cap-author answered with a document it authored — the
-/// health node adopts them instead of registering that document in
-/// cap-network to ask again.
-const authoredIssues = new WeakMap<Network, NetworkError[]>();
+/// The issues and warnings cap-author answered with a document it
+/// authored (its `apply` validates the result) — the health node adopts
+/// them instead of registering that document in cap-network to ask
+/// again. Every other document's are network `validate`'s.
+const authoredHealth = new WeakMap<Network, { issues: NetworkError[]; warnings: NetworkWarning[] }>();
 
 /// A weighted layer as the coverage frame shows it: what the load
 /// answered, and the planner's reading of it — which field is the
@@ -312,6 +315,29 @@ const request = answerGraph(
           const date = groupDay();
           if (!doc || !date) return void (sd.hourly = null);
           sd.hourly = (await ask("analysis", "hourly_trips", { network_hash: docOf(doc), date })).hours;
+        }),
+    },
+    {
+      // The day's numbers beside its shape, on the same date: when
+      // service runs, how many stops it serves, where routes meet.
+      id: "analysis.network_stats",
+      frame: "DayProfile",
+      needs: ["document.active", "group", "view"],
+      visible: on("network"),
+      run: () =>
+        framed("DayProfile", () => (sd.dayStats = null), async () => {
+          const doc = active();
+          const date = groupDay();
+          if (!doc || !date) return void (sd.dayStats = null);
+          sd.dayStats = (
+            await ask("analysis", "network_stats", {
+              network_hash: docOf(doc),
+              date,
+              include_routes: false,
+              include_stops: false,
+              include_service_types: false,
+            })
+          ).stats;
         }),
     },
     {
@@ -506,12 +532,13 @@ const request = answerGraph(
       frame: "Readiness",
       needs: ["document.active"],
       run: () =>
-        framed("Readiness", () => (sd.issues = []), async () => {
+        framed("Readiness", () => ((sd.issues = []), (sd.warnings = [])), async () => {
           const doc = active();
           if (!doc) return;
-          const authored = authoredIssues.get(doc);
-          if (authored) return void (sd.issues = authored);
-          sd.issues = (await ask("network", "validate", { network_hash: docOf(doc) })).issues;
+          const { issues, warnings } =
+            authoredHealth.get(doc) ?? (await ask("network", "validate", { network_hash: docOf(doc) }));
+          sd.issues = issues;
+          sd.warnings = warnings;
         }),
     },
   ],
@@ -671,7 +698,6 @@ export async function openPlan(key: string): Promise<void> {
   sd.activeKey = key;
   setActivePlan(key);
   if (!sd.compareKey || sd.compareKey === key) sd.compareKey = sd.plans.find((p) => p.key !== key)?.key ?? "";
-  sd.warnings = [];
   syncHistory();
   await step("Answering the plan…", () => select("active", "compare", "plans", "view"));
   planStatus();
@@ -702,12 +728,11 @@ export async function fork(name: string, effectiveFrom: string, through = ""): P
   ]);
   if (!applied) return;
   const key = `plan-${applied.network.plan.id}`;
-  authoredIssues.set(applied.network, applied.issues);
+  authoredHealth.set(applied.network, { issues: applied.issues, warnings: applied.warnings });
   putPlan(key, applied.network);
   syncPlanRows();
   sd.compareKey = from;
   await openPlan(key);
-  sd.warnings = applied.warnings;
   sd.status = `Forked "${name.trim()}" from ${sd.plans.find((p) => p.key === from)?.name}.`;
 }
 
@@ -813,13 +838,12 @@ async function apply(doc: Network, edits: NetworkEdit[]) {
   }
 }
 
-async function adopt(next: Network, issues: NetworkError[] | null, warnings: NetworkWarning[]): Promise<void> {
-  if (issues) authoredIssues.set(next, issues);
+async function adopt(next: Network, health: { issues: NetworkError[]; warnings: NetworkWarning[] } | null): Promise<void> {
+  if (health) authoredHealth.set(next, health);
   putPlan(sd.activeKey, next);
   syncHistory();
   await release();
   await step("Answering the change…", () => select("active"));
-  sd.warnings = warnings;
   planStatus();
 }
 
@@ -837,7 +861,7 @@ export async function change(edits: NetworkEdit[]): Promise<void> {
   if (!applied) return;
   (undo[sd.activeKey] ??= []).push(doc);
   redo[sd.activeKey] = [];
-  await adopt(applied.network, applied.issues, applied.warnings);
+  await adopt(applied.network, { issues: applied.issues, warnings: applied.warnings });
 }
 
 export async function undoChange(): Promise<void> {
@@ -845,7 +869,7 @@ export async function undoChange(): Promise<void> {
   const doc = active();
   if (!prev || !doc) return;
   (redo[sd.activeKey] ??= []).push(doc);
-  await adopt(prev, null, []);
+  await adopt(prev, null);
 }
 
 export async function redoChange(): Promise<void> {
@@ -853,7 +877,7 @@ export async function redoChange(): Promise<void> {
   const doc = active();
   if (!next || !doc) return;
   (undo[sd.activeKey] ??= []).push(doc);
-  await adopt(next, null, []);
+  await adopt(next, null);
 }
 
 /// The edits omit `direction` for the patterns in none. A gesture

@@ -42,6 +42,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -98,6 +99,7 @@ type canonicalNetwork struct {
 	Document     string          `json:"document"`
 	DocumentHash string          `json:"document_hash"`
 	Plan         json.RawMessage `json:"plan"`
+	Timezone     string          `json:"timezone"`
 	Warnings     json.RawMessage `json:"-"`
 	ProducedBy   string          `json:"-"`
 }
@@ -131,6 +133,12 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		ID string `json:"id"`
 	}
 	json.Unmarshal(pick.Plan, &frame)
+	// The pick names the agency's zone: today below is its date.
+	if pick.Timezone != "" {
+		s.zoneMu.Lock()
+		s.zone = pick.Timezone
+		s.zoneMu.Unlock()
+	}
 
 	// One publish at a time: the set is read, extended and committed
 	// as one step (the CAS below still guards against any other writer).
@@ -197,13 +205,50 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// today is the host's date, "YYYY-MM-DD" — the server's local date, or
-// -today on a test server.
+// today is the agency's date, "YYYY-MM-DD": the host's clock
+// read in the network's zone — the feed's, else the last published
+// pick's, as cap-network answered it — never the host's own zone, so a
+// server in a UTC container answers the agency's service day. With no
+// zone known yet (no feed, nothing published since boot) it is the
+// host's local date. -today pins it on a test server.
 func (s *server) today() string {
 	if s.fixedToday != "" {
 		return s.fixedToday
 	}
-	return time.Now().Format("2006-01-02")
+	now := time.Now()
+	if s.now != nil {
+		now = s.now()
+	}
+	if loc := s.agencyZone(); loc != nil {
+		now = now.In(loc)
+	}
+	return now.Format("2006-01-02")
+}
+
+// agencyZone is the zone today() counts in: the published feed's, else
+// the last published pick's; nil when neither is known or the name is
+// not a zone the host's tz database has.
+func (s *server) agencyZone() *time.Location {
+	zone := ""
+	if s.feeder != nil {
+		if feed, err := s.feeder.Load(); err == nil {
+			zone = feed.timezone
+		}
+	}
+	if zone == "" {
+		s.zoneMu.Lock()
+		zone = s.zone
+		s.zoneMu.Unlock()
+	}
+	if zone == "" {
+		return nil
+	}
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		log.Printf("agency timezone %q: %v (counting today in the host's zone)", zone, err)
+		return nil
+	}
+	return loc
 }
 
 // handleRetire retires a pick (D-75): cap-plans answers the next set —

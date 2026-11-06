@@ -252,8 +252,9 @@ fn document_answers_the_canonical_bytes_the_hash_names() {
         serde_json::from_str(&cap_network::invoke_bytes(cap_abi::OP_LOAD_NETWORK, pretty.as_bytes())).unwrap();
     let network_hash = loaded["ok"]["network_hash"].as_str().expect("load_network answers").to_string();
     match dispatch(Request::Document { network_hash: network_hash.clone() }).unwrap() {
-        Response::Document { document, document_hash, plan } => {
+        Response::Document { document, document_hash, plan, timezone } => {
             assert_eq!(document_hash, network_hash, "the document hash IS the network hash");
+            assert_eq!(timezone.as_deref(), doc.timezone(), "the zone its dates are counted in rides along");
             assert_eq!(cap_abi::content_hash(document.as_bytes()), network_hash, "the bytes are the ones the hash names");
             assert_ne!(document, pretty, "canonical bytes, not the bytes it was sent");
             assert_eq!(plan, doc.plan, "the plan frame rides along");
@@ -261,6 +262,19 @@ fn document_answers_the_canonical_bytes_the_hash_names() {
         other => panic!("document: {other:?}"),
     }
     assert!(dispatch(Request::Document { network_hash: "sha256:00".into() }).is_err());
+}
+
+/// The host turns its clock into the agency's date: import and
+/// document answer the network's zone beside its hash (the fixture's
+/// agency_timezone), so the host never reads the document.
+#[test]
+fn import_answers_the_networks_timezone() {
+    let (feed_hash, _) = load_fixture();
+    let Response::Import { timezone, network, .. } = dispatch(Request::Import { feed_hash }).unwrap() else {
+        panic!("import")
+    };
+    assert_eq!(timezone.as_deref(), Some("America/Montreal"));
+    assert_eq!(timezone.as_deref(), network.timezone());
 }
 
 /// What stops a network from being published, answered by the module

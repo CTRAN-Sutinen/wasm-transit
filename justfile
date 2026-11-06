@@ -139,7 +139,7 @@ test: caps
       --op '{"op":"stop_board","network_hash":"$load_network.network_hash","stop_id":"STN","date":"2026-10-23","from_secs":25200,"limit":10}' \
       --op '{"op":"load_watchlist","document":{"version":"v2","stops":[{"id":"A","label":"home"}]}}' \
       --op '{"op":"watchlist_board","watchlist_hash":"$load_watchlist.watchlist_hash","network_hash":"$load_network.network_hash","date":"2026-10-23","from_secs":25200,"limit":3}' \
-      | grep -q '"label":"home"'
+      | grep '"label":"home"' > /dev/null
     # The registry kernel ops through the runner (any module, same
     # ops): held names the registered network, a keep-set without it
     # drops it, and the next ask is the unknown-hash error.
@@ -153,7 +153,7 @@ test: caps
     # chained; the dropped single-stop trip must be REPORTED (never
     # silent).
     node tools/caps-run.mjs network --load feed:web/public/caps/sample-gtfs.zip \
-      --op '{"op":"import","feed_hash":"$load.feed_hash"}' | grep -q '"kind":"dropped_trips"'
+      --op '{"op":"import","feed_hash":"$load.feed_hash"}' | grep '"kind":"dropped_trips"' > /dev/null
     # The edit vocabulary reads through the runner: `tools author`
     # carries one worked example per edit kind (QAF-52), each applied
     # to the fixture when the manifest was generated.
@@ -163,7 +163,7 @@ test: caps
     # question.
     node tools/caps-run.mjs gtfs --load feed:web/public/caps/sample-gtfs.zip \
       --op '{"op":"feed_info","feed_hash":"$load.feed_hash"}' \
-      | grep -q '"feed_version":"2026.10.1"'
+      | grep '"feed_version":"2026.10.1"' > /dev/null
     # The realtime capability's gate: the dispatch leg as a JOIN — the
     # imported network and its boundary, the fixture payload on op 0,
     # and the dispatcher's most-asked question answered in one op
@@ -174,48 +174,48 @@ test: caps
       --as bnd --op '{"op":"load_boundary","boundary":"$net.boundary"}' \
       --as snap --load web/e2e/fixtures/sample-rt.pb \
       --op '{"op":"trip_progress","network_hash":"$rnet.network_hash","boundary_hash":"$bnd.boundary_hash","rt_hash":"$snap.rt_hash","trip_id":"t10"}' \
-      | grep -q '"predicted_departure":28920'
+      | grep '"predicted_departure":28920' > /dev/null
     # The clock: $TODAY resolves host-side (the runner is the host) —
     # a valid date must answer, whatever day the gate runs on.
     node tools/caps-run.mjs calendar \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"active_services","network_hash":"$load_network.network_hash","date":"$TODAY"}' \
-      | grep -q '"op":"active_services"'
+      | grep '"op":"active_services"' > /dev/null
     # The calendar read backwards: WK's fixture dates across a window
     # that crosses the feed's calendar exception (removed 10-29) —
     # the reverse read must carry it.
     node tools/caps-run.mjs calendar \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"service_dates","network_hash":"$load_network.network_hash","service_type":"WK","from":"2026-10-23","to":"2026-11-03"}' \
-      | grep -q '"dates":\["2026-10-23","2026-10-26","2026-10-27","2026-10-28","2026-10-30","2026-11-02","2026-11-03"\]'
+      | grep '"dates":\["2026-10-23","2026-10-26","2026-10-27","2026-10-28","2026-10-30","2026-11-02","2026-11-03"\]' > /dev/null
     # The stop's day as gaps (QAF-25): stop A's three fixture
     # departures (08:00, 08:20, 08:40) fold into two 1200 s gaps —
     # the answer a jq fold over the board used to approximate.
     node tools/caps-run.mjs analysis \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"stop_gaps","network_hash":"$load_network.network_hash","date":"2026-10-23","stop_id":"A"}' \
-      | grep -q '"departures":3,"first_departure_secs":28800'
+      | grep '"departures":3,"first_departure_secs":28800' > /dev/null
     # The day's hourly profile (QAF-4): all five fixture trips start
     # in hour 8 under WK — one hour row answers what the jq fold
     # used to approximate.
     node tools/caps-run.mjs analysis \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"hourly_trips","network_hash":"$load_network.network_hash","date":"2026-10-23"}' \
-      | grep -q '"hour":8,"trips":5,"service_types":\[{"service_type":"WK","trips":5}\]'
+      | grep '"hour":8,"trips":5,"service_types":\[{"service_type":"WK","trips":5}\]' > /dev/null
     # The schedule texture (QAF-16): WK's five fixture schedules —
     # each a single trip (no gaps to read), two starts on the
     # quarter-hour grid (28800, 29700), three off it.
     node tools/caps-run.mjs analysis \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"schedule_texture","network_hash":"$load_network.network_hash","members":["WK"]}' \
-      | grep -q '"on_clockface":2,"pattern_trips":\['
+      | grep '"on_clockface":2,"pattern_trips":\[' > /dev/null
     # The corridor read (QAF-22): routes 10 and 20 share the A→B
     # segment and stack three departures at A — the pair answered,
     # not inferred from stop data.
     node tools/caps-run.mjs analysis \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"route_overlap","network_hash":"$load_network.network_hash","date":"2026-10-23"}' \
-      | grep -q '"a":"10","b":"20","shared_stops":2,"shared_segments":1,"stack_stop":"A","stack_departures":3'
+      | grep '"a":"10","b":"20","shared_stops":2,"shared_segments":1,"stack_stop":"A","stack_departures":3' > /dev/null
     # The timed-transfer view (QAF-27): route 10's 08:00 arrival at
     # A meets route 20's 08:20 departure under a caller-brought
     # 25-minute window (the default convention caps at 15) — the
@@ -223,7 +223,7 @@ test: caps
     node tools/caps-run.mjs analysis \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"timed_transfers","network_hash":"$load_network.network_hash","date":"2026-10-23","stop_id":"A","window":{"min_secs":60,"max_secs":1500}}' \
-      | grep -q '"from_route":"10","to_route":"20","arrival_secs":28800,"arrival_stop":"A","departure_secs":30000,"departure_stop":"A","wait_secs":1200'
+      | grep '"from_route":"10","to_route":"20","arrival_secs":28800,"arrival_stop":"A","departure_secs":30000,"departure_stop":"A","wait_secs":1200' > /dev/null
     # The cross-capability session: one session imports the fixture
     # feed, hands the DOCUMENT to the board by reference (no file in
     # between), addresses results by --as name, and feeds the numeric
@@ -269,7 +269,7 @@ test: caps
       --op '{"op":"blocks","network_hash":"$load_network.network_hash","date":"2026-10-23"}' \
       --op '{"op":"load_edits","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
       --op '{"op":"block_trips","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","block_id":"B1","date":"2026-10-23"}' \
-      | grep -q '"layover_remaining_secs":300'
+      | grep '"layover_remaining_secs":300' > /dev/null
     # Blocking where cutting the work begins (D-46, D-9): the work
     # rules registered, the recovery view under them, the suggested
     # blocking of the trips no block carries, adopted through author
@@ -335,7 +335,7 @@ test: caps
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"load_edits","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
       --op '{"op":"trip_stops","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","trip":"t30","start_secs":31200,"date":"2026-10-23"}' \
-      | grep -q '"stop_id":"B"'
+      | grep '"stop_id":"B"' > /dev/null
     # The street capability's gate: where along the streets, one
     # chained session — the street fixture imported on bulk op 0, the
     # document it answered registered back (load_streets: the hash
@@ -377,22 +377,22 @@ test: caps
     # document (rev bumped, host clock stamped).
     node tools/caps-run.mjs sync \
       --op '{"op":"sync_edits","client":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"draft","rev":1,"updated_at":1}],"server":[],"now_ms":1000}' \
-      | grep -q '"status":"submitted"'
+      | grep '"status":"submitted"' > /dev/null
     # The authz capability's gate: fail-closed — a matching rule allows,
     # an empty policy denies.
     node tools/caps-run.mjs authz \
       --op '{"op":"authorize","identity":{"sub":"d","roles":["dispatcher"]},"action":"write","pointer":"edits","policy":{"schema_version":1,"rules":[{"name":"ops","roles":["dispatcher"],"pointers":["edits"],"actions":["write"]}]}}' \
-      | grep -q '"allow":true'
+      | grep '"allow":true' > /dev/null
     node tools/caps-run.mjs authz \
       --op '{"op":"authorize","identity":{"sub":"r","roles":["rider"]},"action":"write","pointer":"edits","policy":{"schema_version":1,"rules":[]}}' \
-      | grep -q '"allow":false'
+      | grep '"allow":false' > /dev/null
     # The plan-chain capability's gate: which pick governs — the
     # spring pick in force, the fall pick taking over after it, and
     # the derived windows.
     node tools/caps-run.mjs plans \
       --op '{"op":"resolve","plans":[{"id":"spring","name":"Spring 2026","effective_from":"2026-03-01"},{"id":"fall","name":"Fall 2026","effective_from":"2026-09-07"}],"date":"2026-10-23"}' \
       --op '{"op":"periods","plans":[{"id":"spring","name":"Spring 2026","effective_from":"2026-03-01"},{"id":"fall","name":"Fall 2026","effective_from":"2026-09-07"}]}' \
-      | grep -q '"plan":"fall"'
+      | grep '"plan":"fall"' > /dev/null
     # The authoring capability's gate: the fixture network stamped as
     # a pick in one atomic change, then the answered document read by
     # the day views in the same session — chained by the hash the
@@ -402,7 +402,7 @@ test: caps
       --as pick --op '{"op":"apply","network_hash":"$load_network.network_hash","edits":[{"edit":"set_plan","plan":{"id":"fall","name":"Fall 2026","effective_from":"2026-10-19"}}]}' \
       --cap calendar --op '{"op":"load_network","network":"$pick.network"}' \
       --op '{"op":"active_services","network_hash":"$pick.network_hash","date":"2026-10-23"}' \
-      | grep -q '"services":\["WK"\]'
+      | grep '"services":\["WK"\]' > /dev/null
     # The diversion-authoring capability's gate: a draft anchored end
     # to end on route 10's default pattern, proposed into an empty
     # edit document, and the answered document's record reported
@@ -412,7 +412,7 @@ test: caps
       --op @web/public/caps/sample-network-load.json \
       --as prop --op '{"op":"propose","network_hash":"$load_network.network_hash","draft":{"route_id":"10","pattern":"pat-10-0-1","first_kept_stop":"A","last_kept_stop":"B","served_stops":[],"slices":[],"added_mins":5,"start_date":"2026-10-23","end_date":"2026-10-23"},"records":[],"record_id":"e1","now_ms":1000}' \
       --op '{"op":"reports","network_hash":"$load_network.network_hash","records":"$prop.records"}' \
-      | grep -q '"valid":true'
+      | grep '"valid":true' > /dev/null
     # A trip cancel, chained (D-45): divert cancels the 08:00 t10 on
     # the Friday into an empty edit document, and the board in the
     # same session lists its visit at A cancelled — never a row
