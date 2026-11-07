@@ -193,12 +193,17 @@ function docOf(network: Network): Doc<Network> {
   return doc;
 }
 
-/// A stored plan read into the current shape: cap-author's `apply`
-/// with no edits answers the canonical document (a plan saved under
-/// older field names comes back in the current shape). Null when the
-/// authoring capability did not assemble.
+/// A stored plan read into the current version: one saved in an older
+/// version comes forward through the migration capability (a network
+/// with no schema_version is v1 — every plan saved before the tag),
+/// then cap-author's `apply` with no edits answers the canonical
+/// document. Null when the authoring capability did not assemble.
 async function readStoredNetwork(stored: unknown): Promise<Network | null> {
   if (!(await available("author"))) return null;
+  if (await available("migrate")) {
+    const { version, reads } = await ask("migrate", "version", { kind: "network", document: stored });
+    if (version < reads) stored = (await ask("migrate", "migrate", { kind: "network", document: stored })).document;
+  }
   const answer = await ask("author", "apply", { network_hash: new Doc("network", { value: stored as Network }), edits: [] });
   docs.set(answer.network, produced("network", answer.network, "author", answer.network_hash));
   return answer.network;

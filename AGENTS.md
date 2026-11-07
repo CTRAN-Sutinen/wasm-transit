@@ -205,14 +205,15 @@ cap-abi          the kernel and the seam: the registries (one per document kind,
                  a capability only registers with `capability!`), the kernel ops
                  (loads, evict, held, about), manifest, validator, gen-manifest,
                  gen-assemblies, arch-gates
-cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert
+cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate
                  the capabilities: rlibs that register, forbid unsafe, declare no
                  state, and never depend on each other (docs/ARCHITECTURE.md, bus section)
 assemblies/      GENERATED (gen-assemblies, gitignored): module-<cap> (one capability
                  alone) and module-ui-<id> (a generated UI's capabilities linked)
 server/          Go + wazero host over cap-sync, cap-network, cap-plans and
                  cap-streets (the network, picks, streets and walk table it
-                 publishes), cap-authz when auth is on, and the proxies
+                 publishes), cap-migrate (an older document, at receive),
+                 cap-authz when auth is on, and the proxies
                  (/rt, /geocode to a Pelias geocoder) — scaffolding, never a
                  domain decision
 web/             Svelte 5 + Vite frontend: / is a picker over the GENERATED UIs
@@ -245,6 +246,11 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
   whole-object writes and a conditional create of an absent key —
   never an append, a rename, an fsync, or a file lock (the directory
   store assumes all four, and goes when the object backend lands).
+- **Documents are open formats (D-115)**: plain JSON (gzip allowed)
+  or an external open format (GTFS, GTFS-rt, GeoJSON), never a
+  private encoding; each says its kind and version inside it, and
+  every kind's schema and a worked example are published per version
+  (`docs/FORMATS.md`) — a document reads without the app.
 - **Retirement is the tombstone**: "delete" means
   `status: "retired"`, rev bumped. No hard deletes.
 - Schedules change by **artifact replacement, not mutation**: the
@@ -325,7 +331,7 @@ e2e, real-data dogfood) are spelled out in `docs/TESTING.md`.
   becomes a capability module (it hosts cap-sync, cap-network for
   the import and the picks it publishes, cap-plans for the published
   plan set, cap-streets for the streets and walk table it
-  publishes).
+  publishes, cap-migrate for an older document at receive).
 - The bus is the architecture: no capability grows a private
   document format — shared data crosses capabilities as kernel
   documents addressed by content hash only, and capabilities never

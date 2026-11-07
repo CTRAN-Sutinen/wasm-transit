@@ -55,6 +55,8 @@ import type { Request as DirectoryRequest } from "./types/cap_directory/Request"
 import type { Response as DirectoryResponse } from "./types/cap_directory/Response";
 import type { Request as GtfsRequest } from "./types/cap_gtfs/Request";
 import type { Response as GtfsResponse } from "./types/cap_gtfs/Response";
+import type { Request as MigrateRequest } from "./types/cap_migrate/Request";
+import type { Response as MigrateResponse } from "./types/cap_migrate/Response";
 import type { Request as NetworkRequest } from "./types/cap_network/Request";
 import type { Response as NetworkResponse } from "./types/cap_network/Response";
 import type { Request as PlansRequest } from "./types/cap_plans/Request";
@@ -83,6 +85,7 @@ type Caps = {
   board: [BoardRequest, BoardResponse];
   directory: [DirectoryRequest, DirectoryResponse];
   gtfs: [GtfsRequest, GtfsResponse];
+  migrate: [MigrateRequest, MigrateResponse];
   network: [NetworkRequest, NetworkResponse];
   plans: [PlansRequest, PlansResponse];
   router: [RouterRequest, RouterResponse];
@@ -92,10 +95,8 @@ type Caps = {
 export type CapId = keyof Caps;
 export type OpOf<C extends CapId> = Caps[C][0]["op"];
 type RequestOf<C extends CapId, O> = Extract<Caps[C][0], { op: O }>;
-/// The answer to an op: tagged like its request (one op answers under
-/// another name — `migrate_watchlist` answers `migrated_watchlist`).
-type Tag<O> = O extends "migrate_watchlist" ? "migrated_watchlist" : O;
-export type Answer<C extends CapId, O> = Extract<Caps[C][1], { op: Tag<O> }>;
+/// The answer to an op: tagged like its request.
+export type Answer<C extends CapId, O> = Extract<Caps[C][1], { op: O }>;
 /// An op's arguments: the request without its tag, every `*_hash`
 /// field taking a document instead of a hash.
 type DocFields<T> = { [K in keyof T]: K extends `${string}_hash` ? Doc | Exclude<T[K], string> : T[K] };
@@ -221,7 +222,7 @@ type Loader = { bytes: number; hash: string } | { json: (doc: Doc) => Record<str
 
 const LOADERS: Record<Kind, Loader> = {
   network: { bytes: 256, hash: "network_hash" },
-  edits: { json: (d) => ({ op: "load_edits", records: d.value }), hash: "edits_hash" },
+  edits: { json: (d) => ({ op: "load_edits", edits: d.value }), hash: "edits_hash" },
   live: { json: (d) => ({ op: "load_live", live: d.value }), hash: "live_hash" },
   boundary: { json: (d) => ({ op: "load_boundary", boundary: d.value }), hash: "boundary_hash" },
   walks: { json: (d) => ({ op: "load_walks", walks: d.value }), hash: "walks_hash" },

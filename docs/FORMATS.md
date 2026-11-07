@@ -1,7 +1,9 @@
 # Formats — what the store persists
 
 The at-rest contract of the sync store
-(`docs/ARCHITECTURE.md`, server section). Everything here is readable
+(`docs/ARCHITECTURE.md`, server section). Every document is an open
+format, readable without the app (D-115): plain JSON, or an external
+open format (GTFS, GTFS-rt, GeoJSON). Everything here is readable
 without any wasm: the blobs are plain bytes, the envelopes and logs
 plain JSON, and the hash is sha256. The JSON Schemas generated from
 the serde types pin the *document payloads*: `just caps` publishes
@@ -40,16 +42,16 @@ in production is never a local or network-mounted directory.
 ## The envelope sidecar
 
 ```json
-{"kind": "edit_records", "schema_version": 1, "produced_by": "cap-sync@sha256:<hex>"}
+{"kind": "edit_records", "schema_version": 2, "produced_by": "cap-sync@sha256:<hex>"}
 ```
 
 - `kind` — one of `network_document`, `edit_records`,
   `diversion_draft`, `manifest`, `plans`, `policy`. `produced_by` on a
   `network_document` is `cap-network@sha256:…`; on `plans`,
   `cap-plans@sha256:…`.
-- `schema_version` — the payload schema's version; a reader pins a
-  version and ignores newer ones, and a writer bumps it deliberately.
-  Migrations happen at receive, never at read.
+- `schema_version` — the payload's version, the same number the
+  document carries inside it (see "Versions" below); a writer bumps it
+  deliberately. Migrations happen at receive, never at read.
 - `produced_by` — the producing module's hash (`cap-sync@sha256:…`),
   or `server` for host-owned documents.
 
@@ -59,7 +61,7 @@ in production is never a local or network-mounted directory.
 commit:
 
 ```json
-{"seq": 2, "from": "sha256:aaa…", "to": "sha256:bbb…", "kind": "edit_records", "schema_version": 1, "produced_by": "cap-sync@sha256:…", "writer": "anonymous", "policy": null, "at_ms": 1798761600000}
+{"seq": 2, "from": "sha256:aaa…", "to": "sha256:bbb…", "kind": "edit_records", "schema_version": 2, "produced_by": "cap-sync@sha256:…", "writer": "anonymous", "policy": null, "at_ms": 1798761600000}
 ```
 
 - The pointer's current value is the last record's `to` — there is no
@@ -143,12 +145,7 @@ commit's two writes.
   record's bytes — and every edit document's hash — are the ones they
   were before the cancel payload existed (D-101). The LWW unit is the
   whole record: a later write may replace a diversion with a cancel
-  under one id. A reader drops a record with neither or both. The
-  payload is additive under `schema_version` 1: a module built before
-  it drops a cancel record at read and counts it, and the record
-  survives on the server, whose merge unions ids
-  (`docs/units/document-versioning.md`: the version tag inside the
-  document is what turns that into a refusal).
+  under one id. A reader drops a record with neither or both.
 - `status: "retired"` is the only tombstone: the record stays in the
   document, is no longer in force, and deletions propagate through
   sync. Compaction (D-57) drops retired records older than the horizon
@@ -156,12 +153,45 @@ commit's two writes.
 - Nothing compressed is ever the durable format; compression is
   transport only.
 
+## Versions
+
+Every document says what it is inside it (D-62, D-115), so a copy
+anywhere — a blob, an export, a file another tool reads — names its
+kind and version without the app:
+
+- `network` and `edit_records` lead with `"kind"` and
+  `"schema_version"` (network v2, edit document v2). A network with no
+  `schema_version` is v1 — every shape written before the tag; a bare
+  array of edit records is edit document v1.
+- `plans` and `policy` carry `schema_version`, `work_rules` a
+  `version`, a watchlist `"version": "vN"`; none names its kind yet.
+- The byte kinds — a GTFS feed, a GTFS-rt snapshot, a GeoJSON layer —
+  are open formats versioned by their own specs and carry no tag of
+  ours.
+
+A module reads the version it was built for, and only that: an older
+document is refused at its load naming the migration capability, a
+newer one naming both versions — never parsed and re-emitted. The
+migration capability (cap-migrate) brings an older document forward,
+one pure step per version, every record kept and every loss reported;
+the answer is a new document under its own hash, and the old bytes
+stay. It runs where a document arrives:
+
+- the server's receive: an older `POST` body comes forward before the
+  merge, and at startup an older `edits` head is committed forward as
+  an ordinary logged CAS, writer `migrate:<module hash>` (the older
+  blob stays under its hash);
+- a browser's restore (service design brings a stored plan forward);
+- an agent's load: `caps-run --load` of an older file is refused
+  naming the op, which the agent runs through `--cap migrate`.
+
 ## Worked examples
 
-An `edit_records` blob is the canonical JSON array of records:
+An `edit_records` blob is the canonical edit document — its kind and
+version, then its records:
 
 ```json
-[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"submitted","rev":2,"updated_at":1000}]
+{"kind":"edit_records","schema_version":2,"records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"submitted","rev":2,"updated_at":1000}]}
 ```
 
 and a trip cancel (one service date; `start_secs` null = every
@@ -172,9 +202,9 @@ instance the trip runs that day) is a record of its own:
 ```
 
 with sidecar
-`{"kind":"edit_records","schema_version":1,"produced_by":"cap-sync@sha256:<hex>"}`
+`{"kind":"edit_records","schema_version":2,"produced_by":"cap-sync@sha256:<hex>"}`
 and, after a second commit, log record
-`{"seq":2,"from":"sha256:<first>","to":"sha256:<this>","kind":"edit_records","schema_version":1,"produced_by":"cap-sync@sha256:<hex>","writer":"anonymous","policy":null,"at_ms":2000}`.
+`{"seq":2,"from":"sha256:<first>","to":"sha256:<this>","kind":"edit_records","schema_version":2,"produced_by":"cap-sync@sha256:<hex>","writer":"anonymous","policy":null,"at_ms":2000}`.
 
 A `manifest` blob is the manifest object itself
 (`{"network_hash","feed_hash","feed_version","streets_hash","walks_hash","wasm_hash","authz_hash","policy_hash","plans_hash","generated_at","publisher","timezone","services"}`,

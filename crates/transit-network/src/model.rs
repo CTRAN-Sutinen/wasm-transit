@@ -720,6 +720,15 @@ pub struct PlanMeta {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Network {
+    /// `"network"`: the document names its kind (D-115).
+    #[serde(default)]
+    #[ts(type = "\"network\"")]
+    pub kind: crate::version::NetworkKind,
+    /// The document's version (D-62): written on every write; a
+    /// document without one is version 1 (`version.rs`).
+    #[serde(default = "crate::version::NetworkVersion::untagged")]
+    #[ts(type = "number")]
+    pub schema_version: crate::version::NetworkVersion,
     pub name: String,
     /// The service plan this document is: the versioning frame for
     /// service changes. Defaults to unversioned.

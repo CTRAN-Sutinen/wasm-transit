@@ -26,9 +26,10 @@ default:
 # loads it). Hash-pinned modules land in web/public/caps/, served under
 # their content hash so the HTTP cache holds them forever. The sync
 # server's modules also land at stable paths in web/pkg/ (cap_sync,
-# cap_network, cap_streets, cap_authz, cap_plans — the server's
-# default -wasm, -network-wasm, -streets-wasm, -authz-wasm and
-# -plans-wasm flags; rebuilt with the modules, never by hand). The
+# cap_network, cap_streets, cap_authz, cap_plans, cap_migrate — the
+# server's default -wasm, -network-wasm, -streets-wasm, -authz-wasm,
+# -plans-wasm and -migrate-wasm flags; rebuilt with the modules, never
+# by hand). The
 # registry also publishes every document kind's JSON Schema and a
 # worked example (registry/documents.json, docs/FORMATS.md).
 caps:
@@ -38,7 +39,7 @@ caps:
     cargo build --release $(ls assemblies | sed 's/^/-p /') --target wasm32-unknown-unknown
     cargo run --quiet -p cap-abi --bin gen-manifest
     mkdir -p web/pkg
-    for cap in sync network streets authz plans; do
+    for cap in sync network streets authz plans migrate; do
         cp "target/wasm32-unknown-unknown/release/module_$cap.wasm" "web/pkg/cap_$cap.wasm"
     done
 
@@ -272,7 +273,7 @@ test: caps
     node tools/caps-run.mjs runcut \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"blocks","network_hash":"$load_network.network_hash","date":"2026-10-23"}' \
-      --op '{"op":"load_edits","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
+      --op '{"op":"load_edits","edits":{"kind":"edit_records","schema_version":2,"records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}}' \
       --op '{"op":"block_trips","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","block_id":"B1","date":"2026-10-23"}' \
       | grep '"layover_remaining_secs":300' > /dev/null
     # Blocking where cutting the work begins (D-46, D-9): the work
@@ -301,7 +302,7 @@ test: caps
       --as plan --op '{"op":"plan","network_hash":"$load_network.network_hash","from":"A","to":"B","date":"2026-10-23","depart_secs":25200,"max_legs":4}' \
       --op '{"op":"itinerary_paths","network_hash":"$load_network.network_hash","date":"2026-10-23","itinerary":"$plan.itinerary"}' \
       --cap runcut --op @web/public/caps/sample-network-load.json \
-      --as edits --op '{"op":"load_edits","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":[{"lat":45.6,"lon":-73.6}],"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
+      --as edits --op '{"op":"load_edits","edits":{"kind":"edit_records","schema_version":2,"records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":[{"lat":45.6,"lon":-73.6}],"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}}' \
       --as trip --op '{"op":"trip_path","network_hash":"$load_network.network_hash","edits_hash":"$edits.edits_hash","trip":"t30","start_secs":31200,"date":"2026-10-23"}' \
       --cap directory --op @web/public/caps/sample-network-load.json \
       --as focus --op '{"op":"focus","network_hash":"$load_network.network_hash","kind":"route","id":"10"}' \
@@ -329,7 +330,7 @@ test: caps
     node tools/caps-run.mjs router \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"plan","network_hash":"$load_network.network_hash","from":"A","to":"B","date":"2026-10-23","depart_secs":25200,"max_legs":4}' \
-      --op '{"op":"load_edits","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
+      --op '{"op":"load_edits","edits":{"kind":"edit_records","schema_version":2,"records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}}' \
       --as cmp --op '{"op":"plan_compare","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","from":"A","to":"B","date":"2026-10-23","depart_secs":25200,"max_legs":4}' \
       --as last --op '{"op":"plan_arrive_by","network_hash":"$load_network.network_hash","from":"A","to":"B","date":"2026-10-23","max_legs":4}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const c = ok("cmp"); if (c.active?.arrival_hhmmss !== "08:15:00" || c.notice?.kind !== "later" || c.notice.minutes_lost !== 5 || ok("last").itinerary?.depart_secs !== 31200) process.exit(1)'
@@ -338,7 +339,7 @@ test: caps
     # geometry; the host's view code draws).
     node tools/caps-run.mjs runcut \
       --op @web/public/caps/sample-network-load.json \
-      --op '{"op":"load_edits","records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}' \
+      --op '{"op":"load_edits","edits":{"kind":"edit_records","schema_version":2,"records":[{"id":"e1","diversion":{"id":"d1","route_id":"10","direction_id":null,"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],"detour":null,"added_secs":300,"start_date":"2026-10-23","end_date":"2026-10-23"},"status":"accepted","rev":1,"updated_at":1}]}}' \
       --op '{"op":"trip_stops","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","trip":"t30","start_secs":31200,"date":"2026-10-23"}' \
       | grep '"stop_id":"B"' > /dev/null
     # The street capability's gate: where along the streets, one
@@ -426,7 +427,7 @@ test: caps
       --op @web/public/caps/sample-network-load.json \
       --as c --op '{"op":"cancel","network_hash":"$load_network.network_hash","records":[],"record_id":"c1","trip_id":"t10","date":"2026-10-23","now_ms":1000}' \
       --cap board --op @web/public/caps/sample-network-load.json \
-      --op '{"op":"load_edits","records":"$c.records"}' \
+      --op '{"op":"load_edits","edits":{"kind":"edit_records","schema_version":2,"records":"$c.records"}}' \
       --op '{"op":"stop_board","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","stop_id":"A","date":"2026-10-23","from_secs":25200,"limit":10}' \
       | grep '"cancel":"cancel-t10-1000"' > /dev/null
     # ARCHITECTURE GATES — the laws as assertions (spelled out in

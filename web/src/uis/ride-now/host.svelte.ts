@@ -44,7 +44,7 @@ import type { DirectoryStop } from "../../types/cap_directory/DirectoryStop";
 import type { EntityRow } from "../../types/EntityRow";
 import type { RouteDetail } from "../../types/RouteDetail";
 import type { TripProgress } from "../../types/TripProgress";
-import type { EditRecord } from "../../types/EditRecord";
+import type { EditDocument } from "../../types/EditDocument";
 import type { EntityFocus } from "../../types/EntityFocus";
 import type { Itinerary } from "../../types/Itinerary";
 import type { LegPath } from "../../types/LegPath";
@@ -215,7 +215,7 @@ let network: Doc<Network> | null = null;
 let boundary: Doc<Boundary> | null = null;
 /// The edit document over the network — null when empty (schedule
 /// only, the day views' contract).
-let edits: Doc<EditRecord[]> | null = null;
+let edits: Doc<EditDocument> | null = null;
 let editsText = "[]";
 /// The rider's saved stops, as the document the board reads.
 let watchlist: Doc<Watchlist> | null = null;
@@ -780,10 +780,12 @@ async function syncEdits(): Promise<boolean> {
     const resp = await fetch("/edits");
     if (!resp.ok) return false;
     const text = await resp.text();
-    const records = JSON.parse(text) as EditRecord[];
+    // The edit document, as the server keeps it (it brings an older
+    // one forward); the modules refuse any version they do not read.
+    const document = JSON.parse(text) as EditDocument;
     if (text === editsText) return false;
     editsText = text;
-    edits = Array.isArray(records) && records.length > 0 ? new Doc("edits", { value: records }, { over: network }) : null;
+    edits = document?.records?.length > 0 ? new Doc("edits", { value: document }, { over: network }) : null;
     return true;
   } catch (e) {
     console.warn("edit sync failed:", e);

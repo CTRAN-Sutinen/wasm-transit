@@ -16,7 +16,8 @@
 //! 5. invalid edit records are REPORTED at load, never rejected;
 //! 6. unknown hashes and garbage are errors, never panics.
 
-use cap_board::{dispatch, dispatch_bytes, dispatch_json, migrate_watchlist, Request, Response, Watchlist};
+use cap_board::{dispatch, dispatch_bytes, dispatch_json, Request, Response, Watchlist};
+use transit_dispatch::watchlist::migrate as migrate_watchlist;
 use proptest::prelude::*;
 use sha2::Digest;
 use transit_network::Network;
@@ -60,7 +61,7 @@ fn record(status: EditStatus, added_secs: u32) -> EditRecord {
 }
 
 fn load_edits(_network_hash: &str, records: Vec<EditRecord>) -> String {
-    cap_abi::kernel::EDITS.register(records).unwrap().0
+    cap_abi::kernel::EDITS.register(cap_abi::kernel::EditDocument::new(records)).unwrap().0
 }
 
 fn stop_board(network_hash: &str, edits_hash: Option<String>, stop_id: &str, from_secs: u32, live_hash: Option<String>) -> transit_dispatch::StopBoard {

@@ -21,6 +21,8 @@
   ],
   "ops": [
     "gtfs.feed_info",
+    "migrate.version",
+    "migrate.migrate",
     "network.import",
     "network.validate",
     "network.export",

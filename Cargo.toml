@@ -26,6 +26,7 @@ members = [
     "crates/cap-plans",
     "crates/cap-author",
     "crates/cap-divert",
+    "crates/cap-migrate",
     "crates/transit-analysis",
     "crates/transit-dispatch",
     "crates/transit-runs",

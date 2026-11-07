@@ -49,7 +49,7 @@ pub use transit_network::Network;
 pub use transit_rt::RtOverview;
 pub use transit_streets::Streets;
 pub use transit_streets::walking::WalkTable;
-pub use transit_sync::EditRecord;
+pub use transit_sync::{EditDocument, EditRecord};
 pub use transit_dispatch::watchlist::Watchlist;
 pub use transit_runs::WorkRules;
 
@@ -142,7 +142,7 @@ pub struct Envelope<'a> {
     #[serde(borrow, default)]
     network: Option<&'a RawValue>,
     #[serde(borrow, default)]
-    records: Option<&'a RawValue>,
+    edits: Option<&'a RawValue>,
     #[serde(borrow, default)]
     live: Option<&'a RawValue>,
     #[serde(borrow, default)]
@@ -313,18 +313,25 @@ pub static NETWORK: Kind<Network> = Kind {
     answer: |network_hash, _| Loaded::LoadNetwork { network_hash },
 };
 
-/// Operator edit documents (the records, wholesale-replaced by the
-/// host). Validation against a network is a question
-/// (cap-divert `reports`), never the load's.
-pub static EDITS: Kind<Vec<EditRecord>> = Kind {
+/// Operator edit documents (the tagged document, wholesale-replaced
+/// by the host), in the version this build reads: an older or newer
+/// one is refused at the load, naming both versions. Validation
+/// against a network is a question (cap-divert `reports`), never the
+/// load's.
+pub static EDITS: Kind<EditDocument> = Kind {
     id: "edits",
     name: "edits",
     load_op: "load_edits",
     op: OP_LOAD_EDITS,
     identity: Identity::Canonical(crate::canonical_hash),
     registry: Registry::documents("edits", "load_edits", Retain::Host),
-    parse: canonical,
-    json: |e| e.field(e.records, "records").map(Cow::Borrowed),
+    parse: |bytes| {
+        let doc: serde_json::Value = crate::parse_document(bytes)?;
+        let found = transit_sync::version::schema_version_of(&doc)?;
+        crate::speaks(transit_sync::KIND, found, transit_sync::SCHEMA_VERSION)?;
+        serde_json::from_value(doc).map_err(|e| format!("invalid document: {e}"))
+    },
+    json: |e| e.field(e.edits, "edits").map(Cow::Borrowed),
     answer: |edits_hash, _| Loaded::LoadEdits { edits_hash },
 };
 
@@ -551,7 +558,7 @@ pub fn day(network_hash: &str, edits_hash: Option<&str>, date: &str) -> Result<A
     let mut inputs = vec![network_hash];
     inputs.extend(edits_hash);
     derive(&DAY, &transit_dispatch::day_key(network_hash, edits_hash, date), &inputs, || {
-        transit_dispatch::day(&network, parsed, records.as_deref().map(Vec::as_slice).unwrap_or(&[]))
+        transit_dispatch::day(&network, parsed, records.as_deref().map(|d| d.records.as_slice()).unwrap_or(&[]))
             .map_err(|e| format!("the network does not materialize: {e}"))
     })
 }

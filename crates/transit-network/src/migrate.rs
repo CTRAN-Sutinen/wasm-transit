@@ -1,5 +1,7 @@
-//! Reading network documents, including those written before trips
-//! were stored or alignments stood on their own.
+//! The network's v1 shapes, read into the current model: the body of
+//! the v1 → v2 step (`version.rs`). v1 is every untagged document,
+//! including those written before trips were stored or alignments
+//! stood on their own.
 //!
 //! A pre-alignment document draws each pattern's line inline, as its
 //! `path`. That line becomes an alignment under the pattern's id —
@@ -18,20 +20,11 @@ use std::collections::BTreeMap;
 
 use serde_json::{json, Value};
 
-use crate::model::{Network, Pattern, StopOffset};
+use crate::model::{Pattern, StopOffset};
 
-/// Read a network document — the current shape (straight into the
-/// type), or a pre-trip one (migrated as a JSON value).
-pub fn read_network(text: &str) -> Result<Network, String> {
-    if let Ok(network) = serde_json::from_str(text) {
-        return Ok(network);
-    }
-    let mut doc: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
-    migrate(&mut doc)?;
-    serde_json::from_value(doc).map_err(|e| e.to_string())
-}
-
-fn migrate(doc: &mut Value) -> Result<(), String> {
+/// The v1 shapes read into the current model, in place (the v1 → v2
+/// step, `version.rs`, adds the tag).
+pub(crate) fn migrate_v1(doc: &mut Value) -> Result<(), String> {
     let Some(root) = doc.as_object_mut() else { return Ok(()) };
     migrate_paths(root);
     if let Some(old) = root.remove("schedules") {

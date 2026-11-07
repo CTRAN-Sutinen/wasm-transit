@@ -1,6 +1,7 @@
 //! The watchlist migration's property laws — the personal document
 //! is the migration mechanism's real payload, so its laws are
-//! property-tested here (the capability owns the document):
+//! property-tested here (the library owns the document; cap-migrate
+//! wraps the chain):
 //!
 //! * **Identity** — the stop-id sequence is invariant across
 //!   versions. This is the law that keeps sync sound: LWW-by-record-id
@@ -15,7 +16,7 @@
 use proptest::prelude::*;
 use proptest::strategy::BoxedStrategy;
 
-use cap_board::{migrate_watchlist, WatchStopV1, Watchlist};
+use transit_dispatch::watchlist::{migrate as migrate_watchlist, WatchStopV1, Watchlist};
 
 fn gen_stop_v1() -> BoxedStrategy<WatchStopV1> {
     (

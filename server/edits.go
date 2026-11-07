@@ -5,10 +5,12 @@ package main
 // CAPABILITY (cap-sync) via its one op, so client and server agree
 // by construction (same bytes, same input, same output).
 //
-// POST /edits  body: the client's document ([]EditRecord).
+// POST /edits  body: the client's edit document (an older version —
+//              a bare array — comes forward through cap-migrate).
 //              response: the converged document — the client
 //              adopts it wholesale.
-// GET  /edits  returns the server's document.
+// GET  /edits  returns the server's document
+//              ({"kind":"edit_records","schema_version":2,"records":[…]}).
 //
 // With -store, /edits is the edit_records pointer of the content-
 // addressed store (docs/FORMATS.md): POST runs the CAS retry loop over
@@ -19,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -54,7 +57,7 @@ func (s *server) handleStoreEdits(w http.ResponseWriter, r *http.Request) {
 		}
 		if !found {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte("[]"))
+			w.Write([]byte(emptyEdits))
 			return
 		}
 		data, _, err := s.store.GetBlob(head.Hash)
@@ -131,12 +134,49 @@ func (s *server) maybeCompactEdits() {
 	}
 }
 
+// commitForward moves the edits pointer's head to the version the
+// hosted modules read, at startup: an ordinary logged CAS whose writer
+// names the migration module (migrate:<module hash>), the way the D-57
+// compaction commits. The older blob stays readable under its hash.
+func (s *server) commitForward() {
+	if s.store == nil {
+		return
+	}
+	head, found, err := s.store.Head("edits")
+	if err != nil || !found {
+		return
+	}
+	body, _, err := s.store.GetBlob(head.Hash)
+	if err != nil {
+		log.Printf("commit forward: edits head %s: %v", head.Hash, err)
+		return
+	}
+	doc, migrated, err := s.forward("edit_records", body)
+	if err != nil || !migrated {
+		if err != nil {
+			log.Printf("commit forward: edits: %v", err)
+		}
+		return
+	}
+	_, document, hash, _, err := s.readEdits(doc)
+	if err != nil {
+		log.Printf("commit forward: edits: %v", err)
+		return
+	}
+	m, _ := s.migrator()
+	if _, _, err := s.store.CAS("edits", head.Hash, []byte(document), s.syncEnvelope(), hash, "migrate:"+m.Hash(), time.Now().UnixMilli()); err != nil {
+		log.Printf("commit forward: edits: %v", err)
+		return
+	}
+	log.Printf("commit forward: edits %s -> %s (edit_records v%d)", head.Hash, hash, editsVersion)
+}
+
 func (s *server) handleGetEdits(w http.ResponseWriter, r *http.Request) {
 	s.editsMu.Lock()
 	defer s.editsMu.Unlock()
 	doc := s.edits
 	if len(doc) == 0 {
-		doc = json.RawMessage("[]")
+		doc = json.RawMessage(emptyEdits)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(doc)
@@ -154,37 +194,30 @@ func (s *server) handlePostEdits(w http.ResponseWriter, r *http.Request) {
 
 	serverDoc := s.edits
 	if len(serverDoc) == 0 {
-		serverDoc = json.RawMessage("[]")
+		serverDoc = json.RawMessage(emptyEdits)
 	}
 
-	// One trip into the sync capability: merge + submit. The host
-	// passes the clock; the module owns every rule. Validation is
-	// NOT here — what a record amounts to on the network is
-	// cap-divert's reports, asked through the bus (a record the
-	// network cannot answer is stored all the same, and patches
-	// nothing).
-	var resp struct {
-		Records json.RawMessage `json:"records"`
-	}
-	err = s.wasm.Invoke(r.Context(), map[string]any{
-		"op":     "sync_edits",
-		"client": json.RawMessage(body),
-		"server": serverDoc,
-		"now_ms": time.Now().UnixMilli(),
-	}, &resp)
+	// One trip into the sync capability: merge + submit, after both
+	// documents are read at the receive boundary (an older version
+	// brought forward). The host passes the clock; the module owns
+	// every rule. Validation is NOT here — what a record amounts to on
+	// the network is cap-divert's reports, asked through the bus (a
+	// record the network cannot answer is stored all the same, and
+	// patches nothing).
+	document, _, err := s.mergeEdits(json.RawMessage(body), serverDoc, time.Now().UnixMilli())
 	if err != nil {
-		http.Error(w, "sync op failed: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "sync op failed: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if err := s.persistEdits(resp.Records); err != nil {
+	if err := s.persistEdits(json.RawMessage(document)); err != nil {
 		http.Error(w, "persist edits: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.edits = resp.Records
+	s.edits = json.RawMessage(document)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(resp.Records)
+	w.Write([]byte(document))
 }
 
 // persistEdits writes the document atomically (temp + rename) when a

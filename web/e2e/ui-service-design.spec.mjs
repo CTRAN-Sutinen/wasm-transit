@@ -234,6 +234,10 @@ test("a plan stored under the old field names restores in the current shape", as
   const doc = JSON.parse(fs.readFileSync(path.join(fixtures, "../../../testdata/network.json"), "utf8"));
   const legacy = { ...doc, schedules: {}, blocks: {} };
   delete legacy.pattern_trips;
+  // Written before the tag: network v1, which the page brings forward
+  // through the migration capability at restore.
+  delete legacy.kind;
+  delete legacy.schema_version;
   // The pre-trip shape: exact starts per schedule, block trips as
   // (schedule, start) — what the fixture's trips were written as.
   for (const [id, t] of Object.entries(doc.pattern_trips)) {

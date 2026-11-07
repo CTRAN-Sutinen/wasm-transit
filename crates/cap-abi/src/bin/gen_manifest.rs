@@ -45,8 +45,9 @@ const PUBLISH_GATES: &[&str] = &[
 const KERNEL: u32 = 1;
 
 /// The capability set this deployment assembles, mirroring the crates:
-/// cap-gtfs produces feed and watchlist documents (and migrates the
-/// watchlist); cap-router consumes feeds. When a crate's Request enum
+/// what each reads and in which versions (`speaks`, the versions the
+/// owning crates read), and the version steps it carries (`migrates`:
+/// cap-migrate's alone). When a crate's Request enum
 /// changes, this changes — and the manifest diff is the reviewable
 /// assembly change.
 struct ModuleSpec {
@@ -88,7 +89,7 @@ const MODULES: &[ModuleSpec] = &[
         ops: &["plan", "plan_arrive_by", "plan_compare", "itinerary_paths"],
         documents: &["network", "edits", "live", "walks"],
         consumes: &[("network", "network")],
-        speaks: &[("network", &[1]), ("live", &[1]), ("walks", &[1])],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("live", &[1]), ("walks", &[1])],
         migrates: &[],
         purpose: "Trip planning (RAPTOR) — how do I get from here to there — over the NETWORK document and the effective day (the model's materialized trips, patched with the edits in force — the same transit-dispatch composition every day view starts from), at the live document's predicted times when one is named. Its facets: leaving at a time (earliest arrival), arriving by a time (the latest departure; with no deadline, the last bus home), and the diversion delta (the unpatched day, one materialization apart, with the rider's notice). Assemble for users who need directions, not just departure times. Documents are hash-addressed; writes nothing.",
         op_docs: &[
@@ -104,7 +105,7 @@ const MODULES: &[ModuleSpec] = &[
         ops: &["import", "validate", "export", "document", "publishable"],
         documents: &["feed", "network", "boundary"],
         consumes: &[],
-        speaks: &[("feed", &[1]), ("network", &[1]), ("boundary", &[1])],
+        speaks: &[("feed", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("boundary", &[1])],
         migrates: &[],
         purpose: "The network codec: read a GTFS feed into an authored network document (the planner's bootstrap — the agency's trips by id with their own times, patterns, service types, blocks; what cannot cross is reported) and export one back to GTFS zip bytes (the publish path). The second capability extracted from the monolith — the codec lives in the shared transit-codec library, and the monolith keeps no copy. Assemble for planners: it is how a planner's session starts and how it publishes.",
         op_docs: &[
@@ -129,7 +130,7 @@ const MODULES: &[ModuleSpec] = &[
         // THE LIVE DOCUMENT is minted here and read by the board —
         // optional edges both: neither module needs the other to
         // answer its own questions, so they are spoken, not consumed.
-        speaks: &[("gtfs_rt", &[1]), ("network", &[1]), ("boundary", &[1]), ("live", &[1])],
+        speaks: &[("gtfs_rt", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("boundary", &[1]), ("live", &[1])],
         migrates: &[],
         purpose: "Realtime decoding and the schedule join: turn a GTFS-rt protobuf payload (trip updates, vehicle positions, service alerts) into the flat view hosts show, and answer the dispatcher's joined questions — one trip's predicted times, the ranked what's-late-now view with the delayed-but-dark flag. The third capability extracted from the monolith; the domain code lives in the shared transit-rt library. It mints THE LIVE DOCUMENT: the snapshot resolved against the network into model vocabulary (delays per trip instance and stop, vehicles on their trip instances, statuses under the caller's on-time window, the service alerts in force with their informed entities resolved to routes, stops, and trip instances) — an rt trip id is a model trip id, resolved here once. Assemble for riders (live boards) and dispatchers (the operation view) alike.",
         op_docs: &[
@@ -147,7 +148,7 @@ const MODULES: &[ModuleSpec] = &[
         // The network document is produced by the network capability —
         // the extraction this module's own docs once called "future".
         consumes: &[("network", "network")],
-        speaks: &[("network", &[1])],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION])],
         migrates: &[],
         purpose: "Planner analysis over an authored network document: network/route/stop stats, per-service-type overview and detail, coverage of a weighted layer (people, jobs, households — points or polygons) and a proposal's coverage gains and losses. The first capability extracted from the monolith — the domain code lives in the shared transit-analysis library. Assemble for planners; riders never download it. Documents are hash-addressed (load once, query by hash — never per-op document serialization).",
         op_docs: &[
@@ -171,20 +172,19 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "board",
         file: "module_board.wasm",
-        ops: &["stop_board", "grouped_board", "migrate_watchlist", "watchlist_board"],
+        ops: &["stop_board", "grouped_board", "watchlist_board"],
         documents: &["network", "edits", "live", "watchlist"],
         // The network document is produced by the network capability;
         // the operator edit document is host-owned (wholesale-replaced
         // — the sync contract); the watchlist is the PERSONAL document
-        // this capability owns (versioned, migrated here).
+        // it reads in either version (cap-migrate migrates it).
         consumes: &[("network", "network")],
-        speaks: &[("network", &[1]), ("operator_edits", &[1]), ("watchlist", &[1, 2]), ("live", &[1])],
-        migrates: &[("watchlist", &[(1, 2)])],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION]), ("watchlist", &[1, 2]), ("live", &[1])],
+        migrates: &[],
         purpose: "The board: when does service leave this stop — at a stop (a station pin or bay with nothing of its own answers its pooled walking group), realtime-first over the live document the rt capability mints (its predictions and its service alerts), with what the in-force edits took away from the stop; the same stop grouped by route and destination for the display at it; or for a personal saved set (the watchlist document, the same question parameterized by a personal document). Every answer is the materialized day over the NETWORK document, patched with the in-force edits. Model-native end to end; the domain code lives in the shared transit-dispatch library. Assemble for anyone who reads a departure board.",
         op_docs: &[
             ("stop_board", "THE board at one stop on a service date: the network's materialized day with the in-force edits (edits_hash), REALTIME-FIRST when live_hash names a registered live document — rows ordered by when the bus actually leaves, a late bus scheduled before from_secs that has not left is still on the board, an early one that already left is not, and each row carries expected_secs, delay_secs (against the board's own patched time), and status under the live document's window (no_prediction without live data). A departure the live document says does not happen — its trip cancelled, or this stop skipped — is no row: it leaves the board silently (D-73). Each row names its route (route_name, route_long_name), the stop it leaves from (stop, stop_name — the bay, on a pooled board — and platform, the bay's own identifier, GTFS platform_code), and its destination as the sign says at that visit (the visit's headsign, else the trip's, else the final stop's station). A trip's final visit is an arrival, never a row. skipped: the scheduled departures the in-force edits took away from the stop, each with the diversion that skips it or the cancel that took its trip (a trip the edit document cancels is never a row — unlike the live feed's own cancellation, it is listed here, D-100) — why a stop is emptier than its schedule. alerts: the live document's service alerts about the board (a row, a skipped visit, or the stop itself); each row and skipped visit names the ids about it. Each row says how long until it leaves (wait, from from_secs to when it actually leaves): due under a minute, minutes (rounded down) under an hour, else the clock time (secs). A stop with nothing of its own — nothing leaving, nothing skipped — that belongs to a walking group (a station pin) answers the group's board with pooled: true, each row naming its bay; a plain stop never pools."),
             ("grouped_board", "THE board grouped for the display at a stop: one group per route AND destination the stop is served by on the date — its whole day, so a group whose last departure has left stays on the board with departures: [] (the route has stopped here today) and next: when it runs here next — {date, days_ahead (1 = tomorrow), weekday (\"Monday\"), departure_secs, stop} — the earliest departure of that route to that destination on the first of the next seven days whose day (patched by that date's in-force edits; never the live document) carries one, counted only if it leaves at or after from_secs; null with departures left, or none within the week — each holding its next per_group departures (default 3) by stop_board's realtime-first rule (the same rows, with wait, status, and the bay), and skipped: the visits the in-force edits took from that group, each with its diversion or its cancel (a cancelled trip takes none of the group's next departures). Groups list in the route's display order (route_sort_order, lower first; routes without one after them, by id), then by destination, and carry the route's names and authored colors. alerts: the live document's alerts about the stop or any departure still to leave it. A stop with nothing of its own all day that belongs to a walking group (a station pin) pools the group, pooled: true, each row naming its bay. Uncut (a per_group as large as the day), the groups' rows together are stop_board's rows."),
-            ("migrate_watchlist", "Migrate a version-1 watchlist to version 2: label = note, colors dropped and reported. Pure and deterministic; the caller keeps the old bytes — migrations never destroy."),
             ("watchlist_board", "The board for a watchlist: each watched stop's board on a service date, labelled per the document's version — the same question the per-stop board answers, parameterized by the personal document, so the same answer: each stop's `board` is `stop_board` with the same edits (in force, skipped visits listed) and `live_hash` (realtime-first), and a watched station pin pools its bays."),
         ],
     },
@@ -200,7 +200,7 @@ const MODULES: &[ModuleSpec] = &[
         // are host-owned (transit-runs), read by the recovery view and
         // the suggested blocking.
         consumes: &[("network", "network")],
-        speaks: &[("network", &[1]), ("operator_edits", &[1]), ("live", &[1]), ("work_rules", &[1])],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION]), ("live", &[1]), ("work_rules", &[1])],
         migrates: &[],
         purpose: "The runcut: what does this vehicle do today — the day's blocks list (which vehicles are out, with that day's running trip counts) and one block's authored chain with the layover ripple (a diverted trip ending later, or a trip the live document predicts ends late, eats into the vehicle's next layover). Blocks and layovers are model state GTFS never had. Blocking is where cutting the work begins (D-46), so the same question covers what a vehicle's waits require under the WORK RULES (the recovery view) and which vehicles the trips no block carries need (the suggested blocking, adopted through author `apply`). The materialized day over the NETWORK document, patched with the in-force edits; the domain code lives in the shared transit-dispatch and transit-runs libraries.",
         op_docs: &[
@@ -222,7 +222,7 @@ const MODULES: &[ModuleSpec] = &[
         // the operator edit document is host-owned (wholesale-replaced
         // — the sync contract).
         consumes: &[("network", "network")],
-        speaks: &[("network", &[1]), ("operator_edits", &[1])],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION])],
         migrates: &[],
         purpose: "The calendar: which service keys run on a date — often several at once (a regular pattern plus an exception-added service) — and its reverse, the dates one service type runs on. Both answers come from the EFFECTIVE day, not the calendar rules alone: a key whose every trip is skipped by edits, or was never representable in the model, is not running however its calendar reads. The materialized day over the NETWORK document; the domain code lives in the shared transit-dispatch library.",
         op_docs: &[
@@ -237,7 +237,7 @@ const MODULES: &[ModuleSpec] = &[
         documents: &["network"],
         // The network document is produced by the network capability.
         consumes: &[("network", "network")],
-        speaks: &[("network", &[1])],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION])],
         migrates: &[],
         purpose: "The directory: what exists in the network — the stops (with their walking-group structure; by name, or the places nearest a point), the routes (short and long names), one route's patterns with their ordered stops (list to detail). The pickers and the names join read here; they are MODEL questions, never feed reads. A route runs in directions, and each direction's stop sequences are its patterns (bay and short-turn variants), each with its own ordered stops — what a diversion editor anchors against. The planner's lists ask here too: rows of any kind narrowed by a filter, a route's composition with each pattern trips' trip count and its patterns by direction, a stop's serving routes, where an entity is on the map, and the timetable — one route, one direction, one service combination, across the direction's patterns.",
         op_docs: &[
@@ -264,7 +264,7 @@ const MODULES: &[ModuleSpec] = &[
         // addresses that hash. The walk table reads the network's
         // stops.
         consumes: &[("network", "network")],
-        speaks: &[("streets", &[1]), ("network", &[1]), ("walks", &[1])],
+        speaks: &[("streets", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("walks", &[1])],
         migrates: &[],
         purpose: "Where along the streets? Snap a point to the nearest street and route between two positions along the street graph, so a traced detour (or a pattern drawn the same way) is street geometry, never freehand chords — and how long a rider walks along them: between a network's stops (the walk table the router plans transfers over), and from any point to the stops near it (the ends of a trip from anywhere). The streets are a document: import reads a street layer (an agency GIS export, TIGER, OSM — GeoJSON lines) into the canonical streets document, whose hash is the streets' own, not the file's. The domain code lives in the shared transit-streets library; the module writes nothing.",
         op_docs: &[
@@ -281,12 +281,12 @@ const MODULES: &[ModuleSpec] = &[
         ops: &["sync_edits", "read_edits", "compact_edits"],
         documents: &[],
         consumes: &[],
-        speaks: &[("operator_edits", &[1])],
+        speaks: &[("operator_edits", &[transit_sync::SCHEMA_VERSION])],
         migrates: &[],
-        purpose: "What is the converged state of this edit document? sync_edits: LWW merge per record id plus tombstones (the terminal authority is the agency scheduling system — propose, review, accept), the receive path clamping client clocks to the host-passed now_ms (D-56), then drafts transition to submitted; the answer carries the canonical document bytes and their hash, so a host stores exact bytes and never mints identity. read_edits migrates a received document at receive; compact_edits is the D-57 tombstone-retention commit. transit-sync is the domain library; the module is stateless — document storage is the host's (the -store, docs/FORMATS.md), and what a record amounts to on a network is the divert capability's reports, never this one's.",
+        purpose: "What is the converged state of this edit document? sync_edits: LWW merge per record id plus tombstones (the terminal authority is the agency scheduling system — propose, review, accept), the receive path clamping client clocks to the host-passed now_ms (D-56), then drafts transition to submitted; the answer carries the canonical document bytes and their hash, so a host stores exact bytes and never mints identity. read_edits reads a received document at receive (an older version is cap-migrate's to bring forward); compact_edits is the D-57 tombstone-retention commit. transit-sync is the domain library; the module is stateless — document storage is the host's (the -store, docs/FORMATS.md), and what a record amounts to on a network is the divert capability's reports, never this one's.",
         op_docs: &[
             ("sync_edits", "Merge the client's edit document with the server's (LWW per record id — the newer updated_at wins, tombstones propagate), then transition drafts to submitted (rev bumped, now_ms stamped). The receive path clamps the client's updated_at to now_ms first (D-56). The answer is the converged document — records, the canonical document bytes, and document_hash; the client adopts it wholesale. The host owns both documents and the clock."),
-            ("read_edits", "Migrate-at-receive: parse a received or stored document under the current schema — serde defaults fill what age removed, malformed records are dropped and counted (never wedging the document). The answer carries the migrated records, the dropped count, the schema_version, and the canonical document + hash for seeding a store pointer."),
+            ("read_edits", "Read a received or stored edit document at the receive boundary, in the version this module reads ({\"kind\": \"edit_records\", \"schema_version\": 2, \"records\"}) — an older one (a bare array is v1) is refused naming the migration capability, a newer one naming both versions: serde defaults fill what age removed, malformed records are dropped and counted (never wedging the document). The answer carries the records, the dropped count, the schema_version, and the canonical document + hash for seeding a store pointer."),
             ("compact_edits", "The D-57 tombstone-retention commit: drop records that are retired AND older than now_ms - horizon_ms; in-force records are never dropped. Answer: the compacted records, the canonical document + hash, and the dropped count."),
         ],
     },
@@ -313,7 +313,7 @@ const MODULES: &[ModuleSpec] = &[
         // identity the codec's import produces and every model-side
         // capability consumes.
         consumes: &[("network", "network")],
-        speaks: &[("network", &[1]), ("work_rules", &[1])],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("work_rules", &[1])],
         migrates: &[],
         purpose: "Authoring: what does this network become after these edits? A change — retime a trip, add a stop, extend a calendar, fork the plan into the next pick — is a list of typed edits applied atomically to a registered NETWORK document. The answer is the next document under its content hash (registered: chain the next change on it), with its validation issues and warnings — the authoring loop in one op. The last document is never touched (the host wholesale-replaces its copy); removals refuse while anything references the entity. The edit vocabulary lives in transit-network. Assemble for anyone who changes a network: a planner's UI, a script, an agent.",
         op_docs: &[
@@ -329,7 +329,7 @@ const MODULES: &[ModuleSpec] = &[
         // produces; the answers are next states of the host-owned
         // operator edit document.
         consumes: &[("network", "network")],
-        speaks: &[("network", &[1]), ("operator_edits", &[1])],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION])],
         migrates: &[],
         purpose: "Operator-edit authoring: what does this operator edit amount to? An edit is a diversion or a whole-trip cancel (D-45). A diversion draft — a route, the pattern anchored against, two kept stops, the interior stops the detour still serves, a traced path, added minutes, dates — is answered over the NETWORK document (the route's patterns and the default, each stop's role, the skips in effect, the alignment the detour is drawn against, the traced path and its length, and the problems keeping it from being a record); a cancel names a trip — one instance or every instance — on one date its service runs, and the day views take it out (boards list it as cancelled, plans never ride it). propose, cancel, retire, and restore answer the edit document's next state under the envelope rules (rev bumped, host clock stamped; retirement is the tombstone); sanitize reads a stored edit document under the current schema. The host owns the documents, the clock, and the record ids. reports answers what each record amounts to on the network (valid or what is wrong, the trip instances it touches) — invalid records are reported, never rejected. Converging two documents is the sync capability's question. Assemble for anyone who authors operator edits: a dispatcher's UI, a script, an agent.",
         op_docs: &[
@@ -359,6 +359,28 @@ const MODULES: &[ModuleSpec] = &[
             ("publish", "Publish a pick: the published plan set (null for the first publish) with the plan (re)placed by id and naming its network by hash, picks in (effective_from, id) order — one set of picks is one byte sequence however it was published. A republish is the pick's next revision; republishing a retired pick restores it. today is the host's date: a pick that is new, restored, or moved never lands before it, while a pick republished under its own date (a correction to the pick in force) always publishes (D-76). Answers the canonical document and its document_hash (the module is the hash authority; the sync server stores exactly these bytes under its plans pointer), or — when the plan is unversioned, undated, dated before today, or would put two picks on one day — every reason in issues and no document."),
             ("retire", "Retire a pick that has not taken effect (dated after today, the host's date — D-75): the set with it marked retired, the tombstone — it stays in the set and never governs, and republishing it restores it. A pick that has taken effect is refused (correct it by republishing). Answers like publish."),
             ("in_force", "Which published pick governs the date — retired picks never do — with its network_hash — how a client chooses the network to load from the published plan set the manifest pins as plans_hash. Null before the first pick takes effect. A set whose schema_version this build does not speak is an error, never a guess."),
+        ],
+    },
+    ModuleSpec {
+        id: "migrate",
+        file: "module_migrate.wasm",
+        ops: &["migrate", "version"],
+        documents: &[],
+        consumes: &[],
+        speaks: &[
+            ("network", &[1, transit_network::SCHEMA_VERSION]),
+            ("operator_edits", &[1, transit_sync::SCHEMA_VERSION]),
+            ("watchlist", &[1, 2]),
+        ],
+        migrates: &[
+            ("network", &[(1, 2)]),
+            ("operator_edits", &[(1, 2)]),
+            ("watchlist", &[(1, 2)]),
+        ],
+        purpose: "Bring an older document forward to the version this build reads. Every authored kind's chain is kept forever (D-66) in the library that owns the kind — one pure step per version, every record id kept, every loss reported as a note naming its step — and this capability wraps them, so a consumer reads the current version only and refuses any other at its load. Assemble it where an older document arrives: the server's receive, a browser's restore, a file an agent loads. Migration never destroys: the answer is a new document under its own hash, and the caller keeps the old bytes.",
+        op_docs: &[
+            ("migrate", "The document of kind (\"network\", \"edit_records\", \"watchlist\") brought to version `to` (omitted: the version this build reads) through every step between: the migrated document, its canonical bytes and document_hash (the identity every module registers it under), from, to, and notes — every loss, each naming the step it came from. A network without schema_version is v1 (every untagged shape, pre-trip and pre-alignment included); a bare edit array is v1. Refused: a document already at or past `to` (nothing to migrate), a document newer than this build (naming both versions — never re-emitted), an unknown kind (naming the kinds it knows)."),
+            ("version", "The version a document of kind is in, and the version this build reads — whether it needs migrate, without migrating it."),
         ],
     },
 ];
@@ -395,7 +417,7 @@ fn kernel_ops(feed_hash: &str, net: Option<&NetworkExampleContext>) -> Vec<Kerne
     };
     vec![
         load(cap_abi::OP_LOAD_NETWORK, "load_network", "Register the NETWORK document under its content hash (idempotent) — one identity in every module that reads networks, registered once per instance however many of its capabilities read it. JSON: {\"op\": \"load_network\", \"network\": …}. Bulk: the bare document's JSON bytes, or those bytes gzipped (decoded as they parse — the text never exists whole in the module) — the same answer and hash, no request envelope; hosts send real-size networks this way, gzipped."),
-        load(kernel::OP_LOAD_EDITS, "load_edits", "Register the OPERATOR EDIT document (its records, wholesale-replaced by the host: push the whole document on every change) under its canonical hash, which the day views address. A record the network cannot answer simply patches nothing — what each record amounts to on a network is the divert capability's reports. JSON: {\"op\": \"load_edits\", \"records\": […]}; bulk: the records' JSON."),
+        load(kernel::OP_LOAD_EDITS, "load_edits", "Register the OPERATOR EDIT document ({\"kind\": \"edit_records\", \"schema_version\", \"records\"} — wholesale-replaced by the host: push the whole document on every change) under its canonical hash, which the day views address. Only the version this module reads registers: an older document is refused naming the migration capability, a newer one naming both versions. A record the network cannot answer simply patches nothing — what each record amounts to on a network is the divert capability's reports. JSON: {\"op\": \"load_edits\", \"edits\": {…}}; bulk: the document's JSON."),
         load(kernel::OP_LOAD_LIVE, "load_live", "Register a LIVE document (the rt capability's live answer) under its canonical hash — the same identity rt answered (in a module linking rt, its live answer is registered already). Ephemeral: the last 4 stay. JSON: {\"op\": \"load_live\", \"live\": …}; bulk: its JSON."),
         load(kernel::OP_LOAD_BOUNDARY, "load_boundary", "Register an imported network's BOUNDARY (the network capability's import answer) under its canonical hash: the stop_sequence numbering the published feed — and so its rt updates — use. A network published from its own export needs none (1..n). JSON: {\"op\": \"load_boundary\", \"boundary\": …}; bulk: its JSON."),
         load(kernel::OP_LOAD_WALKS, "load_walks", "Register a WALK TABLE (the streets capability's walks answer: every walk between the network's stops along the streets) under its canonical hash — the same identity streets answered. A plan naming it by walks_hash walks its transfers along the streets; a table derived for another network is refused there. JSON: {\"op\": \"load_walks\", \"walks\": …}; bulk: its JSON."),
@@ -682,13 +704,13 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
     let walks_example = example_for("streets", "walks", feed_hash, net)
         .and_then(|ex| ex.response.get("ok").and_then(|ok| ok.get("walks")).cloned());
     vec![
-        kind::<transit_network::Network>("network", Some("network_document"), 1, net.map(|n| n.derived.clone())),
+        kind::<transit_network::Network>("network", Some("network_document"), transit_network::SCHEMA_VERSION, net.map(|n| n.derived.clone())),
         kind::<transit_codec::Boundary>("boundary", None, 1, net.map(|n| n.boundary.clone())),
-        kind::<Vec<transit_sync::EditRecord>>(
+        kind::<transit_sync::EditDocument>(
             "operator_edits",
             Some("edit_records"),
             transit_sync::SCHEMA_VERSION,
-            Some(value(&dispatch_fixture_edits())),
+            Some(value(&transit_sync::EditDocument::new(dispatch_fixture_edits()))),
         ),
         kind::<Vec<transit_plans::PlanInfo>>("plan_set", None, 1, Some(value(&fixture_plan_set()))),
         kind::<transit_plans::PublishedPlans>("plans", Some("plans"), transit_plans::PUBLISHED_SCHEMA_VERSION, plans_example),
@@ -1509,10 +1531,10 @@ fn example_for(
             )
         }
         ("kernel", "load_edits") => {
-            let records = dispatch_fixture_edits();
-            let edits_hash = cap_abi::canonical_hash(&records).ok()?;
+            let edits = transit_sync::EditDocument::new(dispatch_fixture_edits());
+            let edits_hash = cap_abi::canonical_hash(&edits).ok()?;
             (
-                json!({ "op": "load_edits", "records": records }),
+                json!({ "op": "load_edits", "edits": edits }),
                 json!({ "ok": { "op": "load_edits", "edits_hash": edits_hash } }),
             )
         }
@@ -1598,13 +1620,22 @@ fn example_for(
                 json!({ "ok": { "op": "load_watchlist", "watchlist_hash": watchlist_hash, "version": 2 } }),
             )
         }
-        ("board", "migrate_watchlist") => (
-            json!({ "op": "migrate_watchlist", "document": { "version": "v1", "stops": [
-                { "id": "A", "note": "home", "color": "blue" }
-            ] } }),
-            json!({ "ok": { "op": "migrated_watchlist", "document": { "version": "v2", "stops": [
-                { "id": "A", "label": "home" }
-            ] }, "notes": [ { "kind": "dropped_field", "field": "color", "count": 1 } ] } }),
+        ("migrate", "migrate") => {
+            let v1 = json!([{ "id": "e1", "status": "accepted", "rev": 1, "updated_at": 1000,
+                "cancel": { "id": "c1", "trip_id": "t1", "start_secs": 28800, "date": "2026-10-23" } }]);
+            let (document, notes) = transit_sync::version::migrate_to(v1.clone(), transit_sync::SCHEMA_VERSION).ok()?;
+            let typed: transit_sync::EditDocument = serde_json::from_value(document.clone()).ok()?;
+            let canonical = serde_json::to_string(&typed).ok()?;
+            let document_hash = cap_abi::canonical_hash(&typed).ok()?;
+            (
+                json!({ "op": "migrate", "kind": "edit_records", "document": v1 }),
+                json!({ "ok": { "op": "migrate", "document": document, "canonical": canonical, "document_hash": document_hash,
+                    "from": 1, "to": transit_sync::SCHEMA_VERSION, "notes": notes } }),
+            )
+        }
+        ("migrate", "version") => (
+            json!({ "op": "version", "kind": "watchlist", "document": { "version": "v1", "stops": [] } }),
+            json!({ "ok": { "op": "version", "version": 1, "reads": 2 } }),
         ),
         ("board", "watchlist_board") => {
             let ctx = net?;
@@ -1929,18 +1960,19 @@ fn example_for(
             draft[0].status = transit_sync::EditStatus::Draft;
             let now_ms: u64 = 1_770_000_000_000;
             let records = transit_sync::submit(transit_sync::merge(&draft, &[]), now_ms);
-            let document = serde_json::to_string(&records).unwrap();
-            let document_hash = cap_abi::canonical_hash(&records).unwrap();
+            let document = serde_json::to_string(&transit_sync::EditDocument::new(records.clone())).unwrap();
+            let document_hash = cap_abi::canonical_hash(&transit_sync::EditDocument::new(records.clone())).unwrap();
             (
                 json!({ "op": "sync_edits", "client": draft, "server": [], "now_ms": now_ms }),
                 json!({ "ok": { "op": "sync_edits", "records": records, "document": document, "document_hash": document_hash } }),
             )
         }
         ("sync", "read_edits") => {
-            let stored = serde_json::to_value(dispatch_fixture_edits()).unwrap();
-            let (records, dropped) = transit_sync::sanitize(&stored);
-            let document = serde_json::to_string(&records).unwrap();
-            let document_hash = cap_abi::canonical_hash(&records).unwrap();
+            let stored = serde_json::to_value(transit_sync::EditDocument::new(dispatch_fixture_edits())).unwrap();
+            let (read, dropped) = transit_sync::read_document(&stored).ok()?;
+            let records = read.records;
+            let document = serde_json::to_string(&transit_sync::EditDocument::new(records.clone())).unwrap();
+            let document_hash = cap_abi::canonical_hash(&transit_sync::EditDocument::new(records.clone())).unwrap();
             (
                 json!({ "op": "read_edits", "document": stored }),
                 json!({ "ok": { "op": "read_edits", "records": records, "dropped": dropped, "schema_version": transit_sync::SCHEMA_VERSION, "document": document, "document_hash": document_hash } }),
@@ -1953,8 +1985,8 @@ fn example_for(
             let now_ms: u64 = 1_770_000_000_000;
             let horizon_ms: u64 = 90 * 24 * 3600 * 1000;
             let (records, dropped) = transit_sync::compact(&old, now_ms, horizon_ms);
-            let document = serde_json::to_string(&records).unwrap();
-            let document_hash = cap_abi::canonical_hash(&records).unwrap();
+            let document = serde_json::to_string(&transit_sync::EditDocument::new(records.clone())).unwrap();
+            let document_hash = cap_abi::canonical_hash(&transit_sync::EditDocument::new(records.clone())).unwrap();
             (
                 json!({ "op": "compact_edits", "records": old, "now_ms": now_ms, "horizon_ms": horizon_ms }),
                 json!({ "ok": { "op": "compact_edits", "records": records, "document": document, "document_hash": document_hash, "dropped": dropped } }),
@@ -2100,7 +2132,7 @@ fn example_for(
                 old["diversion"].as_object_mut()?.remove(field);
             }
             let stored = json!([old, { "id": "e3", "status": "draft" }]);
-            let (records, dropped) = transit_sync::sanitize(&stored);
+            let (records, dropped) = transit_sync::sanitize_records(&stored);
             (
                 json!({ "op": "sanitize", "records": stored }),
                 json!({ "ok": { "op": "sanitize", "records": records, "dropped": dropped } }),

@@ -69,7 +69,7 @@ fn record(added_secs: u32) -> EditRecord {
 }
 
 fn load_edits(_network_hash: &str, records: Vec<EditRecord>) -> String {
-    cap_abi::kernel::EDITS.register(records).unwrap().0
+    cap_abi::kernel::EDITS.register(cap_abi::kernel::EditDocument::new(records)).unwrap().0
 }
 
 #[test]

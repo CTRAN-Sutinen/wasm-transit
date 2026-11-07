@@ -181,7 +181,7 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 	nowMs := time.Now().UnixMilli()
 	// The network first: once it is committed it is referenced, and a
 	// crash before the set's commit leaves the old set in force.
-	netEnv := store.Envelope{Kind: "network_document", SchemaVersion: 1, ProducedBy: pick.ProducedBy}
+	netEnv := store.Envelope{Kind: "network_document", SchemaVersion: networkVersion, ProducedBy: pick.ProducedBy}
 	planHead, planFound, _ := s.store.Head(pointer)
 	planFrom := ""
 	if planFound {

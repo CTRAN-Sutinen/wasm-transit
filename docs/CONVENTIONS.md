@@ -28,7 +28,8 @@ holds the gotchas, Rust/wasm/ops and frontend alike.
   across all its patterns — that is the
   derived `Timetable` (directory `timetable`) — so the model never
   names the per-pattern list that way (documents written before trips
-  were stored still read, through `read_network`). Do not rename
+  were stored still read: they are network v1, which cap-migrate
+  brings forward). Do not rename
   these back toward GTFS's calendar/service words.
 - **Diagnostics are measurements; regressions are assertions.**
   Scratch repro specs live in /tmp with their own Playwright config

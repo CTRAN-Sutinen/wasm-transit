@@ -80,3 +80,28 @@ fn a_gzipped_network_registers_under_the_plain_hash() {
     let zipped = cap_abi::parse_network(&gzip(&text)).unwrap();
     assert_eq!(cap_abi::canonical_hash(&plain).unwrap(), cap_abi::canonical_hash(&zipped).unwrap());
 }
+
+/// A module reads the network version it was built for, and only that
+/// (docs/units/document-versioning.md, rule 5): an older document is
+/// refused with the op that brings it forward, a newer one naming both
+/// versions — at the load, never three layers deep in an op.
+#[test]
+fn a_network_load_refuses_other_versions_naming_both() {
+    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../testdata/network.json")).unwrap();
+    let current = transit_network::SCHEMA_VERSION;
+    let mut doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert!(cap_abi::parse_network(text.as_bytes()).is_ok());
+
+    let root = doc.as_object_mut().unwrap();
+    root.remove("schema_version");
+    let older = cap_abi::parse_network(doc.to_string().as_bytes()).unwrap_err();
+    assert!(older.contains("network v1") && older.contains(&format!("reads v{current}")) && older.contains("migrate"), "{older}");
+
+    doc["schema_version"] = serde_json::json!(current + 1);
+    // A newer document's shape may still parse; its tag refuses it.
+    let newer = cap_abi::parse_network(doc.to_string().as_bytes()).unwrap_err();
+    assert!(newer.contains(&format!("network v{}", current + 1)) && newer.contains(&format!("reads v{current}")), "{newer}");
+    doc["stops"] = serde_json::json!("a shape this build does not know");
+    let newer = cap_abi::parse_network(doc.to_string().as_bytes()).unwrap_err();
+    assert!(newer.contains(&format!("network v{}", current + 1)), "{newer}");
+}

@@ -22,7 +22,7 @@
 //!   it: a block runs a trip whole, so a frequency trip in a block is
 //!   every one of its instances, back to back.
 //! * `MaterializedTrip.trip: TripId`.
-//! * `read_network(&str)` reads current AND pre-trip documents
+//! * `migrate_network` reads pre-trip (v1) documents
 //!   (`departures` + `(pattern_trips, start_secs)` block refs).
 //! * `Default` on `Network`, `Stop`, `Route`, `Pattern`,
 //!   `PatternStop`, `Trip`, `StopOffset` (new fields keep arriving).
@@ -36,7 +36,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::NaiveDate;
 use proptest::prelude::*;
 use transit_network::{
-    apply_edits, materialize_service, read_network, validation_issues, Block, CalendarRule, DateRange,
+    apply_edits, materialize_service, migrate_network, validation_issues, Block, CalendarRule, DateRange,
     Departs, HeadwayBand, Layover, MaterializedTrip, Mode, Network, NetworkEdit, Pattern, PatternStop,
     PatternTrips, Route, ServiceType, Stop, StopOffset, TimingProfile, Trip, TripRef, WeekdaySet,
 };
@@ -353,13 +353,12 @@ proptest! {
         prop_assert!(issues.is_empty(), "{:?}", issues);
     }
 
-    /// The document round-trips through JSON, and `read_network` reads
+    /// The document round-trips through JSON.
     /// the current shape as itself.
     #[test]
     fn documents_round_trip(net in net_strategy()) {
         let json = serde_json::to_string(&net).unwrap();
         prop_assert_eq!(&serde_json::from_str::<Network>(&json).unwrap(), &net);
-        prop_assert_eq!(&read_network(&json).expect("current documents read"), &net);
     }
 
     /// Materialization IS the stored trips: one instance per start
@@ -804,7 +803,7 @@ proptest! {
     #[test]
     fn pre_trip_documents_migrate(s in old_spec()) {
         let (doc, profiles) = old_document(&s);
-        let net = read_network(&doc.to_string()).expect("pre-trip documents read");
+        let net = migrate_network(doc).expect("pre-trip documents read").0;
         let issues = validation_issues(&net);
         prop_assert!(issues.is_empty(), "{:?}", issues);
 

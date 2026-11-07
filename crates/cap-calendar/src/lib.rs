@@ -91,9 +91,9 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let network = NETWORK.require(&network_hash)?;
             let records = match edits_hash.as_deref() {
                 Some(hash) => EDITS.require(hash)?,
-                None => Arc::new(Vec::new()),
+                None => Arc::new(Default::default()),
             };
-            let dates = transit_dispatch::service_dates(&network, &records, &service_type, from, to)
+            let dates = transit_dispatch::service_dates(&network, &records.records, &service_type, from, to)
                 .map_err(|e| format!("the network does not materialize: {e}"))?;
             Ok(Response::ServiceDates {
                 dates: dates.iter().map(|d| d.format("%Y-%m-%d").to_string()).collect(),

@@ -30,8 +30,7 @@
 //!   predictions and alerts and classifies under its window — no host
 //!   joins rt;
 //! * **watchlist** — the personal document (v1 notes + colors,
-//!   v2 labels; `migrate_watchlist` maps note → label and reports the
-//!   dropped color).
+//!   v2 labels; its migration is cap-migrate's).
 
 #![forbid(unsafe_code)]
 
@@ -40,7 +39,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_dispatch::{GroupedBoard, StopBoard};
 
-pub use transit_dispatch::watchlist::{migrate as migrate_watchlist, MigrationNote, WatchStopV1, WatchStopV2, Watchlist};
+pub use transit_dispatch::watchlist::{WatchStopV1, WatchStopV2, Watchlist};
 
 /// One watched stop's board, with the version-appropriate label
 /// (v2 labels; v1 notes — the migration maps note → label). The board
@@ -115,10 +114,6 @@ pub enum Request {
         #[ts(optional)]
         live_hash: Option<String>,
     },
-    /// Migrate a version-1 watchlist to version 2. Pure and
-    /// deterministic: label = note, colors dropped and reported.
-    /// The caller keeps the old bytes — migrations never destroy.
-    MigrateWatchlist { document: Watchlist },
     /// The board for a watchlist: each watched stop's board on a
     /// service date, labelled per its version — the same question the
     /// per-stop board answers, parameterized by the personal document,
@@ -145,7 +140,6 @@ pub enum Request {
 pub enum Response {
     StopBoard { board: StopBoard },
     GroupedBoard { board: GroupedBoard },
-    MigratedWatchlist { document: Watchlist, notes: Vec<MigrationNote> },
     WatchlistBoard { stops: Vec<WatchBoardStop> },
 }
 
@@ -193,7 +187,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             // group has no answer; never the live document.
             if board.groups.iter().any(|g| g.departures.is_empty()) {
                 let records = edits_hash.as_deref().map(|h| cap_abi::kernel::EDITS.require(h)).transpose()?;
-                let records = records.as_deref().map(Vec::as_slice).unwrap_or(&[]);
+                let records = records.as_deref().map(|d| d.records.as_slice()).unwrap_or(&[]);
                 let date = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d").map_err(|e| format!("invalid date {date:?}: {e}"))?;
                 transit_dispatch::with_next_service(&network, &mut board, &stop_id, date, from_secs, |on| {
                     transit_dispatch::day(&network, on, records)
@@ -202,10 +196,6 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 })?;
             }
             Ok(Response::GroupedBoard { board })
-        }
-        Request::MigrateWatchlist { document } => {
-            let (migrated, notes) = migrate_watchlist(&document)?;
-            Ok(Response::MigratedWatchlist { document: migrated, notes })
         }
         Request::WatchlistBoard { watchlist_hash, network_hash, edits_hash, date, from_secs, limit, live_hash } => {
             let watchlist = WATCHLIST.require(&watchlist_hash)?;

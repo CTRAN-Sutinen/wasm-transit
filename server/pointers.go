@@ -14,8 +14,8 @@ package main
 //	                                      document compressed (kernel op 256)
 //
 // POST bodies: for kind edit_records, {"from", "client": <document>}
-// — the server runs cap-sync's read_edits (migrate-at-receive) on both
-// sides and sync_edits (receive-clamped, D-56), and stores the canonical
+// — the server brings an older document forward (cap-migrate) and runs
+// cap-sync's read_edits on both sides and sync_edits (receive-clamped, D-56), and stores the canonical
 // converged bytes. The published plan set and the picks' networks
 // (kinds plans and network_document, pointers plans and plan.<id>) are
 // refused here: they publish through POST /plans (plans.go). Other
@@ -36,15 +36,72 @@ import (
 	"rustwasm/server/store"
 )
 
+// editsVersion is the edit document version the hosted modules read
+// (transit_sync::SCHEMA_VERSION); a document in an older one comes
+// forward through cap-migrate at receive.
+const editsVersion = 2
+
+// networkVersion is the network document version the hosted modules
+// read and cap-network writes (transit_network::SCHEMA_VERSION).
+const networkVersion = 2
+
+// emptyEdits is the edit document with no records, in that version.
+const emptyEdits = `{"kind":"edit_records","schema_version":2,"records":[]}`
+
 // syncEnvelope is the envelope every edit_records commit carries: the
 // kind, the schema version, and the producing module's hash — the
 // conflict function is content-addressed with it.
 func (s *server) syncEnvelope() store.Envelope {
 	return store.Envelope{
 		Kind:          "edit_records",
-		SchemaVersion: 1, // transit_sync::SCHEMA_VERSION
+		SchemaVersion: editsVersion,
 		ProducedBy:    "cap-sync@" + s.wasm.Hash(),
 	}
+}
+
+// defaultMigrateWasm is where `just caps` puts the migration module.
+const defaultMigrateWasm = "../web/pkg/cap_migrate.wasm"
+
+// migrator is the hosted migration capability (cap-migrate), loaded on
+// first use: most receives are already current and never need it.
+func (s *server) migrator() (*WasmHost, error) {
+	s.migrateOnce.Do(func() {
+		path := s.migrateWasm
+		if path == "" {
+			path = defaultMigrateWasm
+		}
+		s.migrateHost, s.migrateErr = NewWasmHost(context.Background(), path)
+	})
+	return s.migrateHost, s.migrateErr
+}
+
+// forward brings a document of kind to the version the hosted modules
+// read, through cap-migrate: a current (or newer) document comes back
+// as it is — a newer one is refused by the module that reads it,
+// naming both versions, never rewritten here. migrated reports whether
+// it moved; the answer is the migrated document's canonical bytes.
+func (s *server) forward(kind string, raw json.RawMessage) (doc json.RawMessage, migrated bool, err error) {
+	m, err := s.migrator()
+	if err != nil {
+		return nil, false, fmt.Errorf("migration module: %w", err)
+	}
+	var v struct {
+		Version uint32 `json:"version"`
+		Reads   uint32 `json:"reads"`
+	}
+	if err := m.Invoke(context.Background(), map[string]any{"op": "version", "kind": kind, "document": raw}, &v); err != nil {
+		return nil, false, err
+	}
+	if v.Version >= v.Reads {
+		return raw, false, nil
+	}
+	var out struct {
+		Canonical string `json:"canonical"`
+	}
+	if err := m.Invoke(context.Background(), map[string]any{"op": "migrate", "kind": kind, "document": raw}, &out); err != nil {
+		return nil, false, err
+	}
+	return json.RawMessage(out.Canonical), true, nil
 }
 
 // syncOp invokes the sync module. The host serializes invokes already
@@ -53,9 +110,13 @@ func (s *server) syncOp(req map[string]any, out any) error {
 	return s.wasm.Invoke(context.Background(), req, out)
 }
 
-// readEdits migrates a received document at the receive boundary and
-// returns its records plus the canonical document bytes and hash.
+// readEdits reads a received document at the receive boundary — an
+// older version brought forward by cap-migrate first — and returns its
+// records plus the canonical document bytes and hash.
 func (s *server) readEdits(raw json.RawMessage) (records json.RawMessage, document string, hash string, dropped int, err error) {
+	if raw, _, err = s.forward("edit_records", raw); err != nil {
+		return nil, "", "", 0, err
+	}
 	var resp struct {
 		Records       json.RawMessage `json:"records"`
 		Dropped       int             `json:"dropped"`
@@ -104,7 +165,7 @@ func (s *server) commitEdits(clientRaw json.RawMessage, writer string) (string, 
 		if err != nil {
 			return "", "", err
 		}
-		serverRaw := json.RawMessage("[]")
+		serverRaw := json.RawMessage(emptyEdits)
 		from := ""
 		if found {
 			from = head.Hash
@@ -266,7 +327,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 		}
 		// One CAS attempt on the client's last-seen hash; the caller
 		// retries on 409 (the legacy /edits loop retries internally).
-		serverRaw := json.RawMessage("[]")
+		serverRaw := json.RawMessage(emptyEdits)
 		from := req.From
 		if found {
 			b, _, err := s.store.GetBlob(head.Hash)

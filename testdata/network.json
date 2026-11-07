@@ -1,4 +1,6 @@
 {
+  "kind": "network",
+  "schema_version": 2,
   "name": "Planner Network",
   "anchor": "noon_minus_twelve",
   "stops": {

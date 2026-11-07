@@ -20,6 +20,9 @@
 use ts_rs::TS;
 use serde::{Deserialize, Serialize};
 
+pub mod version;
+pub use version::{EditDocument, EditsKind, MigrationNote, KIND, SCHEMA_VERSION};
+
 /// One vertex of a drawn detour polyline.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
@@ -390,11 +393,6 @@ pub fn set_retired(records: &[EditRecord], record_id: &str, retired: bool, now_m
 // The stored document: envelope, schema version, the receive path
 // ---------------------------------------------------------------------
 
-/// The current schema version of every document kind this crate
-/// defines. A bump is deliberate; old blobs stay readable under their
-/// hash, and a document written under an older schema migrates when
-/// it arrives, not when it is read (docs/FORMATS.md).
-pub const SCHEMA_VERSION: u32 = 1;
 
 /// The kind of a stored document, as its envelope sidecar spells it
 /// (`docs/FORMATS.md`). GTFS stays the interchange for published
@@ -460,14 +458,35 @@ pub fn compact(records: &[EditRecord], now_ms: u64, horizon_ms: u64) -> (Vec<Edi
     (kept, dropped)
 }
 
-/// Read a stored edit document (IndexedDB, a server response, a file):
-/// every record that deserializes under the CURRENT schema — serde
-/// fills the defaults a record from before a field existed lacks —
-/// and carries exactly one payload, and how many did not. A malformed
-/// record is dropped and counted, never allowed to wedge the document;
-/// anything but an array is an empty document with nothing dropped.
-pub fn sanitize(document: &serde_json::Value) -> (Vec<EditRecord>, usize) {
-    let Some(items) = document.as_array() else { return (Vec::new(), 0) };
+/// Read a received edit document (a POST body, a stored head, a
+/// file) in the version this build reads, and only that: an older one
+/// is refused with the op that brings it forward (the migration
+/// capability), a newer one naming both versions. Its records are
+/// [`sanitize_records`]'s.
+pub fn read_document(document: &serde_json::Value) -> Result<(EditDocument, usize), String> {
+    let found = version::schema_version_of(document)?;
+    if found < SCHEMA_VERSION {
+        return Err(format!(
+            "{KIND} v{found}: this module reads v{SCHEMA_VERSION} — bring it forward first (migrate.migrate, kind {KIND:?})"
+        ));
+    }
+    if found > SCHEMA_VERSION {
+        return Err(format!(
+            "{KIND} v{found} is newer than this module, which reads v{SCHEMA_VERSION}: a newer build wrote it (refused, never rewritten)"
+        ));
+    }
+    let (records, dropped) = sanitize_records(&document["records"]);
+    Ok((EditDocument::new(records), dropped))
+}
+
+/// The records of an edit document: every one that deserializes under
+/// the CURRENT schema — serde fills the defaults a record from before
+/// a field existed lacks — and carries exactly one payload, and how
+/// many did not. A malformed record is dropped and counted, never
+/// allowed to wedge the document; anything but an array is no records
+/// with nothing dropped.
+pub fn sanitize_records(items: &serde_json::Value) -> (Vec<EditRecord>, usize) {
+    let Some(items) = items.as_array() else { return (Vec::new(), 0) };
     let mut kept = Vec::new();
     let mut dropped = 0;
     for item in items {
@@ -559,10 +578,10 @@ mod tests {
         let mut bad_date = good.clone();
         bad_date["diversion"]["start_date"] = "soon".into();
         let doc = serde_json::json!([good, old, bad_date, {"id": "x"}, 7]);
-        let (kept, dropped) = sanitize(&doc);
+        let (kept, dropped) = sanitize_records(&doc);
         assert_eq!((kept.len(), dropped), (2, 3));
         assert_eq!(kept[1].diversion.as_ref().unwrap().added_secs, 0, "a record from before the field existed");
-        assert_eq!(sanitize(&serde_json::json!({"not": "an array"})), (vec![], 0));
+        assert_eq!(sanitize_records(&serde_json::json!({"not": "an array"})), (vec![], 0));
     }
 
     fn cancel(trip: &str, start_secs: Option<u32>, date: NaiveDate) -> TripCancel {
@@ -597,7 +616,7 @@ mod tests {
         let both = EditRecord { cancel: Some(cancel("t", None, day)), ..record(EditStatus::Draft) };
         let neither = EditRecord { diversion: None, ..record(EditStatus::Draft) };
         let doc = serde_json::to_value(vec![div.clone(), can.clone(), both, neither]).unwrap();
-        let (kept, dropped) = sanitize(&doc);
+        let (kept, dropped) = sanitize_records(&doc);
         assert_eq!((kept, dropped), (vec![div, can], 2));
     }
 
@@ -754,7 +773,7 @@ mod receive_tests {
         };
         let json = serde_json::to_string(&env).unwrap();
         assert!(json.contains("\"kind\":\"edit_records\""), "{json}");
-        assert!(json.contains("\"schema_version\":1"), "{json}");
+        assert!(json.contains(&format!("\"schema_version\":{SCHEMA_VERSION}")), "{json}");
         assert_eq!(serde_json::from_str::<Envelope>(&json).unwrap(), env);
         for (kind, name) in [
             (DocumentKind::NetworkDocument, "network_document"),

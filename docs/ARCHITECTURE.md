@@ -65,7 +65,10 @@ transit-network The authored network model (planner authority):
                 stops along its line. Patterns may share one, and one
                 no pattern runs still stands.
                 `materialize` answers a day's instances of the stored
-                trips; `read_network` also reads documents written
+                trips. The document leads with `"kind": "network"`
+                and `"schema_version"` (2); its chain (`version.rs`,
+                kept forever, wrapped by cap-migrate) brings v1 — any
+                untagged document — forward, including those written
                 before trips were stored (each old departure becomes
                 a trip `{pattern_trips}@{start}`) or before
                 alignments stood alone (a pattern's inline `path`
@@ -563,7 +566,8 @@ cap-sync        The sync capability: the converged state of an edit
                 clamping client clocks to the host's, D-56; the
                 answer carries the canonical document bytes and their
                 hash — the op behind POST /edits), read_edits
-                (migrate-at-receive: typed parse, defaults fill what
+                (the receive: the current version only — an older one
+                is cap-migrate's — typed parse, defaults fill what
                 age removed, malformed dropped and counted), and
                 compact_edits (the D-57 tombstone-retention commit).
                 Stateless; validation is NOT here (what a record
@@ -611,6 +615,23 @@ cap-divert      The operator-edit authoring capability: what does
                 edit yet: drawing a diversion is
                 `docs/units/ui-disruptions.md`'s question 4, and
                 cancelling a trip its question 6.
+
+cap-migrate     The migration capability: what is this older
+                document in the version this build reads? migrate
+                brings a network (v1, every untagged shape → v2), an
+                edit document (v1, the bare array → v2), or a
+                watchlist (v1 → v2) forward through every step of its
+                chain — the chains live in the owning libraries
+                (transit-network, transit-sync, transit-dispatch),
+                kept forever (D-66), every record id kept and every
+                loss a note — and answers the new document's canonical
+                bytes and hash; version answers whether a document
+                needs it. Consumers read the current version only and
+                refuse any other at the load (`cap_abi::speaks`), so
+                no consumer carries an old chain. Hosted where an
+                older document arrives: the Go server's receive and
+                startup, service design's restore
+                (docs/FORMATS.md, "Versions").
 
 Every module is the raw rustc output of an assembly crate with the
 same four flat exports (no wasm-bindgen — do not reintroduce host
@@ -1561,7 +1582,8 @@ cap-rt          The realtime capability: decode — a GTFS-rt protobuf
 cap-board       The board capability — ONE QUESTION: when does
                 service leave this stop? (at a stop, a station's
                 pooled bays, or a personal saved set — the WATCHLIST
-                document, v1/v2, migrated here: a personal
+                document, v1/v2, read in either (cap-migrate
+                migrates it): a personal
                 multi-stop board is the same question parameterized
                 by a personal document), over the kernel's network,
                 edit document, live document (cap-rt's, by hash) and
@@ -1577,9 +1599,7 @@ cap-board       The board capability — ONE QUESTION: when does
                 when it runs next within a week, from later days it
                 materializes itself rather than holding them, since the
                 kernel's few held days would be pushed out by a week of
-                them) / migrate_watchlist (the
-                watchlist type is transit-dispatch's) /
-                watchlist_board (each watched
+                them) / watchlist_board (each watched
                 stop's stop_board, the same edits and live document;
                 a trip's FINAL
                 visit is an arrival, never a row) over ONE

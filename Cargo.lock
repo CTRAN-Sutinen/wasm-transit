@@ -252,6 +252,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cap-migrate"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "serde",
+ "serde_json",
+ "transit-dispatch",
+ "transit-network",
+ "transit-sync",
+ "ts-rs",
+]
+
+[[package]]
 name = "cap-network"
 version = "0.1.0"
 dependencies = [
@@ -691,6 +704,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "module-migrate"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-migrate",
+]
+
+[[package]]
 name = "module-network"
 version = "0.1.0"
 dependencies = [
@@ -769,6 +790,7 @@ dependencies = [
  "cap-author",
  "cap-directory",
  "cap-gtfs",
+ "cap-migrate",
  "cap-network",
  "cap-plans",
 ]

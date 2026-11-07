@@ -84,7 +84,7 @@ const detour = [
 
 async function open(page, { edits = [] } = {}) {
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
-  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(edits) }));
+  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ kind: "edit_records", schema_version: 2, records: edits }) }));
   await page.route(/\/rt\?url=/, (route) =>
     route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")) }),
   );

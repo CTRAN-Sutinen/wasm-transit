@@ -50,6 +50,7 @@ func main() {
 	retentionDays := flag.Int("retention-days", 90, "tombstone retention horizon (days) for the store's D-57 compaction commits")
 	gcInterval := flag.Duration("gc-interval", time.Hour, "how often the store sweeps crash-torn orphan blobs past their grace period (store mode; 0 = only at startup)")
 	today := flag.String("today", "", "pin the server's date (YYYY-MM-DD) for hermetic test servers; empty = the host clock. Publishing reads it: a new pick never lands before today, and only a pick after today is retired (D-75, D-76)")
+	migrateWasm := flag.String("migrate-wasm", defaultMigrateWasm, "the migration capability module (cap-migrate): an older document comes forward at receive, and a store's older heads at startup")
 	plansWasm := flag.String("plans-wasm", "../web/pkg/cap_plans.wasm", "the plan-chain capability module (cap-plans) hosted in store mode: it answers the published plan set POST /plans commits")
 	authzWasm := flag.String("authz-wasm", "../web/pkg/cap_authz.wasm", "the authorization capability module (cap-authz) hosted when OIDC is configured")
 	oidcIssuer := flag.String("oidc-issuer", "", "expected JWT iss (D-60); with any -oidc flag this turns authentication on")
@@ -80,6 +81,7 @@ func main() {
 		editsPath:     *editsPath,
 		retentionDays: *retentionDays,
 		fixedToday:    *today,
+		migrateWasm:   *migrateWasm,
 	}
 	if *storeDir != "" {
 		st, err := store.Open(*storeDir)
@@ -92,6 +94,7 @@ func main() {
 		}
 		s.networkWasm = *networkWasm
 		s.seedStore(*editsPath)
+		s.commitForward()
 		s.seedPolicy(*policyFile)
 		s.maybeCompactEdits()
 		if *gcInterval > 0 {
@@ -170,7 +173,7 @@ type server struct {
 	// and every domain decision about it (merge, submit, validation)
 	// — this host only stores and ferries it.
 	editsMu   sync.Mutex
-	edits     json.RawMessage // []EditRecord
+	edits     json.RawMessage // the edit document (current version)
 	editsPath string          // empty = in-memory only (legacy mode)
 
 	// The durable sync store (store mode, -store): blobs + CAS'd
@@ -187,6 +190,12 @@ type server struct {
 	// makes one publish one step.
 	plans       *WasmHost
 	networkWasm string
+	// The migration capability (cap-migrate), loaded on first use
+	// (migrator): an older document comes forward at receive.
+	migrateWasm string
+	migrateOnce sync.Once
+	migrateHost *WasmHost
+	migrateErr  error
 	plansMu     sync.Mutex
 	fixedToday  string           // -today: the date publishing reads, for test servers; "" = the host clock
 	now         func() time.Time // the host clock (nil = time.Now); tests pin it
@@ -465,7 +474,7 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 func (s *server) seedStore(editsPath string) {
 	nowMs := time.Now().UnixMilli()
 	if _, found, err := s.store.Head("edits"); err == nil && !found {
-		raw := []byte("[]")
+		raw := []byte(emptyEdits)
 		if editsPath != "" {
 			if body, err := os.ReadFile(editsPath); err == nil && len(body) > 0 {
 				raw = body

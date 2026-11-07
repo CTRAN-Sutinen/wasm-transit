@@ -25,7 +25,7 @@ test.use({
 /// the spec is the only thing on the wire it looks at.
 async function quiet(page) {
   await page.route(/\/rt\?url=/, (route) => route.fulfill({ status: 404 }));
-  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
+  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: '{"kind":"edit_records","schema_version":2,"records":[]}' }));
 }
 
 /// The style's glyph and sprite URLs once the ride map has one.

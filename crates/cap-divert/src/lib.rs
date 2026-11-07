@@ -172,7 +172,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::Restore { records: transit_sync::set_retired(&records, &record_id, false, now_ms)? })
         }
         Request::Sanitize { records } => {
-            let (records, dropped) = transit_sync::sanitize(&records);
+            let (records, dropped) = transit_sync::sanitize_records(&records);
             Ok(Response::Sanitize { records, dropped: dropped as u32 })
         }
     }

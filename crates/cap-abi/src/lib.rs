@@ -217,24 +217,45 @@ pub fn parse_document<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T,
     serde_json::from_reader(std::io::BufReader::with_capacity(64 * 1024, source)).map_err(|e| format!("invalid document: {e}"))
 }
 
-/// Parse a network document from bulk bytes (JSON or gzipped JSON):
-/// straight into the type, and — only when that fails — through
-/// `read_network`, which reads documents written before trips were
-/// stored (a host's saved documents load after the model changed).
+/// Parse a network document from bulk bytes (JSON or gzipped JSON),
+/// in the version this build reads ([`transit_network::SCHEMA_VERSION`])
+/// and only that: an older document is refused with the op that brings
+/// it forward, a newer one is refused naming both versions — never
+/// parsed and re-emitted (docs/units/document-versioning.md).
 pub fn parse_network(bytes: &[u8]) -> Result<transit_network::Network, String> {
-    parse_document(bytes).or_else(|typed: String| {
-        let unzipped;
-        let text = if is_gzip(bytes) {
-            use std::io::Read;
-            let mut text = String::new();
-            flate2::read::GzDecoder::new(bytes).read_to_string(&mut text).map_err(|e| format!("invalid document: {e}"))?;
-            unzipped = text;
-            unzipped.as_str()
-        } else {
-            std::str::from_utf8(bytes).map_err(|e| format!("invalid document: {e}"))?
-        };
-        transit_network::read_network(text).map_err(|_| typed)
-    })
+    use transit_network::{SCHEMA_VERSION, KIND};
+    match parse_document::<transit_network::Network>(bytes) {
+        Ok(network) => speaks(KIND, network.schema_version.0, SCHEMA_VERSION).map(|_| network),
+        Err(typed) => {
+            // The typed read failed: an older or newer shape says so by
+            // its tag; a document in this version is just malformed.
+            #[derive(serde::Deserialize)]
+            struct Tag {
+                schema_version: Option<u32>,
+            }
+            match parse_document::<Tag>(bytes) {
+                Ok(Tag { schema_version }) => speaks(KIND, schema_version.unwrap_or(1), SCHEMA_VERSION).and(Err(typed)),
+                Err(_) => Err(typed),
+            }
+        }
+    }
+}
+
+/// The version check every versioned kind's load makes: the document's
+/// version is the one this build reads, or the load is refused naming
+/// both — an older one with the capability op that migrates it, a
+/// newer one as written by a newer build (refused, never rewritten).
+pub fn speaks(kind: &str, found: u32, reads: u32) -> Result<(), String> {
+    use std::cmp::Ordering::*;
+    match found.cmp(&reads) {
+        Equal => Ok(()),
+        Less => Err(format!(
+            "{kind} v{found}: this module reads v{reads} — bring it forward first (migrate.migrate, kind {kind:?})"
+        )),
+        Greater => Err(format!(
+            "{kind} v{found} is newer than this module, which reads v{reads}: a newer build wrote it (refused, never rewritten)"
+        )),
+    }
 }
 
 /// The JSON lane every module answers: `{"op": ...}` in, the

@@ -64,7 +64,7 @@ const cancel = [
 
 async function open(page, { query = "", at = "2026-10-23T07:55:00-04:00", edits = [] } = {}) {
   await page.clock.setFixedTime(new Date(at));
-  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(edits) }));
+  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ kind: "edit_records", schema_version: 2, records: edits }) }));
   await page.route(/\/rt\?url=/, (route) =>
     route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")) }),
   );
@@ -162,7 +162,7 @@ test("a display left polling stays bounded, and a module past its ceiling answer
     return Buffer.from(out);
   };
   await page.clock.install({ time: new Date("2026-10-23T07:55:00-04:00") });
-  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
+  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: '{"kind":"edit_records","schema_version":2,"records":[]}' }));
   await page.route(/\/rt\?url=/, (route) => {
     polls += 1;
     route.fulfill({ contentType: "application/octet-stream", body: Buffer.concat([rt, varint(8000), varint(polls)]) });
@@ -240,7 +240,7 @@ test("a hidden display makes no requests, and re-reads on its return", async ({ 
   await page.clock.install({ time: new Date("2026-10-23T07:55:00-04:00") });
   await page.route("**/edits", (route) => {
     requests += 1;
-    route.fulfill({ contentType: "application/json", body: "[]" });
+    route.fulfill({ contentType: "application/json", body: '{"kind":"edit_records","schema_version":2,"records":[]}' });
   });
   await page.route(/\/rt\?url=/, (route) => {
     requests += 1;
@@ -266,7 +266,7 @@ test("a hidden display makes no requests, and re-reads on its return", async ({ 
 test("a live feed that stops answering turns the board to the schedule, and the board stays", async ({ page }) => {
   let down = false;
   await page.clock.install({ time: new Date("2026-10-23T07:55:00-04:00") });
-  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
+  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: '{"kind":"edit_records","schema_version":2,"records":[]}' }));
   await page.route(/\/rt\?url=/, (route) =>
     down
       ? route.fulfill({ status: 502, body: "upstream down" })

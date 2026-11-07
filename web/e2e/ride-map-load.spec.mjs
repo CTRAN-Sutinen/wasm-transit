@@ -34,7 +34,7 @@ test.use({ baseURL: "http://127.0.0.1:8083", timezoneId: "UTC", geolocation: fix
 /// the spec is the only thing on the wire it looks at.
 async function quiet(page) {
   await page.route(/\/rt\?url=/, (route) => route.fulfill({ status: 404 }));
-  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
+  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: '{"kind":"edit_records","schema_version":2,"records":[]}' }));
 }
 
 /// The fallback style, hermetic: no archive, and OpenFreeMap's style

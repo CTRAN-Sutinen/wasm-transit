@@ -135,7 +135,7 @@ fn edits_can_take_a_key_off_the_board() {
         rev: 1,
         updated_at: 1,
     }];
-    let edits_hash = cap_abi::kernel::EDITS.register(records).unwrap().0;
+    let edits_hash = cap_abi::kernel::EDITS.register(cap_abi::kernel::EditDocument::new(records)).unwrap().0;
     // WK still runs (route 10 carries it); the answer is unchanged —
     // the mechanism is pinned by construction: the answer derives
     // from the patched day, and a key only leaves when its every
@@ -231,7 +231,7 @@ fn the_reverse_read_comes_from_the_effective_day() {
         rev: 1,
         updated_at: 1,
     }];
-    let edits_hash = cap_abi::kernel::EDITS.register(records).unwrap().0;
+    let edits_hash = cap_abi::kernel::EDITS.register(cap_abi::kernel::EditDocument::new(records)).unwrap().0;
     assert_eq!(
         service_dates(&network_hash, Some(edits_hash), "WK", "2026-10-23", "2026-10-26"),
         vec!["2026-10-23".to_string(), "2026-10-26".to_string()],
@@ -266,7 +266,7 @@ fn an_invalid_edit_record_moves_nothing() {
         updated_at: 1,
     };
     broken.diversion.as_mut().unwrap().first_kept_stop = "ghost".into();
-    let edits_hash = cap_abi::kernel::EDITS.register(vec![broken]).unwrap().0;
+    let edits_hash = cap_abi::kernel::EDITS.register(cap_abi::kernel::EditDocument::new(vec![broken])).unwrap().0;
     assert_eq!(
         active_services(&network_hash, Some(edits_hash), DATE),
         vec!["WK".to_string()],

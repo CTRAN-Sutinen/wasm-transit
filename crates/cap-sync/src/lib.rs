@@ -6,7 +6,8 @@
 //! system: propose → review → accept). The ops are that document's
 //! lifecycle facets: `sync_edits` merges a client document with the
 //! server's and transitions drafts to submitted; `read_edits`
-//! migrates a received/stored document at the receive boundary;
+//! reads a received/stored document at the receive boundary (an
+//! older version is the migration capability's to bring forward);
 //! `compact_edits` is the D-57 tombstone-retention commit. The host
 //! owns both documents (wholesale-replaced, JS/store-owned) and the
 //! clock (`now_ms` is the only route; hosts own time), and clamps the
@@ -50,10 +51,12 @@ pub enum Request {
         #[ts(type = "number")]
         now_ms: u64,
     },
-    /// Migrate-at-receive: parse a received or stored document under
-    /// the current schema — serde defaults fill what age removed,
-    /// malformed records are dropped and counted, never wedging the
-    /// document (`transit_sync::sanitize`).
+    /// Read a received or stored edit document in the version this
+    /// module reads — an older one is refused naming the migration
+    /// capability, a newer one naming both versions — with serde
+    /// defaults filling what age removed and malformed records dropped
+    /// and counted, never wedging the document
+    /// (`transit_sync::read_document`).
     ReadEdits {
         #[ts(type = "any")]
         document: serde_json::Value,
@@ -75,18 +78,20 @@ pub enum Request {
 pub enum Response {
     SyncEdits {
         records: Vec<transit_sync::EditRecord>,
-        /// The canonical serialization of `records` (serde_json) —
-        /// the exact bytes a host stores.
+        /// The edit document over `records`, canonically serialized
+        /// (`{"kind":"edit_records","schema_version":…,"records":[…]}`)
+        /// — the exact bytes a host stores.
         document: String,
-        /// `cap_abi::canonical_hash(records)` — the document's identity.
+        /// The document's canonical hash — its identity.
         document_hash: String,
     },
     ReadEdits {
         records: Vec<transit_sync::EditRecord>,
         dropped: usize,
         schema_version: u32,
-        /// The canonical serialization of the migrated `records` —
-        /// the exact bytes a host stores when seeding a pointer.
+        /// The edit document over the read `records`, canonically
+        /// serialized — the exact bytes a host stores when seeding a
+        /// pointer.
         document: String,
         document_hash: String,
     },
@@ -105,16 +110,14 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::SyncEdits { client, server, now_ms } => {
             let client = transit_sync::clamp_timestamps(&client, now_ms);
             let records = transit_sync::submit(transit_sync::merge(&client, &server), now_ms);
-            let document = serde_json::to_string(&records).expect("records serialize");
-            let document_hash = cap_abi::canonical_hash(&records)?;
+            let (document, document_hash) = canonical(&records)?;
             Ok(Response::SyncEdits { records, document, document_hash })
         }
         Request::ReadEdits { document } => {
-            let (records, dropped) = transit_sync::sanitize(&document);
-            let canonical = serde_json::to_string(&records).expect("records serialize");
-            let hash = cap_abi::canonical_hash(&records)?;
+            let (read, dropped) = transit_sync::read_document(&document)?;
+            let (canonical, hash) = canonical(&read.records)?;
             Ok(Response::ReadEdits {
-                records,
+                records: read.records,
                 dropped,
                 schema_version: transit_sync::SCHEMA_VERSION,
                 document: canonical,
@@ -123,11 +126,17 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::CompactEdits { records, now_ms, horizon_ms } => {
             let (records, dropped) = transit_sync::compact(&records, now_ms, horizon_ms);
-            let document = serde_json::to_string(&records).expect("records serialize");
-            let document_hash = cap_abi::canonical_hash(&records)?;
+            let (document, document_hash) = canonical(&records)?;
             Ok(Response::CompactEdits { records, document, document_hash, dropped })
         }
     }
+}
+
+/// The edit document over `records` (current version, tagged): its
+/// canonical bytes and their hash.
+fn canonical(records: &[transit_sync::EditRecord]) -> Result<(String, String), String> {
+    let document = transit_sync::EditDocument::new(records.to_vec());
+    Ok((serde_json::to_string(&document).expect("documents serialize"), cap_abi::canonical_hash(&document)?))
 }
 
 /// The JSON seam: `{"op": ...}` in, `{"ok": ...}` / `{"error": ...}`

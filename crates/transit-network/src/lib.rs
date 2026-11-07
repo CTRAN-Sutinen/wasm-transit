@@ -41,6 +41,7 @@ pub mod places;
 pub mod signs;
 pub mod timetable_edit;
 pub mod validate;
+pub mod version;
 
 pub use edit::{apply_edits, apply_edits_reporting, Applied, CreatedEntity, Day, EditError, NetworkEdit, Redraw, TouchedEntity};
 pub use error::{NetworkError, NetworkWarning, RecoverySource};
@@ -53,7 +54,7 @@ pub use listing::{
 pub use materialize::{
     materialize, materialize_service, produce_times, trip_arrival_end_secs, trip_instance, MaterializedTrip, StopTime,
 };
-pub use migrate::read_network;
+pub use version::{migrate_network, migrate_step, migrate_to, schema_version_of, MigrationNote, NetworkKind, NetworkVersion, KIND, SCHEMA_VERSION};
 pub use model::{
     Alignment, AlignmentId, AlignmentPoint, Anchor, Block, CalendarException, CalendarRule, Coord, DateRange, DayState, Departs, Direction, DirectionId,
     HeadwayBand, Layover, Mode, Network, Pattern, PatternStop, PatternTrips, PatternTripsId, PlanMeta, Route,

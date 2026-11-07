@@ -38,7 +38,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-115**.
+- IDs are never reused; the next new decision is **D-116**.
 
 ## Summary
 
@@ -153,6 +153,14 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-112 | Which weekly service types does a fork carry? | encoded | nothing |
 | D-113 | Where does the sync store live in production? | decided | nothing |
 | D-114 | What does the clock answer in the hour before a fall-back day's anchor? | encoded | nothing |
+| D-115 | Must a document be readable without the app? | decided | nothing |
+| D-116 | Which managed object store does a deployment run on? | unanswered | the deployment runbook in `store-durability` |
+| D-117 | Who deletes from the store, and when? | decided | nothing |
+| D-118 | Where does a server read its inputs at boot? | decided | nothing |
+| D-119 | What does the server serve when the store is unreachable? | decided | nothing |
+| D-120 | Does compaction drop a record whose dates have passed? | unanswered | nothing |
+| D-121 | Does the store keep the edit document whole per commit, or record by record? | unanswered | the edits layout in `store-durability` |
+| D-122 | Is the dispatcher's day in scope? | decided | nothing |
 
 ## The trip model
 
@@ -1793,7 +1801,7 @@ loss is acceptable is the agency's infrastructure.
 Options:
 - The provider's own: bucket versioning plus replication to a second
   bucket in another zone or site (S3 replication, GCS dual-region,
-  Azure GRS, RGW multi-site): no loss window to run, and a bad write
+  Azure GRS): no loss window to run, and a bad write
   replicates too — versioning is what undoes it.
 - A periodic copy to a second bucket or provider, hourly or daily: a
   copy the primary's credentials cannot touch; at most that interval
@@ -1809,6 +1817,15 @@ backend." The user tests against a Ceph RGW instance (S3-compatible).
 2026-11-06 — MinIO is cut ("explicitly cut Minio, minio is dead"),
 for dev and production; RustFS is the local dev and test server
 ("maybe rustfs for local testing dev").
+2026-11-06 — no coupling to any one store: "i dont want a tight
+coupling to ceph just like a don't want a tight coupling to a POSIX
+filesystem. those are only dev conveniences." The targets are the
+managed providers (S3, Azure Blob, GCS); the engine assumes only what
+all three guarantee — whole-object atomic put, create-if-absent,
+strongly consistent read and list, object metadata, delete, modified
+time — and Ceph RGW and RustFS are dev endpoints, used only as far as
+they honor that contract; neither earns a code path of its own. Which
+managed provider a deployment runs on is open (D-116).
 Context: the store is a directory on one node. Its guarantees rest on
 a local POSIX filesystem: `flock` keeps one writer process, a commit is
 a file append, and blobs land by `rename` — so a host crash can tear a
@@ -1826,6 +1843,153 @@ Options:
   conditional create is the CAS and the lock; several server processes
   may share a bucket; the provider carries durability and replication.
 Blocks: nothing (`docs/units/store-durability.md` carries the work).
+
+### D-116 — Which managed object store does a deployment run on?
+State: Unanswered.
+Context: 2026-11-06, the user: "the decision between S3/Blob/GCS is
+open, so i don't want that locked." The engine is provider-neutral
+(D-113's contract), and each adapter passes one contract suite, so the
+choice is an agency's infrastructure (existing cloud agreements, a
+government region, where its IdP lives), not the engine's. The S3
+adapter is built first only because the dev endpoints speak the S3
+API; that order picks nothing for production.
+Options: AWS S3; Azure Blob; GCS — each needs only its adapter passing
+the contract suite against a real account.
+Blocks: the deployment runbook and the restore drill in
+`docs/units/store-durability.md` (they name a provider's replication,
+versioning and immutability settings); nothing in the engine.
+
+### D-117 — Who deletes from the store, and when?
+State: Decided.
+Answer: 2026-11-06 — offline: "intuitively i think GC should be
+offline"; after the trade-offs, "yes, keep it offline." Serving
+processes never delete; an offline `store gc` with its own
+delete-capable credentials collects orphans.
+Context: the log is append-only and every record names its blob, so
+the only garbage is an orphan — a blob whose commit never landed (a
+crash between blob and record, or a lost CAS). A store serving a
+moderate-traffic agency makes a handful a month. Online GC today runs
+in every serving process (`-gc-interval`); over object storage it can
+race a commit: a writer whose create-if-absent finds an old orphan
+treats it as durable while another process deletes it, and the record
+then names a missing blob. The north star (24/7 operations, moderate
+to low traffic, high auditability) weighs: the serving credentials,
+the immutability settings the provider offers, and what an auditor
+can prove was never removed.
+Options:
+- Online GC (today): no job to run; every serving process needs
+  delete permission; the race above needs a lease or a heal step;
+  incompatible with object immutability (S3 Object Lock, Azure
+  immutability policies, GCS bucket lock).
+- **Offline `store gc` — decided.** A separate job with its own delete-capable
+  credentials, run on a schedule or by hand; serving processes hold
+  create-and-read only, so a compromised server cannot erase history;
+  the race remains if it runs beside live servers, closed by a
+  long grace plus the commit re-checking its blob after the record.
+- Never delete: orphans stay (a lost CAS's blob is itself evidence of
+  an attempted write), `store verify` reports them; the bucket can be
+  fully immutable for the agency's retention period; storage grows by
+  the orphans only.
+Blocks: nothing (`docs/units/store-durability.md` carries the work).
+
+### D-118 — Where does a server read its inputs at boot?
+State: Decided.
+Answer: 2026-11-06 — "boot should be from the bucket OR configurable
+external resources, eg the gtfs feeds."
+Context: a server reads its inputs from local files today (`-feed`,
+`-streets`, `-policy`, the wasm paths), so a process is not disposable:
+a replacement needs the same files and flags, and two processes
+configured differently publish different manifests to one store.
+Options:
+- **The bucket, or a configured external source (a GTFS feed URL, a
+  street layer) — decided.** Local files remain a dev convenience.
+- The bucket only, with external inputs imported by a separate step.
+Blocks: nothing (`docs/units/store-durability.md` carries the work).
+
+### D-119 — What does the server serve when the store is unreachable?
+State: Decided.
+Answer: 2026-11-06 — "agreed with your assessment": serve the cached
+heads, each labelled with its age, refuse writes until the bucket
+answers, and set no age past which reads fail. A transit system's
+reads peak during disruptions, when an outage is likeliest; a correct
+but stale answer, labelled, beats none.
+Context: blobs are content-addressed and immutable, so a cached copy is
+always correct; only a pointer's head can go stale. The north star is
+an agency running 24/7 at moderate to low traffic with high
+auditability needs. Auditability rules out acknowledging a write the
+bucket has not taken (a server-side queue loses an acknowledged write
+with the process); the browser already owns its documents and resends
+under LWW, so a refused write is held client-side.
+Options:
+- **Serve the cached heads, each labelled with its age (seq and
+  `at_ms`); refuse writes (503) until the bucket answers — decided.**
+- The same, with an age past which reads fail rather than serve stale.
+- Fail every request until the bucket answers.
+Blocks: nothing (`docs/units/store-durability.md` carries the work).
+
+### D-120 — Does compaction drop a record whose dates have passed?
+State: Unanswered.
+Context: compaction (D-57) drops only retired records past the
+horizon. An accepted diversion whose `end_date` has passed, or a
+cancel whose `date` has, stays in the live edit document until someone
+retires it, so the document grows with every edit the agency has ever
+made. Measured 2026-11-06 through the server's merge: a record averages
+1.5 KB (a drawn 120-point detour 4.9 KB, a diversion without one
+~0.3 KB, a cancel ~0.2 KB); at 10 edits a day the live document is
+5.4 MB after a year and 54 MB after ten, and every client syncs it
+whole. The store keeps every past version through the log (each
+commit's blob), so dropping a record from the live document loses no
+history.
+Options:
+- Retired only (encoded): the live document holds every unretired
+  record ever made; growth is unbounded unless people retire.
+- Also drop a record whose dates ended before the horizon: the live
+  document holds roughly the last 90 days plus what is in force
+  (~1.8 MB at 10 edits a day); the log and its blobs keep the rest.
+Blocks: nothing.
+
+### D-121 — Does the store keep the edit document whole per commit, or record by record?
+State: Unanswered.
+Context: a commit to `edits` stores the whole document as one blob
+(`docs/FORMATS.md`), so the bucket grows by the document's size on
+every commit — quadratically while the document grows (D-120).
+Measured 2026-11-06 (1.5 KB a record, ~3 commits per edit), over ten
+years at 10 edits a day: 2.9 TB keeping every record, 190 GB with
+D-120's expiry, ~10 GB stored record by record. At 30 edits a day:
+26.5 TB, 1.7 TB, ~86 GB. Whole snapshots make "what was in force at
+14:02" one GET; record by record makes it a GET of the commit's list
+and the records it names.
+Options:
+- Whole document per commit (today): simplest reader; storage grows
+  with document size times commits.
+- Each record its own content-addressed blob, the document a list of
+  record hashes (git's tree): a commit writes the changed records and
+  the list; the module stays the hash authority for both; a new
+  `docs/FORMATS.md` layout and a `store verify` rule.
+With D-122, detours and cancels are the only row-shaped data this
+repo holds, so the answer also settles whether it needs a row store at
+all: record by record in the bucket keeps it to one durable service.
+Blocks: the edits layout in `docs/units/store-durability.md`.
+
+### D-122 — Is the dispatcher's day in scope?
+State: Decided.
+Answer: 2026-11-06 — "i would say no, but everything we are building
+is adjacent/touches it so the interfaces need to be clear and well
+defined."
+Context: data that is published and acted on as a whole is a document
+(the network, picks, plans, policy, a work bid's package, choices and
+roster); data written by many hands at once, in no order the domain
+imposes, that accumulates and is searched by attribute, is rows. The
+dispatcher's day — sick calls, extra-board fills, swaps, vehicle
+assignments — is the row-shaped operational data a transit system
+runs on, held by its own systems (CAD/AVL, workforce management).
+Options:
+- **Out of scope; the adjacent systems meet this one at defined
+  interfaces — decided.** This repo holds documents (and detours and
+  cancels, D-121); each fact has one system of record, and the
+  interfaces say what crosses and in whose vocabulary.
+- In scope: a row store joins the repo for daily operations.
+Blocks: nothing.
 
 ## Authentication and authorization
 
@@ -2654,3 +2818,13 @@ design choice.
 Blocks: nothing. QAF-9 and QAF-48 are deleted; pins: analysis
 `network_stats` (`transfer_stops` counts flagged stops where two
 routes meet) and rt `live` summary `late[0].label` (the id fallback).
+
+### D-115 — Must a document be readable without the app?
+State: Decided.
+Answer: 2026-11-06 — "documents should also be open formats that can be simply understood without requiring the app." Encoded as: every persisted document is plain JSON (gzip allowed) or an external open format (a GTFS zip, a GTFS-rt protobuf, GeoJSON), never a private encoding; a document on its own says what it is — its kind and its version inside it (extending D-62); and every kind's schema and a worked example, per version, are published as plain files beside the documentation (`registry/schemas/`, `docs/FORMATS.md`), so a person or another tool reads a document with no module, no wasm, and no running deployment.
+Context: `docs/units/document-versioning.md`. Documents leave the
+app as files: an export, a `caps-run` load, a store blob, a backup.
+The store's blobs already read without wasm (`docs/FORMATS.md`), but
+a network or an edit document copied out of IndexedDB names neither
+its kind nor its version.
+Blocks: nothing; `document-versioning` scope 2 and 6 carry it.

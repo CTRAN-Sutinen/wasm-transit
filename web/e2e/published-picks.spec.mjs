@@ -26,7 +26,7 @@ test.use({
 
 async function live(page, at) {
   await page.clock.setFixedTime(new Date(at));
-  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
+  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: '{"kind":"edit_records","schema_version":2,"records":[]}' }));
   await page.route(/\/rt\?url=/, (route) =>
     route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")) }),
   );

@@ -106,17 +106,20 @@ for (const cap of manifest.capabilities) {
   assert(Object.keys(cap.speaks).length > 0, `capability ${cap.id} declares the documents it speaks`);
 }
 
-// Compatibility documentation: the board capability speaks both
-// watchlist versions and provides the 1→2 migration; the validator
-// accepted it.
+// Compatibility documentation: the board reads both watchlist
+// versions; the migration capability carries every authored kind's
+// chain (the board carries none); the validator accepted it.
 assert(
   byId.board.speaks.watchlist.includes(1) && byId.board.speaks.watchlist.includes(2),
   "board speaks watchlist v1 and v2",
 );
-assert(
-  byId.board.migrates.watchlist.some((m) => m.from === 1 && m.to === 2),
-  "board migrates watchlist 1→2",
-);
+assert(Object.keys(byId.board.migrates).length === 0, "a consumer carries no migration chain");
+for (const kind of ["network", "operator_edits", "watchlist"]) {
+  assert(
+    byId.migrate.migrates[kind].some((m) => m.from === 1 && m.to === 2),
+    `migrate carries the ${kind} chain 1→2`,
+  );
+}
 
 // The feed document capability — parse + identity alone. The day
 // views and planning are NOT here (one question, one answer on the
@@ -163,7 +166,10 @@ assert(missing.error && missing.error.includes("unknown feed"), "unknown hashes 
 // monolith: a network document in by content hash, planner numbers
 // out by hash.
 const analysis = shell(loadModule(byId.analysis));
-const NETWORK = {
+// A pre-trip, untagged document — network v1. A consumer refuses it at
+// the load, naming both versions; the migration capability brings it
+// forward, and only then does it register.
+const NETWORK_V1 = {
   name: "Cap Analysis Net",
   plan: { id: "", name: "" },
   anchor: "noon_minus_twelve",
@@ -203,6 +209,19 @@ const NETWORK = {
   blocks: {},
   notes: [],
 };
+const refusedV1 = analysis.raw({ op: "load_network", network: NETWORK_V1 });
+assert(
+  refusedV1.error && refusedV1.error.includes("network v1") && refusedV1.error.includes("reads v2"),
+  `a consumer refuses an older network at the load, naming both versions: ${JSON.stringify(refusedV1)}`,
+);
+const migrate = shell(loadModule(byId.migrate));
+const NETWORK = migrate.invoke({ op: "migrate", kind: "network", document: NETWORK_V1 }).document;
+assert(NETWORK.kind === "network" && NETWORK.schema_version === 2, "the migrated network names its kind and version");
+const newer = analysis.raw({ op: "load_network", network: { ...NETWORK, schema_version: 3 } });
+assert(
+  newer.error && newer.error.includes("network v3") && newer.error.includes("reads v2"),
+  "a consumer refuses a newer network at the load, naming both versions",
+);
 const loadedNet = analysis.invoke({ op: "load_network", network: NETWORK });
 assert(loadedNet.network_hash.startsWith("sha256:"), "analysis registers the network by content hash");
 const stats = analysis.invoke({
@@ -548,9 +567,20 @@ assert(
   planPaths.length === plan.itinerary.legs.length && planPaths[0].kind === "transit" && planPaths[0].path.length >= 2,
   "an itinerary draws one path per leg, the ridden segment",
 );
+const newerEdits = router.raw({ op: "load_edits", edits: { kind: "edit_records", schema_version: 3, records: [] } });
+assert(
+  newerEdits.error && newerEdits.error.includes("edit_records v3") && newerEdits.error.includes("reads v2"),
+  "a consumer refuses a newer edit document at the load, naming both versions",
+);
+const olderEdits = router.raw({ op: "load_edits", edits: [] });
+assert(
+  olderEdits.error && olderEdits.error.includes("edit_records v1") && olderEdits.error.includes("migrate"),
+  "a consumer refuses a bare edit array (v1) at the load, naming the migration",
+);
+/// An edit document in the version the modules read (D-62, D-115).
+const editDoc = (records) => ({ kind: "edit_records", schema_version: 2, records });
 const routerEdits = router.invoke({
-  op: "load_edits",
-  records: [
+  op: "load_edits", edits: editDoc([
     {
       id: "e1",
       diversion: {
@@ -569,7 +599,7 @@ const routerEdits = router.invoke({
       rev: 1,
       updated_at: 1,
     },
-  ],
+  ]),
 });
 assert(routerEdits.op === "load_edits" && routerEdits.edits_hash.startsWith("sha256:"), "the kernel registers the edit document");
 const compare = router.invoke({
@@ -689,7 +719,9 @@ const v1 = {
     { id: "B", note: "work" },
   ],
 };
-const migrated = board.invoke({ op: "migrate_watchlist", document: v1 });
+// The chain is the migration capability's (cap-migrate): the board
+// reads documents, it never migrates them.
+const migrated = migrate.invoke({ op: "migrate", kind: "watchlist", document: v1 });
 assert(migrated.document.version === "v2", "migration produces v2");
 assert(migrated.document.stops[0].label === "home", "label = note");
 assert(
@@ -699,8 +731,8 @@ assert(
     migrated.notes[0].count === 1,
   "the dropped color is reported — never silent",
 );
-const againMigrate = board.raw({ op: "migrate_watchlist", document: migrated.document });
-assert(againMigrate.error && againMigrate.error.includes("already version 2"), "re-migrating v2 errors, not panics");
+const againMigrate = migrate.raw({ op: "migrate", kind: "watchlist", document: migrated.document });
+assert(againMigrate.error && againMigrate.error.includes("nothing to migrate"), "re-migrating v2 errors, not panics");
 for (const document of [v1, migrated.document]) {
   const loaded = board.invoke({ op: "load_watchlist", document });
   const watch = board.invoke({
@@ -762,8 +794,7 @@ assert(runcutChain.trips.length === 2, "the authored chain answers");
 assert(runcutChain.trips[0].layover_after_secs === 600, "the layover is model state (600 s)");
 assert(runcutChain.trips[0].layover_remaining_secs === 600, "no edits: the layover stands");
 const runcutEdits = runcut.invoke({
-  op: "load_edits",
-  records: [
+  op: "load_edits", edits: editDoc([
     {
       id: "e1",
       diversion: {
@@ -782,7 +813,7 @@ const runcutEdits = runcut.invoke({
       rev: 1,
       updated_at: 1,
     },
-  ],
+  ]),
 });
 assert(runcutEdits.edits_hash === routerEdits.edits_hash, "one edit document, one identity in every module");
 const rippedChain = runcut.invoke({
@@ -900,7 +931,7 @@ const brokenRecords = [
       updated_at: 1,
     },
 ];
-const brokenEdit = runcut.invoke({ op: "load_edits", records: brokenRecords });
+const brokenEdit = runcut.invoke({ op: "load_edits", edits: editDoc(brokenRecords) });
 assert(brokenEdit.edits_hash.startsWith("sha256:"), "an edit against an unknown route registers (never rejected)");
 const brokenDay = runcut.invoke({ op: "blocks", network_hash: loadedRuncutNet.network_hash, edits_hash: brokenEdit.edits_hash, date: DATE });
 const plainDay = runcut.invoke({ op: "blocks", network_hash: loadedRuncutNet.network_hash, date: DATE });
@@ -1444,7 +1475,7 @@ const listed = divert.invoke({ op: "list", network_hash: divertNet.network_hash,
 assert(listed.rows.length === 1 && listed.cancels.length === 1 && listed.cancels[0].start_secs === 28800, "the list names a cancel apart");
 const notRunning = divert.raw({ op: "cancel", network_hash: divertNet.network_hash, records: [], record_id: "c", trip_id: "t10", date: "2026-10-25", now_ms: 1 });
 assert(notRunning.error && notRunning.error.includes("does not run"), "a cancel of a trip that does not run that day is refused");
-const cancelEdits = board.invoke({ op: "load_edits", records: [cancelled[1]] });
+const cancelEdits = board.invoke({ op: "load_edits", edits: editDoc([cancelled[1]]) });
 const cancelledBoard = board.invoke({
   op: "stop_board", network_hash: loadedBoardNet.network_hash, edits_hash: cancelEdits.edits_hash,
   stop_id: "A", date: DATE, from_secs: 25200, limit: 10,

@@ -1,0 +1,15 @@
+[package]
+name = "cap-migrate"
+description = "The migration capability: bring an older document forward to the version this build reads. Every authored kind's chain, kept forever (D-66); pure, deterministic, every loss reported. Consumers read the current version only and never carry old chains."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+ts-rs = { workspace = true }
+transit-network = { path = "../transit-network" }
+transit-sync = { path = "../transit-sync" }
+transit-dispatch = { path = "../transit-dispatch" }
+cap-abi = { path = "../cap-abi" }

@@ -150,8 +150,10 @@ fn the_answer_carries_the_canonical_document_and_its_hash() {
     let client = vec![record("e1", EditStatus::Draft, 1, 1)];
     match dispatch(Request::SyncEdits { client, server: vec![], now_ms: 1_000 }).unwrap() {
         Response::SyncEdits { records, document, document_hash } => {
-            assert_eq!(document, serde_json::to_string(&records).unwrap(), "canonical bytes");
-            assert_eq!(document_hash, cap_abi::canonical_hash(&records).unwrap(), "the module is the hash authority");
+            let doc = transit_sync::EditDocument::new(records.clone());
+            assert_eq!(document, serde_json::to_string(&doc).unwrap(), "canonical bytes: the tagged document");
+            assert!(document.starts_with("{\"kind\":\"edit_records\",\"schema_version\":2,"), "{document}");
+            assert_eq!(document_hash, cap_abi::canonical_hash(&doc).unwrap(), "the module is the hash authority");
             assert!(document_hash.starts_with("sha256:"), "{document_hash}");
         }
         _ => panic!("sync_edits"),
@@ -159,7 +161,7 @@ fn the_answer_carries_the_canonical_document_and_its_hash() {
 }
 
 #[test]
-fn read_edits_migrates_a_received_document_at_receive() {
+fn read_edits_reads_a_received_document_at_receive() {
     let good = serde_json::to_value(record("e1", EditStatus::Submitted, 2, 100)).unwrap();
     let mut old = good.clone();
     let d = old["diversion"].as_object_mut().unwrap();
@@ -168,7 +170,12 @@ fn read_edits_migrates_a_received_document_at_receive() {
     }
     let mut bad_date = good.clone();
     bad_date["diversion"]["start_date"] = "soon".into();
-    let doc = serde_json::json!([good, old, bad_date, {"id": "x"}, 7]);
+    let doc = serde_json::json!({"kind": "edit_records", "schema_version": 2, "records": [good, old, bad_date, {"id": "x"}, 7]});
+
+    // A v1 document (the bare array) is the migration capability's.
+    let v1 = doc["records"].clone();
+    let refused = dispatch(Request::ReadEdits { document: v1 }).unwrap_err();
+    assert!(refused.contains("edit_records v1") && refused.contains("migrate"), "{refused}");
 
     match dispatch(Request::ReadEdits { document: doc }).unwrap() {
         Response::ReadEdits { records, dropped, schema_version, document, document_hash } => {
@@ -176,8 +183,9 @@ fn read_edits_migrates_a_received_document_at_receive() {
             assert_eq!(dropped, 3, "malformed records are counted, never wedging the document");
             assert_eq!(records[1].diversion.as_ref().unwrap().added_secs, 0);
             assert_eq!(schema_version, transit_sync::SCHEMA_VERSION);
-            assert_eq!(document, serde_json::to_string(&records).unwrap());
-            assert_eq!(document_hash, cap_abi::canonical_hash(&records).unwrap());
+            let doc = transit_sync::EditDocument::new(records.clone());
+            assert_eq!(document, serde_json::to_string(&doc).unwrap());
+            assert_eq!(document_hash, cap_abi::canonical_hash(&doc).unwrap());
         }
         _ => panic!("read_edits"),
     }
@@ -196,8 +204,9 @@ fn compact_edits_is_the_d57_tombstone_commit() {
             assert_eq!(dropped, 1);
             assert_eq!(records.len(), 1);
             assert_eq!(records[0].id, "live", "in-force records are never dropped");
-            assert_eq!(document, serde_json::to_string(&records).unwrap());
-            assert_eq!(document_hash, cap_abi::canonical_hash(&records).unwrap());
+            let doc = transit_sync::EditDocument::new(records.clone());
+            assert_eq!(document, serde_json::to_string(&doc).unwrap());
+            assert_eq!(document_hash, cap_abi::canonical_hash(&doc).unwrap());
         }
         _ => panic!("compact_edits"),
     }

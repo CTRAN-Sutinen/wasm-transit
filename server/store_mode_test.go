@@ -44,6 +44,12 @@ func storeMux(s *server) *http.ServeMux {
 }
 
 func editDoc(id, status string, rev, at int64) string {
+	return `{"kind":"edit_records","schema_version":2,"records":` + editRecords(id, status, rev, at) + `}`
+}
+
+// editRecords is the same record as a bare array: an edit document v1,
+// the shape a client on an older build posts.
+func editRecords(id, status string, rev, at int64) string {
 	diversion := `{"id":"d-` + id + `","route_id":"10","direction_id":null,` +
 		`"first_kept_stop":"A","last_kept_stop":"B","skipped_stops":["C"],` +
 		`"detour":null,"added_secs":300,"start_date":"` + date + `","end_date":"` + date + `"}`
@@ -257,13 +263,16 @@ func TestStoreReceiveClampsTheClock(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("post: %d %s", code, body)
 	}
-	var doc []struct {
-		ID        string `json:"id"`
-		UpdatedAt int64  `json:"updated_at"`
+	var tagged struct {
+		Records []struct {
+			ID        string `json:"id"`
+			UpdatedAt int64  `json:"updated_at"`
+		} `json:"records"`
 	}
-	if err := json.Unmarshal([]byte(body), &doc); err != nil || len(doc) != 1 {
+	if err := json.Unmarshal([]byte(body), &tagged); err != nil || len(tagged.Records) != 1 {
 		t.Fatalf("doc: %v %s", err, body)
 	}
+	doc := tagged.Records
 	after := time.Now().UnixMilli()
 	if doc[0].UpdatedAt < before || doc[0].UpdatedAt > after {
 		t.Fatalf("stored updated_at %d outside [%d, %d]: the future stamp was not clamped", doc[0].UpdatedAt, before, after)

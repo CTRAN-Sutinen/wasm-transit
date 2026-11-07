@@ -17,14 +17,14 @@
 //! * `NetworkError::UnknownAlignment { pattern, alignment }`.
 //! * `pattern_alignment` draws the referenced alignment (two points
 //!   or more), else the stops joined.
-//! * `read_network` reads a pre-alignment document (an inline
+//! * `migrate_network` reads a pre-alignment (v1) document (an inline
 //!   `path` per pattern) as an alignment under the pattern's id —
 //!   the id the old export gave its shape.
 
 use proptest::prelude::*;
 use serde_json::Value;
 use transit_network::{
-    pattern_alignment, read_network, validation_issues, Alignment, AlignmentPoint, Coord, Mode, Network,
+    pattern_alignment, migrate_network, validation_issues, Alignment, AlignmentPoint, Coord, Mode, Network,
     NetworkError, Pattern, PatternStop, Route, Stop,
 };
 
@@ -200,7 +200,7 @@ proptest! {
     fn alignments_survive_the_document(spec in spec_strategy()) {
         let net = build(&spec);
         let text = serde_json::to_string(&net).unwrap();
-        prop_assert_eq!(read_network(&text).unwrap(), net);
+        prop_assert_eq!(serde_json::from_str::<Network>(&text).unwrap(), net);
     }
 
     /// A pre-alignment document — each pattern's line inline as its
@@ -212,6 +212,8 @@ proptest! {
         let mut doc: Value = serde_json::to_value(&net).unwrap();
         let root = doc.as_object_mut().unwrap();
         root.remove("alignments");
+        root.remove("kind");
+        root.remove("schema_version");
         for (p, pattern) in root["patterns"].as_object_mut().unwrap().iter_mut() {
             let pattern = pattern.as_object_mut().unwrap();
             pattern.remove("alignment");
@@ -225,7 +227,7 @@ proptest! {
                 pattern.insert("path".into(), Value::Array(path));
             }
         }
-        let migrated = read_network(&doc.to_string()).unwrap();
+        let migrated = migrate_network(doc).unwrap().0;
         for (i, (_, alignment)) in spec.patterns.iter().enumerate() {
             let p = format!("p{i}");
             prop_assert_eq!(pattern_alignment(&migrated, &p), pattern_alignment(&net, &p), "{} draws as before", p);

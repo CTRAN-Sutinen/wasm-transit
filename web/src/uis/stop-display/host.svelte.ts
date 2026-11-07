@@ -23,7 +23,7 @@ import { answerGraph, clockLabel, nowSecs, readAgencyZone, setAgencyZone, today,
 assemble("stop-display");
 import type { Boundary } from "../../types/Boundary";
 import type { DirectoryRoute } from "../../types/cap_directory/DirectoryRoute";
-import type { EditRecord } from "../../types/EditRecord";
+import type { EditDocument } from "../../types/EditDocument";
 import type { GroupedBoard } from "../../types/GroupedBoard";
 import type { LiveDay } from "../../types/LiveDay";
 import type { Network } from "../../types/Network";
@@ -80,7 +80,7 @@ let network: Doc<Network> | null = null;
 let boundary: Doc<Boundary> | null = null;
 /// The edit document over the network — null when empty (schedule
 /// only, the day views' contract).
-let edits: Doc<EditRecord[]> | null = null;
+let edits: Doc<EditDocument> | null = null;
 let editsText = "[]";
 /// THE live document (rt's answer over the snapshots), by which every
 /// board reads the live feeds.
@@ -340,10 +340,12 @@ async function syncEdits(): Promise<boolean> {
     const resp = await fetch("/edits");
     if (!resp.ok) return false;
     const text = await resp.text();
-    const records = JSON.parse(text) as EditRecord[];
+    // The edit document, as the server keeps it (it brings an older
+    // one forward); the modules refuse any version they do not read.
+    const document = JSON.parse(text) as EditDocument;
     if (text === editsText) return false;
     editsText = text;
-    edits = Array.isArray(records) && records.length > 0 ? new Doc("edits", { value: records }, { over: network }) : null;
+    edits = document?.records?.length > 0 ? new Doc("edits", { value: document }, { over: network }) : null;
     return true;
   } catch (e) {
     console.warn("edit sync failed:", e);
