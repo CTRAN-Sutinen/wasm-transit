@@ -106,7 +106,7 @@ type canonicalNetwork struct {
 
 func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil || s.plans == nil {
-		http.Error(w, "publishing needs the store (start with -store <dir>)", http.StatusNotFound)
+		http.Error(w, "publishing needs the store (start with -store <url>)", http.StatusNotFound)
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -255,7 +255,7 @@ func (s *server) agencyZone() *time.Location {
 // the pick kept as the tombstone — or why not, and the host commits it.
 func (s *server) handleRetire(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil || s.plans == nil {
-		http.Error(w, "publishing needs the store (start with -store <dir>)", http.StatusNotFound)
+		http.Error(w, "publishing needs the store (start with -store <url>)", http.StatusNotFound)
 		return
 	}
 	if r.Method != http.MethodPost {

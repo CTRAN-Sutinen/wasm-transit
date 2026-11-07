@@ -119,7 +119,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-76 | What does publishing refuse beyond an invalid chain? | decided | nothing |
 | D-77 | How do the capabilities a page uses share one network? | decided | nothing |
 | D-78 | Does the Go server host linked assemblies? | decided | nothing |
-| D-79 | How is a document version rolled back? | unanswered | rollback in `document-versioning` |
+| D-79 | How is a document version rolled back? | decided | nothing |
 | D-80 | Where do retired build artifacts live? | unanswered | retention in `release-artifacts` |
 | D-81 | How are op and HTTP contracts versioned? | unanswered | contract versioning in `release-artifacts` |
 | D-82 | Where do the store's backups go, and how often? | unanswered | backup in `store-durability` |
@@ -2859,7 +2859,15 @@ anchor clamps to the day's start").
 Blocks: nothing (the two-day board replaces the clamp).
 
 ### D-79 — How is a document version rolled back?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-06 — "i like option 1." Read one version ahead. Then, on old and archived data: the migration module "doesn't have to be shipped as a whole everywhere, it can be cut into operational components and one for the archive"; audit views showing the original with today's shape on request "sounds good"; and at an upgrade, "only the ones in use" are brought forward. Encoded as:
+- A format change ships in two releases (expand, then contract). Release A's modules read vN and vN+1 and write vN; release B writes vN+1. A module reads its version and, for that one release, the next; the extra reader goes in the release after B.
+- Rollback goes one release back, to a build that reads everything the store holds. Rolling the data back too (pointers to their pre-upgrade heads) is the emergency procedure only, for when release A itself is bad. It lists the dropped commits from the pointer log, whose vN+1 documents stay readable as plain JSON (D-115) to re-enter by hand.
+- A client refused for its version reloads its manifest. A page from before a rollback that posts vN+1 gets the refusal naming both versions and follows the server's manifest.
+- Nothing older is rewritten (D-66 stands). At an upgrade only the documents in use come forward: the edit document, the published plan set, the networks of the pick in force and the picks still to come, the policy, the work rules. A retired or expired pick stays in its version until it is used again (a republish), and comes forward then.
+- An archive reads two ways. As it was: its bytes and its version's published schema, the default for an audit. Or as it is today: brought forward on read, deterministically, never stored; an audit view offers this where a migration note says something was dropped.
+- The migration module is cut by use: operational pieces linked only where their documents arrive (the server's receive, a page's restore), and one archive piece holding every chain.
+- A backup restores into a build at least as new as the backup; an older build refuses it, naming both versions.
 Context: `docs/units/document-versioning.md`. Rollback is a pointer
 moved back, never an inverse migration, so the bytes from before an
 upgrade stay addressable. But a newer build that has written vN+1

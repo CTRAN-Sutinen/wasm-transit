@@ -1,6 +1,6 @@
 package main
 
-// The generic store surface (store mode, -store <dir>): pointers and
+// The generic store surface (store mode, -store <url>): pointers and
 // blobs over the content-addressed store (docs/FORMATS.md,
 // docs/ARCHITECTURE.md, server section). /edits is the edit_records
 // specialization of POST /pointers/edits (edits.go).
@@ -204,7 +204,7 @@ func asConflict(err error, target **store.ConflictError) bool {
 
 func (s *server) handlePointers(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
-		http.Error(w, "no store configured (start with -store <dir>)", http.StatusNotFound)
+		http.Error(w, "no store configured (start with -store <url>)", http.StatusNotFound)
 		return
 	}
 	rest := strings.TrimPrefix(r.URL.Path, "/pointers/")
@@ -396,7 +396,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 
 func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
-		http.Error(w, "no store configured (start with -store <dir>)", http.StatusNotFound)
+		http.Error(w, "no store configured (start with -store <url>)", http.StatusNotFound)
 		return
 	}
 	if r.Method != http.MethodGet {

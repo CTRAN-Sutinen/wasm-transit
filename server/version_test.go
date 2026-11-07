@@ -24,7 +24,7 @@ import (
 const currentEditsPrefix = `{"kind":"edit_records","schema_version":2,`
 
 func TestAnOlderEditDocumentMigratesAtReceive(t *testing.T) {
-	s := newStoreServer(t, t.TempDir())
+	s := newStoreServer(t, store.NewMemory())
 	ts := httptest.NewServer(storeMux(s))
 	defer ts.Close()
 
@@ -52,7 +52,7 @@ func TestAnOlderEditDocumentMigratesAtReceive(t *testing.T) {
 }
 
 func TestANewerEditDocumentIsRefusedNamingBoth(t *testing.T) {
-	s := newStoreServer(t, t.TempDir())
+	s := newStoreServer(t, store.NewMemory())
 	ts := httptest.NewServer(storeMux(s))
 	defer ts.Close()
 	newer := `{"kind":"edit_records","schema_version":3,"records":[]}`
@@ -63,21 +63,18 @@ func TestANewerEditDocumentIsRefusedNamingBoth(t *testing.T) {
 }
 
 func TestAnOlderStoreHeadCommitsForwardAtStartup(t *testing.T) {
-	dir := t.TempDir()
+	bucket := store.NewMemory()
 	// A store an older build wrote: the edits head is a bare array
 	// under an envelope that says v1.
 	old := []byte(editRecords("e1", "accepted", 3, 1000))
-	st, err := store.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := store.New(bucket)
 	oldHash, _, err := st.CAS("edits", "", old, store.Envelope{Kind: "edit_records", SchemaVersion: 1, ProducedBy: "cap-sync@sha256:old"}, "", "anonymous", time.Now().UnixMilli())
 	if err != nil {
 		t.Fatal(err)
 	}
 	st.Close()
 
-	s := newStoreServer(t, dir)
+	s := newStoreServer(t, bucket)
 	s.commitForward()
 
 	head, _, _ := s.store.Head("edits")

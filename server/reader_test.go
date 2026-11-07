@@ -1,16 +1,17 @@
 package main
 
-// A reader outside the wasm (docs/FORMATS.md): the store directory,
+// A reader outside the wasm (docs/FORMATS.md): the bucket's objects,
 // the generated JSON Schemas the registry publishes
 // (registry/documents.json), and docs/FORMATS.md are enough
-// to read what the store holds. Nothing below the setup calls a module
-// or links Rust: the pointer is the log's last line, the blob is the
-// file its hash names, the envelope sidecar names the kind and schema
-// version, and the schema says what the bytes are.
+// to read what the store holds. Nothing below the setup calls a module,
+// links Rust, or uses the store engine — only object get and list: the
+// pointer is its highest record object, the blob is the object its hash
+// names, the blob's envelope metadata names the kind and schema version,
+// and the schema says what the bytes are.
 
 import (
-	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -18,6 +19,8 @@ import (
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+
+	"rustwasm/server/store"
 )
 
 const registryDir = "../registry"
@@ -100,9 +103,9 @@ func TestRegistryExamplesMatchTheirSchemas(t *testing.T) {
 	}
 }
 
-// storeReader reads a store directory the way FORMATS.md says, with
-// nothing but files and JSON.
-type storeReader struct{ dir string }
+// storeReader reads a bucket the way FORMATS.md says, with nothing but
+// object get, list, and JSON.
+type storeReader struct{ b store.Backend }
 
 type logLine struct {
 	Seq           int64  `json:"seq"`
@@ -113,18 +116,22 @@ type logLine struct {
 
 func (r storeReader) head(t *testing.T, pointer string) logLine {
 	t.Helper()
-	f, err := os.Open(filepath.Join(r.dir, "pointers", pointer+".log"))
-	if err != nil {
-		t.Fatalf("pointer %s: %v", pointer, err)
+	ctx := context.Background()
+	records, err := r.b.List(ctx, "pointers/"+pointer+"/", "")
+	if err != nil || len(records) == 0 {
+		t.Fatalf("pointer %s: %d records, %v", pointer, len(records), err)
 	}
-	defer f.Close()
+	// Keys are zero-padded: the last listed is the head.
+	raw, _, err := r.b.Get(ctx, records[len(records)-1].Key)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var last logLine
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1<<20), 1<<20)
-	for sc.Scan() {
-		if err := json.Unmarshal(sc.Bytes(), &last); err != nil {
-			t.Fatal(err)
-		}
+	if err := json.Unmarshal(raw, &last); err != nil {
+		t.Fatal(err)
+	}
+	if last.Seq != int64(len(records)) {
+		t.Fatalf("pointer %s: head seq %d over %d records", pointer, last.Seq, len(records))
 	}
 	return last
 }
@@ -135,7 +142,7 @@ func (r storeReader) blob(t *testing.T, hash string) ([]byte, struct {
 }) {
 	t.Helper()
 	hexPart := strings.TrimPrefix(hash, "sha256:")
-	data, err := os.ReadFile(filepath.Join(r.dir, "blobs", hexPart))
+	data, meta, err := r.b.Get(context.Background(), "blobs/"+hexPart)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,11 +153,7 @@ func (r storeReader) blob(t *testing.T, hash string) ([]byte, struct {
 		Kind          string `json:"kind"`
 		SchemaVersion uint32 `json:"schema_version"`
 	}
-	meta, err := os.ReadFile(filepath.Join(r.dir, "blobs", hexPart+".meta.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(meta, &env); err != nil {
+	if err := json.Unmarshal([]byte(meta["envelope"]), &env); err != nil {
 		t.Fatal(err)
 	}
 	return data, env
@@ -173,8 +176,8 @@ func schemaFor(t *testing.T, idx documentIndex, kind string, version uint32) *js
 // network, and the edit document, each validated against the schema
 // its envelope names.
 func TestStoreReadsWithoutTheModules(t *testing.T) {
-	dir := t.TempDir()
-	s, base := newPlansServer(t, dir)
+	bucket := store.NewMemory()
+	s, base := newPlansServer(t, bucket)
 	for _, p := range []struct{ id, from string }{{"winter-2026", "2026-12-01"}, {"fall-2026", "2026-09-07"}} {
 		n := fixtureNetwork(t, p.id, p.id, p.from)
 		n["name"] = p.id
@@ -187,9 +190,9 @@ func TestStoreReadsWithoutTheModules(t *testing.T) {
 	}
 	s.store.Close()
 
-	// From here on: files, JSON, and the published schemas.
+	// From here on: objects, JSON, and the published schemas.
 	idx := loadDocumentIndex(t)
-	r := storeReader{dir}
+	r := storeReader{bucket}
 
 	head := r.head(t, "plans")
 	data, env := r.blob(t, head.To)

@@ -394,7 +394,7 @@ pub fn set_retired(records: &[EditRecord], record_id: &str, retired: bool, now_m
 // ---------------------------------------------------------------------
 
 
-/// The kind of a stored document, as its envelope sidecar spells it
+/// The kind of a stored document, as its envelope spells it
 /// (`docs/FORMATS.md`). GTFS stays the interchange for published
 /// products; these kinds cover what GTFS cannot express.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]

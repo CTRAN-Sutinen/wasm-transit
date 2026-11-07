@@ -33,10 +33,14 @@ stop display keeps a URL parameter it does not know. What is left:
    browser brings a stored v1 forward (item 3); the watchlist gains
    its `kind` then. A diversion draft gains its tags when something
    first persists one ([ui-disruptions.md](ui-disruptions.md)).
-2. **Picks' networks at the server's startup.** A `plan.<id>` head
-   in an older network version is committed forward, and the plans
-   document's `network_hash` for that pick follows it (a republish
-   through cap-plans, never a host rewriting hashes).
+2. **The documents in use, at the server's startup (D-79).** Only
+   what is in use comes forward: beside `edits`, the published plan
+   set, the policy, the work rules, and the networks of the pick in
+   force and the picks still to come. A pick's network committed
+   forward moves the plans document's `network_hash` with it (a
+   republish through cap-plans, never a host rewriting hashes). A
+   retired or expired pick stays in its version, and comes forward
+   when it is republished.
 3. **The browser's document store** (`web/src/documents.svelte.ts`,
    `web/src/plans.svelte.ts`): a stored plan or watchlist brought
    forward keeps its old record (`produced_by` naming the
@@ -44,12 +48,13 @@ stop display keeps a URL parameter it does not know. What is left:
    places, live-feed URLs) moves out of `localStorage` into that
    store, tagged (`localStorage` keeps only presentation
    preferences: the map's last frame and fix).
-4. **Migration modules sized to their page.** cap-migrate carries
+4. **The migration module cut by use (D-79).** cap-migrate carries
    every chain, so linking it into service design costs about
    0.8 MB of assembly for chains that page never meets, and ride-now
-   needs the watchlist's (item 3). Split it per kind (one migration
-   capability per authored kind), or measure the cost first in
-   [runtime-cost-gate.md](runtime-cost-gate.md).
+   needs the watchlist's (item 3). Operational pieces, each linked
+   only where its documents arrive (the server's receive, a page's
+   restore), and one archive piece holding every chain (D-66), which
+   reads an archive in today's shape on request.
 5. **The schema lock — the gate that bakes this in.** Per kind,
    per version, checked into the owning crate: a frozen fixture,
    its generated JSON Schema, and the hash of its canonical bytes.
@@ -64,17 +69,24 @@ stop display keeps a URL parameter it does not know. What is left:
    schemas and fixtures are the published spec (D-115): every kind's
    schema and a worked example, per version, readable as plain files
    by a person or another tool.
-6. **Rolling a version back** (Blocked: D-79). Rollback is a
-   pointer moved back, never an inverse migration, so the bytes
-   before an upgrade stay addressable. But once a newer build has
-   written vN+1 documents, a build rolled back to vN cannot read them
-   (a module refuses a version it does not read). The rollback rule
-   says what the previous build can read, and when a migration may
-   start writing. The candidates are in D-79. The server's startup
-   commit-forward and the browser's restore are where the rule
-   applies. Rolling the CODE back is
-   [release-artifacts.md](release-artifacts.md)'s; both follow one
-   compatibility policy.
+6. **Rolling a version back (D-79).** A format change ships in two
+   releases: A reads vN and vN+1 and writes vN, B writes vN+1, so
+   rollback one release back always reads what the store holds.
+   - The reader of the next version: a kind's load accepts its
+     version and, for one release, the next (`Versioned` names both;
+     `cap_abi::parse_versioned` reads either), and the store keeps
+     writing the current one.
+   - A client refused for its version reloads its manifest.
+   - The emergency procedure, for a bad release A: the pointers back
+     to their pre-upgrade heads, and the dropped commits listed from
+     the pointer log, to re-enter by hand.
+   - Written in `docs/FORMATS.md`, "Versions", beside the rollout
+     order, with the backup rule (a backup restores into a build at
+     least as new as it) and the archive's two readings (as it was,
+     the default for an audit; as it is today, through the archive
+     piece). Rolling the CODE back is
+     [release-artifacts.md](release-artifacts.md)'s; both follow this
+     policy.
 
 ## Done when
 
@@ -91,6 +103,6 @@ stop display keeps a URL parameter it does not know. What is left:
   `localStorage` records boots into the migrated documents with the
   old records kept; a page served a newer edit document than it
   reads does not write it.
-- Go and e2e: an upgrade that writes vN+1 is rolled back to the vN
-  build under D-79's rule, and no document is lost or misread (the
-  older build reads, or the newer writes wait, as decided).
+- Go and e2e: a store written by release B (vN+1) is read by release
+  A (reads vN and vN+1) with no document lost or misread, and a page
+  refused for its version reloads its manifest.

@@ -129,10 +129,7 @@ func newAuthServer(t *testing.T, jwks *jwksServer) (*server, string) {
 	t.Helper()
 	dir := t.TempDir()
 	s := &server{wasm: newTestHost(t), retentionDays: 90}
-	st, err := store.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := store.New(store.NewMemory())
 	s.store = st
 	s.seedStore("")
 	policyPath := filepath.Join(dir, "policy.json")
@@ -340,9 +337,8 @@ func TestAuthzFailClosedWithoutPolicy(t *testing.T) {
 	defer jwks.srv.Close()
 
 	// Auth on, but no policy seeded (no -policy file): writes deny.
-	dir := t.TempDir()
 	s := &server{wasm: newTestHost(t), retentionDays: 90}
-	st, _ := store.Open(dir)
+	st := store.New(store.NewMemory())
 	s.store = st
 	s.seedStore("")
 	s.authz = &authzState{

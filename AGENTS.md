@@ -124,9 +124,13 @@ just e2e                   # the browser runner (Playwright, builds first) — U
 just check                 # both runners — changes touching both sides
 just types                 # regenerate TS bindings (gitignored; build runs it)
 just serve [feed.zip [streets.geojson ["Publisher" [addr]]]]   # sync server on :8080
-                           # STORE=dir adds the durable sync store (-store; blobs +
-                           # pointers under dir, docs/FORMATS.md; POST /plans
-                           # publishes a pick)
+                           # STORE=url adds the durable sync store (-store:
+                           # s3://bucket/prefix?endpoint=… or mem://,
+                           # docs/FORMATS.md; POST /plans publishes a pick)
+just store-dev             # a dev S3 endpoint: SeaweedFS in podman on :8333, and the
+                           # STORE= URL to use (store-dev-stop ends it)
+just store-contract        # the store's laws against that endpoint (opt-in,
+                           # never in `just test`)
                            # OIDC_ISSUER/OIDC_JWKS_URL/OIDC_AUDIENCE/OIDC_KEY/POLICY=…
                            # turn on JWT auth + policy (D-58..D-61;
                            # docs/ARCHITECTURE.md, server section)
@@ -247,8 +251,8 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
 - **The sync store's production home is object storage** (S3 and
   S3-compatible, Azure Blob, GCS — D-113). The engine may assume only
   whole-object writes and a conditional create of an absent key —
-  never an append, a rename, an fsync, or a file lock (the directory
-  store assumes all four, and goes when the object backend lands).
+  never an append, a rename, an fsync, or a file lock. There is no
+  directory store.
 - **Documents are open formats (D-115)**: plain JSON (gzip allowed)
   or an external open format (GTFS, GTFS-rt, GeoJSON), never a
   private encoding; each says its kind and version inside it, and

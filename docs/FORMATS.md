@@ -4,8 +4,8 @@ The at-rest contract of the sync store
 (`docs/ARCHITECTURE.md`, server section). Every document is an open
 format, readable without the app (D-115): plain JSON, or an external
 open format (GTFS, GTFS-rt, GeoJSON). Everything here is readable
-without any wasm: the blobs are plain bytes, the envelopes and logs
-plain JSON, and the hash is sha256. The JSON Schemas generated from
+without any wasm: the blobs are plain bytes, the envelopes and log
+records plain JSON, and the hash is sha256. The JSON Schemas generated from
 the serde types pin the *document payloads*: `just caps` publishes
 them in the registry as `registry/schemas/<kind>.v<N>.schema.json`,
 each with a worked example (`registry/examples/<kind>.v<N>.json`),
@@ -17,18 +17,21 @@ pins the *storage envelope* and the invariants the schema cannot say.
 The manifest is the Go host's own document and has no generated
 schema; its shape is below.
 
-The store is a directory today (the layout below). Its production
-home is object storage — S3 and S3-compatible, Azure Blob, GCS
-(D-113) — where the same blobs, envelopes, and log records become
-create-only objects (`docs/units/store-durability.md`). A live store
-in production is never a local or network-mounted directory.
+The store lives in object storage — S3 and S3-compatible, Azure Blob,
+GCS (D-113) — as create-only objects in one bucket, under the store
+URL's prefix (`-store s3://bucket/prefix`, or `mem://` for a store
+that ends with the process). Every key below is relative to that
+prefix. No object is ever overwritten, appended to, or renamed; the
+engine assumes only the backend contract in `server/store/backend.go`.
+A live store is never a local or network-mounted directory.
 
 ## Addressing and hash
 
 - A hash is `sha256:<hex>` of the exact bytes —
   `cap_abi::content_hash`, the formula every module and host shares.
-- A blob lives at `<store>/blobs/<hex>` (raw bytes, no extension).
-  Its envelope sidecar is `<store>/blobs/<hex>.meta.json`.
+- A blob is the object `blobs/<hex>` (raw bytes, no extension). Its
+  envelope is the object's metadata, so a blob and its envelope are
+  one write.
 - **The module is the hash authority for bus documents** (network,
   edit records, plans, walks): the producing module returns the
   canonical bytes and their hash, and the store asserts
@@ -39,7 +42,9 @@ in production is never a local or network-mounted directory.
   (struct field order), so `sha256(canonical bytes)` is the document's
   identity on every host.
 
-## The envelope sidecar
+## The envelope
+
+The blob's metadata key `envelope` holds (S3 `x-amz-meta-envelope`):
 
 ```json
 {"kind": "edit_records", "schema_version": 2, "produced_by": "cap-sync@sha256:<hex>"}
@@ -57,23 +62,24 @@ in production is never a local or network-mounted directory.
 
 ## The pointer log
 
-`<store>/pointers/<name>.log` is append-only JSONL, one record per
-commit:
+Each commit is one record object,
+`pointers/<name>/<seq, zero-padded to 20 digits>.json`:
 
 ```json
 {"seq": 2, "from": "sha256:aaa…", "to": "sha256:bbb…", "kind": "edit_records", "schema_version": 2, "produced_by": "cap-sync@sha256:…", "writer": "anonymous", "policy": null, "at_ms": 1798761600000}
 ```
 
-- The pointer's current value is the last record's `to` — there is no
-  separate pointer file.
-- A pointer's name is a file name: letters, digits, `.`, `_` and `-`,
-  starting with a letter or digit, at most 128 bytes. The store
+- The pointer's current value is its highest record's `to` (the last
+  key a listing of `pointers/<name>/` answers) — there is no pointer
+  object. Records chain from seq 1 with no gaps.
+- A pointer's name is one key segment: letters, digits, `.`, `_` and
+  `-`, starting with a letter or digit, at most 128 bytes. The store
   refuses any other name.
 - The pointers the server keeps: `edits`, `policy`, `manifest`,
   `plans` (the published plan set), and `plan.<id>` per published pick
   (its network document; every revision stays in the log).
-- `from` is the hash the writer last saw; a commit appends only when
-  the last `to` equals it (empty `from` = the pointer must not exist
+- `from` is the hash the writer last saw; a commit lands only when
+  the head's `to` equals it (empty `from` = the pointer must not exist
   yet). A failed CAS changes nothing.
 - `writer` is the verified JWT `sub` when authentication is on (D-58),
   else the caller's label (`X-Writer`, default `anonymous`). It leaves
@@ -82,21 +88,21 @@ commit:
   policy itself is the `policy` pointer's blob (D-61), and that blob is
   never served over HTTP (`/blobs` 404s kind `policy`); clients get the
   caller's projection from `GET /permissions` instead.
-- `<store>/lock` is an flock held for the process's lifetime, so two
-  server processes on one store cannot interleave a commit.
+A commit is two creates: the blob (if absent), then record N+1 with
+`If-None-Match: *` — the record lands only if no record N+1 exists,
+so the conditional create is the CAS, and any number of server
+processes may share one bucket. A process caches each head and reads
+at most 2 s behind another process's commit. A crash between the two
+creates orphans the blob; GC deletes blobs no record names and older
+than the grace period (24 h), every `-gc-interval` (default 1 h) while
+the server runs. A GC pass excludes its own process's commits, so it
+never lands between a commit's two creates there.
 
-A commit is two fsync'd writes: the blob (+ sidecar), then one log
-record. A crash between them orphans the blob; GC deletes blobs no log
-record names and older than the grace period (24 h) — at `Open`, and
-every `-gc-interval` (default 1 h) while the server runs. A GC pass
-holds the store lock a commit holds, so it never lands between a
-commit's two writes.
-
-## The HTTP surface (store mode, `-store <dir>`)
+## The HTTP surface (store mode, `-store <url>`)
 
 - `GET /pointers/{name}` → `{"name","hash","seq","envelope"}`.
 - `GET /pointers/{name}/log?since=<hash>` → `{"entries":[…]}` — the
-  records after the entry whose `to` is `since`; an unknown `since`
+  records after the latest record whose `to` is `since`; an unknown `since`
   answers `{"entries": [], "current": <head>, "whole": true}` and the
   client takes the whole current document.
 - `POST /pointers/{name}` body `{"from": "<hash>", …}` → `200` with the
@@ -254,7 +260,7 @@ instance the trip runs that day) is a record of its own:
 {"id":"e2","cancel":{"id":"cancel-t10","trip_id":"t10","start_secs":null,"date":"2026-10-23"},"status":"draft","rev":1,"updated_at":2000}
 ```
 
-with sidecar
+with envelope
 `{"kind":"edit_records","schema_version":2,"produced_by":"cap-sync@sha256:<hex>"}`
 and, after a second commit, log record
 `{"seq":2,"from":"sha256:<first>","to":"sha256:<this>","kind":"edit_records","schema_version":2,"produced_by":"cap-sync@sha256:<hex>","writer":"anonymous","policy":null,"at_ms":2000}`.
@@ -262,7 +268,7 @@ and, after a second commit, log record
 A `manifest` blob is the manifest object itself
 (`{"network_hash","feed_hash","feed_version","streets_hash","walks_hash","wasm_hash","authz_hash","policy_hash","plans_hash","generated_at","publisher","timezone","services"}`,
 the optional ones omitted when empty),
-sidecar `{"kind":"manifest","schema_version":1,"produced_by":"server"}`.
+envelope `{"kind":"manifest","schema_version":1,"produced_by":"server"}`.
 
 A `plans` blob is the published plan set, its version inside it
 (D-62), picks in (effective_from, id) order; a retired pick stays in
@@ -272,6 +278,6 @@ it as the tombstone (D-75; `status` reads `published` when absent):
 {"schema_version":1,"plans":[{"id":"fall-2026","name":"Fall 2026 pick","effective_from":"2026-09-13","network_hash":"sha256:5206f419…","status":"published"},{"id":"winter-2027","name":"Winter 2027 pick","effective_from":"2027-03-01","network_hash":"sha256:d122b6af…","status":"retired"}]}
 ```
 
-with sidecar `{"kind":"plans","schema_version":1,"produced_by":"cap-plans@sha256:<hex>"}`;
+with envelope `{"kind":"plans","schema_version":1,"produced_by":"cap-plans@sha256:<hex>"}`;
 each `network_hash` is the head of that pick's `plan.<id>` pointer, a
 `network_document` blob.

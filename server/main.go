@@ -46,7 +46,7 @@ func main() {
 	streetsWasm := flag.String("streets-wasm", "../web/pkg/cap_streets.wasm", "the streets capability module that imports the layer and derives the walk table")
 	publisher := flag.String("publisher", "", "manifest provenance (who publishes this schedule)")
 	editsPath := flag.String("edits", "", "path to persist the edit document (JSON); empty = in-memory only (legacy mode; with -store it seeds the edits pointer once)")
-	storeDir := flag.String("store", "", "directory of the durable sync store (blobs + pointers, docs/FORMATS.md): enables /pointers, /blobs and store-backed /edits and /manifest; empty = legacy mode")
+	storeURL := flag.String("store", "", "the durable sync store's URL (docs/FORMATS.md): s3://bucket/prefix[?endpoint=URL&region=R] (S3 or an S3-compatible endpoint; credentials from the AWS SDK's default chain) or mem:// (nothing survives the process); enables /pointers, /blobs and store-backed /edits and /manifest; empty = legacy mode")
 	retentionDays := flag.Int("retention-days", 90, "tombstone retention horizon (days) for the store's D-57 compaction commits")
 	gcInterval := flag.Duration("gc-interval", time.Hour, "how often the store sweeps crash-torn orphan blobs past their grace period (store mode; 0 = only at startup)")
 	today := flag.String("today", "", "pin the server's date (YYYY-MM-DD) for hermetic test servers; empty = the host clock. Publishing reads it: a new pick never lands before today, and only a pick after today is retired (D-75, D-76)")
@@ -83,8 +83,8 @@ func main() {
 		fixedToday:    *today,
 		migrateWasm:   *migrateWasm,
 	}
-	if *storeDir != "" {
-		st, err := store.Open(*storeDir)
+	if *storeURL != "" {
+		st, err := store.Open(*storeURL)
 		if err != nil {
 			log.Fatalf("store: %v", err)
 		}
@@ -100,7 +100,7 @@ func main() {
 		if *gcInterval > 0 {
 			st.Sweep(*gcInterval, store.OrphanGraceMs)
 		}
-		log.Printf("sync store open: %s (orphan sweep every %s)", *storeDir, *gcInterval)
+		log.Printf("sync store open: %s (orphan sweep every %s)", *storeURL, *gcInterval)
 	}
 	if *oidcIssuer != "" || *oidcJWKS != "" || *oidcKey != "" {
 		if *oidcJWKS != "" && (*oidcIssuer == "" || *oidcAud == "") {

@@ -703,20 +703,27 @@ spends 11.8 s on the import and the table; the page fetches 4.5 MB
 document in 0.47 s; the first `access` builds the walking graph in
 0.32 s, later ones answer in ~14 ms.
 
-With `-store <dir>` the server keeps a content-addressed store
-(`docs/FORMATS.md`): immutable blobs
-under `blobs/<hex>` with a typed envelope sidecar, and one append-only
-log per pointer under `pointers/<name>.log` — the pointer is the log's
-last entry, and a commit is blob-write + one log append, CAS'd on the
-`from` hash. The `manifest` pointer is the root (publishing is one CAS
-on it); the `edits` pointer is the multi-writer LWW document; the
-`plans` pointer is the published plan set, and each pick's network
-is its own `plan.<id>` pointer (D-74). GC collects crash-torn orphans
-at startup and every `-gc-interval` (default 1 h). The directory is
-the store today; production requires an object-storage backend (S3,
-Azure Blob, GCS — D-113; `docs/units/store-durability.md`). Without
-`-store`, `-edits <path>` persists the edit document as one flat file
-and everything else is in process.
+With `-store <url>` the server keeps a content-addressed store in
+object storage (`docs/FORMATS.md`; D-113): `s3://bucket/prefix`
+(S3 or an S3-compatible endpoint, `?endpoint=` naming it) or `mem://`
+(gone with the process). The engine (`server/store/`) runs over one
+small backend interface (`backend.go`: get, stat, create-if-absent,
+list from a key, delete) and assumes only its contract — no append,
+rename, fsync, or lock; the in-memory backend and the S3 adapter
+(`s3.go`) both pass one contract suite (`contract_test.go`).
+Immutable blobs are `blobs/<hex>` objects with the typed envelope as
+metadata, and each commit is one record object
+`pointers/<name>/<seq>.json` — the pointer is its highest record, and
+a commit is a blob create plus a conditional create of record N+1,
+which is the CAS on the `from` hash. Several server processes may
+share one bucket; each caches heads and reads at most 2 s behind
+another's commit. The `manifest` pointer is the root (publishing is
+one CAS on it); the `edits` pointer is the multi-writer LWW document;
+the `plans` pointer is the published plan set, and each pick's
+network is its own `plan.<id>` pointer (D-74). GC collects crash-torn
+orphans every `-gc-interval` (default 1 h). Without `-store`,
+`-edits <path>` persists the edit document as one flat file and
+everything else is in process.
 
 Its HTTP surface:
 

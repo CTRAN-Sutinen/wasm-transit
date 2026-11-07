@@ -637,11 +637,49 @@ serve feed="" streets="" publisher="" addr="127.0.0.1:8080":
     # Auth (D-58..D-61): OIDC_* turns authentication on; POLICY seeds the
     # store's policy pointer at first boot. Example:
     # OIDC_ISSUER=https://idp.example OIDC_JWKS_URL=https://idp.example/jwks \
-    #   OIDC_AUDIENCE=transit-server POLICY=./policy.json STORE=./store just serve feed.zip
+    #   OIDC_AUDIENCE=transit-server POLICY=./policy.json STORE=mem:// just serve feed.zip
     for v in OIDC_ISSUER OIDC_JWKS_URL OIDC_AUDIENCE OIDC_KEY OIDC_ROLES_CLAIM POLICY; do
         if [ -n "${!v:-}" ]; then args+=("-$(echo "${v,,}" | tr '_' '-')" "${!v}"); fi
     done
     exec go run . "${args[@]}"
+
+store_dev_image := "docker.io/chrislusf/seaweedfs:4.50"
+store_dev_env := "AWS_ACCESS_KEY_ID=dev AWS_SECRET_ACCESS_KEY=devsecret"
+store_dev_url := "s3://transit/dev?endpoint=http://127.0.0.1:8333"
+
+# A dev S3 endpoint for the sync store: SeaweedFS in podman on
+# 127.0.0.1:8333, its data in the podman volume transit-store-dev (so a
+# store survives a restart), and the bucket `transit`. A dev
+# convenience only — the engine assumes the object contract
+# (server/store/backend.go) and gives no endpoint a code path of its
+# own; `just store-contract` is what says this one honors it. Prints
+# the env + STORE= URL for `just serve` / `just dev`.
+store-dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    podman run -d --replace --name transit-store-dev --memory 1g \
+      -p 127.0.0.1:8333:8333 -v transit-store-dev:/data \
+      -e AWS_ACCESS_KEY_ID=dev -e AWS_SECRET_ACCESS_KEY=devsecret \
+      {{ store_dev_image }} server -dir=/data -s3 -s3.port=8333 -telemetry=false >/dev/null
+    for i in $(seq 1 60); do
+      if curl -s -o /dev/null http://127.0.0.1:8333/; then break; fi
+      sleep 1
+    done
+    echo "s3.bucket.create -name transit" | podman exec -i transit-store-dev weed shell >/dev/null 2>&1 || true
+    echo "SeaweedFS on :8333 (just store-dev-stop ends it). Serve over it:"
+    echo "  {{ store_dev_env }} STORE='{{ store_dev_url }}' just serve …"
+
+store-dev-stop:
+    podman rm -f transit-store-dev >/dev/null 2>&1 || true
+
+# The store's laws — the backend contract and every engine law — run
+# against the dev endpoint (`just store-dev` first), each test under its
+# own fresh prefix of s3://transit/contract. Opt-in, never in `just
+# test`; a managed provider's bucket runs the same way with
+# STORE_TEST_URL and its credentials.
+store-contract:
+    cd server && {{ store_dev_env }} STORE_TEST_URL='s3://transit/contract?endpoint=http://127.0.0.1:8333' \
+      go test -race -count=1 ./store/
 
 # Frontend dev loop: vite with hot reload on :5173 (proxies /rt,
 # /geocode), with the sync server alongside on :8080 (logs:

@@ -25,6 +25,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"rustwasm/server/store"
 )
 
 const plansWasm = "../web/pkg/cap_plans.wasm"
@@ -40,9 +42,9 @@ func newPlansHost(t *testing.T) *WasmHost {
 }
 
 // newPlansServer is a store-mode server that publishes picks.
-func newPlansServer(t *testing.T, dir string) (*server, string) {
+func newPlansServer(t *testing.T, b store.Backend) (*server, string) {
 	t.Helper()
-	s := newStoreServer(t, dir)
+	s := newStoreServer(t, b)
 	s.plans = newPlansHost(t)
 	s.networkWasm = networkWasm
 	s.fixedToday = "2026-08-01" // before every pick below; the fixture runs through 2026-12-31
@@ -145,8 +147,8 @@ func sha(b []byte) string {
 // hash, the pick through cap-plans, its network by hash, every byte
 // the hash names.
 func TestPublishedPicksResolveThroughTheManifest(t *testing.T) {
-	dir := t.TempDir()
-	s, base := newPlansServer(t, dir)
+	bucket := store.NewMemory()
+	s, base := newPlansServer(t, bucket)
 
 	if h := manifestPlansHash(t, base); h != "" {
 		t.Fatalf("nothing published yet, the manifest pins no plans: %q", h)
@@ -169,7 +171,7 @@ func TestPublishedPicksResolveThroughTheManifest(t *testing.T) {
 	s.store.Close()
 
 	// A restarted server over the same store serves the same set.
-	_, base = newPlansServer(t, dir)
+	_, base = newPlansServer(t, bucket)
 	if got := manifestPlansHash(t, base); got != plansHash {
 		t.Fatalf("manifest plans_hash after restart = %q, want %q", got, plansHash)
 	}
@@ -243,7 +245,7 @@ func TestPublishedPicksResolveThroughTheManifest(t *testing.T) {
 // What a pick must be: a valid, dated, versioned network that keeps the
 // chain valid. A refusal says why and moves no pointer.
 func TestPublishRefusesWhatWouldBreakTheChain(t *testing.T) {
-	s, base := newPlansServer(t, t.TempDir())
+	s, base := newPlansServer(t, store.NewMemory())
 	if code, out := publishPick(t, base, fixtureNetwork(t, "fall", "Fall", "2026-09-07")); code != 200 {
 		t.Fatalf("publish: %d %v", code, out)
 	}
@@ -317,7 +319,7 @@ func toJSON(v any) string {
 // them, so nothing reaches a client that cap-network did not validate
 // and cap-plans did not accept.
 func TestPicksPublishOnlyThroughPlans(t *testing.T) {
-	s, base := newPlansServer(t, t.TempDir())
+	s, base := newPlansServer(t, store.NewMemory())
 	if code, out := publishPick(t, base, fixtureNetwork(t, "fall", "Fall", "2026-09-07")); code != 200 {
 		t.Fatalf("publish: %d %v", code, out)
 	}
@@ -346,7 +348,7 @@ func TestPicksPublishOnlyThroughPlans(t *testing.T) {
 // modules and returned as given — the network's refusals from
 // cap-network, the date from cap-plans.
 func TestPublishRefusalsNameTheirReasons(t *testing.T) {
-	_, base := newPlansServer(t, t.TempDir())
+	_, base := newPlansServer(t, store.NewMemory())
 	code, out := publishPick(t, base, fixtureNetwork(t, "spring-2027", "Spring", "2027-03-01"))
 	if code != http.StatusUnprocessableEntity || !strings.Contains(toJSON(out), "no_service_in_plan_period") {
 		t.Fatalf("no service in its period: %d %v", code, out)
@@ -361,7 +363,7 @@ func TestPublishRefusalsNameTheirReasons(t *testing.T) {
 // retired (kept in the set, never in force); one that has is refused;
 // republishing restores it.
 func TestRetiringAPick(t *testing.T) {
-	s, base := newPlansServer(t, t.TempDir())
+	s, base := newPlansServer(t, store.NewMemory())
 	if code, out := publishPick(t, base, fixtureNetwork(t, "fall", "Fall", "2026-09-07")); code != 200 {
 		t.Fatalf("publish: %d %v", code, out)
 	}
@@ -398,7 +400,7 @@ func TestRetiringAPick(t *testing.T) {
 // first pick takes effect it is the configured -feed zip itself (D-74:
 // the import runs until a pick does); with no feed configured, nothing.
 func TestThePickInForceAsGTFS(t *testing.T) {
-	s, base := newPlansServer(t, t.TempDir())
+	s, base := newPlansServer(t, store.NewMemory())
 	fall := fixtureNetwork(t, "fall", "Fall", "2026-09-07")
 	fall["name"] = "fall as gtfs"
 	code, out := publishPick(t, base, fall)
@@ -461,7 +463,7 @@ func TestThePickInForceAsGTFS(t *testing.T) {
 func TestTodayIsTheAgencysDate(t *testing.T) {
 	instant := time.Date(2026, 11, 6, 4, 30, 0, 0, time.UTC)
 
-	s, base := newPlansServer(t, t.TempDir())
+	s, base := newPlansServer(t, store.NewMemory())
 	s.fixedToday = ""
 	s.now = func() time.Time { return instant }
 	code, out := publishPick(t, base, fixtureNetwork(t, "nov-5", "November", "2026-11-05"))

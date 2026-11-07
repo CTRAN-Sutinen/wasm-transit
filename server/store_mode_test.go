@@ -21,13 +21,12 @@ import (
 	"rustwasm/server/store"
 )
 
-func newStoreServer(t *testing.T, dir string) *server {
+// newStoreServer is a store-mode server over a bucket; a second one
+// over the same backend is a restarted (or a second) process.
+func newStoreServer(t *testing.T, b store.Backend) *server {
 	t.Helper()
 	s := &server{wasm: newTestHost(t), retentionDays: 90}
-	st, err := store.Open(dir)
-	if err != nil {
-		t.Fatalf("store open: %v", err)
-	}
+	st := store.New(b)
 	s.store = st
 	s.seedStore("")
 	t.Cleanup(func() { st.Close() })
@@ -81,11 +80,11 @@ func httpGet(t *testing.T, url string) (int, http.Header, string) {
 }
 
 // The unit's headline pin: an edit document syncs through a RESTARTED
-// server (a fresh process over the same store directory) and the
+// server (a fresh process over the same bucket) and the
 // document — tombstone included — is intact.
 func TestStoreEditsSurviveRestart(t *testing.T) {
-	dir := t.TempDir()
-	s1 := newStoreServer(t, dir)
+	bucket := store.NewMemory()
+	s1 := newStoreServer(t, bucket)
 	base := httptest.NewServer(storeMux(s1)).URL
 
 	code, hdr, body := httpPost(t, base+"/edits", editDoc("e1", "draft", 1, 100))
@@ -101,9 +100,9 @@ func TestStoreEditsSurviveRestart(t *testing.T) {
 		t.Fatalf("post tombstone: %d %s", code, body)
 	}
 
-	// Restart: a new server (new store handle) over the same directory.
+	// Restart: a new server (new store handle) over the same bucket.
 	s1.store.Close()
-	s2 := newStoreServer(t, dir)
+	s2 := newStoreServer(t, bucket)
 	base2 := httptest.NewServer(storeMux(s2)).URL
 
 	code, hdr2, body := httpGet(t, base2+"/edits")
@@ -138,7 +137,7 @@ func TestStoreEditsSurviveRestart(t *testing.T) {
 // Idempotent redelivery: re-POSTing the same document converges to the
 // same head hash.
 func TestStoreCASConflictAndRedelivery(t *testing.T) {
-	s := newStoreServer(t, t.TempDir())
+	s := newStoreServer(t, store.NewMemory())
 	base := httptest.NewServer(storeMux(s)).URL
 
 	code, _, body := httpPost(t, base+"/edits", editDoc("e1", "draft", 1, 100))
@@ -193,7 +192,7 @@ func TestStoreCASConflictAndRedelivery(t *testing.T) {
 // current document). Blobs serve with the hash as ETag and the envelope
 // in headers.
 func TestStoreDeltaSyncAndBlobs(t *testing.T) {
-	s := newStoreServer(t, t.TempDir())
+	s := newStoreServer(t, store.NewMemory())
 	base := httptest.NewServer(storeMux(s)).URL
 
 	httpPost(t, base+"/edits", editDoc("e1", "draft", 1, 100))
@@ -254,7 +253,7 @@ func TestStoreDeltaSyncAndBlobs(t *testing.T) {
 // cannot mint a record that wins past now — the stored stamp is clamped
 // to the server clock.
 func TestStoreReceiveClampsTheClock(t *testing.T) {
-	s := newStoreServer(t, t.TempDir())
+	s := newStoreServer(t, store.NewMemory())
 	base := httptest.NewServer(storeMux(s)).URL
 
 	before := time.Now().UnixMilli()
@@ -283,7 +282,7 @@ func TestStoreReceiveClampsTheClock(t *testing.T) {
 // it once and serves the pointer's blob (ETag = its hash); a second GET
 // revalidates for 304 and does not append a log entry.
 func TestStoreManifestPointer(t *testing.T) {
-	s := newStoreServer(t, t.TempDir())
+	s := newStoreServer(t, store.NewMemory())
 	base := httptest.NewServer(storeMux(s)).URL
 
 	code, hdr, body := httpGet(t, base+"/manifest")
@@ -323,7 +322,7 @@ func TestStoreManifestPointer(t *testing.T) {
 // kind an admin rotates through POST /pointers/policy) posts verbatim
 // with a from-CAS, and a wrong document_hash is rejected.
 func TestStoreRawPointerCommit(t *testing.T) {
-	s := newStoreServer(t, t.TempDir())
+	s := newStoreServer(t, store.NewMemory())
 	base := httptest.NewServer(storeMux(s)).URL
 
 	mk := func(from, doc, hash string) (int, string) {
