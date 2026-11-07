@@ -192,7 +192,7 @@ fn oracle(route: &GenRoute, from_secs: u32) -> Option<(u32, u32)> {
 /// not move.
 fn all_cancelled(net: &Network, day: &Day) -> LiveDay {
     let _ = net;
-    LiveDay {
+    LiveDay { kind: Default::default(), schema_version: Default::default(),
         trips: day
             .trips
             .iter()

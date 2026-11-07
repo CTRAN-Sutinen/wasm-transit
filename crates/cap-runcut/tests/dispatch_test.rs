@@ -270,7 +270,7 @@ fn the_block_chain_ripples_under_a_live_prediction() {
         _ => panic!("block_trips"),
     };
     let first = chain(None).remove(0);
-    let live = LiveDay {
+    let live = LiveDay { kind: Default::default(), schema_version: Default::default(),
         window: OnTimeWindow::default(),
         trips: vec![LiveTrip {
             trip: first.trip.clone(),

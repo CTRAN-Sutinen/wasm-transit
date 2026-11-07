@@ -31,6 +31,14 @@ serialization.
   document by `transit_streets::geojson` and nowhere else; the graph
   and every op read the document. A network never references a
   streets document or a graph position — a trace commits geometry.
+- GTFS's siblings are the same kind of thing. TODS serializes the
+  operations plan (the runs layer, deadheads, internal locations)
+  beside GTFS, and lives in transit-codec with it (D-126); TIDES is
+  operations history, read as a source into a document (D-127) and
+  never written (D-128); GTFS-rt is read for the live picture and
+  is the serialization of the authored cancels and detours, which the
+  edit document models (D-124). Their row shapes stay at the
+  boundary.
 
 ## Law 2: do not reinvent the monolith inside a module
 

@@ -1433,12 +1433,12 @@ const divertDraft = { route_id: "10", served_stops: [], slices: [], added_mins: 
 // What each record amounts to on the network — one op, one answer
 // (the loads report nothing): the fixture's diversion is valid, an
 // edit against an unknown route is reported invalid, never rejected.
-const reported = divert.invoke({ op: "reports", network_hash: divertNet.network_hash, records: brokenRecords }).reports;
+const reported = divert.invoke({ op: "reports", network_hash: divertNet.network_hash, edits: editDoc(brokenRecords) }).reports;
 assert(reported.length === 1 && reported[0].valid === false, "divert reports an edit against an unknown route invalid");
 const fine = divert.invoke({
   op: "reports",
   network_hash: divertNet.network_hash,
-  records: [{ ...brokenRecords[0], diversion: { ...brokenRecords[0].diversion, route_id: "10", skipped_stops: ["C"] } }],
+  edits: editDoc([{ ...brokenRecords[0], diversion: { ...brokenRecords[0].diversion, route_id: "10", skipped_stops: ["C"] } }]),
 }).reports;
 assert(fine.length === 1 && fine[0].valid && fine[0].affected_trips >= 1, "divert reports a valid edit and the trips it touches");
 const blank = divert.invoke({ op: "draft", network_hash: divertNet.network_hash, draft: divertDraft }).view;
@@ -1451,29 +1451,32 @@ assert(
 );
 const proposed = divert.invoke({
   op: "propose", network_hash: divertNet.network_hash, draft: { ...divertDraft, ...ends },
-  records: [], record_id: "e9", now_ms: 5000,
-}).records;
-assert(proposed.length === 1 && proposed[0].status === "draft" && proposed[0].diversion.added_secs === 300, "propose builds the record");
-const rows = divert.invoke({ op: "list", network_hash: divertNet.network_hash, records: proposed }).rows;
+  edits: editDoc([]), record_id: "e9", now_ms: 5000,
+}).edits;
+assert(
+  proposed.kind === "edit_records" && proposed.records.length === 1 && proposed.records[0].status === "draft" && proposed.records[0].diversion.added_secs === 300,
+  "propose answers the next edit document, tagged",
+);
+const rows = divert.invoke({ op: "list", network_hash: divertNet.network_hash, edits: proposed }).rows;
 assert(rows.length === 1 && rows[0].in_force && rows[0].skipped_names.length === anchored.skipped_stops.length, "the list names the records");
-const retiredDoc = divert.invoke({ op: "retire", records: proposed, record_id: "e9", now_ms: 6000 }).records;
-assert(retiredDoc[0].status === "retired" && retiredDoc[0].rev === 2, "retire is the tombstone, rev bumped");
-const restoredDoc = divert.invoke({ op: "restore", records: retiredDoc, record_id: "e9", now_ms: 7000 }).records;
-assert(restoredDoc[0].status === "draft" && restoredDoc[0].rev === 3, "restore puts it back in force");
-const stored = divert.invoke({ op: "sanitize", records: [restoredDoc[0], { id: "junk" }] });
-assert(stored.records.length === 1 && stored.dropped === 1, "a stored document drops what does not parse");
-const unready = divert.raw({ op: "propose", network_hash: divertNet.network_hash, draft: divertDraft, records: [], record_id: "x", now_ms: 1 });
+const retiredDoc = divert.invoke({ op: "retire", edits: proposed, record_id: "e9", now_ms: 6000 }).edits;
+assert(retiredDoc.records[0].status === "retired" && retiredDoc.records[0].rev === 2, "retire is the tombstone, rev bumped");
+const restoredDoc = divert.invoke({ op: "restore", edits: retiredDoc, record_id: "e9", now_ms: 7000 }).edits;
+assert(restoredDoc.records[0].status === "draft" && restoredDoc.records[0].rev === 3, "restore puts it back in force");
+const divertOlder = divert.raw({ op: "retire", edits: restoredDoc.records, record_id: "e9", now_ms: 8000 });
+assert(divertOlder.error && divertOlder.error.includes("migrate.migrate"), "an older edit document is refused naming the migration op");
+const unready = divert.raw({ op: "propose", network_hash: divertNet.network_hash, draft: divertDraft, edits: editDoc([]), record_id: "x", now_ms: 1 });
 assert(unready.error && unready.error.includes("first stop"), "an unready draft is refused, naming why");
 // A trip cancel (D-45): the 08:00 t10 on the fixture's Friday — the
 // list names it, and the board lists its visit cancelled, never a row.
 const cancelled = divert.invoke({
-  op: "cancel", network_hash: divertNet.network_hash, records: proposed, record_id: "c9",
+  op: "cancel", network_hash: divertNet.network_hash, edits: proposed, record_id: "c9",
   trip_id: "t10", date: DATE, now_ms: 8000,
-}).records;
+}).edits.records;
 assert(cancelled.length === 2 && cancelled[1].cancel.trip_id === "t10" && !("diversion" in cancelled[1]), "cancel appends a cancel record");
-const listed = divert.invoke({ op: "list", network_hash: divertNet.network_hash, records: cancelled });
+const listed = divert.invoke({ op: "list", network_hash: divertNet.network_hash, edits: editDoc(cancelled) });
 assert(listed.rows.length === 1 && listed.cancels.length === 1 && listed.cancels[0].start_secs === 28800, "the list names a cancel apart");
-const notRunning = divert.raw({ op: "cancel", network_hash: divertNet.network_hash, records: [], record_id: "c", trip_id: "t10", date: "2026-10-25", now_ms: 1 });
+const notRunning = divert.raw({ op: "cancel", network_hash: divertNet.network_hash, edits: editDoc([]), record_id: "c", trip_id: "t10", date: "2026-10-25", now_ms: 1 });
 assert(notRunning.error && notRunning.error.includes("does not run"), "a cancel of a trip that does not run that day is refused");
 const cancelEdits = board.invoke({ op: "load_edits", edits: editDoc([cancelled[1]]) });
 const cancelledBoard = board.invoke({

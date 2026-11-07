@@ -82,7 +82,7 @@ fn streets(spec: &Spec, relabel: Option<StreetClass>) -> Streets {
             name: name.map(|n| format!("Street {n}")),
         });
     }
-    Streets { ways }
+    Streets { kind: Default::default(), schema_version: Default::default(), ways }
 }
 
 fn degrees((r, c): (f64, f64)) -> (f64, f64) {
@@ -129,7 +129,7 @@ proptest! {
 
 #[test]
 fn a_route_along_one_street_names_it_alone() {
-    let doc = Streets {
+    let doc = Streets { kind: Default::default(), schema_version: Default::default(),
         ways: vec![
             Way { points: vec![p(0, 0), p(0, 1), p(0, 2), p(0, 3)], oneway: false, class: StreetClass::Path, name: Some("Trail".into()) },
             Way { points: vec![p(1, 0), p(1, 3)], oneway: false, class: StreetClass::Primary, name: Some("Main".into()) },

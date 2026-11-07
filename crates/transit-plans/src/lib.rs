@@ -169,6 +169,19 @@ pub fn periods(plans: &[PlanInfo]) -> Vec<PlanPeriod> {
 /// (D-62): every copy anywhere says what it is.
 pub const PUBLISHED_SCHEMA_VERSION: u32 = 1;
 
+transit_version::kind_tag!(
+    /// The published plan set's kind tag: always `"plans"`.
+    PlansKind = "plans"
+);
+
+impl transit_version::Versioned for PublishedPlans {
+    const KIND: &'static str = "plans";
+    const READS: u32 = PUBLISHED_SCHEMA_VERSION;
+    fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+}
+
 /// Whether a published pick is in the chain. Retirement is the
 /// tombstone (D-75): a retired pick stays in the set, never governs,
 /// and republishing its id restores it.
@@ -216,13 +229,18 @@ fn chain(plans: &[PublishedPlan]) -> Vec<PlanInfo> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "cap_plans/")]
 pub struct PublishedPlans {
+    /// The kind tag (D-115): `"plans"`; a copy without one reads as
+    /// the plans document.
+    #[serde(default)]
+    #[ts(type = "\"plans\"")]
+    pub kind: PlansKind,
     pub schema_version: u32,
     pub plans: Vec<PublishedPlan>,
 }
 
 impl PublishedPlans {
     pub fn empty() -> Self {
-        PublishedPlans { schema_version: PUBLISHED_SCHEMA_VERSION, plans: Vec::new() }
+        PublishedPlans { kind: PlansKind, schema_version: PUBLISHED_SCHEMA_VERSION, plans: Vec::new() }
     }
 }
 
@@ -273,7 +291,7 @@ pub fn publish(
     if !issues.is_empty() {
         return Err(issues);
     }
-    Ok(PublishedPlans { schema_version: PUBLISHED_SCHEMA_VERSION, plans })
+    Ok(PublishedPlans { kind: PlansKind, schema_version: PUBLISHED_SCHEMA_VERSION, plans })
 }
 
 /// Retire a pick (D-75): the set with it marked retired — it stays in
@@ -299,7 +317,7 @@ pub fn retire(set: &PublishedPlans, id: &str, today: NaiveDate) -> Result<Publis
         .iter()
         .map(|p| if p.id == id { PublishedPlan { status: PickStatus::Retired, ..p.clone() } } else { p.clone() })
         .collect();
-    Ok(PublishedPlans { schema_version: PUBLISHED_SCHEMA_VERSION, plans })
+    Ok(PublishedPlans { kind: PlansKind, schema_version: PUBLISHED_SCHEMA_VERSION, plans })
 }
 
 /// The published pick in force on `date` — the chain's `resolve` over

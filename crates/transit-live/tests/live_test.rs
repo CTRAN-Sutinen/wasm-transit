@@ -65,7 +65,7 @@ fn trip(id: &str, start: u32, worst: i32, stops: Vec<LiveStop>) -> LiveTrip {
 #[test]
 fn a_loop_visit_resolves_by_its_scheduled_time() {
     // A loop: the trip visits A at 08:00 and again at 08:30.
-    let day = LiveDay {
+    let day = LiveDay { kind: Default::default(), schema_version: Default::default(),
         window: OnTimeWindow::default(),
         trips: vec![trip("s1", 28800, 240, vec![stop("A", 28800, 60), stop("B", 29400, 120), stop("A", 30600, 240)])],
         vehicles: vec![],
@@ -100,7 +100,7 @@ fn the_summary_ranks_buses_and_falls_back_to_predictions() {
         status: classify(delay, &w),
     };
     let trips = vec![trip("s1", 28800, 400, vec![]), trip("s2", 29000, 30, vec![])];
-    let day = LiveDay {
+    let day = LiveDay { kind: Default::default(), schema_version: Default::default(),
         window: w,
         trips: trips.clone(),
         vehicles: vec![vehicle("v1", Some(120)), vehicle("v2", Some(900)), vehicle("v3", None), vehicle("v4", Some(0))],

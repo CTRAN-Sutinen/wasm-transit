@@ -264,7 +264,7 @@ fn live(routes: &[GenRoute]) -> LiveDay {
             }
         }
     }
-    LiveDay {
+    LiveDay { kind: Default::default(), schema_version: Default::default(),
         window: OnTimeWindow::default(),
         trips,
         vehicles: vec![],

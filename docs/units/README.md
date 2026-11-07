@@ -47,6 +47,7 @@ archive — nothing here records what is finished.
 | [streets-model.md](streets-model.md) | streets as a model document: serving it, the bus profile, walking for riders, drawing on streets, the geography release |
 | [caps-run-sessions.md](caps-run-sessions.md) | the runner across sessions; shaping the import's output |
 | [grade-debt.md](grade-debt.md) | on the bus, but not yet read by a UI or dogfooded |
+| [rt-publish.md](rt-publish.md) | the authored cancels and detours encoded as GTFS-rt (TripUpdates, TripModifications) and published |
 | [ui-disruptions.md](ui-disruptions.md) | generated UI: running today's service through disruptions (late buses, detours, coverage) |
 | [ui-proposal-compare.md](ui-proposal-compare.md) | generated UI: the public comparing service proposals |
 | [ui-service-design.md](ui-service-design.md) | generated UI: designing a service change in six chained views — the blocked questions and the views' remaining parts |

@@ -520,7 +520,7 @@ fn walk_table(network_hash: &str, walk_secs: Option<u32>) -> transit_streets::wa
             ]
         })
         .unwrap_or_default();
-    transit_streets::walking::WalkTable {
+    transit_streets::walking::WalkTable { kind: Default::default(), schema_version: Default::default(),
         streets_hash: "sha256:streets".into(),
         network_hash: network_hash.into(),
         speed_mps: 1.3,

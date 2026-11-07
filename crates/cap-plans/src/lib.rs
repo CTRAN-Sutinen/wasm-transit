@@ -85,16 +85,11 @@ fn answered(next: Result<PublishedPlans, Vec<PlanIssue>>) -> Result<(Vec<PlanIss
     }
 }
 
-/// A published set this build does not speak is refused, never guessed.
+/// A published set in another version is refused, never guessed —
+/// naming both (docs/FORMATS.md, "Versions").
 fn spoken(published: &PublishedPlans) -> Result<(), String> {
-    if published.schema_version != transit_plans::PUBLISHED_SCHEMA_VERSION {
-        return Err(format!(
-            "published plans schema_version {} is not {} (this build speaks only that)",
-            published.schema_version,
-            transit_plans::PUBLISHED_SCHEMA_VERSION
-        ));
-    }
-    Ok(())
+    use transit_version::Versioned;
+    cap_abi::speaks(PublishedPlans::KIND, published.schema_version(), PublishedPlans::READS)
 }
 
 fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {

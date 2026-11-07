@@ -563,7 +563,7 @@ export async function servedNetwork(
     const doc = await fetch(`/blobs/${pick.network_hash}`, { headers: { Accept: "application/gzip" } }).catch(() => null);
     if (!doc?.ok) return null;
     const network = new Doc<Network>("network", { bytes: new Uint8Array(await doc.arrayBuffer()) }, { pin: pick.network_hash });
-    const boundary = new Doc<Boundary>("boundary", { value: {} });
+    const boundary = new Doc<Boundary>("boundary", { value: { kind: "boundary", schema_version: 1 } });
     await load(cap, network);
     return { network, boundary };
   }

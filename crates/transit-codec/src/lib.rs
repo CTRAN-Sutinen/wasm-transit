@@ -63,6 +63,19 @@ use transit_network::{
 // The boundary residue and the import's report.
 // ---------------------------------------------------------------------
 
+transit_version::kind_tag!(
+    /// The import boundary's kind tag: always `"boundary"`.
+    BoundaryKind = "boundary"
+);
+
+impl transit_version::Versioned for Boundary {
+    const KIND: &'static str = "boundary";
+    const READS: u32 = 1;
+    fn schema_version(&self) -> u32 {
+        self.schema_version.0
+    }
+}
+
 /// What the feed's bytes carry that the document does not: pure
 /// serialization, never planner intent. Emitted with the imported
 /// document; `Boundary::default()` for an authored one (stop_sequence
@@ -70,6 +83,14 @@ use transit_network::{
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Boundary {
+    /// The kind tag and version (D-115); a copy without them is this
+    /// kind, version 1.
+    #[serde(default)]
+    #[ts(type = "\"boundary\"")]
+    pub kind: BoundaryKind,
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub schema_version: transit_version::Version<1>,
     /// Per trip, the feed's stop_sequence numbers — kept only where
     /// they are not 1..=n.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

@@ -325,18 +325,14 @@ pub static EDITS: Kind<EditDocument> = Kind {
     op: OP_LOAD_EDITS,
     identity: Identity::Canonical(crate::canonical_hash),
     registry: Registry::documents("edits", "load_edits", Retain::Host),
-    parse: |bytes| {
-        let doc: serde_json::Value = crate::parse_document(bytes)?;
-        let found = transit_sync::version::schema_version_of(&doc)?;
-        crate::speaks(transit_sync::KIND, found, transit_sync::SCHEMA_VERSION)?;
-        serde_json::from_value(doc).map_err(|e| format!("invalid document: {e}"))
-    },
+    parse: crate::parse_versioned,
     json: |e| e.field(e.edits, "edits").map(Cow::Borrowed),
     answer: |edits_hash, _| Loaded::LoadEdits { edits_hash },
 };
 
 /// Live documents — ephemeral: re-minted every poll, the last four
-/// kept (D-70).
+/// kept (D-70). Like every versioned kind below, refused at the load
+/// in another version, naming both (`crate::parse_versioned`).
 pub static LIVE: Kind<LiveDay> = Kind {
     id: "live",
     name: "live document",
@@ -344,7 +340,7 @@ pub static LIVE: Kind<LiveDay> = Kind {
     op: OP_LOAD_LIVE,
     identity: Identity::Canonical(crate::canonical_hash),
     registry: Registry::documents("live document", "load_live", Retain::Last(4)),
-    parse: canonical,
+    parse: crate::parse_versioned,
     json: |e| e.field(e.live, "live").map(Cow::Borrowed),
     answer: |live_hash, _| Loaded::LoadLive { live_hash },
 };
@@ -357,7 +353,7 @@ pub static BOUNDARY: Kind<Boundary> = Kind {
     op: OP_LOAD_BOUNDARY,
     identity: Identity::Canonical(crate::canonical_hash),
     registry: Registry::documents("boundary", "load_boundary", Retain::Host),
-    parse: canonical,
+    parse: crate::parse_versioned,
     json: |e| e.field(e.boundary, "boundary").map(Cow::Borrowed),
     answer: |boundary_hash, _| Loaded::LoadBoundary { boundary_hash },
 };
@@ -370,7 +366,7 @@ pub static WALKS: Kind<WalkTable> = Kind {
     op: OP_LOAD_WALKS,
     identity: Identity::Canonical(crate::canonical_hash),
     registry: Registry::documents("walk table", "load_walks", Retain::Host),
-    parse: canonical,
+    parse: crate::parse_versioned,
     json: |e| e.field(e.walks, "walks").map(Cow::Borrowed),
     answer: |walks_hash, _| Loaded::LoadWalks { walks_hash },
 };
@@ -385,7 +381,7 @@ pub static STREETS: Kind<Streets> = Kind {
     identity: Identity::Canonical(crate::canonical_hash),
     registry: Registry::documents("street network", "load_streets", Retain::Host),
     parse: |bytes| {
-        let streets: Streets = crate::parse_document(bytes).map_err(|e| format!("streets document: {e}"))?;
+        let streets: Streets = crate::parse_versioned(bytes).map_err(|e| format!("streets document: {e}"))?;
         streets.validate().map_err(|e| format!("streets document: {}", e.0))?;
         Ok(streets)
     },
@@ -420,7 +416,7 @@ pub static WORK_RULES: Kind<WorkRules> = Kind {
     identity: Identity::Canonical(crate::canonical_hash),
     registry: Registry::documents("work rules", "load_work_rules", Retain::Host),
     parse: |bytes| {
-        let rules: WorkRules = crate::parse_document(bytes).map_err(|e| format!("work rules: {e}"))?;
+        let rules: WorkRules = crate::parse_versioned(bytes).map_err(|e| format!("work rules: {e}"))?;
         rules.checked().map_err(|e| format!("work rules: {e}"))
     },
     json: |e| e.field(e.work_rules, "work_rules").map(Cow::Borrowed),

@@ -13,9 +13,15 @@
 //! cancel rows), and each reports what it amounts to on the network
 //! (its validation report: a record the network cannot answer moves
 //! nothing). Proposing a diversion, cancelling a trip, retiring a
-//! record (the tombstone), restoring one, and reading a stored edit
-//! document are the edit document's next states — the envelope rules
-//! (rev, stamp, status) every writer follows.
+//! record (the tombstone), and restoring one are the edit document's
+//! next states — the envelope rules (rev, stamp, status) every writer
+//! follows.
+//!
+//! Every op takes the edit document whole (`edits`) and answers the
+//! next one tagged (D-115), so a host persists or posts the answer as
+//! given; another version is refused naming both
+//! (`cap_abi::Current`). Reading a received document is
+//! cap-sync's `read_edits`.
 //!
 //! The host owns the documents (wholesale-replaced) and the clock
 //! and ids (`now_ms`, `record_id` — hosts own time and randomness).
@@ -29,11 +35,12 @@
 use std::sync::Arc;
 
 use cap_abi::kernel::NETWORK;
+use cap_abi::Current;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_dispatch::{CancelRow, DiversionDraft, DiversionRow, DraftView};
 use transit_network::Network;
-use transit_sync::EditRecord;
+use transit_sync::EditDocument;
 
 /// One operation call. Tagged like every capability's seam.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -46,21 +53,30 @@ pub enum Request {
     /// The edit document's rows, names resolved over the network —
     /// what the list shows: the diversions and the trip cancels, each
     /// in document order.
-    List { network_hash: String, records: Vec<EditRecord> },
+    List {
+        network_hash: String,
+        #[ts(as = "EditDocument")]
+        edits: Current<EditDocument>,
+    },
     /// What each record of the edit document amounts to on the
     /// network, in document order: whether it is valid against it (its
     /// route, pattern, and stops exist and are in order), what is wrong
     /// when it is not, and how many trip instances it touches. Invalid
     /// records are REPORTED, never rejected (the sync contract) — every
     /// day view simply finds nothing to patch for them.
-    Reports { network_hash: String, records: Vec<EditRecord> },
+    Reports {
+        network_hash: String,
+        #[ts(as = "EditDocument")]
+        edits: Current<EditDocument>,
+    },
     /// The edit document with the draft proposed as `record_id` (a
     /// new id appends at rev 1; an existing one is replaced, rev
     /// bumped). Errors name what keeps the draft from being a record.
     Propose {
         network_hash: String,
         draft: DiversionDraft,
-        records: Vec<EditRecord>,
+        #[ts(as = "EditDocument")]
+        edits: Current<EditDocument>,
         record_id: String,
         #[ts(type = "number")]
         now_ms: u64,
@@ -73,7 +89,8 @@ pub enum Request {
     /// never runs, a date its service does not run.
     Cancel {
         network_hash: String,
-        records: Vec<EditRecord>,
+        #[ts(as = "EditDocument")]
+        edits: Current<EditDocument>,
         record_id: String,
         trip_id: String,
         #[serde(default)]
@@ -84,23 +101,19 @@ pub enum Request {
     },
     /// The edit document with `record_id` retired — the tombstone.
     Retire {
-        records: Vec<EditRecord>,
+        #[ts(as = "EditDocument")]
+        edits: Current<EditDocument>,
         record_id: String,
         #[ts(type = "number")]
         now_ms: u64,
     },
     /// The edit document with `record_id` back in force as a draft.
     Restore {
-        records: Vec<EditRecord>,
+        #[ts(as = "EditDocument")]
+        edits: Current<EditDocument>,
         record_id: String,
         #[ts(type = "number")]
         now_ms: u64,
-    },
-    /// Read a stored edit document: the records valid under the
-    /// current schema (serde defaults filled) and how many were not.
-    Sanitize {
-        #[ts(type = "unknown")]
-        records: serde_json::Value,
     },
 }
 
@@ -111,11 +124,10 @@ pub enum Response {
     Draft { view: DraftView },
     List { rows: Vec<DiversionRow>, cancels: Vec<CancelRow> },
     Reports { reports: Vec<transit_sync::EditReport> },
-    Propose { records: Vec<EditRecord> },
-    Cancel { records: Vec<EditRecord> },
-    Retire { records: Vec<EditRecord> },
-    Restore { records: Vec<EditRecord> },
-    Sanitize { records: Vec<EditRecord>, dropped: u32 },
+    Propose { edits: EditDocument },
+    Cancel { edits: EditDocument },
+    Retire { edits: EditDocument },
+    Restore { edits: EditDocument },
 }
 
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
@@ -125,55 +137,54 @@ fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
 /// The typed dispatch (native hosts call this directly). Failures
 /// are `{"error": ...}`, never panics — a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
+    let next = |records| EditDocument::new(records);
     match request {
         Request::Draft { network_hash, draft } => {
             let network = network_arc(&network_hash)?;
             Ok(Response::Draft { view: transit_dispatch::draft_view(&network, &draft) })
         }
-        Request::List { network_hash, records } => {
+        Request::List { network_hash, edits } => {
             let network = network_arc(&network_hash)?;
             Ok(Response::List {
-                rows: transit_dispatch::diversion_rows(&network, &records),
-                cancels: transit_dispatch::cancel_rows(&network, &records),
+                rows: transit_dispatch::diversion_rows(&network, &edits.records),
+                cancels: transit_dispatch::cancel_rows(&network, &edits.records),
             })
         }
-        Request::Reports { network_hash, records } => {
+        Request::Reports { network_hash, edits } => {
             let network = network_arc(&network_hash)?;
-            Ok(Response::Reports { reports: transit_dispatch::report_against_network(&network, &records) })
+            Ok(Response::Reports { reports: transit_dispatch::report_against_network(&network, &edits.records) })
         }
-        Request::Propose { network_hash, draft, records, record_id, now_ms } => {
+        Request::Propose { network_hash, draft, edits, record_id, now_ms } => {
             let network = network_arc(&network_hash)?;
             // The domain id is stable across re-proposals of one record.
-            let id = records
+            let id = edits
+                .records
                 .iter()
                 .find(|r| r.id == record_id)
                 .and_then(|r| r.diversion.as_ref())
                 .map(|d| d.id.clone())
                 .unwrap_or_else(|| format!("div-{}-{now_ms}", draft.route_id));
             let diversion = transit_dispatch::diversion_of(&network, &draft, &id)?;
-            Ok(Response::Propose { records: transit_sync::propose(&records, &record_id, diversion, now_ms) })
+            Ok(Response::Propose { edits: next(transit_sync::propose(&edits.records, &record_id, diversion, now_ms)) })
         }
-        Request::Cancel { network_hash, records, record_id, trip_id, start_secs, date, now_ms } => {
+        Request::Cancel { network_hash, edits, record_id, trip_id, start_secs, date, now_ms } => {
             let network = network_arc(&network_hash)?;
             // The domain id is stable across re-proposals of one record.
-            let id = records
+            let id = edits
+                .records
                 .iter()
                 .find(|r| r.id == record_id)
                 .and_then(|r| r.cancel.as_ref())
                 .map(|c| c.id.clone())
                 .unwrap_or_else(|| format!("cancel-{trip_id}-{now_ms}"));
             let cancel = transit_dispatch::cancel_of(&network, &id, &trip_id, start_secs, &date)?;
-            Ok(Response::Cancel { records: transit_sync::propose_cancel(&records, &record_id, cancel, now_ms) })
+            Ok(Response::Cancel { edits: next(transit_sync::propose_cancel(&edits.records, &record_id, cancel, now_ms)) })
         }
-        Request::Retire { records, record_id, now_ms } => {
-            Ok(Response::Retire { records: transit_sync::set_retired(&records, &record_id, true, now_ms)? })
+        Request::Retire { edits, record_id, now_ms } => {
+            Ok(Response::Retire { edits: next(transit_sync::set_retired(&edits.records, &record_id, true, now_ms)?) })
         }
-        Request::Restore { records, record_id, now_ms } => {
-            Ok(Response::Restore { records: transit_sync::set_retired(&records, &record_id, false, now_ms)? })
-        }
-        Request::Sanitize { records } => {
-            let (records, dropped) = transit_sync::sanitize_records(&records);
-            Ok(Response::Sanitize { records, dropped: dropped as u32 })
+        Request::Restore { edits, record_id, now_ms } => {
+            Ok(Response::Restore { edits: next(transit_sync::set_retired(&edits.records, &record_id, false, now_ms)?) })
         }
     }
 }

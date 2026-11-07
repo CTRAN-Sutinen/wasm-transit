@@ -162,8 +162,9 @@ them onto the base.
 ## Architecture
 
 **Three laws govern every crate** (spelled out and enforced — see
-`crates/AGENTS.md`): the NETWORK is the core data model, GTFS is a
-serialization spec for external data sharing; nobody reinvents
+`crates/AGENTS.md`): the NETWORK is the core data model, GTFS (and
+its siblings TODS and TIDES) is a serialization spec for external
+data sharing; nobody reinvents
 the monolith inside a module; and one NEED per module — personas
 assemble at wire time.
 
@@ -189,6 +190,8 @@ transit-rt       GTFS-rt prost types + the joins over the network (an rt trip id
                  model trip id; a trip instance is (trip, start))
 transit-live     THE live document (rt in model vocabulary, the on-time window, what does
                  not run — a cancelled trip, a skipped stop — pure)
+transit-version  a document's kind tag and version (D-115): the tag every persisted
+                 document writes, and what a reader checks to refuse another version
 transit-sync     THE sync document (EditRecord: a Diversion or a TripCancel, merge, the record envelope — pure)
 transit-plans    THE service-plan chain (resolve, periods, validity — pure, derived)
                  and the published plan set (publish, the pick in force)
@@ -296,6 +299,11 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
   by hand; a host sends it the user's input only, shows its answer
   as given, and finds it in the manifest's `services`
   (`docs/ARCHITECTURE.md`, web section, "External services").
+- **Adjacent systems** (CAD/AVL, workforce management, the
+  scheduling system) run the dispatcher's day, which is out of scope
+  (D-122): they read documents by hash and write only records, through
+  the receive path, as effects in this repo's vocabulary — one system
+  of record per fact (`docs/ARCHITECTURE.md`, "Adjacent systems").
 - New ops go through the extraction pattern (crate boundary
   first, capability wrapper second): the monolith that ops were
   extracted FROM is gone, so a new op is a library + a capability

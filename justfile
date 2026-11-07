@@ -411,13 +411,13 @@ test: caps
       | grep '"services":\["WK"\]' > /dev/null
     # The diversion-authoring capability's gate: a draft anchored end
     # to end on route 10's default pattern, proposed into an empty
-    # edit document, and the answered document's record reported
-    # valid against the network in the same session — the record the
-    # browser's editor writes.
+    # edit document, and the answered document (tagged, as a host
+    # persists it) reported valid against the network in the same
+    # session.
     node tools/caps-run.mjs divert \
       --op @web/public/caps/sample-network-load.json \
-      --as prop --op '{"op":"propose","network_hash":"$load_network.network_hash","draft":{"route_id":"10","pattern":"pat-10-0-1","first_kept_stop":"A","last_kept_stop":"B","served_stops":[],"slices":[],"added_mins":5,"start_date":"2026-10-23","end_date":"2026-10-23"},"records":[],"record_id":"e1","now_ms":1000}' \
-      --op '{"op":"reports","network_hash":"$load_network.network_hash","records":"$prop.records"}' \
+      --as prop --op '{"op":"propose","network_hash":"$load_network.network_hash","draft":{"route_id":"10","pattern":"pat-10-0-1","first_kept_stop":"A","last_kept_stop":"B","served_stops":[],"slices":[],"added_mins":5,"start_date":"2026-10-23","end_date":"2026-10-23"},"edits":{"kind":"edit_records","schema_version":2,"records":[]},"record_id":"e1","now_ms":1000}' \
+      --op '{"op":"reports","network_hash":"$load_network.network_hash","edits":"$prop.edits"}' \
       | grep '"valid":true' > /dev/null
     # A trip cancel, chained (D-45): divert cancels the 08:00 t10 on
     # the Friday into an empty edit document, and the board in the
@@ -425,9 +425,9 @@ test: caps
     # (D-100). grep reads the whole answer (no -q).
     node tools/caps-run.mjs divert \
       --op @web/public/caps/sample-network-load.json \
-      --as c --op '{"op":"cancel","network_hash":"$load_network.network_hash","records":[],"record_id":"c1","trip_id":"t10","date":"2026-10-23","now_ms":1000}' \
+      --as c --op '{"op":"cancel","network_hash":"$load_network.network_hash","edits":{"kind":"edit_records","schema_version":2,"records":[]},"record_id":"c1","trip_id":"t10","date":"2026-10-23","now_ms":1000}' \
       --cap board --op @web/public/caps/sample-network-load.json \
-      --op '{"op":"load_edits","edits":{"kind":"edit_records","schema_version":2,"records":"$c.records"}}' \
+      --op '{"op":"load_edits","edits":"$c.edits"}' \
       --op '{"op":"stop_board","network_hash":"$load_network.network_hash","edits_hash":"$load_edits.edits_hash","stop_id":"A","date":"2026-10-23","from_secs":25200,"limit":10}' \
       | grep '"cancel":"cancel-t10-1000"' > /dev/null
     # ARCHITECTURE GATES — the laws as assertions (spelled out in

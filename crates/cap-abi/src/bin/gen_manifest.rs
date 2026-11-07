@@ -323,7 +323,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "divert",
         file: "module_divert.wasm",
-        ops: &["draft", "list", "reports", "propose", "cancel", "retire", "restore", "sanitize"],
+        ops: &["draft", "list", "reports", "propose", "cancel", "retire", "restore"],
         documents: &["network"],
         // A draft is answered over the network the codec's import
         // produces; the answers are next states of the host-owned
@@ -331,7 +331,7 @@ const MODULES: &[ModuleSpec] = &[
         consumes: &[("network", "network")],
         speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION])],
         migrates: &[],
-        purpose: "Operator-edit authoring: what does this operator edit amount to? An edit is a diversion or a whole-trip cancel (D-45). A diversion draft — a route, the pattern anchored against, two kept stops, the interior stops the detour still serves, a traced path, added minutes, dates — is answered over the NETWORK document (the route's patterns and the default, each stop's role, the skips in effect, the alignment the detour is drawn against, the traced path and its length, and the problems keeping it from being a record); a cancel names a trip — one instance or every instance — on one date its service runs, and the day views take it out (boards list it as cancelled, plans never ride it). propose, cancel, retire, and restore answer the edit document's next state under the envelope rules (rev bumped, host clock stamped; retirement is the tombstone); sanitize reads a stored edit document under the current schema. The host owns the documents, the clock, and the record ids. reports answers what each record amounts to on the network (valid or what is wrong, the trip instances it touches) — invalid records are reported, never rejected. Converging two documents is the sync capability's question. Assemble for anyone who authors operator edits: a dispatcher's UI, a script, an agent.",
+        purpose: "Operator-edit authoring: what does this operator edit amount to? An edit is a diversion or a whole-trip cancel (D-45). A diversion draft — a route, the pattern anchored against, two kept stops, the interior stops the detour still serves, a traced path, added minutes, dates — is answered over the NETWORK document (the route's patterns and the default, each stop's role, the skips in effect, the alignment the detour is drawn against, the traced path and its length, and the problems keeping it from being a record); a cancel names a trip — one instance or every instance — on one date its service runs, and the day views take it out (boards list it as cancelled, plans never ride it). propose, cancel, retire, and restore answer the edit document's next state under the envelope rules (rev bumped, host clock stamped; retirement is the tombstone). Every op takes the edit document whole as `edits` and answers the next one tagged, so a host persists or posts the answer as given; an older edit document is refused naming the migration op, a newer one naming both versions (reading a received document is the sync capability's read_edits). The host owns the documents, the clock, and the record ids. reports answers what each record amounts to on the network (valid or what is wrong, the trip instances it touches) — invalid records are reported, never rejected. Converging two documents is the sync capability's question. Assemble for anyone who authors operator edits: a dispatcher's UI, a script, an agent.",
         op_docs: &[
             ("draft", "The editor's view of a draft: the route's patterns ({pattern, name, stop_count}), the pattern in effect (the draft's when it is the route's, else the longest), every visit with its role (first_kept / last_kept / interior / outside — the anchors are the first visit of the first kept stop and the first visit of the last kept stop after it) and whether it is skipped (an interior stop not in served_stops), the skips the record would carry, the pattern's alignment (authored path, else stop-to-stop), the traced slices flattened (repeated points dropped) with their length in metres, and problems (empty = ready). Total: a draft naming what the network lacks answers problems, never an error."),
             ("reports", "What each record of the edit document amounts to on the network, in document order: valid against it (a diversion's route, pattern, and stops exist and are in order; a cancel's trip exists and runs the instance it names) or what is wrong, and how many trip instances it touches. Invalid records are REPORTED, never rejected (the sync contract) — a day view simply finds nothing to patch for one."),
@@ -340,7 +340,6 @@ const MODULES: &[ModuleSpec] = &[
             ("cancel", "The edit document with trip_id cancelled on date as record_id (D-45): start_secs names one instance, and without it every instance the trip runs that day is cancelled. A new id appends a draft at rev 1, a known id is replaced whole with its rev bumped (its domain id kept, else minted cancel-{trip_id}-{now_ms}); now_ms stamped. The day views read it: the trip does not run, every board lists its visits among `skipped` with the cancel's id, and the router never rides it. Refused, naming the reason: an unknown trip, an instance the trip never runs, a date its service does not run. Partial cancel, cover, hold, and swap are not edits yet."),
             ("retire", "The edit document with record_id retired — the tombstone (the record stays so sync carries the deletion), rev bumped, now_ms stamped. Retiring a retired record answers the same document. An unknown id is an error."),
             ("restore", "The edit document with record_id back in force as a draft (the next sync re-submits it), rev bumped, now_ms stamped. Restoring an in-force record answers the same document."),
-            ("sanitize", "Read a stored edit document (a cache, a server response, a file): the records that parse under the current schema — defaults filled for fields added since they were written — and carry exactly one edit (a diversion or a cancel), and how many were dropped. Anything but an array is an empty document."),
         ],
     },
     ModuleSpec {
@@ -1078,7 +1077,7 @@ fn edit_kind_examples() -> Vec<serde_json::Value> {
 /// every trip, route 10's own rule, routes 10 and 20 interlined, and an
 /// eight-hour run under report and clear times.
 fn fixture_work_rules() -> transit_runs::WorkRules {
-    transit_runs::WorkRules {
+    transit_runs::WorkRules { kind: Default::default(),
         version: transit_runs::SCHEMA_VERSION,
         name: "Fixture rules".into(),
         recovery: vec![
@@ -1118,7 +1117,7 @@ fn example_for(
             // A two-walk table over the fixture's station bays.
             let net = net?;
             let walk = |from: &str, to: &str| transit_streets::walking::Walk { from: from.into(), to: to.into(), walk_secs: 95 };
-            let table = transit_streets::walking::WalkTable {
+            let table = transit_streets::walking::WalkTable { kind: Default::default(), schema_version: Default::default(),
                 streets_hash: "sha256:…".into(),
                 network_hash: net.network_hash.clone(),
                 speed_mps: transit_streets::walking::WALK_SPEED_MPS,
@@ -1888,7 +1887,7 @@ fn example_for(
             let net = net?;
             let stops: Vec<(String, f64, f64)> =
                 net.derived_network().stops.iter().map(|(id, s)| (id.clone(), s.lat, s.lon)).collect();
-            let table = transit_streets::walking::WalkTable {
+            let table = transit_streets::walking::WalkTable { kind: Default::default(), schema_version: Default::default(),
                 streets_hash: streets_hash.clone(),
                 network_hash: net.network_hash.clone(),
                 speed_mps: transit_streets::walking::WALK_SPEED_MPS,
@@ -2076,7 +2075,7 @@ fn example_for(
             let ctx = net?;
             let records = dispatch_fixture_edits();
             (
-                json!({ "op": "list", "network_hash": ctx.network_hash, "records": records }),
+                json!({ "op": "list", "network_hash": ctx.network_hash, "edits": transit_sync::EditDocument::new(records.clone()) }),
                 json!({ "ok": { "op": "list",
                     "rows": transit_dispatch::diversion_rows(ctx.derived_network(), &records),
                     "cancels": transit_dispatch::cancel_rows(ctx.derived_network(), &records) } }),
@@ -2086,7 +2085,7 @@ fn example_for(
             let ctx = net?;
             let records = dispatch_fixture_edits();
             (
-                json!({ "op": "reports", "network_hash": ctx.network_hash, "records": records }),
+                json!({ "op": "reports", "network_hash": ctx.network_hash, "edits": transit_sync::EditDocument::new(records.clone()) }),
                 json!({ "ok": { "op": "reports",
                     "reports": transit_dispatch::report_against_network(ctx.derived_network(), &records) } }),
             )
@@ -2097,8 +2096,8 @@ fn example_for(
             let now_ms: u64 = 1_770_000_000_000;
             let diversion = transit_dispatch::diversion_of(ctx.derived_network(), &draft, &format!("div-10-{now_ms}")).ok()?;
             (
-                json!({ "op": "propose", "network_hash": ctx.network_hash, "draft": draft, "records": [], "record_id": "e2", "now_ms": now_ms }),
-                json!({ "ok": { "op": "propose", "records": transit_sync::propose(&[], "e2", diversion, now_ms) } }),
+                json!({ "op": "propose", "network_hash": ctx.network_hash, "draft": draft, "edits": transit_sync::EditDocument::default(), "record_id": "e2", "now_ms": now_ms }),
+                json!({ "ok": { "op": "propose", "edits": transit_sync::EditDocument::new(transit_sync::propose(&[], "e2", diversion, now_ms)) } }),
             )
         }
         ("divert", "cancel") => {
@@ -2109,9 +2108,9 @@ fn example_for(
             let now_ms: u64 = 1_770_000_000_000;
             let cancel = transit_dispatch::cancel_of(ctx.derived_network(), &format!("cancel-t10-{now_ms}"), "t10", None, "2026-10-23").ok()?;
             (
-                json!({ "op": "cancel", "network_hash": ctx.network_hash, "records": records, "record_id": "e2",
+                json!({ "op": "cancel", "network_hash": ctx.network_hash, "edits": transit_sync::EditDocument::new(records.clone()), "record_id": "e2",
                     "trip_id": "t10", "date": "2026-10-23", "now_ms": now_ms }),
-                json!({ "ok": { "op": "cancel", "records": transit_sync::propose_cancel(&records, "e2", cancel, now_ms) } }),
+                json!({ "ok": { "op": "cancel", "edits": transit_sync::EditDocument::new(transit_sync::propose_cancel(&records, "e2", cancel, now_ms)) } }),
             )
         }
         ("divert", op @ ("retire" | "restore")) => {
@@ -2122,20 +2121,8 @@ fn example_for(
             let now_ms: u64 = 1_770_000_060_000;
             let next = transit_sync::set_retired(&records, "e1", op == "retire", now_ms).ok()?;
             (
-                json!({ "op": op, "records": records, "record_id": "e1", "now_ms": now_ms }),
-                json!({ "ok": { "op": op, "records": next } }),
-            )
-        }
-        ("divert", "sanitize") => {
-            let mut old = serde_json::to_value(&dispatch_fixture_edits()[0]).ok()?;
-            for field in ["direction_id", "skipped_stops", "detour", "added_secs"] {
-                old["diversion"].as_object_mut()?.remove(field);
-            }
-            let stored = json!([old, { "id": "e3", "status": "draft" }]);
-            let (records, dropped) = transit_sync::sanitize_records(&stored);
-            (
-                json!({ "op": "sanitize", "records": stored }),
-                json!({ "ok": { "op": "sanitize", "records": records, "dropped": dropped } }),
+                json!({ "op": op, "edits": transit_sync::EditDocument::new(records), "record_id": "e1", "now_ms": now_ms }),
+                json!({ "ok": { "op": op, "edits": transit_sync::EditDocument::new(next) } }),
             )
         }
         ("plans", "resolve") => {

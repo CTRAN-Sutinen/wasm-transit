@@ -29,7 +29,7 @@ fn date() -> NaiveDate {
 }
 
 fn table(walks: Vec<Walk>) -> WalkTable {
-    WalkTable {
+    WalkTable { kind: Default::default(), schema_version: Default::default(),
         streets_hash: "sha256:streets".into(),
         network_hash: "sha256:network".into(),
         speed_mps: 1.3,

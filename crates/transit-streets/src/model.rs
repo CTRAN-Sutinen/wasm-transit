@@ -29,10 +29,31 @@ use ts_rs::TS;
 
 use crate::StreetError;
 
+transit_version::kind_tag!(
+    /// The streets document's kind tag: always `"streets"`.
+    StreetsKind = "streets"
+);
+
+impl transit_version::Versioned for Streets {
+    const KIND: &'static str = "streets";
+    const READS: u32 = 1;
+    fn schema_version(&self) -> u32 {
+        self.schema_version.0
+    }
+}
+
 /// The street network: its ways, in canonical order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Streets {
+    /// The kind tag and version (D-115); a copy without them is this
+    /// kind, version 1.
+    #[serde(default)]
+    #[ts(type = "\"streets\"")]
+    pub kind: StreetsKind,
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub schema_version: transit_version::Version<1>,
     pub ways: Vec<Way>,
 }
 
@@ -125,7 +146,7 @@ impl Streets {
         }
         ways.sort_by(|a, b| a.key().cmp(&b.key()));
         ways.dedup();
-        Streets { ways }
+        Streets { kind: Default::default(), schema_version: Default::default(), ways }
     }
 
     /// Hold a document to canonical form — the form the import writes,

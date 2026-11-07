@@ -65,6 +65,15 @@ pub struct EditDocument {
     pub records: Vec<EditRecord>,
 }
 
+/// A copy with no `schema_version` — the bare array — is v1.
+impl transit_version::Versioned for EditDocument {
+    const KIND: &'static str = KIND;
+    const READS: u32 = SCHEMA_VERSION;
+    fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+}
+
 impl EditDocument {
     /// A current-version document over these records.
     pub fn new(records: Vec<EditRecord>) -> Self {

@@ -279,10 +279,31 @@ impl LiveAlert {
     }
 }
 
+transit_version::kind_tag!(
+    /// The live document's kind tag: always `"live"`.
+    LiveKind = "live"
+);
+
+impl transit_version::Versioned for LiveDay {
+    const KIND: &'static str = "live";
+    const READS: u32 = 1;
+    fn schema_version(&self) -> u32 {
+        self.schema_version.0
+    }
+}
+
 /// THE live document: one rt moment, in model vocabulary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct LiveDay {
+    /// The kind tag and version (D-115); a copy without them is this
+    /// kind, version 1.
+    #[serde(default)]
+    #[ts(type = "\"live\"")]
+    pub kind: LiveKind,
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub schema_version: transit_version::Version<1>,
     /// The window every status in this document was classified under.
     pub window: OnTimeWindow,
     pub trips: Vec<LiveTrip>,

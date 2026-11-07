@@ -119,7 +119,7 @@ pub fn live_day(
         .unwrap_or_default();
 
     let (alerts, unmatched_alerts) = live_alerts(network, [alerts, delays, positions]);
-    LiveDay { window, trips, vehicles, unmatched_trips, alerts, unmatched_alerts }
+    LiveDay { kind: Default::default(), schema_version: Default::default(), window, trips, vehicles, unmatched_trips, alerts, unmatched_alerts }
 }
 
 /// The alerts in force at each snapshot's moment, resolved; the count

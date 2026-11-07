@@ -163,11 +163,48 @@ kind and version without the app:
   `"schema_version"` (network v2, edit document v2). A network with no
   `schema_version` is v1 — every shape written before the tag; a bare
   array of edit records is edit document v1.
-- `plans` and `policy` carry `schema_version`, `work_rules` a
-  `version`, a watchlist `"version": "vN"`; none names its kind yet.
 - The byte kinds — a GTFS feed, a GTFS-rt snapshot, a GeoJSON layer —
   are open formats versioned by their own specs and carry no tag of
   ours.
+
+Every persisted kind, by what a version change does to it:
+
+| Kind | Owner | Class | Inside it today |
+|---|---|---|---|
+| `edit_records` | transit-sync | authored | `kind`, `schema_version` |
+| `network` (authored or forked) | transit-network | authored | `kind`, `schema_version` |
+| `plans` (the published set) | transit-plans | authored | `kind`, `schema_version` |
+| `plan_set` (a browser's stored plans) | transit-plans | authored | each plan's network |
+| `watchlist` | transit-dispatch | authored | `"version": "vN"` |
+| `policy` | transit-authz | authored | `kind`, `schema_version` |
+| `work_rules` | transit-runs | authored | `kind`, `version` |
+| `diversion_draft` | transit-dispatch | authored | — (never persisted yet) |
+| a rider's device records (recent places, live-feed URLs) | the ride-now host | authored | — (`localStorage`) |
+| `network` (imported) | transit-codec | derived | `kind`, `schema_version` |
+| `boundary` | transit-codec | derived | `kind`, `schema_version` |
+| `streets` (imported) | transit-streets | derived | `kind`, `schema_version` |
+| `walks` | transit-streets | derived | `kind`, `schema_version` |
+| `live` | transit-live | ephemeral | `kind`, `schema_version` |
+| `manifest` | the Go server | host-owned | its own shape (below) |
+
+- *Authored* kinds are written by a person and cannot be re-derived:
+  their chains are kept forever (D-66).
+- *Derived* kinds are a pure function of other documents. A version
+  change re-derives them from the inputs the server holds. The tag is
+  there so a reader refuses a mismatch instead of misreading it.
+- *Ephemeral* kinds never outlive a session. They are tagged for the
+  same refusal.
+- The *host-owned* manifest is versioned in its own envelope.
+
+A copy written before its kind's tags reads as that kind: an absent
+`kind` is the kind itself, and an absent version is v1 (the network's
+and the edit document's untagged v1 are older versions; every other
+kind gained its tags at v1, the version it already was). Every
+kernel load and every request field that takes one of these
+documents checks the version the same way
+(`cap_abi::parse_versioned`, `cap_abi::Current`; the tag type is
+transit-version's `kind_tag!`). The watchlist's own `"version": "vN"`
+is read by the kernel in both versions it has had.
 
 A module reads the version it was built for, and only that: an older
 document is refused at its load naming the migration capability, a
@@ -184,6 +221,22 @@ stay. It runs where a document arrives:
 - a browser's restore (service design brings a stored plan forward);
 - an agent's load: `caps-run --load` of an older file is refused
   naming the op, which the agent runs through `--cap migrate`.
+
+A new version rolls out server first. The server's modules learn it
+first: they accept the old and the new version at receive and store
+the new one. The manifest then pins those modules, and clients follow
+the manifest (D-63). Every client gets its modules from that manifest,
+so no client writes a version the server does not read.
+
+The kernel's own version is separate from the documents'. It bumps
+only when an existing kernel op changes meaning. A new kernel op is
+listed in the manifest's `kernel_ops`, so a host checks for the op by
+name, not the kernel number.
+
+Persisted data includes URLs. The stop display's `stop` and `layout`
+parameters are configured into screens and printed into QR codes, so
+the URL only ever gains optional parameters. A parameter the page does
+not know is ignored and kept when the page rewrites its URL.
 
 ## Worked examples
 

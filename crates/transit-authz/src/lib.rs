@@ -80,11 +80,29 @@ impl Rule {
     }
 }
 
+transit_version::kind_tag!(
+    /// The policy document's kind tag: always `"policy"`.
+    PolicyKind = "policy"
+);
+
+impl transit_version::Versioned for Policy {
+    const KIND: &'static str = "policy";
+    const READS: u32 = SCHEMA_VERSION;
+    fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+}
+
 /// The policy document: a versioned rule list, evaluated in order.
 /// Fail-closed by construction — see `authorize`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct Policy {
+    /// The kind tag (D-115): `"policy"`; a copy without one reads as a
+    /// policy.
+    #[serde(default)]
+    #[ts(type = "\"policy\"")]
+    pub kind: PolicyKind,
     pub schema_version: u32,
     #[serde(default)]
     pub rules: Vec<Rule>,
@@ -92,7 +110,7 @@ pub struct Policy {
 
 impl Policy {
     pub fn current(rules: Vec<Rule>) -> Self {
-        Policy { schema_version: SCHEMA_VERSION, rules }
+        Policy { kind: PolicyKind, schema_version: SCHEMA_VERSION, rules }
     }
 }
 

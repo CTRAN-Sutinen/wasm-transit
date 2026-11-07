@@ -161,6 +161,13 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-120 | Does compaction drop a record whose dates have passed? | unanswered | nothing |
 | D-121 | Does the store keep the edit document whole per commit, or record by record? | unanswered | the edits layout in `store-durability` |
 | D-122 | Is the dispatcher's day in scope? | decided | nothing |
+| D-123 | Do trip, block, and run ids survive from one pick to the next? | unanswered | nothing |
+| D-124 | Does this repo publish its cancels and detours as GTFS-rt? | decided | nothing |
+| D-125 | Does an edit record carry its source system's id? | unanswered | nothing |
+| D-126 | Is the runs layer shaped by TODS? | decided | nothing |
+| D-127 | Where does operations history come from? | decided | nothing |
+| D-128 | Does this repo produce TIDES? | decided | nothing |
+| D-129 | Where does the authored GTFS-rt reach riders? | unanswered | publishing in `rt-publish` |
 
 ## The trip model
 
@@ -664,6 +671,45 @@ so it answers null. Pins: `crates/transit-analysis/tests/coverage_law_test.rs`
 ("hubs and coverage answer around a station and a layer").
 Blocks: nothing.
 
+### D-127 — Where does operations history come from?
+State: Decided.
+Answer: 2026-11-06 — from TIDES, read as a source: "works well as
+consumption for service design." The history itself is out of scope.
+Context: `docs/ROADMAP.md` 3 closes the loop from operations back into
+planning, and planned to accumulate adherence history from the rt
+feeds itself. TIDES (the Transit ITS Data Exchange Specification,
+tides-transit.org) is the standard for that history, as Frictionless
+table schemas: event tables (`vehicle_locations`, `passenger_events`,
+`fare_transactions`) and summaries built from them (`trips_performed`
+per trip and service date, `stop_visits` per trip, stop, and service
+date, `station_activities`), joined to GTFS by service date and trip
+and stop ids. AVL, APC, and fare vendors produce it. A service date
+resolves its pick: no pick lands or moves before today and only one
+not yet in effect retires (D-75, D-76), so (service date, trip id)
+names one trip. A day's summaries are written once and never change,
+so an import is a document like any source. TIDES's boardings are also
+the shape D-53's ridership takes when it is taken up.
+Options:
+- **TIDES as a source; the history stays with the systems that own it
+  — decided.** An import turns a span of `stop_visits` and
+  `trips_performed` into a document the analysis ops read; service
+  design compares observed running times and adherence across picks by
+  pattern and time band, not trip id (D-123).
+- The repo accumulates its own history from the rt feeds.
+Blocks: nothing (`docs/ROADMAP.md` 3 carries the work).
+
+### D-128 — Does this repo produce TIDES?
+State: Decided.
+Answer: 2026-11-06 — no: "don't produce TIDES."
+Context: the one candidate was `trips_performed` rows for this repo's
+own cancels, where it is the system of record for a trip that did not
+run. Those reach adjacent systems as the edit document (and GTFS-rt if
+D-124 says so); the AVL vendor's TIDES records what ran.
+Options:
+- **Consume only — decided.**
+- Produce `trips_performed` for cancels and added trips.
+Blocks: nothing.
+
 ## Blocks and runcutting
 
 ### D-9 — Where does required recovery time come from?
@@ -836,6 +882,34 @@ Pins: `crates/transit-network/tests/recovery_law_test.rs`
 (`a_policy_judges_a_pair_with_no_authored_layover`,
 `the_policy_is_asked_about_the_trip_before_and_where_it_waits`).
 Blocks: nothing.
+
+### D-126 — Is the runs layer shaped by TODS?
+State: Decided.
+Answer: 2026-11-06 — yes: the runs layer is built on TODS's concepts,
+and GTFS + TODS is its interchange.
+Context: TODS (the Transit Operational Data Standard, v2.1.0,
+tods-transit.org) extends GTFS with what operating service needs:
+supplement files that add, overwrite, or delete GTFS rows by key
+(`TODS_delete`) — deadheads and other non-revenue trips, internal
+stops and waypoints, crew service ids — and its own files:
+`run_events` (a run's trips and other activities in order, keyed by
+`service_id`, `run_id`, `event_sequence`; a run id is unique within
+its `service_id`), `employee_run_dates`, `vehicles`, and
+`vehicle_assignments`. It is internal data, usually unpublished, and
+the format scheduling systems hand to CAD/AVL. The runs layer
+(`docs/units/runs-layer.md`) is not built yet, so its model can take
+TODS's concepts now and its codec stays lossless, as transit-codec is
+for GTFS. Law 1 holds: TODS is a serialization at the boundary; the
+runs layer's documents are the model. The dated assignment files
+(`employee_run_dates`, `vehicle_assignments`) are the dispatcher's
+day (D-122): an adjacent system's rows, which a bid's roster may
+feed.
+Options:
+- **TODS's concepts in the runs model, a GTFS + TODS codec at the
+  boundary — decided.** An export holds employee ids, so it is served
+  only under policy (D-58..D-61), never beside the public `/feed`.
+- A runs model of the repo's own, with TODS a later translation.
+Blocks: nothing (`docs/units/runs-layer.md` carries the work).
 
 ## Riding today
 
@@ -1989,6 +2063,85 @@ Options:
   cancels, D-121); each fact has one system of record, and the
   interfaces say what crosses and in whose vocabulary.
 - In scope: a row store joins the repo for daily operations.
+Blocks: nothing.
+
+### D-123 — Do trip, block, and run ids survive from one pick to the next?
+State: Unanswered.
+Context: adjacent systems (D-122) join on this repo's ids — a CAD
+system matches a block, a workforce system a run. Within the repo a
+fork copies the ids it carries, but a network imported from the
+scheduling system's export carries whatever ids that export names, so
+the same id in two picks may or may not be the same piece of work. An
+external reference names its pick or `network_hash` with the id
+(`docs/ARCHITECTURE.md`, "Adjacent systems"), so nothing is ambiguous
+today — and a service date names its pick (D-75, D-76: the past's
+pick in force never changes), so TODS's and TIDES's references by
+service date and id are already unambiguous. The question is what an
+adjacent system may assume across a pick change; service design's
+comparisons across picks go by pattern and time band (D-127).
+Options:
+- No promise: ids mean something only within their pick, and an
+  adjacent system re-joins at every pick.
+- Stable ids: an id names the same work across picks, and the import
+  keeps them (the scheduling system's ids, or a mapping kept beside
+  the network).
+- A published correspondence: each pick carries what its ids replace
+  in the pick before it.
+Blocks: nothing yet; any adjacent system that joins across picks.
+
+### D-124 — Does this repo publish its cancels and detours as GTFS-rt?
+State: Decided.
+Answer: 2026-11-06 — yes: "detours and cancels are in the GTFS-RT spec,
+it is just that we are providing an additional authoring surface."
+The edit document is the authored model; GTFS-rt is its serialization,
+as GTFS is the network's.
+Context: a trip cancel is a TripUpdate with `CANCELED`; a diversion is
+a TripModifications (start and end stop selectors, the detour as a
+shape, `propagated_modification_delay` = `added_secs`, its
+`service_dates`), with TripUpdates marking the skipped stops `SKIPPED`
+for clients that do not read TripModifications. The editing workflow
+(draft, submitted, accepted, retired; `rev`) has no GTFS-rt
+counterpart: it is the authoring surface, and only accepted records
+serialize. TripModifications is experimental in the spec, and a
+diversion has no replacement stops yet, which TripModifications
+carries. `transit-rt` decodes GTFS-rt and joins it over the network;
+no op encodes a feed.
+Options:
+- **Publish: an op answers the edits in force as GTFS-rt — decided**
+  (`docs/units/rt-publish.md`).
+- Documents only: adjacent systems read the edit document and do
+  their own translation.
+Blocks: nothing.
+
+### D-129 — Where does the authored GTFS-rt reach riders?
+State: Unanswered.
+Context: an agency's CAD/AVL vendor usually publishes its GTFS-rt
+already (C-TRAN's at `gtfs-rt.c-tran.org`, with alerts at
+`gtfs-rt.c-tran.com/Alerts`). This repo's authored cancels and
+detours (D-124) are a second source for the same trips: an authored
+cancel and the vendor's prediction can disagree, and no code picks a
+winner between sources (`docs/ARCHITECTURE.md`, "Adjacent systems").
+Options:
+- Its own feed endpoints beside the vendor's: consumers read both
+  (TripModifications and Alerts are commonly separate feeds); a cancel
+  in two TripUpdates feeds is the consumer's to reconcile.
+- Handed to the CAD/AVL system, which folds it into the one feed it
+  publishes (an adjacent system's input, D-122).
+- Both: this repo's endpoints are the source the CAD/AVL reads, and
+  the vendor's feed is what riders' apps read.
+Blocks: publishing in `docs/units/rt-publish.md`.
+
+### D-125 — Does an edit record carry its source system's id?
+State: Unanswered.
+Context: a record an adjacent system writes (a trip cancel after a
+sick call) is joined back to its cause during an audit by the source
+system's own id. `EditRecord` has no field for one; the log's `writer`
+names the system, not the event.
+Options:
+- An optional opaque field (the source and its id), additive under the
+  schema version, stored and served, never branched on.
+- None: the adjacent system keeps the mapping from its event to this
+  repo's record id.
 Blocks: nothing.
 
 ## Authentication and authorization

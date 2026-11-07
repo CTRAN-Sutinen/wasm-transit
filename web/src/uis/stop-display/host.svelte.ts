@@ -411,9 +411,12 @@ function readUrl(): void {
   display.setup = !stopId;
 }
 
+// A configured screen's URL is persisted data (docs/FORMATS.md,
+// "Versions"): a parameter this build does not know is kept.
 function writeUrl(): void {
-  const params = new URLSearchParams();
+  const params = new URLSearchParams(location.search);
   if (stopId) params.set("stop", stopId);
+  else params.delete("stop");
   params.set("layout", display.layout);
   history.replaceState(null, "", `${location.pathname}?${params}`);
 }

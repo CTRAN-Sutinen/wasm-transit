@@ -161,7 +161,7 @@ fn walks(streets_hash: &str, network_hash: &str, speed_mps: Option<f64>, max_wal
     let (speed_mps, max_walk_secs) = pace(speed_mps, max_walk_secs)?;
     let walking = walking(streets_hash)?;
     let stops = network_stops(network_hash)?;
-    let table = WalkTable {
+    let table = WalkTable { kind: Default::default(), schema_version: Default::default(),
         streets_hash: streets_hash.to_string(),
         network_hash: network_hash.to_string(),
         speed_mps,

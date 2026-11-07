@@ -30,14 +30,16 @@ pub enum Request {
         identity: transit_authz::Identity,
         action: String,
         pointer: String,
-        policy: transit_authz::Policy,
+        #[ts(as = "transit_authz::Policy")]
+        policy: cap_abi::Current<transit_authz::Policy>,
     },
     /// The policy AS IT APPLIES TO THIS IDENTITY — the client's view:
     /// the caller's roles and merged capabilities only, never other
     /// roles or rules. What `GET /permissions` serves.
     Effective {
         identity: transit_authz::Identity,
-        policy: transit_authz::Policy,
+        #[ts(as = "transit_authz::Policy")]
+        policy: cap_abi::Current<transit_authz::Policy>,
     },
 }
 

@@ -96,10 +96,11 @@ fn publish_answers_the_canonical_document_and_its_hash() {
         other => panic!("refusal: {other:?}"),
     }
 
-    // A set from a newer schema is refused, not guessed at.
+    // A set from a newer schema is refused naming both, not guessed at.
     let mut newer = published;
     newer.schema_version = 99;
-    assert!(dispatch(Request::InForce { published: newer, date: "2026-11-05".into() }).unwrap_err().contains("schema_version"));
+    let err = dispatch(Request::InForce { published: newer, date: "2026-11-05".into() }).unwrap_err();
+    assert!(err.contains("plans v99") && err.contains("reads v1"), "{err}");
 }
 
 /// Retiring through the seam (D-75): a future pick is retired and the

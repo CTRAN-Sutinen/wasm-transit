@@ -92,7 +92,7 @@ that variation as information, never as error.
 | 7 | analysis `route_overlap` | answered (CorridorTable); whether departures are spread along a shared segment has no op |
 | 8 | analysis `stop_gaps` | answered for one stop (StopWaits); not for a station's bays, QAF-92; no network-wide ranking in a window |
 | 9 | analysis `hub_connections` | answered (HubMatrix); a near-miss (arriving just after the departure) has no op |
-| 10 | none | data gap: no ridership (D-53: to be built in, later); adherence history is `docs/ROADMAP.md` 3 |
+| 10 | none | data gap: no ridership (D-53: to be built in, later); adherence history is `docs/ROADMAP.md` 3, read as TIDES (D-127) |
 | 11 | directory `route_detail`, `focus` | answered (DirectionTabs, FocusMap); branches read as one direction, QAF-63 (Blocked: D-44) |
 | 12 | directory `timetable` (`compare_hash`) | answered (StringLine, TimetableGrid), pooled over the group's members; stop spacing is by order — the timetable carries no distance along the pattern |
 | 13 | directory `timetable` (`run_secs`) | each trip's end-to-end time answered (RunTimes); by segment and band, no op; the model keeps one profile per pattern, D-3 |

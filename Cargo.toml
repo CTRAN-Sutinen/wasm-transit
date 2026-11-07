@@ -30,6 +30,7 @@ members = [
     "crates/transit-analysis",
     "crates/transit-dispatch",
     "crates/transit-runs",
+    "crates/transit-version",
     # The assembly crates (gen-assemblies, `just caps` — generated and
     # gitignored, assemblies/.gitkeep keeps the directory): the modules —
     # each capability alone, and each generated UI's capabilities linked.

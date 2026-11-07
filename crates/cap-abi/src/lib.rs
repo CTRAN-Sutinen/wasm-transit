@@ -217,28 +217,68 @@ pub fn parse_document<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T,
     serde_json::from_reader(std::io::BufReader::with_capacity(64 * 1024, source)).map_err(|e| format!("invalid document: {e}"))
 }
 
-/// Parse a network document from bulk bytes (JSON or gzipped JSON),
-/// in the version this build reads ([`transit_network::SCHEMA_VERSION`])
-/// and only that: an older document is refused with the op that brings
-/// it forward, a newer one is refused naming both versions — never
-/// parsed and re-emitted (docs/units/document-versioning.md).
-pub fn parse_network(bytes: &[u8]) -> Result<transit_network::Network, String> {
-    use transit_network::{SCHEMA_VERSION, KIND};
-    match parse_document::<transit_network::Network>(bytes) {
-        Ok(network) => speaks(KIND, network.schema_version.0, SCHEMA_VERSION).map(|_| network),
-        Err(typed) => {
-            // The typed read failed: an older or newer shape says so by
-            // its tag; a document in this version is just malformed.
-            #[derive(serde::Deserialize)]
-            struct Tag {
-                schema_version: Option<u32>,
-            }
-            match parse_document::<Tag>(bytes) {
-                Ok(Tag { schema_version }) => speaks(KIND, schema_version.unwrap_or(1), SCHEMA_VERSION).and(Err(typed)),
-                Err(_) => Err(typed),
-            }
-        }
+/// Parse a document of a versioned kind from bulk bytes (JSON or
+/// gzipped JSON), in the version this build reads and only that: an
+/// older document is refused with the op that brings it forward, a
+/// newer one naming both versions — never parsed and re-emitted
+/// (docs/FORMATS.md, "Versions"). A copy with no version field is the
+/// kind's untagged version.
+pub fn parse_versioned<T>(bytes: &[u8]) -> Result<T, String>
+where
+    T: serde::de::DeserializeOwned + transit_version::Versioned,
+{
+    match parse_document::<T>(bytes) {
+        Ok(document) => speaks(T::KIND, document.schema_version(), T::READS).map(|_| document),
+        // The typed read failed: an older or newer shape says so by its
+        // version; a document in this version is just malformed.
+        Err(typed) => match parse_document::<serde_json::Value>(bytes) {
+            Ok(value) => speaks(T::KIND, version_in::<T>(&value), T::READS).and(Err(typed)),
+            Err(_) => Err(typed),
+        },
     }
+}
+
+/// [`parse_versioned`] over a value already parsed (a request field).
+pub fn versioned<T>(value: serde_json::Value) -> Result<T, String>
+where
+    T: serde::de::DeserializeOwned + transit_version::Versioned,
+{
+    speaks(T::KIND, version_in::<T>(&value), T::READS)?;
+    serde_json::from_value(value).map_err(|e| format!("invalid document: {e}"))
+}
+
+/// A request field holding a document in the version this build
+/// reads ([`versioned`]): another version fails the request, naming
+/// both. Reads as the document (`Deref`); on the wire it is the
+/// document itself (`#[ts(as = "T")]` on the field).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(transparent)]
+pub struct Current<T>(pub T);
+
+impl<'de, T> serde::Deserialize<'de> for Current<T>
+where
+    T: serde::de::DeserializeOwned + transit_version::Versioned,
+{
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        versioned(<serde_json::Value as serde::Deserialize>::deserialize(d)?).map(Current).map_err(serde::de::Error::custom)
+    }
+}
+
+impl<T> std::ops::Deref for Current<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+/// The version a copy of `T`'s kind carries in its version field.
+fn version_in<T: transit_version::Versioned>(value: &serde_json::Value) -> u32 {
+    value.get(T::VERSION_FIELD).and_then(serde_json::Value::as_u64).map_or(T::UNTAGGED, |v| v as u32)
+}
+
+/// Parse a network document from bulk bytes ([`parse_versioned`]).
+pub fn parse_network(bytes: &[u8]) -> Result<transit_network::Network, String> {
+    parse_versioned(bytes)
 }
 
 /// The version check every versioned kind's load makes: the document's

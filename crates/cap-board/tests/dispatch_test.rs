@@ -200,7 +200,7 @@ fn the_grouped_board_is_the_board_by_route_and_destination() {
 fn late_at_a(network_hash: &str) -> (String, transit_live::LiveDay, transit_dispatch::BoardDeparture) {
     use transit_live::{LiveDay, LiveStatus, LiveStop, LiveTrip, OnTimeWindow};
     let row = departures(network_hash, None, "A").into_iter().find(|d| d.route == "10").unwrap();
-    let live = LiveDay {
+    let live = LiveDay { kind: Default::default(), schema_version: Default::default(),
         window: OnTimeWindow::default(),
         trips: vec![LiveTrip {
             trip: row.trip.clone(),

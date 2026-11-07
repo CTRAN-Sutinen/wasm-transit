@@ -11,61 +11,46 @@ received, into a NEW document (its own hash). The old bytes stay
 addressable; rollback is a pointer moved back, never an inverse
 migration.
 
-The machinery stands (`docs/FORMATS.md`, "Versions";
-`docs/ARCHITECTURE.md`, cap-migrate): the network and the edit
-document lead with `kind` and `schema_version` (both v2; untagged is
-v1); their chains and the watchlist's live in the owning libraries
-and cap-migrate wraps them; every module refuses another version of
-those two at its load, naming both (`cap_abi::speaks`); the Go server
-brings an older edit document forward at receive and commits an
-older `edits` head forward at startup; service design brings a
-stored plan forward at restore. What is left:
+The machinery stands (`docs/FORMATS.md`, "Versions" — the inventory
+of every persisted kind, the rollout order, the kernel-version rule,
+and URLs as persisted data; `docs/ARCHITECTURE.md`, cap-migrate and
+transit-version): every kind in the inventory but the watchlist
+carries its kind and version inside it, and every kernel load and
+every request field taking one refuses another version naming both
+(`cap_abi::parse_versioned`, `cap_abi::Current`); the network's,
+the edit document's and the watchlist's chains live in the owning
+libraries and cap-migrate wraps them; the Go server brings an older
+edit document forward at receive and commits an older `edits` head
+forward at startup; service design brings a stored plan forward at
+restore; cap-divert takes and answers the tagged edit document; a
+stop display keeps a URL parameter it does not know. What is left:
 
 ## Scope
 
-1. **The inventory**, written into `docs/ARCHITECTURE.md`: every
-   persisted kind, its owning crate, and its class —
-   - *authored* — written by a person, not re-derivable, migrated
-     forever (D-66): `edit_records`, `diversion_draft`, `plans`, an
-     authored or forked `network`, `watchlist`, `policy`, the rider's
-     device records (recent places, live-feed URLs), layouts and the
-     UI manifest when [wire-time-assembly.md](wire-time-assembly.md)
-     lands them;
-   - *derived* — a pure function of other documents: an imported
-     `network`, `boundary`, `walks`, an imported `streets`. A
-     version bump re-derives (the server holds the inputs); the
-     tag exists so a reader refuses a mismatch instead of
-     misreading it;
-   - *ephemeral* — `live`: never persisted past a session, tagged for
-     the same refusal;
-   - *host-owned* — the `manifest`: the server's, versioned in its
-     envelope.
-2. **The rest of the tags (D-62, D-115).** `kind` inside `plans`,
-   `policy`, `work_rules`, and the watchlist; `kind` and
-   `schema_version` inside `boundary`, `walks`, `streets`, `live`,
-   and `diversion_draft`; each kind's load refusing another version
-   the way the network's and the edit document's do. A kind that
-   gains only its `kind` reads an absent one as itself.
-3. **Picks' networks at the server's startup.** A `plan.<id>` head
+1. **The watchlist's refusal.** The kernel still reads both
+   watchlist versions (v1 and v2), and the ride-now host reads a v1
+   by hand (`restoreSaved`). It refuses v1 at the load once the
+   browser brings a stored v1 forward (item 3); the watchlist gains
+   its `kind` then. A diversion draft gains its tags when something
+   first persists one ([ui-disruptions.md](ui-disruptions.md)).
+2. **Picks' networks at the server's startup.** A `plan.<id>` head
    in an older network version is committed forward, and the plans
    document's `network_hash` for that pick follows it (a republish
    through cap-plans, never a host rewriting hashes).
-4. **The browser's document store** (`web/src/documents.svelte.ts`,
-   `web/src/plans.svelte.ts`): a stored plan brought forward keeps
-   its old record (`produced_by` naming the migration), and every
-   device record ride-now and the stop display keep moves out of
-   `localStorage` into that store, tagged (`localStorage` keeps only
-   presentation preferences).
-5. **The authoring ops answer the document.** cap-divert's ops take
-   and answer bare record lists; a client that persists or posts
-   their answer writes edit document v1, which the server brings
-   forward. They answer the tagged document instead.
-6. **Migration modules sized to their page.** cap-migrate carries
+3. **The browser's document store** (`web/src/documents.svelte.ts`,
+   `web/src/plans.svelte.ts`): a stored plan or watchlist brought
+   forward keeps its old record (`produced_by` naming the
+   migration), and every device record ride-now keeps (recent
+   places, live-feed URLs) moves out of `localStorage` into that
+   store, tagged (`localStorage` keeps only presentation
+   preferences: the map's last frame and fix).
+4. **Migration modules sized to their page.** cap-migrate carries
    every chain, so linking it into service design costs about
-   0.8 MB of assembly for chains that page never meets. Split it per
-   kind (one migration capability per authored kind), or measure the
-   cost first in [runtime-cost-gate.md](runtime-cost-gate.md).
-7. **The schema lock — the gate that bakes this in.** Per kind,
+   0.8 MB of assembly for chains that page never meets, and ride-now
+   needs the watchlist's (item 3). Split it per kind (one migration
+   capability per authored kind), or measure the cost first in
+   [runtime-cost-gate.md](runtime-cost-gate.md).
+5. **The schema lock — the gate that bakes this in.** Per kind,
    per version, checked into the owning crate: a frozen fixture,
    its generated JSON Schema, and the hash of its canonical bytes.
    `just test` fails when the current version's serde type changes
@@ -79,17 +64,7 @@ stored plan forward at restore. What is left:
    schemas and fixtures are the published spec (D-115): every kind's
    schema and a worked example, per version, readable as plain files
    by a person or another tool.
-8. **Rolling a version out.** The server's modules learn the new
-   version first (accept old and new at receive, store new); the
-   manifest then pins them; clients follow the manifest (D-63).
-   Because every client gets its modules from the server's
-   manifest, no client writes a version the server does not speak.
-9. **The kernel version** bumps only when an existing kernel op
-   changes meaning. A new kernel op (the eviction op,
-   `docs/ARCHITECTURE.md`, "The bus worker") is listed in each
-   capability's `ops`, so a host checks for it rather than the
-   kernel number.
-10. **Rolling a version back** (Blocked: D-79). Rollback is a
+6. **Rolling a version back** (Blocked: D-79). Rollback is a
    pointer moved back, never an inverse migration, so the bytes
    before an upgrade stay addressable. But once a newer build has
    written vN+1 documents, a build rolled back to vN cannot read them
@@ -100,17 +75,12 @@ stored plan forward at restore. What is left:
    applies. Rolling the CODE back is
    [release-artifacts.md](release-artifacts.md)'s; both follow one
    compatibility policy.
-11. **URLs are persisted data.** The stop display's `stop` and
-   `layout` parameters are configured into screens and printed
-   into QR codes: they only gain optional parameters, and an
-   unknown parameter is ignored.
 
 ## Done when
 
-- Every kind in the inventory carries its kind and version inside
-  the document and its load refuses another version naming both
-  (the network and the edit document do: `cap-abi`
-  `kernel_test.rs`, caps-smoke).
+- The watchlist's load refuses another version naming both (every
+  other kind's does: `cap-abi` `kernel_test.rs`,
+  `every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy`).
 - The schema-lock gate runs in `just test` and fails on each of its
   three conditions (each proven by a deliberately broken fixture in
   the gate's own test).
@@ -124,5 +94,3 @@ stored plan forward at restore. What is left:
 - Go and e2e: an upgrade that writes vN+1 is rolled back to the vN
   build under D-79's rule, and no document is lost or misread (the
   older build reads, or the newer writes wait, as decided).
-- e2e: a stop display URL with an unknown parameter loads.
-- `docs/ARCHITECTURE.md` holds the inventory and the schema lock.

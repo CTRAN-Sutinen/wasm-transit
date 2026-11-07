@@ -66,17 +66,23 @@ routing, service-type analysis.
 
 ## 3. The operations → planning feedback loop
 
-**What.** Accumulate adherence history from the rt feeds (locally,
-or server-side if it earns a role). Answer "which trips are
-chronically late," and let the planner import that evidence into
-the next pick's timing profiles.
+**What.** Read operations history as TIDES (D-127) — `stop_visits`
+and `trips_performed`, produced by the agency's AVL, APC, and fare
+vendors — and answer "which trips are chronically late" and "what
+running times did each pattern actually need, by time band," so the
+planner can carry that evidence into the next pick's timing profiles.
+The history stays with the systems that own it; this repo consumes
+TIDES and never produces it (D-128).
 
 **Why.** Measure → plan → publish → measure. No scheduling product
 closes this loop locally-first; it is the most defensible long-term
 feature here.
 
-**Exists already:** rt decode, timing profiles, the plan chain.
-**Needs:** accumulation storage (IndexedDB first), reporting ops.
+**Exists already:** rt decode, timing profiles, the plan chain (a
+service date resolves the pick that governed it).
+**Needs:** a TIDES import (a source: a span of summaries becomes a
+document by hash), the analysis ops over it, and a vendor's TIDES
+export to dogfood against.
 
 ## 4. Walkshed coverage (not crow-flies)
 
@@ -115,7 +121,10 @@ streets) — two modules composed by the host over documents
 and clear times and places, pieces, platform time, pay), and run
 the bid: operators pick runs from the pick's offer in seniority
 order. Runs, work rules, and bids are their own documents and
-modules beside the network (D-16), never a `Block` extension.
+modules beside the network (D-16), never a `Block` extension. The
+runs model takes TODS's concepts — runs as ordered run events,
+deadheads as non-revenue trips, internal locations — and GTFS + TODS
+is its interchange with scheduling and CAD/AVL systems (D-126).
 
 **Why.** A pick ends in work operators can bid on. Blocks answer
 what the vehicles do; runs answer what the people do, and the bid

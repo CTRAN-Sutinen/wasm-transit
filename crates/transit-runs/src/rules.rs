@@ -7,12 +7,31 @@ use ts_rs::TS;
 /// The document version this build speaks.
 pub const SCHEMA_VERSION: u32 = 1;
 
+transit_version::kind_tag!(
+    /// The work-rule document's kind tag: always `"work_rules"`.
+    WorkRulesKind = "work_rules"
+);
+
+impl transit_version::Versioned for WorkRules {
+    const KIND: &'static str = "work_rules";
+    const READS: u32 = SCHEMA_VERSION;
+    const VERSION_FIELD: &'static str = "version";
+    fn schema_version(&self) -> u32 {
+        self.version
+    }
+}
+
 /// The rules work is cut under: generic, every rule optional, an
 /// agency's values as data. Nothing unset is written, so an empty
-/// document is `{"version":1}`.
+/// document is `{"kind":"work_rules","version":1}`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export, export_to = "transit_runs/")]
 pub struct WorkRules {
+    /// The kind tag (D-115): `"work_rules"`; a copy without one reads
+    /// as work rules.
+    #[serde(default)]
+    #[ts(type = "\"work_rules\"")]
+    pub kind: WorkRulesKind,
     pub version: u32,
     /// What the agency calls this rule set ("Winter 2027 agreement").
     #[serde(default, skip_serializing_if = "String::is_empty")]

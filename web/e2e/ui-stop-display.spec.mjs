@@ -118,6 +118,16 @@ test("a transit center names the bay each bus leaves from", async ({ page }) => 
   await expect(toBayB.getByTestId("display-time").first()).toContainText("Main Station: Bay A");
 });
 
+// A screen's URL is persisted data (docs/FORMATS.md, "Versions"): one
+// configured by a newer build, with a parameter this build does not
+// know, loads its stop and keeps the parameter.
+test("a display URL with a parameter this build does not know loads", async ({ page }) => {
+  await open(page, { query: "?stop=A&layout=routes&brightness=night" });
+  await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
+  await expect(page.getByTestId("display")).toHaveAttribute("data-layout", "routes");
+  await expect(page).toHaveURL(/brightness=night/);
+});
+
 test("a single route says when the edits detour it away", async ({ page }) => {
   await open(page, { query: "?stop=C&layout=route", edits: detour });
   await expect(page.getByTestId("display-stop")).toHaveText("Main & 3rd", { timeout: 10_000 });

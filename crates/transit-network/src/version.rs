@@ -59,6 +59,14 @@ impl schemars::JsonSchema for NetworkKind {
     }
 }
 
+impl transit_version::Versioned for Network {
+    const KIND: &'static str = KIND;
+    const READS: u32 = SCHEMA_VERSION;
+    fn schema_version(&self) -> u32 {
+        self.schema_version.0
+    }
+}
+
 /// The network document's version. A network built in code is the
 /// current version; a document read without one is version 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]

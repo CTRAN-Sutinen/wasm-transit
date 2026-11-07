@@ -439,6 +439,16 @@ transit-live    THE live document: one rt moment in model vocabulary
                 status summary. Pure data; no GTFS
                 layer (arch gate). Minted by cap-rt, read by
                 cap-board — no host computes a delay.
+transit-version What every persisted document says about itself
+                (D-115): `kind_tag!` declares a kind's tag (written
+                always, an absent one read as the kind, another
+                kind refused), `Version<N>` a version field whose
+                absence reads as N, and `Versioned` what a reader
+                needs to refuse another version naming both
+                (`cap_abi::parse_versioned` at every kernel load,
+                `cap_abi::Current` on a request field). Each owning
+                library declares its kind's tag; the kinds and their
+                versions are docs/FORMATS.md's "Versions".
 transit-sync   THE sync document: EditRecord, FeedManifest, EditReport,
                 the edit document (THE DISPATCHER'S OWN — it lives in
                 the sync contract, not the GTFS codec) whose records
@@ -452,8 +462,9 @@ transit-sync   THE sync document: EditRecord, FeedManifest, EditReport,
                 drafts with the host-passed clock), and the record
                 envelope every writer follows (propose and
                 propose_cancel: rev 1 or bumped; set_retired: the
-                tombstone and restore; sanitize: a stored document
-                read under the current schema, the unparseable and
+                tombstone and restore; read_document: a received
+                document in the version this build reads, its
+                records under the current schema, the unparseable and
                 any record without exactly one payload dropped and
                 counted). Shared
                 by every host — cap-sync is the seam the Go server
@@ -607,8 +618,13 @@ cap-divert      The operator-edit authoring capability: what does
                 nothing for them), and what is the edit document
                 after propose / cancel / retire / restore (the
                 envelope rules; cancel refuses an unknown trip, an
-                instance it never runs, a date it does not run)
-                — plus sanitize for stored copies. A separate need
+                instance it never runs, a date it does not run).
+                Every op takes the edit document whole (`edits`)
+                and answers the next one tagged, so a host persists
+                or posts the answer as given; another version is
+                refused naming both (`cap_abi::Current`, the
+                version check every kernel load shares). Reading a
+                received document is cap-sync's read_edits. A separate need
                 from cap-sync's converge step (the Go server hosts
                 that one without a network). The host passes the
                 clock and the record ids. No browser UI authors an
@@ -1074,6 +1090,51 @@ The contract:
   through the deployment's path) and chains its answer into the
   ops; the answers themselves drift with the oracle's data, so
   sessions record them as reference, never as fixtures.
+
+### Adjacent systems
+
+The systems that run the dispatcher's day — CAD/AVL, workforce
+management, the agency's scheduling system — are out of scope (D-122)
+and touch everything here. Unlike a source, a presentation, or an
+oracle, an adjacent system both reads this repo's documents and writes
+into its records. Each fact has one system of record: this repo owns
+the documents (the network, picks, plans, policy) and the authored
+detours and cancels; the adjacent system owns its own rows (a sick call, an
+extra-board fill, a swap, a vehicle assignment). The seam:
+
+**Out to an adjacent system**
+
+1. **Documents, by hash.** Their shapes are the registry's schemas
+   (`registry/schemas/`, indexed by `registry/documents.json`;
+   `docs/FORMATS.md` for the at-rest envelope), and the manifest is the
+   index of what is in force. An adjacent system keeps a document as a
+   read-only cache keyed by its hash — never a second system of record,
+   and never a table it queries for domain answers: those are ops.
+2. **Standard formats wherever one exists:** the GTFS zip in force
+   (`GET /feed`); GTFS + TODS for the operations plan (D-126); GTFS-rt
+   for the authored cancels and detours — this repo is an authoring
+   surface for what GTFS-rt carries (D-124; no op encodes it yet,
+   `docs/units/rt-publish.md`). The registry's schemas cover only what
+   the standards cannot say.
+3. **References carry their version.** An external reference names
+   the document with the entity: a pick id with a trip id, a trip
+   instance (trip, start, service date) with its `network_hash`. A bare
+   id can name different things in different picks (D-123).
+
+**In from an adjacent system**
+
+4. **Only as records, through the receive path** — `POST /edits` or a
+   pointer commit (`docs/FORMATS.md`, "The HTTP surface"), under the
+   system's own credentials, so the log's `writer` names it; the module
+   validates and the per-record LWW merge applies. Nothing writes the
+   bucket directly.
+5. **Effects in this repo's vocabulary, never their causes.** A sick
+   call with no extra-board fill arrives as a trip cancel; the sick call
+   stays in the workforce system.
+6. **A pointer back to the source, opaque.** A record has no field for
+   the source system's id yet (D-125); once it does, this repo stores
+   and serves it for audit joins and never branches on it — the rule
+   an oracle's label follows.
 
 ### Generated UIs
 

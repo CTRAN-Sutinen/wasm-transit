@@ -105,3 +105,39 @@ fn a_network_load_refuses_other_versions_naming_both() {
     let newer = cap_abi::parse_network(doc.to_string().as_bytes()).unwrap_err();
     assert!(newer.contains(&format!("network v{}", current + 1)), "{newer}");
 }
+
+/// Every versioned kind's load (docs/FORMATS.md, "Versions"): a copy
+/// with no tag is the kind's v1 (the derived kinds and the work rules
+/// gained their tags at v1), and a newer copy is refused naming both
+/// versions — never read as this build's.
+#[test]
+fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
+    use transit_version::Versioned;
+    fn law<T: serde::de::DeserializeOwned + serde::Serialize + Versioned + std::fmt::Debug>(untagged: serde_json::Value) {
+        let read: T = cap_abi::parse_versioned(untagged.to_string().as_bytes()).unwrap_or_else(|e| panic!("{}: {e}", T::KIND));
+        let written = serde_json::to_value(&read).unwrap();
+        assert_eq!(written["kind"], T::KIND, "a written copy names its kind");
+        assert_eq!(written[T::VERSION_FIELD], 1, "{}: a written copy names its version", T::KIND);
+        let mut newer = written.clone();
+        newer[T::VERSION_FIELD] = serde_json::json!(T::READS + 1);
+        let err = cap_abi::parse_versioned::<T>(newer.to_string().as_bytes()).unwrap_err();
+        assert!(
+            err.contains(&format!("{} v{}", T::KIND, T::READS + 1)) && err.contains(&format!("reads v{}", T::READS)),
+            "{err}"
+        );
+        let mut other = written;
+        other["kind"] = serde_json::json!("not-this-kind");
+        assert!(cap_abi::parse_versioned::<T>(other.to_string().as_bytes()).is_err(), "{}: another kind is refused", T::KIND);
+    }
+    law::<transit_codec::Boundary>(serde_json::json!({}));
+    law::<transit_streets::Streets>(serde_json::json!({"ways": []}));
+    law::<transit_streets::walking::WalkTable>(serde_json::json!({
+        "streets_hash": "sha256:s", "network_hash": "sha256:n", "speed_mps": 1.3, "max_walk_secs": 600, "walks": []
+    }));
+    law::<transit_live::LiveDay>(serde_json::json!({
+        "window": {"early_secs": 0, "late_secs": 300, "very_late_secs": 600}, "trips": [], "vehicles": [], "unmatched_trips": 0
+    }));
+    law::<transit_runs::WorkRules>(serde_json::json!({"version": 1}));
+    law::<transit_plans::PublishedPlans>(serde_json::json!({"schema_version": 1, "plans": []}));
+    law::<transit_authz::Policy>(serde_json::json!({"schema_version": 1, "rules": []}));
+}

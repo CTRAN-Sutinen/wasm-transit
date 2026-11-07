@@ -62,12 +62,33 @@ pub struct DirectWalk {
     pub path: Vec<StreetPoint>,
 }
 
+transit_version::kind_tag!(
+    /// The walk table's kind tag: always `"walks"`.
+    WalksKind = "walks"
+);
+
+impl transit_version::Versioned for WalkTable {
+    const KIND: &'static str = "walks";
+    const READS: u32 = 1;
+    fn schema_version(&self) -> u32 {
+        self.schema_version.0
+    }
+}
+
 /// Every walk between a network's stops within the limit, and what
 /// it was derived from: the streets and network documents' hashes,
 /// the speed, the limit. Walks in (from, to) order; symmetric.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct WalkTable {
+    /// The kind tag and version (D-115); a copy without them is this
+    /// kind, version 1.
+    #[serde(default)]
+    #[ts(type = "\"walks\"")]
+    pub kind: WalksKind,
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub schema_version: transit_version::Version<1>,
     pub streets_hash: String,
     pub network_hash: String,
     pub speed_mps: f64,
@@ -86,7 +107,7 @@ impl WalkGraph {
             .filter(|w| walkable(w.class))
             .map(|w| crate::Way { oneway: false, ..w.clone() })
             .collect();
-        WalkGraph(StreetNetwork::build(&Streets { ways }))
+        WalkGraph(StreetNetwork::build(&Streets { kind: Default::default(), schema_version: Default::default(), ways }))
     }
 
     /// Every walk between `stops` (id, lat, lon) within `max_walk_secs`

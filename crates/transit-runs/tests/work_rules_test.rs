@@ -29,17 +29,17 @@ fn at<'a>(route: &'a str, service_type: &'a str, run_secs: u32) -> RecoveryAt<'a
 
 #[test]
 fn every_rule_is_optional() {
-    let empty: WorkRules = serde_json::from_str(r#"{"version":1}"#).unwrap();
+    let empty: WorkRules = serde_json::from_str(r#"{"kind":"work_rules","version":1}"#).unwrap();
     assert_eq!(empty.clone().checked().unwrap(), empty);
     assert_eq!(empty.recovery_secs(&at("5", "wk", 1200)), None);
     assert!(empty.interlines("5", "5"), "a route always follows itself");
     assert!(!empty.interlines("5", "6"), "no pair listed, no interlining");
-    assert_eq!(serde_json::to_string(&empty).unwrap(), r#"{"version":1}"#, "nothing unset is written");
+    assert_eq!(serde_json::to_string(&empty).unwrap(), r#"{"kind":"work_rules","version":1}"#, "nothing unset is written");
 }
 
 #[test]
 fn the_whole_document_round_trips() {
-    let rules = WorkRules {
+    let rules = WorkRules { kind: Default::default(),
         version: SCHEMA_VERSION,
         name: "Agency 2027".into(),
         recovery: vec![rule(None, None, Some(300), Some(10))],

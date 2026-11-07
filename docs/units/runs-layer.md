@@ -8,6 +8,13 @@ hash. The work-rule document (`work_rules`, D-50), required recovery
 (`docs/ARCHITECTURE.md`, transit-runs and cap-runcut). The runs cut
 itself is what is left. It closes QAF-11, QAF-12, QAF-14, and QAF-15.
 
+The model takes TODS's concepts (D-126): a run is an ordered list of
+run events (its trips and its other activities — report, deadhead,
+break, relief, clear), keyed by service and run id, a run id unique
+within its service; a deadhead is a non-revenue trip; a garage or
+relief point is an internal location. Nothing here reads TODS files:
+that is the codec's (step 7).
+
 ## Scope, in order
 
 1. **The runs cut.** A library function from a day's blocks and the
@@ -44,6 +51,12 @@ itself is what is left. It closes QAF-11, QAF-12, QAF-14, and QAF-15.
    (`docs/units/grade-debt.md`). This lands with
    `docs/units/ui-runcut.md`.
 
+7. **The GTFS + TODS codec** (D-126): export the network with its
+   runs layer as GTFS plus TODS's supplements and `run_events`, and
+   import the same, losslessly, in transit-codec beside the GTFS
+   codec. The export carries internal data and is served only under
+   policy.
+
 Where the runs ops go is a Law 3 question, judged when step 1 lands:
 the runcut's question is "what does this vehicle do today", and a
 run is a person's work. The runs cut is most likely its own
@@ -58,3 +71,6 @@ capability over the same documents.
 - The run view (QAF-14) and run legality (QAF-12) answered, with
   their findings deleted.
 - A UI reads them (`docs/units/ui-runcut.md`).
+- A C-TRAN weekday's runs export as GTFS + TODS and import back to
+  the same documents (a codec round-trip law), and the export is
+  refused without the policy's grant.

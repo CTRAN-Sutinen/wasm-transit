@@ -131,6 +131,7 @@ dependencies = [
  "transit-runs",
  "transit-streets",
  "transit-sync",
+ "transit-version",
  "ts-rs",
 ]
 
@@ -287,6 +288,7 @@ dependencies = [
  "serde",
  "serde_json",
  "transit-plans",
+ "transit-version",
  "ts-rs",
 ]
 
@@ -1361,6 +1363,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "transit-version",
  "ts-rs",
 ]
 
@@ -1376,6 +1379,7 @@ dependencies = [
  "serde_json",
  "transit-analysis",
  "transit-network",
+ "transit-version",
  "ts-rs",
  "zip",
 ]
@@ -1391,6 +1395,7 @@ dependencies = [
  "transit-live",
  "transit-network",
  "transit-sync",
+ "transit-version",
  "ts-rs",
 ]
 
@@ -1401,6 +1406,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "transit-version",
  "ts-rs",
 ]
 
@@ -1414,6 +1420,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+ "transit-version",
  "ts-rs",
 ]
 
@@ -1426,6 +1433,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "transit-version",
  "ts-rs",
 ]
 
@@ -1476,6 +1484,7 @@ dependencies = [
  "serde_json",
  "transit-dispatch",
  "transit-network",
+ "transit-version",
  "ts-rs",
 ]
 
@@ -1487,6 +1496,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "transit-version",
  "ts-rs",
 ]
 
@@ -1499,8 +1509,18 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "transit-version",
  "ts-rs",
  "zip",
+]
+
+[[package]]
+name = "transit-version"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
