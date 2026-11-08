@@ -16,7 +16,7 @@
 /// here answers in its place.
 
 import { ask, assemble, available, keep, load, produced, servedNetwork, together, Doc } from "../../engine";
-import { answerGraph, clockLabel, nowSecs, readAgencyZone, setAgencyZone, today, whileVisible } from "../kit";
+import { answerGraph, clockLabel, nowSecs, readAgencyZone, setAgencyZone, staleLabel, today, whileVisible } from "../kit";
 
 // This page's capabilities answer inside its linked assembly — one
 // module, one registry: each document registers once (D-77).
@@ -47,6 +47,9 @@ const STALE_BOARD_MS = 2 * POLL_MS;
 
 export const display = $state({
   status: "Loading the agency's feed…",
+  /// The edit document's age while the sync server serves it from its
+  /// cache (D-119; kit's staleLabel), else "".
+  editsStale: "",
   busy: true,
   feed: "",
   /// Frames whose capability the bus could not assemble.
@@ -339,6 +342,7 @@ async function syncEdits(): Promise<boolean> {
   try {
     const resp = await fetch("/edits");
     if (!resp.ok) return false;
+    display.editsStale = staleLabel(resp, "Detours");
     const text = await resp.text();
     // The edit document, as the server keeps it (it brings an older
     // one forward); the modules refuse any version they do not read.

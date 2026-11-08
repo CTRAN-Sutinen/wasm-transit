@@ -26,7 +26,7 @@ import (
 func newStoreServer(t *testing.T, b store.Backend) *server {
 	t.Helper()
 	s := &server{wasm: newTestHost(t), retentionDays: 90}
-	st := store.New(b)
+	st := store.NewServing(b)
 	s.store = st
 	s.seedStore("")
 	t.Cleanup(func() { st.Close() })

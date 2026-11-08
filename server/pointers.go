@@ -239,13 +239,14 @@ func (s *server) handlePointers(w http.ResponseWriter, r *http.Request) {
 func (s *server) handlePointerHead(w http.ResponseWriter, name string) {
 	head, found, err := s.store.Head(name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	if !found {
 		http.Error(w, "no such pointer", http.StatusNotFound)
 		return
 	}
+	labelStale(w, head)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(head)
 }
@@ -254,7 +255,7 @@ func (s *server) handlePointerLog(w http.ResponseWriter, r *http.Request, name s
 	since := r.URL.Query().Get("since")
 	entries, found, err := s.store.Log(name, since)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	// Writer identities leave the store only for audit-granted callers
@@ -269,6 +270,7 @@ func (s *server) handlePointerLog(w http.ResponseWriter, r *http.Request, name s
 		}
 	}
 	head, _, _ := s.store.Head(name)
+	labelStale(w, head)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"name":        name,
@@ -301,7 +303,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 
 	head, found, err := s.store.Head(name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	kind := req.Kind
@@ -332,14 +334,14 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 		if found {
 			b, _, err := s.store.GetBlob(head.Hash)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				fail(w, err, http.StatusInternalServerError)
 				return
 			}
 			serverRaw = b
 		}
 		document, hash, err := s.mergeEdits(req.Client, serverRaw, nowMs)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			fail(w, err, http.StatusBadRequest)
 			return
 		}
 		h, seq, err := s.store.CAS(name, from, []byte(document), s.syncEnvelope(), hash, writer, nowMs)
@@ -351,7 +353,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 				json.NewEncoder(w).Encode(map[string]any{"current": ce.Current, "seq": ce.Seq})
 				return
 			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			fail(w, err, http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -386,7 +388,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 			json.NewEncoder(w).Encode(map[string]any{"current": ce.Current, "seq": ce.Seq})
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -410,7 +412,7 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		fail(w, err, http.StatusBadRequest)
 		return
 	}
 	// Server-internal config documents are never served to clients:

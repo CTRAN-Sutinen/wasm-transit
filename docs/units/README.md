@@ -41,7 +41,7 @@ archive — nothing here records what is finished.
 | [runtime-cost-gate.md](runtime-cost-gate.md) | a ratchet on per-module memory and registration time |
 | [document-versioning.md](document-versioning.md) | every persisted document versioned, migrated forward at receive, rolled back under one rule, the schema-lock gate |
 | [release-artifacts.md](release-artifacts.md) | every build kept and rebuildable, op and HTTP contracts changed by expand-then-contract, rolling code back |
-| [store-durability.md](store-durability.md) | the sync store on object storage (S3, Azure Blob, GCS), verified offline, backed up and restored |
+| [store-durability.md](store-durability.md) | the sync store's contract run on each provider's real account, the edits layout (D-121), backup and restore (D-82) |
 | [observability-rollout.md](observability-rollout.md) | what production runs and whether it is healthy; canary rings and the automatic revert |
 | [deploy-rider-apps.md](deploy-rider-apps.md) | ride-now and the stop display beyond localhost: updates, offline, polling, the service day, recovery, caching, the proxy's removal and the feed fixes |
 | [streets-model.md](streets-model.md) | streets as a model document: serving it, the bus profile, walking for riders, drawing on streets, the geography release |

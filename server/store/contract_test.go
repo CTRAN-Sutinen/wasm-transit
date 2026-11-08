@@ -17,6 +17,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 type testBackend struct {
@@ -37,11 +40,60 @@ func backends(t *testing.T) []testBackend {
 			if err != nil {
 				t.Fatalf("open %s: %v", url, err)
 			}
+			ensureBucket(t, b)
 			return b
 		}})
 	}
 	return out
 }
+
+// ensureBucket creates the bucket (container) a local emulator starts
+// without — tests only: the adapters never create one, a deployment's
+// bucket is provisioned with its retention settings.
+func ensureBucket(t *testing.T, b Backend) {
+	t.Helper()
+	ensureOnce.Lock()
+	defer ensureOnce.Unlock()
+	ctx := context.Background()
+	var err error
+	switch b := b.(type) {
+	case *S3:
+		if ensured[b.bucket] {
+			return
+		}
+		_, err = b.c.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: &b.bucket})
+		if status(err) == 409 {
+			err = nil
+		}
+		ensured[b.bucket] = true
+	case *Azure:
+		if ensured[b.container] {
+			return
+		}
+		_, err = b.c.CreateContainer(ctx, b.container, nil)
+		if bloberror.HasCode(err, bloberror.ContainerAlreadyExists) {
+			err = nil
+		}
+		ensured[b.container] = true
+	case *GCS:
+		if ensured[b.b.BucketName()] {
+			return
+		}
+		err = b.b.Create(ctx, "transit-test", nil)
+		if gcsCode(err) == 409 {
+			err = nil
+		}
+		ensured[b.b.BucketName()] = true
+	}
+	if err != nil {
+		t.Fatalf("ensure bucket: %v", err)
+	}
+}
+
+var (
+	ensureOnce sync.Mutex
+	ensured    = map[string]bool{}
+)
 
 // withSubPrefix appends one path segment to a store URL's prefix,
 // keeping its query.

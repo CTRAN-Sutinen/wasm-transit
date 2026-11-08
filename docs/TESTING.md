@@ -45,9 +45,17 @@ run it only when a change touches the sync engine (`server/store/`,
 the store's HTTP surface, or the spec itself); nothing else requires
 Java, and `just test` never does. Default bounds are the small pinned
 `store.cfg`; the exhaustive tier is
-`SPEC_CFG=server/store/store-exhaustive.cfg just spec` (blob-hash
-symmetry, larger bounds, still exhaustive; `TLC_WORKERS`/`TLC_XMX`
-size the run).
+`SPEC_CFG=server/store/store-exhaustive.cfg just spec` (hash and
+process symmetry, larger bounds, still exhaustive, about 5 minutes;
+`TLC_WORKERS`/`TLC_XMX` size the run). `store-race.cfg` is expected
+to fail: it runs GC without its settle step and answers the trace
+that step exists for. A fourth is optional too: `just store-contract`
+runs the store's backend contract and every engine law against real
+object stores (`just store-dev` starts SeaweedFS, Azurite and
+fake-gcs-server in podman) — for changes to `server/store/` or an
+adapter; `just test` runs the same laws on `mem://`. A managed
+provider's bucket runs the same way (`STORE_TEST_URL` and its
+credentials), recorded in the store-durability unit.
 
 1. **Unit/property tests in the owning crate** (oracle style for
    laws — e.g. `transit-network`'s `trip_law_test` holds that trips

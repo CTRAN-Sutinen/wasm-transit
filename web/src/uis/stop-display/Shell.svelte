@@ -42,6 +42,9 @@
       onsetup={openSetup}
     />
     <div class="groups">
+      {#if display.editsStale}
+        <p class="note" data-testid="display-stale">{display.editsStale}</p>
+      {/if}
       {#if display.board && (display.boardError || display.problem)}
         <p class="note" data-testid="display-note">
           {display.boardError ? `Departures could not be updated: ${display.boardError}` : display.problem}

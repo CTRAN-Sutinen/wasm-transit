@@ -174,17 +174,17 @@ func TestCrashBetweenBlobAndRecordLeavesOrphanAndOldAuthority(t *testing.T) {
 		if !found || head.Hash != h1 || head.Seq != 1 {
 			t.Fatalf("crash must leave the old authority readable: %+v", head)
 		}
-		if removed, err := s2.GC(OrphanGraceMs); err != nil || removed != 0 {
-			t.Fatalf("an orphan inside the grace survives: removed=%d %v", removed, err)
+		if r, err := s2.GC(OrphanGraceMs); err != nil || r.Removed != 0 {
+			t.Fatalf("an orphan inside the grace survives: %+v %v", r, err)
 		}
 		if _, _, err := s2.GetBlob(orphan); err != nil {
 			t.Fatalf("orphan blob should still exist within grace: %v", err)
 		}
-		// Two days on, GC collects the one orphan object.
-		s2.now = func() time.Time { return time.Now().Add(48 * time.Hour) }
-		removed, err := s2.GC(OrphanGraceMs)
-		if err != nil || removed != 1 {
-			t.Fatalf("gc: removed=%d err=%v", removed, err)
+		// Past the grace, GC collects the one orphan object.
+		s2.now = func() time.Time { return time.Now().Add(OrphanGrace + time.Hour) }
+		r, err := s2.GC(OrphanGraceMs)
+		if err != nil || r.Removed != 1 || r.Restored != 0 {
+			t.Fatalf("gc: %+v err=%v", r, err)
 		}
 		if _, _, err := s2.GetBlob(orphan); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("orphan must be collected: %v", err)
@@ -291,6 +291,7 @@ func TestTwoStoresOnOneBucketConvergeOnOneChainedLog(t *testing.T) {
 		a.now, c.now = later, later
 		ha := checkChained(t, a, "edits")
 		hc := checkChained(t, c, "edits")
+		ha.AsOfMs, hc.AsOfMs = 0, 0 // each process's own confirmation time
 		if ha != hc {
 			t.Fatalf("the two stores disagree on the head: %+v vs %+v", ha, hc)
 		}
@@ -350,60 +351,123 @@ func TestGetBlobRoundTrip(t *testing.T) {
 	})
 }
 
-// The GC cadence: a store that stays open (the server runs for weeks)
-// still collects crash-torn orphans — a periodic in-process sweep. The
-// sweep keeps every guarantee of GC: it never removes a referenced blob
-// or one inside the grace period, and commits racing it stay intact
-// (go test -race). Memory only: it backdates one orphan.
-func TestSweepCollectsAgedOrphansWhileOpen(t *testing.T) {
-	m := NewMemory()
-	s := New(m)
-	h1, _, err := s.CAS("edits", "", []byte(`[1]`), env("edit_records"), "", "w", 0)
-	if err != nil {
+// hooked is a backend that runs a hook after each create lands — a
+// stand-in for whatever another process does between two of this one's
+// steps.
+type hooked struct {
+	Backend
+	afterCreate func(key string)
+}
+
+func (h hooked) Create(ctx context.Context, key string, data []byte, meta map[string]string) error {
+	err := h.Backend.Create(ctx, key, data, meta)
+	if err == nil && h.afterCreate != nil {
+		h.afterCreate(key)
+	}
+	return err
+}
+
+// A commit re-reads its blob after its record lands and re-creates it if
+// missing (store.tla, Check): a GC pass that deleted it in between does
+// not leave the record naming nothing.
+func TestACommitRecreatesItsBlobIfItVanishesAfterItsRecord(t *testing.T) {
+	eachBackend(t, func(t *testing.T, b Backend) {
+		ctx := context.Background()
+		doc := []byte(`["reused"]`)
+		h, _ := ParseHash(hashOf(doc))
+		s := New(hooked{b, func(key string) {
+			if strings.HasPrefix(key, "pointers/") {
+				b.Delete(ctx, "blobs/"+h) // GC, between the record and the Check
+			}
+		}})
+		hash, _, err := s.CAS("edits", "", doc, env("edit_records"), "", "w", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, gotEnv, err := s.GetBlob(hash)
+		if err != nil || string(data) != string(doc) || gotEnv != env("edit_records") {
+			t.Fatalf("the commit re-created its blob with its envelope: %q %+v %v", data, gotEnv, err)
+		}
+	})
+}
+
+// The race store.tla's Settle closes (store-race.cfg is the trace): a
+// pass lists the records, a commit then reuses an aged orphan, lands
+// its record and passes its Check, and the pass deletes the orphan. The
+// pass keeps the bytes under gc/ until it re-lists the records, and
+// restores every trashed blob a record now names.
+func TestGCRestoresABlobACommitNamedDuringThePass(t *testing.T) {
+	each(t, func(t *testing.T, b Backend, s *Store) {
+		doc := []byte(`["orphan"]`)
+		orphan, err := s.PutBlob(doc, env("edit_records"), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		gc := New(b)
+		gc.now = func() time.Time { return time.Now().Add(OrphanGrace + time.Hour) }
+		gc.afterList = func() {
+			// Another process commits the orphan's bytes after the listing.
+			if _, _, err := s.CAS("edits", "", doc, env("edit_records"), "", "w", 1); err != nil {
+				t.Fatal(err)
+			}
+		}
+		r, err := gc.GC(OrphanGraceMs)
+		if err != nil || r.Removed != 0 || r.Restored != 1 {
+			t.Fatalf("the pass restores what it trashed and a record now names: %+v %v", r, err)
+		}
+		if _, gotEnv, err := s.GetBlob(orphan); err != nil || gotEnv != env("edit_records") {
+			t.Fatalf("the committed blob is durable with its envelope: %+v %v", gotEnv, err)
+		}
+		if left, _ := b.List(context.Background(), "gc/", ""); len(left) != 0 {
+			t.Fatalf("a settled pass leaves no trash: %+v", left)
+		}
+	})
+}
+
+// A pass that crashed after trashing leaves gc/ behind; the next pass
+// settles it first — restoring what a record names, removing the rest.
+func TestGCSettlesTheTrashACrashedPassLeft(t *testing.T) {
+	each(t, func(t *testing.T, b Backend, s *Store) {
+		ctx := context.Background()
+		named := []byte(`["named"]`)
+		hash, _, err := s.CAS("edits", "", named, env("edit_records"), "", "w", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, _ := ParseHash(hash)
+		meta, _ := json.Marshal(env("edit_records"))
+		// The crashed pass: the named blob moved to gc/, an unnamed one too.
+		b.Delete(ctx, "blobs/"+h)
+		b.Create(ctx, "gc/"+h, named, map[string]string{"envelope": string(meta)})
+		b.Create(ctx, "gc/"+strings.Repeat("0", 64), []byte(`["gone"]`), map[string]string{"envelope": string(meta)})
+
+		r, err := New(b).GC(OrphanGraceMs)
+		if err != nil || r.Restored != 1 || r.Removed != 0 {
+			t.Fatalf("settle: %+v %v", r, err)
+		}
+		if data, _, err := s.GetBlob(hash); err != nil || string(data) != string(named) {
+			t.Fatalf("the named blob is back: %q %v", data, err)
+		}
+		if left, _ := b.List(ctx, "gc/", ""); len(left) != 0 {
+			t.Fatalf("gc/ is empty after a pass: %+v", left)
+		}
+	})
+}
+
+// Serving processes never delete (D-117): their store refuses GC and
+// every delete, whatever credentials it runs under.
+func TestAServingStoreNeverDeletes(t *testing.T) {
+	b := NewMemory()
+	s := NewServing(b)
+	if _, _, err := s.CAS("edits", "", []byte(`[]`), env("edit_records"), "", "w", 1); err != nil {
 		t.Fatal(err)
 	}
-	aged, _ := s.PutBlob([]byte(`["aged"]`), env("edit_records"), "")
-	fresh, _ := s.PutBlob([]byte(`["fresh"]`), env("edit_records"), "")
-	h, _ := ParseHash(aged)
-	m.age("blobs/"+h, 48*time.Hour)
-
-	stop := s.Sweep(5*time.Millisecond, OrphanGraceMs)
-	defer stop()
-
-	// Commits race the sweep: every committed head stays readable.
-	var wg sync.WaitGroup
-	for w := 0; w < 4; w++ {
-		wg.Add(1)
-		go func(w int) {
-			defer wg.Done()
-			for i := 0; i < 20; i++ {
-				head, _, _ := s.Head("edits")
-				body := []byte(`[` + strings.Repeat("0", w+1) + `,` + strings.Repeat("1", i+1) + `]`)
-				s.CAS("edits", head.Hash, body, env("edit_records"), "", "w", int64(i))
-			}
-		}(w)
+	if _, err := s.GC(OrphanGraceMs); err == nil {
+		t.Fatal("a serving store must refuse GC")
 	}
-	wg.Wait()
-
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if _, _, err := s.GetBlob(aged); errors.Is(err, ErrNotFound) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the sweep never collected the aged orphan")
-		}
-		time.Sleep(5 * time.Millisecond)
+	if err := s.b.Delete(context.Background(), "blobs/x"); err == nil {
+		t.Fatal("a serving store's backend must refuse delete")
 	}
-	if _, _, err := s.GetBlob(fresh); err != nil {
-		t.Fatalf("an orphan inside the grace period must survive the sweep: %v", err)
-	}
-	if _, _, err := s.GetBlob(h1); err != nil {
-		t.Fatalf("a referenced blob must survive the sweep: %v", err)
-	}
-	checkChained(t, s, "edits")
-	stop()
-	stop() // idempotent
 }
 
 // A pointer name is one key segment under pointers/: only names that
@@ -428,7 +492,7 @@ func TestPointerNamesStayInsideTheStore(t *testing.T) {
 	})
 }
 
-// A store URL names its backend; the directory store is gone.
+// A store URL names its backend; there is no directory backend.
 func TestOpenNamesItsBackend(t *testing.T) {
 	s, err := Open("mem://")
 	if err != nil {
@@ -437,7 +501,7 @@ func TestOpenNamesItsBackend(t *testing.T) {
 	if _, _, err := s.CAS("edits", "", []byte(`[]`), env("edit_records"), "", "w", 0); err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []string{"", "./store", "/var/store", "file:///x", "s3://", "ftp://x/y"} {
+	for _, bad := range []string{"", "./store", "/var/store", "file:///x", "s3://", "azblob://", "gs://", "ftp://x/y"} {
 		if _, err := Open(bad); err == nil {
 			t.Fatalf("store URL %q must be refused", bad)
 		}

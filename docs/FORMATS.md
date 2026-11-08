@@ -19,11 +19,23 @@ schema; its shape is below.
 
 The store lives in object storage — S3 and S3-compatible, Azure Blob,
 GCS (D-113) — as create-only objects in one bucket, under the store
-URL's prefix (`-store s3://bucket/prefix`, or `mem://` for a store
-that ends with the process). Every key below is relative to that
-prefix. No object is ever overwritten, appended to, or renamed; the
-engine assumes only the backend contract in `server/store/backend.go`.
-A live store is never a local or network-mounted directory.
+URL's prefix (`-store s3://bucket/prefix[?endpoint=…]`,
+`azblob://container/prefix`, `gs://bucket/prefix`, or `mem://` for a
+store that ends with the process). Every key below is relative to that
+prefix:
+
+| Prefix | Holds | Written by |
+|---|---|---|
+| `blobs/<hex>` | one immutable blob, its envelope as metadata | serving processes (create only) |
+| `pointers/<name>/<seq>.json` | one commit record | serving processes (create only) |
+| `inputs/<key>` | an input servers boot from (`-feed bucket:<key>`, D-118) | the operator |
+| `gc/<hex>` | a blob a `store gc` pass is collecting, until it settles | `store gc` |
+
+No object is ever overwritten, appended to, or renamed; the engine
+assumes only the backend contract in `server/store/backend.go`. A
+serving process never deletes (D-117): only `store gc` does, under its
+own credentials. A live store is never a local or network-mounted
+directory.
 
 ## Addressing and hash
 
@@ -51,8 +63,10 @@ The blob's metadata key `envelope` holds (S3 `x-amz-meta-envelope`):
 ```
 
 - `kind` — one of `network_document`, `edit_records`,
-  `diversion_draft`, `manifest`, `plans`, `policy`. `produced_by` on a
-  `network_document` is `cap-network@sha256:…`; on `plans`,
+  `diversion_draft`, `manifest`, `plans`, `policy`, and the boot
+  sources' `gtfs_feed` (a GTFS zip) and `street_layer` (GeoJSON) —
+  external open formats, stored as read (D-115, D-118). `produced_by`
+  on a `network_document` is `cap-network@sha256:…`; on `plans`,
   `cap-plans@sha256:…`.
 - `schema_version` — the payload's version, the same number the
   document carries inside it (see "Versions" below); a writer bumps it
@@ -76,8 +90,13 @@ Each commit is one record object,
   `-`, starting with a letter or digit, at most 128 bytes. The store
   refuses any other name.
 - The pointers the server keeps: `edits`, `policy`, `manifest`,
-  `plans` (the published plan set), and `plan.<id>` per published pick
-  (its network document; every revision stays in the log).
+  `plans` (the published plan set), `plan.<id>` per published pick
+  (its network document; every revision stays in the log), and
+  `source.feed` and `source.streets` — each read of `-feed` and
+  `-streets` whose bytes changed, the record's `writer`
+  `import:<source>` (D-118). A server whose source does not answer at
+  boot imports that pointer's head instead, so a replacement given
+  only the bucket and the same configuration serves the same manifest.
 - `from` is the hash the writer last saw; a commit lands only when
   the head's `to` equals it (empty `from` = the pointer must not exist
   yet). A failed CAS changes nothing.
@@ -88,19 +107,34 @@ Each commit is one record object,
   policy itself is the `policy` pointer's blob (D-61), and that blob is
   never served over HTTP (`/blobs` 404s kind `policy`); clients get the
   caller's projection from `GET /permissions` instead.
-A commit is two creates: the blob (if absent), then record N+1 with
-`If-None-Match: *` — the record lands only if no record N+1 exists,
-so the conditional create is the CAS, and any number of server
-processes may share one bucket. A process caches each head and reads
-at most 2 s behind another process's commit. A crash between the two
-creates orphans the blob; GC deletes blobs no record names and older
-than the grace period (24 h), every `-gc-interval` (default 1 h) while
-the server runs. A GC pass excludes its own process's commits, so it
-never lands between a commit's two creates there.
+A commit is two creates and a check: the blob (if absent), then
+record N+1 with `If-None-Match: *` — the record lands only if no
+record N+1 exists, so the conditional create is the CAS, and any
+number of server processes may share one bucket — then a re-read of
+its blob, re-created if missing. A process caches each head and reads
+at most 2 s behind another process's commit. A crash between the
+creates orphans the blob.
+
+`store gc <url>` (offline, D-117) collects orphans: blobs no record
+names, older than the grace (7 days). A pass lists the records, then
+the blobs; moves each orphan to `gc/<hex>` (a copy, then the delete);
+then settles — lists the records again, restores every trashed blob a
+record now names, and empties `gc/`. The settle step closes the race
+a commit's own check cannot: a commit that reuses an aged orphan after
+the pass listed the records, lands its record and passes its check,
+and then has the orphan deleted under it (`server/store/store.tla`,
+`store-race.cfg`). A pass that crashed leaves `gc/`; the next one
+settles it first. `store verify <url>` reads a whole store without
+writing and exits non-zero on the first break: a key under `pointers/`
+that is no record, a gap, a record that does not chain, a named blob
+that is missing, does not hash to its name, or carries no envelope.
 
 ## The HTTP surface (store mode, `-store <url>`)
 
-- `GET /pointers/{name}` → `{"name","hash","seq","envelope"}`.
+- `GET /pointers/{name}` → `{"name","hash","seq","envelope","at_ms","as_of_ms"}`
+  — `at_ms` the head record's commit time, `as_of_ms` when the bucket
+  last confirmed it is the head; `"stale": true` while the bucket does
+  not answer (below).
 - `GET /pointers/{name}/log?since=<hash>` → `{"entries":[…]}` — the
   records after the latest record whose `to` is `since`; an unknown `since`
   answers `{"entries": [], "current": <head>, "whole": true}` and the
@@ -134,6 +168,15 @@ never lands between a commit's two creates there.
 - `/edits` is the `edit_records` specialization: `GET` reads the head
   blob, `POST` runs the merge with a CAS retry loop, so the legacy
   whole-document protocol is unchanged.
+- **While the bucket does not answer** (D-119) a server serves the
+  heads and blobs it holds — blobs are immutable, so a cached one is
+  always correct — and labels every read whose head the bucket did not
+  confirm: `X-Store-Stale: true` and `X-Store-As-Of: <Unix ms>` (when
+  the bucket last confirmed it) on `/manifest`, `/edits` and
+  `/pointers/…`. No age makes a read fail; the pages show the age. A
+  write is never acknowledged: `503` with `Retry-After`, and the client
+  holds its document and resends. A read the server holds nothing for
+  is `503`.
 
 ## Invariants the schema cannot say
 

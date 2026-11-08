@@ -705,25 +705,53 @@ document in 0.47 s; the first `access` builds the walking graph in
 
 With `-store <url>` the server keeps a content-addressed store in
 object storage (`docs/FORMATS.md`; D-113): `s3://bucket/prefix`
-(S3 or an S3-compatible endpoint, `?endpoint=` naming it) or `mem://`
-(gone with the process). The engine (`server/store/`) runs over one
-small backend interface (`backend.go`: get, stat, create-if-absent,
-list from a key, delete) and assumes only its contract — no append,
-rename, fsync, or lock; the in-memory backend and the S3 adapter
-(`s3.go`) both pass one contract suite (`contract_test.go`).
-Immutable blobs are `blobs/<hex>` objects with the typed envelope as
-metadata, and each commit is one record object
-`pointers/<name>/<seq>.json` — the pointer is its highest record, and
-a commit is a blob create plus a conditional create of record N+1,
-which is the CAS on the `from` hash. Several server processes may
-share one bucket; each caches heads and reads at most 2 s behind
-another's commit. The `manifest` pointer is the root (publishing is
-one CAS on it); the `edits` pointer is the multi-writer LWW document;
-the `plans` pointer is the published plan set, and each pick's
-network is its own `plan.<id>` pointer (D-74). GC collects crash-torn
-orphans every `-gc-interval` (default 1 h). Without `-store`,
-`-edits <path>` persists the edit document as one flat file and
-everything else is in process.
+(S3 or an S3-compatible endpoint, `?endpoint=` naming it),
+`azblob://container/prefix`, `gs://bucket/prefix`, or `mem://` (gone
+with the process). The engine (`server/store/`) runs over one small
+backend interface (`backend.go`: get, stat, create-if-absent, list
+from a key, delete) and assumes only its contract — no append, rename,
+fsync, or lock; the in-memory backend and the S3, Azure Blob and GCS
+adapters (`s3.go`, `azure.go`, `gcs.go`) all pass one contract suite
+(`contract_test.go`; `just store-contract` runs it and every engine
+law against local SeaweedFS, Azurite and fake-gcs-server). Immutable
+blobs are `blobs/<hex>` objects with the typed envelope as metadata,
+and each commit is one record object `pointers/<name>/<seq>.json` —
+the pointer is its highest record, and a commit is a blob create plus
+a conditional create of record N+1, which is the CAS on the `from`
+hash, then a re-read of its blob. Several server processes may share
+one bucket; each caches heads and reads at most 2 s behind another's
+commit. The `manifest` pointer is the root (publishing is one CAS on
+it); the `edits` pointer is the multi-writer LWW document; the `plans`
+pointer is the published plan set, and each pick's network is its own
+`plan.<id>` pointer (D-74). The model (`store.tla`, `just spec`)
+checks processes sharing a bucket with the offline collector beside
+them.
+
+A serving process opens the store with `store.OpenServing`: it
+creates, reads and lists, and never deletes (D-117). The offline tools
+are `server/cmd/store` (`just store …`): `gc` collects orphans with
+its own delete-capable credentials, `verify` reads a whole store and
+exits non-zero on the first break, and `copy` carries a directory
+store an older build wrote into a bucket and verifies it.
+
+The server's inputs come from their sources (D-118): `-feed`,
+`-streets` and `-policy` each take an http(s) URL, `bucket:<key>` (the
+object `inputs/<key>` in the store's bucket), or a dev path. A URL or
+bucket source is re-checked at most once a minute (a conditional GET;
+a stat), and only bytes that changed re-import. With `-store` each read
+of the feed and the layer is committed as `source.feed` /
+`source.streets`, the record naming its source; a source that does
+not answer serves the last read, else that pointer's head — so a
+process is disposable: a replacement given the bucket and the same
+configuration serves the same manifest.
+
+While the bucket does not answer (D-119) the server serves the heads
+and blobs it holds (a byte-bounded blob cache; blobs are immutable),
+labels each such read `X-Store-Stale` / `X-Store-As-Of`, and refuses
+every write with 503 and `Retry-After`; the rider pages show the edit
+document's age (kit's `staleLabel`). Without `-store`, `-edits <path>`
+persists the edit document as one flat file and everything else is in
+process.
 
 Its HTTP surface:
 
@@ -796,7 +824,8 @@ Its HTTP surface:
   (`POST /edits`, `POST /pointers/*`, `POST /plans` — write on
   `plans`) need a role the policy grants write on that pointer. 401 bad/missing token, 403 denied; the
   verified `sub` is the store log's `writer`. The policy is the store's
-  `policy` pointer, seeded from `-policy <file>` at first boot (D-61);
+  `policy` pointer, seeded from the `-policy` source (a URL,
+  `bucket:<key>`, or a dev path) at first boot (D-61);
   later changes are authenticated CAS commits. No `-oidc-*` = auth off,
   logged loudly (dev only). `STORE`/`OIDC_*`/`POLICY` env vars pass the
   flags through `just serve`/`just dev`. What the server leaves to the

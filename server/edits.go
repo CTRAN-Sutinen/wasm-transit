@@ -19,6 +19,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -26,6 +27,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"rustwasm/server/store"
 )
 
 func (s *server) handleEdits(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +55,7 @@ func (s *server) handleStoreEdits(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		head, found, err := s.store.Head("edits")
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			fail(w, err, http.StatusInternalServerError)
 			return
 		}
 		if !found {
@@ -62,9 +65,10 @@ func (s *server) handleStoreEdits(w http.ResponseWriter, r *http.Request) {
 		}
 		data, _, err := s.store.GetBlob(head.Hash)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			fail(w, err, http.StatusInternalServerError)
 			return
 		}
+		labelStale(w, head)
 		etag := `"` + head.Hash + `"`
 		w.Header().Set("ETag", etag)
 		w.Header().Set("Cache-Control", "no-cache")
@@ -82,11 +86,15 @@ func (s *server) handleStoreEdits(w http.ResponseWriter, r *http.Request) {
 		}
 		document, hash, err := s.commitEdits(json.RawMessage(body), writerOf(r, "anonymous"))
 		if err != nil {
+			if errors.Is(err, store.ErrUnavailable) {
+				fail(w, err, http.StatusServiceUnavailable)
+				return
+			}
 			if strings.Contains(err.Error(), "moved") {
 				http.Error(w, "conflict: the edit document moved, retry", http.StatusConflict)
 				return
 			}
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			fail(w, err, http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

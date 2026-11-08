@@ -300,3 +300,33 @@ test("a live feed that stops answering turns the board to the schedule, and the 
   await page.clock.fastForward(20_000);
   await expect(page.getByTestId("display-live")).toContainText("Live");
 });
+
+// D-119: while the sync server's store does not answer, it serves the
+// edit document it holds, labelled with when the store last confirmed
+// it (X-Store-Stale, X-Store-As-Of); the display keeps the detour on the
+// board and says how old it is, and the label goes once the store
+// answers again.
+test("a detour served while the server's store is not answering says its age", async ({ page }) => {
+  let stale = true;
+  const asOf = new Date("2026-10-23T07:40:00-04:00").getTime();
+  await page.clock.install({ time: new Date("2026-10-23T07:55:00-04:00") });
+  await page.route("**/edits", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      headers: stale ? { "X-Store-Stale": "true", "X-Store-As-Of": String(asOf) } : {},
+      body: JSON.stringify({ kind: "edit_records", schema_version: 2, records: detour }),
+    }),
+  );
+  await page.route(/\/rt\?url=/, (route) =>
+    route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")) }),
+  );
+  await page.goto("/stop-display.html?stop=A&layout=routes");
+  await page.getByLabel("Agency GTFS zip").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
+
+  await expect(page.getByTestId("display-stale")).toContainText("Detours as of 7:40", { timeout: 10_000 });
+  await expect(group(page, "10", "Downtown").getByTestId("display-time").first()).toBeVisible();
+
+  stale = false;
+  await page.clock.fastForward(20_000);
+  await expect(page.getByTestId("display-stale")).toHaveCount(0);
+});

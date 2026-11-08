@@ -82,9 +82,10 @@ const detour = [
   },
 ];
 
-async function open(page, { edits = [] } = {}) {
+async function open(page, { edits = [], staleAsOf = null } = {}) {
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
-  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ kind: "edit_records", schema_version: 2, records: edits }) }));
+  const headers = staleAsOf ? { "X-Store-Stale": "true", "X-Store-As-Of": String(staleAsOf) } : {};
+  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", headers, body: JSON.stringify({ kind: "edit_records", schema_version: 2, records: edits }) }));
   await page.route(/\/rt\?url=/, (route) =>
     route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")) }),
   );
@@ -263,4 +264,11 @@ test("ride now explores the routes and tracks a bus", async ({ page }) => {
   await expect(stops.first()).toContainText("8:02");
   await expect(stops.nth(1)).toContainText("Main & 2nd");
   await expect(stops.nth(1)).toContainText("8:13");
+});
+
+// D-119: the edit document the server serves from its cache while its
+// store does not answer is labelled with its age; ride now says so.
+test("ride now says how old detours are while the server's store is not answering", async ({ page }) => {
+  await open(page, { staleAsOf: new Date("2026-10-23T07:40:00-04:00").getTime() });
+  await expect(page.getByTestId("ride-stale")).toContainText("Detours as of 7:40");
 });

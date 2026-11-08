@@ -299,6 +299,9 @@
         {/if}
       {/if}
 
+      {#if ride.editsStale}
+        <p class="status" data-testid="ride-stale">{ride.editsStale}</p>
+      {/if}
       {#if ride.status}
         <p class="status" data-testid="ride-status">{ride.status}</p>
       {/if}

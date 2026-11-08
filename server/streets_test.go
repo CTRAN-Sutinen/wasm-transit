@@ -44,9 +44,9 @@ func writeLayer(t *testing.T) string {
 // "" publishes no network.
 func streetsServer(t *testing.T, feed, layer string) string {
 	t.Helper()
-	s := &server{wasm: newTestHost(t), streets: &fileStreets{path: layer, streetsWasm: streetsWasm}}
+	s := &server{wasm: newTestHost(t), streets: fileStreets(layer, streetsWasm)}
 	if feed != "" {
-		s.feeder = &fileFeed{path: feed, networkWasm: networkWasm}
+		s.feeder = fileFeed(feed, networkWasm)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/network", s.handleNetwork)

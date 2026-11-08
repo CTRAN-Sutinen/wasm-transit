@@ -1,19 +1,12 @@
 # Store durability — the sync store on object storage
 
-The sync store (`server/store/`, `docs/FORMATS.md`) is the agency's
-record of edits, policy, published picks, and the manifest. Its
-production home is a managed object store — S3, Azure Blob, or GCS
-(D-113); which one a deployment runs on is open (D-116). The engine
-runs over objects now (`backend.go`, `s3.go`; `-store s3://…` or
-`mem://`) and is coupled to no provider: it assumes only the contract
-below. SeaweedFS (`just store-dev`, podman) is the dev endpoint — a
-convenience, useful only as far as it honors the contract, and never
-given a code path of its own. MinIO is not used at all (D-113). What
-is left: an offline check, the copy for old directory stores, the
-other providers, and the operational half — boot sources, offline GC,
-degraded mode, the edits layout, backup.
-
-## What it serves
+The sync store (`server/store/`; the layout and protocol in
+`docs/FORMATS.md`, the engine in `docs/ARCHITECTURE.md`, server
+section) runs over object storage — S3, Azure Blob, GCS (D-113) —
+with offline GC, boot sources, and degraded mode. Which provider a
+deployment runs on is open (D-116); the engine favors none. What is
+left: the contract run on each provider's real account, the edits
+layout, and a backup the agency can restore.
 
 The north star for every choice here: a transit agency runs 24/7 or
 near it, at moderate to low traffic, with high auditability needs. So
@@ -21,89 +14,6 @@ the store favors availability of reads and a provable history over
 write throughput — no acknowledged write is ever lost, no serving
 process can erase history, and losing any compute or cache loses
 nothing.
-
-## The design
-
-- **The portable contract** is everything the engine may assume of a
-  backend: a whole-object put that lands entirely or not at all; a
-  conditional create of an absent key; a strongly consistent read
-  after write and list after write within one bucket; object metadata;
-  delete; an object's modified time. Cross-region replication is
-  asynchronous on every provider, so one bucket takes the writes and
-  any replica serves reads and backup only (D-82). An endpoint that
-  breaks the contract is unfit for the store, not a case to work
-  around.
-- **One primitive: create an object only if its key is absent.** S3
-  `PutObject` with `If-None-Match: *`, GCS `ifGenerationMatch=0`,
-  Azure Blob `If-None-Match: *`. A whole-object write lands entirely
-  or not at all, so nothing is appended, renamed, fsync'd, or locked,
-  and no write can tear. The store never overwrites an object.
-- **Blobs** are `blobs/<hex>`, created if absent (an existing key is
-  the idempotent case: same key, same bytes). The envelope (`kind`,
-  `schema_version`, `produced_by`) is the object's metadata, so a blob
-  and its envelope are one write — there is no sidecar to lose.
-- **The log is one object per record**:
-  `pointers/<name>/<seq, zero-padded to 20 digits>.json`, holding
-  today's `LogEntry`. A commit writes the blob, then creates record
-  N+1. Two writers racing from the same head both try to create N+1;
-  one wins, the other's create fails, and it is a `ConflictError` —
-  the conditional create is the CAS. A record's `from` is record N's
-  `to`, which the writer read.
-- **The head is the highest record**, found by listing the pointer's
-  prefix (listing is strongly consistent within a bucket — the
-  contract). The server keeps heads in memory; a conflict lists
-  from its cached seq onward (`start-after`) and the writer retries.
-  A read checks freshness with one GET of record seq+1 (a 404 means
-  the cached head is current), coalesced to one probe per pointer per
-  process every 2 s and made only when a read asks: a head is at most
-  2 s behind another process's commit, and the probe's request bill
-  stays bounded however many riders read (an idle night makes none).
-  Several server processes may share one bucket — the conditional
-  create is the only lock.
-- **A crash between the blob and the record** leaves an orphan blob,
-  as today; so does a lost CAS. Nothing else is ever garbage: the log
-  is append-only and every record names its blob.
-- **Serving processes never delete** (D-117). Their credentials
-  create, read, and list only, so a compromised server cannot erase
-  history and the bucket can carry the provider's immutability
-  (S3 Object Lock, Azure immutability policies, GCS bucket lock) for
-  the agency's retention period. The online sweep (`-gc-interval`, GC
-  at `Open`) goes.
-- **`store gc <url>`** is the offline collector, run by hand or on a
-  schedule with its own delete-capable credentials: it lists `blobs/`
-  and deletes what no record names, past a grace of 7 days, skipping
-  objects still under retention. It may run beside live servers, so a
-  commit closes the remaining race itself: after its record lands it
-  re-reads its blob and re-creates it if missing (the bytes are
-  content-addressed, so the re-create is always the same object), and
-  `store verify` catches the crash between those two steps.
-- **Backends** sit behind one small interface in `server/store`
-  (`backend.go`: get, stat, create-if-absent, list from a key, delete;
-  a listed or stat'd object carries its modified time): the in-memory
-  backend `just test` runs every store test over, and the S3 adapter
-  (`s3.go`); Azure Blob and GCS adapters join them. One contract suite
-  (`contract_test.go`) runs against every backend; the run against a
-  real bucket is opt-in (`STORE_TEST_URL`, credentials from the
-  environment) and never in `just test`'s required path. `-store`
-  takes a URL (`s3://bucket/prefix?endpoint=…` for any S3-compatible
-  server, `mem://`; `azblob://…` and `gs://…` with their adapters).
-- **Boot from the bucket or a configured external source** (D-118):
-  a server's inputs — a GTFS feed, a street layer, the policy — come
-  from the bucket or a configured external URL; local files stay a dev
-  convenience. A process is disposable: a replacement given the
-  bucket and the same source configuration serves the same store.
-- **Degraded mode** (D-119): while the bucket does not answer, a
-  server serves its cached blobs (immutable, so always correct) and
-  cached heads, each pointer response labelled with its head's age
-  (seq and `at_ms`), and refuses every write with 503 and
-  `Retry-After` — never acknowledging a write the bucket has not
-  taken. The browser holds its documents and resends under LWW. No age
-  limit fails a read; the pages show the age.
-- **There is no directory store**: dev runs `mem://`, or SeaweedFS
-  (`just store-dev`) for a store that survives a restart. A one-time
-  copy carries a store an older build wrote into a bucket (blobs with
-  their sidecars as metadata, each log line as its record object), and
-  verifies the result.
 
 ## Sizing
 
@@ -128,69 +38,43 @@ decade at a busy agency's edit rate; the two decisions bound it.
 ## Contract runs
 
 `just store-contract` runs the contract suite and every engine law
-against an endpoint (opt-in, never in `just test`):
+(20 laws) against each endpoint; `just test` runs them on `mem://`.
+The local endpoints are for validation only — none is a production
+choice, and none has a code path of its own.
 
 | Endpoint | Release | Date | Result |
 |---|---|---|---|
-| SeaweedFS (dev, podman) | 4.50 | 2026-11-07 | all pass (racing creates ~4 s against ~ms in memory) |
+| SeaweedFS (S3, podman) | 4.50 | 2026-11-07 | all pass (racing creates ~4 s against ~ms in memory) |
+| Azurite (Azure Blob, podman) | 3.37.0 | 2026-11-07 | all pass |
+| fake-gcs-server (GCS, podman) | `sha256:797ce226…` (2026-08-24) | 2026-11-07 | all pass |
 
 ## Scope
 
-1. **The model.** `store.tla` is rewritten for N processes over
-   create-only objects: invariants as today (every record names a
-   durable blob, the log chains, GC never deletes a named blob, a
-   failed CAS leaves authority untouched), with no torn append to
-   model.
-2. **Verify offline.** `store verify <url>` (Go, no wasm) reads a
-   store without writing: every pointer's records chain from seq 1,
-   every named blob exists, hashes to its name, and carries its
-   envelope. It exits non-zero on the first break. The copy, the
-   backup, and the restore run it.
-3. **The directory-store copy.** The directory engine is gone, so a
-   store an older build wrote does not open; `store copy <dir> <url>`
-   reads the old layout (`blobs/<hex>` + `.meta.json` sidecar,
-   `pointers/<name>.log` JSONL) and creates the objects, then verifies
-   them.
-4. **Azure Blob and GCS adapters**, each passing the contract suite.
-5. **Boot sources** (D-118): `-feed`, `-streets` and `-policy` take a
-   bucket key or an external URL; the import commits its result with
-   the source as provenance, and a source that does not answer at boot
-   falls back to the last committed import.
-6. **Offline GC** (D-117): the online sweep removed, `store gc`, the
-   commit's re-check of its blob, and serving credentials without
-   delete.
-7. **Degraded mode** (D-119): stale-labelled reads and 503 writes
-    while the bucket is down, the freshness probe, and the pages
-    showing a head's age.
-8. **The edits layout** (Blocked: D-121): whole per commit, or
-    record by record.
-9. **Backup and restore** (Blocked: D-82, where the copies go and how
-   often). Every object is create-only, so a copy taken records first,
-   then the blobs they name, is consistent, and blobs copy
+1. **The real accounts.** The contract suite against S3, Azure Blob
+   and GCS proper (`STORE_TEST_URL` and each provider's credentials),
+   recorded above — no one of them privileged (D-116). Azure lists
+   from a key with `StartFrom` and filters client-side; a run against
+   a real account says whether a pointer's refresh stays one page.
+2. **The edits layout** (Blocked: D-121): whole per commit, or
+   record by record.
+3. **Backup and restore** (Blocked: D-82, where the copies go and how
+   often). Cross-region replication is asynchronous on every provider,
+   so one bucket takes the writes and any replica serves reads and
+   backup only. Every object is create-only, so a copy taken records
+   first, then the blobs they name, is consistent, and blobs copy
    incrementally by key. Restore points the server at the copy and
-   runs `store verify`. A restore drill is part of the deployment
-   runbook.
+   runs `store verify`. The bucket can carry the provider's
+   immutability (S3 Object Lock, Azure immutability policies, GCS
+   bucket lock) for the agency's retention period — serving processes
+   never delete, and `store gc` keeps what retention refuses. A
+   restore drill is part of the deployment runbook.
 
 ## Done when
 
-- The contract suite passes on each managed provider's real account
-  (S3, Azure Blob, GCS — no one of them privileged, D-116), recorded
-  under "Contract runs".
-- Go: a crash between blob and record leaves the orphan collectable
-  by `store gc` past the grace; `store gc` racing a live commit that
-  reuses an orphan leaves no record naming a missing blob.
-- A server whose bucket stops answering serves the cached heads with
-  their age and answers writes 503, and a client's held edit lands
-  once the bucket returns (Go round-trip and a Playwright spec).
-- A server booted from an empty disk with only the bucket URL and its
-  source configuration serves the same manifest as the one it
-  replaces.
-- `just spec` model-checks the object model clean.
-- `store verify` passes on a healthy store and fails on each
-  deliberately broken fixture in its own test.
-- A directory store copied into a bucket verifies and serves the same
-  manifest, plan set, and edit document.
+- The contract suite passes on each managed provider's real account,
+  recorded under "Contract runs".
 - A backup of a C-TRAN-sized store, restored into a fresh bucket,
   verifies, and a server started on it serves the same manifest, plan
   set, and edit document. D-82 is decided, and the runbook names the
   drill.
+- D-121 is decided and the edits layout matches it.

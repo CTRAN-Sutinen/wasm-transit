@@ -93,9 +93,9 @@ func loadAuthz(ctx context.Context, cfg oidcConfig, authzWasmPath string, policy
 		a.pinned = key
 	}
 	if policyFile != "" {
-		b, err := os.ReadFile(policyFile)
+		b, _, err := newSource(policyFile, "", "", nil).Read()
 		if err != nil {
-			return nil, fmt.Errorf("policy file: %w", err)
+			return nil, fmt.Errorf("policy: %w", err)
 		}
 		a.policyBytes = b
 	}
@@ -561,10 +561,11 @@ func (s *server) handlePermissions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp.Effective)
 }
 
-// seedPolicy commits the -policy file as the store's `policy` pointer
-// when it does not exist yet (D-61 bootstrap). The blob is the file's
-// bytes; the hash is the shared formula (the policy is host-authored
-// at seed — later changes are normal CAS commits).
+// seedPolicy commits the -policy source (a URL, bucket:<key>, or a dev
+// file — D-118) as the store's `policy` pointer when it does not exist
+// yet (D-61 bootstrap). The blob is the source's bytes; the hash is the
+// shared formula (the policy is host-authored at seed — later changes
+// are normal CAS commits).
 func (s *server) seedPolicy(policyFile string) {
 	if s.store == nil || policyFile == "" {
 		return
@@ -572,12 +573,13 @@ func (s *server) seedPolicy(policyFile string) {
 	if _, found, err := s.store.Head("policy"); err == nil && found {
 		return
 	}
-	raw, err := os.ReadFile(policyFile)
+	raw, _, err := newSource(policyFile, "", "", s.store).Read()
 	if err != nil || len(raw) == 0 {
+		log.Printf("seed policy: %v", err)
 		return
 	}
 	env := store.Envelope{Kind: "policy", SchemaVersion: 1, ProducedBy: "server"}
-	if _, _, err := s.store.CAS("policy", "", raw, env, "", "bootstrap:-policy", time.Now().UnixMilli()); err != nil {
+	if _, _, err := s.store.CAS("policy", "", raw, env, "", "bootstrap:"+policyFile, time.Now().UnixMilli()); err != nil {
 		log.Printf("seed policy: %v", err)
 		return
 	}

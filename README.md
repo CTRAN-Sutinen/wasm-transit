@@ -52,9 +52,10 @@ just serve path/to/gtfs.zip                  # + /network, /network/document (th
 just serve path/to/gtfs.zip roads.geojson    # + /streets and /walks (the layer imported
                                              # once, the walk table derived from both)
 just serve path/to/gtfs.zip "" "Test Transit"   # + the manifest's publisher
-STORE=./store just serve path/to/gtfs.zip      # + the durable sync store: content-addressed
-                                               # blobs + CAS'd pointers under ./store
-                                               # (/pointers, /blobs; docs/FORMATS.md)
+STORE=mem:// just serve path/to/gtfs.zip       # + the sync store (/pointers, /blobs;
+                                               # docs/FORMATS.md) — in memory; an
+                                               # object store survives a restart:
+just store-dev                                 # SeaweedFS in podman, and its STORE= URL
 just dev                                     # vite hot reload + the server
 ```
 
@@ -122,19 +123,25 @@ geocoder and its policy under `services`.
 
 ## Authentication and the sync store
 
-`STORE=./store just serve …` turns on the durable sync store:
-content-addressed blobs + CAS'd pointers under `./store` (`/pointers`,
-`/blobs`, store-backed `/edits` and `/manifest`; `docs/FORMATS.md`).
+`STORE=<url> just serve …` turns on the sync store: content-addressed
+blobs and CAS'd pointers as create-only objects in object storage —
+`s3://bucket/prefix` (S3 or S3-compatible, `?endpoint=…`),
+`azblob://container/prefix`, `gs://bucket/prefix`, or `mem://`
+(`/pointers`, `/blobs`, store-backed `/edits` and `/manifest`;
+`docs/FORMATS.md`). `just store-dev` runs a local SeaweedFS to serve
+over; `just store verify|gc|copy` are the offline tools. The feed,
+the street layer and the policy can come from a URL or the bucket
+(`bucket:<key>`) as well as a path.
 
 With an OIDC IdP, writes authenticate: the server verifies bearer JWTs
 (JWKS or a pinned key, RS256/ES256 only) and asks the `cap-authz`
 module over a policy document (the store's `policy` pointer, seeded
-from a `-policy` file at first boot) — reads stay public, writes need a
+from the `-policy` source at first boot) — reads stay public, writes need a
 role the policy grants (D-58..D-61). Via `just serve`:
 
 ```
 OIDC_ISSUER=https://idp.example OIDC_JWKS_URL=https://idp.example/jwks \
-  OIDC_AUDIENCE=transit-server POLICY=./policy.json STORE=./store \
+  OIDC_AUDIENCE=transit-server POLICY=./policy.json STORE=mem:// \
   just serve path/to/gtfs.zip
 ```
 

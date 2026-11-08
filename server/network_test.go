@@ -45,7 +45,7 @@ func newNetworkHost(t *testing.T) *WasmHost {
 // networkServer serves /network and /manifest over the feed at path.
 func networkServer(t *testing.T, path string) string {
 	t.Helper()
-	s := &server{wasm: newTestHost(t), feeder: &fileFeed{path: path, networkWasm: networkWasm}}
+	s := &server{wasm: newTestHost(t), feeder: fileFeed(path, networkWasm)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/network", s.handleNetwork)
 	mux.HandleFunc("/network/document", s.handleNetworkDocument)

@@ -15,9 +15,11 @@
 // The pointer is its highest record — there is no pointer object. A
 // commit is two creates: the blob, then record N+1, which lands only
 // when no record N+1 exists — the conditional create is the CAS, so any
-// number of processes may share one bucket. A crash between the two
-// orphans the blob; GC deletes blobs no record names, past the grace
-// period. Nothing is ever overwritten, appended, renamed, or locked.
+// number of processes may share one bucket — and then a re-read of its
+// blob, re-created if missing. A crash between the creates orphans the
+// blob; the offline collector (gc.go, `store gc`) deletes blobs no
+// record names, past the grace period. Serving processes never delete
+// (D-117). Nothing is ever overwritten, appended, renamed, or locked.
 // The store never mints document identity for bus documents: callers
 // pass the module-produced hash and the store asserts sha256(bytes) ==
 // hash, failing loudly on mismatch.
@@ -25,9 +27,8 @@
 // The invariants: every pointer, current or historical, names a
 // durable blob; the log is append-only and each record's `from` is the
 // prior `to`; GC never deletes a referenced blob; a failed CAS leaves
-// authority untouched. store.tla (`just spec`) still models the
-// single-process append engine; its object model is open work
-// (docs/units/store-durability.md).
+// authority untouched — model-checked for processes sharing a bucket
+// with the offline GC beside them (store.tla, `just spec`).
 package store
 
 import (
@@ -43,10 +44,13 @@ import (
 	"time"
 )
 
-// OrphanGraceMs is how long an unreferenced blob survives before GC
+// OrphanGrace is how long an unreferenced blob survives before GC
 // collects it — long enough that a crash mid-commit is never data
 // loss, short enough that orphans do not pile up.
-const OrphanGraceMs = 24 * 3600 * 1000
+const OrphanGrace = 7 * 24 * time.Hour
+
+// OrphanGraceMs is OrphanGrace in milliseconds.
+const OrphanGraceMs = int64(OrphanGrace / time.Millisecond)
 
 // FreshnessWindow bounds how far a read may trail another process's
 // commit: a read probes for the next record at most once per window per
@@ -80,12 +84,17 @@ type LogEntry struct {
 	AtMs          int64   `json:"at_ms"`  // host clock, Unix epoch ms
 }
 
-// Head is a pointer's current value: its highest record.
+// Head is a pointer's current value: its highest record. While the
+// bucket does not answer (D-119) it is this process's cached head,
+// Stale, as of the last time the bucket confirmed it.
 type Head struct {
 	Name     string   `json:"name"`
 	Hash     string   `json:"hash"` // "" when the pointer does not exist
 	Seq      int64    `json:"seq"`
 	Envelope Envelope `json:"envelope"`
+	AtMs     int64    `json:"at_ms"`           // the head record's commit time
+	AsOfMs   int64    `json:"as_of_ms"`        // when the bucket last confirmed it is the head
+	Stale    bool     `json:"stale,omitempty"` // the bucket did not answer this read
 }
 
 // ConflictError is a failed CAS: the pointer moved since the writer
@@ -111,6 +120,7 @@ type pointer struct {
 	seq    int64
 	to     string
 	env    Envelope
+	atMs   int64
 	recs   map[int64]LogEntry
 	probed time.Time
 }
@@ -118,17 +128,20 @@ type pointer struct {
 // Store is one store over a backend. Safe for concurrent use, and for
 // any number of processes over one bucket.
 type Store struct {
-	b    Backend
-	mu   sync.Mutex
-	ptrs map[string]*pointer
-	// gc excludes a GC pass from a commit in this process, so a pass
-	// never deletes an aged orphan a commit is about to name.
-	gc  sync.RWMutex
-	now func() time.Time
+	b       Backend
+	serving bool
+	cache   *blobCache
+	mu      sync.Mutex
+	ptrs    map[string]*pointer
+	now     func() time.Time
+	// afterList runs between a GC pass's listing and its deletes (tests:
+	// the commit that lands there).
+	afterList func()
 }
 
-// Open opens the store a URL names (OpenBackend): `mem://`, or
-// `s3://bucket/prefix?endpoint=…`.
+// Open opens the store a URL names (OpenBackend) for a tool —
+// `store gc`, `verify`, `copy` — with every operation the credentials
+// allow.
 func Open(url string) (*Store, error) {
 	b, err := OpenBackend(context.Background(), url)
 	if err != nil {
@@ -137,11 +150,38 @@ func Open(url string) (*Store, error) {
 	return New(b), nil
 }
 
+// OpenServing opens the store a URL names for a serving process: it
+// creates, reads, and lists, and never deletes (NewServing).
+func OpenServing(url string) (*Store, error) {
+	b, err := OpenBackend(context.Background(), url)
+	if err != nil {
+		return nil, err
+	}
+	return NewServing(b), nil
+}
+
 // New answers a store over a backend. Nothing is read until a pointer
 // is asked for.
 func New(b Backend) *Store {
-	return &Store{b: b, ptrs: map[string]*pointer{}, now: time.Now}
+	return &Store{b: guarded{b}, cache: newBlobCache(BlobCacheBytes), ptrs: map[string]*pointer{}, now: time.Now}
 }
+
+// NewServing answers the store a serving process holds (D-117): its
+// backend refuses every delete and the store refuses GC, whatever the
+// credentials allow — so a compromised server cannot erase history, and
+// the bucket can carry the provider's immutability.
+func NewServing(b Backend) *Store {
+	s := New(servingBackend{b})
+	s.serving = true
+	return s
+}
+
+// ErrServingNeverDeletes is a delete asked of a serving store.
+var ErrServingNeverDeletes = errors.New("store: a serving process never deletes (D-117; run `store gc`)")
+
+type servingBackend struct{ Backend }
+
+func (servingBackend) Delete(context.Context, string) error { return ErrServingNeverDeletes }
 
 // Close releases nothing — a store holds no lock — and is kept so the
 // server's shutdown stays one call.
@@ -182,6 +222,9 @@ func ParseHash(hash string) (string, error) {
 	return hexPart, nil
 }
 
+// HashOf is the store's content hash: "sha256:<hex>" of the bytes.
+func HashOf(data []byte) string { return hashOf(data) }
+
 func hashOf(data []byte) string {
 	sum := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(sum[:])
@@ -217,8 +260,6 @@ func recordSeq(key string) (name string, seq int64, ok bool) {
 // hash the caller asserts against sha256(data) — the store never mints
 // bus-document identity.
 func (s *Store) PutBlob(data []byte, env Envelope, wantHash string) (string, error) {
-	s.gc.RLock()
-	defer s.gc.RUnlock()
 	return s.putBlob(data, env, wantHash)
 }
 
@@ -230,6 +271,7 @@ func (s *Store) putBlob(data []byte, env Envelope, wantHash string) (string, err
 	h, _ := ParseHash(hash)
 	ctx := context.Background()
 	if _, err := s.b.Stat(ctx, blobKey(h)); err == nil {
+		s.cache.put(hash, data, env)
 		return hash, nil // idempotent, without re-sending the bytes
 	} else if !errors.Is(err, ErrNotFound) {
 		return "", err
@@ -242,6 +284,7 @@ func (s *Store) putBlob(data []byte, env Envelope, wantHash string) (string, err
 	if err != nil && !errors.Is(err, ErrExists) {
 		return "", err
 	}
+	s.cache.put(hash, data, env)
 	return hash, nil
 }
 
@@ -251,6 +294,9 @@ func (s *Store) GetBlob(hash string) ([]byte, Envelope, error) {
 	if err != nil {
 		return nil, Envelope{}, err
 	}
+	if c, ok := s.cache.get(hash); ok {
+		return c.data, c.env, nil // immutable: a cached blob is always correct
+	}
 	data, meta, err := s.b.Get(context.Background(), blobKey(h))
 	if err != nil {
 		return nil, Envelope{}, err
@@ -259,6 +305,7 @@ func (s *Store) GetBlob(hash string) ([]byte, Envelope, error) {
 	if err := json.Unmarshal([]byte(meta[envelopeMeta]), &env); err != nil {
 		return nil, Envelope{}, fmt.Errorf("blob %s envelope: %w", hash, err)
 	}
+	s.cache.put(hash, data, env)
 	return data, env, nil
 }
 
@@ -381,7 +428,7 @@ func (s *Store) advance(p *pointer, name string) error {
 			prev = e.To
 		}
 		head := p.recs[top]
-		p.seq, p.to = top, head.To
+		p.seq, p.to, p.atMs = top, head.To, head.AtMs
 		p.env = Envelope{Kind: head.Kind, SchemaVersion: head.SchemaVersion, ProducedBy: head.ProducedBy}
 	}
 	p.loaded = true
@@ -410,7 +457,7 @@ func (s *Store) fresh(p *pointer, name string) error {
 }
 
 func (p *pointer) head(name string) Head {
-	return Head{Name: name, Hash: p.to, Seq: p.seq, Envelope: p.env}
+	return Head{Name: name, Hash: p.to, Seq: p.seq, Envelope: p.env, AtMs: p.atMs, AsOfMs: p.probed.UnixMilli()}
 }
 
 // Head returns a pointer's current value. found is false when the
@@ -423,7 +470,16 @@ func (s *Store) Head(name string) (Head, bool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err := s.fresh(p, name); err != nil {
-		return Head{Name: name}, false, err
+		if !errors.Is(err, ErrUnavailable) || !p.loaded {
+			return Head{Name: name}, false, err
+		}
+		// D-119: the bucket did not answer — the cached head, labelled.
+		if p.seq == 0 {
+			return Head{Name: name, Stale: true, AsOfMs: p.probed.UnixMilli()}, false, nil
+		}
+		h := p.head(name)
+		h.Stale = true
+		return h, true, nil
 	}
 	if p.seq == 0 {
 		return Head{Name: name}, false, nil
@@ -436,7 +492,8 @@ func (s *Store) Head(name string) (Head, bool, error) {
 // pointer it returns *ConflictError with the current hash; the caller
 // re-reads, re-merges (the kind's module op), and retries. The blob is
 // created first, then record N+1 — created only if absent, which is the
-// commit and the CAS at once.
+// commit and the CAS at once — then the blob is read again and
+// re-created if a GC pass removed it in between (store.tla, Check).
 func (s *Store) CAS(name, from string, data []byte, env Envelope, wantHash, writer string, atMs int64) (string, int64, error) {
 	if !ValidPointerName(name) {
 		return "", 0, fmt.Errorf("store: %q is not a pointer name", name)
@@ -445,9 +502,6 @@ func (s *Store) CAS(name, from string, data []byte, env Envelope, wantHash, writ
 	if wantHash != "" && wantHash != hash {
 		return "", 0, fmt.Errorf("hash mismatch: module says %s, bytes are %s", wantHash, hash)
 	}
-	// The GC lock before the pointer's: a pass takes them in that order.
-	s.gc.RLock()
-	defer s.gc.RUnlock()
 	p := s.pointer(name)
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -500,7 +554,18 @@ func (s *Store) CAS(name, from string, data []byte, env Envelope, wantHash, writ
 		return "", 0, err
 	}
 	p.recs[entry.Seq] = entry
-	p.seq, p.to, p.env = entry.Seq, hash, env
+	p.seq, p.to, p.env, p.atMs = entry.Seq, hash, env, atMs
+	p.probed = s.now()
+	// Check: a commit that reused an aged orphan may have had it deleted
+	// under it; the bytes are content-addressed, so the re-create is the
+	// same object. A crash before this line is `store verify`'s to find.
+	if _, err := s.b.Stat(context.Background(), blobKey(strings.TrimPrefix(hash, "sha256:"))); errors.Is(err, ErrNotFound) {
+		if _, err := s.putBlob(data, env, ""); err != nil {
+			return "", 0, fmt.Errorf("commit %s seq %d: re-create its blob: %w", name, entry.Seq, err)
+		}
+	} else if err != nil {
+		return "", 0, fmt.Errorf("commit %s seq %d: re-read its blob: %w", name, entry.Seq, err)
+	}
 	return hash, entry.Seq, nil
 }
 
@@ -551,86 +616,24 @@ func (s *Store) Log(name, since string) (entries []LogEntry, found bool, err err
 	return nil, false, nil
 }
 
-// GC deletes blobs no record names (neither `to` nor `from`) and older
-// than graceMs — the crash-torn orphans. It never touches a referenced
-// blob, and never deletes a record. It reads every record in the
-// bucket, so a commit another process made is counted.
-func (s *Store) GC(graceMs int64) (int, error) {
-	s.gc.Lock()
-	defer s.gc.Unlock()
+// Input reads inputs/<key>: an input an operator placed in the bucket
+// for servers to boot from (D-118; `-feed bucket:<key>`). The store
+// never writes there.
+func (s *Store) Input(key string) ([]byte, ObjectInfo, error) {
+	if key == "" || strings.HasPrefix(key, "/") || strings.Contains(key, "..") {
+		return nil, ObjectInfo{}, fmt.Errorf("store: %q is not an input key", key)
+	}
 	ctx := context.Background()
-	recs, err := s.b.List(ctx, "pointers/", "")
+	info, err := s.b.Stat(ctx, "inputs/"+key)
 	if err != nil {
-		return 0, err
+		return nil, ObjectInfo{}, err
 	}
-	top := map[string]int64{}
-	for _, o := range recs {
-		if name, seq, ok := recordSeq(o.Key); ok && seq > top[name] {
-			top[name] = seq
-		}
-	}
-	referenced := map[string]bool{}
-	for name, hi := range top {
-		p := s.pointer(name)
-		p.mu.Lock()
-		err := s.loadRange(p, name, 1, hi)
-		for seq := int64(1); err == nil && seq <= hi; seq++ {
-			e := p.recs[seq]
-			for _, h := range []string{e.To, e.From} {
-				if x, perr := ParseHash(h); perr == nil {
-					referenced[x] = true
-				}
-			}
-		}
-		p.mu.Unlock()
-		if err != nil {
-			return 0, err
-		}
-	}
-	blobs, err := s.b.List(ctx, "blobs/", "")
-	if err != nil {
-		return 0, err
-	}
-	now := s.now()
-	removed := 0
-	for _, o := range blobs {
-		if referenced[strings.TrimPrefix(o.Key, "blobs/")] {
-			continue
-		}
-		if now.Sub(o.Modified).Milliseconds() < graceMs {
-			continue
-		}
-		if err := s.b.Delete(ctx, o.Key); err != nil {
-			return removed, err
-		}
-		removed++
-	}
-	return removed, nil
+	data, _, err := s.b.Get(ctx, "inputs/"+key)
+	return data, info, err
 }
 
-// Sweep runs GC every interval in the background until the returned
-// stop is called (stop is idempotent and waits for a running pass).
-// A pass excludes this process's commits, so it never lands between a
-// commit's blob and its record.
-func (s *Store) Sweep(interval time.Duration, graceMs int64) (stop func()) {
-	done := make(chan struct{})
-	finished := make(chan struct{})
-	go func() {
-		defer close(finished)
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				s.GC(graceMs)
-			}
-		}
-	}()
-	var once sync.Once
-	return func() {
-		once.Do(func() { close(done) })
-		<-finished
-	}
+// InputModified answers inputs/<key>'s modified time — the cheap
+// re-check before a read.
+func (s *Store) InputModified(key string) (ObjectInfo, error) {
+	return s.b.Stat(context.Background(), "inputs/"+key)
 }

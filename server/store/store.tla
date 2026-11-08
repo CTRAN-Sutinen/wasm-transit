@@ -1,139 +1,263 @@
 ---------------------------- MODULE store ----------------------------
-(* The sync store engine (docs/FORMATS.md), model-checked
-   by `just spec` (TLC, explicit enumeration at small bounds — `just test`
-   never requires Java).
+(* The sync store engine over object storage (docs/FORMATS.md,
+   server/store/store.go), model-checked by `just spec` (TLC, explicit
+   enumeration at small bounds — `just test` never requires Java).
 
-   Model: one pointer, two writers contending on it, one GC, every crash
-   point. A commit is two writes — the blob, then ONE log append; the
-   pointer is the log's last entry. A crash between the writes leaves an
-   orphan blob. The merge semilattice is NOT here: it is a pure function
-   and proptest owns it (crates/transit-sync); this spec covers the
-   engine's interleavings.
+   What the bucket guarantees, and all the model assumes of it (the
+   backend contract, server/store/backend.go): a whole-object create
+   that lands only if its key is absent, read and list after write,
+   delete. Nothing is appended, renamed, overwritten, or locked.
 
-   Invariants checked (the unit's Done-when):
-     - every pointer, current or in the log, names a durable blob;
-     - the log is append-only and each entry's `from` is the prior `to`;
-     - GC never deletes a blob any log entry names;
-     - a failed CAS leaves authority untouched (encoded: a Commit whose
-       `from` is not the current head is never enabled);
-     - a crash between blob write and log append leaves the old authority
-       readable (the orphan is collectable, the head unchanged). *)
+   Model: one pointer, the writer processes in Procs sharing one bucket,
+   and one offline `store gc` (D-117) running beside them. Each process
+   caches the head it last read (the cache may be stale — another
+   process commits under it). A commit:
+     1. PutBlob  — create blobs/<h> if absent (an existing blob, even an
+                   aged orphan, is reused: same key, same bytes);
+     2. Record   — create record base+1 if absent: the conditional
+                   create is the CAS; a present key is a conflict, and
+                   the process re-reads the head;
+     3. Check    — re-read its blob after the record, and re-create it
+                   if missing (the process still holds the bytes).
+   A process may crash between any two steps and restart with an empty
+   cache.
 
-EXTENDS Naturals, Sequences, FiniteSets, TLC
+   A GC pass:
+     List    — snapshot the records' blobs and the aged, unreferenced
+               blobs (the candidates; age past the grace is Tick);
+     Trash   — per candidate: copy blobs/<h> to gc/<h>, delete blobs/<h>;
+     Settle  — re-list the records, restore (create if absent) every
+               trashed blob a record now names, then empty gc/.
+   A GC pass may crash anywhere; the next pass begins with Settle.
+
+   Why Settle: a commit can reuse an aged orphan after List snapshots
+   the records, land its record, pass its Check while the orphan is
+   still there — and then Trash deletes it. Neither the grace nor the
+   commit's Check sees that; the re-list after the deletes does, and the
+   trash still holds the bytes. With Restore = FALSE (no trash, no
+   re-list) TLC finds exactly that trace against RefsDurable.
+
+   The merge semilattice is NOT here: it is a pure function and
+   proptest owns it (crates/transit-sync); this spec covers the
+   engine's interleavings. *)
+
+EXTENDS Naturals, FiniteSets, TLC
 
 CONSTANTS
-    BlobSet,        \* the finite set of hashes blobs may take
-    MaxCommits      \* bound on log length
+    Procs,          \* the server processes sharing the bucket
+    Hashes,         \* the finite set of blob hashes
+    MaxSeq,         \* bound on the pointer's records
+    Restore         \* TRUE: GC trashes and settles; FALSE: GC deletes outright
 
-(* The blob hashes are interchangeable — every action and invariant
-   treats BlobSet uniformly — so TLC can exploit symmetry (cfg:
-   SYMMETRY Symmetry) and check far larger bounds per distinct state. *)
-Symmetry == Permutations(BlobSet)
+NoRec == [from |-> "-", to |-> "-"]
+
+(* Hashes and processes are interchangeable — every action and
+   invariant treats them uniformly — so TLC exploits symmetry (cfg:
+   SYMMETRY Symmetry). *)
+Symmetry == Permutations(Hashes) \cup Permutations(Procs)
 
 VARIABLES
-    blobs,          \* set of durable blob hashes
-    logs,           \* Seq of [from |-> h, to |-> h] — append-only
-    head,           \* 0 = pointer absent; else index into logs (1-based)
-    orphan          \* a blob written by a crashed commit (not in any log entry)
+    blobs,      \* the hashes present under blobs/
+    aged,       \* the blobs past the grace period
+    trash,      \* the hashes present under gc/
+    recs,       \* seq -> record (NoRec = absent); records are immutable
+    cache,      \* proc -> the head seq it last read
+    pc,         \* proc -> "idle" | "blob" | "rec" | "check"
+    want,       \* proc -> the hash it is committing
+    base,       \* proc -> the seq its commit builds on
+    gcpc,       \* "idle" | "listed"
+    cand,       \* the GC pass's remaining candidates
+    broken      \* hashes whose commit crashed between Record and Check
 
-vars == <<blobs, logs, head, orphan>>
+vars == <<blobs, aged, trash, recs, cache, pc, want, base, gcpc, cand, broken>>
+
+Seqs == 1..MaxSeq
+top == Cardinality({i \in Seqs : recs[i] /= NoRec})
+HashAt(s) == IF s = 0 THEN "" ELSE recs[s].to
+named == {recs[i].to : i \in {j \in Seqs : recs[j] /= NoRec}}
 
 TypeOK ==
-    /\ blobs \in SUBSET BlobSet
-    /\ logs \in Seq([from : BlobSet \cup {""}, to : BlobSet])
-    /\ head \in 0..MaxCommits
-    /\ orphan \in BlobSet \cup {"none"}
+    /\ blobs \subseteq Hashes /\ aged \subseteq blobs /\ trash \subseteq Hashes
+    /\ recs \in [Seqs -> [from : Hashes \cup {"", "-"}, to : Hashes \cup {"-"}]]
+    /\ cache \in [Procs -> 0..MaxSeq]
+    /\ pc \in [Procs -> {"idle", "blob", "rec", "check"}]
+    /\ want \in [Procs -> Hashes \cup {"-"}]
+    /\ base \in [Procs -> 0..MaxSeq]
+    /\ gcpc \in {"idle", "listed"}
+    /\ cand \subseteq Hashes
+    /\ broken \subseteq Hashes
 
 Init ==
-    /\ blobs = {}
-    /\ logs = << >>
-    /\ head = 0
-    /\ orphan = "none"
+    /\ blobs = {} /\ aged = {} /\ trash = {}
+    /\ recs = [i \in Seqs |-> NoRec]
+    /\ cache = [p \in Procs |-> 0]
+    /\ pc = [p \in Procs |-> "idle"]
+    /\ want = [p \in Procs |-> "-"]
+    /\ base = [p \in Procs |-> 0]
+    /\ gcpc = "idle" /\ cand = {}
+    /\ broken = {}
 
-current == IF head = 0 THEN "" ELSE logs[head].to
+---------------------------------------------------------------------------
+(* A process *)
 
-tos == { logs[i].to : i \in 1..Len(logs) }
-froms == { logs[i].from : i \in 1..Len(logs) }
-referenced == tos \cup (froms \ {""})
+(* Read the head: list the pointer's records. *)
+Refresh(p) ==
+    /\ pc[p] = "idle"
+    /\ cache' = [cache EXCEPT ![p] = top]
+    /\ UNCHANGED <<blobs, aged, trash, recs, pc, want, base, gcpc, cand, broken>>
 
-(* A writer commits: PutBlob(to) then append ONE log record, CAS'd on
-   `from`. Enabled only when `from` is the current head ("" = absent) —
-   a stale writer's Commit is simply not enabled, which is the failed-CAS
-   invariant. Committing a hash equal to the crash-orphan absorbs it: the
-   store is content-addressed, so the torn blob write was a no-op for an
-   already-written blob, and the hash is now referenced — nothing is
-   orphaned anymore. *)
-Commit(from, to) ==
-    /\ Len(logs) < MaxCommits
-    /\ (head = 0 /\ from = "") \/ (head > 0 /\ logs[head].to = from)
-    /\ to \in BlobSet
-    /\ blobs' = blobs \cup {to}              \* the blob write (idempotent)
-    /\ logs' = Append(logs, [from |-> from, to |-> to])
-    /\ head' = head + 1
-    /\ IF to = orphan THEN orphan' = "none" ELSE UNCHANGED <<orphan>>
+(* Begin a commit of h from the cached head. Committing the head's own
+   bytes is the idempotent redelivery: no record, so not a step here. *)
+Begin(p, h) ==
+    /\ pc[p] = "idle"
+    /\ cache[p] < MaxSeq
+    /\ h /= HashAt(cache[p])
+    /\ pc' = [pc EXCEPT ![p] = "blob"]
+    /\ want' = [want EXCEPT ![p] = h]
+    /\ base' = [base EXCEPT ![p] = cache[p]]
+    /\ UNCHANGED <<blobs, aged, trash, recs, cache, gcpc, cand, broken>>
 
-(* A crash between the blob write and the log append: the blob exists,
-   no log entry names it (a torn write is unreferenced by construction),
-   the head does not move. *)
-Crash(b) ==
-    /\ orphan = "none"
-    /\ b \in BlobSet
-    /\ b \notin referenced
-    /\ blobs' = blobs \cup {b}
-    /\ orphan' = b
-    /\ UNCHANGED <<logs, head>>
+(* 1. Create the blob if absent; a present one (fresh or an aged
+   orphan) is reused untouched. *)
+PutBlob(p) ==
+    /\ pc[p] = "blob"
+    /\ IF want[p] \in blobs
+         THEN UNCHANGED <<blobs, aged>>
+         ELSE /\ blobs' = blobs \cup {want[p]}
+              /\ UNCHANGED aged
+    /\ pc' = [pc EXCEPT ![p] = "rec"]
+    /\ UNCHANGED <<trash, recs, cache, want, base, gcpc, cand, broken>>
 
-(* GC: delete only blobs no log entry names (the crash-torn orphans,
-   past the grace period — grace is modeled as expired for orphans). *)
-GC ==
-    \E b \in blobs :
-        /\ b \notin referenced
-        /\ blobs' = blobs \ {b}
-        /\ IF orphan = b THEN orphan' = "none" ELSE UNCHANGED <<orphan>>
-        /\ UNCHANGED <<logs, head>>
+(* 2. Create record base+1 if absent — the CAS. A present key is a
+   conflict: the head moved; re-read it and return the conflict. *)
+Record(p) ==
+    /\ pc[p] = "rec"
+    /\ LET s == base[p] + 1 IN
+       IF recs[s] = NoRec
+         THEN /\ recs' = [recs EXCEPT ![s] = [from |-> HashAt(base[p]), to |-> want[p]]]
+              /\ cache' = [cache EXCEPT ![p] = s]
+              /\ pc' = [pc EXCEPT ![p] = "check"]
+         ELSE /\ cache' = [cache EXCEPT ![p] = top]
+              /\ pc' = [pc EXCEPT ![p] = "idle"]
+              /\ UNCHANGED recs
+    /\ UNCHANGED <<blobs, aged, trash, want, base, gcpc, cand, broken>>
+
+(* 3. Re-read the blob after the record; re-create it if missing. *)
+Check(p) ==
+    /\ pc[p] = "check"
+    /\ IF want[p] \in blobs
+         THEN UNCHANGED blobs
+         ELSE blobs' = blobs \cup {want[p]}
+    /\ pc' = [pc EXCEPT ![p] = "idle"]
+    /\ UNCHANGED <<aged, trash, recs, cache, want, base, gcpc, cand, broken>>
+
+(* A crash: the process restarts with nothing cached. A crash after its
+   record and before its Check leaves that record's blob to
+   `store verify` (broken). *)
+Crash(p) ==
+    /\ pc[p] /= "idle"
+    /\ broken' = IF pc[p] = "check" THEN broken \cup {want[p]} ELSE broken
+    /\ pc' = [pc EXCEPT ![p] = "idle"]
+    /\ cache' = [cache EXCEPT ![p] = 0]
+    /\ UNCHANGED <<blobs, aged, trash, recs, want, base, gcpc, cand>>
+
+---------------------------------------------------------------------------
+(* Time and the offline GC *)
+
+(* A blob outlives the grace period. *)
+Tick(h) ==
+    /\ h \in blobs \ aged
+    /\ aged' = aged \cup {h}
+    /\ UNCHANGED <<blobs, trash, recs, cache, pc, want, base, gcpc, cand, broken>>
+
+(* List: the records, then the blobs with their ages. *)
+List ==
+    /\ gcpc = "idle"
+    /\ (Restore => trash = {})
+    /\ gcpc' = "listed"
+    /\ cand' = aged \ named
+    /\ UNCHANGED <<blobs, aged, trash, recs, cache, pc, want, base, broken>>
+
+(* Trash one candidate: copy it to gc/, delete it from blobs/ (with
+   Restore = FALSE: delete it outright). *)
+Trash(h) ==
+    /\ gcpc = "listed"
+    /\ h \in cand
+    /\ trash' = IF Restore /\ h \in blobs THEN trash \cup {h} ELSE trash
+    /\ blobs' = blobs \ {h}
+    /\ aged' = aged \ {h}
+    /\ cand' = cand \ {h}
+    /\ UNCHANGED <<recs, cache, pc, want, base, gcpc, broken>>
+
+(* Settle: re-list the records, restore every trashed blob a record now
+   names, empty gc/. Ends a pass; also begins one after a GC crash. *)
+Settle ==
+    /\ Restore
+    /\ \/ gcpc = "listed" /\ cand = {}
+       \/ gcpc = "idle" /\ trash /= {}
+    /\ blobs' = blobs \cup (trash \cap named)
+    /\ trash' = {}
+    /\ gcpc' = "idle"
+    /\ UNCHANGED <<aged, recs, cache, pc, want, base, cand, broken>>
+
+(* Without Restore a pass ends when its candidates are gone. *)
+Done ==
+    /\ ~Restore
+    /\ gcpc = "listed" /\ cand = {}
+    /\ gcpc' = "idle"
+    /\ UNCHANGED <<blobs, aged, trash, recs, cache, pc, want, base, cand, broken>>
+
+GCCrash ==
+    /\ gcpc = "listed"
+    /\ gcpc' = "idle"
+    /\ cand' = {}
+    /\ UNCHANGED <<blobs, aged, trash, recs, cache, pc, want, base, broken>>
 
 Next ==
-    \/ \E f, t \in BlobSet : Commit(IF head = 0 THEN "" ELSE logs[head].to, t) \* honest writer re-reads
-    \/ \E f \in BlobSet \cup {""}, t \in BlobSet : Commit(f, t)                    \* contending writer, any from
-    \/ \E b \in BlobSet : Crash(b)
-    \/ GC
+    \/ \E p \in Procs :
+        \/ Refresh(p) \/ PutBlob(p) \/ Record(p) \/ Check(p) \/ Crash(p)
+        \/ \E h \in Hashes : Begin(p, h)
+    \/ \E h \in Hashes : Tick(h) \/ Trash(h)
+    \/ List \/ Settle \/ Done \/ GCCrash
 
 Spec == Init /\ [][Next]_vars
 
 ---------------------------------------------------------------------------
 (* Invariants *)
 
-(* Every pointer, current or historical, names a durable blob. *)
-RefIntegrity ==
-    /\ (head = 0) \/ (logs[head].to \in blobs)
-    /\ \A i \in 1..Len(logs) :
-        /\ logs[i].to \in blobs
-        /\ logs[i].from /= "" => logs[i].from \in blobs
-
-(* The log is append-only and chained: each entry's from is the prior to. *)
+(* The records are 1..top with no gap, and each one's from is the prior
+   one's to: the log chains. *)
 LogChained ==
-    \A i \in 2..Len(logs) : logs[i].from = logs[i-1].to
+    /\ \A i \in Seqs : recs[i] /= NoRec <=> i <= top
+    /\ \A i \in 1..top : recs[i].from = HashAt(i - 1)
 
-(* The pointer is the log's last entry. *)
-PointerIsLogTail == head = Len(logs)
+(* Every record names a durable blob — under blobs/, or under gc/ until
+   the pass settles — except a commit between its record and its Check,
+   and one that crashed there (`store verify` reports it). *)
+RefsDurable ==
+    \A i \in 1..top :
+        \/ recs[i].to \in blobs \cup trash
+        \/ \E p \in Procs : pc[p] = "check" /\ want[p] = recs[i].to
+        \/ recs[i].to \in broken
 
-(* GC never deletes a referenced blob (encoded in GC's precondition, and
-   re-asserted here over every reachable state). *)
-GCSafe == referenced \subseteq blobs
+(* At rest — no GC pass open, no commit mid-Check — every named blob is
+   under blobs/ (bar a crash `store verify` reports). *)
+AtRest ==
+    (gcpc = "idle" /\ trash = {} /\ \A p \in Procs : pc[p] /= "check")
+        => named \subseteq blobs \cup broken
 
-(* A failed CAS leaves authority untouched: head never decreases and logs
-   only grow — both follow from Next, pinned here. *)
-AuthorityMonotone == head <= MaxCommits /\ Len(logs) = head
+(* A process's cache never runs ahead of the bucket. *)
+CacheBehind == \A p \in Procs : cache[p] <= top
 
-(* Crash safety: after a crash the old authority is readable — the head
-   still names a durable blob (RefIntegrity) — and the orphan stays
-   unreferenced until either GC collects it or a commit of the same hash
-   absorbs it (Commit clears the marker), so it is always collectable
-   while orphaned. *)
-CrashSafe ==
-    /\ orphan = "none" \/ orphan \notin referenced
-    /\ (head = 0) \/ (logs[head].to \in blobs)
+---------------------------------------------------------------------------
+(* Action properties *)
 
-(* Small-bounds assumptions for TLC live in store.cfg (finite BlobSet,
-   bounded log). *)
+(* A record, once created, never changes — so a failed CAS leaves
+   authority untouched, and two creates of one seq cannot both land. *)
+RecordsImmutable ==
+    [][\A i \in Seqs : recs[i] /= NoRec => recs'[i] = recs[i]]_vars
+
+(* The head only moves forward, one record at a time. *)
+HeadMonotone == [][top' = top \/ top' = top + 1]_vars
+
 ===============================================================================

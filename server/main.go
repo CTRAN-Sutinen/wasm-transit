@@ -40,15 +40,14 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8080", "listen address")
 	dist := flag.String("dist", "../web/dist", "directory of static files to serve")
 	wasmPath := flag.String("wasm", "../web/pkg/cap_sync.wasm", "the sync capability module to host and pin")
-	feedPath := flag.String("feed", "", "path to the GTFS zip: imported once and published as the network (enables /network and the manifest's schedule section)")
+	feedPath := flag.String("feed", "", "the GTFS zip's source (D-118): an http(s) URL, bucket:<key> (the object inputs/<key> in the -store bucket), or a dev path; imported and published as the network (enables /network and the manifest's schedule section). With -store each read is committed as source.feed, and a source that does not answer at boot serves that")
 	networkWasm := flag.String("network-wasm", "../web/pkg/cap_network.wasm", "the network capability module that imports the feed")
-	streetsPath := flag.String("streets", "", "path to a street layer (GeoJSON lines): imported once and published as the streets document (enables /streets, and with -feed the walk table at /walks)")
+	streetsPath := flag.String("streets", "", "the street layer's source (GeoJSON lines; a URL, bucket:<key>, or a dev path, as -feed): imported and published as the streets document (enables /streets, and with -feed the walk table at /walks); committed as source.streets with -store")
 	streetsWasm := flag.String("streets-wasm", "../web/pkg/cap_streets.wasm", "the streets capability module that imports the layer and derives the walk table")
 	publisher := flag.String("publisher", "", "manifest provenance (who publishes this schedule)")
 	editsPath := flag.String("edits", "", "path to persist the edit document (JSON); empty = in-memory only (legacy mode; with -store it seeds the edits pointer once)")
 	storeURL := flag.String("store", "", "the durable sync store's URL (docs/FORMATS.md): s3://bucket/prefix[?endpoint=URL&region=R] (S3 or an S3-compatible endpoint; credentials from the AWS SDK's default chain) or mem:// (nothing survives the process); enables /pointers, /blobs and store-backed /edits and /manifest; empty = legacy mode")
 	retentionDays := flag.Int("retention-days", 90, "tombstone retention horizon (days) for the store's D-57 compaction commits")
-	gcInterval := flag.Duration("gc-interval", time.Hour, "how often the store sweeps crash-torn orphan blobs past their grace period (store mode; 0 = only at startup)")
 	today := flag.String("today", "", "pin the server's date (YYYY-MM-DD) for hermetic test servers; empty = the host clock. Publishing reads it: a new pick never lands before today, and only a pick after today is retired (D-75, D-76)")
 	migrateWasm := flag.String("migrate-wasm", defaultMigrateWasm, "the migration capability module (cap-migrate): an older document comes forward at receive, and a store's older heads at startup")
 	plansWasm := flag.String("plans-wasm", "../web/pkg/cap_plans.wasm", "the plan-chain capability module (cap-plans) hosted in store mode: it answers the published plan set POST /plans commits")
@@ -58,7 +57,7 @@ func main() {
 	oidcAud := flag.String("oidc-audience", "", "expected JWT aud (string or array member)")
 	oidcKey := flag.String("oidc-key", "", "pinned PEM public key for JWT verification (used when -oidc-jwks-url is empty)")
 	oidcRoles := flag.String("oidc-roles-claim", "roles", "dotted JWT claim path holding the roles string array (D-59)")
-	policyFile := flag.String("policy", "", "path to the authorization policy document (JSON): seeds the store's policy pointer at first boot (D-61); with no -store it is the policy")
+	policyFile := flag.String("policy", "", "the authorization policy document's source (JSON; a URL, bucket:<key>, or a dev path): seeds the store's policy pointer at first boot (D-61); with no -store it is the policy")
 	geocoderURL := flag.String("geocoder", "", "base URL of a Pelias geocoder (e.g. http://127.0.0.1:4000): enables /geocode/{autocomplete,search,reverse} and lists it in the manifest's services")
 	geocoderPolicy := flag.String("geocoder-policy", "geocoder.json", "the deployment's geocoder query policy (Pelias parameters per op), applied by the proxy")
 	flag.Parse()
@@ -84,7 +83,7 @@ func main() {
 		migrateWasm:   *migrateWasm,
 	}
 	if *storeURL != "" {
-		st, err := store.Open(*storeURL)
+		st, err := store.OpenServing(*storeURL)
 		if err != nil {
 			log.Fatalf("store: %v", err)
 		}
@@ -97,10 +96,7 @@ func main() {
 		s.commitForward()
 		s.seedPolicy(*policyFile)
 		s.maybeCompactEdits()
-		if *gcInterval > 0 {
-			st.Sweep(*gcInterval, store.OrphanGraceMs)
-		}
-		log.Printf("sync store open: %s (orphan sweep every %s)", *storeURL, *gcInterval)
+		log.Printf("sync store open: %s (serving: creates and reads, never deletes — `store gc` collects orphans)", *storeURL)
 	}
 	if *oidcIssuer != "" || *oidcJWKS != "" || *oidcKey != "" {
 		if *oidcJWKS != "" && (*oidcIssuer == "" || *oidcAud == "") {
@@ -125,13 +121,13 @@ func main() {
 		}
 	}
 	if *feedPath != "" {
-		s.feeder = &fileFeed{path: *feedPath, networkWasm: *networkWasm}
+		s.feeder = &feedSource{src: newSource(*feedPath, "source.feed", "gtfs_feed", s.store), networkWasm: *networkWasm}
 		if _, err := s.feeder.Load(); err != nil {
 			log.Fatalf("feed: %v", err)
 		}
 	}
 	if *streetsPath != "" {
-		s.streets = &fileStreets{path: *streetsPath, streetsWasm: *streetsWasm}
+		s.streets = &streetsSource{src: newSource(*streetsPath, "source.streets", "street_layer", s.store), streetsWasm: *streetsWasm}
 		if _, err := s.publishedStreets(); err != nil {
 			log.Fatalf("streets: %v", err)
 		}
@@ -164,8 +160,8 @@ func main() {
 type server struct {
 	dist      string
 	wasm      *WasmHost
-	feeder    *fileFeed    // nil when no feed is configured
-	streets   *fileStreets // nil when no street layer is configured
+	feeder    *feedSource  // nil when no feed is configured
+	streets   *streetsSource // nil when no street layer is configured
 	publisher string
 	geocoder  *geocoder // nil when no geocoder is configured
 
@@ -402,7 +398,7 @@ func orEmpty(s *string) string {
 func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 	manifest, err := s.buildManifest()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	if s.store == nil {
@@ -424,7 +420,7 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 			head, found, err := s.store.Head("manifest")
 			if err != nil {
 				s.manifestMu.Unlock()
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				fail(w, err, http.StatusInternalServerError)
 				return
 			}
 			from := ""
@@ -432,13 +428,16 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 				from = head.Hash
 			}
 			_, _, err = s.store.CAS("manifest", from, body, env, "", "server", time.Now().UnixMilli())
+			if errors.Is(err, store.ErrUnavailable) {
+				break // D-119: serve the cached manifest below, labelled
+			}
 			if err != nil {
 				var ce *store.ConflictError
 				if errors.As(err, &ce) && attempt < 4 {
 					continue
 				}
 				s.manifestMu.Unlock()
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				fail(w, err, http.StatusInternalServerError)
 				return
 			}
 			s.manifestKey = key
@@ -448,15 +447,20 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 	s.manifestMu.Unlock()
 
 	head, found, err := s.store.Head("manifest")
-	if err != nil || !found {
-		http.Error(w, "manifest pointer unavailable", http.StatusInternalServerError)
+	if err != nil {
+		fail(w, err, http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		fail(w, store.ErrUnavailable, http.StatusInternalServerError)
 		return
 	}
 	data, _, err := s.store.GetBlob(head.Hash)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fail(w, err, http.StatusInternalServerError)
 		return
 	}
+	labelStale(w, head)
 	etag := `"` + head.Hash + `"`
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "no-cache")

@@ -245,7 +245,8 @@ func TestPublishedPicksResolveThroughTheManifest(t *testing.T) {
 // What a pick must be: a valid, dated, versioned network that keeps the
 // chain valid. A refusal says why and moves no pointer.
 func TestPublishRefusesWhatWouldBreakTheChain(t *testing.T) {
-	s, base := newPlansServer(t, store.NewMemory())
+	bucket := store.NewMemory()
+	s, base := newPlansServer(t, bucket)
 	if code, out := publishPick(t, base, fixtureNetwork(t, "fall", "Fall", "2026-09-07")); code != 200 {
 		t.Fatalf("publish: %d %v", code, out)
 	}
@@ -289,7 +290,8 @@ func TestPublishRefusesWhatWouldBreakTheChain(t *testing.T) {
 	}
 
 	// Republishing a pick moves it; the published networks stay
-	// referenced (the plan.<id> log names every one), so GC keeps them.
+	// referenced (the plan.<id> log names every one), so `store gc`
+	// keeps them.
 	again := fixtureNetwork(t, "fall", "Fall", "2026-09-14")
 	again["name"] = "fall, revised"
 	if code, out := publishPick(t, base, again); code != 200 {
@@ -299,7 +301,7 @@ func TestPublishRefusesWhatWouldBreakTheChain(t *testing.T) {
 	if len(entries) != 2 {
 		t.Fatalf("plan.fall log: %d entries", len(entries))
 	}
-	if _, err := s.store.GC(0); err != nil {
+	if _, err := store.New(bucket).GC(0); err != nil {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
@@ -444,7 +446,7 @@ func TestThePickInForceAsGTFS(t *testing.T) {
 	}
 	// With -feed, the configured zip itself.
 	zipBytes, _ := os.ReadFile("../web/e2e/fixtures/sample-gtfs.zip")
-	s.feeder = &fileFeed{path: "../web/e2e/fixtures/sample-gtfs.zip", networkWasm: networkWasm}
+	s.feeder = fileFeed("../web/e2e/fixtures/sample-gtfs.zip", networkWasm)
 	code, _, body := httpGet(t, base+"/feed?date=2026-08-15")
 	if code != 200 || body != string(zipBytes) {
 		t.Fatalf("before the first pick: the configured zip (%d, %d bytes)", code, len(body))
@@ -474,7 +476,7 @@ func TestTodayIsTheAgencysDate(t *testing.T) {
 		t.Fatalf("today after a publish: %s, want the agency's 2026-11-05", got)
 	}
 
-	fed := &server{feeder: &fileFeed{path: "../web/e2e/fixtures/sample-gtfs.zip", networkWasm: networkWasm}}
+	fed := &server{feeder: fileFeed("../web/e2e/fixtures/sample-gtfs.zip", networkWasm)}
 	fed.now = func() time.Time { return instant }
 	if got := fed.today(); got != "2026-11-05" {
 		t.Fatalf("today from the feed's zone: %s, want 2026-11-05", got)

@@ -44,7 +44,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"rustwasm/server/store"
@@ -120,7 +119,7 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 	}
 	pick, issues, err := canonicalPick(r.Context(), s.networkWasm, body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		fail(w, err, http.StatusBadRequest)
 		return
 	}
 	if issues != nil {
@@ -146,13 +145,13 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 	defer s.plansMu.Unlock()
 	head, found, err := s.store.Head("plans")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	var current json.RawMessage = json.RawMessage("null")
 	if found {
 		if current, _, err = s.store.GetBlob(head.Hash); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			fail(w, err, http.StatusInternalServerError)
 			return
 		}
 	}
@@ -164,7 +163,7 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 	if err := s.plans.Invoke(r.Context(), map[string]any{
 		"op": "publish", "published": current, "plan": pick.Plan, "network_hash": pick.DocumentHash, "today": s.today(),
 	}, &next); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	if next.Document == nil {
@@ -188,7 +187,7 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		planFrom = planHead.Hash
 	}
 	if _, _, err := s.store.CAS(pointer, planFrom, []byte(pick.Document), netEnv, pick.DocumentHash, writer, nowMs); err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
+		fail(w, err, http.StatusConflict)
 		return
 	}
 	from := ""
@@ -197,7 +196,7 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 	}
 	plansHash, _, err := s.store.CAS("plans", from, []byte(*next.Document), s.plansEnvelope(), *next.DocumentHash, writer, nowMs)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
+		fail(w, err, http.StatusConflict)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -273,7 +272,7 @@ func (s *server) handleRetire(w http.ResponseWriter, r *http.Request) {
 	defer s.plansMu.Unlock()
 	head, found, err := s.store.Head("plans")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	if !found {
@@ -282,7 +281,7 @@ func (s *server) handleRetire(w http.ResponseWriter, r *http.Request) {
 	}
 	current, _, err := s.store.GetBlob(head.Hash)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	var next struct {
@@ -293,7 +292,7 @@ func (s *server) handleRetire(w http.ResponseWriter, r *http.Request) {
 	if err := s.plans.Invoke(r.Context(), map[string]any{
 		"op": "retire", "published": json.RawMessage(current), "id": req.ID, "today": s.today(),
 	}, &next); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fail(w, err, http.StatusInternalServerError)
 		return
 	}
 	if next.Document == nil {
@@ -302,7 +301,7 @@ func (s *server) handleRetire(w http.ResponseWriter, r *http.Request) {
 	}
 	plansHash, _, err := s.store.CAS("plans", head.Hash, []byte(*next.Document), s.plansEnvelope(), *next.DocumentHash, writerOf(r, "anonymous"), time.Now().UnixMilli())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
+		fail(w, err, http.StatusConflict)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"plans_hash": plansHash})
@@ -331,7 +330,7 @@ func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 		if head, found, err := s.store.Head("plans"); err == nil && found {
 			set, _, err := s.store.GetBlob(head.Hash)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				fail(w, err, http.StatusInternalServerError)
 				return
 			}
 			var ans struct {
@@ -341,7 +340,7 @@ func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 				} `json:"plan"`
 			}
 			if err := s.plans.Invoke(r.Context(), map[string]any{"op": "in_force", "published": json.RawMessage(set), "date": date}, &ans); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				fail(w, err, http.StatusBadRequest)
 				return
 			}
 			pick = ans.Plan
@@ -353,14 +352,14 @@ func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 	case pick != nil:
 		var err error
 		if zipBytes, err = s.exportedPick(r.Context(), pick.NetworkHash); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			fail(w, err, http.StatusInternalServerError)
 			return
 		}
 		name = "gtfs-" + pick.ID + ".zip"
 	case s.feeder != nil:
 		var err error
-		if zipBytes, err = os.ReadFile(s.feeder.path); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		if zipBytes, err = s.feeder.Zip(); err != nil {
+			fail(w, err, http.StatusInternalServerError)
 			return
 		}
 	default:

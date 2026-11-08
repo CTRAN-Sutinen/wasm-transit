@@ -16,14 +16,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/sha256"
 	"encoding/csv"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -173,36 +170,41 @@ func feedInfoVersion(zipBytes []byte) string {
 	return ""
 }
 
-// fileFeed reads the GTFS zip from disk and imports it, caching by
-// mtime so a republished file is picked up without a restart (the
-// "planner publishes, everyone re-pins" flow).
-type fileFeed struct {
-	path        string
+// feedSource reads the GTFS zip from its source (D-118: a URL, the
+// bucket, or a dev file) and imports it, re-importing only when the
+// source's bytes change — a republished feed is picked up without a
+// restart (the "planner publishes, everyone re-pins" flow).
+type feedSource struct {
+	src         *source
 	networkWasm string // the cap-network module that imports it
 
-	mu     sync.Mutex
-	mtime  time.Time
-	loaded bool
-	feed   *loadedFeed
+	mu   sync.Mutex
+	feed *loadedFeed
+}
+
+// fileFeed is a feed read from a local file (dev, tests).
+func fileFeed(path, networkWasm string) *feedSource {
+	return &feedSource{src: newSource(path, "", "", nil), networkWasm: networkWasm}
+}
+
+// Zip answers the feed's bytes as last read.
+func (f *feedSource) Zip() ([]byte, error) {
+	body, _, err := f.src.Read()
+	return body, err
 }
 
 // Load returns the current published state, re-importing when the
-// file changed.
-func (f *fileFeed) Load() (*loadedFeed, error) {
+// source's bytes changed.
+func (f *feedSource) Load() (*loadedFeed, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	info, err := os.Stat(f.path)
+	body, hash, err := f.src.Read()
 	if err != nil {
 		return nil, err
 	}
-	if f.loaded && info.ModTime().Equal(f.mtime) {
+	if f.feed != nil && f.feed.hash == hash {
 		return f.feed, nil
-	}
-
-	body, err := os.ReadFile(f.path)
-	if err != nil {
-		return nil, err
 	}
 	started := time.Now()
 	network, networkHash, err := importFeed(context.Background(), f.networkWasm, body)
@@ -217,12 +219,8 @@ func (f *fileFeed) Load() (*loadedFeed, error) {
 	if err := json.Unmarshal(network, &parts); err != nil || len(parts.Network) == 0 {
 		return nil, fmt.Errorf("import answered no network document")
 	}
-	sum := sha256.Sum256(body)
-
-	f.loaded = true
-	f.mtime = info.ModTime()
 	f.feed = &loadedFeed{
-		hash:         "sha256:" + hex.EncodeToString(sum[:]),
+		hash:         hash,
 		version:      feedInfoVersion(body),
 		networkHash:  networkHash,
 		network:      network,
@@ -232,7 +230,7 @@ func (f *fileFeed) Load() (*loadedFeed, error) {
 		timezone:     parts.Timezone,
 	}
 	log.Printf("network imported from %s in %s: %s (%d KB, %d KB gzipped)",
-		f.path, time.Since(started).Round(time.Millisecond), networkHash, len(parts.Network)/1024, len(f.feed.documentGzip)/1024)
+		f.src.raw, time.Since(started).Round(time.Millisecond), networkHash, len(parts.Network)/1024, len(f.feed.documentGzip)/1024)
 	return f.feed, nil
 }
 

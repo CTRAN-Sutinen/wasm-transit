@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -74,27 +73,32 @@ type loadedStreets struct {
 	walks   servedDoc
 }
 
-// fileStreets reads the street layer from disk and imports it,
-// caching by mtime; the walk table is derived again when the
-// published network changes.
-type fileStreets struct {
-	path        string
+// streetsSource reads the street layer from its source (D-118) and
+// imports it when its bytes change; the walk table is derived again
+// when the published network changes.
+type streetsSource struct {
+	src         *source
 	streetsWasm string // the cap-streets module that imports it
 
 	mu          sync.Mutex
-	mtime       time.Time
+	layerHash   string
 	networkHash string
 	loaded      *loadedStreets
+}
+
+// fileStreets is a street layer read from a local file (dev, tests).
+func fileStreets(path, streetsWasm string) *streetsSource {
+	return &streetsSource{src: newSource(path, "", "", nil), streetsWasm: streetsWasm}
 }
 
 // Load returns the current published streets over `feed` (nil: no
 // network, no walk table), importing the layer when the file changed
 // and deriving the walk table when either changed.
-func (f *fileStreets) Load(feed *loadedFeed) (*loadedStreets, error) {
+func (f *streetsSource) Load(feed *loadedFeed) (*loadedStreets, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	info, err := os.Stat(f.path)
+	body, layerHash, err := f.src.Read()
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +106,7 @@ func (f *fileStreets) Load(feed *loadedFeed) (*loadedStreets, error) {
 	if feed != nil {
 		networkHash = feed.networkHash
 	}
-	if f.loaded != nil && info.ModTime().Equal(f.mtime) && networkHash == f.networkHash {
+	if f.loaded != nil && layerHash == f.layerHash && networkHash == f.networkHash {
 		return f.loaded, nil
 	}
 
@@ -116,17 +120,13 @@ func (f *fileStreets) Load(feed *loadedFeed) (*loadedStreets, error) {
 	defer host.Close(ctx)
 
 	var streets servedDoc
-	if f.loaded != nil && info.ModTime().Equal(f.mtime) {
+	if f.loaded != nil && layerHash == f.layerHash {
 		// The same layer: register the document already imported.
 		streets = f.loaded.streets
 		if err := host.InvokeBytes(ctx, opLoadStreets, streets.body, nil); err != nil {
 			return nil, fmt.Errorf("load_streets: %w", err)
 		}
 	} else {
-		body, err := os.ReadFile(f.path)
-		if err != nil {
-			return nil, err
-		}
 		var imported struct {
 			StreetsHash string          `json:"streets_hash"`
 			Streets     json.RawMessage `json:"streets"`
@@ -162,10 +162,10 @@ func (f *fileStreets) Load(feed *loadedFeed) (*loadedStreets, error) {
 	}
 
 	f.loaded = loaded
-	f.mtime = info.ModTime()
+	f.layerHash = layerHash
 	f.networkHash = networkHash
 	log.Printf("streets from %s in %s: %s (%d KB, %d KB gzipped); walk table %s (%d KB gzipped)",
-		f.path, time.Since(started).Round(time.Millisecond), streets.hash, len(streets.body)/1024, len(streets.gz)/1024,
+		f.src.raw, time.Since(started).Round(time.Millisecond), streets.hash, len(streets.body)/1024, len(streets.gz)/1024,
 		loaded.walks.hash, len(loaded.walks.gz)/1024)
 	return loaded, nil
 }

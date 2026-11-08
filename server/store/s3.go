@@ -17,14 +17,17 @@ import (
 
 // OpenBackend opens the backend a store URL names:
 //
-//	mem://                                      in memory (dev, tests)
-//	s3://bucket[/prefix][?endpoint=URL&region=R] S3 or any S3-compatible
-//	                                            endpoint (path-style when
-//	                                            endpoint is given)
+//	mem://                                       in memory (dev, tests)
+//	s3://bucket[/prefix][?endpoint=URL&region=R]  S3 or any S3-compatible
+//	                                             endpoint (path-style when
+//	                                             endpoint is given)
+//	azblob://container[/prefix][?endpoint=URL]   Azure Blob Storage
+//	gs://bucket[/prefix]                         Google Cloud Storage
 //
-// S3 credentials come from the SDK's default chain (AWS_ACCESS_KEY_ID /
-// AWS_SECRET_ACCESS_KEY, a profile, an instance role). There is no
-// directory backend: a store needs the object contract (backend.go).
+// Credentials come from each provider's own chain: the AWS SDK's
+// (AWS_ACCESS_KEY_ID, a profile, an instance role); NewAzure's; GCS
+// Application Default Credentials. There is no directory backend: a
+// store needs the object contract (backend.go).
 func OpenBackend(ctx context.Context, raw string) (Backend, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -39,8 +42,18 @@ func OpenBackend(ctx context.Context, raw string) (Backend, error) {
 		}
 		q := u.Query()
 		return NewS3(ctx, u.Host, strings.Trim(u.Path, "/"), q.Get("endpoint"), q.Get("region"))
+	case "azblob":
+		if u.Host == "" {
+			return nil, fmt.Errorf("store URL %q names no container", raw)
+		}
+		return NewAzure(u.Host, strings.Trim(u.Path, "/"), u.Query().Get("endpoint"))
+	case "gs":
+		if u.Host == "" {
+			return nil, fmt.Errorf("store URL %q names no bucket", raw)
+		}
+		return NewGCS(ctx, u.Host, strings.Trim(u.Path, "/"))
 	default:
-		return nil, fmt.Errorf("store URL %q: want mem:// or s3://bucket/prefix (the store lives in object storage, D-113)", raw)
+		return nil, fmt.Errorf("store URL %q: want s3://, azblob://, gs:// or mem:// (the store lives in object storage, D-113)", raw)
 	}
 }
 

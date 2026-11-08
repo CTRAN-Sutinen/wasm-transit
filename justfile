@@ -622,15 +622,22 @@ population:
 #   just serve path/to/gtfs.zip "" "Test Transit"   # + manifest publisher
 #   just serve path/to/gtfs.zip "" "" 127.0.0.1:8081
 #
-# The feed and street layer paths are resolved relative to the repo
-# root, wherever you run just from.
+# The feed and street layer are a path (resolved relative to the repo
+# root, wherever you run just from), an http(s) URL, or bucket:<key>
+# (the object inputs/<key> in the STORE bucket) — D-118.
 serve feed="" streets="" publisher="" addr="127.0.0.1:8080":
     #!/usr/bin/env bash
     set -e
+    # A URL or bucket:<key> source passes as given (D-118); a path is
+    # resolved from the repo root.
+    src() { case "$1" in http://*|https://*|bucket:*) echo "$1" ;; *) realpath -m "$1" ;; esac; }
+    feed="{{ feed }}"; streets="{{ streets }}"
+    if [ -n "$feed" ]; then feed=$(src "$feed"); fi
+    if [ -n "$streets" ]; then streets=$(src "$streets"); fi
     cd server
     args=(-addr "{{ addr }}")
-    if [ -n "{{ feed }}" ]; then args+=(-feed "{{ absolute_path(feed) }}"); fi
-    if [ -n "{{ streets }}" ]; then args+=(-streets "{{ absolute_path(streets) }}"); fi
+    if [ -n "$feed" ]; then args+=(-feed "$feed"); fi
+    if [ -n "$streets" ]; then args+=(-streets "$streets"); fi
     if [ -n "{{ publisher }}" ]; then args+=(-publisher "{{ publisher }}"); fi
     if [ -n "${GEOCODER:-}" ]; then args+=(-geocoder "$GEOCODER"); fi
     if [ -n "${STORE:-}" ]; then args+=(-store "$STORE"); fi
@@ -643,42 +650,72 @@ serve feed="" streets="" publisher="" addr="127.0.0.1:8080":
     done
     exec go run . "${args[@]}"
 
+# The sync store's offline tools (server/cmd/store; Go, no wasm):
+#   just store verify <url>          read the whole store, exit 1 on the first break
+#   just store gc [-grace 168h] <url>  collect orphans (D-117) — the collector's
+#                                    own delete-capable credentials
+#   just store copy <dir> <url>      carry an older build's directory store into
+#                                    a bucket, then verify it
+# The store's offline tools: verify | gc | copy (a URL is passed as given).
+[positional-arguments]
+store +args:
+    cd server && go run ./cmd/store "$@"
+
 store_dev_image := "docker.io/chrislusf/seaweedfs:4.50"
+azurite_image := "mcr.microsoft.com/azure-storage/azurite@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5"
+fake_gcs_image := "docker.io/fsouza/fake-gcs-server@sha256:797ce226d62f947c009dc40246b30cfb456b8473d8241407f9d6f2c04e4d69ef"
 store_dev_env := "AWS_ACCESS_KEY_ID=dev AWS_SECRET_ACCESS_KEY=devsecret"
 store_dev_url := "s3://transit/dev?endpoint=http://127.0.0.1:8333"
+# Azurite's published development account (its documented key, not a secret).
+azurite_conn := "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
 
-# A dev S3 endpoint for the sync store: SeaweedFS in podman on
-# 127.0.0.1:8333, its data in the podman volume transit-store-dev (so a
-# store survives a restart), and the bucket `transit`. A dev
-# convenience only — the engine assumes the object contract
-# (server/store/backend.go) and gives no endpoint a code path of its
-# own; `just store-contract` is what says this one honors it. Prints
-# the env + STORE= URL for `just serve` / `just dev`.
+# Local object stores for the sync store, in podman: SeaweedFS (S3, on
+# 127.0.0.1:8333, its data in the volume transit-store-dev so a store
+# survives a restart — the one `just serve` uses), Azurite (Azure Blob,
+# :10000) and fake-gcs-server (GCS, :4443), the last two for the
+# contract only. Local validation only — the engine assumes the object
+# contract (server/store/backend.go) and gives no endpoint a code path
+# of its own; `just store-contract` says whether each honors it.
 store-dev:
     #!/usr/bin/env bash
     set -euo pipefail
     podman run -d --replace --name transit-store-dev --memory 1g \
       -p 127.0.0.1:8333:8333 -v transit-store-dev:/data \
       -e AWS_ACCESS_KEY_ID=dev -e AWS_SECRET_ACCESS_KEY=devsecret \
-      {{ store_dev_image }} server -dir=/data -s3 -s3.port=8333 -telemetry=false >/dev/null
+      {{ store_dev_image }} server -dir=/data -s3 -s3.port=8333 -master.telemetry=false >/dev/null
+    podman run -d --replace --name transit-azurite --memory 512m -p 127.0.0.1:10000:10000 \
+      {{ azurite_image }} azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck >/dev/null
+    podman run -d --replace --name transit-fake-gcs --memory 512m -p 127.0.0.1:4443:4443 \
+      {{ fake_gcs_image }} -scheme http -port 4443 -public-host 127.0.0.1:4443 >/dev/null
     for i in $(seq 1 60); do
-      if curl -s -o /dev/null http://127.0.0.1:8333/; then break; fi
+      if curl -s -o /dev/null http://127.0.0.1:8333/ && curl -s -o /dev/null http://127.0.0.1:10000/ \
+         && curl -s -o /dev/null http://127.0.0.1:4443/storage/v1/b; then break; fi
       sleep 1
     done
     echo "s3.bucket.create -name transit" | podman exec -i transit-store-dev weed shell >/dev/null 2>&1 || true
-    echo "SeaweedFS on :8333 (just store-dev-stop ends it). Serve over it:"
+    echo "SeaweedFS :8333, Azurite :10000, fake-gcs-server :4443 (just store-dev-stop ends them)."
+    echo "Serve over SeaweedFS:"
     echo "  {{ store_dev_env }} STORE='{{ store_dev_url }}' just serve …"
 
 store-dev-stop:
-    podman rm -f transit-store-dev >/dev/null 2>&1 || true
+    podman rm -f transit-store-dev transit-azurite transit-fake-gcs >/dev/null 2>&1 || true
 
 # The store's laws — the backend contract and every engine law — run
-# against the dev endpoint (`just store-dev` first), each test under its
-# own fresh prefix of s3://transit/contract. Opt-in, never in `just
-# test`; a managed provider's bucket runs the same way with
-# STORE_TEST_URL and its credentials.
+# against each local store (`just store-dev` first), each test under its
+# own fresh prefix. Opt-in, never in `just test`; a managed provider's
+# bucket runs the same way with STORE_TEST_URL and its credentials.
 store-contract:
-    cd server && {{ store_dev_env }} STORE_TEST_URL='s3://transit/contract?endpoint=http://127.0.0.1:8333' \
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd server
+    echo "== s3 (SeaweedFS)"
+    {{ store_dev_env }} STORE_TEST_URL='s3://transit/contract?endpoint=http://127.0.0.1:8333' \
+      go test -race -count=1 ./store/
+    echo "== azblob (Azurite)"
+    AZURE_STORAGE_CONNECTION_STRING='{{ azurite_conn }}' STORE_TEST_URL='azblob://transit/contract' \
+      go test -race -count=1 ./store/
+    echo "== gs (fake-gcs-server)"
+    STORAGE_EMULATOR_HOST=127.0.0.1:4443 STORE_TEST_URL='gs://transit/contract' \
       go test -race -count=1 ./store/
 
 # Frontend dev loop: vite with hot reload on :5173 (proxies /rt,
@@ -855,18 +892,20 @@ mutants:
     cargo mutants -p transit-codec -p transit-router -p transit-sync -p transit-plans
 
 # Model-check the sync store engine (server/store/store.tla, run with
-# TLC) — the engine's invariants: ref integrity, an append-only chained
-# log, GC safety, CAS authority, crash safety
-# (docs/FORMATS.md). OPTIONAL: run it only when a change
+# TLC) — processes sharing one bucket and the offline GC beside them:
+# every record names a durable blob, the log chains, records never
+# change, the head only moves forward (docs/FORMATS.md). OPTIONAL: run it only when a change
 # touches the sync engine (server/store/, the /pointers + /blobs +
 # /edits store surface, or the spec itself) — nothing else needs Java.
 # Needs Java 11+ (current tla2tools) and tla2tools.jar from
 # github.com/tlaplus/tlaplus/releases (the user's install; TLA_JAR or
 # ~/bin/tla2tools.jar). Deliberately NOT part of `just test`.
 # Bounds: store.cfg (small, pinned) by default; the exhaustive tier is
-# SPEC_CFG=server/store/store-exhaustive.cfg just spec (blob-hash
-# symmetry, bigger bounds, still exhaustive). TLC_WORKERS / TLC_XMX
-# size the run.
+# SPEC_CFG=server/store/store-exhaustive.cfg just spec (hash and
+# process symmetry, bigger bounds, still exhaustive; ~5 min).
+# SPEC_CFG=server/store/store-race.cfg is EXPECTED TO FAIL: GC without
+# its settle step, and the trace that shows why it has one.
+# TLC_WORKERS / TLC_XMX size the run.
 spec:
     #!/usr/bin/env bash
     set -e
@@ -882,5 +921,11 @@ spec:
     # (blob-hash symmetry makes it exhaustive at much larger bounds).
     # TLC_WORKERS (default auto) and TLC_XMX (e.g. 8g) size the run.
     cfg="${SPEC_CFG:-server/store/store.cfg}"
+    # TLC's state files (hundreds of MB) go to a scratch directory, never
+    # the tree, and a failing check prints its trace instead of writing
+    # store_TTrace_* files beside the spec.
+    meta=$(mktemp -d)
+    trap 'rm -rf "$meta"' EXIT
     java -XX:+UseParallelGC ${TLC_XMX:+-Xmx"$TLC_XMX"} -cp "$jar" tlc2.TLC \
-        -workers "${TLC_WORKERS:-auto}" -config "$cfg" server/store/store.tla
+        -workers "${TLC_WORKERS:-auto}" -metadir "$meta" -noGenerateSpecTE \
+        -config "$cfg" server/store/store.tla

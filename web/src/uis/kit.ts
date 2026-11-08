@@ -52,11 +52,16 @@ export function nowSecs(): number {
 
 /// The agency's wall clock, "4:05 PM", for a status line.
 export function clockLabel(): string {
+  return clockLabelAt(Date.now());
+}
+
+/// The agency's wall clock at an instant (Unix ms), "4:05 PM".
+export function clockLabelAt(ms: number): string {
   const opts: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
   try {
-    return new Date().toLocaleTimeString([], { ...opts, timeZone: agencyZone });
+    return new Date(ms).toLocaleTimeString([], { ...opts, timeZone: agencyZone });
   } catch {
-    return new Date().toLocaleTimeString([], opts);
+    return new Date(ms).toLocaleTimeString([], opts);
   }
 }
 
@@ -175,4 +180,14 @@ export function answerGraph(nodes: AnswerNode[], onerror: (e: unknown) => void) 
     })();
     return draining;
   };
+}
+
+/// A sync-server answer served from its cache while its store does not
+/// answer (D-119) carries X-Store-Stale and X-Store-As-Of: the label a
+/// page shows for it — "Detours as of 4:05 PM …" — else "".
+export function staleLabel(resp: Response, what: string): string {
+  if (resp.headers.get("X-Store-Stale") !== "true") return "";
+  const asOf = Number(resp.headers.get("X-Store-As-Of"));
+  const when = Number.isFinite(asOf) && asOf > 0 ? ` as of ${clockLabelAt(asOf)}` : "";
+  return `${what}${when} — the server's store is not answering.`;
 }

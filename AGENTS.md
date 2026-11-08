@@ -124,13 +124,18 @@ just e2e                   # the browser runner (Playwright, builds first) — U
 just check                 # both runners — changes touching both sides
 just types                 # regenerate TS bindings (gitignored; build runs it)
 just serve [feed.zip [streets.geojson ["Publisher" [addr]]]]   # sync server on :8080
-                           # STORE=url adds the durable sync store (-store:
-                           # s3://bucket/prefix?endpoint=… or mem://,
-                           # docs/FORMATS.md; POST /plans publishes a pick)
-just store-dev             # a dev S3 endpoint: SeaweedFS in podman on :8333, and the
-                           # STORE= URL to use (store-dev-stop ends it)
-just store-contract        # the store's laws against that endpoint (opt-in,
-                           # never in `just test`)
+                           # feed/streets: a path, an http(s) URL, or bucket:<key>
+                           # (D-118). STORE=url adds the durable sync store
+                           # (-store: s3://bucket/prefix?endpoint=…, azblob://…,
+                           # gs://…, or mem://; docs/FORMATS.md; POST /plans
+                           # publishes a pick)
+just store verify|gc|copy … # the store's offline tools (server/cmd/store): verify a
+                           # bucket, collect orphans (D-117), carry an older
+                           # build's directory store into a bucket
+just store-dev             # local object stores in podman: SeaweedFS (:8333, the one
+                           # to serve over), Azurite, fake-gcs-server (store-dev-stop)
+just store-contract        # the store's laws against each of them (opt-in, never
+                           # in `just test`)
                            # OIDC_ISSUER/OIDC_JWKS_URL/OIDC_AUDIENCE/OIDC_KEY/POLICY=…
                            # turn on JWT auth + policy (D-58..D-61;
                            # docs/ARCHITECTURE.md, server section)
