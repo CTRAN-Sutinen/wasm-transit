@@ -233,7 +233,7 @@ Every persisted kind, by what a version change does to it:
 | `boundary` | transit-codec | derived | `kind`, `schema_version` |
 | `streets` (imported) | transit-streets | derived | `kind`, `schema_version` |
 | `walks` | transit-streets | derived | `kind`, `schema_version` |
-| `live` | transit-live | ephemeral | `kind`, `schema_version` |
+| `live` | transit-live | ephemeral | `kind`, `schema_version` (v2: a trip instance names its service `date`) |
 | `manifest` | the Go server | host-owned | its own shape (below) |
 
 - *Authored* kinds are written by a person and cannot be re-derived:

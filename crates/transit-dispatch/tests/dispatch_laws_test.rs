@@ -354,7 +354,7 @@ fn the_station_board_pools_the_walking_group() {
 fn live_at(trip: &str, start: u32, stop: &str, scheduled: u32, delay: i32) -> LiveDay {
     LiveDay { kind: Default::default(), schema_version: Default::default(),
         window: OnTimeWindow::default(),
-        trips: vec![LiveTrip {
+        trips: vec![LiveTrip { date: None,
             trip: trip.into(),
             start_secs: start,
             route: None,

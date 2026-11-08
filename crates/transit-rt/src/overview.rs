@@ -19,6 +19,9 @@ pub struct TripUpdateView {
     /// The instance's start ("HH:MM:SS") — how a frequency trip's
     /// update names which run it is.
     pub start_time: Option<String>,
+    /// The instance's service date ("YYYYMMDD", as the feed writes
+    /// it) — which day's run a trip past midnight is.
+    pub start_date: Option<String>,
     /// The instance does not run: the descriptor's
     /// schedule_relationship is CANCELED, or DELETED (cancelled and
     /// not to be shown to riders).
@@ -47,6 +50,8 @@ pub struct VehicleView {
     pub trip_id: Option<String>,
     /// The instance's start ("HH:MM:SS"), as on a trip update.
     pub start_time: Option<String>,
+    /// The instance's service date ("YYYYMMDD"), as on a trip update.
+    pub start_date: Option<String>,
     pub route_id: Option<String>,
     pub lat: f64,
     pub lon: f64,
@@ -69,6 +74,8 @@ pub struct InformedView {
     pub trip_id: Option<String>,
     /// The trip instance's start ("HH:MM:SS"), for a frequency trip.
     pub trip_start_time: Option<String>,
+    /// The trip instance's service date ("YYYYMMDD").
+    pub trip_start_date: Option<String>,
     pub stop_id: Option<String>,
     pub direction_id: Option<u32>,
 }
@@ -142,6 +149,7 @@ pub fn decode_overview(bytes: &[u8]) -> Result<RtOverview, String> {
                     trip_id: tu.trip.trip_id.clone(),
                     route_id: tu.trip.route_id.clone(),
                     start_time: tu.trip.start_time.clone(),
+                    start_date: tu.trip.start_date.clone(),
                     canceled: matches!(tu.trip.schedule_relationship(), TripRelationship::Canceled | TripRelationship::Deleted),
                     stop_updates: tu
                         .stop_time_update
@@ -164,6 +172,7 @@ pub fn decode_overview(bytes: &[u8]) -> Result<RtOverview, String> {
                     entity_id: entity.id.clone(),
                     trip_id: vehicle.trip.as_ref().and_then(|t| t.trip_id.clone()),
                     start_time: vehicle.trip.as_ref().and_then(|t| t.start_time.clone()),
+                    start_date: vehicle.trip.as_ref().and_then(|t| t.start_date.clone()),
                     route_id: vehicle.trip.as_ref().and_then(|t| t.route_id.clone()),
                     lat: position.latitude as f64,
                     lon: position.longitude as f64,
@@ -247,6 +256,7 @@ fn alert_view(entity_id: &str, alert: &crate::gtfs_rt::Alert) -> AlertView {
                 route_type: e.route_type,
                 trip_id: e.trip.as_ref().and_then(|t| t.trip_id.clone()),
                 trip_start_time: e.trip.as_ref().and_then(|t| t.start_time.clone()),
+                trip_start_date: e.trip.as_ref().and_then(|t| t.start_date.clone()),
                 stop_id: e.stop_id.clone(),
                 direction_id: e.direction_id,
             })

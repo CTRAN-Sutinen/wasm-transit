@@ -189,7 +189,7 @@ fn block_of(network: &Network, trip: &str) -> Option<String> {
 /// instance of it, or — a frequency trip with no update — no instance
 /// is named at all.
 pub fn trip_progress(network: &Network, boundary: &Boundary, overview: &RtOverview, trip_id: &str) -> Option<TripProgress> {
-    let quiet = TripUpdateView { trip_id: Some(trip_id.to_string()), route_id: None, start_time: None, canceled: false, stop_updates: vec![] };
+    let quiet = TripUpdateView { trip_id: Some(trip_id.to_string()), route_id: None, start_time: None, start_date: None, canceled: false, stop_updates: vec![] };
     let update = overview.trips.iter().find(|t| t.trip_id.as_deref() == Some(trip_id)).unwrap_or(&quiet);
     let instance = resolve_instance(network, trip_id, update.start_time.as_deref())?;
     Some(progress_of(network, boundary, update, &instance))

@@ -1,6 +1,6 @@
 /// The ride-now UI's host layer — the ONLY file of this UI that calls the
 /// capability bus. It owns I/O (the published network and streets, the
-/// agency's live feeds through the server's /rt proxy, the sync server's edit
+/// agency's live feeds (kit's fetchFeed), the sync server's edit
 /// document, the watchlist document, the device's location, the
 /// rider's recent stops), the clock, and the selection; every row,
 /// time, status, line, and notice it writes into `ride` is an op's
@@ -28,9 +28,9 @@
 /// is a trip end like a dropped pin, carrying the name it was shown
 /// with; nothing durable keeps the query.
 
-import { ask, assemble, available, keep, load, produced, servedNetwork, servedStreets, servedWalks, Doc } from "../../engine";
+import { ask, assemble, available, keep, load, produced, servedNetwork, servedNetworkPin, servedStreets, servedWalks, Doc } from "../../engine";
 import { currentDocument, putDocument, restoreDocuments } from "../../documents.svelte";
-import { answerGraph, clockLabel, deploymentManifest, nowSecs, readAgencyZone, setAgencyZone, staleLabel, today, whileVisible } from "../kit";
+import { answerGraph, applyBuild, buildWaiting, clockLabel, deploymentFeeds, installApp, previousDay, deploymentManifest, fetchFeed, nowSecs, readAgencyZone, setAgencyZone, staleLabel, today, whileVisible, type LiveUrls } from "../kit";
 
 // This page's capabilities answer inside its linked assembly — one
 // module, one registry: each document registers once (D-77).
@@ -76,7 +76,6 @@ export type View = "home" | "stop" | "trip" | "alerts" | "routes" | "route" | "b
 /// A bus picked on the map, by the live document's key.
 export type Picked = { key: string; trip: string | null; route: string | null };
 export type When = { mode: "now" | "depart" | "arrive" | "last"; secs: number | null };
-export type LiveUrls = { trips: string; vehicles: string; alerts: string };
 
 /// How often the host re-reads the live feeds, the edit document, and
 /// the clock (one timer: the polled input,
@@ -204,6 +203,9 @@ export const ride = $state({
   progress: null as { progress: TripProgress | null; names: DirectoryStop[] } | null,
   /// The map keeps the picked bus in view as it moves.
   follow: true,
+  /// A new build has downloaded and waits (kit's buildWaiting): the
+  /// rider may apply it now; it applies itself at the next navigation.
+  updateReady: false,
   saved: [] as { id: string; label: string }[],
   savedBoards: null as WatchBoardStop[] | null,
   recent: [] as Place[],
@@ -301,6 +303,8 @@ async function stopBoard(stopId: string, rows: number): Promise<StopBoard> {
     stop_id: stopId,
     date: today(),
     from_secs: nowSecs(),
+    // The previous date's after-midnight trips still leaving.
+    previous: previousDay(),
     limit: rows,
     live_hash: live ?? undefined,
   });
@@ -497,6 +501,7 @@ const request = answerGraph(
           edits_hash: edits,
           date: today(),
           from_secs: nowSecs(),
+          previous: previousDay(),
           limit: CARD_ROWS,
           live_hash: live ?? undefined,
         });
@@ -654,6 +659,9 @@ const request = answerGraph(
 // ---------------------------------------------------------------------
 
 export async function boot(): Promise<void> {
+  // The app's build: a build that waited for this navigation applies
+  // now (nothing on the page is unsaved yet).
+  void installApp();
   // The agency's zone before anything reads the date: the pick in
   // force is the agency's today's.
   await Promise.all([restoreUrls(), readAgencyZone()]);
@@ -667,6 +675,7 @@ export async function boot(): Promise<void> {
     // directory answers the first question; the board and rt when the
     // directory did not assemble): none holds a copy only to check it.
     const served = await servedNetwork(today(), "directory", "board", "rt");
+    followsServer = !!served;
     if (served) return served;
     ride.status = "This server publishes no network — load the agency's GTFS zip to begin.";
     return null;
@@ -701,6 +710,9 @@ async function loadStreets(): Promise<void> {
 /// A GTFS zip the rider loads becomes the network document (and its
 /// boundary, the stop_sequence numbering the live feeds name).
 export function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
+  // A zip loaded by hand is this page's own: it stops following the
+  // deployment.
+  followsServer = false;
   return adoptNetwork(label, async () => {
     // The import is the network module's: the only time this page
     // assembles it.
@@ -722,9 +734,11 @@ export function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
 async function adoptNetwork(
   label: string,
   obtain: () => Promise<{ network: Doc<Network>; boundary: Doc<Boundary> } | null>,
+  { quiet = false } = {},
 ): Promise<void> {
   ride.busy = true;
-  ride.status = `Loading ${label}…`;
+  // A re-pin keeps the page on screen while the next network loads.
+  if (!quiet) ride.status = `Loading ${label}…`;
   await new Promise((r) => setTimeout(r, 20));
   try {
     const got = await obtain();
@@ -748,6 +762,23 @@ async function adoptNetwork(
   }
 }
 
+/// Whether the page reads the deployment's network (not a zip loaded
+/// by hand): it follows the deployment as it moves.
+let followsServer = false;
+
+/// The deployment moved past the network this page holds — a
+/// republish, a new pick in force, or today crossing a pick's
+/// effective date (D-63): adopt the network it serves now, without a
+/// reload. The old network leaves every module through `release`'s
+/// keep-set. True when it re-pinned.
+async function followDeployment(): Promise<boolean> {
+  if (!followsServer || !network) return false;
+  const pin = await servedNetworkPin(today()).catch(() => null);
+  if (!pin || pin === network.pin) return false;
+  await adoptNetwork("the agency's network", () => servedNetwork(today(), "directory", "board", "rt"), { quiet: true });
+  return true;
+}
+
 /// Name what the modules keep: the documents this page holds now —
 /// everything else (a replaced network, a superseded edit document)
 /// is dropped from every module (the engine's `keep`). The live
@@ -760,6 +791,8 @@ function release(): Promise<void> {
 /// asked for "now" is asked again from the new now.
 export async function poll(): Promise<void> {
   if (!network || ride.busy) return;
+  if (await followDeployment()) return;
+  ride.updateReady = buildWaiting();
   const changed = ["clock"];
   const [e, l] = await Promise.all([syncEdits(), fetchLive()]);
   if (e) {
@@ -772,6 +805,12 @@ export async function poll(): Promise<void> {
     changed.push("trip");
   }
   await request(...changed);
+}
+
+/// The rider accepts "a new version is ready": the page reloads into
+/// it. Their choice — whatever they had typed is theirs to lose.
+export function applyUpdate(): void {
+  applyBuild();
 }
 
 /// The sync server's edit document (detours), read-only — a rider
@@ -797,8 +836,7 @@ async function syncEdits(): Promise<boolean> {
   }
 }
 
-/// Fetch each configured live feed through the server's proxy and
-/// decode it (cap-rt registers the snapshot). A feed that does not
+/// Fetch each configured live feed (kit's fetchFeed) and decode it (cap-rt registers the snapshot). A feed that does not
 /// answer drops its snapshot: answers read the schedule and say so —
 /// never a stale prediction as live. True when any snapshot changed.
 async function fetchLive(): Promise<boolean> {
@@ -813,7 +851,7 @@ async function fetchLive(): Promise<boolean> {
   const results = await Promise.all(
     kinds.map(async (kind) => {
       try {
-        const resp = await fetch(`/rt?url=${encodeURIComponent(ride.urls[kind])}`);
+        const resp = await fetchFeed(ride.urls[kind]);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         return { kind, bytes: new Uint8Array(await resp.arrayBuffer()) };
       } catch (e) {
@@ -851,6 +889,9 @@ async function fetchLive(): Promise<boolean> {
 /// The rider's own feed URLs, else the deployment's (live-feeds.json
 /// beside the page).
 async function restoreUrls(): Promise<void> {
+  // Always read: the config also says whether a dev relay fetches the
+  // feeds (a rider's own feed is fetched the same way).
+  const deployed = await deploymentFeeds();
   try {
     const stored = localStorage.getItem(URLS_KEY);
     if (stored) {
@@ -860,12 +901,7 @@ async function restoreUrls(): Promise<void> {
   } catch {
     // no storage: the deployment's feeds
   }
-  try {
-    const resp = await fetch("live-feeds.json");
-    if (resp.ok) ride.urls = { ...ride.urls, ...((await resp.json()) as Partial<LiveUrls>) };
-  } catch {
-    // no deployment config: the schedule until the rider sets feeds
-  }
+  ride.urls = { ...ride.urls, ...deployed };
 }
 
 export async function setLiveUrls(urls: LiveUrls): Promise<void> {

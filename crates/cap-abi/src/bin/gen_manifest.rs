@@ -732,7 +732,7 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
         ),
         kind::<transit_streets::walking::WalkTable>("walks", None, 1, walks_example),
         kind::<transit_runs::WorkRules>("work_rules", None, transit_runs::SCHEMA_VERSION, Some(value(&fixture_work_rules()))),
-        kind::<transit_live::LiveDay>("live", None, 1, live_example().map(|(live, _)| value(&live))),
+        kind::<transit_live::LiveDay>("live", None, 2, live_example().map(|(live, _)| value(&live))),
     ]
 }
 

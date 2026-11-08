@@ -272,7 +272,7 @@ fn the_block_chain_ripples_under_a_live_prediction() {
     let first = chain(None).remove(0);
     let live = LiveDay { kind: Default::default(), schema_version: Default::default(),
         window: OnTimeWindow::default(),
-        trips: vec![LiveTrip {
+        trips: vec![LiveTrip { date: None,
             trip: first.trip.clone(),
             start_secs: first.start_secs,
             route: None,

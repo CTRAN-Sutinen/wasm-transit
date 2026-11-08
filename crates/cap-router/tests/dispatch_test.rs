@@ -318,6 +318,7 @@ fn live_t10(delay: i32) -> transit_live::LiveDay {
         "departure_delay": delay, "predicted_departure": (sched as i64 + delay as i64) as u32,
     });
     serde_json::from_value(serde_json::json!({
+        "kind": "live", "schema_version": 2,
         "window": { "early_secs": 0, "late_secs": 60, "very_late_secs": 300 },
         "trips": [{
             "trip": "t10", "start_secs": 8 * 3600, "route": "10", "route_name": "10",

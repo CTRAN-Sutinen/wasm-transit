@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Regenerate the e2e GTFS fixture (web/e2e/fixtures/sample-gtfs.zip).
+"""Regenerate the e2e GTFS fixtures (web/e2e/fixtures/sample-gtfs.zip,
+and overnight-gtfs.zip below).
 
 The feed models a small downtown corridor:
 
@@ -23,6 +24,21 @@ something real to prove. Route 40 shuttles the bays both ways:
 
   t40: SA 08:15 -> SB 08:20, route 40, direction 0 (Friday WK)
   t41: SB 08:35 -> SA 08:40, route 40, direction 1 (Friday WK)
+
+The overnight fixture (overnight-gtfs.zip) is one owl route whose
+trips run past midnight — GTFS times past 24:00 belong to the date the
+trip started on — over the same stops A and B, in the same zone
+(America/Montreal, which falls back on 2026-11-01 at 02:00):
+
+  n1: A 24:40 -> B 24:50, route 90 (weekdays: Friday night is
+      Saturday 00:40)
+  s1: A 00:50 -> B 01:00, route 90 (Saturdays)
+  s2: A 24:45 -> B 24:55, route 90 (Saturdays: Saturday 2026-10-31's
+      runs 00:45 EDT Sunday, before Sunday's 01:00 EDT anchor)
+  u1: A 00:10 -> B 00:20, route 90 (Sundays: 01:10 EDT on 2026-11-01)
+
+Its realtime fixture (overnight-rt.pb, n1 on 2026-10-23 +120 s at A)
+is `cargo run -p transit-rt --example encode_overnight`.
 """
 
 import pathlib
@@ -103,12 +119,58 @@ FILES = {
 }
 
 
-def main() -> None:
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED) as zf:
-        for name, body in FILES.items():
+OVERNIGHT_OUT = HERE / "fixtures" / "overnight-gtfs.zip"
+
+OVERNIGHT = {
+    "agency.txt": FILES["agency.txt"],
+    "routes.txt": (
+        "route_id,agency_id,route_short_name,route_long_name,route_type\n"
+        "90,1,90,Owl,3\n"
+    ),
+    "stops.txt": (
+        "stop_id,stop_code,stop_name,stop_lat,stop_lon,location_type,parent_station\n"
+        "A,,Main & 1st,45.500,-73.500,0,\n"
+        "B,,Main & 2nd,45.510,-73.510,0,\n"
+    ),
+    "trips.txt": (
+        "route_id,service_id,trip_id,trip_headsign,direction_id,block_id,shape_id\n"
+        "90,WK,n1,Downtown,0,,\n"
+        "90,SAT,s1,Downtown,0,,\n"
+        "90,SAT,s2,Downtown,0,,\n"
+        "90,SUN,u1,Downtown,0,,\n"
+    ),
+    "stop_times.txt": (
+        "trip_id,arrival_time,departure_time,stop_id,stop_sequence,stop_headsign\n"
+        "n1,24:40:00,24:40:00,A,1,\n"
+        "n1,24:50:00,24:50:00,B,2,\n"
+        "s1,00:50:00,00:50:00,A,1,\n"
+        "s1,01:00:00,01:00:00,B,2,\n"
+        "s2,24:45:00,24:45:00,A,1,\n"
+        "s2,24:55:00,24:55:00,B,2,\n"
+        "u1,00:10:00,00:10:00,A,1,\n"
+        "u1,00:20:00,00:20:00,B,2,\n"
+    ),
+    "calendar.txt": (
+        "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n"
+        "WK,1,1,1,1,1,0,0,20260101,20261231\n"
+        "SAT,0,0,0,0,0,1,0,20260101,20261231\n"
+        "SUN,0,0,0,0,0,0,1,20260101,20261231\n"
+    ),
+    "feed_info.txt": FILES["feed_info.txt"],
+}
+
+
+def write(out: pathlib.Path, files: dict) -> None:
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, body in files.items():
             zf.writestr(name, body)
-    print(f"wrote {OUT}")
+    print(f"wrote {out}")
+
+
+def main() -> None:
+    write(OUT, FILES)
+    write(OVERNIGHT_OUT, OVERNIGHT)
 
 
 if __name__ == "__main__":

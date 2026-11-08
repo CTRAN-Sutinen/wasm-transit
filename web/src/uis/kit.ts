@@ -8,7 +8,7 @@
 /// only file that asks the bus — through the engine, src/engine.ts),
 /// and `<id>.html` at the web root.
 
-import { serviceClock } from "../clock";
+import { previousClock, serviceClock } from "../clock";
 
 // ---------------------------------------------------------------------
 // the clock — hosts own it; ops take it as arguments. Read in the
@@ -48,6 +48,14 @@ export function today(): string {
 /// GTFS anchor).
 export function nowSecs(): number {
   return serviceClock(Date.now(), agencyZone).secs;
+}
+
+/// The previous service date at this instant, as a board asks for it
+/// (cap-board's `previous`): the instant on that date's clock and its
+/// length — its after-midnight trips are still leaving.
+export function previousDay(): { from_secs: number; length_secs: number } {
+  const { from_secs, length_secs } = previousClock(Date.now(), agencyZone);
+  return { from_secs, length_secs };
 }
 
 /// The agency's wall clock, "4:05 PM", for a status line.
@@ -180,6 +188,122 @@ export function answerGraph(nodes: AnswerNode[], onerror: (e: unknown) => void) 
     })();
     return draining;
   };
+}
+
+// ---------------------------------------------------------------------
+// the app's build — ONE lifecycle for updates and offline (D-63, D-65):
+// the service worker (web/service-worker.js, written to dist/sw.js by
+// the build) precaches a new build in the background and leaves it
+// waiting; the page decides when it applies. A rider's page applies it
+// at the next cold start or navigation (`installApp`) or when the
+// rider accepts it; a display at its next poll while the server
+// answers. Never over unsaved device data — the host says what that
+// is.
+// ---------------------------------------------------------------------
+
+let registration: ServiceWorkerRegistration | null = null;
+let applying = false;
+/// Another page applied a build: this page's worker is the new build's
+/// while the page still runs the old one.
+let movedOn = false;
+
+/// Register the service worker; a build that waited for this
+/// navigation applies now, before anything on the page is unsaved.
+/// Without service workers (a dev server, a blocked context) the page
+/// runs as it always did.
+export async function installApp(): Promise<void> {
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    registration = await navigator.serviceWorker.register("sw.js");
+  } catch {
+    return;
+  }
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    // An applied build reloads into itself; the first install takes
+    // the page without one; another tab's apply leaves this page on
+    // the old build, ready to move on.
+    if (applying) location.reload();
+    else if (hadController) movedOn = true;
+  });
+  if (registration.waiting && navigator.serviceWorker.controller) applyBuild();
+  void readBuild();
+}
+
+/// Whether a new build has downloaded and waits (asking the browser to
+/// look for one, for the next poll).
+export function buildWaiting(): boolean {
+  if (!registration) return false;
+  registration.update().catch(() => {});
+  return movedOn || (!!registration.waiting && !!navigator.serviceWorker.controller);
+}
+
+/// Apply the waiting build: it takes over, and the page reloads into it
+/// (or, when another page already applied it, just reloads).
+export function applyBuild(): void {
+  const waiting = registration?.waiting;
+  if (waiting) {
+    applying = true;
+    waiting.postMessage({ type: "apply" });
+  } else if (movedOn) {
+    location.reload();
+  }
+}
+
+/// Whether the deployment's server answers now (not the worker's last
+/// copy) — a display applies a build only then, so an outage never
+/// reloads a working display into an empty one.
+export async function serverAnswers(): Promise<boolean> {
+  const resp = await fetch("/manifest", { cache: "no-cache" }).catch(() => null);
+  return !!resp?.ok && resp.headers.get("X-Served-From") !== "last-copy";
+}
+
+/// The build this page runs, as its worker names it (inspection: the
+/// page's `data-build`).
+async function readBuild(): Promise<void> {
+  const controller = navigator.serviceWorker.controller;
+  if (!controller) return;
+  const channel = new MessageChannel();
+  const build = await new Promise<string>((resolve) => {
+    channel.port1.onmessage = (e) => resolve(String(e.data));
+    controller.postMessage({ type: "build" }, [channel.port2]);
+  });
+  document.documentElement.dataset.build = build;
+}
+
+// ---------------------------------------------------------------------
+// the live feeds — the deployment's (live-feeds.json beside the page,
+// D-39), fetched directly: the agency's feeds serve HTTPS with CORS
+// (D-67). A dev config whose feeds send no CORS header names the dev
+// server's relay as `proxy` (`-rt-proxy`, off by default).
+// ---------------------------------------------------------------------
+
+export type LiveUrls = { trips: string; vehicles: string; alerts: string };
+
+/// The relay a dev config names ("/rt"), else null: feeds are fetched
+/// directly.
+let feedProxy: string | null = null;
+
+/// The deployment's feed URLs (and whether a dev relay fetches them);
+/// {} when the page has no config.
+export async function deploymentFeeds(): Promise<Partial<LiveUrls>> {
+  try {
+    const resp = await fetch("live-feeds.json");
+    if (!resp.ok) return {};
+    const config = (await resp.json()) as Partial<LiveUrls> & { proxy?: string };
+    feedProxy = typeof config.proxy === "string" && config.proxy ? config.proxy : null;
+    const urls: Partial<LiveUrls> = {};
+    for (const k of ["trips", "vehicles", "alerts"] as const) if (typeof config[k] === "string") urls[k] = config[k];
+    return urls;
+  } catch {
+    return {};
+  }
+}
+
+/// Fetch one live feed: directly, or through the dev relay when the
+/// config names one.
+export function fetchFeed(url: string): Promise<Response> {
+  return fetch(feedProxy ? `${feedProxy}?url=${encodeURIComponent(url)}` : url);
 }
 
 /// A sync-server answer served from its cache while its store does not

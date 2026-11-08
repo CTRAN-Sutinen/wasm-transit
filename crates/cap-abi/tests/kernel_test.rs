@@ -81,6 +81,30 @@ fn a_gzipped_network_registers_under_the_plain_hash() {
     assert_eq!(cap_abi::canonical_hash(&plain).unwrap(), cap_abi::canonical_hash(&zipped).unwrap());
 }
 
+/// The live document is v2 (a trip instance carries its service
+/// date): an untagged copy is its v1 and is refused naming both
+/// versions, as is a newer one; a v2 copy reads. It is ephemeral —
+/// minted by the build that reads it — so no migration brings a v1
+/// forward.
+#[test]
+fn the_live_document_reads_v2_only() {
+    use transit_version::Versioned;
+    assert_eq!(transit_live::LiveDay::READS, 2);
+    let body = serde_json::json!({
+        "window": {"early_secs": 0, "late_secs": 300, "very_late_secs": 600}, "trips": [], "vehicles": [], "unmatched_trips": 0
+    });
+    let older = cap_abi::parse_versioned::<transit_live::LiveDay>(body.to_string().as_bytes()).unwrap_err();
+    assert!(older.contains("live v1") && older.contains("reads v2"), "{older}");
+    let mut current = body.clone();
+    current["kind"] = serde_json::json!("live");
+    current["schema_version"] = serde_json::json!(2);
+    let read: transit_live::LiveDay = cap_abi::parse_versioned(current.to_string().as_bytes()).unwrap();
+    assert_eq!(serde_json::to_value(&read).unwrap()["schema_version"], 2);
+    current["schema_version"] = serde_json::json!(3);
+    let newer = cap_abi::parse_versioned::<transit_live::LiveDay>(current.to_string().as_bytes()).unwrap_err();
+    assert!(newer.contains("live v3") && newer.contains("reads v2"), "{newer}");
+}
+
 /// A module reads the network version it was built for, and only that
 /// (docs/units/document-versioning.md, rule 5): an older document is
 /// refused with the op that brings it forward, a newer one naming both
@@ -133,9 +157,6 @@ fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
     law::<transit_streets::Streets>(serde_json::json!({"ways": []}));
     law::<transit_streets::walking::WalkTable>(serde_json::json!({
         "streets_hash": "sha256:s", "network_hash": "sha256:n", "speed_mps": 1.3, "max_walk_secs": 600, "walks": []
-    }));
-    law::<transit_live::LiveDay>(serde_json::json!({
-        "window": {"early_secs": 0, "late_secs": 300, "very_late_secs": 600}, "trips": [], "vehicles": [], "unmatched_trips": 0
     }));
     law::<transit_runs::WorkRules>(serde_json::json!({"version": 1}));
     law::<transit_plans::PublishedPlans>(serde_json::json!({"schema_version": 1, "plans": []}));

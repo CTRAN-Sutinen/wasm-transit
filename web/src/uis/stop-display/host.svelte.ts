@@ -1,6 +1,6 @@
 /// The stop display's host layer — the ONLY file of this UI that calls
 /// the capability bus. It owns I/O (the published network, the agency's
-/// live feeds through the server's /rt proxy, the sync server's edit
+/// live feeds (kit's fetchFeed), the sync server's edit
 /// document, the page's URL), the clock, and the selection (the stop
 /// and the layout); every group, time, status, and alert it writes
 /// into `display` is an op's answer, adopted as-is.
@@ -15,8 +15,8 @@
 /// assemble turns its frames OFF (`off`), and they say so — nothing
 /// here answers in its place.
 
-import { ask, assemble, available, keep, load, produced, servedNetwork, together, Doc } from "../../engine";
-import { answerGraph, clockLabel, nowSecs, readAgencyZone, setAgencyZone, staleLabel, today, whileVisible } from "../kit";
+import { ask, assemble, available, keep, load, produced, servedNetwork, servedNetworkPin, together, Doc } from "../../engine";
+import { answerGraph, applyBuild, buildWaiting, clockLabel, deploymentFeeds, installApp, previousDay, serverAnswers, fetchFeed, nowSecs, readAgencyZone, setAgencyZone, staleLabel, today, whileVisible, type LiveUrls } from "../kit";
 
 // This page's capabilities answer inside its linked assembly — one
 // module, one registry: each document registers once (D-77).
@@ -32,7 +32,6 @@ import type { Network } from "../../types/Network";
 /// stop: a transit center's bays, one route large, several routes.
 export type Layout = "center" | "route" | "routes";
 export type Place = { id: string; name: string };
-type LiveUrls = { trips: string; vehicles: string; alerts: string };
 
 const LAYOUTS: Layout[] = ["center", "route", "routes"];
 /// How often the host re-reads the live feeds, the edit document, and
@@ -214,6 +213,8 @@ const request = answerGraph(
               stop_id: stopId,
               date: today(),
               from_secs: nowSecs(),
+              // The previous date's after-midnight trips still leaving.
+              previous: previousDay(),
               live_hash: live ?? undefined,
             })
           ).board;
@@ -239,6 +240,8 @@ const request = answerGraph(
 // ---------------------------------------------------------------------
 
 export async function boot(): Promise<void> {
+  // The app's build: a build that waited for this load applies now.
+  void installApp();
   readUrl();
   // The agency's zone before anything reads the date: the pick in
   // force is the agency's today's.
@@ -249,6 +252,7 @@ export async function boot(): Promise<void> {
     // directory answers the first question; the board and rt when the
     // directory did not assemble): none holds a copy only to check it.
     const served = await servedNetwork(today(), "directory", "board", "rt");
+    followsServer = !!served;
     if (served) return served;
     display.status = "This server publishes no network — load the agency's GTFS zip to begin.";
     return null;
@@ -262,6 +266,9 @@ export async function boot(): Promise<void> {
 /// A GTFS zip loaded here becomes the network document (and its
 /// boundary, the stop_sequence numbering the live feeds name).
 export function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
+  // A zip loaded by hand is this page's own: it stops following the
+  // deployment.
+  followsServer = false;
   return adoptNetwork(label, async () => {
     // The import is the network module's: the only time this page
     // assembles it.
@@ -284,9 +291,11 @@ export function loadFeedBytes(bytes: Uint8Array, label: string): Promise<void> {
 async function adoptNetwork(
   label: string,
   obtain: () => Promise<{ network: Doc<Network>; boundary: Doc<Boundary> } | null>,
+  { quiet = false } = {},
 ): Promise<void> {
   display.busy = true;
-  display.status = `Loading ${label}…`;
+  // A re-pin keeps the page on screen while the next network loads.
+  if (!quiet) display.status = `Loading ${label}…`;
   await new Promise((r) => setTimeout(r, 20));
   try {
     const got = await obtain();
@@ -312,6 +321,34 @@ async function adoptNetwork(
   }
 }
 
+/// Whether the page reads the deployment's network (not a zip loaded
+/// by hand): it follows the deployment as it moves.
+let followsServer = false;
+
+/// The deployment moved past the network this page holds — a
+/// republish, a new pick in force, or today crossing a pick's
+/// effective date (D-63): adopt the network it serves now, without a
+/// reload. The old network leaves every module through `release`'s
+/// keep-set. True when it re-pinned.
+async function followDeployment(): Promise<boolean> {
+  if (!followsServer || !network) return false;
+  const pin = await servedNetworkPin(today()).catch(() => null);
+  if (!pin || pin === network.pin) return false;
+  await adoptNetwork("the agency's network", () => servedNetwork(today(), "directory", "board", "rt"), { quiet: true });
+  return true;
+}
+
+/// A new build waits (D-63): nobody is at a display to tap, so it
+/// applies itself here — only while the server answers (an outage
+/// never reloads a working display into an empty one), and never while
+/// the setup is open (someone is configuring the screen). True when it
+/// applies.
+async function applyWaitingBuild(): Promise<boolean> {
+  if (!buildWaiting() || display.setup || !(await serverAnswers())) return false;
+  applyBuild();
+  return true;
+}
+
 /// Name what the modules keep: the documents this page holds now —
 /// everything else (a replaced network, a superseded edit document)
 /// is dropped from every module (the engine's `keep`). The live
@@ -323,6 +360,8 @@ function release(): Promise<void> {
 /// One tick: the edit document, the live feeds, and the clock.
 export async function poll(): Promise<void> {
   if (!network || display.busy) return;
+  if (await followDeployment()) return;
+  if (await applyWaitingBuild()) return;
   display.nowSecs = nowSecs();
   const changed = ["clock"];
   const [e, l] = await Promise.all([syncEdits(), fetchLive()]);
@@ -357,8 +396,7 @@ async function syncEdits(): Promise<boolean> {
   }
 }
 
-/// Fetch each configured live feed through the server's proxy and
-/// decode it (cap-rt registers the snapshot). A feed that does not
+/// Fetch each configured live feed (kit's fetchFeed) and decode it (cap-rt registers the snapshot). A feed that does not
 /// answer drops its snapshot: the board reads the schedule and says so
 /// — a display never shows a stale prediction as live. True when any
 /// snapshot changed.
@@ -371,7 +409,7 @@ async function fetchLive(): Promise<boolean> {
   const errors: string[] = [];
   for (const kind of kinds) {
     try {
-      const resp = await fetch(`/rt?url=${encodeURIComponent(urls[kind])}`);
+      const resp = await fetchFeed(urls[kind]);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const snapshot = new Doc("gtfs_rt", { bytes: new Uint8Array(await resp.arrayBuffer()) });
       const { hash } = await load("rt", snapshot);
@@ -394,12 +432,7 @@ async function fetchLive(): Promise<boolean> {
 
 /// The deployment's live feeds (live-feeds.json beside the page).
 async function restoreUrls(): Promise<void> {
-  try {
-    const resp = await fetch("live-feeds.json");
-    if (resp.ok) urls = { ...urls, ...((await resp.json()) as Partial<LiveUrls>) };
-  } catch {
-    // no deployment config: the schedule
-  }
+  urls = { ...urls, ...(await deploymentFeeds()) };
 }
 
 // ---------------------------------------------------------------------

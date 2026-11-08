@@ -65,7 +65,7 @@ fn load_edits(_network_hash: &str, records: Vec<EditRecord>) -> String {
 }
 
 fn stop_board(network_hash: &str, edits_hash: Option<String>, stop_id: &str, from_secs: u32, live_hash: Option<String>) -> transit_dispatch::StopBoard {
-    match dispatch(Request::StopBoard {
+    match dispatch(Request::StopBoard { previous: None,
         network_hash: network_hash.into(),
         edits_hash,
         stop_id: stop_id.into(),
@@ -172,7 +172,7 @@ fn the_station_board_pools_the_walking_group() {
 #[test]
 fn the_grouped_board_is_the_board_by_route_and_destination() {
     let network_hash = load_network();
-    let grouped = |stop: &str, per_group: Option<u32>| match dispatch(Request::GroupedBoard {
+    let grouped = |stop: &str, per_group: Option<u32>| match dispatch(Request::GroupedBoard { previous: None,
         network_hash: network_hash.clone(),
         edits_hash: None,
         stop_id: stop.into(),
@@ -202,7 +202,7 @@ fn late_at_a(network_hash: &str) -> (String, transit_live::LiveDay, transit_disp
     let row = departures(network_hash, None, "A").into_iter().find(|d| d.route == "10").unwrap();
     let live = LiveDay { kind: Default::default(), schema_version: Default::default(),
         window: OnTimeWindow::default(),
-        trips: vec![LiveTrip {
+        trips: vec![LiveTrip { date: None,
             trip: row.trip.clone(),
             start_secs: row.start_secs,
             route: Some("10".into()),
@@ -246,7 +246,7 @@ fn the_board_reads_a_live_document() {
     assert_eq!(late.delay_secs, Some(120));
     assert_eq!(late.status, LiveStatus::Late);
 
-    let err = dispatch(Request::StopBoard {
+    let err = dispatch(Request::StopBoard { previous: None,
         network_hash,
         edits_hash: None,
         stop_id: "A".into(),
@@ -299,7 +299,7 @@ fn load_watchlist(document: &Watchlist) -> (String, u32) {
 }
 
 fn watchlist_board(watchlist_hash: &str, network_hash: &str) -> Vec<cap_board::WatchBoardStop> {
-    match dispatch(Request::WatchlistBoard {
+    match dispatch(Request::WatchlistBoard { previous: None,
         watchlist_hash: watchlist_hash.into(),
         network_hash: network_hash.into(),
         edits_hash: None,
@@ -355,7 +355,7 @@ fn the_watchlist_migrates_with_loss_reported_and_both_versions_query() {
 
     // The board composes with the edits document like every board.
     let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 60)]);
-    let patched = match dispatch(Request::WatchlistBoard {
+    let patched = match dispatch(Request::WatchlistBoard { previous: None,
         watchlist_hash: v1_hash,
         network_hash,
         edits_hash: Some(edits_hash),
@@ -390,7 +390,7 @@ fn the_watchlist_board_is_the_stop_board() {
     };
     let (watchlist_hash, _) = load_watchlist(&watched);
     let from_secs = row.departure_secs + 60;
-    let stops = match dispatch(Request::WatchlistBoard {
+    let stops = match dispatch(Request::WatchlistBoard { previous: None,
         watchlist_hash,
         network_hash: network_hash.clone(),
         edits_hash: Some(edits_hash.clone()),
@@ -416,7 +416,7 @@ fn the_watchlist_board_is_the_stop_board() {
 #[test]
 fn unknown_hashes_and_garbage_are_errors_not_panics() {
     let network_hash = load_network();
-    let err = dispatch(Request::StopBoard {
+    let err = dispatch(Request::StopBoard { previous: None,
         network_hash,
         edits_hash: Some("sha256:missing".into()),
         stop_id: "A".into(),
@@ -428,7 +428,7 @@ fn unknown_hashes_and_garbage_are_errors_not_panics() {
     .unwrap_err();
     assert!(err.contains("unknown edits"), "{err}");
 
-    let err = dispatch(Request::WatchlistBoard {
+    let err = dispatch(Request::WatchlistBoard { previous: None,
         watchlist_hash: "sha256:missing".into(),
         network_hash: load_network(),
         edits_hash: None,
@@ -476,7 +476,7 @@ proptest! {
     #[test]
     fn an_unknown_stop_answers_an_empty_board(id in "[a-z][a-z0-9_]{0,7}") {
         let hash = load_network();
-        match dispatch(Request::StopBoard {
+        match dispatch(Request::StopBoard { previous: None,
             network_hash: hash,
             edits_hash: None,
             stop_id: id,

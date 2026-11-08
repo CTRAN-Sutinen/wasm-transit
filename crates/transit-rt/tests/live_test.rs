@@ -45,3 +45,39 @@ fn a_snapshot_resolves_into_trip_instances() {
     let empty = transit_network::Network::default();
     assert_eq!(live_day(&empty, &Boundary::default(), Some(&rt), None, None, OnTimeWindow::default()).unmatched_trips, rt.trips.len() as u32);
 }
+
+/// A trip instance is (trip, service date, start): the descriptor's
+/// `start_date` (YYYYMMDD) becomes the instance's date, "YYYY-MM-DD";
+/// absent, the instance states none (the current service day's —
+/// `LiveDay::on`); unreadable, the update names no instance and is
+/// reported unmatched. Vehicles carry their trip's date the same way.
+#[test]
+fn the_start_date_is_the_instances_service_date() {
+    let feed = transit_codec::Feed::from_zip_bytes(include_bytes!("../../../web/e2e/fixtures/sample-gtfs.zip")).unwrap();
+    let imported = transit_codec::import(&feed);
+    let (net, boundary) = (&imported.network, &imported.boundary);
+    let rt = decode_overview(include_bytes!("../../../web/e2e/fixtures/sample-rt.pb")).unwrap();
+    let with_date = |date: Option<&str>| {
+        let mut rt = rt.clone();
+        for t in &mut rt.trips {
+            t.start_date = date.map(Into::into);
+        }
+        for v in &mut rt.vehicle_positions {
+            v.start_date = date.map(Into::into);
+        }
+        live_day(net, boundary, Some(&rt), None, None, OnTimeWindow::default())
+    };
+
+    let dated = with_date(Some("20261023"));
+    let t10 = dated.trips.iter().find(|t| t.trip == "t10").unwrap();
+    assert_eq!(t10.date.as_deref(), Some("2026-10-23"));
+    assert_eq!(dated.vehicles[0].date.as_deref(), Some("2026-10-23"));
+
+    let undated = with_date(None);
+    assert!(undated.trips.iter().all(|t| t.date.is_none()));
+    assert!(undated.vehicles.iter().all(|v| v.date.is_none()));
+
+    let unreadable = with_date(Some("2026-10-23"));
+    assert!(unreadable.trips.is_empty());
+    assert_eq!(unreadable.unmatched_trips, rt.trips.len() as u32);
+}

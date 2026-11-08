@@ -2294,7 +2294,7 @@ Blocks: `document-versioning` the support window.
 
 ### D-67 — Whose feeds does the server's proxy fetch?
 State: Decided.
-Answer: 2026-11-03 — "I'd prefer to get rid of the proxy honestly, it is just there for local dev/testing" and "we control the feeds, so we just need to fix those issues properly on the feed side." The `/rt` proxy is removed; the agency's feeds serve HTTPS with CORS and pages fetch them directly.
+Answer: 2026-11-03 — "I'd prefer to get rid of the proxy honestly, it is just there for local dev/testing" and "we control the feeds, so we just need to fix those issues properly on the feed side." The `/rt` proxy is removed; the agency's feeds serve HTTPS with CORS and pages fetch them directly. Amended 2026-11-08 — "leaving the /rt proxy as an optional dev convenience": `/rt` stays, off unless the server runs with `-rt-proxy` (`just serve` and `just dev` pass it), with a timeout and a size cap; a page fetches its feeds directly unless its `live-feeds.json` names the relay as `proxy`, which only a dev config does.
 Context: `docs/units/deploy-rider-apps.md`. `/rt?url=` fetches any
 http(s) URL for any caller, with no timeout or size cap — beyond
 localhost it is an open relay into the server's network. Ride-now
@@ -2856,7 +2856,15 @@ Options:
   answer, the current day's first trips do not.
 Pinned by: `web/src/clock.test.mjs` ("fall back: the hour before the
 anchor clamps to the day's start").
-Blocks: nothing (the two-day board replaces the clamp).
+Since 2026-11-08 the boards read both days: the host gives the same
+instant on the previous date's clock and that date's length
+(`previousClock`), so in that hour the previous date's 24:00–25:00
+trips answer AND the current day's first trips answer with their true
+waits (the clamped 0 no longer shortens them) — both options at once;
+pinned by `crates/transit-dispatch/tests/overnight_law_test.rs`
+(law 5) and `e2e/ui-stop-display.spec.mjs` ("in the hour before a
+fall-back day's anchor…").
+Blocks: nothing.
 
 ### D-79 — How is a document version rolled back?
 State: Decided.

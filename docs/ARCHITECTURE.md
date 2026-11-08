@@ -393,6 +393,17 @@ transit-dispatch The materialized day's views, model-native: patch_day
                 (cancel_of: the trip, one instance or all, on a date
                 its service runs), and the edit document's named rows
                 — diversion rows and cancel rows),
+                and THE BOARD AT A MOMENT (stop_board_at,
+                grouped_board_at: the date's board and, given the
+                previous date at the same instant — its clock's
+                seconds and its length, 23/24/25 h — that date's
+                departures still to leave: GTFS times past 24:00 are
+                the date the trip started on, so at 00:30 Friday's
+                24:45 leaves in 15 minutes; each date reads its own
+                edits and its own live instances, every row names its
+                date, rows order by how long until each leaves, and
+                in the hour before a fall-back day's anchor the wait
+                counts from the true instant, not the clamped 0),
                 and WHERE SERVICE RUNS TODAY (geometry.rs: a trip's
                 line over the effective day — the authored alignment,
                 and for a diverted trip the alignment to the first
@@ -406,10 +417,13 @@ transit-dispatch The materialized day's views, model-native: patch_day
                 layer (the justfile arch gate enforces it).
 transit-rt      prost types from the official GTFS-rt proto, the
                 OVERVIEW view (delays, vehicles, each trip
-                descriptor's start_time) over them, and the joins
+                descriptor's start_time and start_date) over them, and the joins
                 over the NETWORK: an rt trip id IS a model trip id,
                 the instance its start (a frequency trip's, the
-                descriptor's start_time — `resolve_instance`). The
+                descriptor's start_time — `resolve_instance`) and its
+                service date (the descriptor's start_date; absent,
+                none is stated; unreadable, the update names no
+                instance). The
                 PROGRESS join (one trip's predicted times; the
                 ranked late view with the DELAYED-BUT-DARK flag)
                 pairs stop updates by the published stop_sequence
@@ -423,7 +437,11 @@ transit-rt      prost types from the official GTFS-rt proto, the
                 routes, stops, and trip instances — kept when in
                 force at the snapshot's moment (tests/alert_test).
 transit-live    THE live document: one rt moment in model vocabulary
-                (delays per trip instance (trip, start) and stop,
+                (v2: delays per trip instance (trip, service date,
+                start) and stop — the date as the feed states it,
+                absent meaning the current service day, GTFS-rt's
+                reading; `LiveDay::on(date, current)` is one date's
+                view, which every reader asks for its date —
                 vehicles on their trip instances, every status classified under the
                 on-time window the document records — one window,
                 never a threshold per view; by default ANY earliness
@@ -759,12 +777,15 @@ Its HTTP surface:
   requests PMTiles needs work). A file whose name carries its content
   hash (Vite's `assets/<name>-<hash>.<ext>`, the modules'
   `caps/<name>-<sha256>.wasm`) is served `immutable`; everything else
-  (the pages, `caps/manifest.json`, `live-feeds.json`) `no-cache`, so
-  an open page meets a new build on its next load.
-- `/rt?url=<encoded>` — a proxy that fetches an agency's realtime
-  feed and returns it with CORS headers, so feeds without
-  `Access-Control-Allow-Origin` can be polled from the page (the
-  server binds 127.0.0.1 by default; `-addr` changes it).
+  (the pages, `caps/manifest.json`, `live-feeds.json`, the service
+  worker `sw.js`) `no-cache`, so an open page's update check meets a
+  new build ("Updates and offline", web section).
+- `/rt?url=<encoded>` — a DEV relay, a route only with `-rt-proxy`
+  (`just serve` and `just dev` pass it; D-67): it fetches an http(s)
+  feed (15 s timeout, 32 MB cap) and returns it with CORS headers, for
+  a dev config whose feeds send no `Access-Control-Allow-Origin`. It
+  relays any URL for any caller, so the server binds 127.0.0.1 when
+  it is on. A deployment's pages fetch the agency's feeds directly.
 - `/geocode/{autocomplete,search,reverse}` — a proxy to the Pelias
   geocoder named by `-geocoder` (`<url>/v1/<op>`): it forwards the
   user's input only (`text`, the focus point, the reverse point) and
@@ -786,7 +807,9 @@ Its HTTP surface:
   (the one the server counts its today in, and every page reads its
   clock in), and the external services it proxies
   (`services.geocoder: {path, query}` with `-geocoder`). Served
-  `no-cache`.
+  `no-cache` with an ETag naming what it pins (the store's manifest
+  head; without the store, a hash of every field but `generated_at`),
+  so an open page's poll is a 304 while nothing moved.
 - `/streets` — the canonical streets document imported from the
   configured layer (`-streets`), bare (the bytes `load_streets`
   takes); gzipped, its ETag the streets hash, re-imported when the
@@ -1185,7 +1208,9 @@ web/src/uis/<id>/ui.json       the descriptor the picker renders: id (= the dire
                                capabilities they name are what its linked assembly
                                links; the kernel's loads are not ops), components,
                                session (the dogfood session: date, feed, open
-                               findings), spec, generated
+                               findings), spec, generated, and `offline: true`
+                               for a page that installs and works offline
+                               ("Updates and offline")
 web/src/uis/<id>/main.ts       imports ../base.css (+ maplibre css if it maps), mounts
                                Shell, then awaits the host's boot (the layout paints first)
 web/src/uis/<id>/Shell.svelte  PLACEMENT ONLY: reads the host's answers state, passes
@@ -1209,8 +1234,15 @@ Shared by every generated UI:
   picks its network; a loaded zip's by `setAgencyZone()`), never the
   device's, through `src/clock.ts`: the agency's date, and seconds from
   noon minus 12 h on it (the GTFS anchor — midnight except on a
-  clock-change day; the fall-back hour before it clamps to 0).
-  `whileVisible()` is every page's poll: a hidden page makes no
+  clock-change day; the fall-back hour before it clamps to 0);
+  `previousDay()` is the same instant on the previous date's clock
+  and that date's length, which a board takes as `previous` (the
+  previous date's after-midnight trips, and the fall-back hour read
+  truly). `deploymentFeeds()` and `fetchFeed()` read the live feeds
+  `live-feeds.json` names, directly — or through the dev relay its
+  `proxy` names (`/rt`, D-67). `installApp()`, `buildWaiting()`,
+  `applyBuild()`, and `serverAnswers()` are the build lifecycle
+  ("Updates and offline"). `whileVisible()` is every page's poll: a hidden page makes no
   requests and re-reads on its return. The answer graph is TRANSIENT — hand-built ahead of the flow
   maps `docs/units/host-discipline.md` designs, which replace it: a
   host declares its answers as `AnswerNode`s (the inputs each reads,
@@ -1449,9 +1481,12 @@ where none is published, walks are straight lines and trips run
 stop to stop; a hand-loaded zip walks no streets — the walk table
 walks the published network), reads the edit document from
 `GET /edits`, reads the live feeds the deployment names in
-`public/live-feeds.json` (the rider may set their own) through
-`/rt`, and polls both and the clock every 30 s. A trip asked for
-"now" is re-asked on each poll. Addresses come from the geocoder
+`public/live-feeds.json` (the rider may set their own; kit's
+`fetchFeed`), and polls both and the clock every 30 s. A trip asked
+for "now" is re-asked on each poll. Its boards include the previous
+date's after-midnight trips (`previous`), and it follows the
+deployment and installs as an app ("Updates and offline", below):
+a new build is offered as "a new version is ready". Addresses come from the geocoder
 the manifest lists (read once on boot; "External services"): the
 host sends the typed text and the near point or the rider's, shows
 Pelias's answer as given, and a point it answers keeps the name it
@@ -1471,9 +1506,57 @@ always on screen. Any layout shows any stop. The stop and the layout live in the
 stop; without a stop, the setup picks both. It boots from the
 server's published network (`servedNetwork`, bytes it never parses;
 or a zip), reads `GET /edits` and the deployment's
-live feeds (`public/live-feeds.json`, through `/rt`), and polls them
-and the clock every 20 s. Its questions and session are its
-`ui.json`.
+live feeds (`public/live-feeds.json`, kit's `fetchFeed`), and polls
+them and the clock every 20 s. Its groups include the previous
+date's after-midnight trips (`previous`), and it follows the
+deployment and works offline ("Updates and offline", below): a new
+build applies itself at a poll while the server answers and the
+setup is closed. Its questions and session are its `ui.json`.
+
+### Updates and offline
+
+A page that reads the deployment's network follows it, and a page
+whose `ui.json` says `"offline": true` (ride-now and the stop display)
+installs as an app — one lifecycle (D-63, D-65):
+
+- **Data re-pins without a reload.** On every poll the host asks the
+  engine which network the deployment serves today
+  (`servedNetworkPin`: the manifest, revalidated by its ETag, and the
+  pick in force on the agency's date). A republish, a new pick, or
+  the date crossing a pick's effective date moves it, and the host
+  adopts the new network quietly (the page stays on screen) and names
+  its keep-set, so the old network leaves every module. A zip loaded
+  by hand stops the page following.
+- **A build waits, then applies.** The build writes the service
+  worker (`web/service-worker.js` → `dist/sw.js`, `vite.config.js`'s
+  plugin) with the build's identity (a hash over its shell) and the
+  shell it precaches: the offline UIs' pages, every hashed asset,
+  `caps/manifest.json`, and those UIs' linked assemblies. A new build
+  is a byte-different worker; each poll asks the browser to look for
+  it (kit's `buildWaiting`), and it installs in the background and
+  waits. A rider's page applies it at the next cold start or
+  navigation (`installApp`, before anything on the page is unsaved)
+  or when the rider accepts "a new version is ready"; a display
+  applies it itself at a poll — only while the server answers
+  (`serverAnswers`: not the worker's last copy) and its setup is
+  closed. A page another tab moved past counts as one with a build
+  waiting. The worker keeps the previous build's shell beside the
+  current one, so a page still on it loads its files.
+- **Offline.** The worker answers the shell from its precache;
+  content-addressed files (hashed assets, modules, `/blobs/<hash>`)
+  from a cache filled on first use, forever; the published documents
+  and config (`/manifest`, `/network/document`, `/network/boundary`,
+  `/streets`, `/walks`, `live-feeds.json`, the basemap's glyphs and
+  sprites) from the network, else the last copy (marked
+  `X-Served-From: last-copy`). Live feeds, `/rt`, `/edits`, writes,
+  and the geocoder are never cached: offline, a board is the schedule
+  and says so. The map's tiles (`basemap.pmtiles`, range requests)
+  are not cached.
+
+The e2e runs every other spec with service workers blocked
+(`page.route` never sees what a worker answers);
+`e2e/deploy-builds.spec.mjs` allows them on its own server and
+publishes a new build by rewriting that server's copy of `sw.js`.
 
 Layouts are hand-placed Svelte; layouts as documents are
 `docs/units/wire-time-assembly.md`.
@@ -1698,7 +1781,11 @@ cap-board       The board capability — ONE QUESTION: when does
                 kernel's few held days would be pushed out by a week of
                 them) / watchlist_board (each watched
                 stop's stop_board, the same edits and live document;
-                a trip's FINAL
+                each takes `previous` — the previous date at the same
+                instant, from the host's clock — and then also
+                answers that date's after-midnight departures still
+                to leave, each row naming its date (stop_board_at,
+                grouped_board_at); a trip's FINAL
                 visit is an arrival, never a row) over ONE
                 MATERIALIZED DAY (materialize(net, date), patched
                 with the in-force edits — the kernel's held day, one
@@ -1707,7 +1794,8 @@ cap-board       The board capability — ONE QUESTION: when does
                 in the shared transit-dispatch library; no GTFS
                 layer (arch gate). The UI's departure board renders
                 stop_board's answer; rows carry the trip instance's
-                address (trip, start), so the click-through needs no
+                address (trip, start — and its date, asked at a
+                moment), so the click-through needs no
                 join.
 cap-runcut      The runcut capability — ONE QUESTION: what does
                 this vehicle do today? The day's blocks LIST (the

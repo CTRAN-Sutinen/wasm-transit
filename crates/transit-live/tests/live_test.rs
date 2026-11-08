@@ -50,7 +50,7 @@ fn stop(stop: &str, scheduled: u32, delay: i32) -> LiveStop {
 }
 
 fn trip(id: &str, start: u32, worst: i32, stops: Vec<LiveStop>) -> LiveTrip {
-    LiveTrip {
+    LiveTrip { date: None,
         trip: id.into(),
         start_secs: start,
         route: Some("10".into()),
@@ -84,7 +84,7 @@ fn a_loop_visit_resolves_by_its_scheduled_time() {
 #[test]
 fn the_summary_ranks_buses_and_falls_back_to_predictions() {
     let w = OnTimeWindow::default();
-    let vehicle = |key: &str, delay: Option<i32>| LiveVehicle {
+    let vehicle = |key: &str, delay: Option<i32>| LiveVehicle { date: None,
         key: key.into(),
         vehicle_id: Some(key.into()),
         label: None,
@@ -122,4 +122,57 @@ fn the_summary_ranks_buses_and_falls_back_to_predictions() {
     assert_eq!(s.late.len(), 1);
     assert_eq!(s.late[0].key, "s1@28800");
     assert_eq!(summarize(&no_positions, 0).late.len(), 0, "the limit holds");
+}
+
+/// A trip instance is (trip, service date, start): the live document
+/// carries the date a feed states (GTFS-rt `start_date`), and a reader
+/// asks for one date's view. An instance stating no date is the
+/// current service day's (the GTFS-rt spec's reading) — in that day's
+/// view only. Vehicles and trip-scoped alerts follow the same rule;
+/// an alert scoped to no trip speaks on every date.
+#[test]
+fn a_dates_view_holds_that_dates_instances() {
+    use transit_live::{AlertScope, LiveAlert};
+    let dated = |date: Option<&str>| LiveTrip { date: date.map(Into::into), ..trip("t", 88_500, 60, vec![stop("A", 88_500, 60)]) };
+    let vehicle = |key: &str, date: Option<&str>| LiveVehicle {
+        key: key.into(),
+        vehicle_id: None,
+        label: None,
+        lat: 0.0,
+        lon: 0.0,
+        bearing: None,
+        route: None,
+        route_name: None,
+        next_stop: None,
+        trip: Some("t".into()),
+        date: date.map(Into::into),
+        start_secs: Some(88_500),
+        delay_secs: None,
+        status: LiveStatus::NoPrediction,
+    };
+    let alert = |id: &str, scope: AlertScope| LiveAlert { id: id.into(), scopes: vec![scope], ..Default::default() };
+    let day = LiveDay {
+        kind: Default::default(),
+        schema_version: Default::default(),
+        window: OnTimeWindow::default(),
+        trips: vec![dated(Some("2026-10-23")), dated(None)],
+        vehicles: vec![vehicle("fri", Some("2026-10-23")), vehicle("now", None)],
+        unmatched_trips: 0,
+        alerts: vec![
+            alert("fri-trip", AlertScope { trip: Some("t".into()), date: Some("2026-10-23".into()), ..Default::default() }),
+            alert("now-trip", AlertScope { trip: Some("t".into()), ..Default::default() }),
+            alert("stop", AlertScope { stop: Some("A".into()), ..Default::default() }),
+        ],
+        unmatched_alerts: 0,
+    };
+    let fri = day.on("2026-10-23", "2026-10-24");
+    assert_eq!(fri.trips.iter().map(|t| t.date.as_deref()).collect::<Vec<_>>(), [Some("2026-10-23")]);
+    assert_eq!(fri.vehicles.iter().map(|v| v.key.as_str()).collect::<Vec<_>>(), ["fri"]);
+    assert_eq!(fri.alerts.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["fri-trip", "stop"]);
+    let sat = day.on("2026-10-24", "2026-10-24");
+    assert_eq!(sat.trips.iter().map(|t| t.date.as_deref()).collect::<Vec<_>>(), [None]);
+    assert_eq!(sat.vehicles.iter().map(|v| v.key.as_str()).collect::<Vec<_>>(), ["now"]);
+    assert_eq!(sat.alerts.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["now-trip", "stop"]);
+    // The live document is v2: the date is part of the instance.
+    assert_eq!(serde_json::to_value(&day).unwrap()["schema_version"], 2);
 }

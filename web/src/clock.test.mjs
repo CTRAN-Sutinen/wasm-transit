@@ -8,7 +8,7 @@
 // Run: node --test web/src/clock.test.mjs (`just test`, web gates).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { serviceClock } from "./clock.ts";
+import { previousClock, serviceClock } from "./clock.ts";
 
 const LA = "America/Los_Angeles";
 const at = (iso) => Date.parse(iso);
@@ -46,12 +46,32 @@ test("fall back: the day counts from noon minus 12h (01:00 PDT)", () => {
 test("fall back: the hour before the anchor clamps to the day's start", () => {
   // 00:30 PDT precedes 2026-11-01's anchor; seconds cross the
   // boundary unsigned, so the clock answers the day's first second
-  // (the previous service day's after-midnight trips are
-  // docs/units/deploy-rider-apps.md's).
+  // (previousClock answers the hour truly, on the previous date's
+  // clock).
   assert.deepEqual(serviceClock(at("2026-11-01T00:30:00-07:00"), LA), { date: "2026-11-01", secs: 0 });
 });
 
 test("an unknown or absent zone reads the device's", () => {
   const now = at("2026-11-06T15:30:00Z");
   assert.deepEqual(serviceClock(now, "Not/AZone"), serviceClock(now, undefined));
+});
+
+// The previous service date at the same instant: its after-midnight
+// trips (GTFS times past 24:00) are still leaving. The board needs the
+// instant on that date's clock and the date's length anchor to
+// anchor — 25 h on the night the clocks go back, 23 h going forward.
+test("the previous date's clock: just after midnight it reads past 24:00", () => {
+  assert.deepEqual(previousClock(at("2026-11-07T00:30:00-08:00"), LA), { date: "2026-11-06", from_secs: 88200, length_secs: 86400 });
+  assert.deepEqual(previousClock(at("2026-11-06T15:30:00-08:00"), LA), { date: "2026-11-05", from_secs: 142200, length_secs: 86400 });
+});
+
+test("the previous date's clock across fall back: a 25-hour day, and the hour before the anchor", () => {
+  // 00:30 PDT on 2026-11-01 is 24.5 h after 2026-10-31's anchor, and
+  // 2026-10-31 runs 25 h to 2026-11-01's anchor (01:00 PDT).
+  assert.deepEqual(previousClock(at("2026-11-01T00:30:00-07:00"), LA), { date: "2026-10-31", from_secs: 88200, length_secs: 90000 });
+});
+
+test("the previous date's clock across spring forward: a 23-hour day", () => {
+  // 2026-03-08's anchor is 23:00 PST on the 7th, so the 7th runs 23 h.
+  assert.deepEqual(previousClock(at("2026-03-08T00:30:00-08:00"), LA), { date: "2026-03-07", from_secs: 88200, length_secs: 82800 });
 });

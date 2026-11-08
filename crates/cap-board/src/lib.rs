@@ -37,7 +37,9 @@
 use cap_abi::kernel::{LIVE, NETWORK, WATCHLIST};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use transit_dispatch::{GroupedBoard, StopBoard};
+use std::sync::Arc;
+
+use transit_dispatch::{BoardAt, Day, GroupedBoard, Overnight, ServiceDay, StopBoard};
 
 pub use transit_dispatch::watchlist::{WatchStopV1, WatchStopV2, Watchlist};
 
@@ -50,6 +52,21 @@ pub struct WatchBoardStop {
     pub id: String,
     pub label: String,
     pub board: StopBoard,
+}
+
+/// The previous service date at the board's moment, as the host's
+/// clock reads it: the moment on that date's clock (seconds from its
+/// anchor — past 86 400 after midnight) and its length anchor to
+/// anchor (86 400; 82 800 or 90 000 across a clock change). A board
+/// given it also answers the previous date's after-midnight trips
+/// still to leave (GTFS times past 24:00 are the date the trip started
+/// on), each row naming its date; before a fall-back day's anchor it
+/// is also how long the clamped hour really is.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "cap_board/")]
+pub struct Previous {
+    pub from_secs: u32,
+    pub length_secs: u32,
 }
 
 /// One operation call. Tagged like every capability's seam.
@@ -85,6 +102,11 @@ pub enum Request {
         #[serde(default)]
         #[ts(optional)]
         live_hash: Option<String>,
+        /// The previous date at the same moment: its after-midnight
+        /// trips join the board (each row names its date).
+        #[serde(default)]
+        #[ts(optional)]
+        previous: Option<Previous>,
     },
     /// THE board grouped for a stop's display: one group per route
     /// and destination the stop is served by on the date (a group
@@ -113,6 +135,11 @@ pub enum Request {
         #[serde(default)]
         #[ts(optional)]
         live_hash: Option<String>,
+        /// The previous date at the same moment: its after-midnight
+        /// trips join the board (each row names its date).
+        #[serde(default)]
+        #[ts(optional)]
+        previous: Option<Previous>,
     },
     /// The board for a watchlist: each watched stop's board on a
     /// service date, labelled per its version — the same question the
@@ -131,6 +158,11 @@ pub enum Request {
         #[serde(default)]
         #[ts(optional)]
         live_hash: Option<String>,
+        /// The previous date at the same moment: its after-midnight
+        /// trips join the board (each row names its date).
+        #[serde(default)]
+        #[ts(optional)]
+        previous: Option<Previous>,
     },
 }
 
@@ -151,34 +183,24 @@ const PER_GROUP: u32 = 3;
 /// are `{"error": ...}`, never panics — a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
-        Request::StopBoard { network_hash, edits_hash, stop_id, date, from_secs, limit, live_hash } => {
-            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
+        Request::StopBoard { network_hash, edits_hash, stop_id, date, from_secs, limit, live_hash, previous } => {
+            let days = Days::read(&network_hash, edits_hash.as_deref(), &date, previous)?;
             let network = NETWORK.require(&network_hash)?;
             let live = live_hash.as_deref().map(|h| LIVE.require(h)).transpose()?;
             Ok(Response::StopBoard {
-                board: transit_dispatch::stop_board(
-                    &network,
-                    &day.trips,
-                    &stop_id,
-                    from_secs,
-                    limit as usize,
-                    live.as_deref(),
-                    day.edits.as_ref(),
-                ),
+                board: transit_dispatch::stop_board_at(&network, &days.at(&date, from_secs), &stop_id, limit as usize, live.as_deref()),
             })
         }
-        Request::GroupedBoard { network_hash, edits_hash, stop_id, date, from_secs, per_group, live_hash } => {
-            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
+        Request::GroupedBoard { network_hash, edits_hash, stop_id, date, from_secs, per_group, live_hash, previous } => {
+            let days = Days::read(&network_hash, edits_hash.as_deref(), &date, previous)?;
             let network = NETWORK.require(&network_hash)?;
             let live = live_hash.as_deref().map(|h| LIVE.require(h)).transpose()?;
-            let mut board = transit_dispatch::grouped_board(
+            let mut board = transit_dispatch::grouped_board_at(
                 &network,
-                &day.trips,
+                &days.at(&date, from_secs),
                 &stop_id,
-                from_secs,
                 per_group.unwrap_or(PER_GROUP) as usize,
                 live.as_deref(),
-                day.edits.as_ref(),
             );
             // A stopped group's next run (D-42): the later days are
             // materialized here, not held — the kernel keeps a few days
@@ -197,9 +219,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             }
             Ok(Response::GroupedBoard { board })
         }
-        Request::WatchlistBoard { watchlist_hash, network_hash, edits_hash, date, from_secs, limit, live_hash } => {
+        Request::WatchlistBoard { watchlist_hash, network_hash, edits_hash, date, from_secs, limit, live_hash, previous } => {
             let watchlist = WATCHLIST.require(&watchlist_hash)?;
-            let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
+            let days = Days::read(&network_hash, edits_hash.as_deref(), &date, previous)?;
+            let at = days.at(&date, from_secs);
             let network = NETWORK.require(&network_hash)?;
             let live = live_hash.as_deref().map(|h| LIVE.require(h)).transpose()?;
             let stops = watchlist
@@ -208,18 +231,50 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .map(|stop_id| WatchBoardStop {
                     id: stop_id.to_string(),
                     label: watchlist.label(stop_id),
-                    board: transit_dispatch::stop_board(
-                        &network,
-                        &day.trips,
-                        stop_id,
-                        from_secs,
-                        limit as usize,
-                        live.as_deref(),
-                        day.edits.as_ref(),
-                    ),
+                    board: transit_dispatch::stop_board_at(&network, &at, stop_id, limit as usize, live.as_deref()),
                 })
                 .collect();
             Ok(Response::WatchlistBoard { stops })
+        }
+    }
+}
+
+/// The days a board at a moment reads: its date's, and the previous
+/// date's when the host gives the moment on that clock — both the
+/// kernel's held days.
+struct Days {
+    today: Arc<Day>,
+    previous: Option<(String, Arc<Day>, Previous)>,
+}
+
+impl Days {
+    fn read(network_hash: &str, edits_hash: Option<&str>, date: &str, previous: Option<Previous>) -> Result<Days, String> {
+        let today = cap_abi::kernel::day(network_hash, edits_hash, date)?;
+        let previous = match previous {
+            Some(p) => {
+                let on = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                    .ok()
+                    .and_then(|d| d.pred_opt())
+                    .ok_or_else(|| format!("invalid date {date:?}"))?
+                    .format("%Y-%m-%d")
+                    .to_string();
+                let day = cap_abi::kernel::day(network_hash, edits_hash, &on)?;
+                Some((on, day, p))
+            }
+            None => None,
+        };
+        Ok(Days { today, previous })
+    }
+
+    fn at<'a>(&'a self, date: &'a str, from_secs: u32) -> BoardAt<'a> {
+        BoardAt {
+            today: ServiceDay { date, trips: &self.today.trips, edits: self.today.edits.as_ref() },
+            from_secs,
+            previous: self.previous.as_ref().map(|(on, day, p)| Overnight {
+                day: ServiceDay { date: on, trips: &day.trips, edits: day.edits.as_ref() },
+                from_secs: p.from_secs,
+                length_secs: p.length_secs,
+            }),
         }
     }
 }

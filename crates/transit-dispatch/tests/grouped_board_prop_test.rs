@@ -221,7 +221,7 @@ fn live(routes: &[GenRoute]) -> LiveDay {
             let Some(at_x) = stops_of(gp.shape).1 else { continue };
             for ((&s, &delay), &gone) in gp.starts.iter().zip(&gp.delays).zip(&gp.gone) {
                 let scheduled = s + at_x;
-                let trip = |stops: Vec<LiveStop>, canceled: bool, worst: Option<i32>| LiveTrip {
+                let trip = |stops: Vec<LiveStop>, canceled: bool, worst: Option<i32>| LiveTrip { date: None,
                     trip: trip_id(r, p, s),
                     start_secs: s,
                     route: None,

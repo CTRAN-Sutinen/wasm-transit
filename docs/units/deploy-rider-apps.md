@@ -30,47 +30,13 @@ units it depends on are:
 
 ## Scope (owned here)
 
-- **Updates (D-63).** The pages read `/manifest` once, at boot; a
-  display open for weeks never sees a new import or a new build. On
-  the poll they already run, both pages revalidate `/manifest` (an
-  ETag, a 304 when nothing moved).
-  - A new `network_hash` re-pins without a reload: the worker
-    fetches and registers the new network, the boards re-answer, and
-    the old network leaves every registry through the eviction op's
-    keep-set. So does a new pick in force — a new `plans_hash`, or the
-    page's date crossing a pick's effective date (`servedNetwork`
-    resolves the pick only when it loads).
-  - A new build (a module hash, the kernel, the app shell) downloads
-    in the background and waits. A rider's page applies it at the
-    next cold start or navigation, or when the rider accepts "a new
-    version is ready"; a display applies it itself at its next poll
-    while the server answers, so an outage never reloads a working
-    display into an empty one. No page applies it over unsaved device
-    data.
-- **Offline (D-65).** Both pages install and work with no
-  connection: a service worker caches the shell, the modules (hash-
-  addressed, so cached forever), and the last network; boards
-  answer from the schedule and say so. The service worker IS the
-  update mechanism above — one lifecycle, not two. The map's labels
-  come from `basemap-assets/` when `just basemap-assets` installed it
-  (D-49) — the service worker caches it with the shell — and from
-  protomaps.github.io when not, which offline means no labels.
-- **The previous service day's after-midnight trips.** The pages read
-  the agency's clock (`src/clock.ts`: the date, and seconds from noon
-  minus 12 h), but a board answers one service date: at 00:30 it does
-  not show yesterday's 24:45 departure, which the GTFS spec says leaves
-  at 00:45 today. The same gap is the fall-back hour (00:00–01:00 on
-  the day the clocks go back precedes that day's anchor, and the clock
-  clamps it to the day's first second). The board's library answers
-  both by reading the previous date's day beside the current one; the
-  live document cannot join it yet — a live trip instance is
-  `(trip, start_secs)` with no service date, so yesterday's 24:45 and
-  a trip today could not be told apart. The instance gains its date
-  (transit-rt's join, transit-live's document — a document version,
-  [document-versioning.md](document-versioning.md)) first.
-- **The proxy goes (D-67).** `/rt?url=` (the server's
-  `handleProxy`, Vite's dev proxy, and the hosts that call it) is
-  removed; pages fetch the agency's feeds directly.
+The pages' own lifecycle stands (docs/ARCHITECTURE.md, web section,
+"Updates and offline"): data re-pins without a reload, a build waits
+and applies per D-63, both pages install and boot offline (D-65),
+boards answer the previous date's after-midnight trips and the
+fall-back hour, and `/rt` is a dev relay off by default (D-67).
+What is left here:
+
 - **The feeds are fixed at the source (D-67), the agency's work,
   not this repo's.** Today C-TRAN's trip updates and vehicle
   positions (`gtfs-rt.c-tran.org/gtfsrealtime/…`) answer on plain
@@ -84,9 +50,14 @@ units it depends on are:
   - send a short `Cache-Control: max-age` (about the feed's refresh
     interval), so a CDN absorbs every screen and phone polling the
     same bytes;
-  The proxy is removed in the same change that points
-  `web/public/live-feeds.json` at the fixed URLs; until then dev
-  keeps it.
+  - state each trip instance's `start_date`, so a trip past midnight
+    is joined to the day it started on (an undated instance is read
+    as the current service day's).
+
+  The deployment's `live-feeds.json` then names the fixed URLs and
+  no `proxy`; the dev copy in `web/public/` keeps the relay until
+  then.
+- **The dogfood**, below.
 
 ## Done when
 
@@ -96,20 +67,15 @@ units it depends on are:
   [observability-rollout.md](observability-rollout.md), and
   [store-durability.md](store-durability.md) are deleted,
   with ceilings under the D-68 budgets.
-- e2e: the server republishes the fixture network while a stop
-  display and ride-now are open; both re-pin without a reload, and
-  each module's registry and linear memory are back at their plateau
-  after the old network is evicted.
-- e2e: a new build is published; a rider's page offers it and
-  applies it at the next navigation, a display applies it at its
-  next poll, and neither applies it over unsaved device data.
-- e2e: both pages boot offline from the service worker and answer a
-  board from the schedule, marked as the schedule.
-- transit-dispatch law tests and an e2e: a board at 00:30 on the
-  fixture shows the previous day's after-midnight trips, live where
-  the feed predicts them, and so does the fall-back hour.
-- Go: `/rt` is gone.
 - Dogfood on C-TRAN, recorded here: a stop display on a Pi 4 left
   open 24 h across a service-day rollover and one republish (memory
-  sampled, plateaued), reading the fixed feeds directly; a ride-now
-  session on a phone under the D-68 budgets.
+  sampled, plateaued; the re-pin and a build applied at a poll),
+  reading the fixed feeds directly; a ride-now session on a phone
+  under the D-68 budgets, installed, then offline at a stop.
+
+The pins that stand: `e2e/deploy-updates.spec.mjs` (re-pin, plateau),
+`e2e/deploy-builds.spec.mjs` (offline boot, the build lifecycle),
+`e2e/ui-stop-display.spec.mjs` (feeds fetched directly; after
+midnight, live; the fall-back hour),
+`crates/transit-dispatch/tests/overnight_law_test.rs`, and Go's
+`proxy_test.go`.

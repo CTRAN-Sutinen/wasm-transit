@@ -48,6 +48,7 @@
     "BusView"
   ],
   "session": "2026-10-28 16:47 PDT in the browser on C-TRAN (feed sha256:aa8dbc62…) with the live trip updates and vehicle positions (68 buses): nearby boards, a pooled station board (Fisher's Landing), a two-ride trip, and the last bus answered. 2026-11-06 13:40:32 PST, one snapshot (trip updates 77f90f6d…, vehicle positions d5a480f7…, alerts 2498d547… from https://gtfs-rt.c-tran.com/Alerts; live 82273a7c…: 155 trips, 62 buses, 13 alerts) over the published network (c6847464…): caps-run asked all nine questions (stops / stops_near, stop_board at Van Mall TC 6137, plan_compare 99th Street TC → Fisher's Landing TC, plan_arrive_by back with no deadline, stop_board and its alert at Saint Johns 7900 Block 2095, watchlist_board, trip_progress 755525 + stops_by_ids, entities / route_detail / focus 050), and the browser at the same clock and snapshot shows the same answers: Van Mall's ten rows and statuses, leave in 1 min / 1 h 32 min on 071 then 030, the last bus at 10:50 pm on 034, Vine-Red and 071, bus CTRAN4024 14 min late over 28 stops, the saved stops' boards, and the no-service alert read on 2095's board.",
+  "offline": true,
   "spec": "web/e2e/ui-ride-now.spec.mjs",
   "generated": "2026-10-28"
 }

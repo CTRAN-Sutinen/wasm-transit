@@ -40,6 +40,14 @@ use transit_sync::{Diversion, EditRecord, EditReport, TripCancel};
 #[ts(export)]
 pub struct BoardDeparture {
     pub trip: String,
+    /// The service date the instance runs on, "YYYY-MM-DD" — set by
+    /// a board asked at a moment ([`stop_board_at`],
+    /// [`grouped_board_at`]), where a row may be the previous date's
+    /// after-midnight trip; `departure_secs` counts from this date's
+    /// anchor. Absent from a single day's board.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub date: Option<String>,
     pub start_secs: u32,
     pub route: String,
     /// The route's public name ("12").
@@ -387,7 +395,13 @@ pub enum Wait {
 
 /// THE wait rule — the one place a departure time becomes "how long".
 pub fn wait(at_secs: u32, from_secs: u32) -> Wait {
-    let d = at_secs.saturating_sub(from_secs);
+    wait_after(at_secs, from_secs as i64)
+}
+
+/// The wait from an instant on the same clock that may precede its
+/// anchor (the hour before a fall-back day's anchor).
+fn wait_after(at_secs: u32, from: i64) -> Wait {
+    let d = (at_secs as i64 - from).max(0) as u32;
     if d < 60 {
         Wait::Due
     } else if d < 3_600 {
@@ -692,6 +706,208 @@ pub fn grouped_board(
     GroupedBoard { groups, alerts: board.alerts, pooled: board.pooled, live: board.live }
 }
 
+// ---------------------------------------------------------------------
+// A board at a moment: its service date, and the previous date's
+// after-midnight trips still to leave
+// ---------------------------------------------------------------------
+
+/// One service date's effective day, as a board reads it.
+#[derive(Debug, Clone, Copy)]
+pub struct ServiceDay<'a> {
+    /// "YYYY-MM-DD".
+    pub date: &'a str,
+    /// The trips that run ([`Day::trips`]).
+    pub trips: &'a [MaterializedTrip],
+    /// What the edits took away ([`Day::edits`]).
+    pub edits: Option<&'a DayEdits>,
+}
+
+/// The previous service date, at the board's moment: its day, the
+/// moment on ITS clock (seconds from its anchor — past 86 400 after
+/// midnight), and its length anchor to anchor (86 400, or 23 h / 25 h
+/// across a clock change). The host owns the clock and the zone and
+/// answers both.
+#[derive(Debug, Clone, Copy)]
+pub struct Overnight<'a> {
+    pub day: ServiceDay<'a>,
+    pub from_secs: u32,
+    pub length_secs: u32,
+}
+
+/// When and where a board is asked: its service date, the moment on
+/// that date's clock (clamped to 0 before the anchor — the hour before
+/// a fall-back day's anchor), and, when the host gives it, the
+/// previous date at the same moment.
+#[derive(Debug, Clone, Copy)]
+pub struct BoardAt<'a> {
+    pub today: ServiceDay<'a>,
+    pub from_secs: u32,
+    pub previous: Option<Overnight<'a>>,
+}
+
+impl BoardAt<'_> {
+    /// The moment on today's clock, signed: before the anchor (the
+    /// host's clamped 0) it is the previous clock's moment less that
+    /// day's length.
+    fn today_secs(&self) -> i64 {
+        match self.previous {
+            Some(p) if self.from_secs == 0 => (p.from_secs as i64 - p.length_secs as i64).min(0),
+            _ => self.from_secs as i64,
+        }
+    }
+}
+
+/// How long until a row leaves, on its own clock — the one order
+/// across both dates.
+fn leaves_in(at_secs: u32, from: i64) -> i64 {
+    at_secs as i64 - from
+}
+
+fn dated(d: &mut BoardDeparture, date: &str) {
+    d.date = Some(date.to_string());
+}
+
+/// Rows of both dates in one order: by how long until each leaves
+/// (the expected time when live), each wait counted on its own clock.
+fn merge_rows(today: Vec<BoardRow>, today_from: i64, previous: Vec<BoardRow>, previous_from: i64, limit: usize) -> Vec<BoardRow> {
+    let mut all: Vec<(i64, BoardRow)> = today
+        .into_iter()
+        .map(|r| (today_from, r))
+        .chain(previous.into_iter().map(|r| (previous_from, r)))
+        .map(|(from, mut r)| {
+            let at = r.expected_secs.unwrap_or(r.departure.departure_secs);
+            r.wait = wait_after(at, from);
+            (leaves_in(at, from), r)
+        })
+        .collect();
+    all.sort_by(|(a, x), (b, y)| {
+        a.cmp(b)
+            .then_with(|| x.departure.trip.cmp(&y.departure.trip))
+            .then_with(|| x.departure.date.cmp(&y.departure.date))
+    });
+    all.into_iter().take(limit).map(|(_, r)| r).collect()
+}
+
+fn merge_skipped(
+    today: Vec<SkippedVisit>,
+    today_from: i64,
+    previous: Vec<SkippedVisit>,
+    previous_from: i64,
+    limit: usize,
+) -> Vec<SkippedVisit> {
+    let mut all: Vec<(i64, SkippedVisit)> = today
+        .into_iter()
+        .map(|s| (leaves_in(s.departure.departure_secs, today_from), s))
+        .chain(previous.into_iter().map(|s| (leaves_in(s.departure.departure_secs, previous_from), s)))
+        .collect();
+    all.sort_by(|(a, x), (b, y)| a.cmp(b).then_with(|| x.departure.trip.cmp(&y.departure.trip)));
+    all.into_iter().take(limit).map(|(_, s)| s).collect()
+}
+
+/// Alerts of both dates' boards, each once, in order of first mention.
+fn merge_alerts(today: Vec<LiveAlert>, previous: Vec<LiveAlert>) -> Vec<LiveAlert> {
+    let mut out = today;
+    for a in previous {
+        if !out.iter().any(|b| b.id == a.id) {
+            out.push(a);
+        }
+    }
+    out
+}
+
+/// THE board ([`stop_board`]) at a moment: its date's rows and, with
+/// the previous date, that date's departures still to leave — GTFS
+/// times past 24:00 are the date the trip started on. Each date reads
+/// its own edits and only the live instances on it (an instance
+/// stating no date is today's, [`LiveDay::on`]); every row carries its
+/// date, and rows order by how long until each leaves.
+pub fn stop_board_at(network: &Network, at: &BoardAt, stop_id: &str, limit: usize, live: Option<&LiveDay>) -> StopBoard {
+    let current = at.today.date;
+    let today_live = live.map(|l| l.on(current, current));
+    let mut board = stop_board(network, at.today.trips, stop_id, at.from_secs, limit, today_live.as_ref(), at.today.edits);
+    for r in &mut board.rows {
+        dated(&mut r.departure, current);
+    }
+    for s in &mut board.skipped {
+        dated(&mut s.departure, current);
+    }
+    let today_from = at.today_secs();
+    let Some(prev) = at.previous else {
+        board.rows = merge_rows(board.rows, today_from, Vec::new(), 0, limit);
+        return board;
+    };
+    let prev_live = live.map(|l| l.on(prev.day.date, current));
+    let mut earlier = stop_board(network, prev.day.trips, stop_id, prev.from_secs, limit, prev_live.as_ref(), prev.day.edits);
+    for r in &mut earlier.rows {
+        dated(&mut r.departure, prev.day.date);
+    }
+    for s in &mut earlier.skipped {
+        dated(&mut s.departure, prev.day.date);
+    }
+    let prev_from = prev.from_secs as i64;
+    StopBoard {
+        rows: merge_rows(board.rows, today_from, earlier.rows, prev_from, limit),
+        skipped: merge_skipped(board.skipped, today_from, earlier.skipped, prev_from, limit),
+        alerts: merge_alerts(board.alerts, earlier.alerts),
+        pooled: board.pooled,
+        live: board.live || earlier.live,
+    }
+}
+
+/// THE grouped board ([`grouped_board`]) at a moment, as
+/// [`stop_board_at`] answers THE board: each group's departures of
+/// both dates in one order, and a group the previous date alone still
+/// runs (a route that does not run today) while it has departures to
+/// leave.
+pub fn grouped_board_at(network: &Network, at: &BoardAt, stop_id: &str, per_group: usize, live: Option<&LiveDay>) -> GroupedBoard {
+    let current = at.today.date;
+    let today_live = live.map(|l| l.on(current, current));
+    let mut board = grouped_board(network, at.today.trips, stop_id, at.from_secs, per_group, today_live.as_ref(), at.today.edits);
+    let today_from = at.today_secs();
+    for g in &mut board.groups {
+        for r in &mut g.departures {
+            dated(&mut r.departure, current);
+        }
+        for s in &mut g.skipped {
+            dated(&mut s.departure, current);
+        }
+        g.departures = merge_rows(std::mem::take(&mut g.departures), today_from, Vec::new(), 0, per_group);
+    }
+    let Some(prev) = at.previous else { return board };
+    let prev_live = live.map(|l| l.on(prev.day.date, current));
+    let earlier = grouped_board(network, prev.day.trips, stop_id, prev.from_secs, per_group, prev_live.as_ref(), prev.day.edits);
+    let prev_from = prev.from_secs as i64;
+    for mut e in earlier.groups {
+        if e.departures.is_empty() && e.skipped.is_empty() {
+            continue;
+        }
+        for r in &mut e.departures {
+            dated(&mut r.departure, prev.day.date);
+        }
+        for s in &mut e.skipped {
+            dated(&mut s.departure, prev.day.date);
+        }
+        match board.groups.iter_mut().find(|g| g.route == e.route && g.destination == e.destination) {
+            Some(g) => {
+                g.departures = merge_rows(std::mem::take(&mut g.departures), today_from, e.departures, prev_from, per_group);
+                g.skipped = merge_skipped(std::mem::take(&mut g.skipped), today_from, e.skipped, prev_from, per_group);
+            }
+            None => {
+                e.departures = merge_rows(Vec::new(), today_from, e.departures, prev_from, per_group);
+                board.groups.push(e);
+            }
+        }
+    }
+    let order = |route: &str| network.routes.get(route).and_then(|r| r.sort_order);
+    board.groups.sort_by(|a, b| {
+        let (sa, sb) = (order(&a.route), order(&b.route));
+        (sa.is_none(), sa, &a.route, &a.destination).cmp(&(sb.is_none(), sb, &b.route, &b.destination))
+    });
+    board.alerts = merge_alerts(board.alerts, earlier.alerts);
+    board.live |= earlier.live;
+    board
+}
+
 /// Attach the live document's alerts: on each row and skipped visit
 /// the ids that touch it; on the board every alert touching either,
 /// or the stops themselves, in the document's order.
@@ -829,6 +1045,7 @@ fn board_over(
             }
             rows.push(BoardDeparture {
                 trip: trip.trip.clone(),
+                date: None,
                 start_secs: trip.start_secs,
                 route: trip.route.clone(),
                 route_name: route_name(network, &trip.route),

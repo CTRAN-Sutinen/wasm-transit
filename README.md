@@ -152,7 +152,10 @@ The ride-now UI (`/ride-now.html`) and the stop display
 agency's GTFS-rt feeds
 named in `web/public/live-feeds.json` (`trips`, `vehicles`,
 `alerts`; an empty URL is a feed the agency does not have), fetched
-through the server's `/rt` proxy (every 30 seconds for ride-now,
-20 for the display). A rider can set their own from ride-now's live
-pill. Rebuild the frontend after changing
+directly (every 30 seconds for ride-now, 20 for the display) — each
+feed must answer over HTTPS with a CORS header. The dev copy also
+names `"proxy": "/rt"`: the server's dev relay, which `just serve`
+and `just dev` turn on (`-rt-proxy`) for feeds that send no CORS
+header; a deployment's copy names none. A rider can set their own
+feeds from ride-now's live pill. Rebuild the frontend after changing
 the file.

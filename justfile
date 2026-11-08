@@ -614,7 +614,7 @@ population:
 
 # Serve the built app and APIs on :8080. Arguments are positional:
 #
-#   just serve                                   # static + /rt only
+#   just serve                                   # static + /rt (the dev feed relay) only
 #   just serve path/to/gtfs.zip                  # + /network (imported once), /manifest
 #   just serve path/to/gtfs.zip roads.geojson    # + /streets, /walks (the layer
 #                                                # imported once, the walk table
@@ -635,7 +635,9 @@ serve feed="" streets="" publisher="" addr="127.0.0.1:8080":
     if [ -n "$feed" ]; then feed=$(src "$feed"); fi
     if [ -n "$streets" ]; then streets=$(src "$streets"); fi
     cd server
-    args=(-addr "{{ addr }}")
+    # -rt-proxy: the dev feed relay live-feeds.json names (D-67; off in
+    # a deployment, whose pages fetch the agency's feeds directly).
+    args=(-addr "{{ addr }}" -rt-proxy)
     if [ -n "$feed" ]; then args+=(-feed "$feed"); fi
     if [ -n "$streets" ]; then args+=(-streets "$streets"); fi
     if [ -n "{{ publisher }}" ]; then args+=(-publisher "{{ publisher }}"); fi
@@ -718,8 +720,9 @@ store-contract:
     STORAGE_EMULATOR_HOST=127.0.0.1:4443 STORE_TEST_URL='gs://transit/contract' \
       go test -race -count=1 ./store/
 
-# Frontend dev loop: vite with hot reload on :5173 (proxies /rt,
-# /geocode), with the sync server alongside on :8080 (logs:
+# Frontend dev loop: vite with hot reload on :5173 (proxies /rt — the
+# dev feed relay, -rt-proxy — and /geocode), with the sync server
+# alongside on :8080 (logs:
 # /tmp/transit-server.log). GEOCODER=<url> passes -geocoder.
 dev: caps types
     #!/usr/bin/env bash
@@ -731,7 +734,7 @@ dev: caps types
         if [ -n "${!v:-}" ]; then oidc+=("-$(echo "${v,,}" | tr '_' '-')" "${!v}"); fi
     done
     (cd server && go build -o /tmp/transit-server . && \
-      /tmp/transit-server "${geo[@]}" "${store[@]}" "${oidc[@]}" >/tmp/transit-server.log 2>&1 & echo $! >/tmp/transit-server.pid)
+      /tmp/transit-server -rt-proxy "${geo[@]}" "${store[@]}" "${oidc[@]}" >/tmp/transit-server.log 2>&1 & echo $! >/tmp/transit-server.pid)
     trap 'kill "$(cat /tmp/transit-server.pid)" 2>/dev/null || true' EXIT
     cd web && npx vite
 

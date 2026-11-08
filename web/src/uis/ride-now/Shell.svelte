@@ -15,7 +15,7 @@
   import {
     ride, loadFeedBytes, setLiveUrls, typed, clearFound, show, openStop, pickDeparture, directions, setEnd, swapEnds,
     setWhen, toggleSaved, locate, nearPoint, showRoutes, filterRoutes, openRoute, openVehicle, setFollow, directionsToSpot,
-    fromHere, chooseOnMap, rememberFramed, type Place,
+    fromHere, chooseOnMap, rememberFramed, applyUpdate, type Place,
   } from "./host.svelte";
   import RideMap from "../../components/RideMap.svelte";
   import LiveFeeds from "../../components/LiveFeeds.svelte";
@@ -109,6 +109,12 @@
     />
   </div>
 
+  {#if ride.updateReady && !ride.picking}
+    <div class="pick-banner" data-testid="update-ready" role="status">
+      A new version is ready
+      <button onclick={applyUpdate}>Reload</button>
+    </div>
+  {/if}
   {#if ride.picking}
     <div class="pick-banner" data-testid="pick-banner">
       Tap the map to set your {ride.picking === "from" ? "start" : "destination"}

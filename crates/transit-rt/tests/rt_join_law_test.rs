@@ -249,7 +249,7 @@ fn overview(spec: &Spec) -> RtOverview {
         .iter()
         .map(|u| {
             let t = spec.trips.get(u.trip);
-            TripUpdateView {
+            TripUpdateView { start_date: None,
                 trip_id: Some(match t {
                     Some(_) => format!("trip {}", u.trip),
                     None => "nobody's trip".into(),
@@ -433,7 +433,7 @@ proptest! {
             .trips
             .iter()
             .enumerate()
-            .map(|(n, u)| VehicleView {
+            .map(|(n, u)| VehicleView { start_date: None,
                 entity_id: format!("v{n}"),
                 trip_id: u.trip_id.clone(),
                 start_time: u.start_time.clone(),

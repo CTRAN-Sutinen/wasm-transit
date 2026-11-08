@@ -59,6 +59,7 @@ func main() {
 	oidcRoles := flag.String("oidc-roles-claim", "roles", "dotted JWT claim path holding the roles string array (D-59)")
 	policyFile := flag.String("policy", "", "the authorization policy document's source (JSON; a URL, bucket:<key>, or a dev path): seeds the store's policy pointer at first boot (D-61); with no -store it is the policy")
 	geocoderURL := flag.String("geocoder", "", "base URL of a Pelias geocoder (e.g. http://127.0.0.1:4000): enables /geocode/{autocomplete,search,reverse} and lists it in the manifest's services")
+	rtProxy := flag.Bool("rt-proxy", false, "serve /rt?url=, a relay to any http(s) feed for pages whose feeds send no CORS header — a DEV convenience (D-67): it relays for any caller, so bind localhost; a deployment's pages fetch the agency's feeds directly")
 	geocoderPolicy := flag.String("geocoder-policy", "geocoder.json", "the deployment's geocoder query policy (Pelias parameters per op), applied by the proxy")
 	flag.Parse()
 
@@ -134,8 +135,22 @@ func main() {
 	}
 	s.edits = loadEdits(*editsPath)
 
+	s.rtProxy = *rtProxy
+	if s.rtProxy {
+		log.Printf("-rt-proxy: /rt relays any http(s) URL — dev only; bind localhost")
+	}
+
+	log.Printf("listening on http://%s (dist: %s)", *addr, *dist)
+	log.Fatal(http.ListenAndServe(*addr, s.routes()))
+}
+
+// routes answers the server's mux. /rt is a route only with -rt-proxy
+// (D-67): a deployment's pages fetch the agency's feeds directly.
+func (s *server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/rt", s.handleProxy)
+	if s.rtProxy {
+		mux.HandleFunc("/rt", s.handleProxy)
+	}
 	mux.HandleFunc("/manifest", s.handleManifest)
 	mux.HandleFunc("/network", s.handleNetwork)
 	mux.HandleFunc("/network/document", s.handleNetworkDocument)
@@ -151,19 +166,22 @@ func main() {
 	mux.HandleFunc("/blobs/", s.handleBlob)
 	mux.HandleFunc("/geocode/", s.handleGeocode)
 	mux.HandleFunc("/", s.handleStatic)
-
-	log.Printf("listening on http://%s (dist: %s)", *addr, *dist)
-	log.Fatal(http.ListenAndServe(*addr, mux))
+	return mux
 }
 
 // server holds the host's few pieces of state.
 type server struct {
 	dist      string
 	wasm      *WasmHost
-	feeder    *feedSource  // nil when no feed is configured
+	feeder    *feedSource    // nil when no feed is configured
 	streets   *streetsSource // nil when no street layer is configured
 	publisher string
 	geocoder  *geocoder // nil when no geocoder is configured
+
+	// The /rt feed proxy (-rt-proxy, a dev convenience — D-67) and its
+	// upstream timeout (0 = proxyTimeoutDefault).
+	rtProxy      bool
+	proxyTimeout time.Duration
 
 	// The edit document. Opaque JSON: the artifact owns the schema
 	// and every domain decision about it (merge, submit, validation)
@@ -263,10 +281,17 @@ func staticCacheControl(name string) string {
 	return "no-cache"
 }
 
-// handleProxy is the CORS proxy for agency feeds the browser can't
-// fetch directly (no Access-Control-Allow-Origin upstream). The
-// server is expected to bind localhost in dev; production puts it
-// behind the agency's own reverse proxy.
+// The proxy's caps: an upstream that answers slower or larger is a
+// 502 — a feed is a few MB at most.
+const (
+	proxyTimeoutDefault = 15 * time.Second
+	proxyMaxBytes       = 32 << 20
+)
+
+// handleProxy relays an agency feed the browser cannot fetch directly
+// (no Access-Control-Allow-Origin upstream) — a dev convenience, on
+// only with -rt-proxy (D-67). It relays any http(s) URL for any
+// caller, so the server binds localhost when it is on.
 func (s *server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("url")
 	if raw == "" {
@@ -278,18 +303,38 @@ func (s *server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "url must be http(s)", http.StatusBadRequest)
 		return
 	}
-	resp, err := http.Get(raw) //nolint:noctx // dev proxy; upstream timeout via client defaults
+	timeout := s.proxyTimeout
+	if timeout == 0 {
+		timeout = proxyTimeoutDefault
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("upstream fetch failed: %v", err), http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, proxyMaxBytes+1))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("upstream read failed: %v", err), http.StatusBadGateway)
+		return
+	}
+	if len(body) > proxyMaxBytes {
+		http.Error(w, "upstream answer past the proxy's size cap", http.StatusBadGateway)
+		return
+	}
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
 		w.Header().Set("Content-Type", ct)
 	}
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	w.Write(body)
 }
 
 // Manifest pins the published network, the GTFS zip it was imported
@@ -402,9 +447,17 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.store == nil {
-		// Legacy mode: the manifest is ephemeral, served as built.
-		w.Header().Set("Content-Type", "application/json")
+		// Legacy mode: the manifest is ephemeral, served as built; its
+		// ETag names what it pins, so an open page's poll is a 304
+		// while nothing moved (D-63).
+		etag := `"` + manifestKeyOf(manifest) + `"`
+		w.Header().Set("ETag", etag)
 		w.Header().Set("Cache-Control", "no-cache")
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(manifest)
 		return
 	}

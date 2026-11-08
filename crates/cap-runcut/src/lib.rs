@@ -186,14 +186,15 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::BlockTrips { network_hash, edits_hash, block_id, date, tight_layover_secs, live_hash } => {
             let day = cap_abi::kernel::day(&network_hash, edits_hash.as_deref(), &date)?;
             let network = NETWORK.require(&network_hash)?;
-            let live = live_hash.as_deref().map(|h| LIVE.require(h)).transpose()?;
+            // The date's live instances only (LiveDay::on).
+            let live = live_hash.as_deref().map(|h| LIVE.require(h)).transpose()?.map(|l| l.on(&date, &date));
             Ok(Response::BlockTrips {
                 trips: transit_dispatch::block_chain(
                     &network,
                     &day.trips,
                     &block_id,
                     tight_layover_secs.unwrap_or(transit_dispatch::TIGHT_LAYOVER_SECS),
-                    live.as_deref(),
+                    live.as_ref(),
                 ),
                 block_id,
             })

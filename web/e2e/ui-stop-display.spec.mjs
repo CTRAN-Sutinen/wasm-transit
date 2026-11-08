@@ -330,3 +330,58 @@ test("a detour served while the server's store is not answering says its age", a
   await page.clock.fastForward(20_000);
   await expect(page.getByTestId("display-stale")).toHaveCount(0);
 });
+
+// D-67: a deployment's config names no relay, and the page fetches the
+// agency's feeds directly (HTTPS with CORS) — /rt is a dev convenience.
+test("a deployment's live feeds are fetched directly", async ({ page }) => {
+  const feed = "https://feeds.example.test/TripUpdates";
+  let relayed = 0;
+  await page.route("**/live-feeds.json", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ trips: feed }) }));
+  await page.route(feed, (route) =>
+    route.fulfill({
+      contentType: "application/octet-stream",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")),
+    }),
+  );
+  page.on("request", (r) => {
+    if (/\/rt\?url=/.test(r.url())) relayed++;
+  });
+  await open(page, { query: "?stop=A&layout=routes" });
+  await expect(page.getByTestId("display-live")).toContainText("Live", { timeout: 10_000 });
+  await expect(group(page, "10", "Downtown").getByTestId("display-time").first()).toContainText("2 min late");
+  expect(relayed).toBe(0);
+});
+
+// The previous service day's after-midnight trips (overnight-gtfs.zip:
+// owl route 90 at A — Friday's n1 at 24:40, Saturday's s1 at 00:50 and
+// s2 at 24:45, Sunday's u1 at 00:10). GTFS times past 24:00 are the
+// date the trip started on: at 00:30 on Saturday, Friday's 24:40
+// leaves in 10 minutes, and the feed's prediction for it (start_date
+// 2026-10-23, +120 s) is live.
+async function openOvernight(page, at, rt) {
+  await page.clock.setFixedTime(new Date(at));
+  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ kind: "edit_records", schema_version: 2, records: [] }) }));
+  await page.route(/\/rt\?url=/, (route) =>
+    rt ? route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, rt)) }) : route.fulfill({ status: 404 }),
+  );
+  await page.goto("/stop-display.html?stop=A&layout=routes");
+  await page.getByLabel("Agency GTFS zip").setInputFiles(path.join(fixtures, "overnight-gtfs.zip"));
+}
+
+test("after midnight, the previous day's late trips are on the board, live", async ({ page }) => {
+  await openOvernight(page, "2026-10-24T00:30:00-04:00", "overnight-rt.pb");
+  const owl = group(page, "90", "Downtown");
+  await expect(owl.getByTestId("display-time").first()).toContainText("12 min", { timeout: 10_000 });
+  await expect(owl.getByTestId("display-time").first()).toContainText("2 min late");
+  await expect(owl.getByTestId("display-time").nth(1)).toContainText("20 min");
+});
+
+test("in the hour before a fall-back day's anchor, waits count from the true instant", async ({ page }) => {
+  // 2026-11-01 00:30 EDT: Sunday's anchor is 01:00 EDT, so Saturday's
+  // 24:45 leaves in 15 minutes and Sunday's 00:10 in 40 — not 10.
+  await openOvernight(page, "2026-11-01T00:30:00-04:00", null);
+  const owl = group(page, "90", "Downtown");
+  await expect(owl.getByTestId("display-time").first()).toContainText("15 min", { timeout: 10_000 });
+  await expect(owl.getByTestId("display-time").nth(1)).toContainText("40 min");
+});

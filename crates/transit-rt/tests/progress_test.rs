@@ -12,7 +12,7 @@ fn overview(trip: &str, updates: Vec<StopUpdateView>) -> RtOverview {
         trip_updates: 1,
         vehicles: 0,
         alerts: 0,
-        trips: vec![TripUpdateView {
+        trips: vec![TripUpdateView { start_date: None,
             trip_id: Some(trip.into()),
             route_id: None,
             start_time: None,

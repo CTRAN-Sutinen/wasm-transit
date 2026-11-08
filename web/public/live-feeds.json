@@ -1,4 +1,5 @@
 {
+  "proxy": "/rt",
   "trips": "http://gtfs-rt.c-tran.org/gtfsrealtime/TripUpdates",
   "vehicles": "http://gtfs-rt.c-tran.org/gtfsrealtime/VehiclePositions",
   "alerts": "https://gtfs-rt.c-tran.com/Alerts"

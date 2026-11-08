@@ -15,6 +15,15 @@ use transit_network::Network;
 use crate::overview::{AlertView, InformedView, RtOverview, TripUpdateView};
 use crate::progress::{progress_of, resolve_instance};
 
+/// A descriptor's `start_date` ("YYYYMMDD") as the instance's service
+/// date ("YYYY-MM-DD"): `Ok(None)` when it states none (the current
+/// service day's), `Err` when it is unreadable — the descriptor then
+/// names no instance.
+fn service_date(start_date: Option<&str>) -> Result<Option<String>, ()> {
+    let Some(text) = start_date else { return Ok(None) };
+    chrono::NaiveDate::parse_from_str(text, "%Y%m%d").map(|d| Some(d.format("%Y-%m-%d").to_string())).map_err(|_| ())
+}
+
 /// The worst delay an update states anywhere (arrival or departure)
 /// — `None` when it states none, and for a cancelled trip (it is not
 /// late: it does not run). A skipped stop states none. The same
@@ -44,23 +53,26 @@ pub fn live_day(
     let route_name = |route: &Option<String>| route.as_deref().and_then(|r| network.routes.get(r)).map(|r| r.label().to_string());
     let mut trips = Vec::new();
     let mut unmatched_trips = 0u32;
-    let mut worst_by_instance: HashMap<(String, u32), Option<i32>> = HashMap::new();
+    let mut worst_by_instance: HashMap<(String, Option<String>, u32), Option<i32>> = HashMap::new();
     if let Some(delays) = delays {
         for update in &delays.trips {
+            let date = service_date(update.start_date.as_deref());
             let instance = update
                 .trip_id
                 .as_deref()
+                .filter(|_| date.is_ok())
                 .and_then(|t| resolve_instance(network, t, update.start_time.as_deref()));
-            let Some(instance) = instance else {
+            let (Some(instance), Ok(date)) = (instance, date) else {
                 unmatched_trips += 1;
                 continue;
             };
             let progress = progress_of(network, boundary, update, &instance);
             let worst = stated_worst(update);
             let route = update.route_id.clone().or_else(|| progress.route_id.clone());
-            worst_by_instance.insert((instance.trip.clone(), instance.start_secs), worst);
+            worst_by_instance.insert((instance.trip.clone(), date.clone(), instance.start_secs), worst);
             trips.push(LiveTrip {
                 trip: instance.trip.clone(),
+                date,
                 start_secs: instance.start_secs,
                 route_name: route_name(&route),
                 route,
@@ -91,11 +103,14 @@ pub fn live_day(
                 .vehicle_positions
                 .iter()
                 .map(|v| {
+                    let date = service_date(v.start_date.as_deref());
                     let instance = v
                         .trip_id
                         .as_deref()
+                        .filter(|_| date.is_ok())
                         .and_then(|t| resolve_instance(network, t, v.start_time.as_deref()));
-                    let key = instance.as_ref().map(|i| (i.trip.clone(), i.start_secs));
+                    let date = date.ok().flatten();
+                    let key = instance.as_ref().map(|i| (i.trip.clone(), date.clone(), i.start_secs));
                     let delay = key.as_ref().and_then(|k| worst_by_instance.get(k).copied().flatten());
                     let route = v.route_id.clone().or_else(|| instance.as_ref().map(|i| i.route.clone()));
                     LiveVehicle {
@@ -108,8 +123,9 @@ pub fn live_day(
                         route_name: route_name(&route),
                         route,
                         next_stop: v.stop_id.clone(),
-                        trip: key.as_ref().map(|(t, _)| t.clone()),
-                        start_secs: key.as_ref().map(|(_, s)| *s),
+                        trip: key.as_ref().map(|(t, _, _)| t.clone()),
+                        date: key.as_ref().and_then(|(_, d, _)| d.clone()),
+                        start_secs: key.as_ref().map(|(_, _, s)| *s),
                         delay_secs: delay,
                         status: classify(delay, &window),
                     }
@@ -178,18 +194,19 @@ fn resolve_scope(network: &Network, e: &InformedView) -> Vec<AlertScope> {
         Some(_) => return Vec::new(),
         None => None,
     };
-    let (trip, start_secs) = match &e.trip_id {
+    let (trip, date, start_secs) = match &e.trip_id {
         Some(t) => {
             if network.trip(t).is_none() {
                 return Vec::new();
             }
+            let Ok(date) = service_date(e.trip_start_date.as_deref()) else { return Vec::new() };
             let instance = resolve_instance(network, t, e.trip_start_time.as_deref());
             if e.trip_start_time.is_some() && instance.is_none() {
                 return Vec::new();
             }
-            (Some(t.clone()), instance.map(|i| i.start_secs))
+            (Some(t.clone()), date, instance.map(|i| i.start_secs))
         }
-        None => (None, None),
+        None => (None, None, None),
     };
     let routes: Vec<Option<String>> = match (&e.route_id, e.route_type) {
         (None, None) => vec![None],
@@ -206,6 +223,6 @@ fn resolve_scope(network: &Network, e: &InformedView) -> Vec<AlertScope> {
     };
     routes
         .into_iter()
-        .map(|route| AlertScope { route, stop: stop.clone(), trip: trip.clone(), start_secs })
+        .map(|route| AlertScope { route, stop: stop.clone(), trip: trip.clone(), date: date.clone(), start_secs })
         .collect()
 }

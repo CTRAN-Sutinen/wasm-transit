@@ -328,3 +328,33 @@ func mustRequest(t *testing.T, url, header, value string) *http.Request {
 	req.Header.Set(header, value)
 	return req
 }
+
+// An open page revalidates the manifest on every poll (D-63): without
+// the store too, the manifest answers an ETag naming what it pins — the
+// same while nothing moved (generated_at aside), so a poll costs a 304.
+func TestTheManifestRevalidatesWithoutTheStore(t *testing.T) {
+	base := networkServer(t, "../web/e2e/fixtures/sample-gtfs.zip")
+	get := func(etag string) *http.Response {
+		req, _ := http.NewRequest(http.MethodGet, base+"/manifest", nil)
+		if etag != "" {
+			req.Header.Set("If-None-Match", etag)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+	first := get("")
+	etag := first.Header.Get("ETag")
+	if first.StatusCode != 200 || etag == "" || first.Header.Get("Cache-Control") != "no-cache" {
+		t.Fatalf("the manifest names its ETag and revalidates: %d %q %q", first.StatusCode, etag, first.Header.Get("Cache-Control"))
+	}
+	if again := get(""); again.Header.Get("ETag") != etag {
+		t.Fatalf("nothing moved, the same ETag: %q vs %q", again.Header.Get("ETag"), etag)
+	}
+	if cached := get(etag); cached.StatusCode != http.StatusNotModified {
+		t.Fatalf("an unchanged manifest answers 304: %d", cached.StatusCode)
+	}
+}

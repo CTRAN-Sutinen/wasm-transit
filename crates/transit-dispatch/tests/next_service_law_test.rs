@@ -196,7 +196,7 @@ fn all_cancelled(net: &Network, day: &Day) -> LiveDay {
         trips: day
             .trips
             .iter()
-            .map(|t| LiveTrip {
+            .map(|t| LiveTrip { date: None,
                 trip: t.trip.clone(),
                 start_secs: t.start_secs,
                 route: None,

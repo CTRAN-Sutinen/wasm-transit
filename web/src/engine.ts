@@ -519,16 +519,36 @@ function etag(resp: Response): string | null {
 /// Null when the deployment publishes no picks or none has taken
 /// effect yet; throws Unavailable when it publishes picks and the plans
 /// module does not assemble — a page never guesses which schedule runs.
-async function pickInForce(date: string): Promise<PublishedPlan | null> {
-  const manifest = await fetch("/manifest").catch(() => null);
-  if (!manifest?.ok) return null;
-  const plansHash = ((await manifest.json()) as { plans_hash?: string }).plans_hash;
+async function pickInForce(date: string, manifest?: { plans_hash?: string } | null): Promise<PublishedPlan | null> {
+  manifest ??= await deploymentManifestNow();
+  const plansHash = manifest?.plans_hash;
   if (!plansHash) return null;
   if (!(await available("plans"))) throw new Unavailable("plans");
   const set = await fetch(`/blobs/${plansHash}`).catch(() => null);
   if (!set?.ok) return null;
   const published = (await set.json()) as PublishedPlans;
   return (await ask("plans", "in_force", { published, date })).plan;
+}
+
+/// The deployment's manifest as it stands now — revalidated on every
+/// read (its ETag; a 304 while nothing moved). Null when the server
+/// does not answer.
+async function deploymentManifestNow(): Promise<{ plans_hash?: string; network_hash?: string } | null> {
+  const resp = await fetch("/manifest", { cache: "no-cache" }).catch(() => null);
+  return resp?.ok ? ((await resp.json()) as { plans_hash?: string; network_hash?: string }) : null;
+}
+
+/// The hash of the network the deployment serves on `date` — the pick
+/// in force, else its import: what `servedNetwork` would load now. An
+/// open page compares it with the network it holds on each poll and
+/// re-pins when it moved (a republish, a new pick, or the date crossing
+/// a pick's effective date — D-63). Null when the server does not
+/// answer or publishes none: the page keeps what it holds.
+export async function servedNetworkPin(date: string): Promise<string | null> {
+  const manifest = await deploymentManifestNow();
+  if (!manifest) return null;
+  const pick = await pickInForce(date, manifest);
+  return pick?.network_hash ?? manifest.network_hash ?? null;
 }
 
 /// The deployment's published network on `date`, for a page that READS

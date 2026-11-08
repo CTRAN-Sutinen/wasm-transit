@@ -43,7 +43,7 @@ archive — nothing here records what is finished.
 | [release-artifacts.md](release-artifacts.md) | every build kept and rebuildable, op and HTTP contracts changed by expand-then-contract, rolling code back |
 | [store-durability.md](store-durability.md) | the sync store's contract run on each provider's real account, the edits layout (D-121), backup and restore (D-82) |
 | [observability-rollout.md](observability-rollout.md) | what production runs and whether it is healthy; canary rings and the automatic revert |
-| [deploy-rider-apps.md](deploy-rider-apps.md) | ride-now and the stop display beyond localhost: updates, offline, polling, the service day, recovery, caching, the proxy's removal and the feed fixes |
+| [deploy-rider-apps.md](deploy-rider-apps.md) | ride-now and the stop display beyond localhost: the units it waits on, the agency's feed fixes (HTTPS, CORS, caching, start_date), and the Pi 4 and phone dogfood |
 | [streets-model.md](streets-model.md) | streets as a model document: serving it, the bus profile, walking for riders, drawing on streets, the geography release |
 | [caps-run-sessions.md](caps-run-sessions.md) | the runner across sessions; shaping the import's output |
 | [grade-debt.md](grade-debt.md) | on the bus, but not yet read by a UI or dogfooded |

@@ -116,7 +116,8 @@ credentials), recorded in the store-durability unit.
 4. **Playwright e2e for user-visible flows** (Svelte components
    should not need changes when only the ABI underneath changes).
    External services are answered by the spec (`page.route`): the
-   live feeds behind `/rt`, the edit document, and the geocoder
+   live feeds (the dev config names the `/rt` relay; a spec that
+   proves direct fetches serves its own config), the edit document, and the geocoder
    (the manifest's `services` entry and `/geocode`) — no spec needs
    a running Pelias, and the e2e servers list none, so the
    no-geocoder path is the default. A runner gate stands in for an
@@ -133,7 +134,15 @@ credentials), recorded in the store-durability unit.
    and `web/e2e/published-picks.spec.mjs` (its own store-mode server
    on a pinned date, `-today`: a published pick is the network a rider
    page loads on its date, a retired one never is, and the planner
-   publishes from service design), `web/e2e/basemap-assets.spec.mjs`
+   publishes from service design), `web/e2e/deploy-updates.spec.mjs`
+   (the same server: open pages re-pin a republished network without
+   a reload, one network held, memory flat),
+   `web/e2e/deploy-builds.spec.mjs` (its own server over a copy of the
+   build, the only spec with service workers allowed — every other
+   runs with them blocked, since `page.route` never sees what a worker
+   answers: both rider pages boot offline, and a new build applies at
+   a display's poll and a rider's next navigation),
+   `web/e2e/basemap-assets.spec.mjs`
    (the map's glyphs and sprites are local when installed, networked
    when not; skipped without a local `basemap.pmtiles`),
    `web/e2e/viewport.spec.mjs` (the pure camera rules — where a map

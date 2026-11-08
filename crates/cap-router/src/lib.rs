@@ -221,7 +221,10 @@ fn graph(
     let inputs: Vec<&str> = [Some(network_hash), edits_hash, live_hash, walks_hash].into_iter().flatten().collect();
     cap_abi::kernel::derive(&GRAPH, &key, &inputs, || {
         let day = cap_abi::kernel::day(network_hash, edits_hash, date_str)?;
-        let mut built = transit_router::RouterNetwork::build(&network, &day.trips, date, live.as_deref());
+        // The date's live instances only (an instance stating no date
+        // is the planned date's — LiveDay::on).
+        let live = live.map(|l| l.on(date_str, date_str));
+        let mut built = transit_router::RouterNetwork::build(&network, &day.trips, date, live.as_ref());
         if let Some(walks) = &walks {
             built = built.with_walks(walks);
         }

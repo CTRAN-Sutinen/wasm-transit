@@ -107,6 +107,12 @@ pub struct LiveStop {
 #[ts(export)]
 pub struct LiveTrip {
     pub trip: String,
+    /// The instance's service date, "YYYY-MM-DD", as the feed states
+    /// it (GTFS-rt `start_date`); absent, the current service day's
+    /// (the spec's reading — [`LiveDay::on`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub date: Option<String>,
     pub start_secs: u32,
     pub route: Option<String>,
     /// The route's name as the network names it.
@@ -144,6 +150,12 @@ pub struct LiveVehicle {
     /// The trip instance it runs — absent when the rt trip does not
     /// resolve (or the vehicle names no trip).
     pub trip: Option<String>,
+    /// Its trip instance's service date, "YYYY-MM-DD", as the feed states
+    /// it (GTFS-rt `start_date`); absent, the current service day's
+    /// (the spec's reading — [`LiveDay::on`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub date: Option<String>,
     pub start_secs: Option<u32>,
     /// Its trip's worst stated delay (the same headline as the trip).
     pub delay_secs: Option<i32>,
@@ -221,6 +233,12 @@ pub struct AlertScope {
     pub route: Option<String>,
     pub stop: Option<String>,
     pub trip: Option<String>,
+    /// A trip-scoped alert's instance service date, "YYYY-MM-DD", as the feed states
+    /// it (GTFS-rt `start_date`); absent, the current service day's
+    /// (the spec's reading — [`LiveDay::on`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub date: Option<String>,
     pub start_secs: Option<u32>,
 }
 
@@ -286,7 +304,7 @@ transit_version::kind_tag!(
 
 impl transit_version::Versioned for LiveDay {
     const KIND: &'static str = "live";
-    const READS: u32 = 1;
+    const READS: u32 = 2;
     fn schema_version(&self) -> u32 {
         self.schema_version.0
     }
@@ -297,13 +315,14 @@ impl transit_version::Versioned for LiveDay {
 #[ts(export)]
 pub struct LiveDay {
     /// The kind tag and version (D-115); a copy without them is this
-    /// kind, version 1.
+    /// kind, version 1. Version 2: a trip instance carries its service
+    /// date.
     #[serde(default)]
     #[ts(type = "\"live\"")]
     pub kind: LiveKind,
-    #[serde(default)]
+    #[serde(default = "version_one")]
     #[ts(type = "number")]
-    pub schema_version: transit_version::Version<1>,
+    pub schema_version: transit_version::Version<2>,
     /// The window every status in this document was classified under.
     pub window: OnTimeWindow,
     pub trips: Vec<LiveTrip>,
@@ -323,7 +342,40 @@ pub struct LiveDay {
     pub unmatched_alerts: u32,
 }
 
+/// An untagged copy is version 1 (the kind gained its tags at v1).
+fn version_one() -> transit_version::Version<2> {
+    transit_version::Version(1)
+}
+
 impl LiveDay {
+    /// One service date's view: the trips and vehicles of instances on
+    /// `date`, and the alerts that speak there — an instance stating no
+    /// date is `current`'s (the current service day, GTFS-rt's reading
+    /// of an absent `start_date`). An alert scoped to no trip speaks
+    /// on every date; a trip-scoped one keeps the scopes on `date`, and
+    /// leaves when none is.
+    pub fn on(&self, date: &str, current: &str) -> LiveDay {
+        let here = |d: &Option<String>| d.as_deref().unwrap_or(current) == date;
+        let alerts = self
+            .alerts
+            .iter()
+            .filter_map(|a| {
+                let scopes: Vec<AlertScope> = a.scopes.iter().filter(|s| s.trip.is_none() || here(&s.date)).cloned().collect();
+                (!scopes.is_empty()).then(|| LiveAlert { scopes, ..a.clone() })
+            })
+            .collect();
+        LiveDay {
+            kind: self.kind,
+            schema_version: self.schema_version,
+            window: self.window,
+            trips: self.trips.iter().filter(|t| here(&t.date)).cloned().collect(),
+            vehicles: self.vehicles.iter().filter(|v| here(&v.date)).cloned().collect(),
+            unmatched_trips: self.unmatched_trips,
+            alerts,
+            unmatched_alerts: self.unmatched_alerts,
+        }
+    }
+
     /// The live answer for one visit of a trip instance: the stop
     /// entry whose base departure matches `scheduled_departure`
     /// (a loop visits a stop twice), else the trip's first entry at

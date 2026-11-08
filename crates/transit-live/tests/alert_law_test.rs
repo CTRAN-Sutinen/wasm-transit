@@ -6,7 +6,7 @@
 use transit_live::{AlertScope, LiveAlert, Visit};
 
 fn scope(route: Option<&str>, stop: Option<&str>, trip: Option<&str>, start: Option<u32>) -> AlertScope {
-    AlertScope {
+    AlertScope { date: None,
         route: route.map(Into::into),
         stop: stop.map(Into::into),
         trip: trip.map(Into::into),

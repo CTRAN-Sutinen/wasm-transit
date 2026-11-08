@@ -124,6 +124,7 @@ just e2e                   # the browser runner (Playwright, builds first) — U
 just check                 # both runners — changes touching both sides
 just types                 # regenerate TS bindings (gitignored; build runs it)
 just serve [feed.zip [streets.geojson ["Publisher" [addr]]]]   # sync server on :8080
+                           # (with -rt-proxy, the dev feed relay — D-67)
                            # feed/streets: a path, an http(s) URL, or bucket:<key>
                            # (D-118). STORE=url adds the durable sync store
                            # (-store: s3://bucket/prefix?endpoint=…, azblob://…,
@@ -196,9 +197,10 @@ transit-dispatch the operator's day library (patched materialized day — divers
                  patched, cancelled trips out — boards, authored block chains with
                  the layover ripple, diversion drafts and trip cancels)
 transit-rt       GTFS-rt prost types + the joins over the network (an rt trip id is a
-                 model trip id; a trip instance is (trip, start))
-transit-live     THE live document (rt in model vocabulary, the on-time window, what does
-                 not run — a cancelled trip, a skipped stop — pure)
+                 model trip id; a trip instance is (trip, service date, start))
+transit-live     THE live document (rt in model vocabulary, each instance's service
+                 date, the on-time window, what does not run — a cancelled trip, a
+                 skipped stop — pure)
 transit-version  a document's kind tag and version (D-115): the tag every persisted
                  document writes, and what a reader checks to refuse another version
 transit-sync     THE sync document (EditRecord: a Diversion or a TripCancel, merge, the record envelope — pure)
@@ -226,8 +228,8 @@ server/          Go + wazero host over cap-sync, cap-network, cap-plans and
                  cap-streets (the network, picks, streets and walk table it
                  publishes), cap-migrate (an older document, at receive),
                  cap-authz when auth is on, and the proxies
-                 (/rt, /geocode to a Pelias geocoder) — scaffolding, never a
-                 domain decision
+                 (/geocode to a Pelias geocoder; /rt, a dev feed relay off
+                 unless -rt-proxy) — scaffolding, never a domain decision
 web/             Svelte 5 + Vite frontend: / is a picker over the GENERATED UIs
                  (src/uis/<id>/, each its own page and host layer; every page
                  is one) (docs/ARCHITECTURE.md, web section, "Generated UIs" —
