@@ -1,0 +1,14 @@
+# The pinned Rust toolchain: the modules' bytes are a function of the
+# tree AND the compiler, so the compiler is part of the tree. rustup
+# reads this file and runs this release here; the registry's evidence
+# records it, and a gated publish (`just registry`) refuses another
+# (docs/ARCHITECTURE.md, "Release artifacts").
+#
+# Upgrading is a deliberate act, in its own change: bump the channel,
+# `rustup toolchain install` it, run `just registry` (the module hashes
+# move — measure the churn) and document-versioning's schema lock (a
+# serde or compiler change must not move a document's canonical bytes).
+[toolchain]
+channel = "1.99.1"
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

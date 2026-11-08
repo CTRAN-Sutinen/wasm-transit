@@ -36,28 +36,40 @@ transit-dispatch = { path = "../transit-dispatch" }
 transit-runs = { path = "../transit-runs" }
 # …and the router's examples compute REAL itineraries over the same
 # composition (materialize, patch, build, query) the module runs.
-transit-router = { path = "../transit-router" }
+transit-router = { path = "../transit-router", optional = true }
 # …and the street capability's examples compute REAL snap/route
 # answers over the e2e street fixture through the same library.
 transit-streets = { path = "../transit-streets" }
 # …and the sync and plan-chain capabilities' examples compute REAL
 # answers (merge + submit; resolve/validate/periods) through the
 # same libraries the modules dispatch through.
-transit-plans = { path = "../transit-plans" }
+transit-plans = { path = "../transit-plans", optional = true }
 # …and the authorization capability's example computes a REAL
 # fail-closed decision through the same library the module dispatches
 # through.
-transit-authz = { path = "../transit-authz" }
+transit-authz = { path = "../transit-authz", optional = true }
 # …and the registry publishes every document kind's JSON Schema,
 # generated from those libraries' serde types (never hand-written).
 schemars = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"
+transit-router = { path = "../transit-router" }
+transit-plans = { path = "../transit-plans" }
+transit-authz = { path = "../transit-authz" }
+
+# The generator's libraries: gen-manifest computes the router's, the
+# plan chain's and authorization's worked examples through them, but the
+# kernel never names them, and every module links the kernel — so they
+# are optional, outside every module's closure (arch-gates, the kernel's
+# closure; docs/ARCHITECTURE.md, "Release artifacts").
+[features]
+gen-manifest = ["dep:transit-router", "dep:transit-plans", "dep:transit-authz"]
 
 [[bin]]
 name = "gen-manifest"
 path = "src/bin/gen_manifest.rs"
+required-features = ["gen-manifest"]
 
 [[bin]]
 name = "gen-assemblies"

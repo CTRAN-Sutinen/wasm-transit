@@ -6,6 +6,9 @@ import path from "node:path";
 /// e2e/deploy-builds.spec.mjs publishes a new build over (the same
 /// path there).
 const buildsDist = path.join(os.tmpdir(), "transit-e2e-builds");
+/// The copy of the build the :8086 server commits to its store, which
+/// e2e/deploy-rollback.spec.mjs publishes a new release over.
+const releasesDist = path.join(os.tmpdir(), "transit-e2e-releases");
 
 // E2E tests run against the built app (npm run build) served by the
 // Go sync server — on their OWN port, never reused: a shared server
@@ -16,7 +19,9 @@ const buildsDist = path.join(os.tmpdir(), "transit-e2e-builds");
 // the first publishes none. The third runs the sync store (in memory,
 // fresh per run: -store mem://) on a pinned date (-today: before the spec's picks,
 // inside the fixture's calendar) so a spec can publish picks to it
-// (e2e/published-picks.spec.mjs).
+// (e2e/published-picks.spec.mjs). In store mode a server commits its
+// -dist as a build and serves the pages from it (docs/ARCHITECTURE.md,
+// "Release artifacts"); the fifth rolls one back.
 export default defineConfig({
   testDir: "./e2e",
   timeout: 20_000,
@@ -26,7 +31,8 @@ export default defineConfig({
     // The rider pages register a service worker (web/service-worker.js),
     // and page.route never sees what a worker answers — every spec that
     // serves its own feeds and edits runs without one.
-    // e2e/deploy-builds.spec.mjs allows it, on its own server.
+    // e2e/deploy-builds.spec.mjs and e2e/deploy-rollback.spec.mjs
+    // allow it, each on its own server.
     serviceWorkers: "block",
   },
   webServer: [
@@ -62,6 +68,17 @@ export default defineConfig({
       command: `bash -c 'rm -rf "${buildsDist}" && cp -r ../web/dist "${buildsDist}" && exec go run . -addr 127.0.0.1:8085 -dist "${buildsDist}" -feed ../web/e2e/fixtures/sample-gtfs.zip'`,
       cwd: "../server",
       url: "http://127.0.0.1:8085",
+      reuseExistingServer: false,
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+    {
+      // Releases and rollback (e2e/deploy-rollback.spec.mjs): the store
+      // mode server commits its copy of the build to the build pointer
+      // and serves the pages from it.
+      command: `bash -c 'rm -rf "${releasesDist}" && cp -r ../web/dist "${releasesDist}" && exec go run . -addr 127.0.0.1:8086 -store mem:// -dist "${releasesDist}" -feed ../web/e2e/fixtures/sample-gtfs.zip'`,
+      cwd: "../server",
+      url: "http://127.0.0.1:8086",
       reuseExistingServer: false,
       stdout: "ignore",
       stderr: "pipe",

@@ -36,8 +36,8 @@ caps:
     #!/usr/bin/env bash
     set -e
     cargo run --quiet -p cap-abi --bin gen-assemblies
-    cargo build --release $(ls assemblies | sed 's/^/-p /') --target wasm32-unknown-unknown
-    cargo run --quiet -p cap-abi --bin gen-manifest
+    just _modules
+    cargo run --quiet -p cap-abi --features gen-manifest --bin gen-manifest
     mkdir -p web/pkg
     for cap in sync network streets authz plans migrate; do
         cp "target/wasm32-unknown-unknown/release/module_$cap.wasm" "web/pkg/cap_$cap.wasm"
@@ -53,7 +53,63 @@ registry:
     export TS_RS_EXPORT_DIR="$PWD/web/src/types"
     cargo test
     node crates/cap-abi/caps-smoke.mjs
+    just reproducible
     CAPS_PUBLISH_GATED=1 just caps
+
+# The modules' build (`just caps` runs it): release wasm for every
+# assembly, under the pinned toolchain (rust-toolchain.toml; the
+# registry's evidence records it), --locked (Cargo.lock is the
+# dependency pin), and with the build machine's paths remapped — the
+# cargo home to /cargo, the tree to /src — so a panic location names
+# no home directory and the bytes are a function of the tree alone.
+_modules target_dir="target":
+    #!/usr/bin/env bash
+    set -e
+    export RUSTFLAGS="--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$PWD=/src"
+    export CARGO_TARGET_DIR="{{target_dir}}"
+    # One build per assembly: cargo unifies a dependency's features
+    # across every package one build selects, so building them together
+    # lets a feature one capability asks for move every module's bytes.
+    # Apart, a module's bytes are a function of its own closure.
+    for crate in $(ls assemblies); do
+        cargo build --quiet --locked --release -p "$crate" --target wasm32-unknown-unknown
+    done
+
+# REPRODUCIBLE BUILDS (`just registry` gates on it): two clean builds
+# of one tree give the same module hashes. The second builds a copy of
+# the tree (what git sees, tracked and untracked, plus the generated
+# assemblies) at another path, with another cargo home, into its own
+# target directory, and
+# every module's bytes must match this tree's build. A difference is a
+# leak — a path, a timestamp, an unpinned input — and fails the gate.
+# A full release build (~minutes); its work directory is
+# target/reproducible, removed after.
+reproducible:
+    #!/usr/bin/env bash
+    set -e
+    cargo run --quiet -p cap-abi --bin gen-assemblies
+    just _modules
+    work="$PWD/target/reproducible"
+    rm -rf "$work"
+    trap 'rm -rf "$work"' EXIT
+    mkdir -p "$work/tree"
+    git ls-files -z --cached --others --exclude-standard \
+      | tar --null -T - --ignore-failed-read -cf - 2>/dev/null | tar -xf - -C "$work/tree"
+    cp -r assemblies "$work/tree/"
+    # Another cargo home too (the same sources, reached by another
+    # path), so a leaked registry path differs between the builds.
+    mkdir -p "$work/cargo"
+    ln -s "${CARGO_HOME:-$HOME/.cargo}/registry" "$work/cargo/registry"
+    (cd "$work/tree" && CARGO_HOME="$work/cargo" just _modules "$work/target")
+    differ=0
+    for crate in $(ls assemblies); do
+        m="${crate//-/_}.wasm"
+        if ! cmp -s "target/wasm32-unknown-unknown/release/$m" "$work/target/wasm32-unknown-unknown/release/$m"; then
+            echo "not reproducible: $m" >&2; differ=1
+        fi
+    done
+    test "$differ" = 0
+    echo "reproducible: $(ls assemblies | wc -l) modules, byte for byte"
 
 # Build everything the server serves: artifact + frontend (web/dist).
 # Regenerates the TS bindings, then type-checks — the TS layer is

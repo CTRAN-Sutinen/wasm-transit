@@ -91,7 +91,8 @@ Each commit is one record object,
   refuses any other name.
 - The pointers the server keeps: `edits`, `policy`, `manifest`,
   `plans` (the published plan set), `plan.<id>` per published pick
-  (its network document; every revision stays in the log), and
+  (its network document; every revision stays in the log), `build`
+  (each release committed from `-dist`, and each move — "Builds"), and
   `source.feed` and `source.streets` — each read of `-feed` and
   `-streets` whose bytes changed, the record's `writer`
   `import:<source>` (D-118). A server whose source does not answer at
@@ -116,7 +117,8 @@ at most 2 s behind another process's commit. A crash between the
 creates orphans the blob.
 
 `store gc <url>` (offline, D-117) collects orphans: blobs no record
-names, older than the grace (7 days). A pass lists the records, then
+names (a build's record names its files too — "Builds"), older than
+the grace (7 days). A pass lists the records, then
 the blobs; moves each orphan to `gc/<hex>` (a copy, then the delete);
 then settles — lists the records again, restores every trashed blob a
 record now names, and empties `gc/`. The settle step closes the race
@@ -165,6 +167,12 @@ that is missing, does not hash to its name, or carries no envelope.
   {issues}` (the pick has taken effect, or no pick has the id), `404`
   when nothing is published (D-75). The server commits the module's canonical
   network to `plan.<id>`, then cap-plans' next set to `plans`.
+- `POST /builds` body `{"build": "<hash>"}` → `200 {build, seq}`:
+  moves the `build` pointer to a build its log holds — a rollback, or
+  forward again; `404` for a build the log never held, `409` on a
+  moved head. Builds land only from the server's `-dist` and move only
+  here: `POST /pointers/build` (and any `build` or `build_file` kind)
+  is `400`.
 - `/edits` is the `edit_records` specialization: `GET` reads the head
   blob, `POST` runs the merge with a CAS retry loop, so the legacy
   whole-document protocol is unchanged.
@@ -177,6 +185,33 @@ that is missing, does not hash to its name, or carries no envelope.
   write is never acknowledged: `503` with `Retry-After`, and the client
   holds its document and resends. A read the server holds nothing for
   is `503`.
+
+## Builds
+
+A release is a build (D-80): every file the pages load is a blob of
+kind `build_file` (its exact bytes, envelope
+`{"kind":"build_file","schema_version":1,"produced_by":"server"}`), and
+a `build` document names them, with the modules the server hosts
+retained beside them:
+
+```json
+{"kind":"build","schema_version":1,"files":[{"path":"index.html","hash":"sha256:…","type":"text/html; charset=utf-8"},{"path":"sw.js","hash":"sha256:…","type":"text/javascript; charset=utf-8"}],"server":[{"role":"sync","hash":"sha256:…"}]}
+```
+
+Files are in path order and modules in role order, so one tree is one
+document and one hash. A path is the file's path under the web root;
+the server serves it at `/<path>` with `type`. The `build` pointer logs
+every build the server committed and every move (`POST /builds`); the
+manifest's `build_hash` is its head.
+
+A `build` blob is the one kind that names other blobs, and the store
+reads it: a build record names its document AND every hash the
+document lists. GC keeps them (`store gc`), and `store verify` checks
+each like any named blob. A build commit creates every file, then the
+document and its record, then re-reads every file and re-creates one a
+GC pass removed in between, so a logged build is always whole. (The
+model-checked protocol, `server/store/store.tla`, is the one-blob
+commit; a build runs that order for each of its files.)
 
 ## Invariants the schema cannot say
 
@@ -235,6 +270,7 @@ Every persisted kind, by what a version change does to it:
 | `walks` | transit-streets | derived | `kind`, `schema_version` |
 | `live` | transit-live | ephemeral | `kind`, `schema_version` (v2: a trip instance names its service `date`) |
 | `manifest` | the Go server | host-owned | its own shape (below) |
+| `build`, `build_file` | the Go server | host-owned | its own shape ("Builds", below) |
 
 - *Authored* kinds are written by a person and cannot be re-derived:
   their chains are kept forever (D-66).
@@ -243,7 +279,8 @@ Every persisted kind, by what a version change does to it:
   there so a reader refuses a mismatch instead of misreading it.
 - *Ephemeral* kinds never outlive a session. They are tagged for the
   same refusal.
-- The *host-owned* manifest is versioned in its own envelope.
+- The *host-owned* manifest and builds are versioned in their own
+  envelope.
 
 A copy written before its kind's tags reads as that kind: an absent
 `kind` is the kind itself, and an absent version is v1 (the network's
@@ -309,7 +346,7 @@ and, after a second commit, log record
 `{"seq":2,"from":"sha256:<first>","to":"sha256:<this>","kind":"edit_records","schema_version":2,"produced_by":"cap-sync@sha256:<hex>","writer":"anonymous","policy":null,"at_ms":2000}`.
 
 A `manifest` blob is the manifest object itself
-(`{"network_hash","feed_hash","feed_version","streets_hash","walks_hash","wasm_hash","authz_hash","policy_hash","plans_hash","generated_at","publisher","timezone","services"}`,
+(`{"network_hash","feed_hash","feed_version","streets_hash","walks_hash","wasm_hash","authz_hash","policy_hash","plans_hash","build_hash","generated_at","publisher","timezone","services"}`,
 the optional ones omitted when empty),
 envelope `{"kind":"manifest","schema_version":1,"produced_by":"server"}`.
 

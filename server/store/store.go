@@ -18,7 +18,8 @@
 // number of processes may share one bucket — and then a re-read of its
 // blob, re-created if missing. A crash between the creates orphans the
 // blob; the offline collector (gc.go, `store gc`) deletes blobs no
-// record names, past the grace period. Serving processes never delete
+// record names, past the grace period — a build's record names its
+// files too (build.go, the one kind whose blob names blobs). Serving processes never delete
 // (D-117). Nothing is ever overwritten, appended, renamed, or locked.
 // The store never mints document identity for bus documents: callers
 // pass the module-produced hash and the store asserts sha256(bytes) ==

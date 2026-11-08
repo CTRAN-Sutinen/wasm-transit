@@ -3,7 +3,10 @@
 //! `docs/ARCHITECTURE.md`, "Bus rules"): in one binary a crate can still
 //! name only the code of the crates it depends on, so the rule is the
 //! dependency graph, the kernel's private registry constructor, and no
-//! `unsafe` outside the kernel. `arch-gates` runs them in `just test`;
+//! `unsafe` outside the kernel — and the kernel's closure kept to the
+//! libraries it uses, so a change elsewhere moves only the modules that
+//! carry it (docs/ARCHITECTURE.md, "Release artifacts"). `arch-gates`
+//! runs them in `just test`;
 //! `crates/cap-abi/tests/arch_gates_test.rs` breaks each on a fixture.
 
 #![allow(dead_code)] // each bin uses part of the module
@@ -12,11 +15,14 @@ use std::collections::BTreeMap;
 
 /// One workspace package as the gates read it: its name and its
 /// NORMAL dependencies on other workspace packages (dev-dependencies
-/// may build fixtures through anything; production code may not).
+/// may build fixtures through anything; production code may not) —
+/// all of them, and the ones that are not optional (always in the
+/// package's closure).
 #[derive(Debug, Clone)]
 pub struct Package {
     pub name: String,
     pub deps: Vec<String>,
+    pub required: Vec<String>,
 }
 
 /// What a workspace package is, by name — deny by default: a package
@@ -110,18 +116,50 @@ pub fn packages_from_metadata(metadata: &serde_json::Value) -> Vec<Package> {
         .as_array()
         .into_iter()
         .flatten()
-        .map(|p| Package {
-            name: p["name"].as_str().unwrap_or_default().to_string(),
-            deps: p["dependencies"]
+        .map(|p| {
+            let normal: Vec<&serde_json::Value> = p["dependencies"]
                 .as_array()
                 .into_iter()
                 .flatten()
                 .filter(|d| d["kind"].is_null()) // normal; "dev" and "build" are not production code
-                .filter_map(|d| d["name"].as_str().map(str::to_string))
-                .filter(|d| names.contains(d))
-                .collect(),
+                .filter(|d| d["name"].as_str().is_some_and(|n| names.iter().any(|w| w == n)))
+                .collect();
+            let name = |d: &&serde_json::Value| d["name"].as_str().unwrap_or_default().to_string();
+            Package {
+                name: p["name"].as_str().unwrap_or_default().to_string(),
+                deps: normal.iter().map(name).collect(),
+                required: normal.iter().filter(|d| d["optional"].as_bool() != Some(true)).map(name).collect(),
+            }
         })
         .collect()
+}
+
+/// Gate 4: the kernel's closure. Every module links the kernel, so a
+/// library the kernel requires is in every module's closure, and a
+/// dependency or feature change in it moves every module's hash (every
+/// client downloads every module again). The kernel requires only the
+/// libraries its own code (`kernel_source`: its library's source, the
+/// generators' bins excluded) names; a generator's extra libraries are
+/// optional, behind its feature.
+pub fn kernel_closure_violations(required: &[String], kernel_source: &str) -> Vec<String> {
+    let code: String = kernel_source.lines().map(|l| l.split("//").next().unwrap_or_default()).collect::<Vec<_>>().join("\n");
+    required
+        .iter()
+        .filter(|d| class(d) == Some(Class::Library))
+        .filter(|d| !names_crate(&code, &d.replace('-', "_")))
+        .map(|d| {
+            format!(
+                "cap-abi requires {d}, which its library never names: every module would carry it — make it an optional dependency of the generator that needs it"
+            )
+        })
+        .collect()
+}
+
+fn names_crate(code: &str, ident: &str) -> bool {
+    let ident_char = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    code.match_indices(ident).any(|(at, _)| {
+        !code[..at].chars().next_back().is_some_and(ident_char) && !code[at + ident.len()..].chars().next().is_some_and(ident_char)
+    })
 }
 
 /// Gate 3: a capability crate forbids `unsafe` (the unsafe exports live

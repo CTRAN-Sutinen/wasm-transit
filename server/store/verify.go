@@ -33,9 +33,10 @@ func broken(key, format string, args ...any) error {
 // Verify reads a whole store without writing (`store verify`; Go, no
 // wasm): every key under pointers/ is a record, each pointer's records
 // run from seq 1 with no gap and chain (`from` is the prior `to`), and
-// every blob a record names exists, hashes to its name, and carries its
-// envelope. It answers the first break as a *VerifyError. The copy, the
-// backup, and the restore run it.
+// every blob a record names (and every file of a build one names —
+// build.go) exists, hashes to its name, and carries its envelope. It
+// answers the first break as a *VerifyError. The copy, the backup, and
+// the restore run it.
 func Verify(ctx context.Context, b Backend) (VerifyReport, error) {
 	var r VerifyReport
 	objs, err := b.List(ctx, "pointers/", "")
@@ -56,6 +57,7 @@ func Verify(ctx context.Context, b Backend) (VerifyReport, error) {
 	}
 	sort.Strings(names)
 	named := map[string]bool{}
+	builds := map[string]string{} // a build's hash → the first record naming it
 	for _, name := range names {
 		r.Pointers++
 		prev := ""
@@ -83,8 +85,33 @@ func Verify(ctx context.Context, b Backend) (VerifyReport, error) {
 				return r, broken(key, "to: %v", err)
 			}
 			named[h] = true
+			if e.Kind == BuildKind {
+				builds[e.To] = key
+			}
 			prev = e.To
 			r.Records++
+		}
+	}
+	// A build names its files (build.go): each must be there, as its
+	// hash, with its envelope, like the build itself.
+	buildFile := map[string]string{} // a file's hex → the build naming it
+	buildHashes := make([]string, 0, len(builds))
+	for to := range builds {
+		buildHashes = append(buildHashes, to)
+	}
+	sort.Strings(buildHashes)
+	for _, to := range buildHashes {
+		refs, err := buildRefs(ctx, b, to)
+		if errors.Is(err, ErrNotFound) {
+			continue // the blob check below names the missing build
+		} else if err != nil {
+			return r, broken(builds[to], "%v", err)
+		}
+		for _, x := range refs {
+			if !named[x] {
+				named[x] = true
+				buildFile[x] = to
+			}
 		}
 	}
 	hexes := make([]string, 0, len(named))
@@ -96,6 +123,9 @@ func Verify(ctx context.Context, b Backend) (VerifyReport, error) {
 		key := blobKey(h)
 		data, meta, err := b.Get(ctx, key)
 		if errors.Is(err, ErrNotFound) {
+			if by, ok := buildFile[h]; ok {
+				return r, broken(key, "build %s names it, and the blob is missing", by)
+			}
 			return r, broken(key, "a record names it, and the blob is missing")
 		} else if err != nil {
 			return r, err

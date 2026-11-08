@@ -18,7 +18,8 @@ type GCReport struct {
 //
 //  1. settles any trash a crashed pass left (step 4);
 //  2. lists every record, then the blobs: the candidates are the blobs
-//     no record names (neither `to` nor `from`) older than graceMs;
+//     no record names (neither `to` nor `from`, nor a file of a build a
+//     record names — build.go) older than graceMs;
 //  3. moves each candidate to gc/<hex> — a copy, then the delete;
 //  4. settles: lists the records again, restores every trashed blob a
 //     record now names (a commit that reused the orphan after step 2),
@@ -111,8 +112,9 @@ func (s *Store) settle(r *GCReport, deleted map[string]bool) error {
 	return nil
 }
 
-// named answers the hex of every blob a record names (`to` or `from`),
-// over every pointer in the bucket — another process's commits too.
+// named answers the hex of every blob a record names (`to` or `from`,
+// and every file of a build it names), over every pointer in the
+// bucket — another process's commits too.
 func (s *Store) named() (map[string]bool, error) {
 	recs, err := s.b.List(context.Background(), "pointers/", "")
 	if err != nil {
@@ -125,6 +127,7 @@ func (s *Store) named() (map[string]bool, error) {
 		}
 	}
 	named := map[string]bool{}
+	builds := map[string]bool{}
 	for name, hi := range top {
 		p := s.pointer(name)
 		p.mu.Lock()
@@ -136,10 +139,24 @@ func (s *Store) named() (map[string]bool, error) {
 					named[x] = true
 				}
 			}
+			if e.Kind == BuildKind {
+				builds[e.To] = true
+			}
 		}
 		p.mu.Unlock()
 		if err != nil {
 			return nil, err
+		}
+	}
+	// A build's record names its files too (build.go). A build whose
+	// document cannot be read fails the pass: GC never guesses.
+	for to := range builds {
+		refs, err := buildRefs(context.Background(), s.b, to)
+		if err != nil {
+			return nil, err
+		}
+		for _, x := range refs {
+			named[x] = true
 		}
 	}
 	return named, nil

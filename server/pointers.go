@@ -321,6 +321,12 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 		http.Error(w, "picks publish through POST /plans", http.StatusBadRequest)
 		return
 	}
+	// A build names files the store must hold: builds land from -dist,
+	// and the pointer moves only to a build its log holds (POST /builds).
+	if kind == store.BuildKind || kind == store.BuildFileKind || name == buildPointer {
+		http.Error(w, "builds land from -dist and move through POST /builds", http.StatusBadRequest)
+		return
+	}
 
 	if kind == "edit_records" {
 		if len(req.Client) == 0 {

@@ -97,6 +97,11 @@ func main() {
 		s.commitForward()
 		s.seedPolicy(*policyFile)
 		s.maybeCompactEdits()
+		s.serverModules = map[string]string{"sync": *wasmPath, "network": *networkWasm, "streets": *streetsWasm, "plans": *plansWasm, "migrate": *migrateWasm}
+		if *oidcIssuer != "" || *oidcJWKS != "" || *oidcKey != "" {
+			s.serverModules["authz"] = *authzWasm
+		}
+		s.syncBuild()
 		log.Printf("sync store open: %s (serving: creates and reads, never deletes — `store gc` collects orphans)", *storeURL)
 	}
 	if *oidcIssuer != "" || *oidcJWKS != "" || *oidcKey != "" {
@@ -161,6 +166,7 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("/pointers/", s.protectWrite(pointerNameOf, s.handlePointers))
 	mux.HandleFunc("/plans", s.protectWrite(func(*http.Request) string { return "plans" }, s.handlePlans))
 	mux.HandleFunc("/plans/retire", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleRetire))
+	mux.HandleFunc("/builds", s.protectWrite(func(*http.Request) string { return buildPointer }, s.handleBuilds))
 	mux.HandleFunc("/feed", s.handleFeed)
 	mux.HandleFunc("/permissions", s.requireAuth(s.handlePermissions))
 	mux.HandleFunc("/blobs/", s.handleBlob)
@@ -231,6 +237,15 @@ type server struct {
 	// manifest is re-committed when the published set changes.
 	manifestMu  sync.Mutex
 	manifestKey string
+
+	// Builds (store mode; builds.go): -dist's release committed to the
+	// `build` pointer and the pages served from its head. serverModules
+	// names the modules this server hosts (role → path), retained in
+	// each build; buildEvery bounds how often -dist is re-listed (0 =
+	// buildEveryDefault).
+	builds        buildState
+	buildEvery    time.Duration
+	serverModules map[string]string
 }
 
 // handleStatic serves the built frontend. http.ServeContent gives
@@ -245,6 +260,14 @@ func (s *server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	name := path.Clean(strings.TrimPrefix(upath, "/"))
 	if name == "" || name == "." {
 		name = "index.html"
+	}
+	// Store mode: the pages are the pinned build's (builds.go); what the
+	// build does not hold (the basemap) is -dist's.
+	if s.store != nil {
+		s.syncBuild()
+		if s.serveBuildFile(w, r, name) {
+			return
+		}
 	}
 	file, err := os.Open(filepath.Join(s.dist, name))
 	if err != nil {
@@ -339,8 +362,8 @@ func (s *server) handleProxy(w http.ResponseWriter, r *http.Request) {
 
 // Manifest pins the published network, the GTFS zip it was imported
 // from, the published plan set (the picks clients resolve), the
-// published streets and walk table, and the sync module
-// this server runs, and lists the external services it proxies. `feed_version` is read
+// published streets and walk table, the build the pages are served
+// from (store mode), and the sync module this server runs, and lists the external services it proxies. `feed_version` is read
 // from the feed's own feed_info.txt by the host (the host owns files
 // and I/O; the module owns the format's domain).
 type Manifest struct {
@@ -353,6 +376,7 @@ type Manifest struct {
 	AuthzHash   string  `json:"authz_hash,omitempty"`   // sha256 of the cap-authz module, when auth is on
 	PolicyHash  string  `json:"policy_hash,omitempty"`  // the store's policy pointer head, store mode (D-61)
 	PlansHash   string  `json:"plans_hash,omitempty"`   // the published plan set (the plans pointer head), store mode
+	BuildHash   string  `json:"build_hash,omitempty"`   // the build the pages are served from (the build pointer head), store mode
 	GeneratedAt int64   `json:"generated_at"`
 	Publisher   *string `json:"publisher,omitempty"`
 	// The agency's zone (the network's operator timezone, as today()
@@ -418,6 +442,9 @@ func (s *server) buildManifest() (Manifest, error) {
 		if head, found, err := s.store.Head("plans"); err == nil && found {
 			manifest.PlansHash = head.Hash
 		}
+		if head, found, err := s.store.Head(buildPointer); err == nil && found {
+			manifest.BuildHash = head.Hash
+		}
 	}
 	return manifest, nil
 }
@@ -427,7 +454,7 @@ func (s *server) buildManifest() (Manifest, error) {
 func manifestKeyOf(m Manifest) string {
 	services, _ := json.Marshal(m.Services)
 	sum := sha256.Sum256([]byte(strings.Join([]string{
-		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.NetworkHash, m.FeedHash, orEmpty(m.FeedVersion),
+		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.BuildHash, m.NetworkHash, m.FeedHash, orEmpty(m.FeedVersion),
 		m.StreetsHash, m.WalksHash, orEmpty(m.Publisher), m.Timezone, string(services),
 	}, "|")))
 	return hex.EncodeToString(sum[:])
@@ -441,6 +468,7 @@ func orEmpty(s *string) string {
 }
 
 func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
+	s.syncBuild() // a release that landed in -dist is the build the manifest pins
 	manifest, err := s.buildManifest()
 	if err != nil {
 		fail(w, err, http.StatusInternalServerError)

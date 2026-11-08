@@ -39,6 +39,7 @@ use sha2::{Digest as _, Sha256};
 const PUBLISH_GATES: &[&str] = &[
     "cargo test (workspace, includes the capability law suites)",
     "node crates/cap-abi/caps-smoke.mjs (ABI + composition + context)",
+    "just reproducible (two clean builds of the tree, byte for byte)",
 ];
 
 /// The document-kernel version this build speaks.
@@ -577,6 +578,14 @@ fn main() {
     println!("manifest: {} capabilities, kernel v{KERNEL}, assembly valid", MODULES.len());
 }
 
+/// The pinned toolchain's channel, from rust-toolchain.toml.
+fn toolchain_pin(root: &Path) -> String {
+    let text = fs::read_to_string(root.join("rust-toolchain.toml")).expect("rust-toolchain.toml (the toolchain pin)");
+    text.lines()
+        .find_map(|l| l.trim().strip_prefix("channel").map(|v| v.trim().trim_start_matches('=').trim().trim_matches('"').to_string()))
+        .expect("rust-toolchain.toml names a channel")
+}
+
 /// Publish the REGISTRY: immutable blobs, one evidence record per
 /// capability, and the pointer. The record says what these exact
 /// bytes are, what they answer, what they speak — and WHICH GATES
@@ -604,6 +613,35 @@ fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKi
     let dirty = !run(&["git", "status", "--porcelain"]).is_empty();
     let rustc = run(&["rustc", "--version"]);
     let gated = std::env::var("CAPS_PUBLISH_GATED").is_ok_and(|v| v == "1");
+    // The toolchain the bytes came from: the pin (rust-toolchain.toml),
+    // the compiler that ran (its release, commit, and LLVM), and cargo.
+    // A gated publish refuses a compiler other than the pin — the
+    // published hashes are the pinned toolchain's, rebuildable from the
+    // tree alone.
+    let verbose = run(&["rustc", "-vV"]);
+    let field = |name: &str| {
+        verbose
+            .lines()
+            .find_map(|l| l.strip_prefix(name).map(|v| v.trim().to_string()))
+            .unwrap_or_default()
+    };
+    let pinned = toolchain_pin(root);
+    let release = field("release:");
+    if gated {
+        assert_eq!(
+            release, pinned,
+            "rustc {release} is not the pinned toolchain {pinned} (rust-toolchain.toml)"
+        );
+    }
+    let toolchain = serde_json::json!({
+        "pinned": pinned,
+        "rustc": release,
+        "rustc_commit": field("commit-hash:"),
+        "llvm": field("LLVM version:"),
+        "cargo": run(&["cargo", "--version"]),
+        "locked": true,
+        "remapped_paths": ["/cargo", "/src"],
+    });
     let evidence = serde_json::json!({
         "gates": if gated { PUBLISH_GATES } else { &[] },
         "recipe": if gated { "just registry" } else { "just caps" },
@@ -611,6 +649,7 @@ fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKi
         "dirty_tree": dirty,
         "source_digest": source_digest(root),
         "rustc": rustc,
+        "toolchain": toolchain,
     });
 
     for cap in &manifest.capabilities {

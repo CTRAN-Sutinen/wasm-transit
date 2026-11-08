@@ -57,6 +57,14 @@ adapter; `just test` runs the same laws on `mem://`. A managed
 provider's bucket runs the same way (`STORE_TEST_URL` and its
 credentials), recorded in the store-durability unit.
 
+Publishing the registry is its own gate: `just registry` runs `cargo
+test` and the module smoke, then `just reproducible` — a second clean
+build of the tree, at another path with another cargo home, must match
+every module byte for byte (about five minutes; docs/ARCHITECTURE.md,
+"Release artifacts") — and publishes only under the pinned toolchain.
+Run it for a change to the build itself (the toolchain, the lockfile,
+the profile, the recipes) and before a release.
+
 1. **Unit/property tests in the owning crate** (oracle style for
    laws — e.g. `transit-network`'s `trip_law_test` holds that trips
    are stored records (ids, times, edits that keep them, documents
@@ -138,10 +146,13 @@ credentials), recorded in the store-durability unit.
    (the same server: open pages re-pin a republished network without
    a reload, one network held, memory flat),
    `web/e2e/deploy-builds.spec.mjs` (its own server over a copy of the
-   build, the only spec with service workers allowed — every other
-   runs with them blocked, since `page.route` never sees what a worker
-   answers: both rider pages boot offline, and a new build applies at
-   a display's poll and a rider's next navigation),
+   build — with deploy-rollback the only specs with service workers
+   allowed; every other runs with them blocked, since `page.route`
+   never sees what a worker answers: both rider pages boot offline, and
+   a new build applies at a display's poll and a rider's next
+   navigation), `web/e2e/deploy-rollback.spec.mjs` (its own store-mode
+   server over another copy: build A, then B, then `POST /builds` back
+   to A, and the display runs A's bytes again),
    `web/e2e/basemap-assets.spec.mjs`
    (the map's glyphs and sprites are local when installed, networked
    when not; skipped without a local `basemap.pmtiles`),

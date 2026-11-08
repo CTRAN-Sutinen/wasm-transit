@@ -107,7 +107,10 @@ just caps                  # assemblies/ (generated, gitignored) → the modules
                            # (+ cap_sync, cap_network, cap_streets, cap_authz and
                            # cap_plans .wasm for the server)
 just registry              # publish the capability registry (gates → blobs + evidence;
-                           # every `just caps` republishes it ungated)
+                           # every `just caps` republishes it ungated); refuses a
+                           # compiler other than rust-toolchain.toml's
+just reproducible          # two clean builds of the tree, byte for byte (a gate of
+                           # `just registry`; docs/ARCHITECTURE.md, "Release artifacts")
 node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op ...
                            # steps run in command-line order; --cap ID switches
                            # capability mid-session (documents cross by $ref);
@@ -155,6 +158,8 @@ just perf                  # browser perf baselines on the real feed — reports
                            # gates (docs/TESTING.md, "Performance baselines")
 ```
 
+The Rust toolchain is pinned in `rust-toolchain.toml` (rustup runs
+that release in this tree; upgrading it is a change of its own).
 Toolchains live in `~/.cargo/bin` and `~/.local/bin` (rustc, pmtiles,
 just, go at `~/.local/go/bin`) — export PATH if a shell lacks them.
 Installs (toolchains, release binaries) are the user's job;
@@ -226,7 +231,8 @@ assemblies/      GENERATED (gen-assemblies, gitignored): module-<cap> (one capab
                  alone) and module-ui-<id> (a generated UI's capabilities linked)
 server/          Go + wazero host over cap-sync, cap-network, cap-plans and
                  cap-streets (the network, picks, streets and walk table it
-                 publishes), cap-migrate (an older document, at receive),
+                 publishes; in store mode every build it serves, kept and
+                 rolled back by pointer — D-80), cap-migrate (an older document, at receive),
                  cap-authz when auth is on, and the proxies
                  (/geocode to a Pelias geocoder; /rt, a dev feed relay off
                  unless -rt-proxy) — scaffolding, never a domain decision

@@ -8,10 +8,11 @@
 #[path = "../src/bin/common/gates.rs"]
 mod gates;
 
-use gates::{dependency_violations, state_violations, unsafe_violation, Package};
+use gates::{dependency_violations, kernel_closure_violations, state_violations, unsafe_violation, Package};
 
 fn package(name: &str, deps: &[&str]) -> Package {
-    Package { name: name.into(), deps: deps.iter().map(|d| d.to_string()).collect() }
+    let deps: Vec<String> = deps.iter().map(|d| d.to_string()).collect();
+    Package { name: name.into(), required: deps.clone(), deps }
 }
 
 /// A workspace that keeps the rule: capabilities over the kernel and
@@ -91,6 +92,7 @@ fn the_gate_reads_normal_dependencies_from_cargo_metadata() {
     ] });
     let packages = gates::packages_from_metadata(&metadata);
     assert_eq!(packages[0].deps, vec!["cap-abi".to_string(), "cap-router".to_string()], "dev and external deps are not the rule's");
+    assert_eq!(packages[0].required, packages[0].deps, "none of them optional");
     assert!(dependency_violations(&packages).iter().any(|v| v.contains("cap-board") && v.contains("cap-router")));
 }
 
@@ -112,4 +114,41 @@ fn a_capability_that_declares_state_fails() {
     ] {
         assert_eq!(state_violations("cap.rs", broken).len(), 1, "{broken}");
     }
+}
+
+// HASH CHURN (docs/ARCHITECTURE.md, "Release artifacts"): every module
+// links the kernel, so a library the kernel depends on is in every
+// module's closure — a dependency or feature change in it moves every
+// module's hash. The kernel requires only the libraries its own code
+// names; what its generator (gen-manifest) needs besides is optional,
+// behind the generator's feature.
+
+#[test]
+fn the_kernel_requires_only_the_libraries_its_code_names() {
+    let kernel = "use transit_network::Network;\nfn f() { transit_codec::import(); }\n// transit_router in prose";
+    let required = |deps: &[&str]| deps.iter().map(|d| d.to_string()).collect::<Vec<_>>();
+    assert_eq!(kernel_closure_violations(&required(&["transit-network", "transit-codec", "serde"]), kernel), Vec::<String>::new());
+    let found = kernel_closure_violations(&required(&["transit-network", "transit-router", "transit-plans"]), kernel);
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert!(found.iter().any(|v| v.starts_with("cap-abi requires transit-router")), "a name in a comment is not a use: {found:?}");
+    assert!(found.iter().any(|v| v.starts_with("cap-abi requires transit-plans")), "{found:?}");
+    let prefix = kernel_closure_violations(&required(&["transit-net"]), kernel);
+    assert_eq!(prefix.len(), 1, "a prefix of a name is not the name: {prefix:?}");
+}
+
+#[test]
+fn the_gate_reads_which_dependencies_are_optional() {
+    let metadata = serde_json::json!({ "packages": [
+        { "name": "cap-abi", "dependencies": [
+            { "name": "transit-network", "kind": null },
+            { "name": "transit-router", "kind": null, "optional": true },
+            { "name": "transit-plans", "kind": "dev" },
+        ] },
+        { "name": "transit-network", "dependencies": [] },
+        { "name": "transit-router", "dependencies": [] },
+        { "name": "transit-plans", "dependencies": [] },
+    ] });
+    let packages = gates::packages_from_metadata(&metadata);
+    assert_eq!(packages[0].deps, vec!["transit-network".to_string(), "transit-router".to_string()], "the graph rule reads optional deps too");
+    assert_eq!(packages[0].required, vec!["transit-network".to_string()], "the closure rule reads only the required ones");
 }

@@ -171,7 +171,11 @@ The justfile `test` recipe asserts laws 1 and 2 and the linking
 rule: `arch-gates` reads the dependency graph (`cargo metadata`,
 deny by default — a capability depends only on cap-abi and
 libraries, only assemblies depend on capabilities, only the codec's
-homes read transit-codec), and every capability crate's source
+homes read transit-codec, and the kernel requires only the libraries
+its own code names — every module carries the kernel's closure, so a
+generator's extra library is an optional dependency behind its
+feature; docs/ARCHITECTURE.md, "Release artifacts"), and every
+capability crate's source
 (`#![forbid(unsafe_code)]`, no static or thread_local of its own);
 the registry constructor is private to the kernel (its
 `compile_fail` doctests); `transit_codec::export` may not appear

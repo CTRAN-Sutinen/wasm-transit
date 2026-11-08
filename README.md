@@ -40,8 +40,10 @@ testdata/ the authored-network fixture, real-data assets
 
 ## Getting started
 
-Toolchains: Rust (with the `wasm32-unknown-unknown` target), Go
-1.22+, Node, and `just`. Then:
+Toolchains: Rust at the release `rust-toolchain.toml` pins (rustup
+installs it and the `wasm32-unknown-unknown` target:
+`rustup toolchain install` in the tree), Go at the version
+`server/go.mod` names, Node, and `just`. Then:
 
 ```
 cd web && npm install && cd ..

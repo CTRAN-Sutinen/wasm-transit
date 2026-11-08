@@ -120,7 +120,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-77 | How do the capabilities a page uses share one network? | decided | nothing |
 | D-78 | Does the Go server host linked assemblies? | decided | nothing |
 | D-79 | How is a document version rolled back? | decided | nothing |
-| D-80 | Where do retired build artifacts live? | unanswered | retention in `release-artifacts` |
+| D-80 | Where do retired build artifacts live? | decided | nothing |
 | D-81 | How are op and HTTP contracts versioned? | unanswered | contract versioning in `release-artifacts` |
 | D-82 | Where do the store's backups go, and how often? | unanswered | backup in `store-durability` |
 | D-83 | What does each deployed device report, and to where? | unanswered | reporting in `observability-rollout` |
@@ -2898,11 +2898,23 @@ Options:
 Blocks: rollback in `docs/units/document-versioning.md`.
 
 ### D-80 — Where do retired build artifacts live?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-08 — in the sync store: module, assembly, and
+app-shell bytes as blobs, named by the manifests the `manifest`
+pointer already logs — one store, one backup (D-82), the same
+verification. Encoded as: the server commits its `-dist` release to
+the store's `build` pointer (each file a `build_file` blob, a `build`
+document naming them and the server's modules), the manifest pins the
+head (`build_hash`), GC and `store verify` treat a logged build's
+files as named, and a rollback is `POST /builds` to a build the log
+holds (docs/FORMATS.md, "Builds"; pins: `server/store/build_test.go`,
+`server/builds_test.go`, `web/e2e/deploy-rollback.spec.mjs`).
 Context: `docs/units/release-artifacts.md`. Every `just caps` deletes
 and rewrites `registry/` and `web/public/caps/`; git keeps the source,
-not the bytes, and the bytes cannot yet be rebuilt exactly. Rolling
-code back, and expand-then-contract, need every deployed build kept.
+not the bytes. The modules rebuild byte for byte from a commit under
+its pinned toolchain (`just reproducible`); the app shell's build is
+not gated that way. Rolling code back, and expand-then-contract, need
+every deployed build kept.
 Options:
 - In the sync store: module, assembly, and app-shell bytes as blobs,
   named by the manifests the `manifest` pointer already logs. One

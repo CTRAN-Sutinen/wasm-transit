@@ -40,7 +40,7 @@ archive — nothing here records what is finished.
 | [wire-time-assembly.md](wire-time-assembly.md) | per-user selection over the manifest; layouts as documents |
 | [runtime-cost-gate.md](runtime-cost-gate.md) | a ratchet on per-module memory and registration time |
 | [document-versioning.md](document-versioning.md) | every persisted document versioned, migrated forward at receive, rolled back under one rule, the schema-lock gate |
-| [release-artifacts.md](release-artifacts.md) | every build kept and rebuildable, op and HTTP contracts changed by expand-then-contract, rolling code back |
+| [release-artifacts.md](release-artifacts.md) | op and HTTP contracts changed by expand-then-contract |
 | [store-durability.md](store-durability.md) | the sync store's contract run on each provider's real account, the edits layout (D-121), backup and restore (D-82) |
 | [observability-rollout.md](observability-rollout.md) | what production runs and whether it is healthy; canary rings and the automatic revert |
 | [deploy-rider-apps.md](deploy-rider-apps.md) | ride-now and the stop display beyond localhost: the units it waits on, the agency's feed fixes (HTTPS, CORS, caching, start_date), and the Pi 4 and phone dogfood |
