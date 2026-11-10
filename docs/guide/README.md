@@ -31,6 +31,9 @@ Read the pages in this order. Each one builds on the one before.
 - **To deploy the rider apps** with no server of your own, read
   [DEPLOYMENTS.md](../../DEPLOYMENTS.md). It is a step-by-step guide
   for a system administrator.
+- **To run the server** in production, read
+  [DEPLOYMENTS-SERVER.md](../../DEPLOYMENTS-SERVER.md), written for
+  the same reader.
 - **To build and run the project** on your own computer, read the
   [README](../../README.md).
 - **For the full technical detail** of any part, read the

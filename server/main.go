@@ -23,35 +23,43 @@ import (
 	"io"
 	"log"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"rustwasm/server/store"
 )
 
 func main() {
-	addr := flag.String("addr", "127.0.0.1:8080", "listen address")
-	dist := flag.String("dist", "../web/dist", "directory of static files to serve")
-	wasmPath := flag.String("wasm", "../web/pkg/cap_sync.wasm", "the sync capability module to host and pin")
+	defaultAddr := "127.0.0.1:8080"
+	if os.Getenv("KO_DATA_PATH") != "" {
+		defaultAddr = ":8080"
+	}
+	addr := flag.String("addr", defaultAddr, "listen address (in the image: every interface, :8080; from a source tree: localhost only)")
+	dist := flag.String("dist", dataPath("dist", "../web/dist"), "directory of static files to serve")
+	wasmPath := flag.String("wasm", dataPath("pkg/cap_sync.wasm", "../web/pkg/cap_sync.wasm"), "the sync capability module to host and pin")
 	feedPath := flag.String("feed", "", "the GTFS zip's source (D-118): an http(s) URL, bucket:<key> (the object inputs/<key> in the -store bucket), or a dev path; imported and published as the network (enables /network and the manifest's schedule section). With -store each read is committed as source.feed, and a source that does not answer at boot serves that")
-	networkWasm := flag.String("network-wasm", "../web/pkg/cap_network.wasm", "the network capability module that imports the feed")
+	networkWasm := flag.String("network-wasm", dataPath("pkg/cap_network.wasm", "../web/pkg/cap_network.wasm"), "the network capability module that imports the feed")
 	streetsPath := flag.String("streets", "", "the street layer's source (GeoJSON lines; a URL, bucket:<key>, or a dev path, as -feed): imported and published as the streets document (enables /streets, and with -feed the walk table at /walks); committed as source.streets with -store")
-	streetsWasm := flag.String("streets-wasm", "../web/pkg/cap_streets.wasm", "the streets capability module that imports the layer and derives the walk table")
+	streetsWasm := flag.String("streets-wasm", dataPath("pkg/cap_streets.wasm", "../web/pkg/cap_streets.wasm"), "the streets capability module that imports the layer and derives the walk table")
 	publisher := flag.String("publisher", "", "manifest provenance (who publishes this schedule)")
-	editsPath := flag.String("edits", "", "path to persist the edit document (JSON); empty = in-memory only (legacy mode; with -store it seeds the edits pointer once)")
-	storeURL := flag.String("store", "", "the durable sync store's URL (docs/FORMATS.md): s3://bucket/prefix[?endpoint=URL&region=R] (S3 or an S3-compatible endpoint; credentials from the AWS SDK's default chain) or mem:// (nothing survives the process); enables /pointers, /blobs and store-backed /edits and /manifest; empty = legacy mode")
+	editsPath := flag.String("edits", "", "with no -store (the dev store): a file to keep the edit document in across restarts; empty = in memory only. With -store it seeds the edits pointer once")
+	storeURL := flag.String("store", "", "the durable sync store's URL (docs/FORMATS.md): s3://bucket/prefix[?endpoint=URL&region=R] (S3 or an S3-compatible endpoint; credentials from the AWS SDK's default chain) azblob://container/prefix, gs://bucket/prefix, or mem:// (nothing survives the process); enables /pointers, /blobs, /plans, /builds and store-backed /edits and /manifest. Empty = the dev store: edits in memory (or the -edits file), no history, no publishing — for development and -export only")
 	retentionDays := flag.Int("retention-days", 90, "tombstone retention horizon (days) for the store's D-57 compaction commits")
 	today := flag.String("today", "", "pin the server's date (YYYY-MM-DD) for hermetic test servers; empty = the host clock. Publishing reads it: a new pick never lands before today, and only a pick after today is retired (D-75, D-76)")
-	migrateWasm := flag.String("migrate-wasm", defaultMigrateWasm, "the migration capability module (cap-migrate): an older document comes forward at receive, and a store's older heads at startup")
-	plansWasm := flag.String("plans-wasm", "../web/pkg/cap_plans.wasm", "the plan-chain capability module (cap-plans) hosted in store mode: it answers the published plan set POST /plans commits")
-	authzWasm := flag.String("authz-wasm", "../web/pkg/cap_authz.wasm", "the authorization capability module (cap-authz) hosted when OIDC is configured")
+	migrateWasm := flag.String("migrate-wasm", dataPath("pkg/cap_migrate.wasm", defaultMigrateWasm), "the migration capability module (cap-migrate): an older document comes forward at receive, and a store's older heads at startup")
+	plansWasm := flag.String("plans-wasm", dataPath("pkg/cap_plans.wasm", "../web/pkg/cap_plans.wasm"), "the plan-chain capability module (cap-plans) hosted in store mode: it answers the published plan set POST /plans commits")
+	authzWasm := flag.String("authz-wasm", dataPath("pkg/cap_authz.wasm", "../web/pkg/cap_authz.wasm"), "the authorization capability module (cap-authz) hosted when OIDC is configured")
 	oidcIssuer := flag.String("oidc-issuer", "", "expected JWT iss (D-60); with any -oidc flag this turns authentication on")
 	oidcJWKS := flag.String("oidc-jwks-url", "", "the IdP's JWKS URL: keys are fetched, cached by kid, refetched on an unknown kid (rate-limited)")
 	oidcAud := flag.String("oidc-audience", "", "expected JWT aud (string or array member)")
@@ -60,9 +68,10 @@ func main() {
 	policyFile := flag.String("policy", "", "the authorization policy document's source (JSON; a URL, bucket:<key>, or a dev path): seeds the store's policy pointer at first boot (D-61); with no -store it is the policy")
 	geocoderURL := flag.String("geocoder", "", "base URL of a Pelias geocoder (e.g. http://127.0.0.1:4000): enables /geocode/{autocomplete,search,reverse} and lists it in the manifest's services")
 	rtProxy := flag.Bool("rt-proxy", false, "serve /rt?url=, a relay to any http(s) feed for pages whose feeds send no CORS header — a DEV convenience (D-67): it relays for any caller, so bind localhost; a deployment's pages fetch the agency's feeds directly")
-	geocoderPolicy := flag.String("geocoder-policy", "geocoder.json", "the deployment's geocoder query policy (Pelias parameters per op), applied by the proxy")
+	geocoderPolicy := flag.String("geocoder-policy", dataPath("geocoder.json", "geocoder.json"), "the deployment's geocoder query policy (Pelias parameters per op), applied by the proxy")
 	exportDir := flag.String("export", "", "write the deployment as a static bundle into this directory (absent or empty) and exit: -dist's pages, the manifest, and every published document as blobs/<hash> and blobs/<hash>.gz — the paths this server answers (D-131; export.go)")
 	liveFeeds := flag.String("live-feeds", "", "with -export: the deployment's live-feeds.json (its agency feeds, no proxy), replacing -dist's dev copy")
+	drain := flag.Duration("drain", 5*time.Second, "on SIGTERM or SIGINT: how long /readyz answers 503 \"draining\" before the listener closes, so a load balancer stops sending first; then requests in flight get up to 30s to finish")
 	feedURL := flag.String("feed-url", "", "with -export, instead of -feed: the agency's GTFS zip URL the pages fetch, import, and check daily themselves — a serverless deployment that follows the feed with no redeploy (D-132); the URL must answer with CORS")
 	flag.Parse()
 
@@ -152,14 +161,79 @@ func main() {
 		return
 	}
 	s.edits = loadEdits(*editsPath)
+	if s.store == nil {
+		where := "in memory (lost on restart)"
+		if *editsPath != "" {
+			where = "in the file " + *editsPath + " (this machine only)"
+		}
+		log.Printf("DEV STORE: no -store — edits are kept %s, with no history; publishing picks and builds is off. Development only: a deployment runs with -store", where)
+	}
 
 	s.rtProxy = *rtProxy
 	if s.rtProxy {
 		log.Printf("-rt-proxy: /rt relays any http(s) URL — dev only; bind localhost")
 	}
 
-	log.Printf("listening on http://%s (dist: %s)", *addr, *dist)
-	log.Fatal(http.ListenAndServe(*addr, s.routes()))
+	ln, err := net.Listen("tcp", *addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("listening on http://%s (dist: %s)", ln.Addr(), *dist)
+	if err := s.serve(ln, newHTTPServer(s.routes()), *drain); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// dataPath is a default file's path: under $KO_DATA_PATH when the
+// server runs from its image (`just server-image`: ko copies
+// server/kodata/ there), else the path in a source tree.
+func dataPath(inImage, inTree string) string {
+	if root := os.Getenv("KO_DATA_PATH"); root != "" {
+		return filepath.Join(root, inImage)
+	}
+	return inTree
+}
+
+// newHTTPServer bounds what one client can hold: a header must arrive
+// within 10s (a slow client cannot pin a connection), a request body
+// within 5 min (a build or a feed is large), an idle keep-alive closes
+// after 2 min, and no response runs past 10 min. The response bound is
+// loose on purpose: a phone on a poor signal downloads the street data
+// slowly, and a cut-off download only makes it start again.
+func newHTTPServer(h http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           h,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       5 * time.Minute,
+		WriteTimeout:      10 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
+	}
+}
+
+// serve runs srv until SIGTERM or SIGINT, then shuts down gracefully:
+// /readyz answers "draining" for drain (the balancer stops sending),
+// then the listener closes and requests in flight get up to 30s.
+func (s *server) serve(ln net.Listener, srv *http.Server, drain time.Duration) error {
+	errc := make(chan error, 1)
+	go func() { errc <- srv.Serve(ln) }()
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGTERM, os.Interrupt)
+	defer signal.Stop(sig)
+	select {
+	case err := <-errc:
+		return err
+	case got := <-sig:
+		log.Printf("%v: draining for %v (/readyz answers 503), then shutting down", got, drain)
+	}
+	s.draining.Store(true)
+	time.Sleep(drain)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		return fmt.Errorf("shutdown: %w", err)
+	}
+	log.Printf("shut down cleanly")
+	return nil
 }
 
 // routes answers the server's mux. /rt is a route only with -rt-proxy
@@ -169,6 +243,8 @@ func (s *server) routes() *http.ServeMux {
 	if s.rtProxy {
 		mux.HandleFunc("/rt", s.handleProxy)
 	}
+	mux.HandleFunc("/healthz", s.handleHealthz)
+	mux.HandleFunc("/readyz", s.handleReadyz)
 	mux.HandleFunc("/manifest", s.handleManifest)
 	mux.HandleFunc("/network", s.handleNetwork)
 	mux.HandleFunc("/network/document", s.handleNetworkDocument)
@@ -210,12 +286,17 @@ type server struct {
 	// — this host only stores and ferries it.
 	editsMu   sync.Mutex
 	edits     json.RawMessage // the edit document (current version)
-	editsPath string          // empty = in-memory only (legacy mode)
+	editsPath string          // the dev store's file; empty = in memory only
 
 	// The durable sync store (store mode, -store): blobs + CAS'd
-	// pointers. nil = legacy mode.
+	// pointers. nil = the dev store (no -store): edits in memory or the
+	// -edits file, no history, no publishing — development and -export.
 	store         *store.Store
 	retentionDays int
+
+	// draining is set once shutdown begins: /readyz answers 503 so a
+	// load balancer stops sending before the listener closes.
+	draining atomic.Bool
 
 	// Authorization state (nil = auth off, dev only): the IdP config,
 	// the hosted cap-authz module, and the policy source.
@@ -500,7 +581,7 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.store == nil {
-		// Legacy mode: the manifest is ephemeral, served as built; its
+		// The dev store: the manifest is ephemeral, served as built; its
 		// ETag names what it pins, so an open page's poll is a 304
 		// while nothing moved (D-63).
 		etag := `"` + manifestKeyOf(manifest) + `"`
@@ -579,7 +660,7 @@ func (s *server) handleManifest(w http.ResponseWriter, r *http.Request) {
 }
 
 // seedStore creates the edits pointer when the store is fresh: from the
-// legacy -edits file (migrated at receive through the module — canonical
+// dev store's -edits file (migrated at receive through the module — canonical
 // bytes and hash come from the module, never minted here), else empty.
 func (s *server) seedStore(editsPath string) {
 	nowMs := time.Now().UnixMilli()

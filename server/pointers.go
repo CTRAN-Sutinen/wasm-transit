@@ -340,7 +340,7 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 			return
 		}
 		// One CAS attempt on the client's last-seen hash; the caller
-		// retries on 409 (the legacy /edits loop retries internally).
+		// retries on 409 (POST /edits retries internally).
 		serverRaw := json.RawMessage(emptyEdits)
 		from := req.From
 		if found {

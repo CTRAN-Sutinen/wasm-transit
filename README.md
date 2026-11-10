@@ -70,7 +70,9 @@ just export ride-now out/ path/to/gtfs.zip [roads.geojson]   # or no server: one
 ```
 
 Deploying the rider apps as static sites (Cloudflare Workers, step by step):
-[DEPLOYMENTS.md](DEPLOYMENTS.md).
+[DEPLOYMENTS.md](DEPLOYMENTS.md). Running the server in production (its
+container image, a bucket, sign-in, a load balancer):
+[DEPLOYMENTS-SERVER.md](DEPLOYMENTS-SERVER.md).
 
 Open http://127.0.0.1:8080. `just test` is the host-side gate,
 `just e2e` the browser runner, `just check` both; the full command

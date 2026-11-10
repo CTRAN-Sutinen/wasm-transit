@@ -41,7 +41,8 @@ server can hold:
   storage.
 
 Apps for staff, such as service planning, need the server. Apps for
-riders do not. Neither way is a cut-down version of the other. An app that runs
+riders do not. [DEPLOYMENTS-SERVER.md](../../DEPLOYMENTS-SERVER.md)
+explains how to run it. Neither way is a cut-down version of the other. An app that runs
 without a server keeps working without one, and the server's
 features stay with the server.
 

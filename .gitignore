@@ -14,6 +14,9 @@ playwright-report
 
 # Go: `go build ./...` drops the binary in server/
 /server/server
+# The server image's data (`just server-image` fills it; ko copies it
+# into the image at $KO_DATA_PATH)
+/server/kodata/
 
 # Basemap extract — regenerate with `just basemap` (~94 MB at z15)
 web/public/basemap.pmtiles

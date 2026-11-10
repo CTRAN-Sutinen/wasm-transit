@@ -21,11 +21,12 @@ touching the other, or deploy only one of them.
 10. [What a static deployment does not do](#10-what-a-static-deployment-does-not-do)
 11. [Troubleshooting](#11-troubleshooting)
 
-The project can also run behind its own server (`just serve`; see
-`README.md`). The server adds detours, address search, and the planning
-tool (service design), which only works with a server. Everything here
-is the server-free option for the two rider apps. Both options use the
-same pages and the same file layout, so you can move between them.
+The project can also run behind its own server ([DEPLOYMENTS-
+SERVER.md](DEPLOYMENTS-SERVER.md)). The server adds detours, address
+search, and the planning tool (service design), which only works with a
+server. Everything here is the server-free option for the two rider
+apps. Both options use the same pages and the same file layout, so you
+can move between them.
 
 ---
 
@@ -458,7 +459,7 @@ away from. Rolling back one app does not touch the other.
 
 ## 10. What a static deployment does not do
 
-These need the server deployment (`just serve`; `README.md`):
+These need the server deployment ([DEPLOYMENTS-SERVER.md](DEPLOYMENTS-SERVER.md)):
 
 | Feature | In a static deployment |
 |---|---|

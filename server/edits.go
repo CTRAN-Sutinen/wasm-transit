@@ -15,7 +15,7 @@ package main
 // With -store, /edits is the edit_records pointer of the content-
 // addressed store (docs/FORMATS.md): POST runs the CAS retry loop over
 // the merge, GET serves the head blob (ETag = its hash). Without it,
-// the legacy flat-file (-edits) or in-memory path runs unchanged.
+// the dev store keeps it in memory or the -edits file.
 
 import (
 	"encoding/json"

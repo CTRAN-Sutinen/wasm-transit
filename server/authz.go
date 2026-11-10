@@ -66,7 +66,7 @@ type authzState struct {
 	jwksMinInterval time.Duration // refetch rate limit; loadAuthz sets 30s, tests 0
 
 	// policyBytes is the policy document used when there is no store
-	// (legacy mode); with -store it is read from the `policy` pointer
+	// (the dev store); with -store it is read from the `policy` pointer
 	// per request (changes are audited CAS commits).
 	policyMu    sync.RWMutex
 	policyBytes []byte
@@ -380,7 +380,7 @@ const (
 
 // policyDocument returns the current policy document bytes: the
 // store's `policy` pointer in store mode (audited), else the -policy
-// file's bytes (legacy mode). Absent → nil (fail-closed at the op).
+// file's bytes (the dev store). Absent → nil (fail-closed at the op).
 func (s *server) policyDocument() []byte {
 	if s.store != nil {
 		head, found, err := s.store.Head("policy")

@@ -95,12 +95,40 @@ While the bucket does not answer (D-119) the server serves the heads
 and blobs it holds (a byte-bounded blob cache; blobs are immutable),
 labels each such read `X-Store-Stale` / `X-Store-As-Of`, and refuses
 every write with 503 and `Retry-After`; the rider pages show the edit
-document's age (kit's `staleLabel`). Without `-store`, `-edits <path>`
-persists the edit document as one flat file and everything else is in
-process.
+document's age (kit's `staleLabel`).
+
+Without `-store` the server runs over **the dev store**: the edit
+document in memory (or, with `-edits <path>`, one flat file on this
+machine), no history, and no publishing — `/plans`, `/builds`,
+`/pointers` and the store's log are off. It is for development
+(`just serve`, `just dev`) and for `-export`, which refuses a store;
+the server logs `DEV STORE` at startup. A deployment runs with
+`-store`.
+
+**Running it.** The server stops on SIGTERM or SIGINT in two steps:
+`/readyz` answers 503 `draining` for `-drain` (default 5 s), so a load
+balancer stops sending, then the listener closes and requests in
+flight get up to 30 s (`serve` in `main.go`). The HTTP server bounds
+each client (`newHTTPServer`): headers within 10 s, a request body
+within 5 min, idle keep-alives 2 min, a response 10 min. `just
+server-image` builds the server as one container image with ko (no
+Dockerfile): the binary on a distroless base, with the server's
+modules, `web/dist`, and the geocoder policy in `server/kodata/`,
+which ko copies to `$KO_DATA_PATH`. When `KO_DATA_PATH` is set, every
+module and file flag defaults to its copy there and `-addr` to `:8080`,
+so the image runs with only its deployment's flags. The operator's
+guide is [DEPLOYMENTS-SERVER.md](../../DEPLOYMENTS-SERVER.md).
 
 Its HTTP surface:
 
+- `/healthz` — liveness: 200 `ok` while the process answers HTTP. It
+  reads nothing (`health.go`).
+- `/readyz` — readiness, JSON `{status, store, store_as_of_ms,
+  error}`: 200 `ready`; 200 `degraded` while the bucket does not answer
+  and the cached heads serve labelled reads; 503 `unavailable` when
+  the store holds no head to serve; 503 `draining` once shutdown has
+  begun. Without `-store` it is `ready` with `store: "none"`. It reads
+  the `edits` head, which the store rechecks at most once per 2 s.
 - `/` — the pages: with `-store`, the pinned build's files (the
   `build` pointer's head, [release-artifacts.md](release-artifacts.md)), and `-dist` (default
   `web/dist`) for what no build holds (the basemap); without it,
@@ -207,7 +235,7 @@ Its HTTP surface:
   reads the server's. With `-store` this is the `edit_records`
   pointer, CAS'd through the store (a CAS conflict retries against
   the re-read document); without it, `-edits <path>` persists it as
-  one flat file across restarts, else in memory.
+  one flat file across restarts, else in memory (the dev store).
 - Store mode also exposes the generic surface (`-store` only):
   `GET /pointers/{name}`, `GET /pointers/{name}/log?since=<hash>`
   (delta sync over the append-only log), `POST /pointers/{name}`
@@ -299,6 +327,14 @@ reading **Because**.
 - **Holds:** GETs are public; writes need a role the policy grants on that pointer; tokens verify by JWKS or a pinned key, RS256/ES256 only; the roles' claim path is configurable; the policy is a store document seeded from a file at first boot and changed by audited commits.
 - **Because:** reads publish what riders need; writes are the shared state. Symmetric or `none` algorithms would let anyone mint tokens. The claim's location is the IdP's. A file re-read per request would leave policy changes unaudited; a store-only policy needs a break-glass bootstrap.
 - **Decided:** D-58, D-59, D-60, D-61.
+
+### Degraded is ready (`/readyz`, `health.go`)
+- **Holds:** `/readyz` stays 200 while the bucket does not answer and cached heads serve; `/healthz` reads nothing.
+- **Because:** every instance shares one bucket, so all of them would fail the check at once; a balancer that pulled them all would turn a write outage into a read outage, while the pages read the cached heads fine (D-119). Restarting a process cannot fix the bucket.
+
+### The dev store is not a deployment mode (no `-store`)
+- **Holds:** without `-store` the server warns at startup and keeps working; it does not refuse.
+- **Because:** with no store there is no history, rollback, or publishing, and edits live on one machine — right for a developer and for `-export` (which writes a bundle and exits), never for a server riders depend on. A warning keeps `just serve` one command.
 
 ### `/rt` is a dev relay, off by default (`handleProxy`, `-rt-proxy`)
 - **Holds:** the route exists only with `-rt-proxy`, which binds localhost; deployments fetch feeds directly.

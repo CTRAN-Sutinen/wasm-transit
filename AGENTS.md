@@ -126,6 +126,10 @@ Where the detail lives:
 - `DEPLOYMENTS.md` — the operator's guide: the static export deployed
   to Cloudflare Workers, written for a sysadmin who never reads the code
   (how it works inside is `docs/architecture/static-deployment.md`)
+- `DEPLOYMENTS-SERVER.md` — the operator's guide to the server: its
+  image, the bucket, sign-in, the load balancer's health checks,
+  updates and rollback, and the store's upkeep, for the same reader
+  (how it works inside is `docs/architecture/server.md`)
 
 ## Commands
 
@@ -167,6 +171,11 @@ just serve [feed.zip [streets.geojson ["Publisher" [addr]]]]   # sync server on 
                            # (-store: s3://bucket/prefix?endpoint=…, azblob://…,
                            # gs://…, or mem://; docs/FORMATS.md; POST /plans
                            # publishes a pick)
+                           # No STORE = the dev store: edits in memory, no
+                           # history or publishing (logged DEV STORE)
+just server-image [REPO [TAG]]   # the server as one container image (ko):
+                           # target/server-image.tar, or pushed to REPO for
+                           # amd64 + arm64 (DEPLOYMENTS-SERVER.md)
 just build-ui UI            # one UI built alone → web/dist-ui/UI/ (its page, its
                            # assembly, the map only if it draws one)
 just export UI OUT feed.zip [streets.geojson ["Publisher"]]   # one rider UI (ride-now,

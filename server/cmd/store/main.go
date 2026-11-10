@@ -7,8 +7,10 @@
 //	store copy <dir> <url>        carry a directory store an older build
 //	                              wrote into a bucket, then verify it
 //
-// <url> is a store URL: s3://bucket/prefix[?endpoint=URL&region=R], with
-// credentials from the AWS SDK's default chain. Each prints its report
+// <url> is a store URL: s3://bucket/prefix[?endpoint=URL&region=R],
+// azblob://container/prefix, or gs://bucket/prefix, with each
+// provider's usual credentials (DEPLOYMENTS-SERVER.md, "Prepare the
+// bucket"). Each prints its report
 // as JSON on stdout.
 package main
 

@@ -775,6 +775,36 @@ export-feed-url ui out url streets="" publisher="": (build-ui ui)
 store +args:
     cd server && go run ./cmd/store "$@"
 
+# The server as one container image, built with ko (no Dockerfile):
+# the Go binary on a distroless base, with the server's modules
+# (web/pkg/), the pages (web/dist), and the geocoder policy in
+# server/kodata/, which ko copies into the image at $KO_DATA_PATH.
+# The flags' defaults find them there, and the listen address is
+# :8080, so the image runs with only its deployment's flags (-store,
+# -feed, ...). With no repo it writes target/server-image.tar for
+# `podman load`; with a repo (ghcr.io/agency/transit-server) it pushes
+# linux/amd64 and linux/arm64 under the tag. Operator's guide:
+# DEPLOYMENTS-SERVER.md.
+server-image repo="" tag="latest": caps build
+    #!/usr/bin/env bash
+    set -e
+    rm -rf server/kodata
+    mkdir -p server/kodata/pkg
+    for cap in sync network streets authz plans migrate; do
+        cp "web/pkg/cap_$cap.wasm" server/kodata/pkg/
+    done
+    cp -r web/dist server/kodata/dist
+    cp server/geocoder.json server/kodata/
+    cd server
+    if [ -z "{{ repo }}" ]; then
+        KO_DOCKER_REPO=transit-server ko build --bare --push=false \
+          --tarball ../target/server-image.tar --tags "{{ tag }}" .
+        echo "image: target/server-image.tar — podman load -i target/server-image.tar"
+    else
+        KO_DOCKER_REPO="{{ repo }}" ko build --bare --tags "{{ tag }}" \
+          --platform linux/amd64,linux/arm64 .
+    fi
+
 store_dev_image := "docker.io/chrislusf/seaweedfs:4.50"
 azurite_image := "mcr.microsoft.com/azure-storage/azurite@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5"
 fake_gcs_image := "docker.io/fsouza/fake-gcs-server@sha256:797ce226d62f947c009dc40246b30cfb456b8473d8241407f9d6f2c04e4d69ef"
