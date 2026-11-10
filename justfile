@@ -618,7 +618,7 @@ test: caps
 # Builds first; the runner starts the server unless :8080 is taken.
 # For UI-visible changes: each generated UI's spec, the picker, and
 # the published-network spec (module surfaces as the UIs read them).
-e2e: caps build
+e2e: caps build (build-ui "ride-now") (build-ui "stop-display")
     cd web && npx playwright test
 
 # Both runners — for changes that touch both sides.
@@ -708,20 +708,27 @@ serve feed="" streets="" publisher="" addr="127.0.0.1:8080":
     done
     exec go run . "${args[@]}"
 
-# The deployment as static files (D-131; docs/ARCHITECTURE.md, server
-# section, "Static deployment"): the server boots on the feed (and the
-# street layer, if given) exactly as `just serve` does, writes the
-# bundle into OUT, and exits — the built pages, `manifest`, and every
-# published document as blobs/<hash> and blobs/<hash>.gz, the paths
-# the server itself answers. Upload OUT to any static host; never
-# delete blobs an earlier upload wrote (an open page pinned to the old
-# manifest still reads them). LIVE_FEEDS names the deployment's own
-# live-feeds.json (the agency's feeds, no proxy), replacing the dev
-# copy. Builds first.
+# One UI built alone (web/dist-ui/<ui>/): only its page, its scripts,
+# and what it runs (vite.config.js, "ONE UI") — what `just export`
+# deploys. Each rider UI deploys on its own.
+build-ui ui: caps types
+    cd web && npm run typecheck && UI={{ ui }} npx vite build
+
+# One UI as a static deployment (D-131; docs/ARCHITECTURE.md, server
+# section, "Static deployment"; the operator's guide is DEPLOYMENTS.md):
+# the server boots on the feed (and the street layer, if given) exactly
+# as `just serve` does, writes the bundle into OUT, and exits — that
+# UI's page, `manifest`, and every published document as blobs/<hash>
+# and blobs/<hash>.gz, the paths the server itself answers. Upload OUT
+# to any static host; never delete blobs an earlier upload wrote (an
+# open page pinned to the old manifest still reads them). LIVE_FEEDS
+# names the deployment's own live-feeds.json (the agency's feeds, no
+# proxy), replacing the dev copy. The rider UIs (ride-now,
+# stop-display) are the ones that run without a server.
 #
-#   just export out/ path/to/gtfs.zip [roads.geojson ["Publisher"]]
-#   LIVE_FEEDS=deploy/live-feeds.json just export out/ gtfs.zip
-export out feed streets="" publisher="": caps build
+#   just export ride-now out/ path/to/gtfs.zip [roads.geojson ["Publisher"]]
+#   LIVE_FEEDS=deploy/live-feeds.json just export stop-display out/ gtfs.zip
+export ui out feed streets="" publisher="": (build-ui ui)
     #!/usr/bin/env bash
     set -e
     src() { case "$1" in http://*|https://*|bucket:*) echo "$1" ;; *) realpath -m "$1" ;; esac; }
@@ -729,7 +736,30 @@ export out feed streets="" publisher="": caps build
     if [ -n "$streets" ]; then streets=$(src "$streets"); fi
     live="${LIVE_FEEDS:-}"; if [ -n "$live" ]; then live=$(realpath -m "$live"); fi
     cd server
-    args=(-export "$out" -feed "$feed")
+    args=(-export "$out" -dist "../web/dist-ui/{{ ui }}" -feed "$feed")
+    if [ -n "$streets" ]; then args+=(-streets "$streets"); fi
+    if [ -n "{{ publisher }}" ]; then args+=(-publisher "{{ publisher }}"); fi
+    if [ -n "$live" ]; then args+=(-live-feeds "$live"); fi
+    exec go run . "${args[@]}"
+
+# One UI as a static deployment that follows the agency's GTFS URL
+# (D-132): the same bundle as `just export`, but the manifest names the
+# feed's URL and no network is imported — each page fetches the zip,
+# imports it itself, and checks the URL once a day, so a new feed needs
+# no redeploy. The URL must answer with CORS. A street layer still ships
+# (walking from a place); the walk table between stops needs the
+# network, so it does not.
+#
+#   just export-feed-url stop-display out/ https://agency.example/gtfs.zip [roads.geojson ["Publisher"]]
+export-feed-url ui out url streets="" publisher="": (build-ui ui)
+    #!/usr/bin/env bash
+    set -e
+    src() { case "$1" in http://*|https://*|bucket:*) echo "$1" ;; *) realpath -m "$1" ;; esac; }
+    out=$(realpath -m "{{ out }}"); streets="{{ streets }}"
+    if [ -n "$streets" ]; then streets=$(src "$streets"); fi
+    live="${LIVE_FEEDS:-}"; if [ -n "$live" ]; then live=$(realpath -m "$live"); fi
+    cd server
+    args=(-export "$out" -dist "../web/dist-ui/{{ ui }}" -feed-url "{{ url }}")
     if [ -n "$streets" ]; then args+=(-streets "$streets"); fi
     if [ -n "{{ publisher }}" ]; then args+=(-publisher "{{ publisher }}"); fi
     if [ -n "$live" ]; then args+=(-live-feeds "$live"); fi

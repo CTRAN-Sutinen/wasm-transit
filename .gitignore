@@ -5,6 +5,7 @@
 node_modules
 web/dist
 web/dist-perf
+web/dist-ui
 web/perf-results
 web/pkg
 web/test-results

@@ -1,17 +1,20 @@
-// A static deployment (D-131; docs/ARCHITECTURE.md, server section, "Static deployment"): the
-// server's export — the pages, the manifest, and every published
-// document as blobs/<hash>[.gz] — served by a plain file server
-// (e2e/static-server.mjs: no negotiation, no ETags, no routes) under
-// a path prefix, /rider/. No Go server runs. The rider pages boot,
-// answer, re-pin a redeploy, and boot offline exactly as they do over
-// the sync server, through the same layout; what a static host has not
-// (the edit document, a geocoder, the dev relay) is absent, not an
-// error.
+// Static deployments, one per UI (D-131; docs/ARCHITECTURE.md, server
+// section, "Static deployment"): the server's export of ONE UI — its
+// page, the manifest, and every published document as
+// blobs/<hash>[.gz] — served by a plain file server
+// (e2e/static-server.mjs: no negotiation, no ETags, no routes) under a
+// path prefix. No Go server runs. Ride-now (/ride/) and the stop
+// display (/display/) are two deployments, each carrying only its own
+// page and what it runs. The pages boot, answer, re-pin a redeploy, and
+// boot offline exactly as they do over the sync server, through the
+// same layout; what a static host has not (the edit document, a
+// geocoder, the dev relay) is absent, not an error.
 //
-// Its host (playwright.config.mjs, :8087) serves the export of the
+// Its host (playwright.config.mjs, :8087) serves the two exports of the
 // fixture feed and the walking fixture's streets, with a
-// live-feeds.json naming feeds.test directly (no proxy); a second
-// export (the overnight feed) waits beside it for the redeploy.
+// live-feeds.json naming feeds.test directly (no proxy); a third export
+// (the stop display over the overnight feed) waits beside them for the
+// redeploy.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -20,9 +23,10 @@ import path from "node:path";
 import fs from "node:fs";
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
-const bundle = path.join(os.tmpdir(), "transit-e2e-static", "rider");
+const ride = path.join(os.tmpdir(), "transit-e2e-static", "ride");
+const display = path.join(os.tmpdir(), "transit-e2e-static", "display");
 const next = path.join(os.tmpdir(), "transit-e2e-static-next");
-const manifest = () => JSON.parse(fs.readFileSync(path.join(bundle, "manifest"), "utf8"));
+const manifest = (bundle) => JSON.parse(fs.readFileSync(path.join(bundle, "manifest"), "utf8"));
 
 test.use({
   baseURL: "http://127.0.0.1:8087",
@@ -60,7 +64,7 @@ test("ride now boots from a static host under a prefix", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
   await feeds(page);
   const asked = requests(page);
-  await page.goto("/rider/ride-now.html");
+  await page.goto("/ride/ride-now.html");
 
   const first = page.getByTestId("nearby").getByTestId("stop-card").first();
   await expect(first).toContainText("Main Station", { timeout: 10_000 });
@@ -68,19 +72,19 @@ test("ride now boots from a static host under a prefix", async ({ page }) => {
 
   // Every published document by its hash, under the prefix, gzipped
   // where a module registers it; nothing outside the bundle.
-  const m = manifest();
+  const m = manifest(ride);
   await expect
     .poll(() => asked)
     .toEqual(
       expect.arrayContaining([
-        "/rider/manifest",
-        `/rider/blobs/${m.network_hash}.gz`,
-        `/rider/blobs/${m.boundary_hash}`,
-        `/rider/blobs/${m.streets_hash}.gz`,
-        `/rider/blobs/${m.walks_hash}`,
+        "/ride/manifest",
+        `/ride/blobs/${m.network_hash}.gz`,
+        `/ride/blobs/${m.boundary_hash}`,
+        `/ride/blobs/${m.streets_hash}.gz`,
+        `/ride/blobs/${m.walks_hash}`,
       ]),
     );
-  expect(asked.filter((p) => !p.startsWith("/rider/")), "every fetch stays inside the bundle").toEqual([]);
+  expect(asked.filter((p) => !p.startsWith("/ride/")), "every fetch stays inside the bundle").toEqual([]);
 
   // No geocoder in the manifest: place search finds stops only.
   await expect(page.getByPlaceholder("Search for a stop", { exact: true })).toBeVisible();
@@ -93,7 +97,7 @@ test.describe("ride now plans a trip from a static host", () => {
   test("directions to a stop walk the published streets", async ({ page }) => {
     await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
     await feeds(page);
-    await page.goto("/rider/ride-now.html");
+    await page.goto("/ride/ride-now.html");
     const cards = page.getByTestId("nearby").getByTestId("stop-card");
     await expect(cards.first().getByTestId("walk")).toHaveText("1 min walk", { timeout: 10_000 });
     await cards.first().getByRole("button").first().click();
@@ -107,13 +111,34 @@ test("the stop display answers live from a static host with no edit document", a
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
   await feeds(page);
   const asked = requests(page);
-  await page.goto("/rider/stop-display.html?stop=A&layout=routes");
+  await page.goto("/display/stop-display.html?stop=A&layout=routes");
 
   await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
   const ten = page.locator('[data-testid="display-group"][data-route="10"]').first();
   await expect(ten.getByTestId("display-time").first()).toContainText("2 min late");
   // The host has no edit document: asked, absent, and the board runs.
-  await expect.poll(() => asked).toContain("/rider/edits");
+  await expect.poll(() => asked).toContain("/display/edits");
+});
+
+test("each deployment carries its own UI and nothing else", async ({ page, request }) => {
+  // The other UIs' pages are not there, nor service design anywhere.
+  for (const absent of ["/ride/stop-display.html", "/ride/service-design.html", "/display/ride-now.html", "/display/service-design.html"]) {
+    expect((await request.get(absent)).status(), absent).toBe(404);
+  }
+  // The stop display draws no map: no basemap in its deployment.
+  expect((await request.get("/display/basemap-assets/sprites/v4/light.json")).status()).toBe(404);
+  // Each carries its own assembly, not the other's.
+  const caps = (bundle) => fs.readdirSync(path.join(bundle, "caps"));
+  expect(caps(ride).some((f) => f.startsWith("ui-ride-now-"))).toBe(true);
+  expect(caps(ride).some((f) => f.startsWith("ui-stop-display-") || f.startsWith("ui-service-design-"))).toBe(false);
+  expect(caps(display).some((f) => f.startsWith("ui-stop-display-"))).toBe(true);
+  expect(caps(display).some((f) => f.startsWith("ui-ride-now-") || f.startsWith("ui-service-design-"))).toBe(false);
+  // The deployment's root opens its UI, keeping the query.
+  await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
+  await feeds(page);
+  await page.goto("/display/?stop=A&layout=routes");
+  await expect(page).toHaveURL(/\/display\/stop-display\.html\?stop=A&layout=routes$/);
+  await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
 });
 
 test.describe("offline", () => {
@@ -122,7 +147,7 @@ test.describe("offline", () => {
   test("the stop display boots offline from a static host", async ({ page, context }) => {
     await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
     await feeds(page);
-    await page.goto("/rider/stop-display.html?stop=A&layout=routes");
+    await page.goto("/display/stop-display.html?stop=A&layout=routes");
     await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller), { timeout: 20_000 }).toBe(true);
     // Once more under the worker, so it is the worker that kept what it read.
     await page.reload();
@@ -138,7 +163,7 @@ test.describe("offline", () => {
   test("ride now boots offline from a static host", async ({ page, context }) => {
     await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
     await feeds(page);
-    await page.goto("/rider/ride-now.html");
+    await page.goto("/ride/ride-now.html");
     await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller), { timeout: 20_000 }).toBe(true);
     await page.reload();
     const first = page.getByTestId("nearby").getByTestId("stop-card").first();
@@ -152,15 +177,16 @@ test.describe("offline", () => {
 });
 
 test("an open display re-pins a redeploy without a reload", async ({ page }) => {
+  const bundle = display;
   const original = fs.readFileSync(path.join(bundle, "manifest"));
   try {
     await page.clock.install({ time: new Date("2026-10-23T07:55:00-04:00") });
     await feeds(page);
-    await page.goto("/rider/stop-display.html?stop=A&layout=routes");
+    await page.goto("/display/stop-display.html?stop=A&layout=routes");
     await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
     await page.evaluate(() => (window.__notReloaded = true));
     const [held] = await networks(page);
-    expect(held).toBe(manifest().network_hash);
+    expect(held).toBe(manifest(bundle).network_hash);
 
     // The redeploy, as an upload does it: the new bundle's blobs beside
     // the old ones (create-only — an open page pinned to the old
@@ -170,7 +196,7 @@ test("an open display re-pins a redeploy without a reload", async ({ page }) => 
       if (!fs.existsSync(to)) fs.copyFileSync(path.join(next, "blobs", blob), to);
     }
     fs.copyFileSync(path.join(next, "manifest"), path.join(bundle, "manifest"));
-    const moved = manifest().network_hash;
+    const moved = manifest(bundle).network_hash;
     expect(moved).not.toBe(held);
 
     // One poll (the display's 20 s): the new network, the old evicted.

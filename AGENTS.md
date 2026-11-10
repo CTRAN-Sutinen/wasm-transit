@@ -136,11 +136,17 @@ just serve [feed.zip [streets.geojson ["Publisher" [addr]]]]   # sync server on 
                            # (-store: s3://bucket/prefix?endpoint=…, azblob://…,
                            # gs://…, or mem://; docs/FORMATS.md; POST /plans
                            # publishes a pick)
-just export OUT feed.zip [streets.geojson ["Publisher"]]   # the deployment as static
-                           # files, no server (D-131): the pages, `manifest`, and
-                           # each published document as blobs/<hash>[.gz] — the
-                           # paths the server answers too; LIVE_FEEDS= names the
+just build-ui UI            # one UI built alone → web/dist-ui/UI/ (its page, its
+                           # assembly, the map only if it draws one)
+just export UI OUT feed.zip [streets.geojson ["Publisher"]]   # one rider UI (ride-now,
+                           # stop-display) as a static deployment of its own, no
+                           # server (D-131): its page, `manifest`, and each
+                           # published document as blobs/<hash>[.gz] — the paths
+                           # the server answers too; LIVE_FEEDS= names the
                            # deployment's live-feeds.json (no proxy)
+just export-feed-url UI OUT URL [streets.geojson ["Publisher"]]   # the same, but the
+                           # pages fetch and import the agency's GTFS URL
+                           # themselves, checked daily — no redeploy per feed (D-132)
 just store verify|gc|copy … # the store's offline tools (server/cmd/store): verify a
                            # bucket, collect orphans (D-117), carry an older
                            # build's directory store into a bucket
@@ -284,7 +290,8 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
 - Schedules change by **artifact replacement, not mutation**: the
   planner publishes a new zip; the server imports it once
   (cap-network) and publishes the NETWORK — browsers never parse
-  GTFS the server has; the manifest pins `network_hash` (with the
+  GTFS the server has (a serverless deployment may instead name the
+  agency's GTFS URL, and each page imports it — D-132); the manifest pins `network_hash` (with the
   zip's `feed_hash` as provenance) + the published picks
   (`plans_hash`; a page loads the pick in force) + the sync module's
   `wasm_hash`; everyone re-pins and revalidates.

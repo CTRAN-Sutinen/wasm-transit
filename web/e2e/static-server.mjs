@@ -4,13 +4,17 @@
 // compression, no routes. What a bucket or a bare web server does at
 // its least, so a page that boots here boots on any static host.
 //
-//   node e2e/static-server.mjs <root> <port>
+//   node e2e/static-server.mjs <root> <port> [cors]
+//
+// `cors` adds `Access-Control-Allow-Origin: *`, as an agency's feed
+// host sends it (e2e/static-feed-url.spec.mjs).
 
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 
-const [root, port] = process.argv.slice(2);
+const [root, port, cors] = process.argv.slice(2);
+const corsHeaders = cors === "cors" ? { "Access-Control-Allow-Origin": "*" } : {};
 const types = {
   ".html": "text/html",
   ".js": "text/javascript",
@@ -37,7 +41,7 @@ http
         res.writeHead(404).end();
         return;
       }
-      res.writeHead(200, { "Content-Type": types[path.extname(file)] ?? "application/octet-stream" }).end(body);
+      res.writeHead(200, { "Content-Type": types[path.extname(file)] ?? "application/octet-stream", ...corsHeaders }).end(body);
     });
   })
   .listen(Number(port), "127.0.0.1");

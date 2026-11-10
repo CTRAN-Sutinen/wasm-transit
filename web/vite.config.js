@@ -25,6 +25,54 @@ const input = {
   ...Object.fromEntries(uis.map((id) => [id, `${id}.html`])),
 };
 
+// ONE UI, deployable on its own (`UI=<id> vite build` → dist-ui/<id>/;
+// `just export <id> …`, D-131): only that page, its scripts, and what
+// it runs — the capability manifest, its linked assembly and, for the
+// fallback a page takes when the assembly does not load (D-88), each
+// of its capabilities alone; the deployment's live-feeds.json; the
+// basemap's files only when the page draws a map (its code includes
+// src/basemap.ts). index.html forwards to the page. Without UI the
+// build is every page (the sync server's).
+const only = process.env.UI || null;
+if (only && !uis.includes(only)) throw new Error(`UI=${only}: no generated UI by that id (${uis.join(", ")})`);
+function oneUi(id) {
+  let outDir = "";
+  let drawsMap = false;
+  const pub = path.join(root, "public");
+  const copy = (rel) => {
+    const from = path.join(pub, rel);
+    if (fs.existsSync(from)) fs.cpSync(from, path.join(outDir, rel), { recursive: true });
+  };
+  return {
+    name: "one-ui",
+    apply: "build",
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
+    generateBundle(_, bundle) {
+      drawsMap = Object.values(bundle).some((c) => c.type === "chunk" && Object.keys(c.modules).some((m) => m.endsWith("/src/basemap.ts")));
+    },
+    closeBundle() {
+      const caps = JSON.parse(fs.readFileSync(path.join(pub, "caps/manifest.json"), "utf8"));
+      const linked = caps.assemblies?.find((a) => a.ui === id);
+      copy("caps/manifest.json");
+      if (linked) {
+        copy(linked.url);
+        for (const cap of caps.capabilities.filter((c) => linked.capabilities.includes(c.id))) copy(cap.url);
+      }
+      copy("live-feeds.json");
+      if (drawsMap) {
+        copy("basemap.pmtiles");
+        copy("basemap-assets");
+      }
+      fs.writeFileSync(
+        path.join(outDir, "index.html"),
+        `<!doctype html>\n<meta charset="utf-8">\n<title>${id}</title>\n<script>location.replace(${JSON.stringify(`${id}.html`)} + location.search + location.hash);</script>\n<a href="${id}.html">${id}</a>\n`,
+      );
+    },
+  };
+}
+
 // The service worker (web/service-worker.js — D-63, D-65): written to
 // <outDir>/sw.js after the build with the build's identity and the
 // shell it precaches above the template — the pages of every UI whose
@@ -32,7 +80,7 @@ const input = {
 // manifest, and those UIs' linked assemblies. BUILD hashes the shell's
 // bytes, so a build that changes any of them is a byte-different
 // worker the browser's update check installs (and leaves waiting).
-const offline = uis.filter((id) => JSON.parse(fs.readFileSync(path.join(root, "src/uis", id, "ui.json"), "utf8")).offline === true);
+const offline = uis.filter((id) => (!only || id === only) && JSON.parse(fs.readFileSync(path.join(root, "src/uis", id, "ui.json"), "utf8")).offline === true);
 function serviceWorker() {
   let outDir = "";
   return {
@@ -64,10 +112,14 @@ function serviceWorker() {
 export default defineConfig({
   // Relative: the built pages reference their assets beside them, so
   // a deployment serves them from any path — a static host's prefix
-  // (/rider/, D-131) as well as the sync server's root.
+  // (/ride/, D-131) as well as the sync server's root.
   base: "./",
-  plugins: [svelte(), serviceWorker()],
-  build: { target: "esnext", rollupOptions: { input } },
+  plugins: [svelte(), ...(only ? [oneUi(only)] : []), serviceWorker()],
+  build: only
+    ? { target: "esnext", outDir: `dist-ui/${only}`, rollupOptions: { input: { [only]: `${only}.html` } } }
+    : { target: "esnext", rollupOptions: { input } },
+  // One UI copies only what it runs from public/ (oneUi).
+  publicDir: only ? false : "public",
   // The bus worker (src/bus.worker.ts) is a module worker.
   worker: { format: "es" },
   server: {

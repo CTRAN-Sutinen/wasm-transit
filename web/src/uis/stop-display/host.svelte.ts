@@ -252,6 +252,8 @@ export async function boot(): Promise<void> {
     // directory answers the first question; the board and rt when the
     // directory did not assemble): none holds a copy only to check it.
     const served = await servedNetwork(today(), "directory", "board", "rt");
+    // A deployment that names its GTFS URL: the zip's zone (D-132).
+    setAgencyZone(served?.timezone);
     followsServer = !!served;
     if (served) return served;
     display.status = "This server publishes no network — load the agency's GTFS zip to begin.";
@@ -334,7 +336,15 @@ async function followDeployment(): Promise<boolean> {
   if (!followsServer || !network) return false;
   const pin = await servedNetworkPin(today()).catch(() => null);
   if (!pin || pin === network.pin) return false;
-  await adoptNetwork("the agency's network", () => servedNetwork(today(), "directory", "board", "rt"), { quiet: true });
+  await adoptNetwork(
+    "the agency's network",
+    async () => {
+      const served = await servedNetwork(today(), "directory", "board", "rt");
+      setAgencyZone(served?.timezone);
+      return served;
+    },
+    { quiet: true },
+  );
   return true;
 }
 

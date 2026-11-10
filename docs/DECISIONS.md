@@ -170,6 +170,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-129 | Where does the authored GTFS-rt reach riders? | unanswered | publishing in `rt-publish` |
 | D-130 | Where does a display's identity live on the device? | decided | nothing |
 | D-131 | Does the MVP deployment need a server? | decided | nothing |
+| D-132 | Can a serverless deployment follow the agency's GTFS URL? | decided | nothing |
 
 ## The trip model
 
@@ -3022,8 +3023,13 @@ new zip is a new export uploaded by hand or CI. Service design's
 publish is not part of the MVP deployment. Without a server there is
 no `/rt` relay (the feeds must send CORS, D-67), no geocoder proxy
 (place search is off), and no edit document written (no detours or
-cancels shown); a rollback redeploys the previous bundle
-(docs/ARCHITECTURE.md, server section, "Static deployment"; pinned by
+cancels shown); a rollback redeploys the previous bundle. 2026-11-10, further: "these
+separate UI's aren't 'one app' that should all be deployed at once. the
+service design piece makes no sense without a server. i want to be able
+to deploy the ride now and stop display serverless, and i want to be
+able to deploy them independently" — each rider UI is exported and
+deployed on its own (`just export <ui>`); service design runs only with
+the server (docs/ARCHITECTURE.md, server section, "Static deployment"; pinned by
 `web/e2e/static-deploy.spec.mjs` and Go's
 `TestTheExportIsWhatTheServerServes`).
 Context: the rider pages read the server's derived documents
@@ -3033,6 +3039,30 @@ each refused unless it answers its pin) and `/edits`. Most pins are
 already the manifest's (`network_hash`, `streets_hash`, `walks_hash`,
 `plans_hash`); `/network/document`, `/streets` and `/walks` take theirs
 from the ETag, which a static host does not set to a content hash.
+Blocks: nothing.
+
+### D-132 — Can a serverless deployment follow the agency's GTFS URL?
+State: Decided.
+Answer: 2026-11-10 — yes, the pages fetch the GTFS: "Pages fetch the
+GTFS" — "this is an exception, allowing for a fully serverless deploy.
+with the server then we wouldn't have the client parse GTFS. the rule
+is too strict" — and "the budget will get blown by GTFS, that is ok."
+Encoded as: an export may name the feed's URL (`-feed-url`, `just
+export-feed-url`) instead of importing it; the manifest carries
+`feed_url` and no network, and each page fetches the zip, imports it in
+its own assembly (network `import`), and checks the URL once a day,
+adopting a changed zip without a reload (`servedNetworkPin`,
+`importFollowed` in `web/src/engine.ts`). The last zip is kept in Cache
+Storage, so a device boots offline on it. With a server, the server
+imports and the pages never parse GTFS. In this mode the D-68 budgets
+do not hold (C-TRAN's import is ~2.7 s and a ~187 MB network module per
+page); there is no walk table between stops (it needs the network,
+which only the page has). Pinned by `web/e2e/static-feed-url.spec.mjs`
+and Go's `TestTheExportNamesAFeedURLAndImportsNothing`.
+Context: a static deployment (D-131) otherwise needs a redeploy per new
+GTFS zip. Options were a scheduled job that re-exports and redeploys
+when the zip changes, the pages fetching the zip, or a Cloudflare
+Worker cron running the import.
 Blocks: nothing.
 
 ### D-84 — Who takes a build first, and what counts as healthy?

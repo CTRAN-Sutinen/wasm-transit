@@ -10,11 +10,17 @@ const buildsDist = path.join(os.tmpdir(), "transit-e2e-builds");
 /// e2e/deploy-rollback.spec.mjs publishes a new release over.
 const releasesDist = path.join(os.tmpdir(), "transit-e2e-releases");
 /// The static host's root (e2e/static-deploy.spec.mjs, D-131): the
-/// server's export of the fixture feed under /rider/, served by a plain
-/// static file server; and a second export (the overnight feed) the
-/// spec uploads over it as a redeploy.
+/// server's export of each rider UI alone (web/dist-ui/<id>, `just
+/// build-ui`) over the fixture feed — ride-now under /ride/, the stop
+/// display under /display/ — served by a plain static file server; and
+/// a third export (the stop display over the overnight feed) the spec
+/// uploads over /display/ as a redeploy.
 const staticRoot = path.join(os.tmpdir(), "transit-e2e-static");
 const staticNext = path.join(os.tmpdir(), "transit-e2e-static-next");
+/// A serverless deployment that follows the agency's GTFS URL
+/// (e2e/static-feed-url.spec.mjs, D-132): each rider UI's bundle (under
+/// /ride/ and /display/) and the feed under /feeds/, served with CORS.
+const staticFetchRoot = path.join(os.tmpdir(), "transit-e2e-static-fetch");
 
 // E2E tests run against the built app (npm run build) served by the
 // Go sync server — on their OWN port, never reused: a shared server
@@ -93,9 +99,19 @@ export default defineConfig({
     {
       // A static deployment (e2e/static-deploy.spec.mjs, D-131): no Go
       // server serves it — the export writes the bundle and exits.
-      command: `bash -c 'rm -rf "${staticRoot}" "${staticNext}" && go run . -export "${staticRoot}/rider" -feed ../web/e2e/fixtures/sample-gtfs.zip -streets ../web/e2e/fixtures/walk-streets.geojson -live-feeds ../web/e2e/fixtures/static-live-feeds.json && go run . -export "${staticNext}" -feed ../web/e2e/fixtures/overnight-gtfs.zip && exec node ../web/e2e/static-server.mjs "${staticRoot}" 8087'`,
+      command: `bash -c 'rm -rf "${staticRoot}" "${staticNext}" && for ui in ride-now:ride stop-display:display; do go run . -export "${staticRoot}/\${ui#*:}" -dist "../web/dist-ui/\${ui%%:*}" -feed ../web/e2e/fixtures/sample-gtfs.zip -streets ../web/e2e/fixtures/walk-streets.geojson -live-feeds ../web/e2e/fixtures/static-live-feeds.json || exit 1; done && go run . -export "${staticNext}" -dist ../web/dist-ui/stop-display -feed ../web/e2e/fixtures/overnight-gtfs.zip && exec node ../web/e2e/static-server.mjs "${staticRoot}" 8087'`,
       cwd: "../server",
-      url: "http://127.0.0.1:8087/rider/manifest",
+      url: "http://127.0.0.1:8087/display/manifest",
+      reuseExistingServer: false,
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+    {
+      // The serverless deployment that fetches its GTFS (D-132): the
+      // export names the feed's URL and imports nothing.
+      command: `bash -c 'rm -rf "${staticFetchRoot}" && for ui in ride-now:ride stop-display:display; do go run . -export "${staticFetchRoot}/\${ui#*:}" -dist "../web/dist-ui/\${ui%%:*}" -feed-url http://localhost:8088/feeds/feed.zip -live-feeds ../web/e2e/fixtures/static-live-feeds.json || exit 1; done && mkdir -p "${staticFetchRoot}/feeds" && cp ../web/e2e/fixtures/sample-gtfs.zip "${staticFetchRoot}/feeds/feed.zip" && exec node ../web/e2e/static-server.mjs "${staticFetchRoot}" 8088 cors'`,
+      cwd: "../server",
+      url: "http://127.0.0.1:8088/display/manifest",
       reuseExistingServer: false,
       stdout: "ignore",
       stderr: "pipe",

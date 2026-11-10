@@ -63,6 +63,7 @@ func main() {
 	geocoderPolicy := flag.String("geocoder-policy", "geocoder.json", "the deployment's geocoder query policy (Pelias parameters per op), applied by the proxy")
 	exportDir := flag.String("export", "", "write the deployment as a static bundle into this directory (absent or empty) and exit: -dist's pages, the manifest, and every published document as blobs/<hash> and blobs/<hash>.gz — the paths this server answers (D-131; export.go)")
 	liveFeeds := flag.String("live-feeds", "", "with -export: the deployment's live-feeds.json (its agency feeds, no proxy), replacing -dist's dev copy")
+	feedURL := flag.String("feed-url", "", "with -export, instead of -feed: the agency's GTFS zip URL the pages fetch, import, and check daily themselves — a serverless deployment that follows the feed with no redeploy (D-132); the URL must answer with CORS")
 	flag.Parse()
 
 	mime.AddExtensionType(".wasm", "application/wasm")
@@ -140,6 +141,10 @@ func main() {
 			log.Fatalf("streets: %v", err)
 		}
 	}
+	if *feedURL != "" && (*exportDir == "" || *feedPath != "") {
+		log.Fatal("-feed-url is an export's (-export), in place of -feed: a server imports its feed")
+	}
+	s.feedURL = *feedURL
 	if *exportDir != "" {
 		if err := s.export(*exportDir, *liveFeeds); err != nil {
 			log.Fatalf("export: %v", err)
@@ -191,6 +196,9 @@ type server struct {
 	streets   *streetsSource // nil when no street layer is configured
 	publisher string
 	geocoder  *geocoder // nil when no geocoder is configured
+	// The GTFS URL an export names for the pages to fetch (D-132);
+	// "" for a server, which imports its own feed.
+	feedURL string
 
 	// The /rt feed proxy (-rt-proxy, a dev convenience — D-67) and its
 	// upstream timeout (0 = proxyTimeoutDefault).
@@ -375,11 +383,15 @@ func (s *server) handleProxy(w http.ResponseWriter, r *http.Request) {
 // from the feed's own feed_info.txt by the host (the host owns files
 // and I/O; the module owns the format's domain).
 type Manifest struct {
-	NetworkHash string  `json:"network_hash"` // the network GET /network serves
+	NetworkHash string `json:"network_hash"` // the network GET /network serves
 	// The import's boundary (the feed's numbering the live feeds name),
 	// a blob of its own: sha256 of its bytes, as every blob is named.
 	BoundaryHash string `json:"boundary_hash,omitempty"`
-	FeedHash    string  `json:"feed_hash"`    // "sha256:<hex>" of the GTFS zip it was imported from
+	// A serverless deployment that follows the agency's GTFS URL
+	// (D-132; -export with -feed-url): no network is published, and
+	// each page fetches this zip, imports it, and checks it daily.
+	FeedURL     string  `json:"feed_url,omitempty"`
+	FeedHash    string  `json:"feed_hash"` // "sha256:<hex>" of the GTFS zip it was imported from
 	FeedVersion *string `json:"feed_version,omitempty"`
 	StreetsHash string  `json:"streets_hash,omitempty"` // the streets document GET /streets serves
 	WalksHash   string  `json:"walks_hash,omitempty"`   // the walk table GET /walks serves
@@ -438,6 +450,7 @@ func (s *server) buildManifest() (Manifest, error) {
 	if s.publisher != "" {
 		manifest.Publisher = &s.publisher
 	}
+	manifest.FeedURL = s.feedURL
 	if loc := s.agencyZone(); loc != nil {
 		manifest.Timezone = loc.String()
 	}
@@ -467,7 +480,7 @@ func manifestKeyOf(m Manifest) string {
 	services, _ := json.Marshal(m.Services)
 	sum := sha256.Sum256([]byte(strings.Join([]string{
 		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.BuildHash, m.NetworkHash, m.BoundaryHash, m.FeedHash, orEmpty(m.FeedVersion),
-		m.StreetsHash, m.WalksHash, orEmpty(m.Publisher), m.Timezone, string(services),
+		m.StreetsHash, m.WalksHash, orEmpty(m.Publisher), m.Timezone, string(services), m.FeedURL,
 	}, "|")))
 	return hex.EncodeToString(sum[:])
 }

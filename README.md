@@ -59,12 +59,12 @@ STORE=mem:// just serve path/to/gtfs.zip       # + the sync store (/pointers, /b
                                                # object store survives a restart:
 just store-dev                                 # SeaweedFS in podman, and its STORE= URL
 just dev                                     # vite hot reload + the server
-just export out/ path/to/gtfs.zip [roads.geojson]   # or no server at all: the deployment
-                                             # as static files for any host (D-131;
-                                             # LIVE_FEEDS= names its feeds)
+just export ride-now out/ path/to/gtfs.zip [roads.geojson]   # or no server: one rider
+                                             # app (ride-now, stop-display) as its own
+                                             # static site (D-131; LIVE_FEEDS= names its feeds)
 ```
 
-Deploying the static site (Cloudflare Workers, step by step):
+Deploying the rider apps as static sites (Cloudflare Workers, step by step):
 [DEPLOYMENTS.md](DEPLOYMENTS.md).
 
 Open http://127.0.0.1:8080. `just test` is the host-side gate,

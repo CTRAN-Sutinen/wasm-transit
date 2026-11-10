@@ -64,7 +64,8 @@ What is left here:
 ## Done when
 
 - [runtime-cost-gate.md](runtime-cost-gate.md) is deleted, with
-  ceilings under the D-68 budgets, and document-versioning's browser
+  ceilings under the D-68 budgets (for a deployment that publishes its
+  network; one that follows the GTFS URL is exempt, D-132), and document-versioning's browser
   items are pinned.
 - The static host chosen and its headers configured to the rule in
   docs/ARCHITECTURE.md ("Static deployment"), the config recorded

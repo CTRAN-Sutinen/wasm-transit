@@ -230,3 +230,31 @@ func TestTheExportRefusesANonEmptyDirectory(t *testing.T) {
 		t.Fatal("export into a non-empty directory succeeded")
 	}
 }
+
+// A serverless deployment that follows the agency's GTFS URL (D-132):
+// the export names the feed for the pages to fetch and imports none —
+// the manifest pins no network, and no network blob is written.
+func TestTheExportNamesAFeedURLAndImportsNothing(t *testing.T) {
+	s := exportServer(t)
+	s.feeder, s.streets = nil, nil
+	s.feedURL = "https://feeds.example.test/gtfs.zip"
+	bundle := filepath.Join(t.TempDir(), "bundle")
+	if err := s.export(bundle, ""); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(bundle, "manifest"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.FeedURL != s.feedURL || m.NetworkHash != "" || m.BoundaryHash != "" {
+		t.Fatalf("manifest feed_url %q network %q boundary %q — want the URL and no network", m.FeedURL, m.NetworkHash, m.BoundaryHash)
+	}
+	blobs, _ := os.ReadDir(filepath.Join(bundle, "blobs"))
+	if len(blobs) != 0 {
+		t.Fatalf("%d blobs written, want none", len(blobs))
+	}
+}

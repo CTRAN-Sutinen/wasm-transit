@@ -522,7 +522,94 @@ type DeploymentManifest = {
   plans_hash?: string;
   streets_hash?: string;
   walks_hash?: string;
+  /// A serverless deployment that follows the agency's GTFS URL (D-132).
+  feed_url?: string;
 };
+
+// ---------------------------------------------------------------------
+// a deployment that names its GTFS URL (D-132): with no server to
+// import it, the page fetches the zip, imports it in its own assembly
+// (network `import`), and checks the URL once a day — a changed zip is
+// imported and adopted, an unchanged one is not. The last zip is kept
+// in Cache Storage, so a device boots offline on the schedule it had.
+// ---------------------------------------------------------------------
+
+const FEED_CHECK_MS = 24 * 3600_000;
+/// A check that found the URL unanswered (and read the kept copy, or
+/// nothing) retries after this, not at the next poll nor a day later.
+const FEED_RETRY_MS = 3600_000;
+const FEED_CACHE = "gtfs-feed";
+
+/// What this page knows of the deployment's GTFS URL: when it last
+/// checked it, the zip's hash then, the network it imported from that
+/// zip (null until imported), and a fetched zip not yet imported.
+let followed: { url: string; checkedAt: number; zipHash: string; networkHash: string | null; pending: Uint8Array<ArrayBuffer> | null } | null = null;
+
+async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/// The zip at `url` — fetched (`fresh`), and kept as the last copy;
+/// when the URL does not answer, the last copy this device kept; null
+/// when neither.
+async function feedZip(url: string): Promise<{ bytes: Uint8Array<ArrayBuffer>; fresh: boolean } | null> {
+  const kept = typeof caches === "undefined" ? null : await caches.open(FEED_CACHE).catch(() => null);
+  try {
+    const resp = await fetch(url, { cache: "no-cache" });
+    if (resp.ok) {
+      await kept?.put(url, resp.clone()).catch(() => {});
+      return { bytes: new Uint8Array(await resp.arrayBuffer()), fresh: true };
+    }
+  } catch {
+    // unreachable: the last copy below
+  }
+  const hit = await kept?.match(url).catch(() => undefined);
+  return hit ? { bytes: new Uint8Array(await hit.arrayBuffer()), fresh: false } : null;
+}
+
+/// Check the URL (at most once a day): the hash of the network the
+/// page should hold — the one it imported, while the zip is unchanged;
+/// for a changed zip, a pin no network holds (`feed:<zip hash>`), so the
+/// page adopts `servedNetwork`'s import of it. Null when the URL does
+/// not answer and nothing was imported yet.
+async function followedPin(url: string): Promise<string | null> {
+  const now = Date.now();
+  if (followed?.url === url && now - followed.checkedAt < FEED_CHECK_MS) return followed.networkHash;
+  const got = await feedZip(url);
+  // The URL did not answer: check again in an hour, not a day.
+  const checkedAt = got?.fresh ? now : now - FEED_CHECK_MS + FEED_RETRY_MS;
+  if (!got) {
+    if (followed?.url === url) followed.checkedAt = checkedAt;
+    return followed?.url === url ? followed.networkHash : null;
+  }
+  const zipHash = await sha256Hex(got.bytes);
+  const same = followed?.url === url && followed.zipHash === zipHash;
+  followed = { url, checkedAt, zipHash, networkHash: same ? followed!.networkHash : null, pending: same ? null : got.bytes };
+  return followed.networkHash ?? `feed:${zipHash}`;
+}
+
+/// Import the deployment's GTFS: the zip the last check fetched, else
+/// fetched now. The import is the network module's; its network is
+/// registered where it was made (`produced`).
+async function importFollowed(url: string): Promise<{ network: Doc<Network>; boundary: Doc<Boundary>; timezone?: string } | null> {
+  let bytes = followed?.url === url ? followed.pending : null;
+  if (!bytes) {
+    const got = await feedZip(url);
+    if (!got) return null;
+    bytes = got.bytes;
+    const checkedAt = got.fresh ? Date.now() : Date.now() - FEED_CHECK_MS + FEED_RETRY_MS;
+    followed = { url, checkedAt, zipHash: await sha256Hex(bytes), networkHash: null, pending: bytes };
+  }
+  if (!(await available("network"))) throw new Unavailable("network");
+  const imported = await ask("network", "import", { feed_hash: new Doc("feed", { bytes }) });
+  followed = { ...followed!, networkHash: imported.network_hash, pending: null };
+  return {
+    network: produced("network", imported.network, "network", imported.network_hash),
+    boundary: new Doc<Boundary>("boundary", { value: imported.boundary }),
+    timezone: imported.timezone ?? undefined,
+  };
+}
 
 /// A published document's bytes, gzipped, by its hash.
 function blobGz(hash: string): Promise<Response | null> {
@@ -563,7 +650,9 @@ export async function servedNetworkPin(date: string): Promise<string | null> {
   const manifest = await deploymentManifestNow();
   if (!manifest) return null;
   const pick = await pickInForce(date, manifest);
-  return pick?.network_hash ?? manifest.network_hash ?? null;
+  if (pick) return pick.network_hash;
+  if (manifest.network_hash) return manifest.network_hash;
+  return manifest.feed_url ? followedPin(manifest.feed_url) : null;
 }
 
 /// The deployment's published network on `date`, for a page that READS
@@ -574,7 +663,10 @@ export async function servedNetworkPin(date: string): Promise<string | null> {
 /// the first pick takes effect, the manifest's `network_hash`: the
 /// import of the deployment's GTFS zip (cap-network, the same module),
 /// with its boundary (`boundary_hash`) — one manifest read names both,
-/// so the boundary always belongs to the network. Either way the
+/// so the boundary always belongs to the network. A deployment with no
+/// network but the agency's GTFS URL (`feed_url`, D-132) has the page
+/// import the zip itself (`importFollowed`); its answer carries the
+/// feed's `timezone` for the host to adopt. Either way the
 /// network arrives gzipped and the page never unzips or parses it —
 /// every module registers it compressed (kernel op 256 decodes as it
 /// parses). Registered in a reader now, so a network that does not
@@ -587,13 +679,16 @@ export async function servedNetworkPin(date: string): Promise<string | null> {
 export async function servedNetwork(
   date: string,
   ...readers: CapId[]
-): Promise<{ network: Doc<Network>; boundary: Doc<Boundary> } | null> {
+): Promise<{ network: Doc<Network>; boundary: Doc<Boundary>; timezone?: string } | null> {
   const candidates: CapId[] = readers.length ? readers : ["network"];
   let cap: CapId | null = null;
   for (const c of candidates) if (!cap && (await available(c))) cap = c;
   if (!cap) throw new Unavailable(candidates[0]);
   const manifest = await deploymentManifestNow();
   const pick = await pickInForce(date, manifest);
+  // No network published, but the agency's GTFS URL named: the page
+  // imports it (D-132; its `timezone` is the hosts' to adopt).
+  if (!pick && !manifest?.network_hash && manifest?.feed_url) return importFollowed(manifest.feed_url);
   const pin = pick?.network_hash ?? manifest?.network_hash;
   if (!pin) return null;
   let boundaryValue: Boundary = { kind: "boundary", schema_version: 1 };

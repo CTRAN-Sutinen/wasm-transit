@@ -23,7 +23,7 @@
 ///   offline on the last manifest it had, and so on the network it
 ///   pins (D-65). Paths are
 ///   read relative to the worker's scope, so a deployment under a
-///   prefix (a static host's /rider/, D-131) matches as one at the root.
+///   prefix (a static host's /ride/, D-131) matches as one at the root.
 ///   Never cached: live feeds and the dev relay (a prediction is never
 ///   replayed as live), the edit document (offline, the boards are the
 ///   schedule and say so), writes, and the geocoder.
