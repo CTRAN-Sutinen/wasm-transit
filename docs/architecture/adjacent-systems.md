@@ -20,7 +20,7 @@ extra-board fill, a swap, a vehicle assignment). The seam:
 2. **Standard formats wherever one exists:** the GTFS zip in force
    (`GET /feed`); GTFS + TODS for the operations plan (D-126); GTFS-rt
    for the authored cancels and detours — this repo is an authoring
-   surface for what GTFS-rt carries (D-124; no op encodes it yet). The registry's schemas cover only what
+   surface for what GTFS-rt carries (D-124, deferred: no op encodes it). The registry's schemas cover only what
    the standards cannot say.
 3. **References carry their version.** An external reference names
    the document with the entity: a pick id with a trip id, a trip

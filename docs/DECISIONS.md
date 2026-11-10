@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-116**.
+- IDs are never reused; the next new decision is **D-133**.
 
 ## Summary
 
@@ -177,12 +177,12 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-121 | Does the store keep the edit document whole per commit, or record by record? | unanswered | the edits layout in `store-durability` |
 | D-122 | Is the dispatcher's day in scope? | decided | nothing |
 | D-123 | Do trip, block, and run ids survive from one pick to the next? | unanswered | nothing |
-| D-124 | Does this repo publish its cancels and detours as GTFS-rt? | decided | nothing |
+| D-124 | Does this repo publish its cancels and detours as GTFS-rt? | decided; deferred | nothing |
 | D-125 | Does an edit record carry its source system's id? | unanswered | nothing |
 | D-126 | Is the runs layer shaped by TODS? | decided | nothing |
 | D-127 | Where does operations history come from? | decided | nothing |
 | D-128 | Does this repo produce TIDES? | decided | nothing |
-| D-129 | Where does the authored GTFS-rt reach riders? | unanswered | publishing in `rt-publish` |
+| D-129 | Where does the authored GTFS-rt reach riders? | unanswered | nothing (publishing is deferred, D-124) |
 | D-130 | Where does a display's identity live on the device? | decided | nothing |
 | D-131 | Does the MVP deployment need a server? | decided | nothing |
 | D-132 | Can a serverless deployment follow the agency's GTFS URL? | decided | nothing |
@@ -1773,11 +1773,15 @@ Options:
 Blocks: nothing yet; any adjacent system that joins across picks.
 
 ### D-124 — Does this repo publish its cancels and detours as GTFS-rt?
-State: Decided.
+State: Decided; deferred.
 Answer: 2026-11-06 — yes: "detours and cancels are in the GTFS-RT spec,
 it is just that we are providing an additional authoring surface."
 The edit document is the authored model; GTFS-rt is its serialization,
 as GTFS is the network's.
+2026-11-10 — deferred, with no timetable: "taking over a GTFS feed is a
+big change for the app, so i don't want it queued. it is an explicit
+defer for now with no timetable to be added." No unit and no queued
+item tracks the publishing.
 Context: a trip cancel is a TripUpdate with `CANCELED`; a diversion is
 a TripModifications (start and end stop selectors, the detour as a
 shape, `propagated_modification_delay` = `added_secs`, its
@@ -1790,8 +1794,8 @@ diversion has no replacement stops yet, which TripModifications
 carries. `transit-rt` decodes GTFS-rt and joins it over the network;
 no op encodes a feed.
 Options:
-- **Publish: an op answers the edits in force as GTFS-rt — decided**
-  (`docs/units/rt-publish.md`).
+- **Publish: an op answers the edits in force as GTFS-rt — decided,
+  deferred (2026-11-10).**
 - Documents only: adjacent systems read the edit document and do
   their own translation.
 Blocks: nothing.
@@ -1812,7 +1816,7 @@ Options:
   publishes (an adjacent system's input, D-122).
 - Both: this repo's endpoints are the source the CAD/AVL reads, and
   the vendor's feed is what riders' apps read.
-Blocks: publishing in `docs/units/rt-publish.md`.
+Blocks: nothing — publishing is deferred (D-124).
 
 ### D-125 — Does an edit record carry its source system's id?
 State: Unanswered.

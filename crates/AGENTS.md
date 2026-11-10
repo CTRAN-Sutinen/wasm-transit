@@ -1,7 +1,7 @@
 # AGENTS.md — the crates
 
-Two laws govern everything under this directory. If a design
-violates either one, the design is wrong — not the law.
+Three laws govern everything under this directory. If a design
+violates any one, the design is wrong — not the law.
 
 ## Law 1: the NETWORK is the core data model
 
