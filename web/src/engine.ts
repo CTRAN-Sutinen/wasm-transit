@@ -507,42 +507,57 @@ export type Inspection = typeof inspection;
 // the deployment's published documents
 // ---------------------------------------------------------------------
 
-/// The hash a published document's ETag pins (`"<hash>"`, weakened or
-/// not by a proxy).
-function etag(resp: Response): string | null {
-  return resp.headers.get("ETag")?.replace(/^W\//, "").replace(/"/g, "") || null;
+/// The deployment's manifest and published documents live at one
+/// layout, whoever serves it — the sync server or a static host
+/// (D-131; docs/ARCHITECTURE.md, "Static deployment"): `manifest`, and
+/// each document by its hash at `blobs/<hash>` (its JSON) and
+/// `blobs/<hash>.gz` (the same bytes gzipped — fetched as bytes, so a
+/// module registers them compressed and the text never exists whole on
+/// the page). Paths are relative to the page, so a deployment may live
+/// under a prefix. Every pin is the manifest's, never a response
+/// header's.
+type DeploymentManifest = {
+  network_hash?: string;
+  boundary_hash?: string;
+  plans_hash?: string;
+  streets_hash?: string;
+  walks_hash?: string;
+};
+
+/// A published document's bytes, gzipped, by its hash.
+function blobGz(hash: string): Promise<Response | null> {
+  return fetch(`blobs/${hash}.gz`).catch(() => null);
 }
 
 /// The published pick in force on `date`: the manifest's `plans_hash`
-/// names the published plan set (`GET /blobs/<hash>`), and the plans
+/// names the published plan set (`blobs/<hash>`), and the plans
 /// module answers which pick governs the date and its network's hash.
 /// Null when the deployment publishes no picks or none has taken
 /// effect yet; throws Unavailable when it publishes picks and the plans
 /// module does not assemble — a page never guesses which schedule runs.
-async function pickInForce(date: string, manifest?: { plans_hash?: string } | null): Promise<PublishedPlan | null> {
+async function pickInForce(date: string, manifest?: DeploymentManifest | null): Promise<PublishedPlan | null> {
   manifest ??= await deploymentManifestNow();
   const plansHash = manifest?.plans_hash;
   if (!plansHash) return null;
   if (!(await available("plans"))) throw new Unavailable("plans");
-  const set = await fetch(`/blobs/${plansHash}`).catch(() => null);
+  const set = await fetch(`blobs/${plansHash}`).catch(() => null);
   if (!set?.ok) return null;
   const published = (await set.json()) as PublishedPlans;
   return (await ask("plans", "in_force", { published, date })).plan;
 }
 
 /// The deployment's manifest as it stands now — revalidated on every
-/// read (its ETag; a 304 while nothing moved). Null when the server
-/// does not answer.
-async function deploymentManifestNow(): Promise<{ plans_hash?: string; network_hash?: string } | null> {
-  const resp = await fetch("/manifest", { cache: "no-cache" }).catch(() => null);
-  return resp?.ok ? ((await resp.json()) as { plans_hash?: string; network_hash?: string }) : null;
+/// read. Null when the deployment does not answer.
+async function deploymentManifestNow(): Promise<DeploymentManifest | null> {
+  const resp = await fetch("manifest", { cache: "no-cache" }).catch(() => null);
+  return resp?.ok ? ((await resp.json()) as DeploymentManifest) : null;
 }
 
 /// The hash of the network the deployment serves on `date` — the pick
 /// in force, else its import: what `servedNetwork` would load now. An
 /// open page compares it with the network it holds on each poll and
 /// re-pins when it moved (a republish, a new pick, or the date crossing
-/// a pick's effective date — D-63). Null when the server does not
+/// a pick's effective date — D-63). Null when the deployment does not
 /// answer or publishes none: the page keeps what it holds.
 export async function servedNetworkPin(date: string): Promise<string | null> {
   const manifest = await deploymentManifestNow();
@@ -553,23 +568,22 @@ export async function servedNetworkPin(date: string): Promise<string | null> {
 
 /// The deployment's published network on `date`, for a page that READS
 /// it. When the deployment publishes picks (docs/ROADMAP.md 1), the
-/// pick in force on the date (`pickInForce`): its network by hash
-/// (`GET /blobs/<network_hash>`, gzipped), with the default boundary —
-/// a published pick is an authored document, numbered 1..n the way its
-/// export is. Otherwise, and before the first pick takes effect,
-/// `GET /network/document`: the server's import of its GTFS zip
-/// (cap-network, the same module), and its boundary
-/// (`GET /network/boundary`, under the same pin). Either way the bytes
-/// arrive gzipped and the page never unzips or parses them — every
-/// module registers them compressed (kernel op 256 decodes as it
-/// parses, so the document's text never exists whole anywhere on the
-/// page). Registered in a reader now, so a network that does not answer
-/// the hash the server pins is refused before anything is asked of it.
-/// A page names the modules that read it, in order, and the pin is
-/// checked in the first that assembles — registering it in a module the
-/// page never asks would hold a whole copy only to check it. The
-/// network's name is a question for the directory (`about`). Throws
-/// Unavailable when none assembles; null when the server publishes none.
+/// pick in force on the date (`pickInForce`): its network by hash,
+/// with the default boundary — a published pick is an authored
+/// document, numbered 1..n the way its export is. Otherwise, and before
+/// the first pick takes effect, the manifest's `network_hash`: the
+/// import of the deployment's GTFS zip (cap-network, the same module),
+/// with its boundary (`boundary_hash`) — one manifest read names both,
+/// so the boundary always belongs to the network. Either way the
+/// network arrives gzipped and the page never unzips or parses it —
+/// every module registers it compressed (kernel op 256 decodes as it
+/// parses). Registered in a reader now, so a network that does not
+/// answer its pin is refused before anything is asked of it. A page
+/// names the modules that read it, in order, and the pin is checked in
+/// the first that assembles — registering it in a module the page never
+/// asks would hold a whole copy only to check it. The network's name is
+/// a question for the directory (`about`). Throws Unavailable when none
+/// assembles; null when the deployment publishes none.
 export async function servedNetwork(
   date: string,
   ...readers: CapId[]
@@ -578,27 +592,23 @@ export async function servedNetwork(
   let cap: CapId | null = null;
   for (const c of candidates) if (!cap && (await available(c))) cap = c;
   if (!cap) throw new Unavailable(candidates[0]);
-  const pick = await pickInForce(date);
-  if (pick) {
-    const doc = await fetch(`/blobs/${pick.network_hash}`, { headers: { Accept: "application/gzip" } }).catch(() => null);
-    if (!doc?.ok) return null;
-    const network = new Doc<Network>("network", { bytes: new Uint8Array(await doc.arrayBuffer()) }, { pin: pick.network_hash });
-    const boundary = new Doc<Boundary>("boundary", { value: { kind: "boundary", schema_version: 1 } });
-    await load(cap, network);
-    return { network, boundary };
+  const manifest = await deploymentManifestNow();
+  const pick = await pickInForce(date, manifest);
+  const pin = pick?.network_hash ?? manifest?.network_hash;
+  if (!pin) return null;
+  let boundaryValue: Boundary = { kind: "boundary", schema_version: 1 };
+  if (!pick) {
+    if (!manifest?.boundary_hash) return null;
+    const bnd = await fetch(`blobs/${manifest.boundary_hash}`).catch(() => null);
+    if (!bnd?.ok) return null;
+    boundaryValue = (await bnd.json()) as Boundary;
   }
-  // The two answer one import: a republish between the requests is
-  // read again, so the boundary always belongs to the network.
-  for (let tries = 0; tries < 3; tries++) {
-    const [doc, bnd] = await Promise.all([fetch("/network/document"), fetch("/network/boundary")]).catch(() => [null, null]);
-    if (!doc?.ok || !bnd?.ok) return null;
-    if (etag(doc) !== etag(bnd)) continue;
-    const network = new Doc<Network>("network", { bytes: new Uint8Array(await doc.arrayBuffer()) }, { pin: etag(doc) });
-    const boundary = new Doc<Boundary>("boundary", { value: (await bnd.json()) as Boundary });
-    await load(cap, network);
-    return { network, boundary };
-  }
-  throw new Error("the server republished its network while it loaded — reload to try again");
+  const doc = await blobGz(pin);
+  if (!doc?.ok) return null;
+  const network = new Doc<Network>("network", { bytes: new Uint8Array(await doc.arrayBuffer()) }, { pin });
+  const boundary = new Doc<Boundary>("boundary", { value: boundaryValue });
+  await load(cap, network);
+  return { network, boundary };
 }
 
 /// The deployment's published network as a VALUE, for a page that
@@ -615,26 +625,29 @@ export async function servedNetworkValue(): Promise<{ network: Doc<Network>; bou
   return { network, boundary: new Doc<Boundary>("boundary", { value: served.boundary }) };
 }
 
-/// The deployment's published streets: `GET /streets`, the server's
-/// import of its street layer — bytes the page never parses,
-/// registered in cap-streets and refused unless it answers the hash
-/// the server pins. Null when the server publishes none.
+/// The deployment's published streets: the manifest's `streets_hash`,
+/// the server's import of its street layer — bytes the page never
+/// parses, registered in cap-streets and refused unless they answer
+/// the pin. Null when the deployment publishes none.
 export async function servedStreets(): Promise<Doc | null> {
-  const resp = await fetch("/streets").catch(() => null);
+  const pin = (await deploymentManifestNow())?.streets_hash;
+  if (!pin) return null;
+  const resp = await blobGz(pin);
   if (!resp?.ok) return null;
-  const doc = new Doc("streets", { bytes: new Uint8Array(await resp.arrayBuffer()) }, { pin: etag(resp) });
+  const doc = new Doc("streets", { bytes: new Uint8Array(await resp.arrayBuffer()) }, { pin });
   await load("streets", doc);
   return doc;
 }
 
-/// The deployment's walk table: `GET /walks`, derived on the server
+/// The deployment's walk table: the manifest's `walks_hash`, derived
 /// from its streets and network, registered in the router and refused
-/// unless it answers the hash the server pins. Null when the server
-/// publishes none.
+/// unless it answers the pin. Null when the deployment publishes none.
 export async function servedWalks(): Promise<Doc<WalkTable> | null> {
-  const resp = await fetch("/walks").catch(() => null);
+  const pin = (await deploymentManifestNow())?.walks_hash;
+  if (!pin) return null;
+  const resp = await fetch(`blobs/${pin}`).catch(() => null);
   if (!resp?.ok) return null;
-  const doc = new Doc<WalkTable>("walks", { value: (await resp.json()) as WalkTable }, { pin: etag(resp) });
+  const doc = new Doc<WalkTable>("walks", { value: (await resp.json()) as WalkTable }, { pin });
   await load("router", doc);
   return doc;
 }

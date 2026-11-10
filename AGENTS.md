@@ -133,6 +133,11 @@ just serve [feed.zip [streets.geojson ["Publisher" [addr]]]]   # sync server on 
                            # (-store: s3://bucket/prefix?endpoint=…, azblob://…,
                            # gs://…, or mem://; docs/FORMATS.md; POST /plans
                            # publishes a pick)
+just export OUT feed.zip [streets.geojson ["Publisher"]]   # the deployment as static
+                           # files, no server (D-131): the pages, `manifest`, and
+                           # each published document as blobs/<hash>[.gz] — the
+                           # paths the server answers too; LIVE_FEEDS= names the
+                           # deployment's live-feeds.json (no proxy)
 just store verify|gc|copy … # the store's offline tools (server/cmd/store): verify a
                            # bucket, collect orphans (D-117), carry an older
                            # build's directory store into a bucket

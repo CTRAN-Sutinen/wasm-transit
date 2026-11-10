@@ -23,7 +23,7 @@ let agencyZone: string | undefined;
 /// The deployment's manifest, read once per page.
 let manifestRead: Promise<Record<string, unknown> | null> | null = null;
 export function deploymentManifest<T>(): Promise<T | null> {
-  manifestRead ??= fetch("/manifest")
+  manifestRead ??= fetch("manifest")
     .then((r) => (r.ok ? r.json() : null))
     .catch(() => null);
   return manifestRead as Promise<T | null>;
@@ -254,7 +254,7 @@ export function applyBuild(): void {
 /// copy) — a display applies a build only then, so an outage never
 /// reloads a working display into an empty one.
 export async function serverAnswers(): Promise<boolean> {
-  const resp = await fetch("/manifest", { cache: "no-cache" }).catch(() => null);
+  const resp = await fetch("manifest", { cache: "no-cache" }).catch(() => null);
   return !!resp?.ok && resp.headers.get("X-Served-From") !== "last-copy";
 }
 

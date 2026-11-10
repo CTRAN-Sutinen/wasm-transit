@@ -16,10 +16,14 @@
 ///   one before it (a page another tab moved past still loads the
 ///   files of the build it runs); older shells are dropped.
 /// - Fetch answers: the shell from its precache; content-addressed
-///   files (Vite's hashed assets, the hash-named modules, /blobs/<hash>)
-///   from a cache filled on first use, forever; the deployment's
-///   published documents and config from the network, else the last
-///   copy — a page boots offline on the last network it had (D-65).
+///   files (Vite's hashed assets, the hash-named modules, every
+///   published document at blobs/<hash>[.gz]) from a cache filled on
+///   first use, forever; the deployment's published documents and
+///   config from the network, else the last copy — a page boots
+///   offline on the last manifest it had, and so on the network it
+///   pins (D-65). Paths are
+///   read relative to the worker's scope, so a deployment under a
+///   prefix (a static host's /rider/, D-131) matches as one at the root.
 ///   Never cached: live feeds and the dev relay (a prediction is never
 ///   replayed as live), the edit document (offline, the boards are the
 ///   schedule and say so), writes, and the geocoder.
@@ -32,9 +36,11 @@ const LAST = "last-published";
 /// The builds activated, oldest first (one JSON response).
 const BUILDS = "builds";
 
+const SCOPE = new URL(self.registration.scope).pathname;
 const SHELL_URLS = new Set(SHELL.map((p) => new URL(p, self.registration.scope).pathname));
-const HASHED = [/\/assets\/[^/]+-[A-Za-z0-9_-]{8}\.[a-z0-9]+$/, /\/caps\/[^/]+-[0-9a-f]{64}\.wasm$/, /\/blobs\/sha256:[0-9a-f]{64}$/];
-const PUBLISHED = ["/manifest", "/network/document", "/network/boundary", "/streets", "/walks", "/live-feeds.json"];
+/// Scope-relative paths (no leading slash).
+const HASHED = [/^assets\/[^/]+-[A-Za-z0-9_-]{8}\.[a-z0-9]+$/, /^caps\/[^/]+-[0-9a-f]{64}\.wasm$/, /^blobs\/sha256:[0-9a-f]{64}(\.gz)?$/];
+const PUBLISHED = ["manifest", "network/document", "network/boundary", "streets", "walks", "live-feeds.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL)));
@@ -66,16 +72,18 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   const path = url.pathname;
-  if (request.mode === "navigate" || SHELL_URLS.has(path) || /\/assets\//.test(path)) {
+  if (!path.startsWith(SCOPE)) return;
+  const rel = path.slice(SCOPE.length);
+  if (request.mode === "navigate" || SHELL_URLS.has(path) || rel.startsWith("assets/")) {
     const page = request.mode === "navigate" && path.endsWith("/") ? `${path}index.html` : path;
-    if (SHELL_URLS.has(page) || path.startsWith("/assets/")) event.respondWith(fromShell(request, page));
+    if (SHELL_URLS.has(page) || rel.startsWith("assets/")) event.respondWith(fromShell(request, page));
     return;
   }
-  if (HASHED.some((re) => re.test(path))) {
+  if (HASHED.some((re) => re.test(rel))) {
     event.respondWith(forever(request));
     return;
   }
-  if (PUBLISHED.includes(path) || path.startsWith("/basemap-assets/")) event.respondWith(networkElseLast(request));
+  if (PUBLISHED.includes(rel) || rel.startsWith("basemap-assets/")) event.respondWith(networkElseLast(request));
 });
 
 /// The shell's copy (a page's query string is the page's state, not

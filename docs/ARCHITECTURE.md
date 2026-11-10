@@ -804,11 +804,12 @@ Its HTTP surface:
   the network's), `just geocoder` starts it on :4000, and
   `GEOCODER=http://127.0.0.1:4000 just serve …` (or `just dev`)
   proxies it.
-- `/manifest` — `{network_hash, feed_hash, feed_version,
+- `/manifest` — `{network_hash, boundary_hash, feed_hash, feed_version,
   plans_hash, streets_hash, walks_hash, wasm_hash, authz_hash,
   policy_hash, build_hash, generated_at, publisher, timezone, services}`
   (the optional ones omitted when empty): which network is
-  authoritative, the GTFS zip it was imported from, the published plan
+  authoritative and its boundary (the import's numbering, named by the
+  sha256 of its bytes), the GTFS zip it was imported from, the published plan
   set, the build the pages are served from (store mode), which
   sync module bytes the server runs, who says so, the agency's zone
   (the one the server counts its today in, and every page reads its
@@ -820,13 +821,13 @@ Its HTTP surface:
 - `/streets` — the canonical streets document imported from the
   configured layer (`-streets`), bare (the bytes `load_streets`
   takes); gzipped, its ETag the streets hash, re-imported when the
-  file changes (mtime-checked). A client refuses it unless the
-  module answers the ETag's hash (`servedStreets` in
+  file changes (mtime-checked). The pages read the same document by
+  the manifest's `streets_hash` (`/blobs`, below; `servedStreets` in
   `src/engine.ts`).
 - `/walks` — the walk table over the published streets and network
   (both `-streets` and `-feed`), derived again when either changes;
-  gzipped, its ETag the walks hash, refused by a client the same
-  way (`servedWalks`).
+  gzipped, its ETag the walks hash; the pages read it by the
+  manifest's `walks_hash` (`servedWalks`).
 - `/network` — the import's answer for the configured zip
   (`-feed`), served as-is: `{network, boundary, notes,
   network_hash}`. Gzipped when the client takes it; its ETag is the
@@ -841,10 +842,17 @@ Its HTTP surface:
   hands them to the modules compressed — kernel op 256 decodes the
   stream as it parses), and the boundary as JSON, both under the
   network hash's ETag. The document's bytes are the import's
-  canonical serialization (unzipped, they hash to the pin). A
-  client registers the document and refuses it unless the module
-  answers the pinned hash (`servedNetwork`) — when no published pick
-  is in force; a page loads the pick in force instead (web section).
+  canonical serialization (unzipped, they hash to the pin). The
+  pages read the same two documents by the manifest's `network_hash`
+  and `boundary_hash` (`/blobs`, below; `servedNetwork`).
+- `/blobs/{hash}` and `/blobs/{hash}.gz` — with or without the store,
+  every document the manifest pins (the network, its boundary, the
+  streets, the walk table) by its hash: its JSON, and the same bytes
+  gzipped (`application/gzip`, never `Content-Encoding`). Immutable,
+  the ETag the path. Every blob's bytes hash to its name. This is the
+  layout a static host serves too ("Static deployment", below), so
+  one page code reads either deployment; a store blob of the same hash
+  wins, with its envelope (`publishedBlob` in `export.go`).
 - **Authentication/authorization** (D-58..D-61): with any `-oidc-*`
   flag set, the server verifies bearer JWTs — JWKS (`-oidc-jwks-url`,
   cached by `kid`, refetched on unknown kid) or a pinned PEM
@@ -875,7 +883,8 @@ Its HTTP surface:
   (delta sync over the append-only log), `POST /pointers/{name}`
   (`{from, …}` → 200 + new head, 409 + current on conflict), and
   `GET /blobs/{hash}` (raw bytes, ETag the hash, envelope in headers;
-  gzipped as `application/gzip` for `Accept: application/gzip` — except
+  gzipped as `application/gzip` for `Accept: application/gzip` or at
+  `/blobs/{hash}.gz` — except
   kind `policy` blobs, which are never served: 404). `GET
   /manifest` serves the `manifest` pointer's blob, re-committed when the
   published feed, streets, module, or services change. With auth on, the
@@ -908,13 +917,49 @@ Its HTTP surface:
 `go test ./...` in `server/` proves the server runs the exact
 module bytes the manifest pins and answers what the browser does.
 
+### Static deployment
+
+A deployment needs no server (D-131): `just export OUT feed.zip
+[streets.geojson]` (the server binary's `-export DIR`, export.go)
+boots as `just serve` does — the same modules import the feed and the
+street layer and derive the walk table — writes the bundle, and exits:
+`-dist`'s pages, `manifest` (the server's own manifest), every
+published document as `blobs/<hash>` and `blobs/<hash>.gz`, and
+`live-feeds.json` (`-live-feeds`, the deployment's own: the agency's
+feeds, no `proxy` — a static host has no `/rt`). It refuses a
+non-empty directory, and `-store` (it exports the feed's import, not a
+store's picks: a new schedule is a new export, D-131). The bundle's
+paths are the ones the server answers, so the pages are the same
+bytes on either; `go test`'s `TestTheExportIsWhatTheServerServes`
+pins the bundle byte for byte against the server.
+
+What a static deployment has not: the edit document (`edits` 404s;
+the pages show no detours or cancels), a geocoder (the manifest lists
+no service; place search finds stops), the dev relay, and every write.
+A page under a path prefix works: the pages and the service worker
+read every path relative to themselves.
+
+The host's headers: a content-addressed file (`assets/*-<hash>.*`,
+`caps/*-<sha256>.wasm`, `blobs/<hash>` and `blobs/<hash>.gz`) may be
+cached forever; the pages, `manifest`, `caps/manifest.json`,
+`live-feeds.json`, and `sw.js` must revalidate (`no-cache`) — the
+rule the server applies (`staticCacheControl`). A `.gz` blob is
+served as its bytes (`application/gzip` or `octet-stream`), never with
+`Content-Encoding`; a host that adds one anyway still works (the
+modules read a document gzipped or not). An upload adds files and
+never deletes blobs: an open page pinned to the previous manifest still
+reads its documents, and a rollback is uploading the previous
+`manifest`. Pinned by `web/e2e/static-deploy.spec.mjs` on a plain file
+server (`web/e2e/static-server.mjs`) under `/rider/`.
+
 ## web/
 
 Svelte 5 runes + Vite, TypeScript end to end, as a multi-page
 build: `/` is the PICKER (`index.html` → `src/picker/`), one card
-per generated UI (below). Every page lives at the web root because
-asset fetches (`caps/manifest.json`, `basemap.pmtiles`) are
-relative. Every page is a generated UI; there is no other shell.
+per generated UI (below). Every page lives at the bundle's root
+because every fetch (the built assets — Vite's `base: "./"` —
+`caps/manifest.json`, `basemap.pmtiles`, the deployment's `manifest`
+and `blobs/`) is relative, so a bundle serves from any path. Every page is a generated UI; there is no other shell.
 
 ### Parity
 
@@ -993,9 +1038,13 @@ File ownership:
   holds a copy only to check it. `servedNetwork` takes the page's local
   date: when the manifest pins a published plan set (`plans_hash`) it
   asks the plans module which pick is in force (`in_force`) and loads
-  that pick's network by hash (`/blobs/<network_hash>`, gzipped) with
-  the default boundary; before the first pick takes effect it loads
-  the import (`/network/document` and `/network/boundary`). It throws
+  that pick's network by hash (`blobs/<network_hash>.gz`) with the
+  default boundary; before the first pick takes effect it loads the
+  import by the manifest's pins (`blobs/<network_hash>.gz`,
+  `blobs/<boundary_hash>` — one manifest read names both, so the
+  boundary always belongs to the network). Every pin is the
+  manifest's, so a static host serves the same (server section,
+  "Static deployment"). It throws
   Unavailable when picks are published and the plans module does not
   assemble — a page never guesses which schedule runs. Either way it
   holds the network as the gzipped bytes the server sends: the
@@ -1550,14 +1599,15 @@ installs as an app — one lifecycle (D-63, D-65):
   waiting. The worker keeps the previous build's shell beside the
   current one, so a page still on it loads its files.
 - **Offline.** The worker answers the shell from its precache;
-  content-addressed files (hashed assets, modules, `/blobs/<hash>`)
-  from a cache filled on first use, forever; the published documents
-  and config (`/manifest`, `/network/document`, `/network/boundary`,
-  `/streets`, `/walks`, `live-feeds.json`, the basemap's glyphs and
-  sprites) from the network, else the last copy (marked
+  content-addressed files (hashed assets, modules, `blobs/<hash>` and
+  `blobs/<hash>.gz`) from a cache filled on first use, forever; the
+  published documents and config (`manifest`, `network/document`,
+  `network/boundary`, `streets`, `walks`, `live-feeds.json`, the
+  basemap's glyphs and sprites) from the network, else the last copy (marked
   `X-Served-From: last-copy`). Live feeds, `/rt`, `/edits`, writes,
   and the geocoder are never cached: offline, a board is the schedule
-  and says so. The map's tiles (`basemap.pmtiles`, range requests)
+  and says so. The worker reads every path relative to its scope, so a
+  bundle served under a prefix caches as one at the root. The map's tiles (`basemap.pmtiles`, range requests)
   are not cached.
 
 The e2e runs every other spec with service workers blocked

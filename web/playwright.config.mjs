@@ -9,6 +9,12 @@ const buildsDist = path.join(os.tmpdir(), "transit-e2e-builds");
 /// The copy of the build the :8086 server commits to its store, which
 /// e2e/deploy-rollback.spec.mjs publishes a new release over.
 const releasesDist = path.join(os.tmpdir(), "transit-e2e-releases");
+/// The static host's root (e2e/static-deploy.spec.mjs, D-131): the
+/// server's export of the fixture feed under /rider/, served by a plain
+/// static file server; and a second export (the overnight feed) the
+/// spec uploads over it as a redeploy.
+const staticRoot = path.join(os.tmpdir(), "transit-e2e-static");
+const staticNext = path.join(os.tmpdir(), "transit-e2e-static-next");
 
 // E2E tests run against the built app (npm run build) served by the
 // Go sync server — on their OWN port, never reused: a shared server
@@ -21,7 +27,8 @@ const releasesDist = path.join(os.tmpdir(), "transit-e2e-releases");
 // inside the fixture's calendar) so a spec can publish picks to it
 // (e2e/published-picks.spec.mjs). In store mode a server commits its
 // -dist as a build and serves the pages from it (docs/ARCHITECTURE.md,
-// "Release artifacts"); the fifth rolls one back.
+// "Release artifacts"); the fifth rolls one back. The sixth is no Go
+// server at all: the server's static export, on a plain file server.
 export default defineConfig({
   testDir: "./e2e",
   timeout: 20_000,
@@ -79,6 +86,16 @@ export default defineConfig({
       command: `bash -c 'rm -rf "${releasesDist}" && cp -r ../web/dist "${releasesDist}" && exec go run . -addr 127.0.0.1:8086 -store mem:// -dist "${releasesDist}" -feed ../web/e2e/fixtures/sample-gtfs.zip'`,
       cwd: "../server",
       url: "http://127.0.0.1:8086",
+      reuseExistingServer: false,
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+    {
+      // A static deployment (e2e/static-deploy.spec.mjs, D-131): no Go
+      // server serves it — the export writes the bundle and exits.
+      command: `bash -c 'rm -rf "${staticRoot}" "${staticNext}" && go run . -export "${staticRoot}/rider" -feed ../web/e2e/fixtures/sample-gtfs.zip -streets ../web/e2e/fixtures/walk-streets.geojson -live-feeds ../web/e2e/fixtures/static-live-feeds.json && go run . -export "${staticNext}" -feed ../web/e2e/fixtures/overnight-gtfs.zip && exec node ../web/e2e/static-server.mjs "${staticRoot}" 8087'`,
+      cwd: "../server",
+      url: "http://127.0.0.1:8087/rider/manifest",
       reuseExistingServer: false,
       stdout: "ignore",
       stderr: "pipe",

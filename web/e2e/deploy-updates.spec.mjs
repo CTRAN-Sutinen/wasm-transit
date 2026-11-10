@@ -96,7 +96,7 @@ test("a poll with nothing moved re-pins nothing", async ({ page, request }) => {
   const bus = await open(page, "/stop-display.html?stop=A&layout=routes");
   await expect(page.getByTestId("display-group").first()).toBeVisible({ timeout: 10_000 });
   const [held] = await networks(bus);
-  const fetched = () => asked.filter((p) => p === `/blobs/${held}`).length;
+  const fetched = () => asked.filter((p) => p === `/blobs/${held}.gz`).length;
   expect(fetched()).toBe(1);
   const manifests = asked.filter((p) => p === "/manifest").length;
   await page.clock.fastForward(20_000);

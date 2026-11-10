@@ -708,6 +708,33 @@ serve feed="" streets="" publisher="" addr="127.0.0.1:8080":
     done
     exec go run . "${args[@]}"
 
+# The deployment as static files (D-131; docs/ARCHITECTURE.md, server
+# section, "Static deployment"): the server boots on the feed (and the
+# street layer, if given) exactly as `just serve` does, writes the
+# bundle into OUT, and exits — the built pages, `manifest`, and every
+# published document as blobs/<hash> and blobs/<hash>.gz, the paths
+# the server itself answers. Upload OUT to any static host; never
+# delete blobs an earlier upload wrote (an open page pinned to the old
+# manifest still reads them). LIVE_FEEDS names the deployment's own
+# live-feeds.json (the agency's feeds, no proxy), replacing the dev
+# copy. Builds first.
+#
+#   just export out/ path/to/gtfs.zip [roads.geojson ["Publisher"]]
+#   LIVE_FEEDS=deploy/live-feeds.json just export out/ gtfs.zip
+export out feed streets="" publisher="": caps build
+    #!/usr/bin/env bash
+    set -e
+    src() { case "$1" in http://*|https://*|bucket:*) echo "$1" ;; *) realpath -m "$1" ;; esac; }
+    out=$(realpath -m "{{ out }}"); feed=$(src "{{ feed }}"); streets="{{ streets }}"
+    if [ -n "$streets" ]; then streets=$(src "$streets"); fi
+    live="${LIVE_FEEDS:-}"; if [ -n "$live" ]; then live=$(realpath -m "$live"); fi
+    cd server
+    args=(-export "$out" -feed "$feed")
+    if [ -n "$streets" ]; then args+=(-streets "$streets"); fi
+    if [ -n "{{ publisher }}" ]; then args+=(-publisher "{{ publisher }}"); fi
+    if [ -n "$live" ]; then args+=(-live-feeds "$live"); fi
+    exec go run . "${args[@]}"
+
 # The sync store's offline tools (server/cmd/store; Go, no wasm):
 #   just store verify <url>          read the whole store, exit 1 on the first break
 #   just store gc [-grace 168h] <url>  collect orphans (D-117) — the collector's

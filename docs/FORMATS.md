@@ -152,7 +152,9 @@ that is missing, does not hash to its name, or carries no envelope.
   the envelope. With `Accept: application/gzip` the same bytes come
   gzipped as `Content-Type: application/gzip` (transport only, never
   `Content-Encoding`), for a page that registers a document
-  compressed. A `policy` blob is never served.
+  compressed; `GET /blobs/{hash}.gz` answers the same by path, the
+  layout a static bundle carries (docs/ARCHITECTURE.md, server
+  section, "Static deployment"). A `policy` blob is never served.
 - `POST /plans` body: a network document, any serialization, gzipped
   or not → `200 {plan_id, network_hash, plans_hash, warnings}`, `422
   {issues, refusals}` (the network does not validate, or runs no

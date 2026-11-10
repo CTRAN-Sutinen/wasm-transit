@@ -24,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"rustwasm/server/store"
 )
 
 // handleNetwork serves the import's answer ({network, boundary,
@@ -102,10 +104,16 @@ type loadedFeed struct {
 	networkHash string          // the import's network_hash
 	network     json.RawMessage // the import's answer, served as-is
 	networkGzip []byte
-	// The answer's two documents, split off as they are: the bare
-	// network gzipped, and the boundary.
+	// The answer's two documents, split off as they are, each also
+	// gzipped: the bare network (its bytes hash to networkHash — they
+	// are its canonical serialization) and the boundary (named by the
+	// sha256 of its bytes, boundaryHash). Both are blobs too
+	// (publishedBlob).
+	document     json.RawMessage
 	documentGzip []byte
 	boundary     json.RawMessage
+	boundaryGzip []byte
+	boundaryHash string
 	// The zone the network's dates are counted in, as the import
 	// answered it ("" when its operators name none): today()'s zone.
 	timezone string
@@ -225,8 +233,11 @@ func (f *feedSource) Load() (*loadedFeed, error) {
 		networkHash:  networkHash,
 		network:      network,
 		networkGzip:  gzipped(network),
+		document:     parts.Network,
 		documentGzip: gzipped(parts.Network),
 		boundary:     parts.Boundary,
+		boundaryGzip: gzipped(parts.Boundary),
+		boundaryHash: store.HashOf(parts.Boundary),
 		timezone:     parts.Timezone,
 	}
 	log.Printf("network imported from %s in %s: %s (%d KB, %d KB gzipped)",

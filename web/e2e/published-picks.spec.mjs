@@ -2,7 +2,7 @@
 // the store (POST /plans) is the network a rider page loads once its
 // date arrives. The page reads the manifest's plans_hash, asks the
 // plans module which pick is in force today, and registers that pick's
-// network by hash (GET /blobs/<hash>, gzipped) — before the first pick
+// network by hash (GET /blobs/<hash>.gz) — before the first pick
 // takes effect it reads the server's import as before.
 //
 // Its own server (playwright.config.mjs, :8084) runs the durable store
@@ -59,7 +59,7 @@ test("ride now loads the pick in force today", async ({ page, request }) => {
   await page.goto("/ride-now.html");
   await expect(page.locator("h1")).toHaveText("Fall 2026 pick", { timeout: 10_000 });
   expect(asked.some((p) => p.startsWith("/blobs/"))).toBe(true);
-  expect(asked).not.toContain("/network/document");
+  expect(asked, "never the import's network").not.toContain(`/blobs/${(await (await page.request.get("/manifest")).json()).network_hash}.gz`);
   await expect(page.getByTestId("nearby").getByTestId("stop-card").first()).toContainText("Main Station");
 
   // Before the first pick takes effect: the import, as before.
@@ -76,7 +76,7 @@ test("the stop display loads the pick in force today", async ({ page, request })
   const asked = requests(page);
   await page.goto("/stop-display.html?stop=STN");
   await expect.poll(() => asked.some((p) => p.startsWith("/blobs/")), { timeout: 10_000 }).toBe(true);
-  expect(asked).not.toContain("/network/document");
+  expect(asked, "never the import's network").not.toContain(`/blobs/${(await (await page.request.get("/manifest")).json()).network_hash}.gz`);
 });
 
 test("a retired pick never reaches a rider", async ({ page, request }) => {

@@ -12,6 +12,12 @@ package main
 //	                                      Accept: application/gzip -> the same bytes gzipped
 //	                                      (transport only), for a page that registers a
 //	                                      document compressed (kernel op 256)
+//	GET  /blobs/{hash}.gz              -> the same gzipped bytes by path, the layout a
+//	                                      static host serves too (export.go)
+//
+// /blobs also answers the published documents (the network, its
+// boundary, the streets, the walk table — publishedBlob) with or
+// without the store.
 //
 // POST bodies: for kind edit_records, {"from", "client": <document>}
 // — the server brings an older document forward (cap-migrate) and runs
@@ -403,21 +409,48 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 }
 
 func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
-		http.Error(w, "no store configured (start with -store <url>)", http.StatusNotFound)
-		return
-	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "use GET", http.StatusMethodNotAllowed)
 		return
 	}
-	hash := strings.TrimPrefix(r.URL.Path, "/blobs/")
-	data, env, err := s.store.GetBlob(hash)
-	if err != nil {
-		if err == store.ErrNotFound {
-			http.NotFound(w, r)
+	name := strings.TrimPrefix(r.URL.Path, "/blobs/")
+	hash, gz := strings.CutSuffix(name, ".gz")
+	etag := `"` + name + `"`
+	send := func(plain []byte, compressed func() []byte) {
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Cache-Control", "max-age=31536000, immutable") // content-addressed: cache forever
+		w.Header().Set("Vary", "Accept")
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
 			return
 		}
+		if gz || strings.Contains(r.Header.Get("Accept"), "application/gzip") {
+			// Content-Type, never Content-Encoding: the page hands the
+			// compressed bytes to the modules without unzipping them.
+			w.Header().Set("Content-Type", "application/gzip")
+			w.Write(compressed())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(plain)
+	}
+	// The store's blob first (it carries its envelope), else the
+	// published document of that hash.
+	var data []byte
+	var env store.Envelope
+	err := store.ErrNotFound
+	if s.store != nil {
+		data, env, err = s.store.GetBlob(hash)
+	}
+	if err == store.ErrNotFound {
+		if doc, ok := s.publishedBlob(hash); ok {
+			send(doc.body, func() []byte { return doc.gz })
+			return
+		}
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
 		fail(w, err, http.StatusBadRequest)
 		return
 	}
@@ -430,26 +463,9 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	etag := `"` + hash + `"`
-	w.Header().Set("ETag", etag)
-	w.Header().Set("Cache-Control", "max-age=31536000, immutable") // content-addressed: cache forever
 	w.Header().Set("X-Document-Kind", env.Kind)
 	w.Header().Set("X-Schema-Version", fmt.Sprintf("%d", env.SchemaVersion))
-	w.Header().Set("Vary", "Accept")
-	if r.Header.Get("If-None-Match") == etag {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-	if strings.Contains(r.Header.Get("Accept"), "application/gzip") {
-		// Content-Type, never Content-Encoding: the page hands the
-		// compressed bytes to the modules without unzipping them, as
-		// GET /network/document serves the import.
-		w.Header().Set("Content-Type", "application/gzip")
-		w.Write(s.gzippedBlob(hash, data))
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
+	send(data, func() []byte { return s.gzippedBlob(hash, data) })
 }
 
 // gzippedBlob compresses a blob for transport, caching the last few:

@@ -42,7 +42,7 @@ archive — nothing here records what is finished.
 | [document-versioning.md](document-versioning.md) | every persisted document versioned, migrated forward at receive, rolled back under one rule, the schema-lock gate |
 | [release-artifacts.md](release-artifacts.md) | op and HTTP contracts changed by expand-then-contract |
 | [store-durability.md](store-durability.md) | the sync store's contract run on each provider's real account, the edits layout (D-121), backup and restore (D-82) |
-| [observability-rollout.md](observability-rollout.md) | what production runs and whether it is healthy; canary rings and the automatic revert |
+| [observability-rollout.md](observability-rollout.md) | what production runs and whether it is healthy; a display's automatic revert |
 | [deploy-rider-apps.md](deploy-rider-apps.md) | ride-now and the stop display beyond localhost: the units it waits on, the agency's feed fixes (HTTPS, CORS, caching, start_date), and the Pi 4 and phone dogfood |
 | [streets-model.md](streets-model.md) | streets as a model document: serving it, the bus profile, walking for riders, drawing on streets, the geography release |
 | [caps-run-sessions.md](caps-run-sessions.md) | the runner across sessions; shaping the import's output |
@@ -75,6 +75,11 @@ before starting it.
   deleted (no host calls it); cap-streets into the street graph and
   walking. Where the service-group relation and `route_overlap`
   belong goes to the user when this is scoped.
+- **Staged rollout (canary rings)** — not needed now (D-84). The
+  manifest names a build per cohort; a canary set takes build B while
+  the rest keep A, promoted once it has stayed healthy. Promotion on
+  reported health needs an authenticated heartbeat (D-130's takes no
+  token) and a server, so a static-only deployment has none.
 - **Fuel metering** in the runner, once it may point at untrusted
   registry entries (the wall-clock guard is the stopgap).
 

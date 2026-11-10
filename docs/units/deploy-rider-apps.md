@@ -1,15 +1,15 @@
 # Deploying the rider apps
 
 Ride-now on riders' phones and the stop display on Raspberry Pi 4
-screens at stops (D-64), served by the agency beyond localhost.
-Ready means: memory plateaus however long a page stays open, the
-main thread only renders, every document and device record is
-versioned, an open page updates the way a web app does, it works
-offline, the server exposes nothing it should not, and a display
-recovers without a person.
+screens at stops (D-64), served by the agency beyond localhost as
+static files — no server (D-131). Ready means: memory plateaus
+however long a page stays open, the main thread only renders, every
+document and device record is versioned, an open page updates the
+way a web app does, it works offline, and the whole deployment is a
+bundle any static host serves.
 
-This unit owns what no other unit does, and is done only when the
-units it depends on are:
+This unit owns what no other unit does, and is done only when what
+it depends on is:
 
 - **Memory and the main thread** — the measured ceilings,
   [runtime-cost-gate.md](runtime-cost-gate.md).
@@ -17,16 +17,18 @@ units it depends on are:
   at most 40 MB on the display, flat across 24 h; at most 80 MB for
   ride-now, its first board under 3 s cold and 1 s cached, no
   main-thread task over 50 ms after first paint.
-- **Versioning** — [document-versioning.md](document-versioning.md),
-  and the code's: retained builds, rollback, and contracts that do
-  not break, [release-artifacts.md](release-artifacts.md).
-- **Seeing production** — the display heartbeat, the fleet view,
-  canary rings and the automatic revert,
-  [observability-rollout.md](observability-rollout.md). The update
-  lifecycle below applies a build through its rings.
-- **The server's record** — the store on object storage, offline
-  verification, and backup and restore,
-  [store-durability.md](store-durability.md).
+- **Versioning** — a display's cached build meets newer documents:
+  [document-versioning.md](document-versioning.md)'s browser items
+  (1, 3, 5, and 6's reader of the next version; item 2 is the
+  server's).
+- **The static bundle** stands (`just export`; docs/ARCHITECTURE.md,
+  server section, "Static deployment").
+
+The server's units ([store-durability.md](store-durability.md),
+[observability-rollout.md](observability-rollout.md),
+[release-artifacts.md](release-artifacts.md)) are not this
+deployment's (D-131): a bundle ships each page with its assemblies,
+and a rollback redeploys the previous bundle.
 
 ## Scope (owned here)
 
@@ -61,21 +63,24 @@ What is left here:
 
 ## Done when
 
-- [runtime-cost-gate.md](runtime-cost-gate.md),
-  [document-versioning.md](document-versioning.md),
-  [release-artifacts.md](release-artifacts.md),
-  [observability-rollout.md](observability-rollout.md), and
-  [store-durability.md](store-durability.md) are deleted,
-  with ceilings under the D-68 budgets.
-- Dogfood on C-TRAN, recorded here: a stop display on a Pi 4 left
-  open 24 h across a service-day rollover and one republish (memory
-  sampled, plateaued; the re-pin and a build applied at a poll),
-  reading the fixed feeds directly; a ride-now session on a phone
-  under the D-68 budgets, installed, then offline at a stop.
+- [runtime-cost-gate.md](runtime-cost-gate.md) is deleted, with
+  ceilings under the D-68 budgets, and document-versioning's browser
+  items are pinned.
+- The static host chosen and its headers configured to the rule in
+  docs/ARCHITECTURE.md ("Static deployment"), the config recorded
+  here.
+- Dogfood on C-TRAN, recorded here, served from that static host: a
+  stop display on a Pi 4 left open 24 h across a service-day
+  rollover and one redeploy (memory sampled, plateaued; the re-pin
+  and a build applied at a poll), reading the fixed feeds directly;
+  a ride-now session on a phone under the D-68 budgets, installed,
+  then offline at a stop.
 
 The pins that stand: `e2e/deploy-updates.spec.mjs` (re-pin, plateau),
 `e2e/deploy-builds.spec.mjs` (offline boot, the build lifecycle),
-`e2e/ui-stop-display.spec.mjs` (feeds fetched directly; after
+`e2e/static-deploy.spec.mjs` (the bundle on a plain file server
+under a prefix: boot, boards, a trip plan, a redeploy re-pinned,
+offline, no edits or geocoder), `e2e/ui-stop-display.spec.mjs` (feeds fetched directly; after
 midnight, live; the fall-back hour),
 `crates/transit-dispatch/tests/overnight_law_test.rs`, and Go's
 `proxy_test.go`.

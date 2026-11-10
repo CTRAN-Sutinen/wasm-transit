@@ -1,0 +1,5 @@
+{
+  "trips": "http://feeds.test/TripUpdates",
+  "vehicles": "http://feeds.test/VehiclePositions",
+  "alerts": "http://feeds.test/Alerts"
+}

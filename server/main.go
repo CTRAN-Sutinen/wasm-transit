@@ -61,6 +61,8 @@ func main() {
 	geocoderURL := flag.String("geocoder", "", "base URL of a Pelias geocoder (e.g. http://127.0.0.1:4000): enables /geocode/{autocomplete,search,reverse} and lists it in the manifest's services")
 	rtProxy := flag.Bool("rt-proxy", false, "serve /rt?url=, a relay to any http(s) feed for pages whose feeds send no CORS header — a DEV convenience (D-67): it relays for any caller, so bind localhost; a deployment's pages fetch the agency's feeds directly")
 	geocoderPolicy := flag.String("geocoder-policy", "geocoder.json", "the deployment's geocoder query policy (Pelias parameters per op), applied by the proxy")
+	exportDir := flag.String("export", "", "write the deployment as a static bundle into this directory (absent or empty) and exit: -dist's pages, the manifest, and every published document as blobs/<hash> and blobs/<hash>.gz — the paths this server answers (D-131; export.go)")
+	liveFeeds := flag.String("live-feeds", "", "with -export: the deployment's live-feeds.json (its agency feeds, no proxy), replacing -dist's dev copy")
 	flag.Parse()
 
 	mime.AddExtensionType(".wasm", "application/wasm")
@@ -137,6 +139,12 @@ func main() {
 		if _, err := s.publishedStreets(); err != nil {
 			log.Fatalf("streets: %v", err)
 		}
+	}
+	if *exportDir != "" {
+		if err := s.export(*exportDir, *liveFeeds); err != nil {
+			log.Fatalf("export: %v", err)
+		}
+		return
 	}
 	s.edits = loadEdits(*editsPath)
 
@@ -368,6 +376,9 @@ func (s *server) handleProxy(w http.ResponseWriter, r *http.Request) {
 // and I/O; the module owns the format's domain).
 type Manifest struct {
 	NetworkHash string  `json:"network_hash"` // the network GET /network serves
+	// The import's boundary (the feed's numbering the live feeds name),
+	// a blob of its own: sha256 of its bytes, as every blob is named.
+	BoundaryHash string `json:"boundary_hash,omitempty"`
 	FeedHash    string  `json:"feed_hash"`    // "sha256:<hex>" of the GTFS zip it was imported from
 	FeedVersion *string `json:"feed_version,omitempty"`
 	StreetsHash string  `json:"streets_hash,omitempty"` // the streets document GET /streets serves
@@ -410,6 +421,7 @@ func (s *server) buildManifest() (Manifest, error) {
 			return manifest, fmt.Errorf("feed unavailable: %w", err)
 		}
 		manifest.NetworkHash = feed.networkHash
+		manifest.BoundaryHash = feed.boundaryHash
 		manifest.FeedHash = feed.hash
 		if v := feed.version; v != "" {
 			manifest.FeedVersion = &v
@@ -454,7 +466,7 @@ func (s *server) buildManifest() (Manifest, error) {
 func manifestKeyOf(m Manifest) string {
 	services, _ := json.Marshal(m.Services)
 	sum := sha256.Sum256([]byte(strings.Join([]string{
-		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.BuildHash, m.NetworkHash, m.FeedHash, orEmpty(m.FeedVersion),
+		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.BuildHash, m.NetworkHash, m.BoundaryHash, m.FeedHash, orEmpty(m.FeedVersion),
 		m.StreetsHash, m.WalksHash, orEmpty(m.Publisher), m.Timezone, string(services),
 	}, "|")))
 	return hex.EncodeToString(sum[:])

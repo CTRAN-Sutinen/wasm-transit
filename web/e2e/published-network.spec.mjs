@@ -2,8 +2,9 @@
 // server started with -feed imports its zip once and serves the
 // network; every generated UI boots from it with no GTFS in the
 // browser, and refuses a network that does not register under the
-// hash the server pins. The rider pages read it as gzipped bytes they
-// never parse (/network/document, /network/boundary); the planner
+// hash the server pins. The rider pages read every published document
+// by the hash the manifest pins (blobs/<hash>, gzipped bytes they never
+// parse — the layout a static host serves too, D-131); the planner
 // takes the whole answer (/network) to fork.
 //
 // Its own server (playwright.config.mjs, :8083) publishes the fixture
@@ -36,6 +37,9 @@ async function live(page) {
   );
 }
 
+/// The manifest's pins: what the page fetches by hash.
+const pins = async (page) => (await page.request.get("/manifest")).json();
+
 /// What the page asked the server for, by path.
 function requests(page) {
   const paths = [];
@@ -53,7 +57,8 @@ test("ride now boots from the published network", async ({ page }) => {
   await expect(first).toContainText("8:15");
   // The bytes, never the parsed answer — and the heading is the
   // network's name, which the directory answers.
-  expect(asked).toEqual(expect.arrayContaining(["/network/document", "/network/boundary"]));
+  const m = await pins(page);
+  expect(asked).toEqual(expect.arrayContaining([`/blobs/${m.network_hash}.gz`, `/blobs/${m.boundary_hash}`]));
   expect(asked).not.toContain("/network");
   const { network } = await (await page.request.get("/network")).json();
   await expect(page.locator("h1")).toHaveText(network.name);
@@ -75,7 +80,8 @@ test.describe("ride now walks the published streets", () => {
     await expect(cards.first().getByTestId("walk")).toHaveText("1 min walk", { timeout: 10_000 });
     await expect(cards.first()).toContainText("Main Station");
     await expect(cards.nth(1).getByTestId("walk")).toHaveCount(0);
-    expect(asked).toEqual(expect.arrayContaining(["/streets", "/walks"]));
+    const m = await pins(page);
+    expect(asked).toEqual(expect.arrayContaining([`/blobs/${m.streets_hash}.gz`, `/blobs/${m.walks_hash}`]));
 
     // Directions to the station start at my location: the router
     // plans from it as a place, and walking there beats the 8:15 bus.
@@ -239,7 +245,7 @@ test("the stop display boots from the published network", async ({ page }) => {
   await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
   const ten = page.locator('[data-testid="display-group"][data-route="10"]').first();
   await expect(ten.getByTestId("display-time").first()).toContainText("2 min late");
-  expect(asked).toContain("/network/document");
+  expect(asked).toContain(`/blobs/${(await pins(page)).network_hash}.gz`);
   expect(asked).not.toContain("/network");
 });
 
@@ -256,12 +262,17 @@ test("service design opens the published network as a plan", async ({ page }) =>
 
 test("a network that does not register under the pinned hash is refused", async ({ page }) => {
   await live(page);
-  // Both answers name the same (wrong) pin, so the page takes them as
-  // one import and registers the document against it.
-  const wrong = `"sha256:${"0".repeat(64)}"`;
-  await page.route(/\/network\/(document|boundary)$/, async (route) => {
+  // The manifest pins a wrong hash, and that blob answers the real
+  // network's bytes: the module registers them under their own hash.
+  const wrong = `sha256:${"0".repeat(64)}`;
+  const real = (await (await page.request.get("/manifest")).json()).network_hash;
+  await page.route(/\/manifest$/, async (route) => {
     const response = await route.fetch();
-    await route.fulfill({ response, headers: { ...response.headers(), etag: wrong } });
+    await route.fulfill({ response, json: { ...(await response.json()), network_hash: wrong } });
+  });
+  await page.route(`**/blobs/${wrong}.gz`, async (route) => {
+    const response = await page.request.get(`/blobs/${real}.gz`);
+    await route.fulfill({ contentType: "application/gzip", body: await response.body() });
   });
   await page.goto("/ride-now.html");
 

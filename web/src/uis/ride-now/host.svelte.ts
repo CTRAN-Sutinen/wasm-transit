@@ -819,7 +819,7 @@ export function applyUpdate(): void {
 async function syncEdits(): Promise<boolean> {
   if (!network) return false;
   try {
-    const resp = await fetch("/edits");
+    const resp = await fetch("edits");
     if (!resp.ok) return false;
     ride.editsStale = staleLabel(resp, "Detours");
     const text = await resp.text();

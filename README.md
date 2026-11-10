@@ -59,6 +59,9 @@ STORE=mem:// just serve path/to/gtfs.zip       # + the sync store (/pointers, /b
                                                # object store survives a restart:
 just store-dev                                 # SeaweedFS in podman, and its STORE= URL
 just dev                                     # vite hot reload + the server
+just export out/ path/to/gtfs.zip [roads.geojson]   # or no server at all: the deployment
+                                             # as static files for any host (D-131;
+                                             # LIVE_FEEDS= names its feeds)
 ```
 
 Open http://127.0.0.1:8080. `just test` is the host-side gate,

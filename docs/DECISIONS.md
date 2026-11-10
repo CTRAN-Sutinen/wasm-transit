@@ -123,8 +123,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-80 | Where do retired build artifacts live? | decided | nothing |
 | D-81 | How are op and HTTP contracts versioned? | unanswered | contract versioning in `release-artifacts` |
 | D-82 | Where do the store's backups go, and how often? | unanswered | backup in `store-durability` |
-| D-83 | What does each deployed device report, and to where? | unanswered | reporting in `observability-rollout` |
-| D-84 | Who takes a build first, and what counts as healthy? | unanswered | rings and revert in `observability-rollout` |
+| D-83 | What does each deployed device report, and to where? | decided | nothing |
+| D-84 | Who takes a build first, and what counts as healthy? | decided | nothing |
 | D-85 | Are the generated assembly crates committed? | decided | nothing |
 | D-86 | Which op answers what an edit record amounts to on the network? | encoded | nothing |
 | D-87 | How does an export name the import numbering it writes back? | encoded | nothing |
@@ -168,6 +168,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-127 | Where does operations history come from? | decided | nothing |
 | D-128 | Does this repo produce TIDES? | decided | nothing |
 | D-129 | Where does the authored GTFS-rt reach riders? | unanswered | publishing in `rt-publish` |
+| D-130 | Where does a display's identity live on the device? | decided | nothing |
+| D-131 | Does the MVP deployment need a server? | decided | nothing |
 
 ## The trip model
 
@@ -2948,7 +2950,19 @@ Options:
 Blocks: contract versioning in `docs/units/release-artifacts.md`.
 
 ### D-83 — What does each deployed device report, and to where?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-10 — option 1, displays and the server only: "for 83
+i agree with option 1." Riders' phones send nothing. Not a URL
+parameter: "we could just use http headers" (replaced by D-130:
+the id is a URL parameter after all). And optional: "it should be optional to send a
+heartbeat, i like the idea of being able to deploy serverless with
+just static content." Encoded as: the heartbeat is a service the
+manifest's `services` lists; a deployment that lists none (static
+content only) has displays that send nothing. The server keeps each display's latest heartbeat
+in memory and in its structured logs; only transitions (a build
+applied, a revert, a display gone offline or back) are durable — the
+store is create-only (D-117), so a heartbeat per poll is never a
+store object.
 Context: `docs/units/observability-rollout.md`. Nothing reports what
 production runs. Stop displays are the agency's devices; riders'
 phones are not, and a rider's location or stops are theirs.
@@ -2960,10 +2974,82 @@ Options:
   build and the error, no location, no stops), opt-in or opt-out.
 - An external monitoring service as the sink (the server forwards,
   or devices send directly), instead of the agency's own server.
-Blocks: reporting in `docs/units/observability-rollout.md`.
+Blocks: nothing; the display's identity is D-130's.
+
+### D-130 — Where does a display's identity live on the device?
+State: Decided.
+Answer: 2026-11-10 — "actually, i changed my mind, for D-130 the id
+will come from the url param." A display's id is a URL parameter
+(`display=<id>`) set when the screen is installed, beside `stop` and
+`layout`; the heartbeat carries it. This replaces D-83's "we could
+just use http headers" for where the identity lives. Encoded
+provisionally: the heartbeat takes no token (D-58's writes do) — with
+no rings (D-84) a report changes nothing served, so a forged one only
+misleads the fleet view; it is rate-limited and bounded in size. A
+display with no `display` parameter sends no heartbeat.
+Context: `docs/units/observability-rollout.md`. A stop display is
+configured by its URL alone (`?stop=…&layout=…`), so two screens on
+one stop are indistinguishable. D-83 puts the identity in the
+heartbeat's headers, not the URL; a header's value must be held
+somewhere on the device. Writes require a token (D-58), and once
+rings promote on health (D-84) a forged "healthy" report could
+promote a bad build, so the identity also bears on authentication.
+Options:
+- A cookie issued at installation by an authenticated server
+  endpoint (HttpOnly: id and secret together, sent as the `Cookie`
+  header, unreadable by the page). Identity and auth in one step.
+- A random id the page mints on first boot, kept in IndexedDB, sent
+  as a header (`X-Display-Id`); named in the fleet view. No
+  provisioning, no secret: safe for the fleet view, not for
+  promotion. Cleared site data mints a new id.
+- Injected outside the browser: a local proxy adds the header, or a
+  TLS client certificate on the device. Strongest, and per-device
+  configuration to maintain.
+Blocks: nothing.
+
+### D-131 — Does the MVP deployment need a server?
+State: Decided.
+Answer: 2026-11-10 — no: "for the MVP i want to be able to deploy all
+of this serverless" ("deploy serverless with just static content",
+D-83). The MVP is static files on a host: the pages, their
+assemblies, the manifest, and the published documents by hash. The Go
+server, the sync store, and every write endpoint (`POST /edits`,
+`/plans`, `/builds`) are not part of it; observability is held
+(`docs/units/observability-rollout.md`). A new schedule reaches the
+site by rebuilding from GTFS (2026-11-10, "Rebuild from GTFS"): the
+deployment serves the agency's own zip, imported at build time, and a
+new zip is a new export uploaded by hand or CI. Service design's
+publish is not part of the MVP deployment. Without a server there is
+no `/rt` relay (the feeds must send CORS, D-67), no geocoder proxy
+(place search is off), and no edit document written (no detours or
+cancels shown); a rollback redeploys the previous bundle
+(docs/ARCHITECTURE.md, server section, "Static deployment"; pinned by
+`web/e2e/static-deploy.spec.mjs` and Go's
+`TestTheExportIsWhatTheServerServes`).
+Context: the rider pages read the server's derived documents
+(`web/src/engine.ts`: `/manifest`, `/blobs/<hash>`,
+`/network/document` and `/network/boundary`, `/streets`, `/walks`,
+each refused unless it answers its pin) and `/edits`. Most pins are
+already the manifest's (`network_hash`, `streets_hash`, `walks_hash`,
+`plans_hash`); `/network/document`, `/streets` and `/walks` take theirs
+from the ETag, which a static host does not set to a content hash.
+Blocks: nothing.
 
 ### D-84 — Who takes a build first, and what counts as healthy?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-10 — no rings: "i don't think canary builds/rings are
+needed right now." Every display takes a new build at its next poll
+(D-63); staged rollout is queued, not scoped (`docs/units/README.md`).
+The automatic revert stays ("Keep it"), on the display alone, so a
+static-only deployment has it too, with health as offered: only
+failures the build causes count (its assembly does not load, an op
+refuses, the board does not render, memory past the D-68 budget or a
+reset under its ceiling, an uncaught error) — a failed fetch (network,
+server, feed) never reverts — and a revert only inside a probation
+window after the build is applied. Encoded provisionally: the window
+is one service day across its rollover (the failures this project has
+met — after midnight, the rollover, the fall-back hour — show only
+across one).
 Context: `docs/units/observability-rollout.md`. Under D-63 every
 display applies a new build at its next poll, so a bad build reaches
 every stop at once. Rings need a first cohort and a health rule a
@@ -2975,8 +3061,8 @@ Options:
 - A percentage of displays, picked by id, widened in steps.
 - Health as: polls succeed, the board renders, memory stays under
   the D-68 budget, no reset under the ceiling, for the window.
-Blocks: rings and the automatic revert in
-`docs/units/observability-rollout.md`.
+Blocks: nothing; the revert's window is pinned by the revert e2e in
+`docs/units/observability-rollout.md` when it lands.
 
 ## Agency data
 

@@ -7,8 +7,8 @@ import { createHash } from "node:crypto";
 
 // Pages: the picker (/) and every generated UI —
 // one per `src/uis/<id>/` directory, served from `<id>.html` at the
-// web root (asset fetches are relative, so every page lives at the
-// root). Adding a UI is adding its directory and its html; a
+// bundle's root (asset fetches are relative, so every page lives at
+// the root of wherever the bundle is served). Adding a UI is adding its directory and its html; a
 // directory without its page fails the build here, not at runtime.
 const root = path.dirname(fileURLToPath(import.meta.url));
 const uis = fs
@@ -62,6 +62,10 @@ function serviceWorker() {
 }
 
 export default defineConfig({
+  // Relative: the built pages reference their assets beside them, so
+  // a deployment serves them from any path — a static host's prefix
+  // (/rider/, D-131) as well as the sync server's root.
+  base: "./",
   plugins: [svelte(), serviceWorker()],
   build: { target: "esnext", rollupOptions: { input } },
   // The bus worker (src/bus.worker.ts) is a module worker.
