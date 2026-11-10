@@ -1,6 +1,5 @@
 // The stop display (src/uis/stop-display) — a generated UI for the
-// screen at a stop (docs/ARCHITECTURE.md, web section, "Generated
-// UIs"), in three full-screen layouts over one answer.
+// screen at a stop (docs/architecture/generated-uis.md), in three full-screen layouts over one answer.
 //
 // Friday 2026-10-23 at 07:55 at the agency (the fixture's America/
 // Montreal; the browser in UTC, which never decides), the fixture feed,
@@ -152,7 +151,7 @@ test("a route that has stopped for the day stays on the display", async ({ page 
   await expect(group(page, "20", "Downtown").getByTestId("display-none")).toHaveText("Next: Monday 8:20 am");
 });
 
-// 4. A display left running (docs/ARCHITECTURE.md, "The bus worker"): the agency
+// 4. A display left running (docs/architecture/web.md, "The bus worker"): the agency
 //    re-mints its live feeds every poll, so each poll here serves a new
 //    snapshot (the fixture plus an unknown field carrying the poll's
 //    number — the decode ignores it, its hash does not). The rt module

@@ -13,7 +13,7 @@ migration.
 
 The machinery stands (`docs/FORMATS.md`, "Versions" — the inventory
 of every persisted kind, the rollout order, the kernel-version rule,
-and URLs as persisted data; `docs/ARCHITECTURE.md`, cap-migrate and
+and URLs as persisted data; `docs/architecture/crates.md`, cap-migrate and
 transit-version): every kind in the inventory but the watchlist
 carries its kind and version inside it, and every kernel load and
 every request field taking one refuses another version naming both

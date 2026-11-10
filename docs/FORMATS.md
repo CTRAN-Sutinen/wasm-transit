@@ -1,7 +1,7 @@
 # Formats — what the store persists
 
 The at-rest contract of the sync store
-(`docs/ARCHITECTURE.md`, server section). Every document is an open
+(`docs/architecture/server.md`). Every document is an open
 format, readable without the app (D-115): plain JSON, or an external
 open format (GTFS, GTFS-rt, GeoJSON). Everything here is readable
 without any wasm: the blobs are plain bytes, the envelopes and log
@@ -153,8 +153,7 @@ that is missing, does not hash to its name, or carries no envelope.
   gzipped as `Content-Type: application/gzip` (transport only, never
   `Content-Encoding`), for a page that registers a document
   compressed; `GET /blobs/{hash}.gz` answers the same by path, the
-  layout a static bundle carries (docs/ARCHITECTURE.md, server
-  section, "Static deployment"). A `policy` blob is never served.
+  layout a static bundle carries (docs/architecture/static-deployment.md). A `policy` blob is never served.
 - `POST /plans` body: a network document, any serialization, gzipped
   or not → `200 {plan_id, network_hash, plans_hash, warnings}`, `422
   {issues, refusals}` (the network does not validate, or runs no

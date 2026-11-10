@@ -10,8 +10,7 @@ A generated UI for cutting a service plan's work, in two layers:
   library beside the network (D-16). The work-rule document is on
   the bus; the runs cut is [runs-layer.md](runs-layer.md).
 
-It follows the generated-UI procedure (`docs/ARCHITECTURE.md`,
-"Generated UIs"). The blocking questions are at step 2; the runs
+It follows the generated-UI procedure (`docs/architecture/generated-uis.md`). The blocking questions are at step 2; the runs
 questions are at step 2 with no op to inventory, so their session
 logs the layer's op gaps.
 

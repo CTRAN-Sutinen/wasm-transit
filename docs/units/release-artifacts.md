@@ -31,8 +31,7 @@ deployed is retired, never deleted.
 - **HTTP contracts** (D-81). `/manifest`, `/edits`, `/pointers`,
   `/blobs`, `/plans`, `/plans/retire`, `/builds`, and `/feed` change under the
   same rule, because a display's cached build meets a newer server.
-The build side and retention are in place (docs/ARCHITECTURE.md,
-"Release artifacts"): the pinned toolchain, reproducible modules gated
+The build side and retention are in place (docs/architecture/release-artifacts.md): the pinned toolchain, reproducible modules gated
 by `just reproducible`, churn cut to each change's own modules except
 the kernel's closure, and every build kept in the store (D-80) with
 rollback as a pointer move (`POST /builds`; pinned by
@@ -52,5 +51,5 @@ far back a rollback can go.
 - The contract gate fails on a deliberately breaking op change, and
   on a breaking HTTP change, each in its own test; an additive change
   passes.
-- D-81 is decided and encoded, and `docs/ARCHITECTURE.md`
+- D-81 is decided and encoded, and `docs/architecture/release-artifacts.md`
   states the compatibility policy shared with document-versioning.

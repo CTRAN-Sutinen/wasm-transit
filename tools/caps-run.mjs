@@ -36,8 +36,7 @@
 // results print as JSON, one per line, in that order.
 //
 // --ask URL asks an ORACLE — an external service whose answer is an
-// input the user could have given by hand (docs/ARCHITECTURE.md, web
-// section, "External services") — through the deployment's path, the
+// input the user could have given by hand (docs/architecture/web.md, "External services") — through the deployment's path, the
 // way a page asks it: `--ask 'http://127.0.0.1:8080/geocode/
 // autocomplete?text=peacehealth'`. Its JSON answer joins the session
 // as a result (`$ask.features.0.geometry.coordinates.1`), so "the

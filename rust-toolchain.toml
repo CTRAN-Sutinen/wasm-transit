@@ -2,7 +2,7 @@
 # tree AND the compiler, so the compiler is part of the tree. rustup
 # reads this file and runs this release here; the registry's evidence
 # records it, and a gated publish (`just registry`) refuses another
-# (docs/ARCHITECTURE.md, "Release artifacts").
+# (docs/architecture/release-artifacts.md).
 #
 # Upgrading is a deliberate act, in its own change: bump the channel,
 # `rustup toolchain install` it, run `just registry` (the module hashes

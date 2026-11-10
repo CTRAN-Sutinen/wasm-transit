@@ -2,8 +2,7 @@
 /// needs and none should rewrite. Host layer only: shells and
 /// components never import this.
 ///
-/// A generated UI lives in `src/uis/<id>/` (docs/ARCHITECTURE.md,
-/// "Generated UIs"): `ui.json` (what it answers), `main.ts` (mount,
+/// A generated UI lives in `src/uis/<id>/` (docs/architecture/generated-uis.md): `ui.json` (what it answers), `main.ts` (mount,
 /// then boot), `Shell.svelte` (placement only), `host.svelte.ts` (the
 /// only file that asks the bus — through the engine, src/engine.ts),
 /// and `<id>.html` at the web root.

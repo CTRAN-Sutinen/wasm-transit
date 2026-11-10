@@ -1,7 +1,7 @@
 # Conventions and gotchas
 
 Git is the user's — see the root AGENTS.md. Frontend shape and file
-ownership live in `docs/ARCHITECTURE.md` (web section); this file
+ownership live in `docs/architecture/web.md`; this file
 holds the gotchas, Rust/wasm/ops and frontend alike.
 
 - **serde_json must keep the `float_roundtrip` feature** (root

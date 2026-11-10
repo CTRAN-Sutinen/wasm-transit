@@ -8,7 +8,7 @@ documents as `Doc` handles registered and identity-checked per
 module, answers cached under the journal's key, and the modules on
 the page's one bus worker behind it — gated in `just test` (the
 one-op-caller web gates and the DETERMINISM gate;
-`docs/ARCHITECTURE.md`, web section). What is left is the
+`docs/architecture/web.md`). What is left is the
 describing half (flow maps), the journal written down, and replay.
 
 ## Scope
@@ -52,8 +52,7 @@ Flow maps replace the TRANSIENT answer graph in `web/src/uis/kit.ts`
 (`answerGraph`) — they do not grow out of it — and the change that
 lands them deletes it. A node is a flow-map entry's draft (inputs,
 frame, visibility, op calls). The generated-UI units (`ui-*.md`)
-each carry an answer-graph table (`docs/ARCHITECTURE.md`,
-"Generated UIs", step 5), and flow maps are designed from those
+each carry an answer-graph table (`docs/architecture/generated-uis.md`, step 5), and flow maps are designed from those
 tables. What a table cannot express (a timer-driven live input, for
 one) is written here as an engine requirement. The store's log and
 pointer CAS live in the Go server (`server/store/`,

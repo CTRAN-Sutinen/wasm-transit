@@ -116,7 +116,7 @@ fn a_capability_that_declares_state_fails() {
     }
 }
 
-// HASH CHURN (docs/ARCHITECTURE.md, "Release artifacts"): every module
+// HASH CHURN (docs/architecture/release-artifacts.md): every module
 // links the kernel, so a library the kernel depends on is in every
 // module's closure — a dependency or feature change in it moves every
 // module's hash. The kernel requires only the libraries its own code

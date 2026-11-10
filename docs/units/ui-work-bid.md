@@ -6,8 +6,7 @@ order. Bidding sits on the runs layer (`docs/ROADMAP.md` 7),
 which `docs/units/ui-runcut.md`'s runs questions build first, and
 on data the bus does not hold.
 
-It follows the generated-UI procedure (`docs/ARCHITECTURE.md`,
-"Generated UIs"). It is at step 1, and it cannot reach step 3: no
+It follows the generated-UI procedure (`docs/architecture/generated-uis.md`). It is at step 1, and it cannot reach step 3: no
 op answers any of its questions yet.
 
 ## Questions, in the order asked

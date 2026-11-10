@@ -1,7 +1,6 @@
 package main
 
-// The geocoder proxy: the geocoder is an ORACLE (docs/ARCHITECTURE.md,
-// web section, "External services") — its answer is an input the
+// The geocoder proxy: the geocoder is an ORACLE (docs/architecture/web.md, "External services") — its answer is an input the
 // user could have given by hand (a point, a label), never a document
 // on the bus. The page asks the same origin, so the rider's typed
 // addresses go no further than the deployment's geocoder (a Pelias

@@ -1,5 +1,4 @@
-// Static deployments, one per UI (D-131; docs/ARCHITECTURE.md, server
-// section, "Static deployment"): the server's export of ONE UI — its
+// Static deployments, one per UI (D-131; docs/architecture/static-deployment.md): the server's export of ONE UI — its
 // page, the manifest, and every published document as
 // blobs/<hash>[.gz] — served by a plain file server
 // (e2e/static-server.mjs: no negotiation, no ETags, no routes) under a

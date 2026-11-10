@@ -1,5 +1,5 @@
 /// THE BUS WORKER — the page's one Worker, and the only wasm loader
-/// (docs/ARCHITECTURE.md, web section, "The bus worker").
+/// (docs/architecture/web.md, "The bus worker").
 ///
 /// Every module a page assembles lives here, off the thread the UI
 /// renders on: the manifest is validated at the seam, each module's

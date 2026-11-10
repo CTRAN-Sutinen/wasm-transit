@@ -1,6 +1,6 @@
 package main
 
-// The static bundle (D-131; docs/ARCHITECTURE.md, server section, "Static deployment"): `-export DIR`
+// The static bundle (D-131; docs/architecture/static-deployment.md): `-export DIR`
 // writes the deployment as files any static host serves — the pages,
 // the manifest, and every published document under its content hash —
 // and the server serves the SAME paths, so one page reads either

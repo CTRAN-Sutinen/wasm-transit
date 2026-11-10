@@ -20,7 +20,7 @@
 /// and they say so — nothing here answers in its place.
 ///
 /// Addresses are not the bus's: the geocoder is an ORACLE
-/// (docs/ARCHITECTURE.md, web section, "External services") — the
+/// (docs/architecture/web.md, "External services") — the
 /// server's manifest lists it, and it turns text into a point and
 /// names a point. This host sends only what the rider did (the text,
 /// the tap, where the map looks; the deployment's query policy is

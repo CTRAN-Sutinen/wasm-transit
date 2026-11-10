@@ -32,8 +32,7 @@ const staticFetchRoot = path.join(os.tmpdir(), "transit-e2e-static-fetch");
 // fresh per run: -store mem://) on a pinned date (-today: before the spec's picks,
 // inside the fixture's calendar) so a spec can publish picks to it
 // (e2e/published-picks.spec.mjs). In store mode a server commits its
-// -dist as a build and serves the pages from it (docs/ARCHITECTURE.md,
-// "Release artifacts"); the fifth rolls one back. The sixth is no Go
+// -dist as a build and serves the pages from it (docs/architecture/release-artifacts.md); the fifth rolls one back. The sixth is no Go
 // server at all: the server's static export, on a plain file server.
 export default defineConfig({
   testDir: "./e2e",

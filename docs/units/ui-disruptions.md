@@ -4,7 +4,7 @@ A generated UI for keeping today's service running when it breaks:
 what is late and where that bus is, which disruptions are in force,
 drawing a detour along the streets, and which trips are covered or
 uncovered. It follows the generated-UI procedure
-(`docs/ARCHITECTURE.md`, "Generated UIs"). It is at step 2: no
+(`docs/architecture/generated-uis.md`). It is at step 2: no
 session has asked these questions as one sequence.
 
 ## Questions, in the order asked
@@ -34,7 +34,7 @@ session has asked these questions as one sequence.
 
 ## Scope beyond the ops
 
-- **Live input**, as in ride-now (`docs/ARCHITECTURE.md`, web section): a timer
+- **Live input**, as in ride-now (`docs/architecture/web.md`): a timer
   refreshes the snapshot; the registries bound themselves, and the
   host names its keep-set (`keep`) when its documents change.
 - **The edit document is shared state.** Retire is the tombstone,

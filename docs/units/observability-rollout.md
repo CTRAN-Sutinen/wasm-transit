@@ -36,7 +36,7 @@ yet scoped").
 - **A fleet view.** Which display runs which build, which is stale or
   offline, and which has reset under its memory ceiling: a page for
   the agency, reading the reports. It is a generated UI, so it follows
-  the procedure in `docs/ARCHITECTURE.md` ("Generated UIs").
+  the procedure in `docs/architecture/generated-uis.md`.
 - **Automatic revert** (D-84). A display judges its own health; it
   needs no server and no heartbeat, so a static-only deployment has
   it too. Health counts only failures the build causes: its assembly

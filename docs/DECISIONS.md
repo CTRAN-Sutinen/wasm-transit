@@ -16,12 +16,27 @@ the rest of the work can go ahead while the decision is reviewed.
   ### D-N — the question
   State: Unanswered | Encoded provisionally | Decided
   Answer: (Decided only) the user's answer, dated, in their words.
-  Context: what the intent, the spec, and the code say, briefly.
-  Options: each answer and what it costs; mark the one the code
-    encodes (if any).
+  Context: (open entries) what the intent, the spec, and the code
+    say, briefly.
+  Options: (open entries) each answer and what it costs; mark the one
+    the code encodes (if any).
+  Pinned by: the laws, tests, and specs that hold the answer.
+  Why: (decided entries) the topic file and the heading, under its
+    "Why", that holds the reasoning and the alternatives considered.
   Blocks: the units, findings, or laws that cannot proceed or be
     deleted until it is decided. "Nothing" is a valid answer.
   ```
+
+- **A decided entry is the record, not the reasoning.** When an entry
+  is decided, its Context and Options move into the "Why" section of
+  the architecture topic it shapes (`docs/architecture/<topic>.md`),
+  rewritten in the present tense with the alternatives named, and the
+  entry keeps its question, the answer in the user's words, its pins,
+  what it blocks, and a `Why:` pointer. An open entry (unanswered or
+  encoded provisionally) keeps its Context and Options: the question
+  is still in front of the user. So does a decided entry whose work is
+  not built yet: its reasoning moves to the topic's Why in the change
+  that builds it.
 
 - **State.** *Unanswered* means nothing is built on any answer, and
   the work it blocks waits. *Encoded provisionally* means an agent
@@ -34,7 +49,7 @@ the rest of the work can go ahead while the decision is reviewed.
   deleted.** Its state becomes *Decided* and its Answer line records
   what the user said and when. In the same change, the answer goes
   into the law that pins it and the doc that owns its topic
-  (`docs/ARCHITECTURE.md`, `docs/units/`, `docs/QA-FINDINGS.md`),
+  (`docs/architecture/`, `docs/units/`, `docs/QA-FINDINGS.md`),
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
@@ -257,21 +272,7 @@ not confirmed by the user: the line `one` leaves behind when no other
 pattern ran it stays in the document (an alignment no pattern runs
 still stands; no edit removes one yet), so the export writes it as an
 unused shape.
-Context: patterns run alignments by reference (`Pattern::alignment`),
-and several patterns may run one: a feed may give one shape to
-trips with different stops. No edit authors an alignment yet. The
-first edit that redraws a pattern's line has to say what happens to
-the other patterns on the same alignment.
-Options:
-- The edit changes the alignment, so every pattern on it is
-  redrawn. This is one place to fix a line, but a change meant for
-  one variant moves the others silently.
-- The edit copies the alignment under a new id for the edited
-  pattern, and the others keep the old line. This follows "new
-  entities get new ids", but a fix meant for all of them must be
-  made once per pattern.
-- The edit names which it does, and the gesture reports the
-  patterns it touched.
+Why: `docs/architecture/crates.md`, Why, "An alignment edit names its reach".
 Blocks: nothing.
 
 ### D-5 — Does the import keep a block that breaks the spec?
@@ -338,15 +339,11 @@ Blocks: QAF-63.
 ### D-6 — Does "frequent" count terminal arrivals?
 State: Decided.
 Answer: 2026-11-05 — departures only, for both tests, so a terminal where nobody boards is not frequent.
-Context: QAF-78. The whole-day "frequent" test counts every visit
-to a stop, arrivals included, so a terminal where nobody boards can
-read as frequent. The windowed test counts departures only.
-Options: departures only, for both tests (the finding reads this
-way); or keep counting arrivals and document the difference.
 Pins: `crates/transit-analysis/tests/coverage_law_test.rs`
 (`a_terminal_nobody_boards_at_is_never_frequent`),
 `crates/transit-analysis/tests/regression_test.rs`
 (`service_type_ops_expose_the_design_axis`: frequent_pct 100/180).
+Why: `docs/architecture/crates.md`, Why, ""Frequent" counts departures only".
 Blocks: nothing.
 
 ### D-43 — What does a coverage comparison report?
@@ -382,19 +379,6 @@ layers, each with a label giving its analytical meaning (population,
 jobs, zero-car households, ...). Areal weighting applies to polygon
 layers; point layers stay valid, with their resolution stated in the
 answer.
-Context: QAF-18 and QAF-28. Coverage takes one weighted POINT layer
-and calls the weight population. A tract's people sit at its
-centroid, so a rural tract reads unserved where its developed part
-has service, and the radius swings the answer by 20 points (28.9%
-at 500 m, 49.1% at 800 m). Jobs, seniors, and zero-car households
-are the usual companions; no such layer exists in the repo.
-Options:
-- Areal layers: polygons with a weight, served share by the share of
-  the area within the radius (block groups or blocks for population).
-- Point layers only, at a finer resolution (block centroids), with
-  the resolution stated in the answer.
-- Either, and the vocabulary becomes "a weighted layer" (any field:
-  population, jobs, households).
 Pins: `crates/transit-analysis/tests/coverage_law_test.rs` (areal
 weighting conserves the layer, serves a polygon by the share of its
 area inside the radius, a point layer states its resolution, any
@@ -402,6 +386,7 @@ numeric property is a weight), `crates/cap-analysis/tests/dispatch_test.rs`
 (the load's `fields`, the answer's `layer` reading), the caps smoke,
 `web/e2e/ui-service-design.spec.mjs` (a polygon layer read by `jobs`).
 How a layer is read and sampled: D-97, D-98.
+Why: `docs/architecture/crates.md`, Why, "Coverage takes any weighted layer".
 Blocks: nothing.
 
 ## Service types
@@ -409,21 +394,11 @@ Blocks: nothing.
 ### D-8 — Do timetable edits act on the whole service family?
 State: Decided.
 Answer: 2026-11-05 — gestures stay per service type, and the UI warns when the family has siblings. No "same as, except" relation for now.
-Context: QAF-65 and QAF-44. The reads pool a service family (a
-base service and the siblings that run on its days, such as 1-WKDY
-with /30 and /31), but the timetable gestures key on one service
-type. A `set_headway` under 1-WKDY retimes only the base's trips.
-Options:
-- Gestures act on the family. The trips stay under their own
-  service ids.
-- Gestures stay per service type, and the UI warns when the family
-  has siblings.
-- An authored "same as, except" relation between service types
-  (QAF-44), which the gestures follow. This is a model change.
 Pins: `web/src/components/GesturePanel.svelte` (the panel names the
 one type it changes; the warning, D-95), `web/e2e/ui-service-design.spec.mjs`
 ("Changes the trips of"). QAF-65 is deleted; QAF-44 stays open for
 what no warning reaches (D-95).
+Why: `docs/architecture/crates.md`, Why, "Timetable gestures act on one service type".
 Blocks: nothing.
 
 ### D-94 — Which types make a combination, and how are its dates folded?
@@ -484,20 +459,7 @@ Pins: `crates/transit-network/tests/plan_period_law_test.rs`,
 `web/e2e/ui-service-design.spec.mjs` ("a fork past the calendar carries
 its weekly service through its period"); on C-TRAN, once the import
 reads its dated calendars as weekly (D-105), see D-105's pins.
-Context: QAF-54. A fork picked after the import's calendar end
-(2027-01-09) runs nothing until every service type's date range is
-extended by hand — 13 set_service_range edits on C-TRAN. Holiday
-types (4-NYE and others) are dated exceptions, not ranges.
-Options:
-- A gesture, extend_service_ranges {through}: every weekly service
-  type whose last range ends before `through` ends at `through`;
-  dated-only types are untouched.
-- The fork itself (set_plan with a period end) extends every weekly
-  type to the period's end.
-- No gesture: the warning names the problem, the planner extends by
-  hand.
-Open inside the first two: which date the period ends on, and
-whether next year's holidays (new dated exceptions) are part of it.
+Why: `docs/architecture/crates.md`, Why, "A fork carries weekly service through its period".
 Blocks: nothing (QAF-54 is free to start on D-105).
 
 ## Service design
@@ -632,19 +594,6 @@ to a specific date. if it just means 'this is WDKY-1 + WKDY/30'..
 then yeah that is fine" — a combination named by its members is fine;
 a date standing in for it is not (QAF-97). Reading, not confirmed: a
 dated exception (a holiday, a disruption day) is its own combination.
-Context: QAF-91 and QAF-65. A group pools a base service type and
-the types whose calendars are subsets of it. C-TRAN's 1-WKDY/30 and
-1-WKDY/31 are both subsets of 1-WKDY, but they run in successive
-periods and never share a day, so pooling both on the representative
-day counts trips that never run together (2130 against 1774).
-Options:
-- Count only the members that run on the group's representative day
-  (a real day's service). A member that runs in another period shows
-  as the group's other period.
-- Split a group into periods wherever its members' date ranges
-  change, each period with its own representative day and numbers.
-- Count every member, as now, and say so in the answer (a total over
-  the members' authored service, not a day).
 Pins: `crates/transit-network/tests/combination_law_test.rs` (the
 partition, never pooled apart, successive overlays as separate
 combinations), `crates/transit-analysis/tests/analysis_prop_test.rs`
@@ -672,6 +621,7 @@ so it answers null. Pins: `crates/transit-analysis/tests/coverage_law_test.rs`
 `analysis_prop_test.rs` (`type_coverage_agrees_with_coverage`,
 `unserved_points_match_the_radius_oracle`), `web/e2e/ui-service-design.spec.mjs`
 ("hubs and coverage answer around a station and a layer").
+Why: `docs/architecture/crates.md`, Why, "A service group is a combination that runs together".
 Blocks: nothing.
 
 ### D-127 — Where does operations history come from?
@@ -718,18 +668,12 @@ Blocks: nothing.
 ### D-9 — Where does required recovery time come from?
 State: Decided.
 Answer: 2026-11-05 — a policy document (minutes and/or a percentage of run time, per route or service type) wins; the smallest layover seen at that terminal is the fallback where no policy applies.
-Context: QAF-62. Imported layovers are the whole observed gap
-between two trips, so any delay reads as infeasible. Separating
-required recovery from slack needs a rule the feed does not carry.
-Options: a policy document (a minimum in minutes, a percentage of
-the run time, or both, per route or per service type); a value
-derived from the feed (for example, the smallest layover seen at
-that terminal); or both, with the policy winning.
 Pins: `crates/transit-network/tests/recovery_law_test.rs` (the floor,
 the policy winning both ways), `crates/transit-runs/tests/recovery_view_test.rs`
 (short exactly where validation says layover_infeasible). The policy is
 the work-rule document's `recovery` (D-50); which waits each
 requirement judges is D-110.
+Why: `docs/architecture/crates.md`, Why, "Required recovery: the work rules, else the terminal's floor".
 Blocks: nothing.
 
 ### D-16 — Where does the runs layer live?
@@ -760,24 +704,13 @@ routes, and the rest), and its blocks are suggestions the planner
 adopts or edits, showing the slack they leave. A peak-vehicle estimate
 falls out of it. Interlining is set per route pair
 (the user, same day), not once per agency.
-Context: QAF-3. A proposal's added trips are unassigned (no block),
-so fleet_summary cannot say how many more vehicles it needs. A
-vehicle need is a block assignment, which the model does not make,
-and an automatic one needs a minimum turn time (D-9).
-Options:
-- An automatic blocking op over a proposal (chain trips terminal to
-  terminal under a minimum layover), answering the blocks it would
-  make; the planner adopts them or not.
-- A peak-vehicle estimate from concurrent trips plus a recovery
-  allowance, with no blocks made.
-- The planner blocks by hand (add_block_trip) and fleet_summary
-  answers; the finding becomes a UI affordance.
 Pins: `crates/transit-runs/tests/suggest_law_test.rs` (every
 unassigned trip once; each wait at one place, on an interlined pair,
 at least the required recovery; the edits adopt into a document that
 validates clean with the peak named), runcut `suggest_blocks` (the
 `work_rules` gate in the justfile). What a suggestion changes is
 D-109; which pairs interline with no rule is D-107.
+Why: `docs/architecture/crates.md`, Why, "Blocking is a suggestion under the work rules".
 Blocks: nothing.
 
 ### D-50 — What are the work rules a run is cut under?
@@ -787,22 +720,11 @@ Answer: 2026-11-05 — a generic policy document: the common rules
 piece, meal breaks, relief points, pay), each optional, with an
 agency's values as data in it. Nothing is coupled to C-TRAN; the
 blocking settings of D-46 sit in the same document.
-Context: QAF-11, QAF-12, QAF-14, and the rest of QAF-15. The runs
-layer (D-16: beside the network) needs a work-rule policy document,
-and its shape is the agency's rules: maximum platform and spread,
-report and pull times, minimum and maximum piece, meal breaks,
-relief points, pay (guarantee, spread premium, overtime). The
-hand-cut menu in QAF-11 assumed 8 h maximum platform, 15 + 15
-report and pull, and a 2 h minimum piece.
-Options:
-- The user supplies C-TRAN's rules (or the labor agreement's
-  section), and the policy document is shaped to them.
-- A generic policy document (the common rules above, each optional)
-  lands first, and C-TRAN's values are data in it.
 Pins: `crates/transit-runs/tests/work_rules_test.rs` (every rule
 optional, the round trip, the most specific rule, order is not
 identity, the refusals); the kernel kind `work_rules` (load 269). The
 runs cut that reads the run rules is `docs/units/runs-layer.md`.
+Why: `docs/architecture/crates.md`, Why, "Work rules are one generic document, every rule optional".
 Blocks: nothing.
 
 ### D-106 — Does a recovery rule judge a trip that continues with no wait?
@@ -1042,42 +964,18 @@ Blocks: nothing.
 ### D-40 — How long does a planned trip take, and from when?
 State: Decided.
 Answer: 2026-11-05 — door to door: the itinerary carries `leave_secs` (the first ride's boarding minus the walk before it) and `duration_secs` (arrival minus leave); "leave in N min" uses the board's `wait` rule (D-24). "That matches what other trip planning services do today."
-Context: QAF-81. An itinerary carries depart_secs (the moment the
-plan was asked for) and arrival_secs; a walk leg carries only its
-seconds, so when the rider must leave is host arithmetic, and so is
-"takes 23 min". A board row already says how long until it leaves
-(`wait`, D-24).
-Options:
-- Door to door: `leave_secs` (the first ride's boarding minus the
-  walk before it — when the rider must set out) and `duration_secs`
-  (arrival minus leave), plus the board's `wait` rule for "leave in
-  N min".
-- From the moment asked: one `duration_secs` = arrival minus
-  depart_secs (it counts the wait before leaving).
-- Both readings, named.
 Pins: `crates/transit-router/tests/door_to_door_law_test.rs` (leave,
 duration, and the wait rule, leave-at and arrive-by over generated
 feeds and places); `web/e2e/ui-ride-now.spec.mjs` ("Leave in 7 min",
 "11 min"); C-TRAN (import `2beddcb3…`) router `plan` 106 → 110 on
 2026-10-29 asked at 08:00 — a 35 s walk to a 08:15 boarding: leave
 29665, 4663 s door to door, leave in 14 min. How "leave in" reads on a plan not asked for now is D-92.
+Why: `docs/architecture/crates.md`, Why, "A plan's time is door to door".
 Blocks: nothing.
 
 ### D-42 — When a route has stopped for the day, how far ahead does a stop look?
 State: Decided.
 Answer: 2026-11-05 — look ahead day by day for up to a week, each day's in-force edits read and never the live feed; say nothing past a week. "A week sounds good to me."
-Context: QAF-82. grouped_board keeps a route and destination whose
-last departure has left, with no departures. The display says "No
-more service today" where a rider wants "Next: 5:12 am tomorrow" or
-"Next: Monday". The next one is on another service day, which the
-board does not ask.
-Options:
-- Look ahead day by day for up to a week (one weekly cycle), with
-  each day's in-force edits; say nothing past a week.
-- Tomorrow only.
-- Until the calendar ends.
-Open inside each: whether a later day's answer reads that day's
-edits (yes, if they are in the document) and never the live feed.
 Pins: `crates/transit-dispatch/tests/next_service_law_test.rs` (the
 first later day that serves the group, patched by that day's
 diversions; nothing past seven days; unmoved by the live document;
@@ -1089,23 +987,12 @@ its bay (164 → Portland 18000 at 9008), the tenth (065) with one
 departure left and no next. Only a group the
 stop is served by today (the board's own groups) is given a next; a
 group with nothing within the week reads "No more service this week".
+Why: `docs/architecture/crates.md`, Why, "A stopped route looks ahead up to a week".
 Blocks: nothing.
 
 ### D-48 — Does a stop answer to a name its sign does not carry?
 State: Decided.
 Answer: 2026-11-05 — fuzzy matching on the stop names now (typos, abbreviations like "Van" for "Vancouver"). No authored aliases: they would be a hand-maintained separate dataset. A geocoder stays a possibility down the road where a deployment runs one (D-36).
-Context: QAF-70. directory `stops` matches the feed's names, so
-"vancouver mall" finds nothing (the sign says "Van Mall"). Where the
-server runs a geocoder (D-36), the everyday name finds the place and
-the stops near it; without one it has no answer.
-Options:
-- Stops carry authored aliases in the network (a stop's other
-  names), and `stops` matches them.
-- The geocoder is the answer; a deployment without one says how
-  stops are named (as the UI does now). The finding closes as
-  documentation.
-- Fuzzy matching on the stop names (typos, abbreviations like
-  "Van" for "Vancouver").
 Pins: `crates/transit-network/tests/stop_search_law_test.rs`;
 `crates/cap-directory/tests/dispatch_test.rs` (a typo finds the
 station); `web/e2e/ui-ride-now.spec.mjs` ("mian 2nd"); C-TRAN (import
@@ -1113,6 +1000,7 @@ station); `web/e2e/ui-ride-now.spec.mjs` ("mian 2nd"); C-TRAN (import
 "van mall" answers (it answered none), and "fishers landng" finds
 Fisher's Landing Transit Center and its bays. What counts as an
 abbreviation or a typo, and the order, is D-91.
+Why: `docs/architecture/crates.md`, Why, "Stop search is fuzzy on the stops' own names".
 Blocks: nothing.
 
 ### D-91 — What does fuzzy stop search accept, and in what order?
@@ -1192,21 +1080,7 @@ Blocks: the operator half waits on the runs layer and workforce data (`docs/ROAD
 ### D-45 — Which dispatcher edits does the edit document carry beyond the diversion?
 State: Decided.
 Answer: 2026-11-05 — cancel (whole trip) first: a cancelled trip shows on boards as cancelled and the router never rides it. Partial cancel, cover, hold and swap come later.
-Context: QAF-36. The edit document holds diversions only; a
-dispatcher's first answer to a 24-minute-late trip (cancel it,
-cover it, hold a connection, swap the vehicle) has no vocabulary. A
-new edit kind is a sync-document change, and each kind needs a
-meaning on every reader: does a cancelled trip leave the board or
-show as cancelled, does the router skip it, does the live feed's
-own cancellation (SCHEDULED/CANCELED in GTFS-rt) agree with it.
-D-73 answers the board's reading for the live feed's cancellations.
-D-15 ("covered") depends on the answer.
-Options:
-- Cancel (whole trip) first; a cancelled trip shows on boards as
-  cancelled and the router never rides it.
-- Cancel and partial cancel (from a stop on).
-- Cancel, cover (another block or vehicle takes it), hold, swap —
-  the full set, landed together.
+Why: `docs/architecture/crates.md`, Why, "A cancelled trip is not a row".
 Blocks: nothing.
 Pins: `crates/transit-sync` (the cancel payload's laws, the merge
 semilattice over both payloads), `crates/transit-dispatch/tests/cancel_law_test.rs`
@@ -1296,15 +1170,7 @@ place among the group's next three. The group stays while the route
 still serves the stop that day. The router follows the same rule: it
 never rides a cancelled trip, and never boards or alights at a
 skipped stop.
-Context: the rt decode dropped GTFS-rt's schedule_relationship, so a
-cancelled trip reached the board as an ordinary trip with no
-prediction and showed at its scheduled time. The live document now
-carries `canceled` (trip) and `skipped` (stop), and every reader asks
-`LiveDay::runs`.
-Options:
-- Show it in place, marked Canceled (it uses one of the three slots).
-- Drop it, with a note on the group ("A trip was canceled").
-- Drop it silently (encoded).
+Why: `docs/architecture/crates.md`, Why, "A cancelled trip is not a row".
 Blocks: nothing.
 Pinned by: `crates/transit-rt/tests/cancel_law_test.rs`; law 6 in
 `crates/transit-dispatch/tests/grouped_board_prop_test.rs`; law 5 in
@@ -1321,23 +1187,7 @@ source fills it is the host's choice. On C-TRAN's Trapeze roads not
 carrying walking: "that is something to be solved in the data, not
 in the model or the logic … a problem for me/the user to solve" —
 walking wants an OSM-sourced document (QAF-85).
-Context: the streets document (`docs/units/streets-model.md`) is
-imported from a street layer; the import reads the agency's
-Trapeze roads export, TIGER, and OSM GeoJSON alike. C-TRAN's
-Trapeze roads (118,860 features) are what the agency's scheduling
-system routes on, so deadheads computed over them agree with it.
-They carry no sidewalks, paths, or stairs (no CFCC A7x feature),
-so walking over them treats every road as walkable and misses
-every cut-through. OSM carries footways and crossings, at a
-licence cost: the ODbL's share-alike applies to a streets document
-derived from OSM and distributed.
-Options:
-- One source for every mode: the Trapeze roads (agency parity,
-  no walking network), or OSM (walking detail, no parity).
-- Two documents: the Trapeze roads for driving (drawing, detours,
-  deadheads) and OSM for walking (access, transfers, walksheds).
-  Every op that takes streets then names which.
-- **Decided:** the model takes any source; the source is data.
+Why: `docs/architecture/crates.md`, Why, "Streets: any source, per-mode profiles".
 Blocks: nothing.
 
 ### D-26 — Which streets can each mode use?
@@ -1363,21 +1213,7 @@ class. Pins: `crates/transit-streets/tests/bus_profile_law_test.rs`,
 streets `route` from (45.49755, -122.5900) to (45.49755, -122.5750)
 draws 1,194 m — SE 71st Ave (secondary) 12 m, SE Powell Blvd (unknown)
 1,166 m, SE 85th Ave (local) 16 m — with `to_confirm` SE Powell Blvd.
-Context: the import classifies every street (D-30). A rider cannot
-walk a motorway or a ramp; a bus cannot be drawn down a path,
-stairs, or a 4WD track, and a planner may not want one drawn down an
-alley or a private drive. C-TRAN's data holds 1,701 streets with no
-class (626 with a null CFCC, among them SE Powell Blvd, and 1,075
-unnamed `X10` features), so a rule must also say what an unknown
-class allows.
-Options: a mode profile per class, owned by the op as a parameter
-with a default (a walking profile, a bus profile). The defaults
-are the decision: which classes each mode may use, and whether an
-unknown class is allowed (permissive) or refused (strict).
-- **Decided (walking):** strict — every class but motorway, ramp,
-  and unknown; one-way does not bind a rider.
-- **Decided (a bus):** every class may be drawn; unknown and
-  path-like classes carry a warning the planner confirms.
+Why: `docs/architecture/crates.md`, Why, "Streets: any source, per-mode profiles".
 Blocks: nothing.
 
 ### D-27 — What does place search find?
@@ -1389,22 +1225,13 @@ the geocoder answers: Pelias's portland-metro project — addresses
 (OpenAddresses, TIGER interpolation), streets and venues (OSM),
 and places (Who's On First). Which sources is the geocoder's
 configuration, not the model's (D-36).
-Context: search found stop names only (directory `stops`). A rider
-types addresses ("1400 NE 136th Ave"), intersections ("4th Plain
-& Andresen"), and places ("PeaceHealth", "WSU Vancouver"). The
-Trapeze roads carry TIGER-style address ranges per side
-(`L_F_ADD`…`R_T_ADD`) and street names, so addresses and
-intersections need no new source; places do (OSM, or the county's
-data), and they are the hardest to keep current.
-Options: stops only; + intersections; + addresses
-(interpolated along the ranges, or the county's address points);
-+ places. **Decided:** stops, and every kind the geocoder answers.
+Why: `docs/architecture/web.md`, Why, "The geocoder is an oracle the host calls".
 Blocks: nothing.
 
 ### D-28 — Where do stop and address results meet?
 State: Encoded provisionally.
 Context: a rider wants one search box. The host may not merge two
-answers (`docs/ARCHITECTURE.md`, "Generated UIs", step 6). With the
+answers (`docs/architecture/generated-uis.md`, step 6). With the
 geocoder a service (D-36), the stops are an op's answer and the
 addresses the geocoder's; neither knows the other.
 Options:
@@ -1587,26 +1414,7 @@ this feels like something that should just be a service i call to"
 to ride-now". The geocoder is an external service: the host asks
 it, through the server's `/geocode` proxy, and every op takes the
 point it answers.
-Context: data belongs on the bus when an op's answer depends on it
-— the streets do (walks, the walk table); basemap tiles do not.
-A geocoder turns text into a point and a point into a name; from
-the point on, every op answers the same whichever way the point
-came (typed, tapped, located). The gazetteer that was queued in
-`docs/units/streets-model.md` (a document read from the street
-layers' names and address ranges) would have rebuilt a geocoder —
-interpolation, fuzzy matching, ranking, places — inside a
-capability.
-Options:
-- A gazetteer document on the bus: offline, the same answer on
-  every host, and a geocoder to build and keep current.
-- **Decided:** an external service (Pelias, `just geocoder`). Costs:
-  no address search offline or where the server runs no geocoder
-  (stop search, the map, and the location still answer); a rider's
-  typed addresses reach whoever runs it (the agency's server, here);
-  its answers drift as its data does, so nothing durable keeps a
-  query — a trip end keeps the point and the name it was shown with.
-  Stops stay the network's: the Pelias project's transit importer
-  is not run.
+Why: `docs/architecture/web.md`, Why, "The geocoder is an oracle the host calls".
 Blocks: nothing. Pins: `server/geocode_test.go` (the proxy forwards
 the query as-is, answers 404 with no geocoder),
 `web/e2e/published-network.spec.mjs` ("ride now searches addresses
@@ -1650,17 +1458,8 @@ data promote the oracle to a source. Ops echo an oracle's label,
 never branch on it. The query policy is the deployment's (the
 server's policy file, applied by its proxy); the manifest's
 `services` lists what a deployment offers; nothing durable keeps a
-query or an oracle's id. The rule's home is `docs/ARCHITECTURE.md`,
-web section, "External services".
-Context: the geocoder (D-36) was the first time a host showed an
-answer that is not an op's. Its query policy (layers, radius, size)
-was chosen in ride-now's TypeScript — a threshold in TypeScript,
-which "Parity" forbids — and the page found it by probing for a
-404, a third way of discovering a deployment's offer beside fixed
-endpoints and `live-feeds.json`.
-Options:
-- Leave external services to each host's judgment.
-- **Decided:** the three kinds and the oracle contract above.
+query or an oracle's id. The rule's home is `docs/architecture/web.md`, "External services".
+Why: `docs/architecture/web.md`, Why, "The geocoder is an oracle the host calls".
 Blocks: nothing. Pins: `server/geocode_test.go` (the page's own
 policy is dropped and the deployment's applied; the manifest lists
 the service exactly when configured), `web/e2e/published-network.
@@ -1671,19 +1470,7 @@ gate in `just test`.
 ### D-39 — Do the live feeds move into the manifest's services?
 State: Decided.
 Answer: 2026-11-05 — the feeds stay in the static `web/public/live-feeds.json`. The departure board must run as plain static files on a CDN with a static config document and no sync server, so a page's default feeds never depend on `/manifest`. If `services` ever carries them, it is a static file the same way.
-Context: D-38 makes the manifest's `services` the way a deployment
-says what it offers. The deployment's GTFS-rt feeds are still named
-in a static `web/public/live-feeds.json` beside the page (read by
-ride-now and the stop display; the perf harness and its recorder
-read the file too), and a rider may set their own. Moving them
-moves where a deployment configures its feeds — server flags or a
-file the server reads — and the page would read them from
-`/manifest`, so a page served without the sync server has no
-default feeds.
-Options:
-- Move them now: `services.live: {trips, vehicles, alerts}` from
-  the server's configuration; `live-feeds.json` is retired.
-- Wait for a second deployment to need it; `live-feeds.json` stays.
+Why: `docs/architecture/web.md`, Why, "Live feeds are named in a static file".
 Blocks: nothing.
 
 ### D-49 — Where do the basemap's glyphs and sprites come from?
@@ -1691,24 +1478,7 @@ State: Decided.
 Answer: 2026-11-05 — "lets do option 2": a recipe fetches them once
 into `web/public/basemap-assets/` (gitignored); the style reads them
 locally when present and falls back to the network.
-Context: With `basemap.pmtiles` served, the style still
-fetches its fonts (glyphs) and icons (sprites) from
-protomaps.github.io, so a stop display that loses its uplink loses
-every map label. Installs and downloads are the user's job.
-Options:
-- Vendor them into the repo (the Protomaps font PBFs and sprite
-  sheets, a few MB, OFL/BSD licensed), served beside the tiles.
-- **Decided:** a recipe that fetches them once into web/public (like
-  `just geocoder-build`), gitignored; the style reads them locally
-  when present and falls back to the network. `just basemap-assets`
-  fetches `protomaps/basemaps-assets` at a pinned commit (the light
-  sprites and every font stack, ~14 MB, licenses included);
-  `pickStyle` probes for `basemap-assets/sprites/v4/light.json`
-  beside the tiles. The assets are an install: a checkout without
-  them still draws labels from protomaps.github.io, so it needs an
-  uplink for them until the recipe has run.
-- Keep the network fetch; the finding is documented as a known
-  offline limit.
+Why: `docs/architecture/web.md`, Why, "The basemap's labels are served locally when installed".
 Blocks: nothing. Pins: `web/e2e/basemap-assets.spec.mjs` (installed:
 the style's glyph and sprite URLs are the app's own origin and
 nothing is asked of protomaps.github.io; absent: the network
@@ -1823,16 +1593,7 @@ took effect, restore, not a chain member, `retired_picks_never_resolve`),
 the cap-plans dispatch test `retire_answers_the_next_set_or_why_not`,
 `TestRetiringAPick` in `server/plans_test.go`, and "a retired pick
 never reaches a rider" in `web/e2e/published-picks.spec.mjs`.
-Context: a pick published by mistake, or a service change the agency
-cancels, stays in the published set; republishing can move its date
-but not remove it. Retirement is the tombstone everywhere else
-(AGENTS.md: no hard deletes).
-Options:
-- A retired pick: it stays in the set marked `status: "retired"`,
-  never resolves, and a later publish of the same id restores it.
-- Removal from the set: the set's log still names it (the store's
-  history keeps every revision), but the current set does not.
-- Nothing until a later pick supersedes it (the behavior before).
+Why: `docs/architecture/server.md`, Why, "Picks: retired, not removed; never landing in the past".
 Blocks: nothing.
 
 ### D-76 — What does publishing refuse beyond an invalid chain?
@@ -1851,19 +1612,7 @@ Pinned by: `a_pick_with_no_service_in_its_period_is_refused_publication`
 `publishable_answers_what_refuses_a_pick` (cap-network) and
 `retire_answers_the_next_set_or_why_not` (cap-plans), and
 `TestPublishRefusalsNameTheirReasons` in `server/plans_test.go`.
-Context: QAF-95 (fixed by this answer). cap-network `validate` warnings never gate
-(they name what validity lets through), so a pick whose service
-types' calendars end before its effective date publishes with a
-`no_service_in_plan_period` warning, and on that date every rider
-page loads a network that runs nothing. A pick dated in the past also
-publishes and governs at once, changing what the deployment says ran
-on past dates.
-Options:
-- Publish with the warnings in the answer (the behavior before).
-- Refuse a pick with no service in its period; publish other
-  warnings.
-- Also refuse a pick dated before today (the server's clock, the way
-  D-56 bounds the LWW clock), or before the pick in force.
+Why: `docs/architecture/server.md`, Why, "Picks: retired, not removed; never landing in the past".
 Blocks: nothing.
 
 ### D-82 — Where do the store's backups go, and how often?
@@ -1903,22 +1652,7 @@ strongly consistent read and list, object metadata, delete, modified
 time — and Ceph RGW and RustFS are dev endpoints, used only as far as
 they honor that contract; neither earns a code path of its own. Which
 managed provider a deployment runs on is open (D-116).
-Context: the store is a directory on one node. Its guarantees rest on
-a local POSIX filesystem: `flock` keeps one writer process, a commit is
-a file append, and blobs land by `rename` — so a host crash can tear a
-log tail, and network filesystems and object stores provide none of
-the three. Object stores write whole objects atomically and offer a
-conditional create (S3 `If-None-Match: *`, GCS `ifGenerationMatch=0`,
-Azure Blob `If-None-Match: *`), which is enough to hold the pointer
-CAS across processes.
-Options:
-- A local directory hardened against crashes (torn-tail recovery,
-  directory fsyncs, an offline verify): one node, one process, the
-  disk's failure is the store's.
-- **Object storage (S3 and S3-compatible, Azure Blob, GCS) — decided.**
-  Blobs, envelopes, and log records become create-only objects; the
-  conditional create is the CAS and the lock; several server processes
-  may share a bucket; the provider carries durability and replication.
+Why: `docs/architecture/server.md`, Why, "Object storage, create-only".
 Blocks: nothing (`docs/units/store-durability.md` carries the work).
 
 ### D-116 — Which managed object store does a deployment run on?
@@ -1942,45 +1676,14 @@ Answer: 2026-11-06 — offline: "intuitively i think GC should be
 offline"; after the trade-offs, "yes, keep it offline." Serving
 processes never delete; an offline `store gc` with its own
 delete-capable credentials collects orphans.
-Context: the log is append-only and every record names its blob, so
-the only garbage is an orphan — a blob whose commit never landed (a
-crash between blob and record, or a lost CAS). A store serving a
-moderate-traffic agency makes a handful a month. Online GC today runs
-in every serving process (`-gc-interval`); over object storage it can
-race a commit: a writer whose create-if-absent finds an old orphan
-treats it as durable while another process deletes it, and the record
-then names a missing blob. The north star (24/7 operations, moderate
-to low traffic, high auditability) weighs: the serving credentials,
-the immutability settings the provider offers, and what an auditor
-can prove was never removed.
-Options:
-- Online GC (today): no job to run; every serving process needs
-  delete permission; the race above needs a lease or a heal step;
-  incompatible with object immutability (S3 Object Lock, Azure
-  immutability policies, GCS bucket lock).
-- **Offline `store gc` — decided.** A separate job with its own delete-capable
-  credentials, run on a schedule or by hand; serving processes hold
-  create-and-read only, so a compromised server cannot erase history;
-  the race remains if it runs beside live servers, closed by a
-  long grace plus the commit re-checking its blob after the record.
-- Never delete: orphans stay (a lost CAS's blob is itself evidence of
-  an attempted write), `store verify` reports them; the bucket can be
-  fully immutable for the agency's retention period; storage grows by
-  the orphans only.
+Why: `docs/architecture/server.md`, Why, "Object storage, create-only".
 Blocks: nothing (`docs/units/store-durability.md` carries the work).
 
 ### D-118 — Where does a server read its inputs at boot?
 State: Decided.
 Answer: 2026-11-06 — "boot should be from the bucket OR configurable
 external resources, eg the gtfs feeds."
-Context: a server reads its inputs from local files today (`-feed`,
-`-streets`, `-policy`, the wasm paths), so a process is not disposable:
-a replacement needs the same files and flags, and two processes
-configured differently publish different manifests to one store.
-Options:
-- **The bucket, or a configured external source (a GTFS feed URL, a
-  street layer) — decided.** Local files remain a dev convenience.
-- The bucket only, with external inputs imported by a separate step.
+Why: `docs/architecture/server.md`, Why, "Inputs from a URL or the bucket".
 Blocks: nothing (`docs/units/store-durability.md` carries the work).
 
 ### D-119 — What does the server serve when the store is unreachable?
@@ -1990,18 +1693,7 @@ heads, each labelled with its age, refuse writes until the bucket
 answers, and set no age past which reads fail. A transit system's
 reads peak during disruptions, when an outage is likeliest; a correct
 but stale answer, labelled, beats none.
-Context: blobs are content-addressed and immutable, so a cached copy is
-always correct; only a pointer's head can go stale. The north star is
-an agency running 24/7 at moderate to low traffic with high
-auditability needs. Auditability rules out acknowledging a write the
-bucket has not taken (a server-side queue loses an acknowledged write
-with the process); the browser already owns its documents and resends
-under LWW, so a refused write is held client-side.
-Options:
-- **Serve the cached heads, each labelled with its age (seq and
-  `at_ms`); refuse writes (503) until the bucket answers — decided.**
-- The same, with an age past which reads fail rather than serve stale.
-- Fail every request until the bucket answers.
+Why: `docs/architecture/server.md`, Why, "Stale reads labelled, writes refused".
 Blocks: nothing (`docs/units/store-durability.md` carries the work).
 
 ### D-120 — Does compaction drop a record whose dates have passed?
@@ -2053,19 +1745,7 @@ State: Decided.
 Answer: 2026-11-06 — "i would say no, but everything we are building
 is adjacent/touches it so the interfaces need to be clear and well
 defined."
-Context: data that is published and acted on as a whole is a document
-(the network, picks, plans, policy, a work bid's package, choices and
-roster); data written by many hands at once, in no order the domain
-imposes, that accumulates and is searched by attribute, is rows. The
-dispatcher's day — sick calls, extra-board fills, swaps, vehicle
-assignments — is the row-shaped operational data a transit system
-runs on, held by its own systems (CAD/AVL, workforce management).
-Options:
-- **Out of scope; the adjacent systems meet this one at defined
-  interfaces — decided.** This repo holds documents (and detours and
-  cancels, D-121); each fact has one system of record, and the
-  interfaces say what crosses and in whose vocabulary.
-- In scope: a row store joins the repo for daily operations.
+Why: `docs/architecture/adjacent-systems.md`, Why, "The dispatcher's day is out of scope; the seam is defined".
 Blocks: nothing.
 
 ### D-123 — Do trip, block, and run ids survive from one pick to the next?
@@ -2076,7 +1756,7 @@ fork copies the ids it carries, but a network imported from the
 scheduling system's export carries whatever ids that export names, so
 the same id in two picks may or may not be the same piece of work. An
 external reference names its pick or `network_hash` with the id
-(`docs/ARCHITECTURE.md`, "Adjacent systems"), so nothing is ambiguous
+(`docs/architecture/adjacent-systems.md`), so nothing is ambiguous
 today — and a service date names its pick (D-75, D-76: the past's
 pick in force never changes), so TODS's and TIDES's references by
 service date and id are already unambiguous. The question is what an
@@ -2123,7 +1803,7 @@ already (C-TRAN's at `gtfs-rt.c-tran.org`, with alerts at
 `gtfs-rt.c-tran.com/Alerts`). This repo's authored cancels and
 detours (D-124) are a second source for the same trips: an authored
 cancel and the vendor's prediction can disagree, and no code picks a
-winner between sources (`docs/ARCHITECTURE.md`, "Adjacent systems").
+winner between sources (`docs/architecture/adjacent-systems.md`).
 Options:
 - Its own feed endpoints beside the vendor's: consumers read both
   (TripModifications and Alerts are commonly separate feeds); a cancel
@@ -2156,11 +1836,7 @@ Answer: 2026-10-30 — "Public read, auth'd write": GET on /manifest,
 (the rider-facing deployment shape); POST /edits and POST
 /pointers/* require a role with write on that pointer. The policy
 document can refine per pointer later.
-Context: with -store landed, writes are the multi-writer surface; reads
-publish documents. A deployment that must not expose reads can put a
-read rule behind auth in the policy.
-Options: public read / auth'd write (chosen); everything authenticated;
-only edits+pointers protected.
+Why: `docs/architecture/server.md`, Why, "Public reads, authenticated writes".
 Blocks: nothing.
 
 ### D-59 — Which JWT claim carries the roles?
@@ -2169,11 +1845,7 @@ Answer: 2026-10-30 — "Configurable claim path": a `-oidc-roles-claim`
 flag (dotted path into the payload, e.g. `roles` or
 `realm_access.roles` for Keycloak), default `roles`, value a JSON
 array of strings. Works with any IdP.
-Context: the policy matches role strings; the claim's location is the
-IdP's, so the server must be told where to look rather than hard-code
-one vendor's shape.
-Options: configurable path (chosen); OAuth2 scope/scp only; fixed
-top-level `roles`.
+Why: `docs/architecture/server.md`, Why, "Public reads, authenticated writes".
 Blocks: nothing.
 
 ### D-60 — How are JWTs verified (JWKS vs pinned key)?
@@ -2185,8 +1857,7 @@ ES256 only — `alg: none` and HS* are rejected (the IdP signs with a
 private key; symmetric algs would let anyone mint tokens). iss must
 equal `-oidc-issuer`, aud must contain `-oidc-audience`, exp/nbf with
 60 s leeway.
-Context: authentication is the IdP's; the server only verifies.
-Options: JWKS only; pinned key only; both (chosen).
+Why: `docs/architecture/server.md`, Why, "Public reads, authenticated writes".
 Blocks: nothing.
 
 ### D-61 — Where does the authz policy live and how is it changed?
@@ -2196,11 +1867,7 @@ document on the store (kind `policy`), seeded from a `-policy <file>`
 flag at first boot when the pointer is absent; later changes are
 authenticated CAS commits on the `policy` pointer (audited in the log)
 needing a role with write on it. Bootstrap-safe: no chicken-and-egg.
-Context: the policy is data, so per the bus laws it is a document
-addressed by hash, and cap-authz answers authorize/deny over it
-fail-closed (no policy, no valid token, or no matching rule → deny).
-Options: store pointer seeded from file (chosen); file re-read per
-request (not audited); store pointer only (needs break-glass bootstrap).
+Why: `docs/architecture/server.md`, Why, "Public reads, authenticated writes".
 Blocks: nothing.
 
 ## Versioning and deployment
@@ -2208,139 +1875,45 @@ Blocks: nothing.
 ### D-62 — Where does a document's schema version live?
 State: Decided.
 Answer: 2026-11-03 — "field inside each document." Every document carries a top-level version field; the hash covers it.
-Context: `docs/units/document-versioning.md`. The watchlist and the
-policy carry their version inside the document; `edit_records`
-carries it only in the store's envelope sidecar, so the copy in
-IndexedDB, a POST body, or a file `caps-run` loads has none; the
-network carries none anywhere and `read_network` sniffs its shape.
-A document's hash is its canonical bytes, so a tag inside is part of
-its identity.
-Options:
-- Inside every document, a top-level version field (recommended):
-  every copy anywhere says what it is; two versions of the same
-  content never share a hash. Costs: `edit_records` stops being a
-  bare array (its own v1 → v2 migration), and every network hash
-  changes once.
-- In the envelope only: the store and HTTP headers carry it; every
-  other copy needs a wrapper or a shape sniff, the way the network
-  is read today.
+Why: `docs/architecture/bus.md`, Why, "Every document says what it is".
 Blocks: `document-versioning` scope 2 (the tag) and the first
 migrations.
 
 ### D-63 — What does an open page do when the deployment moves past it?
 State: Decided.
 Answer: 2026-11-03 — "these are truly web apps, so they benefit from proper 'update' semantics." Encoded as the web-app update lifecycle: a new build downloads in the background and waits; a rider's page applies it at the next cold start or navigation, or when the rider accepts "a new version is ready"; a display (nobody to tap) applies it itself at its next poll while the server answers; no page applies it over unsaved device data. Data (a new network_hash) re-pins without a reload.
-Context: `docs/units/deploy-rider-apps.md`. A stop display stays
-open for weeks; a rider's tab for days. A publish moves either the
-data (a new `network_hash`, the same modules) or the code (a module
-hash, the kernel, the app build). Data re-pins without a reload in
-every option below; the question is code.
-Options:
-- Riders see "a new version is ready" and it applies at the next
-  cold start or navigation; displays reload themselves at the next
-  poll while the server answers; neither reloads over unsaved device
-  data (recommended).
-- Every page reloads as soon as it sees new code.
-- Nothing until the person reloads (today) — an old page may meet a
-  document it does not speak and goes read-only.
-Also open: a scheduled nightly reload for displays as a safety net
-(e.g. 03:00, outside service).
+Why: `docs/architecture/updates-offline.md`, Why, "A new build waits, then applies".
 Blocks: `deploy-rider-apps` following a publish.
 
 ### D-64 — Which devices must the rider apps run well on?
 State: Decided.
 Answer: 2026-11-03 — the stop displays run on Raspberry Pi 4s. Ride-now targets browsers: "it shouldn't be about 'minimum support' most phones these days can handle a properly optimized page." So ride-now has performance budgets, not a device floor; the numbers are D-68.
-Context: `docs/units/runtime-cost-gate.md` ratchets the measured
-numbers down but sets no target. The scratch bench measured
-5.8–8.4 MB of wasm memory per consumer and ~300 ms per C-TRAN
-registration at 4× CPU throttle; ride-now assembles five consumers.
-Mobile browsers kill a tab well before a desktop would, and the
-stop display's hardware is not named anywhere.
-Options: name the floor — a phone (e.g. a mid-range Android three
-years old, and the smallest supported iPhone), the display's player
-hardware and browser, and a cold-load network (e.g. throttled 4G) —
-and the budgets on it (e.g. first board under 3 s cold, the page
-under 150 MB).
+Why: `docs/architecture/updates-offline.md`, Why, "Budgets from what the page needs".
 Blocks: `deploy-rider-apps` budgets (the ceilings' targets) and its
 phone dogfood.
 
 ### D-65 — Do ride-now and the stop display work offline?
 State: Decided.
 Answer: 2026-11-03 — "yes." Both pages are installable and work offline: the shell, the modules, and the last network cached; boards answer from the schedule, marked as the schedule.
-Context: `docs/units/deploy-rider-apps.md`. The modules and the
-network are content-addressed, so a service worker can cache them
-forever without staleness; the app shell and `/manifest` are what
-would go stale (D-63 governs those). A rider at a stop with no
-signal is the common case the project's local-first claim is for;
-a display whose uplink drops keeps its in-memory network until it
-reloads.
-Options:
-- Installable and offline at launch: the shell, the modules, and the
-  last network cached; boards answer from the schedule, marked as
-  the schedule (recommended).
-- The HTTP cache only at launch; offline is a later unit.
+Why: `docs/architecture/updates-offline.md`, Why, "Offline at launch".
 Blocks: `deploy-rider-apps` offline.
 
 ### D-66 — How long is a migration kept?
 State: Decided.
 Answer: 2026-11-03 — "forever … i imagined they'd just be their own wasm caps that don't take much space to store. you keep migrations for a regular application forever as sql files." Every authored kind's migration chain is kept forever, wrapped as its own capability module (the library crate holds the steps; the capability is assembled only when an older document needs it), so consumers speak only the current version.
-Context: `docs/units/document-versioning.md`. Derived documents
-(an import, the walk table) re-derive and need no migrations.
-Authored ones (edits, plans, a planner's fork, a watchlist) can sit
-on an unopened device or in an old file for years. A migration is a
-pure function with a frozen fixture, so keeping it costs a test.
-Options:
-- Forever for authored kinds (recommended).
-- A floor (e.g. a year, or N versions): older documents are refused
-  with a message naming the last build that reads them.
+Why: `docs/architecture/bus.md`, Why, "Migrations are kept forever, as a capability".
 Blocks: `document-versioning` the support window.
 
 ### D-67 — Whose feeds does the server's proxy fetch?
 State: Decided.
 Answer: 2026-11-03 — "I'd prefer to get rid of the proxy honestly, it is just there for local dev/testing" and "we control the feeds, so we just need to fix those issues properly on the feed side." The `/rt` proxy is removed; the agency's feeds serve HTTPS with CORS and pages fetch them directly. Amended 2026-11-08 — "leaving the /rt proxy as an optional dev convenience": `/rt` stays, off unless the server runs with `-rt-proxy` (`just serve` and `just dev` pass it), with a timeout and a size cap; a page fetches its feeds directly unless its `live-feeds.json` names the relay as `proxy`, which only a dev config does.
-Context: `docs/units/deploy-rider-apps.md`. `/rt?url=` fetches any
-http(s) URL for any caller, with no timeout or size cap — beyond
-localhost it is an open relay into the server's network. Ride-now
-lets a rider set their own feed URLs, which only work through an
-open proxy unless the upstream sends CORS headers. Where the
-deployment names its feeds is D-39.
-Options:
-- Only the deployment's own feeds (recommended): an allowlist from
-  its configuration, a timeout and a size cap; a rider's own feed
-  works only when its upstream allows CORS.
-- The deployment's feeds for anyone, any URL for an authenticated
-  role (D-58).
-- Any URL, localhost deployments only.
+Why: `docs/architecture/server.md`, Why, "`/rt` is a dev relay, off by default".
 Blocks: `deploy-rider-apps` the proxy.
 
 ### D-68 — What are ride-now's and the stop display's performance budgets?
 State: Decided.
 Answer: 2026-11-03 — "ok" to the proposal below, after asking "why would we be allowing a departure board to tax 2 GB of RAM": budgets are set from what the page needs, never the hardware's headroom — the display at most 40 MB of wasm + JS heap flat across 24 h, ride-now at most 80 MB, with the timing budgets below.
-Context: D-64 sets no device floor for ride-now and names the
-display hardware (a Raspberry Pi 4). Budgets are what the cost
-gate's ratchet must come under; the costs that matter are bytes on
-a cold load, main-thread blocking, memory (each consumer module
-holds its own parsed network, 5.8–8.4 MB on C-TRAN), and polling a
-hidden page (battery and data).
-Options (proposed): budgets on what the page controls — wasm
-linear memory plus the JS heap — never on what the device has; the
-browser's own overhead is outside them. Set from what each page
-needs, not from the hardware's headroom: a display assembles three
-consumers (directory, rt, board), each with its own parsed network
-(5.8–8.4 MB on C-TRAN), plus one live snapshot each once eviction
-lands (~388 KB) — about 30 MB.
-- The display (measured on a Pi 4): wasm + JS heap at most 40 MB,
-  flat across 24 h; a board refresh never drops a frame.
-- Ride-now (4× CPU throttle, "Fast 4G"): wasm + JS heap at most
-  80 MB (five consumers and a map); first board under 3 s cold and
-  under 1 s cached (D-65); no main-thread task over 50 ms after
-  first paint; no polling while hidden.
-These are starting ceilings: the cost gate only lowers them. The
-larger saving is a candidate, not part of this answer: a display
-shows one stop, so a stop-scoped derived document (the day's
-departures there) would replace three whole-network copies — a new
-document kind (`docs/units/runtime-cost-gate.md`, splitting the
-network document).
+Why: `docs/architecture/updates-offline.md`, Why, "Budgets from what the page needs".
 Blocks: `deploy-rider-apps` budgets (the ceilings' targets) and its
 dogfood.
 
@@ -2348,14 +1921,7 @@ dogfood.
 State: Decided.
 Answer: 2026-11-03 — "Retire it now": delete `/app.html` and its host
 layer; anything only it answered becomes a gap recorded in a unit.
-Context: `docs/units/host-discipline.md`'s gate (no op call outside
-the engine) ends with an empty allowlist. The original app (persona
-tabs over one shell) called ops directly from `actions.ts`,
-`planner.ts`, and `capdemo.svelte.ts`. It was the only browser UI
-that authored a diversion, showed a day's blocks, imported a feed or
-street layer in the page, and demonstrated migrate/rollback.
-Options: migrate it onto the engine; keep it on the gate's
-allowlist until retired; retire it now (chosen).
+Why: `docs/architecture/web.md`, Why, "Every page is a generated UI".
 Blocks: nothing. The gaps it left are lines in
 `docs/units/grade-debt.md` ("Not read by a UI"), paid by
 `ui-disruptions` and `ui-runcut`; the migrate/rollback pin is
@@ -2400,28 +1966,7 @@ every capability's state together. Pins add
 ### D-71 — May a module register a document under a pinned hash it did not compute?
 State: Decided.
 Answer: 2026-11-05 — keep full verification in every module. After D-77 a page registers each document once, so the cost is one canonical hash per document per page.
-Context: registering the C-TRAN network costs ~300 ms per module on
-the bus worker (`docs/units/runtime-cost-gate.md`): the parse
-(~126 ms), then the canonical hash — the document re-serialized
-(~50–100 ms) and SHA-256 over it (~100 ms). The module is the hash
-authority (the bus rules): it derives identity, a host never mints
-it. A module cannot VERIFY a pin cheaper than computing it — bytes
-that hash to the pin are the pin's bytes, but only re-serializing
-proves they are canonical, which is the cost to be saved.
-Options:
-- Keep full verification in every module (today): sound, ~300 ms per
-  registration on C-TRAN.
-- Trust a pin for bytes that hash to it: the module skips the
-  re-serialization and registers under the pin (saves ~50–100 ms per
-  registration; the SHA-256 stays). A host passing non-canonical
-  bytes with their own hash would mint an identity no module derived.
-- Hash once per page: the first module derives the identity, the
-  engine passes it with the same bytes to the rest, which trust it —
-  the same trust, saving the whole hash in every later module.
-- A strict canonical parser that refuses anything but the canonical
-  serialization, so the bytes' SHA-256 IS the identity with no
-  re-serialization and no trust — sound, and a parser to keep in
-  lockstep with serde's output.
+Why: `docs/architecture/bus.md`, Why, "The module verifies every pin by hashing".
 Blocks: nothing (the re-hash candidate in `runtime-cost-gate` is closed).
 Update 2026-11-04: modules now register the network from its gzip
 stream, and every op answers in struct field order, so the server's
@@ -2461,37 +2006,14 @@ On linking per generated UI at build time, with "capabilities never
 call capabilities" enforced by crate dependencies, a registry
 constructor private to the kernel, forbidden `unsafe`, and an
 assembly-independence test: "i agree with what you laid out."
-Context: each capability is its own wasm instance, with private
-linear memory and zero imports, so every network consumer parses and
-holds its own copy (~9–12 MB and ~300 ms each on C-TRAN; the stop
-display holds three — QAF-93). Each also ships the same ~550 KB
-(gzipped) base. Law 3 said a persona's bundle comes together at wire
-time, "never at build time".
-Options:
-- One module per capability: isolation of faults and memory by
-  construction; a network copy and a base per consumer.
-- Link a page's capabilities into one module with one kernel-owned
-  registry (decided): one copy and one base per page. Costs: the
-  capabilities in an assembly share one model version; one
-  instance's failure or memory reset is every capability's; the rule
-  is enforced by the compiler and gates instead of separate
-  memories. Linking is per generated UI at build time first, and per
-  user selection at wire time later.
-- Wasm threads with a shared, imported memory: lets instances of ONE
-  module share memory. Separately compiled modules cannot share a
-  heap or a parsed `Network` without linking, so it does not replace
-  linking. It breaks zero imports, and needs cross-origin isolation
-  (COOP/COEP) and a nightly toolchain with a rebuilt std. It remains
-  an option on top of linking, if a measured query needs more cores.
-- A compact zero-parse document format: smaller, faster copies,
-  still one per module.
-Blocks: nothing. The design is `docs/ARCHITECTURE.md`, "Bus rules"; Law 3
+Why: `docs/architecture/bus.md`, Why, "One linked module per page, one registry".
+Blocks: nothing. The design is `docs/architecture/bus.md`, "Bus rules"; Law 3
 in `crates/AGENTS.md` carries the answer (linking assembles bytes,
 not surfaces).
 Update 2026-11-05: built — the kernel owns the registries and the
 loads, `assembly!` emits the exports, each generated UI loads one
 linked module, and the four gates run in `just test`
-(`docs/ARCHITECTURE.md`, "Bus rules"). Measured on C-TRAN the same
+(`docs/architecture/bus.md`, "Bus rules"). Measured on C-TRAN the same
 day: the stop display 41.5 → 21.0 MB (wasm 31.8 → 16.2), ride-now's
 wasm 45.7 → 17.8 MB (`docs/units/runtime-cost-gate.md`); the server
 stays on single-capability modules (D-78).
@@ -2507,20 +2029,7 @@ another capability never takes the fail-closed check with it); and
 sync's pinned `wasm_hash` changes only when sync does. Revisit if the
 server hosts a long-lived network reader (a server-side board or
 router): link those readers together, authz still apart.
-Context: the server keeps cap-sync, cap-plans, and cap-authz for its
-lifetime, and instantiates cap-network and cap-streets fresh for each
-published feed or street layer, closing each after
-(`server/network.go`, `server/streets.go`, `server/plans.go`). A
-fresh instance hands its memory back, because wasm memory never
-shrinks. The long-lived modules hold no network.
-Options:
-- Keep single-capability modules on the server; only the browser
-  links (decided). The per-import instance stays the memory hygiene.
-- One assembly for the long-lived modules (sync, plans, authz), the
-  per-import instances single: the base ships once; there is no
-  network to share.
-- One assembly for everything: one compile and one registry; loses
-  the fresh instance per import.
+Why: `docs/architecture/server.md`, Why, "Single-capability modules, fresh per import".
 Blocks: nothing. Pinned by `server/main.go` (one module flag per
 capability) and the `caps` recipe (each `module_<cap>.wasm` copied to
 `web/pkg/`).
@@ -2530,18 +2039,7 @@ State: Decided.
 Answer: 2026-11-05 — "looks like a lot of auto generated
 assets/packages aren't gitignored": they are generated, like the TS
 bindings, and gitignored.
-Context: `gen-assemblies` writes one crate per capability and per
-generated UI (`assemblies/module-*`), workspace members by glob. A
-committed tree would need a currency gate; an ignored one needs the
-directory to exist so the glob resolves (cargo refuses a glob whose
-directory is missing, and accepts an empty one).
-Options:
-- Commit them, with a `--check` gate in `just test`.
-- Generate and ignore them (decided): `.gitignore` ignores
-  `assemblies/*`, and `assemblies/.gitkeep` keeps the directory; `just caps` regenerates them
-  before every build. Cargo.lock carries their entries once
-  generated, and a plain `cargo` run in a fresh checkout before `just
-  caps` drops them again.
+Why: `docs/architecture/bus.md`, Why, "The assembly crates are generated, never committed".
 Blocks: nothing. Pinned by `.gitignore`, `assemblies/.gitkeep`, and
 the `caps` recipe.
 
@@ -2767,35 +2265,7 @@ types and warns nothing; network `publishable` → no refusals (without
 `through`: `no_service_in_plan_period`); network `export` with the
 import's boundary writes calendar.txt (13 rows) and calendar_dates.txt
 (255 rows) back unchanged.
-Context: QAF-54 and D-41. The fork carries every WEEKLY service type
-(a flagged day and a range) to its period end. C-TRAN has none: its
-calendar.txt flags no day for any service, and every type runs only on
-added dates (1-WKDY: 81 dates, 2026-09-14 → 2027-01-08; 1-WKDY/30
-closes 2026-10-09; 4-NYE one date). A Winter 2027 fork through
-2027-05-29 carries nothing and is still refused for publishing
-(C-TRAN session 2026-11-06: import `sha256:2beddcb3…`, author `apply`
-`set_plan` with and without `through` answer the same document,
-network `publishable` refusals `no_service_in_plan_period`). Setting
-ranges by hand does not help either: with no day flagged a range runs
-nothing.
-The rhythm is in the dates, only not written as a rule: by weekday,
-1-WKDY runs 17 Mondays, Tuesdays and Wednesdays and 15 Thursdays and
-Fridays (the gaps are holidays); 2-SAT 17 Saturdays; 3-SUN 17 Sundays
-plus three holiday weekdays; 1-WKDY/30 and /31 weekdays in two
-successive spans; 1-WKDY/15 and /16 Tuesdays only.
-Options:
-- **Recommended.** The import reads a weekly rule out of dated service: a type whose
-  added dates are every flagged weekday of a span, but for a few
-  removed dates, imports as days + range + those exceptions (a codec
-  normalization; export writes it back as the feed had it). D-41's
-  fork then carries 1-WKDY, 2-SAT, 3-SUN; a closed period such as
-  1-WKDY/30 ends where its dates end and is not carried.
-- The fork carries dated service by its rhythm: a dated type whose
-  dates reach the calendar's last week repeats its weekdays through
-  `through` (no import change; the rule is inferred at the fork).
-- Nothing is inferred: the planner flags a type's days
-  (`toggle_service_day`) and the fork carries it from there; the UI
-  says which types are dated.
+Why: `docs/architecture/crates.md`, Why, "Dated calendars import as weekly rules".
 Blocks: nothing.
 
 ### D-111 — When does a dated service read as a weekly rule?
@@ -2912,21 +2382,7 @@ head (`build_hash`), GC and `store verify` treat a logged build's
 files as named, and a rollback is `POST /builds` to a build the log
 holds (docs/FORMATS.md, "Builds"; pins: `server/store/build_test.go`,
 `server/builds_test.go`, `web/e2e/deploy-rollback.spec.mjs`).
-Context: `docs/units/release-artifacts.md`. Every `just caps` deletes
-and rewrites `registry/` and `web/public/caps/`; git keeps the source,
-not the bytes. The modules rebuild byte for byte from a commit under
-its pinned toolchain (`just reproducible`); the app shell's build is
-not gated that way. Rolling code back, and expand-then-contract, need
-every deployed build kept.
-Options:
-- In the sync store: module, assembly, and app-shell bytes as blobs,
-  named by the manifests the `manifest` pointer already logs. One
-  store, one backup (D-82), the same verification; the store grows
-  by each release's bytes.
-- A separate artifact store (a directory or bucket keyed by hash),
-  beside the registry: keeps release bytes out of the agency's data.
-- Release archives (a tarball per release, with its manifest) kept
-  wherever the agency keeps releases.
+Why: `docs/architecture/release-artifacts.md`, Why, "Every build is kept in the sync store".
 Blocks: retention in `docs/units/release-artifacts.md`.
 
 ### D-81 — How are op and HTTP contracts versioned?
@@ -3029,16 +2485,10 @@ service design piece makes no sense without a server. i want to be able
 to deploy the ride now and stop display serverless, and i want to be
 able to deploy them independently" — each rider UI is exported and
 deployed on its own (`just export <ui>`); service design runs only with
-the server (docs/ARCHITECTURE.md, server section, "Static deployment"; pinned by
+the server (docs/architecture/static-deployment.md; pinned by
 `web/e2e/static-deploy.spec.mjs` and Go's
 `TestTheExportIsWhatTheServerServes`).
-Context: the rider pages read the server's derived documents
-(`web/src/engine.ts`: `/manifest`, `/blobs/<hash>`,
-`/network/document` and `/network/boundary`, `/streets`, `/walks`,
-each refused unless it answers its pin) and `/edits`. Most pins are
-already the manifest's (`network_hash`, `streets_hash`, `walks_hash`,
-`plans_hash`); `/network/document`, `/streets` and `/walks` take theirs
-from the ETag, which a static host does not set to a content hash.
+Why: `docs/architecture/static-deployment.md`, Why, "A rider UI needs no server".
 Blocks: nothing.
 
 ### D-132 — Can a serverless deployment follow the agency's GTFS URL?
@@ -3059,10 +2509,7 @@ do not hold (C-TRAN's import is ~2.7 s and a ~187 MB network module per
 page); there is no walk table between stops (it needs the network,
 which only the page has). Pinned by `web/e2e/static-feed-url.spec.mjs`
 and Go's `TestTheExportNamesAFeedURLAndImportsNothing`.
-Context: a static deployment (D-131) otherwise needs a redeploy per new
-GTFS zip. Options were a scheduled job that re-exports and redeploys
-when the zip changes, the pages fetching the zip, or a Cloudflare
-Worker cron running the import.
+Why: `docs/architecture/static-deployment.md`, Why, "A serverless deployment may follow the GTFS URL".
 Blocks: nothing.
 
 ### D-84 — Who takes a build first, and what counts as healthy?
@@ -3104,14 +2551,7 @@ feed's own flag; nothing infers one, and RAPTOR computes transfers
 regardless, so `transfer_stops: 0` on C-TRAN is the data, not a defect.
 Vehicle names: yes, the id is what C-TRAN calls a bus, but not coupled
 to C-TRAN — the rule is generic: with no label, fall back to the id.
-Context: two findings wait on facts only the agency has, not on a
-design choice.
-- QAF-9: should transfer inference fire on C-TRAN (station 106 and
-  its bays all read `transfer: false`)? Or does C-TRAN mean its
-  stations only as walking groups?
-- QAF-48: vehicle labels are empty, so the late list shows ids
-  like "CTRAN7003". Is that id what a dispatcher calls the bus? If
-  not, what is?
+Why: `docs/architecture/crates.md`, Why, "The feed's own facts are not inferred".
 Blocks: nothing. QAF-9 and QAF-48 are deleted; pins: analysis
 `network_stats` (`transfer_stops` counts flagged stops where two
 routes meet) and rt `live` summary `late[0].label` (the id fallback).
@@ -3119,9 +2559,5 @@ routes meet) and rt `live` summary `late[0].label` (the id fallback).
 ### D-115 — Must a document be readable without the app?
 State: Decided.
 Answer: 2026-11-06 — "documents should also be open formats that can be simply understood without requiring the app." Encoded as: every persisted document is plain JSON (gzip allowed) or an external open format (a GTFS zip, a GTFS-rt protobuf, GeoJSON), never a private encoding; a document on its own says what it is — its kind and its version inside it (extending D-62); and every kind's schema and a worked example, per version, are published as plain files beside the documentation (`registry/schemas/`, `docs/FORMATS.md`), so a person or another tool reads a document with no module, no wasm, and no running deployment.
-Context: `docs/units/document-versioning.md`. Documents leave the
-app as files: an export, a `caps-run` load, a store blob, a backup.
-The store's blobs already read without wasm (`docs/FORMATS.md`), but
-a network or an edit document copied out of IndexedDB names neither
-its kind nor its version.
+Why: `docs/architecture/bus.md`, Why, "Every document says what it is".
 Blocks: nothing; `document-versioning` scope 2 and 6 carry it.

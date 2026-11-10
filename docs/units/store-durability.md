@@ -1,8 +1,7 @@
 # Store durability — the sync store on object storage
 
 The sync store (`server/store/`; the layout and protocol in
-`docs/FORMATS.md`, the engine in `docs/ARCHITECTURE.md`, server
-section) runs over object storage — S3, Azure Blob, GCS (D-113) —
+`docs/FORMATS.md`, the engine in `docs/architecture/server.md`) runs over object storage — S3, Azure Blob, GCS (D-113) —
 with offline GC, boot sources, and degraded mode. Which provider a
 deployment runs on is open (D-116); the engine favors none. What is
 left: the contract run on each provider's real account, the edits

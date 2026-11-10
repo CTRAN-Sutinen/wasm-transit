@@ -60,8 +60,7 @@ credentials), recorded in the store-durability unit.
 Publishing the registry is its own gate: `just registry` runs `cargo
 test` and the module smoke, then `just reproducible` — a second clean
 build of the tree, at another path with another cargo home, must match
-every module byte for byte (about five minutes; docs/ARCHITECTURE.md,
-"Release artifacts") — and publishes only under the pinned toolchain.
+every module byte for byte (about five minutes; docs/architecture/release-artifacts.md) — and publishes only under the pinned toolchain.
 Run it for a change to the build itself (the toolchain, the lockfile,
 the profile, the recipes) and before a release.
 
@@ -170,7 +169,7 @@ the profile, the recipes) and before a release.
    never import the engine or the bus, no host code reads raw
    rt `stop_updates`, and nothing clones a document to mutate it
    — each against an allowlist that only shrinks, all empty
-   (`docs/ARCHITECTURE.md`, web section, "Parity"). Logic a view needs
+   (`docs/architecture/web.md`, "Parity"). Logic a view needs
    lands as an op with expectations 1–2, never in TypeScript; a
    unit that empties an allowlist entry removes it in the same
    change.
@@ -179,8 +178,7 @@ the profile, the recipes) and before a release.
    questions end to end, and with a dogfood session (below) in which
    its numbers on the real feed match the runner's. That session
    runs BEFORE the UI is built: the questions' op gaps become
-   findings and the UI's blockers (`docs/ARCHITECTURE.md`,
-   "Generated UIs", the procedure). The GENERATED
+   findings and the UI's blockers (`docs/architecture/generated-uis.md`, the procedure). The GENERATED
    UIs gate in `just test` refuses one without its spec, and
    `e2e/picker.spec.mjs` covers its card with no edit.
 7. **Dogfood on real data**: capability work touching feeds or

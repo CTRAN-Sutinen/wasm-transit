@@ -509,7 +509,7 @@ export type Inspection = typeof inspection;
 
 /// The deployment's manifest and published documents live at one
 /// layout, whoever serves it — the sync server or a static host
-/// (D-131; docs/ARCHITECTURE.md, "Static deployment"): `manifest`, and
+/// (D-131; docs/architecture/static-deployment.md): `manifest`, and
 /// each document by its hash at `blobs/<hash>` (its JSON) and
 /// `blobs/<hash>.gz` (the same bytes gzipped — fetched as bytes, so a
 /// module registers them compressed and the text never exists whole on

@@ -13,7 +13,7 @@ import (
 	"rustwasm/server/store"
 )
 
-// Builds (D-80; docs/ARCHITECTURE.md, "Release artifacts"): in store
+// Builds (D-80; docs/architecture/release-artifacts.md): in store
 // mode the server commits the release in -dist to the `build` pointer —
 // every file a blob, the build document naming them and the modules
 // the server hosts — the manifest pins it (`build_hash`), and the pages

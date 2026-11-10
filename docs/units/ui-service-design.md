@@ -5,7 +5,7 @@ finish. The planner learns what the network does today, finds where
 it is weak, reshapes routes in a fork, and judges what the fork
 costs and who it reaches before publishing it. The UI is six views
 chained by one selection (`web/src/uis/service-design/`, described
-in `docs/ARCHITECTURE.md`, "Generated UIs"). It answers the
+in `docs/architecture/generated-uis.md`). It answers the
 questions below that have an op, and every frame without one says
 what it waits on. What is left: the blocked questions, the
 remaining parts of the views, and the `caps-run` session for the

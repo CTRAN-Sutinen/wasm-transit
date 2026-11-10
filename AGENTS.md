@@ -9,6 +9,17 @@ project; the bytes are assembled per user from the manifest. The
 bus is the architecture: every host instantiates the capability
 modules it needs.
 
+**Two deployment shapes, both first-class.** With the sync server
+(`just serve`), or with no server at all (`just export <ui>`: a
+rider UI as static files). The operator chooses per deployment.
+Neither is the other's subset: a UI that runs without a server keeps
+running without one, the server's features stay the server's, and a
+change made for one shape adds to it and takes no capability from the
+other. **Each generated UI is its own product**, deployed, updated, and
+rolled back on its own, not a part of one app; which UIs need the
+server is in `docs/architecture/README.md` ("Deployment shapes", "Each
+UI is its own product").
+
 **This file is load-bearing, and so are its pointers.** The detail
 lives in the docs below; the rules that keep them from drifting:
 
@@ -17,7 +28,8 @@ lives in the docs below; the rules that keep them from drifting:
   session narratives. Architecture docs are written in the present
   tense.
 - One doc per topic. Architecture detail lives in
-  `docs/ARCHITECTURE.md` (and `crates/AGENTS.md` for the three laws);
+  `docs/architecture/`, one file per topic (and `crates/AGENTS.md` for
+  the three laws);
   open work lives only in `docs/units/`, one file per unit — never
   restate status here or anywhere else. Architecture docs may be
   many, but they must not overlap: each topic has exactly one home.
@@ -52,7 +64,9 @@ updated:
 2. **The open-work records.** Edit a unit down to what is left, or
    delete it with its pin; add every decision you had to encode to
    `docs/DECISIONS.md` (provisional, with its pins) and mark the
-   ones the user settled Decided, with their answer — a decision is
+   ones the user settled Decided, with their answer — once built, a
+   decided entry's reasoning moves into its topic's Why
+   (`docs/architecture/<topic>.md`) and the entry keeps the record — a decision is
    a durable record, never deleted; delete fixed findings in
    `docs/QA-FINDINGS.md`, reword ones the change answers in part,
    and update the reference hashes a dogfood session re-measured.
@@ -75,8 +89,10 @@ Where the detail lives:
 
 - `crates/AGENTS.md` — the three architecture laws for everything
   under `crates/` (enforced by arch gates in `just test`)
-- `docs/ARCHITECTURE.md` — the architecture reference: per-crate
-  detail, server, web, the capability bus and its rules
+- `docs/architecture/` — the architecture reference, one file per
+  topic (its README indexes them): per-crate detail, the bus and its
+  rules, the server, static deployment, the web, the generated UIs —
+  each topic's What, and its Why where the reason is not obvious
 - `docs/units/` — the open work, one file per unit (read its
   README before touching anything); a unit's file is deleted when
   it lands
@@ -94,7 +110,7 @@ Where the detail lives:
 - `docs/ROADMAP.md` — the sequenced feature plan (direction changes)
 - `DEPLOYMENTS.md` — the operator's guide: the static export deployed
   to Cloudflare Workers, written for a sysadmin who never reads the code
-  (how it works inside is `docs/ARCHITECTURE.md`, "Static deployment")
+  (how it works inside is `docs/architecture/static-deployment.md`)
 
 ## Commands
 
@@ -113,7 +129,7 @@ just registry              # publish the capability registry (gates → blobs + 
                            # every `just caps` republishes it ungated); refuses a
                            # compiler other than rust-toolchain.toml's
 just reproducible          # two clean builds of the tree, byte for byte (a gate of
-                           # `just registry`; docs/ARCHITECTURE.md, "Release artifacts")
+                           # `just registry`; docs/architecture/release-artifacts.md)
 node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op ...
                            # steps run in command-line order; --cap ID switches
                            # capability mid-session (documents cross by $ref);
@@ -156,7 +172,7 @@ just store-contract        # the store's laws against each of them (opt-in, neve
                            # in `just test`)
                            # OIDC_ISSUER/OIDC_JWKS_URL/OIDC_AUDIENCE/OIDC_KEY/POLICY=…
                            # turn on JWT auth + policy (D-58..D-61;
-                           # docs/ARCHITECTURE.md, server section)
+                           # docs/architecture/server.md)
 just dev                   # vite hot reload + server alongside
 just geocoder-build        # once: a local Pelias (portland-metro) in .pelias/
 just geocoder              # start it on :4000 (GEOCODER=http://127.0.0.1:4000
@@ -240,7 +256,7 @@ cap-abi          the kernel and the seam: the registries (one per document kind,
                  gen-assemblies, arch-gates
 cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate
                  the capabilities: rlibs that register, forbid unsafe, declare no
-                 state, and never depend on each other (docs/ARCHITECTURE.md, bus section)
+                 state, and never depend on each other (docs/architecture/bus.md)
 assemblies/      GENERATED (gen-assemblies, gitignored): module-<cap> (one capability
                  alone) and module-ui-<id> (a generated UI's capabilities linked)
 server/          Go + wazero host over cap-sync, cap-network, cap-plans and
@@ -252,12 +268,12 @@ server/          Go + wazero host over cap-sync, cap-network, cap-plans and
                  unless -rt-proxy) — scaffolding, never a domain decision
 web/             Svelte 5 + Vite frontend: / is a picker over the GENERATED UIs
                  (src/uis/<id>/, each its own page and host layer; every page
-                 is one) (docs/ARCHITECTURE.md, web section, "Generated UIs" —
+                 is one) (docs/architecture/generated-uis.md —
                  the recipe a fresh agent follows); each page runs its linked
                  assembly in the page's one bus worker, behind the engine
 ```
 
-Per-crate detail: `docs/ARCHITECTURE.md`.
+Per-crate detail: `docs/architecture/crates.md`.
 
 **Ownership rules** (violations here caused real bugs; keep them):
 
@@ -316,8 +332,7 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
   wire contract.
 - **Parity**: the browser, caps-run, and the Go server run the
   same ops and get the same bytes — `web/` is host glue plus
-  render components, never answers (`docs/ARCHITECTURE.md`, web
-  section, "Parity"; ratcheted in `just test`).
+  render components, never answers (`docs/architecture/web.md`, "Parity"; ratcheted in `just test`).
 - **One op caller**: a host asks through the engine
   (`web/src/engine.ts`) — `ask(capability, op, args)`, holding
   documents (`Doc`), never modules or hashes; nothing else imports
@@ -330,12 +345,12 @@ Per-crate detail: `docs/ARCHITECTURE.md`.
   oracle (the geocoder) answers an input the user could have given
   by hand; a host sends it the user's input only, shows its answer
   as given, and finds it in the manifest's `services`
-  (`docs/ARCHITECTURE.md`, web section, "External services").
+  (`docs/architecture/web.md`, "External services").
 - **Adjacent systems** (CAD/AVL, workforce management, the
   scheduling system) run the dispatcher's day, which is out of scope
   (D-122): they read documents by hash and write only records, through
   the receive path, as effects in this repo's vocabulary — one system
-  of record per fact (`docs/ARCHITECTURE.md`, "Adjacent systems").
+  of record per fact (`docs/architecture/adjacent-systems.md`).
 - New ops go through the extraction pattern (crate boundary
   first, capability wrapper second): the monolith that ops were
   extracted FROM is gone, so a new op is a library + a capability

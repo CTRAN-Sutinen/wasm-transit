@@ -1,4 +1,4 @@
-// The published network (docs/ARCHITECTURE.md, server section): a
+// The published network (docs/architecture/server.md): a
 // server started with -feed imports its zip once and serves the
 // network; every generated UI boots from it with no GTFS in the
 // browser, and refuses a network that does not register under the

@@ -14,12 +14,12 @@ next; every item below is designed for both drawings.
 ## Scope
 
 The document, its import, and cap-streets' import / the kernel's load_streets
-are on the bus (`docs/ARCHITECTURE.md`, transit-streets and
+are on the bus (`docs/architecture/crates.md`, transit-streets and
 cap-streets). What is left:
 
 1. **Serving the streets.** The server publishes the document
    (`/streets`, gzipped, the hash its ETag) and ride-now registers
-   it by its bytes (`docs/ARCHITECTURE.md`, server); no page imports
+   it by its bytes (`docs/architecture/server.md`); no page imports
    a street layer itself, and a UI that draws on streets (the
    detour, [ui-disruptions.md](ui-disruptions.md)) registers the
    published document the same way. Left: persisting the document
@@ -42,7 +42,7 @@ cap-streets). What is left:
    reads them (the nearby list by walk, D-34). Left:
    - **ride-now walks C-TRAN's streets.** ride-now walks the
      published streets, from the rider's location or a spot chosen
-     on the map (`docs/ARCHITECTURE.md`, web section;
+     on the map (`docs/architecture/web.md`;
      `web/e2e/published-network.spec.mjs`, "ride now walks the
      published streets" and "ride now chooses a trip's end on the
      map"), on the fixture only. Left: a dogfood session on C-TRAN
@@ -71,7 +71,7 @@ cap-streets). What is left:
    area is whatever the agency's GIS exports.
 
 Geocoding is not this unit's: it is an external service the host
-calls (D-36; `docs/ARCHITECTURE.md`, server section, `/geocode`).
+calls (D-36; `docs/architecture/server.md`, `/geocode`).
 
 ## Done when
 

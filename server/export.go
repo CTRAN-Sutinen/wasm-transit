@@ -1,7 +1,6 @@
 package main
 
-// The static bundle (D-131; docs/ARCHITECTURE.md, server section,
-// "Static deployment"). `-export DIR` boots as the server does — the
+// The static bundle (D-131; docs/architecture/static-deployment.md). `-export DIR` boots as the server does — the
 // same modules import the feed and the street layer and derive the walk
 // table — then writes the deployment as files and exits:
 //

@@ -23,7 +23,7 @@ import (
 	"rustwasm/server/store"
 )
 
-// Builds (D-80; docs/ARCHITECTURE.md, "Release artifacts";
+// Builds (D-80; docs/architecture/release-artifacts.md;
 // docs/FORMATS.md, "Builds"). In store mode the release in -dist is a
 // BUILD: every file a blob, a build document naming them and the
 // modules this server hosts, committed to the `build` pointer. The

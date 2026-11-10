@@ -1,5 +1,5 @@
 // Every build kept, and rolling code back (docs/units/release-artifacts.md,
-// D-80; docs/ARCHITECTURE.md, "Release artifacts"): a store-mode
+// D-80; docs/architecture/release-artifacts.md): a store-mode
 // server commits the release in its -dist to the store's `build`
 // pointer and serves the pages from the pinned build. A new release is
 // a new build the manifest pins, and an open display applies it at a

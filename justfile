@@ -533,7 +533,7 @@ test: caps
         echo "$violations"
         exit 1
     fi
-    # WEB GATES — parity (docs/ARCHITECTURE.md, web section, "Parity"): the
+    # WEB GATES — parity (docs/architecture/web.md, "Parity"): the
     # browser runs the same ops as caps-run and the Go server, so
     # web/ holds host glue and render components, never answers.
     # Ratchets: each allowlist names today's violators and may only
@@ -543,7 +543,7 @@ test: caps
         local name="$1" allowed=" $2 " found="$3" f
         for f in $found; do
             if [[ "$allowed" != *" $f "* ]]; then
-                echo "WEB GATE FAIL ($name): $f — $4 (docs/ARCHITECTURE.md, Parity)"; exit 1
+                echo "WEB GATE FAIL ($name): $f — $4 (docs/architecture/web.md, Parity)"; exit 1
             fi
         done
         for f in $2; do
@@ -588,7 +588,7 @@ test: caps
         "" \
         "$(grep -rlE 'WebAssembly\.|transit_invoke' web/src --include='*.ts' --include='*.svelte' | grep -v '^web/src/bus\.worker\.ts$' | grep -v '^web/src/types/' | sort | tr '\n' ' ')" \
         "loads or calls a module outside the bus worker; ask through the engine (src/engine.ts)"
-    # GENERATED UIs (docs/ARCHITECTURE.md, "Generated UIs"): each
+    # GENERATED UIs (docs/architecture/generated-uis.md): each
     # src/uis/<id>/ carries its descriptor, its page, and its e2e spec,
     # and owns its host layer: nothing reaches into another UI's
     # directory, and no component imports a UI's host.
@@ -714,8 +714,7 @@ serve feed="" streets="" publisher="" addr="127.0.0.1:8080":
 build-ui ui: caps types
     cd web && npm run typecheck && UI={{ ui }} npx vite build
 
-# One UI as a static deployment (D-131; docs/ARCHITECTURE.md, server
-# section, "Static deployment"; the operator's guide is DEPLOYMENTS.md):
+# One UI as a static deployment (D-131; docs/architecture/static-deployment.md; the operator's guide is DEPLOYMENTS.md):
 # the server boots on the feed (and the street layer, if given) exactly
 # as `just serve` does, writes the bundle into OUT, and exits — that
 # UI's page, `manifest`, and every published document as blobs/<hash>

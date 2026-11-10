@@ -408,7 +408,7 @@ type Manifest struct {
 	Timezone string `json:"timezone,omitempty"`
 	// The external services this deployment offers, by name — a
 	// service it does not list is off, and the frames that need it
-	// say so (docs/ARCHITECTURE.md, web section, "External services").
+	// say so (docs/architecture/web.md, "External services").
 	Services map[string]Service `json:"services,omitempty"`
 }
 

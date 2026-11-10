@@ -21,8 +21,7 @@ it depends on is:
   [document-versioning.md](document-versioning.md)'s browser items
   (1, 3, 5, and 6's reader of the next version; item 2 is the
   server's).
-- **The static bundle** stands (`just export`; docs/ARCHITECTURE.md,
-  server section, "Static deployment").
+- **The static bundle** stands (`just export`; docs/architecture/static-deployment.md).
 
 The server's units ([store-durability.md](store-durability.md),
 [observability-rollout.md](observability-rollout.md),
@@ -32,8 +31,7 @@ and a rollback redeploys the previous bundle.
 
 ## Scope (owned here)
 
-The pages' own lifecycle stands (docs/ARCHITECTURE.md, web section,
-"Updates and offline"): data re-pins without a reload, a build waits
+The pages' own lifecycle stands (docs/architecture/updates-offline.md): data re-pins without a reload, a build waits
 and applies per D-63, both pages install and boot offline (D-65),
 boards answer the previous date's after-midnight trips and the
 fall-back hour, and `/rt` is a dev relay off by default (D-67).
@@ -68,7 +66,7 @@ What is left here:
   network; one that follows the GTFS URL is exempt, D-132), and document-versioning's browser
   items are pinned.
 - The static host chosen and its headers configured to the rule in
-  docs/ARCHITECTURE.md ("Static deployment"), the config recorded
+  docs/architecture/static-deployment.md, the config recorded
   here.
 - Dogfood on C-TRAN, recorded here, served from that static host: a
   stop display on a Pi 4 left open 24 h across a service-day

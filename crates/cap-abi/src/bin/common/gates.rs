@@ -1,11 +1,11 @@
 //! The architecture gates that keep "capabilities never call
 //! capabilities" true once they link into one binary (D-77,
-//! `docs/ARCHITECTURE.md`, "Bus rules"): in one binary a crate can still
+//! `docs/architecture/bus.md`, "Bus rules"): in one binary a crate can still
 //! name only the code of the crates it depends on, so the rule is the
 //! dependency graph, the kernel's private registry constructor, and no
 //! `unsafe` outside the kernel — and the kernel's closure kept to the
 //! libraries it uses, so a change elsewhere moves only the modules that
-//! carry it (docs/ARCHITECTURE.md, "Release artifacts"). `arch-gates`
+//! carry it (docs/architecture/release-artifacts.md). `arch-gates`
 //! runs them in `just test`;
 //! `crates/cap-abi/tests/arch_gates_test.rs` breaks each on a fixture.
 

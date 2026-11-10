@@ -1,4 +1,4 @@
-// ASSEMBLY INDEPENDENCE (D-77, docs/ARCHITECTURE.md "Bus rules"): every
+// ASSEMBLY INDEPENDENCE (D-77, docs/architecture/bus.md, "Bus rules"): every
 // manifest worked example answers identically from the capability
 // built alone and from inside each generated UI's linked assembly — in
 // either order of the assembly's capabilities. A derived entry one

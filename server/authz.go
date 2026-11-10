@@ -1,6 +1,6 @@
 package main
 
-// Authentication + authorization (docs/ARCHITECTURE.md, server section;
+// Authentication + authorization (docs/architecture/server.md;
 // D-58..D-61).
 //
 // Authentication is the IdP's: this file only VERIFIES the bearer JWT —

@@ -4,8 +4,7 @@ A generated UI for the public to compare service-plan proposals
 against today's service: what changes on my route, at my stop, and
 on my trip, and who gains or loses service. It reads the same plans
 the service-design UI authors; it never authors them. It follows
-the generated-UI procedure (`docs/ARCHITECTURE.md`, "Generated
-UIs"). It is at step 2.
+the generated-UI procedure (`docs/architecture/generated-uis.md`). It is at step 2.
 
 ## Questions, in the order asked
 

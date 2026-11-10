@@ -18,7 +18,8 @@ whole GTFS Schedule spec.
 
 - `AGENTS.md` — the crate tree, the commands, the ownership rules,
   and the conventions. Start here, human or agent.
-- `docs/ARCHITECTURE.md` — per-crate detail, the server, the web
+- `docs/architecture/` — the architecture reference, one file per
+  topic: per-crate detail, the server, static deployment, the web
   app, and the capability bus.
 - `docs/TESTING.md` — what every change is tested with, and the
   real-data dogfood rules.

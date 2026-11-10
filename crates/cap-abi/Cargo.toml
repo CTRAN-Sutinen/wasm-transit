@@ -62,7 +62,7 @@ transit-authz = { path = "../transit-authz" }
 # plan chain's and authorization's worked examples through them, but the
 # kernel never names them, and every module links the kernel — so they
 # are optional, outside every module's closure (arch-gates, the kernel's
-# closure; docs/ARCHITECTURE.md, "Release artifacts").
+# closure; docs/architecture/release-artifacts.md).
 [features]
 gen-manifest = ["dep:transit-router", "dep:transit-plans", "dep:transit-authz"]
 

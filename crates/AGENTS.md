@@ -75,7 +75,7 @@ design a module around who will use it, and do not merge ops
 because the same users end up wiring them together. Linking the
 capabilities a selection assembles into one binary (a generated
 UI's at build time, a user's at wire time — D-77,
-`docs/ARCHITECTURE.md`, "Bus rules") assembles BYTES and merges no
+`docs/architecture/bus.md`, "Bus rules") assembles BYTES and merges no
 surface: each capability keeps its crate, its Request enum, and its
 manifest entry, and stays independently retirable.
 
@@ -174,7 +174,7 @@ libraries, only assemblies depend on capabilities, only the codec's
 homes read transit-codec, and the kernel requires only the libraries
 its own code names — every module carries the kernel's closure, so a
 generator's extra library is an optional dependency behind its
-feature; docs/ARCHITECTURE.md, "Release artifacts"), and every
+feature; docs/architecture/release-artifacts.md), and every
 capability crate's source
 (`#![forbid(unsafe_code)]`, no static or thread_local of its own);
 the registry constructor is private to the kernel (its

@@ -1,5 +1,5 @@
 // The service-design UI (src/uis/service-design) — six views over one
-// selection, chained (docs/ARCHITECTURE.md, web section; the unit
+// selection, chained (docs/architecture/web.md; the unit
 // docs/units/ui-service-design.md):
 //
 //   1. A feed becomes an unframed plan; its service groups answer, and

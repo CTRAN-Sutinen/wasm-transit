@@ -483,5 +483,5 @@ These need the server deployment (`just serve`; `README.md`):
 | The export says `no generated UI by that id` | The first argument is the app: `ride-now` or `stop-display`. |
 | Files named `sha256:…` fail to copy | The machine is Windows. Run the export and the deployment on Linux, macOS, or WSL. |
 
-For how this works inside the project, see `docs/ARCHITECTURE.md`
-(server section, "Static deployment").
+For how this works inside the project, see
+`docs/architecture/static-deployment.md`.

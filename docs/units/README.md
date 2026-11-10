@@ -21,7 +21,7 @@ archive — nothing here records what is finished.
   file reports the pins that prove it in the same change. A
   partial landing edits the file down to what is left.
 - **What a landed unit built is described in the present tense in
-  the architecture docs** (`docs/ARCHITECTURE.md`,
+  the architecture docs** (`docs/architecture/`,
   `crates/AGENTS.md`, `docs/CONVENTIONS.md`), in the same change.
 - **A finding becomes a unit only when it is picked up**: the unit
   names the `QAF-N` it closes; the finding is deleted from
