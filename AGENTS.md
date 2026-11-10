@@ -65,7 +65,8 @@ updated:
    `crates/AGENTS.md`, and every file under `docs/` whose topic the
    change touches — in the present tense, one home per topic. That
    includes `docs/guide/` when the change alters something it
-   describes: what an app does, a step in its walkthrough, a design
+   describes: what an app does (a new UI gets a short entry in
+   `docs/guide/apps.md`), a step in its walkthrough, a design
    choice or its cost, or a term in its glossary. The guide is
    written for people to ISO 24495-1 (plain language): short
    sentences, everyday words, every remaining term in its glossary,

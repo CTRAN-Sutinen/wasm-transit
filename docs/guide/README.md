@@ -21,6 +21,7 @@ Read the pages in this order. Each one builds on the one before.
 | Page | The question it answers |
 |---|---|
 | [What it does](what-it-does.md) | What does the software do, for whom, and how is it deployed? |
+| [The apps](apps.md) | What does each app do, and does it need a server? |
 | [How it works](how-it-works.md) | What happens, step by step, when a stop display shows its departures? |
 | [Why it is built this way](why-it-is-built-this-way.md) | Why these design choices, and what do they cost? |
 | [Glossary](glossary.md) | What does each term mean, and what might an agency call it? |

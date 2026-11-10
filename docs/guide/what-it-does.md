@@ -13,23 +13,10 @@ job for one kind of user, and is deployed on its own.
 
 ## The apps
 
-The set of apps grows over time. New apps are built from the same
-parts, so adding one does not change the others. A deployment's start
-page lists the apps it offers. The current list, and which apps need a
-server, is in the
-[architecture reference](../architecture/README.md#each-ui-is-its-own-product).
-
-Some examples of what the apps do:
-
-- **For riders, on their phones:** find stops and addresses, show
-  the next departures with live times, plan trips on a map, and keep
-  saved stops. Installs like an app and works offline.
-- **For a screen at a stop or transit center:** show the next
-  departures at one stop, with live times, alerts, and detours. Runs
-  for weeks with no one watching it.
-- **For service planners:** plan a service change. See how the
-  network performs today, who it reaches, and what a change costs.
-  Then publish the change for a future date.
+There are apps for riders, for screens at stops, and for service
+planners. The set grows over time. New apps are built from the same
+parts, so adding one does not change the others.
+[The apps](apps.md) describes each one.
 
 ## Two ways to deploy it
 
@@ -106,5 +93,4 @@ schedule. What is still to be done is listed in
 
 ## Read next
 
-[How it works](how-it-works.md) follows one stop display from
-start-up to the departures on its screen.
+[The apps](apps.md) describes each app and whether it needs a server.

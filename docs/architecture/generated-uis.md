@@ -213,7 +213,8 @@ unit is written before any code and deleted when the UI lands.
    assembly from `ui.json`'s `ops`. Run the UI in the browser on the real
    feed (`just serve testdata/ctran-gtfs.zip`) and check its numbers
    against the runner session's. Record the session in the
-   descriptor's `session` field, and describe the UI below. Delete
+   descriptor's `session` field, describe the UI below, and give it
+   a short plain-language entry in the guide (`docs/guide/apps.md`). Delete
    the unit if no question is left blocked, naming its pins;
    otherwise edit it down to the blocked questions.
 
