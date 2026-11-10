@@ -33,6 +33,9 @@ lives in the docs below; the rules that keep them from drifting:
   open work lives only in `docs/units/`, one file per unit — never
   restate status here or anywhere else. Architecture docs may be
   many, but they must not overlap: each topic has exactly one home.
+  The guide (`docs/guide/`) explains the same topics to people in
+  plain language and links to each topic's home; it holds no detail
+  of its own, and where it and a home disagree, the home is right.
 - When your work changes the architecture, the ops surface, naming,
   conventions, commands, or testing expectations — update this file
   AND every doc whose topic the change touches, in the same change,
@@ -60,7 +63,14 @@ updated:
 1. **The docs.** `AGENTS.md` (the crate tree, commands, rules),
    `README.md` (what the project is and how to start it),
    `crates/AGENTS.md`, and every file under `docs/` whose topic the
-   change touches — in the present tense, one home per topic.
+   change touches — in the present tense, one home per topic. That
+   includes `docs/guide/` when the change alters something it
+   describes: what an app does, a step in its walkthrough, a design
+   choice or its cost, or a term in its glossary. The guide is
+   written for people to ISO 24495-1 (plain language): short
+   sentences, everyday words, every remaining term in its glossary,
+   no decision or finding numbers and no code names in its prose
+   unless the reader needs them to act.
 2. **The open-work records.** Edit a unit down to what is left, or
    delete it with its pin; add every decision you had to encode to
    `docs/DECISIONS.md` (provisional, with its pins) and mark the
@@ -87,6 +97,10 @@ updated:
 
 Where the detail lives:
 
+- `docs/guide/` — the plain-language guide for people (agency staff,
+  developers new to the project): what the software does, a
+  walkthrough of one stop display, the design choices and their
+  costs, and the glossary
 - `crates/AGENTS.md` — the three architecture laws for everything
   under `crates/` (enforced by arch gates in `just test`)
 - `docs/architecture/` — the architecture reference, one file per

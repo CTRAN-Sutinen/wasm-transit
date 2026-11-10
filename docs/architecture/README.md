@@ -8,7 +8,9 @@ data model; nobody reinvents the monolith inside a module; one NEED per
 module, personas assemble at wire time) are spelled out in
 `crates/AGENTS.md`; that file and these are updated together. These
 files describe the tree as it is; open work lives in `docs/units/`,
-one file per unit.
+one file per unit. The plain-language introduction for people is
+[the guide](../guide/README.md); it explains these topics and links
+here for their detail.
 
 ## The topics
 

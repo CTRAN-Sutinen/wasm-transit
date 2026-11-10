@@ -16,8 +16,12 @@ whole GTFS Schedule spec.
 
 ## Where things are
 
+- `docs/guide/` — start here if you are new: what the software does,
+  how it works, why it is built this way, and a glossary, in plain
+  language.
 - `AGENTS.md` — the crate tree, the commands, the ownership rules,
-  and the conventions. Start here, human or agent.
+  and the conventions. Start here before changing the code, human or
+  agent.
 - `docs/architecture/` — the architecture reference, one file per
   topic: per-crate detail, the server, static deployment, the web
   app, and the capability bus.
