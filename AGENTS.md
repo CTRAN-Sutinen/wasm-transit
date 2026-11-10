@@ -92,6 +92,9 @@ Where the detail lives:
   one names the work it blocks (`Blocked: D-N`), and work that names
   none is free to start
 - `docs/ROADMAP.md` — the sequenced feature plan (direction changes)
+- `DEPLOYMENTS.md` — the operator's guide: the static export deployed
+  to Cloudflare Workers, written for a sysadmin who never reads the code
+  (how it works inside is `docs/ARCHITECTURE.md`, "Static deployment")
 
 ## Commands
 

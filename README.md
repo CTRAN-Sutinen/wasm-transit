@@ -64,6 +64,9 @@ just export out/ path/to/gtfs.zip [roads.geojson]   # or no server at all: the d
                                              # LIVE_FEEDS= names its feeds)
 ```
 
+Deploying the static site (Cloudflare Workers, step by step):
+[DEPLOYMENTS.md](DEPLOYMENTS.md).
+
 Open http://127.0.0.1:8080. `just test` is the host-side gate,
 `just e2e` the browser runner, `just check` both; the full command
 list is in `AGENTS.md`.

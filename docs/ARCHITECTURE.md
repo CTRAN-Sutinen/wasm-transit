@@ -950,7 +950,9 @@ modules read a document gzipped or not). An upload adds files and
 never deletes blobs: an open page pinned to the previous manifest still
 reads its documents, and a rollback is uploading the previous
 `manifest`. Pinned by `web/e2e/static-deploy.spec.mjs` on a plain file
-server (`web/e2e/static-server.mjs`) under `/rider/`.
+server (`web/e2e/static-server.mjs`) under `/rider/`. Operating one
+(building, Cloudflare Workers' configuration, updates, rollback) is
+`DEPLOYMENTS.md`.
 
 ## web/
 
