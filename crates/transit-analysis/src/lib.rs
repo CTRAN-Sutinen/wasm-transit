@@ -966,8 +966,20 @@ pub struct StopGaps {
 /// into the max gap, the departure it follows, and the per-hour
 /// profile (departures, max and median gap starting in the hour).
 /// Final-stop visits are arrivals, not departures — they never
-/// count (the same line the route headway reads).
+/// count (the same line the route headway reads). A station's waits
+/// are its bays': asked for a stop other stops name as parent, the
+/// departures of those stops are pooled with its own (nothing
+/// departs from a GTFS station itself); a bay or a plain
+/// stop reads itself alone.
 pub fn stop_gaps(net: &Network, date: NaiveDate, stop_id: &str) -> StopGaps {
+    let pooled: BTreeSet<&str> = std::iter::once(stop_id)
+        .chain(
+            net.stops
+                .iter()
+                .filter(|(_, s)| s.parent.as_deref() == Some(stop_id))
+                .map(|(id, _)| id.as_str()),
+        )
+        .collect();
     let mut departures: Vec<u32> = Vec::new();
     for (service_id, service) in &net.pattern_trips {
         if !net
@@ -984,7 +996,7 @@ pub fn stop_gaps(net: &Network, date: NaiveDate, stop_id: &str) -> StopGaps {
         };
         for trip in materialized {
             for st in &trip.stop_times[..trip.stop_times.len() - 1] {
-                if st.stop == stop_id {
+                if pooled.contains(st.stop.as_str()) {
                     departures.push(st.departure_secs);
                 }
             }
@@ -1035,6 +1047,90 @@ pub fn stop_gaps(net: &Network, date: NaiveDate, stop_id: &str) -> StopGaps {
         max_gap_after_secs: max_after,
         hourly,
     }
+}
+
+/// One stop in the network's longest-waits ranking.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct StopWait {
+    pub stop_id: String,
+    pub name: String,
+    /// Departures inside the window (the whole day without one).
+    pub departures: u32,
+    /// The stop's longest wait for the next departure, and when it
+    /// starts (a departure, or the window's start).
+    pub longest_wait_secs: u32,
+    pub wait_from_secs: u32,
+}
+
+/// Where riders wait longest (service-design question 8): every stop
+/// that departs on the date, ranked by its longest wait — longest
+/// first, then by stop id — and cut to `limit`. Without a window the
+/// wait is the largest gap between distinct departure times (a stop
+/// with fewer than two has none and is no row). With one it is
+/// coverage's reading of a window ([`CoverageWindow`]): from the
+/// window's start to the first departure in it, between departures,
+/// and from the last to the window's end; a stop that departs that
+/// day but not inside the window waits the whole window. Each stop
+/// reads alone — a station's bays rank one by one, the boarding
+/// places riders stand at. Departures only (a final visit is an
+/// arrival); every route at the stop pools, as a rider sees it.
+pub fn longest_waits(
+    net: &Network,
+    date: NaiveDate,
+    window: Option<CoverageWindow>,
+    limit: Option<u32>,
+) -> Vec<StopWait> {
+    let mut departures: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
+    for (service_id, service) in &net.pattern_trips {
+        if !net.service_types.get(&service.service_type).is_some_and(|st| st.rule.runs_on(date)) {
+            continue;
+        }
+        let Ok(materialized) = transit_network::materialize_service(net, service_id) else {
+            continue;
+        };
+        for trip in materialized {
+            for st in &trip.stop_times[..trip.stop_times.len() - 1] {
+                if let Some((id, _)) = net.stops.get_key_value(&st.stop) {
+                    departures.entry(id.as_str()).or_default().push(st.departure_secs);
+                }
+            }
+        }
+    }
+    let mut rows: Vec<StopWait> = Vec::new();
+    for (stop_id, deps) in departures {
+        let spine: Vec<u32> = deps.iter().copied().collect::<BTreeSet<_>>().into_iter().collect();
+        let (count, edges) = match window {
+            None => (deps.len() as u32, spine),
+            Some(w) => {
+                let inside = |t: &u32| *t >= w.start_secs && *t <= w.end_secs;
+                let mut edges = vec![w.start_secs];
+                edges.extend(spine.iter().copied().filter(inside));
+                edges.push(w.end_secs);
+                (deps.iter().filter(|t| inside(t)).count() as u32, edges)
+            }
+        };
+        // The first largest gap along the edges.
+        let mut best: Option<(u32, u32)> = None;
+        for e in edges.windows(2) {
+            if best.map_or(true, |(g, _)| e[1] - e[0] > g) {
+                best = Some((e[1] - e[0], e[0]));
+            }
+        }
+        let Some((longest_wait_secs, wait_from_secs)) = best else { continue };
+        rows.push(StopWait {
+            stop_id: stop_id.to_string(),
+            name: net.stops[stop_id].name.clone(),
+            departures: count,
+            longest_wait_secs,
+            wait_from_secs,
+        });
+    }
+    rows.sort_by(|a, b| b.longest_wait_secs.cmp(&a.longest_wait_secs).then_with(|| a.stop_id.cmp(&b.stop_id)));
+    if let Some(n) = limit {
+        rows.truncate(n as usize);
+    }
+    rows
 }
 
 /// One service hour of one service type's day: how many trips
@@ -1248,11 +1344,42 @@ pub fn timed_transfers(
     window: Option<TransferWindow>,
 ) -> Vec<TimedTransfer> {
     let window = window.unwrap_or_default();
+    let (arrivals, departures) = hub_visits(net, date, stop_id);
+    let mut out = Vec::new();
+    for (from_route, arrival_stop, arrival_secs) in &arrivals {
+        for (to_route, departure_stop, departure_secs) in &departures {
+            let wait = departure_secs.saturating_sub(*arrival_secs);
+            if from_route != to_route && window.min_secs <= wait && wait <= window.max_secs {
+                out.push(TimedTransfer {
+                    from_route: from_route.clone(),
+                    to_route: to_route.clone(),
+                    arrival_secs: *arrival_secs,
+                    arrival_stop: arrival_stop.clone(),
+                    departure_secs: *departure_secs,
+                    departure_stop: departure_stop.clone(),
+                    wait_secs: wait,
+                });
+            }
+        }
+    }
+    out.sort_by(|x, y| {
+        x.arrival_secs
+            .cmp(&y.arrival_secs)
+            .then_with(|| x.from_route.cmp(&y.from_route))
+            .then_with(|| x.to_route.cmp(&y.to_route))
+            .then_with(|| x.departure_secs.cmp(&y.departure_secs))
+    });
+    out
+}
+
+/// A hub's day as (route, stop, time) visits, pooled over the stop's
+/// walking group: arrivals are every visit; departures are every
+/// visit but the trip's last (final stops are arrivals).
+type Visits = Vec<(String, String, u32)>;
+fn hub_visits(net: &Network, date: NaiveDate, stop_id: &str) -> (Visits, Visits) {
     let group = transit_network::walking_group(net, stop_id);
-    // (route, stop, time): arrivals are every visit; departures are
-    // every visit but the trip's last (final stops are arrivals).
-    let mut arrivals: Vec<(String, String, u32)> = Vec::new();
-    let mut departures: Vec<(String, String, u32)> = Vec::new();
+    let mut arrivals: Visits = Vec::new();
+    let mut departures: Visits = Vec::new();
     for (service_id, service) in &net.pattern_trips {
         if !net
             .service_types
@@ -1279,21 +1406,75 @@ pub fn timed_transfers(
             }
         }
     }
+    (arrivals, departures)
+}
+
+/// How far before an arrival a departure still counts as just
+/// missed, when the caller names no `miss_secs`: five minutes (the
+/// provisional answer, D-133).
+pub const MISS_SECS: u32 = 300;
+
+/// One near miss at a hub: an arrival of one route and a departure of
+/// another that leaves before the rider can make it.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct MissedConnection {
+    pub from_route: String,
+    pub to_route: String,
+    pub arrival_secs: u32,
+    pub arrival_stop: String,
+    pub departure_secs: u32,
+    pub departure_stop: String,
+    /// How much later the departure would have had to leave for the
+    /// rider to make it (the window's minimum after the arrival).
+    pub missed_by_secs: u32,
+    /// The route's first departure from the hub the rider can make,
+    /// or none that day.
+    pub next_departure_secs: Option<u32>,
+}
+
+/// The hub's just-missed connections (service-design question 9):
+/// over the stop's walking group, every arrival of one route and
+/// departure of another where the departure leaves from `miss_secs`
+/// (default [`MISS_SECS`]) before the arrival up to, not including,
+/// the connection window's minimum after it — the rider sees it go.
+/// No near miss is a timed transfer. Each names the route's next
+/// departure the rider can make, so a frequent route's misses read as
+/// the short waits they are. Sorted as `timed_transfers` sorts. An
+/// unknown stop answers empty, never an error.
+pub fn missed_connections(
+    net: &Network,
+    date: NaiveDate,
+    stop_id: &str,
+    window: Option<TransferWindow>,
+    miss_secs: Option<u32>,
+) -> Vec<MissedConnection> {
+    let min = window.unwrap_or_default().min_secs as i64;
+    let miss = miss_secs.unwrap_or(MISS_SECS) as i64;
+    let (arrivals, departures) = hub_visits(net, date, stop_id);
     let mut out = Vec::new();
     for (from_route, arrival_stop, arrival_secs) in &arrivals {
+        let a = *arrival_secs as i64;
         for (to_route, departure_stop, departure_secs) in &departures {
-            let wait = departure_secs.saturating_sub(*arrival_secs);
-            if from_route != to_route && window.min_secs <= wait && wait <= window.max_secs {
-                out.push(TimedTransfer {
-                    from_route: from_route.clone(),
-                    to_route: to_route.clone(),
-                    arrival_secs: *arrival_secs,
-                    arrival_stop: arrival_stop.clone(),
-                    departure_secs: *departure_secs,
-                    departure_stop: departure_stop.clone(),
-                    wait_secs: wait,
-                });
+            let d = *departure_secs as i64;
+            if from_route == to_route || d < a - miss || d >= a + min {
+                continue;
             }
+            let next_departure_secs = departures
+                .iter()
+                .filter(|(r, _, t)| r == to_route && (*t as i64) >= a + min)
+                .map(|(_, _, t)| *t)
+                .min();
+            out.push(MissedConnection {
+                from_route: from_route.clone(),
+                to_route: to_route.clone(),
+                arrival_secs: *arrival_secs,
+                arrival_stop: arrival_stop.clone(),
+                departure_secs: *departure_secs,
+                departure_stop: departure_stop.clone(),
+                missed_by_secs: (a + min - d) as u32,
+                next_departure_secs,
+            });
         }
     }
     out.sort_by(|x, y| {

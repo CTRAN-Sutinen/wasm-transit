@@ -812,3 +812,44 @@ fn service_groups_answer_the_combinations() {
     let cap_analysis::Response::ServiceTypeDetail { detail: Some(detail) } = detail else { panic!("detail") };
     assert_eq!((detail.group.as_str(), detail.trips), ("0 + 3", 2));
 }
+
+/// The hub's near misses and the network's longest waits answer
+/// through the seam (the oracle laws live in the library's prop
+/// suite): route 0 arrives at s1 at 1:55, five minutes after route 1
+/// left at 1:50 — missed by six minutes with the 60 s minimum, and no
+/// later route 1 to make; s0 departs at 1:40 and 1:50, the only stop
+/// with two departures, so the ranking is its ten-minute gap alone.
+#[test]
+fn missed_connections_and_longest_waits_answer_through_the_seam() {
+    let net = network(&[
+        GenTrip { route: 0, service: 0, block: None, start_slot: 10, stops: vec![0, 1], leg_min: 5 },
+        GenTrip { route: 0, service: 0, block: None, start_slot: 11, stops: vec![0, 1], leg_min: 5 },
+        GenTrip { route: 1, service: 0, block: None, start_slot: 11, stops: vec![1, 2], leg_min: 5 },
+    ]);
+    let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+
+    let missed = cap_analysis::dispatch(cap_analysis::Request::MissedConnections {
+        network_hash: network_hash.clone(),
+        date: "2026-01-05".into(),
+        stop_id: "s1".into(),
+        window: None,
+        miss_secs: None,
+    })
+    .expect("missed_connections");
+    let cap_analysis::Response::MissedConnections { missed } = missed else { panic!("missed_connections") };
+    assert_eq!(missed.len(), 1);
+    let m = &missed[0];
+    assert_eq!((m.from_route.as_str(), m.to_route.as_str()), ("0", "1"));
+    assert_eq!((m.arrival_secs, m.departure_secs, m.missed_by_secs, m.next_departure_secs), (6900, 6600, 360, None));
+
+    let waits = cap_analysis::dispatch(cap_analysis::Request::LongestWaits {
+        network_hash,
+        date: "2026-01-05".into(),
+        window: None,
+        limit: None,
+    })
+    .expect("longest_waits");
+    let cap_analysis::Response::LongestWaits { waits } = waits else { panic!("longest_waits") };
+    let rows: Vec<_> = waits.iter().map(|w| (w.stop_id.as_str(), w.longest_wait_secs, w.wait_from_secs, w.departures)).collect();
+    assert_eq!(rows, [("s0", 600, 6000, 2)]);
+}

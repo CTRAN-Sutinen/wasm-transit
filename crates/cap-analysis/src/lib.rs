@@ -155,6 +155,36 @@ pub enum Request {
         #[ts(optional)]
         window: Option<transit_analysis::TransferWindow>,
     },
+    /// The hub's just-missed connections: over the stop's walking
+    /// group, an arrival of one route and a departure of another that
+    /// leaves from `miss_secs` (omitted: 300 s) before it up to the
+    /// window's minimum after it — the rider sees it go — with that
+    /// route's next departure the rider can make. An unknown stop
+    /// answers empty, never an error.
+    MissedConnections {
+        network_hash: String,
+        date: String,
+        stop_id: String,
+        #[serde(default)]
+        #[ts(optional)]
+        window: Option<transit_analysis::TransferWindow>,
+        #[serde(default)]
+        #[ts(optional)]
+        miss_secs: Option<u32>,
+    },
+    /// Where riders wait longest on the date: every stop that departs,
+    /// ranked by its longest wait — the whole day's largest gap, or
+    /// coverage's reading of `window` — cut to `limit`.
+    LongestWaits {
+        network_hash: String,
+        date: String,
+        #[serde(default)]
+        #[ts(optional)]
+        window: Option<CoverageWindow>,
+        #[serde(default)]
+        #[ts(optional)]
+        limit: Option<u32>,
+    },
     /// The SERVICE GROUP's frequency grid: every route that departs
     /// under the combination, hour by hour at its headway stop —
     /// departures and the shortest, longest and median gap starting
@@ -225,6 +255,8 @@ pub enum Response {
     RouteOverlap { overlaps: Vec<transit_analysis::RouteOverlap> },
     TimedTransfers { transfers: Vec<transit_analysis::TimedTransfer> },
     HubConnections { connections: Vec<transit_analysis::RouteConnections> },
+    MissedConnections { missed: Vec<transit_analysis::MissedConnection> },
+    LongestWaits { waits: Vec<transit_analysis::StopWait> },
     RouteFrequency { frequency: Option<transit_analysis::RouteFrequency> },
     UnservedPoints { layer: LayerReading, unserved: Option<transit_analysis::UnservedPlaces> },
     CoverageCompare { layer: LayerReading, comparison: CoverageDelta },
@@ -346,6 +378,20 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let network_arc = network_arc(&network_hash)?;
             Ok(Response::HubConnections {
                 connections: transit_analysis::hub_connections(&network_arc, parsed, &stop_id, window),
+            })
+        }
+        Request::MissedConnections { network_hash, date, stop_id, window, miss_secs } => {
+            let parsed = parse_date(&date)?;
+            let network_arc = network_arc(&network_hash)?;
+            Ok(Response::MissedConnections {
+                missed: transit_analysis::missed_connections(&network_arc, parsed, &stop_id, window, miss_secs),
+            })
+        }
+        Request::LongestWaits { network_hash, date, window, limit } => {
+            let parsed = parse_date(&date)?;
+            let network_arc = network_arc(&network_hash)?;
+            Ok(Response::LongestWaits {
+                waits: transit_analysis::longest_waits(&network_arc, parsed, window, limit),
             })
         }
         Request::RouteFrequency { network_hash, members } => {

@@ -90,7 +90,7 @@ host layer (the gates check both).
   plan named), PlanList (the plan set, fork, feed import; a network with no plan
   frame is the "Base network"),
   GroupTable (`service_groups`: each combination with its date
-  spans), GroupLedger (`service_type_compare` totals), DayProfile (`hourly_trips`, a
+  spans), GroupLedger (`service_type_compare` totals, and runcut `suggest_blocks` on the group's day: the peak with the trips no block carries chained in, D-46), DayProfile (`hourly_trips`, a
   drag sets the hour window; `network_stats` on the same date: the
   service window, stops served, transfer points), FrequencyGrid (`route_frequency`:
   hours as cells, shaded continuously by the longest wait),
@@ -100,7 +100,10 @@ host layer (the gates check both).
   CoverageMap (`unserved_points` drawn: points as circles, polygons as
   their shape shaded by the share unserved),
   HubMatrix (`hub_connections`), CorridorTable (`route_overlap`),
-  StopWaits (`stop_gaps`), RouteHeader (a route's `route_frequency`
+  StopWaits (`stop_gaps`: a stop's waits, a station's pooled over its
+  bays), NearMisses (`missed_connections`: each near miss with the
+  route's next departure), LongestWaits (`longest_waits` in the hour
+  window, a row opening its hub), RouteHeader (a route's `route_frequency`
   numbers, before → after), StringLine (directory `timetable` as
   time against stop; a dragged trip is a nudge event, and a stop's
   name a pick event when the host listens), RunTimes
@@ -108,8 +111,9 @@ host layer (the gates check both).
   hours), GesturePanel (span — beside the direction's own first and last
   trip —, running time, one trip, stops, the stop to insert picked by
   name — one event each), ChangeLedger (`service_type_compare` routes, undo and
-  redo events), ProposalScore and Redline
-  (`service_type_compare`), Readiness (the document's issues and
+  redo events), ProposalScore (`service_type_compare`, and
+  `suggest_blocks`' authored peak → the peak with the suggestion
+  adopted) and Redline (`service_type_compare`), Readiness (the document's issues and
   warnings — network `validate`'s, or cap-author's for a version it
   just authored — each a sentence with clock times
   (`designFormat.ts`'s `issueWords`), whether the plan is ready, the export
@@ -248,7 +252,8 @@ window every view reads), and the frequency grid; a row opens the
 route. Coverage: the parameters and window, the selected group's
 served and frequent share (named by its members, with its dates), and
 the places its stops leave unserved, listed and mapped. Hubs: a stop's connection
-matrix and waits, and the shared corridors. Route: the string-line
+matrix, its waits, and its just-missed connections, the network's
+longest waits in the hour window, and the shared corridors. Route: the string-line
 workbench — directions, the string-line or the timetable grid,
 gaps by hour, running time by start, the change ledger with undo
 and redo, the route's map, and (edit mode, E) the gestures, placed above
@@ -263,7 +268,8 @@ After a change, an undo, or a redo, the status line states the
 plan's issues and warnings as the answer gave them, and the last
 export and publish answers are cleared with the version they were
 about. A frequency target is shown as waiting on D-54. Proposal: the
-scorecard, the redline, readiness (each issue in words, a broken
+scorecard (with the vehicles the group's day needs; hours against a
+budget wait on D-108), the redline, readiness (each issue in words, a broken
 block's next trip held from its issue — the host's `retime_trip`),
 the export, and publishing the
 pick to the deployment (D-74). A frame with no answer says so in a

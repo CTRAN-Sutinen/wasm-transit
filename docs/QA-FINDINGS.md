@@ -95,14 +95,6 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   "Coverage gained and lost" say so; no op takes two network hashes
   for fleet.
   Blocked: D-43 (the matching rule).
-- **QAF-92 OP GAP** — `stop_gaps` reads one stop, not its walking
-  group: asked for a station (99th Street Transit Center, stop 110)
-  it answers 0 departures, while `timed_transfers` and
-  `hub_connections` pool the same station's bays (1,410 connections
-  across bays A–J). The hub view's waits go empty exactly where a
-  planner looks first.
-  Pin: 2026-10-30 analysis `stop_gaps` 110 on 2026-09-14 — 0
-  departures; `hub_connections` 110 — 82 route pairs.
 
 - **QAF-101 OP GAP** — a block issue names ids and a position, not
   the place a planner fixes it: `block_infeasible` carries the block

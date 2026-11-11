@@ -313,7 +313,13 @@ transit-analysis Planner analysis over an authored network document:
                 the trips' own shortest, longest and median gaps,
                 never regularized — with the route's numbers), a
                 hub's connections by route pair (hub_connections:
-                timed_transfers folded), and coverage of a WEIGHTED LAYER
+                timed_transfers folded) and its near misses
+                (missed_connections: another route leaving just
+                before the rider can make it, with that route's next
+                departure, D-133), a stop's waits (stop_gaps; a
+                station's are its bays', pooled), the network's
+                longest waits (longest_waits: every stop ranked, in an
+                hour window or over the day, D-134), and coverage of a WEIGHTED LAYER
                 (its `coverage` module, D-47): any GeoJSON points and
                 polygons, weighted by whichever numeric property the
                 question names (`field`, with the planner's `label`) —

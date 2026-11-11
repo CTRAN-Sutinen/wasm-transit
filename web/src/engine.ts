@@ -65,6 +65,8 @@ import type { Request as RouterRequest } from "./types/cap_router/Request";
 import type { Response as RouterResponse } from "./types/cap_router/Response";
 import type { Request as RtRequest } from "./types/cap_rt/Request";
 import type { Response as RtResponse } from "./types/cap_rt/Response";
+import type { Request as RuncutRequest } from "./types/cap_runcut/Request";
+import type { Response as RuncutResponse } from "./types/cap_runcut/Response";
 import type { Request as StreetsRequest } from "./types/cap_streets/Request";
 import type { Response as StreetsResponse } from "./types/cap_streets/Response";
 import type { Boundary } from "./types/Boundary";
@@ -90,6 +92,7 @@ type Caps = {
   plans: [PlansRequest, PlansResponse];
   router: [RouterRequest, RouterResponse];
   rt: [RtRequest, RtResponse];
+  runcut: [RuncutRequest, RuncutResponse];
   streets: [StreetsRequest, StreetsResponse];
 };
 export type CapId = keyof Caps;

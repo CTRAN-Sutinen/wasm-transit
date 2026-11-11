@@ -70,6 +70,14 @@ fn gen_trip() -> impl Strategy<Value = GenTrip> {
 }
 
 fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
+    gen_feed_stations(trips, &[])
+}
+
+/// The same feed, with a station `st` (GTFS location_type 1) whose
+/// bays are the stops `parented` marks — none marked, the feed is
+/// `gen_feed`'s byte for byte.
+fn gen_feed_stations(trips: &[GenTrip], parented: &[bool]) -> Vec<u8> {
+    let station = parented.iter().any(|&p| p);
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let opts = zip::write::SimpleFileOptions::default();
     let add = |w: &mut zip::ZipWriter<std::io::Cursor<Vec<u8>>>, name: &str, body: &str| {
@@ -84,8 +92,15 @@ fn gen_feed(trips: &[GenTrip]) -> Vec<u8> {
     );
     add(&mut w, "routes.txt", "route_id,agency_id,route_short_name,route_type\n0,1,0,3\n1,1,1,3\n");
     let mut stops = String::from("stop_id,stop_name,stop_lat,stop_lon");
+    if station {
+        stops.push_str(",location_type,parent_station\nst,Station,45.505,-73.505,1,");
+    }
     for i in 0..6u8 {
         stops.push_str(&format!("\ns{i},Stop {i},45.50{},-73.50{}", i, i));
+        if station {
+            let parent = if parented.get(i as usize).copied().unwrap_or(false) { "st" } else { "" };
+            stops.push_str(&format!(",0,{parent}"));
+        }
     }
     add(&mut w, "stops.txt", &stops);
 
@@ -520,6 +535,230 @@ proptest! {
                 prop_assert_eq!(row.median_gap_secs, median, "{} hour {} median", stop_id, row.hour);
             }
         }
+    }
+
+    /// A station's waits are its bays' — `stop_gaps` asked
+    /// for a station pools the departures of every stop that names
+    /// it as parent (nothing departs from the station itself), and
+    /// asked for a bay or a plain stop it reads that stop alone. The
+    /// oracle folds the materialized departures over the same set:
+    /// the count, the distinct-time spine's first, last, and largest
+    /// gap, and the departures per hour.
+    #[test]
+    fn a_stations_waits_pool_its_bays(
+        trips in proptest::collection::vec(gen_trip(), 0..=14),
+        parented in proptest::collection::vec(any::<bool>(), 6),
+    ) {
+        prop_assume!(parented.iter().any(|&p| p));
+        let feed = transit_codec::Feed::from_zip_bytes(&gen_feed_stations(&trips, &parented)).expect("parse");
+        let net = transit_codec::import(&feed).network;
+        let date = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
+        let materialized = transit_network::materialize(&net, date).expect("materialize");
+        let mut raw: BTreeMap<String, Vec<u32>> = BTreeMap::new();
+        for trip in &materialized {
+            for st in trip.stop_times.iter().rev().skip(1) {
+                raw.entry(st.stop.clone()).or_default().push(st.departure_secs);
+            }
+        }
+        for stop_id in net.stops.keys() {
+            // The set by hand: the stop, and the stops naming it parent.
+            let pooled: Vec<u32> = net
+                .stops
+                .iter()
+                .filter(|(id, s)| *id == stop_id || s.parent.as_deref() == Some(stop_id.as_str()))
+                .flat_map(|(id, _)| raw.get(id).cloned().unwrap_or_default())
+                .collect();
+            if stop_id == "st" {
+                let bays: usize = parented.iter().filter(|&&p| p).count();
+                prop_assert_eq!(net.stops.values().filter(|s| s.parent.as_deref() == Some("st")).count(), bays);
+            }
+            let gaps = transit_analysis::stop_gaps(&net, date, stop_id);
+            let spine: Vec<u32> = pooled.iter().copied().collect::<BTreeSet<_>>().into_iter().collect();
+            let mut max_gap = None;
+            let mut max_after = None;
+            for w in spine.windows(2) {
+                if max_gap.map_or(true, |m| w[1] - w[0] > m) {
+                    max_gap = Some(w[1] - w[0]);
+                    max_after = Some(w[0]);
+                }
+            }
+            let mut by_hour: BTreeMap<u32, u32> = BTreeMap::new();
+            for &d in &pooled {
+                *by_hour.entry(d / 3600).or_default() += 1;
+            }
+            prop_assert_eq!(gaps.departures, pooled.len() as u32, "{} departures", stop_id);
+            prop_assert_eq!(gaps.name, net.stops[stop_id].name.clone(), "{} keeps its own name", stop_id);
+            prop_assert_eq!(gaps.first_departure_secs, spine.first().copied(), "{} first", stop_id);
+            prop_assert_eq!(gaps.last_departure_secs, spine.last().copied(), "{} last", stop_id);
+            prop_assert_eq!(gaps.max_gap_secs, max_gap, "{} max gap", stop_id);
+            prop_assert_eq!(gaps.max_gap_after_secs, max_after, "{} max gap after", stop_id);
+            for row in &gaps.hourly {
+                prop_assert_eq!(row.departures, by_hour.get(&row.hour).copied().unwrap_or(0), "{} hour {}", stop_id, row.hour);
+            }
+        }
+    }
+
+    /// The network's longest waits (service-design question 8):
+    /// every stop that departs on the date, ranked by its longest
+    /// wait — longest first, then by stop id — and cut to `limit`.
+    /// Without a window the wait is the largest gap between the
+    /// stop's distinct departure times (a stop with fewer than two
+    /// has none and is no row). With one, it is coverage's reading of
+    /// a window: from the window's start to the first departure in
+    /// it, between departures, and from the last to the window's end;
+    /// a stop that departs that day but not inside the window waits
+    /// the whole window. The oracle recomputes each from the
+    /// materialized departures.
+    #[test]
+    fn longest_waits_rank_every_stops_wait(
+        trips in proptest::collection::vec(gen_trip(), 0..=14),
+        windowed in any::<bool>(),
+        start_h in 0u32..20,
+        len_h in 1u32..8,
+        limit in proptest::option::of(0u32..8),
+    ) {
+        let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
+        let net = transit_codec::import(&feed).network;
+        let date = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
+        let window = windowed.then(|| transit_analysis::CoverageWindow {
+            start_secs: start_h * 3600,
+            end_secs: (start_h + len_h) * 3600,
+        });
+        let materialized = transit_network::materialize(&net, date).expect("materialize");
+        let mut raw: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
+        let mut counts: BTreeMap<String, Vec<u32>> = BTreeMap::new();
+        for trip in &materialized {
+            for st in trip.stop_times.iter().rev().skip(1) {
+                raw.entry(st.stop.clone()).or_default().insert(st.departure_secs);
+                counts.entry(st.stop.clone()).or_default().push(st.departure_secs);
+            }
+        }
+        // (wait, from, stop, departures) per stop, by hand.
+        let mut expected: Vec<(u32, u32, String, u32)> = Vec::new();
+        for (stop, spine) in &raw {
+            let spine: Vec<u32> = spine.iter().copied().collect();
+            match window {
+                None => {
+                    let best = spine.windows(2).map(|w| (w[1] - w[0], w[0])).fold(None, |acc: Option<(u32, u32)>, g| match acc {
+                        Some(a) if a.0 >= g.0 => Some(a),
+                        _ => Some(g),
+                    });
+                    if let Some((wait, from)) = best {
+                        expected.push((wait, from, stop.clone(), counts[stop].len() as u32));
+                    }
+                }
+                Some(w) => {
+                    let inside: Vec<u32> = spine.iter().copied().filter(|t| *t >= w.start_secs && *t <= w.end_secs).collect();
+                    let deps = counts[stop].iter().filter(|t| **t >= w.start_secs && **t <= w.end_secs).count() as u32;
+                    if inside.is_empty() {
+                        expected.push((w.end_secs - w.start_secs, w.start_secs, stop.clone(), 0));
+                        continue;
+                    }
+                    let mut edges = vec![w.start_secs];
+                    edges.extend(&inside);
+                    edges.push(w.end_secs);
+                    let mut best = (0u32, w.start_secs);
+                    for e in edges.windows(2) {
+                        if e[1] - e[0] > best.0 {
+                            best = (e[1] - e[0], e[0]);
+                        }
+                    }
+                    expected.push((best.0, best.1, stop.clone(), deps));
+                }
+            }
+        }
+        expected.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.2.cmp(&b.2)));
+        if let Some(n) = limit {
+            expected.truncate(n as usize);
+        }
+
+        let ranked = transit_analysis::longest_waits(&net, date, window, limit);
+        prop_assert_eq!(ranked.len(), expected.len(), "rows");
+        for (row, (wait, from, stop, deps)) in ranked.iter().zip(&expected) {
+            prop_assert_eq!(&row.stop_id, stop);
+            prop_assert_eq!(row.longest_wait_secs, *wait, "{} wait", stop);
+            prop_assert_eq!(row.wait_from_secs, *from, "{} from", stop);
+            prop_assert_eq!(row.departures, *deps, "{} departures", stop);
+            prop_assert_eq!(&row.name, &net.stops[stop].name);
+        }
+        // Unwindowed, each row agrees with the stop's own day.
+        if window.is_none() {
+            for row in &ranked {
+                let gaps = transit_analysis::stop_gaps(&net, date, &row.stop_id);
+                prop_assert_eq!(Some(row.longest_wait_secs), gaps.max_gap_secs);
+                prop_assert_eq!(Some(row.wait_from_secs), gaps.max_gap_after_secs);
+            }
+        }
+    }
+
+    /// Just-missed connections (service-design question 9): at a
+    /// hub (the stop's walking group, as `timed_transfers` pools it),
+    /// every arrival of one route and departure of another where the
+    /// departure leaves from `miss_secs` before the arrival up to
+    /// (not including) the connection window's minimum after it —
+    /// the rider sees it go. `missed_by_secs` is how much later it
+    /// would have had to leave; `next_departure_secs` is that route's
+    /// first departure the rider can make (at least the minimum after
+    /// the arrival), or none. No near miss is a timed transfer. The
+    /// oracle recomputes the pairs from the materialized day.
+    #[test]
+    fn missed_connections_match_the_near_miss_oracle(
+        trips in proptest::collection::vec(gen_trip(), 0..=14),
+        parented in proptest::collection::vec(any::<bool>(), 6),
+        min_secs in 0u32..600,
+        miss in proptest::option::of(0u32..1200),
+        use_default in any::<bool>(),
+    ) {
+        let window = (!use_default).then(|| transit_analysis::TransferWindow { min_secs, max_secs: min_secs + 900 });
+        let lo = window.map_or(60, |w| w.min_secs) as i64;
+        let miss_secs = miss.unwrap_or(300) as i64;
+        let feed = transit_codec::Feed::from_zip_bytes(&gen_feed_stations(&trips, &parented)).expect("parse");
+        let net = transit_codec::import(&feed).network;
+        let date = NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(); // a Monday
+        let materialized = transit_network::materialize(&net, date).expect("materialize");
+
+        for stop_id in net.stops.keys() {
+            let group = transit_network::walking_group(&net, stop_id);
+            let mut arrivals: Vec<(String, u32)> = Vec::new();
+            let mut departures: Vec<(String, u32)> = Vec::new();
+            for trip in &materialized {
+                let route = net.patterns[&trip.pattern].route.clone();
+                for (i, st) in trip.stop_times.iter().enumerate() {
+                    if !group.contains_key(&st.stop) {
+                        continue;
+                    }
+                    arrivals.push((route.clone(), st.arrival_secs));
+                    if i + 1 < trip.stop_times.len() {
+                        departures.push((route.clone(), st.departure_secs));
+                    }
+                }
+            }
+            let mut expected: Vec<(u32, String, String, u32, u32, Option<u32>)> = Vec::new();
+            for (fr, at) in &arrivals {
+                for (tr, dt) in &departures {
+                    let (a, d) = (*at as i64, *dt as i64);
+                    if fr != tr && d >= a - miss_secs && d < a + lo {
+                        let next = departures
+                            .iter()
+                            .filter(|(r, t)| r == tr && (*t as i64) >= a + lo)
+                            .map(|(_, t)| *t)
+                            .min();
+                        expected.push((*at, fr.clone(), tr.clone(), *dt, (a + lo - d) as u32, next));
+                    }
+                }
+            }
+            expected.sort();
+            let got = transit_analysis::missed_connections(&net, date, stop_id, window, miss.map(|m| m));
+            let got: Vec<_> = got
+                .iter()
+                .map(|m| {
+                    prop_assert!(group.contains_key(&m.arrival_stop) && group.contains_key(&m.departure_stop));
+                    Ok((m.arrival_secs, m.from_route.clone(), m.to_route.clone(), m.departure_secs, m.missed_by_secs, m.next_departure_secs))
+                })
+                .collect::<Result<_, TestCaseError>>()?;
+            prop_assert_eq!(got, expected, "near misses at {}", stop_id);
+        }
+        prop_assert!(transit_analysis::missed_connections(&net, date, "nope", window, miss).is_empty());
     }
 
     /// QAF-4: the day's hourly profile — `hourly_trips` matches an

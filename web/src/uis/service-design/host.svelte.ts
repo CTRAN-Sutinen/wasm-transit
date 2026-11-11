@@ -43,6 +43,9 @@ import type { RouteOverlap } from "../../types/RouteOverlap";
 import type { ServiceGroup } from "../../types/ServiceGroup";
 import type { ServiceTypeComparison } from "../../types/ServiceTypeComparison";
 import type { StopGaps } from "../../types/StopGaps";
+import type { MissedConnection } from "../../types/MissedConnection";
+import type { StopWait } from "../../types/StopWait";
+import type { Suggestion } from "../../types/transit_runs/Suggestion";
 import type { Timetable } from "../../types/Timetable";
 import type { CombinationCoverage } from "../../types/CombinationCoverage";
 import type { UnservedPoint } from "../../types/UnservedPoint";
@@ -91,6 +94,10 @@ export const sd = $state({
   dayStats: null as NetworkStats | null,
   frequency: null as RouteFrequency | null,
   comparison: null as ServiceTypeComparison | null,
+  /// The group's day blocked (runcut `suggest_blocks`, D-46): the
+  /// authored blocks' peak, and the vehicles the trips no block
+  /// carries add when the suggestion is adopted.
+  vehicles: null as Suggestion | null,
   routes: [] as DirectoryRoute[],
   route: "",
   routeDetail: null as RouteDetail | null,
@@ -112,6 +119,9 @@ export const sd = $state({
   stop: "",
   connections: null as RouteConnections[] | null,
   gaps: null as StopGaps | null,
+  missed: null as MissedConnection[] | null,
+  /// The network's stops ranked by their longest wait, in the window.
+  waits: null as StopWait[] | null,
   editing: false,
   /// The picked trip on the string-line: "trip@start".
   selectedTrip: "",
@@ -380,6 +390,22 @@ const request = answerGraph(
         }),
     },
     {
+      // The vehicles the plan needs on the group's day (D-46): the
+      // authored blocks, and the trips a change added on no block,
+      // chained by the suggestion — under the terminals' recovery
+      // floors, since this UI loads no work rules.
+      id: "runcut.suggest_blocks",
+      frame: "Vehicles",
+      needs: ["document.active", "group"],
+      run: () =>
+        framed("Vehicles", () => (sd.vehicles = null), async () => {
+          const doc = active();
+          const date = groupDay();
+          if (!doc || !date) return void (sd.vehicles = null);
+          sd.vehicles = (await ask("runcut", "suggest_blocks", { network_hash: docOf(doc), edits_hash: null, date })).suggestion;
+        }),
+    },
+    {
       id: "directory.route_detail",
       frame: "RouteHeader",
       needs: ["document.active", "route", "view"],
@@ -527,6 +553,35 @@ const request = answerGraph(
           const date = groupDay();
           if (!doc || !date || !sd.stop) return void (sd.gaps = null);
           sd.gaps = (await ask("analysis", "stop_gaps", { network_hash: docOf(doc), date, stop_id: sd.stop })).gaps;
+        }),
+    },
+    {
+      id: "analysis.missed_connections",
+      frame: "NearMisses",
+      needs: ["document.active", "group", "stop", "view"],
+      visible: on("hubs"),
+      run: () =>
+        framed("NearMisses", () => (sd.missed = null), async () => {
+          const doc = active();
+          const date = groupDay();
+          if (!doc || !date || !sd.stop) return void (sd.missed = null);
+          sd.missed = (await ask("analysis", "missed_connections", { network_hash: docOf(doc), date, stop_id: sd.stop })).missed;
+        }),
+    },
+    {
+      // The ranking a planner scans before picking a hub: the
+      // longest waits on the group's day, in the hour window.
+      id: "analysis.longest_waits",
+      frame: "LongestWaits",
+      needs: ["document.active", "group", "window", "view"],
+      visible: on("hubs"),
+      run: () =>
+        framed("LongestWaits", () => (sd.waits = null), async () => {
+          const doc = active();
+          const date = groupDay();
+          if (!doc || !date) return void (sd.waits = null);
+          const window = sd.window ? { start_secs: sd.window.from * 3600, end_secs: sd.window.to * 3600 } : undefined;
+          sd.waits = (await ask("analysis", "longest_waits", { network_hash: docOf(doc), date, window, limit: 25 })).waits;
         }),
     },
     {

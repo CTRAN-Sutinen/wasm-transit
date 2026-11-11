@@ -1,13 +1,19 @@
 <script lang="ts">
   /// The proposal's scorecard under one group (analysis
   /// `service_type_compare`): trips, revenue hours and miles, routes
-  /// changed — and the measures the bus cannot answer yet, each named
-  /// with what it waits on.
+  /// changed, the vehicles the group's day needs (runcut
+  /// `suggest_blocks`, D-46) — and the measures the bus cannot answer
+  /// yet, each named with what it waits on.
   import Unavailable from "./Unavailable.svelte";
   import type { ServiceTypeComparison } from "../types/ServiceTypeComparison";
+  import type { Suggestion } from "../types/transit_runs/Suggestion";
   import { change, count, fixed } from "./designFormat";
 
-  let { comparison }: { comparison: ServiceTypeComparison } = $props();
+  let {
+    comparison,
+    vehicles,
+    vehiclesError = "",
+  }: { comparison: ServiceTypeComparison; vehicles: Suggestion | null; vehiclesError?: string } = $props();
   const b = $derived(comparison.base);
   const p = $derived(comparison.proposal);
 </script>
@@ -18,12 +24,19 @@
     <div class="card"><small>Revenue hours</small><b>{change(fixed(b.revenue_hours), fixed(p.revenue_hours))}</b></div>
     <div class="card"><small>Revenue miles</small><b>{change(count(Math.round(b.revenue_miles)), count(Math.round(p.revenue_miles)))}</b></div>
     <div class="card"><small>Routes changed</small><b>{comparison.routes.length}</b><span>of {p.routes}</span></div>
+    {#if vehicles}
+      <div class="card" data-testid="score-vehicles">
+        <small>Peak vehicles</small>
+        <b>{change(String(vehicles.authored_peak_vehicles), String(vehicles.peak_vehicles))}</b>
+        <span>{vehicles.added_vehicles > 0 ? `+${vehicles.added_vehicles} for trips no block carries, suggested` : "every trip on a block"}{vehicles.unblocked.length ? `; ${vehicles.unblocked.length} trips not blockable` : ""}</span>
+      </div>
+    {/if}
   </div>
   <div class="blocked">
-    <Unavailable title="Peak vehicles" reason="Not shown yet. Trips a change adds are on no block, so the vehicles this proposal needs are not counted here." blockers={["D-46", "QAF-3"]} />
-    <Unavailable title="Cost" reason="Not shown yet. Costing needs the agency's rates per hour, mile, and vehicle, which this software does not hold." blockers={["D-51"]} />
+    {#if vehiclesError}<Unavailable title="Peak vehicles" error={vehiclesError} />{/if}
+    <Unavailable title="Hours against budget" reason="Not shown yet. A proposal is measured in platform hours against an hours budget, not dollars; what a budget is, and where it is kept, is not decided." blockers={["D-108"]} />
     <Unavailable title="Coverage gained and lost" reason="Not shown yet. It waits on a rule for matching this plan's service groups to the baseline's when a fork renames or splits a service type." blockers={["D-43", "QAF-20"]} />
-    <Unavailable title="Connections made and broken" reason="Not available yet: which timed connections this proposal makes or breaks against the baseline." blockers={["Q19"]} />
+    <Unavailable title="Connections made and broken" reason="Not shown yet: which timed connections this proposal makes or breaks against the baseline. Like coverage, it waits on the rule for matching this plan's service groups to the baseline's." blockers={["D-43"]} />
   </div>
 </section>
 

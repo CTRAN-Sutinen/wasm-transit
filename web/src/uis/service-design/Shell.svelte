@@ -44,6 +44,8 @@
   import ChangeLedger from "../../components/ChangeLedger.svelte";
   import FocusMap from "../../components/FocusMap.svelte";
   import ProposalScore from "../../components/ProposalScore.svelte";
+  import NearMisses from "../../components/NearMisses.svelte";
+  import LongestWaits from "../../components/LongestWaits.svelte";
   import Redline from "../../components/Redline.svelte";
   import Readiness from "../../components/Readiness.svelte";
 
@@ -138,7 +140,7 @@
       {:else if sd.view === "network"}
         <h1>Network <span>{group ? `${group.id} — ${spansText(group.spans)}` : ""}</span></h1>
         {#if sd.failed.Comparison}{@render failure("Comparison", "Against the baseline")}{/if}
-        <GroupLedger {group} comparison={sd.comparison} baselineName={planName(sd.compareKey)} />
+        <GroupLedger {group} comparison={sd.comparison} baselineName={planName(sd.compareKey)} vehicles={sd.vehicles} vehiclesError={sd.failed.Vehicles ?? ""} />
         {#if sd.failed.DayProfile}
           {@render failure("DayProfile", "Trips per hour")}
         {:else if sd.hourly}
@@ -198,12 +200,20 @@
             {#if sd.failed.StopWaits}
               {@render failure("StopWaits", "Waits")}
             {:else if sd.gaps && sd.gaps.departures === 0}
-              <Unavailable title="Waits at {sd.gaps.name}" reason="Nothing departs from the station itself, only from its bays. Pick one of its bays to read the waits there." blockers={["QAF-92"]} />
+              <Unavailable title="Waits at {sd.gaps.name}" reason="Nothing departs here on the group's day." />
             {:else if sd.gaps}
               <StopWaits gaps={sd.gaps} window={sd.window} />
             {/if}
-            <Unavailable title="Just-missed connections" reason="Not available yet: connections that just miss, where a bus arrives a minute or two after the other has left." blockers={["Q9"]} />
-            <Unavailable title="Longest waits across the network" reason="Not available yet: every stop ranked by its longest wait. Waits are read one stop at a time." blockers={["Q8"]} />
+            {#if sd.failed.NearMisses}
+              {@render failure("NearMisses", "Just missed")}
+            {:else if sd.missed && sd.stop}
+              <NearMisses missed={sd.missed} stopName={sd.gaps?.name ?? sd.stop} onroute={openRoute} />
+            {/if}
+            {#if sd.failed.LongestWaits}
+              {@render failure("LongestWaits", "Longest waits across the network")}
+            {:else if sd.waits}
+              <LongestWaits waits={sd.waits} window={sd.window} onstop={openStop} />
+            {/if}
           </div>
         </div>
         {#if sd.failed.Corridors}
@@ -304,7 +314,7 @@
         {#if sd.failed.Comparison}
           {@render failure("Comparison", "Against the baseline")}
         {:else if sd.comparison}
-          <ProposalScore comparison={sd.comparison} />
+          <ProposalScore comparison={sd.comparison} vehicles={sd.vehicles} vehiclesError={sd.failed.Vehicles ?? ""} />
         {:else}
           <Unavailable title="Against the baseline" reason="Choose a baseline plan on the bar to compare against." />
         {/if}

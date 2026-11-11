@@ -1,16 +1,26 @@
 <script lang="ts">
   /// The selected group's numbers against the baseline (analysis
   /// `service_type_compare`: both sides pooled over the combination's
-  /// members), with the answers the bus cannot give yet named as such.
+  /// members), the vehicles its day needs (runcut `suggest_blocks`,
+  /// D-46), and the answers the bus cannot give yet named as such.
   import type { ServiceTypeComparison } from "../types/ServiceTypeComparison";
   import type { ServiceGroup } from "../types/ServiceGroup";
+  import type { Suggestion } from "../types/transit_runs/Suggestion";
   import { count, fixed, change, spansText } from "./designFormat";
 
   let {
     group,
     comparison,
     baselineName,
-  }: { group: ServiceGroup | null; comparison: ServiceTypeComparison | null; baselineName: string } = $props();
+    vehicles,
+    vehiclesError = "",
+  }: {
+    group: ServiceGroup | null;
+    comparison: ServiceTypeComparison | null;
+    baselineName: string;
+    vehicles: Suggestion | null;
+    vehiclesError?: string;
+  } = $props();
 
   const b = $derived(comparison?.base);
   const p = $derived(comparison?.proposal);
@@ -28,8 +38,16 @@
     <div class="stat"><small>Revenue hours</small><b>{fixed(group.revenue_hours)}</b></div>
     <div class="stat"><small>Revenue miles</small><b>{count(Math.round(group.revenue_miles))}</b></div>
   {/if}
-  <div class="stat"><small>Peak vehicles</small><b class="muted">—</b><span class="blocker">D-46</span></div>
-  <div class="stat"><small>Cost</small><b class="muted">—</b><span class="blocker">D-51</span></div>
+  <div class="stat" data-testid="ledger-vehicles">
+    <small>Peak vehicles</small>
+    {#if vehicles}
+      <b>{vehicles.peak_vehicles}</b>
+      <span class="muted">{vehicles.added_vehicles > 0 ? `${vehicles.authored_peak_vehicles} blocked + ${vehicles.added_vehicles} suggested` : "all on its blocks"}</span>
+    {:else}
+      <b class="muted">—</b>{#if vehiclesError}<span class="muted" title={vehiclesError}>couldn't answer</span>{/if}
+    {/if}
+  </div>
+  <div class="stat"><small>Hours against budget</small><b class="muted">—</b><span class="blocker">D-108</span></div>
   <p class="note muted">
     {#if p && b}against {baselineName}, over the same service types (it holds on {b.days} → {p.days} days){:else if group}{group.id}: {spansText(group.spans)}{/if}
   </p>

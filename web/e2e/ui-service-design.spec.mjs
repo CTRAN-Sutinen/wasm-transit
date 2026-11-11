@@ -59,6 +59,11 @@ test("service design chains its views over a plan, a fork, and a change", async 
   // Network: the group's ledger, the day's shape, and the grid.
   await page.keyboard.press("2");
   await expect(page.getByTestId("group-ledger")).toContainText("Trips");
+  // The group's day blocked (runcut `suggest_blocks`, D-46): block B1
+  // carries one vehicle at the peak; the four trips no block carries
+  // chain into two suggested blocks, one more vehicle at 8:15.
+  await expect(page.getByTestId("ledger-vehicles")).toContainText("2");
+  await expect(page.getByTestId("ledger-vehicles")).toContainText("1 blocked + 1 suggested");
   await expect(page.getByTestId("day-profile")).toBeVisible();
   // The day's numbers (analysis `network_stats`) on the group's first
   // date, the day the profile reads: 8:00 – 8:50, five stops, no
@@ -135,7 +140,8 @@ test("service design chains its views over a plan, a fork, and a change", async 
   await page.keyboard.press("6");
   await expect(page.getByTestId("scorecard")).toContainText("Routes changed");
   await expect(page.getByTestId("redline")).toContainText("10");
-  await expect(page.getByTestId("scorecard")).toContainText("D-46");
+  await expect(page.getByTestId("score-vehicles")).toContainText("Peak vehicles");
+  await expect(page.getByTestId("scorecard")).toContainText("D-108");
 
   // The selection is in the hash: a reload returns to the route.
   await page.keyboard.press("5");
@@ -247,9 +253,23 @@ test("hubs and coverage answer around a station and a layer", async ({ page }) =
   await hub.fill("Main Station");
   await page.getByRole("option", { name: /Main Station/ }).first().click();
   await expect(page.getByTestId("hub-matrix")).toBeVisible();
-  // The station pin departs nothing itself: its waits frame says so
-  // (stop_gaps reads one stop, QAF-92); a bay answers.
-  await expect(page.getByTestId("unavailable").filter({ hasText: "Waits at Main Station" })).toContainText("QAF-92");
+  // A station's waits are its bays' (stop_gaps pools the stops that
+  // name it parent): Bay A at 8:15 and Bay B at 8:35.
+  const waits = page.getByTestId("stop-waits");
+  await expect(waits).toContainText("Waits at Main Station");
+  await expect(waits).toContainText("2 departures, 8:15–8:35");
+  await expect(waits).toContainText("Longest wait 20 min");
+  // Only route 40 serves the station, so nothing just misses here
+  // (D-133; the seam test pins a real near miss).
+  await expect(page.getByTestId("near-misses")).toContainText("No near misses");
+  // The network's longest waits (D-134): only Main & 1st departs
+  // twice on the day, 8:00 and 8:20; a row opens its hub.
+  const ranking = page.getByTestId("longest-waits");
+  await expect(ranking.locator("tbody tr")).toHaveCount(1);
+  await expect(ranking).toContainText("Main & 1st");
+  await expect(ranking).toContainText("20 min");
+  await ranking.getByRole("button", { name: "Main & 1st" }).click();
+  await expect(page.getByTestId("stop-waits")).toContainText("Waits at Main & 1st");
   await hub.fill("Bay A");
   await page.getByRole("option", { name: /Bay A/ }).first().click();
   await expect(page.getByTestId("stop-waits")).toBeVisible();

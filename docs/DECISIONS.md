@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-133**.
+- IDs are never reused; the next new decision is **D-135**.
 
 ## Summary
 
@@ -186,6 +186,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-130 | Where does a display's identity live on the device? | decided | nothing |
 | D-131 | Does the MVP deployment need a server? | decided | nothing |
 | D-132 | Can a serverless deployment follow the agency's GTFS URL? | decided | nothing |
+| D-133 | What counts as a just-missed connection? | encoded | nothing |
+| D-134 | How does the network rank its longest waits? | encoded | nothing |
 
 ## The trip model
 
@@ -528,6 +530,40 @@ Options:
 - No boundaries: continuous shading of the longest gap, with the
   range printed in the cell.
 Blocks: nothing (the grid's shading is provisional).
+
+### D-133 — What counts as a just-missed connection?
+State: Encoded provisionally.
+Context: `docs/units/ui-service-design.md` question 9 — at each hub,
+which connections just miss. A timed transfer is an arrival and
+another route's departure 60–900 s later (the window, `TransferWindow`).
+A near miss needs its own bounds.
+Encoded: at the hub's walking group, an arrival of one route and a
+departure of another that leaves from `miss_secs` before the arrival
+up to, not including, the window's minimum after it — five minutes
+before when the caller names none (`MISS_SECS`). Each near miss carries
+how much later the bus would have had to leave and that route's next
+departure the rider can make, so a frequent route's misses read as the
+short waits they are; no near miss is hidden or judged. A different
+answer changes the bounds, not the shape.
+Pinned by: `missed_connections_match_the_near_miss_oracle`
+(`crates/transit-analysis/tests/analysis_prop_test.rs`).
+Blocks: nothing.
+
+### D-134 — How does the network rank its longest waits?
+State: Encoded provisionally.
+Context: `docs/units/ui-service-design.md` question 8 — where riders
+wait longest for the next bus.
+Encoded: every stop that departs on the group's day, ranked by its
+longest wait, longest first. With an hour window the wait is coverage's
+reading of a window (from its start to the first departure, between
+departures, from the last to its end), and a stop that departs that
+day but not inside the window waits the whole window; without one it
+is the day's largest gap between departures. Each stop reads alone, so
+a station's bays rank one by one (asked for one stop, a station's
+waits pool its bays: `a_stations_waits_pool_its_bays`).
+Pinned by: `longest_waits_rank_every_stops_wait`
+(`crates/transit-analysis/tests/analysis_prop_test.rs`).
+Blocks: nothing.
 
 ### D-53 — What ridership data does the planner bring?
 State: Decided.
