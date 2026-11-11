@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-135**.
+- IDs are never reused; the next new decision is **D-136**.
 
 ## Summary
 
@@ -188,6 +188,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-132 | Can a serverless deployment follow the agency's GTFS URL? | decided | nothing |
 | D-133 | What counts as a just-missed connection? | encoded | nothing |
 | D-134 | How does the network rank its longest waits? | encoded | nothing |
+| D-135 | Which browsers must the generated UIs support? | unanswered | the live-feeds panel in `web-conformance` |
 
 ## The trip model
 
@@ -2580,6 +2581,28 @@ Options:
   the D-68 budget, no reset under the ceiling, for the window.
 Blocks: nothing; the revert's window is pinned by the revert e2e in
 `docs/units/observability-rollout.md` when it lands.
+
+### D-135 — Which browsers must the generated UIs support?
+State: Unanswered.
+Context: `docs/units/web-conformance.md`. No policy is written down.
+The modern-web-guidance corpus treats Baseline "widely available"
+features (30 months in every major browser) as safe, and requires a
+fallback for "newly available" ones. The live-feeds panel's native
+replacement, the Popover API (Escape, light dismiss, the top layer),
+is Baseline since 2025-01-27, so it is newly available until mid-2027.
+The rider UIs run on riders' own phones, often old ones; the stop
+display runs on a Pi 4's Chromium the agency controls.
+Options:
+- Baseline widely available only: the panel keeps a hand-rolled
+  Escape, outside-click, and focus handling (~30 lines), no Popover.
+- Widely available, plus newly available with a small fallback (no
+  polyfill, a fallback of about 20 lines or fewer): Popover where the
+  browser has it, the current panel where it does not.
+- Newly available with the guide's polyfills (`@oddbird/popover-polyfill`,
+  loaded only when the browser lacks Popover): one more dependency.
+- A named floor (for example, the last two major versions of each browser
+  and iOS Safari 16.4+), checked against each feature's support data.
+Blocks: the live-feeds panel in `docs/units/web-conformance.md`.
 
 ## Agency data
 

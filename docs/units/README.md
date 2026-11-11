@@ -53,6 +53,7 @@ archive — nothing here records what is finished.
 | [runs-layer.md](runs-layer.md) | the runs cut under the work rules; the run view, legality, and run edits; suggested blocking, extended |
 | [ui-runcut.md](ui-runcut.md) | generated UI: cutting a plan's work into blocks and runs |
 | [ui-work-bid.md](ui-work-bid.md) | generated UI: bidding on work (waits on the runs layer) |
+| [web-conformance.md](web-conformance.md) | the generated UIs held to WCAG 2.2 AA and current web practice in both deployment shapes, and the gate that keeps them there |
 
 ## Queued, not yet scoped
 
