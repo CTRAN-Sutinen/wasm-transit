@@ -110,8 +110,13 @@ async function contentHash(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
 /// Load the manifest and validate it AT THE SEAM: wrong kernel, no
 /// content hash, or duplicate ids are assembly errors, not runtime
 /// surprises.
-async function loadManifest(): Promise<CapManifest> {
-  const loaded = (await (await fetch(new URL("caps/manifest.json", base))).json()) as CapManifest;
+/// The request names the page (`?ui=<id>`): the service worker answers
+/// only its offline pages' manifest from its precache, and any other
+/// page's from the network (web/service-worker.js).
+async function loadManifest(ui: string | undefined): Promise<CapManifest> {
+  const url = new URL("caps/manifest.json", base);
+  if (ui) url.searchParams.set("ui", ui);
+  const loaded = (await (await fetch(url)).json()) as CapManifest;
   if (loaded.kernel !== KERNEL_VERSION) {
     throw new Error(`manifest kernel v${loaded.kernel} != host kernel v${KERNEL_VERSION}`);
   }
@@ -191,7 +196,7 @@ async function handle(request: BusRequest): Promise<BusReply> {
       base = request.base;
       return { ok: null };
     case "ensure": {
-      manifest ??= loadManifest();
+      manifest ??= loadManifest(request.ui ?? undefined);
       const loaded = await manifest;
       const byId = new Map(loaded.capabilities.map((c) => [c.id, c]));
       const linked = request.ui ? loaded.assemblies?.find((a) => a.ui === request.ui) : undefined;

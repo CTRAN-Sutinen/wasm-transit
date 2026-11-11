@@ -464,6 +464,146 @@ pub fn service_groups(net: &Network) -> Vec<ServiceGroup> {
         .collect()
 }
 
+/// One combination inside a day type: the dates it holds on inside
+/// the period, their spans, and the days of the week they fall on
+/// (Monday first).
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct DayTypeGroup {
+    pub id: String,
+    pub members: Vec<String>,
+    pub dates: Vec<String>,
+    pub spans: Vec<transit_network::DateSpan>,
+    pub weekdays: Vec<bool>,
+}
+
+/// A day type: the combinations that serve the same days of the week
+/// in a period — its regular service first, then the combinations that
+/// run on fewer of its days.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct DayType {
+    /// The weekdays it is the service of (Monday first): those its
+    /// regular group runs on for more than half of that weekday's
+    /// dates in the period — a holiday it also runs on is not one —
+    /// else, when there are none, every weekday it runs on.
+    pub weekdays: Vec<bool>,
+    pub groups: Vec<DayTypeGroup>,
+}
+
+/// The service combinations inside a period (`from` and `through`,
+/// each optional and inclusive), arranged by the days of the week
+/// their dates fall on (D-137). The period runs from `from` (else the
+/// first in-period date any combination holds) to `through` (else the
+/// last). Walking the combinations with the most in-period dates first
+/// (then first date, then id), one whose dates all fall on an earlier
+/// day type's weekdays joins the first such type; any other starts a
+/// new type as its regular service, the type's weekdays those it runs
+/// on for more than half of that weekday's dates in the period. A
+/// combination with no date in the period is left out. The planner's
+/// "weekday, Saturday, Sunday" read, with every combination still
+/// named by its members and its dates (D-55).
+pub fn day_types(net: &Network, from: Option<NaiveDate>, through: Option<NaiveDate>) -> Vec<DayType> {
+    use chrono::Datelike;
+    let mut groups: Vec<DayTypeGroup> = transit_network::service_combinations(net)
+        .into_iter()
+        .filter_map(|c| {
+            let dates: Vec<NaiveDate> = c
+                .dates
+                .iter()
+                .filter_map(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                .filter(|d| from.map_or(true, |f| *d >= f) && through.map_or(true, |t| *d <= t))
+                .collect();
+            if dates.is_empty() {
+                return None;
+            }
+            let mut weekdays = vec![false; 7];
+            for d in &dates {
+                weekdays[d.weekday().num_days_from_monday() as usize] = true;
+            }
+            Some(DayTypeGroup {
+                id: c.id,
+                members: c.members,
+                spans: transit_network::date_spans(&dates),
+                dates: dates.iter().map(|d| d.format("%Y-%m-%d").to_string()).collect(),
+                weekdays,
+            })
+        })
+        .collect();
+    groups.sort_by(|a, b| {
+        b.dates.len().cmp(&a.dates.len()).then_with(|| a.dates[0].cmp(&b.dates[0])).then_with(|| a.id.cmp(&b.id))
+    });
+    // The period's dates by weekday.
+    let first = from.or_else(|| groups.iter().filter_map(|g| g.dates.first()).min().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()));
+    let last = through.or_else(|| groups.iter().filter_map(|g| g.dates.last()).max().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()));
+    let mut period = [0u32; 7];
+    if let (Some(mut d), Some(end)) = (first, last) {
+        while d <= end {
+            period[d.weekday().num_days_from_monday() as usize] += 1;
+            d += chrono::Duration::days(1);
+        }
+    }
+    let within = |a: &[bool], b: &[bool]| a.iter().zip(b).all(|(x, y)| !*x || *y);
+    let mut types: Vec<DayType> = Vec::new();
+    for g in groups {
+        match types.iter_mut().find(|t| within(&g.weekdays, &t.weekdays)) {
+            Some(t) => t.groups.push(g),
+            None => {
+                let mut held = [0u32; 7];
+                for d in g.dates.iter().filter_map(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()) {
+                    held[d.weekday().num_days_from_monday() as usize] += 1;
+                }
+                let most: Vec<bool> = (0..7).map(|w| held[w] * 2 > period[w]).collect();
+                let weekdays = if most.iter().any(|&x| x) { most } else { g.weekdays.clone() };
+                types.push(DayType { weekdays, groups: vec![g] });
+            }
+        }
+    }
+    types
+}
+
+/// One group of a day type, with what the proposal changes in it.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct DayTypeGroupComparison {
+    pub group: DayTypeGroup,
+    pub comparison: Option<ServiceTypeComparison>,
+}
+
+/// One day type of the proposal, each group compared.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct DayTypeComparison {
+    pub weekdays: Vec<bool>,
+    pub groups: Vec<DayTypeGroupComparison>,
+}
+
+/// The proposal against its baseline across every day type of its
+/// period: [`day_types`] of the proposal, each group carrying
+/// [`service_type_compare`] for its members — the whole proposal in
+/// one answer, not one group at a time.
+pub fn plan_compare(
+    base: &Network,
+    proposal: &Network,
+    from: Option<NaiveDate>,
+    through: Option<NaiveDate>,
+) -> Vec<DayTypeComparison> {
+    day_types(proposal, from, through)
+        .into_iter()
+        .map(|t| DayTypeComparison {
+            weekdays: t.weekdays,
+            groups: t
+                .groups
+                .into_iter()
+                .map(|g| {
+                    let comparison = service_type_compare(base, proposal, &g.members);
+                    DayTypeGroupComparison { group: g, comparison }
+                })
+                .collect(),
+        })
+        .collect()
+}
+
 /// The overview table: every service type's own numbers (its authored
 /// service, on no date). The planner's design axis is the combinations
 /// ([`service_groups`]); this is the per-id read under them.
@@ -1485,6 +1625,330 @@ pub fn missed_connections(
             .then_with(|| x.departure_secs.cmp(&y.departure_secs))
     });
     out
+}
+
+// ---------------------------------------------------------------------
+// The worklist: what is weak, as findings a change can resolve
+// ---------------------------------------------------------------------
+
+/// What the worklist calls weak (D-136, provisional). Each threshold
+/// is the caller's to change; omitted, the op's default holds.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct FindingParams {
+    /// A frequency hole: an hour whose longest gap is at least this
+    /// many times the longer of its two neighbours' (default 1.5).
+    #[serde(default)]
+    #[ts(optional)]
+    pub hole_factor: Option<f64>,
+    /// A long wait: at least this long (default 3600 s).
+    #[serde(default)]
+    #[ts(optional)]
+    pub wait_secs: Option<u32>,
+    /// A costly near miss: the next departure is at least this long
+    /// after the arrival, or there is none (default 900 s).
+    #[serde(default)]
+    #[ts(optional)]
+    pub miss_cost_secs: Option<u32>,
+    /// Hours (for holes), waits (as `longest_waits` reads a window),
+    /// and arrivals (for misses) inside this window only.
+    #[serde(default)]
+    #[ts(optional)]
+    pub window: Option<CoverageWindow>,
+    /// Each kind cut to this many, after its sort.
+    #[serde(default)]
+    #[ts(optional)]
+    pub limit: Option<u32>,
+    /// Keys the planner watches: each answered in `watched`, now and
+    /// in the baseline, whatever the limit cuts.
+    #[serde(default)]
+    #[ts(optional)]
+    pub watch: Option<Vec<String>>,
+}
+
+const HOLE_FACTOR: f64 = 1.5;
+const LONG_WAIT_SECS: u32 = 3600;
+const MISS_COST_SECS: u32 = 900;
+
+/// A route-hour whose longest gap stands out from both neighbours'.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct FrequencyHole {
+    /// "hole|<route>|<hour>": the same hole in another version.
+    pub key: String,
+    pub route_id: String,
+    pub name: String,
+    pub hour: u32,
+    pub longest_gap_secs: u32,
+    /// The longer of the neighbouring hours' longest gaps.
+    pub around_gap_secs: u32,
+}
+
+/// A stop riders wait long at (a `longest_waits` row).
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct LongWait {
+    /// "wait|<stop>".
+    pub key: String,
+    pub stop_id: String,
+    pub name: String,
+    pub longest_wait_secs: u32,
+    pub wait_from_secs: u32,
+}
+
+/// One route pair's costly near misses at a hub.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct CostlyMiss {
+    /// "miss|<hub>|<from route>|<to route>".
+    pub key: String,
+    pub hub_id: String,
+    pub hub_name: String,
+    pub from_route: String,
+    pub to_route: String,
+    /// Near misses whose next departure is long after, or never.
+    pub misses: u32,
+    /// The longest of those waits for the next departure (none when
+    /// every one has no later departure).
+    pub worst_wait_secs: Option<u32>,
+    /// Near misses with no later departure that day.
+    pub stranded: u32,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct HoleRow {
+    pub now: FrequencyHole,
+    /// The baseline's finding under the same key; none when new.
+    pub base: Option<FrequencyHole>,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct WaitRow {
+    pub now: LongWait,
+    pub base: Option<LongWait>,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct MissRow {
+    pub now: CostlyMiss,
+    pub base: Option<CostlyMiss>,
+}
+
+/// A finding of any kind, tagged.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AnyFinding {
+    Hole(FrequencyHole),
+    Wait(LongWait),
+    Miss(CostlyMiss),
+}
+
+/// A watched key: its finding now and in the baseline — none where
+/// that version has no such finding (a fix reads now: none).
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct Watched {
+    pub key: String,
+    pub now: Option<AnyFinding>,
+    pub base: Option<AnyFinding>,
+}
+
+/// The baseline's findings this version no longer has.
+#[derive(Debug, Clone, Default, Serialize, TS)]
+#[ts(export)]
+pub struct ResolvedFindings {
+    pub holes: Vec<FrequencyHole>,
+    pub waits: Vec<LongWait>,
+    pub misses: Vec<CostlyMiss>,
+}
+
+/// The worklist under one service combination.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct NetworkFindings {
+    pub group: String,
+    /// The date the waits and misses are read on: the combination's
+    /// first (every date it holds answers alike — D-55; an address).
+    pub date: String,
+    pub holes: Vec<HoleRow>,
+    pub waits: Vec<WaitRow>,
+    pub misses: Vec<MissRow>,
+    pub resolved: ResolvedFindings,
+    /// `params.watch`, in its order.
+    pub watched: Vec<Watched>,
+}
+
+struct Found {
+    group: String,
+    date: String,
+    holes: Vec<FrequencyHole>,
+    waits: Vec<LongWait>,
+    misses: Vec<CostlyMiss>,
+}
+
+impl Found {
+    fn find(&self, key: &str) -> Option<AnyFinding> {
+        self.holes
+            .iter()
+            .find(|f| f.key == key)
+            .map(|f| AnyFinding::Hole(f.clone()))
+            .or_else(|| self.waits.iter().find(|f| f.key == key).map(|f| AnyFinding::Wait(f.clone())))
+            .or_else(|| self.misses.iter().find(|f| f.key == key).map(|f| AnyFinding::Miss(f.clone())))
+    }
+}
+
+/// Every finding of one version, sorted, uncut.
+fn findings_of(net: &Network, members: &[String], p: &FindingParams) -> Option<Found> {
+    let combination = transit_network::service_combination(net, members)?;
+    let date_text = combination.dates.first()?.clone();
+    let date = NaiveDate::parse_from_str(&date_text, "%Y-%m-%d").ok()?;
+    let factor = p.hole_factor.unwrap_or(HOLE_FACTOR);
+    let in_hour = |h: u32| p.window.map_or(true, |w| h * 3600 >= w.start_secs && h * 3600 < w.end_secs);
+    let in_secs = |t: u32| p.window.map_or(true, |w| t >= w.start_secs && t <= w.end_secs);
+
+    let mut holes = Vec::new();
+    if let Some(grid) = route_frequency(net, &combination.members) {
+        for row in grid.routes {
+            let gaps: BTreeMap<u32, u32> =
+                row.hours.iter().filter_map(|h| h.longest_gap_secs.map(|g| (h.hour, g))).collect();
+            for (&h, &g) in &gaps {
+                if h == 0 || !in_hour(h) {
+                    continue;
+                }
+                let (Some(&a), Some(&b)) = (gaps.get(&(h - 1)), gaps.get(&(h + 1))) else { continue };
+                let around = a.max(b);
+                if g as f64 >= factor * around as f64 {
+                    holes.push(FrequencyHole {
+                        key: format!("hole|{}|{}", row.route_id, h),
+                        route_id: row.route_id.clone(),
+                        name: row.name.clone(),
+                        hour: h,
+                        longest_gap_secs: g,
+                        around_gap_secs: around,
+                    });
+                }
+            }
+        }
+    }
+    holes.sort_by(|x, y| y.longest_gap_secs.cmp(&x.longest_gap_secs).then_with(|| x.key.cmp(&y.key)));
+
+    let threshold = p.wait_secs.unwrap_or(LONG_WAIT_SECS);
+    let waits: Vec<LongWait> = longest_waits(net, date, p.window, None)
+        .into_iter()
+        .filter(|w| w.longest_wait_secs >= threshold)
+        .map(|w| LongWait {
+            key: format!("wait|{}", w.stop_id),
+            stop_id: w.stop_id,
+            name: w.name,
+            longest_wait_secs: w.longest_wait_secs,
+            wait_from_secs: w.wait_from_secs,
+        })
+        .collect();
+
+    // The hubs: stations, and transfer-flagged stops a station does
+    // not already stand for.
+    let cost = p.miss_cost_secs.unwrap_or(MISS_COST_SECS);
+    let mut folded: BTreeMap<(String, String, String), (u32, Option<u32>, u32)> = BTreeMap::new();
+    for (hub, stop) in &net.stops {
+        let station = net.stops.values().any(|c| c.parent.as_deref() == Some(hub.as_str()));
+        if !station && !(stop.transfer && stop.parent.is_none()) {
+            continue;
+        }
+        for m in missed_connections(net, date, hub, None, None) {
+            if !in_secs(m.arrival_secs) {
+                continue;
+            }
+            let wait = m.next_departure_secs.map(|t| t - m.arrival_secs);
+            if wait.is_some_and(|w| w < cost) {
+                continue;
+            }
+            let e = folded.entry((hub.clone(), m.from_route, m.to_route)).or_insert((0, None, 0));
+            e.0 += 1;
+            match wait {
+                Some(w) => e.1 = Some(e.1.map_or(w, |x| x.max(w))),
+                None => e.2 += 1,
+            }
+        }
+    }
+    let mut misses: Vec<CostlyMiss> = folded
+        .into_iter()
+        .map(|((hub, from_route, to_route), (misses, worst_wait_secs, stranded))| CostlyMiss {
+            key: format!("miss|{hub}|{from_route}|{to_route}"),
+            hub_name: net.stops.get(&hub).map(|s| s.name.clone()).unwrap_or_default(),
+            hub_id: hub,
+            from_route,
+            to_route,
+            misses,
+            worst_wait_secs,
+            stranded,
+        })
+        .collect();
+    misses.sort_by(|x, y| y.misses.cmp(&x.misses).then_with(|| x.key.cmp(&y.key)));
+
+    Some(Found { group: combination.id, date: date_text, holes, waits, misses })
+}
+
+/// The worklist (D-136): under one service combination (`members`),
+/// the network's frequency holes, long waits, and costly near misses
+/// at its hubs, each kind sorted and cut to `limit`. Against a
+/// baseline (`base`, its own combination of the same members), each
+/// finding carries the baseline's finding under the same key — none
+/// when the change made it — and the baseline's findings with no key
+/// now are listed as resolved. None when the members never run
+/// together in `net`.
+pub fn network_findings(
+    net: &Network,
+    base: Option<&Network>,
+    members: &[String],
+    params: &FindingParams,
+) -> Option<NetworkFindings> {
+    let now = findings_of(net, members, params)?;
+    let then = base.and_then(|b| findings_of(b, members, params));
+    let watched: Vec<Watched> = params
+        .watch
+        .iter()
+        .flatten()
+        .map(|key| Watched {
+            key: key.clone(),
+            now: now.find(key),
+            base: then.as_ref().and_then(|t| t.find(key)),
+        })
+        .collect();
+    let cut = |n: usize| params.limit.map_or(n, |l| n.min(l as usize));
+    let mut resolved = ResolvedFindings::default();
+    let (mut base_holes, mut base_waits, mut base_misses): (BTreeMap<_, _>, BTreeMap<_, _>, BTreeMap<_, _>) =
+        Default::default();
+    if let Some(t) = then {
+        let hole_keys: BTreeSet<&String> = now.holes.iter().map(|f| &f.key).collect();
+        let wait_keys: BTreeSet<&String> = now.waits.iter().map(|f| &f.key).collect();
+        let miss_keys: BTreeSet<&String> = now.misses.iter().map(|f| &f.key).collect();
+        for f in t.holes {
+            if hole_keys.contains(&f.key) { base_holes.insert(f.key.clone(), f); } else { resolved.holes.push(f); }
+        }
+        for f in t.waits {
+            if wait_keys.contains(&f.key) { base_waits.insert(f.key.clone(), f); } else { resolved.waits.push(f); }
+        }
+        for f in t.misses {
+            if miss_keys.contains(&f.key) { base_misses.insert(f.key.clone(), f); } else { resolved.misses.push(f); }
+        }
+    }
+    resolved.holes.truncate(cut(resolved.holes.len()));
+    resolved.waits.truncate(cut(resolved.waits.len()));
+    resolved.misses.truncate(cut(resolved.misses.len()));
+    let n = (cut(now.holes.len()), cut(now.waits.len()), cut(now.misses.len()));
+    Some(NetworkFindings {
+        group: now.group,
+        date: now.date,
+        holes: now.holes.into_iter().take(n.0).map(|f| HoleRow { base: base_holes.remove(&f.key), now: f }).collect(),
+        waits: now.waits.into_iter().take(n.1).map(|f| WaitRow { base: base_waits.remove(&f.key), now: f }).collect(),
+        misses: now.misses.into_iter().take(n.2).map(|f| MissRow { base: base_misses.remove(&f.key), now: f }).collect(),
+        resolved,
+        watched,
+    })
 }
 
 /// One route pair's timed connections at a hub: how many the day

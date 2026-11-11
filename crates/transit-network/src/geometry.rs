@@ -81,6 +81,51 @@ pub struct EntityFocus {
     pub points: Vec<Coord>,
 }
 
+/// One route on the network map: its id, name and color (the
+/// agency's, when it has one), and the distinct lines its patterns
+/// draw.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[ts(export)]
+pub struct RouteLines {
+    pub route_id: String,
+    pub name: String,
+    pub color: Option<String>,
+    pub lines: Vec<Vec<Coord>>,
+}
+
+/// The network on a map: every route that draws a line, in id order,
+/// with the distinct lines of its patterns (each its alignment, else
+/// its stops joined — the lines `entity_focus` frames). Given
+/// `members`, only the patterns that run trips under one of those
+/// service types draw, and a route with none is left out.
+pub fn route_lines(network: &Network, members: Option<&[String]>) -> Vec<RouteLines> {
+    let runs = |pattern: &str| {
+        members.map_or(true, |m| {
+            network
+                .pattern_trips
+                .values()
+                .any(|pt| pt.pattern == pattern && !pt.trips.is_empty() && m.contains(&pt.service_type))
+        })
+    };
+    let mut out = Vec::new();
+    for (route_id, route) in &network.routes {
+        let mut lines: Vec<Vec<Coord>> = Vec::new();
+        for (pattern_id, pattern) in &network.patterns {
+            if pattern.route != *route_id || !runs(pattern_id) {
+                continue;
+            }
+            let line = pattern_alignment(network, pattern_id);
+            if !line.is_empty() && !lines.contains(&line) {
+                lines.push(line);
+            }
+        }
+        if !lines.is_empty() {
+            out.push(RouteLines { route_id: route_id.clone(), name: route.name.clone(), color: route.color.clone(), lines });
+        }
+    }
+    out
+}
+
 /// Where an entity is: a stop is its point; a pattern (and a schedule,
 /// through its pattern) its alignment and stops; a route every one of
 /// its patterns; a service type every pattern scheduled under it; a

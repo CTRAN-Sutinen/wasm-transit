@@ -40,6 +40,20 @@ the change is ready, it publishes it for a future date.
 
 **Server:** needed.
 
+## Service change
+
+**For service planners.**
+
+Service change is a second way to plan a service change, built to
+compare with Service design. It shows the whole network on a map and
+a list of what looks weak: hours with a long gap between buses, stops
+with a long wait, and connections at transit centers that just miss.
+You open an item, change the route right there, and see whether the
+item is fixed. The proposal shows what changed on weekdays, Saturdays
+and Sundays at once.
+
+**Server:** needed.
+
 ## Read next
 
 [How it works](how-it-works.md) follows one stop display from

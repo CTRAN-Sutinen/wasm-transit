@@ -66,3 +66,4 @@ updates, and rolls back on its own.
 | ride-now | Yes | Detours and cancels, address search, picks dated ahead |
 | stop-display | Yes | Detours and cancels, picks dated ahead |
 | service-design | No | Loading the published network, publishing picks |
+| service-change | No | Loading the published network, publishing picks |

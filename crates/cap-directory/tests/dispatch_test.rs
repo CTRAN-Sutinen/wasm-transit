@@ -448,3 +448,21 @@ fn about_names_the_network_as_the_document_does() {
         _ => panic!("about"),
     }
 }
+
+/// The network on a map answers through the seam (the law is
+/// transit-network's `route_lines_draw_what_focus_frames`): every
+/// route the fixture runs, route 10 drawing the lines `focus` frames
+/// for it; a service type that runs no route draws nothing.
+#[test]
+fn route_lines_draw_the_network() {
+    let hash = load_network();
+    let lines = |members: Option<Vec<String>>| match dispatch(Request::RouteLines { network_hash: hash.clone(), members }).unwrap() {
+        Response::RouteLines { routes } => routes,
+        _ => panic!("route_lines"),
+    };
+    let all = lines(None);
+    let ten = all.iter().find(|r| r.route_id == "10").expect("route 10 draws");
+    let focus = transit_network::entity_focus(&derived_network(), transit_network::EntityKind::Route, "10").unwrap();
+    assert_eq!(ten.lines.len(), focus.lines.len());
+    assert!(lines(Some(vec!["nope".into()])).is_empty());
+}

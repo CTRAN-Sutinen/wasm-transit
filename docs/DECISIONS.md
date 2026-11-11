@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-136**.
+- IDs are never reused; the next new decision is **D-138**.
 
 ## Summary
 
@@ -189,6 +189,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-133 | What counts as a just-missed connection? | encoded | nothing |
 | D-134 | How does the network rank its longest waits? | encoded | nothing |
 | D-135 | Which browsers must the generated UIs support? | unanswered | the live-feeds panel in `web-conformance` |
+| D-136 | What does the worklist call weak? | encoded | nothing |
+| D-137 | How are a plan's service combinations shown as day types? | encoded | nothing |
 
 ## The trip model
 
@@ -563,6 +565,52 @@ is the day's largest gap between departures. Each stop reads alone, so
 a station's bays rank one by one (asked for one stop, a station's
 waits pool its bays: `a_stations_waits_pool_its_bays`).
 Pinned by: `longest_waits_rank_every_stops_wait`
+(`crates/transit-analysis/tests/analysis_prop_test.rs`).
+Blocks: nothing.
+
+### D-136 — What does the worklist call weak?
+State: Encoded provisionally.
+Context: the service-change UI (`docs/architecture/generated-uis.md`). The worklist
+gathers findings a change can resolve; each kind needs a line between
+"look at this" and "fine".
+Encoded (analysis `network_findings`, each threshold a parameter the
+caller may change):
+- A frequency hole: a route-hour whose longest gap is at least 1.5×
+  the longer of both neighbouring hours' longest gaps. A dip between
+  busier hours, not the planned evening drop (an hour as long as the
+  next one is no hole).
+- A long wait: a stop whose longest wait (as `longest_waits` reads it,
+  D-134) is at least 60 minutes.
+- A costly near miss: at a hub — a station, or a transfer-flagged stop
+  with no parent — a near miss (D-133) whose next departure of that
+  route is at least 15 minutes after the arrival, or none that day;
+  folded by route pair. Ordinary stops are not hubs, so routes sharing
+  a corridor are not read as missing each other at every stop.
+A finding keeps a key across versions (route and hour, stop, hub and
+route pair), so a plan reads each against its baseline (new, moved,
+resolved) and a watched one is re-read after every change.
+Pinned by: `network_findings_gather_the_worklist`
+(`crates/transit-analysis/tests/analysis_prop_test.rs`).
+Blocks: nothing.
+
+### D-137 — How are a plan's service combinations shown as day types?
+State: Encoded provisionally — a trial. The user, 2026-11-11: "go ahead
+and give what you have a try, but note that this is a hard problem so
+it is likely to get changed."
+Context: D-55 — a planner sees the combinations that actually run, with
+their dates. C-TRAN's period holds eleven; a planner names three
+(weekday, Saturday, Sunday) and reads the rest as exceptions to them.
+Encoded (analysis `day_types`): inside the plan's period (from its pick
+date on; the base network from today), the combinations are walked most
+dates first. One whose dates all fall on an earlier day type's days of
+the week joins it; any other starts a new day type as its regular
+service. A day type's days of the week are those its regular service
+runs on for more than half of that weekday's dates in the period, so
+the holidays Sunday service also runs on (C-TRAN: Thanksgiving and the
+day after) do not make it "Thu, Fri, Sun". Every combination stays named by its members and its dates;
+none is pooled with another. A combination with no date in the period
+is not shown.
+Pinned by: `day_types_arrange_the_combinations_by_weekday`
 (`crates/transit-analysis/tests/analysis_prop_test.rs`).
 Blocks: nothing.
 

@@ -853,3 +853,51 @@ fn missed_connections_and_longest_waits_answer_through_the_seam() {
     let rows: Vec<_> = waits.iter().map(|w| (w.stop_id.as_str(), w.longest_wait_secs, w.wait_from_secs, w.departures)).collect();
     assert_eq!(rows, [("s0", 600, 6000, 2)]);
 }
+
+/// The day types, the whole-plan comparison, and the worklist answer
+/// through the seam (the laws live in the library's prop suite).
+/// Route 0 leaves s0 every ten minutes from 1:00 to 2:00, then not
+/// until 2:40, then every ten minutes to 4:00: hour 2's 40-minute gap
+/// is a frequency hole beside hours 1 and 3 (10 minutes each).
+#[test]
+fn day_types_plan_compare_and_findings_answer_through_the_seam() {
+    let trip = |start_slot| GenTrip { route: 0, service: 0, block: None, start_slot, stops: vec![0, 1], leg_min: 5 };
+    let slots: Vec<u16> = (6..=12).chain(16..=24).collect();
+    let net = network(&slots.iter().map(|&s| trip(s)).collect::<Vec<_>>());
+    let network_hash = cap_abi::kernel::NETWORK.register(net).expect("load").0;
+
+    let types = cap_analysis::dispatch(cap_analysis::Request::DayTypes {
+        network_hash: network_hash.clone(),
+        from: Some("2026-03-01".into()),
+        through: None,
+    })
+    .expect("day_types");
+    let cap_analysis::Response::DayTypes { day_types } = types else { panic!("day_types") };
+    assert_eq!(day_types.len(), 1, "the weekday service alone");
+    assert_eq!(day_types[0].weekdays, [true, true, true, true, true, false, false]);
+    assert!(day_types[0].groups[0].dates.iter().all(|d| d.as_str() >= "2026-03-01"));
+
+    let compared = cap_analysis::dispatch(cap_analysis::Request::PlanCompare {
+        base_hash: network_hash.clone(),
+        network_hash: network_hash.clone(),
+        from: None,
+        through: None,
+    })
+    .expect("plan_compare");
+    let cap_analysis::Response::PlanCompare { day_types: compared } = compared else { panic!("plan_compare") };
+    let first = compared[0].groups[0].comparison.as_ref().expect("the group runs");
+    assert!(first.routes.is_empty(), "a plan against itself changes no route");
+
+    let found = cap_analysis::dispatch(cap_analysis::Request::NetworkFindings {
+        network_hash: network_hash.clone(),
+        base_hash: Some(network_hash),
+        members: vec!["0".into()],
+        params: None,
+    })
+    .expect("network_findings");
+    let cap_analysis::Response::NetworkFindings { findings: Some(found) } = found else { panic!("network_findings") };
+    let holes: Vec<_> = found.holes.iter().map(|h| (h.now.route_id.as_str(), h.now.hour, h.now.longest_gap_secs, h.now.around_gap_secs)).collect();
+    assert_eq!(holes, [("0", 2, 2400, 600)]);
+    assert!(found.holes[0].base.is_some(), "against itself, the hole was there before");
+    assert!(found.resolved.holes.is_empty());
+}

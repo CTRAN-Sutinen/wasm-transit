@@ -161,6 +161,17 @@ pub enum Request {
     /// its point; a schedule its pattern; a route, a service type, or a
     /// block every pattern it runs. Null for an unknown id.
     Focus { network_hash: String, kind: transit_network::EntityKind, id: String },
+    /// The network on a map: every route that draws a line (id
+    /// order) with its name, its color, and the distinct lines of its
+    /// patterns. Given `members` (service types), only the patterns
+    /// that run trips under them draw, and a route with none is left
+    /// out.
+    RouteLines {
+        network_hash: String,
+        #[serde(default)]
+        #[ts(optional)]
+        members: Option<Vec<String>>,
+    },
     /// Every entity of one kind, in id order, narrowed the way a
     /// filter box's typing does (every term in the id, the name, or a
     /// route's long name, case-insensitive): what places it (a pattern's route, a
@@ -217,6 +228,7 @@ pub enum Response {
     Routes { routes: Vec<DirectoryRoute> },
     RouteStopSequence { patterns: Vec<PatternStops> },
     Focus { focus: Option<transit_network::EntityFocus> },
+    RouteLines { routes: Vec<transit_network::RouteLines> },
     Entities { rows: Vec<transit_network::EntityRow> },
     RouteDetail { detail: Option<transit_network::RouteDetail> },
     StopDetail { detail: Option<transit_network::StopDetail> },
@@ -331,6 +343,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::Focus { network_hash, kind, id } => {
             let network = network_arc(&network_hash)?;
             Ok(Response::Focus { focus: transit_network::entity_focus(&network, kind, &id) })
+        }
+        Request::RouteLines { network_hash, members } => {
+            let network = network_arc(&network_hash)?;
+            Ok(Response::RouteLines { routes: transit_network::route_lines(&network, members.as_deref()) })
         }
         Request::Entities { network_hash, kind, query } => {
             let network = network_arc(&network_hash)?;

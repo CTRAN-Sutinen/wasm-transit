@@ -285,6 +285,27 @@ cap-author's issues and warnings for a document it authored. After
 every change it adopts, the host names its keep-set (the plan set's
 current networks and the layer). Undo restores an
 earlier document version the host keeps; nothing is inverted.
+`service-change` (`src/uis/service-change/`): the same need as
+service-design, kept as one loop on one screen to compare against it.
+A bar (plan, baseline, the plan's day types — analysis `day_types`,
+D-137, a trial — the hour window, health, a route box) sits over the
+network drawn on a map (directory `route_lines`; the routes the plan
+changed in the accent, the open route on top, a click opens a route),
+with the frequency grid as the other way to look at it. The side panel
+holds the worklist (analysis `network_findings`, D-136: frequency
+holes, long waits, costly near misses at hubs — each new, moved, or
+resolved against the baseline; a row opens its route at its hour, or
+its stop or hub), the proposal across every day type (analysis
+`plan_compare`) with readiness, export and publish, and the plans.
+A route or a hub opens in a drawer over the map: the string-line and
+the changes (the service-design gestures), or the hub's waits, near
+misses and connections — each beside the findings the planner
+watches (`params.watch`, answered in `watched` after every change:
+fixed, moved, or new). The selection, the watched findings with it,
+lives in the URL hash, which the page follows: back and forward move
+through it. It has no single-key shortcuts. Its authoring path (fork,
+apply, undo, export, publish) is service-design's, copied — a UI
+never imports another's files.
 `ride-now` (`src/uis/ride-now/`): a full-bleed map with a panel over
 it (a card at the left on a wide screen, a sheet over the bottom of
 the map on a phone), the live pill and the alerts button in the

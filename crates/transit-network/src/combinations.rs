@@ -52,6 +52,23 @@ pub struct DateSpan {
 /// The longest step between two dates of one span.
 const SPAN_GAP_DAYS: i64 = 7;
 
+/// Sorted dates folded into spans: a new span starts where the next
+/// date is more than seven days after the last (D-94).
+pub fn date_spans(dates: &[NaiveDate]) -> Vec<DateSpan> {
+    let mut spans: Vec<(NaiveDate, NaiveDate, u32)> = Vec::new();
+    for &d in dates {
+        match spans.last_mut() {
+            Some(s) if (d - s.1).num_days() <= SPAN_GAP_DAYS => {
+                s.1 = d;
+                s.2 += 1;
+            }
+            _ => spans.push((d, d, 1)),
+        }
+    }
+    let iso = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
+    spans.into_iter().map(|(start, end, days)| DateSpan { start: iso(start), end: iso(end), days }).collect()
+}
+
 /// Every date any service type could run on: its ranges' dates and its
 /// added exceptions.
 fn candidate_dates(network: &Network) -> BTreeSet<NaiveDate> {
@@ -93,27 +110,11 @@ pub fn service_combinations(network: &Network) -> Vec<ServiceCombination> {
     }
     let mut out: Vec<ServiceCombination> = by_members
         .into_iter()
-        .map(|(members, dates)| {
-            let mut spans: Vec<(NaiveDate, NaiveDate, u32)> = Vec::new();
-            for &d in &dates {
-                match spans.last_mut() {
-                    Some(s) if (d - s.1).num_days() <= SPAN_GAP_DAYS => {
-                        s.1 = d;
-                        s.2 += 1;
-                    }
-                    _ => spans.push((d, d, 1)),
-                }
-            }
-            let iso = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
-            ServiceCombination {
-                id: members.join(" + "),
-                members,
-                dates: dates.iter().map(|&d| iso(d)).collect(),
-                spans: spans
-                    .into_iter()
-                    .map(|(start, end, days)| DateSpan { start: iso(start), end: iso(end), days })
-                    .collect(),
-            }
+        .map(|(members, dates)| ServiceCombination {
+            id: members.join(" + "),
+            members,
+            dates: dates.iter().map(|d| d.format("%Y-%m-%d").to_string()).collect(),
+            spans: date_spans(&dates),
         })
         .collect();
     out.sort_by(|a, b| {

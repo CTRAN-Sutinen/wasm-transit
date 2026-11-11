@@ -75,7 +75,8 @@ function oneUi(id) {
 
 // The service worker (web/service-worker.js — D-63, D-65): written to
 // <outDir>/sw.js after the build with the build's identity and the
-// shell it precaches above the template — the pages of every UI whose
+// shell it precaches above the template (and OFFLINE, those UIs' ids)
+// — the pages of every UI whose
 // ui.json says `"offline": true`, every hashed asset, the capability
 // manifest, and those UIs' linked assemblies. BUILD hashes the shell's
 // bytes, so a build that changes any of them is a byte-different
@@ -104,7 +105,10 @@ function serviceWorker() {
       for (const file of shell) hash.update(file).update(fs.readFileSync(path.join(outDir, file)));
       const build = hash.digest("hex").slice(0, 16);
       const template = fs.readFileSync(path.join(root, "service-worker.js"), "utf8");
-      fs.writeFileSync(path.join(outDir, "sw.js"), `const BUILD = ${JSON.stringify(build)};\nconst SHELL = ${JSON.stringify(shell)};\n\n${template}`);
+      fs.writeFileSync(
+        path.join(outDir, "sw.js"),
+        `const BUILD = ${JSON.stringify(build)};\nconst SHELL = ${JSON.stringify(shell)};\nconst OFFLINE = ${JSON.stringify(offline)};\n\n${template}`,
+      );
     },
   };
 }

@@ -336,6 +336,52 @@ proptest! {
         prop_assert!(net.validate().is_ok(), "issues: {:?}", validation_issues(&net));
     }
 
+    /// The network on a map (`route_lines`): every route that draws a
+    /// line, in id order, with its name and color and the distinct
+    /// lines of its patterns — the same lines `entity_focus` frames
+    /// for the route. Given service types, only the patterns that run
+    /// trips under one of them draw, and a route with none is no row.
+    #[test]
+    fn route_lines_draw_what_focus_frames(net in net_strategy(), pick in proptest::collection::vec(any::<bool>(), 3)) {
+        use std::collections::BTreeSet;
+        let all = transit_network::route_lines(&net, None);
+        prop_assert!(all.windows(2).all(|w| w[0].route_id < w[1].route_id), "id order");
+        for (id, route) in &net.routes {
+            let focus = transit_network::entity_focus(&net, transit_network::EntityKind::Route, id).unwrap();
+            let framed: BTreeSet<String> = focus.lines.iter().map(|l| format!("{l:?}")).collect();
+            let row = all.iter().find(|r| &r.route_id == id);
+            if framed.is_empty() {
+                prop_assert!(row.is_none(), "{} draws nothing", id);
+                continue;
+            }
+            let row = row.unwrap();
+            prop_assert_eq!(&row.name, &route.name);
+            prop_assert_eq!(&row.color, &route.color);
+            let drawn: Vec<String> = row.lines.iter().map(|l| format!("{l:?}")).collect();
+            prop_assert_eq!(drawn.len(), framed.len(), "{} draws each line once", id);
+            prop_assert_eq!(drawn.into_iter().collect::<BTreeSet<_>>(), framed);
+        }
+
+        let members: Vec<String> = net.service_types.keys().zip(&pick).filter(|(_, p)| **p).map(|(k, _)| k.clone()).collect();
+        let narrowed = transit_network::route_lines(&net, Some(&members));
+        for row in &narrowed {
+            let expected: BTreeSet<String> = net
+                .pattern_trips
+                .values()
+                .filter(|pt| members.contains(&pt.service_type) && !pt.trips.is_empty())
+                .filter(|pt| net.patterns[&pt.pattern].route == row.route_id)
+                .map(|pt| format!("{:?}", transit_network::pattern_alignment(&net, &pt.pattern)))
+                .collect();
+            prop_assert_eq!(row.lines.iter().map(|l| format!("{l:?}")).collect::<BTreeSet<_>>(), expected, "{} under {:?}", row.route_id, members);
+        }
+        for route in net.routes.keys() {
+            let runs = net.pattern_trips.values().any(|pt| {
+                members.contains(&pt.service_type) && !pt.trips.is_empty() && net.patterns[&pt.pattern].route == *route
+            });
+            prop_assert_eq!(narrowed.iter().any(|r| &r.route_id == route), runs, "{} drawn iff it runs", route);
+        }
+    }
+
     /// serde round-trip: the document survives JSON exactly.
     #[test]
     fn network_round_trips_through_json(net in net_strategy()) {

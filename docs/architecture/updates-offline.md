@@ -62,7 +62,7 @@ reading **Because**.
 - **Decided:** D-63.
 
 ### Offline at launch (`"offline": true` in `ui.json`, the service worker's caches)
-- **Holds:** ride-now and the stop display install and boot offline: the shell and modules precached, content-addressed files kept forever, the manifest and config kept as the last copy; a board offline answers from the schedule and says so. Live feeds and the edit document are never cached.
+- **Holds:** ride-now and the stop display install and boot offline: the shell and modules precached, content-addressed files kept forever, the manifest and config kept as the last copy; a board offline answers from the schedule and says so. Live feeds and the edit document are never cached. The worker's scope is the deployment's root, so it controls every page on the origin, yet it answers only its offline pages from the shell: any other page's capability manifest (the bus worker asks `caps/manifest.json?ui=<id>`) comes from the network, since the shell's copy names one build's modules and a planner page that read it after the next build would ask for modules that are gone.
 - **Because:** a rider at a stop with no signal is the case local-first is for. Content-addressed files can be cached forever without going stale; a cached prediction replayed as live would be wrong.
 - **Rejected:** the HTTP cache only, offline later.
 - **Decided:** D-65.

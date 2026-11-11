@@ -185,6 +185,48 @@ pub enum Request {
         #[ts(optional)]
         limit: Option<u32>,
     },
+    /// The day types of a period: the service combinations with a
+    /// date in [`from`, `through`] (each optional, inclusive), by the
+    /// days of the week their dates fall on — each type's regular
+    /// combination first, then those running on fewer of its days.
+    DayTypes {
+        network_hash: String,
+        #[serde(default)]
+        #[ts(optional)]
+        from: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        through: Option<String>,
+    },
+    /// The proposal against its baseline across every day type of the
+    /// period: `day_types` of the proposal, each group carrying
+    /// `service_type_compare` for its members.
+    PlanCompare {
+        base_hash: String,
+        network_hash: String,
+        #[serde(default)]
+        #[ts(optional)]
+        from: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        through: Option<String>,
+    },
+    /// The worklist under one combination (`members`): frequency
+    /// holes, long waits, and costly near misses at the hubs, each
+    /// sorted and cut to `params.limit`; with `base_hash`, each with
+    /// the baseline's finding under the same key, and the baseline's
+    /// findings this version resolved. Null when the members never run
+    /// together.
+    NetworkFindings {
+        network_hash: String,
+        #[serde(default)]
+        #[ts(optional)]
+        base_hash: Option<String>,
+        members: Vec<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        params: Option<transit_analysis::FindingParams>,
+    },
     /// The SERVICE GROUP's frequency grid: every route that departs
     /// under the combination, hour by hour at its headway stop —
     /// departures and the shortest, longest and median gap starting
@@ -257,6 +299,9 @@ pub enum Response {
     HubConnections { connections: Vec<transit_analysis::RouteConnections> },
     MissedConnections { missed: Vec<transit_analysis::MissedConnection> },
     LongestWaits { waits: Vec<transit_analysis::StopWait> },
+    DayTypes { day_types: Vec<transit_analysis::DayType> },
+    PlanCompare { day_types: Vec<transit_analysis::DayTypeComparison> },
+    NetworkFindings { findings: Option<transit_analysis::NetworkFindings> },
     RouteFrequency { frequency: Option<transit_analysis::RouteFrequency> },
     UnservedPoints { layer: LayerReading, unserved: Option<transit_analysis::UnservedPlaces> },
     CoverageCompare { layer: LayerReading, comparison: CoverageDelta },
@@ -392,6 +437,24 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let network_arc = network_arc(&network_hash)?;
             Ok(Response::LongestWaits {
                 waits: transit_analysis::longest_waits(&network_arc, parsed, window, limit),
+            })
+        }
+        Request::DayTypes { network_hash, from, through } => {
+            let (from, through) = (from.as_deref().map(parse_date).transpose()?, through.as_deref().map(parse_date).transpose()?);
+            let network_arc = network_arc(&network_hash)?;
+            Ok(Response::DayTypes { day_types: transit_analysis::day_types(&network_arc, from, through) })
+        }
+        Request::PlanCompare { base_hash, network_hash, from, through } => {
+            let (from, through) = (from.as_deref().map(parse_date).transpose()?, through.as_deref().map(parse_date).transpose()?);
+            let base = network_arc(&base_hash)?;
+            let proposal = network_arc(&network_hash)?;
+            Ok(Response::PlanCompare { day_types: transit_analysis::plan_compare(&base, &proposal, from, through) })
+        }
+        Request::NetworkFindings { network_hash, base_hash, members, params } => {
+            let base = base_hash.as_deref().map(network_arc).transpose()?;
+            let net = network_arc(&network_hash)?;
+            Ok(Response::NetworkFindings {
+                findings: transit_analysis::network_findings(&net, base.as_deref(), &members, &params.unwrap_or_default()),
             })
         }
         Request::RouteFrequency { network_hash, members } => {

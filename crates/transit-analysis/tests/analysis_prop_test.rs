@@ -761,6 +761,319 @@ proptest! {
         prop_assert!(transit_analysis::missed_connections(&net, date, "nope", window, miss).is_empty());
     }
 
+    /// The day types (the service-change UI's first question): the
+    /// service combinations inside a period, arranged by the days of
+    /// the week their dates fall on. Every combination with a date in
+    /// [from, through] appears once, with exactly those dates; one
+    /// with none does not appear. Walking the combinations most
+    /// in-period dates first (then first date, then id), a combination
+    /// whose dates all fall on an earlier day type's weekdays joins
+    /// the first such type; any other starts a new one and is its
+    /// regular service. A type's weekdays are those its regular group
+    /// runs on for more than half of that weekday's dates in the
+    /// period (from `from`, else the first in-period date, to
+    /// `through`, else the last) — a holiday it also runs on is not
+    /// one — or, with none, every weekday it runs on. Every other
+    /// group's weekdays are inside them, and no type's regular group
+    /// fits inside an earlier type.
+    #[test]
+    fn day_types_arrange_the_combinations_by_weekday(
+        trips in proptest::collection::vec(gen_trip(), 0..=14),
+        from_day in proptest::option::of(0i64..365),
+        len in proptest::option::of(0i64..200),
+    ) {
+        let feed = transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse");
+        let net = transit_codec::import(&feed).network;
+        let from = from_day.map(|d| EPOCH + Duration::days(d));
+        let through = len.map(|l| from.unwrap_or(EPOCH) + Duration::days(l));
+        let types = transit_analysis::day_types(&net, from, through);
+
+        let iso = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
+        let inside = |d: &String| {
+            from.map_or(true, |f| *d >= iso(f)) && through.map_or(true, |t| *d <= iso(t))
+        };
+        let weekdays_of = |dates: &[String]| {
+            let mut w = vec![false; 7];
+            for d in dates {
+                let day = NaiveDate::parse_from_str(d, "%Y-%m-%d").unwrap();
+                w[chrono::Datelike::weekday(&day).num_days_from_monday() as usize] = true;
+            }
+            w
+        };
+        let within = |a: &[bool], b: &[bool]| a.iter().zip(b).all(|(x, y)| !*x || *y);
+
+        // The partition: each combination with an in-period date once,
+        // with exactly its in-period dates.
+        let mut expected: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for c in transit_network::service_combinations(&net) {
+            let dates: Vec<String> = c.dates.iter().filter(|d| inside(d)).cloned().collect();
+            if !dates.is_empty() {
+                expected.insert(c.id.clone(), dates);
+            }
+        }
+        let mut seen: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for t in &types {
+            prop_assert!(!t.groups.is_empty(), "no empty day type");
+            for g in &t.groups {
+                prop_assert!(seen.insert(g.id.clone(), g.dates.clone()).is_none(), "{} appears once", g.id);
+                prop_assert_eq!(&g.weekdays, &weekdays_of(&g.dates), "{} weekdays", g.id);
+                prop_assert_eq!(g.spans.iter().map(|s| s.days).sum::<u32>() as usize, g.dates.len(), "{} spans hold its dates", g.id);
+            }
+        }
+        prop_assert_eq!(&seen, &expected, "every in-period combination, with its in-period dates");
+
+        // The arrangement.
+        let rank = |g: &transit_analysis::DayTypeGroup| (std::cmp::Reverse(g.dates.len()), g.dates[0].clone(), g.id.clone());
+        let all: Vec<&String> = seen.values().flatten().collect();
+        let (lo, hi) = (
+            from.map(iso).or_else(|| all.iter().min().map(|d| (*d).clone())),
+            through.map(iso).or_else(|| all.iter().max().map(|d| (*d).clone())),
+        );
+        let mut period = [0u32; 7];
+        if let (Some(lo), Some(hi)) = (lo, hi) {
+            let (mut d, end) = (NaiveDate::parse_from_str(&lo, "%Y-%m-%d").unwrap(), NaiveDate::parse_from_str(&hi, "%Y-%m-%d").unwrap());
+            while d <= end {
+                period[chrono::Datelike::weekday(&d).num_days_from_monday() as usize] += 1;
+                d += Duration::days(1);
+            }
+        }
+        for (i, t) in types.iter().enumerate() {
+            let mut held = [0u32; 7];
+            for d in &t.groups[0].dates {
+                let day = NaiveDate::parse_from_str(d, "%Y-%m-%d").unwrap();
+                held[chrono::Datelike::weekday(&day).num_days_from_monday() as usize] += 1;
+            }
+            let most: Vec<bool> = (0..7).map(|w| held[w] * 2 > period[w]).collect();
+            let expected = if most.contains(&true) { most } else { t.groups[0].weekdays.clone() };
+            prop_assert_eq!(&t.weekdays, &expected, "a day type's weekdays: its regular group's most-held");
+            for w in t.groups.windows(2) {
+                prop_assert!(rank(&w[0]) < rank(&w[1]), "groups most dates first");
+            }
+            for earlier in &types[..i] {
+                prop_assert!(rank(&earlier.groups[0]) < rank(&t.groups[0]), "day types by their regular group");
+                prop_assert!(!within(&t.groups[0].weekdays, &earlier.weekdays), "a regular group fits no earlier type");
+            }
+            for g in &t.groups[1..] {
+                prop_assert!(within(&g.weekdays, &t.weekdays), "{} fits its type", g.id);
+                // It joined the first type it fits, among the types
+                // started before it.
+                for earlier in &types[..i] {
+                    prop_assert!(
+                        !within(&g.weekdays, &earlier.weekdays) || rank(&earlier.groups[0]) > rank(g),
+                        "{} joins the first type it fits", g.id
+                    );
+                }
+            }
+        }
+    }
+
+    /// A proposal judged across every day type (`plan_compare`): the
+    /// proposal's day types in the period, each group carrying the
+    /// `service_type_compare` answer for its members — the same
+    /// arrangement `day_types` gives, the same comparison one group
+    /// at a time gives.
+    #[test]
+    fn plan_compare_is_every_day_types_comparison(
+        base_trips in proptest::collection::vec(gen_trip(), 0..=10),
+        trips in proptest::collection::vec(gen_trip(), 0..=10),
+        from_day in proptest::option::of(0i64..365),
+    ) {
+        let base = transit_codec::import(&transit_codec::Feed::from_zip_bytes(&gen_feed(&base_trips)).expect("parse")).network;
+        let net = transit_codec::import(&transit_codec::Feed::from_zip_bytes(&gen_feed(&trips)).expect("parse")).network;
+        let from = from_day.map(|d| EPOCH + Duration::days(d));
+        let compared = transit_analysis::plan_compare(&base, &net, from, None);
+        let types = transit_analysis::day_types(&net, from, None);
+        prop_assert_eq!(compared.len(), types.len());
+        for (c, t) in compared.iter().zip(&types) {
+            prop_assert_eq!(&c.weekdays, &t.weekdays);
+            prop_assert_eq!(c.groups.len(), t.groups.len());
+            for (cg, tg) in c.groups.iter().zip(&t.groups) {
+                prop_assert_eq!(&cg.group.id, &tg.id);
+                prop_assert_eq!(&cg.group.dates, &tg.dates);
+                let one = transit_analysis::service_type_compare(&base, &net, &tg.members);
+                prop_assert_eq!(serde_json::to_value(&cg.comparison).unwrap(), serde_json::to_value(&one).unwrap(), "{}", tg.id);
+            }
+        }
+    }
+
+    /// The worklist (`network_findings`, D-136), recomputed from the
+    /// answers it gathers:
+    /// * a frequency hole is a route-hour (the group's grid,
+    ///   `route_frequency`) whose longest gap is at least `hole_factor`
+    ///   (1.5) times the longer of its two neighbouring hours' longest
+    ///   gaps — both neighbours must have one;
+    /// * a long wait is a `longest_waits` row (the group's first date,
+    ///   the window) of at least `wait_secs` (3600);
+    /// * a costly miss folds `missed_connections` at each hub (a
+    ///   station, or a transfer-flagged stop with no parent) by route
+    ///   pair, counting the near misses whose next departure is at
+    ///   least `miss_cost_secs` (900) after the arrival, or never;
+    /// each kind sorted (holes and waits longest first, misses most
+    /// first, then by key) and cut to `limit`; a window keeps hours
+    /// and arrivals inside it. Against a baseline, each finding
+    /// carries the baseline's finding under the same key, and the
+    /// baseline's findings with no key now are the resolved ones; a
+    /// plan against itself resolves nothing and changes nothing.
+    #[test]
+    fn network_findings_gather_the_worklist(
+        trips in proptest::collection::vec(gen_trip(), 0..=14),
+        base_trips in proptest::collection::vec(gen_trip(), 0..=14),
+        parented in proptest::collection::vec(any::<bool>(), 6),
+        windowed in any::<bool>(),
+        start_h in 0u32..20,
+        limit in proptest::option::of(0u32..6),
+        wait_min in 10u32..120,
+    ) {
+        let net = transit_codec::import(&transit_codec::Feed::from_zip_bytes(&gen_feed_stations(&trips, &parented)).expect("parse")).network;
+        let base = transit_codec::import(&transit_codec::Feed::from_zip_bytes(&gen_feed_stations(&base_trips, &parented)).expect("parse")).network;
+        let members = vec!["0".to_string()];
+        let window = windowed.then(|| transit_analysis::CoverageWindow { start_secs: start_h * 3600, end_secs: (start_h + 6) * 3600 });
+        let params = transit_analysis::FindingParams { window, limit, wait_secs: Some(wait_min * 60), ..Default::default() };
+        let Some(found) = transit_analysis::network_findings(&net, None, &members, &params) else {
+            prop_assert!(transit_network::service_combination(&net, &members).is_none());
+            return Ok(());
+        };
+        let combination = transit_network::service_combination(&net, &members).unwrap();
+        prop_assert_eq!(&found.date, &combination.dates[0]);
+        let date = NaiveDate::parse_from_str(&found.date, "%Y-%m-%d").unwrap();
+        let in_hour = |h: u32| window.map_or(true, |w| h * 3600 >= w.start_secs && h * 3600 < w.end_secs);
+        let in_secs = |t: u32| window.map_or(true, |w| t >= w.start_secs && t <= w.end_secs);
+        let cut = |n: usize| limit.map_or(n, |l| n.min(l as usize));
+
+        // Holes.
+        let mut holes: Vec<(u32, String, String, u32)> = Vec::new();
+        for row in transit_analysis::route_frequency(&net, &members).unwrap().routes {
+            let gaps: BTreeMap<u32, u32> = row.hours.iter().filter_map(|h| h.longest_gap_secs.map(|g| (h.hour, g))).collect();
+            for (&h, &g) in &gaps {
+                let (Some(&a), Some(&b)) = (gaps.get(&h.wrapping_sub(1)), gaps.get(&(h + 1))) else { continue };
+                if in_hour(h) && h > 0 && g as f64 >= 1.5 * a.max(b) as f64 {
+                    holes.push((g, format!("hole|{}|{}", row.route_id, h), row.route_id.clone(), h));
+                }
+            }
+        }
+        holes.sort_by(|x, y| y.0.cmp(&x.0).then_with(|| x.1.cmp(&y.1)));
+        prop_assert_eq!(found.holes.len(), cut(holes.len()), "holes");
+        for (row, (g, key, route, h)) in found.holes.iter().zip(&holes) {
+            prop_assert_eq!((&row.now.key, &row.now.route_id, row.now.hour, row.now.longest_gap_secs), (key, route, *h, *g));
+            prop_assert!(row.base.is_none());
+        }
+
+        // Long waits.
+        let waits: Vec<_> = transit_analysis::longest_waits(&net, date, window, None)
+            .into_iter()
+            .filter(|w| w.longest_wait_secs >= wait_min * 60)
+            .collect();
+        prop_assert_eq!(found.waits.len(), cut(waits.len()), "waits");
+        for (row, w) in found.waits.iter().zip(&waits) {
+            prop_assert_eq!((&row.now.stop_id, row.now.longest_wait_secs, row.now.wait_from_secs), (&w.stop_id, w.longest_wait_secs, w.wait_from_secs));
+            prop_assert_eq!(&row.now.key, &format!("wait|{}", w.stop_id));
+        }
+
+        // Costly misses at the hubs.
+        let hubs: Vec<&String> = net
+            .stops
+            .iter()
+            .filter(|(id, s)| net.stops.values().any(|c| c.parent.as_deref() == Some(id.as_str())) || (s.transfer && s.parent.is_none()))
+            .map(|(id, _)| id)
+            .collect();
+        let mut misses: BTreeMap<(String, String, String), (u32, Option<u32>, u32)> = BTreeMap::new();
+        for hub in hubs {
+            for m in transit_analysis::missed_connections(&net, date, hub, None, None) {
+                if !in_secs(m.arrival_secs) {
+                    continue;
+                }
+                let wait = m.next_departure_secs.map(|t| t - m.arrival_secs);
+                if wait.map_or(false, |w| w < 900) {
+                    continue;
+                }
+                let e = misses.entry((hub.clone(), m.from_route.clone(), m.to_route.clone())).or_insert((0, None, 0));
+                e.0 += 1;
+                if let Some(w) = wait {
+                    e.1 = Some(e.1.map_or(w, |x: u32| x.max(w)));
+                } else {
+                    e.2 += 1;
+                }
+            }
+        }
+        let mut misses: Vec<_> = misses.into_iter().map(|((h, f, t), v)| (format!("miss|{h}|{f}|{t}"), v)).collect();
+        misses.sort_by(|x, y| y.1 .0.cmp(&x.1 .0).then_with(|| x.0.cmp(&y.0)));
+        prop_assert_eq!(found.misses.len(), cut(misses.len()), "misses");
+        for (row, (key, (n, worst, stranded))) in found.misses.iter().zip(&misses) {
+            prop_assert_eq!((&row.now.key, row.now.misses, row.now.worst_wait_secs, row.now.stranded), (key, *n, *worst, *stranded));
+        }
+        prop_assert!(found.resolved.holes.is_empty() && found.resolved.waits.is_empty() && found.resolved.misses.is_empty());
+
+        // Against itself: every finding's base is itself, none resolved.
+        let same = transit_analysis::network_findings(&net, Some(&net), &members, &params).unwrap();
+        for row in &same.holes {
+            prop_assert_eq!(serde_json::to_value(&row.base).unwrap(), serde_json::to_value(Some(&row.now)).unwrap());
+        }
+        for row in &same.waits {
+            prop_assert_eq!(serde_json::to_value(&row.base).unwrap(), serde_json::to_value(Some(&row.now)).unwrap());
+        }
+        for row in &same.misses {
+            prop_assert_eq!(serde_json::to_value(&row.base).unwrap(), serde_json::to_value(Some(&row.now)).unwrap());
+        }
+        prop_assert!(same.resolved.holes.is_empty() && same.resolved.waits.is_empty() && same.resolved.misses.is_empty());
+
+        // Against another baseline: the base side is the baseline's
+        // own findings by key (uncut), and what it alone holds is resolved.
+        let uncut = transit_analysis::FindingParams { limit: None, ..params.clone() };
+        let theirs = transit_analysis::network_findings(&base, None, &members, &uncut);
+        let vs = transit_analysis::network_findings(&net, Some(&base), &members, &params).unwrap();
+        let mine_all = transit_analysis::network_findings(&net, None, &members, &uncut).unwrap();
+        let base_keys: BTreeMap<String, serde_json::Value> = theirs.as_ref().map(|t| {
+            t.holes.iter().map(|r| (r.now.key.clone(), serde_json::to_value(&r.now).unwrap()))
+                .chain(t.waits.iter().map(|r| (r.now.key.clone(), serde_json::to_value(&r.now).unwrap())))
+                .chain(t.misses.iter().map(|r| (r.now.key.clone(), serde_json::to_value(&r.now).unwrap())))
+                .collect()
+        }).unwrap_or_default();
+        for row in &vs.holes {
+            prop_assert_eq!(serde_json::to_value(&row.base).unwrap(), base_keys.get(&row.now.key).cloned().unwrap_or(serde_json::Value::Null));
+        }
+        for row in &vs.misses {
+            prop_assert_eq!(serde_json::to_value(&row.base).unwrap(), base_keys.get(&row.now.key).cloned().unwrap_or(serde_json::Value::Null));
+        }
+        let mine: BTreeSet<String> = mine_all.holes.iter().map(|r| r.now.key.clone())
+            .chain(mine_all.waits.iter().map(|r| r.now.key.clone()))
+            .chain(mine_all.misses.iter().map(|r| r.now.key.clone()))
+            .collect();
+        let resolved: BTreeSet<String> = vs.resolved.holes.iter().map(|f| f.key.clone())
+            .chain(vs.resolved.waits.iter().map(|f| f.key.clone()))
+            .chain(vs.resolved.misses.iter().map(|f| f.key.clone()))
+            .collect();
+        let gone: BTreeSet<String> = base_keys.keys().filter(|k| !mine.contains(*k)).cloned().collect();
+        if limit.is_none() {
+            prop_assert_eq!(resolved, gone, "resolved: the baseline's findings with no key now");
+        } else {
+            prop_assert!(resolved.is_subset(&gone));
+        }
+
+        // Watched keys: each answered whatever the limit cuts, now and
+        // in the baseline, by its key — and an unknown key as nothing.
+        let mut keys: Vec<String> = mine.iter().chain(base_keys.keys()).cloned().collect();
+        keys.push("hole|nope|3".into());
+        let watching = transit_analysis::FindingParams { watch: Some(keys.clone()), ..params.clone() };
+        let w = transit_analysis::network_findings(&net, Some(&base), &members, &watching).unwrap();
+        prop_assert_eq!(w.watched.iter().map(|x| x.key.clone()).collect::<Vec<_>>(), keys.clone());
+        for x in &w.watched {
+            let now = serde_json::to_value(&x.now).unwrap();
+            prop_assert_eq!(!now.is_null(), mine.contains(&x.key), "{} now", x.key);
+            if !now.is_null() {
+                prop_assert_eq!(now["key"].as_str(), Some(x.key.as_str()));
+            }
+            let then = serde_json::to_value(&x.base).unwrap();
+            let expected = base_keys.get(&x.key).cloned().unwrap_or(serde_json::Value::Null);
+            if !then.is_null() {
+                let mut then = then;
+                then.as_object_mut().unwrap().remove("kind");
+                prop_assert_eq!(then, expected, "{} base", x.key);
+            } else {
+                prop_assert!(expected.is_null(), "{} base", x.key);
+            }
+        }
+    }
+
     /// QAF-4: the day's hourly profile — `hourly_trips` matches an
     /// independent fold of the same materialized trips, bucketed by
     /// start hour: per-hour totals, per-type counts, only non-empty

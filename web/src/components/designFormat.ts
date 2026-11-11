@@ -71,3 +71,24 @@ export function issueWords(item: object): { kind: string; detail: string } {
     .join(", ");
   return { kind, detail };
 }
+
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/// The days of the week an answer names (Monday first) in words:
+/// "Mon–Fri", "Sat", "Sun", "Tue, Thu" — a run of three or more
+/// reads as a range.
+export function weekdaysText(days: boolean[]): string {
+  const parts: string[] = [];
+  let i = 0;
+  while (i < 7) {
+    if (!days[i]) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j + 1 < 7 && days[j + 1]) j++;
+    parts.push(j - i >= 2 ? `${DAY_NAMES[i]}–${DAY_NAMES[j]}` : DAY_NAMES.slice(i, j + 1).join(", "));
+    i = j + 1;
+  }
+  return parts.join(", ") || "no day";
+}

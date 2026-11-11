@@ -144,7 +144,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "analysis",
         file: "module_analysis.wasm",
-        ops: &["network_stats", "service_types_overview", "service_groups", "service_type_detail", "service_type_compare", "stop_gaps", "hourly_trips", "schedule_texture", "route_overlap", "timed_transfers", "hub_connections", "missed_connections", "longest_waits", "route_frequency", "type_coverage", "unserved_points", "coverage_compare"],
+        ops: &["network_stats", "service_types_overview", "service_groups", "service_type_detail", "service_type_compare", "stop_gaps", "hourly_trips", "schedule_texture", "route_overlap", "timed_transfers", "hub_connections", "missed_connections", "longest_waits", "day_types", "plan_compare", "network_findings", "route_frequency", "type_coverage", "unserved_points", "coverage_compare"],
         documents: &["network", "layer"],
         // The network document is produced by the network capability —
         // the extraction this module's own docs once called "future".
@@ -165,6 +165,9 @@ const MODULES: &[ModuleSpec] = &[
             ("timed_transfers", "The hub's timed-transfer view: every arrival of one route followed by a departure of another within the connection window — the caller's ({min_secs, max_secs}, for a hub with widely separated bays), else the transfer-point convention (60–900 s: a rider needs a minute to move, and beyond 15 minutes it is not a timed transfer) — pooled over the stop's walking group (bays named: arrival_stop, departure_stop), sorted by arrival then routes. Who can make what at this hub, not just pooled departures. An unknown stop answers empty, never an error."),
             ("hub_connections", "The hub as a route-pair matrix: timed_transfers (the same window, the same walking group) folded by (from_route, to_route) — how many timed connections the pair makes on the date, the shortest and longest wait, and the median wait (null below four connections), pairs in route order; a pair with no connection is no row. Who connects to whom at this hub, and how long the wait runs. An unknown stop answers empty, never an error."),
             ("missed_connections", "The hub's just-missed connections: over the stop's walking group (as timed_transfers pools it), every arrival of one route and departure of another where the departure leaves from miss_secs (omitted: 300) before the arrival up to, not including, the window's min_secs (omitted: 60) after it — the rider sees it go. No near miss is a timed transfer. Each row: from_route, to_route, arrival_secs, arrival_stop, departure_secs, departure_stop, missed_by_secs (how much later it would have had to leave), next_departure_secs (that route's first departure the rider can make, or null). Sorted as timed_transfers sorts. An unknown stop answers empty, never an error."),
+            ("day_types", "The day types of a period: the service combinations with a date in [from, through] (\"YYYY-MM-DD\", each optional, inclusive), arranged by the days of the week their dates fall on (D-137). Walking the combinations with the most in-period dates first (then first date, then id), one whose weekdays fall inside an earlier type's joins the first such type; any other starts a new type as its regular service. Each type: weekdays (Monday first) and groups — id, members, dates (in the period), spans, weekdays. A combination with no date in the period is left out."),
+            ("plan_compare", "The proposal (network_hash) against its baseline (base_hash) across every day type of the period (from, through as day_types takes them): day_types of the proposal, each group {group, comparison} carrying service_type_compare for its members — the whole proposal in one answer."),
+            ("network_findings", "The worklist under one service combination (members, as route_frequency takes them), D-136: holes — route-hours whose longest gap is at least params.hole_factor (1.5) times the longer of both neighbouring hours' (route_frequency's grid); waits — longest_waits rows of at least params.wait_secs (3600) on the combination's first date (the answer's date); misses — missed_connections at each hub (a station, or a transfer-flagged stop with no parent) folded by route pair: the near misses whose next departure is at least params.miss_cost_secs (900) after the arrival or never, the worst such wait, and how many have none. params.window keeps hours, waits and arrivals inside it; each kind sorted (holes and waits longest first, misses most first, then key) and cut to params.limit. Each finding carries a key (the same finding in another version); each row is {now, base}: with base_hash, base is the baseline's finding under the same key (null when the change made it), and resolved lists the baseline's findings with no key now. Null when the members never run together."),
             ("longest_waits", "Where riders wait longest on a date: every stop that departs, ranked by its longest wait (longest first, then stop id), cut to limit (omitted: every stop). Without a window the wait is the largest gap between distinct departure times (a stop with fewer than two is no row); with window {start_secs, end_secs} it is type_coverage's window reading — from the window's start to the first departure in it, between departures, and from the last to its end — and a stop that departs that day but not inside the window waits the whole window. Each stop reads alone (a station's bays one by one). Rows: stop_id, name, departures (inside the window), longest_wait_secs, wait_from_secs."),
             ("route_frequency", "One service COMBINATION's frequency grid, by `members`: every route that departs under it (the members service_type_detail pools, route id order), read at its headway stop (the most departures, lowest id on a tie — service_type_detail's headway_stop) hour by hour: every departure in the hour, and the shortest, longest and median gap (null below four gaps) between distinct departure times starting in the hour — and the route's numbers under the group (stats: service_type_detail's row for it: trips, span, typical headway, revenue hours and miles). The gaps are the trips' own — a target adjusted through the day for traffic, layover and reliefs reads as the range it runs, never rounded to a grid. Null for members that never run together."),
             ("type_coverage", "Coverage of a hash-addressed WEIGHTED LAYER by one service COMBINATION — `members`, any order (a service_groups row's): the service types that run together, pooled over their authored service with no date standing in (on every date the combination holds exactly its members run, so this is what each of those dates covers). Answers the combination's `group` (its members joined \" + \"), its `members`, the `spans` of dates it holds on, and the layer weight it serves (within radius_m of a stop it visits) and serves frequently, as weights, shares and stop counts; null when the members never run together. `field` names the weight — any numeric property: people, jobs, zero-car households (omitted: the layer's one numeric property; a layer with several must name one) — and `label` what it means (omitted: the field); the answer's `layer` echoes the reading with the layer's resolution: point_spacing_m (a point layer's average area per point, as a side — a tract centroid that far from the next swings with the radius) or sample_spacing_m (a polygon's weight spreads over its area, sampled on a lattice that fine; a polygon is served by the share of its area inside the radius). Frequent counts DEPARTURES only (a terminal nobody boards at never is): the whole-day average headway over departures, unless `window` ({start_secs, end_secs}) is given — then a stop is frequent when the worst wait anywhere in the window (edges included, every route pooled) fits frequent_secs: the planner's \"every 15 minutes, 07:00–19:00\". A midday or peak improvement is visible only through a window."),
@@ -236,7 +239,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "directory",
         file: "module_directory.wasm",
-        ops: &["about", "stops", "stops_near", "stops_by_ids", "routes", "route_stop_sequence", "focus", "entities", "route_detail", "stop_detail", "timetable"],
+        ops: &["about", "stops", "stops_near", "stops_by_ids", "routes", "route_stop_sequence", "focus", "route_lines", "entities", "route_detail", "stop_detail", "timetable"],
         documents: &["network"],
         // The network document is produced by the network capability.
         consumes: &[("network", "network")],
@@ -250,6 +253,7 @@ const MODULES: &[ModuleSpec] = &[
             ("stops_by_ids", "Stops by id, in the request's order — the names join hosts otherwise do by hand when a view (like rt's) carries ids a human reads as names. Unknown ids are omitted."),
             ("routes", "The route list, name-sorted: every route with its name (the short public name, else the long one), its long_name (\"Lincoln\"; null for a route without one), its mode (the model's closed set, not GTFS's numeric codes) and its authored color when there is one."),
             ("route_stop_sequence", "One route's patterns with their ordered stops (route_detail groups them by direction). An unknown route answers empty, never an error."),
+            ("route_lines", "The network on a map: every route that draws a line, in id order — route_id, name, color (the agency's, or null), and lines (the distinct lines of its patterns: each its authored alignment, else its stops joined — what focus frames for the route). members (service types, optional) keeps only the patterns that run trips under one of them; a route with none is no row."),
             ("focus", "Where one entity is on the map ({kind: stop | route | pattern | pattern_trips | service_type | block, id}): its lines (each pattern's authored alignment, else its stops joined) and the stops it serves. A stop is its point; pattern trips their pattern; a route, a service type, or a block every pattern it runs. Null for an unknown id."),
             ("entities", "Every entity of one kind ({kind: stop | route | pattern | pattern_trips | service_type | block}), in id order, narrowed by an optional query the way a filter box's typing does (every whitespace-separated term in the id, the name, or a route's long name, case-insensitive — \"lin\" finds 002 Lincoln). Each row: id, name, context (a pattern's route; pattern trips' pattern · service type), transfer (stops), trips (pattern trips' materialized trip count; a block's chained trips), long_name (routes: the long name beside the short one, null without one)."),
             ("route_detail", "One route's composition: its patterns, the stops they visit (first-visit order), its pattern trips grouped by service type, each with the trips it runs (the same expansion the materialized day runs), and its patterns grouped by direction (the route's named directions in id order, then any patterns in none). Each direction also lists its VARIANTS, most trips first — the ways a rider rides it: patterns that visit the same places in the same order, a station's bays being one place (so patterns that differ only by the bay they use at a transit center are one variant); each with a name (\"first place → last place\", and \"via\" a place only it visits or \", skips\" one it does not when another variant shares its ends), its pattern ids, its places (the station or stop, and the stops used there), and its trips. Null for an unknown route."),
@@ -1477,6 +1481,35 @@ fn example_for(
                     "waits": transit_analysis::longest_waits(&ctx.derived_network(), date, Some(window), Some(5)) } }),
             )
         }
+        ("analysis", "day_types") => {
+            let ctx = net?;
+            (
+                json!({ "op": "day_types", "network_hash": ctx.network_hash, "from": "2026-01-01" }),
+                json!({ "ok": { "op": "day_types",
+                    "day_types": transit_analysis::day_types(&ctx.derived_network(), chrono::NaiveDate::from_ymd_opt(2026, 1, 1), None) } }),
+            )
+        }
+        // The fixture against itself: every day type, nothing changed.
+        ("analysis", "plan_compare") => {
+            let ctx = net?;
+            let n = ctx.derived_network();
+            (
+                json!({ "op": "plan_compare", "base_hash": ctx.network_hash, "network_hash": ctx.network_hash, "from": "2026-01-01" }),
+                json!({ "ok": { "op": "plan_compare",
+                    "day_types": transit_analysis::plan_compare(&n, &n, chrono::NaiveDate::from_ymd_opt(2026, 1, 1), None) } }),
+            )
+        }
+        ("analysis", "network_findings") => {
+            let ctx = net?;
+            let n = ctx.derived_network();
+            let params = transit_analysis::FindingParams { wait_secs: Some(900), limit: Some(5), ..Default::default() };
+            (
+                json!({ "op": "network_findings", "network_hash": ctx.network_hash, "base_hash": ctx.network_hash,
+                    "members": ["WK"], "params": { "wait_secs": 900, "limit": 5 } }),
+                json!({ "ok": { "op": "network_findings",
+                    "findings": transit_analysis::network_findings(&n, Some(&n), &["WK".to_string()], &params) } }),
+            )
+        }
         ("analysis", "route_frequency") => {
             let ctx = net?;
             (
@@ -1891,6 +1924,13 @@ fn example_for(
                 json!({ "op": "focus", "network_hash": ctx.network_hash, "kind": "route", "id": "10" }),
                 json!({ "ok": { "op": "focus",
                     "focus": transit_network::entity_focus(ctx.derived_network(), transit_network::EntityKind::Route, "10") } }),
+            )
+        }
+        ("directory", "route_lines") => {
+            let ctx = net?;
+            (
+                json!({ "op": "route_lines", "network_hash": ctx.network_hash }),
+                json!({ "ok": { "op": "route_lines", "routes": transit_network::route_lines(ctx.derived_network(), None) } }),
             )
         }
         ("directory", "entities") => {

@@ -136,7 +136,10 @@ transit-network The authored network model (planner authority):
                 runs, else its stops joined — the model's own
                 contract) and where an entity is (`entity_focus`: a
                 stop's point; the lines and stops of every pattern a
-                route, pattern trips, service type, or block runs). The
+                route, pattern trips, service type, or block runs), and
+                the network on a map (`route_lines`: every route's
+                distinct lines, by route id, narrowed to the service
+                types given). The
                 planner's LISTS live here too (`listing.rs`): rows
                 of any kind narrowed by every filter term (id, name,
                 and a route's long name), the stops a rider's typing
@@ -319,7 +322,13 @@ transit-analysis Planner analysis over an authored network document:
                 departure, D-133), a stop's waits (stop_gaps; a
                 station's are its bays', pooled), the network's
                 longest waits (longest_waits: every stop ranked, in an
-                hour window or over the day, D-134), and coverage of a WEIGHTED LAYER
+                hour window or over the day, D-134), the worklist
+                (network_findings: frequency holes, long waits and
+                costly near misses at hubs, each keyed so a plan reads
+                it against its baseline — new, moved, resolved, watched;
+                D-136), a period's day types (day_types: the
+                combinations arranged by the weekdays they serve, D-137)
+                and the whole proposal across them (plan_compare), and coverage of a WEIGHTED LAYER
                 (its `coverage` module, D-47): any GeoJSON points and
                 polygons, weighted by whichever numeric property the
                 question names (`field`, with the planner's `label`) —

@@ -129,3 +129,20 @@ test("a new build: a display applies it at its next poll, a rider's page offers 
     for (const p of [display, configuring, rider]) await p.context().close();
   }
 });
+
+// The worker's scope is the deployment's root, so it controls a
+// planner's page too — but answers only the offline pages from its
+// shell: a page outside them reads the deployment's current manifest
+// (its shell copy names one build's modules, gone after the next).
+test("a page that is not offline reads the current manifest, not the shell's", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
+  await controlled(page, "/stop-display.html?stop=A&layout=routes");
+  const manifests = [];
+  page.on("response", (r) => {
+    if (r.url().includes("caps/manifest.json")) manifests.push({ ui: new URL(r.url()).searchParams.get("ui"), sw: r.fromServiceWorker() });
+  });
+  await page.goto("/service-change.html");
+  await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker?.controller)).toBe(true);
+  await expect.poll(() => manifests.length, { timeout: 20_000 }).toBeGreaterThan(0);
+  expect(manifests).toEqual([{ ui: "service-change", sw: false }]);
+});

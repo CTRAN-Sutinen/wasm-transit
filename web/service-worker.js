@@ -15,6 +15,13 @@
 /// - Activate takes the open pages and keeps this build's shell and the
 ///   one before it (a page another tab moved past still loads the
 ///   files of the build it runs); older shells are dropped.
+/// - The worker answers for the offline pages (OFFLINE, their UI ids)
+///   only. Its scope is the deployment's root, so every other page on
+///   the origin (a planner's) is controlled by it too: that page's
+///   capability manifest — asked with `?ui=<id>` by the bus worker —
+///   comes from the network, never the shell's copy, which names this
+///   build's modules and goes stale at the next build. Hash-named
+///   files are safe to share: their bytes never change.
 /// - Fetch answers: the shell from its precache; content-addressed
 ///   files (Vite's hashed assets, the hash-named modules, every
 ///   published document at blobs/<hash>[.gz]) from a cache filled on
@@ -28,7 +35,7 @@
 ///   replayed as live), the edit document (offline, the boards are the
 ///   schedule and say so), writes, and the geocoder.
 
-/* global BUILD, SHELL */
+/* global BUILD, SHELL, OFFLINE */
 
 const SHELL_CACHE = `shell-${BUILD}`;
 const FOREVER = "content-addressed";
@@ -74,6 +81,8 @@ self.addEventListener("fetch", (event) => {
   const path = url.pathname;
   if (!path.startsWith(SCOPE)) return;
   const rel = path.slice(SCOPE.length);
+  const ui = url.searchParams.get("ui");
+  if (rel === "caps/manifest.json" && ui && !OFFLINE.includes(ui)) return;
   if (request.mode === "navigate" || SHELL_URLS.has(path) || rel.startsWith("assets/")) {
     const page = request.mode === "navigate" && path.endsWith("/") ? `${path}index.html` : path;
     if (SHELL_URLS.has(page) || rel.startsWith("assets/")) event.respondWith(fromShell(request, page));

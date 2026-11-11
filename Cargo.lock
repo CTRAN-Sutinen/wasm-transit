@@ -784,6 +784,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "module-ui-service-change"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-analysis",
+ "cap-author",
+ "cap-directory",
+ "cap-gtfs",
+ "cap-migrate",
+ "cap-network",
+ "cap-plans",
+]
+
+[[package]]
 name = "module-ui-service-design"
 version = "0.1.0"
 dependencies = [
