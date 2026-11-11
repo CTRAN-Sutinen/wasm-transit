@@ -28,7 +28,7 @@
       <div class="card" data-testid="score-vehicles">
         <small>Peak vehicles</small>
         <b>{change(String(vehicles.authored_peak_vehicles), String(vehicles.peak_vehicles))}</b>
-        <span>{vehicles.added_vehicles > 0 ? `+${vehicles.added_vehicles} for trips no block carries, suggested` : "every trip on a block"}{vehicles.unblocked.length ? `; ${vehicles.unblocked.length} trips not blockable` : ""}</span>
+        <span>{vehicles.added_vehicles > 0 ? `+${vehicles.added_vehicles} for trips no block carries, suggested` : vehicles.blocks.length ? "trips no block carries fit under the peak" : "every trip on a block"}{vehicles.unblocked.length ? `; ${vehicles.unblocked.length} trips not blockable` : ""}</span>
       </div>
     {/if}
   </div>

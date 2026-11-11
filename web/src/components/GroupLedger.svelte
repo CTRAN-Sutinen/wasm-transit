@@ -42,7 +42,7 @@
     <small>Peak vehicles</small>
     {#if vehicles}
       <b>{vehicles.peak_vehicles}</b>
-      <span class="muted">{vehicles.added_vehicles > 0 ? `${vehicles.authored_peak_vehicles} blocked + ${vehicles.added_vehicles} suggested` : "all on its blocks"}</span>
+      <span class="muted">{vehicles.added_vehicles > 0 ? `${vehicles.authored_peak_vehicles} blocked + ${vehicles.added_vehicles} suggested` : vehicles.blocks.length ? "unblocked trips fit under the peak" : "all on its blocks"}</span>
     {:else}
       <b class="muted">—</b>{#if vehiclesError}<span class="muted" title={vehiclesError}>couldn't answer</span>{/if}
     {/if}
