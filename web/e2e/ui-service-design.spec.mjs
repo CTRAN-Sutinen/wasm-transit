@@ -2,7 +2,7 @@
 // selection, chained (docs/architecture/web.md; the unit
 // docs/units/ui-service-design.md):
 //
-//   1. A feed becomes an unframed plan; its service groups answer, and
+//   1. A feed becomes the base network (a plan with no pick); its service groups answer, and
 //      the Network view's frequency grid (analysis `route_frequency`)
 //      lists the group's routes; a row opens the Route view, whose
 //      string-line draws the direction's trips.
@@ -20,6 +20,12 @@
 //      against a weighted layer (points or polygons).
 //   6. A capability that fails to load fails its frames only, each
 //      saying so, while the plan set keeps working.
+//   7. The workflow reads in a planner's words: a picker's list floats
+//      over the page and gives the keyboard back once it has picked;
+//      the pick timeline is drawn; a change says what it left the plan
+//      with, where it was made; an issue reads in clock times and a
+//      broken block offers to hold its next trip; a stop is picked by
+//      its name on the string-line.
 
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
@@ -72,7 +78,7 @@ test("service design chains its views over a plan, a fork, and a change", async 
   // target names what it waits on.
   await page.getByTestId("edit-toggle").click();
   const gestures = page.getByTestId("gestures");
-  await expect(gestures).toContainText("Fork the import");
+  await expect(gestures).toContainText("Fork it into a plan");
   await expect(gestures).toContainText("D-54");
   // A gesture changes one service type of the group (D-8); WK runs
   // alone, so nothing else is named.
@@ -86,6 +92,8 @@ test("service design chains its views over a plan, a fork, and a change", async 
   await page.getByRole("button", { name: "Fork" }).click();
   await expect(page.getByTestId("status")).toContainText("Forked");
   await expect(page.getByTestId("pick-timeline")).toContainText("Spring");
+  // The timeline is drawn, not squeezed to a line by the view's column.
+  expect((await page.getByTestId("pick-timeline").boundingBox()).height).toBeGreaterThan(60);
   await expect(page.getByTestId("plan-select")).toHaveValue(/plan-/);
 
   // The fork exports as a GTFS zip.
@@ -134,6 +142,77 @@ test("service design chains its views over a plan, a fork, and a change", async 
   await page.reload();
   await expect(page.getByTestId("view-route")).toBeVisible();
   await expect(page.getByTestId("string-line")).toContainText("2 trips", { timeout: 10_000 });
+});
+
+test("a change says what it did, in a planner's words", async ({ page }) => {
+  await importFixture(page);
+  await page.getByTestId("fork-name").fill("Spring");
+  await page.getByTestId("fork-date").fill("2026-11-02");
+  await page.getByRole("button", { name: "Fork" }).click();
+  await expect(page.getByTestId("status")).toContainText("Forked \"Spring\" from Base network");
+
+  // The jump box's list floats over the page (it never pushes it),
+  // and a pick gives the keyboard back: E opens the gestures.
+  const jump = page.getByRole("combobox", { name: "Jump to route" });
+  await jump.fill("10");
+  const list = page.getByRole("listbox", { name: "Jump to route" });
+  expect(await list.evaluate((el) => getComputedStyle(el).position)).toBe("absolute");
+  await page.getByRole("option", { name: /^10/ }).first().click();
+  await expect(page.getByTestId("string-line")).toContainText("2 trips");
+  await expect(jump).not.toBeFocused();
+  await page.keyboard.press("e");
+  const gestures = page.getByTestId("gestures");
+  await expect(gestures).toBeVisible();
+  // The span form names the direction's own first and last trip.
+  await expect(page.getByTestId("span-now")).toContainText("Now 8:00 to 8:40");
+
+  // A stop is picked by its name beside the string-line.
+  const line = page.getByTestId("string-line");
+  await line.getByLabel("every stop").check();
+  await line.getByRole("button", { name: "Main & 3rd" }).click();
+  await expect(page.getByTestId("picked-stop")).toContainText("Main & 3rd");
+
+  // t10 runs 8:00–8:10 and its block's next trip leaves at 8:20:
+  // moved to 8:15 it arrives after that trip leaves. The status says
+  // so where the change was made, and marks it.
+  await line.getByRole("button", { name: /Trip t10 at 8:00/ }).dispatchEvent("pointerdown", { clientX: 0, pointerId: 1 });
+  await line.locator("svg").dispatchEvent("pointerup", { pointerId: 1 });
+  const trip = page.getByTestId("gesture-trip");
+  await trip.getByLabel("trip leaves at").fill("8:15");
+  await trip.getByRole("button", { name: "Move" }).click();
+  const status = page.getByTestId("status");
+  await expect(status).toContainText(/Changed\. The plan now has [1-9]\d* issues?/);
+  await expect(status).toHaveClass(/alert/);
+
+  // The proposal reads the issue in clock times, says the plan is not
+  // ready, and an export's refusal is said once, in words.
+  await page.keyboard.press("6");
+  const readiness = page.getByTestId("readiness");
+  await expect(page.getByTestId("readiness-gate")).toContainText("Not ready");
+  await expect(readiness).toContainText("trip t10 arrives at 8:25, after its next trip t20 leaves at 8:20");
+  await page.getByTestId("export").click();
+  await expect(page.getByTestId("export-refused")).toContainText("Not exported");
+
+  // The issue offers the planner's answer: hold the block's next trip
+  // until its bus is there (retime_trip, the issue's own trip and
+  // time). The bus now makes the trip; what is left is the recovery
+  // the block's authored layover asks for there (D-9), read in
+  // minutes — and the export's refusal is gone with the version it
+  // was about.
+  await readiness.getByRole("button", { name: "Hold trip t20 until 8:25" }).click();
+  await expect(readiness).not.toContainText("arrives at 8:25");
+  await expect(readiness).toContainText("the wait after trip number 1 of the block is 0 min; 10 min is required there");
+  await expect(page.getByTestId("export-refused")).toHaveCount(0);
+
+  // Undo puts each earlier version back: the first issue, then none.
+  await page.keyboard.press("5");
+  const ledger = page.getByTestId("change-ledger");
+  await ledger.getByRole("button", { name: "Undo" }).click();
+  await expect(line.locator("g.trip.moved")).toHaveCount(1);
+  await ledger.getByRole("button", { name: "Undo" }).click();
+  await expect(status).toContainText("Undone. The plan now has 0 issues");
+  await page.keyboard.press("6");
+  await expect(page.getByTestId("readiness-gate")).toContainText("Ready, with");
 });
 
 test("a fork past the calendar carries its weekly service through its period", async ({ page }) => {
@@ -220,7 +299,7 @@ test("a capability that fails to load fails its frames, not the page", async ({ 
 
   // The plan set answers (cap-network); the groups frame says why it
   // has none, and offers to try again.
-  await expect(page.getByTestId("plan-list")).toContainText("(unframed import)", { timeout: 10_000 });
+  await expect(page.getByTestId("plan-list")).toContainText("Base network", { timeout: 10_000 });
   const failed = page.getByTestId("unavailable").filter({ hasText: "Service groups" });
   await expect(failed).toContainText("did not load");
   await expect(failed.getByRole("button", { name: "Try again" })).toBeVisible();

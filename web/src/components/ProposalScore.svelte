@@ -20,10 +20,10 @@
     <div class="card"><small>Routes changed</small><b>{comparison.routes.length}</b><span>of {p.routes}</span></div>
   </div>
   <div class="blocked">
-    <Unavailable title="Peak vehicles" reason="Added trips have no block, so the vehicles a proposal needs has no answer." blockers={["D-46", "QAF-3"]} />
-    <Unavailable title="Cost" reason="The agency's rates per revenue hour, mile, and vehicle are not on the bus." blockers={["D-51"]} />
-    <Unavailable title="Coverage gained and lost" reason="coverage_compare answers two named sides; which of one plan's service combinations answers to which of the other's is not decided." blockers={["D-43", "QAF-20"]} />
-    <Unavailable title="Connections made and broken" reason="No op compares two plans' timed transfers." blockers={["Q19"]} />
+    <Unavailable title="Peak vehicles" reason="Not shown yet. Trips a change adds are on no block, so the vehicles this proposal needs are not counted here." blockers={["D-46", "QAF-3"]} />
+    <Unavailable title="Cost" reason="Not shown yet. Costing needs the agency's rates per hour, mile, and vehicle, which this software does not hold." blockers={["D-51"]} />
+    <Unavailable title="Coverage gained and lost" reason="Not shown yet. It waits on a rule for matching this plan's service groups to the baseline's when a fork renames or splits a service type." blockers={["D-43", "QAF-20"]} />
+    <Unavailable title="Connections made and broken" reason="Not available yet: which timed connections this proposal makes or breaks against the baseline." blockers={["Q19"]} />
   </div>
 </section>
 

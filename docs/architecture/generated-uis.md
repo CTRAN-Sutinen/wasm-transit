@@ -85,8 +85,10 @@ host layer (the gates check both).
   it waits on, or a capability that failed, with a retry), the
   service-design set: DesignRail (the views, keyed 1–6),
   ContextBar (plan, baseline, group, route, stop, hours, health, a
-  route jump), PickTimeline (plans `periods` as bars, `resolve`'s
-  plan named), PlanList (the plan set, fork, feed import),
+  route jump, and the status line — marked when it is a refusal, an
+  error, or a change that left issues), PickTimeline (plans `periods` as bars, `resolve`'s
+  plan named), PlanList (the plan set, fork, feed import; a network with no plan
+  frame is the "Base network"),
   GroupTable (`service_groups`: each combination with its date
   spans), GroupLedger (`service_type_compare` totals), DayProfile (`hourly_trips`, a
   drag sets the hour window; `network_stats` on the same date: the
@@ -100,22 +102,29 @@ host layer (the gates check both).
   HubMatrix (`hub_connections`), CorridorTable (`route_overlap`),
   StopWaits (`stop_gaps`), RouteHeader (a route's `route_frequency`
   numbers, before → after), StringLine (directory `timetable` as
-  time against stop; a dragged trip is a nudge event), RunTimes
+  time against stop; a dragged trip is a nudge event, and a stop's
+  name a pick event when the host listens), RunTimes
   (`run_secs` by start), HourGaps (a route's `route_frequency`
-  hours), GesturePanel (span, running time, one trip, stops — one
-  event each), ChangeLedger (`service_type_compare` routes, undo and
+  hours), GesturePanel (span — beside the direction's own first and last
+  trip —, running time, one trip, stops, the stop to insert picked by
+  name — one event each), ChangeLedger (`service_type_compare` routes, undo and
   redo events), ProposalScore and Redline
   (`service_type_compare`), Readiness (the document's issues and
   warnings — network `validate`'s, or cap-author's for a version it
-  just authored — the export
+  just authored — each a sentence with clock times
+  (`designFormat.ts`'s `issueWords`), whether the plan is ready, the export
   and publish events — Publish posts the plan to `POST /plans` and
-  shows the server's answer as given: published, or each refusal); RouteCard (`route_detail`), ScheduleChange (one
+  shows the server's answer as given: published, or each refusal —
+  and, on a block whose trip arrives after its next trip leaves, a
+  hold event carrying the issue's own trip and time); RouteCard (`route_detail`), ScheduleChange (one
   pattern trips' starts with add and remove events), DirectionTabs
   (`route_detail` directions), TimetableGrid (directory `timetable`,
   added, retimed, and removed trips when asked against a baseline; a stop
   column click is an event), FocusMap (a
   directory `focus` drawn and framed),
-  Combobox (a searchable picker), and the rider's set: RideMap (every
+  Combobox (a searchable picker: it carries its own styles, its list
+  floats over the page, and a pick gives the focus back so the page's
+  keys work), and the rider's set: RideMap (every
   stop, the live buses by status, a route's `focus`, a trip's
   `itinerary_paths`, the rider's location; it opens on the last fix,
   else the last network frame, and frames the network only by
@@ -242,15 +251,27 @@ the places its stops leave unserved, listed and mapped. Hubs: a stop's connectio
 matrix and waits, and the shared corridors. Route: the string-line
 workbench — directions, the string-line or the timetable grid,
 gaps by hour, running time by start, the change ledger with undo
-and redo, the route's map, and (edit mode, E) the gestures: span,
-running time, one trip moved alone (picked or dragged), stops —
+and redo, the route's map, and (edit mode, E) the gestures, placed above
+the picture they change: span,
+running time, one trip moved alone (picked or dragged), stops (one
+picked by its name on the string-line or its timetable column,
+dropped, or another inserted after it by name) —
 each acting on one service type of the group, which the panel picks
 and names, warning what else runs with it and the other groups it
-runs in (D-8, D-95). A frequency target is shown as waiting on D-54. Proposal: the
-scorecard, the redline, readiness, the export, and publishing the
-pick to the deployment (D-74). The selection
+runs in (D-8, D-95). The panel is fresh for each route and direction.
+After a change, an undo, or a redo, the status line states the
+plan's issues and warnings as the answer gave them, and the last
+export and publish answers are cleared with the version they were
+about. A frequency target is shown as waiting on D-54. Proposal: the
+scorecard, the redline, readiness (each issue in words, a broken
+block's next trip held from its issue — the host's `retime_trip`),
+the export, and publishing the
+pick to the deployment (D-74). A frame with no answer says so in a
+planner's words, and keeps the decision or finding it waits on as a
+tag. The selection
 lives in the URL hash. With no stored plan it opens the server's
-`/network` as the base plan. Its host answers through the answer
+`/network` as the base plan, which every view calls the Base
+network. Its host answers through the answer
 graph; a view's nodes answer only while it is open, each frame
 records its own failure (`sd.failed`) and renders Unavailable with
 a retry while the rest answers, and the plan's health adopts

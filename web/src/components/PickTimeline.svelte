@@ -86,7 +86,10 @@
   .tick i, .today i { position: absolute; left: 4px; font-style: normal; font-size: 0.7rem; color: var(--muted); white-space: nowrap; }
   .today { border-left: 2px solid var(--accent); }
   .today i { color: var(--accent); font-weight: 600; }
-  section { overflow: hidden; }
+  /* Clipped (the ticks run past the rows), so it must not shrink: a
+     clipped flex child has no minimum height and a column squeezes it
+     to nothing. */
+  section { overflow: hidden; flex: none; }
   .row { display: flex; align-items: center; padding: 0.35rem 1rem; position: relative; }
   .name { width: 11rem; flex: 0 0 11rem; font-size: 0.85rem; font-weight: 500; }
   .name.active { color: var(--accent); }

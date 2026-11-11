@@ -75,7 +75,7 @@
     "Redline",
     "Readiness"
   ],
-  "session": "2026-10-30 on C-TRAN (feed sha256:aa8dbc62…): the questions' ops ran through caps-run (docs/units/ui-service-design.md); open findings QAF-88–91, decisions D-51–D-55",
+  "session": "2026-11-10 on C-TRAN (feed sha256:aa8dbc62…): a toy proposal — a fork with its period end, an evening span, a running-time band, one trip moved, a stop dropped — built through caps-run and again in the browser, the two agreeing on every number (docs/units/ui-service-design.md); open findings QAF-90, QAF-101, QAF-102, decisions D-51–D-55",
   "spec": "web/e2e/ui-service-design.spec.mjs",
   "generated": "2026-10-30"
 }

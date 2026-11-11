@@ -43,7 +43,9 @@
     const longest = Math.round(h.longest_gap_secs / 60);
     const shortest = Math.round((h.shortest_gap_secs ?? h.longest_gap_secs) / 60);
     return {
-      text: String(longest),
+      // A wait past two hours reads in hours ("9.8 h"): a service
+      // gap, not a headway — three digits of minutes look like a slip.
+      text: longest >= 120 ? `${(longest / 60).toFixed(1)} h` : String(longest),
       sub: shortest !== longest ? `from ${shortest}` : "",
       bg: `color-mix(in oklab, #1d4ed8 ${Math.round(s * 100)}%, var(--surface))`,
       fg: s > 0.55 ? "#fff" : "var(--text)",

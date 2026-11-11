@@ -9,8 +9,7 @@ in `docs/architecture/generated-uis.md`). It answers the
 questions below that have an op, and every frame without one says
 what it waits on. What is left: the blocked questions, the
 remaining parts of the views, and the `caps-run` session for the
-questions the 2026-10-30 session did not run (10, 11, 14, 15, 17,
-19). The views were first drawn as a clickable prototype:
+questions no session has run (10, 11, 14, 17, 19). The views were first drawn as a clickable prototype:
 https://claude.ai/artifact/LWrTKxGV8MyTnMZFZteXEG.
 
 ## Questions, in the order asked
@@ -97,12 +96,12 @@ that variation as information, never as error.
 | 12 | directory `timetable` (`compare_hash`) | answered (StringLine, TimetableGrid), pooled over the group's members; stop spacing is by order — the timetable carries no distance along the pattern |
 | 13 | directory `timetable` (`run_secs`) | each trip's end-to-end time answered (RunTimes); by segment and band, no op; the model keeps one profile per pattern, D-3 |
 | 14 | runcut `blocks`, `block_trips`, `fleet_summary` | not in the UI: no route scoping; runcut `recovery` and `suggest_blocks` answer required recovery and a proposal's added vehicles (D-9, D-46), unread by a UI |
-| 15 | author `apply` (`set_plan`, its `through`) | answered (PlanList: a fork's period end carries the weekly calendars still running, D-41, D-112; C-TRAN's dated calendars import as weekly, D-105) |
-| 16 | author `apply` (`set_span`, `adjust_running_time`, `retime_trip`, `insert_direction_stop`, `remove_direction_stop`) | answered (GesturePanel, a dragged trip on StringLine); the frequency target is Blocked: D-54, D-3 (QAF-90); each gesture acts on one service type of the group, picked in the panel, which warns what else runs with it (D-8, D-95) |
+| 15 | author `apply` (`set_plan`, its `through`) | answered (PlanList: a fork's period end carries the weekly calendars still running, D-41, D-112; C-TRAN's dated calendars import as weekly, D-105); a fork keeps the calendar's dates before its pick, so its groups and the day counts beside the baseline's include them |
+| 16 | author `apply` (`set_span`, `adjust_running_time`, `retime_trip`, `insert_direction_stop`, `remove_direction_stop`) | answered (GesturePanel, a dragged trip on StringLine, a stop picked by its name on StringLine and inserted by name from directory `stops`); the frequency target is Blocked: D-54, D-3 (QAF-90); each gesture acts on one service type of the group, picked in the panel, which warns what else runs with it (D-8, D-95); after each change the status states the plan's issues and warnings as `apply` answered them |
 | 17 | author `apply` (`add_route`, `add_pattern`, `update_pattern`, `draw_alignment`, `upsert_*`, `remove_*`), streets `route` (`streets`, `to_confirm`) | ops exist; not in the UI: no gesture draws a pattern along the streets (`docs/units/streets-model.md` item 4) |
 | 18 | analysis `service_type_compare` | answered (ProposalScore, Redline) for the selected group; no dollar cost (D-51: platform hours against an hours budget — what a budget is, Blocked: D-108); vehicles: runcut `suggest_blocks` `added_vehicles` (D-46), unread by the UI |
 | 19 | analysis `coverage_compare` | on the bus (gained and lost between two named sides, D-99), not in the UI: which combination answers to which across the plans waits on D-43's matching rule (QAF-20); no transfer delta |
-| 20 | network `validate`, author `apply` issues, network `export`, `POST /plans` | answered (Readiness: export and publish); a block's waits judged against the recovery required there (D-9; `work_rules_hash` unread by the UI) |
+| 20 | network `validate`, author `apply` issues, network `export`, `POST /plans` | answered (Readiness: each issue a sentence in clock times, export and publish); a block whose trip arrives after its next trip leaves offers to hold that trip until then (`retime_trip`, the issue's own trip and time); the recovery issue a hold can leave names a position in the block, not its trips, so it offers nothing (QAF-101); a block's waits judged against the recovery required there (D-9; `work_rules_hash` unread by the UI) |
 
 ## Answer graph
 
@@ -123,7 +122,7 @@ hash), `view` (which view is open), `layer`, `coverage-params`.
 | directory.focus | document.active, route, view | FocusMap | route |
 | analysis.type_coverage | document.active, group, layer, coverage-params, window, view | CoveragePanel | coverage |
 | analysis.unserved_points | document.active, group, layer, coverage-params, view | CoveragePanel, CoverageMap | coverage |
-| directory.stops | document.active, view | the hub picker | hubs |
+| directory.stops | document.active, view | the hub picker, GesturePanel (a stop to insert) | hubs, route |
 | analysis.route_overlap | document.active, group, view | CorridorTable | hubs |
 | analysis.hub_connections / analysis.stop_gaps | document.active, group, stop, view | HubMatrix / StopWaits | hubs |
 | plans.chain | plans | PickTimeline | always |
@@ -138,10 +137,13 @@ hash), `view` (which view is open), `layer`, `coverage-params`.
   a presentation rule, to decide); speed per route.
 - **Coverage**: stops drawn served or frequent within the window.
 - **Hubs**: shared segments drawn on a map; the connection timeline;
-  the network-wide waits ranking.
+  the network-wide waits ranking; the stop where a corridor's
+  departures stack, by name (QAF-102).
 - **Route**: the pattern strip (a line diagram of branches, stops,
-  and timepoints, clicked to pick a stop); the route's blocks; the
-  frequency target with its preview (Blocked: D-54).
+  and timepoints, clicked to pick a stop); the route's blocks, and
+  with them the layover ripple a held trip starts (today one hold at a
+  time, from the Proposal view's issue); the frequency target with its
+  preview (Blocked: D-54).
 - **The bar**: the jump box finds routes only — stops, plans, and
   views too.
 - **Proposal**: previewing the pick as a rider will see it, before
@@ -153,7 +155,7 @@ hash), `view` (which view is open), `layer`, `coverage-params`.
 
 ## Done when
 
-- A `caps-run` session has run questions 10, 11, 14, 15, 17, and 19,
+- A `caps-run` session has run questions 10, 11, 14, 17, and 19,
   and the inventory names an op or a finding for each.
 - Every question is answered or names its blocker in the UI, and
   the parts above are built or named in a finding.

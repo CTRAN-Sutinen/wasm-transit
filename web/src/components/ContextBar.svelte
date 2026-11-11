@@ -19,6 +19,7 @@
     issues,
     warnings,
     status,
+    alert = false,
     busy,
     onplan,
     oncompare,
@@ -41,6 +42,8 @@
     issues: number;
     warnings: number;
     status: string;
+    /// The status is a refusal, an error, or a change that left issues.
+    alert?: boolean;
     busy: boolean;
     onplan: (key: string) => void;
     oncompare: (key: string) => void;
@@ -89,14 +92,14 @@
     </button>
   {/if}
   {#if issues || warnings}
-    <button type="button" class="health" onclick={onhealth} data-testid="health">
+    <button type="button" class="health" class:warn={!issues} onclick={onhealth} data-testid="health" title="Open the proposal's readiness list">
       {issues} {issues === 1 ? "issue" : "issues"} · {warnings} {warnings === 1 ? "warning" : "warnings"}
     </button>
   {/if}
   <div class="jump">
     <Combobox label="Jump to route" bind:value={jump} options={routes} placeholder="Jump to route…" onchange={(v) => { if (v) onroute(v); jump = ""; }} />
   </div>
-  <p class="status" class:busy aria-live="polite" data-testid="status">{status}</p>
+  <p class="status" class:busy class:alert aria-live="polite" data-testid="status">{status}</p>
 </header>
 
 <style>
@@ -116,8 +119,11 @@
     height: 1.9rem; padding: 0 0.6rem; border-radius: 6px; border: 0; cursor: pointer;
     background: color-mix(in srgb, var(--bad) 14%, var(--surface)); color: var(--bad); font: inherit; font-size: 0.85rem; font-weight: 600;
   }
+  /* Warnings alone never block a pick: they read as a caution, not an alarm. */
+  .health.warn { background: color-mix(in srgb, var(--warn) 16%, var(--surface)); color: var(--warn); }
   .jump { margin-left: auto; min-width: 14rem; }
   .jump :global(label) { position: absolute; left: -9999px; }
   .status { flex-basis: 100%; margin: 0; font-size: 0.75rem; color: var(--muted); }
   .status.busy { color: var(--accent); }
+  .status.alert { color: var(--bad); font-weight: 600; font-size: 0.8rem; }
 </style>

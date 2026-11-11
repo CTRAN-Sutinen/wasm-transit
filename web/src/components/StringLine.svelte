@@ -6,7 +6,8 @@
   /// moved trip is drawn in the accent with its baseline time dashed
   /// beside it, and an added trip in blue. Editable, a trip drags
   /// along the time axis to nudge it on its own (whole minutes); the
-  /// drop is an event, the change is the host's.
+  /// drop is an event, the change is the host's. A stop's name is a
+  /// button when the host listens: picking the stop is an event too.
   import type { Timetable } from "../types/Timetable";
   import type { TimetableTrip } from "../types/TimetableTrip";
   import { clock } from "./designFormat";
@@ -18,6 +19,8 @@
     selected,
     onselect,
     onnudge,
+    selectedStop = "",
+    onstop,
   }: {
     timetable: Timetable;
     window: { from: number; to: number } | null;
@@ -25,6 +28,8 @@
     selected: string;
     onselect: (key: string) => void;
     onnudge: (trip: string, toSecs: number) => void;
+    selectedStop?: string;
+    onstop?: (stopId: string) => void;
   } = $props();
 
   let allStops = $state(false);
@@ -90,7 +95,11 @@
   <div class="frame">
     <div class="names" style:height="{H}px">
       {#each columns as c, row (c.stop)}
-        <span style:top="{y(row) - 7}px" class:tp={c.timepoint}>{c.name}</span>
+        {#if onstop}
+          <button type="button" style:top="{y(row) - 7}px" class:tp={c.timepoint} class:picked={c.stop === selectedStop} aria-pressed={c.stop === selectedStop} title="{c.name} ({c.stop}) — pick this stop" onclick={() => onstop(c.stop)}>{c.name}</button>
+        {:else}
+          <span style:top="{y(row) - 7}px" class:tp={c.timepoint}>{c.name}</span>
+        {/if}
       {/each}
     </div>
     <div class="plot">
@@ -154,7 +163,10 @@
   .frame { display: flex; padding: 0.5rem 0.9rem 0; }
   .names { position: relative; flex: 0 0 11rem; }
   .names span { position: absolute; right: 0.5rem; left: 0; font-size: 0.7rem; color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 14px; }
-  .names span.tp { color: var(--text); font-weight: 500; }
+  .names span.tp, .names button.tp { color: var(--text); font-weight: 500; }
+  .names button { position: absolute; right: 0.5rem; left: 0; font: inherit; font-size: 0.7rem; color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 14px; border: 0; background: none; padding: 0; cursor: pointer; }
+  .names button:hover { color: var(--accent); text-decoration: underline; }
+  .names button.picked { color: var(--accent); font-weight: 700; }
   .plot { flex: 1; min-width: 0; }
   svg { display: block; width: 100%; touch-action: none; }
   .win { fill: var(--accent-soft); }

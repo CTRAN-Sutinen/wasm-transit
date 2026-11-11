@@ -44,7 +44,7 @@
             {#if p.key === activeKey}<span class="tag open">open</span>{/if}
             {#if p.key === compareKey}<span class="tag">baseline</span>{/if}
           </td>
-          <td class="muted">{p.effectiveFrom ?? (p.id ? "no date" : "unframed — the base")}</td>
+          <td class="muted">{p.effectiveFrom ?? (p.id ? "no date" : "none: the base every fork copies")}</td>
           <td class="actions">
             {#if p.key !== activeKey}<button type="button" onclick={() => onopen(p.key)}>Open</button>{/if}
             {#if p.key !== activeKey && p.key !== compareKey}<button type="button" onclick={() => oncompare(p.key)}>Set baseline</button>{/if}
@@ -60,7 +60,8 @@
     <label>Name <input bind:value={name} placeholder="Winter 2027" data-testid="fork-name" /></label>
     <label>Picks on <input type="date" bind:value={date} data-testid="fork-date" /></label>
     <label title="Every weekly service type still running at the calendar's end runs through this day; holidays and closed periods are not carried">Runs through <input type="date" bind:value={through} min={date} data-testid="fork-through" /></label>
-    <button type="submit" class="pri" disabled={!name.trim() || !date}>Fork</button>
+    <button type="submit" class="pri" disabled={!name.trim() || !date} title={!name.trim() || !date ? "Give the fork a name and the day it picks" : ""}>Fork</button>
+    <p class="hint">A fork is a copy of the open plan that you can change. "Picks on" is the day it takes effect. "Runs through" is optional: the last day of its period, which carries the weekly service to that day.</p>
   </form>
   <label class="feed">
     Import a GTFS feed as a new base
@@ -85,5 +86,6 @@
   button:disabled { opacity: 0.5; cursor: default; }
   .fork { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; padding: 0.7rem 1rem; border-bottom: 1px solid var(--line); font-size: 0.85rem; }
   .fork input { font: inherit; padding: 0.2rem 0.4rem; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--text); }
+  .hint { flex-basis: 100%; margin: 0; font-size: 0.78rem; color: var(--muted); }
   .feed { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; padding: 0.7rem 1rem; font-size: 0.8rem; color: var(--muted); }
 </style>

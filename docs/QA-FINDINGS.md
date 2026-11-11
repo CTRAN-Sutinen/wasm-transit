@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-101**. A
+IDs are never reused; the next new finding is **QAF-103**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -103,6 +103,28 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   planner looks first.
   Pin: 2026-10-30 analysis `stop_gaps` 110 on 2026-09-14 — 0
   departures; `hub_connections` 110 — 82 route pairs.
+
+- **QAF-101 OP GAP** — a block issue names ids and a position, not
+  the place a planner fixes it: `block_infeasible` carries the block
+  and its two trips but no route, so a UI cannot open the route it
+  is on; `layover_infeasible` carries `after_trip` (a position in the
+  block) and no trip id or start, so a UI cannot offer to hold the
+  next trip the way it does for `block_infeasible`. On C-TRAN the
+  two chain: a held trip shortens the layover after it, and the
+  second issue has no gesture.
+  Pin: `caps-run author` on the C-TRAN import, forked: `apply`
+  `adjust_running_time` 006 direction 0, 1-WKDY, 15:00–18:00, +180 s
+  answers two `block_infeasible` (blocks 1-WKDY601, 1-WKDY602);
+  `retime_trip` 755845 to 58560 then answers `layover_infeasible`
+  (600 s where 780 is required). In the UI: Route 006, Edit, Running
+  time; Proposal, "Hold trip 755845 until 16:16".
+- **QAF-102 OP GAP** — analysis answers name a stop by id only:
+  `route_overlap`'s `stack_stop` and `route_frequency`'s
+  `headway_stop` carry no name, so CorridorTable shows "2847" and
+  HourGaps "busiest stop (2231)"; the name is a join the host may
+  not make.
+  Pin: `caps-run analysis` `route_overlap` on a C-TRAN weekday; the
+  Hubs view's corridor table.
 
 ## Coverage
 

@@ -68,6 +68,9 @@ export type HourWindow = { from: number; to: number };
 
 export const sd = $state({
   status: "Load a GTFS feed to begin.",
+  /// The status is something the planner must not miss: a refusal, an
+  /// error, a change that left the plan with issues.
+  alert: false,
   busy: false,
   view: "network" as View,
   feed: null as { label: string; info: FeedInfo | null } | null,
@@ -162,11 +165,15 @@ function syncEditType(): void {
   if (!members.includes(sd.editType)) sd.editType = members[0] ?? "";
 }
 
+/// What the views call a network with no plan frame: the base every
+/// fork copies (an import, or the deployment's published network).
+const BASE_NAME = "Base network";
+
 function syncPlanRows(): void {
   sd.plans = Object.entries(getAllPlans()).map(([key, d]) => ({
     key,
     id: d.plan?.id ?? "",
-    name: d.plan?.name || "(unframed import)",
+    name: d.plan?.name || BASE_NAME,
     effectiveFrom: d.plan?.effective_from ?? null,
   }));
 }
@@ -231,6 +238,12 @@ function syncHistory(): void {
 // ---------------------------------------------------------------------
 // failure, per frame
 // ---------------------------------------------------------------------
+
+/// The status line: what just happened, in one sentence.
+function say(text: string, alert = false): void {
+  sd.status = text;
+  sd.alert = alert;
+}
 
 function message(e: unknown): string {
   return (e as Error)?.message ?? String(e);
@@ -464,10 +477,12 @@ const request = answerGraph(
         }),
     },
     {
+      // The stops by name: the hub picker, and the route view's
+      // insert-a-stop picker.
       id: "directory.stops",
       frame: "HubPicker",
       needs: ["document.active", "view"],
-      visible: on("hubs"),
+      visible: on("hubs", "route"),
       run: () =>
         framed("HubPicker", () => (sd.stops = []), async () => {
           const doc = active();
@@ -548,7 +563,7 @@ const request = answerGraph(
     },
   ],
   (e) => {
-    sd.status = `Error: ${message(e)}`;
+    say(`Error: ${message(e)}`, true);
     console.error(e);
   },
 );
@@ -557,12 +572,12 @@ const request = answerGraph(
 /// paints a frame before a real-size feed's work starts.
 async function step<T>(label: string, run: () => Promise<T>): Promise<T | undefined> {
   sd.busy = true;
-  sd.status = label;
+  say(label);
   await new Promise((r) => setTimeout(r, 20));
   try {
     return await run();
   } catch (e) {
-    sd.status = `Error: ${message(e)}`;
+    say(`Error: ${message(e)}`, true);
     console.error(e);
     return undefined;
   } finally {
@@ -572,7 +587,20 @@ async function step<T>(label: string, run: () => Promise<T>): Promise<T | undefi
 
 function planStatus(): void {
   const name = sd.plans.find((p) => p.key === sd.activeKey)?.name ?? "";
-  sd.status = `${name}: ${sd.groups.length} service groups.`;
+  say(`${name}: ${sd.groups.length} service groups.`);
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/// After a change, the status says what the plan's health now is, as
+/// the answer gave it — a change that breaks a block says so where
+/// the planner made it, not only on the Proposal view.
+function changeStatus(done: string): void {
+  const health =
+    sd.issues.length || sd.warnings.length
+      ? `The plan now has ${plural(sd.issues.length, "issue")} and ${plural(sd.warnings.length, "warning")} (Proposal view).`
+      : "The plan has no issues.";
+  say(`${done} ${health}`, sd.issues.length > 0);
 }
 
 // ---------------------------------------------------------------------
@@ -646,7 +674,7 @@ export async function boot(): Promise<void> {
     return key;
   });
   if (key) await openPlan(key);
-  else if (!sd.status.startsWith("Error")) sd.status = "Load a GTFS feed to begin.";
+  else if (!sd.status.startsWith("Error")) say("Load a GTFS feed to begin.");
 }
 
 /// A feed becomes a plan: the network capability imports it into an
@@ -722,7 +750,7 @@ export function setCompare(key: string): Promise<void> {
 export async function fork(name: string, effectiveFrom: string, through = ""): Promise<void> {
   const doc = active();
   if (!doc || !name.trim() || !effectiveFrom) {
-    sd.status = "A fork needs a source plan, a name, and an effective date.";
+    say("A fork needs a source plan, a name, and an effective date.", true);
     return;
   }
   const from = sd.activeKey;
@@ -740,7 +768,7 @@ export async function fork(name: string, effectiveFrom: string, through = ""): P
   syncPlanRows();
   sd.compareKey = from;
   await openPlan(key);
-  sd.status = `Forked "${name.trim()}" from ${sd.plans.find((p) => p.key === from)?.name}.`;
+  say(`Forked "${name.trim()}" from ${sd.plans.find((p) => p.key === from)?.name}.`);
 }
 
 // ---------------------------------------------------------------------
@@ -832,7 +860,7 @@ export function setCoverageParams(params: CoverageParams): Promise<void> {
 
 async function apply(doc: Network, edits: NetworkEdit[]) {
   if (!(await available("author"))) {
-    sd.status = "The authoring capability did not load — changes are off.";
+    say("The authoring capability did not load — changes are off.", true);
     return null;
   }
   try {
@@ -840,18 +868,24 @@ async function apply(doc: Network, edits: NetworkEdit[]) {
     docs.set(applied.network, produced("network", applied.network, "author", applied.network_hash));
     return applied;
   } catch (e) {
-    sd.status = `Change refused: ${message(e)}`;
+    say(`Change refused: ${message(e)}`, true);
     return null;
   }
 }
 
-async function adopt(next: Network, health: { issues: NetworkError[]; warnings: NetworkWarning[] } | null): Promise<void> {
+async function adopt(next: Network, health: { issues: NetworkError[]; warnings: NetworkWarning[] } | null, done: string): Promise<void> {
   if (health) authoredHealth.set(next, health);
   putPlan(sd.activeKey, next);
+  // The last export and publish answered the version before this one.
+  sd.exported = "";
+  sd.published = null;
+  sd.publishRefused = [];
+  delete sd.failed.Export;
+  delete sd.failed.Publish;
   syncHistory();
   await release();
   await step("Answering the change…", () => select("active"));
-  planStatus();
+  changeStatus(done);
 }
 
 /// Apply a change to the ACTIVE plan and re-answer everything that
@@ -861,14 +895,14 @@ export async function change(edits: NetworkEdit[]): Promise<void> {
   const doc = active();
   if (!doc) return;
   if (!doc.plan?.id) {
-    sd.status = "This is the unframed import — fork it into a plan before changing it.";
+    say("This is the base network. Fork it into a plan (Plans view) before changing it.", true);
     return;
   }
   const applied = await apply(doc, edits);
   if (!applied) return;
   (undo[sd.activeKey] ??= []).push(doc);
   redo[sd.activeKey] = [];
-  await adopt(applied.network, { issues: applied.issues, warnings: applied.warnings });
+  await adopt(applied.network, { issues: applied.issues, warnings: applied.warnings }, "Changed.");
 }
 
 export async function undoChange(): Promise<void> {
@@ -876,7 +910,7 @@ export async function undoChange(): Promise<void> {
   const doc = active();
   if (!prev || !doc) return;
   (redo[sd.activeKey] ??= []).push(doc);
-  await adopt(prev, null);
+  await adopt(prev, null, "Undone.");
 }
 
 export async function redoChange(): Promise<void> {
@@ -884,7 +918,7 @@ export async function redoChange(): Promise<void> {
   const doc = active();
   if (!next || !doc) return;
   (undo[sd.activeKey] ??= []).push(doc);
-  await adopt(next, null);
+  await adopt(next, null, "Redone.");
 }
 
 /// The edits omit `direction` for the patterns in none. A gesture

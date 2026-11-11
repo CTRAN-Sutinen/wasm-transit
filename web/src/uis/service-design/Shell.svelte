@@ -6,8 +6,9 @@
   /// numbers, the day's shape as the hour brush, the frequency grid),
   /// Coverage (who is reached, the unserved on the map), Hubs (the
   /// connection matrix, corridors, waits), Route (the string-line
-  /// workbench and its gestures), and Proposal (the scorecard, the
-  /// redline, readiness and export). A frame with no answer says why
+  /// workbench; in edit mode its gestures sit above the picture they
+  /// change, so a change and its result are on screen together), and
+  /// Proposal (the scorecard, the redline, readiness and export). A frame with no answer says why
   /// in place; the rest of the view keeps answering.
   /// Every panel is a render component fed from the host's `sd`;
   /// this file only places them and routes their events to the host.
@@ -55,6 +56,8 @@
   const alsoIn = $derived(sd.groups.filter((g) => g.id !== sd.group && g.members.includes(sd.editType)).map((g) => g.id));
   const routeRow = $derived(sd.routes.find((r) => r.route_id === sd.route) ?? null);
   const changed = $derived(sd.comparison?.routes.map((r) => r.route_id) ?? []);
+  /// Every stop by name, for the pickers (the hub, a stop to insert).
+  const stopOptions = $derived(sd.stops.map((s) => ({ value: s.stop_id, label: s.name, sub: s.stop_id })));
   let tableMode = $state(false);
 
   function keys(e: KeyboardEvent) {
@@ -88,6 +91,7 @@
       issues={sd.issues.length}
       warnings={sd.warnings.length}
       status={sd.status}
+      alert={sd.alert}
       busy={sd.busy}
       onplan={openPlan}
       oncompare={setCompare}
@@ -163,7 +167,7 @@
           <div class="map-area">
             {#if sd.failed.Coverage}{@render failure("Coverage", "Coverage")}{/if}
             {#if sd.failed.Unserved}{@render failure("Unserved", "Unserved points")}{/if}
-            <Unavailable title="Gained and lost against the baseline" reason="coverage_compare answers two named sides; which of one plan's service combinations answers to which of the other's, when a fork renames or splits a type, is not decided." blockers={["D-43", "QAF-20"]} />
+            <Unavailable title="Gained and lost against the baseline" reason="Not shown yet: who gains and who loses coverage against the baseline. It waits on a rule for matching this plan's service groups to the baseline's when a fork renames or splits a service type." blockers={["D-43", "QAF-20"]} />
             <div class="map"><CoverageMap points={sd.unserved ?? []} selected={sd.unservedPick} onselect={pickUnserved} /></div>
           </div>
         </div>
@@ -176,7 +180,7 @@
             <Combobox
               label="Hub"
               value={sd.stop}
-              options={sd.stops.map((s) => ({ value: s.stop_id, label: s.name, sub: s.stop_id }))}
+              options={stopOptions}
               placeholder="Find a stop or station…"
               onchange={(v) => v && openStop(v)}
             />
@@ -194,12 +198,12 @@
             {#if sd.failed.StopWaits}
               {@render failure("StopWaits", "Waits")}
             {:else if sd.gaps && sd.gaps.departures === 0}
-              <Unavailable title="Waits at {sd.gaps.name}" reason="Nothing departs from this stop itself; stop_gaps reads one stop, not a station's bays. Pick a bay." blockers={["QAF-92"]} />
+              <Unavailable title="Waits at {sd.gaps.name}" reason="Nothing departs from the station itself, only from its bays. Pick one of its bays to read the waits there." blockers={["QAF-92"]} />
             {:else if sd.gaps}
               <StopWaits gaps={sd.gaps} window={sd.window} />
             {/if}
-            <Unavailable title="Just-missed connections" reason="Arrivals a minute after the departure leaves have no op yet." blockers={["Q9"]} />
-            <Unavailable title="Longest waits across the network" reason="stop_gaps answers one stop at a time; no op ranks every stop." blockers={["Q8"]} />
+            <Unavailable title="Just-missed connections" reason="Not available yet: connections that just miss, where a bus arrives a minute or two after the other has left." blockers={["Q9"]} />
+            <Unavailable title="Longest waits across the network" reason="Not available yet: every stop ranked by its longest wait. Waits are read one stop at a time." blockers={["Q8"]} />
           </div>
         </div>
         {#if sd.failed.Corridors}
@@ -209,7 +213,7 @@
         {/if}
       {:else if sd.view === "route"}
         {#if !sd.route}
-          <Unavailable title="No route picked" reason="Pick a route from the Network grid, a hub, or the jump box." />
+          <Unavailable title="No route picked" reason="Pick a route: click its row in the Network view's grid, a route in a hub's connections, or type it in the Jump to route box at the top right." />
         {:else}
           <RouteHeader
             route={sd.route}
@@ -233,23 +237,8 @@
               {#if sd.failed.StringLine}
                 {@render failure("StringLine", "Timetable")}
               {:else if sd.timetable}
-                {#if tableMode}
-                  <TimetableGrid timetable={sd.timetable} baselineName={planName(sd.compareKey)} selectedStop={sd.selectedStop} onstop={selectTimetableStop} />
-                {:else}
-                  <StringLine
-                    timetable={sd.timetable}
-                    window={sd.window}
-                    editable={sd.editing && framed}
-                    selected={sd.selectedTrip}
-                    onselect={selectTrip}
-                    onnudge={gestures.retime}
-                  />
-                {/if}
-                <div class="row">
-                  {#if sd.frequency}<HourGaps frequency={sd.frequency} route={sd.route} window={sd.window} />{/if}
-                  <RunTimes timetable={sd.timetable} />
-                </div>
                 {#if sd.editing}
+                  {#key `${sd.route}|${sd.direction}`}
                   <GesturePanel
                     {framed}
                     members={group?.members ?? []}
@@ -257,6 +246,7 @@
                     {alsoIn}
                     onedittype={setEditType}
                     stops={sd.timetable.stops}
+                    allStops={stopOptions}
                     selectedStop={sd.selectedStop}
                     trips={sd.timetable.trips}
                     selectedTrip={sd.selectedTrip}
@@ -267,7 +257,26 @@
                     oninsertstop={gestures.insertStop}
                     onremovestop={gestures.removeStop}
                   />
+                  {/key}
                 {/if}
+                {#if tableMode}
+                  <TimetableGrid timetable={sd.timetable} baselineName={planName(sd.compareKey)} selectedStop={sd.selectedStop} onstop={selectTimetableStop} />
+                {:else}
+                  <StringLine
+                    timetable={sd.timetable}
+                    window={sd.window}
+                    editable={sd.editing && framed}
+                    selected={sd.selectedTrip}
+                    onselect={selectTrip}
+                    onnudge={gestures.retime}
+                    selectedStop={sd.selectedStop}
+                    onstop={sd.editing ? selectTimetableStop : undefined}
+                  />
+                {/if}
+                <div class="row">
+                  {#if sd.frequency}<HourGaps frequency={sd.frequency} route={sd.route} window={sd.window} />{/if}
+                  <RunTimes timetable={sd.timetable} />
+                </div>
               {:else}
                 <Unavailable title="Timetable" reason="This direction runs nothing under the group." />
               {/if}
@@ -305,7 +314,8 @@
             {@render failure("Readiness", "Ready to publish?")}
           {:else}
             <Readiness issues={sd.issues} warnings={sd.warnings} {framed} exported={sd.exported} exportError={sd.failed.Export ?? ""} onexport={exportPlan}
-              published={sd.published} publishRefused={sd.publishRefused} publishError={sd.failed.Publish ?? ""} onpublish={publishPlan} />
+              published={sd.published} publishRefused={sd.publishRefused} publishError={sd.failed.Publish ?? ""} onpublish={publishPlan}
+              onhold={gestures.retime} />
           {/if}
         </div>
       {/if}
