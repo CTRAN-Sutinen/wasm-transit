@@ -359,6 +359,17 @@ test: caps
       --cap runcut --as adopted --op '{"op":"load_network","network":"$a.network"}' \
       --as fleet --op '{"op":"fleet_summary","network_hash":"$adopted.network_hash","date":"2026-10-23"}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const s = ok("s").suggestion; if (!ok("rec").recovery.waits.length || ok("a").issues.some((i) => i.layover_infeasible) || ok("fleet").summary.peak_vehicles !== s.peak_vehicles) process.exit(1)'
+    # The stops capability (D-153): a document validated, registered
+    # under the hash validate answered, and read on a date — closed
+    # while its closure lasts, open again on its until; a reopening of
+    # a stop that is not closed is refused, named.
+    node tools/caps-run.mjs stops \
+      --as v --op '{"op":"validate","stops":{"kind":"stops","schema_version":1,"stops":{"6124":[{"on":"2004-09-01","event":"opened","lat":45.6934,"lon":-122.6512,"name":"NE 99th St & Hwy 99"},{"on":"2027-03-03","event":"closed","until":"2027-07-01"}]}}}' \
+      --as l --op '{"op":"load_stops","stops":{"kind":"stops","schema_version":1,"stops":{"6124":[{"on":"2004-09-01","event":"opened","lat":45.6934,"lon":-122.6512,"name":"NE 99th St & Hwy 99"},{"on":"2027-03-03","event":"closed","until":"2027-07-01"}]}}}' \
+      --as spring --op '{"op":"stop","stops_hash":"$l.stops_hash","stop_id":"6124","date":"2027-04-01"}' \
+      --as back --op '{"op":"stop","stops_hash":"$l.stops_hash","stop_id":"6124","date":"2027-07-01"}' \
+      --as bad --op '{"op":"validate","stops":{"stops":{"a":[{"event":"opened","lat":45,"lon":-122},{"on":"2027-01-02","event":"reopened"}]}}}' \
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (ok("v").document_hash !== ok("l").stops_hash || ok("spring").stop.status !== "closed" || ok("back").stop.status !== "open" || ok("bad").refusals[0]?.problem.kind !== "nothing_closed") process.exit(1)'
     # The map's geometry is answered, never computed by a host (W4):
     # a plan's ridden segment (router), the diverted 08:40 trip drawn
     # along the diversion's traced detour from A (runcut), and a route

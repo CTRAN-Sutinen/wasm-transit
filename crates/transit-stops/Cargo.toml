@@ -1,0 +1,17 @@
+[package]
+name = "transit-stops"
+description = "The stops document: every stop as a list of dated events (opened, closed, reopened, moved, changed, proposed, retired) — the stop on a date, whether it is served, the refusals a write must pass, and canonical bytes. Beside the plans, never copied by a fork; nothing in it means today. Pure and stateless."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+transit-version = { path = "../transit-version" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ts-rs = { workspace = true }
+schemars = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"

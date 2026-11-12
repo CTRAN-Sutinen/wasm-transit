@@ -104,6 +104,7 @@ const KIND_LOADS = {
   feed: "load_feed",
   rt: "load_rt",
   work_rules: "load_work_rules",
+  stops: "load_stops",
 };
 
 /// A --load prefix as a bulk op code: a number, or a kind's load.

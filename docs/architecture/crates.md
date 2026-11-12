@@ -539,6 +539,31 @@ transit-runs   THE runs layer, beside the network (D-16). The
                 that adopt it. The runs cut itself is open
                 (`docs/units/runs-layer.md`). Pure; cap-runcut and
                 cap-author are the seams.
+transit-stops   THE stops document, beside the plans (D-147, D-153):
+                every stop by its lasting id (kept through a move,
+                D-145), each a list of dated events — opened, closed,
+                reopened, moved, changed, proposed (naming its draft
+                plan), retired (the tombstone) — with the point, the
+                details (name, code, station, access, fare zone, …)
+                and the amenities (D-154: true, false, or absent for
+                not recorded; OpenStreetMap's bus-stop names where one
+                exists, the agency's own kept) set only by events.
+                Nothing in it means today: `stop_on` is a stop's
+                events applied in order up to a date, a temporary
+                closed or moved applying until its `until`; `served`
+                asks whether a trip at the stop on a date (and time,
+                unread at a day's grain, D-148) is served — open,
+                nothing else; `on_date` lists every stop that exists.
+                `checked` is what a write must pass, each refusal
+                naming its stop, event and problem; a document that
+                passes is canonical as it stands (stops by id, events
+                as written), and what this crate does not know —
+                another tool's field, an agency's amenity — is kept
+                through a read and a write. A correction edits the
+                event that was wrong; a real change adds one. Depends
+                on no other model crate. cap-stops is the seam; the
+                network does not read it yet
+                (`docs/units/stop-lifecycle.md`).
 transit-streets THE streets model. `model.rs`: the streets document
                 (`Streets`: ways — points as [lat, lon] microdegrees,
                 one-way, class, name), CANONICAL so its hash is the
@@ -619,6 +644,14 @@ cap-plans       The plan-chain capability: which service plan
                 the plan set and pushes its metadata per call;
                 publish answers the next set's canonical bytes and
                 hash, which the server stores as given.
+cap-stops       The stops capability: what is a stop on a date?
+                validate (what a write must pass — every refusal, or
+                the canonical document and its hash, the one the
+                kernel's load_stops answers), stops_on (every stop, or
+                those named, as on a date) and stop (one stop on a
+                date and its events, oldest first). transit-stops is
+                the library; the kernel's `stops` kind registers a
+                document only if validate would pass it.
 cap-author      The authoring capability: what does this network
                 become after these edits? apply (typed edits,
                 atomic) answers the next document under its hash,

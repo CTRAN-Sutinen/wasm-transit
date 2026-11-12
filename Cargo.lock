@@ -129,6 +129,7 @@ dependencies = [
  "transit-router",
  "transit-rt",
  "transit-runs",
+ "transit-stops",
  "transit-streets",
  "transit-sync",
  "transit-version",
@@ -342,6 +343,19 @@ dependencies = [
  "transit-network",
  "transit-runs",
  "transit-sync",
+ "ts-rs",
+]
+
+[[package]]
+name = "cap-stops"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "chrono",
+ "serde",
+ "serde_json",
+ "transit-stops",
+ "transit-version",
  "ts-rs",
 ]
 
@@ -751,6 +765,14 @@ version = "0.1.0"
 dependencies = [
  "cap-abi",
  "cap-runcut",
+]
+
+[[package]]
+name = "module-stops"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-stops",
 ]
 
 [[package]]
@@ -1500,6 +1522,19 @@ dependencies = [
  "serde_json",
  "transit-dispatch",
  "transit-network",
+ "transit-version",
+ "ts-rs",
+]
+
+[[package]]
+name = "transit-stops"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "proptest",
+ "schemars",
+ "serde",
+ "serde_json",
  "transit-version",
  "ts-rs",
 ]

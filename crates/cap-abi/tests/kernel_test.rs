@@ -159,6 +159,7 @@ fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
         "streets_hash": "sha256:s", "network_hash": "sha256:n", "speed_mps": 1.3, "max_walk_secs": 600, "walks": []
     }));
     law::<transit_runs::WorkRules>(serde_json::json!({"version": 1}));
+    law::<transit_stops::Stops>(serde_json::json!({"stops": {}}));
     law::<transit_plans::PublishedPlans>(serde_json::json!({"schema_version": 1, "plans": []}));
     law::<transit_authz::Policy>(serde_json::json!({"schema_version": 1, "rules": []}));
 }

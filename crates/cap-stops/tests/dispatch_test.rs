@@ -1,0 +1,113 @@
+//! Native dispatch tests for the stops capability — the seam without
+//! wasm. The document's own laws (the stop on a date, served, each
+//! refusal, canonical bytes, what is not known kept) are tested at the
+//! library seam (transit-stops); here the module's contract is pinned:
+//! `validate` and the kernel's `load_stops` agree on one identity, a
+//! refused document is refused at both with its reasons named, the
+//! date questions answer over a registered document, and garbage is an
+//! honest error, never a panic.
+
+use cap_abi::kernel::OP_LOAD_STOPS;
+use serde_json::{json, Value};
+
+fn run(request: Value) -> Value {
+    serde_json::from_str(&cap_stops::invoke(&request.to_string())).unwrap()
+}
+
+fn ok(request: Value) -> Value {
+    let answer = run(request.clone());
+    answer.get("ok").cloned().unwrap_or_else(|| panic!("{request} answered {answer}"))
+}
+
+fn err(request: Value) -> String {
+    let answer = run(request.clone());
+    answer["error"].as_str().unwrap_or_else(|| panic!("{request} answered {answer}")).to_string()
+}
+
+fn sample() -> Value {
+    json!({
+        "kind": "stops", "schema_version": 1,
+        "stops": {
+            "6124": [
+                {"on": "2004-09-01", "event": "opened", "lat": 45.6934, "lon": -122.6512, "name": "NE 99th St & Hwy 99", "code": "6124", "wheelchair": true},
+                {"on": "2025-05-12", "event": "changed", "amenities": {"shelter": true, "bench": true, "bin": true}},
+                {"on": "2027-03-03", "event": "closed", "until": "2027-07-01", "note": "water main"},
+                {"on": "2027-09-01", "event": "moved", "lat": 45.6936, "lon": -122.6509}
+            ],
+            "7001": [
+                {"on": "2027-01-10", "event": "proposed", "plan": "fall-2027", "lat": 45.70, "lon": -122.66, "name": "NE 104th St"}
+            ]
+        }
+    })
+}
+
+#[test]
+fn validate_and_the_load_agree_on_one_identity() {
+    let checked = ok(json!({"op": "validate", "stops": sample()}));
+    assert_eq!(checked["refusals"], json!([]));
+    let document = checked["document"].as_str().unwrap();
+    let hash = checked["document_hash"].as_str().unwrap();
+    assert_eq!(cap_abi::content_hash(document.as_bytes()), hash, "the hash is the document's bytes'");
+
+    let loaded = ok(json!({"op": "load_stops", "stops": sample()}));
+    assert_eq!(loaded, json!({"op": "load_stops", "stops_hash": hash, "stops": 2}));
+    // the bulk lane: the document's bytes, no envelope — the same answer
+    let bulk: Value = serde_json::from_str(&cap_stops::invoke_bytes(OP_LOAD_STOPS, document.as_bytes())).unwrap();
+    assert_eq!(bulk["ok"], loaded);
+    // a writer's key order is not part of the identity
+    let reordered: Value = serde_json::from_str(r#"{"stops":{"7001":[{"name":"NE 104th St","lon":-122.66,"lat":45.70,"plan":"fall-2027","event":"proposed","on":"2027-01-10"}],"6124":[{"on":"2004-09-01","event":"opened","lat":45.6934,"lon":-122.6512,"name":"NE 99th St & Hwy 99","code":"6124","wheelchair":true},{"on":"2025-05-12","event":"changed","amenities":{"bin":true,"bench":true,"shelter":true}},{"note":"water main","until":"2027-07-01","event":"closed","on":"2027-03-03"},{"on":"2027-09-01","event":"moved","lat":45.6936,"lon":-122.6509}]},"schema_version":1,"kind":"stops"}"#).unwrap();
+    assert_eq!(ok(json!({"op": "validate", "stops": reordered}))["document_hash"], hash);
+}
+
+#[test]
+fn a_refused_document_names_each_reason_and_never_registers() {
+    let mut bad = sample();
+    bad["stops"]["6124"][2]["until"] = json!("2027-03-01");
+    bad["stops"]["7001"][0].as_object_mut().unwrap().remove("plan");
+    let checked = ok(json!({"op": "validate", "stops": bad}));
+    assert_eq!(
+        checked["refusals"],
+        json!([
+            {"stop": "6124", "event": 2, "problem": {"kind": "until_not_after"}},
+            {"stop": "7001", "event": 0, "problem": {"kind": "no_plan"}}
+        ])
+    );
+    assert!(checked["document"].is_null() && checked["document_hash"].is_null());
+    let e = err(json!({"op": "load_stops", "stops": bad}));
+    assert!(e.contains("stops document") && e.contains(r#"stop "7001" event 0 proposes the stop for no plan"#), "{e}");
+}
+
+#[test]
+fn the_date_questions_answer_over_a_registered_document() {
+    let hash = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();
+    let on = |date: &str| ok(json!({"op": "stops_on", "stops_hash": hash, "date": date}))["stops"].clone();
+    assert_eq!(on("2026-01-01").as_array().unwrap().len(), 1, "the proposal is not there yet");
+    let spring = on("2027-04-01");
+    assert_eq!(spring[0]["status"], "closed");
+    assert_eq!(spring[0]["amenities"], json!({"bench": true, "bin": true, "shelter": true}));
+    assert_eq!(spring[1], json!({"stop_id": "7001", "status": "proposed", "lat": 45.70, "lon": -122.66, "plan": "fall-2027", "name": "NE 104th St"}));
+    let only = ok(json!({"op": "stops_on", "stops_hash": hash, "date": "2027-10-01", "stop_ids": ["6124", "nope"]}))["stops"].clone();
+    assert_eq!((only.as_array().unwrap().len(), only[0]["lat"].clone(), only[0]["status"].clone()), (1, json!(45.6936), json!("open")));
+
+    let card = ok(json!({"op": "stop", "stops_hash": hash, "stop_id": "6124", "date": "2027-07-01"}));
+    assert_eq!(card["stop"]["status"], "open", "until is the first day back");
+    assert_eq!(card["events"].as_array().unwrap().len(), 4);
+    assert_eq!(card["events"][2]["note"], "water main");
+    let before = ok(json!({"op": "stop", "stops_hash": hash, "stop_id": "6124", "date": "2000-01-01"}));
+    assert!(before["stop"].is_null() && before["events"].as_array().unwrap().len() == 4);
+    assert!(err(json!({"op": "stop", "stops_hash": hash, "stop_id": "nope", "date": "2027-01-01"})).contains("no stop \"nope\""));
+}
+
+#[test]
+fn garbage_is_an_error_not_a_panic() {
+    assert!(err(json!({"op": "stops_on", "stops_hash": "sha256:none", "date": "2027-01-01"})).contains("load_stops"));
+    let hash = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();
+    assert!(err(json!({"op": "stops_on", "stops_hash": hash, "date": "2027-13-01"})).contains("invalid date"));
+    let mut newer = sample();
+    newer["schema_version"] = json!(2);
+    assert!(err(json!({"op": "validate", "stops": newer})).contains("stops v2"));
+    assert!(err(json!({"op": "load_stops", "stops": {"kind": "streets", "stops": {}}})).contains("stops document"));
+    assert!(err(json!({"op": "nope"})).contains("invalid request"));
+    let bulk: Value = serde_json::from_str(&cap_stops::invoke_bytes(0, b"whatever")).unwrap();
+    assert!(bulk["error"].as_str().unwrap().contains("unknown bulk op"), "{bulk}");
+}

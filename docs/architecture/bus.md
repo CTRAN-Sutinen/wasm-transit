@@ -37,14 +37,14 @@ cap-abi         The kernel and the seam: the flat C ABI as a macro
                 THE KERNEL (kernel.rs) owns the registries: one per
                 document kind — network, edits, live, boundary,
                 walks, streets, watchlist, layer, feed, rt,
-                work_rules — and one
+                work_rules, stops — and one
                 derived registry, each a `Registry` (registry.rs)
                 whose constructor is private to cap-abi, so a
                 capability cannot declare shared state. Each kind's
                 LOAD is a kernel op: a bulk op (256 network, 259
                 edits, 260 live, 261 boundary, 262 walks, 263
                 streets, 264 watchlist, 265 layer, 266 feed, 267 rt,
-                269 work_rules) over its bytes, and the same JSON op
+                269 work_rules, 270 stops) over its bytes, and the same JSON op
                 (`{"op": "load_network", "network": …}`) peeled
                 before any capability decodes the request (the
                 document left raw, never buffered into a generic
@@ -392,7 +392,7 @@ cap-streets    The street-graph capability: where along the
   the high 16 bits; kernel ops number from 256 and mean the same thing
   in every module that answers them: each kind's load (256 network,
   259 edits, 260 live, 261 boundary, 262 walks, 263 streets, 264
-  watchlist, 265 layer, 266 feed, 267 rt, 269 work_rules) in every module whose
+  watchlist, 265 layer, 266 feed, 267 rt, 269 work_rules, 270 stops) in every module whose
   capabilities read the kind, the browser host registering every
   document that way (the engine's loader per kind, the document
   encoded once however many instances register it). EVERY module

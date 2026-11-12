@@ -34,6 +34,9 @@ transit-dispatch = { path = "../transit-dispatch" }
 # …and the work-rule document kind and the runcut's recovery and
 # suggested-blocking examples (the runs layer, beside the network).
 transit-runs = { path = "../transit-runs" }
+# …and the stops document kind (each stop a list of dated events,
+# beside the plans; D-153).
+transit-stops = { path = "../transit-stops" }
 # …and the router's examples compute REAL itineraries over the same
 # composition (materialize, patch, build, query) the module runs.
 transit-router = { path = "../transit-router", optional = true }

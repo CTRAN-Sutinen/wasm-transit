@@ -1,0 +1,15 @@
+[package]
+name = "cap-stops"
+description = "The stops capability: every stop a list of dated events (transit-stops). validate answers what a write must pass — each refusal named, or the canonical document and its hash; stops_on and stop answer stops as their events make them on a date. The kernel's load_stops registers a document the host holds. transit-stops is shared as a library; the module writes nothing."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+transit-version = { path = "../transit-version" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ts-rs = { workspace = true }
+chrono = { workspace = true }
+transit-stops = { path = "../transit-stops" }
+cap-abi = { path = "../cap-abi" }

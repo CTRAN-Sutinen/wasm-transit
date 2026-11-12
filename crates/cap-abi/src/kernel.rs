@@ -52,6 +52,7 @@ pub use transit_streets::walking::WalkTable;
 pub use transit_sync::{EditDocument, EditRecord};
 pub use transit_dispatch::watchlist::Watchlist;
 pub use transit_runs::WorkRules;
+pub use transit_stops::Stops;
 
 // ---------------------------------------------------------------------
 // the kernel ops
@@ -76,6 +77,9 @@ pub const OP_ABOUT: u32 = 268;
 
 /// The work rules' load (after [`OP_ABOUT`], which took 268).
 pub const OP_LOAD_WORK_RULES: u32 = 269;
+
+/// The stops document's load.
+pub const OP_LOAD_STOPS: u32 = 270;
 
 /// [`OP_ABOUT`]'s answer.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -128,6 +132,8 @@ pub enum Loaded {
     LoadRt { rt_hash: String },
     /// The version the rules speak.
     LoadWorkRules { work_rules_hash: String, version: u32 },
+    /// How many stops the document holds.
+    LoadStops { stops_hash: String, stops: u32 },
 }
 
 /// The JSON lane's envelope: the op, the capability it names, and the
@@ -155,6 +161,8 @@ pub struct Envelope<'a> {
     document: Option<&'a RawValue>,
     #[serde(borrow, default)]
     work_rules: Option<&'a RawValue>,
+    #[serde(borrow, default)]
+    stops: Option<&'a RawValue>,
     #[serde(borrow, default)]
     bytes: Option<&'a RawValue>,
 }
@@ -421,6 +429,27 @@ pub static WORK_RULES: Kind<WorkRules> = Kind {
     },
     json: |e| e.field(e.work_rules, "work_rules").map(Cow::Borrowed),
     answer: |work_rules_hash, rules| Loaded::LoadWorkRules { work_rules_hash, version: rules.version },
+};
+
+/// Stops documents (transit-stops: every stop a list of dated events,
+/// D-153), refused unless a write could store them — each refusal
+/// named — so a registered document is always one the model reads.
+pub static STOPS: Kind<Stops> = Kind {
+    id: "stops",
+    name: "stops document",
+    load_op: "load_stops",
+    op: OP_LOAD_STOPS,
+    identity: Identity::Canonical(crate::canonical_hash),
+    registry: Registry::documents("stops document", "load_stops", Retain::Host),
+    parse: |bytes| {
+        let stops: Stops = crate::parse_versioned(bytes).map_err(|e| format!("stops document: {e}"))?;
+        stops.checked().map_err(|refusals| {
+            let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
+            format!("stops document: {}", reasons.join("; "))
+        })
+    },
+    json: |e| e.field(e.stops, "stops").map(Cow::Borrowed),
+    answer: |stops_hash, stops| Loaded::LoadStops { stops_hash, stops: stops.stops.len() as u32 },
 };
 
 /// Weighted layers (GeoJSON points and polygons — people, jobs,

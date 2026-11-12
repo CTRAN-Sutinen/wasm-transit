@@ -263,6 +263,7 @@ Every persisted kind, by what a version change does to it:
 | `watchlist` | transit-dispatch | authored | `"version": "vN"` |
 | `policy` | transit-authz | authored | `kind`, `schema_version` |
 | `work_rules` | transit-runs | authored | `kind`, `version` |
+| `stops` | transit-stops | authored | `kind`, `schema_version` (not stored by the server yet) |
 | `diversion_draft` | transit-dispatch | authored | — (never persisted yet) |
 | a rider's device records (recent places, live-feed URLs) | the ride-now host | authored | — (`localStorage`) |
 | `network` (imported) | transit-codec | derived | `kind`, `schema_version` |

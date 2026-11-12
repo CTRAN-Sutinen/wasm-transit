@@ -278,6 +278,10 @@ transit-version  a document's kind tag and version (D-115): the tag every persis
 transit-sync     THE sync document (EditRecord: a Diversion or a TripCancel, merge, the record envelope — pure)
 transit-plans    THE service-plan chain (resolve, periods, validity — pure, derived)
                  and the published plan set (publish, the pick in force)
+transit-stops    THE stops document, beside the plans: each stop a list of dated events
+                 (opened, closed, reopened, moved, changed, proposed, retired), the
+                 stop on a date, served, what a write must pass — pure; the network
+                 does not read it yet
 transit-runs     THE runs layer beside the network: the work-rule document (recovery,
                  interlining per route pair, run rules, pay — every rule optional), the
                  recovery a wait requires and its slack, the suggested blocking — pure
@@ -291,7 +295,7 @@ cap-abi          the kernel and the seam: the registries (one per document kind,
                  a capability only registers with `capability!`), the kernel ops
                  (loads, evict, held, about), manifest, validator, gen-manifest,
                  gen-assemblies, arch-gates
-cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate
+cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops
                  the capabilities: rlibs that register, forbid unsafe, declare no
                  state, and never depend on each other (docs/architecture/bus.md)
 assemblies/      GENERATED (gen-assemblies, gitignored): module-<cap> (one capability
