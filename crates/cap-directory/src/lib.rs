@@ -161,6 +161,10 @@ pub enum Request {
     /// its point; a schedule its pattern; a route, a service type, or a
     /// block every pattern it runs. Null for an unknown id.
     Focus { network_hash: String, kind: transit_network::EntityKind, id: String },
+    /// The service keys, id order: each one's name, its calendar rule
+    /// as authored (weekdays, date ranges, exceptions), and the routes
+    /// and trips it carries.
+    ServiceKeys { network_hash: String },
     /// The network on a map: every route that draws a line (id
     /// order) with its name, its color, and the distinct lines of its
     /// patterns. Given `members` (service types), only the patterns
@@ -229,6 +233,7 @@ pub enum Response {
     RouteStopSequence { patterns: Vec<PatternStops> },
     Focus { focus: Option<transit_network::EntityFocus> },
     RouteLines { routes: Vec<transit_network::RouteLines> },
+    ServiceKeys { keys: Vec<transit_network::ServiceKey> },
     Entities { rows: Vec<transit_network::EntityRow> },
     RouteDetail { detail: Option<transit_network::RouteDetail> },
     StopDetail { detail: Option<transit_network::StopDetail> },
@@ -343,6 +348,10 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         Request::Focus { network_hash, kind, id } => {
             let network = network_arc(&network_hash)?;
             Ok(Response::Focus { focus: transit_network::entity_focus(&network, kind, &id) })
+        }
+        Request::ServiceKeys { network_hash } => {
+            let network = network_arc(&network_hash)?;
+            Ok(Response::ServiceKeys { keys: transit_network::service_keys(&network) })
         }
         Request::RouteLines { network_hash, members } => {
             let network = network_arc(&network_hash)?;

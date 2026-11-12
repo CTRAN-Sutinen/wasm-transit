@@ -92,6 +92,17 @@ codegen-units = 1
 panic = "abort"
 strip = true
 
+# The iteration loop's modules (`just caps-fast`): release semantics
+# (panic abort, stripped) without whole-program LTO or one codegen unit,
+# and incremental — a change to one library re-links in seconds, not
+# minutes. Never published: the registry, the reproducible gate, and
+# `just test` build `release`.
+[profile.wasm-fast]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+
 # Dev and test builds (the test profile inherits dev) keep line tables
 # only: backtraces still name file and line, and the full DWARF, the bulk
 # of target/, is dropped. The release wasm above

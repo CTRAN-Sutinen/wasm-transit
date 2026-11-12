@@ -5,15 +5,15 @@
 /// selection. Every number, list, and line it writes into `sc` is an
 /// op's answer, adopted as-is.
 ///
-/// The UI keeps the loop of a service change on one screen
-/// (docs/architecture/generated-uis.md): the network on a map, the
-/// worklist of what is weak (analysis `network_findings`), a route or a
-/// hub opened over the map, the findings the planner watches re-read
-/// after every change, and the proposal across every day type. The
-/// selection — plan, baseline, the day type's combination, route,
-/// direction, hub, hour window, the side panel, and the watched
-/// findings — lives in the URL hash, which the page follows (back and
-/// forward move through it).
+/// The UI follows the stages a service change takes, as dogfood
+/// sessions on C-TRAN worked them (docs/architecture/generated-uis.md):
+/// the plan and its calendar (the service keys, edited), a scan of the
+/// network hour by hour, one route's day changed in place with a hub it
+/// serves beside it, the vehicles and hours the change needs (adopting
+/// the suggested blocks), and the proposal across every day type. The
+/// selection — plan, baseline, the day type's combination, stage,
+/// route, direction, hub, hour window — lives in the URL hash, which
+/// the page follows (back and forward move through it).
 ///
 /// The authoring path (fork, apply, undo, export, publish) is the
 /// service-design host's, copied: one UI never imports another's files.
@@ -41,12 +41,21 @@ import type { MissedConnection } from "../../types/MissedConnection";
 import type { Timetable } from "../../types/Timetable";
 import type { DayType } from "../../types/DayType";
 import type { DayTypeComparison } from "../../types/DayTypeComparison";
-import type { NetworkFindings } from "../../types/NetworkFindings";
+import type { ServiceKey } from "../../types/ServiceKey";
+import type { FleetSummary } from "../../types/FleetSummary";
+import type { Suggestion } from "../../types/transit_runs/Suggestion";
 import type { PlanIssue } from "../../types/cap_plans/PlanIssue";
 import type { PlanPeriod } from "../../types/cap_plans/PlanPeriod";
 
-export type Panel = "worklist" | "proposal" | "plans";
-export type Center = "map" | "grid";
+export type Stage = "calendar" | "scan" | "route" | "resources" | "proposal";
+export const STAGES: { id: Stage; label: string }[] = [
+  { id: "calendar", label: "Plan & calendar" },
+  { id: "scan", label: "Scan" },
+  { id: "route", label: "Route" },
+  { id: "resources", label: "Vehicles & hours" },
+  { id: "proposal", label: "Proposal" },
+];
+export type ScanView = "grid" | "map";
 export type PlanRow = { key: string; id: string; name: string; effectiveFrom: string | null };
 /// The hour window, service-day hours [from, to).
 export type HourWindow = { from: number; to: number };
@@ -69,15 +78,15 @@ export const sc = $state({
   group: "",
   /// The member of the group the changes act on (D-8).
   editType: "",
-  panel: "worklist" as Panel,
-  center: "map" as Center,
+  stage: "scan" as Stage,
+  scanView: "grid" as ScanView,
   window: null as HourWindow | null,
   routes: [] as DirectoryRoute[],
   lines: [] as RouteLines[],
   comparison: null as ServiceTypeComparison | null,
-  findings: null as NetworkFindings | null,
-  /// The finding keys the planner watches.
-  watch: [] as string[],
+  keys: [] as ServiceKey[],
+  fleet: null as FleetSummary | null,
+  suggestion: null as Suggestion | null,
   planCompare: null as DayTypeComparison[] | null,
   frequency: null as RouteFrequency | null,
   // The drawer: a route, or a hub.
@@ -85,8 +94,6 @@ export const sc = $state({
   direction: null as string | null,
   routeDetail: null as RouteDetail | null,
   timetable: null as Timetable | null,
-  /// The hour a finding opened the route at, shaded on the string-line.
-  hour: null as number | null,
   editing: false,
   selectedTrip: "",
   selectedStop: "",
@@ -214,8 +221,8 @@ async function framed(frame: string, clear: () => void, run: () => Promise<void>
 // ---------------------------------------------------------------------
 // TRANSIENT — this UI's answer graph (src/uis/kit.ts). Inputs:
 // "active" / "compare" / "plans" (the documents), "group" / "route" /
-// "direction" / "stop" / "window" / "watch" (the selection), "panel" /
-// "center" (what is on screen).
+// "direction" / "stop" / "window" (the selection), "stage" /
+// "scan-view" (what is on screen).
 // ---------------------------------------------------------------------
 
 const request = answerGraph(
@@ -270,7 +277,8 @@ const request = answerGraph(
     {
       id: "directory.route_lines",
       frame: "Map",
-      needs: ["document.active", "group"],
+      needs: ["document.active", "group", "stage", "scan-view"],
+      visible: () => sc.stage === "scan" && sc.scanView === "map",
       run: () =>
         framed("Map", () => (sc.lines = []), async () => {
           const doc = active();
@@ -292,31 +300,40 @@ const request = answerGraph(
         }),
     },
     {
-      // The worklist, and the watched findings with it: one answer,
-      // re-read after every change (the "did it work" of the loop).
-      id: "analysis.network_findings",
-      frame: "Worklist",
-      needs: ["document.active", "document.compare", "group", "window", "watch"],
+      id: "directory.service_keys",
+      frame: "Keys",
+      needs: ["document.active", "stage"],
+      visible: () => sc.stage === "calendar",
       run: () =>
-        framed("Worklist", () => (sc.findings = null), async () => {
-          const [doc, base] = [active(), baseline()];
-          if (!doc || !sc.group) return void (sc.findings = null);
-          const window = sc.window ? { start_secs: sc.window.from * 3600, end_secs: sc.window.to * 3600 } : undefined;
-          sc.findings = (
-            await ask("analysis", "network_findings", {
-              network_hash: docOf(doc),
-              base_hash: base ? docOf(base) : undefined,
-              members: groupMembers(),
-              params: { window, limit: 15, watch: sc.watch },
-            })
-          ).findings;
+        framed("Keys", () => (sc.keys = []), async () => {
+          const doc = active();
+          if (!doc) return;
+          sc.keys = (await ask("directory", "service_keys", { network_hash: docOf(doc) })).keys;
+        }),
+    },
+    {
+      // What the change needs, on a date the day type runs: the
+      // fleet as blocked, and the blocks suggested for the trips no
+      // block carries (D-46).
+      id: "runcut.fleet",
+      frame: "Fleet",
+      needs: ["document.active", "group", "stage"],
+      visible: () => sc.stage === "resources",
+      run: () =>
+        framed("Fleet", () => ((sc.fleet = null), (sc.suggestion = null)), async () => {
+          const doc = active();
+          const date = groupDay();
+          if (!doc || !date) return void ((sc.fleet = null), (sc.suggestion = null));
+          const at = { network_hash: docOf(doc), edits_hash: null, date };
+          sc.fleet = (await ask("runcut", "fleet_summary", at)).summary;
+          sc.suggestion = (await ask("runcut", "suggest_blocks", at)).suggestion;
         }),
     },
     {
       id: "analysis.plan_compare",
       frame: "Proposal",
-      needs: ["document.active", "document.compare", "panel"],
-      visible: () => sc.panel === "proposal",
+      needs: ["document.active", "document.compare", "stage"],
+      visible: () => sc.stage === "proposal",
       run: () =>
         framed("Proposal", () => (sc.planCompare = null), async () => {
           const [doc, base] = [active(), baseline()];
@@ -329,8 +346,8 @@ const request = answerGraph(
     {
       id: "analysis.route_frequency",
       frame: "Grid",
-      needs: ["document.active", "group", "center", "route"],
-      visible: () => sc.center === "grid" || !!sc.route,
+      needs: ["document.active", "group", "stage", "scan-view"],
+      visible: () => (sc.stage === "scan" && sc.scanView === "grid") || sc.stage === "route",
       run: () =>
         framed("Grid", () => (sc.frequency = null), async () => {
           const doc = active();
@@ -342,7 +359,7 @@ const request = answerGraph(
       id: "directory.route_detail",
       frame: "Route",
       needs: ["document.active", "route"],
-      visible: () => !!sc.route,
+      visible: () => sc.stage === "route" && !!sc.route,
       run: (touch) =>
         framed("Route", () => (sc.routeDetail = null), async () => {
           const doc = active();
@@ -359,7 +376,7 @@ const request = answerGraph(
       id: "directory.timetable",
       frame: "StringLine",
       needs: ["document.active", "document.compare", "route", "direction", "group"],
-      visible: () => !!sc.route,
+      visible: () => sc.stage === "route" && !!sc.route,
       run: () =>
         framed("StringLine", () => (sc.timetable = null), async () => {
           const [doc, base] = [active(), baseline()];
@@ -390,7 +407,7 @@ const request = answerGraph(
       id: "analysis.hub",
       frame: "Hub",
       needs: ["document.active", "group", "stop"],
-      visible: () => !!sc.stop,
+      visible: () => sc.stage === "route" && !!sc.stop,
       run: () =>
         framed("Hub", () => ((sc.gaps = null), (sc.connections = null), (sc.missed = null)), async () => {
           const doc = active();
@@ -405,8 +422,8 @@ const request = answerGraph(
     {
       id: "plans.chain",
       frame: "Plans",
-      needs: ["plans", "panel"],
-      visible: () => sc.panel === "plans",
+      needs: ["plans", "stage"],
+      visible: () => sc.stage === "calendar",
       run: () =>
         framed("Plans", () => (sc.chain = null), async () => {
           const infos = sc.plans.filter((p) => p.id).map((p) => ({ id: p.id, name: p.name, effective_from: p.effectiveFrom }));
@@ -473,13 +490,12 @@ function writeHash(): void {
   if (sc.activeKey) q.set("plan", sc.activeKey);
   if (sc.compareKey) q.set("base", sc.compareKey);
   if (sc.group) q.set("group", sc.group);
-  if (sc.panel !== "worklist") q.set("panel", sc.panel);
-  if (sc.center !== "map") q.set("center", sc.center);
+  q.set("stage", sc.stage);
+  if (sc.scanView !== "grid") q.set("view", sc.scanView);
   if (sc.route) q.set("route", sc.route);
   if (sc.direction != null) q.set("dir", sc.direction);
   if (sc.stop) q.set("stop", sc.stop);
   if (sc.window) q.set("hours", `${sc.window.from}-${sc.window.to}`);
-  if (sc.watch.length) q.set("watch", sc.watch.join(","));
   const next = `#${q}`;
   if (location.hash === next) return;
   writing = true;
@@ -502,15 +518,14 @@ function readHash(): string[] {
   const base = q.get("base");
   if (base && getAllPlans()[base]) set("compareKey", base, "compare");
   set("group", q.get("group") ?? sc.group, "group");
-  const panel = q.get("panel");
-  set("panel", panel === "proposal" || panel === "plans" ? panel : "worklist", "panel");
-  set("center", q.get("center") === "grid" ? "grid" : "map", "center");
+  const stage = q.get("stage") as Stage | null;
+  set("stage", stage && STAGES.some((x) => x.id === stage) ? stage : "scan", "stage");
+  set("scanView", q.get("view") === "map" ? "map" : "grid", "scan-view");
   set("route", q.get("route") ?? "", "route");
   set("direction", q.get("dir"), "direction");
   set("stop", q.get("stop") ?? "", "stop");
   const hours = q.get("hours")?.match(/^(\d+)-(\d+)$/);
   set("window", hours ? { from: Number(hours[1]), to: Number(hours[2]) } : null, "window");
-  set("watch", (q.get("watch") ?? "").split(",").filter(Boolean), "watch");
   return changed;
 }
 
@@ -584,7 +599,7 @@ export async function openPlan(key: string): Promise<void> {
   setActivePlan(key);
   if (!sc.compareKey || sc.compareKey === key) sc.compareKey = sc.plans.find((p) => p.key !== key)?.key ?? "";
   syncHistory();
-  await step("Reading the plan…", () => select("active", "compare", "plans", "panel"));
+  await step("Reading the plan…", () => select("active", "compare", "plans", "stage"));
   say(`${planName(sc.activeKey)}${sc.compareKey ? ` against ${planName(sc.compareKey)}` : ""}.`);
 }
 
@@ -613,7 +628,7 @@ export async function fork(name: string, effectiveFrom: string, through = ""): P
   putPlan(key, applied.network);
   syncPlanRows();
   sc.compareKey = from;
-  sc.panel = "worklist";
+  sc.stage = "calendar";
   await openPlan(key);
   say(`Started "${name.trim()}" from ${planName(from)}. Changes go into it; ${planName(from)} stays as it is.`);
 }
@@ -627,14 +642,14 @@ export function periodStart(): string {
   return periodFrom();
 }
 
-export function setPanel(panel: Panel): Promise<void> {
-  sc.panel = panel;
-  return select("panel");
+export function setStage(stage: Stage): Promise<void> {
+  sc.stage = stage;
+  return select("stage");
 }
 
-export function setCenter(center: Center): Promise<void> {
-  sc.center = center;
-  return select("center");
+export function setScanView(view: ScanView): Promise<void> {
+  sc.scanView = view;
+  return select("scan-view");
 }
 
 export function selectGroup(group: string): Promise<void> {
@@ -652,33 +667,22 @@ export function setWindow(window: HourWindow | null): Promise<void> {
   return select("window");
 }
 
-/// A route opens in the drawer over the map; `hour` (from a finding)
-/// is shaded on its string-line.
-export function openRoute(route: string, hour: number | null = null): Promise<void> {
+/// A route opens the Route stage, wherever it was chosen.
+export function openRoute(route: string): Promise<void> {
   if (sc.route !== route) {
     sc.selectedStop = "";
     sc.selectedTrip = "";
+    sc.stop = "";
   }
   sc.route = route;
-  sc.hour = hour;
-  sc.stop = "";
-  return select("route", "stop");
+  sc.stage = "route";
+  return select("route", "stop", "stage");
 }
 
-/// A stop or hub opens in the drawer.
-export function openStop(stop: string): Promise<void> {
+/// A hub the route serves, read beside the route's day.
+export function openHub(stop: string): Promise<void> {
   sc.stop = stop;
-  sc.route = "";
-  sc.editing = false;
-  return select("stop", "route");
-}
-
-export function closeDrawer(): Promise<void> {
-  sc.route = "";
-  sc.stop = "";
-  sc.hour = null;
-  sc.editing = false;
-  return select("route", "stop");
+  return select("stop");
 }
 
 export function selectDirection(direction: string | null): Promise<void> {
@@ -699,14 +703,8 @@ export function toggleEdit(): void {
   sc.editing = !sc.editing;
 }
 
-/// Watch a finding across changes, or stop.
-export function toggleWatch(key: string): Promise<void> {
-  sc.watch = sc.watch.includes(key) ? sc.watch.filter((k) => k !== key) : [...sc.watch, key];
-  return select("watch");
-}
-
 export function retry(): Promise<void> {
-  return select("active", "compare", "plans", "panel", "center", "route", "stop");
+  return select("active", "compare", "plans", "stage", "scan-view", "route", "stop");
 }
 
 // ---------------------------------------------------------------------
@@ -789,6 +787,26 @@ export const gestures = {
       sc.selectedStop = "";
     }),
 };
+
+/// The calendar's edits on one service key (cap-author owns the rules).
+export const calendar = {
+  toggleDay: (id: string, day: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun") => change([{ edit: "toggle_service_day", id, day }]),
+  addRange: (id: string) => change([{ edit: "add_service_range", id }]),
+  setRange: (id: string, index: number, start: string, end: string) => change([{ edit: "set_service_range", id, index, start, end }]),
+  removeRange: (id: string, index: number) => change([{ edit: "remove_service_range", id, index }]),
+  setException: (id: string, date: string, state: "added" | "removed") => change([{ edit: "set_service_exception", id, date, state }]),
+  removeException: (id: string, date: string) => change([{ edit: "remove_service_exception", id, date }]),
+  rename: (id: string, name: string) => change([{ edit: "update_service_type", id, name }]),
+  /// A route's trips onto another key: each pattern trips it runs
+  /// under this key now runs under `to`.
+  move: (patternTrips: string[], to: string) => change(patternTrips.map((id) => ({ edit: "set_pattern_trips_refs" as const, id, service_type: to }))),
+};
+
+/// The suggested blocks, adopted: their edits applied as one change.
+export function adoptBlocks(): Promise<void> {
+  const edits = sc.suggestion?.edits ?? [];
+  return edits.length ? change(edits) : Promise.resolve();
+}
 
 // ---------------------------------------------------------------------
 // the publish path

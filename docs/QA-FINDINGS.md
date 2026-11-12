@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-103**. A
+IDs are never reused; the next new finding is **QAF-107**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -118,6 +118,45 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   Pin: `caps-run analysis` `route_overlap` on a C-TRAN weekday; the
   Hubs view's corridor table.
 
+- **QAF-103 OP GAP** — a near miss is counted, and a count punishes
+  more service: added trips make more arrivals that just miss
+  something, so `missed_connections` rows and `network_findings`'
+  `misses` rise when the rider is better off. What a rider feels is
+  the wait for the next bus after the miss, and no op answers it
+  for a hub against the baseline; the session derived it by hand
+  from two answers.
+  Pin: 2026-11-11 C-TRAN, 071 every 15 min 17:00–21:00 (13 trips
+  added): evening near misses at 99th Street involving 071 40 → 54,
+  median wait for the next 30 → 15 min; 065 every 15 min midday:
+  Fisher's Landing 065→012 near misses 39 → 51.
+- **QAF-104 OP GAP** — a calendar change shows in no comparison:
+  `plan_compare` and `service_type_compare` compare what each
+  combination runs, not which dates run it, so Memorial Day moved to
+  Sunday service answers "nothing changed". Missing: the dates whose
+  combination differs from the baseline's, and the period's total
+  (each day type's days × its daily hours) that an hours budget is
+  measured against (D-108).
+  Pin: 2026-11-11 C-TRAN fork "Spring calendar" (2027-01-10 through
+  2027-05-31): 2027-05-31 removed from 1-WKDY and 1-WKDY/31, added to
+  3-SUN and 3-SUN/31 — `plan_compare` reports no route changed in
+  any day type; only `day_types` shows Sunday 21 → 22 days.
+- **QAF-105 MODEL** — a fork's `through` carries weekly calendars
+  only; dated-only overlays end silently. C-TRAN's alternate-Tuesday
+  keys (1-WKDY/15, /16: route 899, 4 trips) stop at 2027-01-09, so
+  the fork's day types quietly lose them, and continuing them is
+  twenty dated exceptions computed by hand (no "every other Tuesday
+  until" gesture).
+  Pin: 2026-11-11 C-TRAN fork 2027-01-10 through 2027-05-31:
+  `day_types` answers three day types, no Tuesday combination.
+- **QAF-106 OP GAP** — a baseline whose calendar ends before the
+  plan's period cannot be compared on a date: the date-scoped reads
+  (`hub_connections`, `missed_connections`, `fleet_summary`) need a
+  date both run, and C-TRAN's import ends 2027-01-08 while the pick
+  starts 2027-01-10; the session compared 2027-01-08 against
+  2027-01-11 by hand.
+  Pin: 2026-11-11 C-TRAN, 99th Street Transit Center, base on
+  2027-01-08 against the fork on 2027-01-11.
+
 ## Coverage
 
 - **QAF-98 MODEL** — nothing pins that adding service never lowers
@@ -148,6 +187,10 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   (`compare_hash` the import) — trip `1-WKDY:pat-071-0-0@64800`
   64800→66000, trip 758184 65700→67380; "1" — trip
   `1-WKDY:pat-071-1-4@64800` 64800→66180, trip 758239 64620→66360.
+  Re-confirmed 2026-11-11: `add_trip` on 071 direction 0 at 17:57–20:57
+  (1-WKDY) gives each new trip 20 min beside neighbours running
+  27–30; the only fix is reading the pattern trips back and
+  rewriting each new trip's times (`upsert_pattern_trips`).
   Blocked: D-3 (re-opened), D-54.
 
 

@@ -102,7 +102,7 @@
 <div class="network-map" data-testid="network-map">
   <div class="canvas" bind:this={container}></div>
   <div class="legend">
-    <span><i class="sw base"></i>runs</span>
+    <span><i class="sw base"></i>route</span>
     <span><i class="sw changed"></i>changed in this plan</span>
     {#if hover}<strong>{hover}</strong>{/if}
   </div>

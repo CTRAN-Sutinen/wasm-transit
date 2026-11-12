@@ -35,13 +35,23 @@ default:
 caps:
     #!/usr/bin/env bash
     set -e
+    profile="${CAPS_PROFILE:-release}"
     cargo run --quiet -p cap-abi --bin gen-assemblies
-    just _modules
-    cargo run --quiet -p cap-abi --features gen-manifest --bin gen-manifest
+    just _modules target "$profile"
+    CAPS_PROFILE="$profile" cargo run --quiet -p cap-abi --features gen-manifest --bin gen-manifest
     mkdir -p web/pkg
     for cap in sync network streets authz plans migrate; do
-        cp "target/wasm32-unknown-unknown/release/module_$cap.wasm" "web/pkg/cap_$cap.wasm"
+        cp "target/wasm32-unknown-unknown/$profile/module_$cap.wasm" "web/pkg/cap_$cap.wasm"
     done
+
+# The iteration loop's modules: `just caps` under the wasm-fast profile
+# (Cargo.toml — no whole-program LTO, incremental), so a change to one
+# library rebuilds its modules in seconds to a minute instead of ~10
+# minutes. The pages, e2e specs, and caps-run read them the same way
+# (the local registry's evidence says `profile: wasm-fast`). `just
+# test`, `just e2e`, and `just registry` build release themselves.
+caps-fast:
+    CAPS_PROFILE=wasm-fast just caps
 
 # Publish the registry: gates first (the records report them), then
 # build and publish — immutable blobs, evidence records per
@@ -62,7 +72,7 @@ registry:
 # dependency pin), and with the build machine's paths remapped — the
 # cargo home to /cargo, the tree to /src — so a panic location names
 # no home directory and the bytes are a function of the tree alone.
-_modules target_dir="target":
+_modules target_dir="target" profile="release":
     #!/usr/bin/env bash
     set -e
     export RUSTFLAGS="--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$PWD=/src"
@@ -72,7 +82,7 @@ _modules target_dir="target":
     # lets a feature one capability asks for move every module's bytes.
     # Apart, a module's bytes are a function of its own closure.
     for crate in $(ls assemblies); do
-        cargo build --quiet --locked --release -p "$crate" --target wasm32-unknown-unknown
+        cargo build --quiet --locked --profile "{{profile}}" -p "$crate" --target wasm32-unknown-unknown
     done
 
 # REPRODUCIBLE BUILDS (`just registry` gates on it): two clean builds

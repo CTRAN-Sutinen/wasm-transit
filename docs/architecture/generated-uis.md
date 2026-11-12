@@ -286,26 +286,30 @@ every change it adopts, the host names its keep-set (the plan set's
 current networks and the layer). Undo restores an
 earlier document version the host keeps; nothing is inverted.
 `service-change` (`src/uis/service-change/`): the same need as
-service-design, kept as one loop on one screen to compare against it.
-A bar (plan, baseline, the plan's day types — analysis `day_types`,
-D-137, a trial — the hour window, health, a route box) sits over the
-network drawn on a map (directory `route_lines`; the routes the plan
-changed in the accent, the open route on top, a click opens a route),
-with the frequency grid as the other way to look at it. The side panel
-holds the worklist (analysis `network_findings`, D-136: frequency
-holes, long waits, costly near misses at hubs — each new, moved, or
-resolved against the baseline; a row opens its route at its hour, or
-its stop or hub), the proposal across every day type (analysis
-`plan_compare`) with readiness, export and publish, and the plans.
-A route or a hub opens in a drawer over the map: the string-line and
-the changes (the service-design gestures), or the hub's waits, near
-misses and connections — each beside the findings the planner
-watches (`params.watch`, answered in `watched` after every change:
-fixed, moved, or new). The selection, the watched findings with it,
-lives in the URL hash, which the page follows: back and forward move
-through it. It has no single-key shortcuts. Its authoring path (fork,
-apply, undo, export, publish) is service-design's, copied — a UI
-never imports another's files.
+service-design, laid out in the stages a service change took when it
+was worked through the ops on C-TRAN (three proposals, assessed,
+built, judged and revised): one selection bar (plan, baseline, the
+plan's day types — analysis `day_types`, D-137, a trial — the hour
+window, health, a route box) over five stages, each with the page's
+width. Plan & calendar: the pick timeline, the plan set and the fork,
+and the service keys (directory `service_keys`): each key's weekdays,
+date ranges and exceptions, edited in place (cap-author's calendar
+edits), what it carries (a route's trips moved to another key,
+`set_pattern_trips_refs`), and the combinations it forms. Scan: the
+frequency grid, the network map (directory `route_lines`) one click
+away. Route: one route's day — the string-line or the timetable, the
+changes (the service-design gestures), running time by start, gaps by
+hour, the trips by start with the key each runs under — with the
+change ledger and a stop the route serves read beside it (its
+connections, near misses and waits). Vehicles & hours: runcut
+`fleet_summary` and `suggest_blocks` on a date the day type runs —
+the peak, platform, revenue and layover hours, the trips on no block,
+and the suggested blocks adopted as one change. Proposal: analysis
+`plan_compare` across every day type, readiness, export and publish.
+The selection lives in the URL hash, which the page follows: back and
+forward move through the stages. It has no single-key shortcuts. Its
+authoring path (fork, apply, undo, export, publish) is service-design's,
+copied — a UI never imports another's files.
 `ride-now` (`src/uis/ride-now/`): a full-bleed map with a panel over
 it (a card at the left on a wide screen, a sheet over the bottom of
 the map on a phone), the live pill and the alerts button in the

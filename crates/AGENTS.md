@@ -153,7 +153,11 @@ The extraction pattern, always in this order:
    library crate (transit-analysis, transit-rt, transit-dispatch,
    transit-runs,
    transit-plans) with the law tests;
-2. capability wrapper second — a thin module over the library.
+2. capability wrapper second — a thin module over the library, its
+   purpose and each op's description in the crate's `OPS.md` (a `#`
+   heading naming the capability, then one `##` section per op, in
+   its `ops` order — gen-manifest refuses anything else) and its
+   worked example computed in gen-manifest's `example_for`.
 
 A new domain op is a library and a capability, never a host. A
 capability declares no state: the documents it reads are the

@@ -48,8 +48,8 @@ pub use error::{NetworkError, NetworkWarning, RecoverySource};
 pub use geometry::{authored_alignment, entity_focus, route_lines, RouteLines, pattern_alignment, pattern_stop_points, stop_point, stops_line, EntityFocus, EntityKind};
 pub use combinations::{date_spans, service_combination, service_combinations, DateSpan, ServiceCombination};
 pub use listing::{
-    entity_rows, route_detail, stop_detail, timetable, timetable_against, DirectionGroup, EntityRow, PatternTripsGroup,
-    RemovedTrip, RouteDetail, RouteVariant, StopDetail, Timetable, TimetablePattern, TimetableStop, TimetableTrip, VariantStop,
+    entity_rows, route_detail, service_keys, stop_detail, timetable, timetable_against, DirectionGroup, EntityRow, PatternTripsGroup,
+    RemovedTrip, RouteDetail, RouteVariant, ServiceKey, ServiceKeyRoute, StopDetail, Timetable, TimetablePattern, TimetableStop, TimetableTrip, VariantStop,
 };
 pub use materialize::{
     materialize, materialize_service, produce_times, trip_arrival_end_secs, trip_instance, MaterializedTrip, StopTime,

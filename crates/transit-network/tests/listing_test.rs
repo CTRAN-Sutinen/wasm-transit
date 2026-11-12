@@ -361,3 +361,15 @@ fn a_route_row_answers_its_long_name_when_it_has_one() {
     // Rows naming no route carry none.
     assert!(entity_rows(&net, EntityKind::Stop, "").iter().all(|r| r.long_name.is_none()));
 }
+
+/// A timetable trip names the service key it runs under: its pattern
+/// trips' (the route view shows which key carries which trips).
+#[test]
+fn a_timetable_trip_names_its_service_key() {
+    let net = network();
+    let tt = transit_network::timetable(&net, "10", None, &["weekday".to_string()]).expect("route 10 runs on weekdays");
+    assert!(!tt.trips.is_empty());
+    for t in &tt.trips {
+        assert_eq!(t.service_type, net.pattern_trips[&t.pattern_trips].service_type);
+    }
+}

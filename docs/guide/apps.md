@@ -45,12 +45,12 @@ the change is ready, it publishes it for a future date.
 **For service planners.**
 
 Service change is a second way to plan a service change, built to
-compare with Service design. It shows the whole network on a map and
-a list of what looks weak: hours with a long gap between buses, stops
-with a long wait, and connections at transit centers that just miss.
-You open an item, change the route right there, and see whether the
-item is fixed. The proposal shows what changed on weekdays, Saturdays
-and Sundays at once.
+compare with Service design. It follows the steps of the work in
+order: set up the plan and its calendar (which service runs on which
+days, holidays included), scan how often each route runs hour by
+hour, change one route's day, check the buses and hours the change
+needs, and review the whole proposal for weekdays, Saturdays and
+Sundays.
 
 **Server:** needed.
 

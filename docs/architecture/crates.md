@@ -139,7 +139,9 @@ transit-network The authored network model (planner authority):
                 route, pattern trips, service type, or block runs), and
                 the network on a map (`route_lines`: every route's
                 distinct lines, by route id, narrowed to the service
-                types given). The
+                types given), and the service keys (`service_keys`:
+                each key's calendar as authored and the routes and
+                trips it carries; a timetable trip names its key). The
                 planner's LISTS live here too (`listing.rs`): rows
                 of any kind narrowed by every filter term (id, name,
                 and a route's long name), the stops a rider's typing

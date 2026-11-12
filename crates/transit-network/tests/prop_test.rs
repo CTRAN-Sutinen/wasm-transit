@@ -382,6 +382,40 @@ proptest! {
         }
     }
 
+    /// The service keys (`service_keys`): every service type, in id
+    /// order, with its name and its calendar rule as authored, the
+    /// trips it runs (materialized, the count a day runs), and the
+    /// routes it carries — each with the pattern trips under the key
+    /// on that route and their trips. A route the key runs nothing on
+    /// is no row; the routes' trips sum to the key's.
+    #[test]
+    fn service_keys_are_the_authored_calendars_and_what_runs_on_them(net in net_strategy()) {
+        let keys = transit_network::service_keys(&net);
+        prop_assert_eq!(keys.iter().map(|k| k.id.clone()).collect::<Vec<_>>(), net.service_types.keys().cloned().collect::<Vec<_>>());
+        for k in &keys {
+            let st = &net.service_types[&k.id];
+            prop_assert_eq!(&k.name, &st.name);
+            prop_assert_eq!(&k.rule, &st.rule);
+            let mut by_route: std::collections::BTreeMap<String, (Vec<String>, u32)> = Default::default();
+            for (id, pt) in &net.pattern_trips {
+                if pt.service_type != k.id {
+                    continue;
+                }
+                let n = transit_network::materialize_service(&net, id).map(|t| t.len() as u32).unwrap_or(0);
+                if n == 0 {
+                    continue;
+                }
+                let e = by_route.entry(net.patterns[&pt.pattern].route.clone()).or_default();
+                e.0.push(id.clone());
+                e.1 += n;
+            }
+            let got: Vec<(String, Vec<String>, u32)> = k.routes.iter().map(|r| (r.route_id.clone(), r.pattern_trips.clone(), r.trips)).collect();
+            let want: Vec<(String, Vec<String>, u32)> = by_route.into_iter().map(|(r, (p, n))| (r, p, n)).collect();
+            prop_assert_eq!(got, want, "{} routes", k.id);
+            prop_assert_eq!(k.trips, k.routes.iter().map(|r| r.trips).sum::<u32>());
+        }
+    }
+
     /// serde round-trip: the document survives JSON exactly.
     #[test]
     fn network_round_trips_through_json(net in net_strategy()) {

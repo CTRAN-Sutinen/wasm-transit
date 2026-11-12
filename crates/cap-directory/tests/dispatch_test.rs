@@ -466,3 +466,19 @@ fn route_lines_draw_the_network() {
     assert_eq!(ten.lines.len(), focus.lines.len());
     assert!(lines(Some(vec!["nope".into()])).is_empty());
 }
+
+/// The service keys answer through the seam (the law is
+/// transit-network's `service_keys_are_the_authored_calendars_and_what_runs_on_them`):
+/// the fixture's weekday key carries route 10's trips.
+#[test]
+fn service_keys_name_each_calendar_and_what_runs_on_it() {
+    let keys = match dispatch(Request::ServiceKeys { network_hash: load_network() }).unwrap() {
+        Response::ServiceKeys { keys } => keys,
+        _ => panic!("service_keys"),
+    };
+    let net = derived_network();
+    assert_eq!(keys.len(), net.service_types.len());
+    let wk = keys.iter().find(|k| k.id == "WK").expect("the weekday key");
+    assert_eq!(wk.rule, net.service_types["WK"].rule);
+    assert!(wk.routes.iter().any(|r| r.route_id == "10" && r.trips > 0));
+}

@@ -1,14 +1,14 @@
 {
   "id": "service-change",
   "title": "Service change",
-  "summary": "A service change as one loop on one screen: the network on a map, a worklist of what is weak (frequency holes, long waits, missed connections at hubs), a route or hub opened over the map to change, the findings you watch re-read after every change, and the proposal across every day type.",
+  "summary": "A service change in the stages the work takes: the plan's calendar and its service keys, a scan of the network hour by hour, one route's day changed in place with a hub it serves beside it, the vehicles and hours the change needs, and the proposal across every day type.",
   "questions": [
-    "Which plan am I changing, against which baseline, and which day types does it run in its period?",
-    "Where does the network run, and which routes has this plan changed?",
-    "What is weak: frequency holes, long waits, connections that just miss at a hub?",
-    "Opening one finding: what route or hub is it, and what does its day look like?",
-    "Change it: span, running time, one trip, stops — over the picture.",
-    "Did it work: the findings I watch, before and after each change; what the plan resolved.",
+    "Which plan am I changing, against which baseline, and which service keys and day types run in its period?",
+    "What does each service key run on — weekdays, date ranges, exceptions — and what routes and trips does it carry? Change them.",
+    "How often does each route come, hour by hour, under a day type?",
+    "What is one route's day: every trip by start, its running time, and the key it runs under? Change it.",
+    "At a hub the route serves: who connects to whom, and what just misses?",
+    "What vehicles and hours does the change need, and which trips are on no block? Adopt the suggested blocks.",
     "What does the proposal change across every day type, and is it ready to publish?"
   ],
   "ops": [
@@ -20,7 +20,6 @@
     "network.export",
     "analysis.day_types",
     "analysis.plan_compare",
-    "analysis.network_findings",
     "analysis.service_type_compare",
     "analysis.route_frequency",
     "analysis.stop_gaps",
@@ -34,12 +33,13 @@
     "author.apply",
     "plans.resolve",
     "plans.periods",
-    "plans.validate"
+    "plans.validate",
+    "directory.service_keys",
+    "runcut.suggest_blocks",
+    "runcut.fleet_summary"
   ],
   "components": [
     "NetworkMap",
-    "Worklist",
-    "WatchList",
     "DayTypePicker",
     "HourWindowPicker",
     "PlanScore",
@@ -57,9 +57,14 @@
     "PlanList",
     "PickTimeline",
     "Combobox",
-    "Unavailable"
+    "Unavailable",
+    "ServiceKeys",
+    "FleetPanel",
+    "RunTimes",
+    "HourGaps",
+    "TripList"
   ],
-  "session": "2026-11-11 on C-TRAN (testdata/ctran-gtfs.zip): caps-run day_types, network_findings (1-WKDY + 1-WKDY/31: 2 holes, 15+ waits, 15+ misses at the transit centers), plan_compare, route_lines (29 routes) — the browser, forked to Winter 2027, reads the same worklist; D-136, D-137 provisional",
+  "session": "2026-11-11 on C-TRAN (testdata/ctran-gtfs.zip): three proposals through caps-run — 065 midday every 15 min (+24 trips, +5.9 platform h, peak 77), a spring calendar (Memorial Day on Sunday service, route 899's alternate Tuesdays continued), 071 evenings every 15 min (13 trips, times rewritten) — whose stages the UI follows; findings QAF-103..106, QAF-90 re-confirmed; D-137 a trial",
   "spec": "web/e2e/ui-service-change.spec.mjs",
   "generated": "2026-11-11"
 }

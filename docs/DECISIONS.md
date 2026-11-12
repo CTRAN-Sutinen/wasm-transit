@@ -570,7 +570,9 @@ Blocks: nothing.
 
 ### D-136 — What does the worklist call weak?
 State: Encoded provisionally.
-Context: the service-change UI (`docs/architecture/generated-uis.md`). The worklist
+Context: a worklist for the service-change UI; withdrawn from it after
+the 2026-11-11 dogfood loop (no UI reads `network_findings` now —
+`docs/units/grade-debt.md`; its miss count misleads, QAF-103). The worklist
 gathers findings a change can resolve; each kind needs a line between
 "look at this" and "fine".
 Encoded (analysis `network_findings`, each threshold a parameter the

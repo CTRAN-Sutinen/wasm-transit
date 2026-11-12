@@ -185,6 +185,8 @@ pub struct TimetablePattern {
 pub struct TimetableTrip {
     pub trip: String,
     pub pattern_trips: String,
+    /// The service key the trip runs under (its pattern trips').
+    pub service_type: String,
     pub start_secs: u32,
     pub pattern: String,
     pub block: Option<String>,
@@ -199,6 +201,75 @@ pub struct TimetableTrip {
     /// (the same trip id) at another start — its start there. A moved
     /// trip is kept, not removed and added (QAF-64).
     pub retimed_from_secs: Option<u32>,
+}
+
+/// One route a service key carries: the pattern trips under the key
+/// on that route, and the trips they run.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct ServiceKeyRoute {
+    pub route_id: String,
+    pub name: String,
+    pub pattern_trips: Vec<String>,
+    pub trips: u32,
+}
+
+/// One service key as authored: its name, its calendar rule (weekdays,
+/// date ranges, exceptions — the rule the calendar edits change), and
+/// what runs on it.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct ServiceKey {
+    pub id: String,
+    pub name: String,
+    pub rule: crate::model::CalendarRule,
+    /// Its trips (materialized: a frequency trip counts its instances).
+    pub trips: u32,
+    /// The routes it carries, id order; a route it runs nothing on is
+    /// no row.
+    pub routes: Vec<ServiceKeyRoute>,
+}
+
+/// The service keys, in id order: each one's calendar as authored and
+/// the routes and trips it carries — what a planner edits when the
+/// calendar changes, and what moves when trips change keys.
+pub fn service_keys(network: &Network) -> Vec<ServiceKey> {
+    network
+        .service_types
+        .iter()
+        .map(|(id, st)| {
+            let mut routes: std::collections::BTreeMap<&str, (Vec<String>, u32)> = Default::default();
+            for (pid, pt) in &network.pattern_trips {
+                if pt.service_type != *id {
+                    continue;
+                }
+                let n = materialize_service(network, pid).map(|t| t.len() as u32).unwrap_or(0);
+                if n == 0 {
+                    continue;
+                }
+                let Some(route) = network.patterns.get(&pt.pattern).map(|p| p.route.as_str()) else { continue };
+                let e = routes.entry(route).or_default();
+                e.0.push(pid.clone());
+                e.1 += n;
+            }
+            let routes: Vec<ServiceKeyRoute> = routes
+                .into_iter()
+                .map(|(r, (pattern_trips, trips))| ServiceKeyRoute {
+                    route_id: r.to_string(),
+                    name: network.routes.get(r).map(|x| x.name.clone()).unwrap_or_default(),
+                    pattern_trips,
+                    trips,
+                })
+                .collect();
+            ServiceKey {
+                id: id.clone(),
+                name: st.name.clone(),
+                rule: st.rule.clone(),
+                trips: routes.iter().map(|r| r.trips).sum(),
+                routes,
+            }
+        })
+        .collect()
 }
 
 /// A stop's composition: the routes whose patterns visit it.
@@ -498,6 +569,7 @@ fn pooled_timetable(network: &Network, route: &str, direction: Option<&str>, mem
                 block: block_of.get(trip.trip.as_str()).map(|b| b.to_string()),
                 trip: trip.trip.clone(),
                 pattern_trips: trip.pattern_trips.clone(),
+                service_type: network.pattern_trips.get(&trip.pattern_trips).map(|pt| pt.service_type.clone()).unwrap_or_default(),
                 start_secs: trip.start_secs,
                 pattern: trip.pattern.clone(),
                 run_secs: trip.stop_times.last().map_or(0, |st| st.arrival_secs.saturating_sub(trip.start_secs)),

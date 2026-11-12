@@ -15,6 +15,7 @@
     comparison,
     editing,
     onedit,
+    shortcut = "E",
   }: {
     route: string;
     routeName: string;
@@ -24,6 +25,8 @@
     comparison: ServiceTypeComparison | null;
     editing: boolean;
     onedit: () => void;
+    /// The key that toggles editing on this page; "" for none.
+    shortcut?: string;
   } = $props();
 
   const row = $derived(frequency?.routes.find((r) => r.route_id === route)?.stats ?? null);
@@ -41,7 +44,7 @@
   <div class="stat"><small>Span</small><b>{pair((s) => `${clock(s.first_start_secs)}–${clock(s.last_arrival_secs)}`)}</b></div>
   <div class="stat"><small>Rev. hours</small><b>{pair((s) => fixed(s.revenue_hours))}</b></div>
   <div class="stat"><small>Rev. miles</small><b>{pair((s) => count(Math.round(s.revenue_miles)))}</b></div>
-  <button type="button" class:on={editing} onclick={onedit} aria-keyshortcuts="E" data-testid="edit-toggle">{editing ? "Done editing" : "Edit (E)"}</button>
+  <button type="button" class:on={editing} onclick={onedit} aria-keyshortcuts={shortcut || undefined} data-testid="edit-toggle">{editing ? "Done editing" : shortcut ? `Edit (${shortcut})` : "Edit"}</button>
 </header>
 
 <style>

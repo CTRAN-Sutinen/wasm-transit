@@ -27,7 +27,8 @@ cap-abi         The kernel and the seam: the flat C ABI as a macro
                 (compose-time proof: closure, version coherence,
                 migration-path reachability — total and property-
                 tested; gen-manifest self-validizes before writing),
-                and gen-manifest (the capability set as code; the
+                and gen-manifest (the capability set as code, each
+                capability's agent context read from its OPS.md; the
                 manifest diff IS the reviewable assembly change; its
                 worked examples are computed, and cap-author apply's
                 carry one example per edit kind, applied to the

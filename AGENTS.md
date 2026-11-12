@@ -81,10 +81,12 @@ updated:
    a durable record, never deleted; delete fixed findings in
    `docs/QA-FINDINGS.md`, reword ones the change answers in part,
    and update the reference hashes a dogfood session re-measured.
-3. **The contract an agent reads.** The op docs and worked examples
-   in `crates/cap-abi/src/bin/gen_manifest.rs` (regenerate the
-   manifest), the justfile's gate comments, and the TS bindings
-   (`just types`).
+3. **The contract an agent reads.** The capability's purpose and
+   op descriptions in its `crates/cap-<id>/OPS.md` (the generator
+   refuses one whose `##` sections are not exactly the capability's
+   ops), the worked examples in `crates/cap-abi/src/bin/gen_manifest.rs`
+   (computed; regenerate the manifest), the justfile's gate comments,
+   and the TS bindings (`just types`).
 4. **The comments.** Module and crate doc comments, the API notes
    in law-test headers, and the web glue's comments — a comment
    describing a retired type, op, field, or address misleads the
@@ -144,6 +146,10 @@ just caps                  # assemblies/ (generated, gitignored) → the modules
                            # capability alone and each UI's linked assembly + manifest
                            # (+ cap_sync, cap_network, cap_streets, cap_authz and
                            # cap_plans .wasm for the server)
+just caps-fast             # the same, under the wasm-fast profile (no whole-program
+                           # LTO, incremental): a library change rebuilds in ~10 s, not
+                           # ~10 min — the loop's build; the local registry's evidence
+                           # says profile wasm-fast; test/e2e/registry build release
 just registry              # publish the capability registry (gates → blobs + evidence;
                            # every `just caps` republishes it ungated); refuses a
                            # compiler other than rust-toolchain.toml's
