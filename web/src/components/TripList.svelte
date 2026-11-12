@@ -38,7 +38,7 @@
   .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
   header { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--line); }
   h2 { margin: 0; font-size: 0.9rem; }
-  .scroll { max-height: 18rem; overflow: auto; }
+  .scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
   th, td { text-align: left; padding: 0.2rem 0.9rem; border-bottom: 1px solid var(--line); }
   th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--surface); }

@@ -46,7 +46,7 @@
     "PlanScore",
     "FrequencyGrid",
     "RouteHeader",
-    "DirectionTabs",
+    "DirectionToggle",
     "StringLine",
     "TimetableGrid",
     "GesturePanel",

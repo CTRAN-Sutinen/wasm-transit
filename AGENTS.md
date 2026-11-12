@@ -206,7 +206,8 @@ just store-contract        # the store's laws against each of them (opt-in, neve
 just dev                   # vite hot reload + server alongside
 just qa [feed.zip]         # the UI QA loop: modules under wasm-fast, a server on the
                            # C-TRAN feed (else the e2e fixture) in a memory store,
-                           # vite hot reload on :5173; drive it with
+                           # vite hot reload on :5174 (server :8091, its own
+                           # ports beside serve/dev); drive it with
 node tools/ui-shot.mjs UI  # [--hash H] [--steps walk.mjs] [--full] [--size WxH]:
                            # a screenshot + status + page errors, one browser
                            # profile in .qa/ (forked plans persist) — docs/TESTING.md

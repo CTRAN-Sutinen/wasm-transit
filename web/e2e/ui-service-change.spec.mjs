@@ -138,11 +138,22 @@ test("plans, keys, routes and blocks: each control lands somewhere", async ({ pa
 
   // A route chosen while another stage is open reads in full when its
   // stage opens: its directions and its day.
-  await page.evaluate(() => { location.hash = location.hash.replace(/stage=[a-z]+/, "stage=scan") + "&route=10"; });
+  await page.evaluate(() => { location.hash = location.hash.replace(/stage=[a-z]+/, "stage=scan") + "&route=40"; });
   await expect(page.getByTestId("stage-scan")).toBeVisible();
   await page.locator("nav.stages").getByRole("button", { name: /Route/ }).first().click();
-  await expect(page.getByTestId("direction-tabs")).toBeVisible();
+  // The direction is chosen on the route's bar: the first is open, and
+  // each other one opens with a click (route 40 runs both ways).
+  const dirs = page.getByTestId("direction-toggle").getByRole("button");
+  await expect(dirs.first()).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("string-line")).toContainText("trips");
+  const count = await dirs.count();
+  expect(count).toBeGreaterThan(1);
+  const first = await page.getByTestId("string-line").locator("h2").first().textContent();
+  await dirs.nth(1).click();
+  await expect(dirs.nth(1)).toHaveAttribute("aria-pressed", "true");
+  await expect(dirs.first()).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByTestId("string-line").locator("h2").first()).not.toHaveText(first);
+  await dirs.first().click();
 
   // Every running block is drawn; one opens to its trips. (The
   // fixture's trips start on no block: adopt the suggestion first.)

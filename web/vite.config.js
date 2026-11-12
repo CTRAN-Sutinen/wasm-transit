@@ -134,7 +134,8 @@ export default defineConfig({
     // `just dev` runs the server with -rt-proxy).
     proxy: Object.fromEntries(
       ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/plans", "/feed", "/geocode"].map(
-        (route) => [route, "http://127.0.0.1:8080"],
+        // TRANSIT_SERVER names another server (`just qa` runs its own).
+        (route) => [route, process.env.TRANSIT_SERVER ?? "http://127.0.0.1:8080"],
       ),
     ),
   },

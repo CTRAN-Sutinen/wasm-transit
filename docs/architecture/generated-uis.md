@@ -300,7 +300,7 @@ date ranges and exceptions, edited in place (cap-author's calendar
 edits), what it carries (a route's trips moved to another key,
 `set_pattern_trips_refs`), and the combinations it forms. Scan: the
 frequency grid, the network map (directory `route_lines`) one click
-away. Route: one route's day (closed again from its stage tab) — the string-line or the timetable, the
+away. Route: one route's day in one direction, chosen on the route's bar (the first by default; a direction that runs nothing under the day type offers the others), closed again from its stage tab — the string-line or the timetable, the
 changes (the service-design gestures), running time by start, gaps by
 hour, the trips by start with the key and the block each runs under (a
 block opens on Vehicles & hours) — with the

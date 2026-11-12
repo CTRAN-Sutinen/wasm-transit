@@ -50,7 +50,7 @@
   import PlanScore from "../../components/PlanScore.svelte";
   import FrequencyGrid from "../../components/FrequencyGrid.svelte";
   import RouteHeader from "../../components/RouteHeader.svelte";
-  import DirectionTabs from "../../components/DirectionTabs.svelte";
+  import DirectionToggle from "../../components/DirectionToggle.svelte";
   import StringLine from "../../components/StringLine.svelte";
   import TimetableGrid from "../../components/TimetableGrid.svelte";
   import RunTimes from "../../components/RunTimes.svelte";
@@ -178,18 +178,16 @@
         <Unavailable title="No such route" reason={`${planName(sc.activeKey)} has no route ${sc.route}. Open one from the frequency grid, the map, or the route box at the top right.`} />
         <button type="button" class="closer" onclick={closeRoute}>Close route</button>
       {:else}
-        <div class="routebar"><button type="button" class="closer" onclick={closeRoute}>Close route</button></div>
+        <div class="routebar">
+          <DirectionToggle directions={sc.routeDetail?.directions ?? null} selected={sc.direction} onselect={selectDirection} />
+          <label class="mode"><input type="checkbox" bind:checked={tableMode} /> timetable</label>
+          <button type="button" class="closer" onclick={closeRoute}>Close route</button>
+        </div>
         <RouteHeader route={sc.route} routeName={routeRow?.name ?? sc.route} longName={routeRow?.long_name ?? null} groupName={sc.group}
           frequency={sc.frequency} comparison={sc.comparison} editing={sc.editing} onedit={toggleEdit} shortcut="" />
         <div class="route">
           <div class="work">
             {#if sc.failed.Route}{@render failure("Route", "The route")}{/if}
-            {#if sc.routeDetail}
-              <div class="dirs">
-                <DirectionTabs directions={sc.routeDetail.directions} selected={sc.direction} onselect={selectDirection} />
-                <label class="mode"><input type="checkbox" bind:checked={tableMode} /> timetable</label>
-              </div>
-            {/if}
             {#if sc.failed.StringLine}{@render failure("StringLine", "Timetable")}
             {:else if sc.timetable}
               {#if tableMode}
@@ -212,7 +210,14 @@
               </div>
               <TripList timetable={sc.timetable} selected={sc.selectedTrip} onselect={selectTrip} onblock={showBlock} />
             {:else}
-              <p class="muted">This direction runs nothing under this day type.</p>
+              {@const here = sc.routeDetail?.directions.find((d) => d.direction === sc.direction)}
+              {@const others = (sc.routeDetail?.directions ?? []).filter((d) => d.direction !== sc.direction)}
+              <p class="muted" data-testid="direction-empty">
+                {here?.direction == null ? "These trips" : `Trips to ${here.name}`} run nothing under {sc.group}.
+                {#each others as d (d.direction ?? "")}
+                  <button type="button" class="closer" onclick={() => selectDirection(d.direction)}>Show {d.direction == null ? "trips in no direction" : `to ${d.name}`}</button>
+                {/each}
+              </p>
             {/if}
           </div>
           <aside class="side">
@@ -278,7 +283,8 @@
   .sub { font-weight: 400; color: var(--accent); }
   .stages button.close { padding: 0.2rem 0.35rem; margin-left: -0.5rem; font-size: 1rem; line-height: 1; }
   .stages button.close:hover { color: var(--text); }
-  .routebar { display: flex; justify-content: flex-end; margin-bottom: -0.6rem; }
+  .routebar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem; }
+  .routebar .mode { margin-left: auto; }
   .closer { font: inherit; font-size: 0.78rem; border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 6px; padding: 0.2rem 0.6rem; cursor: pointer; }
   .status { margin: 0 0 0 auto; font-size: 0.78rem; color: var(--muted); max-width: 40rem; text-align: right; }
   .status.alert { color: var(--bad); }
@@ -295,7 +301,6 @@
   .hub { display: flex; flex-direction: column; gap: 0.6rem; }
   .hub h2 { margin: 0; font-size: 0.9rem; }
   .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 0.7rem; }
-  .dirs { display: flex; justify-content: space-between; align-items: center; }
   .mode { font-size: 0.8rem; color: var(--muted); }
   .muted { color: var(--muted); font-size: 0.8rem; }
   @media (max-width: 1000px) {
