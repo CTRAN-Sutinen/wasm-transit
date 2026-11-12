@@ -102,3 +102,70 @@ test("the stages: calendar, scan, route, vehicles, proposal", async ({ page }) =
   await page.goForward();
   await expect(page.getByTestId("stage-proposal")).toBeVisible();
 });
+
+// The controls that manage the plan set and move between the stages:
+// every one shows its answer where the planner lands.
+test("plans, keys, routes and blocks: each control lands somewhere", async ({ page }) => {
+  await startPlan(page);
+  const status = page.getByTestId("status");
+
+  // A plan renamed; a service key added, then removed.
+  const plans = page.getByTestId("plan-list");
+  await plans.locator("tr", { hasText: "Spring" }).getByTestId("rename-plan").click();
+  await plans.locator(".rename input").fill("Spring 2027");
+  await plans.getByRole("button", { name: "Save" }).click();
+  await expect(status).toContainText('Renamed to "Spring 2027"');
+  await expect(page.getByTestId("plan-select").locator("option:checked")).toHaveText("Spring 2027");
+  const keys = page.getByTestId("service-keys");
+  const before = await keys.locator(".list li").count();
+  await page.getByTestId("add-key").click();
+  await expect(keys.locator(".list li")).toHaveCount(before + 1);
+  const added = (await page.getByTestId("service-key").locator("h2").textContent()).trim();
+  page.once("dialog", (d) => d.accept());
+  await page.getByTestId("remove-key").click();
+  await expect(keys.locator(".list li")).toHaveCount(before);
+  await expect(keys).not.toContainText(added);
+
+  // A route chosen while another stage is open reads in full when its
+  // stage opens: its directions and its day.
+  await page.evaluate(() => { location.hash = location.hash.replace(/stage=[a-z]+/, "stage=scan") + "&route=10"; });
+  await expect(page.getByTestId("stage-scan")).toBeVisible();
+  await page.locator("nav.stages").getByRole("button", { name: /Route/ }).first().click();
+  await expect(page.getByTestId("direction-tabs")).toBeVisible();
+  await expect(page.getByTestId("string-line")).toContainText("trips");
+
+  // Every running block is drawn; one opens to its trips. (The
+  // fixture's trips start on no block: adopt the suggestion first.)
+  await page.locator("nav.stages").getByRole("button", { name: /Vehicles & hours/ }).click();
+  await page.getByTestId("fleet-panel").getByTestId("adopt-blocks").click();
+  await expect(status).toContainText("Changed.");
+  await page.getByTestId("blocks").locator(".brow").first().click();
+  await expect(page.getByTestId("block-chain").locator("tbody tr").first()).toBeVisible();
+
+  // A trip's block, named on the Route, opens there with its chain.
+  await page.locator("nav.stages").getByRole("button", { name: /Route/ }).first().click();
+  const block = page.getByTestId("trip-list").locator("button.blk").first();
+  const blockId = (await block.textContent()).trim();
+  await block.click();
+  await expect(page.getByTestId("stage-resources")).toBeVisible();
+  await expect(page.getByTestId("blocks").locator(".brow.on")).toContainText(blockId);
+  await expect(page.getByTestId("block-chain").locator("tbody tr").first()).toBeVisible();
+
+  // A route closed: the Route stage is empty, and the address says so.
+  await page.locator("nav.stages").getByRole("button", { name: /Route/ }).first().click();
+  await page.getByTestId("close-route").click();
+  await expect(page.getByTestId("stage-route")).toContainText("No route open");
+  expect(await page.evaluate(() => location.hash)).not.toContain("route=");
+
+  // A day type's card opens that day type on the Scan.
+  await page.locator("nav.stages").getByRole("button", { name: /Proposal/ }).click();
+  await page.getByTestId("plan-score").locator("article").first().getByRole("button").first().click();
+  await expect(page.getByTestId("stage-scan")).toBeVisible();
+
+  // The plan deleted from the device; the base opens.
+  await page.locator("nav.stages").getByRole("button", { name: /Plan & calendar/ }).click();
+  page.once("dialog", (d) => d.accept());
+  await plans.locator("tr", { hasText: "Spring 2027" }).getByTestId("delete-plan").click();
+  await expect(status).toContainText('Removed "Spring 2027"');
+  await expect(plans).not.toContainText("Spring 2027");
+});

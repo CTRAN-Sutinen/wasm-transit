@@ -8,7 +8,7 @@
     "How often does each route come, hour by hour, under a day type?",
     "What is one route's day: every trip by start, its running time, and the key it runs under? Change it.",
     "At a hub the route serves: who connects to whom, and what just misses?",
-    "What vehicles and hours does the change need, and which trips are on no block? Adopt the suggested blocks.",
+    "What vehicles and hours does the change need, what does each block run, and which trips are on no block? Adopt the suggested blocks.",
     "What does the proposal change across every day type, and is it ready to publish?"
   ],
   "ops": [
@@ -36,6 +36,7 @@
     "plans.validate",
     "directory.service_keys",
     "runcut.suggest_blocks",
+    "runcut.block_trips",
     "runcut.fleet_summary"
   ],
   "components": [

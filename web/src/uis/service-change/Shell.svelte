@@ -21,6 +21,12 @@
     setEditType,
     setWindow,
     openRoute,
+    closeRoute,
+    openBlock,
+    showBlock,
+    scanGroup,
+    renamePlan,
+    deletePlan,
     openHub,
     selectDirection,
     selectTimetableStop,
@@ -72,6 +78,7 @@
     sc.dayTypes.flatMap((t) => t.groups).filter((g) => g.id !== sc.group && g.members.includes(sc.editType)).map((g) => g.id),
   );
   const groupDate = $derived(sc.dayTypes.flatMap((t) => t.groups).find((g) => g.id === sc.group)?.dates[0] ?? "");
+  const stopNames = $derived(new Map(sc.stops.map((s) => [s.stop_id, s.name])));
   let jump = $state("");
   let hub = $state("");
   let tableMode = $state(false);
@@ -116,6 +123,9 @@
       <button type="button" class:on={sc.stage === s.id} aria-current={sc.stage === s.id ? "step" : undefined} onclick={() => setStage(s.id)}>
         <span class="n">{i + 1}</span>{s.label}{#if s.id === "route" && sc.route}<span class="sub">{routeRow?.name ?? sc.route}</span>{/if}
       </button>
+      {#if s.id === "route" && sc.route}
+        <button type="button" class="close" aria-label="Close route {routeRow?.name ?? sc.route}" title="Close the route" onclick={closeRoute} data-testid="close-route">×</button>
+      {/if}
     {/each}
     <p class="status" class:alert={sc.alert} role="status" data-testid="status">{sc.busy ? "… " : ""}{sc.status}</p>
   </nav>
@@ -134,12 +144,14 @@
       {/if}
       <div class="two">
         <PlanList plans={sc.plans} activeKey={sc.activeKey} compareKey={sc.compareKey} feed={sc.feed} onopen={openPlan} oncompare={setCompare} onfork={fork}
+          onrename={renamePlan} ondelete={deletePlan}
           onfeed={async (f) => loadFeedBytes(new Uint8Array(await f.arrayBuffer()), f.name)} />
         <div class="card">
           {#if sc.failed.Keys}{@render failure("Keys", "Service keys")}{:else}
             <ServiceKeys keys={sc.keys} dayTypes={sc.dayTypes} {framed}
               ontoggleday={calendar.toggleDay} onaddrange={calendar.addRange} onsetrange={calendar.setRange} onremoverange={calendar.removeRange}
               onsetexception={calendar.setException} onremoveexception={calendar.removeException} onrename={calendar.rename} onmove={calendar.move}
+              onadd={calendar.add} onremove={calendar.remove}
               onroute={openRoute} />
           {/if}
         </div>
@@ -162,7 +174,11 @@
     {:else if sc.stage === "route"}
       {#if !sc.route}
         <Unavailable title="No route open" reason="Open a route: a row of the frequency grid, a line on the map, a route a service key carries, or the route box at the top right." />
+      {:else if sc.routes.length && !routeRow}
+        <Unavailable title="No such route" reason={`${planName(sc.activeKey)} has no route ${sc.route}. Open one from the frequency grid, the map, or the route box at the top right.`} />
+        <button type="button" class="closer" onclick={closeRoute}>Close route</button>
       {:else}
+        <div class="routebar"><button type="button" class="closer" onclick={closeRoute}>Close route</button></div>
         <RouteHeader route={sc.route} routeName={routeRow?.name ?? sc.route} longName={routeRow?.long_name ?? null} groupName={sc.group}
           frequency={sc.frequency} comparison={sc.comparison} editing={sc.editing} onedit={toggleEdit} shortcut="" />
         <div class="route">
@@ -194,7 +210,7 @@
                 <RunTimes timetable={sc.timetable} />
                 {#if sc.frequency}<HourGaps frequency={sc.frequency} route={sc.route} window={sc.window} />{/if}
               </div>
-              <TripList timetable={sc.timetable} selected={sc.selectedTrip} onselect={selectTrip} />
+              <TripList timetable={sc.timetable} selected={sc.selectedTrip} onselect={selectTrip} onblock={showBlock} />
             {:else}
               <p class="muted">This direction runs nothing under this day type.</p>
             {/if}
@@ -219,7 +235,8 @@
 
     {:else if sc.stage === "resources"}
       {#if sc.failed.Fleet}{@render failure("Fleet", "Vehicles and hours")}{:else}
-        <FleetPanel fleet={sc.fleet} suggestion={sc.suggestion} date={groupDate} {framed} onadopt={adoptBlocks} onroute={openRoute} />
+        <FleetPanel fleet={sc.fleet} suggestion={sc.suggestion} date={groupDate} {framed} onadopt={adoptBlocks} onroute={openRoute}
+          block={sc.block} blockTrips={sc.blockTrips} blockError={sc.failed.Block ?? ""} onblock={openBlock} stopName={(id) => stopNames.get(id) ?? id} />
       {/if}
 
     {:else}
@@ -229,13 +246,13 @@
             <Unavailable title="The proposal" reason="Choose a plan to compare against, in the bar at the top." />
           {:else if sc.failed.Proposal}{@render failure("Proposal", "The proposal")}
           {:else if sc.planCompare}
-            <PlanScore dayTypes={sc.planCompare} selected={sc.group} onselect={selectGroup} onroute={openRoute} />
+            <PlanScore dayTypes={sc.planCompare} selected={sc.group} onselect={scanGroup} onroute={openRoute} />
           {/if}
         </div>
         {#if sc.failed.Readiness}{@render failure("Readiness", "Ready to publish?")}{:else}
           <Readiness issues={sc.issues} warnings={sc.warnings} {framed} exported={sc.exported} exportError={sc.failed.Export ?? ""} onexport={exportPlan}
             published={sc.published} publishRefused={sc.publishRefused} publishError={sc.failed.Publish ?? ""} onpublish={publishPlan}
-            onhold={gestures.retime} />
+            onhold={gestures.retime} onblock={showBlock} />
         {/if}
       </div>
     {/if}
@@ -259,6 +276,10 @@
   .n { display: inline-flex; width: 1.2rem; height: 1.2rem; border-radius: 50%; align-items: center; justify-content: center; font-size: 0.7rem; border: 1px solid var(--line); }
   .on .n { background: var(--accent); border-color: var(--accent); color: var(--surface); }
   .sub { font-weight: 400; color: var(--accent); }
+  .stages button.close { padding: 0.2rem 0.35rem; margin-left: -0.5rem; font-size: 1rem; line-height: 1; }
+  .stages button.close:hover { color: var(--text); }
+  .routebar { display: flex; justify-content: flex-end; margin-bottom: -0.6rem; }
+  .closer { font: inherit; font-size: 0.78rem; border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 6px; padding: 0.2rem 0.6rem; cursor: pointer; }
   .status { margin: 0 0 0 auto; font-size: 0.78rem; color: var(--muted); max-width: 40rem; text-align: right; }
   .status.alert { color: var(--bad); }
   .stage { overflow: auto; padding: 0.9rem; display: flex; flex-direction: column; gap: 0.9rem; min-height: 0; }

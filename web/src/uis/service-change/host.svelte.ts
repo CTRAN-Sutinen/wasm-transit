@@ -18,7 +18,7 @@
 /// The authoring path (fork, apply, undo, export, publish) is the
 /// service-design host's, copied: one UI never imports another's files.
 
-import { getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
+import { getAllPlans, getActivePlanId, putPlan, readPlan, removePlan, setActivePlan, restorePlans } from "../../plans.svelte";
 import { ask, assemble, available, keep, produced, servedNetworkValue, Doc } from "../../engine";
 import { answerGraph, readAgencyZone, today } from "../kit";
 
@@ -44,6 +44,7 @@ import type { DayTypeComparison } from "../../types/DayTypeComparison";
 import type { ServiceKey } from "../../types/ServiceKey";
 import type { FleetSummary } from "../../types/FleetSummary";
 import type { Suggestion } from "../../types/transit_runs/Suggestion";
+import type { BlockChainTrip } from "../../types/BlockChainTrip";
 import type { PlanIssue } from "../../types/cap_plans/PlanIssue";
 import type { PlanPeriod } from "../../types/cap_plans/PlanPeriod";
 
@@ -87,6 +88,9 @@ export const sc = $state({
   keys: [] as ServiceKey[],
   fleet: null as FleetSummary | null,
   suggestion: null as Suggestion | null,
+  /// The block open on Vehicles & hours, and its chain.
+  block: "",
+  blockTrips: null as BlockChainTrip[] | null,
   planCompare: null as DayTypeComparison[] | null,
   frequency: null as RouteFrequency | null,
   // The drawer: a route, or a hub.
@@ -330,6 +334,22 @@ const request = answerGraph(
         }),
     },
     {
+      // One block's chain on the same date: its trips in order and
+      // the layover after each.
+      id: "runcut.block_trips",
+      frame: "Block",
+      needs: ["document.active", "group", "stage", "block"],
+      visible: () => sc.stage === "resources" && !!sc.block,
+      run: () =>
+        framed("Block", () => (sc.blockTrips = null), async () => {
+          const doc = active();
+          const date = groupDay();
+          if (!doc || !date || !sc.block) return void (sc.blockTrips = null);
+          const answer = await ask("runcut", "block_trips", { network_hash: docOf(doc), edits_hash: null, block_id: sc.block, date });
+          sc.blockTrips = answer.trips;
+        }),
+    },
+    {
       id: "analysis.plan_compare",
       frame: "Proposal",
       needs: ["document.active", "document.compare", "stage"],
@@ -358,7 +378,7 @@ const request = answerGraph(
     {
       id: "directory.route_detail",
       frame: "Route",
-      needs: ["document.active", "route"],
+      needs: ["document.active", "route", "stage"],
       visible: () => sc.stage === "route" && !!sc.route,
       run: (touch) =>
         framed("Route", () => (sc.routeDetail = null), async () => {
@@ -375,7 +395,7 @@ const request = answerGraph(
     {
       id: "directory.timetable",
       frame: "StringLine",
-      needs: ["document.active", "document.compare", "route", "direction", "group"],
+      needs: ["document.active", "document.compare", "route", "direction", "group", "stage"],
       visible: () => sc.stage === "route" && !!sc.route,
       run: () =>
         framed("StringLine", () => (sc.timetable = null), async () => {
@@ -406,7 +426,7 @@ const request = answerGraph(
     {
       id: "analysis.hub",
       frame: "Hub",
-      needs: ["document.active", "group", "stop"],
+      needs: ["document.active", "group", "stop", "stage"],
       visible: () => sc.stage === "route" && !!sc.stop,
       run: () =>
         framed("Hub", () => ((sc.gaps = null), (sc.connections = null), (sc.missed = null)), async () => {
@@ -495,6 +515,7 @@ function writeHash(): void {
   if (sc.route) q.set("route", sc.route);
   if (sc.direction != null) q.set("dir", sc.direction);
   if (sc.stop) q.set("stop", sc.stop);
+  if (sc.block) q.set("block", sc.block);
   if (sc.window) q.set("hours", `${sc.window.from}-${sc.window.to}`);
   const next = `#${q}`;
   if (location.hash === next) return;
@@ -524,6 +545,7 @@ function readHash(): string[] {
   set("route", q.get("route") ?? "", "route");
   set("direction", q.get("dir"), "direction");
   set("stop", q.get("stop") ?? "", "stop");
+  set("block", q.get("block") ?? "", "block");
   const hours = q.get("hours")?.match(/^(\d+)-(\d+)$/);
   set("window", hours ? { from: Number(hours[1]), to: Number(hours[2]) } : null, "window");
   return changed;
@@ -603,6 +625,44 @@ export async function openPlan(key: string): Promise<void> {
   say(`${planName(sc.activeKey)}${sc.compareKey ? ` against ${planName(sc.compareKey)}` : ""}.`);
 }
 
+/// A plan renamed (the plan frame's name, through cap-author). The
+/// rename is not a change to the plan's service, so it is not on the
+/// undo stack.
+export async function renamePlan(key: string, name: string): Promise<void> {
+  const doc = getAllPlans()[key];
+  if (!doc || !name.trim()) return;
+  const applied = await apply(doc, [{ edit: "update_plan", name: name.trim() }]);
+  if (!applied) return;
+  authoredHealth.set(applied.network, { issues: applied.issues, warnings: applied.warnings });
+  putPlan(key, applied.network);
+  syncPlanRows();
+  await release();
+  await select(key === sc.activeKey ? "active" : "compare", "plans");
+  say(`Renamed to "${name.trim()}".`);
+}
+
+/// A plan removed from this device. A plan published to the server
+/// stays published; this drops the working copy and its undo history.
+export async function deletePlan(key: string): Promise<void> {
+  if (!getAllPlans()[key]) return;
+  const name = planName(key);
+  removePlan(key);
+  delete undo[key];
+  delete redo[key];
+  syncPlanRows();
+  await release();
+  if (sc.compareKey === key) sc.compareKey = "";
+  if (sc.activeKey === key) {
+    sc.activeKey = "";
+    const next = sc.plans[0]?.key;
+    if (next) await openPlan(next);
+    else say("Load a GTFS feed to begin.");
+  } else {
+    await select("compare", "plans");
+  }
+  say(`Removed "${name}" from this device.`);
+}
+
 export function setCompare(key: string): Promise<void> {
   sc.compareKey = key;
   return select("compare");
@@ -679,6 +739,44 @@ export function openRoute(route: string): Promise<void> {
   return select("route", "stop", "stage");
 }
 
+/// The route closed: the Route stage is empty again, and the grid and
+/// map mark no route.
+export function closeRoute(): Promise<void> {
+  sc.route = "";
+  sc.direction = null;
+  sc.routeDetail = null;
+  sc.timetable = null;
+  sc.selectedStop = "";
+  sc.selectedTrip = "";
+  sc.stop = "";
+  sc.editing = false;
+  return select("route", "direction", "stop");
+}
+
+/// A block opened on Vehicles & hours, from wherever it was named (a
+/// trip's row, a readiness issue).
+export function showBlock(block: string): Promise<void> {
+  sc.block = block;
+  sc.blockTrips = null;
+  sc.stage = "resources";
+  return select("block", "stage");
+}
+
+/// A day type opened on the Scan, from the proposal's scorecard.
+export function scanGroup(group: string): Promise<void> {
+  sc.group = group;
+  syncEditType();
+  sc.stage = "scan";
+  return select("group", "stage");
+}
+
+/// A block's chain opened (or closed, when it is the open one).
+export function openBlock(block: string): Promise<void> {
+  sc.block = sc.block === block ? "" : block;
+  if (!sc.block) sc.blockTrips = null;
+  return select("block");
+}
+
 /// A hub the route serves, read beside the route's day.
 export function openHub(stop: string): Promise<void> {
   sc.stop = stop;
@@ -704,7 +802,7 @@ export function toggleEdit(): void {
 }
 
 export function retry(): Promise<void> {
-  return select("active", "compare", "plans", "stage", "scan-view", "route", "stop");
+  return select("active", "compare", "plans", "stage", "scan-view", "route", "stop", "block");
 }
 
 // ---------------------------------------------------------------------
@@ -797,6 +895,10 @@ export const calendar = {
   setException: (id: string, date: string, state: "added" | "removed") => change([{ edit: "set_service_exception", id, date, state }]),
   removeException: (id: string, date: string) => change([{ edit: "remove_service_exception", id, date }]),
   rename: (id: string, name: string) => change([{ edit: "update_service_type", id, name }]),
+  /// A new key: weekdays, a year from the plan's period start.
+  add: () => change([{ edit: "add_service_type", from: periodFrom() }]),
+  /// Refused while trips run under the key (cap-author).
+  remove: (id: string) => change([{ edit: "remove_service_type", id }]),
   /// A route's trips onto another key: each pattern trips it runs
   /// under this key now runs under `to`.
   move: (patternTrips: string[], to: string) => change(patternTrips.map((id) => ({ edit: "set_pattern_trips_refs" as const, id, service_type: to }))),

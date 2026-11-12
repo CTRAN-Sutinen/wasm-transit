@@ -291,21 +291,30 @@ was worked through the ops on C-TRAN (three proposals, assessed,
 built, judged and revised): one selection bar (plan, baseline, the
 plan's day types — analysis `day_types`, D-137, a trial — the hour
 window, health, a route box) over five stages, each with the page's
-width. Plan & calendar: the pick timeline, the plan set and the fork,
-and the service keys (directory `service_keys`): each key's weekdays,
+width. Plan & calendar: the pick timeline, the plan set (open, set as
+baseline, rename — author `update_plan` —, delete from the device, and
+fork), and the service keys (directory `service_keys`), added
+(`add_service_type`) or removed (`remove_service_type`, refused while
+trips run under the key): each key's weekdays,
 date ranges and exceptions, edited in place (cap-author's calendar
 edits), what it carries (a route's trips moved to another key,
 `set_pattern_trips_refs`), and the combinations it forms. Scan: the
 frequency grid, the network map (directory `route_lines`) one click
-away. Route: one route's day — the string-line or the timetable, the
+away. Route: one route's day (closed again from its stage tab) — the string-line or the timetable, the
 changes (the service-design gestures), running time by start, gaps by
-hour, the trips by start with the key each runs under — with the
+hour, the trips by start with the key and the block each runs under (a
+block opens on Vehicles & hours) — with the
 change ledger and a stop the route serves read beside it (its
 connections, near misses and waits). Vehicles & hours: runcut
 `fleet_summary` and `suggest_blocks` on a date the day type runs —
-the peak, platform, revenue and layover hours, the trips on no block,
-and the suggested blocks adopted as one change. Proposal: analysis
-`plan_compare` across every day type, readiness, export and publish.
+the peak, platform, revenue and layover hours, the trips on no block
+and the suggested blocks adopted as one change, and every running
+block drawn on the day (the summary's spans), one opened to its chain
+(runcut `block_trips`). Proposal: analysis `plan_compare` across every
+day type (a day type's card opens it on the Scan), readiness (a block
+an issue names opens on Vehicles & hours), export and publish. A
+stage's reads re-run when the stage opens, so a route or block chosen
+while another stage is open reads in full there.
 The selection lives in the URL hash, which the page follows: back and
 forward move through the stages. It has no single-key shortcuts. Its
 authoring path (fork, apply, undo, export, publish) is service-design's,

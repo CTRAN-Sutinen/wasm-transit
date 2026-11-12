@@ -50,7 +50,7 @@
     const q = settled.trim().toLowerCase();
     if (!q) return options;
     return options.filter(
-      (o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q),
+      (o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q) || !!o.sub?.toLowerCase().includes(q),
     );
   });
   const shown = $derived(hits.slice(0, cap));

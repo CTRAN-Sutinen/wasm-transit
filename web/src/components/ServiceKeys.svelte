@@ -2,8 +2,9 @@
   /// The plan's service keys (directory `service_keys`) and the
   /// combinations they form (analysis `day_types`): pick a key to read
   /// and change its calendar — weekdays, date ranges, exceptions — and
-  /// what it carries, a route's trips moved onto another key. Events
-  /// out; every change is the host's `apply`.
+  /// what it carries, a route's trips moved onto another key; add a
+  /// key, or remove one that carries nothing. Events out; every change
+  /// is the host's `apply`.
   import type { ServiceKey } from "../types/ServiceKey";
   import type { DayType } from "../types/DayType";
   import { weekdaysText } from "./designFormat";
@@ -21,6 +22,8 @@
     onremoveexception,
     onrename,
     onmove,
+    onadd,
+    onremove,
     onroute,
   }: {
     keys: ServiceKey[];
@@ -34,6 +37,8 @@
     onremoveexception: (id: string, date: string) => void;
     onrename: (id: string, name: string) => void;
     onmove: (patternTrips: string[], to: string) => void;
+    onadd: () => void;
+    onremove: (id: string) => void;
     onroute: (route: string) => void;
   } = $props();
 
@@ -46,17 +51,27 @@
   let exState = $state<"added" | "removed">("added");
   let name = $state("");
   $effect(() => { name = key?.name ?? ""; });
+  // A key just added opens: the id that was not there before the add.
+  let before: string[] | null = null;
+  $effect(() => {
+    const ids = keys.map((k) => k.id);
+    if (!before) return;
+    const added = ids.find((id) => !before!.includes(id));
+    if (added) { picked = added; before = null; }
+  });
+  function add() { before = keys.map((k) => k.id); onadd(); }
 </script>
 
 <section class="keys" aria-label="Service keys" data-testid="service-keys">
   <div class="list">
     <h2>Service keys</h2>
+    <button type="button" class="new" disabled={!framed} onclick={add} data-testid="add-key">Add a key</button>
     <ul>
       {#each keys as k (k.id)}
         <li>
           <button type="button" class:on={k === key} aria-pressed={k === key} onclick={() => (picked = k.id)}>
-            <strong>{k.id}</strong>
-            <span class="muted">{weekdaysText(DAYS.map((d) => k.rule.days[d]))} · {k.trips} trips · {k.routes.length} routes</span>
+            <strong>{k.id}{#if k.name && k.name !== k.id}<span class="muted"> · {k.name}</span>{/if}</strong>
+            <span class="muted">{weekdaysText(DAYS.map((d) => k.rule.days[d]))} · {k.trips} trips · {k.routes.length} {k.routes.length === 1 ? "route" : "routes"}</span>
           </button>
         </li>
       {/each}
@@ -70,6 +85,9 @@
         <form onsubmit={(e) => { e.preventDefault(); if (name.trim() && name !== key.name) onrename(key.id, name.trim()); }}>
           <label>Name <input bind:value={name} disabled={!framed} /></label>
         </form>
+        <button type="button" class="remove" disabled={!framed || key.trips > 0} data-testid="remove-key"
+          title={key.trips > 0 ? "It carries trips: move its routes to another key first" : "Remove this key from the plan"}
+          onclick={() => { const id = key.id; if (confirm(`Remove service key ${id}?`)) { picked = ""; onremove(id); } }}>Remove key</button>
       </header>
       {#if !framed}<p class="note">This is the base network. Start a plan (above) to change its calendar.</p>{/if}
 
@@ -142,6 +160,10 @@
   ul { list-style: none; margin: 0; padding: 0; }
   .list button { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 0.1rem; padding: 0.4rem 0.6rem; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--text); font: inherit; cursor: pointer; }
   .list button.on { border-color: var(--accent); background: var(--accent-soft); }
+  .list .new, .remove { font: inherit; font-size: 0.78rem; padding: 0.2rem 0.6rem; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--text); cursor: pointer; margin-bottom: 0.4rem; }
+  .list .new { width: auto; display: inline-block; }
+  .remove { margin-left: auto; }
+  .list .new:disabled, .remove:disabled { opacity: 0.5; cursor: default; }
   .detail { border-left: 1px solid var(--line); padding-left: 1rem; min-width: 0; }
   header { display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
   .days { display: flex; gap: 0.25rem; }

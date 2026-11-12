@@ -20,7 +20,7 @@
     {@const c = regular.comparison}
     {@const others = t.groups.slice(1)}
     <article class:on={t.groups.some((g) => g.group.id === selected)}>
-      <button type="button" class="head" onclick={() => onselect(regular.group.id)}>
+      <button type="button" class="head" title="Open this day type on the Scan" onclick={() => onselect(regular.group.id)}>
         <strong>{weekdaysText(t.weekdays)}</strong>
         <span class="muted">{regular.group.dates.length} days</span>
       </button>

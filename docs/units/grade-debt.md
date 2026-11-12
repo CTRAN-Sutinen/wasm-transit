@@ -17,11 +17,11 @@ UI that reads the op pays the line instead.
   tracing a detour, and writing the edit document (`POST /edits`) —
   no page writes a detour; ride-now and the stop display only read
   them ([ui-disruptions.md](ui-disruptions.md) questions 3–5, 7).
-- cap-runcut (`blocks`, `block_trips`, `trip_stops`, `trip_path`,
-  `recovery`) and the kernel's `load_work_rules` — no UI shows a
-  day's blocks or a wait's recovery (`fleet_summary` and
-  `suggest_blocks` are read by service-change's Vehicles & hours and
-  service-design's ledger), and no page holds a work-rule
+- cap-runcut (`blocks`, `trip_stops`, `trip_path`, `recovery`) and
+  the kernel's `load_work_rules` — no UI shows a wait's recovery
+  (`fleet_summary`, `suggest_blocks` and `block_trips` are read by
+  service-change's Vehicles & hours, the first two by
+  service-design's ledger too), and no page holds a work-rule
   document (the engine has no `work_rules` loader); author `apply`'s
   `work_rules_hash` is unread too ([ui-runcut.md](ui-runcut.md)).
 - analysis `network_findings` (D-136) — no UI reads it: the

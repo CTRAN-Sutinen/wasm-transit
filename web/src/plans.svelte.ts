@@ -30,6 +30,16 @@ export function putPlan(id: string, doc: Network): void {
   void persistPlans();
 }
 
+/** Drop a plan from the set (and from IndexedDB with the next
+ * persist). The active plan id is the host's to move. */
+export function removePlan(id: string): void {
+  if (!(id in plans)) return;
+  const { [id]: _, ...rest } = plans;
+  plans = rest;
+  readPlans.delete(id);
+  void persistPlans();
+}
+
 export function setActivePlan(id: string): void {
   activePlanId = id;
   localStorage.setItem(ACTIVE_PLAN_KEY, id);

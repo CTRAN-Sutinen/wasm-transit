@@ -49,7 +49,8 @@ compare with Service design. It follows the steps of the work in
 order: set up the plan and its calendar (which service runs on which
 days, holidays included), scan how often each route runs hour by
 hour, change one route's day, check the buses and hours the change
-needs, and review the whole proposal for weekdays, Saturdays and
+needs (each bus's day drawn as a bar, with its trips one click away),
+and review the whole proposal for weekdays, Saturdays and
 Sundays.
 
 **Server:** needed.

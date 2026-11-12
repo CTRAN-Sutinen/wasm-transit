@@ -64,7 +64,7 @@
       <thead>
         <tr>
           <th class="route">Route</th>
-          {#each hours as h (h)}<th class="hr" class:win={inWindow(h)}>{h % 24}</th>{/each}
+          {#each hours as h (h)}<th class="hr" class:win={inWindow(h)} class:out={!!window && !inWindow(h)}>{h % 24}</th>{/each}
           <th class="n">Trips</th><th class="n">Span</th><th class="n">Rev h</th><th class="n">Rev mi</th>
         </tr>
       </thead>
@@ -78,7 +78,7 @@
             </th>
             {#each hours as h (h)}
               {@const c = cell(byHour.get(h))}
-              <td class="hr" class:win={inWindow(h)} title={c.title}>
+              <td class="hr" class:win={inWindow(h)} class:out={!!window && !inWindow(h)} title={c.title}>
                 <span class="cell" style:background={c.bg} style:color={c.fg}><b>{c.text}</b>{#if c.sub}<i>{c.sub}</i>{/if}</span>
               </td>
             {/each}
@@ -114,6 +114,8 @@
   .route button { font: inherit; font-weight: 600; border: 0; background: none; padding: 0; cursor: pointer; color: var(--text); font-family: ui-monospace, monospace; }
   td.hr { padding: 1px; min-width: 2.3rem; }
   td.hr.win { background: var(--accent-soft); }
+  /* Outside the hour window: still there, out of the way. */
+  .hr.out { opacity: 0.22; }
   .cell { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 2.1rem; border-radius: 3px; line-height: 1.05; }
   .cell b { font-size: 0.8rem; }
   .cell i { font-style: normal; font-size: 0.62rem; opacity: 0.85; }

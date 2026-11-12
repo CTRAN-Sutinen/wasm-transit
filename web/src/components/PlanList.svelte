@@ -3,7 +3,8 @@
   /// which is the baseline; open, set as baseline, fork the open plan
   /// into a dated pick (with the day its period runs through, the fork
   /// carries every weekly calendar to it — D-41), or import a feed as a
-  /// new base.
+  /// new base. A host that passes `onrename` / `ondelete` lets a plan
+  /// be renamed or removed from the device.
   let {
     plans,
     activeKey,
@@ -13,6 +14,8 @@
     oncompare,
     onfork,
     onfeed,
+    onrename,
+    ondelete,
   }: {
     plans: { key: string; id: string; name: string; effectiveFrom: string | null }[];
     activeKey: string;
@@ -22,7 +25,12 @@
     oncompare: (key: string) => void;
     onfork: (name: string, effectiveFrom: string, through: string) => void;
     onfeed: (file: File) => void;
+    onrename?: (key: string, name: string) => void;
+    ondelete?: (key: string) => void;
   } = $props();
+
+  let renaming = $state("");
+  let newName = $state("");
 
   let name = $state("");
   let date = $state("");
@@ -40,14 +48,26 @@
       {#each plans as p (p.key)}
         <tr class:active={p.key === activeKey}>
           <td>
+            {#if renaming === p.key}
+              <form class="rename" onsubmit={(e) => { e.preventDefault(); if (newName.trim()) onrename?.(p.key, newName.trim()); renaming = ""; }}>
+                <!-- svelte-ignore a11y_autofocus -->
+                <input bind:value={newName} aria-label="New name for {p.name}" autofocus onkeydown={(e) => { if (e.key === "Escape") renaming = ""; }} />
+                <button type="submit" disabled={!newName.trim()}>Save</button>
+                <button type="button" onclick={() => (renaming = "")}>Cancel</button>
+              </form>
+            {:else}
             <strong>{p.name}</strong>
             {#if p.key === activeKey}<span class="tag open">open</span>{/if}
             {#if p.key === compareKey}<span class="tag">baseline</span>{/if}
+            {/if}
           </td>
           <td class="muted">{p.effectiveFrom ?? (p.id ? "no date" : "none: the base every fork copies")}</td>
           <td class="actions">
             {#if p.key !== activeKey}<button type="button" onclick={() => onopen(p.key)}>Open</button>{/if}
             {#if p.key !== activeKey && p.key !== compareKey}<button type="button" onclick={() => oncompare(p.key)}>Set baseline</button>{/if}
+            {#if onrename}<button type="button" onclick={() => { renaming = p.key; newName = p.name; }} data-testid="rename-plan">Rename</button>{/if}
+            {#if ondelete}<button type="button" class="del" data-testid="delete-plan"
+              onclick={() => { if (confirm(`Remove "${p.name}" from this device? Its changes and undo history go with it. A copy published to the server stays published.`)) ondelete(p.key); }}>Delete</button>{/if}
           </td>
         </tr>
       {:else}
@@ -84,6 +104,10 @@
   button { font: inherit; font-size: 0.8rem; padding: 0.25rem 0.6rem; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; margin-left: 0.3rem; }
   button.pri { background: var(--text); color: var(--surface); border-color: var(--text); }
   button:disabled { opacity: 0.5; cursor: default; }
+  .rename { display: flex; gap: 0.3rem; align-items: center; }
+  .rename input { font: inherit; padding: 0.2rem 0.4rem; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--text); }
+  .rename button { margin-left: 0; }
+  button.del { color: var(--bad); }
   .fork { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; padding: 0.7rem 1rem; border-bottom: 1px solid var(--line); font-size: 0.85rem; }
   .fork input { font: inherit; padding: 0.2rem 0.4rem; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--text); }
   .hint { flex-basis: 100%; margin: 0; font-size: 0.78rem; color: var(--muted); }

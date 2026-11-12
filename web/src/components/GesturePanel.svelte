@@ -122,10 +122,10 @@
       </form>
       <form class="g" onsubmit={(e) => { e.preventDefault(); const [a, b] = [parseClock(bandFrom), parseClock(bandTo)]; if (a != null && b != null) onrunning(a, b, delta * 60); }} data-testid="gesture-running">
         <h3>Running time</h3>
-        <label>From <input bind:value={bandFrom} placeholder="15:00" aria-label="band from" /></label>
-        <label>Until <input bind:value={bandTo} placeholder="18:00" aria-label="band until" /></label>
+        <label>From <input bind:value={bandFrom} placeholder="e.g. 15:00" aria-label="band from" /></label>
+        <label>Until <input bind:value={bandTo} placeholder="e.g. 18:00" aria-label="band until" /></label>
         <label>Change (min) <input type="number" bind:value={delta} aria-label="running time change" /></label>
-        <p class="muted">Trips departing in the band run longer (or shorter), spread along each trip.</p>
+        <p class="muted">Trips departing in the band run longer (or shorter), spread along each trip.{#if parseClock(bandFrom) == null || parseClock(bandTo) == null}{" "}Fill in the band (or set the hours at the top) to apply.{/if}</p>
         <button type="submit" disabled={parseClock(bandFrom) == null || parseClock(bandTo) == null || !delta}>Apply</button>
       </form>
       <form class="g" onsubmit={(e) => { e.preventDefault(); const to = parseClock(tripTo); if (selectedTrip && to != null) onretime(selectedTrip.trip, to); }} data-testid="gesture-trip">

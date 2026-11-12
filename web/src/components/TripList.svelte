@@ -5,7 +5,12 @@
   import type { Timetable } from "../types/Timetable";
   import { clock } from "./designFormat";
 
-  let { timetable, selected, onselect }: { timetable: Timetable; selected: string; onselect: (key: string) => void } = $props();
+  let {
+    timetable,
+    selected,
+    onselect,
+    onblock,
+  }: { timetable: Timetable; selected: string; onselect: (key: string) => void; onblock?: (block: string) => void } = $props();
 </script>
 
 <section class="panel" aria-label="Trips" data-testid="trip-list">
@@ -20,7 +25,7 @@
             <td>{clock(t.start_secs)}</td>
             <td>{t.service_type}</td>
             <td>{Math.round(t.run_secs / 60)} min</td>
-            <td class="muted">{t.block ?? "none"}</td>
+            <td class="muted">{#if t.block && onblock}<button type="button" class="blk" title="Open the block on Vehicles & hours" onclick={(e) => { e.stopPropagation(); onblock(t.block!); }}>{t.block}</button>{:else}{t.block ?? "none"}{/if}</td>
             <td class="mark">{t.added ? "added" : t.retimed_from_secs != null ? `moved from ${clock(t.retimed_from_secs)}` : ""}</td>
           </tr>
         {/each}
@@ -41,4 +46,5 @@
   tr.on { background: var(--accent-soft); }
   .mark { color: var(--accent); }
   .muted { color: var(--muted); }
+  .blk { font: inherit; border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; }
 </style>

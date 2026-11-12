@@ -25,6 +25,7 @@
     publishError,
     onpublish,
     onhold,
+    onblock,
   }: {
     issues: NetworkError[];
     warnings: NetworkWarning[];
@@ -39,7 +40,15 @@
     /// Hold a trip until a time (a block's next trip, until its bus
     /// arrives); absent, no fix is offered.
     onhold?: (trip: string, toSecs: number) => void;
+    /// Open a block an issue names; absent, the block is text.
+    onblock?: (block: string) => void;
   } = $props();
+
+  /// The block an issue is about (every block issue names it), else null.
+  function blockOf(issue: object): string | null {
+    const body = Object.values(issue)[0] as { block?: unknown } | undefined;
+    return typeof body?.block === "string" ? body.block : null;
+  }
 
   /// The trip to hold and until when, as a block_infeasible issue
   /// names them; null for every other issue.
@@ -73,6 +82,9 @@
         <div>
           <strong>{w.kind}</strong>
           <div class="muted">{w.detail}</div>
+          {#if onblock && blockOf(issue)}
+            <button type="button" class="fix" onclick={() => onblock?.(blockOf(issue)!)}>Open block {blockOf(issue)}</button>
+          {/if}
           {#if h}
             <button type="button" class="fix" onclick={() => onhold?.(h.trip, h.until)} title="Moves trip {h.trip} alone; it keeps its running time and its block. Later trips of the block may then need the same.">Hold trip {h.trip} until {clock(h.until)}</button>
           {/if}
