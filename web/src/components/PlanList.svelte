@@ -81,7 +81,7 @@
     <label>Picks on <input type="date" bind:value={date} data-testid="fork-date" /></label>
     <label title="Every weekly service type still running at the calendar's end runs through this day; holidays and closed periods are not carried">Runs through <input type="date" bind:value={through} min={date} data-testid="fork-through" /></label>
     <button type="submit" class="pri" disabled={!name.trim() || !date} title={!name.trim() || !date ? "Give the fork a name and the day it picks" : ""}>Fork</button>
-    <p class="hint">A fork is a copy of the open plan that you can change. "Picks on" is the day it takes effect. "Runs through" is optional: the last day of its period, which carries the weekly service to that day.</p>
+    <p class="hint">A fork is a copy of the open plan that you can change. "Picks on" is the day it takes effect. "Runs through" is optional: the last day of its period, which carries the weekly service to that day. The fork keeps only the dates in its period.</p>
   </form>
   <label class="feed">
     Import a GTFS feed as a new base

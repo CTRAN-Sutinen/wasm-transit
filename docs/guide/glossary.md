@@ -82,6 +82,10 @@ saved stops. Documents are plain JSON or an open standard format.
 would, to find problems that test data hides. Here it usually means
 running C-TRAN's feed through caps-run.
 
+**Draft (schedule).** A pick a planner is still changing, kept on
+their own computer. It runs nowhere until it is published; once
+published it never changes in place.
+
 **Edit document.** The shared list of detours and trip cancellations
 that staff have entered. Each entry is a **record**. Only a
 deployment with a server has one.

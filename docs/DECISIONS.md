@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-138**.
+- IDs are never reused; the next new decision is **D-142**.
 
 ## Summary
 
@@ -191,6 +191,10 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-135 | Which browsers must the generated UIs support? | unanswered | the live-feeds panel in `web-conformance` |
 | D-136 | What does the worklist call weak? | encoded | nothing |
 | D-137 | How are a plan's service combinations shown as day types? | encoded | nothing |
+| D-138 | Does a fork keep the dates outside its period? | decided | nothing |
+| D-139 | Is there a base network the plans fork from? | decided | nothing |
+| D-140 | What date does an imported feed pick on? | decided | nothing |
+| D-141 | What does an open plan compare against by default? | decided | nothing |
 
 ## The trip model
 
@@ -465,6 +469,9 @@ Pins: `crates/transit-network/tests/plan_period_law_test.rs`,
 its weekly service through its period"); on C-TRAN, once the import
 reads its dated calendars as weekly (D-105), see D-105's pins.
 Why: `docs/architecture/crates.md`, Why, "A fork carries weekly service through its period".
+Amended: D-138 (2026-11-12) — the fork's calendar is its period: the
+dates outside it leave, so a holiday or closure before the pick is no
+longer kept as it was.
 Blocks: nothing (QAF-54 is free to start on D-105).
 
 ## Service design
@@ -614,6 +621,53 @@ none is pooled with another. A combination with no date in the period
 is not shown.
 Pinned by: `day_types_arrange_the_combinations_by_weekday`
 (`crates/transit-analysis/tests/analysis_prop_test.rs`).
+Blocks: nothing.
+
+### D-138 — Does a fork keep the dates outside its period?
+State: Decided.
+Answer: 2026-11-12 — no. The user: "when i fork a pick, it holds onto
+all the old dates, which makes no sense. if my new service runs from
+january 2027 to may 2027 for example, why would it have date ranges
+from 2026?" A fork's calendar is its period: from its pick date
+through its period end (open at the end when none is given).
+Built (`set_plan`): after the carry (D-41), every range is cut to the
+period, and a range or exception wholly outside it goes. Readings, not
+confirmed by the user: every service type stays even when left with no
+date (trips still name it; it runs nothing in the period — a closure
+before the pick, last year's holiday); and the carry reads the
+calendar up to the period's end (a range starting after it, or a date
+past it, never counts), so forking twice with the same frame changes
+nothing the second time.
+Pins: `crates/transit-network/tests/plan_period_law_test.rs` (laws 2–4,
+`the_winter_fork_runs_past_the_import_calendar`); on C-TRAN, a fork
+picking 2027-01-10 through 2027-05-31 holds each weekly key exactly
+that period, the closed fall period and last year's holidays no date.
+Why: `docs/architecture/crates.md`, Why, "A fork carries weekly service through its period".
+Blocks: nothing.
+
+### D-139 — Is there a base network the plans fork from?
+State: Decided.
+Answer: 2026-11-12 — no. The user: "'base plan' assumes a forever
+immutable base which makes little sense, we have the active one in
+production *now* and forward and backward in time — there is no
+constant base." The plans are the picks on a timeline: earlier ones,
+the one in force today, later ones, each published or a local draft. A
+published pick is read-only: a change to it goes into a fork, which is
+published in its turn (the user chose "read-only; fork it").
+Blocks: nothing.
+
+### D-140 — What date does an imported feed pick on?
+State: Decided.
+Answer: 2026-11-12 — its first service date: the earliest date its
+calendar runs, filled in at the import and changeable there.
+Blocks: nothing.
+
+### D-141 — What does an open plan compare against by default?
+State: Decided.
+Answer: 2026-11-12 — nothing: no comparison until the planner chooses
+one. The user: "the existing comparison isn't coherent anyways, we
+have a lot to fix on that front" — the comparison itself is reworked
+on its own.
 Blocks: nothing.
 
 ### D-53 — What ridership data does the planner bring?

@@ -234,7 +234,10 @@ test("a fork past the calendar carries its weekly service through its period", a
   await page.keyboard.press("6");
   await expect(page.getByTestId("readiness")).toContainText(/no service in plan period/i);
 
+  // A fork keeps only its period's dates (D-138): "Late" kept none, so
+  // the carrying fork starts again from the base.
   await page.keyboard.press("1");
+  await page.getByTestId("plan-list").locator("tr", { hasText: "the base every fork copies" }).getByRole("button", { name: "Open" }).click();
   await page.getByTestId("fork-name").fill("Winter 2027");
   await page.getByTestId("fork-date").fill("2027-01-11");
   await page.getByTestId("fork-through").fill("2027-05-28");

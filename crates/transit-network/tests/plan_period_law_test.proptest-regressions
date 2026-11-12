@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 9323d99e0031456a026c579412b9df6ab3052a5b205c48362442e2145819c64f # shrinks to types = [GenType { days: [false, false, false, false, false, false, false], ranges: [], exceptions: [(0, false)] }], from = 1, len = 0
+cc 7348e5a511142867d337dbca5b4859805116df660b303f0e82c669a4fbc40d1d # shrinks to types = [GenType { days: [false, false, false, false, false, false, false], ranges: [], exceptions: [(0, false)] }], from = 1
+cc 85f7070f6332a093e94181262d67bd026e4a4a4d55fd75bb4eb845d4a9df42fb # shrinks to types = [GenType { days: [false, false, false, false, false, true, false], ranges: [(0, 91)], exceptions: [(123, true)] }], from = 61, len = 31
+cc f6a7d19c1582257338f034afc0d08451cc79dfcae3f21ecec8b211d21937c3f1 # shrinks to types = [GenType { days: [false, false, false, false, false, false, true], ranges: [(145, 0), (47, 9)], exceptions: [] }], from = 0, len = 57

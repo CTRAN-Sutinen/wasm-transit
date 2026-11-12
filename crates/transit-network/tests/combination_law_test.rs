@@ -22,13 +22,16 @@
 //! * **Spans** (D-94) — the dates, folded into spans: a new span starts
 //!   where the next date it holds is more than seven days after the
 //!   last; the spans' days sum to the dates.
+//! * **First service date** (D-140) — `first_service_date` is the
+//!   earliest date some type with trips runs, None when nothing runs:
+//!   the date an imported feed picks on.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{Duration, NaiveDate};
 use proptest::prelude::*;
 use transit_network::{
-    service_combination, service_combinations, CalendarException, CalendarRule, DateRange, DayState, Network, ServiceType,
+    first_service_date, service_combination, service_combinations, CalendarException, CalendarRule, DateRange, DayState, Network, ServiceType,
     WeekdaySet,
 };
 
@@ -107,6 +110,19 @@ fn network(types: &[GenType]) -> Network {
 }
 
 proptest! {
+    #[test]
+    fn the_first_service_date_is_the_earliest_date_anything_runs(types in proptest::collection::vec(gen_type(), 0..=5)) {
+        let net = network(&types);
+        let with_trips: BTreeSet<String> = net.pattern_trips.values()
+            .filter(|pt| !pt.trips.is_empty())
+            .map(|pt| pt.service_type.clone())
+            .collect();
+        let oracle = (0..200i64)
+            .map(|day| EPOCH + Duration::days(day))
+            .find(|date| net.service_types.iter().any(|(id, st)| with_trips.contains(id) && st.rule.runs_on(*date)));
+        prop_assert_eq!(first_service_date(&net), oracle);
+    }
+
     #[test]
     fn combinations_partition_the_dates(types in proptest::collection::vec(gen_type(), 0..=5)) {
         let net = network(&types);

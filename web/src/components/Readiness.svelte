@@ -26,6 +26,7 @@
     onpublish,
     onhold,
     onblock,
+    locked = "This is the base network, not a pick. Fork it into a plan (Plans view) to export or publish.",
   }: {
     issues: NetworkError[];
     warnings: NetworkWarning[];
@@ -42,6 +43,9 @@
     onhold?: (trip: string, toSecs: number) => void;
     /// Open a block an issue names; absent, the block is text.
     onblock?: (block: string) => void;
+    /// Why the plan cannot be exported or published (shown when it
+    /// cannot): the host's words for its plan set.
+    locked?: string;
   } = $props();
 
   /// The block an issue is about (every block issue names it), else null.
@@ -120,7 +124,7 @@
   {:else if exported}
     <p class="muted pad">Exported — feed {exported.slice(0, 19)}…</p>
   {:else if !framed}
-    <p class="muted pad">This is the base network, not a pick. Fork it into a plan (Plans view) to export or publish.</p>
+    <p class="muted pad">{locked}</p>
   {/if}
 </section>
 

@@ -291,9 +291,19 @@ was worked through the ops on C-TRAN (three proposals, assessed,
 built, judged and revised): one selection bar (plan, baseline, the
 plan's day types — analysis `day_types`, D-137, a trial — the hour
 window, health, a route box) over five stages, each with the page's
-width. Plan & calendar: the pick timeline, the plan set (open, set as
-baseline, rename — author `update_plan` —, delete from the device, and
-fork), and the service keys (directory `service_keys`), added
+width. Plan & calendar: the pick timeline and the picks (PickList,
+D-139) — there is no base network: every pick the deployment publishes
+(engine `publishedPlanSet`; one is fetched as a value when it opens,
+`publishedPickValue`) and every draft on this device, by pick date,
+the one running today marked (plans `in_force` over the published set,
+else, before the first pick takes effect, the deployment's feed). A
+published pick, and the deployment's feed, are read-only: a change goes
+into a fork (author `set_plan`, the fork's calendar its period, D-138).
+A draft is renamed and re-dated (`update_plan`) and deleted from the
+device. An imported feed is a draft picking on its first service date
+(network `import`'s `first_service_date`, D-140); the page opens on
+what runs today. Nothing is compared until the planner chooses a plan
+to compare against (D-141). Then the service keys (directory `service_keys`), added
 (`add_service_type`) or removed (`remove_service_type`, refused while
 trips run under the key): each key's weekdays,
 date ranges and exceptions, edited in place (cap-author's calendar

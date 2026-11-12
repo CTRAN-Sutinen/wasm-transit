@@ -86,6 +86,9 @@ pub enum Response {
     /// `timezone`: the zone the network's dates are counted in (its
     /// operators' one zone, absent when they name none or disagree) —
     /// what a host needs to turn its clock into the agency's date.
+    /// `first_service_date`: the earliest date it runs service
+    /// ("YYYY-MM-DD"; absent when nothing runs) — the date the import
+    /// picks on (D-140).
     Import {
         network: Network,
         boundary: Boundary,
@@ -93,6 +96,7 @@ pub enum Response {
         network_hash: String,
         boundary_hash: String,
         timezone: Option<String>,
+        first_service_date: Option<String>,
     },
     /// `issues` gate (invalid documents never export); `warnings`
     /// never gate — they name what validity lets through (trips with
@@ -121,7 +125,8 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let (network_hash, _) = NETWORK.register(network.clone())?;
             let (boundary_hash, _) = BOUNDARY.register(boundary.clone())?;
             let timezone = network.timezone().map(str::to_string);
-            Ok(Response::Import { network, boundary, notes, network_hash, boundary_hash, timezone })
+            let first_service_date = transit_network::first_service_date(&network).map(|d| d.to_string());
+            Ok(Response::Import { network, boundary, notes, network_hash, boundary_hash, timezone, first_service_date })
         }
         Request::Validate { network_hash } => {
             let network = NETWORK.require(&network_hash)?;

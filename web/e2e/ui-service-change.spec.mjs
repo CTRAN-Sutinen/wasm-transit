@@ -1,10 +1,12 @@
 // The service-change UI (src/uis/service-change) — a service change
 // in the stages the work takes (docs/architecture/generated-uis.md):
 //
-//   1. Plan & calendar: a feed becomes the base network; a plan started
-//      from it picks on a date; its service keys read as authored and
-//      change in place (an exception date: Thanksgiving off the weekday
-//      key).
+//   1. Plan & calendar: a feed imports as a draft pick on its first
+//      service date (D-140); a plan forked from it picks on a date; its
+//      service keys read as authored and change in place (an exception
+//      date: Thanksgiving off the weekday key). Nothing is compared
+//      until the planner chooses (D-141): the tests compare against the
+//      imported draft.
 //   2. Scan: the frequency grid first, the map one click away.
 //   3. Route: a row opens one route's day — the string-line, each trip's
 //      running time and key — and a trip moved there reads as moved; a
@@ -25,12 +27,18 @@ async function startPlan(page) {
   await page.getByRole("button", { name: /Plan & calendar/ }).click();
   await page.getByTestId("feed-input").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
   await expect(page.getByTestId("plan-select")).toHaveValue(/plan-/, { timeout: 10_000 });
-  // The base is read, not changed: its calendar is shown, the edits off.
-  await expect(page.getByTestId("service-key")).toContainText("Start a plan");
+  // The import is a draft pick on its first service date (the fixture's
+  // weekday calendar starts 2026-01-01), named after its file.
+  const imported = page.getByTestId("plan-list").getByTestId("pick-row").filter({ hasText: "sample-gtfs" });
+  await expect(imported).toContainText("2026-01-01");
+  await expect(imported).toContainText("draft");
   await page.getByTestId("fork-name").fill("Spring");
   await page.getByTestId("fork-date").fill("2026-11-02");
   await page.getByRole("button", { name: "Fork" }).click();
   await expect(page.getByTestId("status")).toContainText('Started "Spring"');
+  // Nothing is compared until chosen.
+  await expect(page.getByTestId("base-select")).toHaveValue("");
+  await page.getByTestId("base-select").selectOption({ label: "sample-gtfs" });
 }
 
 test("the stages: calendar, scan, route, vehicles, proposal", async ({ page }) => {
@@ -112,7 +120,7 @@ test("plans, keys, routes and blocks: each control lands somewhere", async ({ pa
   // A plan renamed; a service key added, then removed.
   const plans = page.getByTestId("plan-list");
   await plans.locator("tr", { hasText: "Spring" }).getByTestId("rename-plan").click();
-  await plans.locator(".rename input").fill("Spring 2027");
+  await plans.getByLabel("New name for Spring").fill("Spring 2027");
   await plans.getByRole("button", { name: "Save" }).click();
   await expect(status).toContainText('Renamed to "Spring 2027"');
   await expect(page.getByTestId("plan-select").locator("option:checked")).toHaveText("Spring 2027");
@@ -183,10 +191,56 @@ test("plans, keys, routes and blocks: each control lands somewhere", async ({ pa
   await page.getByTestId("plan-score").locator("article").first().getByRole("button").first().click();
   await expect(page.getByTestId("stage-scan")).toBeVisible();
 
-  // The plan deleted from the device; the base opens.
+  // The draft deleted from the device; another plan opens.
   await page.locator("nav.stages").getByRole("button", { name: /Plan & calendar/ }).click();
   page.once("dialog", (d) => d.accept());
   await plans.locator("tr", { hasText: "Spring 2027" }).getByTestId("delete-plan").click();
   await expect(status).toContainText('Removed "Spring 2027"');
   await expect(plans).not.toContainText("Spring 2027");
+});
+
+// A published pick is read-only (D-139): the store-mode server (:8084,
+// shared with published-picks and deploy-updates, which run before
+// this file) publishes the fork; the pick is retired again at the end.
+test.describe("a published pick", () => {
+  test.use({ baseURL: "http://127.0.0.1:8084" });
+
+  test("is read-only: its changes go into a fork", async ({ page, request, browser }) => {
+    await startPlan(page);
+    const status = page.getByTestId("status");
+    const id = (await page.evaluate(() => new URLSearchParams(location.hash.slice(1)).get("plan"))).replace(/^plan-/, "");
+    try {
+      // The fork picks inside the fixture's calendar, so it runs service.
+      await page.getByRole("button", { name: /Proposal/ }).click();
+      await page.getByTestId("publish").click();
+      await expect(page.getByTestId("readiness")).toContainText(/published/i, { timeout: 10_000 });
+      // Its row says so, and its calendar no longer changes.
+      await page.getByRole("button", { name: /Plan & calendar/ }).click();
+      const row = page.getByTestId("plan-list").getByTestId("pick-row").filter({ hasText: "Spring" });
+      await expect(row).toContainText("published");
+      await expect(row.getByTestId("rename-plan")).toHaveCount(0);
+      await expect(page.getByTestId("service-key")).toContainText("is published");
+      await expect(page.getByTestId("service-key").getByRole("button", { name: "mon" })).toBeDisabled();
+      // A fork of it is a draft that changes.
+      await page.getByTestId("fork-name").fill("Spring revised");
+      await page.getByTestId("fork-date").fill("2026-11-09");
+      await page.getByRole("button", { name: "Fork" }).click();
+      await expect(status).toContainText('Started "Spring revised"');
+      await expect(page.getByTestId("service-key").getByRole("button", { name: "mon" })).toBeEnabled();
+
+      // Another device, nothing stored: the pick is on its timeline,
+      // fetched by hash when it opens, and read-only there too.
+      const fresh = await browser.newContext({ baseURL: "http://127.0.0.1:8084", serviceWorkers: "block" });
+      const other = await fresh.newPage();
+      await other.goto("/service-change.html#stage=calendar");
+      const pick = other.getByTestId("plan-list").getByTestId("pick-row").filter({ hasText: "Spring" }).first();
+      await expect(pick).toContainText("published", { timeout: 15_000 });
+      if (await pick.getByRole("button", { name: "Open" }).count()) await pick.getByRole("button", { name: "Open" }).click();
+      await expect(pick).toContainText("open");
+      await expect(other.getByTestId("service-key")).toContainText("is published");
+      await fresh.close();
+    } finally {
+      await request.post("/plans/retire", { data: { id } });
+    }
+  });
 });

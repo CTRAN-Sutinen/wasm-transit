@@ -19,7 +19,7 @@
 /// service-design host's, copied: one UI never imports another's files.
 
 import { getAllPlans, getActivePlanId, putPlan, readPlan, removePlan, setActivePlan, restorePlans } from "../../plans.svelte";
-import { ask, assemble, available, keep, produced, servedNetworkValue, Doc } from "../../engine";
+import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, servedNetworkValue, Doc } from "../../engine";
 import { answerGraph, readAgencyZone, today } from "../kit";
 
 // This page's capabilities answer inside its linked assembly (D-77).
@@ -47,6 +47,7 @@ import type { Suggestion } from "../../types/transit_runs/Suggestion";
 import type { BlockChainTrip } from "../../types/BlockChainTrip";
 import type { PlanIssue } from "../../types/cap_plans/PlanIssue";
 import type { PlanPeriod } from "../../types/cap_plans/PlanPeriod";
+import type { PublishedPlans } from "../../types/cap_plans/PublishedPlans";
 
 export type Stage = "calendar" | "scan" | "route" | "resources" | "proposal";
 export const STAGES: { id: Stage; label: string }[] = [
@@ -57,7 +58,11 @@ export const STAGES: { id: Stage; label: string }[] = [
   { id: "proposal", label: "Proposal" },
 ];
 export type ScanView = "grid" | "map";
-export type PlanRow = { key: string; id: string; name: string; effectiveFrom: string | null };
+/// A plan on the timeline (D-139): a pick the deployment publishes
+/// (read-only: a change goes into a fork) or a draft on this device.
+/// `loaded`: its document is on this device (a published pick is
+/// fetched the first time it opens).
+export type PlanRow = { key: string; id: string; name: string; effectiveFrom: string | null; published: boolean; loaded: boolean };
 /// The hour window, service-day hours [from, to).
 export type HourWindow = { from: number; to: number };
 
@@ -67,6 +72,8 @@ export const sc = $state({
   busy: false,
   feed: null as { label: string; info: FeedInfo | null } | null,
   plans: [] as PlanRow[],
+  /// The deployment's published plan set (null: it publishes none).
+  pickSet: null as PublishedPlans | null,
   activeKey: "",
   compareKey: "",
   chain: null as { inForce: string | null; periods: PlanPeriod[]; issues: PlanIssue[] } | null,
@@ -151,19 +158,78 @@ function syncEditType(): void {
   if (!members.includes(sc.editType)) sc.editType = members[0] ?? "";
 }
 
-const BASE_NAME = "Base network";
-
 export function planName(key: string): string {
   return sc.plans.find((p) => p.key === key)?.name ?? "";
 }
 
+/// A published pick's key until (and after) its document is fetched.
+const pickKey = (id: string) => `published:${id}`;
+
+/// The timeline's rows: every plan on this device, then every
+/// published pick not on it yet. A plan whose identity the deployment
+/// publishes is published, wherever it was made.
 function syncPlanRows(): void {
-  sc.plans = Object.entries(getAllPlans()).map(([key, d]) => ({
+  const picks = (sc.pickSet?.plans ?? []).filter((p) => p.status === "published");
+  const publishedIds = new Set(picks.map((p) => p.id));
+  const rows: PlanRow[] = Object.entries(getAllPlans()).map(([key, d]) => ({
     key,
     id: d.plan?.id ?? "",
-    name: d.plan?.name || BASE_NAME,
+    name: d.plan?.name || d.name || "Unnamed plan",
     effectiveFrom: d.plan?.effective_from ?? null,
+    // The deployment's feed (its import, `served:`) is in production
+    // too until a pick takes effect: read-only like a pick.
+    published: (!!d.plan?.id && publishedIds.has(d.plan.id)) || key.startsWith("served:"),
+    loaded: true,
   }));
+  for (const p of picks) {
+    if (!rows.some((r) => r.id === p.id)) {
+      rows.push({ key: pickKey(p.id), id: p.id, name: p.name, effectiveFrom: p.effective_from, published: true, loaded: false });
+    }
+  }
+  sc.plans = rows;
+}
+
+/// What runs in production today: the published pick in force, else
+/// — before the first takes effect — the deployment's feed (the rule
+/// the deployment serves by, engine `servedNetwork`).
+export function runsToday(): string | null {
+  return sc.chain?.inForce ?? sc.plans.find((p) => p.key.startsWith("served:"))?.id ?? null;
+}
+
+/// Can the open plan change? A draft with a pick date can; a published
+/// pick is read-only (D-139), and a plan with no pick date sets one
+/// first.
+export function editable(key = sc.activeKey): boolean {
+  const row = sc.plans.find((p) => p.key === key);
+  return !!row && !row.published && !!row.id;
+}
+
+/// A published pick's document, fetched once and kept on this device
+/// (the status says so only while it is fetched).
+async function ensureLoaded(key: string): Promise<boolean> {
+  if (getAllPlans()[key]) return true;
+  return (await step("Fetching the pick…", () => fetchPick(key))) ?? false;
+}
+
+async function fetchPick(key: string): Promise<boolean> {
+  const pick = sc.pickSet?.plans.find((p) => pickKey(p.id) === key);
+  if (!pick) return false;
+  const doc = await publishedPickValue(pick);
+  if (!doc?.value) return false;
+  docs.set(doc.value, doc);
+  putPlan(key, doc.value);
+  syncPlanRows();
+  return true;
+}
+
+/// A feed's document stamped as a pick on its first service date
+/// (D-140): the date it is listed under, changeable on its row.
+async function stampAsPick(doc: Network, name: string, firstServiceDate: string | null): Promise<Network> {
+  if (doc.plan?.id || !firstServiceDate) return doc;
+  const applied = await apply(doc, [{ edit: "set_plan", plan: { id: crypto.randomUUID(), name, effective_from: firstServiceDate } }]);
+  if (!applied) return doc;
+  authoredHealth.set(applied.network, { issues: applied.issues, warnings: applied.warnings });
+  return applied.network;
 }
 
 const authoredHealth = new WeakMap<Network, { issues: NetworkError[]; warnings: NetworkWarning[] }>();
@@ -447,8 +513,11 @@ const request = answerGraph(
       run: () =>
         framed("Plans", () => (sc.chain = null), async () => {
           const infos = sc.plans.filter((p) => p.id).map((p) => ({ id: p.id, name: p.name, effective_from: p.effectiveFrom }));
+          // Only a published pick is ever in force (a draft runs
+          // nowhere): the plans module answers it from the published set.
+          const inForce = sc.pickSet ? (await ask("plans", "in_force", { published: sc.pickSet, date: today() })).plan?.id ?? null : null;
           sc.chain = {
-            inForce: (await ask("plans", "resolve", { plans: infos, date: today() })).plan,
+            inForce,
             periods: (await ask("plans", "periods", { plans: infos })).periods,
             issues: (await ask("plans", "validate", { plans: infos })).issues,
           };
@@ -571,23 +640,37 @@ addEventListener("popstate", () => {
 // boot and loaders
 // ---------------------------------------------------------------------
 
+/// The page opens on the plan it had open, else what runs today: the
+/// pick in force (the deployment's timeline, D-139), else — before the
+/// first pick takes effect — the deployment's feed, as a read-only
+/// pick on its first service date (D-140), beside the published picks.
 export async function boot(): Promise<void> {
   await Promise.all([restorePlans(), readAgencyZone()]);
+  sc.pickSet = await publishedPlanSet().catch(() => null);
   syncPlanRows();
-  sc.activeKey = getAllPlans()[getActivePlanId()] ? getActivePlanId() : (sc.plans[0]?.key ?? "");
+  sc.activeKey = getAllPlans()[getActivePlanId()] ? getActivePlanId() : "";
   readHash();
   if (sc.activeKey) {
     await openPlan(sc.activeKey);
     return;
   }
-  const key = await step("Loading the published network…", async () => {
+  // Production today: the pick in force, else (before the first takes
+  // effect) the deployment's feed.
+  if (sc.pickSet?.plans.length && (await available("plans"))) {
+    const inForce = (await ask("plans", "in_force", { published: sc.pickSet, date: today() })).plan;
+    if (inForce) {
+      await openPlan(pickKey(inForce.id));
+      return;
+    }
+  }
+  const key = await step("Loading the deployment's feed…", async () => {
     const served = await servedNetworkValue();
     if (!served?.network.value) return null;
-    const network = served.network.value;
-    docs.set(network, served.network);
-    const key = `plan-${crypto.randomUUID()}`;
+    docs.set(served.network.value, served.network);
+    const network = await stampAsPick(served.network.value, served.network.value.name || "The deployment's feed", served.firstServiceDate);
+    const key = `served:${served.network.pin ?? crypto.randomUUID()}`;
     putPlan(key, network);
-    sc.feed = { label: network.name || "the published network", info: null };
+    sc.feed = { label: network.name || "the deployment's feed", info: null };
     syncPlanRows();
     return key;
   });
@@ -600,9 +683,9 @@ export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<v
     const feed = new Doc("feed", { bytes });
     const info = (await available("gtfs")) ? (await ask("gtfs", "feed_info", { feed_hash: feed })).info : null;
     const imported = await ask("network", "import", { feed_hash: feed });
-    const doc = imported.network;
-    docs.set(doc, produced("network", doc, "network", imported.network_hash));
-    const key = `plan-${crypto.randomUUID()}`;
+    docs.set(imported.network, produced("network", imported.network, "network", imported.network_hash));
+    const doc = await stampAsPick(imported.network, label.replace(/\.zip$/i, ""), imported.first_service_date ?? null);
+    const key = `plan-${doc.plan?.id || crypto.randomUUID()}`;
     putPlan(key, doc);
     sc.feed = { label, info };
     syncPlanRows();
@@ -615,11 +698,12 @@ export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<v
 // the plan set
 // ---------------------------------------------------------------------
 
+/// A plan opened; nothing is compared until the planner chooses (D-141).
 export async function openPlan(key: string): Promise<void> {
-  if (!getAllPlans()[key]) return;
+  if (!(await ensureLoaded(key))) return;
   sc.activeKey = key;
   setActivePlan(key);
-  if (!sc.compareKey || sc.compareKey === key) sc.compareKey = sc.plans.find((p) => p.key !== key)?.key ?? "";
+  if (sc.compareKey === key) sc.compareKey = "";
   syncHistory();
   await step("Reading the plan…", () => select("active", "compare", "plans", "stage"));
   say(`${planName(sc.activeKey)}${sc.compareKey ? ` against ${planName(sc.compareKey)}` : ""}.`);
@@ -630,7 +714,7 @@ export async function openPlan(key: string): Promise<void> {
 /// undo stack.
 export async function renamePlan(key: string, name: string): Promise<void> {
   const doc = getAllPlans()[key];
-  if (!doc || !name.trim()) return;
+  if (!doc || !name.trim() || !editable(key)) return;
   const applied = await apply(doc, [{ edit: "update_plan", name: name.trim() }]);
   if (!applied) return;
   authoredHealth.set(applied.network, { issues: applied.issues, warnings: applied.warnings });
@@ -641,8 +725,24 @@ export async function renamePlan(key: string, name: string): Promise<void> {
   say(`Renamed to "${name.trim()}".`);
 }
 
-/// A plan removed from this device. A plan published to the server
-/// stays published; this drops the working copy and its undo history.
+/// A draft's pick date set (the plan frame's `effective_from`; a plan
+/// with no pick date is stamped as a pick here). Not on the undo stack.
+export async function setPickDate(key: string, date: string): Promise<void> {
+  const doc = getAllPlans()[key];
+  const row = sc.plans.find((p) => p.key === key);
+  if (!doc || !date || row?.published) return;
+  const applied = await apply(doc, [{ edit: "update_plan", effective_from: date, ...(doc.plan?.id ? {} : { id: crypto.randomUUID() }) }]);
+  if (!applied) return;
+  authoredHealth.set(applied.network, { issues: applied.issues, warnings: applied.warnings });
+  putPlan(key, applied.network);
+  syncPlanRows();
+  await release();
+  await select(key === sc.activeKey ? "active" : "compare", "plans");
+  say(`${planName(key)} now picks on ${date}.`);
+}
+
+/// A plan removed from this device. A published pick stays published
+/// (and on the timeline); this drops the copy here and its undo history.
 export async function deletePlan(key: string): Promise<void> {
   if (!getAllPlans()[key]) return;
   const name = planName(key);
@@ -654,7 +754,7 @@ export async function deletePlan(key: string): Promise<void> {
   if (sc.compareKey === key) sc.compareKey = "";
   if (sc.activeKey === key) {
     sc.activeKey = "";
-    const next = sc.plans[0]?.key;
+    const next = sc.plans.find((p) => p.loaded)?.key ?? sc.plans[0]?.key;
     if (next) await openPlan(next);
     else say("Load a GTFS feed to begin.");
   } else {
@@ -663,9 +763,11 @@ export async function deletePlan(key: string): Promise<void> {
   say(`Removed "${name}" from this device.`);
 }
 
-export function setCompare(key: string): Promise<void> {
+export async function setCompare(key: string): Promise<void> {
+  if (key && !(await ensureLoaded(key))) return;
   sc.compareKey = key;
-  return select("compare");
+  await step("Comparing…", () => select("compare"));
+  say(key ? `${planName(sc.activeKey)} against ${planName(key)}.` : `${planName(sc.activeKey)}, compared with nothing.`);
 }
 
 export async function fork(name: string, effectiveFrom: string, through = ""): Promise<void> {
@@ -687,7 +789,6 @@ export async function fork(name: string, effectiveFrom: string, through = ""): P
   authoredHealth.set(applied.network, { issues: applied.issues, warnings: applied.warnings });
   putPlan(key, applied.network);
   syncPlanRows();
-  sc.compareKey = from;
   sc.stage = "calendar";
   await openPlan(key);
   say(`Started "${name.trim()}" from ${planName(from)}. Changes go into it; ${planName(from)} stays as it is.`);
@@ -841,8 +942,13 @@ async function adopt(next: Network, health: { issues: NetworkError[]; warnings: 
 export async function change(edits: NetworkEdit[]): Promise<void> {
   const doc = active();
   if (!doc) return;
-  if (!doc.plan?.id) {
-    say("This is the base network. Start a plan from it (Plans) before changing it.", true);
+  if (!editable()) {
+    say(
+      sc.plans.find((p) => p.key === sc.activeKey)?.published
+        ? `${planName(sc.activeKey)} is published, so it does not change: fork it (Plan & calendar) and change the fork.`
+        : `${planName(sc.activeKey)} has no pick date: set one (Plan & calendar) before changing it.`,
+      true,
+    );
     return;
   }
   const applied = await apply(doc, edits);
@@ -930,6 +1036,11 @@ export async function publishPlan(): Promise<void> {
     }
     if (!resp.ok) throw new Error(`the server did not publish it: ${(await resp.text()).trim() || resp.status}`);
     sc.published = (await resp.json()) as { plans_hash: string };
+    // Published now: on the timeline as a pick, read-only (D-139).
+    sc.pickSet = await publishedPlanSet().catch(() => sc.pickSet);
+    syncPlanRows();
+    await select("plans");
+    say(`Published "${doc.plan?.name}": it takes effect ${doc.plan?.effective_from}. It no longer changes; fork it to change it.`);
   });
 }
 

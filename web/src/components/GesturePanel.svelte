@@ -19,6 +19,7 @@
 
   let {
     framed,
+    locked = "This is the base network. Fork it into a plan (Plans view) to change it.",
     members,
     editType,
     alsoIn,
@@ -36,6 +37,8 @@
     onremovestop,
   }: {
     framed: boolean;
+    /// Why the plan cannot change (shown when it cannot).
+    locked?: string;
     /// The selected group's service types, and the one edited.
     members: string[];
     editType: string;
@@ -85,7 +88,7 @@
 <section class="panel" aria-label="Change this direction" data-testid="gestures">
   <header>
     <h2>Change this direction</h2>
-    {#if !framed}<span class="warn">This is the base network. Fork it into a plan (Plans view) to change it.</span>{/if}
+    {#if !framed}<span class="warn">{locked}</span>{/if}
   </header>
   <div class="scope" data-testid="gesture-scope">
     <label>Changes the trips of

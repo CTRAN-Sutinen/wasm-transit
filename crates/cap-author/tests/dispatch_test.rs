@@ -67,12 +67,20 @@ fn changes_chain_by_hash_and_report_the_result() {
         ]
     );
 
-    // The next change chains on the answered hash (no reload): extend
-    // the weekday calendar into 2027 and the plan-period warning clears.
-    let mut weekday = network.service_types["weekday"].clone();
-    weekday.rule.ranges[0].end = chrono::NaiveDate::from_ymd_opt(2027, 12, 31).unwrap();
-    let Response::Apply { warnings, .. } =
-        apply(&pick, vec![NetworkEdit::UpsertServiceType { id: "weekday".into(), service_type: weekday }]).unwrap()
+    // The fork keeps only its period's dates (D-138): the weekday
+    // calendar, all before the pick, left with no range.
+    assert!(network.service_types["weekday"].rule.ranges.is_empty());
+    // The next change chains on the answered hash (no reload): give the
+    // weekday a range in the period and the plan-period warning clears.
+    let Response::Apply { warnings, .. } = apply(
+        &pick,
+        vec![NetworkEdit::AddServiceRange {
+            id: "weekday".into(),
+            start: Some("2027-01-10".into()),
+            end: Some("2027-12-31".into()),
+        }],
+    )
+    .unwrap()
     else {
         panic!("apply")
     };

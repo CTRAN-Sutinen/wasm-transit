@@ -13,18 +13,24 @@
 //!    Only a type still running at the document's end is carried
 //!    (D-112): its last range ends in the calendar's final week — the
 //!    week before the latest date any type names (a weekly type's last
-//!    range end, or an added date). A closed period (C-TRAN's
+//!    range end, or an added date) up to `through` — a date past the
+//!    period leaves the fork's calendar, so it never counts (D-138). A closed period (C-TRAN's
 //!    1-WKDY/30, ended in October) is left where it ended.
-//! 2. **Nothing earlier moves** — a date a type already decided (on or
-//!    before its last range's end, or outside the new window) runs
-//!    exactly as before: the edit only ADDS the dates between the
-//!    type's old end and `through`.
+//! 2. **The fork's calendar is its period** (D-138) — every range and
+//!    exception lies from `effective_from` through `through`: a range
+//!    is cut to the period and one wholly outside it goes, as does an
+//!    exception outside it; nothing runs outside the period. Inside
+//!    it, nothing a type already decided moves: a date on or before
+//!    the type's old last day runs exactly as before — the edit only
+//!    ADDS the dates between the type's old end and `through`.
 //! 3. **Dated service is not carried** — a type with no weekly rule
-//!    (no flagged day, or no range: holidays, one-off events) is
-//!    untouched; no exception is added, moved, or removed anywhere,
-//!    and no weekday flag changes.
-//! 4. **Idempotent**, and **without `through`** the edit is the frame
-//!    alone — no service type changes.
+//!    (no flagged day, or no range: holidays, one-off events) gains
+//!    nothing: it keeps what it had inside the period. No exception is
+//!    added or moved, no weekday flag or name changes, and every type
+//!    stays (trips still name it), even one left with no date.
+//! 4. **Idempotent**, and **without `through`** the period is open at
+//!    its end: only the dates before `effective_from` go, and every
+//!    date from it on runs as before.
 //! 5. **Refusal** — a `through` before the pick's `effective_from`, or
 //!    not a date, is a named error; the input is untouched.
 //!
@@ -121,6 +127,12 @@ fn weekly(rule: &CalendarRule) -> bool {
     (w.mon || w.tue || w.wed || w.thu || w.fri || w.sat || w.sun) && !rule.ranges.is_empty()
 }
 
+/// Weekly as the fork reads it (D-138): a flagged day and a range that
+/// starts by the period's end.
+fn weekly_by(rule: &CalendarRule, through: NaiveDate) -> bool {
+    weekly(rule) && rule.ranges.iter().any(|r| r.start <= through)
+}
+
 fn set_plan(from: i64, through: Option<NaiveDate>) -> NetworkEdit {
     NetworkEdit::SetPlan {
         plan: PlanMeta { id: "winter".into(), name: "Winter".into(), effective_from: Some(d(from)) },
@@ -144,32 +156,48 @@ proptest! {
         prop_assert_eq!(next.plan.effective_from, Some(d(from)));
         prop_assert_eq!(next.service_types.len(), net.service_types.len());
 
-        // D-112: the calendar's end, recomputed.
+        // D-112: the calendar's end, recomputed — within the period
+        // (D-138: the fork's calendar is its period, so a date past
+        // `through` never makes a type ended inside it look closed).
         let calendar_end = net
             .service_types
             .values()
             .flat_map(|t| {
-                let weekly_end = weekly(&t.rule).then(|| t.rule.ranges.iter().map(|r| r.end).max()).flatten();
-                weekly_end.into_iter().chain(t.rule.exceptions.iter().filter(|e| e.state == DayState::Added).map(|e| e.date))
+                let weekly_end = weekly_by(&t.rule, through)
+                    .then(|| t.rule.ranges.iter().filter(|r| r.start <= through).map(|r| r.end.min(through)).max())
+                    .flatten();
+                weekly_end.into_iter().chain(t.rule.exceptions.iter().filter(|e| e.state == DayState::Added && e.date <= through).map(|e| e.date))
             })
             .max();
+        let period = |date: NaiveDate| d(from) <= date && date <= through;
         for (id, before) in &net.service_types {
             let after = &next.service_types[id];
-            // 3: flags, exceptions and names never change.
+            // 2: every range and exception lies in the period.
+            for r in &after.rule.ranges {
+                prop_assert!(r.start <= r.end && period(r.start) && period(r.end), "{} range {:?} outside the period", id, r);
+            }
+            // 3: flags and names never change; the exceptions are the
+            // ones inside the period.
             prop_assert_eq!(after.rule.days, before.rule.days);
-            prop_assert_eq!(&after.rule.exceptions, &before.rule.exceptions);
+            let kept: Vec<_> = before.rule.exceptions.iter().filter(|e| period(e.date)).cloned().collect();
+            prop_assert_eq!(&after.rule.exceptions, &kept);
             prop_assert_eq!(&after.name, &before.name);
-            if !weekly(&before.rule) {
-                prop_assert_eq!(after, before, "dated service is not carried");
-                continue;
-            }
-            let old_end = before.rule.ranges.iter().map(|r| r.end).max().unwrap();
-            if old_end < calendar_end.unwrap() - Duration::days(6) {
-                prop_assert_eq!(after, before, "{} ended before the final week: not carried", id);
-                continue;
-            }
+            let last_end = before.rule.ranges.iter().filter(|r| r.start <= through).map(|r| r.end).max();
+            let carried = weekly_by(&before.rule, through) && last_end.unwrap() >= calendar_end.unwrap() - Duration::days(6);
+            let old_end = if carried { last_end.unwrap() } else { through };
             for offset in -10..(from + len + 30) {
                 let date = d(offset);
+                // 2: nothing runs outside the period.
+                if !period(date) {
+                    prop_assert!(!runs(&after.rule, date), "{} runs on {}, outside the period", id, date);
+                    continue;
+                }
+                // 3, and 2 for a type not carried: inside the period it
+                // runs exactly as before.
+                if !carried {
+                    prop_assert_eq!(runs(&after.rule, date), runs(&before.rule, date), "{} on {}: not carried, moved", id, date);
+                    continue;
+                }
                 // 1: coverage over the pick's period, past the type's
                 // own end (a type whose service starts later is not
                 // pulled back: the fork extends, it never backfills).
@@ -179,9 +207,9 @@ proptest! {
                         ..before.rule.clone()
                     }, date), "{} on {}", id, date);
                 }
-                // 2: only the dates after the old end through `through`
+                // 2: inside the period only the dates after the old end
                 // can change.
-                if date <= old_end || date > through {
+                if date <= old_end {
                     prop_assert_eq!(runs(&after.rule, date), runs(&before.rule, date), "{} on {} moved", id, date);
                 }
             }
@@ -193,14 +221,27 @@ proptest! {
     }
 
     #[test]
-    fn without_a_period_end_the_fork_is_the_frame_alone(
+    fn without_a_period_end_the_fork_starts_at_its_pick(
         types in proptest::collection::vec(gen_type(), 1..5),
         from in 0i64..400,
     ) {
         let net = network(&types);
         let next = apply_edits(&net, &[set_plan(from, None)]).unwrap();
-        prop_assert_eq!(&next.service_types, &net.service_types);
         prop_assert_eq!(next.plan.effective_from, Some(d(from)));
+        prop_assert_eq!(next.service_types.len(), net.service_types.len());
+        for (id, before) in &net.service_types {
+            let after = &next.service_types[id];
+            prop_assert_eq!(after.rule.days, before.rule.days);
+            prop_assert!(after.rule.ranges.iter().all(|r| r.start >= d(from) && r.start <= r.end), "{}: a range before the pick", id);
+            prop_assert!(after.rule.exceptions.iter().all(|e| e.date >= d(from)), "{}: an exception before the pick", id);
+            for offset in -10..(from + 400) {
+                let date = d(offset);
+                let want = date >= d(from) && runs(&before.rule, date);
+                prop_assert_eq!(runs(&after.rule, date), want, "{} on {}", id, date);
+            }
+        }
+        let again = apply_edits(&next, &[set_plan(from, None)]).unwrap();
+        prop_assert_eq!(&again, &next);
     }
 
     #[test]
@@ -281,7 +322,9 @@ fn the_winter_fork_runs_past_the_import_calendar() {
     let next = apply_edits(&net, &[edit]).unwrap();
     assert!(!net.service_types["1-WKDY"].rule.runs_on(pick));
     assert!(next.service_types["1-WKDY"].rule.runs_on(pick), "the weekday runs on the pick's date");
-    assert_eq!(next.service_types["1-WKDY"].rule.ranges[0].end.to_string(), "2027-05-29");
-    assert_eq!(next.service_types["4-NYE"], net.service_types["4-NYE"], "next year's holiday is the planner's");
-    assert_eq!(next.service_types["1-WKDY/30"], net.service_types["1-WKDY/30"], "a closed period is not carried");
+    let weekday = &next.service_types["1-WKDY"].rule.ranges;
+    assert_eq!((weekday.len(), weekday[0].start, weekday[0].end.to_string()), (1, pick, "2027-05-29".into()), "the weekday's calendar is the period");
+    assert!(next.service_types["4-NYE"].rule.exceptions.is_empty(), "last year's holiday leaves; next year's is the planner's");
+    assert!(next.service_types["1-WKDY/30"].rule.ranges.is_empty(), "a closed period before the pick leaves the calendar");
+    assert_eq!(next.service_types.len(), 3, "every key stays: trips still name them");
 }

@@ -46,9 +46,13 @@ pub enum NetworkEdit {
     /// not before `effective_from`) the fork carries the calendar
     /// (D-41): every WEEKLY service type (a flagged day and a date
     /// range) still running in the calendar's final week (D-112) whose
-    /// last range ends before `through` now ends on it;
-    /// dated-only types (holidays, events) and every exception stay as
-    /// they are — next year's holidays are the planner's to add.
+    /// last range ends before `through` now ends on it; dated-only
+    /// types (holidays, events) gain nothing — next year's holidays
+    /// are the planner's to add. The fork's calendar is then its
+    /// period (D-138): every range is cut to `effective_from` ..
+    /// `through` (open at the end without `through`), and a range or
+    /// exception wholly outside it goes. Every service type stays —
+    /// trips still name it — even one left with no date.
     SetPlan {
         plan: PlanMeta,
         #[serde(default)]
@@ -568,14 +572,19 @@ fn draw_alignment(
 /// last range ends before `through` ends on it; dated-only types and
 /// closed periods are left alone.
 fn carry_calendars(net: &mut Network, through: NaiveDate) {
-    let weekly = |rule: &CalendarRule| rule.days != WeekdaySet::none() && !rule.ranges.is_empty();
+    // The calendar as the fork reads it: up to `through` — a range
+    // starting after it, or a date past it, leaves the fork's calendar
+    // (D-138), so it never makes a type look closed or still running.
+    let in_time = |r: &DateRange| r.start <= through;
+    let weekly = |rule: &CalendarRule| rule.days != WeekdaySet::none() && rule.ranges.iter().any(in_time);
     // The calendar's end: the latest date any type names.
     let Some(calendar_end) = net
         .service_types
         .values()
         .flat_map(|t| {
-            let weekly_end = weekly(&t.rule).then(|| t.rule.ranges.iter().map(|r| r.end).max()).flatten();
-            weekly_end.into_iter().chain(t.rule.exceptions.iter().filter(|e| e.state == DayState::Added).map(|e| e.date))
+            let weekly_end = weekly(&t.rule).then(|| t.rule.ranges.iter().filter(|r| in_time(r)).map(|r| r.end.min(through)).max()).flatten();
+            let added = t.rule.exceptions.iter().filter(|e| e.state == DayState::Added && e.date <= through).map(|e| e.date);
+            weekly_end.into_iter().chain(added)
         })
         .max()
     else {
@@ -587,11 +596,31 @@ fn carry_calendars(net: &mut Network, through: NaiveDate) {
         if !weekly(rule) {
             continue;
         }
-        if let Some(last) = rule.ranges.iter_mut().max_by_key(|r| r.end) {
+        if let Some(last) = rule.ranges.iter_mut().filter(|r| r.start <= through).max_by_key(|r| r.end) {
             if last.end >= final_week && last.end < through {
                 last.end = through;
             }
         }
+    }
+}
+
+/// The fork's calendar is its period (D-138): each range cut to
+/// `from` ..= `through` (either end open when absent), a range or an
+/// exception wholly outside it dropped. Service types themselves stay.
+fn clip_calendars(net: &mut Network, from: Option<NaiveDate>, through: Option<NaiveDate>) {
+    let inside = |d: NaiveDate| from.is_none_or(|f| d >= f) && through.is_none_or(|t| d <= t);
+    for service_type in net.service_types.values_mut() {
+        let rule = &mut service_type.rule;
+        for r in &mut rule.ranges {
+            if let Some(f) = from {
+                r.start = r.start.max(f);
+            }
+            if let Some(t) = through {
+                r.end = r.end.min(t);
+            }
+        }
+        rule.ranges.retain(|r| r.start <= r.end);
+        rule.exceptions.retain(|e| inside(e.date));
     }
 }
 
@@ -697,6 +726,8 @@ fn apply_one(net: &mut Network, edit: &NetworkEdit) -> Result<Option<CreatedEnti
                 }
                 carry_calendars(net, through);
             }
+            let through = through.as_deref().map(date).transpose()?;
+            clip_calendars(net, plan.effective_from, through);
             net.plan = plan.clone();
         }
         NetworkEdit::SetName { name } => net.name = name.clone(),

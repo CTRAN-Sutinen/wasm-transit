@@ -25,6 +25,7 @@
     onadd,
     onremove,
     onroute,
+    locked = "This plan cannot change. Fork it (beside) to change its calendar.",
   }: {
     keys: ServiceKey[];
     dayTypes: DayType[];
@@ -40,6 +41,8 @@
     onadd: () => void;
     onremove: (id: string) => void;
     onroute: (route: string) => void;
+    /// Why the calendar cannot change (shown when it cannot).
+    locked?: string;
   } = $props();
 
   const DAYS: Day[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -91,7 +94,7 @@
           title={key.trips > 0 ? "It carries trips: move its routes to another key first" : "Remove this key from the plan"}
           onclick={() => { const id = key.id; if (confirm(`Remove service key ${id}?`)) { picked = ""; onremove(id); } }}>Remove key</button>
       </header>
-      {#if !framed}<p class="note">This is the base network. Start a plan (above) to change its calendar.</p>{/if}
+      {#if !framed}<p class="note">{locked}</p>{/if}
 
       <h3>Weekdays</h3>
       <div class="days" role="group" aria-label="Weekdays">

@@ -696,10 +696,10 @@ reading **Because**.
 - **Decided:** D-8.
 
 ### A fork carries weekly service through its period (author `set_plan {through}`)
-- **Holds:** a fork with a period end extends every weekly service type still running in the calendar's last week to that end; dated-only types and every exception stay as they were.
-- **Because:** a fork picked after the import's calendar runs nothing until every type is extended (13 edits on C-TRAN); holidays are next year's to add deliberately.
+- **Holds:** a fork with a period end extends every weekly service type still running in the calendar's last week to that end (the calendar read up to the period's end); dated-only types gain nothing. Then the fork's calendar is its period: every range is cut to the pick date through the period end, and a range or exception outside it goes; every service type stays, even one left with no date.
+- **Because:** a fork picked after the import's calendar runs nothing until every type is extended (13 edits on C-TRAN); holidays are next year's to add deliberately. Dates outside the period never run in the fork (a pick governs from its date), so keeping them only clutters its calendar; a type with none still names its trips.
 - **Rejected:** a separate `extend_service_ranges` gesture; leaving it to the planner by hand.
-- **Decided:** D-41 (where `through` comes from: D-104; which types: D-112).
+- **Decided:** D-41 (where `through` comes from: D-104; which types: D-112; the period as the calendar: D-138).
 
 ### Dated calendars import as weekly rules (transit-codec calendars)
 - **Holds:** a type whose added dates are every flagged weekday of a span, but for a few removed dates, imports as days + range + exceptions, and exports back exactly as the feed had it.

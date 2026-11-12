@@ -277,6 +277,19 @@ fn import_answers_the_networks_timezone() {
     assert_eq!(timezone.as_deref(), network.timezone());
 }
 
+/// An imported feed picks on its first service date (D-140): the
+/// import answers it — the fixture's weekday calendar starts Thursday
+/// 2026-01-01.
+#[test]
+fn import_answers_the_first_service_date() {
+    let (feed_hash, _) = load_fixture();
+    let Response::Import { first_service_date, network, .. } = dispatch(Request::Import { feed_hash }).unwrap() else {
+        panic!("import")
+    };
+    assert_eq!(first_service_date.as_deref(), Some("2026-01-01"));
+    assert_eq!(first_service_date, transit_network::first_service_date(&network).map(|d| d.to_string()));
+}
+
 /// What stops a network from being published, answered by the module
 /// (D-76): its validation issues, and the warnings that refuse
 /// publication — a pick that runs no service in its period. The other

@@ -712,15 +712,48 @@ export async function servedNetwork(
 /// The deployment's published network as a VALUE, for a page that
 /// edits it (the planner forks it into a plan; JS owns the documents
 /// it authors): `GET /network`, the import's whole answer, registered
-/// in the network module under the pin it serves. Null when the server
-/// publishes none.
-export async function servedNetworkValue(): Promise<{ network: Doc<Network>; boundary: Doc<Boundary> } | null> {
+/// in the network module under the pin it serves, with the date it
+/// first runs service (the import's `first_service_date`, D-140). Null
+/// when the server publishes none.
+export async function servedNetworkValue(): Promise<{
+  network: Doc<Network>;
+  boundary: Doc<Boundary>;
+  firstServiceDate: string | null;
+} | null> {
   const resp = await fetch("/network").catch(() => null);
   if (!resp?.ok) return null;
-  const served = (await resp.json()) as { network: Network; boundary: Boundary; network_hash: string };
+  const served = (await resp.json()) as { network: Network; boundary: Boundary; network_hash: string; first_service_date?: string | null };
   const network = new Doc<Network>("network", { value: served.network }, { pin: served.network_hash });
   await load("network", network);
-  return { network, boundary: new Doc<Boundary>("boundary", { value: served.boundary }) };
+  return {
+    network,
+    boundary: new Doc<Boundary>("boundary", { value: served.boundary }),
+    firstServiceDate: served.first_service_date ?? null,
+  };
+}
+
+/// The published plan set (the manifest's `plans_hash`): every pick
+/// the deployment publishes, earlier, in force, and later alike — a
+/// planner's timeline (D-139). Null when it publishes none.
+export async function publishedPlanSet(): Promise<PublishedPlans | null> {
+  const plansHash = (await deploymentManifestNow())?.plans_hash;
+  if (!plansHash) return null;
+  const set = await fetch(`blobs/${plansHash}`).catch(() => null);
+  return set?.ok ? ((await set.json()) as PublishedPlans) : null;
+}
+
+/// One published pick's network as a VALUE, for a page that forks it
+/// (JS owns the documents it authors): the document by its hash,
+/// fetched gzipped (a fraction of its size) and decompressed here — a
+/// value is parsed either way —, then registered in the network module
+/// under that pin, so one that does not answer it is refused.
+export async function publishedPickValue(pick: PublishedPlan): Promise<Doc<Network> | null> {
+  const resp = await blobGz(pick.network_hash);
+  if (!resp?.ok || !resp.body) return null;
+  const text = await new Response(resp.body.pipeThrough(new DecompressionStream("gzip"))).text();
+  const network = new Doc<Network>("network", { value: JSON.parse(text) as Network }, { pin: pick.network_hash });
+  await load("network", network);
+  return network;
 }
 
 /// The deployment's published streets: the manifest's `streets_hash`,

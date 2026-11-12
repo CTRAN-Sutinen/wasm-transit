@@ -86,6 +86,16 @@ fn candidate_dates(network: &Network) -> BTreeSet<NaiveDate> {
     out
 }
 
+/// The earliest date any type with trips runs (D-140): the date an
+/// imported feed picks on. None when nothing runs.
+pub fn first_service_date(network: &Network) -> Option<NaiveDate> {
+    service_combinations(network)
+        .iter()
+        .filter_map(|c| c.dates.first())
+        .filter_map(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+        .min()
+}
+
 /// The service combinations: one per distinct set of types (with
 /// trips) that run on some date, with the dates it holds on. Sorted by
 /// the days it holds (most first), then its first date, then its id.

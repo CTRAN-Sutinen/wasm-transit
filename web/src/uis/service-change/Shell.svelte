@@ -26,6 +26,8 @@
     showBlock,
     scanGroup,
     renamePlan,
+    setPickDate,
+    runsToday,
     deletePlan,
     openHub,
     selectDirection,
@@ -61,13 +63,20 @@
   import NearMisses from "../../components/NearMisses.svelte";
   import StopWaits from "../../components/StopWaits.svelte";
   import Readiness from "../../components/Readiness.svelte";
-  import PlanList from "../../components/PlanList.svelte";
+  import PickList from "../../components/PickList.svelte";
   import PickTimeline from "../../components/PickTimeline.svelte";
   import Combobox from "../../components/Combobox.svelte";
   import Unavailable from "../../components/Unavailable.svelte";
   import { today } from "../kit";
 
-  const framed = $derived(!!sc.plans.find((p) => p.key === sc.activeKey)?.id);
+  // Can the open plan change? A published pick cannot (D-139): it forks.
+  const openRow = $derived(sc.plans.find((p) => p.key === sc.activeKey));
+  const framed = $derived(!!openRow && !openRow.published && !!openRow.id);
+  const locked = $derived(
+    openRow?.published
+      ? `${openRow.name} is published, so it does not change: fork it (Plan & calendar) and change the fork.`
+      : `${openRow?.name ?? "This plan"} has no pick date: set one (Plan & calendar) to change it.`,
+  );
   const changed = $derived(sc.comparison?.routes.map((r) => r.route_id) ?? []);
   const routeRow = $derived(sc.routes.find((r) => r.route_id === sc.route) ?? null);
   const routeOptions = $derived(sc.routes.map((r) => ({ value: r.route_id, label: r.name, sub: r.long_name ?? undefined })));
@@ -133,7 +142,7 @@
   <main class="stage" data-testid="stage-{sc.stage}">
     {#if sc.noService && sc.stage !== "calendar"}
       <Unavailable title="No service in this plan's period"
-        reason={`${planName(sc.activeKey)} runs nothing from ${periodStart()} on: its calendars end before then. Start the plan again with "Runs through" set, or extend its service keys' ranges (Plan & calendar).`} />
+        reason={`${planName(sc.activeKey)} runs nothing from ${periodStart()} on: no service key has a date in its period. Give its keys ranges in the period, or fork the plan it came from again with "Runs through" set (Plan & calendar).`} />
     {/if}
 
     {#if sc.stage === "calendar"}
@@ -142,13 +151,13 @@
         <PickTimeline periods={sc.chain.periods} names={Object.fromEntries(sc.plans.map((p) => [p.id, p.name]))} inForce={sc.chain.inForce}
           issues={sc.chain.issues} today={today()} activeId={sc.plans.find((p) => p.key === sc.activeKey)?.id ?? ""} />
       {/if}
-      <div class="two">
-        <PlanList plans={sc.plans} activeKey={sc.activeKey} compareKey={sc.compareKey} feed={sc.feed} onopen={openPlan} oncompare={setCompare} onfork={fork}
-          onrename={renamePlan} ondelete={deletePlan}
+      <div class="stack">
+        <PickList plans={sc.plans} activeKey={sc.activeKey} compareKey={sc.compareKey} inForceId={runsToday()} onopen={openPlan} oncompare={setCompare} onfork={fork}
+          onrename={renamePlan} ondate={setPickDate} ondelete={deletePlan}
           onfeed={async (f) => loadFeedBytes(new Uint8Array(await f.arrayBuffer()), f.name)} />
         <div class="card">
           {#if sc.failed.Keys}{@render failure("Keys", "Service keys")}{:else}
-            <ServiceKeys keys={sc.keys} dayTypes={sc.dayTypes} {framed}
+            <ServiceKeys keys={sc.keys} dayTypes={sc.dayTypes} {framed} {locked}
               ontoggleday={calendar.toggleDay} onaddrange={calendar.addRange} onsetrange={calendar.setRange} onremoverange={calendar.removeRange}
               onsetexception={calendar.setException} onremoveexception={calendar.removeException} onrename={calendar.rename} onmove={calendar.move}
               onadd={calendar.add} onremove={calendar.remove}
@@ -198,7 +207,7 @@
               {/if}
               {#if sc.editing}
                 {#key `${sc.route}|${sc.direction}`}
-                  <GesturePanel {framed} members={groupMembers()} editType={sc.editType} {alsoIn} onedittype={setEditType}
+                  <GesturePanel {framed} {locked} members={groupMembers()} editType={sc.editType} {alsoIn} onedittype={setEditType}
                     stops={sc.timetable.stops} allStops={stopOptions} selectedStop={sc.selectedStop} trips={sc.timetable.trips}
                     selectedTrip={sc.selectedTrip} window={sc.window} onspan={gestures.span} onrunning={gestures.running}
                     onretime={gestures.retime} oninsertstop={gestures.insertStop} onremovestop={gestures.removeStop} />
@@ -255,7 +264,7 @@
           {/if}
         </div>
         {#if sc.failed.Readiness}{@render failure("Readiness", "Ready to publish?")}{:else}
-          <Readiness issues={sc.issues} warnings={sc.warnings} {framed} exported={sc.exported} exportError={sc.failed.Export ?? ""} onexport={exportPlan}
+          <Readiness issues={sc.issues} warnings={sc.warnings} {framed} {locked} exported={sc.exported} exportError={sc.failed.Export ?? ""} onexport={exportPlan}
             published={sc.published} publishRefused={sc.publishRefused} publishError={sc.failed.Publish ?? ""} onpublish={publishPlan}
             onhold={gestures.retime} onblock={showBlock} />
         {/if}
@@ -289,6 +298,7 @@
   .status { margin: 0 0 0 auto; font-size: 0.78rem; color: var(--muted); max-width: 40rem; text-align: right; }
   .status.alert { color: var(--bad); }
   .stage { overflow: auto; padding: 0.9rem; display: flex; flex-direction: column; gap: 0.9rem; min-height: 0; }
+  .stack { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
   .two { display: grid; grid-template-columns: minmax(20rem, 1fr) 2fr; gap: 0.9rem; align-items: start; }
   .card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0.8rem 0.9rem; }
   .seg { display: flex; align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }

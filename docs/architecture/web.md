@@ -96,7 +96,10 @@ File ownership:
   page never unzips, parses, or re-encodes it, and every module it
   registers in decodes the stream itself (a heading asks the
   directory's `about` for the network's name). `servedNetworkValue`
-  is the planner's: the network as a value it forks. A module may drop what
+  is the planner's: the network as a value it forks; `publishedPlanSet`
+  and `publishedPickValue` are its timeline (D-139) — every published
+  pick, and one pick's network as a value, fetched gzipped and
+  decompressed in the page (a value is parsed either way). A module may drop what
   it holds (see "The bus worker", below): asking for a dropped document is
   the module's unknown-hash error, and the engine registers the
   document again (or mints it again) and asks once more — a host

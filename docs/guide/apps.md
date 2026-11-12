@@ -45,7 +45,10 @@ the change is ready, it publishes it for a future date.
 **For service planners.**
 
 Service change is a second way to plan a service change, built to
-compare with Service design. It follows the steps of the work in
+compare with Service design. Its plans sit on a timeline: the
+schedule running today, the ones before it, and the ones coming.
+A published schedule never changes in place; you copy it into a
+draft and change the draft. It follows the steps of the work in
 order: set up the plan and its calendar (which service runs on which
 days, holidays included), scan how often each route runs hour by
 hour, change one route's day, check the buses and hours the change
