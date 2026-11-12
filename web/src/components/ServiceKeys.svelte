@@ -30,7 +30,7 @@
     dayTypes: DayType[];
     framed: boolean;
     ontoggleday: (id: string, day: Day) => void;
-    onaddrange: (id: string) => void;
+    onaddrange: (id: string, start: string, end: string) => void;
     onsetrange: (id: string, index: number, start: string, end: string) => void;
     onremoverange: (id: string, index: number) => void;
     onsetexception: (id: string, date: string, state: "added" | "removed") => void;
@@ -50,6 +50,8 @@
   let exDate = $state("");
   let exState = $state<"added" | "removed">("added");
   let name = $state("");
+  let newStart = $state("");
+  let newEnd = $state("");
   $effect(() => { name = key?.name ?? ""; });
   // A key just added opens: the id that was not there before the add.
   let before: string[] | null = null;
@@ -109,7 +111,13 @@
           </li>
         {/each}
       </ul>
-      <button type="button" disabled={!framed} onclick={() => onaddrange(key.id)}>Add a range</button>
+      <form class="add" data-testid="add-range" onsubmit={(e) => { e.preventDefault(); onaddrange(key.id, newStart, newEnd); newStart = ""; newEnd = ""; }}>
+        <input type="date" bind:value={newStart} disabled={!framed} aria-label="new range start" />
+        –
+        <input type="date" bind:value={newEnd} min={newStart || undefined} disabled={!framed} aria-label="new range end" />
+        <button type="submit" disabled={!framed || (key.rule.ranges.length === 0 && !newStart)}>Add a range</button>
+      </form>
+      <p class="muted hint">{key.rule.ranges.length === 0 ? "This key has no range: give the first one its start (and its end)." : "Left empty, the start continues the last range and the end is the start."}</p>
 
       <h3>Exceptions <span class="muted">a date added or removed, whatever the weekday</span></h3>
       <ul class="rows" data-testid="exceptions">
@@ -173,6 +181,7 @@
   .date { font-variant-numeric: tabular-nums; }
   .added { color: var(--ok); }
   .x { background: none; border: 0; cursor: pointer; color: var(--muted); font-size: 1rem; }
+  .hint { margin: 0.2rem 0 0; font-size: 0.75rem; }
   .add { display: flex; gap: 0.4rem; margin-top: 0.3rem; }
   table { border-collapse: collapse; }
   th, td { text-align: left; padding: 0.2rem 0.8rem 0.2rem 0; border-bottom: 1px solid var(--line); }

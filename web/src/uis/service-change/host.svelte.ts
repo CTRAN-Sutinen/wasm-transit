@@ -889,7 +889,9 @@ export const gestures = {
 /// The calendar's edits on one service key (cap-author owns the rules).
 export const calendar = {
   toggleDay: (id: string, day: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun") => change([{ edit: "toggle_service_day", id, day }]),
-  addRange: (id: string) => change([{ edit: "add_service_range", id }]),
+  /// A date left empty continues the last range (cap-author).
+  addRange: (id: string, start: string, end: string) =>
+    change([{ edit: "add_service_range", id, ...(start ? { start } : {}), ...(end ? { end } : {}) }]),
   setRange: (id: string, index: number, start: string, end: string) => change([{ edit: "set_service_range", id, index, start, end }]),
   removeRange: (id: string, index: number) => change([{ edit: "remove_service_range", id, index }]),
   setException: (id: string, date: string, state: "added" | "removed") => change([{ edit: "set_service_exception", id, date, state }]),

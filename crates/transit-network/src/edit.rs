@@ -286,8 +286,19 @@ pub enum NetworkEdit {
 
     // --- gestures: a service type's calendar
     ToggleServiceDay { id: String, day: Day },
-    /// A new date range after the last one (starting where it ends).
-    AddServiceRange { id: String },
+    /// A new date range, `start` to `end` ("YYYY-MM-DD"). A date left
+    /// out continues the last range: `start` where the last one ends,
+    /// `end` at `start`. A key with no range takes its first one only
+    /// with a `start`; a range never ends before it starts.
+    AddServiceRange {
+        id: String,
+        #[serde(default)]
+        #[ts(optional)]
+        start: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        end: Option<String>,
+    },
     SetServiceRange {
         id: String,
         index: usize,
@@ -1134,10 +1145,19 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
             *flag = !*flag;
             None
         }
-        NetworkEdit::AddServiceRange { id } => {
+        NetworkEdit::AddServiceRange { id, start, end } => {
+            let start = start.as_deref().map(date).transpose()?;
+            let end = end.as_deref().map(date).transpose()?;
             let ranges = &mut get_mut(&mut net.service_types, id, "service type")?.rule.ranges;
-            let last = ranges.last().ok_or_else(|| format!("service type {id} has no range to continue — set one"))?.end;
-            ranges.push(DateRange { start: last, end: last });
+            let start = match start {
+                Some(s) => s,
+                None => ranges.last().ok_or_else(|| format!("service type {id} has no range to continue — give the new range a start"))?.end,
+            };
+            let end = end.unwrap_or(start);
+            if end < start {
+                return Err(format!("the range ends {end}, before it starts {start}"));
+            }
+            ranges.push(DateRange { start, end });
             None
         }
         NetworkEdit::SetServiceRange { id, index, start, end } => {

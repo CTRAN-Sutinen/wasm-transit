@@ -190,7 +190,7 @@ fn calendars_edit_in_place_with_exceptions_in_date_order() {
             NetworkEdit::SetServiceException { id: "weekday".into(), date: "2026-12-25".into(), state: DayState::Removed },
             NetworkEdit::SetServiceException { id: "weekday".into(), date: "2026-11-26".into(), state: DayState::Removed },
             NetworkEdit::SetServiceException { id: "weekday".into(), date: "2026-12-25".into(), state: DayState::Added },
-            NetworkEdit::AddServiceRange { id: "weekday".into() },
+            NetworkEdit::AddServiceRange { id: "weekday".into(), start: None, end: None },
         ],
     );
     let rule = &next.service_types["weekday"].rule;
@@ -203,6 +203,35 @@ fn calendars_edit_in_place_with_exceptions_in_date_order() {
     let removed = apply(&next, vec![NetworkEdit::RemoveServiceException { id: "weekday".into(), date: "2026-11-26".into() }]);
     assert_eq!(removed.service_types["weekday"].rule.exceptions.len(), 1);
     assert!(refused(&net, NetworkEdit::SetServiceRange { id: "weekday".into(), index: 0, start: Some("2026-13-01".into()), end: None }).contains("invalid date"));
+}
+
+/// A range is added with the dates the planner gives it; a date left
+/// out continues the last range (its start where the last one ends,
+/// its end at its start). A key with no range takes its first one only
+/// with a start; a range never ends before it starts.
+#[test]
+fn a_range_is_added_with_its_dates_or_continues_the_last() {
+    let net = network();
+    let n = net.service_types["weekday"].rule.ranges.len();
+    let empty = apply(&net, (0..n).map(|_| NetworkEdit::RemoveServiceRange { id: "weekday".into(), index: 0 }).collect());
+    assert!(empty.service_types["weekday"].rule.ranges.is_empty());
+    let add = |start: Option<&str>, end: Option<&str>| NetworkEdit::AddServiceRange {
+        id: "weekday".into(),
+        start: start.map(Into::into),
+        end: end.map(Into::into),
+    };
+    assert!(refused(&empty, add(None, None)).contains("no range to continue"));
+    assert!(refused(&empty, add(None, Some("2027-05-31"))).contains("no range to continue"));
+    let first = apply(&empty, vec![add(Some("2027-01-10"), Some("2027-05-31"))]);
+    let r = &first.service_types["weekday"].rule.ranges;
+    assert_eq!((r.len(), r[0].start.to_string(), r[0].end.to_string()), (1, "2027-01-10".into(), "2027-05-31".into()));
+    let one_day = apply(&empty, vec![add(Some("2027-01-10"), None)]);
+    assert_eq!(one_day.service_types["weekday"].rule.ranges[0].end.to_string(), "2027-01-10", "an end left out is the start");
+    let next = apply(&first, vec![add(None, Some("2027-08-31"))]);
+    let r = &next.service_types["weekday"].rule.ranges;
+    assert_eq!((r[1].start, r[1].end.to_string()), (r[0].end, "2027-08-31".into()), "a start left out continues the last");
+    assert!(refused(&empty, add(Some("2027-05-31"), Some("2027-01-10"))).contains("before"));
+    assert!(refused(&empty, add(Some("2027-13-01"), None)).contains("invalid date"));
 }
 
 #[test]

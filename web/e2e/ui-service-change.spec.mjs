@@ -121,6 +121,16 @@ test("plans, keys, routes and blocks: each control lands somewhere", async ({ pa
   await page.getByTestId("add-key").click();
   await expect(keys.locator(".list li")).toHaveCount(before + 1);
   const added = (await page.getByTestId("service-key").locator("h2").textContent()).trim();
+  // Its only range removed, a range is added with the dates given.
+  const key = page.getByTestId("service-key");
+  await key.getByRole("button", { name: "Remove range" }).click();
+  await expect(key.getByLabel("range start", { exact: true })).toHaveCount(0);
+  await expect(key.getByTestId("add-range").getByRole("button", { name: "Add a range" })).toBeDisabled();
+  await key.getByLabel("new range start").fill("2027-01-10");
+  await key.getByLabel("new range end").fill("2027-05-31");
+  await key.getByTestId("add-range").getByRole("button", { name: "Add a range" }).click();
+  await expect(key.getByLabel("range start", { exact: true })).toHaveValue("2027-01-10");
+  await expect(key.getByLabel("range end", { exact: true })).toHaveValue("2027-05-31");
   page.once("dialog", (d) => d.accept());
   await page.getByTestId("remove-key").click();
   await expect(keys.locator(".list li")).toHaveCount(before);
