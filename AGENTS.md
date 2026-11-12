@@ -338,6 +338,14 @@ Per-crate detail: `docs/architecture/crates.md`.
   private encoding; each says its kind and version inside it, and
   every kind's schema and a worked example are published per version
   (`docs/FORMATS.md`) — a document reads without the app.
+- **The agency owns the data; applications are interfaces (D-146,
+  D-152)**: no application, this repo's included, is the record for a
+  document. Reads are open to any application; every write goes
+  through a receive path that checks shape, invariants, concurrency,
+  and attribution, refuses only what makes the data wrong, and leaves
+  a change with consequences to be flagged for a person. Import and
+  export are interfaces defined by their formats, never by their
+  callers (`docs/architecture/agency-data.md`).
 - **Retirement is the tombstone**: "delete" means
   `status: "retired"`, rev bumped. No hard deletes.
 - Schedules change by **artifact replacement, not mutation**: the
@@ -386,8 +394,8 @@ Per-crate detail: `docs/architecture/crates.md`.
 - **Adjacent systems** (CAD/AVL, workforce management, the
   scheduling system) run the dispatcher's day, which is out of scope
   (D-122): they read documents by hash and write only records, through
-  the receive path, as effects in this repo's vocabulary — one system
-  of record per fact (`docs/architecture/adjacent-systems.md`).
+  the receive path, as effects in this repo's vocabulary — one home
+  per fact (`docs/architecture/adjacent-systems.md`).
 - New ops go through the extraction pattern (crate boundary
   first, capability wrapper second): the monolith that ops were
   extracted FROM is gone, so a new op is a library + a capability

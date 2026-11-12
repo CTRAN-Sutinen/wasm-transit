@@ -17,6 +17,7 @@ The choices are:
 9. [Let the rider apps run without a server](#9-let-the-rider-apps-run-without-a-server)
 10. [Read the clock in the agency's time zone](#10-read-the-clock-in-the-agencys-time-zone)
 11. [Check the rules by machine, and test from intent](#11-check-the-rules-by-machine-and-test-from-intent)
+12. [The agency owns its data, not the apps](#12-the-agency-owns-its-data-not-the-apps)
 
 ## 1. Do the work on the rider's device
 
@@ -229,6 +230,38 @@ its bugs. This project has shipped exactly that kind of bug before.
 **The cost.** The full set of checks takes about 15 minutes to run.
 Adding anything new means writing its tests first, and a new module
 needs tests at several levels before it is done.
+
+## 12. The agency owns its data, not the apps
+
+**The choice.** The data belongs to the agency and the people who work
+with it. No app owns it, including the apps in this project. Each app
+is a way to look at the data or change it. Any app may read the data.
+Every change goes through one checkpoint, whichever app makes it. The
+checkpoint makes sure the change is complete and follows the rules,
+that nobody else changed the same data at the same moment, and it
+records who made the change. It turns a change away only when the
+change would make the data wrong. A change that is allowed but has
+effects worth a look, such as a route left ending at a closed stop, is
+saved and shown to staff.
+
+**Why.** Data lasts longer than software. A list of stops is kept for
+decades, while scheduling software is replaced every five to ten years.
+When the data lives inside one company's product, changing products
+means a long, costly move, so agencies stay with software they have
+outgrown. Data in open formats, with its full history in the agency's
+own storage, can be read by any program. Reading is safe to leave open:
+a program that misreads the data spoils only its own view. Changing is
+not: a wrong change reaches everyone who reads it. That is why reading
+is open and changing is checked.
+
+**The cost.** The checkpoint has to be built for each kind of data;
+today it fully checks shared edits and published schedules, but not yet
+every other kind. A file format cannot say what a change means: moving
+a stop's point on a map can fix a measuring error or move the stop,
+and only a person knows which. Permissions in storage apply to whole
+files, while real responsibility is often split by field and role. And
+owning the data gives the agency the work of keeping it clean; the apps
+can make that easier, but cannot do it for the agency.
 
 ## Questions still open
 

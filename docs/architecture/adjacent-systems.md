@@ -4,10 +4,11 @@ The systems that run the dispatcher's day — CAD/AVL, workforce
 management, the agency's scheduling system — are out of scope (D-122)
 and touch everything here. Unlike a source, a presentation, or an
 oracle, an adjacent system both reads this repo's documents and writes
-into its records. Each fact has one system of record: this repo owns
-the documents (the network, picks, plans, policy) and the authored
-detours and cancels; the adjacent system owns its own rows (a sick call, an
-extra-board fill, a swap, a vehicle assignment). The seam:
+into its records. The data is the agency's, whichever system holds it
+(`docs/architecture/agency-data.md`); each fact has one home: the
+agency's documents in its store (the network, picks, plans, policy, the
+authored detours and cancels), or the adjacent system's own rows (a sick
+call, an extra-board fill, a swap, a vehicle assignment). The seam:
 
 **Out to an adjacent system**
 
@@ -15,7 +16,7 @@ extra-board fill, a swap, a vehicle assignment). The seam:
    (`registry/schemas/`, indexed by `registry/documents.json`;
    `docs/FORMATS.md` for the at-rest envelope), and the manifest is the
    index of what is in force. An adjacent system keeps a document as a
-   read-only cache keyed by its hash — never a second system of record,
+   read-only cache keyed by its hash — never a second home for the fact,
    and never a table it queries for domain answers: those are ops.
 2. **Standard formats wherever one exists:** the GTFS zip in force
    (`GET /feed`); GTFS + TODS for the operations plan (D-126); GTFS-rt
@@ -33,7 +34,8 @@ extra-board fill, a swap, a vehicle assignment). The seam:
    pointer commit (`docs/FORMATS.md`, "The HTTP surface"), under the
    system's own credentials, so the log's `writer` names it; the module
    validates and the per-record LWW merge applies. Nothing writes the
-   bucket directly.
+   bucket directly: an adjacent system is one more writer under the
+   receive contract (`docs/architecture/agency-data.md`).
 5. **Effects in this repo's vocabulary, never their causes.** A sick
    call with no extra-board fill arrives as a trip cancel; the sick call
    stays in the workforce system.
@@ -49,7 +51,7 @@ One entry per load-bearing choice, headed by the code it governs.
 reading **Because**.
 
 ### The dispatcher's day is out of scope; the seam is defined (this file's six rules)
-- **Holds:** CAD/AVL, workforce management, and the scheduling system own their rows; this repo owns its documents and the authored detours and cancels. They meet only at the seam above: documents out by hash or standard format, records in through the receive path.
-- **Because:** the dispatcher's day (sick calls, fills, swaps, assignments) is row-shaped data written by many hands and searched by attribute, which those systems already hold; this repo's data is published and acted on as whole documents. One system of record per fact keeps audits answerable.
+- **Holds:** the dispatcher's day lives in CAD/AVL, workforce management, and the scheduling system's rows; the network, picks, plans, and the authored detours and cancels live in the agency's documents. They meet only at the seam above: documents out by hash or standard format, records in through the receive path.
+- **Because:** the dispatcher's day (sick calls, fills, swaps, assignments) is row-shaped data written by many hands and searched by attribute, which those systems already hold; this repo's data is published and acted on as whole documents. One home per fact keeps audits answerable.
 - **Rejected:** a row store in this repo for daily operations.
 - **Decided:** D-122.

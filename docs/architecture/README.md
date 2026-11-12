@@ -16,6 +16,7 @@ here for their detail.
 
 | File | What it covers |
 |---|---|
+| [agency-data.md](agency-data.md) | Who owns the data (the agency), applications as interfaces, reads open and writes governed by the receive contract |
 | [crates.md](crates.md) | Every crate, bottom up: the model, the codecs, the libraries, the kernel, the capabilities, the generated assemblies |
 | [bus.md](bus.md) | The capability bus: one flat ABI, documents by hash, linked assemblies, and its load-bearing rules |
 | [server.md](server.md) | The Go host: its routes, the published documents, the store, auth, publishing picks |

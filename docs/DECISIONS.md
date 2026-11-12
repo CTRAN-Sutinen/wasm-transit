@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-145**.
+- IDs are never reused; the next new decision is **D-156**.
 
 ## Summary
 
@@ -197,7 +197,18 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-141 | What does an open plan compare against by default? | decided | nothing |
 | D-142 | Does serving a stop act on the direction or on one pattern? | unanswered | `ui-stops` item 4 |
 | D-143 | What does redrawing a line do to running time? | unanswered | `ui-stops` item 5 |
-| D-144 | What does closing a stop do to a plan? | decided | nothing |
+| D-144 | What does closing a stop do to a plan? | decided; its dates replaced by D-147 | nothing |
+| D-145 | What makes a stop the same stop over time? | decided | nothing |
+| D-146 | Does this repo own the stop data? | decided | nothing |
+| D-147 | Do stops live inside each plan or beside the plans? | decided | nothing |
+| D-148 | How fine are a stop's dates? | decided | nothing |
+| D-149 | What format is the stops document? | decided; replaced by D-153 | nothing |
+| D-150 | What does importing a feed do to a stops timeline that exists? | decided | nothing |
+| D-151 | What does the export write when a stop changes inside its window? | decided | nothing |
+| D-152 | Who owns the data, and how strict is a write? | decided | nothing |
+| D-153 | How is the stops document stored? | decided | nothing |
+| D-154 | What does the stops document say about amenities? | decided | nothing |
+| D-155 | What happens when a closure leaves a trip short? | decided | nothing |
 
 ## The trip model
 
@@ -704,7 +715,8 @@ Options:
 Blocks: `docs/units/ui-stops.md` item 5.
 
 ### D-144 — What does closing a stop do to a plan?
-State: Decided.
+State: Decided; how long a closure lasts is replaced by D-147 (a closure
+carries its own dates on the stops' timeline, not the plan's period).
 Answer: 2026-11-12 — a closed status, for now. The user: "realistically
 we need both. what we are running into is the fact the GTFS doesn't
 have a good way to handle the stop lifecycle, it has no concept of past
@@ -717,8 +729,8 @@ trips skip it; reopening restores service as it was. A closure lasts
 the plan's period (dates of its own wait on the stop lifecycle).
 Not built: the user, the same day, after the design was laid out —
 "sounds like we need to take a step back and really work on the data
-model." The closure is built in that work (the stop lifecycle, queued
-in `docs/units/README.md`, which carries the design), not on the
+model." The closure is built in that work
+(`docs/units/stop-lifecycle.md`, which carries the design), not on the
 diversion's skip rules: diversions are the dispatcher's day, outside
 the network.
 Context: `docs/units/ui-stops.md` item 2. A planner closes a stop and
@@ -731,6 +743,228 @@ visit (trips skip the stop while it is closed, and reopening restores
 service as it was), or a closure withdraws the stop from every pattern
 and keeps only its record. And whether a closure lasts the plan's whole
 period or carries dates of its own inside it.
+Blocks: nothing.
+
+### D-145 — What makes a stop the same stop over time?
+State: Decided.
+Answer: 2026-11-12 — the rider's stop: its identity follows the stop
+id and the number on the sign, so a stop moved along the curb stays
+the same stop; a consolidation or a split makes new stops, each naming
+the stops it replaces. The user agreed ("makes sense") to the design
+laid out: identity belongs to the service point, not to the pole.
+Context: `docs/units/stop-lifecycle.md`. A stop is
+two things GTFS merges — the place at the curb, which is built, moved,
+and removed on the city's clock, and the point where service stops,
+which patterns visit, riders know by number, and history (adherence,
+ridership) is keyed to. Transmodel and NeTEx keep them apart (a
+scheduled stop point assigned to a quay over time).
+Blocks: nothing.
+
+### D-146 — Does this repo own the stop data?
+State: Decided.
+Answer: 2026-11-12 — no app in this repo owns any data. The user: "the
+whole architecture is built on top of the idea that no app in here
+*owns* any data. the data is the data, this repo just operates on it.
+ideally the data has some sort of standard to lean on (GTFS, TODS, etc)
+but at the very least when this repo's apps save data it is saved in an
+open durable format. there should be minimal friction for another
+application, eg. GIS, to open stops that this app produces and edit
+them, provided the requisite permissions are granted by the data store
+layer." This extends D-115 from reading to editing: another
+application edits a document this repo saves, and this repo reads that
+edit as its own; who may write is the store's permission, not an app's.
+Context: the question asked was which system is the record for stop
+assets (shelters, permits, condition) — the wrong frame: the stops are
+a document in the store, and any application with the store's
+permission edits it.
+Blocks: nothing.
+
+### D-147 — Do stops live inside each plan or beside the plans?
+State: Decided.
+Answer: 2026-11-12 — beside them: "separate." Stops (their record,
+place, and dated status) are one document on a timeline of their own
+that every plan refers to by stop id; a fork copies service, never the
+stops. A closure carries its own dates on that timeline, which replaces
+D-144's closure lasting the plan's period.
+The split is the authoring side's: the user, the same day — "splitting
+the network document means having to have those apps pull in stops as
+well." Riders get one published network, as before: the pick with the
+stops in force over its window, closures and moves inside the window
+carrying their dates; the stops' past and a draft's proposed stops
+never reach a rider. Confirmed by the user ("yes"), with: the window is
+from the pick's effective date until the next pick's (open-ended when
+there is none); a stop event inside a published window rebuilds the
+riders' network, which pages follow as they follow a new pick; a page
+following the agency's GTFS URL (D-132) builds its network from the
+feed and never sees the stops document; a static export carries the
+network of its day, and a later closure needs a new export.
+Context: a fork copies the whole world, so a closure spanning two picks
+would be entered in both and a location fixed in one fork would miss
+the others; a draft plan's new stop exists on the timeline as proposed
+for that plan.
+Blocks: nothing.
+
+### D-148 — How fine are a stop's dates?
+State: Decided.
+Answer: 2026-11-12 — a service day: "start at a day unless it is going
+to be painful to migrate to a finer grain later." It is not: dates are
+versioned document fields (cap-migrate upgrades a date to the start of
+its service day losslessly), and every reader asks one library question
+— is this stop served by this trip instance — so a finer grain changes
+that function and the export, not its callers.
+Context: closures sometimes begin at an hour (an event, overnight
+construction); none has come up in C-TRAN's data.
+Blocks: nothing.
+
+### D-149 — What format is the stops document?
+State: Decided; replaced by D-153 (the stored document is plain JSON,
+one record per stop with its events; sharing with a GIS is later work).
+Answer: 2026-11-12 — GeoJSON: "i think geojson makes sense." One
+FeatureCollection, one Point feature per stop per period of its life,
+its properties named for the stops.txt columns where GTFS has one plus
+the period's dates and status; a move or a closure is a new period.
+Context: `docs/units/stop-lifecycle.md`. Under D-146 a GIS edits the
+stops with no adapter, and effective-dated rows are how GIS tools keep
+time. A Transmodel-style split (a stop point assigned to a quay over
+time) was weighed and set aside: a dated feature carries the same facts
+with no assignment table to learn.
+Blocks: nothing.
+
+### D-152 — Who owns the data, and how strict is a write?
+State: Decided.
+Answer: 2026-11-12 — the agency and its users own the data;
+applications are interfaces onto it; reads are open and writes are
+governed. The user: "the point is that applications stop owning the
+data, the agency and the users own the data", and, on what follows:
+"open formats make *reading* amoung multiple apps cheap, but there
+needs to be greater strictness around writes." Encoded as: every
+application (this repo's included) reads any document freely; every
+write meets one contract at a receive path — shape (current version,
+migrated at receive), invariants (the owning module's validation),
+concurrency (the version read, `409`), attribution (the log's
+`writer`) — which refuses only what makes the data wrong and leaves a
+change with consequences to be flagged for a person; import and export
+are interfaces defined by their formats, not by their callers.
+Why: `docs/architecture/agency-data.md`, Why.
+Context: the stop-lifecycle discussion (D-146, D-150) kept slipping
+into an ownership frame — which system is the record, whose edit wins.
+Blocks: nothing; the gap (a pointer commit stores any kind but the
+edits verbatim) is queued in `docs/units/README.md`, "Governed writes".
+
+### D-150 — What does importing a feed do to a stops timeline that exists?
+State: Decided.
+Answer: 2026-11-12 — the feed applies, and the planner sees what it did.
+The user: "what happens if the GTFS feed has bad data? well, what
+happens today is that google, et al publish that data and most riders
+see that. the fix is to push a correct gtfs feed", and "I was talking
+about rider facing apps, a planner *definitely* needs to see issues
+flagged." Confirmed ("yes") as: the import compares the feed with the
+stops as they are on the feed's first service date (D-140) and adds
+each difference as an event dated that day — `opened` for a stop the
+document lacks, `moved` for a different point, `changed` for a
+different name, code, or detail. A stop the feed does not list keeps
+its events (many feeds list only the stops they serve), and events
+dated after that day stand (a feed cannot say a closure scheduled for
+March). Riders get the feed at once; a bad feed is fixed by a correct
+one. The planner sees the list of events the import added and the stops
+it did not list, and can fix any of them — most often a `moved` that
+was a survey correction, turned into an edit of the earlier point (a
+feed cannot tell the two apart; D-153). Every difference counts, however
+small: the export writes points exactly, so a re-import of this repo's
+own feed adds nothing.
+Context: `docs/units/stop-lifecycle.md` item 4. A feed has no dates for
+its stops; the document already holds events, some in the future. A
+review step before riders get the feed was weighed: on the rider path a
+feed is the agency's published statement, and a stop its trips visit
+must exist when riders get it.
+Blocks: nothing.
+
+### D-151 — What does the export write when a stop changes inside its window?
+State: Decided.
+Answer: 2026-11-12 — one stops.txt row per version of the stop: the
+version in force on the window's last date keeps the stop's id, every
+other version takes an id made from the stop's id and the date it
+starts, all with the same `stop_code`, and the trips split by calendar
+as for a closure. The user: "the stop code is the rider facing
+identifier, and doesn't have to be unique", and "option B, worrying
+about real time feeds is outside your concern in this case." So the
+rider's stop is its `stop_code`; a GTFS `stop_id` is an identifier for
+software, one per exported version when the window needs more than one,
+while the stops document keeps one lasting key per stop (refining
+D-145). An import (D-150) reads a made id back as a version of its
+stop. A real-time producer's ids are outside this decision.
+Context: `docs/units/stop-lifecycle.md` item 4. stops.txt holds one row
+per stop id, with one point and one name; a move or rename inside the
+feed's window has two.
+Options:
+- The window ends at the change (rider apps show no service past a
+  feed's end, so riders could not plan past it).
+- One row per version, sharing the `stop_code` (chosen).
+- The record in force on the window's first date (wrong after the
+  change; a construction move is the common case).
+Blocks: nothing.
+
+### D-153 — How is the stops document stored?
+State: Decided.
+Answer: 2026-11-12 — plain JSON, one record per stop, each a list of
+dated events; it replaces D-149. The user, on one feature per period:
+"that doesn't sound good to me … it shoudl be one feature per stop";
+on a current status: "the events are that truth, the current status is
+a convenience but it doesn't stay stable across time for reads, we
+should probably cut it"; on the format: "lets start with the stored
+document model and worry about interchange later. even the json
+document you describe would be trivial to read with proper
+documentation." Encoded as: `{kind: "stops", schema_version, stops:
+{<stop_id>: [event…]}}`; each event has a type (`opened`, `closed`,
+`reopened`, `moved`, `changed`, `proposed`, `retired`), the service
+date it takes effect (`on`), and the details it sets; `closed` and
+`moved` take an optional `until`, after which the earlier state returns;
+`proposed` names its plan. Every detail — the point, name, code, access,
+amenities — changes only by an event, and nothing in the document means
+"today": a stop on a date is its events applied in order up to that
+date. A correction edits the event that was wrong (the store keeps the
+earlier version); a real change adds an event — which also tells a
+survey fix from a move. The user confirmed each point ("yes").
+Context: `docs/units/stop-lifecycle.md`. GeoJSON holds one point per
+feature and no time, so a stop's record either goes stale after a dated
+change or splits into one feature per period. OGC JSON-FG (GeoJSON
+with one `time` per feature, 1.0 in June 2026; GDAL reads a draft of it
+since 3.8) has the same one-period-per-feature shape, which suits a
+file shared for viewing, not the stored record.
+Blocks: nothing.
+
+### D-154 — What does the stops document say about amenities?
+State: Decided.
+Answer: 2026-11-12 — the user: "this is a good opportunity to add more
+richness to the data, including things like stop amenitics: garbage
+cans, shelters, seats, etc", and "agreed with all 3" to: names
+borrowed from OpenStreetMap's bus-stop tags where one exists (`shelter`,
+`bench`, `bin`, `lit`, `tactile_paving`, …); each amenity `true`
+(there), `false` (checked, not there), or absent (not recorded) — the
+rule wheelchair access already follows, so a feed with no amenities
+claims none; a documented core list plus the agency's own names, which
+the server keeps and does not check. Amenities change by events like
+any detail. Their condition and repair stay out: the document says what
+is at a stop and when it changed, not its upkeep.
+Context: `docs/units/stop-lifecycle.md`. GTFS carries no amenities
+beyond `wheelchair_boarding`.
+Blocks: nothing.
+
+### D-155 — What happens when a closure leaves a trip short?
+State: Decided.
+Answer: 2026-11-12 — the closure is saved whatever it does to a route,
+nothing is held up, and the planner is warned. Confirmed by the user
+("yes"): a pattern whose first or last stop is closed runs to (or from)
+its nearest open stop on those dates, which GTFS says without trouble,
+and the planner sees "route 9 ends at a closed stop from March 3 to
+July 1"; a trip left with fewer than two open stops on a date does not
+run that date — for riders and in the GTFS export (GTFS needs two stop
+times; a trip that stops once carries no one) — and the planner sees
+the trips and dates. This replaces the unit's earlier "a plan issue
+that gates export and publish": the closure is a fact on the ground,
+and holding the schedule back would leave riders one that shows the
+stop open.
+Context: `docs/units/stop-lifecycle.md` item 3.
 Blocks: nothing.
 
 ### D-53 — What ridership data does the planner bring?

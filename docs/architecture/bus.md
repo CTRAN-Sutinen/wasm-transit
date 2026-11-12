@@ -452,7 +452,7 @@ entries below say why the ones that are not self-evident hold.
 - **Holds:** every persisted document is plain JSON (gzip allowed) or an external open format, carries its kind and version inside it (so the hash covers them), and has its schema and a worked example published per version.
 - **Because:** documents leave the app as files (exports, `caps-run` loads, store blobs, backups); a copy anywhere must say what it is, and a person or another tool must read it with no module and no deployment. Two versions of the same content never share a hash.
 - **Rejected:** the version in the store's envelope only (every other copy needs a wrapper or a shape sniff).
-- **Decided:** D-62, D-115.
+- **Decided:** D-62, D-115. Who owns the data and how a write is governed: `docs/architecture/agency-data.md`.
 
 ### Migrations are kept forever, as a capability (`cap-migrate`, each owning library's chain)
 - **Holds:** every authored kind's migration chain is kept forever, in the library that owns the type, wrapped by cap-migrate and assembled only where an older document arrives; consumers speak only the current version. Derived documents re-derive and need none.
