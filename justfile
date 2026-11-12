@@ -890,6 +890,28 @@ dev: caps types
     trap 'kill "$(cat /tmp/transit-server.pid)" 2>/dev/null || true' EXIT
     cd web && npx vite
 
+# The UI QA loop: `dev` for walking a page on real data. Modules build
+# under the wasm-fast profile (a library change in ~10 s, not ~10 min);
+# the sync server serves FEED (default: the real C-TRAN feed when it is
+# fetched, else the e2e fixture) from an in-memory store, so publishing
+# works, on :8080 (logs: /tmp/transit-qa.log); vite serves the pages with
+# hot reload on :5173. A page edit shows without a build; after a Rust
+# change, `just caps-fast` and reload — the server stays up. Drive it
+# with tools/ui-shot.mjs (one browser profile, so a forked plan stays).
+qa feed="": caps-fast types
+    #!/usr/bin/env bash
+    set -e
+    feed="{{feed}}"
+    if [ -z "$feed" ]; then
+        feed=testdata/ctran-gtfs.zip; [ -f "$feed" ] || feed=web/e2e/fixtures/sample-gtfs.zip
+    fi
+    feed="$(realpath "$feed")"
+    (cd server && go build -o /tmp/transit-qa-server . && \
+      /tmp/transit-qa-server -store mem:// -feed "$feed" >/tmp/transit-qa.log 2>&1 & echo $! >/tmp/transit-qa.pid)
+    trap 'kill "$(cat /tmp/transit-qa.pid)" 2>/dev/null || true' EXIT
+    echo "qa: $feed on :8080; pages on http://127.0.0.1:5173/"
+    cd web && npx vite --host 127.0.0.1 --port 5173 --strictPort
+
 # ---------------------------------------------------------------
 # basemap
 # ---------------------------------------------------------------

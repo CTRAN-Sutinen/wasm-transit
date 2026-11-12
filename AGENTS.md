@@ -204,6 +204,12 @@ just store-contract        # the store's laws against each of them (opt-in, neve
                            # turn on JWT auth + policy (D-58..D-61;
                            # docs/architecture/server.md)
 just dev                   # vite hot reload + server alongside
+just qa [feed.zip]         # the UI QA loop: modules under wasm-fast, a server on the
+                           # C-TRAN feed (else the e2e fixture) in a memory store,
+                           # vite hot reload on :5173; drive it with
+node tools/ui-shot.mjs UI  # [--hash H] [--steps walk.mjs] [--full] [--size WxH]:
+                           # a screenshot + status + page errors, one browser
+                           # profile in .qa/ (forked plans persist) — docs/TESTING.md
 just geocoder-build        # once: a local Pelias (portland-metro) in .pelias/
 just geocoder              # start it on :4000 (GEOCODER=http://127.0.0.1:4000
                            # just serve|dev proxies it at /geocode); geocoder-stop

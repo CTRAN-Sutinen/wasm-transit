@@ -57,3 +57,7 @@ crates/*/bindings/
 
 # The local geocoder (`just geocoder-build`): pelias/docker and its data
 .pelias/
+
+# The QA driver's browser profile (tools/ui-shot.mjs): the plans a
+# walk forked, kept between runs
+.qa/

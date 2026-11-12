@@ -207,6 +207,17 @@ among them):
   the CLI but absent from the UI is a UI gap; a question awkward
   via the CLI is an op gap. Dogfood sessions generate both
   signals; both land in `docs/QA-FINDINGS.md`.
+- **A UI is walked, control by control, before it is done.** A
+  passing spec proves the paths it names; it does not prove that each
+  control shows its answer where the planner lands. Run `just qa` (the
+  page with hot reload over a server on the C-TRAN feed, modules under
+  the wasm-fast profile) and drive it with `tools/ui-shot.mjs`: open a
+  selection by its hash, run steps, read the screenshot, the status
+  line, and the page's errors. Its browser profile (`.qa/`) keeps the
+  plans a walk forked, so a fix is re-checked in seconds: a page edit
+  needs no build, a Rust edit only `just caps-fast` and a reload. Every
+  control on every stage, on a forked plan, then the paths between
+  stages; each control fixed is pinned in the UI's spec.
 - **Findings are open work, not a log.** A session adds new
   findings (and re-confirmation lines on old ones) to
   `docs/QA-FINDINGS.md`; the change that fixes a finding deletes it
