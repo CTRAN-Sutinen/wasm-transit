@@ -318,7 +318,9 @@ cap-directory   The directory capability — ONE QUESTION: what
                 composition with trip counts and its patterns and
                 rider variants by direction; a stop's serving
                 routes — its own, or a station pin's bays', the
-                board's rule), and timetable
+                board's rule — beside its own record and every
+                pattern position that visits it, with the trips each
+                runs under the members asked), and timetable
                 answers the planner's timetable (route + direction
                 + service type, across the direction's patterns) —
                 the planner computes no number.

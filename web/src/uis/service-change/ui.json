@@ -1,11 +1,12 @@
 {
   "id": "service-change",
   "title": "Service change",
-  "summary": "A service change in the stages the work takes: the plan's calendar and its service keys, a scan of the network hour by hour, one route's day changed in place with a hub it serves beside it, the vehicles and hours the change needs, and the proposal across every day type.",
+  "summary": "A service change in the stages the work takes: the plan's calendar and its service keys, a scan of the network hour by hour, the stops on their own (each with every route that visits it), one route's day changed in place with a hub it serves beside it, the vehicles and hours the change needs, and the proposal across every day type.",
   "questions": [
     "Which plan am I changing, against which baseline, and which service keys and day types run in its period?",
     "What does each service key run on — weekdays, date ranges, exceptions — and what routes and trips does it carry? Change them.",
     "How often does each route come, hour by hour, under a day type?",
+    "Where is each stop, what is it, and which routes, directions and patterns visit it, with how many trips under the day type?",
     "What is one route's day: every trip by start, its running time, and the key it runs under? Change it.",
     "At a hub the route serves: who connects to whom, and what just misses?",
     "What vehicles and hours does the change need, what does each block run, and which trips are on no block? Adopt the suggested blocks.",
@@ -27,6 +28,7 @@
     "analysis.missed_connections",
     "directory.routes",
     "directory.stops",
+    "directory.stop_detail",
     "directory.route_lines",
     "directory.route_detail",
     "directory.timetable",
@@ -42,6 +44,8 @@
   ],
   "components": [
     "NetworkMap",
+    "StopMap",
+    "StopRecord",
     "DayTypePicker",
     "HourWindowPicker",
     "PlanScore",

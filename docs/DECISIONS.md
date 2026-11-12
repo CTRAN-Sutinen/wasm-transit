@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-142**.
+- IDs are never reused; the next new decision is **D-145**.
 
 ## Summary
 
@@ -195,6 +195,9 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-139 | Is there a base network the plans fork from? | decided | nothing |
 | D-140 | What date does an imported feed pick on? | decided | nothing |
 | D-141 | What does an open plan compare against by default? | decided | nothing |
+| D-142 | Does serving a stop act on the direction or on one pattern? | unanswered | `ui-stops` item 4 |
+| D-143 | What does redrawing a line do to running time? | unanswered | `ui-stops` item 5 |
+| D-144 | What does closing a stop do to a plan? | decided | nothing |
 
 ## The trip model
 
@@ -668,6 +671,66 @@ Answer: 2026-11-12 — nothing: no comparison until the planner chooses
 one. The user: "the existing comparison isn't coherent anyways, we
 have a lot to fix on that front" — the comparison itself is reworked
 on its own.
+Blocks: nothing.
+
+### D-142 — Does serving a stop act on the direction or on one pattern?
+State: Unanswered.
+Context: `docs/units/ui-stops.md` item 4. The Route stage's map adds
+a nearby stop to the route or drops one. Today's stop gestures
+(`insert_direction_stop`, `remove_direction_stop`) act on every
+pattern of the direction; cap-author also has per-pattern edits
+(`insert_pattern_stop`, `remove_pattern_stop`). A direction with
+branches or short turns has patterns that do not all pass the stop.
+Options:
+- The direction: every pattern of it whose line passes the stop
+  serves it; a pattern the stop is not near is left alone.
+- One pattern, picked on the map when the direction has more than one.
+- The direction by default, one pattern on request.
+Blocks: `docs/units/ui-stops.md` item 4.
+
+### D-143 — What does redrawing a line do to running time?
+State: Unanswered.
+Context: `docs/units/ui-stops.md` item 5. A redrawn line is longer
+or shorter; `draw_alignment` changes geometry only, and every trip
+keeps its times. Running time is the planner's (no rigid
+timetables: times flex with traffic, layover, and reliefs), and
+`adjust_running_time` already moves a window of trips by a delta.
+Options:
+- Nothing moves: the stage shows the change in length, and the
+  planner enters a running-time change with `adjust_running_time`.
+- The stage proposes a delta from the change in length at the
+  direction's speed in each band, for the planner to accept or edit.
+- The trips are retimed in proportion to the new length.
+Blocks: `docs/units/ui-stops.md` item 5.
+
+### D-144 — What does closing a stop do to a plan?
+State: Decided.
+Answer: 2026-11-12 — a closed status, for now. The user: "realistically
+we need both. what we are running into is the fact the GTFS doesn't
+have a good way to handle the stop lifecycle, it has no concept of past
+or future feeds so all it speaks to is what is in service _now_. we
+will eventually have to extend the data model to be able to address
+this beyond what gtfs supports, but that is a large extension of scope
+to what we are doing here so for now lets set that aside. we can just
+do closed status for now." A closed stop keeps every pattern's visit;
+trips skip it; reopening restores service as it was. A closure lasts
+the plan's period (dates of its own wait on the stop lifecycle).
+Not built: the user, the same day, after the design was laid out —
+"sounds like we need to take a step back and really work on the data
+model." The closure is built in that work (the stop lifecycle, queued
+in `docs/units/README.md`, which carries the design), not on the
+diversion's skip rules: diversions are the dispatcher's day, outside
+the network.
+Context: `docs/units/ui-stops.md` item 2. A planner closes a stop and
+expects it to stay on the map and its card with its new status. The
+model has no stop status: a stop is visited by patterns or it is not,
+and `remove_stop` deletes one no pattern visits. GTFS static has no
+closed stop either; a feed drops the stop's visits from the trips. Two
+readings are open: a closure is a status that keeps each pattern's
+visit (trips skip the stop while it is closed, and reopening restores
+service as it was), or a closure withdraws the stop from every pattern
+and keeps only its record. And whether a closure lasts the plan's whole
+period or carries dates of its own inside it.
 Blocks: nothing.
 
 ### D-53 — What ridership data does the planner bring?

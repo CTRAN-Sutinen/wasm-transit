@@ -272,11 +272,46 @@ pub fn service_keys(network: &Network) -> Vec<ServiceKey> {
         .collect()
 }
 
-/// A stop's composition: the routes whose patterns visit it.
+/// A stop's composition: the routes whose patterns visit it (the
+/// board's rule: a station pin answers its walking group's), the
+/// stop's own record, and every pattern position that visits the stop
+/// itself.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 pub struct StopDetail {
     pub routes: Vec<EntityRow>,
+    /// The stop as authored.
+    #[serde(default)]
+    pub stop: crate::Stop,
+    /// Every visit of this stop (never its walking group's), by route,
+    /// then pattern id, then position.
+    #[serde(default)]
+    pub visits: Vec<StopVisit>,
+}
+
+/// One pattern position that visits a stop: where it is on the
+/// network (route, direction, pattern, position), and what runs it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct StopVisit {
+    pub route: String,
+    /// The route's label.
+    pub route_name: String,
+    /// The pattern's direction (`None`: in none).
+    pub direction: Option<String>,
+    /// The direction's name, when the pattern is in one.
+    pub direction_name: Option<String>,
+    pub pattern: String,
+    pub pattern_name: String,
+    /// The visit's position in the pattern (0-based).
+    pub index: u32,
+    /// The pattern's first or last stop.
+    pub endpoint: bool,
+    pub timepoint: bool,
+    /// The trips the pattern runs under the members asked (every
+    /// service type when none were named): every trip's instances, the
+    /// expansion materialize runs.
+    pub trips: u32,
 }
 
 fn row(id: &str, name: &str) -> EntityRow {
@@ -676,9 +711,42 @@ pub fn timetable_against(
 /// its own routes and never pools, and a stop no pattern visits (a
 /// station pin whose patterns visit only its bays) answers what its
 /// WALKING GROUP answers — the same group the station board departs
-/// across.
-pub fn stop_detail(network: &Network, stop: &str) -> Option<StopDetail> {
-    network.stops.get(stop)?;
+/// across. Beside them, the stop's record and its own visits, each
+/// with the trips its pattern runs under `members` (every service
+/// type when `None`).
+pub fn stop_detail(network: &Network, stop: &str, members: Option<&[String]>) -> Option<StopDetail> {
+    let record = network.stops.get(stop)?.clone();
+    let mut visits = Vec::new();
+    for (pid, p) in &network.patterns {
+        let trips = || -> u32 {
+            network
+                .pattern_trips
+                .values()
+                .filter(|s| &s.pattern == pid && members.is_none_or(|m| m.contains(&s.service_type)))
+                .flat_map(|s| s.trips.iter())
+                .map(|t| t.departs.instances().len() as u32)
+                .sum()
+        };
+        let route = network.routes.get(&p.route);
+        for (i, ps) in p.stops.iter().enumerate().filter(|(_, ps)| ps.stop == stop) {
+            visits.push(StopVisit {
+                route: p.route.clone(),
+                route_name: route.map_or(p.route.clone(), |r| r.label().to_string()),
+                direction: p.direction.clone(),
+                direction_name: p
+                    .direction
+                    .as_ref()
+                    .and_then(|d| route.and_then(|r| r.directions.get(d)).map(|d| d.name.clone())),
+                pattern: pid.clone(),
+                pattern_name: p.name.clone(),
+                index: i as u32,
+                endpoint: i == 0 || i + 1 == p.stops.len(),
+                timepoint: ps.timepoint,
+                trips: trips(),
+            });
+        }
+    }
+    visits.sort_by(|a, b| (&a.route, &a.pattern, a.index).cmp(&(&b.route, &b.pattern, b.index)));
     let index = crate::validate::stop_route_index(network);
     let routes = match index.get(stop) {
         Some(own) if !own.is_empty() => own.clone(),
@@ -688,7 +756,7 @@ pub fn stop_detail(network: &Network, stop: &str) -> Option<StopDetail> {
         .into_iter()
         .map(|rid| route_row(network, &rid))
         .collect();
-    Some(StopDetail { routes })
+    Some(StopDetail { routes, stop: record, visits })
 }
 
 /// One place near a point, as the directory's stop question answers

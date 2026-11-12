@@ -59,7 +59,8 @@ cap-streets). What is left:
    document and never references the streets document or a graph
    position (`crates/AGENTS.md`, Law 1), so a new streets import never
    breaks a plan. The route answer names the streets each leg follows.
-   Left: the service-design gesture (registering the published
+   Left: the gesture, built as the service-change Route stage's map
+   ([ui-stops.md](ui-stops.md) item 5: registering the published
    document, item 1; the trace; the confirmation of item 2; the
    commit and its `touched` patterns shown), its e2e spec, and street
    names naming new stops.

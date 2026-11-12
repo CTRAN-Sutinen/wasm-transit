@@ -196,8 +196,16 @@ pub enum Request {
     /// place). Null for an unknown route.
     RouteDetail { network_hash: String, route_id: String },
     /// One stop's composition: the routes whose patterns visit it, in
-    /// id order. Null for an unknown stop.
-    StopDetail { network_hash: String, stop_id: String },
+    /// id order; the stop's record; and every pattern position that
+    /// visits it, with the trips each runs under `members` (every
+    /// service type when omitted). Null for an unknown stop.
+    StopDetail {
+        network_hash: String,
+        stop_id: String,
+        #[serde(default)]
+        #[ts(optional)]
+        members: Option<Vec<String>>,
+    },
     /// The planner's timetable: one route, one direction (null: its
     /// patterns in no direction), one service COMBINATION (`members`,
     /// the types that run together — analysis `service_groups`) —
@@ -367,9 +375,9 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let network = network_arc(&network_hash)?;
             Ok(Response::RouteDetail { detail: transit_network::route_detail(&network, &route_id) })
         }
-        Request::StopDetail { network_hash, stop_id } => {
+        Request::StopDetail { network_hash, stop_id, members } => {
             let network = network_arc(&network_hash)?;
-            Ok(Response::StopDetail { detail: transit_network::stop_detail(&network, &stop_id) })
+            Ok(Response::StopDetail { detail: transit_network::stop_detail(&network, &stop_id, members.as_deref()) })
         }
         Request::Timetable { network_hash, route_id, direction, members, compare_hash } => {
             let network = network_arc(&network_hash)?;

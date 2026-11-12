@@ -8,11 +8,12 @@
 /// The UI follows the stages a service change takes, as dogfood
 /// sessions on C-TRAN worked them (docs/architecture/generated-uis.md):
 /// the plan and its calendar (the service keys, edited), a scan of the
-/// network hour by hour, one route's day changed in place with a hub it
-/// serves beside it, the vehicles and hours the change needs (adopting
+/// network hour by hour, the stops (each one shared by every route that
+/// visits it, read on its own card), one route's day changed in place
+/// with a hub it serves beside it, the vehicles and hours the change needs (adopting
 /// the suggested blocks), and the proposal across every day type. The
 /// selection — plan, baseline, the day type's combination, stage,
-/// route, direction, hub, hour window — lives in the URL hash, which
+/// the open stop, route, direction, hub, hour window — lives in the URL hash, which
 /// the page follows (back and forward move through it).
 ///
 /// The authoring path (fork, apply, undo, export, publish) is the
@@ -35,6 +36,7 @@ import type { RouteConnections } from "../../types/RouteConnections";
 import type { RouteDetail } from "../../types/RouteDetail";
 import type { RouteFrequency } from "../../types/RouteFrequency";
 import type { RouteLines } from "../../types/RouteLines";
+import type { StopDetail } from "../../types/StopDetail";
 import type { ServiceTypeComparison } from "../../types/ServiceTypeComparison";
 import type { StopGaps } from "../../types/StopGaps";
 import type { MissedConnection } from "../../types/MissedConnection";
@@ -49,10 +51,11 @@ import type { PlanIssue } from "../../types/cap_plans/PlanIssue";
 import type { PlanPeriod } from "../../types/cap_plans/PlanPeriod";
 import type { PublishedPlans } from "../../types/cap_plans/PublishedPlans";
 
-export type Stage = "calendar" | "scan" | "route" | "resources" | "proposal";
+export type Stage = "calendar" | "scan" | "stops" | "route" | "resources" | "proposal";
 export const STAGES: { id: Stage; label: string }[] = [
   { id: "calendar", label: "Plan & calendar" },
   { id: "scan", label: "Scan" },
+  { id: "stops", label: "Stops" },
   { id: "route", label: "Route" },
   { id: "resources", label: "Vehicles & hours" },
   { id: "proposal", label: "Proposal" },
@@ -100,6 +103,9 @@ export const sc = $state({
   blockTrips: null as BlockChainTrip[] | null,
   planCompare: null as DayTypeComparison[] | null,
   frequency: null as RouteFrequency | null,
+  /// The stop open on the Stops stage, and its card.
+  stopOpen: "",
+  stopCard: null as StopDetail | null,
   // The drawer: a route, or a hub.
   route: "",
   direction: null as string | null,
@@ -291,7 +297,7 @@ async function framed(frame: string, clear: () => void, run: () => Promise<void>
 // ---------------------------------------------------------------------
 // TRANSIENT — this UI's answer graph (src/uis/kit.ts). Inputs:
 // "active" / "compare" / "plans" (the documents), "group" / "route" /
-// "direction" / "stop" / "window" (the selection), "stage" /
+// "direction" / "stop" / "stop-open" / "window" (the selection), "stage" /
 // "scan-view" (what is on screen).
 // ---------------------------------------------------------------------
 
@@ -348,7 +354,9 @@ const request = answerGraph(
       id: "directory.route_lines",
       frame: "Map",
       needs: ["document.active", "group", "stage", "scan-view"],
-      visible: () => sc.stage === "scan" && sc.scanView === "map",
+      // The network's lines: the scan's map, and the Stops stage's
+      // ground under the stops.
+      visible: () => (sc.stage === "scan" && sc.scanView === "map") || sc.stage === "stops",
       run: () =>
         framed("Map", () => (sc.lines = []), async () => {
           const doc = active();
@@ -495,6 +503,22 @@ const request = answerGraph(
         }),
     },
     {
+      // The open stop's card: its record and every pattern that
+      // visits it, the trips counted under the day type.
+      id: "directory.stop_detail",
+      frame: "StopCard",
+      needs: ["document.active", "group", "stop-open", "stage"],
+      visible: () => sc.stage === "stops" && !!sc.stopOpen,
+      run: () =>
+        framed("StopCard", () => (sc.stopCard = null), async () => {
+          const doc = active();
+          if (!doc || !sc.stopOpen) return void (sc.stopCard = null);
+          sc.stopCard = (
+            await ask("directory", "stop_detail", { network_hash: docOf(doc), stop_id: sc.stopOpen, members: groupMembers() })
+          ).detail;
+        }),
+    },
+    {
       id: "analysis.hub",
       frame: "Hub",
       needs: ["document.active", "group", "stop", "stage"],
@@ -589,6 +613,7 @@ function writeHash(): void {
   if (sc.route) q.set("route", sc.route);
   if (sc.direction != null) q.set("dir", sc.direction);
   if (sc.stop) q.set("stop", sc.stop);
+  if (sc.stopOpen) q.set("open", sc.stopOpen);
   if (sc.block) q.set("block", sc.block);
   if (sc.window) q.set("hours", `${sc.window.from}-${sc.window.to}`);
   const next = `#${q}`;
@@ -619,6 +644,7 @@ function readHash(): string[] {
   set("route", q.get("route") ?? "", "route");
   set("direction", q.get("dir"), "direction");
   set("stop", q.get("stop") ?? "", "stop");
+  set("stopOpen", q.get("open") ?? "", "stop-open");
   set("block", q.get("block") ?? "", "block");
   const hours = q.get("hours")?.match(/^(\d+)-(\d+)$/);
   set("window", hours ? { from: Number(hours[1]), to: Number(hours[2]) } : null, "window");
@@ -853,6 +879,27 @@ export function openRoute(route: string): Promise<void> {
   return select("route", "stop", "stage");
 }
 
+/// A stop opened on the Stops stage, wherever it was chosen (the map,
+/// the search box). It stays open until another stop is chosen.
+export function openStop(stop: string): Promise<void> {
+  sc.stopOpen = stop;
+  sc.stage = "stops";
+  return select("stop-open", "stage");
+}
+
+/// A visit on a stop's card opens its route in the visit's direction.
+export function openVisit(route: string, direction: string | null): Promise<void> {
+  if (sc.route !== route) {
+    sc.selectedStop = "";
+    sc.selectedTrip = "";
+    sc.stop = "";
+  }
+  sc.route = route;
+  sc.direction = direction;
+  sc.stage = "route";
+  return select("route", "direction", "stop", "stage");
+}
+
 /// The route closed: the Route stage is empty again, and the grid and
 /// map mark no route.
 export function closeRoute(): Promise<void> {
@@ -916,7 +963,7 @@ export function toggleEdit(): void {
 }
 
 export function retry(): Promise<void> {
-  return select("active", "compare", "plans", "stage", "scan-view", "route", "stop", "block");
+  return select("active", "compare", "plans", "stage", "scan-view", "stop-open", "route", "stop", "block");
 }
 
 // ---------------------------------------------------------------------

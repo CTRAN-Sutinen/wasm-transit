@@ -344,12 +344,23 @@ fn the_planners_lists_are_directory_answers() {
         Response::RouteDetail { detail } => assert!(detail.is_none()),
         _ => panic!("route_detail"),
     }
-    let serving = match dispatch(Request::StopDetail { network_hash: hash.clone(), stop_id: detail.stops[0].id.clone() }).unwrap() {
-        Response::StopDetail { detail } => detail.expect("a visited stop exists").routes,
+    let stop_id = detail.stops[0].id.clone();
+    let card = match dispatch(Request::StopDetail { network_hash: hash.clone(), stop_id: stop_id.clone(), members: None }).unwrap() {
+        Response::StopDetail { detail } => detail.expect("a visited stop exists"),
         _ => panic!("stop_detail"),
     };
-    assert!(serving.iter().any(|r| r.id == "10"), "a stop route 10 visits is served by it");
-    match dispatch(Request::StopDetail { network_hash: hash, stop_id: "nope".into() }).unwrap() {
+    assert!(card.routes.iter().any(|r| r.id == "10"), "a stop route 10 visits is served by it");
+    assert!(card.visits.iter().any(|v| v.route == "10" && v.trips > 0), "its visits carry the trips each pattern runs");
+    // Under no member, the same visits run nothing.
+    match dispatch(Request::StopDetail { network_hash: hash.clone(), stop_id, members: Some(vec![]) }).unwrap() {
+        Response::StopDetail { detail } => {
+            let under_none = detail.expect("a visited stop exists");
+            assert_eq!(under_none.visits.len(), card.visits.len());
+            assert!(under_none.visits.iter().all(|v| v.trips == 0));
+        }
+        _ => panic!("stop_detail"),
+    }
+    match dispatch(Request::StopDetail { network_hash: hash, stop_id: "nope".into(), members: None }).unwrap() {
         Response::StopDetail { detail } => assert!(detail.is_none()),
         _ => panic!("stop_detail"),
     }
@@ -385,7 +396,7 @@ proptest! {
             Ok(Response::RouteDetail { detail }) => prop_assert!(detail.is_none()),
             other => panic!("route_detail on an unknown id must answer, not {other:?}"),
         }
-        match dispatch(Request::StopDetail { network_hash: hash.clone(), stop_id: id.clone() }) {
+        match dispatch(Request::StopDetail { network_hash: hash.clone(), stop_id: id.clone(), members: None }) {
             Ok(Response::StopDetail { detail }) => prop_assert!(detail.is_none()),
             other => panic!("stop_detail on an unknown id must answer, not {other:?}"),
         }

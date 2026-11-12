@@ -127,9 +127,9 @@ fn a_route_lists_its_composition() {
 #[test]
 fn a_stop_lists_the_routes_serving_it() {
     let net = network();
-    let routes = stop_detail(&net, "B").unwrap().routes;
+    let routes = stop_detail(&net, "B", None).unwrap().routes;
     assert_eq!(routes.iter().map(|r| (r.id.as_str(), r.name.as_str())).collect::<Vec<_>>(), [("10", "Route 10")]);
-    assert!(stop_detail(&net, "nope").is_none());
+    assert!(stop_detail(&net, "nope", None).is_none());
 }
 
 /// QAF-51 regression (C-TRAN, Fisher's Landing): a parent station
@@ -175,7 +175,7 @@ fn a_station_answers_its_bays_routes() {
     ])
     .unwrap();
     let routes = |stop: &str| {
-        stop_detail(&net, stop).unwrap().routes.iter().map(|r| r.id.clone()).collect::<Vec<_>>()
+        stop_detail(&net, stop, None).unwrap().routes.iter().map(|r| r.id.clone()).collect::<Vec<_>>()
     };
     assert_eq!(routes("STN"), ["10"], "the station answers its bays' routes");
     assert_eq!(routes("N1"), ["10"], "a bay no route serves answers its sibling's routes");
@@ -190,7 +190,7 @@ fn a_station_answers_its_bays_routes() {
     net.routes.insert("20".into(), route20);
     net.patterns.insert("20-only".into(), transit_network::Pattern { route: "20".into(), ..pattern("20 via N1", &["N1", "C"]) });
     let routes = |stop: &str| {
-        stop_detail(&net, stop).unwrap().routes.iter().map(|r| r.id.clone()).collect::<Vec<_>>()
+        stop_detail(&net, stop, None).unwrap().routes.iter().map(|r| r.id.clone()).collect::<Vec<_>>()
     };
     assert_eq!(routes("N1"), ["20"], "a served bay answers its own routes");
     assert_eq!(routes("B"), ["10"], "and not its sibling's");
@@ -350,13 +350,13 @@ fn a_timetable_against_its_baseline_marks_what_changed() {
 fn a_route_row_answers_its_long_name_when_it_has_one() {
     let mut net = network();
     assert_eq!(entity_rows(&net, EntityKind::Route, "")[0].long_name, None, "no long name, none answered");
-    assert_eq!(stop_detail(&net, "B").unwrap().routes[0].long_name, None);
+    assert_eq!(stop_detail(&net, "B", None).unwrap().routes[0].long_name, None);
     assert_eq!(timetable(&net, "10", None, &["weekday".to_string()]).unwrap().route_long_name, None);
 
     net.routes.get_mut("10").unwrap().long_name = Some("Lincoln".into());
     let route = &entity_rows(&net, EntityKind::Route, "")[0];
     assert_eq!((route.name.as_str(), route.long_name.as_deref()), ("Route 10", Some("Lincoln")));
-    assert_eq!(stop_detail(&net, "B").unwrap().routes[0].long_name.as_deref(), Some("Lincoln"));
+    assert_eq!(stop_detail(&net, "B", None).unwrap().routes[0].long_name.as_deref(), Some("Lincoln"));
     assert_eq!(timetable(&net, "10", None, &["weekday".to_string()]).unwrap().route_long_name.as_deref(), Some("Lincoln"));
     // Rows naming no route carry none.
     assert!(entity_rows(&net, EntityKind::Stop, "").iter().all(|r| r.long_name.is_none()));

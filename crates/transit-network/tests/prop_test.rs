@@ -551,7 +551,7 @@ proptest! {
             };
             let own = serving(&[id.as_str()].into_iter().collect());
             let expected = if own.is_empty() { serving(&group) } else { own };
-            let detail = stop_detail(&net, id).expect("a known stop has a detail");
+            let detail = stop_detail(&net, id, None).expect("a known stop has a detail");
             let got: std::collections::BTreeSet<String> =
                 detail.routes.iter().map(|r| r.id.clone()).collect();
             prop_assert_eq!(
@@ -560,6 +560,55 @@ proptest! {
                 "stop {} does not answer its own routes or its walking group",
                 id
             );
+        }
+    }
+
+    /// The stop card (docs/units/ui-stops.md item 1): a stop's detail
+    /// carries its own record and EVERY pattern position that visits
+    /// it — never its walking group's — each with its route, its
+    /// direction, whether it ends the pattern, and the trips the
+    /// pattern runs under the members asked (every service type when
+    /// none are named; none under an empty set). Positions are
+    /// recomputed here by scanning every pattern; trips by the
+    /// oracle's own expansion.
+    #[test]
+    fn stop_detail_lists_every_visit_of_the_stop_itself(net in net_strategy()) {
+        let all: Vec<String> = net.service_types.keys().cloned().collect();
+        for id in net.stops.keys() {
+            for members in [None, Some(all.as_slice()), Some(&[][..])] {
+                let detail = stop_detail(&net, id, members).expect("a known stop has a detail");
+                prop_assert_eq!(&detail.stop, &net.stops[id], "the card carries the stop's record");
+                let mut expected: Vec<(String, String, u32, bool, u32)> = Vec::new();
+                for (pid, p) in &net.patterns {
+                    for (i, ps) in p.stops.iter().enumerate() {
+                        if &ps.stop != id {
+                            continue;
+                        }
+                        let trips: u32 = net
+                            .pattern_trips
+                            .values()
+                            .filter(|s| &s.pattern == pid)
+                            .filter(|s| members.is_none_or(|m| m.contains(&s.service_type)))
+                            .flat_map(|s| s.trips.iter())
+                            .map(|t| oracle_instances(&t.departs).len() as u32)
+                            .sum();
+                        let endpoint = i == 0 || i + 1 == p.stops.len();
+                        expected.push((p.route.clone(), pid.clone(), i as u32, endpoint, trips));
+                    }
+                }
+                expected.sort();
+                let got: Vec<(String, String, u32, bool, u32)> = detail
+                    .visits
+                    .iter()
+                    .map(|v| (v.route.clone(), v.pattern.clone(), v.index, v.endpoint, v.trips))
+                    .collect();
+                prop_assert_eq!(got, expected, "stop {} under {:?}", id, members);
+                for v in &detail.visits {
+                    let p = &net.patterns[&v.pattern];
+                    prop_assert_eq!(&v.direction, &p.direction);
+                    prop_assert_eq!(v.timepoint, p.stops[v.index as usize].timepoint);
+                }
+            }
         }
     }
 }

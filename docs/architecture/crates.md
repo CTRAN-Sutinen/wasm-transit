@@ -157,7 +157,10 @@ transit-network The authored network model (planner authority):
                 bays one place, named by their ends and by what sets
                 them apart, most trips first) — each entry's trip
                 count is its trips' instances, the materialized
-                day's own expansion — a stop's serving routes, and the
+                day's own expansion — a stop's serving routes, its
+                record, and its visits (every pattern position naming
+                it, with what the pattern runs under the members
+                asked), and the
                 planner's TIMETABLE (`timetable`: one route, one
                 direction, one service combination — every trip its
                 members run on the direction's patterns by start, one column per stop

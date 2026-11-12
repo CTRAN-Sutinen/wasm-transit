@@ -2,7 +2,8 @@
   /// The service-change UI's layout: PLACEMENT ONLY. One selection bar
   /// (plan, day type, hours, route) over the stage that is open — the
   /// plan and its calendar, the scan, one route's day with a hub beside
-  /// it, vehicles and hours, the proposal — each with the page's full
+  /// it, the stops (each on its own card, apart from any route),
+  /// vehicles and hours, the proposal — each with the page's full
   /// width. The plan compared against is chosen on the Proposal, the
   /// stage it serves; the scan and the route mark the change only once
   /// one is chosen. Every prop is the host's answers state; every
@@ -23,6 +24,8 @@
     setEditType,
     setWindow,
     openRoute,
+    openStop,
+    openVisit,
     closeRoute,
     openBlock,
     showBlock,
@@ -46,6 +49,8 @@
     publishPlan,
   } from "./host.svelte";
   import NetworkMap from "../../components/NetworkMap.svelte";
+  import StopMap from "../../components/StopMap.svelte";
+  import StopRecord from "../../components/StopRecord.svelte";
   import DayTypePicker from "../../components/DayTypePicker.svelte";
   import HourWindowPicker from "../../components/HourWindowPicker.svelte";
   import ServiceKeys from "../../components/ServiceKeys.svelte";
@@ -92,6 +97,8 @@
   const stopNames = $derived(new Map(sc.stops.map((s) => [s.stop_id, s.name])));
   let jump = $state("");
   let hub = $state("");
+  let stopFind = $state("");
+  const openStation = $derived(sc.stopCard?.stop.parent ? (stopNames.get(sc.stopCard.stop.parent) ?? null) : null);
   let tableMode = $state(false);
 </script>
 
@@ -175,6 +182,29 @@
           <div class="map"><NetworkMap routes={sc.lines} {changed} selected={sc.route} onroute={openRoute} /></div>
         {/if}
       {/if}
+
+    {:else if sc.stage === "stops"}
+      <div class="stops">
+        <div class="stack">
+          <div class="find">
+            <Combobox label="Find a stop" bind:value={stopFind} options={stopOptions} placeholder="Find a stop by name or id…"
+              onchange={(v) => { if (v) openStop(v); stopFind = ""; }} />
+          </div>
+          {#if sc.failed.Stops}{@render failure("Stops", "The stops")}{:else}
+            <div class="map"><StopMap stops={sc.stops} lines={sc.lines} selected={sc.stopOpen} onstop={openStop} /></div>
+          {/if}
+        </div>
+        <aside class="side">
+          {#if !sc.stopOpen}
+            <p class="muted" data-testid="stop-none">Open a stop: click it on the map, or find it by name. A stop belongs to the network, not to a route: every route that visits it is listed on its card.</p>
+          {:else if sc.failed.StopCard}{@render failure("StopCard", "The stop")}
+          {:else if sc.stopCard}
+            <div class="card"><StopRecord stopId={sc.stopOpen} detail={sc.stopCard} stationName={openStation} groupName={sc.group} onvisit={openVisit} /></div>
+          {:else if sc.stops.length && !sc.stops.some((x) => x.stop_id === sc.stopOpen)}
+            <Unavailable title="No such stop" reason={`${planName(sc.activeKey)} has no stop ${sc.stopOpen}.`} />
+          {/if}
+        </aside>
+      </div>
 
     {:else if sc.stage === "route"}
       {#if !sc.route}
@@ -311,6 +341,11 @@
   .seg button { font: inherit; font-size: 0.8rem; border: 0; background: none; padding: 0.3rem 0.8rem; cursor: pointer; color: var(--text); }
   .seg button.on { background: var(--accent); color: var(--surface); }
   .map { flex: 1; min-height: 70vh; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+  .stops { display: grid; grid-template-columns: 1fr minmax(18rem, 26rem); gap: 0.9rem; align-items: start; }
+  .find { max-width: 26rem; }
+  /* A definite height: the map inside fills 100% of it (a min-height
+     alone leaves the canvas at its own minimum). */
+  .stops .map { flex: none; height: calc(100vh - 12rem); min-height: 24rem; }
   .route { display: grid; grid-template-columns: 1fr minmax(18rem, 26rem); gap: 0.9rem; align-items: start; }
   .work { display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; }
   .side { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
@@ -320,7 +355,7 @@
   .mode { font-size: 0.8rem; color: var(--muted); }
   .muted { color: var(--muted); font-size: 0.8rem; }
   @media (max-width: 1000px) {
-    .two, .route { grid-template-columns: 1fr; }
+    .two, .route, .stops { grid-template-columns: 1fr; }
     .status { margin: 0.3rem 0; text-align: left; flex-basis: 100%; }
   }
 </style>

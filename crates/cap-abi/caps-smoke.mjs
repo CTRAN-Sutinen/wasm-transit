@@ -1087,6 +1087,11 @@ assert(
 );
 const stopDetail = dir.invoke({ op: "stop_detail", network_hash: loadedDirNet.network_hash, stop_id: "A" }).detail;
 assert(stopDetail.routes.some((r) => r.id === "10"), "a stop lists the routes whose patterns visit it");
+assert(stopDetail.stop.name && stopDetail.visits.some((v) => v.route === "10" && v.trips > 0), "a stop carries its record and its visits, with the trips each runs");
+assert(
+  dir.invoke({ op: "stop_detail", network_hash: loadedDirNet.network_hash, stop_id: "A", members: [] }).detail.visits.every((v) => v.trips === 0),
+  "under no service type, a stop's visits run nothing",
+);
 assert(dir.invoke({ op: "stop_detail", network_hash: loadedDirNet.network_hash, stop_id: "missing" }).detail === null, "an unknown stop has no composition");
 
 // Unknown hashes error, never panic — every day-view seam.

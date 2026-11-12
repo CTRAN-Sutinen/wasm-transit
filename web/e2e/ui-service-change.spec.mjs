@@ -8,6 +8,9 @@
 //      until the planner chooses (D-141), on the Proposal: the tests
 //      compare against the imported draft.
 //   2. Scan: the frequency grid first, the map one click away.
+//   Stops: each stop on its own card — its record and every pattern
+//      that visits it — found on a map or by name; a visit opens its
+//      route.
 //   3. Route: a row opens one route's day — the string-line, each trip's
 //      running time and key — and a trip moved there reads as moved, and
 //      as a change in the ledger; a stop the route serves is read beside
@@ -118,6 +121,41 @@ test("the stages: calendar, scan, route, vehicles, proposal", async ({ page }) =
   await expect(page.getByTestId("stage-resources")).toBeVisible();
   await page.goForward();
   await expect(page.getByTestId("stage-proposal")).toBeVisible();
+});
+
+// Stops: a stop is the network's, not a route's — its card names every
+// pattern that visits it, and a visit opens that route.
+test("stops: a stop's card lists every pattern that visits it", async ({ page }) => {
+  await startPlan(page);
+  await page.getByRole("navigation", { name: "Stages" }).getByRole("button", { name: /Stops/ }).click();
+  await expect(page.getByTestId("stage-stops")).toBeVisible();
+  await expect(page.getByTestId("stop-map")).toBeVisible();
+  await expect(page.getByTestId("stop-none")).toBeVisible();
+
+  // Found by name: its record, and route 10's visit with its trips.
+  const find = page.getByTestId("stage-stops").getByRole("combobox");
+  await find.fill("Main & 2nd");
+  await page.getByRole("listbox", { name: "Find a stop" }).getByRole("option", { name: /^Main & 2nd/ }).click();
+  const card = page.getByTestId("stop-record");
+  await expect(card).toContainText("Main & 2nd");
+  await expect(card).toContainText("45.51000, -73.51000");
+  const visit = card.getByTestId("stop-visit").first();
+  await expect(visit).toContainText("trips");
+  await expect(card).toContainText("10");
+  expect(page.url()).toContain("open=B");
+
+  // A visit opens its route on the Route stage; back returns to the stop.
+  await visit.getByRole("button").click();
+  await expect(page.getByTestId("stage-route")).toBeVisible();
+  await expect(page.getByTestId("string-line")).toBeVisible();
+  await page.goBack();
+  await expect(page.getByTestId("stop-record")).toContainText("Main & 2nd");
+
+  // A station pin no pattern visits says so, and names what serves its bays.
+  await find.fill("Main Station");
+  await page.getByRole("listbox", { name: "Find a stop" }).getByRole("option", { name: /^Main Station(?!:)/ }).click();
+  await expect(card).toContainText("Station");
+  await expect(card.getByTestId("stop-unserved")).toContainText("Its station is served by");
 });
 
 // The controls that manage the plan set and move between the stages:

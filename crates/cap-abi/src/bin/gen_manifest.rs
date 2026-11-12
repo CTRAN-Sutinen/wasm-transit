@@ -1932,9 +1932,9 @@ fn example_for(
         ("directory", "stop_detail") => {
             let ctx = net?;
             (
-                json!({ "op": "stop_detail", "network_hash": ctx.network_hash, "stop_id": "B" }),
+                json!({ "op": "stop_detail", "network_hash": ctx.network_hash, "stop_id": "B", "members": ["WK"] }),
                 json!({ "ok": { "op": "stop_detail",
-                    "detail": transit_network::stop_detail(ctx.derived_network(), "B") } }),
+                    "detail": transit_network::stop_detail(ctx.derived_network(), "B", Some(&["WK".to_string()])) } }),
             )
         }
         ("directory", "route_stop_sequence") => {

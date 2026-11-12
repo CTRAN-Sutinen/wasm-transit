@@ -48,7 +48,7 @@ One route's composition: its patterns, the stops they visit (first-visit order),
 
 ## stop_detail
 
-One stop's composition: the routes whose patterns visit it (id, name and long_name rows, id order). A stop with service of its own answers its own routes — a bay never answers its siblings'; a stop no pattern visits (a station pin) answers its walking group's. Null for an unknown stop.
+One stop's composition: the routes whose patterns visit it (id, name and long_name rows, id order). A stop with service of its own answers its own routes — a bay never answers its siblings'; a stop no pattern visits (a station pin) answers its walking group's. Beside them, the stop's own record (`stop`: name, point, parent, kind, transfer, info) and `visits`: every pattern position that visits THIS stop (never its group's), by route, then pattern id, then position — each its route and label, direction and its name, pattern and name, index, whether it ends the pattern, whether it is a timepoint, and trips: what the pattern runs under members (the service types asked; every type when omitted), each trip's instances. Null for an unknown stop.
 
 ## timetable
 

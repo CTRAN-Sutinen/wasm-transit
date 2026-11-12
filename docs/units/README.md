@@ -49,6 +49,7 @@ archive — nothing here records what is finished.
 | [grade-debt.md](grade-debt.md) | on the bus, but not yet read by a UI or dogfooded |
 | [ui-disruptions.md](ui-disruptions.md) | generated UI: running today's service through disruptions (late buses, detours, coverage) |
 | [ui-proposal-compare.md](ui-proposal-compare.md) | generated UI: the public comparing service proposals |
+| [ui-stops.md](ui-stops.md) | generated UI: stops as their own stage of the service change (create, move, consolidate, remove), a route's map choosing the stops it serves, and its line redrawn along the streets |
 | [ui-service-design.md](ui-service-design.md) | generated UI: designing a service change in six chained views — the blocked questions and the views' remaining parts |
 | [runs-layer.md](runs-layer.md) | the runs cut under the work rules; the run view, legality, and run edits; suggested blocking, extended |
 | [ui-runcut.md](ui-runcut.md) | generated UI: cutting a plan's work into blocks and runs |
@@ -80,6 +81,19 @@ before starting it.
   the rest keep A, promoted once it has stayed healthy. Promotion on
   reported health needs an authenticated heartbeat (D-130's takes no
   token) and a server, so a static-only deployment has none.
+- **The stop lifecycle** — a stop's past and future beyond what GTFS
+  can say (GTFS speaks only of what is in service now): opened and
+  closed on dates, planned, retired. First in it, the closed status
+  (D-144), in the network, never on the diversion's skip rules (a
+  diversion is the dispatcher's day): the stop carries it; every
+  pattern keeps its visit and place; the network's day does not serve
+  it, the planner's timetable keeps its column marked closed, and the
+  GTFS export writes no stop times there (the stop stays in stops.txt);
+  a pattern ending at a closed stop, or left with under two open stops,
+  is a plan issue (gates export and publish), never a refused edit.
+  The readers that index a trip's stop times by position (the
+  timetable, the analysis ops, dispatch's patching) read the served
+  stops instead. Scope it into a unit before starting.
 - **Fuel metering** in the runner, once it may point at untrusted
   registry entries (the wall-clock guard is the stopgap).
 

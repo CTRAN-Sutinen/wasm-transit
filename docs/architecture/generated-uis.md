@@ -290,7 +290,7 @@ service-design, laid out in the stages a service change took when it
 was worked through the ops on C-TRAN (three proposals, assessed,
 built, judged and revised): one selection bar (plan, the
 plan's day types — analysis `day_types`, D-137, a trial — the hour
-window, health, a route box) over five stages, each with the page's
+window, health, a route box) over six stages, each with the page's
 width. Plan & calendar: the pick timeline and the picks (PickList,
 D-139) — there is no base network: every pick the deployment publishes
 (engine `publishedPlanSet`; one is fetched as a value when it opens,
@@ -311,7 +311,15 @@ date ranges and exceptions, edited in place (cap-author's calendar
 edits), what it carries (a route's trips moved to another key,
 `set_pattern_trips_refs`), and the combinations it forms. Scan: the
 frequency grid, the network map (directory `route_lines`) one click
-away. Route: one route's day in one direction, chosen on the route's bar (the first by default; a direction that runs nothing under the day type offers the others), closed again from its stage tab — the string-line or the timetable, the
+away. Stops: a stop belongs to the network, not to a route, so it has a
+stage of its own — every stop on a map over the network's lines, found
+there or by name (directory `stops`), one opened to its card (directory
+`stop_detail` under the day type's members: its record, and every
+pattern position that visits it with the trips it runs; a station pin
+no pattern visits names the routes its bays serve); a visit opens its
+route on the Route stage in that direction. Creating, moving,
+consolidating and removing stops, and a route's own map, are
+`docs/units/ui-stops.md`. Route: one route's day in one direction, chosen on the route's bar (the first by default; a direction that runs nothing under the day type offers the others), closed again from its stage tab — the string-line or the timetable, the
 changes (the service-design gestures), running time by start, gaps by
 hour, the trips by start with the key and the block each runs under (a
 block opens on Vehicles & hours) — with a stop the route serves read
