@@ -359,7 +359,12 @@ const request = answerGraph(
     {
       id: "analysis.service_type_compare",
       frame: "Comparison",
-      needs: ["document.active", "document.compare", "group"],
+      // Read only where it marks the change: the scan's changed routes
+      // and the route's ledger and before → after. The comparison is
+      // the proposal's; elsewhere it stays quiet.
+      needs: ["document.active", "document.compare", "group", "stage"],
+      visible: () => !!sc.compareKey && (sc.stage === "scan" || sc.stage === "route"),
+      hide: () => (sc.comparison = null),
       run: () =>
         framed("Comparison", () => (sc.comparison = null), async () => {
           const [doc, base] = [active(), baseline()];
@@ -725,20 +730,28 @@ export async function renamePlan(key: string, name: string): Promise<void> {
   say(`Renamed to "${name.trim()}".`);
 }
 
-/// A draft's pick date set (the plan frame's `effective_from`; a plan
-/// with no pick date is stamped as a pick here). Not on the undo stack.
-export async function setPickDate(key: string, date: string): Promise<void> {
+/// A draft's period set: the day it picks on and, optionally, the day
+/// it runs through — the fork's own edit (author `set_plan`): the
+/// weekly service carried to the end (D-41) and the calendar cut to
+/// the period (D-138). A plan with no pick date is stamped as a pick.
+/// The dates it drops are a change to its service, so it is undone like
+/// one.
+export async function setPickDates(key: string, from: string, through = ""): Promise<void> {
   const doc = getAllPlans()[key];
   const row = sc.plans.find((p) => p.key === key);
-  if (!doc || !date || row?.published) return;
-  const applied = await apply(doc, [{ edit: "update_plan", effective_from: date, ...(doc.plan?.id ? {} : { id: crypto.randomUUID() }) }]);
+  if (!doc || !from || row?.published) return;
+  const plan = { id: doc.plan?.id || crypto.randomUUID(), name: doc.plan?.name || row?.name || "Unnamed plan", effective_from: from };
+  const applied = await apply(doc, [{ edit: "set_plan", plan, ...(through ? { through } : {}) }]);
   if (!applied) return;
+  (undo[key] ??= []).push(doc);
+  redo[key] = [];
   authoredHealth.set(applied.network, { issues: applied.issues, warnings: applied.warnings });
   putPlan(key, applied.network);
   syncPlanRows();
+  syncHistory();
   await release();
   await select(key === sc.activeKey ? "active" : "compare", "plans");
-  say(`${planName(key)} now picks on ${date}.`);
+  say(`${planName(key)} now picks on ${from}${through ? ` and runs through ${through}` : ""}.`);
 }
 
 /// A plan removed from this device. A published pick stays published

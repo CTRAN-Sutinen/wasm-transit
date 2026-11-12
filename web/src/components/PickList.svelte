@@ -3,7 +3,8 @@
   /// publishes and every draft on this device, by pick date, the one in
   /// force today marked (plans `resolve`, from the host). A published
   /// pick is read-only — it opens and forks; a draft is also renamed,
-  /// re-dated, and removed. Fork the open plan into a dated draft (its
+  /// given its period (picks on, runs through: the fork's rule), and
+  /// removed. Fork the open plan into a dated draft (its
   /// calendar becomes its period, D-138), or import a feed as a draft
   /// picking on its first service date (D-140). Events out; every change
   /// is the host's.
@@ -11,10 +12,8 @@
   let {
     plans,
     activeKey,
-    compareKey,
     inForceId,
     onopen,
-    oncompare,
     onrename,
     ondate,
     ondelete,
@@ -23,12 +22,10 @@
   }: {
     plans: Row[];
     activeKey: string;
-    compareKey: string;
     inForceId: string | null;
     onopen: (key: string) => void;
-    oncompare: (key: string) => void;
     onrename: (key: string, name: string) => void;
-    ondate: (key: string, date: string) => void;
+    ondate: (key: string, from: string, through: string) => void;
     ondelete: (key: string) => void;
     onfork: (name: string, effectiveFrom: string, through: string) => void;
     onfeed: (file: File) => void;
@@ -40,6 +37,7 @@
   let newName = $state("");
   let dating = $state("");
   let newDate = $state("");
+  let newThrough = $state("");
   let name = $state("");
   let date = $state("");
   let through = $state("");
@@ -63,15 +61,15 @@
             {:else}
               <strong>{p.name}</strong>
               {#if p.key === activeKey}<span class="tag open">open</span>{/if}
-              {#if p.key === compareKey}<span class="tag">compared</span>{/if}
               {#if p.id && p.id === inForceId}<span class="tag now">in force today</span>{/if}
               <span class="tag" class:pub={p.published}>{p.published ? "published" : "draft"}</span>
             {/if}
           </td>
           <td class="muted">
             {#if dating === p.key}
-              <form class="inline" onsubmit={(e) => { e.preventDefault(); if (newDate) ondate(p.key, newDate); dating = ""; }}>
-                <input type="date" bind:value={newDate} aria-label="New pick date for {p.name}" />
+              <form class="inline" onsubmit={(e) => { e.preventDefault(); if (newDate) ondate(p.key, newDate, newThrough); dating = ""; }}>
+                <label>from <input type="date" bind:value={newDate} aria-label="New pick date for {p.name}" /></label>
+                <label>through <input type="date" bind:value={newThrough} min={newDate} aria-label="Runs through for {p.name}" /></label>
                 <button type="submit" disabled={!newDate}>Save</button>
                 <button type="button" onclick={() => (dating = "")}>Cancel</button>
               </form>
@@ -81,11 +79,9 @@
           </td>
           <td class="actions">
             {#if p.key !== activeKey}<button type="button" onclick={() => onopen(p.key)}>Open</button>{/if}
-            {#if p.key !== activeKey && p.key !== compareKey}<button type="button" onclick={() => oncompare(p.key)}>Compare</button>{/if}
-            {#if p.key === compareKey}<button type="button" onclick={() => oncompare("")}>Stop comparing</button>{/if}
             {#if !p.published && p.loaded}
               <button type="button" data-testid="rename-plan" onclick={() => { renaming = p.key; newName = p.name; }}>Rename</button>
-              <button type="button" data-testid="date-plan" onclick={() => { dating = p.key; newDate = p.effectiveFrom ?? ""; }}>Change date</button>
+              <button type="button" data-testid="date-plan" title="The day it picks on and, optionally, the day it runs through" onclick={() => { dating = p.key; newDate = p.effectiveFrom ?? ""; newThrough = ""; }}>Change dates</button>
             {/if}
             {#if p.loaded}
               <button type="button" class="del" data-testid="delete-plan"
@@ -133,6 +129,7 @@
   button:disabled { opacity: 0.5; cursor: default; }
   .inline { display: flex; gap: 0.3rem; align-items: center; }
   .inline button { margin-left: 0; }
+  .inline label { display: flex; gap: 0.25rem; align-items: center; font-size: 0.78rem; }
   input { font: inherit; padding: 0.2rem 0.4rem; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--text); }
   .fork { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; padding: 0.7rem 1rem; border-bottom: 1px solid var(--line); font-size: 0.85rem; }
   .hint { flex-basis: 100%; margin: 0; font-size: 0.78rem; color: var(--muted); }

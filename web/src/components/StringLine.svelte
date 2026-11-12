@@ -84,6 +84,9 @@
     drag = null;
   }
   const kind = (t: TimetableTrip) => (t.added ? "added" : t.retimed_from_secs != null ? "moved" : "kept");
+  // The key names only what is drawn: a moved or added trip exists
+  // only against a baseline, so without one the key is empty.
+  const drawn = $derived(new Set(timetable.trips.map(kind)));
 </script>
 
 <section class="panel" aria-label="String-line" data-testid="string-line">
@@ -144,10 +147,9 @@
     </div>
   </div>
   <footer>
-    <span><i class="k kept"></i>unchanged</span>
-    <span><i class="k moved"></i>moved</span>
-    <span><i class="k ghost"></i>its baseline time</span>
-    <span><i class="k added"></i>added</span>
+    {#if drawn.has("moved") || drawn.has("added")}<span><i class="k kept"></i>unchanged</span>{/if}
+    {#if drawn.has("moved")}<span><i class="k moved"></i>moved</span><span><i class="k ghost"></i>its baseline time</span>{/if}
+    {#if drawn.has("added")}<span><i class="k added"></i>added</span>{/if}
     {#if timetable.removed.length}<span class="muted">{timetable.removed.length} baseline trips no longer run</span>{/if}
     {#if drag}<span class="drag">{drag.trip}: {clock(drag.start)} → {clock(drag.start + drag.delta)}</span>
     {:else if editable}<span class="muted">drag a line to move that trip alone</span>{/if}

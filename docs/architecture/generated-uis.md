@@ -288,7 +288,7 @@ earlier document version the host keeps; nothing is inverted.
 `service-change` (`src/uis/service-change/`): the same need as
 service-design, laid out in the stages a service change took when it
 was worked through the ops on C-TRAN (three proposals, assessed,
-built, judged and revised): one selection bar (plan, baseline, the
+built, judged and revised): one selection bar (plan, the
 plan's day types — analysis `day_types`, D-137, a trial — the hour
 window, health, a route box) over five stages, each with the page's
 width. Plan & calendar: the pick timeline and the picks (PickList,
@@ -299,11 +299,12 @@ the one running today marked (plans `in_force` over the published set,
 else, before the first pick takes effect, the deployment's feed). A
 published pick, and the deployment's feed, are read-only: a change goes
 into a fork (author `set_plan`, the fork's calendar its period, D-138).
-A draft is renamed and re-dated (`update_plan`) and deleted from the
-device. An imported feed is a draft picking on its first service date
+A draft is renamed (`update_plan`), given its period — picks on and,
+optionally, runs through, by the fork's own edit (`set_plan`: weekly
+service carried to the end, the calendar cut to the period; undone like
+any change) — and deleted from the device. An imported feed is a draft picking on its first service date
 (network `import`'s `first_service_date`, D-140); the page opens on
-what runs today. Nothing is compared until the planner chooses a plan
-to compare against (D-141). Then the service keys (directory `service_keys`), added
+what runs today. Then the service keys (directory `service_keys`), added
 (`add_service_type`) or removed (`remove_service_type`, refused while
 trips run under the key): each key's weekdays,
 date ranges and exceptions, edited in place (cap-author's calendar
@@ -313,18 +314,25 @@ frequency grid, the network map (directory `route_lines`) one click
 away. Route: one route's day in one direction, chosen on the route's bar (the first by default; a direction that runs nothing under the day type offers the others), closed again from its stage tab — the string-line or the timetable, the
 changes (the service-design gestures), running time by start, gaps by
 hour, the trips by start with the key and the block each runs under (a
-block opens on Vehicles & hours) — with the
-change ledger and a stop the route serves read beside it (its
-connections, near misses and waits). Vehicles & hours: runcut
+block opens on Vehicles & hours) — with a stop the route serves read
+beside it (its connections, near misses and waits), and, once a plan
+is compared, the change ledger below it. Vehicles & hours: runcut
 `fleet_summary` and `suggest_blocks` on a date the day type runs —
 the peak, platform, revenue and layover hours, the trips on no block
 and the suggested blocks adopted as one change, and every running
 block drawn on the day (the summary's spans), one opened to its chain
-(runcut `block_trips`). Proposal: analysis `plan_compare` across every
+(runcut `block_trips`). Proposal: the plan compared against, chosen
+here — nothing is compared until the planner chooses (D-141) — then
+analysis `plan_compare` across every
 day type (a day type's card opens it on the Scan), readiness (a block
 an issue names opens on Vehicles & hours), export and publish. A
 stage's reads re-run when the stage opens, so a route or block chosen
-while another stage is open reads in full there.
+while another stage is open reads in full there. The comparison is the
+proposal's: the other stages carry no control for it, and only the Scan
+(a changed route's mark, its legend) and the Route (the ledger, the
+header's and the timetable's before → after) show it, once one is
+chosen (analysis `service_type_compare`, read on those two stages
+only).
 The selection lives in the URL hash, which the page follows: back and
 forward move through the stages. It has no single-key shortcuts. Its
 authoring path (fork, apply, undo, export, publish) is service-design's,

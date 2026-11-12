@@ -1,9 +1,11 @@
 <script lang="ts">
   /// The service-change UI's layout: PLACEMENT ONLY. One selection bar
-  /// (plan, baseline, day type, hours, route) over the stage that is
-  /// open — the plan and its calendar, the scan, one route's day with a
-  /// hub beside it, vehicles and hours, the proposal — each with the
-  /// page's full width. Every prop is the host's answers state; every
+  /// (plan, day type, hours, route) over the stage that is open — the
+  /// plan and its calendar, the scan, one route's day with a hub beside
+  /// it, vehicles and hours, the proposal — each with the page's full
+  /// width. The plan compared against is chosen on the Proposal, the
+  /// stage it serves; the scan and the route mark the change only once
+  /// one is chosen. Every prop is the host's answers state; every
   /// event calls a host function.
   import {
     sc,
@@ -26,7 +28,7 @@
     showBlock,
     scanGroup,
     renamePlan,
-    setPickDate,
+    setPickDates,
     runsToday,
     deletePlan,
     openHub,
@@ -104,12 +106,6 @@
         {#each sc.plans as p (p.key)}<option value={p.key}>{p.name}</option>{/each}
       </select>
     </label>
-    <label class="pick"><span>against</span>
-      <select value={sc.compareKey} onchange={(e) => setCompare(e.currentTarget.value)} data-testid="base-select">
-        <option value="">nothing</option>
-        {#each sc.plans.filter((p) => p.key !== sc.activeKey) as p (p.key)}<option value={p.key}>{p.name}</option>{/each}
-      </select>
-    </label>
     {#if sc.failed.DayTypes}{@render failure("DayTypes", "Day types")}{:else}
       <DayTypePicker dayTypes={sc.dayTypes} selected={sc.group} onselect={selectGroup} />
     {/if}
@@ -152,8 +148,8 @@
           issues={sc.chain.issues} today={today()} activeId={sc.plans.find((p) => p.key === sc.activeKey)?.id ?? ""} />
       {/if}
       <div class="stack">
-        <PickList plans={sc.plans} activeKey={sc.activeKey} compareKey={sc.compareKey} inForceId={runsToday()} onopen={openPlan} oncompare={setCompare} onfork={fork}
-          onrename={renamePlan} ondate={setPickDate} ondelete={deletePlan}
+        <PickList plans={sc.plans} activeKey={sc.activeKey} inForceId={runsToday()} onopen={openPlan} onfork={fork}
+          onrename={renamePlan} ondate={setPickDates} ondelete={deletePlan}
           onfeed={async (f) => loadFeedBytes(new Uint8Array(await f.arrayBuffer()), f.name)} />
         <div class="card">
           {#if sc.failed.Keys}{@render failure("Keys", "Service keys")}{:else}
@@ -230,8 +226,6 @@
             {/if}
           </div>
           <aside class="side">
-            <ChangeLedger comparison={sc.comparison} baselineName={planName(sc.compareKey)} canUndo={sc.canUndo} canRedo={sc.canRedo}
-              onundo={undoChange} onredo={redoChange} onroute={openRoute} />
             <div class="card hub" data-testid="route-hub">
               <h2>At a stop on this route</h2>
               <Combobox label="Read a stop or hub" bind:value={hub} options={routeStops} placeholder="Pick one of its stops…" onchange={(v) => { if (v) openHub(v); hub = ""; }} />
@@ -243,6 +237,10 @@
                 {/if}
               {/if}
             </div>
+            {#if sc.compareKey}
+              <ChangeLedger comparison={sc.comparison} baselineName={planName(sc.compareKey)} canUndo={sc.canUndo} canRedo={sc.canRedo}
+                onundo={undoChange} onredo={redoChange} onroute={openRoute} />
+            {/if}
           </aside>
         </div>
       {/if}
@@ -254,10 +252,18 @@
       {/if}
 
     {:else}
+      <div class="routebar">
+        <label class="pick"><span>Compare {planName(sc.activeKey)} with</span>
+          <select value={sc.compareKey} onchange={(e) => setCompare(e.currentTarget.value)} data-testid="base-select">
+            <option value="">nothing</option>
+            {#each sc.plans.filter((p) => p.key !== sc.activeKey) as p (p.key)}<option value={p.key}>{p.name}</option>{/each}
+          </select>
+        </label>
+      </div>
       <div class="two">
         <div>
           {#if !sc.compareKey}
-            <Unavailable title="The proposal" reason="Choose a plan to compare against, in the bar at the top." />
+            <Unavailable title="The proposal" reason="Choose a plan above to compare it with." />
           {:else if sc.failed.Proposal}{@render failure("Proposal", "The proposal")}
           {:else if sc.planCompare}
             <PlanScore dayTypes={sc.planCompare} selected={sc.group} onselect={scanGroup} onroute={openRoute} />

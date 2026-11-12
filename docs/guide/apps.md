@@ -54,7 +54,7 @@ days, holidays included), scan how often each route runs hour by
 hour, change one route's day, check the buses and hours the change
 needs (each bus's day drawn as a bar, with its trips one click away),
 and review the whole proposal for weekdays, Saturdays and
-Sundays.
+Sundays, against a plan you choose there.
 
 **Server:** needed.
 

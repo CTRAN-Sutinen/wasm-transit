@@ -5,12 +5,13 @@
 //      service date (D-140); a plan forked from it picks on a date; its
 //      service keys read as authored and change in place (an exception
 //      date: Thanksgiving off the weekday key). Nothing is compared
-//      until the planner chooses (D-141): the tests compare against the
-//      imported draft.
+//      until the planner chooses (D-141), on the Proposal: the tests
+//      compare against the imported draft.
 //   2. Scan: the frequency grid first, the map one click away.
 //   3. Route: a row opens one route's day — the string-line, each trip's
-//      running time and key — and a trip moved there reads as moved; a
-//      stop the route serves is read beside it.
+//      running time and key — and a trip moved there reads as moved, and
+//      as a change in the ledger; a stop the route serves is read beside
+//      it.
 //   4. Vehicles & hours: the fixture's trips on no block are named, and
 //      adopting the suggested blocks leaves none.
 //   5. Proposal: every day type, and the route changed.
@@ -36,9 +37,15 @@ async function startPlan(page) {
   await page.getByTestId("fork-date").fill("2026-11-02");
   await page.getByRole("button", { name: "Fork" }).click();
   await expect(page.getByTestId("status")).toContainText('Started "Spring"');
-  // Nothing is compared until chosen.
+  // Nothing is compared until chosen, and it is chosen on the
+  // Proposal, the stage it serves: the bar does not carry it.
+  await expect(page.locator("header.bar").getByTestId("base-select")).toHaveCount(0);
+  await page.getByRole("button", { name: /Proposal/ }).click();
   await expect(page.getByTestId("base-select")).toHaveValue("");
+  await expect(page.getByTestId("stage-proposal")).toContainText("Choose a plan above");
   await page.getByTestId("base-select").selectOption({ label: "sample-gtfs" });
+  await expect(page.getByTestId("plan-score")).toBeVisible();
+  await page.getByRole("button", { name: /Plan & calendar/ }).click();
 }
 
 test("the stages: calendar, scan, route, vehicles, proposal", async ({ page }) => {
@@ -83,6 +90,8 @@ test("the stages: calendar, scan, route, vehicles, proposal", async ({ page }) =
   await trip.getByRole("button", { name: "Move" }).click();
   await expect(page.getByTestId("status")).toContainText("Changed.");
   await expect(trips).toContainText("moved from 8:00");
+  // Against the plan compared on the Proposal, the ledger names it.
+  await expect(page.getByTestId("change-ledger").getByRole("button", { name: "10" })).toBeVisible();
 
   // A stop the route serves, read beside its day.
   const hub = page.getByTestId("route-hub");
@@ -124,6 +133,18 @@ test("plans, keys, routes and blocks: each control lands somewhere", async ({ pa
   await plans.getByRole("button", { name: "Save" }).click();
   await expect(status).toContainText('Renamed to "Spring 2027"');
   await expect(page.getByTestId("plan-select").locator("option:checked")).toHaveText("Spring 2027");
+  // Its period set: picks on and runs through (the fork's rule) — the
+  // weekday key runs exactly that period, and the change undoes.
+  await plans.getByTestId("pick-row").filter({ hasText: "Spring 2027" }).getByTestId("date-plan").click();
+  await plans.getByLabel("New pick date for Spring 2027").fill("2026-11-02");
+  await plans.getByLabel("Runs through for Spring 2027").fill("2026-11-30");
+  await plans.getByRole("button", { name: "Save" }).click();
+  await expect(status).toContainText("runs through 2026-11-30");
+  await page.getByTestId("service-keys").getByRole("button", { name: /^WK\s/ }).click();
+  await expect(page.getByTestId("service-key").getByLabel("range start", { exact: true })).toHaveValue("2026-11-02");
+  await expect(page.getByTestId("service-key").getByLabel("range end", { exact: true })).toHaveValue("2026-11-30");
+  await page.locator("header.bar").getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByTestId("service-key").getByLabel("range end", { exact: true })).toHaveValue("2026-12-31");
   const keys = page.getByTestId("service-keys");
   const before = await keys.locator(".list li").count();
   await page.getByTestId("add-key").click();

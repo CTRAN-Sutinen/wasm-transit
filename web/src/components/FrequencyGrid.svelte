@@ -95,7 +95,7 @@
     <span class="key"><i style:background="color-mix(in oklab, #1d4ed8 100%, var(--surface))"></i>≤ 10 min</span>
     <span class="key"><i style:background="color-mix(in oklab, #1d4ed8 50%, var(--surface))"></i>≈ 40</span>
     <span class="key"><i style:background="var(--surface)" style:border="1px solid var(--line)"></i>≥ 75</span>
-    <span class="key"><i class="changed-key"></i>changed against the baseline</span>
+    {#if changed.length}<span class="key"><i class="changed-key"></i>changed against the baseline</span>{/if}
     <span>· one departure, no gap in the hour</span>
   </footer>
 </section>
