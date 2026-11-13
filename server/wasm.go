@@ -11,13 +11,17 @@ package main
 // the op behind POST /edits, held for the server's lifetime; the
 // AUTHORIZATION CAPABILITY (cap-authz) when auth is on (authz.go); the
 // PLANS CAPABILITY (cap-plans) in store mode, the op behind POST /plans
-// (plans.go); the NETWORK CAPABILITY (cap-network), instantiated once
+// (plans.go); the STOPS CAPABILITY (cap-stops) in store mode, one
+// instance emptied after each use (stops.go); the NETWORK CAPABILITY
+// (cap-network), instantiated once
 // per published feed to import it — and once per published pick to
 // validate and canonicalize it — and then closed (network.go,
 // plans.go); and the STREETS
 // CAPABILITY (cap-streets), instantiated once per published street
 // layer (and network) to import it and derive the walk table, then
-// closed (streets.go). This file is the
+// closed (streets.go). Each module's bytes are compiled once per process
+// ([compiledModule]); an instance is cheap (well under a millisecond),
+// so a fresh one per import or publish costs only its memory. This file is the
 // only place Go touches the ABI; everything above it speaks typed Go
 // values.
 
@@ -34,8 +38,8 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
-// WasmHost wraps one instance of the artifact. The runtime is held for
-// the host's lifetime — wazero ties module lifetime to it.
+// WasmHost wraps one instance of the artifact: its own linear memory,
+// instantiated from the module compiled once for the process.
 //
 // The artifact is NOT reentrant: its heap and linear memory are
 // single-instance state, and its internal Mutex only guards the feed
@@ -44,7 +48,6 @@ import (
 // on its own goroutine; without this lock concurrent /edits and
 // /manifest handling would corrupt wasm memory).
 type WasmHost struct {
-	runtime     wazero.Runtime
 	module      api.Module
 	memory      api.Memory
 	alloc       api.Function
@@ -56,10 +59,37 @@ type WasmHost struct {
 	mu sync.Mutex
 }
 
-// compiled caches machine code by module bytes for the process: a
-// module instantiated again (cap-network, per published feed)
-// compiles once.
-var compiled = wazero.NewCompilationCache()
+// The process's one runtime and each artifact compiled in it, by the
+// sha256 of its bytes: compiling (decoding, validating, generating
+// machine code) is the whole cost of a module — 1–3 s for cap-network,
+// many times that under the race detector — and an instance made from
+// the compiled module costs well under a millisecond. Compiled modules
+// live as long as the process; new bytes (a new build's modules) compile
+// once more beside the old.
+var (
+	compileMu sync.Mutex
+	shared    wazero.Runtime
+	compiled  = map[string]wazero.CompiledModule{}
+)
+
+// compiledModule is the artifact's compiled module, compiling it the
+// first time its bytes are seen.
+func compiledModule(ctx context.Context, hash string, body []byte) (wazero.Runtime, wazero.CompiledModule, error) {
+	compileMu.Lock()
+	defer compileMu.Unlock()
+	if shared == nil {
+		shared = wazero.NewRuntime(context.Background())
+	}
+	if module, ok := compiled[hash]; ok {
+		return shared, module, nil
+	}
+	module, err := shared.CompileModule(ctx, body)
+	if err != nil {
+		return nil, nil, err
+	}
+	compiled[hash] = module
+	return shared, module, nil
+}
 
 // NewWasmHost loads the artifact and instantiates it. The bytes are
 // hashed once: the manifest's wasm_hash claim is about exactly what
@@ -69,30 +99,33 @@ func NewWasmHost(ctx context.Context, artifactPath string) (*WasmHost, error) {
 	if err != nil {
 		return nil, err
 	}
-	runtime := wazero.NewRuntimeWithConfig(ctx, wazero.NewRuntimeConfig().WithCompilationCache(compiled))
-
-	// Zero imports: instantiation is the whole integration story.
-	module, err := runtime.Instantiate(ctx, body)
+	sum := sha256.Sum256(body)
+	hash := "sha256:" + hex.EncodeToString(sum[:])
+	runtime, code, err := compiledModule(ctx, hash, body)
 	if err != nil {
-		runtime.Close(ctx)
+		return nil, fmt.Errorf("compile %s: %w", artifactPath, err)
+	}
+	// Zero imports: instantiation is the whole integration story. An
+	// anonymous instance: any number share the runtime.
+	module, err := runtime.InstantiateModule(ctx, code, wazero.NewModuleConfig().WithName(""))
+	if err != nil {
 		return nil, fmt.Errorf("instantiate %s: %w", artifactPath, err)
 	}
-	sum := sha256.Sum256(body)
 	return &WasmHost{
-		runtime:     runtime,
 		module:      module,
 		memory:      module.Memory(),
 		alloc:       module.ExportedFunction("transit_alloc"),
 		free:        module.ExportedFunction("transit_free"),
 		invoke:      module.ExportedFunction("transit_invoke"),
 		invokeBytes: module.ExportedFunction("transit_invoke_bytes"),
-		hash:        "sha256:" + hex.EncodeToString(sum[:]),
+		hash:        hash,
 	}, nil
 }
 
-// Close releases the module and runtime.
+// Close releases the instance and its memory (the compiled module stays
+// for the next instance).
 func (h *WasmHost) Close(ctx context.Context) error {
-	return h.runtime.Close(ctx)
+	return h.module.Close(ctx)
 }
 
 // Hash returns the sha256 of the artifact this host runs.
