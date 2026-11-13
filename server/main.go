@@ -41,130 +41,95 @@ import (
 )
 
 func main() {
-	defaultAddr := "127.0.0.1:8080"
-	if os.Getenv("KO_DATA_PATH") != "" {
-		defaultAddr = ":8080"
-	}
-	addr := flag.String("addr", defaultAddr, "listen address (in the image: every interface, :8080; from a source tree: localhost only)")
-	dist := flag.String("dist", dataPath("dist", "../web/dist"), "directory of static files to serve")
-	wasmPath := flag.String("wasm", dataPath("pkg/cap_sync.wasm", "../web/pkg/cap_sync.wasm"), "the sync capability module to host and pin")
-	feedPath := flag.String("feed", "", "the GTFS zip's source (D-118): an http(s) URL, bucket:<key> (the object inputs/<key> in the -store bucket), or a dev path; imported and published as the network (enables /network and the manifest's schedule section). With -store each read is committed as source.feed, and a source that does not answer at boot serves that")
-	networkWasm := flag.String("network-wasm", dataPath("pkg/cap_network.wasm", "../web/pkg/cap_network.wasm"), "the network capability module that imports the feed")
-	streetsPath := flag.String("streets", "", "the street layer's source (GeoJSON lines; a URL, bucket:<key>, or a dev path, as -feed): imported and published as the streets document (enables /streets, and with -feed the walk table at /walks); committed as source.streets with -store")
-	streetsWasm := flag.String("streets-wasm", dataPath("pkg/cap_streets.wasm", "../web/pkg/cap_streets.wasm"), "the streets capability module that imports the layer and derives the walk table")
-	publisher := flag.String("publisher", "", "manifest provenance (who publishes this schedule)")
-	editsPath := flag.String("edits", "", "with no -store (the dev store): a file to keep the edit document in across restarts; empty = in memory only. With -store it seeds the edits pointer once")
-	storeURL := flag.String("store", "", "the durable sync store's URL (docs/FORMATS.md): s3://bucket/prefix[?endpoint=URL&region=R] (S3 or an S3-compatible endpoint; credentials from the AWS SDK's default chain) azblob://container/prefix, gs://bucket/prefix, or mem:// (nothing survives the process); enables /pointers, /blobs, /plans, /builds and store-backed /edits and /manifest. Empty = the dev store: edits in memory (or the -edits file), no history, no publishing — for development and -export only")
-	retentionDays := flag.Int("retention-days", 90, "tombstone retention horizon (days) for the store's D-57 compaction commits")
-	today := flag.String("today", "", "pin the server's date (YYYY-MM-DD) for hermetic test servers; empty = the host clock. Publishing reads it: a new pick never lands before today, and only a pick after today is retired (D-75, D-76)")
-	migrateWasm := flag.String("migrate-wasm", dataPath("pkg/cap_migrate.wasm", defaultMigrateWasm), "the migration capability module (cap-migrate): an older document comes forward at receive, and a store's older heads at startup")
-	plansWasm := flag.String("plans-wasm", dataPath("pkg/cap_plans.wasm", "../web/pkg/cap_plans.wasm"), "the plan-chain capability module (cap-plans) hosted in store mode: it answers the published plan set POST /plans commits")
-	attachmentsURL := flag.String("attachments", "", "the attachments' own bucket (D-162): any store URL (s3://, gs://, azblob://, mem://); photos and drawings on surveys and requests, read only by the signed-in; unset, none are taken")
-	workOrdersSpec := flag.String("work-orders", "", "the work order system's adapter (D-165): unset, none — a request's work order is entered by hand; stub: (or stub:<name>) a stand-in that opens STUB-<request>, for tests and demos")
-	requestsWasm := flag.String("requests-wasm", dataPath("pkg/cap_requests.wasm", "../web/pkg/cap_requests.wasm"), "the stop requests capability module (cap-requests) in store mode: it validates every POST /stop-requests (D-159)")
-	stopsWasm := flag.String("stops-wasm", dataPath("pkg/cap_stops.wasm", "../web/pkg/cap_stops.wasm"), "the stops capability module (cap-stops) in store mode: it validates every POST /stops and refreshes each pick's stops from the stops document")
-	authzWasm := flag.String("authz-wasm", dataPath("pkg/cap_authz.wasm", "../web/pkg/cap_authz.wasm"), "the authorization capability module (cap-authz) hosted when OIDC is configured")
-	oidcIssuer := flag.String("oidc-issuer", "", "expected JWT iss (D-60); with any -oidc flag this turns authentication on")
-	oidcJWKS := flag.String("oidc-jwks-url", "", "the IdP's JWKS URL: keys are fetched, cached by kid, refetched on an unknown kid (rate-limited)")
-	oidcAud := flag.String("oidc-audience", "", "expected JWT aud (string or array member)")
-	oidcKey := flag.String("oidc-key", "", "pinned PEM public key for JWT verification (used when -oidc-jwks-url is empty)")
-	oidcRoles := flag.String("oidc-roles-claim", "roles", "dotted JWT claim path holding the roles string array (D-59)")
-	oidcClientID := flag.String("oidc-client-id", "", "the pages' own registration at the sign-in provider (a public single-page application client, PKCE): with it, the manifest names the issuer, this client, and -oidc-scope, and the pages sign in to write (D-58 reads stay public)")
-	oidcScope := flag.String("oidc-scope", "openid profile offline_access", "the scopes a page asks for, its access token's audience the server's -oidc-audience (for Entra: openid profile offline_access api://<server app>/<scope>)")
-	oidcName := flag.String("oidc-name-claim", "name", "dotted JWT claim path holding the person's name, recorded as a survey's surveyor (D-158): name (Entra's display name), preferred_username or upn (the UPN), email; a token without it records its sub")
-	policyFile := flag.String("policy", "", "the authorization policy document's source (JSON; a URL, bucket:<key>, or a dev path): seeds the store's policy pointer at first boot (D-61); with no -store it is the policy")
-	geocoderURL := flag.String("geocoder", "", "base URL of a Pelias geocoder (e.g. http://127.0.0.1:4000): enables /geocode/{autocomplete,search,reverse} and lists it in the manifest's services")
-	rtProxy := flag.Bool("rt-proxy", false, "serve /rt?url=, a relay to any http(s) feed for pages whose feeds send no CORS header — a DEV convenience (D-67): it relays for any caller, so bind localhost; a deployment's pages fetch the agency's feeds directly")
-	geocoderPolicy := flag.String("geocoder-policy", dataPath("geocoder.json", "geocoder.json"), "the deployment's geocoder query policy (Pelias parameters per op), applied by the proxy")
-	exportDir := flag.String("export", "", "write the deployment as a static bundle into this directory (absent or empty) and exit: -dist's pages, the manifest, and every published document as blobs/<hash> and blobs/<hash>.gz — the paths this server answers (D-131; export.go)")
-	liveFeeds := flag.String("live-feeds", "", "with -export: the deployment's live-feeds.json (its agency feeds, no proxy), replacing -dist's dev copy")
-	drain := flag.Duration("drain", 5*time.Second, "on SIGTERM or SIGINT: how long /readyz answers 503 \"draining\" before the listener closes, so a load balancer stops sending first; then requests in flight get up to 30s to finish")
-	feedURL := flag.String("feed-url", "", "with -export, instead of -feed: the agency's GTFS zip URL the pages fetch, import, and check daily themselves — a serverless deployment that follows the feed with no redeploy (D-132); the URL must answer with CORS")
+	f := serverFlags(flag.CommandLine)
 	flag.Parse()
+	if err := applyConfig(flag.CommandLine, f.configs); err != nil {
+		log.Fatalf("config: %v", err)
+	}
 
 	mime.AddExtensionType(".wasm", "application/wasm")
 	mime.AddExtensionType(".mjs", "text/javascript")
 	mime.AddExtensionType(".pmtiles", "application/vnd.pmtiles")
 
 	ctx := context.Background()
-	host, err := NewWasmHost(ctx, *wasmPath)
+	host, err := NewWasmHost(ctx, *f.wasmPath)
 	if err != nil {
 		log.Fatalf("wasm host: %v", err)
 	}
-	log.Printf("sync module loaded: %s (%s)", *wasmPath, host.Hash())
+	log.Printf("sync module loaded: %s (%s)", *f.wasmPath, host.Hash())
 
 	s := &server{
-		dist:          *dist,
+		dist:          *f.dist,
 		wasm:          host,
-		publisher:     *publisher,
-		editsPath:     *editsPath,
-		retentionDays: *retentionDays,
-		fixedToday:    *today,
-		migrateWasm:   *migrateWasm,
+		publisher:     *f.publisher,
+		editsPath:     *f.editsPath,
+		retentionDays: *f.retentionDays,
+		fixedToday:    *f.today,
+		migrateWasm:   *f.migrateWasm,
 	}
-	if *attachmentsURL != "" {
-		if s.attachments, err = store.OpenBackend(context.Background(), *attachmentsURL); err != nil {
+	if *f.attachmentsURL != "" {
+		if s.attachments, err = store.OpenBackend(context.Background(), *f.attachmentsURL); err != nil {
 			log.Fatalf("attachments: %v", err)
 		}
-		log.Printf("attachments: %s (D-162)", *attachmentsURL)
+		log.Printf("attachments: %s (D-162)", *f.attachmentsURL)
 	}
 	// the work order adapter before the store's first manifest, which
 	// offers it (services.work_orders)
 	var woErr error
-	if s.workOrders, woErr = newWorkOrders(*workOrdersSpec); woErr != nil {
+	if s.workOrders, woErr = newWorkOrders(*f.workOrdersSpec); woErr != nil {
 		log.Fatal(woErr)
 	}
 	if s.workOrders != nil {
 		log.Printf("work orders: the %s adapter (D-165)", s.workOrders.Name())
 	}
-	if *storeURL != "" {
-		st, err := store.OpenServing(*storeURL)
+	if *f.storeURL != "" {
+		st, err := store.OpenServing(*f.storeURL)
 		if err != nil {
 			log.Fatalf("store: %v", err)
 		}
 		s.store = st
-		if s.plans, err = NewWasmHost(ctx, *plansWasm); err != nil {
+		if s.plans, err = NewWasmHost(ctx, *f.plansWasm); err != nil {
 			log.Fatalf("plans module: %v", err)
 		}
-		s.networkWasm = *networkWasm
-		s.stopsWasm = *stopsWasm
-		s.requestsWasm = *requestsWasm
-		s.seedStore(*editsPath)
+		s.networkWasm = *f.networkWasm
+		s.stopsWasm = *f.stopsWasm
+		s.requestsWasm = *f.requestsWasm
+		s.seedStore(*f.editsPath)
 		s.commitForward()
-		s.seedPolicy(*policyFile)
+		s.seedPolicy(*f.policyFile)
 		s.maybeCompactEdits()
-		s.serverModules = map[string]string{"sync": *wasmPath, "network": *networkWasm, "streets": *streetsWasm, "plans": *plansWasm, "migrate": *migrateWasm, "stops": *stopsWasm, "requests": *requestsWasm}
-		if *oidcIssuer != "" || *oidcJWKS != "" || *oidcKey != "" {
-			s.serverModules["authz"] = *authzWasm
+		s.serverModules = map[string]string{"sync": *f.wasmPath, "network": *f.networkWasm, "streets": *f.streetsWasm, "plans": *f.plansWasm, "migrate": *f.migrateWasm, "stops": *f.stopsWasm, "requests": *f.requestsWasm}
+		if *f.oidcIssuer != "" || *f.oidcJWKS != "" || *f.oidcKey != "" {
+			s.serverModules["authz"] = *f.authzWasm
 		}
 		s.syncBuild()
-		log.Printf("sync store open: %s (serving: creates and reads, never deletes — `store gc` collects orphans)", *storeURL)
+		log.Printf("sync store open: %s (serving: creates and reads, never deletes — `store gc` collects orphans)", *f.storeURL)
 	}
-	if *oidcIssuer != "" || *oidcJWKS != "" || *oidcKey != "" {
-		if *oidcJWKS != "" && (*oidcIssuer == "" || *oidcAud == "") {
+	if *f.oidcIssuer != "" || *f.oidcJWKS != "" || *f.oidcKey != "" {
+		if *f.oidcJWKS != "" && (*f.oidcIssuer == "" || *f.oidcAud == "") {
 			log.Fatal("-oidc-jwks-url needs -oidc-issuer and -oidc-audience")
 		}
 		a, err := loadAuthz(ctx, oidcConfig{
-			issuer: *oidcIssuer, jwksURL: *oidcJWKS, audience: *oidcAud,
-			keyFile: *oidcKey, rolesClaim: *oidcRoles, nameClaim: *oidcName,
-			clientID: *oidcClientID, scope: *oidcScope,
-		}, *authzWasm, *policyFile)
+			issuer: *f.oidcIssuer, jwksURL: *f.oidcJWKS, audience: *f.oidcAud,
+			keyFile: *f.oidcKey, rolesClaim: *f.oidcRoles, nameClaim: *f.oidcName,
+			clientID: *f.oidcClientID, scope: *f.oidcScope,
+		}, *f.authzWasm, *f.policyFile)
 		if err != nil {
 			log.Fatalf("authz: %v", err)
 		}
 		s.authz = a
 		log.Printf("auth ON: iss=%q aud=%q jwks=%q key=%q roles-claim=%q name-claim=%q (authz module %s)",
-			*oidcIssuer, *oidcAud, *oidcJWKS, *oidcKey, a.cfg.rolesClaim, a.cfg.nameClaim, a.wasm.Hash())
+			*f.oidcIssuer, *f.oidcAud, *f.oidcJWKS, *f.oidcKey, a.cfg.rolesClaim, a.cfg.nameClaim, a.wasm.Hash())
 	} else {
 		log.Printf("auth OFF: no -oidc flags — writes are UNAUTHENTICATED (dev only; bind localhost)")
 	}
-	if *geocoderURL != "" {
-		if s.geocoder, err = loadGeocoder(*geocoderURL, *geocoderPolicy); err != nil {
+	if *f.geocoderURL != "" {
+		if s.geocoder, err = loadGeocoder(*f.geocoderURL, *f.geocoderPolicy); err != nil {
 			log.Fatalf("geocoder: %v", err)
 		}
 	}
-	if *feedPath != "" {
-		s.feeder = &feedSource{src: newSource(*feedPath, "source.feed", "gtfs_feed", s.store), networkWasm: *networkWasm}
+	if *f.feedPath != "" {
+		s.feeder = &feedSource{src: newSource(*f.feedPath, "source.feed", "gtfs_feed", s.store), networkWasm: *f.networkWasm}
 		s.feeder.onImport = func(feed *loadedFeed) {
 			if err := s.recordFeed(context.Background(), feed); err != nil {
 				log.Printf("stops: the feed's differences were not recorded: %v", err)
@@ -174,42 +139,42 @@ func main() {
 			log.Fatalf("feed: %v", err)
 		}
 	}
-	if *streetsPath != "" {
-		s.streets = &streetsSource{src: newSource(*streetsPath, "source.streets", "street_layer", s.store), streetsWasm: *streetsWasm}
+	if *f.streetsPath != "" {
+		s.streets = &streetsSource{src: newSource(*f.streetsPath, "source.streets", "street_layer", s.store), streetsWasm: *f.streetsWasm}
 		if _, err := s.publishedStreets(); err != nil {
 			log.Fatalf("streets: %v", err)
 		}
 	}
-	if *feedURL != "" && (*exportDir == "" || *feedPath != "") {
+	if *f.feedURL != "" && (*f.exportDir == "" || *f.feedPath != "") {
 		log.Fatal("-feed-url is an export's (-export), in place of -feed: a server imports its feed")
 	}
-	s.feedURL = *feedURL
-	if *exportDir != "" {
-		if err := s.export(*exportDir, *liveFeeds); err != nil {
+	s.feedURL = *f.feedURL
+	if *f.exportDir != "" {
+		if err := s.export(*f.exportDir, *f.liveFeeds); err != nil {
 			log.Fatalf("export: %v", err)
 		}
 		return
 	}
-	s.edits = loadEdits(*editsPath)
+	s.edits = loadEdits(*f.editsPath)
 	if s.store == nil {
 		where := "in memory (lost on restart)"
-		if *editsPath != "" {
-			where = "in the file " + *editsPath + " (this machine only)"
+		if *f.editsPath != "" {
+			where = "in the file " + *f.editsPath + " (this machine only)"
 		}
 		log.Printf("DEV STORE: no -store — edits are kept %s, with no history; publishing picks and builds is off. Development only: a deployment runs with -store", where)
 	}
 
-	s.rtProxy = *rtProxy
+	s.rtProxy = *f.rtProxy
 	if s.rtProxy {
 		log.Printf("-rt-proxy: /rt relays any http(s) URL — dev only; bind localhost")
 	}
 
-	ln, err := net.Listen("tcp", *addr)
+	ln, err := net.Listen("tcp", *f.addr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("listening on http://%s (dist: %s)", ln.Addr(), *dist)
-	if err := s.serve(ln, newHTTPServer(s.routes()), *drain); err != nil {
+	log.Printf("listening on http://%s (dist: %s)", ln.Addr(), *f.dist)
+	if err := s.serve(ln, newHTTPServer(s.routes()), *f.drain); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -53,21 +53,26 @@ installs it and the `wasm32-unknown-unknown` target:
 ```
 cd web && npm install && cd ..
 just build                                   # capability modules + frontend
-just serve                                   # the server on :8080
-just serve path/to/gtfs.zip                  # + /network, /network/document (the zip, imported
-                                             # once) and the manifest
-just serve path/to/gtfs.zip roads.geojson    # + /streets and /walks (the layer imported
-                                             # once, the walk table derived from both)
+just serve                                   # the server on :8080, on server/dev.toml
+just serve path/to/gtfs.zip                  # another feed (imported once: /network,
+                                             # /network/document and the manifest)
+just serve path/to/gtfs.zip roads.geojson    # + another street layer (/streets, /walks)
 just serve path/to/gtfs.zip "" "Test Transit"   # + the manifest's publisher
-STORE=mem:// just serve path/to/gtfs.zip       # + the sync store (/pointers, /blobs;
-                                               # docs/FORMATS.md) — in memory; an
-                                               # object store survives a restart:
-just store-dev                                 # SeaweedFS in podman, and its STORE= URL
+just store-dev                               # SeaweedFS in podman: a store that
+                                             # survives a restart (its URL in local.toml)
 just dev                                     # vite hot reload + the server
 just export ride-now out/ path/to/gtfs.zip [roads.geojson]   # or no server: one rider
                                              # app (ride-now, stop-display) as its own
                                              # static site (D-131; LIVE_FEEDS= names its feeds)
 ```
+
+The server's settings are files, not a long command line. `just serve`,
+`just dev` and `just qa` start from `server/dev.toml`: the e2e fixture
+feed and streets, a store in memory, photos in memory, the stand-in work
+order system, and the dev feed relay. Your own settings (the agency's
+feed, a lasting store, sign-in, the geocoder) go in `server/local.toml`,
+laid over it: copy `server/local.example.toml`; git ignores it. Each key
+is a flag's name; a flag on the command line beats both files.
 
 Deploying the rider apps as static sites (Cloudflare Workers, step by step):
 [DEPLOYMENTS.md](DEPLOYMENTS.md). Running the server in production (its
@@ -127,7 +132,8 @@ with podman-compose; several GB of data, about an hour to build):
 ```
 just geocoder-build                          # once: download and import
 just geocoder                                # start it on 127.0.0.1:4000
-GEOCODER=http://127.0.0.1:4000 just serve path/to/gtfs.zip roads.geojson
+just serve                                   # with geocoder = "http://127.0.0.1:4000"
+                                             # in server/local.toml
 just geocoder-stop
 ```
 
@@ -138,12 +144,12 @@ geocoder and its policy under `services`.
 
 ## Authentication and the sync store
 
-`STORE=<url> just serve …` turns on the sync store: content-addressed
+The `store` setting (`-store`) is the sync store: content-addressed
 blobs and CAS'd pointers as create-only objects in object storage —
 `s3://bucket/prefix` (S3 or S3-compatible, `?endpoint=…`),
 `azblob://container/prefix`, `gs://bucket/prefix`, or `mem://`
 (`/pointers`, `/blobs`, store-backed `/edits` and `/manifest`;
-`docs/FORMATS.md`). `just store-dev` runs a local SeaweedFS to serve
+`docs/FORMATS.md`); `server/dev.toml` holds it in memory. `just store-dev` runs a local SeaweedFS to serve
 over; `just store verify|gc|copy` are the offline tools. The feed,
 the street layer and the policy can come from a URL or the bucket
 (`bucket:<key>`) as well as a path.
@@ -152,13 +158,9 @@ With an OIDC IdP, writes authenticate: the server verifies bearer JWTs
 (JWKS or a pinned key, RS256/ES256 only) and asks the `cap-authz`
 module over a policy document (the store's `policy` pointer, seeded
 from the `-policy` source at first boot) — reads stay public, writes need a
-role the policy grants (D-58..D-61). Via `just serve`:
-
-```
-OIDC_ISSUER=https://idp.example OIDC_JWKS_URL=https://idp.example/jwks \
-  OIDC_AUDIENCE=transit-server POLICY=./policy.json STORE=mem:// \
-  just serve path/to/gtfs.zip
-```
+role the policy grants (D-58..D-61). For `just serve`, set `policy`
+and the `[oidc]` table in `server/local.toml`
+(`server/local.example.toml` has an Entra example).
 
 ## Live feeds
 

@@ -83,10 +83,26 @@ document's age (kit's `staleLabel`).
 Without `-store` the server runs over **the dev store**: the edit
 document in memory (or, with `-edits <path>`, one flat file on this
 machine), no history, and no publishing — `/plans`, `/builds`,
-`/pointers` and the store's log are off. It is for development
-(`just serve`, `just dev`) and for `-export`, which refuses a store;
-the server logs `DEV STORE` at startup. A deployment runs with
+`/pointers` and the store's log are off. It is for `-export`, which
+refuses a store, and for a server started bare; the server logs `DEV
+STORE` at startup. `server/dev.toml` gives `just serve`, `just dev`
+and `just qa` a store in memory instead, and a deployment runs with
 `-store`.
+
+**Settings** (`config.go`, `flags.go`). Every setting is a flag, and
+`-config <file>` sets them from a TOML file: each key a flag's name, a
+`[table]` prefixing its keys with its name and a dash (`[oidc]` `issuer`
+is `-oidc-issuer`), a relative path read from the file's directory, a
+URL or `bucket:<key>` as given. `-config` repeats, a later file over an
+earlier, and a flag on the command line beats every file. A key that
+names no flag, or a value its flag refuses, stops the boot with the
+file's name. Secrets stay out of the files: the store's credentials
+come from each SDK's own chain (the environment, a workload identity).
+`server/dev.toml` is the development defaults (the fixture feed and
+streets, `mem://` store and attachments, the stub work order system,
+`-rt-proxy`); `server/local.toml`, gitignored, is a developer's own,
+laid over it (`server/local.example.toml`). `just serve`, `just dev`
+and `just qa` read both.
 
 **Running it.** The server stops on SIGTERM or SIGINT in two steps:
 `/readyz` answers 503 `draining` for `-drain` (default 5 s), so a load
@@ -126,7 +142,7 @@ Its HTTP surface:
   build its log holds: a rollback, or forward again (store mode;
   docs/FORMATS.md, "Builds"). A write, protected like the others.
 - `/rt?url=<encoded>` — a DEV relay, a route only with `-rt-proxy`
-  (`just serve` and `just dev` pass it; D-67): it fetches an http(s)
+  (`server/dev.toml` turns it on; D-67): it fetches an http(s)
   feed (15 s timeout, 32 MB cap) and returns it with CORS headers, for
   a dev config whose feeds send no `Access-Control-Allow-Origin`. It
   relays any URL for any caller, so the server binds 127.0.0.1 when
@@ -141,8 +157,8 @@ Its HTTP surface:
   (`github.com/pelias/docker`'s portland-metro project, in the
   gitignored `.pelias/`, its transit importer not run — stops are
   the network's), `just geocoder` starts it on :4000, and
-  `GEOCODER=http://127.0.0.1:4000 just serve …` (or `just dev`)
-  proxies it.
+  `geocoder = "http://127.0.0.1:4000"` in `server/local.toml` has
+  `just serve` (or `just dev`) proxy it.
 - `/manifest` — `{network_hash, boundary_hash, feed_url, feed_hash, feed_version,
   plans_hash, stops_hash, streets_hash, walks_hash, wasm_hash, authz_hash,
   policy_hash, build_hash, generated_at, publisher, timezone, services}`
@@ -214,8 +230,8 @@ Its HTTP surface:
   the client, and the scopes, and the pages sign in to write
   (`web/src/signin.svelte.ts`).
   No `-oidc-*` = auth off,
-  logged loudly (dev only). `STORE`/`OIDC_*`/`POLICY` env vars pass the
-  flags through `just serve`/`just dev`. What the server leaves to the
+  logged loudly (dev only). For `just serve`/`just dev`, `policy` and
+  the `[oidc]` table go in `server/local.toml`. What the server leaves to the
   deployment: the first JWKS fetch trusts the IdP's HTTPS (pin its
   certificate at the proxy for more), throttling repeated 401s is the
   reverse proxy's, and a browser gets and refreshes its IdP token on
@@ -383,7 +399,11 @@ reading **Because**.
 
 ### The dev store is not a deployment mode (no `-store`)
 - **Holds:** without `-store` the server warns at startup and keeps working; it does not refuse.
-- **Because:** with no store there is no history, rollback, or publishing, and edits live on one machine — right for a developer and for `-export` (which writes a bundle and exits), never for a server riders depend on. A warning keeps `just serve` one command.
+- **Because:** with no store there is no history, rollback, or publishing, and edits live on one machine — right for a developer and for `-export` (which writes a bundle and exits), never for a server riders depend on. A warning keeps a bare server one command.
+
+### Settings are a file whose keys are the flags (`config.go`)
+- **Holds:** `-config` sets flags from TOML files; the command line beats a file, a later file an earlier; an unknown key refuses the boot; the flags themselves stay, every one.
+- **Because:** the server grew past thirty flags, and a long command line (or an environment variable per flag, passed through each recipe) is hard to read, review, and keep. A file keeps a deployment's settings in one reviewed place and the developer's defaults in the tree; keys that are the flags' own names mean one vocabulary (`-help` documents both), and the flags staying means the image, the e2e servers, and a one-off override need no file. TOML because people edit it and it takes comments; refusing an unknown key because a misspelt setting silently ignored is a deployment running on a default nobody chose.
 
 ### `/rt` is a dev relay, off by default (`handleProxy`, `-rt-proxy`)
 - **Holds:** the route exists only with `-rt-proxy`, which binds localhost; deployments fetch feeds directly.

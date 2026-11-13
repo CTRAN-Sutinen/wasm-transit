@@ -1,0 +1,27 @@
+# Your own settings, laid over dev.toml. Copy this file to
+# server/local.toml (gitignored) and keep the lines you want; a relative
+# path is read from this file's directory.
+
+# The agency's feed and street layer.
+feed = "../testdata/ctran-gtfs.zip"
+streets = "../testdata/CTRANTrapezeRoads_-7802340045063204687.geojson"
+publisher = "C-TRAN"
+
+# Keep the store across restarts (`just store-dev` starts SeaweedFS).
+# store = "s3://transit/dev?endpoint=http://127.0.0.1:8333"
+# (its credentials stay in the environment: AWS_ACCESS_KEY_ID=dev
+# AWS_SECRET_ACCESS_KEY=devsecret just serve)
+
+# A local Pelias geocoder (`just geocoder`).
+# geocoder = "http://127.0.0.1:4000"
+
+# Sign-in (D-58..D-61). With an issuer set, writes need a signed-in
+# person the policy lets write; the pages sign in with client-id.
+# policy = "../web/e2e/fixtures/signin-policy.json"
+# [oidc]
+# issuer = "https://login.microsoftonline.com/<tenant>/v2.0"
+# jwks-url = "https://login.microsoftonline.com/<tenant>/discovery/v2.0/keys"
+# audience = "api://<server app>"
+# client-id = "<the pages' app registration>"
+# scope = "openid profile offline_access api://<server app>/<scope>"
+# name-claim = "name"

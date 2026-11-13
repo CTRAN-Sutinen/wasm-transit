@@ -236,7 +236,8 @@ among them):
   passing spec proves the paths it names; it does not prove that each
   control shows its answer where the planner lands. Run `just qa` (the
   page with hot reload over a server on the C-TRAN feed, modules under
-  the wasm-fast profile) and drive it with `tools/ui-shot.mjs`: open a
+  the wasm-fast profile, on `server/dev.toml`'s settings: the stub
+  work order system and photos in memory) and drive it with `tools/ui-shot.mjs`: open a
   selection by its hash, run steps, read the screenshot, the status
   line, and the page's errors. Its browser profile (`.qa/`) keeps the
   plans a walk forked, so a fix is re-checked in seconds: a page edit

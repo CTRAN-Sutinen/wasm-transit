@@ -142,6 +142,38 @@ The options you are most likely to use:
 
 `podman run localhost/transit-server:latest -help` lists every option.
 
+**Keep the settings in a file.** Instead of a long command, put the
+options in a settings file and give the server `-config <file>`. Each
+line is an option's name without the dash. A `[oidc]` heading saves
+writing `oidc-` before each sign-in option. Lines starting with `#` are
+comments.
+
+```
+# /etc/transit/server.toml
+store = "s3://agency-transit/prod?region=us-west-2"
+feed = "https://agency.example.com/gtfs.zip"
+publisher = "Example Transit"
+
+[oidc]
+issuer = "https://login.example.com/"
+audience = "transit-server"
+jwks-url = "https://login.example.com/keys"
+```
+
+```
+podman run -d --name transit-server -p 8080:8080 \
+  -e AWS_ACCESS_KEY_ID=… -e AWS_SECRET_ACCESS_KEY=… \
+  -v /etc/transit:/etc/transit:ro \
+  localhost/transit-server:latest -config /etc/transit/server.toml
+```
+
+Keep passwords and keys out of the file: the bucket's credentials still
+come from the environment or the platform's identity, as above. An
+option given on the command line wins over the file, which is handy for
+a one-off change. If the file has a name the server does not know, it
+stops at once and the log names the file and the line's name. A file
+path written in the file is read from the file's own folder.
+
 **Check it.** Open `https://<your address>/readyz`. It should say
 `{"status":"ready","store":"ok"}`. Then open the address itself: the
 start page lists the apps.

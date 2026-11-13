@@ -1,0 +1,32 @@
+# The server's development defaults: what `just serve`, `just dev` and
+# `just qa` start with. Your own settings go in server/local.toml
+# (gitignored; copy local.example.toml), laid over this file; a flag on
+# the command line beats both.
+#
+# Each key is a flag's name (`go run ./server -help` lists them); a
+# [table] prefixes its keys ([oidc] issuer is -oidc-issuer). A relative
+# path is read from this file's directory.
+
+addr = "127.0.0.1:8080"
+
+# The schedule: the e2e fixture feed, so the server starts with no
+# download. Point local.toml at the agency's feed.
+feed = "../testdata/ctran-gtfs.zip"
+streets = "../testdata/CTRANTrapezeRoads_-7802340045063204687.geojson"
+publisher = "Dev Transit"
+
+# A store held in memory: publishing, history, and the stops and stop
+# requests writes all work, and nothing survives a restart. Point
+# local.toml at `just store-dev`'s SeaweedFS to keep it.
+store = "mem://"
+
+# Photos on surveys and requests, held in memory too (D-162).
+attachments = "mem://"
+
+# The stand-in work order system: Open work order answers STUB-<request>
+# (D-165).
+work-orders = "stub:Maintenance"
+
+# The dev relay for live feeds that send no CORS header (D-67). Never on
+# in a deployment.
+rt-proxy = true

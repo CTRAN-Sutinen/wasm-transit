@@ -61,3 +61,6 @@ crates/*/bindings/
 # The QA driver's browser profile (tools/ui-shot.mjs): the plans a
 # walk forked, kept between runs
 .qa/
+
+# The server settings a developer keeps to themselves (server/local.example.toml).
+/server/local.toml

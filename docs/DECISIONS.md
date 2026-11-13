@@ -1346,6 +1346,26 @@ Options, for rollback and retention:
   keeps the server's modules only.
 Blocks: each UI at its own URL in `docs/units/release-artifacts.md`.
 
+### D-172 — Where do the server's settings live?
+State: Decided.
+Answer: 2026-11-13 — "just serve has gotten an insane number of flags,
+its far past the point where we need to have a config file with sane
+dev defaults."
+Built: `-config <file>` (repeatable) sets flags from TOML, each key a
+flag's name and a `[table]` its keys' prefix; the command line beats
+every file, a later file an earlier; a relative path is read from the
+file's directory; an unknown key refuses the boot. `server/dev.toml`
+holds the development defaults (fixture feed and streets, `mem://`
+store and attachments, the stub work order system, `-rt-proxy`), and a
+gitignored `server/local.toml` is laid over it (`local.example.toml`);
+`just serve`, `just dev` and `just qa` read both, and the recipes no
+longer pass environment variables through. Every flag stays. Reading,
+encoded and not confirmed by the user: TOML (comments; Go's standard
+library reads only JSON), the flags' own names as keys, and secrets
+kept out of the files (the SDKs' credential chains). Why:
+`docs/architecture/server.md`, "Settings are a file whose keys are the
+flags". Pins: `server/config_test.go`.
+
 ### D-53 — What ridership data does the planner bring?
 State: Decided.
 Answer: 2026-11-05 — none for now: no ridership document and no

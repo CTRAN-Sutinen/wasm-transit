@@ -742,46 +742,38 @@ population:
 # run
 # ---------------------------------------------------------------
 
-# Serve the built app and APIs on :8080. Arguments are positional:
+# Serve the built app and APIs on :8080, on the settings in
+# server/dev.toml (the fixture feed and streets, a store in memory,
+# attachments, the stub work order system, the dev feed relay) and
+# server/local.toml over it if you keep one (copy
+# server/local.example.toml: your feed, store, sign-in, geocoder).
+# The positional arguments beat both:
 #
-#   just serve                                   # static + /rt (the dev feed relay) only
-#   just serve path/to/gtfs.zip                  # + /network (imported once), /manifest
-#   just serve path/to/gtfs.zip roads.geojson    # + /streets, /walks (the layer
-#                                                # imported once, the walk table
-#                                                # derived from both)
+#   just serve                                   # the settings files only
+#   just serve path/to/gtfs.zip                  # another feed
+#   just serve path/to/gtfs.zip roads.geojson    # + another street layer
 #   just serve path/to/gtfs.zip "" "Test Transit"   # + manifest publisher
 #   just serve path/to/gtfs.zip "" "" 127.0.0.1:8081
 #
 # The feed and street layer are a path (resolved relative to the repo
 # root, wherever you run just from), an http(s) URL, or bucket:<key>
-# (the object inputs/<key> in the STORE bucket) — D-118.
-serve feed="" streets="" publisher="" addr="127.0.0.1:8080":
+# (the object inputs/<key> in the store's bucket) — D-118.
+serve feed="" streets="" publisher="" addr="":
     #!/usr/bin/env bash
     set -e
-    # A URL or bucket:<key> source passes as given (D-118); a path is
-    # resolved from the repo root.
+    # The settings are server/dev.toml, then server/local.toml if you
+    # keep one (your feed, store, sign-in, geocoder — copy
+    # local.example.toml); the arguments here beat both. A URL or
+    # bucket:<key> source passes as given (D-118); a path is resolved
+    # from the repo root.
     src() { case "$1" in http://*|https://*|bucket:*) echo "$1" ;; *) realpath -m "$1" ;; esac; }
-    feed="{{ feed }}"; streets="{{ streets }}"
-    if [ -n "$feed" ]; then feed=$(src "$feed"); fi
-    if [ -n "$streets" ]; then streets=$(src "$streets"); fi
-    cd server
-    # -rt-proxy: the dev feed relay live-feeds.json names (D-67; off in
-    # a deployment, whose pages fetch the agency's feeds directly).
-    args=(-addr "{{ addr }}" -rt-proxy)
-    if [ -n "$feed" ]; then args+=(-feed "$feed"); fi
-    if [ -n "$streets" ]; then args+=(-streets "$streets"); fi
+    args=(-config dev.toml)
+    if [ -f server/local.toml ]; then args+=(-config local.toml); fi
+    if [ -n "{{ feed }}" ]; then args+=(-feed "$(src "{{ feed }}")"); fi
+    if [ -n "{{ streets }}" ]; then args+=(-streets "$(src "{{ streets }}")"); fi
     if [ -n "{{ publisher }}" ]; then args+=(-publisher "{{ publisher }}"); fi
-    if [ -n "${GEOCODER:-}" ]; then args+=(-geocoder "$GEOCODER"); fi
-    if [ -n "${STORE:-}" ]; then args+=(-store "$STORE"); fi
-    if [ -n "${ATTACHMENTS:-}" ]; then args+=(-attachments "$ATTACHMENTS"); fi
-    if [ -n "${WORK_ORDERS:-}" ]; then args+=(-work-orders "$WORK_ORDERS"); fi
-    # Auth (D-58..D-61): OIDC_* turns authentication on; POLICY seeds the
-    # store's policy pointer at first boot. Example:
-    # OIDC_ISSUER=https://idp.example OIDC_JWKS_URL=https://idp.example/jwks \
-    #   OIDC_AUDIENCE=transit-server POLICY=./policy.json STORE=mem:// just serve feed.zip
-    for v in OIDC_ISSUER OIDC_JWKS_URL OIDC_AUDIENCE OIDC_KEY OIDC_ROLES_CLAIM OIDC_NAME_CLAIM OIDC_CLIENT_ID OIDC_SCOPE POLICY; do
-        if [ -n "${!v:-}" ]; then args+=("-$(echo "${v,,}" | tr '_' '-')" "${!v}"); fi
-    done
+    if [ -n "{{ addr }}" ]; then args+=(-addr "{{ addr }}"); fi
+    cd server
     exec go run . "${args[@]}"
 
 # One UI built alone (web/dist-ui/<ui>/): only its page, its scripts,
@@ -915,7 +907,8 @@ store-dev:
     echo "s3.bucket.create -name transit" | podman exec -i transit-store-dev weed shell >/dev/null 2>&1 || true
     echo "SeaweedFS :8333, Azurite :10000, fake-gcs-server :4443 (just store-dev-stop ends them)."
     echo "Serve over SeaweedFS:"
-    echo "  {{ store_dev_env }} STORE='{{ store_dev_url }}' just serve …"
+    echo "  store = \"{{ store_dev_url }}\" in server/local.toml, then"
+    echo "  {{ store_dev_env }} just serve"
 
 store-dev-stop:
     podman rm -f transit-store-dev transit-azurite transit-fake-gcs >/dev/null 2>&1 || true
@@ -941,20 +934,15 @@ store-contract:
 # Frontend dev loop: vite with hot reload on :5173 (proxies /rt — the
 # dev feed relay, -rt-proxy — and /geocode), with the sync server
 # alongside on :8080 (logs:
-# /tmp/transit-server.log). GEOCODER=<url> passes -geocoder.
+# /tmp/transit-server.log), on the same settings files as serve.
 dev: caps types
     #!/usr/bin/env bash
     set -e
-    geo=(); if [ -n "${GEOCODER:-}" ]; then geo=(-geocoder "$GEOCODER"); fi
-    store=(); if [ -n "${STORE:-}" ]; then store=(-store "$STORE"); fi
-    if [ -n "${ATTACHMENTS:-}" ]; then store+=(-attachments "$ATTACHMENTS"); fi
-    if [ -n "${WORK_ORDERS:-}" ]; then store+=(-work-orders "$WORK_ORDERS"); fi
-    oidc=()
-    for v in OIDC_ISSUER OIDC_JWKS_URL OIDC_AUDIENCE OIDC_KEY OIDC_ROLES_CLAIM OIDC_NAME_CLAIM OIDC_CLIENT_ID OIDC_SCOPE POLICY; do
-        if [ -n "${!v:-}" ]; then oidc+=("-$(echo "${v,,}" | tr '_' '-')" "${!v}"); fi
-    done
+    # The server on server/dev.toml (+ server/local.toml), as `just serve`.
+    cfg=(-config dev.toml)
+    if [ -f server/local.toml ]; then cfg+=(-config local.toml); fi
     (cd server && go build -o /tmp/transit-server . && \
-      /tmp/transit-server -rt-proxy "${geo[@]}" "${store[@]}" "${oidc[@]}" >/tmp/transit-server.log 2>&1 & echo $! >/tmp/transit-server.pid)
+      /tmp/transit-server "${cfg[@]}" >/tmp/transit-server.log 2>&1 & echo $! >/tmp/transit-server.pid)
     trap 'kill "$(cat /tmp/transit-server.pid)" 2>/dev/null || true' EXIT
     cd web && npx vite
 
@@ -975,8 +963,11 @@ qa feed="": caps-fast types
         feed=testdata/ctran-gtfs.zip; [ -f "$feed" ] || feed=web/e2e/fixtures/sample-gtfs.zip
     fi
     feed="$(realpath "$feed")"
+    # server/dev.toml (+ local.toml), on its own port, its store in memory.
+    cfg=(-config dev.toml)
+    if [ -f server/local.toml ]; then cfg+=(-config local.toml); fi
     (cd server && go build -o /tmp/transit-qa-server . && \
-      /tmp/transit-qa-server -addr 127.0.0.1:8091 -store mem:// -feed "$feed" >/tmp/transit-qa.log 2>&1 & echo $! >/tmp/transit-qa.pid)
+      /tmp/transit-qa-server "${cfg[@]}" -addr 127.0.0.1:8091 -store mem:// -feed "$feed" >/tmp/transit-qa.log 2>&1 & echo $! >/tmp/transit-qa.pid)
     trap 'kill "$(cat /tmp/transit-qa.pid)" 2>/dev/null || true' EXIT
     for i in $(seq 1 60); do curl -sf -o /dev/null http://127.0.0.1:8091/manifest && break; sleep 1; done
     curl -sf -o /dev/null http://127.0.0.1:8091/manifest || { echo "qa: the server did not start (/tmp/transit-qa.log):"; tail -3 /tmp/transit-qa.log; exit 1; }
@@ -1035,12 +1026,12 @@ basemap-assets:
 # Pelias (github.com/pelias/docker, its portland-metro project —
 # OSM, OpenAddresses, Who's On First, TIGER interpolation) in
 # .pelias/ (gitignored: pelias/docker at a pinned commit in docker/,
-# never written to; data/ ~6.5 GB). The server proxies it at /geocode when started with
-# GEOCODER set:
+# never written to; data/ ~6.5 GB). The server proxies it at /geocode when its
+# settings name it (geocoder = "http://127.0.0.1:4000" in server/local.toml):
 #
 #   just geocoder-build      # once: fetch, download, import (~1 h)
 #   just geocoder            # start it on 127.0.0.1:4000
-#   GEOCODER=http://127.0.0.1:4000 just serve feed.zip roads.geojson
+#   just serve
 #   just geocoder-stop       # stop every container
 #
 # Needs docker compose (or podman + podman-compose; rootless podman

@@ -183,14 +183,17 @@ just e2e-fast [args]       # the same over `caps-fast` modules, Playwright's arg
 just check                 # both runners — changes touching both sides
 just types                 # regenerate TS bindings (gitignored; build runs it)
 just serve [feed.zip [streets.geojson ["Publisher" [addr]]]]   # sync server on :8080
-                           # (with -rt-proxy, the dev feed relay — D-67)
+                           # on its settings files: server/dev.toml (the fixture
+                           # feed and streets, a mem:// store and attachments, the
+                           # stub work order system, -rt-proxy — D-67), then
+                           # server/local.toml (gitignored; copy
+                           # local.example.toml: your feed, store, sign-in,
+                           # geocoder); each key a flag's name, the arguments
+                           # beat both (docs/architecture/server.md, "Settings")
                            # feed/streets: a path, an http(s) URL, or bucket:<key>
-                           # (D-118). STORE=url adds the durable sync store
-                           # (-store: s3://bucket/prefix?endpoint=…, azblob://…,
-                           # gs://…, or mem://; docs/FORMATS.md; POST /plans
-                           # publishes a pick)
-                           # No STORE = the dev store: edits in memory, no
-                           # history or publishing (logged DEV STORE)
+                           # (D-118); store = s3://bucket/prefix?endpoint=…,
+                           # azblob://…, gs://…, or mem:// (docs/FORMATS.md;
+                           # POST /plans publishes a pick)
 just server-image [REPO [TAG]]   # the server as one container image (ko):
                            # target/server-image.tar, or pushed to REPO for
                            # amd64 + arm64 (DEPLOYMENTS-SERVER.md)
@@ -212,24 +215,19 @@ just store-dev             # local object stores in podman: SeaweedFS (:8333, th
                            # to serve over), Azurite, fake-gcs-server (store-dev-stop)
 just store-contract        # the store's laws against each of them (opt-in, never
                            # in `just test`)
-                           # OIDC_ISSUER/OIDC_JWKS_URL/OIDC_AUDIENCE/OIDC_KEY/POLICY=…
-                           # (OIDC_NAME_CLAIM: the claim a survey's surveyor is;
-                           # OIDC_CLIENT_ID/OIDC_SCOPE: the pages sign in)
-                           # ATTACHMENTS=url: the photos' own bucket (D-162);
-                           # WORK_ORDERS=stub: the work order adapter (D-165)
-                           # turn on JWT auth + policy (D-58..D-61;
-                           # docs/architecture/server.md)
 just dev                   # vite hot reload + server alongside
 just qa [feed.zip]         # the UI QA loop: modules under wasm-fast, a server on the
                            # C-TRAN feed (else the e2e fixture) in a memory store,
                            # vite hot reload on :5174 (server :8091, its own
-                           # ports beside serve/dev); drive it with
+                           # ports beside serve/dev, on server/dev.toml + local.toml,
+                           # its store in memory); drive it with
 node tools/ui-shot.mjs UI  # [--hash H] [--steps walk.mjs] [--full] [--size WxH]:
                            # a screenshot + status + page errors, one browser
                            # profile in .qa/ (forked plans persist) — docs/TESTING.md
 just geocoder-build        # once: a local Pelias (portland-metro) in .pelias/
-just geocoder              # start it on :4000 (GEOCODER=http://127.0.0.1:4000
-                           # just serve|dev proxies it at /geocode); geocoder-stop
+just geocoder              # start it on :4000 (geocoder = "http://127.0.0.1:4000"
+                           # in server/local.toml: serve|dev proxy it at /geocode);
+                           # geocoder-stop
 just basemap-assets        # once: the basemap's glyphs + sprites into web/public/
                            # (gitignored; labels read them locally, else the network)
 just fixtures              # regenerate the e2e GTFS fixture
