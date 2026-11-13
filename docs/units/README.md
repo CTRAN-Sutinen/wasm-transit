@@ -49,7 +49,7 @@ archive — nothing here records what is finished.
 | [grade-debt.md](grade-debt.md) | on the bus, but not yet read by a UI or dogfooded |
 | [ui-disruptions.md](ui-disruptions.md) | generated UI: running today's service through disruptions (late buses, detours, coverage) |
 | [ui-proposal-compare.md](ui-proposal-compare.md) | generated UI: the public comparing service proposals |
-| [stop-lifecycle.md](stop-lifecycle.md) | stops as one document beside the plans: each stop a list of dated events (opened, closed, moved, changed, proposed, retired), amenities included |
+| [stop-site-and-requests.md](stop-site-and-requests.md) | a stop's site survey filled in the field, stop requests tracking the work order system's orders, their photos and drawings, and the stops' GTFS import and export wired |
 | [ui-stops.md](ui-stops.md) | generated UI: stops as their own stage of the service change (create, move, consolidate, remove), a route's map choosing the stops it serves, and its line redrawn along the streets |
 | [ui-service-design.md](ui-service-design.md) | generated UI: designing a service change in six chained views — the blocked questions and the views' remaining parts |
 | [runs-layer.md](runs-layer.md) | the runs cut under the work rules; the run view, legality, and run edits; suggested blocking, extended |

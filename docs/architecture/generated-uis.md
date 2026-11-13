@@ -321,7 +321,7 @@ there or by name (directory `stops`), one opened to its card (directory
 pattern position that visits it with the trips it runs; a station pin
 no pattern visits names the routes its bays serve); a visit opens its
 route on the Route stage in that direction. A stop's own record and life (creating, moving,
-suspending, retiring) are the stops app's (`docs/units/stop-lifecycle.md`,
+suspending, retiring) are the stops app's (`stops`, below;
 D-157); consolidating stops on a plan's patterns, and a route's own map,
 are `docs/units/ui-stops.md`. Route: one route's day in one direction, chosen on the route's bar (the first by default; a direction that runs nothing under the day type offers the others), closed again from its stage tab — the string-line or the timetable, the
 changes (the service-design gestures), running time by start, gaps by

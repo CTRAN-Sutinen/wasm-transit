@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-157**.
+- IDs are never reused; the next new decision is **D-163**.
 
 ## Summary
 
@@ -211,6 +211,11 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-155 | What happens when a closure leaves a trip short? | decided; replaced by D-157 | nothing |
 | D-156 | Does the network document change for the stops? | decided; replaced by D-157 | nothing |
 | D-157 | Whose lifecycle is a stop's? | decided | nothing |
+| D-158 | Where does a stop's site survey live? | decided | nothing |
+| D-159 | What is a stop request, and how does it reach the work order system? | decided | nothing |
+| D-160 | Are a stop's signs, posts, and shelters records of their own? | decided | nothing |
+| D-161 | When a survey and the agency's other data disagree, which wins? | decided | nothing |
+| D-162 | Where do photos and drawings live, and how does a record name one? | decided | nothing |
 
 ## The trip model
 
@@ -732,7 +737,7 @@ the plan's period (dates of its own wait on the stop lifecycle).
 Not built: the user, the same day, after the design was laid out —
 "sounds like we need to take a step back and really work on the data
 model." The closure is built in that work
-(`docs/units/stop-lifecycle.md`, which carries the design), not on the
+(the stops document, `docs/architecture/crates.md`, transit-stops), not on the
 diversion's skip rules: diversions are the dispatcher's day, outside
 the network.
 Context: `docs/units/ui-stops.md` item 2. A planner closes a stop and
@@ -754,7 +759,7 @@ id and the number on the sign, so a stop moved along the curb stays
 the same stop; a consolidation or a split makes new stops, each naming
 the stops it replaces. The user agreed ("makes sense") to the design
 laid out: identity belongs to the service point, not to the pole.
-Context: `docs/units/stop-lifecycle.md`. A stop is
+Context: the stops document (`docs/architecture/crates.md`, transit-stops). A stop is
 two things GTFS merges — the place at the curb, which is built, moved,
 and removed on the city's clock, and the point where service stops,
 which patterns visit, riders know by number, and history (adherence,
@@ -827,7 +832,7 @@ Answer: 2026-11-12 — GeoJSON: "i think geojson makes sense." One
 FeatureCollection, one Point feature per stop per period of its life,
 its properties named for the stops.txt columns where GTFS has one plus
 the period's dates and status; a move or a closure is a new period.
-Context: `docs/units/stop-lifecycle.md`. Under D-146 a GIS edits the
+Context: the stops document (`docs/architecture/crates.md`, transit-stops). Under D-146 a GIS edits the
 stops with no adapter, and effective-dated rows are how GIS tools keep
 time. A Transmodel-style split (a stop point assigned to a quay over
 time) was weighed and set aside: a dated feature carries the same facts
@@ -876,7 +881,7 @@ was a survey correction, turned into an edit of the earlier point (a
 feed cannot tell the two apart; D-153). Every difference counts, however
 small: the export writes points exactly, so a re-import of this repo's
 own feed adds nothing.
-Context: `docs/units/stop-lifecycle.md` item 1. A feed has no dates for
+Context: the stops' GTFS import and export (`docs/architecture/crates.md`, transit-stops). A feed has no dates for
 its stops; the document already holds events, some in the future. A
 review step before riders get the feed was weighed: on the rider path a
 feed is the agency's published statement, and a stop its trips visit
@@ -897,7 +902,7 @@ software, one per exported version when the window needs more than one,
 while the stops document keeps one lasting key per stop (refining
 D-145). An import (D-150) reads a made id back as a version of its
 stop. A real-time producer's ids are outside this decision.
-Context: `docs/units/stop-lifecycle.md` item 1. stops.txt holds one row
+Context: the stops' GTFS import and export (`docs/architecture/crates.md`, transit-stops). stops.txt holds one row
 per stop id, with one point and one name; a move or rename inside the
 feed's window has two.
 Options:
@@ -930,7 +935,7 @@ amenities — changes only by an event, and nothing in the document means
 date. A correction edits the event that was wrong (the store keeps the
 earlier version); a real change adds an event — which also tells a
 survey fix from a move. The user confirmed each point ("yes").
-Context: `docs/units/stop-lifecycle.md`. GeoJSON holds one point per
+Context: the stops document (`docs/architecture/crates.md`, transit-stops). GeoJSON holds one point per
 feature and no time, so a stop's record either goes stale after a dated
 change or splits into one feature per period. OGC JSON-FG (GeoJSON
 with one `time` per feature, 1.0 in June 2026; GDAL reads a draft of it
@@ -951,7 +956,7 @@ claims none; a documented core list plus the agency's own names, which
 the server keeps and does not check. Amenities change by events like
 any detail. Their condition and repair stay out: the document says what
 is at a stop and when it changed, not its upkeep.
-Context: `docs/units/stop-lifecycle.md`. GTFS carries no amenities
+Context: the stops document (`docs/architecture/crates.md`, transit-stops). GTFS carries no amenities
 beyond `wheelchair_boarding`.
 Blocks: nothing.
 
@@ -1033,11 +1038,116 @@ stops app is its own generated UI. D-145, D-146, D-148, D-152 and D-154
 stand; D-150 and D-151 stand for GTFS in and out except that closures no
 longer split trips. A suspension of a few hours is still recorded by
 day (D-148): "we can always adjust and support hourly later."
-Context: `docs/units/stop-lifecycle.md`. The pick-centered build (the
+Context: the stops document (`docs/architecture/crates.md`, transit-stops). The pick-centered build (the
 window refresh, republishing picks on a stops write, trips skipping a
 closed stop, the dated timetable, publishing opening a plan's proposed
 stops, closing a stop on the service-change page) followed D-155 and
 D-156.
+Blocks: nothing.
+
+### D-158 — Where does a stop's site survey live?
+State: Decided.
+Answer: 2026-11-13 — on the stop, as typed site fields beside its
+amenities, set by the event that records the survey (its surveyor and
+date with it); filled on a phone or tablet at the stop. The user
+agreed to the plan ("everything else looks good") and, of the form:
+"i think it would be better to make it so it can be filled on a
+phone/tablet in the field". Started online, with a draft kept on the
+device so a dropped connection loses nothing: "agreed with starting
+online. in the future we will definitely want to build full offline
+support though." What the schedule already says (the routes, a
+time point, the previous and next stop) is shown from it, never typed
+— but only for a stop a schedule serves: "if this is a new stop, it
+wont be in the schedule yet", so a new stop's intended routes and
+direction are the request's (D-159).
+Context: C-TRAN's paper Service Stop Worksheet: on and cross street,
+near side / far side / opposite / mid-block, side of street, stop and
+sidewalk surface, sidewalk connection, curb and curb cuts, front and
+rear door pads, shoulder, turnout, a crossing within 200 ft, street
+light, advertising, the seat and the post, sign, shelter, kiosk and
+light types, landmark, remarks, photos, the surveyor and date. Many
+answers are a choice from a list or a type, which the yes/no
+amenities (D-154) cannot hold. OpenStreetMap names many of them
+(`surface`, `kerb`, `sidewalk`, `crossing`, `advertising`, `lit`).
+Options: typed site fields beside the amenities, OpenStreetMap's
+names where one exists and the agency's own kept (recommended);
+widening amenities to typed values (a format change to a decided
+shape).
+Pinned by: nothing yet (`docs/units/stop-site-and-requests.md`).
+Blocks: nothing.
+
+### D-159 — What is a stop request, and how does it reach the work order system?
+State: Decided.
+Answer: 2026-11-13 — a record of its own, the planning team's
+submission, referencing the work order the work order system opens.
+The user: "work orders live in a work order system, but the form i
+attached is something that the planning team submits, the sheet isn't
+itself a work order. they should have their own record and the system
+should be able to track a reference to the external work order. in
+the future we should be able to call out to the work order systems api
+and generate one/track status in this app by calling that system."
+The sheet's Control # is the work order system's number: "it comes
+from the work order system". The user agreed to it as its own
+document kind beside the stops document ("everything else looks
+good").
+Context: C-TRAN's Bus Stop Sign & Shelter Installation Worksheet: the
+kind of job (new, reinstall, relocate/remove, repair/improve,
+temporary), the stop, route and direction, the requester and date,
+parcel and township/range/section, the site drawing and the measured
+offset from the cross street, how the spot is marked, the utility
+locate ticket and the utilities called, and the completion. A request
+is work, not a fact about the stop, with its own life (drafted,
+submitted, work order opened, completed); the stop's own event (built,
+moved, retired) names the request it came from. The work order
+reference holds the system, its id (the Control #), a link, and the
+status as last read with when it was read — read from that system,
+shown as given. Calling its API is the server's, as an adjacent
+system's writes are (`docs/architecture/adjacent-systems.md`).
+Options: its own document kind (recommended); events on the stop (mixes
+the work into the stop's facts).
+Pinned by: nothing yet (`docs/units/stop-site-and-requests.md`).
+Blocks: nothing. Which work order system, and its API, are taken up
+when the call-out is scoped.
+
+### D-160 — Are a stop's signs, posts, and shelters records of their own?
+State: Decided.
+Answer: 2026-11-13 — not yet: each is a type and an optional asset id
+on the stop, with the other systems' ids for the stop (the Sign ID, TMS,
+HP, GIS) kept as cross-references. The user: "agreed with your
+recommendation".
+Context: the worksheets name a sign id and the post, sign, shelter,
+kiosk and light types. Records of their own are worth it only if
+these things move between stops with a history of their own.
+Pinned by: nothing yet (`docs/units/stop-site-and-requests.md`).
+Blocks: nothing.
+
+### D-161 — When a survey and the agency's other data disagree, which wins?
+State: Decided.
+Answer: 2026-11-13 — neither: both are shown as given and the
+difference flagged. The user: "agree with your recommendation".
+Context: the survey records the speed limit, traffic lanes, city and
+county, and land use; the streets document and boundary layers may
+say otherwise, and a new stop's intended routes (D-159) may differ
+from what the schedule serving it says.
+Pinned by: nothing yet (`docs/units/stop-site-and-requests.md`).
+Blocks: nothing.
+
+### D-162 — Where do photos and drawings live, and how does a record name one?
+State: Decided.
+Answer: 2026-11-13 — in a bucket of their own, each named in the
+record by its content hash, never by a URL. The user: "we need file
+attachments, but those should probably be in their own bucket? not
+sure what best practice is here, but i would think we'd have a field
+in the stop that just holds bucket urls where the photos live", then
+agreed to naming by hash ("everything else looks good").
+Context: a URL ties every record to one provider and bucket name; a
+hash keeps the record portable (the deployment names the bucket, the
+server hands out the link), shows a swapped file, and lets the store's
+garbage collection see which files are still referenced. Each
+attachment carries its hash, type, file name, caption, and who took it
+and when, on a request (D-159) or a stop's event (D-158).
+Options: by content hash (recommended); by bucket URL.
+Pinned by: nothing yet (`docs/units/stop-site-and-requests.md`).
 Blocks: nothing.
 
 ### D-53 — What ridership data does the planner bring?
