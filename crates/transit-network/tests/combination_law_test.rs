@@ -206,6 +206,22 @@ proptest! {
         prop_assert!(service_combination(&net, &[]).is_none());
         prop_assert!(service_combination(&net, &["ghost".to_string()]).is_none());
     }
+
+    /// The date is an address, never an input: every date a combination
+    /// holds on materializes the same day, so whatever reads a day —
+    /// the fleet as blocked, the suggested blocks — answers by the
+    /// service keys running, never by which of their dates was asked.
+    #[test]
+    fn every_date_of_a_combination_materializes_the_same_day(types in proptest::collection::vec(gen_type(), 0..=5)) {
+        let net = network(&types);
+        for c in service_combinations(&net) {
+            let day = |d: &String| transit_network::materialize(&net, NaiveDate::parse_from_str(d, "%Y-%m-%d").unwrap()).unwrap();
+            let first = day(&c.dates[0]);
+            for d in &c.dates[1..] {
+                prop_assert_eq!(&day(d), &first, "{} materializes {}'s day", d, c.dates[0]);
+            }
+        }
+    }
 }
 
 /// Two overlays in successive periods never pool (QAF-91's shape): a

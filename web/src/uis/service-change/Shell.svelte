@@ -95,7 +95,6 @@
   const alsoIn = $derived(
     sc.dayTypes.flatMap((t) => t.groups).filter((g) => g.id !== sc.group && g.members.includes(sc.editType)).map((g) => g.id),
   );
-  const groupDate = $derived(sc.dayTypes.flatMap((t) => t.groups).find((g) => g.id === sc.group)?.dates[0] ?? "");
   const stopNames = $derived(new Map(sc.stops.map((s) => [s.stop_id, s.name])));
   let jump = $state("");
   let hub = $state("");
@@ -279,7 +278,7 @@
 
     {:else if sc.stage === "resources"}
       {#if sc.failed.Fleet}{@render failure("Fleet", "Vehicles and hours")}{:else}
-        <FleetPanel fleet={sc.fleet} suggestion={sc.suggestion} date={groupDate} {framed} onadopt={adoptBlocks} onroute={openRoute}
+        <FleetPanel fleet={sc.fleet} suggestion={sc.suggestion} {framed} onadopt={adoptBlocks} onroute={openRoute}
           block={sc.block} blockTrips={sc.blockTrips} blockError={sc.failed.Block ?? ""} onblock={openBlock} stopName={(id) => stopNames.get(id) ?? id} />
       {/if}
 

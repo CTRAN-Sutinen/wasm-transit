@@ -1,6 +1,6 @@
 <script lang="ts">
   /// What the change needs (runcut `fleet_summary` and `suggest_blocks`
-  /// on the day type's date): the peak vehicles and the platform,
+  /// on the service combination: the trips its service keys run): the peak vehicles and the platform,
   /// revenue and layover hours as blocked, the trips no block carries,
   /// and the suggested blocks that would carry them — adopted with one
   /// event, their edits applied by the host. The blocks themselves: each
@@ -15,7 +15,6 @@
   let {
     fleet,
     suggestion,
-    date,
     framed,
     onadopt,
     onroute,
@@ -27,7 +26,6 @@
   }: {
     fleet: FleetSummary | null;
     suggestion: Suggestion | null;
-    date: string;
     framed: boolean;
     onadopt: () => void;
     onroute: (route: string) => void;
@@ -57,7 +55,6 @@
 </script>
 
 <section class="fleet" aria-label="Vehicles and hours" data-testid="fleet-panel">
-  <p class="muted">As blocked on {date}, a date this day type runs.</p>
   {#if fleet}
     <div class="cards">
       <div><small>Peak vehicles</small><b>{fleet.peak_vehicles}</b><span>{fleet.peak_at_secs != null ? `at ${clock(fleet.peak_at_secs)}` : ""}</span></div>
@@ -90,7 +87,7 @@
   {/if}
   {#if spans.length}
     <div class="blockhead">
-      <h3>Blocks <span class="muted">{spans.length} out on {date}; a bar is one vehicle, out to in. Open one for its trips.</span></h3>
+      <h3>Blocks <span class="muted">{spans.length} out; a bar is one vehicle, out to in. Open one for its trips.</span></h3>
       <input type="search" bind:value={filter} placeholder="Find a block…" aria-label="Find a block" />
     </div>
     <div class="gantt" data-testid="blocks">
