@@ -197,19 +197,20 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-141 | What does an open plan compare against by default? | decided | nothing |
 | D-142 | Does serving a stop act on the direction or on one pattern? | unanswered | `ui-stops` item 4 |
 | D-143 | What does redrawing a line do to running time? | unanswered | `ui-stops` item 5 |
-| D-144 | What does closing a stop do to a plan? | decided; its dates replaced by D-147 | nothing |
+| D-144 | What does closing a stop do to a plan? | decided; replaced by D-157 | nothing |
 | D-145 | What makes a stop the same stop over time? | decided | nothing |
 | D-146 | Does this repo own the stop data? | decided | nothing |
-| D-147 | Do stops live inside each plan or beside the plans? | decided | nothing |
+| D-147 | Do stops live inside each plan or beside the plans? | decided; its picks' part replaced by D-157 | nothing |
 | D-148 | How fine are a stop's dates? | decided | nothing |
 | D-149 | What format is the stops document? | decided; replaced by D-153 | nothing |
 | D-150 | What does importing a feed do to a stops timeline that exists? | decided | nothing |
 | D-151 | What does the export write when a stop changes inside its window? | decided | nothing |
 | D-152 | Who owns the data, and how strict is a write? | decided | nothing |
-| D-153 | How is the stops document stored? | decided | nothing |
+| D-153 | How is the stops document stored? | decided; its event types replaced by D-157 | nothing |
 | D-154 | What does the stops document say about amenities? | decided | nothing |
-| D-155 | What happens when a closure leaves a trip short? | decided | nothing |
-| D-156 | Does the network document change for the stops? | decided | nothing |
+| D-155 | What happens when a closure leaves a trip short? | decided; replaced by D-157 | nothing |
+| D-156 | Does the network document change for the stops? | decided; replaced by D-157 | nothing |
+| D-157 | Whose lifecycle is a stop's? | decided | nothing |
 
 ## The trip model
 
@@ -716,8 +717,8 @@ Options:
 Blocks: `docs/units/ui-stops.md` item 5.
 
 ### D-144 — What does closing a stop do to a plan?
-State: Decided; how long a closure lasts is replaced by D-147 (a closure
-carries its own dates on the stops' timeline, not the plan's period).
+State: Decided; replaced by D-157 (a closure is a suspension on the
+stop's own timeline; a pick never skips it on its own).
 Answer: 2026-11-12 — a closed status, for now. The user: "realistically
 we need both. what we are running into is the fact the GTFS doesn't
 have a good way to handle the stop lifecycle, it has no concept of past
@@ -781,7 +782,9 @@ permission edits it.
 Blocks: nothing.
 
 ### D-147 — Do stops live inside each plan or beside the plans?
-State: Decided.
+State: Decided; beside the plans stands. What a pick does with the stops
+(the window refresh, a stop event rebuilding the riders' network, a
+stop proposed for a plan) is replaced by D-157.
 Answer: 2026-11-12 — beside them: "separate." Stops (their record,
 place, and dated status) are one document on a timeline of their own
 that every plan refers to by stop id; a fork copies service, never the
@@ -873,7 +876,7 @@ was a survey correction, turned into an edit of the earlier point (a
 feed cannot tell the two apart; D-153). Every difference counts, however
 small: the export writes points exactly, so a re-import of this repo's
 own feed adds nothing.
-Context: `docs/units/stop-lifecycle.md` item 1. A feed has no dates for
+Context: `docs/units/stop-lifecycle.md` item 4. A feed has no dates for
 its stops; the document already holds events, some in the future. A
 review step before riders get the feed was weighed: on the rider path a
 feed is the agency's published statement, and a stop its trips visit
@@ -894,7 +897,7 @@ software, one per exported version when the window needs more than one,
 while the stops document keeps one lasting key per stop (refining
 D-145). An import (D-150) reads a made id back as a version of its
 stop. A real-time producer's ids are outside this decision.
-Context: `docs/units/stop-lifecycle.md` item 1. stops.txt holds one row
+Context: `docs/units/stop-lifecycle.md` item 4. stops.txt holds one row
 per stop id, with one point and one name; a move or rename inside the
 feed's window has two.
 Options:
@@ -906,7 +909,8 @@ Options:
 Blocks: nothing.
 
 ### D-153 — How is the stops document stored?
-State: Decided.
+State: Decided; the document's shape stands, its event types are
+replaced by D-157.
 Answer: 2026-11-12 — plain JSON, one record per stop, each a list of
 dated events; it replaces D-149. The user, on one feature per period:
 "that doesn't sound good to me … it shoudl be one feature per stop";
@@ -952,7 +956,9 @@ beyond `wheelchair_boarding`.
 Blocks: nothing.
 
 ### D-155 — What happens when a closure leaves a trip short?
-State: Decided.
+State: Decided; replaced by D-157 (a suspension does not change a
+pick's trips; the planner is warned when a pick visits a stop not in
+service).
 Answer: 2026-11-12 — the closure is saved whatever it does to a route,
 nothing is held up, and the planner is warned. Confirmed by the user
 ("yes"): a pattern whose first or last stop is closed runs to (or from)
@@ -969,7 +975,9 @@ Context: the closure's warnings are built (transit-network `served_warnings`).
 Blocks: nothing.
 
 ### D-156 — Does the network document change for the stops?
-State: Decided.
+State: Decided; replaced by D-157 (a pick reads a stop's record when
+it is published or exported; no events are copied, and a stops write
+republishes nothing). The network document keeps its shape.
 Answer: 2026-11-12 — no: the network document keeps its shape, stops
 included, and the split is the planners'. The user: "so we leave the
 existing document alone and make a split for planners?", then "yes that
@@ -986,6 +994,50 @@ Context: the refresh is built (cap-stops `refresh`, the server's publish and `PO
 leaving the stored pick, a new network version, and every older network
 split by cap-migrate — changes every network reader and every stored
 document to gain nothing a refresh does not.
+Blocks: nothing.
+
+### D-157 — Whose lifecycle is a stop's?
+State: Decided.
+Answer: 2026-11-12 — the stop's own, managed in an app of its own; picks
+only read it. The user: "this whole piece actually needs its own ui and
+lifecycle. stop lifecycle management should NOT be centered around
+picks. stops get closed temporarily all the time and aren't removed
+from static GTFS feeds, but are noted in realtime feeds. the lifecycle
+of planning => permitting => built => in service => retired is largely
+outside of the pick. the stops data model is something the pick reads
+in a read only manner, they only thing it has to say is whether a
+service visits a stop, or not." Then, confirmed point by point:
+- Real-time: nothing here publishes it. "this is an open document, it
+  isn't hard to have aother system read it and push the data into an rt
+  feed."
+- A pick takes each stop's location and name (its record) from the
+  stops document when it is published or exported, and never writes
+  it.
+- A closure reaches a pick only as the planner's choice that service
+  stops visiting the stop: "many transient closures never make it into
+  it because they happen for a few hours or days. long term closures
+  would absolutely be publishable."
+- The planner is warned, never refused, when a pick visits a stop not
+  in service on its dates: always for a stop planned, permitted, built,
+  or retired; for a suspended stop only when the suspension covers the
+  pick's whole period or has no end date.
+- A stop is planned, permitted, built, in service, suspended, or
+  retired. "a suspended stop is expected to return to service, it may
+  not though"; "a long closure is a long suspension."
+Encoded as: the stops document keeps its shape (D-153) with events
+`planned`, `permitted`, `built`, `in_service`, `suspended` (an optional
+`until`, after which the earlier state returns), `moved`, `changed`,
+and `retired`; a suspended stop returns by `in_service` or ends by
+`retired`. A planned stop names no plan; a plan just visits it. The
+stops app is its own generated UI. D-145, D-146, D-148, D-152 and D-154
+stand; D-150 and D-151 stand for GTFS in and out except that closures no
+longer split trips. A suspension of a few hours is still recorded by
+day (D-148): "we can always adjust and support hourly later."
+Context: `docs/units/stop-lifecycle.md`. The pick-centered build (the
+window refresh, republishing picks on a stops write, trips skipping a
+closed stop, the dated timetable, publishing opening a plan's proposed
+stops, closing a stop on the service-change page) followed D-155 and
+D-156.
 Blocks: nothing.
 
 ### D-53 — What ridership data does the planner bring?

@@ -194,18 +194,6 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   Blocked: D-3 (re-opened), D-54.
 
 
-- **QAF-107 OP GAP** — before the first pick takes effect, a stop
-  closure reaches no one: `POST /stops` refreshes the published picks
-  (D-156), and the deployment's own import (the manifest's
-  `network_hash`, what riders get until a pick takes effect) is never
-  refreshed. So a closure is missing from the riders' network, from the
-  planner's timetable on that feed, and from its served warnings. The
-  Stops stage's card and map read the stops document, so they do show
-  it.
-  Pin: 2026-11-12 `just qa` on C-TRAN (no picks): stop 6136 closed
-  2026-11-16 until 2026-11-18 through the Stops stage (200, the document
-  seeded, `republished: []`); Vine-Green's timetable on 2026-11-17 marks
-  no column, and the plan shows 0 warnings.
 
 ## Live operations
 

@@ -321,7 +321,6 @@ fn the_planners_lists_are_directory_answers() {
         direction: direction.clone(),
         members: members.clone(),
         compare_hash: None,
-        date: None,
     };
     let table = match dispatch(request).unwrap() {
         Response::Timetable { timetable } => timetable.expect("the direction and type exist"),
@@ -331,12 +330,12 @@ fn the_planners_lists_are_directory_answers() {
     assert!(table.trips.windows(2).all(|w| w[0].start_secs <= w[1].start_secs), "rows by start");
     assert!(table.trips.iter().all(|t| t.times.len() == table.stops.len()));
     // Against itself: nothing added, nothing removed.
-    let against = Request::Timetable { network_hash: hash.clone(), route_id: "10".into(), direction, members, compare_hash: Some(hash.clone()), date: None };
+    let against = Request::Timetable { network_hash: hash.clone(), route_id: "10".into(), direction, members, compare_hash: Some(hash.clone()) };
     match dispatch(against).unwrap() {
         Response::Timetable { timetable: Some(t) } => assert!(t.trips.iter().all(|x| !x.added) && t.removed.is_empty()),
         _ => panic!("timetable"),
     }
-    let unknown = Request::Timetable { network_hash: hash.clone(), route_id: "10".into(), direction: Some("ghost".into()), members: vec![], compare_hash: None, date: None };
+    let unknown = Request::Timetable { network_hash: hash.clone(), route_id: "10".into(), direction: Some("ghost".into()), members: vec![], compare_hash: None };
     match dispatch(unknown).unwrap() {
         Response::Timetable { timetable } => assert!(timetable.is_none()),
         _ => panic!("timetable"),
@@ -407,7 +406,6 @@ proptest! {
             direction: None,
             members: vec!["WK".into()],
             compare_hash: None,
-            date: None,
         }) {
             Ok(Response::Timetable { timetable }) => prop_assert!(timetable.is_none()),
             other => panic!("timetable on an unknown id must answer, not {other:?}"),
@@ -420,7 +418,6 @@ proptest! {
             direction: None,
             members: vec![id],
             compare_hash: None,
-            date: None,
         }) {
             Ok(Response::Timetable { timetable }) => prop_assert!(timetable.is_none()),
             other => panic!("timetable on an unknown service type must answer, not {other:?}"),
@@ -496,37 +493,3 @@ fn service_keys_name_each_calendar_and_what_runs_on_it() {
     assert_eq!(wk.rule, net.service_types["WK"].rule);
     assert!(wk.routes.iter().any(|r| r.route_id == "10" && r.trips > 0));
 }
-
-/// The timetable read for a date marks a column whose stop is closed
-/// that date (the laws are transit-network's `timetable_on`): here the
-/// op passes the date through, and a bad date is an honest error.
-#[test]
-fn the_timetable_reads_for_a_date() {
-    let mut network = derived_network();
-    let c = network.stops.get_mut("C").unwrap();
-    c.events = serde_json::from_value(serde_json::json!([
-        {"event": "opened", "lat": c.lat, "lon": c.lon},
-        {"on": "2026-10-23", "event": "closed", "until": "2026-10-24"}
-    ]))
-    .unwrap();
-    let hash = cap_abi::kernel::NETWORK.register(network).unwrap().0;
-    let ask = |date: Option<&str>| {
-        dispatch(Request::Timetable {
-            network_hash: hash.clone(),
-            route_id: "10".into(),
-            direction: Some("0".into()),
-            members: vec!["WK".into()],
-            compare_hash: None,
-            date: date.map(str::to_string),
-        })
-    };
-    let column = |t: &transit_network::Timetable| t.stops.iter().find(|s| s.stop == "C").cloned().unwrap();
-    let Ok(Response::Timetable { timetable: Some(free) }) = ask(None) else { panic!("timetable") };
-    let Ok(Response::Timetable { timetable: Some(closed) }) = ask(Some("2026-10-23")) else { panic!("timetable") };
-    let Ok(Response::Timetable { timetable: Some(back) }) = ask(Some("2026-10-24")) else { panic!("timetable") };
-    assert!(!column(&free).unserved && column(&closed).unserved);
-    assert_eq!(serde_json::to_value(column(&closed).status).unwrap(), serde_json::json!("closed"));
-    assert_eq!(back, free, "the day after reads as the date-free timetable");
-    assert!(ask(Some("2026-13-01")).unwrap_err().contains("invalid date"));
-}
-

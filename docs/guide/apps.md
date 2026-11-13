@@ -52,9 +52,7 @@ draft and change the draft. It follows the steps of the work in
 order: set up the plan and its calendar (which service runs on which
 days, holidays included), scan how often each route runs hour by
 hour, look up any stop (where it is, what it is, and every route
-that stops there), close a stop for some days or open it again (on
-the chosen day, the map, the stop and the timetable show it closed,
-and the schedules that day change for everyone), change one route's day, check the buses and hours the change
+that stops there), change one route's day, check the buses and hours the change
 needs (each bus's day drawn as a bar, with its trips one click away),
 and review the whole proposal for weekdays, Saturdays and
 Sundays, against a plan you choose there.

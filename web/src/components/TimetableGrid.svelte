@@ -4,8 +4,7 @@
   /// direction's patterns. One row per trip in the op's order, one
   /// column per stop in the op's order; against a baseline the op
   /// marks `added` rows, `retimed_from_secs` on a kept trip that
-  /// moved, and lists `removed` trips; read for a date, a column whose
-  /// stop is not open then is marked `unserved`. RENDER only — the
+  /// moved, and lists `removed` trips. RENDER only — the
   /// pattern letters index the op's legend, and "timepoints only"
   /// hides the columns the op does not flag.
   import type { Timetable } from "../types/Timetable";
@@ -68,9 +67,8 @@
         <tr>
           <th class="pat"></th>
           {#each columns as s (s.i)}
-            <th class:tp={s.timepoint} class:sel={s.stop === selectedStop} class:unserved={s.unserved} title={s.unserved ? `${s.name}: ${s.status ?? "not open"} on this date` : s.name} data-unserved={s.unserved ? (s.status ?? "not_there") : undefined}>
+            <th class:tp={s.timepoint} class:sel={s.stop === selectedStop} title={s.name}>
               <button onclick={() => onstop(s.stop)}>{s.name}</button>
-              {#if s.unserved}<span class="unserved-mark">{s.status ?? "not open"}</span>{/if}
             </th>
           {/each}
           <th class="blk">Block</th>
@@ -117,8 +115,6 @@
   }
   thead th.tp { font-weight: 600; }
   th.sel, td.sel { background: var(--accent-soft); }
-  th.unserved button { text-decoration: line-through; }
-  .unserved-mark { display: block; font-size: 0.7rem; font-weight: 400; color: var(--bad, #b91c1c); }
   .pat { position: sticky; left: 0; background: var(--surface); font-weight: 600; }
   thead .pat { z-index: 2; }
   tr.added td { background: var(--accent-soft); }

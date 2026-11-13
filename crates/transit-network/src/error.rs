@@ -193,15 +193,6 @@ pub enum NetworkWarning {
     /// plan is the document's own, named as a reader knows it — its
     /// name, never its (often minted) id.
     NoServiceInPlanPeriod { plan_name: String, effective_from: String },
-    /// A pattern's first or last stop is not served — closed, retired,
-    /// proposed, or not yet opened — from `from` until `until` (both
-    /// service dates; none = since before any record, until further
-    /// notice): its trips run to or from their nearest open stop then
-    /// (D-155).
-    EndpointNotServed { pattern: String, stop: String, from: Option<String>, until: Option<String> },
-    /// A pattern left with fewer than two served stops from `from`
-    /// until `until`: its trips do not run then (D-155).
-    UnderTwoServed { pattern: String, from: Option<String>, until: Option<String> },
 }
 
 /// Where a required recovery came from (D-9).

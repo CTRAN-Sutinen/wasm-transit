@@ -248,8 +248,6 @@ pub(crate) fn import_places(feed: &Feed, net: &mut Network) {
                 transfer: false,
                 kind: if int::<u8>(&row.location_type) == Some(1) { StopKind::Station } else { StopKind::Stop },
                 info: stop_info(row),
-                // A feed says nothing of a stop's dates.
-                events: Vec::new(),
             },
         );
     }

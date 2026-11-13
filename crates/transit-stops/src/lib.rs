@@ -511,33 +511,6 @@ impl Stops {
         self.stop_on(id, date).is_some_and(|s| s.status == Status::Open)
     }
 
-    /// The document with `plan`'s proposed stops opened from `first`,
-    /// the plan's first date — or from the proposal's own date, when it
-    /// is later: an `opened` event appended to each stop whose only
-    /// event is `plan`'s proposal, so the stop is open from that date at
-    /// the proposal's point with its details. A stop whose history has
-    /// gone on, another plan's proposal, and every other stop keep their
-    /// events. Answers the ids it opened, in id order; publishing again
-    /// opens nothing more.
-    pub fn open_plan(&self, plan: &str, first: NaiveDate) -> (Stops, Vec<String>) {
-        let mut next = self.clone();
-        let mut opened = Vec::new();
-        for (id, events) in &mut next.stops {
-            let [proposal] = events.as_slice() else { continue };
-            if proposal.event != EventKind::Proposed || proposal.plan.as_deref() != Some(plan) {
-                continue;
-            }
-            let on = proposal
-                .on
-                .as_deref()
-                .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
-                .map_or(first, |d| d.max(first));
-            events.push(Event { on: Some(on.format("%Y-%m-%d").to_string()), event: EventKind::Opened, ..Event::default() });
-            opened.push(id.clone());
-        }
-        (next, opened)
-    }
-
     /// The document with `event` added to stop `id` in its place by
     /// date: after every event dated on or before it (an undated opening
     /// first), before every later one; every other event keeps its

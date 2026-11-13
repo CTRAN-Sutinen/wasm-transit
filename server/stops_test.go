@@ -1,11 +1,9 @@
 package main
 
-// The stops document in store mode (D-147, D-152, D-156): a write goes
+// The stops document in store mode (D-152, D-153, D-157): a write goes
 // through the receive path — cap-stops validates it and answers its
-// canonical bytes, a stale write is refused — and a pick's stops are a
-// copy refreshed from the document: publishing refreshes the pick for
-// its window and opens the stops its plan proposed, and a stop change
-// republishes every pick in force or to come whose stops it changes. A server with no stops document publishes exactly as before.
+// canonical bytes, a stale write is refused — and a pick only reads the
+// document, so a stops write changes no pick.
 
 import (
 	"context"
@@ -162,114 +160,27 @@ func TestStopsWritesAreValidated(t *testing.T) {
 	}
 }
 
-func TestAStopChangeRefreshesThePicksItTouches(t *testing.T) {
+// A pick only reads the stops document (D-157): a closure written while
+// a pick is published leaves every pick's network as it was.
+func TestAStopsWriteChangesNoPick(t *testing.T) {
 	s, base := newStopsServer(t, store.NewMemory())
 	if code, out := publishPick(t, base, fixtureNetwork(t, "fall-2026", "Fall 2026", "2026-09-07")); code != 200 {
 		t.Fatalf("publish fall: %d %v", code, out)
 	}
-	winter := fixtureNetwork(t, "winter-2026", "Winter 2026", "2026-12-01")
-	winter["name"] = "winter network"
-	if code, out := publishPick(t, base, winter); code != 200 {
-		t.Fatalf("publish winter: %d %v", code, out)
-	}
 	before := pickHashes(t, s)
-
-	// the seed changes no pick: each network's stops are the document's
 	seed := seededStops(t)
 	code, out := postStops(t, base, "", seed)
 	if code != 200 {
 		t.Fatalf("the seed: %d %v", code, out)
 	}
-	if got := pickHashes(t, s); got["fall-2026"] != before["fall-2026"] || got["winter-2026"] != before["winter-2026"] {
-		t.Fatalf("a seed that matches every pick republishes none: %v -> %v", before, got)
-	}
-
-	// A closed inside fall's window: fall is republished, winter is not
 	code, out = postStops(t, base, out["stops_hash"].(string), withClosure(seed, "2026-10-23", "2026-10-24"))
 	if code != 200 {
 		t.Fatalf("the closure: %d %v", code, out)
 	}
-	if r, _ := out["republished"].([]any); len(r) != 1 || r[0] != "fall-2026" {
-		t.Fatalf("only the pick whose window holds the closure republishes: %v", out)
+	if _, has := out["republished"]; has {
+		t.Fatalf("a stops write republishes nothing: %v", out)
 	}
-	after := pickHashes(t, s)
-	if after["fall-2026"] == before["fall-2026"] || after["winter-2026"] != before["winter-2026"] {
-		t.Fatalf("fall's network changes, winter's does not: %v -> %v", before, after)
-	}
-	_, _, body := httpGet(t, base+"/blobs/"+after["fall-2026"])
-	var net struct {
-		Stops map[string]struct {
-			Events []map[string]any `json:"events"`
-		} `json:"stops"`
-	}
-	json.Unmarshal([]byte(body), &net)
-	if len(net.Stops["A"].Events) != 2 || len(net.Stops["B"].Events) != 0 {
-		t.Fatalf("A carries its closure, B nothing: %+v", net.Stops)
-	}
-
-	// publishing refreshes too: a pick whose window holds the closure
-	// is stored with it, whatever copy the planner sent
-	spring := fixtureNetwork(t, "fall-2026", "Fall 2026", "2026-09-07")
-	spring["name"] = "fall, corrected"
-	code, out = publishPick(t, base, spring)
-	if code != 200 {
-		t.Fatalf("republish fall: %d %v", code, out)
-	}
-	_, _, body = httpGet(t, base+"/blobs/"+out["network_hash"].(string))
-	json.Unmarshal([]byte(body), &net)
-	if len(net.Stops["A"].Events) != 2 {
-		t.Fatalf("a published pick carries the stops document's closure: %+v", net.Stops["A"])
-	}
-}
-
-func TestPublishingAPlanOpensTheStopsItProposed(t *testing.T) {
-	s, base := newStopsServer(t, store.NewMemory())
-	seed := seededStops(t)
-	raw, _ := json.Marshal(seed)
-	var doc map[string]any
-	json.Unmarshal(raw, &doc)
-	doc["stops"].(map[string]any)["N"] = []any{map[string]any{"on": "2026-08-15", "event": "proposed", "plan": "fall-2026", "lat": 45.5, "lon": -122.6, "name": "New stop"}}
-	code, out := postStops(t, base, "", doc)
-	if code != 200 {
-		t.Fatalf("the proposal: %d %v", code, out)
-	}
-	before := out["stops_hash"].(string)
-
-	code, out = publishPick(t, base, fixtureNetwork(t, "fall-2026", "Fall 2026", "2026-09-07"))
-	if code != 200 {
-		t.Fatalf("publish fall: %d %v", code, out)
-	}
-	if o, _ := out["opened"].([]any); len(o) != 1 || o[0] != "N" {
-		t.Fatalf("the publish answers the stop it opened: %v", out)
-	}
-	after := manifestStopsHash(t, base)
-	if after == before || after == "" {
-		t.Fatalf("the stops document is written: %q -> %q", before, after)
-	}
-	_, _, body := httpGet(t, base+"/blobs/"+after)
-	var stored struct {
-		Stops map[string][]map[string]any `json:"stops"`
-	}
-	json.Unmarshal([]byte(body), &stored)
-	if n := stored.Stops["N"]; len(n) != 2 || n[1]["event"] != "opened" || n[1]["on"] != "2026-09-07" {
-		t.Fatalf("N opens on the plan's first date: %v", n)
-	}
-	_, _, body = httpGet(t, base+"/blobs/"+pickHashes(t, s)["fall-2026"])
-	var net struct {
-		Stops map[string]struct {
-			Events []map[string]any `json:"events"`
-		} `json:"stops"`
-	}
-	json.Unmarshal([]byte(body), &net)
-	if len(net.Stops["N"].Events) != 2 {
-		t.Fatalf("the pick carries N, open from its first date: %+v", net.Stops["N"])
-	}
-
-	// publishing again opens nothing more and leaves the stops alone
-	again := fixtureNetwork(t, "fall-2026", "Fall 2026", "2026-09-07")
-	again["name"] = "fall, again"
-	code, out = publishPick(t, base, again)
-	if code != 200 || out["opened"] != nil || manifestStopsHash(t, base) != after {
-		t.Fatalf("a second publish opens nothing: %d %v", code, out)
+	if got := pickHashes(t, s); got["fall-2026"] != before["fall-2026"] {
+		t.Fatalf("the pick is as it was: %v -> %v", before, got)
 	}
 }

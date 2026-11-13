@@ -241,7 +241,7 @@ checkpoint makes sure the change is complete and follows the rules,
 that nobody else changed the same data at the same moment, and it
 records who made the change. It turns a change away only when the
 change would make the data wrong. A change that is allowed but has
-effects worth a look, such as a route left ending at a closed stop, is
+effects worth a look, such as a schedule that still visits a retired stop, is
 saved and shown to staff.
 
 **Why.** Data lasts longer than software. A list of stops is kept for

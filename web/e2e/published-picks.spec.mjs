@@ -91,41 +91,6 @@ test("a retired pick never reaches a rider", async ({ page, request }) => {
   await publish(request, "winter-2026", "Winter 2026 pick", "2026-12-01");
 });
 
-// A stop closed in the stops document (POST /stops, D-153) reaches a
-// rider through the pick it touches (D-156: the server refreshes and
-// republishes it): stop C — served by the A–C–B pattern — closed for
-// Wednesday 2026-11-04 shows no departures that day, and its
-// departures are back on Thursday. The other stops are as the import
-// has them.
-test("a stop closed for a day shows no departures that day", async ({ page, request }) => {
-  await publish(request, "fall-2026", "Fall 2026 pick", "2026-10-01");
-  await publish(request, "winter-2026", "Winter 2026 pick", "2026-12-01");
-  const { network } = await (await request.get("/network")).json();
-  const stops = {};
-  for (const [id, s] of Object.entries(network.stops)) {
-    stops[id] = [{
-      event: "opened", lat: s.lat, lon: s.lon,
-      ...(s.name ? { name: s.name } : {}), ...(s.kind === "station" ? { kind: "station" } : {}),
-      ...(s.parent ? { parent: s.parent } : {}), ...(s.info ?? {}), ...(s.transfer ? { transfer: true } : {}),
-    }];
-  }
-  stops.C.push({ on: "2026-11-04", event: "closed", until: "2026-11-05", note: "water main" });
-  const from = (await (await request.get("/manifest")).json()).stops_hash ?? "";
-  const written = await request.post("/stops", { data: { from, stops: { kind: "stops", schema_version: 1, stops } } });
-  expect(written.status(), await written.text()).toBe(200);
-  expect((await written.json()).republished).toContain("fall-2026");
-
-  await live(page, "2026-11-04T07:55:00-05:00");
-  await page.goto("/stop-display.html?stop=C&layout=routes");
-  await expect(page.getByTestId("display-stop")).toHaveText(/./, { timeout: 10_000 });
-  await expect(page.getByTestId("display-time")).toHaveCount(0);
-
-  const next = await page.context().newPage();
-  await live(next, "2026-11-05T07:55:00-05:00");
-  await next.goto("/stop-display.html?stop=C&layout=routes");
-  await expect(next.getByTestId("display-time").first()).toBeVisible({ timeout: 10_000 });
-});
-
 // The planner publishes from the service-design UI: the "Ready to
 // publish?" panel posts the active plan to POST /plans and shows the
 // server's answer as given — published, or each reason it was refused.
@@ -156,47 +121,4 @@ test("a planner publishes a fork from service design", async ({ page, request })
   await page.keyboard.press("6");
   await page.getByTestId("publish").click();
   await expect(page.getByTestId("publish-refused")).toContainText("pick dated in past", { timeout: 10_000 });
-});
-
-// The Stops stage (service-change) reads the stops document on the date
-// the planner chooses and writes a closure through POST /stops (D-144,
-// D-153, D-155): stop B closed from Monday 2026-11-09, open again from
-// Wednesday 11-11, reads closed that week on its card, on the map, and
-// as a marked column of route 10's timetable (its pick, Fall 2026, is
-// republished with the closure) — and open again on the Wednesday.
-test("a planner closes a stop for dates on the Stops stage", async ({ page, request }) => {
-  await publish(request, "fall-2026", "Fall 2026 pick", "2026-10-01");
-  await publish(request, "winter-2026", "Winter 2026 pick", "2026-12-01");
-  await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
-  await page.goto("/service-change.html#stage=stops&open=B&on=2026-11-10");
-  await expect(page.getByTestId("plan-select")).toHaveValue("published:fall-2026", { timeout: 15_000 });
-  await expect(page.getByTestId("stops-on")).toHaveValue("2026-11-10");
-  await expect(page.getByTestId("stop-events")).toBeVisible({ timeout: 10_000 });
-
-  await page.getByTestId("stop-edit-from").fill("2026-11-09");
-  await page.getByTestId("stop-edit-until").fill("2026-11-11");
-  await page.getByTestId("stop-edit-note").fill("Paving");
-  await page.getByTestId("stop-edit-submit").click();
-  await expect(page.getByTestId("status")).toContainText("Closed B from 2026-11-09 until 2026-11-11", { timeout: 15_000 });
-  await expect(page.getByTestId("status")).toContainText("Fall 2026 pick");
-  await expect(page.getByTestId("stop-status")).toContainText("Closed");
-  await expect(page.getByTestId("stop-event").last()).toContainText("Paving");
-  await expect(page.getByTestId("stop-map-closed")).toBeVisible();
-  // An A–B trip has one stop left that week: it does not run (a warning).
-  await expect(page.getByTestId("stop-warnings")).toContainText("fewer than two open stops from 2026-11-09 until 2026-11-11");
-
-  // The timetable marks B's column that day.
-  await page.getByTestId("stop-visit").first().getByRole("button").click();
-  await expect(page.getByTestId("stage-route")).toBeVisible();
-  await page.getByLabel("timetable").check();
-  const marked = page.getByTestId("timetable").locator("th[data-unserved]");
-  await expect(marked).toHaveCount(1, { timeout: 10_000 });
-  await expect(marked).toHaveAttribute("data-unserved", "closed");
-  await expect(marked).toContainText("closed");
-
-  // Wednesday: open again, nothing marked.
-  await page.getByTestId("stops-on").fill("2026-11-11");
-  await expect(marked).toHaveCount(0, { timeout: 10_000 });
-  await page.getByRole("navigation", { name: "Stages" }).getByRole("button", { name: /Stops/ }).click();
-  await expect(page.getByTestId("stop-status")).toContainText("Open", { timeout: 10_000 });
 });

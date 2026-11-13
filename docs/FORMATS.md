@@ -66,8 +66,7 @@ The blob's metadata key `envelope` holds (S3 `x-amz-meta-envelope`):
   `diversion_draft`, `manifest`, `plans`, `policy`, `stops`, and the boot
   sources' `gtfs_feed` (a GTFS zip) and `street_layer` (GeoJSON) —
   external open formats, stored as read (D-115, D-118). `produced_by`
-  on a `network_document` is `cap-network@sha256:…` (a pick refreshed
-  from the stops document, `cap-stops@sha256:…`); on `plans`,
+  on a `network_document` is `cap-network@sha256:…`; on `plans`,
   `cap-plans@sha256:…`; on `stops`, `cap-stops@sha256:…`.
 - `schema_version` — the payload's version, the same number the
   document carries inside it (see "Versions" below); a writer bumps it
@@ -157,19 +156,15 @@ that is missing, does not hash to its name, or carries no envelope.
   compressed; `GET /blobs/{hash}.gz` answers the same by path, the
   layout a static bundle carries (docs/architecture/static-deployment.md). A `policy` blob is never served.
 - `POST /plans` body: a network document, any serialization, gzipped
-  or not → `200 {plan_id, network_hash, plans_hash, warnings}` (with
-  `opened` and `republished` when the plan proposed stops still to
-  open: the stops document records them open from its date), `422
+  or not → `200 {plan_id, network_hash, plans_hash, warnings}`, `422
   {issues, refusals}` (the network does not validate, or runs no
   service in its period — D-76) or `422 {issues}` (cap-plans refuses
   the pick: the chain, or a new, restored or moved pick dated before
   the server's today), or `400`.
 - `POST /stops` body `{"from": "<hash or empty>", "stops": <document>}` →
-  `200 {stops_hash, republished}`, `422 {refusals}` (cap-stops
-  `validate`), or `409 {current, seq}`. The server commits the module's
-  canonical document to `stops`, then republishes each pick in force or
-  to come whose network the refresh changes (`plan.<id>`, then
-  `plans`). `POST /pointers/stops` is `400`.
+  `200 {stops_hash}`, `422 {refusals}` (cap-stops `validate`), or `409
+  {current, seq}`. The server commits the module's canonical document
+  to `stops`; no pick changes (D-157). `POST /pointers/stops` is `400`.
 - `GET /feed?date=YYYY-MM-DD` → the GTFS zip in force on the date
   (default the server's today; `application/zip`, ETag its hash):
   cap-network `export` of the pick in force, or the `-feed` zip before

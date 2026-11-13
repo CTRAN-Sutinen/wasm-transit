@@ -160,14 +160,6 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		Document     *string         `json:"document"`
 		DocumentHash *string         `json:"document_hash"`
 	}
-	// A pick's stops are a copy (D-156): with a stops document, the pick
-	// is refreshed from it for its window before anything is stored.
-	// Publishing opens the plan's proposed stops from its first date.
-	opening, err := s.refreshPick(r.Context(), &pick, current)
-	if err != nil {
-		fail(w, err, http.StatusInternalServerError)
-		return
-	}
 	if err := s.plans.Invoke(r.Context(), map[string]any{
 		"op": "publish", "published": current, "plan": pick.Plan, "network_hash": pick.DocumentHash, "today": s.today(),
 	}, &next); err != nil {
@@ -207,18 +199,9 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		fail(w, err, http.StatusConflict)
 		return
 	}
-	answer := map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"plan_id": frame.ID, "network_hash": pick.DocumentHash, "plans_hash": plansHash, "warnings": pick.Warnings,
-	}
-	if opening != nil {
-		republished, err := s.storeOpening(r.Context(), opening, writer)
-		if err != nil {
-			fail(w, fmt.Errorf("pick %s is published, but storing the stops it opens failed (publish it again): %w", frame.ID, err), http.StatusInternalServerError)
-			return
-		}
-		answer["opened"], answer["republished"] = opening.opened, republished
-	}
-	writeJSON(w, http.StatusOK, answer)
+	})
 }
 
 // today is the agency's date, "YYYY-MM-DD": the host's clock

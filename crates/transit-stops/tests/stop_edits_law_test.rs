@@ -1,18 +1,7 @@
-//! The edits of the stops document (D-144, D-147, D-153) — the laws, from the user's intent, before the
-//! implementation:
-//!
-//! * an event added to a stop takes its place by date, and nothing
-//!   else moves (the Stops stage's close and reopen);
-//! * publishing plan P from its first date opens each stop P proposed:
-//!   from that date (or from the proposal's own date, when it is later)
-//!   the stop is open, at the proposal's point with its details; before
-//!   it, the stop is what it was;
-//! * nothing else changes: another plan's proposals, open stops, and a
-//!   proposal whose history has gone on (a later event already recorded)
-//!   keep their events;
-//! * the answer names the stops it opened, and the document still
-//!   passes what a write must pass;
-//! * publishing again opens nothing more.
+//! An edit of the stops document (D-153, D-157) — the law, from the
+//! user's intent, before the implementation: an event added to a stop
+//! takes its place by date, and nothing else moves (every edit of the
+//! stops app is one event added).
 
 use chrono::NaiveDate;
 use proptest::prelude::*;
@@ -45,57 +34,6 @@ fn arb_doc() -> impl Strategy<Value = Stops> {
         stops: stops.into_iter().enumerate().map(|(i, (kind, on))| (format!("s{i}"), stop(kind, on, i))).collect(),
         ..Stops::default()
     })
-}
-
-proptest! {
-    #[test]
-    fn publishing_a_plan_opens_what_it_proposed(doc in arb_doc(), first in 0u32..30) {
-        let doc = doc.checked().expect("the generated document is valid");
-        let (next, opened) = doc.open_plan("P", day(first));
-        prop_assert!(next.clone().checked().is_ok(), "{:?}", next.clone().checked());
-        let want: Vec<String> = doc
-            .stops
-            .iter()
-            .filter(|(_, e)| e.len() == 1 && e[0].event == EventKind::Proposed && e[0].plan.as_deref() == Some("P"))
-            .map(|(id, _)| id.clone())
-            .collect();
-        prop_assert_eq!(&opened, &want, "the answer names the stops it opened, in id order");
-        for (id, events) in &doc.stops {
-            if !opened.contains(id) {
-                prop_assert_eq!(&next.stops[id], events, "stop {} keeps its events", id);
-                continue;
-            }
-            let proposed_on = NaiveDate::parse_from_str(events[0].on.as_ref().unwrap(), "%Y-%m-%d").unwrap();
-            let opens = proposed_on.max(day(first));
-            for d in 0..40 {
-                let (was, now) = (doc.stop_on(id, day(d)), next.stop_on(id, day(d)));
-                if day(d) < opens {
-                    prop_assert_eq!(now, was, "before it opens, stop {} is what it was", id);
-                } else {
-                    let (was, now) = (was.unwrap(), now.unwrap());
-                    prop_assert_eq!(now.status, Status::Open);
-                    prop_assert_eq!((now.lat, now.lon, &now.details), (was.lat, was.lon, &was.details), "at the proposal's point, with its details");
-                }
-            }
-        }
-        let (again, none) = next.open_plan("P", day(first));
-        prop_assert_eq!(again, next, "publishing again changes nothing");
-        prop_assert!(none.is_empty());
-    }
-}
-
-#[test]
-fn a_proposal_opens_on_the_plans_first_date() {
-    let doc = Stops { stops: [("n".to_string(), stop(1, 5, 0))].into(), ..Stops::default() }.checked().unwrap();
-    let (next, opened) = doc.open_plan("P", day(10));
-    assert_eq!(opened, vec!["n".to_string()]);
-    assert_eq!(next.stops["n"].len(), 2);
-    assert_eq!(next.stops["n"][1], Event { on: Some(date(10)), event: EventKind::Opened, ..Event::default() });
-    assert_eq!(next.stop_on("n", day(9)).unwrap().status, Status::Proposed);
-    assert_eq!(next.stop_on("n", day(10)).unwrap().status, Status::Open);
-    // a proposal dated after the plan's first date opens on its own date
-    let (late, _) = doc.open_plan("P", day(1));
-    assert_eq!(late.stops["n"][1].on, Some(date(5)));
 }
 
 // ---------------------------------------------------------------------

@@ -774,27 +774,6 @@ export async function servedStops(): Promise<Doc | null> {
   return new Doc("stops", { bytes: new Uint8Array(await resp.arrayBuffer()) }, { pin });
 }
 
-/// A plan's network with its stops refreshed from the deployment's stops
-/// document for the plan's window (D-156: a pick's stops are a copy) —
-/// from its pick date until the next published pick's, as cap-plans
-/// derives it over the published set with the plan placed by id. Null
-/// when nothing changes: no stops document, no pick date, or a copy
-/// already the document's.
-export async function refreshedFromStops(network: Doc<Network>, published: PublishedPlans | null): Promise<Doc<Network> | null> {
-  const plan = network.value?.plan;
-  if (!plan?.id || !plan.effective_from || !(await available("stops"))) return null;
-  const stops = await servedStops();
-  if (!stops) return null;
-  const others = (published?.plans ?? [])
-    .filter((p) => p.status !== "retired" && p.id !== plan.id)
-    .map((p) => ({ id: p.id, name: p.name, effective_from: p.effective_from }));
-  const { periods } = await ask("plans", "periods", { plans: [...others, { id: plan.id, name: plan.name, effective_from: plan.effective_from }] });
-  const until = periods.find((p) => p.id === plan.id)?.until ?? null;
-  const answer = await ask("stops", "refresh", { network_hash: network, stops_hash: stops, from: plan.effective_from, until: until ?? undefined, plan: plan.id });
-  if (answer.network_hash === network.hash) return null;
-  return produced("network", answer.network, "stops", answer.network_hash);
-}
-
 /// The deployment's published streets: the manifest's `streets_hash`,
 /// the server's import of its street layer — bytes the page never
 /// parses, registered in cap-streets and refused unless they answer

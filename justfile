@@ -382,14 +382,15 @@ _host-tests:
       --as back --op '{"op":"stop","stops_hash":"$l.stops_hash","stop_id":"6124","date":"2027-07-01"}' \
       --as bad --op '{"op":"validate","stops":{"stops":{"a":[{"event":"opened","lat":45,"lon":-122},{"on":"2027-01-02","event":"reopened"}]}}}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (ok("v").document_hash !== ok("l").stops_hash || ok("spring").stop.status !== "closed" || ok("back").stop.status !== "open" || ok("bad").refusals[0]?.problem.kind !== "nothing_closed") process.exit(1)'
-    # A pick's stops are a copy (D-156): the sample network's stops
-    # seeded into a stops document, and the network refreshed from it,
-    # is the same network under the same hash.
+    # The first stops document begins from a network (D-157): the sample
+    # network's stops seeded, then one edit placed and checked — stop A
+    # closed on 2026-10-23 reads closed that day.
     node tools/caps-run.mjs stops \
       --op @web/public/caps/sample-network-load.json \
       --as seed --op '{"op":"seed","network_hash":"$load_network.network_hash"}' \
-      --as back --op '{"op":"refresh","network_hash":"$load_network.network_hash","stops_hash":"$seed.stops_hash","from":"2026-10-01"}' \
-      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (ok("back").network_hash !== r.find((x) => x.ok?.op === "load_network").ok.network_hash || !ok("seed").stops.stops.A) process.exit(1)'
+      --as edit --op '{"op":"add_event","stops_hash":"$seed.stops_hash","stop_id":"A","event":{"on":"2026-10-23","event":"closed","until":"2026-10-24"}}' \
+      --as on --op '{"op":"stop","stops_hash":"$edit.stops_hash","stop_id":"A","date":"2026-10-23"}' \
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (!ok("seed").stops.stops.A || ok("edit").refusals.length || ok("on").stop.status !== "closed") process.exit(1)'
     # The map's geometry is answered, never computed by a host (W4):
     # a plan's ridden segment (router), the diverted 08:40 trip drawn
     # along the diversion's traced detour from A (runcut), and a route

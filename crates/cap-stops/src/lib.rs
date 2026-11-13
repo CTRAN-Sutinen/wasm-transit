@@ -9,10 +9,9 @@
 //! a host stores exactly those bytes). `stops_on` and `stop` answer
 //! stops as their events make them on a date, over a document the
 //! kernel's `load_stops` registered (refused there unless `validate`
-//! would pass it). A pick's stops are a copy (D-156): `seed` starts a
-//! stops document from a network's stops, and `refresh` rewrites a
-//! pick's stops from the stops document for its window, answering the
-//! refreshed network under its hash (transit-network's `stop_record`).
+//! would pass it). `seed` starts a stops document from a network's
+//! stops (transit-network's `stop_record`), and `add_event` places one
+//! edit and checks it. A pick only reads the document (D-157).
 //! The domain code lives in the shared `transit-stops` library; the
 //! module writes nothing.
 
@@ -47,32 +46,8 @@ pub enum Request {
     Stop { stops_hash: String, stop_id: String, date: String },
     /// A stops document from a network's stops: each one `opened`
     /// event with no date, carrying its point and details — registered,
-    /// answered with its hash. Refreshing the network from it gives the
-    /// network back.
-    Seed { network_hash: String },
-    /// The network with its stops refreshed from the stops document for
-    /// the window `[from, until)` (open-ended without `until`), for the
-    /// pick's `plan`: each stop the document holds as the window opens,
-    /// carrying the events inside the window unless it is open as
-    /// recorded every day of it; another plan's proposals left out; a
-    /// stop the document does not hold left as it was. Registered,
     /// answered with its hash.
-    Refresh {
-        network_hash: String,
-        stops_hash: String,
-        from: String,
-        #[serde(default)]
-        #[ts(optional)]
-        until: Option<String>,
-        #[serde(default)]
-        #[ts(optional)]
-        plan: Option<String>,
-    },
-    /// The document with `plan`'s proposed stops opened from `from`,
-    /// the plan's first date (or the proposal's own, when later) — what
-    /// publishing the plan writes. Registered, answered with its hash
-    /// and the stops it opened.
-    OpenPlan { stops_hash: String, plan: String, from: String },
+    Seed { network_hash: String },
     /// The document with `event` added to stop `stop_id` in its place
     /// by date — an id the document does not hold begins a stop — then
     /// checked as a write is: every refusal, or the document registered
@@ -88,8 +63,6 @@ pub enum Response {
     StopsOn { stops: Vec<StopOn> },
     Stop { stop: Option<StopOn>, events: Vec<Event> },
     Seed { stops_hash: String, stops: Stops },
-    Refresh { network_hash: String, network: transit_network::Network },
-    OpenPlan { stops_hash: String, stops: Stops, opened: Vec<String> },
     AddEvent { refusals: Vec<Refusal>, stops_hash: Option<String>, stops: Option<Stops> },
 }
 
@@ -142,24 +115,6 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             })?;
             let (stops_hash, held) = STOPS.register(seeded)?;
             Ok(Response::Seed { stops_hash, stops: (*held).clone() })
-        }
-        Request::Refresh { network_hash, stops_hash, from, until, plan } => {
-            let from = parse_date(&from)?;
-            let until = until.as_deref().map(parse_date).transpose()?;
-            if until.is_some_and(|u| u <= from) {
-                return Err("until must come after from".into());
-            }
-            let network = NETWORK.require(&network_hash)?;
-            let stops = STOPS.require(&stops_hash)?;
-            let next = transit_network::stop_record::refresh(&network, &stops, from, until, plan.as_deref());
-            let (network_hash, next) = NETWORK.register(next)?;
-            Ok(Response::Refresh { network_hash, network: (*next).clone() })
-        }
-        Request::OpenPlan { stops_hash, plan, from } => {
-            let from = parse_date(&from)?;
-            let (next, opened) = STOPS.require(&stops_hash)?.open_plan(&plan, from);
-            let (stops_hash, next) = STOPS.register(next)?;
-            Ok(Response::OpenPlan { stops_hash, stops: (*next).clone(), opened })
         }
         Request::AddEvent { stops_hash, stop_id, event } => {
             let next = STOPS.require(&stops_hash)?.add_event(&stop_id, event);

@@ -20,7 +20,7 @@
 /// answers (a production failure, shown gracefully).
 
 import { getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
-import { ask, assemble, available, keep, load, produced, publishedPlanSet, refreshedFromStops, servedNetworkValue, Doc } from "../../engine";
+import { ask, assemble, available, keep, load, produced, servedNetworkValue, Doc } from "../../engine";
 import { answerGraph, readAgencyZone, today } from "../kit";
 
 // This page's capabilities answer inside its linked assembly — one
@@ -33,7 +33,6 @@ import type { FeedInfo } from "../../types/FeedInfo";
 import type { HourlyTrips } from "../../types/HourlyTrips";
 import type { NetworkStats } from "../../types/NetworkStats";
 import type { Network } from "../../types/Network";
-import type { PublishedPlans } from "../../types/cap_plans/PublishedPlans";
 import type { NetworkEdit } from "../../types/NetworkEdit";
 import type { NetworkError } from "../../types/NetworkError";
 import type { NetworkWarning } from "../../types/NetworkWarning";
@@ -209,23 +208,6 @@ function docOf(network: Network): Doc<Network> {
   let doc = docs.get(network);
   if (!doc) docs.set(network, (doc = new Doc("network", { value: network })));
   return doc;
-}
-
-/// A draft's stops refreshed from the deployment's stops document for
-/// its window (D-156: a pick's stops are a copy, and the copy never
-/// wins). Not an edit: it is not on the undo stack. A published pick is
-/// the server's, refreshed when it publishes.
-async function refreshStops(key: string, published: PublishedPlans | null): Promise<void> {
-  const doc = getAllPlans()[key];
-  if (!doc) return;
-  try {
-    const refreshed = await refreshedFromStops(docOf(doc), published);
-    if (!refreshed?.value) return;
-    docs.set(refreshed.value, refreshed);
-    putPlan(key, refreshed.value);
-  } catch (e) {
-    say(`The stops could not be refreshed: ${e instanceof Error ? e.message : e}`, true);
-  }
 }
 
 /// A stored plan read into the current version: one saved in an older
@@ -803,7 +785,6 @@ export function setLayerReading(field: string, label: string): Promise<void> {
 
 export async function openPlan(key: string): Promise<void> {
   if (!getAllPlans()[key]) return;
-  await refreshStops(key, await publishedPlanSet().catch(() => null));
   sd.activeKey = key;
   setActivePlan(key);
   if (!sd.compareKey || sd.compareKey === key) sd.compareKey = sd.plans.find((p) => p.key !== key)?.key ?? "";

@@ -287,13 +287,13 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "stops",
         file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stop", "seed", "refresh", "open_plan", "add_event"],
+        ops: &["validate", "stops_on", "stop", "seed", "add_event"],
         documents: &["stops", "network"],
         // The stops document is the host's (beside the plans, D-147):
         // validate answers its canonical bytes and hash, which the
         // kernel's load_stops answers too; the date questions read it.
-        // A pick's stops are a copy (D-156): seed reads a network's
-        // stops, refresh mints the network with its stops refreshed.
+        // seed reads a network's stops to begin the document; add_event
+        // answers the next one. A pick only reads it (D-157).
         consumes: &[("network", "network")],
         speaks: &[("stops", &[transit_stops::SCHEMA_VERSION]), ("network", &[transit_network::SCHEMA_VERSION])],
         migrates: &[],
@@ -1715,35 +1715,6 @@ fn example_for(
             (
                 json!({ "op": "seed", "network_hash": net.network_hash }),
                 json!({ "ok": { "op": "seed", "stops_hash": cap_abi::canonical_hash(&seeded).ok()?, "stops": seeded } }),
-            )
-        }
-        ("stops", "refresh") => {
-            // The fixture's stops seeded, stop A closed for one day
-            // inside the window: A carries its events, the rest do not.
-            let net = net?;
-            let mut stops = transit_network::stop_record::seed(net.derived_network());
-            stops.stops.get_mut("A")?.push(transit_stops::Event {
-                on: Some("2026-10-23".into()),
-                event: transit_stops::EventKind::Closed,
-                until: Some("2026-10-24".into()),
-                ..Default::default()
-            });
-            let stops = stops.checked().ok()?;
-            let from = chrono::NaiveDate::from_ymd_opt(2026, 10, 1)?;
-            let refreshed = transit_network::stop_record::refresh(net.derived_network(), &stops, from, None, None);
-            (
-                json!({ "op": "refresh", "network_hash": net.network_hash, "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "from": "2026-10-01" }),
-                json!({ "ok": { "op": "refresh", "network_hash": cap_abi::canonical_hash(&refreshed).ok()?, "network": refreshed } }),
-            )
-        }
-        ("stops", "open_plan") => {
-            // Publishing fall-2027 from 2027-09-06 opens 7001, its
-            // proposal; 6124 keeps its events.
-            let stops = fixture_stops().checked().ok()?;
-            let (next, opened) = stops.open_plan("fall-2027", chrono::NaiveDate::from_ymd_opt(2027, 9, 6)?);
-            (
-                json!({ "op": "open_plan", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "plan": "fall-2027", "from": "2027-09-06" }),
-                json!({ "ok": { "op": "open_plan", "stops_hash": cap_abi::canonical_hash(&next).ok()?, "stops": next, "opened": opened } }),
             )
         }
         ("stops", "add_event") => {

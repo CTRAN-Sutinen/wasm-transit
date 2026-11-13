@@ -286,10 +286,9 @@ transit-plans    THE service-plan chain (resolve, periods, validity — pure, de
                  and the published plan set (publish, the pick in force)
 transit-stops    THE stops document, beside the plans: each stop a list of dated events
                  (opened, closed, reopened, moved, changed, proposed, retired), the
-                 stop on a date, served, what a write must pass, its edits (an
-                 event placed by date; a published plan's proposals opened) —
-                 pure; a pick's
-                 stops are a copy refreshed from it (transit-network `stop_record`)
+                 stop on a date, served, what a write must pass, its edit (an
+                 event placed by date) — pure; a stop's life is its own, and a
+                 pick only reads it (D-157)
 transit-runs     THE runs layer beside the network: the work-rule document (recovery,
                  interlining per route pair, run rules, pay — every rule optional), the
                  recovery a wait requires and its slack, the suggested blocking — pure
@@ -312,7 +311,7 @@ server/          Go + wazero host over cap-sync, cap-network, cap-plans and
                  cap-streets (the network, picks, streets and walk table it
                  publishes; in store mode every build it serves, kept and
                  rolled back by pointer — D-80), cap-migrate (an older document, at receive),
-                 cap-stops (the stops document's writes; each pick refreshed from it),
+                 cap-stops (the stops document's writes),
                  cap-authz when auth is on, and the proxies
                  (/geocode to a Pelias geocoder; /rt, a dev feed relay off
                  unless -rt-proxy) — scaffolding, never a domain decision
@@ -445,7 +444,7 @@ e2e, real-data dogfood) are spelled out in `docs/TESTING.md`.
   the import and the picks it publishes, cap-plans for the published
   plan set, cap-streets for the streets and walk table it
   publishes, cap-migrate for an older document at receive, cap-stops
-  for the stops document and each pick's stops refreshed from it).
+  for the stops document's writes).
 - The bus is the architecture: no capability grows a private
   document format — shared data crosses capabilities as kernel
   documents addressed by content hash only, and capabilities never

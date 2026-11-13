@@ -26,10 +26,6 @@
     openRoute,
     openStop,
     openVisit,
-    readDate,
-    setReadDate,
-    closeStop,
-    reopenStop,
     closeRoute,
     openBlock,
     showBlock,
@@ -55,8 +51,6 @@
   import NetworkMap from "../../components/NetworkMap.svelte";
   import StopMap from "../../components/StopMap.svelte";
   import StopRecord from "../../components/StopRecord.svelte";
-  import StopEvents from "../../components/StopEvents.svelte";
-  import { issueWords } from "../../components/designFormat";
   import DayTypePicker from "../../components/DayTypePicker.svelte";
   import HourWindowPicker from "../../components/HourWindowPicker.svelte";
   import ServiceKeys from "../../components/ServiceKeys.svelte";
@@ -101,23 +95,12 @@
   );
   const groupDate = $derived(sc.dayTypes.flatMap((t) => t.groups).find((g) => g.id === sc.group)?.dates[0] ?? "");
   const stopNames = $derived(new Map(sc.stops.map((s) => [s.stop_id, s.name])));
-  // What the stops' closures do to the plan's trips (D-155): warnings,
-  // never refusals.
-  const servedWarnings = $derived(
-    sc.warnings.map((w) => issueWords(w)).filter((w) => w.kind === "endpoint not served" || w.kind === "under two served"),
-  );
   let jump = $state("");
   let hub = $state("");
   let stopFind = $state("");
   const openStation = $derived(sc.stopCard?.stop.parent ? (stopNames.get(sc.stopCard.stop.parent) ?? null) : null);
   let tableMode = $state(false);
 </script>
-
-{#snippet onDate()}
-  <label class="mode" title="The day the stops and the timetable are read on: a stop closed that day is marked">
-    Stops on <input type="date" value={readDate()} onchange={(e) => setReadDate(e.currentTarget.value)} data-testid="stops-on" />
-  </label>
-{/snippet}
 
 {#snippet failure(frame: string, title: string)}
   <Unavailable {title} error={sc.failed[frame]} onretry={retry} />
@@ -206,16 +189,9 @@
           <div class="find">
             <Combobox label="Find a stop" bind:value={stopFind} options={stopOptions} placeholder="Find a stop by name or id…"
               onchange={(v) => { if (v) openStop(v); stopFind = ""; }} />
-            {@render onDate()}
           </div>
-          {#if sc.failed.StopStatus}{@render failure("StopStatus", "The stops on this date")}{/if}
-          {#if servedWarnings.length}
-            <ul class="warnings" data-testid="stop-warnings">
-              {#each servedWarnings as w, i (i)}<li>{w.detail}</li>{/each}
-            </ul>
-          {/if}
           {#if sc.failed.Stops}{@render failure("Stops", "The stops")}{:else}
-            <div class="map"><StopMap stops={sc.stops} lines={sc.lines} selected={sc.stopOpen} onstop={openStop} status={sc.stopStatus} /></div>
+            <div class="map"><StopMap stops={sc.stops} lines={sc.lines} selected={sc.stopOpen} onstop={openStop} /></div>
           {/if}
         </div>
         <aside class="side">
@@ -224,13 +200,6 @@
           {:else if sc.failed.StopCard}{@render failure("StopCard", "The stop")}
           {:else if sc.stopCard}
             <div class="card"><StopRecord stopId={sc.stopOpen} detail={sc.stopCard} stationName={openStation} groupName={sc.group} onvisit={openVisit} /></div>
-            <div class="card">
-              {#if sc.failed.StopHistory}{@render failure("StopHistory", "The stop's history")}{:else}
-                <StopEvents date={readDate()} held={sc.stopsHeld} history={sc.stopHistory} refusals={sc.stopsRefused} busy={sc.busy}
-                  onclose={(from, until, note) => closeStop(sc.stopOpen, from, until, note)}
-                  onreopen={(on, note) => reopenStop(sc.stopOpen, on, note)} />
-              {/if}
-            </div>
           {:else if sc.stops.length && !sc.stops.some((x) => x.stop_id === sc.stopOpen)}
             <Unavailable title="No such stop" reason={`${planName(sc.activeKey)} has no stop ${sc.stopOpen}.`} />
           {/if}
@@ -247,7 +216,6 @@
         <div class="routebar">
           <DirectionToggle directions={sc.routeDetail?.directions ?? null} selected={sc.direction} onselect={selectDirection} />
           <label class="mode"><input type="checkbox" bind:checked={tableMode} /> timetable</label>
-          {@render onDate()}
           <button type="button" class="closer" onclick={closeRoute}>Close route</button>
         </div>
         <RouteHeader route={sc.route} routeName={routeRow?.name ?? sc.route} longName={routeRow?.long_name ?? null} groupName={sc.group}
@@ -377,7 +345,6 @@
   .find { max-width: 26rem; }
   /* A definite height: the map inside fills 100% of it (a min-height
      alone leaves the canvas at its own minimum). */
-  .warnings { margin: 0; padding-left: 1.1rem; font-size: 0.85rem; color: var(--warn, #b45309); }
   .stops .map { flex: none; height: calc(100vh - 12rem); min-height: 24rem; }
   .route { display: grid; grid-template-columns: 1fr minmax(18rem, 26rem); gap: 0.9rem; align-items: start; }
   .work { display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; }

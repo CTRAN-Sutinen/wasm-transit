@@ -172,20 +172,6 @@ pub fn materialize(
             .then_with(|| a.pattern_trips.cmp(&b.pattern_trips))
             .then_with(|| a.trip.cmp(&b.trip))
     });
-    // A stop not open on the date — closed, proposed, retired, or not
-    // yet opened (its events, D-156) — loses its stop times, as a
-    // diversion's skipped stop does; a trip left with fewer than two
-    // does not run (D-155).
-    let unserved = crate::stop_record::unserved_on(network, date);
-    if !unserved.is_empty() {
-        trips = trips
-            .into_iter()
-            .filter_map(|mut t| {
-                t.stop_times.retain(|st| !unserved.contains(st.stop.as_str()));
-                (t.stop_times.len() >= 2).then_some(t)
-            })
-            .collect();
-    }
     Ok(trips)
 }
 

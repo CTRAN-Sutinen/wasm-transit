@@ -57,8 +57,8 @@ stores the document as given (`docs/units/README.md`, queued, "Governed
 writes").
 
 **The gate refuses only what makes the data wrong** — a broken shape
-or a broken invariant. A legitimate change with consequences (a pattern
-left ending at a closed stop, a pick that drops a route) is accepted and
+or a broken invariant. A legitimate change with consequences (a pick
+visiting a retired stop, a pick that drops a route) is accepted and
 flagged for a person: the plan issue that gates export and publish is
 never a refused edit. Stewardship stays with people; code shows them
 what a change does and does not decide for them.

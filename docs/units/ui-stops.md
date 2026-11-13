@@ -10,29 +10,24 @@ consolidates, or removes a stop, and no gesture redraws a line.
 
 ## Scope, in order
 
-Items 2 and 3 edit the stops document, never a plan's copy (D-156):
-author's `add_stop`, `update_stop`, and removals become dated events of
-that document (stops `add_event`: `opened` or `proposed`, `moved`,
-`changed`, `retired`).
+A stop's own record and lifecycle — creating it, moving it, its
+details, suspending and retiring it — are the stops app's
+([stop-lifecycle.md](stop-lifecycle.md) item 2, D-157), never this page's:
+a plan only says which stops its service visits.
 
 1. **A station's bays on its card.** The card names a bay's station,
    but a station's card does not list its bays: `stop_detail` answers
    them (the host does not filter the stop list for them).
-2. **Create, move, and edit a stop** in the Stops stage: a new stop
-   from a point on the map (author `add_stop`), a pin dragged (author
-   `update_stop`, which moves it for every pattern that visits it; the
-   card names them before the change), and the record's fields
-   (`update_stop` grows code, access, fare zone, and station). One
-   library function measures where a stop falls along a pattern's line;
-   a move re-measures every visit and warns where the line is now far
-   from the stop. Closing and reopening a stop (D-144) are already the
-   stage's: each is one stops `add_event` written through `POST /stops`,
-   the path these edits take too.
-3. **Consolidate and remove.** One stop replaced by another on every
-   pattern that visits it, then removed (a new gesture,
-   `replace_stop {from, to}`); a stop withdrawn from every pattern and
-   removed in one change, refused where it ends a pattern
-   (`remove_stop` keeps refusing a stop still visited).
+2. **A moved stop's visits.** When a pick reads a stop's new point
+   ([stop-lifecycle.md](stop-lifecycle.md) item 3), one library function
+   measures where the stop falls along each pattern's line that visits
+   it, re-measures those visits, and warns where the line is now far
+   from the stop.
+3. **Consolidate and stop serving.** One stop replaced by another on
+   every pattern that visits it (a new gesture, `replace_stop {from,
+   to}`); a stop withdrawn from every pattern in one change, refused
+   where it ends a pattern. Retiring the stop itself is the stops
+   app's.
 4. **The Route stage's map.** The open direction's line and stops, the
    stops near it faded: serve a nearby stop (a new gesture placing it by
    where it falls along the line — `insert_direction_stop` needs an
@@ -59,5 +54,5 @@ that document (stops `add_event`: `opened` or `proposed`, `moved`,
   cap-author, and a runner gate.
 - `web/e2e/ui-service-change.spec.mjs` covers each item above.
 - A dogfood session on C-TRAN has walked every control of the Stops
-  stage and the Route map (a stop moved, one consolidated, one
+  stage and the Route map (a moved stop re-measured, one consolidated, one
   served, a line redrawn along the county roads).

@@ -1,6 +1,6 @@
 # stops
 
-Every stop as a list of dated events, oldest first — opened, closed, reopened, moved, changed, proposed, retired (transit-stops; D-153). Nothing in the document means "today": a stop on a date is its events applied in order up to that date, and a temporary closure or move (until) applies only while it lasts, so the earlier state returns on its until date. Every detail — the point, name, code, access, fare zone, amenities (D-154: true there, false checked and not there, absent not recorded) — changes only by an event. A correction edits the event that was wrong; a real change adds one. The stop's id is its lasting key, kept through a move (D-145). A stops document registers on the kernel's load_stops, refused unless validate would pass it. The network document keeps its shape: a pick's stops are a copy, refreshed from the stops document for the pick's window (D-156).
+Every stop as a list of dated events, oldest first — opened, closed, reopened, moved, changed, proposed, retired (transit-stops; D-153). Nothing in the document means "today": a stop on a date is its events applied in order up to that date, and a temporary closure or move (until) applies only while it lasts, so the earlier state returns on its until date. Every detail — the point, name, code, access, fare zone, amenities (D-154: true there, false checked and not there, absent not recorded) — changes only by an event. A correction edits the event that was wrong; a real change adds one. The stop's id is its lasting key, kept through a move (D-145). A stops document registers on the kernel's load_stops, refused unless validate would pass it. A pick only reads the document; the stop's own life is managed apart from the picks (D-157).
 
 ## validate
 
@@ -16,15 +16,7 @@ One stop on the date — null before it exists — and every event it has, oldes
 
 ## seed
 
-A stops document from a registered network's stops: each stop one opened event with no date (no feed records a stop's opening), carrying its point and every detail — registered, answered with its stops_hash. Refreshing the network from it gives the same network back, under the same hash.
-
-## refresh
-
-The network with its stops refreshed from the stops document for the window from–until (until exclusive; open-ended without it), for the pick's plan — the copy never wins. Each stop the document holds is the pick's as the window opens (or as it first exists inside it); unless it is open as recorded on every day of the window, it carries the events that apply inside it (a closure, a move, a rename, an opening, a retirement), so a day reads it on its dates. A stop is in the network when it exists on a date of the window other than retired, or when the network already has it; another plan's proposals stay out, the plan's own are in as proposed; a stop the document does not hold is left as it was. A network whose stops do not change keeps its bytes and hash. Registered, answered with the network and its network_hash.
-
-## open_plan
-
-What publishing a plan writes: the document with the plan's proposed stops opened from `from`, the plan's first date — an `opened` event appended to each stop whose only event is the plan's proposal, dated `from` (or the proposal's own date, when later), so the stop is open from then at the proposal's point with its details. Another plan's proposals, a proposal whose history has gone on, and every other stop keep their events; publishing again opens nothing more. Registered, answered with its stops_hash and the ids it opened, in id order.
+A stops document from a registered network's stops: each stop one opened event with no date (no feed records a stop's opening), carrying its point and every detail — registered, answered with its stops_hash.
 
 ## add_event
 

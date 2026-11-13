@@ -2,25 +2,9 @@
 
 ```
 transit-network The authored network model (planner authority):
-                its stops a COPY of the stops document's (D-156):
-                `stop_record` seeds a stops document from a network's
-                stops and refreshes a pick's stops from one for its
-                window — each as the window opens, carrying
-                `Stop.events` (the events inside the window) only
-                where it is not open as recorded every day of it, so
-                a network whose stops do not change keeps its bytes
-                and hash; `stop_on` answers a network's stop on a
-                date. A DATED DAY SERVES WHAT IS OPEN (D-155):
-                `materialize` drops a stop not open on its date —
-                closed, proposed, retired, not yet opened — from every
-                trip's stop times, as a diversion's skip does, so a
-                trip runs to or from its nearest open stop, and drops
-                a trip left with under two; `served_warnings` (in
-                `validation_warnings`) tells the planner, with the
-                dates, of an endpoint not served and a pattern left
-                with under two served stops — never a refusal. The
-                date-free readers (`materialize_service`, the
-                timetable, the analysis) read every visit;
+                `stop_record::seed` begins a stops document from a
+                network's stops (D-157: a pick only reads the stops
+                document);
                 routes and their DIRECTIONS (`Route.directions`,
                 each named; a pattern runs in at most one —
                 `Pattern.direction`, validated against its route;
@@ -186,11 +170,7 @@ transit-network The authored network model (planner authority):
                 in route order, a variant's stops slotted where it
                 leaves the others; rows are `materialize_service`'s
                 trips, never a second derivation, each with its own
-                end-to-end running time, `run_secs`); `timetable_on`
-                reads it for a date (D-155): every column kept, one
-                whose stop is not open that date marked `unserved`
-                with its status, its times blank, a trip left with
-                fewer than two dropped — the day `materialize` runs.
+                end-to-end running time, `run_secs`).
 transit-router  RAPTOR planning over the network model's
                 materialized day; pure (no I/O, clock, or calendar),
                 GTFS-free. `RouterNetwork::build(network, day, date,
@@ -584,13 +564,11 @@ transit-stops   THE stops document, beside the plans (D-147, D-153):
                 another tool's field, an agency's amenity — is kept
                 through a read and a write. A correction edits the
                 event that was wrong; a real change adds one. Its
-                edits answer the next document: `add_event` (one event
-                in its place by date) and `open_plan` (what publishing
-                a plan writes: each stop it proposed opened from its
-                first date). Depends
-                on no other model crate. cap-stops is the seam; a
-                pick's stops are refreshed from it (transit-network's
-                `stop_record`).
+                edit answers the next document: `add_event` (one event
+                in its place by date). Depends on no other model
+                crate. cap-stops is the seam. A stop's life is its own,
+                managed apart from the picks, which only read it
+                (D-157).
 transit-streets THE streets model. `model.rs`: the streets document
                 (`Streets`: ways — points as [lat, lon] microdegrees,
                 one-way, class, name), CANONICAL so its hash is the
@@ -677,13 +655,9 @@ cap-stops       The stops capability: what is a stop on a date?
                 kernel's load_stops answers), stops_on (every stop, or
                 those named, as on a date) and stop (one stop on a
                 date and its events, oldest first); seed (a stops
-                document from a network's stops) and refresh (a
-                pick's stops refreshed from the stops document for
-                its window, the network answered under its hash —
-                D-156); add_event (one edit placed by date and checked
-                as a write is: the Stops stage's close and reopen) and
-                open_plan (a published plan's proposed stops opened
-                from its first date). transit-stops and transit-network's
+                document from a network's stops) and add_event (one
+                edit placed by date and checked as a write is).
+                transit-stops and transit-network's
                 `stop_record` are the libraries; the kernel's `stops`
                 kind registers a document only if validate would pass
                 it.

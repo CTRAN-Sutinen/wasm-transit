@@ -11,8 +11,7 @@ the op behind POST /edits, held for the server's lifetime; cap-authz
 (-authz-wasm) when authentication is on; cap-plans (-plans-wasm) in
 store mode, the op behind POST /plans; cap-stops (-stops-wasm) in
 store mode, one instance made on first use and emptied after each
-(the kernel's `evict`) — the validation behind a stops write, and each
-pick's stops refreshed from the stops document; cap-network
+(the kernel's `evict`) — the validation behind a stops write; cap-network
 (the -network-wasm flag, cap_network.wasm), which imports the
 configured GTFS zip (the kernel's `load_feed` + `import`) — and canonicalizes and
 validates each published pick — in a fresh instance
@@ -271,25 +270,16 @@ Its HTTP surface:
   server. The server commits the network to
   `plan.<id>`, then the set to `plans`, and the manifest pins it as
   `plans_hash`. Clients read the set and each pick's network from
-  `/blobs`. With a stops document, the pick is refreshed from it
-  first (cap-stops `refresh`, D-156), for its window — from its date
-  until the next pick's, as cap-plans `periods` derives it — so the
-  network stored is the refreshed one, whatever copy was sent. Before
-  the refresh, the stops the plan proposed are opened from its date
-  (cap-stops `open_plan`, D-147); once the pick is committed that
-  document is committed to `stops` and every other pick is refreshed
-  from it, the answer naming them as `opened` and `republished`.
+  `/blobs`.
 - `POST /stops` (store mode) — write the stops document (D-153):
   `{"from": "<the head read, or empty>", "stops": {...}}`. A fresh
   cap-stops validates it (422 with `refusals`) and answers its
   canonical bytes, committed to the `stops` pointer by CAS (409 with
   `current` when another writer moved it); the manifest pins it as
-  `stops_hash`. Then every pick in force or to come is refreshed from
-  it, and each whose network changed is republished (`plan.<id>`, then
-  the set), answered as `republished`. A raw pointer commit of the
-  stops is refused (400). With no stops document a pick publishes as
-  sent; the first one arrives through this route (a page makes it with
-  cap-stops `seed`).
+  `stops_hash`. A stops write changes no pick: a stop's life is its own,
+  and a pick only reads the document (D-157). A raw pointer commit of
+  the stops is refused (400). The first document arrives through this
+  route (a page makes it with cap-stops `seed`).
 - `GET /feed?date=` — the GTFS zip in force on the date (default the
   server's today): cap-network `export` of the published pick in
   force (cap-plans `in_force` answers which), kept by network hash;
