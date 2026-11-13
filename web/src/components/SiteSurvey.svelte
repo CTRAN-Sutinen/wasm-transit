@@ -2,7 +2,6 @@
   /// A survey half filled (answers as typed, "" not recorded). The host
   /// keeps it on the device until it is saved or thrown away (D-158).
   export type SurveyDraft = {
-    by: string;
     on: string;
     site: Record<string, string>;
     amenities: Record<string, string>;
@@ -13,7 +12,7 @@
 
 <script lang="ts">
   /// A stop's site survey (D-158), filled at the stop on a phone or a
-  /// tablet: who surveyed and when, the site questions grouped as the
+  /// tablet: when, the site questions grouped as the
   /// Service Stop Worksheet groups them, what is at the stop, and the
   /// stop's ids in other systems (D-160). The questions and the answers
   /// each takes are cap-stops `questions`'; the words are stopWords'.
@@ -53,7 +52,6 @@
     const refs: Record<string, string> = Object.fromEntries(REFS.map(([k]) => [k, ""]));
     Object.assign(refs, stop?.refs ?? {});
     return {
-      by: "",
       on: date,
       site: { ...Object.fromEntries(questions.site.map((q) => [q.key, ""])), ...(stop?.site ?? {}) },
       amenities: Object.fromEntries(questions.amenities.map((a) => [a, yn(stop?.amenities?.[a])])),
@@ -110,7 +108,9 @@
     const event: Event = {
       on: d.on,
       event: "changed",
-      surveyed_by: d.by.trim(),
+      // the surveyor is the signed-in writer: the server names them
+      // (cap-stops attribute_surveys), whatever this says
+      surveyed_by: "",
       ...(Object.keys(site).length ? { site } : {}),
       ...(Object.keys(refs).length ? { refs } : {}),
       ...(Object.keys(amenities).length ? { amenities } : {}),
@@ -136,9 +136,9 @@
     </p>
   {/if}
   <div class="grid">
-    <label>Surveyed by <input type="text" bind:value={d.by} required autocomplete="name" data-testid="survey-by" /></label>
     <label>On <input type="date" bind:value={d.on} required data-testid="survey-on" /></label>
   </div>
+  <p class="muted small">Recorded as surveyed by you, the person signed in.</p>
 
   {#each grouped as g (g.title)}
     <fieldset>
@@ -197,7 +197,7 @@
 
   <label class="note">Note <input type="text" bind:value={d.note} placeholder="Anything else, in a few words" data-testid="survey-note" /></label>
   <div class="row">
-    <button type="submit" disabled={busy || !d.by.trim() || !d.on} data-testid="survey-save">Save survey</button>
+    <button type="submit" disabled={busy || !d.on} data-testid="survey-save">Save survey</button>
     <button type="button" onclick={() => (startOver(), oncancel())} data-testid="survey-discard">Discard</button>
     <button type="button" onclick={oncancel} data-testid="survey-keep">Save draft</button>
   </div>
@@ -219,6 +219,7 @@
   .add { display: flex; gap: 0.4rem; margin-top: 0.4rem; max-width: 24rem; }
   .add input { flex: 1; }
   .row { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .muted.small { margin: 0; font-size: 0.8rem; }
   .restored { margin: 0; font-size: 0.85rem; color: var(--warn); }
   .link { background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; font: inherit; }
   /* A finger at the stop: larger targets, the text a phone will not zoom. */

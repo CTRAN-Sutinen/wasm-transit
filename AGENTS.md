@@ -212,6 +212,7 @@ just store-dev             # local object stores in podman: SeaweedFS (:8333, th
 just store-contract        # the store's laws against each of them (opt-in, never
                            # in `just test`)
                            # OIDC_ISSUER/OIDC_JWKS_URL/OIDC_AUDIENCE/OIDC_KEY/POLICY=…
+                           # (OIDC_NAME_CLAIM: the claim a survey's surveyor is)
                            # turn on JWT auth + policy (D-58..D-61;
                            # docs/architecture/server.md)
 just dev                   # vite hot reload + server alongside

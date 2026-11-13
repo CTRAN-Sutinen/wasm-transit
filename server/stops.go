@@ -221,10 +221,34 @@ func (s *server) handleStops(w http.ResponseWriter, r *http.Request) {
 		Document     *string         `json:"document"`
 		DocumentHash *string         `json:"document_hash"`
 	}
+	// The surveyor is the signed-in writer (D-158): every survey the held
+	// document does not hold names them, whatever name the client sent
+	// (cap-stops attribute_surveys); then the write is checked.
+	_, held, haveHeld, err := s.stopsHead()
+	if err != nil {
+		fail(w, err, http.StatusInternalServerError)
+		return
+	}
 	var producedBy string
 	err = s.withStops(ctx, func(host *WasmHost) error {
 		producedBy = "cap-stops@" + host.Hash()
-		return host.Invoke(ctx, map[string]any{"op": "validate", "stops": req.Stops}, &checked)
+		attribute := map[string]any{"op": "attribute_surveys", "stops": req.Stops, "by": nameOf(r, "anonymous")}
+		if haveHeld {
+			var loaded struct {
+				StopsHash string `json:"stops_hash"`
+			}
+			if err := host.InvokeBytes(ctx, opLoadStops, held, &loaded); err != nil {
+				return fmt.Errorf("the stops document held: %w", err)
+			}
+			attribute["stops_hash"] = loaded.StopsHash
+		}
+		var attributed struct {
+			Stops json.RawMessage `json:"stops"`
+		}
+		if err := host.Invoke(ctx, attribute, &attributed); err != nil {
+			return err
+		}
+		return host.Invoke(ctx, map[string]any{"op": "validate", "stops": attributed.Stops}, &checked)
 	})
 	if err != nil {
 		fail(w, err, http.StatusBadRequest)

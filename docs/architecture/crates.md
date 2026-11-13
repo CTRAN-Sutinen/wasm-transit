@@ -583,7 +583,9 @@ transit-stops   THE stops document, beside the plans (D-147, D-153):
                 unread at a day's grain, D-148) is served — in service,
                 nothing else; `on_date` lists every stop that exists.
                 `checked` is what a write must pass, each refusal
-                naming its stop, event and problem; a document that
+                naming its stop, event and problem; `attribute_surveys`
+                names the signed-in writer as the surveyor of every
+                survey a write adds (the receive path's, D-158); a document that
                 passes is canonical as it stands (stops by id, events
                 as written), and what this crate does not know —
                 another tool's field, an agency's amenity — is kept
@@ -698,7 +700,9 @@ cap-stops       The stops capability: what is a stop on a date?
                 history; amenities, site answers, and references are
                 the document's alone); questions (what a site survey
                 asks: the core site questions with the kind of answer
-                each takes, and the core amenity names).
+                each takes, and the core amenity names) and
+                attribute_surveys (the write's new surveys named for
+                the writer, before validate).
                 transit-stops and transit-network's
                 `stop_record` are the libraries; the kernel's `stops`
                 kind registers a document only if validate would pass
@@ -840,10 +844,10 @@ reading **Because**.
 - **Decided:** D-42.
 
 ### A stop's site survey is typed answers beside its amenities (transit-stops `site`, `SITE`; stops `questions`)
-- **Holds:** the site survey — C-TRAN's Service Stop Worksheet, filled at the stop on a phone or tablet — is part of the stop's details: each question's answer by name, set by an event like any detail, the event naming its surveyor. A core question takes only an answer of its kind (one of its list, a whole number, or text); the agency's own questions are kept and not checked. A part's type (sign, post, shelter, kiosk, light, seat, garbage can) is a written answer, its id a reference (`refs`), as are the stop's ids in other systems (Sign ID, TMS, HP, GIS) — a type and an id on the stop, not records of their own. What a schedule says (the routes, a time point, the previous and next stop) is never asked: it is read from a schedule that serves the stop; a new stop's intended routes are its request's. The answers stay in this document: GTFS has no place for them, so the export and the import leave them alone, and a survey never splits a stop into versions. The page asks `questions` for the questions, so a question added here needs no page change.
+- **Holds:** the site survey — C-TRAN's Service Stop Worksheet, filled at the stop on a phone or tablet — is part of the stop's details: each question's answer by name, set by an event like any detail, the event naming its surveyor. A core question takes only an answer of its kind (one of its list, a whole number, or text); the agency's own questions are kept and not checked. A part's type (sign, post, shelter, kiosk, light, seat, garbage can) is a written answer, its id a reference (`refs`), as are the stop's ids in other systems (Sign ID, TMS, HP, GIS) — a type and an id on the stop, not records of their own. What a schedule says (the routes, a time point, the previous and next stop) is never asked: it is read from a schedule that serves the stop; a new stop's intended routes are its request's. The answers stay in this document: GTFS has no place for them, so the export and the import leave them alone, and a survey never splits a stop into versions. The page asks `questions` for the questions, so a question added here needs no page change. The surveyor is the signed-in person: the receive path names them on every survey the held document does not hold (`attribute_surveys`, by the server's configured name claim), never a name the page sent, so a survey's surveyor is as trustworthy as the sign-in.
 - **Because:** many answers are a choice from a list or a type, which yes/no amenities cannot hold, and widening amenities would change a decided shape; a map of named answers keeps the agency's own questions next to the core ones, as amenities do. Signs, posts, and shelters get records of their own only if they move between stops with histories of their own. A v1 reader keeps fields it does not know, so the new fields need no new version.
 - **Rejected:** typed values inside `amenities`; a separate survey document (the answers are facts about the stop and change by its events); asset records for each part.
-- **Decided:** D-158, D-160 (D-154 for amenities).
+- **Decided:** D-158, D-160, D-163 (D-154 for amenities).
 
 ### Stop search is fuzzy on the stops' own names (directory `stops`)
 - **Holds:** typos and abbreviations match the names the feed gives; no authored aliases.

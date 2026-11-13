@@ -767,7 +767,7 @@ serve feed="" streets="" publisher="" addr="127.0.0.1:8080":
     # store's policy pointer at first boot. Example:
     # OIDC_ISSUER=https://idp.example OIDC_JWKS_URL=https://idp.example/jwks \
     #   OIDC_AUDIENCE=transit-server POLICY=./policy.json STORE=mem:// just serve feed.zip
-    for v in OIDC_ISSUER OIDC_JWKS_URL OIDC_AUDIENCE OIDC_KEY OIDC_ROLES_CLAIM POLICY; do
+    for v in OIDC_ISSUER OIDC_JWKS_URL OIDC_AUDIENCE OIDC_KEY OIDC_ROLES_CLAIM OIDC_NAME_CLAIM POLICY; do
         if [ -n "${!v:-}" ]; then args+=("-$(echo "${v,,}" | tr '_' '-')" "${!v}"); fi
     done
     exec go run . "${args[@]}"
@@ -936,7 +936,7 @@ dev: caps types
     geo=(); if [ -n "${GEOCODER:-}" ]; then geo=(-geocoder "$GEOCODER"); fi
     store=(); if [ -n "${STORE:-}" ]; then store=(-store "$STORE"); fi
     oidc=()
-    for v in OIDC_ISSUER OIDC_JWKS_URL OIDC_AUDIENCE OIDC_KEY OIDC_ROLES_CLAIM POLICY; do
+    for v in OIDC_ISSUER OIDC_JWKS_URL OIDC_AUDIENCE OIDC_KEY OIDC_ROLES_CLAIM OIDC_NAME_CLAIM POLICY; do
         if [ -n "${!v:-}" ]; then oidc+=("-$(echo "${v,,}" | tr '_' '-')" "${!v}"); fi
     done
     (cd server && go build -o /tmp/transit-server . && \

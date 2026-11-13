@@ -66,6 +66,7 @@ func main() {
 	oidcAud := flag.String("oidc-audience", "", "expected JWT aud (string or array member)")
 	oidcKey := flag.String("oidc-key", "", "pinned PEM public key for JWT verification (used when -oidc-jwks-url is empty)")
 	oidcRoles := flag.String("oidc-roles-claim", "roles", "dotted JWT claim path holding the roles string array (D-59)")
+	oidcName := flag.String("oidc-name-claim", "name", "dotted JWT claim path holding the person's name, recorded as a survey's surveyor (D-158): name (Entra's display name), preferred_username or upn (the UPN), email; a token without it records its sub")
 	policyFile := flag.String("policy", "", "the authorization policy document's source (JSON; a URL, bucket:<key>, or a dev path): seeds the store's policy pointer at first boot (D-61); with no -store it is the policy")
 	geocoderURL := flag.String("geocoder", "", "base URL of a Pelias geocoder (e.g. http://127.0.0.1:4000): enables /geocode/{autocomplete,search,reverse} and lists it in the manifest's services")
 	rtProxy := flag.Bool("rt-proxy", false, "serve /rt?url=, a relay to any http(s) feed for pages whose feeds send no CORS header — a DEV convenience (D-67): it relays for any caller, so bind localhost; a deployment's pages fetch the agency's feeds directly")
@@ -124,14 +125,14 @@ func main() {
 		}
 		a, err := loadAuthz(ctx, oidcConfig{
 			issuer: *oidcIssuer, jwksURL: *oidcJWKS, audience: *oidcAud,
-			keyFile: *oidcKey, rolesClaim: *oidcRoles,
+			keyFile: *oidcKey, rolesClaim: *oidcRoles, nameClaim: *oidcName,
 		}, *authzWasm, *policyFile)
 		if err != nil {
 			log.Fatalf("authz: %v", err)
 		}
 		s.authz = a
-		log.Printf("auth ON: iss=%q aud=%q jwks=%q key=%q roles-claim=%q (authz module %s)",
-			*oidcIssuer, *oidcAud, *oidcJWKS, *oidcKey, a.cfg.rolesClaim, a.wasm.Hash())
+		log.Printf("auth ON: iss=%q aud=%q jwks=%q key=%q roles-claim=%q name-claim=%q (authz module %s)",
+			*oidcIssuer, *oidcAud, *oidcJWKS, *oidcKey, a.cfg.rolesClaim, a.cfg.nameClaim, a.wasm.Hash())
 	} else {
 		log.Printf("auth OFF: no -oidc flags — writes are UNAUTHENTICATED (dev only; bind localhost)")
 	}

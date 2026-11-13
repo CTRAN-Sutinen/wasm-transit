@@ -287,7 +287,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "stops",
         file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stop", "seed", "add_event", "correct_event", "read_records", "visit_warnings", "export_versions", "import_events", "questions"],
+        ops: &["validate", "stops_on", "stop", "seed", "add_event", "correct_event", "read_records", "visit_warnings", "export_versions", "import_events", "questions", "attribute_surveys"],
         documents: &["stops", "network"],
         // The stops document is the host's (beside the plans, D-147):
         // validate answers its canonical bytes and hash, which the
@@ -1805,6 +1805,18 @@ fn example_for(
                 "site": transit_stops::SITE.iter().map(|(key, answer)| json!({ "key": key, "answer": answer })).collect::<Vec<_>>(),
                 "amenities": transit_stops::AMENITIES } }),
         ),
+        ("stops", "attribute_surveys") => {
+            // 7001 surveyed: the name the page sent is replaced by the
+            // signed-in writer's.
+            let stops = fixture_stops().checked().ok()?;
+            let event: transit_stops::Event = serde_json::from_value(json!({"on": "2027-02-01", "event": "changed",
+                "surveyed_by": "", "site": {"position": "far_side", "surface": "concrete"}, "refs": {"sign": "S-1180"}})).ok()?;
+            let next = stops.add_event("7001", event);
+            (
+                json!({ "op": "attribute_surveys", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stops": next, "by": "Rosa Ortiz" }),
+                json!({ "ok": { "op": "attribute_surveys", "stops": stops.attribute_surveys(next.clone(), "Rosa Ortiz") } }),
+            )
+        }
         ("kernel", "load_work_rules") => {
             let rules = fixture_work_rules().checked().ok()?;
             let work_rules_hash = cap_abi::canonical_hash(&rules).ok()?;

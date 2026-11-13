@@ -15,7 +15,12 @@
 //!   only on an event that sets details; a stop on a date says when it
 //!   was last surveyed and by whom;
 //! * the questions a page asks are the crate's (`SITE`), every one
-//!   named once, and every list answer is a plain lowercase word.
+//!   named once, and every list answer is a plain lowercase word;
+//! * the surveyor is the signed-in writer, never a name a client sent
+//!   (`Stops::attribute_surveys`): every survey event the stored document
+//!   does not already hold names the writer; every event it holds keeps
+//!   its surveyor; nothing else changes, and attributing twice is
+//!   attributing once.
 
 use serde_json::json;
 use transit_stops::{Answer, Details, Event, EventKind, Problem, Stops, SITE};
@@ -192,4 +197,69 @@ fn the_worked_survey_reads() {
     assert_eq!(s.surveyed_by.as_deref(), Some("R. Ortiz"));
     assert_eq!(s.details.site.len(), 12);
     assert_eq!(s.details.refs.get("sign").map(String::as_str), Some("S-1180"));
+}
+
+// ---------------------------------------------------------------------
+// the surveyor is the writer
+// ---------------------------------------------------------------------
+
+fn survey(on: u32, by: &str, site: &[(&str, &str)]) -> Event {
+    Event { surveyed_by: Some(by.into()), ..changed(on, site) }
+}
+
+fn held_and_next() -> (Stops, Stops) {
+    let held = doc(vec![begun(0), survey(2, "A. Lee", &[("surface", "gravel")])]);
+    let mut next = held.clone();
+    let events = next.stops.get_mut("a").unwrap();
+    // a new survey naming whoever the client liked, a plain change, and
+    // a stored survey whose surveyor the client rewrote
+    events.push(survey(4, "Someone Else", &[("surface", "concrete")]));
+    events.push(changed(5, &[("landmark", "the library")]));
+    events[1].surveyed_by = Some("Forged".into());
+    (held, next)
+}
+
+#[test]
+fn a_new_survey_names_the_writer_whatever_the_client_sent() {
+    let (held, next) = held_and_next();
+    let out = held.attribute_surveys(next, "rosa.ortiz");
+    let events = &out.stops["a"];
+    assert_eq!(events[2].surveyed_by.as_deref(), Some("rosa.ortiz"));
+    // an empty name is a survey with its surveyor left to the writer
+    let mut blank = held.clone();
+    blank.stops.get_mut("a").unwrap().push(survey(6, "", &[]));
+    assert_eq!(held.attribute_surveys(blank, "rosa.ortiz").stops["a"][2].surveyed_by.as_deref(), Some("rosa.ortiz"));
+}
+
+#[test]
+fn a_held_survey_keeps_its_surveyor_and_a_rewritten_one_is_the_writers() {
+    let (held, next) = held_and_next();
+    let out = held.attribute_surveys(next.clone(), "rosa.ortiz");
+    // the event the client rewrote is not the one held: it is the writer's
+    assert_eq!(out.stops["a"][1].surveyed_by.as_deref(), Some("rosa.ortiz"));
+    // an untouched held survey keeps its own
+    let untouched = held.attribute_surveys(held.clone(), "rosa.ortiz");
+    assert_eq!(untouched, held);
+}
+
+#[test]
+fn nothing_but_surveyors_changes_and_twice_is_once() {
+    let (held, next) = held_and_next();
+    let once = held.attribute_surveys(next.clone(), "rosa.ortiz");
+    let twice = held.attribute_surveys(once.clone(), "rosa.ortiz");
+    assert_eq!(twice, once);
+    let strip = |d: &Stops| {
+        let mut d = d.clone();
+        for e in d.stops.values_mut().flatten() {
+            e.surveyed_by = e.surveyed_by.as_ref().map(|_| String::new());
+        }
+        d
+    };
+    assert_eq!(strip(&once), strip(&next));
+    // an event that is no survey stays none
+    assert_eq!(once.stops["a"][3].surveyed_by, None);
+    // a stop the held document lacks: every survey in it is new
+    let mut fresh = Stops::default();
+    fresh.stops.insert("n".into(), vec![Event { surveyed_by: Some("x".into()), ..Event { event: EventKind::Planned, ..begun(0) } }]);
+    assert_eq!(Stops::default().attribute_surveys(fresh, "rosa.ortiz").stops["n"][0].surveyed_by.as_deref(), Some("rosa.ortiz"));
 }

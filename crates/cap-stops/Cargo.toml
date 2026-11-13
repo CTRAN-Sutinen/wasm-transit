@@ -1,6 +1,6 @@
 [package]
 name = "cap-stops"
-description = "The stops capability: every stop's own life as a list of dated events (transit-stops; D-157). validate answers what a write must pass — each refusal named, or the canonical document and its hash; stops_on and stop answer stops as their events make them on a date; seed, add_event and correct_event answer the next document; read_records and visit_warnings are what a pick reads of it; export_versions and import_events are GTFS out and in with the stops' history (D-150, D-151); questions answers what a site survey asks (D-158). The kernel's load_stops registers a document the host holds. transit-stops is shared as a library; the module writes nothing."
+description = "The stops capability: every stop's own life as a list of dated events (transit-stops; D-157). validate answers what a write must pass — each refusal named, or the canonical document and its hash; stops_on and stop answer stops as their events make them on a date; seed, add_event and correct_event answer the next document; read_records and visit_warnings are what a pick reads of it; export_versions and import_events are GTFS out and in with the stops' history (D-150, D-151); questions answers what a site survey asks, and attribute_surveys names the signed-in writer as each new survey's surveyor (D-158). The kernel's load_stops registers a document the host holds. transit-stops is shared as a library; the module writes nothing."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

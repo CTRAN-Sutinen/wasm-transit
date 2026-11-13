@@ -228,7 +228,10 @@ Its HTTP surface:
   verified `sub` is the store log's `writer`. The policy is the store's
   `policy` pointer, seeded from the `-policy` source (a URL,
   `bucket:<key>`, or a dev path) at first boot (D-61);
-  later changes are authenticated CAS commits. No `-oidc-*` = auth off,
+  later changes are authenticated CAS commits. `-oidc-name-claim`
+  (dotted, default `name`) is what a record names the person by — a
+  survey's surveyor (D-158); a token without it is named by its `sub`.
+  No `-oidc-*` = auth off,
   logged loudly (dev only). `STORE`/`OIDC_*`/`POLICY` env vars pass the
   flags through `just serve`/`just dev`. What the server leaves to the
   deployment: the first JWKS fetch trusts the IdP's HTTPS (pin its
@@ -253,7 +256,8 @@ Its HTTP surface:
   /manifest` serves the `manifest` pointer's blob, re-committed when the
   published feed, streets, module, or services change. With auth on, the
   log endpoint requires a read (an `audit` rule implies it) and redacts
-  `writer` unless audit is granted; `GET /permissions` (any valid token)
+  `writer` unless audit is granted (an agent's choice, not decided:
+  D-164); `GET /permissions` (any valid token)
   returns the caller's effective-permissions projection (cap-authz
   `effective`) — the only client-readable form of the policy.
 - `POST /plans` (store mode) — publish a pick (docs/ROADMAP.md 1,
@@ -280,7 +284,11 @@ Its HTTP surface:
   written.
 - `POST /stops` (store mode) — write the stops document (D-153):
   `{"from": "<the head read, or empty>", "stops": {...}}`. A fresh
-  cap-stops validates it (422 with `refusals`) and answers its
+  cap-stops first names the person writing as the surveyor of every
+  survey the held document does not hold (`attribute_surveys`, D-158 —
+  never a name the client sent: the verified token's
+  `-oidc-name-claim`, default `name`, else its `sub`; with auth off the
+  caller's `X-Writer` label, else `anonymous`), then validates it (422 with `refusals`) and answers its
   canonical bytes, committed to the `stops` pointer by CAS (409 with
   `current` when another writer moved it); the manifest pins it as
   `stops_hash`. A stops write changes no pick: a stop's life is its own,

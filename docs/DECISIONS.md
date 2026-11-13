@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-163**.
+- IDs are never reused; the next new decision is **D-165**.
 
 ## Summary
 
@@ -216,6 +216,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-160 | Are a stop's signs, posts, and shelters records of their own? | decided | nothing |
 | D-161 | When a survey and the agency's other data disagree, which wins? | decided | nothing |
 | D-162 | Where do photos and drawings live, and how does a record name one? | decided | nothing |
+| D-163 | Who is a survey's surveyor? | decided | nothing |
+| D-164 | Does the store log hide who wrote each change from callers without audit? | unanswered | nothing |
 
 ## The trip model
 
@@ -1141,6 +1143,43 @@ attachment carries its hash, type, file name, caption, and who took it
 and when, on a request (D-159) or a stop's event (D-158).
 Options: by content hash (recommended); by bucket URL.
 Pinned by: nothing yet (`docs/units/stop-site-and-requests.md`).
+Blocks: nothing.
+
+### D-163 — Who is a survey's surveyor?
+State: Decided.
+Answer: 2026-11-13 — the signed-in person, never a typed name. The
+user, of the survey form's "Surveyed by" field: "this should just be
+the authenticated user", and "the token claim it uses should be in the
+configuration. in my understanding entra sends the users name/upn".
+Encoded as: `-oidc-name-claim` (`OIDC_NAME_CLAIM`), a dotted claim
+path, default `name` (Entra's display name; `preferred_username` or
+`upn` for the UPN); a token without it is named by its `sub`; with
+auth off, the caller's `X-Writer` label, else `anonymous`. POST /stops
+names that person on every survey the held document does not hold
+(cap-stops `attribute_surveys`), whatever the page sent. The store
+log's `writer` stays the `sub`.
+Pinned by: `crates/transit-stops/tests/stop_site_law_test.rs` (the
+surveyor is the writer), cap-stops' dispatch test
+(`attribute_surveys_names_the_writer`), `server/stops_test.go`
+(`TestASurveyNamesTheWriter`), `server/authz_test.go`
+(`TestAuthzNameIsTheConfiguredClaim`), `web/e2e/ui-stops.spec.mjs`.
+Why: `docs/architecture/crates.md`, "A stop's site survey is typed
+answers beside its amenities".
+Blocks: nothing.
+
+### D-164 — Does the store log hide who wrote each change from callers without audit?
+State: Unanswered.
+Context: `GET /pointers/{name}/log` redacts each entry's `writer` (the
+verified `sub`) unless the caller's policy grants `audit`
+(`server/authz.go`, `docs/FORMATS.md`, `docs/architecture/server.md`).
+No decision asked for it: D-58..D-61 keep the policy private (its blob
+is never served; a client sees only its own projection, `GET
+/permissions`), not who wrote what. The user, 2026-11-13: "no client
+should see the user's policy permissions, i never said it should never
+see a users identity." Stop surveys already name their surveyor in
+the open stops document (D-163).
+Options: show `writer` to any caller allowed to read the log; keep the
+redaction (encoded now).
 Blocks: nothing.
 
 ### D-53 — What ridership data does the planner bring?

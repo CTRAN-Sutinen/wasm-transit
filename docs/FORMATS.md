@@ -105,7 +105,7 @@ Each commit is one record object,
 - `writer` is the verified JWT `sub` when authentication is on (D-58),
   else the caller's label (`X-Writer`, default `anonymous`). It leaves
   the server only through the log endpoint, and only to `audit`-granted
-  callers (redacted otherwise). `policy` (the field) stays null — the
+  callers (redacted otherwise — an agent's choice, open as D-164). `policy` (the field) stays null — the
   policy itself is the `policy` pointer's blob (D-61), and that blob is
   never served over HTTP (`/blobs` 404s kind `policy`); clients get the
   caller's projection from `GET /permissions` instead.

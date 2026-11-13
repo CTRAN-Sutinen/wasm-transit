@@ -752,6 +752,29 @@ impl Stops {
         })
     }
 
+    /// `next` with its surveys attributed to `by`, the signed-in
+    /// writer, as a write receives it (D-158): every survey event (one
+    /// with `surveyed_by`, a name or empty) that this document — the one
+    /// held — does not hold, compared whole, in the same stop, names
+    /// `by`; every event it holds keeps its surveyor. A client's name is
+    /// never kept: a survey it sent, or a held one it rewrote, is the
+    /// writer's. Nothing else changes, and attributing twice is
+    /// attributing once.
+    pub fn attribute_surveys(&self, mut next: Stops, by: &str) -> Stops {
+        for (id, events) in next.stops.iter_mut() {
+            // the held events still unmatched, each matched once
+            let mut held: Vec<&Event> = self.stops.get(id).map(|v| v.iter().collect()).unwrap_or_default();
+            for e in events.iter_mut() {
+                if let Some(i) = held.iter().position(|h| *h == e) {
+                    held.swap_remove(i);
+                } else if e.surveyed_by.is_some() {
+                    e.surveyed_by = Some(by.to_string());
+                }
+            }
+        }
+        next
+    }
+
     /// The document, if a write may store it, or every reason it may
     /// not.
     pub fn checked(self) -> Result<Self, Vec<Refusal>> {

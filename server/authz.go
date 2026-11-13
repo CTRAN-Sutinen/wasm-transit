@@ -51,6 +51,7 @@ type oidcConfig struct {
 	audience   string
 	keyFile    string // pinned PEM public key (used when jwksURL is empty, or as bootstrap)
 	rolesClaim string // dotted claim path, default "roles" (D-59)
+	nameClaim  string // dotted claim path to the person's name, default "name" (D-158)
 }
 
 // authzState is the auth-enabled server state: nil means auth is OFF
@@ -78,6 +79,9 @@ func loadAuthz(ctx context.Context, cfg oidcConfig, authzWasmPath string, policy
 		return nil, fmt.Errorf("authz module: %w", err)
 	}
 	a := &authzState{cfg: cfg, wasm: host, jwksKeys: map[string]crypto.PublicKey{}, jwksMinInterval: 30 * time.Second}
+	if a.cfg.nameClaim == "" {
+		a.cfg.nameClaim = "name"
+	}
 	if a.cfg.rolesClaim == "" {
 		a.cfg.rolesClaim = "roles"
 	}
@@ -240,6 +244,9 @@ func (a *authzState) keyFor(ctx context.Context, kid string) (crypto.PublicKey, 
 type identity struct {
 	Sub   string   `json:"sub"`
 	Roles []string `json:"roles"`
+	// Name is the configured name claim (-oidc-name-claim), else the sub:
+	// what a record names the person by (a survey's surveyor, D-158).
+	Name string `json:"-"`
 }
 
 const clockLeeway = 60 * time.Second
@@ -339,7 +346,28 @@ func (a *authzState) verifyJWT(ctx context.Context, token string) (*identity, er
 	if sub == "" {
 		return nil, errors.New("no sub")
 	}
-	return &identity{Sub: sub, Roles: rolesAtClaim(claims, a.cfg.rolesClaim)}, nil
+	name := stringAtClaim(claims, a.cfg.nameClaim)
+	if name == "" {
+		name = sub
+	}
+	return &identity{Sub: sub, Roles: rolesAtClaim(claims, a.cfg.rolesClaim), Name: name}, nil
+}
+
+// stringAtClaim reads a dotted claim path whose leaf is a string ("" when
+// it is missing or not a string).
+func stringAtClaim(claims map[string]any, path string) string {
+	cur := any(claims)
+	for _, seg := range strings.Split(path, ".") {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return ""
+		}
+		if cur, ok = m[seg]; !ok {
+			return ""
+		}
+	}
+	s, _ := cur.(string)
+	return strings.TrimSpace(s)
 }
 
 // rolesAtClaim reads a dotted claim path; the leaf must be a string
@@ -460,9 +488,9 @@ func (s *server) protectWrite(pointerOf func(*http.Request) string, next http.Ha
 		ctx = context.WithValue(ctx, writerKey, id.Sub)
 		if isLog {
 			// The log endpoint needs read on the pointer — and an "audit"
-			// rule implies it. The log's `writer` fields are user
-			// identities: visible only to an audit rule, redacted
-			// otherwise, so no client ever sees another user's sub.
+			// rule implies it. The log's `writer` fields are shown to an
+			// audit rule and redacted otherwise (an agent's choice, open
+			// as D-164; the policy itself is what stays private, D-61).
 			allowRead, reason := s.authorize(r, id, "read", pointer)
 			canAudit, _ := s.authorize(r, id, "audit", pointer)
 			if !allowRead && !canAudit {
@@ -584,6 +612,16 @@ func (s *server) seedPolicy(policyFile string) {
 		return
 	}
 	log.Printf("policy seeded into the store from %s", policyFile)
+}
+
+// nameOf is how a record names the person writing (a survey's
+// surveyor, D-158): the verified token's configured name claim when auth
+// ran, else the caller's label (X-Writer), else fallback.
+func nameOf(r *http.Request, fallback string) string {
+	if id, ok := r.Context().Value(identityKey).(*identity); ok && id != nil && id.Name != "" {
+		return id.Name
+	}
+	return writerOf(r, fallback)
 }
 
 // writerOf returns the verified subject when auth ran, else the

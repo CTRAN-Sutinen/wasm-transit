@@ -557,3 +557,31 @@ func mustHead(t *testing.T, s *server, pointer string) string {
 	}
 	return head.Hash
 }
+
+// The person's name is the configured claim (D-158, -oidc-name-claim):
+// Entra's display name or its UPN, a nested path, and the sub when the
+// token has no such claim.
+func TestAuthzNameIsTheConfiguredClaim(t *testing.T) {
+	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
+	jwks := newJWKSServer([]map[string]any{rsaJWK("k1", &rsaKey.PublicKey)})
+	defer jwks.srv.Close()
+	s, _ := newAuthServer(t, jwks)
+	now := time.Now().Unix()
+	tok := signRS256(t, rsaKey, "k1", map[string]any{
+		"iss": "https://idp.example", "aud": "transit-server", "sub": "00u1abc", "exp": now + 3600,
+		"name": "Rosa Ortiz", "upn": "rosa.ortiz@agency.example", "ext": map[string]any{"display": "R. Ortiz"},
+	})
+	for claim, want := range map[string]string{"": "Rosa Ortiz", "name": "Rosa Ortiz", "upn": "rosa.ortiz@agency.example", "ext.display": "R. Ortiz", "preferred_username": "00u1abc"} {
+		s.authz.cfg.nameClaim = claim
+		if claim == "" {
+			s.authz.cfg.nameClaim = "name" // loadAuthz's default
+		}
+		id, err := s.authz.verifyJWT(context.Background(), tok)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if id.Name != want {
+			t.Fatalf("claim %q: name %q, want %q", claim, id.Name, want)
+		}
+	}
+}

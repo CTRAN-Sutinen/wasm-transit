@@ -434,11 +434,12 @@ why the page links the network capability too), and its history.
 The card offers only what the stop may become that day (`stop`'s
 `next`), a move (to a new point, optionally until a date), a
 change of details and amenities, and a site survey (`SiteSurvey`,
-D-158): who surveyed and when, the questions stops `questions` asks
+D-158): the date, the questions stops `questions` asks
 — a list answer chosen, a count typed as a whole number, the rest
 written — what is at the stop, and the stop's ids in other systems,
 starting from what the stop records and saved as one `changed` event
-carrying every answer recorded and its `surveyed_by`. A survey half
+carrying every answer recorded, its surveyor left to the server,
+which names the person signed in (D-163). A survey half
 filled is kept on the device (`localStorage`, per stop) until it is
 saved or thrown away, so a reload or a dropped connection loses
 nothing; the card says a draft is kept. Each event in the history can be

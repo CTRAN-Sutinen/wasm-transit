@@ -45,3 +45,7 @@ GTFS in with the stops' history (D-150): a feed's stops — the network its impo
 ## questions
 
 What a site survey asks (D-158): the core site questions in the order C-TRAN's Service Stop Worksheet asks them, each with the kind of answer it takes — one_of (its answers listed), number (a whole number), or text — and the core amenity names (D-154). An answer is recorded in an event's site, by question; a part's id in its refs (sign, tms, hp, gis, shelter, …); who surveyed in its surveyed_by. The agency's own questions are kept and not checked. Reads no document.
+
+## attribute_surveys
+
+The surveyor is the signed-in writer (D-158), as the receive path takes a write: `stops` with every survey event (one carrying surveyed_by — a name, or empty to leave it to the writer) that the held document (`stops_hash`, registered by load_stops; absent for a first write) does not hold, compared whole in the same stop, naming `by` — whatever name the client sent, and a held survey the client rewrote included. Every event the held document holds keeps its surveyor; nothing else changes; attributing twice is attributing once. Answers the document unchecked: validate follows. POST /stops runs it with `by` the configured claim of the verified token (`-oidc-name-claim`).

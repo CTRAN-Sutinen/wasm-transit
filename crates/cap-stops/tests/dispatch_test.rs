@@ -252,3 +252,21 @@ fn questions_are_the_librarys_and_a_bad_answer_is_refused() {
     assert_eq!(bad["refusals"][0]["problem"], json!({ "kind": "bad_answer", "key": "position", "value": "behind" }));
     assert!(bad["stops_hash"].is_null());
 }
+
+/// The surveyor is the writer (D-158): a new survey names `by`, a held
+/// one keeps its own — the receive path's step before validate.
+#[test]
+fn attribute_surveys_names_the_writer() {
+    let held = ok(json!({ "op": "load_stops", "stops": sample() }));
+    let mut next = sample();
+    next["stops"]["6124"].as_array_mut().unwrap().push(json!(
+        { "on": "2027-10-01", "event": "changed", "surveyed_by": "Typed By Hand", "site": { "surface": "concrete" } }));
+    let out = ok(json!({ "op": "attribute_surveys", "stops_hash": held["stops_hash"], "stops": next, "by": "Rosa Ortiz" }));
+    assert_eq!(out["stops"]["stops"]["6124"][4]["surveyed_by"], "Rosa Ortiz");
+    assert_eq!(out["stops"]["stops"]["6124"][1].get("surveyed_by"), None);
+    // a first write: every survey is new
+    let first = ok(json!({ "op": "attribute_surveys", "stops": next, "by": "Rosa Ortiz" }));
+    assert_eq!(first["stops"]["stops"]["6124"][4]["surveyed_by"], "Rosa Ortiz");
+    // a held document the module does not hold is an error
+    assert!(err(json!({ "op": "attribute_surveys", "stops_hash": "sha256:00", "stops": next, "by": "x" })).len() > 0);
+}

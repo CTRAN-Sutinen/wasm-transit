@@ -64,6 +64,15 @@ wait for their callers (item 5).
    it did not list, each one fixable (a `moved` turned into a
    correction of the earlier point, stops `correct_event`).
 
+6. **The pages sign in.** With sign-in on, a page's write carries no
+   token, so the server refuses it (`DEPLOYMENTS-SERVER.md`, "Turn on
+   sign-in", "Not yet") — a survey saved from the stops page included,
+   whose surveyor is the person signed in (D-163). The page gets and
+   refreshes the user's token from the agency's sign-in provider
+   (OpenID Connect; Entra at C-TRAN) and presents it on writes only,
+   reads staying public (D-58). Every page that writes needs it; it
+   lands here because the field surveys need it first.
+
 ## Deferred
 
 - **The stops page without a server's store, or offline** (the user,
@@ -89,6 +98,8 @@ wait for their callers (item 5).
   a work order reference and a photo, and completes it into the stop's
   `built` event; a store contract test keeps a referenced attachment
   through `gc`.
+- An e2e with sign-in on saves a survey from the stops page, recorded
+  under the signed-in user's configured name claim.
 - An e2e exports a pick over a stop moved inside its period (two rows,
   one code) and imports a feed whose changes the stops page lists and
   fixes.

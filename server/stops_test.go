@@ -219,3 +219,64 @@ func TestAPublishedPickReadsTheStops(t *testing.T) {
 		t.Fatalf("the pick takes A's name from the stops document: %+v", net.Stops["A"])
 	}
 }
+
+// The surveyor is the writer (D-158): a survey the server does not hold
+// names the person writing (here the dev label, X-Writer, auth being
+// off), whatever name the page sent; a held survey keeps its own.
+func TestASurveyNamesTheWriter(t *testing.T) {
+	s, base := newStopsServer(t, store.NewMemory())
+	seed := seededStops(t)
+	code, out := postStops(t, base, "", seed)
+	if code != 200 {
+		t.Fatalf("the seed: %d %v", code, out)
+	}
+	from := out["stops_hash"].(string)
+	survey := func(doc map[string]any, on, by string) map[string]any {
+		raw, _ := json.Marshal(doc)
+		var next map[string]any
+		json.Unmarshal(raw, &next)
+		stops := next["stops"].(map[string]any)
+		stops["A"] = append(stops["A"].([]any), map[string]any{"on": on, "event": "changed", "surveyed_by": by, "site": map[string]any{"surface": "concrete"}})
+		return next
+	}
+	post := func(from string, doc any, writer string) (int, map[string]any) {
+		body, _ := json.Marshal(map[string]any{"from": from, "stops": doc})
+		req := httptest.NewRequest("POST", "/stops", strings.NewReader(string(body)))
+		req.Header.Set("X-Writer", writer)
+		w := httptest.NewRecorder()
+		s.handleStops(w, req)
+		var out map[string]any
+		json.Unmarshal(w.Body.Bytes(), &out)
+		return w.Code, out
+	}
+	first := survey(seed, "2026-09-01", "Typed By Hand")
+	code, out = post(from, first, "Rosa Ortiz")
+	if code != 200 {
+		t.Fatalf("a survey: %d %v", code, out)
+	}
+	stored := func(hash string) []any {
+		blob, _, err := s.store.GetBlob(hash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc map[string]any
+		json.Unmarshal(blob, &doc)
+		return doc["stops"].(map[string]any)["A"].([]any)
+	}
+	hash := out["stops_hash"].(string)
+	if by := stored(hash)[1].(map[string]any)["surveyed_by"]; by != "Rosa Ortiz" {
+		t.Fatalf("the surveyor is the writer: %v", by)
+	}
+	// another writer adds a survey: theirs is theirs, the held one stays
+	var held map[string]any
+	blob, _, _ := s.store.GetBlob(hash)
+	json.Unmarshal(blob, &held)
+	code, out = post(hash, survey(held, "2026-09-15", ""), "Sam Lee")
+	if code != 200 {
+		t.Fatalf("a second survey: %d %v", code, out)
+	}
+	events := stored(out["stops_hash"].(string))
+	if a, b := events[1].(map[string]any)["surveyed_by"], events[2].(map[string]any)["surveyed_by"]; a != "Rosa Ortiz" || b != "Sam Lee" {
+		t.Fatalf("held %v, new %v", a, b)
+	}
+}

@@ -185,6 +185,12 @@ it.
    If the roles are in a claim with another name, add
    `-oidc-roles-claim <name>`.
 
+   A stop survey records who did it, by the name in the sign-in token's
+   `name` claim (in Entra, the person's display name). To record
+   another claim, add `-oidc-name-claim <name>` — for example
+   `preferred_username` or `upn` for the user's UPN. A token without
+   that claim is recorded by its user id (`sub`).
+
 The policy file is read the first time the server starts on a bucket.
 After that the bucket's copy is the policy, and every change to it is
 logged.

@@ -15,7 +15,8 @@
 //     retired — hidden from the map until retired stops are shown;
 //   - a stop is surveyed (D-158): the half-filled survey survives a
 //     reload on this device, a count that is not a number is stopped at
-//     its field, and the saved survey shows on the card grouped as the
+//     its field, the surveyor is the person writing (the server's, never
+//     typed), and the saved survey shows on the card grouped as the
 //     worksheet groups it, with its surveyor and date.
 
 import { test, expect } from "@playwright/test";
@@ -120,14 +121,13 @@ test("a stop's site survey: kept as a draft, checked, saved, and shown", async (
 
   // Half filled, then the tab is reloaded: the survey is back.
   await page.getByTestId("action-survey").click();
-  await page.getByTestId("survey-by").fill("R. Ortiz");
   await page.getByTestId("survey-position").selectOption("far_side");
   await page.getByTestId("survey-on_street").fill("Main St");
   await page.reload();
   await expect(page.getByTestId("action-survey")).toHaveText("Survey (draft)", { timeout: 15_000 });
   await page.getByTestId("action-survey").click();
   await expect(page.getByTestId("survey-restored")).toBeVisible();
-  await expect(page.getByTestId("survey-by")).toHaveValue("R. Ortiz");
+  await expect(page.getByTestId("survey-on_street")).toHaveValue("Main St");
   await expect(page.getByTestId("survey-position")).toHaveValue("far_side");
 
   // A count that is not a whole number is stopped at the field (the
@@ -143,14 +143,15 @@ test("a stop's site survey: kept as a draft, checked, saved, and shown", async (
   await page.getByTestId("survey-ref-sign").fill("S-1180");
   await page.getByTestId("survey-save").click();
   await expect(page.getByTestId("status")).toContainText("Survey of A on 2026-11-02 saved.", { timeout: 15_000 });
-  await expect(page.getByTestId("stop-surveyed")).toHaveText("Last surveyed on 2026-11-02 by R. Ortiz.");
+  // the surveyor is the person writing — with sign-in off, "anonymous"
+  await expect(page.getByTestId("stop-surveyed")).toHaveText("Last surveyed on 2026-11-02 by anonymous.");
   const site = page.getByTestId("stop-site");
   await expect(site.first()).toContainText("On street");
   await expect(site.first()).toContainText("Main St");
   await expect(site.first()).toContainText("Far side");
   await expect(page.getByTestId("stop-refs")).toContainText("S-1180");
   await expect(page.getByTestId("stop-amenities")).toContainText("Rear door pad: there");
-  await expect(page.getByTestId("stop-event").last()).toContainText("Surveyed by R. Ortiz");
+  await expect(page.getByTestId("stop-event").last()).toContainText("Surveyed by anonymous");
   // saved: no draft is kept
   await expect(page.getByTestId("action-survey")).toHaveText("Survey");
 });

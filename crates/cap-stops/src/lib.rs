@@ -19,7 +19,9 @@
 //! history (D-150, D-151): `export_versions` gives cap-network's export
 //! one stop per version, and `import_events` records a feed's
 //! differences as events. `questions` answers what a site survey asks
-//! (D-158): the core site questions and amenity names.
+//! (D-158): the core site questions and amenity names; and
+//! `attribute_surveys` names the signed-in writer as the surveyor of
+//! every survey a write adds (the receive path's, before `validate`).
 //! The domain code lives in the shared `transit-stops` library; the
 //! module writes nothing.
 
@@ -123,6 +125,18 @@ pub enum Request {
     /// worksheet's order, each with the kind of answer it takes, and
     /// the core amenity names (D-154). Reads no document.
     Questions {},
+    /// A write's surveys attributed to the signed-in writer `by`, as the
+    /// receive path takes them (D-158): every survey event the held
+    /// document (`stops_hash`; none for a first write) does not hold
+    /// names `by`, whatever name the client sent. Unchecked: validate
+    /// follows.
+    AttributeSurveys {
+        #[serde(default)]
+        #[ts(optional)]
+        stops_hash: Option<String>,
+        stops: Stops,
+        by: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -151,6 +165,7 @@ pub enum Response {
         unapplied: Vec<String>,
     },
     Questions { site: Vec<SiteQuestion>, amenities: Vec<String> },
+    AttributeSurveys { stops: Stops },
 }
 
 fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
@@ -161,6 +176,13 @@ fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
 /// are `{"error": ...}`, never panics — a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
+        Request::AttributeSurveys { stops_hash, stops, by } => {
+            let stops = match stops_hash {
+                Some(h) => STOPS.require(&h)?.attribute_surveys(stops, &by),
+                None => Stops::default().attribute_surveys(stops, &by),
+            };
+            Ok(Response::AttributeSurveys { stops })
+        }
         Request::Questions {} => Ok(Response::Questions {
             site: transit_stops::SITE.iter().map(|(key, answer)| SiteQuestion { key: key.to_string(), answer: answer.clone() }).collect(),
             amenities: transit_stops::AMENITIES.iter().map(|a| a.to_string()).collect(),
