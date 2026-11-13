@@ -876,7 +876,7 @@ was a survey correction, turned into an edit of the earlier point (a
 feed cannot tell the two apart; D-153). Every difference counts, however
 small: the export writes points exactly, so a re-import of this repo's
 own feed adds nothing.
-Context: `docs/units/stop-lifecycle.md` item 4. A feed has no dates for
+Context: `docs/units/stop-lifecycle.md` item 3. A feed has no dates for
 its stops; the document already holds events, some in the future. A
 review step before riders get the feed was weighed: on the rider path a
 feed is the agency's published statement, and a stop its trips visit
@@ -897,7 +897,7 @@ software, one per exported version when the window needs more than one,
 while the stops document keeps one lasting key per stop (refining
 D-145). An import (D-150) reads a made id back as a version of its
 stop. A real-time producer's ids are outside this decision.
-Context: `docs/units/stop-lifecycle.md` item 4. stops.txt holds one row
+Context: `docs/units/stop-lifecycle.md` item 3. stops.txt holds one row
 per stop id, with one point and one name; a move or rename inside the
 feed's window has two.
 Options:

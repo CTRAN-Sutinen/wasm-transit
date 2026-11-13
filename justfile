@@ -371,26 +371,27 @@ _host-tests:
       --cap runcut --as adopted --op '{"op":"load_network","network":"$a.network"}' \
       --as fleet --op '{"op":"fleet_summary","network_hash":"$adopted.network_hash","date":"2026-10-23"}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const s = ok("s").suggestion; if (!ok("rec").recovery.waits.length || ok("a").issues.some((i) => i.layover_infeasible) || ok("fleet").summary.peak_vehicles !== s.peak_vehicles) process.exit(1)'
-    # The stops capability (D-153): a document validated, registered
-    # under the hash validate answered, and read on a date — closed
-    # while its closure lasts, open again on its until; a reopening of
-    # a stop that is not closed is refused, named.
+    # The stops capability (D-153, D-157): a document validated,
+    # registered under the hash validate answered, and read on a date —
+    # suspended while its suspension lasts, in service again on its
+    # until; a return to service of a stop already in service is
+    # refused, named.
     node tools/caps-run.mjs stops \
-      --as v --op '{"op":"validate","stops":{"kind":"stops","schema_version":1,"stops":{"6124":[{"on":"2004-09-01","event":"opened","lat":45.6934,"lon":-122.6512,"name":"NE 99th St & Hwy 99"},{"on":"2027-03-03","event":"closed","until":"2027-07-01"}]}}}' \
-      --as l --op '{"op":"load_stops","stops":{"kind":"stops","schema_version":1,"stops":{"6124":[{"on":"2004-09-01","event":"opened","lat":45.6934,"lon":-122.6512,"name":"NE 99th St & Hwy 99"},{"on":"2027-03-03","event":"closed","until":"2027-07-01"}]}}}' \
+      --as v --op '{"op":"validate","stops":{"kind":"stops","schema_version":1,"stops":{"6124":[{"on":"2004-09-01","event":"in_service","lat":45.6934,"lon":-122.6512,"name":"NE 99th St & Hwy 99"},{"on":"2027-03-03","event":"suspended","until":"2027-07-01"}]}}}' \
+      --as l --op '{"op":"load_stops","stops":{"kind":"stops","schema_version":1,"stops":{"6124":[{"on":"2004-09-01","event":"in_service","lat":45.6934,"lon":-122.6512,"name":"NE 99th St & Hwy 99"},{"on":"2027-03-03","event":"suspended","until":"2027-07-01"}]}}}' \
       --as spring --op '{"op":"stop","stops_hash":"$l.stops_hash","stop_id":"6124","date":"2027-04-01"}' \
       --as back --op '{"op":"stop","stops_hash":"$l.stops_hash","stop_id":"6124","date":"2027-07-01"}' \
-      --as bad --op '{"op":"validate","stops":{"stops":{"a":[{"event":"opened","lat":45,"lon":-122},{"on":"2027-01-02","event":"reopened"}]}}}' \
-      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (ok("v").document_hash !== ok("l").stops_hash || ok("spring").stop.status !== "closed" || ok("back").stop.status !== "open" || ok("bad").refusals[0]?.problem.kind !== "nothing_closed") process.exit(1)'
+      --as bad --op '{"op":"validate","stops":{"stops":{"a":[{"event":"in_service","lat":45,"lon":-122},{"on":"2027-01-02","event":"in_service"}]}}}' \
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (ok("v").document_hash !== ok("l").stops_hash || ok("spring").stop.status !== "suspended" || ok("back").stop.status !== "in_service" || ok("bad").refusals[0]?.problem.kind !== "already_in_service") process.exit(1)'
     # The first stops document begins from a network (D-157): the sample
     # network's stops seeded, then one edit placed and checked — stop A
-    # closed on 2026-10-23 reads closed that day.
+    # suspended on 2026-10-23 reads suspended that day.
     node tools/caps-run.mjs stops \
       --op @web/public/caps/sample-network-load.json \
       --as seed --op '{"op":"seed","network_hash":"$load_network.network_hash"}' \
-      --as edit --op '{"op":"add_event","stops_hash":"$seed.stops_hash","stop_id":"A","event":{"on":"2026-10-23","event":"closed","until":"2026-10-24"}}' \
+      --as edit --op '{"op":"add_event","stops_hash":"$seed.stops_hash","stop_id":"A","event":{"on":"2026-10-23","event":"suspended","until":"2026-10-24"}}' \
       --as on --op '{"op":"stop","stops_hash":"$edit.stops_hash","stop_id":"A","date":"2026-10-23"}' \
-      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (!ok("seed").stops.stops.A || ok("edit").refusals.length || ok("on").stop.status !== "closed") process.exit(1)'
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (!ok("seed").stops.stops.A || ok("edit").refusals.length || ok("on").stop.status !== "suspended") process.exit(1)'
     # The map's geometry is answered, never computed by a host (W4):
     # a plan's ridden segment (router), the diverted 08:40 trip drawn
     # along the diversion's traced detour from A (runcut), and a route

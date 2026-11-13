@@ -2,7 +2,8 @@
 //!
 //! One question: **what is a stop, on a date?** The stops document
 //! (transit-stops; D-153) holds every stop as a list of dated events —
-//! opened, closed, reopened, moved, changed, proposed, retired — and
+//! planned, permitted, built, in_service, suspended, moved, changed,
+//! retired — and
 //! nothing in it means "today". `validate` answers what a write must
 //! pass: every refusal, naming its stop, event, and problem, or the
 //! canonical document and its hash (the module is the hash authority;

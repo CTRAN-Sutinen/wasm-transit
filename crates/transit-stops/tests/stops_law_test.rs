@@ -1,16 +1,19 @@
-//! The stops document's laws (docs/units/stop-lifecycle.md, D-153,
-//! D-154), derived from the user's intent and written before the
-//! implementation:
+//! The stops document's laws (D-153, D-154, D-157), derived from the
+//! user's intent and written before the implementation:
 //!
-//! * the events are the truth: a stop on a date is its events applied
-//!   in order up to that date, a temporary one (`until`) only while it
-//!   lasts — checked against an oracle that answers each detail as the
-//!   LAST active event that sets it, a different reading of the same
-//!   rule;
-//! * a temporary closure or move ends on its `until`: from that date
+//! * a stop has a life of its own: planned, permitted, built, in
+//!   service, suspended for a while, retired (D-157); the events are the
+//!   truth — a stop on a date is its events applied in order up to that
+//!   date, a temporary one (`until`) only while it lasts — checked
+//!   against an oracle that answers each detail as the LAST active event
+//!   that sets it, a different reading of the same rule;
+//! * the stages only go forward (a stage may be skipped); a suspension
+//!   is of a stop in service, and a stop returns to service from a
+//!   suspension or goes into service from an earlier stage — it may
+//!   also never return, and end retired;
+//! * a temporary suspension or move ends on its `until`: from that date
 //!   the stop is what it would be without the event;
-//! * served is open, nothing else (a closed, proposed, retired, or
-//!   not-yet-opened stop is not served);
+//! * served is in service, nothing else;
 //! * a document that breaks the model is refused, each reason named;
 //! * one document is one byte sequence however its stops and keys are
 //!   ordered;
@@ -36,18 +39,26 @@ fn event(kind: EventKind, on: Option<u32>) -> Event {
     Event { on: on.map(date), event: kind, ..Event::default() }
 }
 
-fn opened(on: Option<u32>, lat: f64, lon: f64, name: &str) -> Event {
+/// A stop begun at a stage, at a point, with a name.
+fn begun(kind: EventKind, on: Option<u32>, lat: f64, lon: f64, name: &str) -> Event {
     Event {
         lat: Some(lat),
         lon: Some(lon),
         details: Details { name: Some(name.into()), ..Details::default() },
-        ..event(EventKind::Opened, on)
+        ..event(kind, on)
     }
+}
+
+/// A stop begun in service.
+fn in_service(on: Option<u32>, lat: f64, lon: f64, name: &str) -> Event {
+    begun(EventKind::InService, on, lat, lon, name)
 }
 
 fn doc(stops: Vec<(&str, Vec<Event>)>) -> Stops {
     Stops { stops: stops.into_iter().map(|(id, e)| (id.to_string(), e)).collect(), ..Stops::default() }
 }
+
+const STAGES: [EventKind; 4] = [EventKind::Planned, EventKind::Permitted, EventKind::Built, EventKind::InService];
 
 // ---------------------------------------------------------------------
 // the oracle: each answer is the last active event that sets it
@@ -58,15 +69,20 @@ fn active(e: &Event, d: NaiveDate) -> bool {
     e.on.as_ref().map_or(true, |on| p(on) <= d) && e.until.as_ref().map_or(true, |u| d < p(u))
 }
 
-fn oracle(events: &[Event], id: &str, d: NaiveDate) -> Option<StopOn> {
-    let live: Vec<&Event> = events.iter().filter(|e| active(e, d)).collect();
-    let status_of = |k: &EventKind| match k {
-        EventKind::Opened | EventKind::Reopened => Some(Status::Open),
-        EventKind::Proposed => Some(Status::Proposed),
-        EventKind::Closed => Some(Status::Closed),
+fn status_of(k: &EventKind) -> Option<Status> {
+    match k {
+        EventKind::Planned => Some(Status::Planned),
+        EventKind::Permitted => Some(Status::Permitted),
+        EventKind::Built => Some(Status::Built),
+        EventKind::InService => Some(Status::InService),
+        EventKind::Suspended => Some(Status::Suspended),
         EventKind::Retired => Some(Status::Retired),
         _ => None,
-    };
+    }
+}
+
+fn oracle(events: &[Event], id: &str, d: NaiveDate) -> Option<StopOn> {
+    let live: Vec<&Event> = events.iter().filter(|e| active(e, d)).collect();
     let status = live.iter().rev().find_map(|e| status_of(&e.event))?;
     let point = live.iter().rev().find(|e| e.lat.is_some())?;
     let last = |f: &dyn Fn(&Details) -> Option<Value>| -> Option<Value> { live.iter().rev().find_map(|e| f(&e.details)) };
@@ -82,8 +98,19 @@ fn oracle(events: &[Event], id: &str, d: NaiveDate) -> Option<StopOn> {
         let v = live.iter().rev().find_map(|e| e.details.amenities.get(k)).unwrap();
         details.amenities.insert(k.clone(), *v);
     }
-    let plan = live.iter().rev().find_map(|e| e.plan.clone());
-    Some(StopOn { stop_id: id.to_string(), status, lat: point.lat.unwrap(), lon: point.lon.unwrap(), plan, details })
+    Some(StopOn { stop_id: id.to_string(), status, lat: point.lat.unwrap(), lon: point.lon.unwrap(), details })
+}
+
+/// How far along a stop is: the stages in order, a suspension counting
+/// as in service (it was in service to be suspended).
+fn rank(s: Status) -> u8 {
+    match s {
+        Status::Planned => 0,
+        Status::Permitted => 1,
+        Status::Built => 2,
+        Status::InService | Status::Suspended => 3,
+        Status::Retired => 4,
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -92,8 +119,8 @@ fn oracle(events: &[Event], id: &str, d: NaiveDate) -> Option<StopOn> {
 
 #[derive(Debug, Clone)]
 enum Step {
-    Close(Option<u32>),
-    Reopen,
+    Stage(usize),
+    Suspend(Option<u32>),
     Move(Option<u32>, i32),
     Change(u8, bool),
     Retire,
@@ -101,31 +128,50 @@ enum Step {
 
 fn arb_step() -> impl Strategy<Value = Step> {
     prop_oneof![
-        proptest::option::of(1u32..60).prop_map(Step::Close),
-        Just(Step::Reopen),
+        (0usize..4).prop_map(Step::Stage),
+        proptest::option::of(1u32..60).prop_map(Step::Suspend),
         (proptest::option::of(1u32..60), -500i32..500).prop_map(|(u, d)| Step::Move(u, d)),
         (0u8..4, any::<bool>()).prop_map(|(f, b)| Step::Change(f, b)),
         Just(Step::Retire),
     ]
 }
 
-/// A stop's history: a first event, then steps at non-decreasing
-/// dates — each kept only where the model allows it (a reopening only
-/// of a closed stop, nothing after retirement).
+/// A stop's history: a first stage, then steps at non-decreasing dates
+/// — each kept only where the model allows it (stages forward, a
+/// suspension of a stop in service, a return of one not in service,
+/// nothing after retirement).
 fn arb_history() -> impl Strategy<Value = Vec<Event>> {
-    (any::<bool>(), proptest::option::of(0u32..30), proptest::collection::vec((0u32..20, arb_step()), 0..10)).prop_map(
-        |(proposed, first_on, steps)| {
-            let mut events = vec![if proposed {
-                Event { plan: Some("fall".into()), ..Event { event: EventKind::Proposed, on: Some(date(first_on.unwrap_or(0))), ..opened(None, 45.6, -122.6, "Main & 1st") } }
-            } else {
-                opened(first_on, 45.6, -122.6, "Main & 1st")
-            }];
+    (0usize..4, proptest::option::of(0u32..30), proptest::collection::vec((0u32..20, arb_step()), 0..10)).prop_map(
+        |(stage, first_on, steps)| {
+            // only a first in_service goes undated
+            let first_on = if stage == 3 { first_on } else { Some(first_on.unwrap_or(0)) };
+            let mut events = vec![begun(STAGES[stage].clone(), first_on, 45.6, -122.6, "Main & 1st")];
             let mut at = first_on.unwrap_or(0);
             for (gap, step) in steps {
                 at += gap;
+                if events.last().is_some_and(|l| l.event == EventKind::Retired) {
+                    break;
+                }
+                let now = oracle(&events, "s", day(at)).map(|s| s.status);
                 let e = match step {
-                    Step::Close(u) => Event { until: u.map(|u| date(at + u)), ..event(EventKind::Closed, Some(at)) },
-                    Step::Reopen => event(EventKind::Reopened, Some(at)),
+                    Step::Stage(k) => {
+                        let kind = STAGES[k].clone();
+                        let allowed = match (&kind, now) {
+                            (EventKind::InService, Some(s)) => s != Status::InService,
+                            (_, Some(s)) => rank(s) < k as u8,
+                            (_, None) => false,
+                        };
+                        if !allowed {
+                            continue;
+                        }
+                        event(kind, Some(at))
+                    }
+                    Step::Suspend(u) => {
+                        if now != Some(Status::InService) {
+                            continue;
+                        }
+                        Event { until: u.map(|u| date(at + u)), ..event(EventKind::Suspended, Some(at)) }
+                    }
                     Step::Move(u, d) => Event {
                         until: u.map(|u| date(at + u)),
                         lat: Some(45.6 + d as f64 * 1e-5),
@@ -149,12 +195,6 @@ fn arb_history() -> impl Strategy<Value = Vec<Event>> {
                     }
                     Step::Retire => event(EventKind::Retired, Some(at)),
                 };
-                if events.last().is_some_and(|l| l.event == EventKind::Retired) {
-                    break;
-                }
-                if e.event == EventKind::Reopened && oracle(&events, "s", day(at)).map(|s| s.status) != Some(Status::Closed) {
-                    continue;
-                }
                 events.push(e);
             }
             events
@@ -230,19 +270,32 @@ proptest! {
         }
     }
 
-    /// Served is open, and nothing else.
+    /// The stages only go forward: on no two dates does a stop stand at
+    /// an earlier stage later (a suspension and its return aside).
     #[test]
-    fn served_is_open(doc in arb_doc(), d in 0u32..400, secs in 0u32..100_000) {
+    fn the_stages_only_go_forward(doc in arb_doc(), a in 0u32..400, b in 0u32..400) {
+        let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
+        let (a, b) = (a.min(b), a.max(b));
+        for id in doc.stops.keys() {
+            if let (Some(x), Some(y)) = (doc.stop_on(id, day(a)), doc.stop_on(id, day(b))) {
+                prop_assert!(rank(x.status) <= rank(y.status), "stop {} is {:?} on {} and {:?} on {}", id, x.status, date(a), y.status, date(b));
+            }
+        }
+    }
+
+    /// Served is in service, and nothing else.
+    #[test]
+    fn served_is_in_service(doc in arb_doc(), d in 0u32..400, secs in 0u32..100_000) {
         let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
         for (id, events) in &doc.stops {
-            let open = oracle(events, id, day(d)).is_some_and(|s| s.status == Status::Open);
-            prop_assert_eq!(doc.served(id, day(d), secs), open);
+            let in_service = oracle(events, id, day(d)).is_some_and(|s| s.status == Status::InService);
+            prop_assert_eq!(doc.served(id, day(d), secs), in_service);
         }
         prop_assert!(!doc.served("no-such-stop", day(d), secs));
     }
 
-    /// A temporary closure or move ends on its `until`: from that date
-    /// on the stop is what it would be had the event never been
+    /// A temporary suspension or move ends on its `until`: from that
+    /// date on the stop is what it would be had the event never been
     /// recorded.
     #[test]
     fn a_temporary_event_ends_on_its_until(doc in arb_doc(), pick in any::<prop::sample::Index>(), after in 0u32..30) {
@@ -300,21 +353,32 @@ fn refused_json(v: Value) -> Vec<Problem> {
 
 #[test]
 fn a_valid_document_is_accepted() {
-    let d = doc(vec![(
-        "6124",
-        vec![
-            opened(Some(0), 45.69, -122.65, "NE 99th St & Hwy 99"),
-            Event { until: Some(date(30)), ..event(EventKind::Closed, Some(10)) },
-            Event { lat: Some(45.691), lon: Some(-122.651), ..event(EventKind::Moved, Some(40)) },
-        ],
-    )]);
+    let d = doc(vec![
+        (
+            "6124",
+            vec![
+                in_service(Some(0), 45.69, -122.65, "NE 99th St & Hwy 99"),
+                Event { until: Some(date(30)), ..event(EventKind::Suspended, Some(10)) },
+                Event { lat: Some(45.691), lon: Some(-122.651), ..event(EventKind::Moved, Some(40)) },
+            ],
+        ),
+        (
+            "7001",
+            vec![
+                begun(EventKind::Planned, Some(0), 45.70, -122.66, "NE 104th St"),
+                event(EventKind::Permitted, Some(20)),
+                event(EventKind::Built, Some(60)),
+                event(EventKind::InService, Some(70)),
+            ],
+        ),
+    ]);
     assert!(d.checked().is_ok());
 }
 
 #[test]
 fn an_unknown_event_is_refused() {
     let p = refused_json(json!({"stops": {"a": [
-        {"event": "opened", "lat": 45.0, "lon": -122.0},
+        {"event": "in_service", "lat": 45.0, "lon": -122.0},
         {"on": "2027-01-02", "event": "teleported"}
     ]}}));
     assert_eq!(p, vec![Problem::UnknownEvent { event: "teleported".into() }]);
@@ -322,79 +386,122 @@ fn an_unknown_event_is_refused() {
 
 #[test]
 fn events_out_of_date_order_are_refused() {
-    let p = refused(doc(vec![("a", vec![opened(Some(5), 45.0, -122.0, "A"), event(EventKind::Closed, Some(3))])]));
+    let p = refused(doc(vec![("a", vec![in_service(Some(5), 45.0, -122.0, "A"), event(EventKind::Suspended, Some(3))])]));
     assert_eq!(p, vec![Problem::OutOfOrder]);
 }
 
 #[test]
-fn a_stop_must_begin_opened_or_proposed() {
+fn a_stop_begins_at_a_stage() {
     assert_eq!(refused(doc(vec![("a", vec![])])), vec![Problem::NoEvents]);
     let p = refused(doc(vec![("a", vec![Event { lat: Some(45.0), lon: Some(-122.0), ..event(EventKind::Moved, Some(1)) }])]));
     assert!(p.contains(&Problem::FirstEvent), "{p:?}");
+    for stage in STAGES {
+        assert!(refused(doc(vec![("a", vec![begun(stage.clone(), Some(0), 45.0, -122.0, "A")])])).is_empty(), "{stage:?}");
+    }
+}
+
+#[test]
+fn the_stages_do_not_go_back() {
+    let p = refused(doc(vec![("a", vec![begun(EventKind::Built, Some(0), 45.0, -122.0, "A"), event(EventKind::Permitted, Some(3))])]));
+    assert_eq!(p, vec![Problem::StageBack]);
+    let p = refused(doc(vec![("a", vec![begun(EventKind::Permitted, Some(0), 45.0, -122.0, "A"), event(EventKind::Permitted, Some(3))])]));
+    assert_eq!(p, vec![Problem::StageBack], "a stage is not entered twice");
+    let p = refused(doc(vec![("a", vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::Planned, Some(3))])]));
+    assert_eq!(p, vec![Problem::StageBack]);
+    // a stage skipped is fine
+    assert!(refused(doc(vec![("a", vec![begun(EventKind::Planned, Some(0), 45.0, -122.0, "A"), event(EventKind::InService, Some(3))])])).is_empty());
+}
+
+#[test]
+fn a_suspension_is_of_a_stop_in_service() {
+    let p = refused(doc(vec![("a", vec![begun(EventKind::Built, Some(0), 45.0, -122.0, "A"), event(EventKind::Suspended, Some(3))])]));
+    assert_eq!(p, vec![Problem::NotInService]);
     let p = refused(doc(vec![(
         "a",
-        vec![opened(Some(0), 45.0, -122.0, "A"), Event { plan: Some("fall".into()), ..event(EventKind::Proposed, Some(3)) }],
+        vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::Suspended, Some(2)), event(EventKind::Suspended, Some(3))],
     )]));
-    assert!(p.contains(&Problem::FirstEvent), "a proposal is only a stop's first event: {p:?}");
+    assert_eq!(p, vec![Problem::NotInService], "a suspended stop is not suspended again");
+}
+
+#[test]
+fn a_return_to_service_needs_a_stop_not_in_service() {
+    let p = refused(doc(vec![("a", vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::InService, Some(3))])]));
+    assert_eq!(p, vec![Problem::AlreadyInService]);
+    // a temporary suspension that has ended leaves nothing to return from
+    let p = refused(doc(vec![(
+        "a",
+        vec![
+            in_service(Some(0), 45.0, -122.0, "A"),
+            Event { until: Some(date(5)), ..event(EventKind::Suspended, Some(1)) },
+            event(EventKind::InService, Some(6)),
+        ],
+    )]));
+    assert_eq!(p, vec![Problem::AlreadyInService]);
+    // back early from a temporary one, or from one with no end
+    assert!(refused(doc(vec![(
+        "a",
+        vec![
+            in_service(Some(0), 45.0, -122.0, "A"),
+            Event { until: Some(date(9)), ..event(EventKind::Suspended, Some(1)) },
+            event(EventKind::InService, Some(6)),
+        ],
+    )]))
+    .is_empty());
+}
+
+#[test]
+fn a_suspended_stop_may_never_return() {
+    let d = doc(vec![(
+        "a",
+        vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::Suspended, Some(2)), event(EventKind::Retired, Some(90))],
+    )]);
+    let d = d.checked().unwrap();
+    assert_eq!(d.stop_on("a", day(50)).unwrap().status, Status::Suspended);
+    assert_eq!(d.stop_on("a", day(90)).unwrap().status, Status::Retired);
 }
 
 #[test]
 fn nothing_follows_retirement() {
-    let p = refused(doc(vec![("a", vec![opened(Some(0), 45.0, -122.0, "A"), event(EventKind::Retired, Some(3)), event(EventKind::Closed, Some(4))])]));
+    let p = refused(doc(vec![(
+        "a",
+        vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::Retired, Some(3)), event(EventKind::Suspended, Some(4))],
+    )]));
     assert_eq!(p, vec![Problem::AfterRetired]);
 }
 
 #[test]
-fn a_reopening_needs_a_closed_stop() {
-    let p = refused(doc(vec![("a", vec![opened(Some(0), 45.0, -122.0, "A"), event(EventKind::Reopened, Some(3))])]));
-    assert_eq!(p, vec![Problem::NothingClosed]);
-    // a temporary closure that has ended leaves nothing to reopen
+fn until_comes_after_its_date() {
     let p = refused(doc(vec![(
         "a",
-        vec![
-            opened(Some(0), 45.0, -122.0, "A"),
-            Event { until: Some(date(5)), ..event(EventKind::Closed, Some(1)) },
-            event(EventKind::Reopened, Some(6)),
-        ],
+        vec![in_service(Some(0), 45.0, -122.0, "A"), Event { until: Some(date(3)), ..event(EventKind::Suspended, Some(3)) }],
     )]));
-    assert_eq!(p, vec![Problem::NothingClosed]);
-}
-
-#[test]
-fn a_proposal_names_its_plan() {
-    let p = refused(doc(vec![("a", vec![Event { lat: Some(45.0), lon: Some(-122.0), ..event(EventKind::Proposed, Some(0)) }])]));
-    assert_eq!(p, vec![Problem::NoPlan]);
-}
-
-#[test]
-fn until_comes_after_its_date() {
-    let p = refused(doc(vec![("a", vec![opened(Some(0), 45.0, -122.0, "A"), Event { until: Some(date(3)), ..event(EventKind::Closed, Some(3)) }])]));
     assert_eq!(p, vec![Problem::UntilNotAfter]);
 }
 
 #[test]
-fn only_an_opening_may_go_undated() {
-    let p = refused(doc(vec![("a", vec![opened(None, 45.0, -122.0, "A"), event(EventKind::Closed, None)])]));
+fn only_a_first_in_service_may_go_undated() {
+    let p = refused(doc(vec![("a", vec![in_service(None, 45.0, -122.0, "A"), event(EventKind::Suspended, None)])]));
     assert_eq!(p, vec![Problem::NoDate]);
+    let p = refused(doc(vec![("a", vec![begun(EventKind::Planned, None, 45.0, -122.0, "A")])]));
+    assert_eq!(p, vec![Problem::NoDate], "a stop still being planned has a date");
 }
 
 #[test]
 fn a_date_is_a_service_date() {
-    let p = refused_json(json!({"stops": {"a": [{"on": "March 3", "event": "opened", "lat": 45.0, "lon": -122.0}]}}));
+    let p = refused_json(json!({"stops": {"a": [{"on": "March 3", "event": "in_service", "lat": 45.0, "lon": -122.0}]}}));
     assert_eq!(p, vec![Problem::BadDate { date: "March 3".into() }]);
 }
 
 #[test]
 fn an_event_carries_only_what_its_kind_sets() {
-    let misplaced = |e: Event| refused(doc(vec![("a", vec![opened(Some(0), 45.0, -122.0, "A"), e])]));
+    let misplaced = |e: Event| refused(doc(vec![("a", vec![in_service(Some(0), 45.0, -122.0, "A"), e])]));
     assert_eq!(misplaced(Event { until: Some(date(9)), ..event(EventKind::Changed, Some(1)) }), vec![Problem::Misplaced { field: "until".into() }]);
-    assert_eq!(misplaced(Event { plan: Some("p".into()), ..event(EventKind::Closed, Some(1)) }), vec![Problem::Misplaced { field: "plan".into() }]);
     assert_eq!(
         misplaced(Event { lat: Some(45.0), lon: Some(-122.0), ..event(EventKind::Changed, Some(1)) }),
         vec![Problem::Misplaced { field: "point".into() }]
     );
     assert_eq!(
-        misplaced(Event { details: Details { name: Some("B".into()), ..Details::default() }, ..event(EventKind::Closed, Some(1)) }),
+        misplaced(Event { details: Details { name: Some("B".into()), ..Details::default() }, ..event(EventKind::Suspended, Some(1)) }),
         vec![Problem::Misplaced { field: "details".into() }]
     );
     assert_eq!(
@@ -405,11 +512,11 @@ fn an_event_carries_only_what_its_kind_sets() {
 
 #[test]
 fn a_point_is_whole_and_on_the_earth() {
-    let p = refused(doc(vec![("a", vec![Event { lat: None, ..opened(Some(0), 45.0, -122.0, "A") }])]));
+    let p = refused(doc(vec![("a", vec![Event { lat: None, ..in_service(Some(0), 45.0, -122.0, "A") }])]));
     assert_eq!(p, vec![Problem::NoPoint]);
-    let p = refused(doc(vec![("a", vec![opened(Some(0), 95.0, -122.0, "A")])]));
+    let p = refused(doc(vec![("a", vec![in_service(Some(0), 95.0, -122.0, "A")])]));
     assert_eq!(p, vec![Problem::BadPoint]);
-    let p = refused(doc(vec![("a", vec![opened(Some(0), 45.0, -122.0, "A"), event(EventKind::Moved, Some(2))])]));
+    let p = refused(doc(vec![("a", vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::Moved, Some(2))])]));
     assert_eq!(p, vec![Problem::NoPoint]);
 }
 
@@ -417,8 +524,8 @@ fn a_point_is_whole_and_on_the_earth() {
 fn a_consolidation_names_other_stops_that_exist() {
     let with = |replaces: Vec<&str>| {
         refused(doc(vec![
-            ("a", vec![opened(Some(0), 45.0, -122.0, "A")]),
-            ("b", vec![Event { replaces: replaces.into_iter().map(String::from).collect(), ..opened(Some(4), 45.0, -122.0, "B") }]),
+            ("a", vec![in_service(Some(0), 45.0, -122.0, "A")]),
+            ("b", vec![Event { replaces: replaces.into_iter().map(String::from).collect(), ..begun(EventKind::Planned, Some(4), 45.0, -122.0, "B") }]),
         ]))
     };
     assert!(with(vec!["a"]).is_empty());
@@ -428,7 +535,7 @@ fn a_consolidation_names_other_stops_that_exist() {
 
 #[test]
 fn every_refusal_names_its_stop_and_event() {
-    let refusals = doc(vec![("a", vec![opened(Some(5), 45.0, -122.0, "A"), event(EventKind::Closed, Some(3))])]).checked().unwrap_err();
+    let refusals = doc(vec![("a", vec![in_service(Some(5), 45.0, -122.0, "A"), event(EventKind::Suspended, Some(3))])]).checked().unwrap_err();
     assert_eq!((refusals[0].stop.as_str(), refusals[0].event), ("a", Some(1)));
 }
 
@@ -440,33 +547,43 @@ fn every_refusal_names_its_stop_and_event() {
 fn the_worked_example_reads_as_the_unit_says() {
     let d: Stops = serde_json::from_value(json!({
         "kind": "stops", "schema_version": 1,
-        "stops": {"6124": [
-            {"on": "2004-09-01", "event": "opened", "lat": 45.6934, "lon": -122.6512, "name": "NE 99th St & Hwy 99", "code": "6124", "wheelchair": true},
-            {"on": "2025-05-12", "event": "changed", "amenities": {"shelter": true, "bench": true, "bin": true}},
-            {"on": "2027-03-03", "event": "closed", "until": "2027-07-01"},
-            {"on": "2027-09-01", "event": "moved", "lat": 45.6936, "lon": -122.6509}
-        ]}
+        "stops": {
+            "6124": [
+                {"on": "2004-09-01", "event": "in_service", "lat": 45.6934, "lon": -122.6512, "name": "NE 99th St & Hwy 99", "code": "6124", "wheelchair": true},
+                {"on": "2025-05-12", "event": "changed", "amenities": {"shelter": true, "bench": true, "bin": true}},
+                {"on": "2027-03-03", "event": "suspended", "until": "2027-07-01"},
+                {"on": "2027-09-01", "event": "moved", "lat": 45.6936, "lon": -122.6509}
+            ],
+            "7001": [
+                {"on": "2026-11-02", "event": "planned", "lat": 45.70, "lon": -122.66, "name": "NE 104th St"},
+                {"on": "2027-02-15", "event": "permitted"},
+                {"on": "2027-06-01", "event": "built"},
+                {"on": "2027-09-06", "event": "in_service"}
+            ]
+        }
     }))
     .unwrap();
     let d = d.checked().unwrap();
-    let at = |s: &str| d.stop_on("6124", NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap());
-    assert_eq!(at("2004-08-31"), None, "before it opened, the stop is not there");
-    assert_eq!(at("2025-05-11").unwrap().details.amenities, BTreeMap::new(), "amenities not recorded yet");
-    assert_eq!(at("2025-05-12").unwrap().details.amenities.get("shelter"), Some(&true));
-    assert_eq!(at("2027-03-03").unwrap().status, Status::Closed);
-    assert_eq!(at("2027-06-30").unwrap().status, Status::Closed);
-    assert_eq!(at("2027-07-01").unwrap().status, Status::Open, "until is the first day back");
-    assert_eq!((at("2027-08-31").unwrap().lat, at("2027-09-01").unwrap().lat), (45.6934, 45.6936));
-    assert_eq!(at("2030-01-01").unwrap().details.name.as_deref(), Some("NE 99th St & Hwy 99"));
+    let at = |id: &str, s: &str| d.stop_on(id, NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap());
+    assert_eq!(at("6124", "2004-08-31"), None, "before it went into service, the stop is not there");
+    assert_eq!(at("6124", "2025-05-11").unwrap().details.amenities, BTreeMap::new(), "amenities not recorded yet");
+    assert_eq!(at("6124", "2025-05-12").unwrap().details.amenities.get("shelter"), Some(&true));
+    assert_eq!(at("6124", "2027-03-03").unwrap().status, Status::Suspended);
+    assert_eq!(at("6124", "2027-06-30").unwrap().status, Status::Suspended);
+    assert_eq!(at("6124", "2027-07-01").unwrap().status, Status::InService, "until is the first day back");
+    assert_eq!((at("6124", "2027-08-31").unwrap().lat, at("6124", "2027-09-01").unwrap().lat), (45.6934, 45.6936));
+    assert_eq!(at("7001", "2027-01-01").unwrap().status, Status::Planned);
+    assert_eq!(at("7001", "2027-06-01").unwrap().status, Status::Built);
+    assert!(!d.served("7001", NaiveDate::from_ymd_opt(2027, 9, 5).unwrap(), 0) && d.served("7001", NaiveDate::from_ymd_opt(2027, 9, 6).unwrap(), 0));
 }
 
 #[test]
 fn every_stop_on_a_date_in_id_order() {
     let d = doc(vec![
-        ("b", vec![opened(Some(0), 45.0, -122.0, "B")]),
-        ("a", vec![opened(Some(0), 45.0, -122.0, "A")]),
-        ("later", vec![opened(Some(9), 45.0, -122.0, "L")]),
+        ("b", vec![in_service(Some(0), 45.0, -122.0, "B")]),
+        ("a", vec![begun(EventKind::Planned, Some(0), 45.0, -122.0, "A")]),
+        ("later", vec![in_service(Some(9), 45.0, -122.0, "L")]),
     ]);
     let ids: Vec<String> = d.on_date(day(1)).into_iter().map(|s| s.stop_id).collect();
-    assert_eq!(ids, vec!["a", "b"], "a stop not yet opened is not listed");
+    assert_eq!(ids, vec!["a", "b"], "a stop not yet there is not listed; a planned one is");
 }

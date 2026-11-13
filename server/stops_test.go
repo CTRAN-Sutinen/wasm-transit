@@ -78,13 +78,14 @@ func seededStops(t *testing.T) map[string]any {
 	return doc
 }
 
-// withClosure is the document with stop A closed from `on` until `until`.
-func withClosure(doc map[string]any, on, until string) map[string]any {
+// withSuspension is the document with stop A suspended from `on` until
+// `until`.
+func withSuspension(doc map[string]any, on, until string) map[string]any {
 	raw, _ := json.Marshal(doc)
 	var out map[string]any
 	json.Unmarshal(raw, &out)
 	stops := out["stops"].(map[string]any)
-	stops["A"] = append(stops["A"].([]any), map[string]any{"on": on, "event": "closed", "until": until})
+	stops["A"] = append(stops["A"].([]any), map[string]any{"on": on, "event": "suspended", "until": until})
 	return out
 }
 
@@ -134,8 +135,8 @@ func TestStopsWritesAreValidated(t *testing.T) {
 	if h := manifestStopsHash(t, base); h != "" {
 		t.Fatalf("no stops document yet, the manifest pins none: %q", h)
 	}
-	bad := map[string]any{"stops": map[string]any{"a": []any{map[string]any{"event": "opened", "lat": 45, "lon": -122}, map[string]any{"on": "2026-09-01", "event": "reopened"}}}}
-	if code, out := postStops(t, base, "", bad); code != 422 || !strings.Contains(out["refusals"].(any).([]any)[0].(map[string]any)["problem"].(map[string]any)["kind"].(string), "nothing_closed") {
+	bad := map[string]any{"stops": map[string]any{"a": []any{map[string]any{"event": "in_service", "lat": 45, "lon": -122}, map[string]any{"on": "2026-09-01", "event": "in_service"}}}}
+	if code, out := postStops(t, base, "", bad); code != 422 || !strings.Contains(out["refusals"].(any).([]any)[0].(map[string]any)["problem"].(map[string]any)["kind"].(string), "already_in_service") {
 		t.Fatalf("a refused document: %d %v", code, out)
 	}
 	seed := seededStops(t)
@@ -151,7 +152,7 @@ func TestStopsWritesAreValidated(t *testing.T) {
 	if code != 200 || hdr.Get("X-Document-Kind") != "stops" || sha([]byte(body)) != hash {
 		t.Fatalf("the stops blob: %d kind=%q", code, hdr.Get("X-Document-Kind"))
 	}
-	if code, out := postStops(t, base, "", withClosure(seed, "2026-10-23", "2026-10-24")); code != 409 {
+	if code, out := postStops(t, base, "", withSuspension(seed, "2026-10-23", "2026-10-24")); code != 409 {
 		t.Fatalf("a write from a version that is no longer the head is refused: %d %v", code, out)
 	}
 	raw, _ := json.Marshal(map[string]any{"from": hash, "document": "{}"})
@@ -160,7 +161,7 @@ func TestStopsWritesAreValidated(t *testing.T) {
 	}
 }
 
-// A pick only reads the stops document (D-157): a closure written while
+// A pick only reads the stops document (D-157): a suspension written while
 // a pick is published leaves every pick's network as it was.
 func TestAStopsWriteChangesNoPick(t *testing.T) {
 	s, base := newStopsServer(t, store.NewMemory())
@@ -173,9 +174,9 @@ func TestAStopsWriteChangesNoPick(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("the seed: %d %v", code, out)
 	}
-	code, out = postStops(t, base, out["stops_hash"].(string), withClosure(seed, "2026-10-23", "2026-10-24"))
+	code, out = postStops(t, base, out["stops_hash"].(string), withSuspension(seed, "2026-10-23", "2026-10-24"))
 	if code != 200 {
-		t.Fatalf("the closure: %d %v", code, out)
+		t.Fatalf("the suspension: %d %v", code, out)
 	}
 	if _, has := out["republished"]; has {
 		t.Fatalf("a stops write republishes nothing: %v", out)

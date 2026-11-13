@@ -15,17 +15,17 @@ fn date(n: u32) -> String {
     day(n).format("%Y-%m-%d").to_string()
 }
 
-/// One stop: 0 open, 1 proposed for P, 2 proposed for Q, 3 proposed for
-/// P and then moved.
+/// One stop: 0 in service from before any record, 1 planned, 2
+/// permitted, 3 planned and then moved.
 fn stop(kind: u8, on: u32, i: usize) -> Vec<Event> {
     let point = |e: Event| Event { lat: Some(45.0 + i as f64 / 100.0), lon: Some(-122.0), ..e };
     let named = Details { name: Some(format!("stop {i}")), wheelchair: Some(i % 2 == 0), ..Details::default() };
-    let proposed = |plan: &str| point(Event { on: Some(date(on)), event: EventKind::Proposed, plan: Some(plan.into()), details: named.clone(), ..Event::default() });
+    let begun = |kind: EventKind| point(Event { on: Some(date(on)), event: kind, details: named.clone(), ..Event::default() });
     match kind {
-        0 => vec![point(Event { event: EventKind::Opened, details: named.clone(), ..Event::default() })],
-        1 => vec![proposed("P")],
-        2 => vec![proposed("Q")],
-        _ => vec![proposed("P"), Event { on: Some(date(on + 3)), event: EventKind::Moved, lat: Some(46.0), lon: Some(-122.0), ..Event::default() }],
+        0 => vec![point(Event { event: EventKind::InService, details: named.clone(), ..Event::default() })],
+        1 => vec![begun(EventKind::Planned)],
+        2 => vec![begun(EventKind::Permitted)],
+        _ => vec![begun(EventKind::Planned), Event { on: Some(date(on + 3)), event: EventKind::Moved, lat: Some(46.0), lon: Some(-122.0), ..Event::default() }],
     }
 }
 
@@ -37,8 +37,8 @@ fn arb_doc() -> impl Strategy<Value = Stops> {
 }
 
 // ---------------------------------------------------------------------
-// an edit: one event added to one stop (the Stops stage's close and
-// reopen, and later its create, move, and change)
+// an edit: one event added to one stop (each of the stops app's
+// edits)
 // ---------------------------------------------------------------------
 
 fn on_of(e: &Event) -> Option<NaiveDate> {
@@ -51,7 +51,7 @@ proptest! {
     #[test]
     fn an_added_event_takes_its_place_by_date(doc in arb_doc(), which in 0usize..6, on in 0u32..40) {
         let id = format!("s{}", which % doc.stops.len());
-        let added = Event { on: Some(date(on)), event: EventKind::Closed, note: Some("added".into()), ..Event::default() };
+        let added = Event { on: Some(date(on)), event: EventKind::Suspended, note: Some("added".into()), ..Event::default() };
         let next = doc.add_event(&id, added.clone());
         for (other, events) in &doc.stops {
             if *other != id {
@@ -69,14 +69,14 @@ proptest! {
 }
 
 #[test]
-fn a_closure_added_closes_the_stop_and_a_new_id_begins_a_stop() {
+fn a_suspension_added_suspends_the_stop_and_a_new_id_begins_a_stop() {
     let doc = Stops { stops: [("o".to_string(), stop(0, 0, 0))].into(), ..Stops::default() };
-    let closed = doc.add_event("o", Event { on: Some(date(3)), event: EventKind::Closed, until: Some(date(5)), ..Event::default() });
-    let closed = closed.checked().unwrap();
-    assert_eq!(closed.stop_on("o", day(4)).unwrap().status, Status::Closed);
-    assert_eq!(closed.stop_on("o", day(5)).unwrap().status, Status::Open);
-    let reopened = closed.add_event("o", Event { on: Some(date(4)), event: EventKind::Reopened, ..Event::default() });
-    assert!(reopened.checked().is_ok(), "a reopening on a closed date is a valid write");
+    let suspended = doc.add_event("o", Event { on: Some(date(3)), event: EventKind::Suspended, until: Some(date(5)), ..Event::default() });
+    let suspended = suspended.checked().unwrap();
+    assert_eq!(suspended.stop_on("o", day(4)).unwrap().status, Status::Suspended);
+    assert_eq!(suspended.stop_on("o", day(5)).unwrap().status, Status::InService);
+    let back = suspended.add_event("o", Event { on: Some(date(4)), event: EventKind::InService, ..Event::default() });
+    assert!(back.checked().is_ok(), "a return on a suspended date is a valid write");
     let fresh = doc.add_event("n", stop(1, 2, 1)[0].clone());
     assert_eq!(fresh.stops["n"], stop(1, 2, 1));
 }

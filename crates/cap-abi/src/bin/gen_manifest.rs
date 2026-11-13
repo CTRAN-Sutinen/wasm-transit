@@ -364,7 +364,7 @@ fn kernel_ops(feed_hash: &str, net: Option<&NetworkExampleContext>) -> Vec<Kerne
         load(kernel::OP_LOAD_LAYER, "load_layer", "Register a GeoJSON WEIGHTED LAYER — Point, Polygon and MultiPolygon features (people, jobs, households: any weighted geography; other geometries are skipped) — under the content hash of its bytes. The answer is the import handle — features, points, polygons, and the weights it can be read by (each property that is a JSON number, with its total) — so the layer's owner never parses a second copy. Which field is the weight, and what it means, are the coverage op's (`field`, `label`): one file read two ways is one layer. Bulk: the GeoJSON bytes; JSON: {\"op\": \"load_layer\", \"bytes\": [..]}."),
         load(kernel::OP_LOAD_FEED, "load_feed", "Register a GTFS zip under the content hash of its bytes (idempotent), answering the feed's summary — stops, routes, trips, stop_times — the at-a-glance read the feed line shows. Bulk: the raw zip."),
         load(kernel::OP_LOAD_WORK_RULES, "load_work_rules", "Register the WORK RULES (transit-runs: the rules work is cut under — recovery per route and/or service type in minutes and/or a percent of the run, the route pairs one vehicle may interline, the run rules, pay; every rule optional, D-50) under its canonical hash, answering its version. Checked and normalized at the load (rules and pairs sorted, each pair's routes in order — two orderings are one identity); refused: another version, a rule requiring nothing, one scope twice, a share over 1000 percent, a pair of one route or listed twice, a minimum piece over the maximum. JSON: {\"op\": \"load_work_rules\", \"work_rules\": …}; bulk: its JSON."),
-        load(kernel::OP_LOAD_STOPS, "load_stops", "Register a STOPS document (transit-stops: every stop a list of dated events — opened, closed, reopened, moved, changed, proposed, retired; D-153) under its canonical hash — the same hash the stops capability's validate answers — with how many stops it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_stops\", \"stops\": …}; bulk: its JSON."),
+        load(kernel::OP_LOAD_STOPS, "load_stops", "Register a STOPS document (transit-stops: every stop a list of dated events — planned, permitted, built, in_service, suspended, moved, changed, retired; D-153, D-157) under its canonical hash — the same hash the stops capability's validate answers — with how many stops it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_stops\", \"stops\": …}; bulk: its JSON."),
         load(kernel::OP_LOAD_RT, "load_rt", "Register a GTFS-rt protobuf payload (a snapshot) under the content hash of its bytes, answering the hash only (the rt capability's decode answers the overview too). Ephemeral: the last 8 stay. Bulk: the raw payload."),
         KernelOp {
             code: OP_EVICT,
@@ -1103,20 +1103,22 @@ fn edit_kind_examples() -> Vec<serde_json::Value> {
 /// Requests carry the REAL feed hash computed above; responses
 /// carry the fixture's known answers.
 /// The worked work rules: five minutes or a tenth of the run after
-/// A stops document (D-153, D-154): one stop opened, given amenities,
-/// closed for a while, then moved; one proposed by a draft plan.
+/// A stops document (D-153, D-154, D-157): one stop in service, given
+/// amenities, suspended for a while, then moved; one planned, then
+/// permitted.
 fn fixture_stops() -> transit_stops::Stops {
     serde_json::from_value(serde_json::json!({
         "kind": "stops", "schema_version": 1,
         "stops": {
             "6124": [
-                {"on": "2004-09-01", "event": "opened", "lat": 45.6934, "lon": -122.6512, "name": "NE 99th St & Hwy 99", "code": "6124", "wheelchair": true},
+                {"on": "2004-09-01", "event": "in_service", "lat": 45.6934, "lon": -122.6512, "name": "NE 99th St & Hwy 99", "code": "6124", "wheelchair": true},
                 {"on": "2025-05-12", "event": "changed", "amenities": {"shelter": true, "bench": true, "bin": true}},
-                {"on": "2027-03-03", "event": "closed", "until": "2027-07-01", "note": "water main"},
+                {"on": "2027-03-03", "event": "suspended", "until": "2027-07-01", "note": "water main"},
                 {"on": "2027-09-01", "event": "moved", "lat": 45.6936, "lon": -122.6509}
             ],
             "7001": [
-                {"on": "2027-01-10", "event": "proposed", "plan": "fall-2027", "lat": 45.7, "lon": -122.66, "name": "NE 104th St"}
+                {"on": "2027-01-10", "event": "planned", "lat": 45.7, "lon": -122.66, "name": "NE 104th St"},
+                {"on": "2027-05-03", "event": "permitted"}
             ]
         }
     }))
@@ -1718,9 +1720,9 @@ fn example_for(
             )
         }
         ("stops", "add_event") => {
-            // 6124 closed for a week of paving: in its place by date.
+            // 6124 suspended for a week of paving: in its place by date.
             let stops = fixture_stops().checked().ok()?;
-            let event: transit_stops::Event = serde_json::from_value(json!({"on": "2026-01-05", "event": "closed", "until": "2026-01-12", "note": "paving"})).ok()?;
+            let event: transit_stops::Event = serde_json::from_value(json!({"on": "2026-01-05", "event": "suspended", "until": "2026-01-12", "note": "paving"})).ok()?;
             let next = stops.add_event("6124", event.clone()).checked().ok()?;
             (
                 json!({ "op": "add_event", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stop_id": "6124", "event": event }),

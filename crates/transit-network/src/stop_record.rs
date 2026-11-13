@@ -9,9 +9,9 @@ use transit_stops::{Details, Event, EventKind, Stops};
 use crate::places::StopKind;
 use crate::{Network, Stop};
 
-/// A stops document from a network's stops: each stop one `opened`
-/// event with no date (no feed records a stop's opening), carrying its
-/// point and every detail.
+/// A stops document from a network's stops: each stop one `in_service`
+/// event with no date (no feed records when a stop went into service),
+/// carrying its point and every detail.
 pub fn seed(network: &Network) -> Stops {
     let stops = network.stops.iter().map(|(id, stop)| (id.clone(), vec![opening(stop)])).collect();
     Stops { stops, ..Stops::default() }
@@ -20,7 +20,7 @@ pub fn seed(network: &Network) -> Stops {
 fn opening(stop: &Stop) -> Event {
     let info = &stop.info;
     Event {
-        event: EventKind::Opened,
+        event: EventKind::InService,
         lat: Some(stop.lat),
         lon: Some(stop.lon),
         details: Details {

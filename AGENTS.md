@@ -285,7 +285,7 @@ transit-sync     THE sync document (EditRecord: a Diversion or a TripCancel, mer
 transit-plans    THE service-plan chain (resolve, periods, validity — pure, derived)
                  and the published plan set (publish, the pick in force)
 transit-stops    THE stops document, beside the plans: each stop a list of dated events
-                 (opened, closed, reopened, moved, changed, proposed, retired), the
+                 (planned, permitted, built, in_service, suspended, moved, changed, retired), the
                  stop on a date, served, what a write must pass, its edit (an
                  event placed by date) — pure; a stop's life is its own, and a
                  pick only reads it (D-157)

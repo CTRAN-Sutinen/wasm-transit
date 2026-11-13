@@ -29,13 +29,14 @@ fn sample() -> Value {
         "kind": "stops", "schema_version": 1,
         "stops": {
             "6124": [
-                {"on": "2004-09-01", "event": "opened", "lat": 45.6934, "lon": -122.6512, "name": "NE 99th St & Hwy 99", "code": "6124", "wheelchair": true},
+                {"on": "2004-09-01", "event": "in_service", "lat": 45.6934, "lon": -122.6512, "name": "NE 99th St & Hwy 99", "code": "6124", "wheelchair": true},
                 {"on": "2025-05-12", "event": "changed", "amenities": {"shelter": true, "bench": true, "bin": true}},
-                {"on": "2027-03-03", "event": "closed", "until": "2027-07-01", "note": "water main"},
+                {"on": "2027-03-03", "event": "suspended", "until": "2027-07-01", "note": "water main"},
                 {"on": "2027-09-01", "event": "moved", "lat": 45.6936, "lon": -122.6509}
             ],
             "7001": [
-                {"on": "2027-01-10", "event": "proposed", "plan": "fall-2027", "lat": 45.70, "lon": -122.66, "name": "NE 104th St"}
+                {"on": "2027-01-10", "event": "planned", "lat": 45.70, "lon": -122.66, "name": "NE 104th St"},
+                {"on": "2027-05-03", "event": "permitted"}
             ]
         }
     })
@@ -55,7 +56,7 @@ fn validate_and_the_load_agree_on_one_identity() {
     let bulk: Value = serde_json::from_str(&cap_stops::invoke_bytes(OP_LOAD_STOPS, document.as_bytes())).unwrap();
     assert_eq!(bulk["ok"], loaded);
     // a writer's key order is not part of the identity
-    let reordered: Value = serde_json::from_str(r#"{"stops":{"7001":[{"name":"NE 104th St","lon":-122.66,"lat":45.70,"plan":"fall-2027","event":"proposed","on":"2027-01-10"}],"6124":[{"on":"2004-09-01","event":"opened","lat":45.6934,"lon":-122.6512,"name":"NE 99th St & Hwy 99","code":"6124","wheelchair":true},{"on":"2025-05-12","event":"changed","amenities":{"bin":true,"bench":true,"shelter":true}},{"note":"water main","until":"2027-07-01","event":"closed","on":"2027-03-03"},{"on":"2027-09-01","event":"moved","lat":45.6936,"lon":-122.6509}]},"schema_version":1,"kind":"stops"}"#).unwrap();
+    let reordered: Value = serde_json::from_str(r#"{"stops":{"7001":[{"name":"NE 104th St","lon":-122.66,"lat":45.70,"event":"planned","on":"2027-01-10"},{"event":"permitted","on":"2027-05-03"}],"6124":[{"on":"2004-09-01","event":"in_service","lat":45.6934,"lon":-122.6512,"name":"NE 99th St & Hwy 99","code":"6124","wheelchair":true},{"on":"2025-05-12","event":"changed","amenities":{"bin":true,"bench":true,"shelter":true}},{"note":"water main","until":"2027-07-01","event":"suspended","on":"2027-03-03"},{"on":"2027-09-01","event":"moved","lat":45.6936,"lon":-122.6509}]},"schema_version":1,"kind":"stops"}"#).unwrap();
     assert_eq!(ok(json!({"op": "validate", "stops": reordered}))["document_hash"], hash);
 }
 
@@ -63,34 +64,34 @@ fn validate_and_the_load_agree_on_one_identity() {
 fn a_refused_document_names_each_reason_and_never_registers() {
     let mut bad = sample();
     bad["stops"]["6124"][2]["until"] = json!("2027-03-01");
-    bad["stops"]["7001"][0].as_object_mut().unwrap().remove("plan");
+    bad["stops"]["7001"][1]["event"] = json!("planned");
     let checked = ok(json!({"op": "validate", "stops": bad}));
     assert_eq!(
         checked["refusals"],
         json!([
             {"stop": "6124", "event": 2, "problem": {"kind": "until_not_after"}},
-            {"stop": "7001", "event": 0, "problem": {"kind": "no_plan"}}
+            {"stop": "7001", "event": 1, "problem": {"kind": "stage_back"}}
         ])
     );
     assert!(checked["document"].is_null() && checked["document_hash"].is_null());
     let e = err(json!({"op": "load_stops", "stops": bad}));
-    assert!(e.contains("stops document") && e.contains(r#"stop "7001" event 0 proposes the stop for no plan"#), "{e}");
+    assert!(e.contains("stops document") && e.contains(r#"stop "7001" event 1 is a stage the stop is already at or past"#), "{e}");
 }
 
 #[test]
 fn the_date_questions_answer_over_a_registered_document() {
     let hash = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();
     let on = |date: &str| ok(json!({"op": "stops_on", "stops_hash": hash, "date": date}))["stops"].clone();
-    assert_eq!(on("2026-01-01").as_array().unwrap().len(), 1, "the proposal is not there yet");
+    assert_eq!(on("2026-01-01").as_array().unwrap().len(), 1, "the planned stop is not there yet");
     let spring = on("2027-04-01");
-    assert_eq!(spring[0]["status"], "closed");
+    assert_eq!(spring[0]["status"], "suspended");
     assert_eq!(spring[0]["amenities"], json!({"bench": true, "bin": true, "shelter": true}));
-    assert_eq!(spring[1], json!({"stop_id": "7001", "status": "proposed", "lat": 45.70, "lon": -122.66, "plan": "fall-2027", "name": "NE 104th St"}));
+    assert_eq!(spring[1], json!({"stop_id": "7001", "status": "planned", "lat": 45.70, "lon": -122.66, "name": "NE 104th St"}));
     let only = ok(json!({"op": "stops_on", "stops_hash": hash, "date": "2027-10-01", "stop_ids": ["6124", "nope"]}))["stops"].clone();
-    assert_eq!((only.as_array().unwrap().len(), only[0]["lat"].clone(), only[0]["status"].clone()), (1, json!(45.6936), json!("open")));
+    assert_eq!((only.as_array().unwrap().len(), only[0]["lat"].clone(), only[0]["status"].clone()), (1, json!(45.6936), json!("in_service")));
 
     let card = ok(json!({"op": "stop", "stops_hash": hash, "stop_id": "6124", "date": "2027-07-01"}));
-    assert_eq!(card["stop"]["status"], "open", "until is the first day back");
+    assert_eq!(card["stop"]["status"], "in_service", "until is the first day back");
     assert_eq!(card["events"].as_array().unwrap().len(), 4);
     assert_eq!(card["events"][2]["note"], "water main");
     let before = ok(json!({"op": "stop", "stops_hash": hash, "stop_id": "6124", "date": "2000-01-01"}));
@@ -122,8 +123,8 @@ fn seed_begins_a_document_from_a_network() {
     let network_hash = sample_network()["network_hash"].clone();
     let seeded = ok(json!({"op": "seed", "network_hash": network_hash}));
     let stops = &seeded["stops"]["stops"];
-    assert_eq!(stops["A"].as_array().unwrap().len(), 1, "one opened event per stop");
-    assert!(stops["A"][0].get("on").is_none() && stops["A"][0]["event"] == "opened");
+    assert_eq!(stops["A"].as_array().unwrap().len(), 1, "one in_service event per stop");
+    assert!(stops["A"][0].get("on").is_none() && stops["A"][0]["event"] == "in_service");
     // the seed is registered under its hash: load it again, same identity
     assert_eq!(ok(json!({"op": "load_stops", "stops": seeded["stops"]}))["stops_hash"], seeded["stops_hash"]);
     assert!(err(json!({"op": "seed", "network_hash": "sha256:none"})).contains("load_network"));
@@ -133,12 +134,12 @@ fn seed_begins_a_document_from_a_network() {
 fn add_event_places_an_edit_and_checks_it() {
     let hash = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();
     let closed = ok(json!({"op": "add_event", "stops_hash": hash, "stop_id": "6124",
-        "event": {"on": "2026-01-05", "event": "closed", "until": "2026-01-10", "note": "paving"}}));
+        "event": {"on": "2026-01-05", "event": "suspended", "until": "2026-01-10", "note": "paving"}}));
     assert_eq!(closed["refusals"], json!([]));
     assert_eq!(closed["stops"]["stops"]["6124"][2]["note"], "paving", "in its place by date");
     let card = ok(json!({"op": "stop", "stops_hash": closed["stops_hash"], "stop_id": "6124", "date": "2026-01-06"}));
-    assert_eq!(card["stop"]["status"], "closed");
-    let refused = ok(json!({"op": "add_event", "stops_hash": hash, "stop_id": "6124", "event": {"on": "2026-01-05", "event": "reopened"}}));
-    assert_eq!(refused["refusals"][0]["problem"]["kind"], "nothing_closed");
+    assert_eq!(card["stop"]["status"], "suspended");
+    let refused = ok(json!({"op": "add_event", "stops_hash": hash, "stop_id": "6124", "event": {"on": "2026-01-05", "event": "in_service"}}));
+    assert_eq!(refused["refusals"][0]["problem"]["kind"], "already_in_service");
     assert!(refused["stops"].is_null() && refused["stops_hash"].is_null());
 }

@@ -1,8 +1,11 @@
-//! The stops document (`docs/units/stop-lifecycle.md`; D-153, D-154).
+//! The stops document (D-153, D-154, D-157).
 //!
-//! Every stop is a list of dated events, oldest first — `opened`,
-//! `closed`, `reopened`, `moved`, `changed`, `proposed`, `retired` —
-//! and nothing in the document means "today". A stop on a date is its
+//! A stop has a life of its own: planned, permitted, built, in service,
+//! suspended for a while, retired — on a timeline set by permits and
+//! construction, not by service plans, which only read it (D-157).
+//! Every stop is a list of dated events, oldest first — `planned`,
+//! `permitted`, `built`, `in_service`, `suspended`, `moved`, `changed`,
+//! `retired` — and nothing in the document means "today". A stop on a date is its
 //! events applied in order up to that date ([`Stops::stop_on`]); a
 //! temporary event (`until`) applies only while it lasts, so the state
 //! before it returns on its `until`. Every reader asks this library —
@@ -77,37 +80,32 @@ pub struct Stops {
 #[ts(export)]
 pub struct Event {
     /// The service date it takes effect ("YYYY-MM-DD", the agency's
-    /// zone). Only a stop's first event, an `opened`, may have none:
-    /// an imported stop whose opening no feed records.
+    /// zone). Only a stop's first event, an `in_service`, may have
+    /// none: an imported stop whose start no feed records.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub on: Option<String>,
-    #[ts(type = "\"opened\" | \"closed\" | \"reopened\" | \"moved\" | \"changed\" | \"proposed\" | \"retired\"")]
+    #[ts(type = "\"planned\" | \"permitted\" | \"built\" | \"in_service\" | \"suspended\" | \"moved\" | \"changed\" | \"retired\"")]
     pub event: EventKind,
-    /// A `closed` or `moved` that is temporary: the first service date
-    /// after it, when the earlier state returns.
+    /// A `suspended` or `moved` that is temporary: the first service
+    /// date after it, when the earlier state returns.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub until: Option<String>,
-    /// The draft plan a `proposed` stop belongs to.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub plan: Option<String>,
-    /// The stop's point (WGS 84 degrees): set by `opened`, `proposed`,
-    /// and `moved`; required of a stop's first event and of a move.
+    /// The stop's point (WGS 84 degrees): set by a stage event and by
+    /// `moved`; required of a stop's first event and of a move.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub lat: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub lon: Option<f64>,
-    /// The details it sets (`opened`, `proposed`, `changed`): only
-    /// those listed change.
+    /// The details it sets (a stage event, `changed`): only those
+    /// listed change.
     #[serde(flatten)]
     #[ts(flatten)]
     pub details: Details,
-    /// The stops a consolidation or split succeeds (`opened`,
-    /// `proposed`).
+    /// The stops a consolidation or split succeeds (a stage event).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<String>>")]
     pub replaces: Vec<String>,
@@ -126,33 +124,38 @@ pub struct Event {
 /// it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum EventKind {
-    /// The stop starts: a stop's first event, with its point.
+    /// The stop is planned: where it will go.
+    Planned,
+    /// Its permits are granted.
+    Permitted,
+    /// It is built, not yet served.
+    Built,
+    /// In service: served. A stop's first event when it is already
+    /// there (an import, a seed); later, a return from a suspension.
     #[default]
-    Opened,
-    /// Not served; with `until`, it reopens by itself on that date.
-    Closed,
-    /// Served again after a closure with no `until`.
-    Reopened,
+    InService,
+    /// Out of service for a while — a closure, works, an event; with
+    /// `until`, it returns by itself on that date. It is expected to
+    /// return, and may not (a long closure is a long suspension).
+    Suspended,
     /// A new point; with `until`, temporary.
     Moved,
     /// Some details change; only those listed.
     Changed,
-    /// A draft plan adds the stop (a stop's first event, naming the
-    /// plan).
-    Proposed,
     /// The stop ends for good; nothing follows (the tombstone).
     Retired,
     Unknown(String),
 }
 
 impl EventKind {
-    const NAMES: [(&'static str, EventKind); 7] = [
-        ("opened", EventKind::Opened),
-        ("closed", EventKind::Closed),
-        ("reopened", EventKind::Reopened),
+    const NAMES: [(&'static str, EventKind); 8] = [
+        ("planned", EventKind::Planned),
+        ("permitted", EventKind::Permitted),
+        ("built", EventKind::Built),
+        ("in_service", EventKind::InService),
+        ("suspended", EventKind::Suspended),
         ("moved", EventKind::Moved),
         ("changed", EventKind::Changed),
-        ("proposed", EventKind::Proposed),
         ("retired", EventKind::Retired),
     ];
 
@@ -163,12 +166,24 @@ impl EventKind {
         }
     }
 
+    /// The stages, in order: how far along the stop is (`None` for an
+    /// event that is not one).
+    fn stage(&self) -> Option<u8> {
+        match self {
+            EventKind::Planned => Some(0),
+            EventKind::Permitted => Some(1),
+            EventKind::Built => Some(2),
+            EventKind::InService => Some(3),
+            _ => None,
+        }
+    }
+
     fn sets_point(&self) -> bool {
-        matches!(self, EventKind::Opened | EventKind::Proposed | EventKind::Moved)
+        self.stage().is_some() || *self == EventKind::Moved
     }
 
     fn sets_details(&self) -> bool {
-        matches!(self, EventKind::Opened | EventKind::Proposed | EventKind::Changed)
+        self.stage().is_some() || *self == EventKind::Changed
     }
 }
 
@@ -190,7 +205,7 @@ impl schemars::JsonSchema for EventKind {
         "EventKind".into()
     }
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({ "type": "string", "enum": ["opened", "closed", "reopened", "moved", "changed", "proposed", "retired"] })
+        schemars::json_schema!({ "type": "string", "enum": ["planned", "permitted", "built", "in_service", "suspended", "moved", "changed", "retired"] })
     }
 }
 
@@ -328,11 +343,29 @@ impl Details {
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
-    /// A draft plan's stop: not built, not served.
-    Proposed,
-    Open,
-    Closed,
+    Planned,
+    Permitted,
+    /// Built, not yet served.
+    Built,
+    /// Served.
+    InService,
+    /// Out of service for a while.
+    Suspended,
     Retired,
+}
+
+impl Status {
+    /// How far along the stop is: the stages in order, a suspension
+    /// counting as in service.
+    fn rank(self) -> u8 {
+        match self {
+            Status::Planned => 0,
+            Status::Permitted => 1,
+            Status::Built => 2,
+            Status::InService | Status::Suspended => 3,
+            Status::Retired => 4,
+        }
+    }
 }
 
 /// A stop as its events make it on one date.
@@ -343,10 +376,6 @@ pub struct StopOn {
     pub status: Status,
     pub lat: f64,
     pub lon: f64,
-    /// The plan that proposed the stop, when one did.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub plan: Option<String>,
     #[serde(flatten)]
     #[ts(flatten)]
     pub details: Details,
@@ -375,23 +404,26 @@ pub enum Problem {
     UnknownEvent { event: String },
     /// A date that is not "YYYY-MM-DD".
     BadDate { date: String },
-    /// No `on`: only a stop's first event, an `opened`, may go
+    /// No `on`: only a stop's first event, an `in_service`, may go
     /// undated.
     NoDate,
     /// Dated before the event above it.
     OutOfOrder,
-    /// A stop begins with `opened` or `proposed`, and a proposal is
-    /// only ever a stop's first event.
+    /// A stop begins at a stage: `planned`, `permitted`, `built`, or
+    /// `in_service`.
     FirstEvent,
     /// An event after `retired`.
     AfterRetired,
-    /// A `reopened` when the stop is not closed on its date.
-    NothingClosed,
-    /// A `proposed` naming no plan.
-    NoPlan,
+    /// A `planned`, `permitted`, or `built` when the stop is already at
+    /// or past that stage on its date: the stages only go forward.
+    StageBack,
+    /// A `suspended` when the stop is not in service on its date.
+    NotInService,
+    /// An `in_service` when the stop is already in service on its date.
+    AlreadyInService,
     /// An `until` on or before the event's own date.
     UntilNotAfter,
-    /// A field its event type does not set (`until`, `plan`, `point`,
+    /// A field its event type does not set (`until`, `point`,
     /// `details`, `replaces`).
     Misplaced { field: String },
     /// A point missing where one is required, or half a point.
@@ -411,12 +443,13 @@ impl fmt::Display for Refusal {
             Problem::NoEvents => "has no events".to_string(),
             Problem::UnknownEvent { event } => format!("is an unknown event {event:?}"),
             Problem::BadDate { date } => format!("has {date:?}, not a YYYY-MM-DD date"),
-            Problem::NoDate => "has no date (only a first opened may go undated)".into(),
+            Problem::NoDate => "has no date (only a first in_service may go undated)".into(),
             Problem::OutOfOrder => "is dated before the event above it".into(),
-            Problem::FirstEvent => "must be opened or proposed first, and proposed only first".into(),
+            Problem::FirstEvent => "must be a stage first: planned, permitted, built, or in_service".into(),
             Problem::AfterRetired => "follows the stop's retirement".into(),
-            Problem::NothingClosed => "reopens a stop that is not closed".into(),
-            Problem::NoPlan => "proposes the stop for no plan".into(),
+            Problem::StageBack => "is a stage the stop is already at or past".into(),
+            Problem::NotInService => "suspends a stop that is not in service".into(),
+            Problem::AlreadyInService => "puts in service a stop already in service".into(),
             Problem::UntilNotAfter => "ends (until) on or before it starts".into(),
             Problem::Misplaced { field } => format!("carries {field}, which its type does not set"),
             Problem::NoPoint => "lacks a whole point (lat and lon)".into(),
@@ -449,26 +482,22 @@ fn active(e: &Event, date: NaiveDate) -> bool {
     from && until
 }
 
-/// A stop's events applied in order up to `date`.
+/// A stop's events applied in order up to `date`: it is there from its
+/// first stage event.
 fn fold(id: &str, events: &[Event], date: NaiveDate) -> Option<StopOn> {
     let mut state: Option<StopOn> = None;
     for e in events.iter().filter(|e| active(e, date)) {
         let status = match e.event {
-            EventKind::Opened | EventKind::Reopened => Some(Status::Open),
-            EventKind::Proposed => Some(Status::Proposed),
-            EventKind::Closed => Some(Status::Closed),
+            EventKind::Planned => Some(Status::Planned),
+            EventKind::Permitted => Some(Status::Permitted),
+            EventKind::Built => Some(Status::Built),
+            EventKind::InService => Some(Status::InService),
+            EventKind::Suspended => Some(Status::Suspended),
             EventKind::Retired => Some(Status::Retired),
             EventKind::Moved | EventKind::Changed | EventKind::Unknown(_) => None,
         };
-        if matches!(e.event, EventKind::Opened | EventKind::Proposed) && state.is_none() {
-            state = Some(StopOn {
-                stop_id: id.to_string(),
-                status: Status::Open,
-                lat: f64::NAN,
-                lon: f64::NAN,
-                plan: None,
-                details: Details::default(),
-            });
+        if e.event.stage().is_some() && state.is_none() {
+            state = Some(StopOn { stop_id: id.to_string(), status: Status::InService, lat: f64::NAN, lon: f64::NAN, details: Details::default() });
         }
         let Some(s) = state.as_mut() else { continue };
         if let Some(status) = status {
@@ -477,9 +506,6 @@ fn fold(id: &str, events: &[Event], date: NaiveDate) -> Option<StopOn> {
         if let (Some(lat), Some(lon)) = (e.lat, e.lon) {
             s.lat = lat;
             s.lon = lon;
-        }
-        if e.plan.is_some() {
-            s.plan.clone_from(&e.plan);
         }
         s.details.apply(&e.details);
     }
@@ -504,16 +530,16 @@ impl Stops {
     }
 
     /// Whether a trip at the stop on `date`, at `secs` since the service
-    /// day's midnight, is served there: the stop is open. At a service
+    /// day's midnight, is served there: the stop is in service. At a service
     /// day's grain (D-148) the time is not read; it is the question's
     /// so a finer grain changes this function and not its callers.
     pub fn served(&self, id: &str, date: NaiveDate, _secs: u32) -> bool {
-        self.stop_on(id, date).is_some_and(|s| s.status == Status::Open)
+        self.stop_on(id, date).is_some_and(|s| s.status == Status::InService)
     }
 
     /// The document with `event` added to stop `id` in its place by
-    /// date: after every event dated on or before it (an undated opening
-    /// first), before every later one; every other event keeps its
+    /// date: after every event dated on or before it (an undated first
+    /// event first), before every later one; every other event keeps its
     /// order. An id the document does not hold begins a stop. Unchecked:
     /// a write passes `checked`.
     pub fn add_event(&self, id: &str, event: Event) -> Stops {
@@ -571,18 +597,20 @@ fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> 
             },
             None => None,
         };
+        let mut in_order = true;
         match on {
             Some(d) => {
                 if last.is_some_and(|l| d < l) {
                     refuse(Problem::OutOfOrder);
+                    in_order = false;
                 }
                 last = Some(d);
             }
-            None if first && e.event == EventKind::Opened => {}
+            None if first && e.event == EventKind::InService => {}
             None => refuse(Problem::NoDate),
         }
         if let Some(u) = &e.until {
-            if !matches!(e.event, EventKind::Closed | EventKind::Moved) {
+            if !matches!(e.event, EventKind::Suspended | EventKind::Moved) {
                 refuse(Problem::Misplaced { field: "until".into() });
             } else {
                 match parse_date(u) {
@@ -593,15 +621,24 @@ fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> 
             }
         }
 
-        // where it stands in the stop's life
-        let begins = matches!(e.event, EventKind::Opened | EventKind::Proposed);
-        if (first && !begins) || (!first && e.event == EventKind::Proposed) {
+        // where it stands in the stop's life: a stage first, the stages
+        // forward, a suspension of a stop in service, a return of one
+        // that is not
+        let begins = e.event.stage().is_some();
+        if first && !begins {
             refuse(Problem::FirstEvent);
         }
-        match (&e.event, &e.plan) {
-            (EventKind::Proposed, None) => refuse(Problem::NoPlan),
-            (EventKind::Proposed, Some(_)) | (_, None) => {}
-            (_, Some(_)) => refuse(Problem::Misplaced { field: "plan".into() }),
+        // (an event out of date order is refused for that alone)
+        if let (false, true, Some(d)) = (first, in_order, on) {
+            let now = fold(id, &events[..i], d).map(|s| s.status);
+            match (&e.event, now) {
+                (EventKind::InService, Some(Status::InService)) => refuse(Problem::AlreadyInService),
+                (EventKind::InService, _) => {}
+                (EventKind::Suspended, Some(Status::InService)) => {}
+                (EventKind::Suspended, _) => refuse(Problem::NotInService),
+                (kind, Some(now)) if kind.stage().is_some_and(|k| now.rank() >= k) => refuse(Problem::StageBack),
+                _ => {}
+            }
         }
 
         // what it sets
@@ -636,14 +673,6 @@ fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> 
             }
         }
 
-        // a reopening ends a closure in force on its date
-        if e.event == EventKind::Reopened {
-            if let Some(d) = on {
-                if fold(id, &events[..i], d).map(|s| s.status) != Some(Status::Closed) {
-                    refuse(Problem::NothingClosed);
-                }
-            }
-        }
         if e.event == EventKind::Retired {
             retired = true;
         }

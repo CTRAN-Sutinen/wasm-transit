@@ -21,7 +21,7 @@ fn the_seed_records_every_stop_in_service_as_the_network_has_it() {
     let any_date = chrono::NaiveDate::from_ymd_opt(1990, 1, 1).unwrap();
     for (id, stop) in &net.stops {
         let on = stops.stop_on(id, any_date).expect("there from before any record");
-        assert_eq!(on.status, Status::Open);
+        assert_eq!(on.status, Status::InService);
         assert_eq!((on.lat, on.lon), (stop.lat, stop.lon));
         assert_eq!(on.details.name.as_deref().unwrap_or(""), stop.name);
         assert_eq!(on.details.code, stop.info.code);

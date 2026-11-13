@@ -18,23 +18,17 @@ for a date, JSON-FG over a range) is later work.
 
 ## Scope, in order
 
-1. **The lifecycle's events.** The document's events become `planned`,
-   `permitted`, `built`, `in_service`, `suspended` (an optional `until`),
-   `moved`, `changed`, and `retired`; a suspended stop returns by
-   `in_service` or ends by `retired`; a planned stop names no plan. Its
-   laws, checks, and worked examples follow. No deployment holds a
-   stops document yet, so schema version 1 changes in place.
-2. **The stops app.** A generated UI of its own (its own product,
+1. **The stops app.** A generated UI of its own (its own product,
    needing the server): every stop on a map and in a list, read on a
    date the user chooses — its status, point, details, and amenities —
    and its history. Its edits are events, each one `add_event` written
    through `POST /stops`: a new stop planned at a point, then permitted,
    built, in service; suspended for dates or with no end, back in
    service, retired; moved; its details and amenities changed. The
-   first write makes the document with `seed`. The rest of
-   [ui-stops.md](ui-stops.md)'s stop edits (create, move, consolidate,
-   remove) are this app's.
-3. **What a pick reads.** Publishing and exporting a pick take each
+   first write makes the document with `seed`. Creating, moving, and
+   retiring a stop are this app's; which stops a plan visits stays the
+   planner pages' ([ui-stops.md](ui-stops.md)).
+2. **What a pick reads.** Publishing and exporting a pick take each
    stop's record (point, name, code, details) from the stops document
    as it stands on the pick's first date; no events are copied, and a
    stops write republishes nothing. The planner is warned, never
@@ -42,7 +36,7 @@ for a date, JSON-FG over a range) is later work.
    always for a stop planned, permitted, built, or retired; for a
    suspended one only when the suspension covers the pick's whole
    period or has no end.
-4. **GTFS in and out.** An import compares the feed with the stops on
+3. **GTFS in and out.** An import compares the feed with the stops on
    its first service date and adds each difference as an event dated
    that day (`in_service` for a stop the document lacks, `moved`,
    `changed`); a stop the feed does not list keeps its events, later
@@ -56,7 +50,7 @@ for a date, JSON-FG over a range) is later work.
 
 ## Done when
 
-- The lifecycle's laws (transit-stops), a pick's record and warning
+- A pick's record and warning
   laws (transit-network), and the codec's round-trip, move-inside-the-window,
   and import laws (a re-import of this repo's own feed adds no event)
   pass; nothing in a pick changes when only a suspension is written.

@@ -12,14 +12,14 @@ consolidates, or removes a stop, and no gesture redraws a line.
 
 A stop's own record and lifecycle — creating it, moving it, its
 details, suspending and retiring it — are the stops app's
-([stop-lifecycle.md](stop-lifecycle.md) item 2, D-157), never this page's:
+([stop-lifecycle.md](stop-lifecycle.md) item 1, D-157), never this page's:
 a plan only says which stops its service visits.
 
 1. **A station's bays on its card.** The card names a bay's station,
    but a station's card does not list its bays: `stop_detail` answers
    them (the host does not filter the stop list for them).
 2. **A moved stop's visits.** When a pick reads a stop's new point
-   ([stop-lifecycle.md](stop-lifecycle.md) item 3), one library function
+   ([stop-lifecycle.md](stop-lifecycle.md) item 2), one library function
    measures where the stop falls along each pattern's line that visits
    it, re-measures those visits, and warns where the line is now far
    from the stop.
