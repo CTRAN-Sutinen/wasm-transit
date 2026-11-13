@@ -57,11 +57,14 @@ same layout (`manifest`, `blobs/<hash>`), so the page code is one.
 ## Each UI is its own product
 
 Every generated UI ([generated-uis.md](generated-uis.md)) is an
-independently deployable product, not a part of one app. The sync
-server serves every UI it hosts from one build (`web/dist`, the picker
-at `/`), but nothing ties their deployments together: each UI builds
-alone (`just build-ui <id>` → `web/dist-ui/<id>/`) and deploys,
-updates, and rolls back on its own.
+independently deployable product, not a part of one app, and a
+deployment puts each at a URL of its own. The sync server serving
+every UI from one build (`web/dist`, the picker at `/`) is the
+development setup (`just serve`, `just dev`). Each UI builds alone
+(`just build-ui <id>` → `web/dist-ui/<id>/`); the rider UIs export as
+static bundles of their own (`just export`), and what a staff UI's
+bundle needs to reach the server from its own URL is open
+(`docs/units/release-artifacts.md`, D-171).
 
 | UI | Without a server | Needs the server for |
 |---|---|---|

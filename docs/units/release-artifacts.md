@@ -29,8 +29,31 @@ deployed is retired, never deleted.
   a breaking change fails unless it is the contract step of a
   migration.
 - **HTTP contracts** (D-81). `/manifest`, `/edits`, `/pointers`,
-  `/blobs`, `/plans`, `/plans/retire`, `/builds`, and `/feed` change under the
-  same rule, because a display's cached build meets a newer server.
+  `/blobs`, `/plans`, `/plans/retire`, `/builds`, `/feed`, `/stops`,
+  `/stop-requests`, and `/schemas` change under the same rule, because
+  a display's cached build meets a newer server.
+- **Each UI at its own URL.** A deployment puts every UI at a URL of
+  its own, deployed, updated, and rolled back alone; the server's one
+  build at `/` with the picker (one `build` pointer for the whole
+  `-dist`, one service worker at the root controlling every page) is
+  the development setup. What is left:
+  - **A bundle for every UI.** `just export` makes one for the rider
+    UIs; the staff UIs (service design, service change, stops) need
+    the server's data and writes, so their bundle carries no
+    published documents and reaches the server for them.
+  - **How a UI's URL reaches the server** (Blocked: D-171). The pages
+    address the deployment by relative paths (`manifest`,
+    `blobs/<hash>`, `edits`, `stops`), and the server answers no
+    cross-origin request.
+  - **Sign-in at each URL.** A page signs in with its own address as
+    the redirect (`web/src/signin.svelte.ts`), so each UI's URL is
+    registered with the agency's identity provider; the operator's
+    guides say so.
+  - **Rollback per UI** (Blocked: D-171): the previous bundle
+    redeployed to that UI's URL, and where the retained bundles live.
+  Pinned by an e2e spec that serves two UIs at two origins over one
+  server, rolls one back, and keeps the other on its newer build.
+
 The build side and retention are in place (docs/architecture/release-artifacts.md): the pinned toolchain, reproducible modules gated
 by `just reproducible`, churn cut to each change's own modules except
 the kernel's closure, and every build kept in the store (D-80) with
@@ -51,5 +74,8 @@ far back a rollback can go.
 - The contract gate fails on a deliberately breaking op change, and
   on a breaking HTTP change, each in its own test; an additive change
   passes.
+- Two UIs at two origins over one server: one rolls back while the
+  other stays on its newer build, and each signs in at its own URL.
+- D-171 is decided and encoded.
 - D-81 is decided and encoded, and `docs/architecture/release-artifacts.md`
   states the compatibility policy shared with document-versioning.

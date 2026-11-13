@@ -183,13 +183,20 @@ at that terminal. A wait longer than the recovery has slack.
 
 **Registry.** The published set of modules, each with a record of the
 tests it passed and the source code it was built from. caps-run loads
-modules from it.
+modules from it. It also publishes the schema of each kind of
+document. See
+[architecture/registry.md](../architecture/registry.md).
 
 **Retired.** The software's form of "deleted". A retired thing stays
 in the history, marked as retired, and no longer takes effect.
 
 **Run.** A piece of work for one operator, cut from one or more
 blocks. Work on runs is still in progress.
+
+**Schema.** A description of a kind of document: its fields and what
+each may hold. Another program can check a document against it, and
+read the document without this software. See
+[architecture/registry.md](../architecture/registry.md).
 
 **Service combination.** A set of service types that run together on
 the same dates, such as "Weekday + School Day". Every date with

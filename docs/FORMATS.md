@@ -273,8 +273,10 @@ Every document says what it is inside it (D-62, D-115), so a copy
 anywhere — a blob, an export, a file another tool reads — names its
 kind and version without the app:
 
-- `network` and `edit_records` lead with `"kind"` and
-  `"schema_version"` (network v2, edit document v2). A network with no
+- Each of our kinds carries `"kind"` and its version inside it — the
+  table below says which field, and the two that differ: `work_rules`
+  names it `version`, and the browser's `plan_set` is a bare array
+  whose plans each carry their own network. A network with no
   `schema_version` is v1 — every shape written before the tag; a bare
   array of edit records is edit document v1.
 - The byte kinds — a GTFS feed, a GTFS-rt snapshot, a GeoJSON layer —

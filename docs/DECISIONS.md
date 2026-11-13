@@ -223,6 +223,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-167 | Do authored documents keep the fields they do not know? | unanswered | the shapes and the kind table's strictness in `storage-model` |
 | D-168 | Where does personal data live, and how is it removed when the law requires? | unanswered | restricted reads in `storage-model` |
 | D-169 | Is a document's canonical form serde's field order, or RFC 8785? | unanswered | nothing (before the first deployment's baseline) |
+| D-170 | Are the migration steps from before the first deployment kept? | unanswered | nothing |
+| D-171 | How does a UI at its own URL reach the server, and how is it rolled back? | unanswered | each UI at its own URL in `release-artifacts` |
 
 ## The trip model
 
@@ -1295,6 +1297,54 @@ Options:
   form, reproducible in any language; every hash moves once.
 Blocks: nothing (it is cheapest before the first deployment's
 baseline, `docs/units/document-versioning.md`, item 5).
+
+### D-170 — Are the migration steps from before the first deployment kept?
+State: Unanswered.
+Context: D-66 keeps every authored kind's migration chain forever, so
+an old document anywhere can be read. Three steps predate any
+deployment — the network's v1→v2, the edit document's v1→v2, and the
+watchlist's v1→v2 — and only development stores hold their older
+versions. The user, 2026-11-13: "this is all pre deployment right now
+so there is no old schema compatibility to worry about." cap-migrate
+carries every chain into each assembly that links it (about 0.8 MB in
+service design; `docs/units/document-versioning.md`, item 4), and the
+watchlist's v1 is why the kernel still reads two watchlist versions
+(item 1).
+Options:
+- Keep them (D-66 as encoded): nothing changes.
+- Drop them at the first deployment's baseline: each kind's version
+  numbers stay as they are (renumbering moves every hash), the three
+  steps and their fixtures go, a development store is rebuilt from its
+  sources, and items 1 and 4 shrink. D-66 holds from the baseline on.
+Blocks: nothing.
+
+### D-171 — How does a UI at its own URL reach the server, and how is it rolled back?
+State: Unanswered.
+Context: the user, 2026-11-13: "the plan was always to have the UIs
+would actually be deployed to their own Urls, the single page was a
+dev convenience." The pages address the deployment by relative paths
+(`manifest`, `blobs/<hash>`, `edits`, `stops`, `stop-requests`,
+`geocode/…`; `web/src/engine.ts`, `web/src/uis/kit.ts`), the layout a
+static bundle and the server share (D-131), and the server sends no
+CORS headers (only the dev `/rt` relay does). A page signs in with its
+own address as the redirect (`web/src/signin.svelte.ts`) and sends the
+token as a header. Builds are retained in the store (D-80), as the
+server's one `build` pointer.
+Options, for reaching the server:
+- The UI's URL routes the data paths to the server: the UI's host (an
+  edge worker, a load balancer, a reverse proxy) serves the bundle and
+  forwards the paths the server answers. The pages stay as they are;
+  no CORS; each UI is same-origin with its data.
+- The bundle names the server's URL and the server answers
+  cross-origin: an allow-list of the UIs' origins (`Authorization`
+  allowed, no cookies); every page fetch takes the base.
+Options, for rollback and retention:
+- Each UI's bundle retained in the store as a build of its own
+  (`build.<id>`, D-80 extended), and a deploy tool puts a retained
+  bundle on the UI's host; rollback deploys the previous one.
+- The UI host's own versions (its deployments and rollback); the store
+  keeps the server's modules only.
+Blocks: each UI at its own URL in `docs/units/release-artifacts.md`.
 
 ### D-53 — What ridership data does the planner bring?
 State: Decided.
@@ -3177,6 +3227,16 @@ Options:
   keeps.
 - A version prefix on the HTTP surface (`/v1/…`) plus additive-only
   ops.
+- Ops private to their deployable; HTTP and documents public,
+  additive only, each behind a gate (proposed 2026-11-13). An op's
+  request never crosses a deployable: a page's host and its linked
+  assembly ship in one build, and the server's Go and its modules in
+  one image; between deployables only HTTP and documents cross
+  (documents under the schema lock and D-79,
+  `docs/units/document-versioning.md`). So an op shape changes freely
+  inside its deployable, and the gate diffs only the HTTP surface and
+  the documents' schemas. An agent's runner pins each module by hash,
+  so it meets no shape it was not built against.
 Blocks: contract versioning in `docs/units/release-artifacts.md`.
 
 ### D-83 — What does each deployed device report, and to where?

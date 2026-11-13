@@ -1,5 +1,9 @@
 # The registry and the runner
 
+The registry has two roles: the modules agents and people run
+(this section), and the published schema of every document kind
+("Document schemas", below).
+
 The registry (`registry/`, published by every `just caps`; `just
 registry` runs the gates first): immutable blobs + one evidence
 record per capability (contracts, agent context, which gates ran —
@@ -31,3 +35,24 @@ and refuses one whose op sections are not the capability's ops. The
 worked examples are computed in the generator, never written. `just test` gates the runner
 itself (the fixture feed hash is stable, so registry/fixture drift
 fails the gate).
+
+## Document schemas
+
+Every `just caps` also publishes each document kind's JSON Schema and
+a worked example: gen-manifest generates the schema from the kind's
+serde type (`schemars`) and computes the example, and writes
+`registry/schemas/<kind>.v<N>.schema.json`,
+`registry/examples/<kind>.v<N>.json`, and the index
+`registry/documents.json` — per kind its bus `kind`, its `store_kind`
+(the store envelope's kind, when the store persists it), its
+`schema_version`, the files' paths and hashes, and the registry's
+evidence. A reader maps a blob's envelope (`kind`, `schema_version`)
+to its schema there (`docs/FORMATS.md`); `server/reader_test.go`
+checks every example against its schema and reads a store with
+nothing but the bucket, the schemas, and FORMATS.md.
+
+The schemas are generated, not kept: `registry/` is gitignored and
+rewritten by every `just caps`, so it holds the version each kind
+writes today and no other, nothing gates a serde change that moves
+one, and no deployment serves them. Keeping every version, the gate,
+and serving them are `docs/units/document-versioning.md`, item 5.
