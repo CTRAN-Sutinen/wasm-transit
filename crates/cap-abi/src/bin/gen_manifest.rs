@@ -287,7 +287,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "stops",
         file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stop", "seed", "add_event", "correct_event"],
+        ops: &["validate", "stops_on", "stop", "seed", "add_event", "correct_event", "read_records", "visit_warnings"],
         documents: &["stops", "network"],
         // The stops document is the host's (beside the plans, D-147):
         // validate answers its canonical bytes and hash, which the
@@ -1739,6 +1739,32 @@ fn example_for(
             (
                 json!({ "op": "correct_event", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stop_id": "7001", "index": 1, "event": event }),
                 json!({ "ok": { "op": "correct_event", "refusals": [], "stops_hash": cap_abi::canonical_hash(&next).ok()?, "stops": next } }),
+            )
+        }
+        ("stops", "read_records") => {
+            // The fixture's stops seeded, stop A renamed from 2026-10-01:
+            // a pick from that date reads the new name.
+            let net = net?;
+            let mut stops = transit_network::stop_record::seed(net.derived_network());
+            stops = stops.add_event("A", serde_json::from_value(json!({"on": "2026-10-01", "event": "changed", "name": "A Street Station"})).ok()?);
+            let stops = stops.checked().ok()?;
+            let read = transit_network::stop_record::read_records(net.derived_network(), &stops, chrono::NaiveDate::from_ymd_opt(2026, 10, 5)?);
+            (
+                json!({ "op": "read_records", "network_hash": net.network_hash, "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "on": "2026-10-05" }),
+                json!({ "ok": { "op": "read_records", "network_hash": cap_abi::canonical_hash(&read).ok()?, "network": read } }),
+            )
+        }
+        ("stops", "visit_warnings") => {
+            // Stop B retired on 2026-11-02, inside a pick's period: the
+            // planner is warned from that day.
+            let net = net?;
+            let mut stops = transit_network::stop_record::seed(net.derived_network());
+            stops = stops.add_event("B", serde_json::from_value(json!({"on": "2026-11-02", "event": "retired"})).ok()?);
+            let stops = stops.checked().ok()?;
+            let (from, until) = (chrono::NaiveDate::from_ymd_opt(2026, 10, 1)?, chrono::NaiveDate::from_ymd_opt(2026, 12, 1)?);
+            (
+                json!({ "op": "visit_warnings", "network_hash": net.network_hash, "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "from": "2026-10-01", "until": "2026-12-01" }),
+                json!({ "ok": { "op": "visit_warnings", "warnings": transit_network::stop_record::visit_warnings(net.derived_network(), &stops, from, Some(until)) } }),
             )
         }
         ("kernel", "load_work_rules") => {

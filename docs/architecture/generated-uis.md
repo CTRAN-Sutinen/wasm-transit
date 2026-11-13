@@ -270,8 +270,11 @@ export and publish answers are cleared with the version they were
 about. A frequency target is shown as waiting on D-54. Proposal: the
 scorecard (with the vehicles the group's day needs; hours against a
 budget wait on D-108), the redline, readiness (each issue in words, a broken
-block's next trip held from its issue — the host's `retime_trip`),
-the export, and publishing the
+block's next trip held from its issue — the host's `retime_trip`; the
+warnings include each stop the plan visits that the stops document
+has not in service over its period, engine `stopWarnings`, D-157),
+the export (carrying each stop's record on the pick date, engine
+`withStopRecords`), and publishing the
 pick to the deployment (D-74). A frame with no answer says so in a
 planner's words, and keeps the decision or finding it waits on as a
 tag. The selection
@@ -334,7 +337,10 @@ block drawn on the day (the summary's spans), one opened to its chain
 here — nothing is compared until the planner chooses (D-141) — then
 analysis `plan_compare` across every
 day type (a day type's card opens it on the Scan), readiness (a block
-an issue names opens on Vehicles & hours), export and publish. A
+an issue names opens on Vehicles & hours; the warnings include the
+stops the plan visits that are not in service over its period, as
+service design's do), export (each stop's record on the pick date, as
+service design's) and publish. A
 stage's reads re-run when the stage opens, so a route or block chosen
 while another stage is open reads in full there. The comparison is the
 proposal's: the other stages carry no control for it, and only the Scan

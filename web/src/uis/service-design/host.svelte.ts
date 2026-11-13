@@ -20,7 +20,7 @@
 /// answers (a production failure, shown gracefully).
 
 import { getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
-import { ask, assemble, available, keep, load, produced, servedNetworkValue, Doc } from "../../engine";
+import { ask, assemble, available, keep, load, produced, servedNetworkValue, Doc, stopWarnings, withStopRecords, publishedPlanSet } from "../../engine";
 import { answerGraph, readAgencyZone, today } from "../kit";
 
 // This page's capabilities answer inside its linked assembly — one
@@ -613,7 +613,9 @@ const request = answerGraph(
           const { issues, warnings } =
             authoredHealth.get(doc) ?? (await ask("network", "validate", { network_hash: docOf(doc) }));
           sd.issues = issues;
-          sd.warnings = warnings;
+          // and the stops it visits that are not in service over its
+          // period, as the stops document records them (D-157)
+          sd.warnings = [...warnings, ...(await stopWarnings(docOf(doc), await publishedPlanSet().catch(() => null)))];
         }),
     },
   ],
@@ -1031,7 +1033,8 @@ export async function exportPlan(): Promise<void> {
   const doc = active();
   if (!doc) return;
   await framed("Export", () => (sd.exported = ""), async () => {
-    const out = await ask("network", "export", { network_hash: docOf(doc) });
+    // the export carries each stop's record on the pick date (D-157)
+    const out = await ask("network", "export", { network_hash: await withStopRecords(docOf(doc)) });
     const bytes = Uint8Array.from(atob(out.zip_b64), (c) => c.charCodeAt(0));
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));

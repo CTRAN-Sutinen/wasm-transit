@@ -12,7 +12,10 @@
 //! kernel's `load_stops` registered (refused there unless `validate`
 //! would pass it). `seed` starts a stops document from a network's
 //! stops (transit-network's `stop_record`), and `add_event` places one
-//! edit and checks it. A pick only reads the document (D-157).
+//! edit and checks it. A pick only reads the document (D-157):
+//! `read_records` gives it each stop's record on its first date, and
+//! `visit_warnings` tells its planner of the stops it visits that are
+//! not in service on its dates.
 //! The domain code lives in the shared `transit-stops` library; the
 //! module writes nothing.
 
@@ -71,6 +74,21 @@ pub enum Request {
         #[ts(optional)]
         event: Option<Event>,
     },
+    /// The pick with each stop's record as the stops document has it on
+    /// `on`, its first date (D-157: a pick only reads the stops) —
+    /// registered, answered with its hash.
+    ReadRecords { network_hash: String, stops_hash: String, on: String },
+    /// What the planner is told of the stops the pick visits over
+    /// `[from, until)`: each not in service, and each suspended for the
+    /// whole period or with no end — warnings, never refusals.
+    VisitWarnings {
+        network_hash: String,
+        stops_hash: String,
+        from: String,
+        #[serde(default)]
+        #[ts(optional)]
+        until: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -88,6 +106,8 @@ pub enum Response {
     Seed { stops_hash: String, stops: Stops },
     AddEvent { refusals: Vec<Refusal>, stops_hash: Option<String>, stops: Option<Stops> },
     CorrectEvent { refusals: Vec<Refusal>, stops_hash: Option<String>, stops: Option<Stops> },
+    ReadRecords { network_hash: String, network: transit_network::Network },
+    VisitWarnings { warnings: Vec<transit_network::NetworkWarning> },
 }
 
 fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
@@ -165,6 +185,24 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 }
                 Err(refusals) => Response::CorrectEvent { refusals, stops_hash: None, stops: None },
             })
+        }
+        Request::ReadRecords { network_hash, stops_hash, on } => {
+            let on = parse_date(&on)?;
+            let network = NETWORK.require(&network_hash)?;
+            let stops = STOPS.require(&stops_hash)?;
+            let read = transit_network::stop_record::read_records(&network, &stops, on);
+            let (network_hash, read) = NETWORK.register(read)?;
+            Ok(Response::ReadRecords { network_hash, network: (*read).clone() })
+        }
+        Request::VisitWarnings { network_hash, stops_hash, from, until } => {
+            let from = parse_date(&from)?;
+            let until = until.as_deref().map(parse_date).transpose()?;
+            if until.is_some_and(|u| u <= from) {
+                return Err("until must come after from".into());
+            }
+            let network = NETWORK.require(&network_hash)?;
+            let stops = STOPS.require(&stops_hash)?;
+            Ok(Response::VisitWarnings { warnings: transit_network::stop_record::visit_warnings(&network, &stops, from, until) })
         }
     }
 }

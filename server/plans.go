@@ -160,6 +160,14 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		Document     *string         `json:"document"`
 		DocumentHash *string         `json:"document_hash"`
 	}
+	// A pick only reads the stops document (D-157): each stop's record
+	// on its first date, and the warnings of the stops it visits that
+	// are not in service over its period.
+	stopWarnings, err := s.readPick(r.Context(), &pick, current)
+	if err != nil {
+		fail(w, err, http.StatusInternalServerError)
+		return
+	}
 	if err := s.plans.Invoke(r.Context(), map[string]any{
 		"op": "publish", "published": current, "plan": pick.Plan, "network_hash": pick.DocumentHash, "today": s.today(),
 	}, &next); err != nil {
@@ -200,7 +208,7 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"plan_id": frame.ID, "network_hash": pick.DocumentHash, "plans_hash": plansHash, "warnings": pick.Warnings,
+		"plan_id": frame.ID, "network_hash": pick.DocumentHash, "plans_hash": plansHash, "warnings": withWarnings(pick.Warnings, stopWarnings),
 	})
 }
 
@@ -423,4 +431,16 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(v)
+}
+
+// withWarnings is the pick's warnings (cap-network's, a JSON array)
+// followed by `more` (cap-stops' visit warnings).
+func withWarnings(warnings json.RawMessage, more []json.RawMessage) json.RawMessage {
+	if len(more) == 0 {
+		return warnings
+	}
+	var all []json.RawMessage
+	json.Unmarshal(warnings, &all)
+	out, _ := json.Marshal(append(all, more...))
+	return out
 }

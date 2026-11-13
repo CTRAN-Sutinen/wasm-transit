@@ -20,7 +20,7 @@
 /// service-design host's, copied: one UI never imports another's files.
 
 import { getAllPlans, getActivePlanId, putPlan, readPlan, removePlan, setActivePlan, restorePlans } from "../../plans.svelte";
-import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, servedNetworkValue, Doc } from "../../engine";
+import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, servedNetworkValue, stopWarnings, withStopRecords, Doc } from "../../engine";
 import { answerGraph, readAgencyZone, today } from "../kit";
 
 // This page's capabilities answer inside its linked assembly (D-77).
@@ -562,7 +562,9 @@ const request = answerGraph(
           if (!doc) return;
           const { issues, warnings } = authoredHealth.get(doc) ?? (await ask("network", "validate", { network_hash: docOf(doc) }));
           sc.issues = issues;
-          sc.warnings = warnings;
+          // and the stops it visits that are not in service over its
+          // period, as the stops document records them (D-157)
+          sc.warnings = [...warnings, ...(await stopWarnings(docOf(doc), sc.pickSet))];
         }),
     },
   ],
@@ -1108,7 +1110,8 @@ export async function exportPlan(): Promise<void> {
   const doc = active();
   if (!doc) return;
   await framed("Export", () => (sc.exported = ""), async () => {
-    const out = await ask("network", "export", { network_hash: docOf(doc) });
+    // the export carries each stop's record on the pick date (D-157)
+    const out = await ask("network", "export", { network_hash: await withStopRecords(docOf(doc)) });
     const bytes = Uint8Array.from(atob(out.zip_b64), (c) => c.charCodeAt(0));
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));

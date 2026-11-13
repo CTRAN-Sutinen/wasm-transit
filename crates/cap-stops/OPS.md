@@ -25,3 +25,11 @@ One edit: the document with `event` added to stop `stop_id` in its place by date
 ## correct_event
 
 One correction: a correction edits the event that was wrong (D-153; the store keeps the earlier version). The document with event `index` (its place in the stop's list, from 0) of stop `stop_id` taken out and `event` placed by date as add_event places one — the same event in its place changes nothing — or, with no `event`, taken out. Then checked as a write is: every refusal and no document, or none and the document registered and answered with its stops_hash. A stop or index the document does not hold is an error.
+
+## read_records
+
+What a pick reads of the stops (D-157): the registered network with each stop's record — its point, name, code, station, and details (amenities are the stops document's alone) — as the stops document has it on `on`, the pick's first date. A stop the document does not hold, or that is not there yet that day, keeps the network's own record; nothing else in the network changes, and the stops document is never written. A network read from a document seeded from it comes back under the same hash. Registered, answered with the network and its network_hash.
+
+## visit_warnings
+
+What the planner is told of the stops the network's patterns visit over its period, from `from` until `until` (exclusive; open-ended without): each span a stop is not in service — planned, permitted, built, retired, or not there yet (no status) — and each span it is suspended when the suspension covers the whole period or has no end (a shorter suspension is real time's to say, not the pick's). Each warning is `stop_not_in_service` with the stop, its status, and the span, in stop order. Warnings, never refusals; a stop the document does not hold says nothing.

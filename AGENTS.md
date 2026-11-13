@@ -317,7 +317,7 @@ server/          Go + wazero host over cap-sync, cap-network, cap-plans and
                  cap-streets (the network, picks, streets and walk table it
                  publishes; in store mode every build it serves, kept and
                  rolled back by pointer — D-80), cap-migrate (an older document, at receive),
-                 cap-stops (the stops document's writes),
+                 cap-stops (the stops document's writes; what a published pick reads of it),
                  cap-authz when auth is on, and the proxies
                  (/geocode to a Pelias geocoder; /rt, a dev feed relay off
                  unless -rt-proxy) — scaffolding, never a domain decision

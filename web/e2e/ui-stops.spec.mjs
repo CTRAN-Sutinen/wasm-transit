@@ -96,3 +96,36 @@ test("a stop's life: suspended and back, moved, and a new stop planned, permitte
   await page.getByTestId("filter-retired").click();
   await expect(rows.filter({ hasText: "Main & 9th" })).toHaveCount(1);
 });
+
+// A pick only reads the stops (D-157): published over stop C, retired
+// before the pick's first date, the publish answers the warning, and the
+// service-change page shows it with the plan's others. The stops record
+// is the one this server keeps (begun from its network when none is).
+test("a pick published over a retired stop carries the warning", async ({ page, request }) => {
+  const manifest = await (await request.get("/manifest")).json();
+  let doc;
+  if (manifest.stops_hash) {
+    doc = await (await request.get(`/blobs/${manifest.stops_hash}`)).json();
+  } else {
+    const { network } = await (await request.get("/network")).json();
+    doc = { kind: "stops", schema_version: 1, stops: {} };
+    for (const [id, s] of Object.entries(network.stops)) {
+      doc.stops[id] = [{ event: "in_service", lat: s.lat, lon: s.lon, ...(s.name ? { name: s.name } : {}), ...(s.parent ? { parent: s.parent } : {}), ...(s.kind === "station" ? { kind: "station" } : {}) }];
+    }
+  }
+  doc.stops.C.push({ on: "2026-09-01", event: "retired", note: "Replaced by the new stop at Main" });
+  const written = await request.post("/stops", { data: { from: manifest.stops_hash ?? "", stops: doc } });
+  expect(written.status(), await written.text()).toBe(200);
+
+  const { network } = await (await request.get("/network")).json();
+  const pick = { ...network, name: "Late 2026 pick", plan: { id: "late-2026", name: "Late 2026 pick", effective_from: "2026-12-14" } };
+  const published = await request.post("/plans", { data: JSON.stringify(pick) });
+  expect(published.status(), await published.text()).toBe(200);
+  const { warnings } = await published.json();
+  expect(warnings).toContainEqual({ stop_not_in_service: { stop: "C", status: "retired", from: "2026-12-14" } });
+
+  await page.clock.setFixedTime(new Date("2026-12-16T09:00:00-05:00"));
+  await page.goto("/service-change.html#stage=proposal");
+  await expect(page.getByTestId("plan-select")).toHaveValue("published:late-2026", { timeout: 15_000 });
+  await expect(page.getByTestId("stage-proposal")).toContainText("The plan stops at C, which is retired from 2026-12-14 on", { timeout: 15_000 });
+});

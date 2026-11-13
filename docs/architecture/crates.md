@@ -2,9 +2,14 @@
 
 ```
 transit-network The authored network model (planner authority):
-                `stop_record::seed` begins a stops document from a
-                network's stops (D-157: a pick only reads the stops
-                document);
+                a pick only reads the stops document (D-157):
+                `stop_record::read_records` takes each stop's record
+                as the document has it on the pick's first date, and
+                `visit_warnings` warns of a stop its patterns visit
+                that is not in service over its period (planned,
+                permitted, built, retired, not there yet; suspended
+                only for the whole period or with no end); `seed`
+                begins a stops document from a network's stops;
                 routes and their DIRECTIONS (`Route.directions`,
                 each named; a pattern runs in at most one —
                 `Pattern.direction`, validated against its route;
@@ -668,7 +673,10 @@ cap-stops       The stops capability: what is a stop on a date?
                 day); seed (a stops document from a network's stops),
                 add_event (one edit placed by date) and correct_event
                 (an event that was wrong, corrected or taken out),
-                each checked as a write is.
+                each checked as a write is; read_records and
+                visit_warnings (what a pick reads: each stop's record
+                on its first date, and the stops it visits not in
+                service over its period).
                 transit-stops and transit-network's
                 `stop_record` are the libraries; the kernel's `stops`
                 kind registers a document only if validate would pass

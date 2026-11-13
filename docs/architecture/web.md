@@ -101,7 +101,12 @@ File ownership:
   pick, and one pick's network as a value, fetched gzipped and
   decompressed in the page (a value is parsed either way).
   `servedStops` is the deployment's stops document (the manifest's
-  `stops_hash`, bytes the page never parses; D-153). A module may drop what
+  `stops_hash`, bytes the page never parses; D-153); `stopWarnings` the
+  warnings of the stops a plan visits that are not in service over its
+  period (cap-plans `periods`, then cap-stops `visit_warnings`), and
+  `withStopRecords` a plan with each stop's record on its pick date
+  (`read_records`) — what an export carries, as a publish does (D-157).
+  A module may drop what
   it holds (see "The bus worker", below): asking for a dropped document is
   the module's unknown-hash error, and the engine registers the
   document again (or mints it again) and asks once more — a host

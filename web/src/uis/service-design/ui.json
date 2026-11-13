@@ -48,7 +48,9 @@
     "author.apply",
     "plans.resolve",
     "plans.periods",
-    "plans.validate"
+    "plans.validate",
+    "stops.visit_warnings",
+    "stops.read_records"
   ],
   "components": [
     "DesignRail",

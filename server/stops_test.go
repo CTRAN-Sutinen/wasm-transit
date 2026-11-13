@@ -185,3 +185,37 @@ func TestAStopsWriteChangesNoPick(t *testing.T) {
 		t.Fatalf("the pick is as it was: %v -> %v", before, got)
 	}
 }
+
+// A pick being published reads the stops document (D-157): each stop's
+// record on its first date, and a warning for a stop it visits that is
+// not in service over its period.
+func TestAPublishedPickReadsTheStops(t *testing.T) {
+	s, base := newStopsServer(t, store.NewMemory())
+	raw, _ := json.Marshal(seededStops(t))
+	var doc map[string]any
+	json.Unmarshal(raw, &doc)
+	stops := doc["stops"].(map[string]any)
+	stops["A"] = append(stops["A"].([]any), map[string]any{"on": "2026-09-01", "event": "changed", "name": "A Street Station"})
+	stops["B"] = append(stops["B"].([]any), map[string]any{"on": "2026-10-15", "event": "retired"})
+	if code, out := postStops(t, base, "", doc); code != 200 {
+		t.Fatalf("the stops: %d %v", code, out)
+	}
+	code, out := publishPick(t, base, fixtureNetwork(t, "fall-2026", "Fall 2026", "2026-09-07"))
+	if code != 200 {
+		t.Fatalf("publish fall: %d %v", code, out)
+	}
+	warned, _ := json.Marshal(out["warnings"])
+	if !strings.Contains(string(warned), `"stop_not_in_service":{"from":"2026-10-15","status":"retired","stop":"B"}`) {
+		t.Fatalf("the planner is warned of B, retired inside the period: %s", warned)
+	}
+	_, _, body := httpGet(t, base+"/blobs/"+pickHashes(t, s)["fall-2026"])
+	var net struct {
+		Stops map[string]struct {
+			Name string `json:"name"`
+		} `json:"stops"`
+	}
+	json.Unmarshal([]byte(body), &net)
+	if net.Stops["A"].Name != "A Street Station" {
+		t.Fatalf("the pick takes A's name from the stops document: %+v", net.Stops["A"])
+	}
+}

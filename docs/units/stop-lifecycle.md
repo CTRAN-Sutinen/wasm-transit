@@ -19,15 +19,7 @@ for a date, JSON-FG over a range) is later work.
 
 ## Scope, in order
 
-1. **What a pick reads.** Publishing and exporting a pick take each
-   stop's record (point, name, code, details) from the stops document
-   as it stands on the pick's first date; no events are copied, and a
-   stops write republishes nothing. The planner is warned, never
-   refused, when a pick visits a stop not in service on its dates:
-   always for a stop planned, permitted, built, or retired; for a
-   suspended one only when the suspension covers the pick's whole
-   period or has no end.
-2. **GTFS in and out.** An import compares the feed with the stops on
+1. **GTFS in and out.** An import compares the feed with the stops on
    its first service date and adds each difference as an event dated
    that day (`in_service` for a stop the document lacks, `moved`,
    `changed`); a stop the feed does not list keeps its events, later
@@ -41,10 +33,6 @@ for a date, JSON-FG over a range) is later work.
 
 ## Done when
 
-- A pick's record and warning laws (transit-network), and the codec's
-  round-trip, move-inside-the-window, and import laws (a re-import of
-  this repo's own feed adds no event) pass; nothing in a pick changes
-  when only a suspension is written.
-- An e2e publishes a pick over a stop retired before its first date and
-  sees the warning, and imports a feed whose changes the stops page
-  lists and fixes.
+- The codec's round-trip, move-inside-the-window, and import laws (a
+  re-import of this repo's own feed adds no event) pass.
+- An e2e imports a feed whose changes the stops page lists and fixes.

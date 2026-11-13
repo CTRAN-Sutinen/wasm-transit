@@ -11,7 +11,8 @@ the op behind POST /edits, held for the server's lifetime; cap-authz
 (-authz-wasm) when authentication is on; cap-plans (-plans-wasm) in
 store mode, the op behind POST /plans; cap-stops (-stops-wasm) in
 store mode, one instance made on first use and emptied after each
-(the kernel's `evict`) — the validation behind a stops write; cap-network
+(the kernel's `evict`) — the validation behind a stops write, and what a
+published pick reads of the stops document; cap-network
 (the -network-wasm flag, cap_network.wasm), which imports the
 configured GTFS zip (the kernel's `load_feed` + `import`) — and canonicalizes and
 validates each published pick — in a fresh instance
@@ -270,7 +271,13 @@ Its HTTP surface:
   server. The server commits the network to
   `plan.<id>`, then the set to `plans`, and the manifest pins it as
   `plans_hash`. Clients read the set and each pick's network from
-  `/blobs`.
+  `/blobs`. With a stops document, the pick reads it first (D-157):
+  each stop's record on its first date (cap-stops `read_records`, so
+  the network stored is the read one, whatever copy was sent), and the
+  warnings of the stops it visits that are not in service over its
+  period (`visit_warnings`, the period as cap-plans `periods` derives
+  it), answered after cap-network's own. The stops document is never
+  written.
 - `POST /stops` (store mode) — write the stops document (D-153):
   `{"from": "<the head read, or empty>", "stops": {...}}`. A fresh
   cap-stops validates it (422 with `refusals`) and answers its

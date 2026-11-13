@@ -173,3 +173,19 @@ fn correct_event_edits_the_event_that_was_wrong() {
     assert_eq!(refused["refusals"][0]["problem"]["kind"], "first_event", "taking out the first event leaves no beginning");
     assert!(err(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "6124", "index": 9})).contains("no event 9"));
 }
+
+#[test]
+fn a_pick_reads_the_records_and_is_warned_of_stops_not_in_service() {
+    let network_hash = sample_network()["network_hash"].clone();
+    let seeded = ok(json!({"op": "seed", "network_hash": network_hash}));
+    let same = ok(json!({"op": "read_records", "network_hash": network_hash, "stops_hash": seeded["stops_hash"], "on": "2026-10-01"}));
+    assert_eq!(same["network_hash"], network_hash, "a pick read from its own seed keeps its hash");
+    let renamed = ok(json!({"op": "add_event", "stops_hash": seeded["stops_hash"], "stop_id": "A",
+        "event": {"on": "2026-10-01", "event": "changed", "name": "A Street Station"}}));
+    let read = ok(json!({"op": "read_records", "network_hash": network_hash, "stops_hash": renamed["stops_hash"], "on": "2026-10-05"}));
+    assert_eq!(read["network"]["stops"]["A"]["name"], "A Street Station");
+    let retired = ok(json!({"op": "add_event", "stops_hash": seeded["stops_hash"], "stop_id": "B", "event": {"on": "2026-11-02", "event": "retired"}}));
+    let warned = ok(json!({"op": "visit_warnings", "network_hash": network_hash, "stops_hash": retired["stops_hash"], "from": "2026-10-01", "until": "2026-12-01"}));
+    assert_eq!(warned["warnings"], json!([{"stop_not_in_service": {"stop": "B", "status": "retired", "from": "2026-11-02", "until": "2026-12-01"}}]));
+    assert!(err(json!({"op": "visit_warnings", "network_hash": network_hash, "stops_hash": retired["stops_hash"], "from": "2026-12-01", "until": "2026-12-01"})).contains("until"));
+}

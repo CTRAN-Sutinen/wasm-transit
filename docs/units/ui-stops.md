@@ -19,7 +19,7 @@ a plan only says which stops its service visits.
    but a station's card does not list its bays: `stop_detail` answers
    them (the host does not filter the stop list for them).
 2. **A moved stop's visits.** When a pick reads a stop's new point
-   ([stop-lifecycle.md](stop-lifecycle.md) item 1), one library function
+   (D-157: publishing and exporting read each stop's record), one library function
    measures where the stop falls along each pattern's line that visits
    it, re-measures those visits, and warns where the line is now far
    from the stop.

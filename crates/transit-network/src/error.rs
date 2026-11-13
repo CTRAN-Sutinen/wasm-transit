@@ -193,6 +193,22 @@ pub enum NetworkWarning {
     /// plan is the document's own, named as a reader knows it — its
     /// name, never its (often minted) id.
     NoServiceInPlanPeriod { plan_name: String, effective_from: String },
+    /// A stop the pick's patterns visit that is not in service from
+    /// `from` until `until` (open-ended without), as the stops document
+    /// records it (D-157): planned, permitted, built, retired, or not
+    /// there yet (`status` none) — or suspended, when the suspension
+    /// covers the pick's whole period or has no end. A shorter
+    /// suspension is not the pick's to say (real time says it).
+    StopNotInService {
+        stop: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        status: Option<transit_stops::Status>,
+        from: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        until: Option<String>,
+    },
 }
 
 /// Where a required recovery came from (D-9).
