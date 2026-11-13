@@ -20,7 +20,8 @@ package main
 // CAPABILITY (cap-streets), instantiated once per published street
 // layer (and network) to import it and derive the walk table, then
 // closed (streets.go). Each module's bytes are compiled once per process
-// ([compiledModule]); an instance is cheap (well under a millisecond),
+// ([compiledModule]), different modules at the same time; an instance
+// is cheap (well under a millisecond),
 // so a fresh one per import or publish costs only its memory. This file is the
 // only place Go touches the ABI; everything above it speaks typed Go
 // values.
@@ -66,29 +67,61 @@ type WasmHost struct {
 // the compiled module costs well under a millisecond. Compiled modules
 // live as long as the process; new bytes (a new build's modules) compile
 // once more beside the old.
+//
+// The lock guards only the map: each module compiles under its own
+// entry, so different modules compile at the same time (wazero's
+// runtime is safe for concurrent use) and a caller asking for one
+// module never waits behind another's compile. Callers asking for the
+// same bytes wait for the one compile. A failed compile is not kept:
+// the next caller tries again.
 var (
 	compileMu sync.Mutex
 	shared    wazero.Runtime
-	compiled  = map[string]wazero.CompiledModule{}
+	compiled  = map[string]*compileEntry{}
 )
+
+// compileEntry is one module's compile: done closes once module or err
+// is set.
+type compileEntry struct {
+	done   chan struct{}
+	module wazero.CompiledModule
+	err    error
+}
 
 // compiledModule is the artifact's compiled module, compiling it the
 // first time its bytes are seen.
 func compiledModule(ctx context.Context, hash string, body []byte) (wazero.Runtime, wazero.CompiledModule, error) {
 	compileMu.Lock()
-	defer compileMu.Unlock()
 	if shared == nil {
 		shared = wazero.NewRuntime(context.Background())
 	}
-	if module, ok := compiled[hash]; ok {
-		return shared, module, nil
+	runtime := shared
+	entry, ok := compiled[hash]
+	if !ok {
+		entry = &compileEntry{done: make(chan struct{})}
+		compiled[hash] = entry
 	}
-	module, err := shared.CompileModule(ctx, body)
-	if err != nil {
-		return nil, nil, err
+	compileMu.Unlock()
+
+	if ok {
+		select {
+		case <-entry.done:
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		}
+	} else {
+		entry.module, entry.err = runtime.CompileModule(ctx, body)
+		if entry.err != nil {
+			compileMu.Lock()
+			delete(compiled, hash)
+			compileMu.Unlock()
+		}
+		close(entry.done)
 	}
-	compiled[hash] = module
-	return shared, module, nil
+	if entry.err != nil {
+		return nil, nil, entry.err
+	}
+	return runtime, entry.module, nil
 }
 
 // NewWasmHost loads the artifact and instantiates it. The bytes are

@@ -138,7 +138,9 @@ Where the detail lives:
 `just` is the task runner. Two runners: `just test` is the
 host-side gate (no browser) — run it before declaring any change
 done; `just e2e` adds the browser runner, for UI-visible changes;
-`just check` runs both, for changes that touch both sides.
+`just check` runs both, for changes that touch both sides. While
+iterating, `just test-fast` runs the same host-side suites over the
+wasm-fast modules; it is not the gate.
 
 ```
 just build                 # frontend (type-checks first — the TS layer is a gate)
@@ -149,7 +151,8 @@ just caps                  # assemblies/ (generated, gitignored) → the modules
 just caps-fast             # the same, under the wasm-fast profile (no whole-program
                            # LTO, incremental): a library change rebuilds in ~10 s, not
                            # ~10 min — the loop's build; the local registry's evidence
-                           # says profile wasm-fast; test/e2e/registry build release
+                           # says profile wasm-fast; test-fast runs over it;
+                           # test/e2e/registry build release
 just registry              # publish the capability registry (gates → blobs + evidence;
                            # every `just caps` republishes it ungated); refuses a
                            # compiler other than rust-toolchain.toml's
@@ -167,6 +170,9 @@ node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op .
                            # e.g. POST /plans '$apply.network' publishes a pick)
 just test                  # the host-side runner (Rust + smokes + runner gates + web
                            # parity ratchets + Go -race) — no browser
+just test-fast             # the same suites over `caps-fast` modules — the edit
+                           # loop's runner, never the gate (WASM_TEST_CACHE=off:
+                           # the Go tests compile modules afresh, no disk cache)
 just e2e                   # the browser runner (Playwright, builds first) — UI changes
 just check                 # both runners — changes touching both sides
 just types                 # regenerate TS bindings (gitignored; build runs it)

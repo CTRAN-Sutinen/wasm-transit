@@ -49,7 +49,8 @@ caps:
 # library rebuilds its modules in seconds to a minute instead of ~10
 # minutes. The pages, e2e specs, and caps-run read them the same way
 # (the local registry's evidence says `profile: wasm-fast`). `just
-# test`, `just e2e`, and `just registry` build release themselves.
+# test-fast` runs the host-side suites over them; `just test`, `just
+# e2e`, and `just registry` build release themselves.
 caps-fast:
     CAPS_PROFILE=wasm-fast just caps
 
@@ -155,7 +156,18 @@ types:
 # web/src/types on every run (.cargo/config.toml pins the same path
 # for plain cargo runs; without either, ts-rs scatters them into
 # crates/*/bindings).
-test: caps
+test: caps _host-tests
+
+# The edit loop's runner: the same suites and gates as `test`, over
+# the wasm-fast modules (`caps-fast`), so a library change costs
+# seconds to a minute of module build instead of ~10 minutes of
+# whole-program LTO. Not the gate: `just test` (release modules) is
+# what a change runs before it is called done.
+test-fast: caps-fast _host-tests
+
+# The host-side suites and gates over whichever modules were built
+# last (`test` and `test-fast` build them first).
+_host-tests:
     #!/usr/bin/env bash
     set -e
     export TS_RS_EXPORT_DIR="$PWD/web/src/types"
@@ -639,9 +651,10 @@ test: caps
     fi
     # -race: the artifact is one non-reentrant instance; the host must
     # serialize invokes (see server/race_test.go — the gate watches it).
-    # -timeout 20m: the race detector compiles every module per test
-    # host, and the suite outgrew go test's 10-minute default.
-    cd server && go test -race -timeout 20m ./...
+    # The test binary compiles each module once, all at the same time,
+    # and keeps the machine code on disk between runs
+    # (server/compile_test.go; WASM_TEST_CACHE=off compiles afresh).
+    cd server && go test -race ./...
 
 # Browser e2e (Chromium via Playwright, against the Go server).
 # Builds first; the runner starts the server unless :8080 is taken.

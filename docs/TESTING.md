@@ -57,6 +57,27 @@ adapter; `just test` runs the same laws on `mem://`. A managed
 provider's bucket runs the same way (`STORE_TEST_URL` and its
 credentials), recorded in the store-durability unit.
 
+**The edit loop.** `just test-fast` runs every suite and gate `just
+test` runs, over the `wasm-fast` modules (`just caps-fast`: release
+semantics without whole-program LTO), so a library change costs
+seconds to a minute of module build instead of about ten minutes. It
+is the loop, not the gate: a change still passes `just test` before
+it is called done, because only release modules are what ships. Two
+more things keep the loop short without testing less:
+
+- Dependencies are optimized in dev and test builds
+  (`[profile.dev.package."*"]` in `Cargo.toml`); the workspace's own
+  crates are not, and debug assertions and overflow checks stay on.
+- The Go test binary compiles each server module once, all of them at
+  the same time, and keeps the machine code on disk between runs,
+  keyed by the module's bytes (`server/compile_test.go`). A damaged
+  entry fails loudly. `WASM_TEST_CACHE=off` compiles every module
+  afresh, which also runs wazero's compiler under `-race`;
+  `WASM_TEST_CACHE=DIR` moves the cache. The server keeps no such cache.
+
+For a narrower loop, run one owner's tests directly: `cargo test -p
+<crate>`, or `go test -race -run <Test> .` in `server/`.
+
 Publishing the registry is its own gate: `just registry` runs `cargo
 test` and the module smoke, then `just reproducible` — a second clean
 build of the tree, at another path with another cargo home, must match

@@ -111,3 +111,11 @@ incremental = true
 # is unaffected.
 [profile.dev]
 debug = "line-tables-only"
+
+# Dependencies (zip, serde, proptest, ...) are optimized in dev and test
+# builds: the property tests spend most of their time in them, and they
+# compile once and stay cached, so the edit loop never pays for it. The
+# workspace's own crates stay unoptimized and incremental. Debug
+# assertions and overflow checks are separate settings and stay on.
+[profile.dev.package."*"]
+opt-level = 2

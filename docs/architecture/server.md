@@ -22,7 +22,8 @@ which imports the configured street layer (`import`) and derives
 the walk table over it and the published network (the kernel's
 `load_network` + `walks`) in a fresh instance, closed the same way. Each module's
 bytes are compiled once per process (decoding, validating, machine
-code: 1–3 s for cap-network) and every instance is made from that
+code: 1–3 s for cap-network), different modules at the same time, so
+a request for one never waits behind another's compile; every instance is made from that
 compiled module in well under a millisecond, so a fresh instance per
 import or publish costs only its memory. The manifest pins the network it publishes, the zip
 it was imported from, the published plan set (store mode), the
