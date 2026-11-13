@@ -15,7 +15,10 @@
 //! edit and checks it. A pick only reads the document (D-157):
 //! `read_records` gives it each stop's record on its first date, and
 //! `visit_warnings` tells its planner of the stops it visits that are
-//! not in service on its dates.
+//! not in service on its dates. GTFS out and in carry the stops'
+//! history (D-150, D-151): `export_versions` gives cap-network's export
+//! one stop per version, and `import_events` records a feed's
+//! differences as events.
 //! The domain code lives in the shared `transit-stops` library; the
 //! module writes nothing.
 
@@ -89,6 +92,24 @@ pub enum Request {
         #[ts(optional)]
         until: Option<String>,
     },
+    /// The network over `[from, until)` with the stops' history in GTFS
+    /// terms (D-151): one stop per version of a stop whose record
+    /// changes inside the dates, each visiting pattern split at them —
+    /// registered, answered with its hash, for cap-network's export.
+    ExportVersions {
+        network_hash: String,
+        stops_hash: String,
+        from: String,
+        #[serde(default)]
+        #[ts(optional)]
+        until: Option<String>,
+    },
+    /// A feed's stops (an imported network) recorded on `on`, its first
+    /// service date (D-150): each difference an event dated that day,
+    /// checked as a write is — registered, answered with the events
+    /// added, the stops the feed does not list, and those whose
+    /// difference does not fit their history.
+    ImportEvents { stops_hash: String, network_hash: String, on: String },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -108,6 +129,14 @@ pub enum Response {
     CorrectEvent { refusals: Vec<Refusal>, stops_hash: Option<String>, stops: Option<Stops> },
     ReadRecords { network_hash: String, network: transit_network::Network },
     VisitWarnings { warnings: Vec<transit_network::NetworkWarning> },
+    ExportVersions { network_hash: String, network: transit_network::Network },
+    ImportEvents {
+        stops_hash: String,
+        stops: Stops,
+        added: Vec<transit_network::stop_record::AddedEvent>,
+        unlisted: Vec<String>,
+        unapplied: Vec<String>,
+    },
 }
 
 fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
@@ -203,6 +232,32 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let network = NETWORK.require(&network_hash)?;
             let stops = STOPS.require(&stops_hash)?;
             Ok(Response::VisitWarnings { warnings: transit_network::stop_record::visit_warnings(&network, &stops, from, until) })
+        }
+        Request::ExportVersions { network_hash, stops_hash, from, until } => {
+            let from = parse_date(&from)?;
+            let until = until.as_deref().map(parse_date).transpose()?;
+            if until.is_some_and(|u| u <= from) {
+                return Err("until must come after from".into());
+            }
+            let network = NETWORK.require(&network_hash)?;
+            let stops = STOPS.require(&stops_hash)?;
+            let exported = transit_network::stop_record::export_versions(&network, &stops, from, until);
+            let (network_hash, exported) = NETWORK.register(exported)?;
+            Ok(Response::ExportVersions { network_hash, network: (*exported).clone() })
+        }
+        Request::ImportEvents { stops_hash, network_hash, on } => {
+            let on = parse_date(&on)?;
+            let network = NETWORK.require(&network_hash)?;
+            let stops = STOPS.require(&stops_hash)?;
+            let imported = transit_network::stop_record::import_events(&stops, &network, on);
+            let (stops_hash, next) = STOPS.register(imported.stops)?;
+            Ok(Response::ImportEvents {
+                stops_hash,
+                stops: (*next).clone(),
+                added: imported.added,
+                unlisted: imported.unlisted,
+                unapplied: imported.unapplied,
+            })
         }
     }
 }

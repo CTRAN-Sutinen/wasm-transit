@@ -19,20 +19,32 @@ for a date, JSON-FG over a range) is later work.
 
 ## Scope, in order
 
-1. **GTFS in and out.** An import compares the feed with the stops on
-   its first service date and adds each difference as an event dated
-   that day (`in_service` for a stop the document lacks, `moved`,
-   `changed`); a stop the feed does not list keeps its events, later
-   events stand, and riders get the feed at once (D-150). It answers the
-   events it added and the stops it did not list, which the stops page
-   lists, each one fixable — a `moved` turned into a correction of the
-   earlier point. A stop that moves or is renamed inside the export's
-   window exports one stops.txt row per version sharing its
-   `stop_code`, and an import reads a made id back as a version of its
-   stop (D-151).
+1. **GTFS in and out, wired.** The library and its ops are built
+   (cap-stops `export_versions` and `import_events`; D-150, D-151,
+   `docs/architecture/crates.md`). Left: their callers. An export —
+   the planner pages' Export and the server's `GET /feed` — runs
+   `export_versions` over the pick's period first, so a stop moved or
+   renamed inside it is one stops.txt row per version. An import — the
+   server's feed at boot, a feed a page loads — runs `import_events`
+   on the feed's first service date and writes the answer through the
+   receive path; the stops page lists the events it added and the stops
+   it did not list, each one fixable (a `moved` turned into a
+   correction of the earlier point, stops `correct_event`).
+
+## Deferred
+
+- **The stops page without a server's store, or offline** (the user,
+  2026-11-12, deferred): a copy of the stops document on the device that
+  every edit lands in first; begun from the deployment's document, the
+  network it serves, a GTFS zip loaded in the page, or a stops file
+  opened; saved to a file; sent to the deployment when its store
+  answers; the page installed to work offline. Open: when the
+  deployment's document moved on while edits waited — the edits
+  replayed one by one onto it, each checked, the ones that no longer
+  fit listed (recommended), or one of the two documents chosen.
 
 ## Done when
 
-- The codec's round-trip, move-inside-the-window, and import laws (a
-  re-import of this repo's own feed adds no event) pass.
-- An e2e imports a feed whose changes the stops page lists and fixes.
+- An e2e exports a pick over a stop moved inside its period (two rows,
+  one code) and imports a feed whose changes the stops page lists and
+  fixes.

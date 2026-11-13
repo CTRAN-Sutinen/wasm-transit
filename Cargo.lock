@@ -1430,6 +1430,7 @@ dependencies = [
  "serde_json",
  "transit-analysis",
  "transit-network",
+ "transit-stops",
  "transit-version",
  "ts-rs",
  "zip",

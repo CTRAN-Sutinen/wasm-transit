@@ -118,6 +118,11 @@ fn garbage_is_an_error_not_a_panic() {
     assert!(bulk["error"].as_str().unwrap().contains("unknown bulk op"), "{bulk}");
 }
 
+fn sample_network_value() -> Value {
+    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/public/caps/sample-network-load.json")).unwrap();
+    serde_json::from_str::<Value>(&text).unwrap()["network"].clone()
+}
+
 fn sample_network() -> Value {
     let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/public/caps/sample-network-load.json")).unwrap();
     ok(serde_json::from_str(&text).unwrap())
@@ -188,4 +193,33 @@ fn a_pick_reads_the_records_and_is_warned_of_stops_not_in_service() {
     let warned = ok(json!({"op": "visit_warnings", "network_hash": network_hash, "stops_hash": retired["stops_hash"], "from": "2026-10-01", "until": "2026-12-01"}));
     assert_eq!(warned["warnings"], json!([{"stop_not_in_service": {"stop": "B", "status": "retired", "from": "2026-11-02", "until": "2026-12-01"}}]));
     assert!(err(json!({"op": "visit_warnings", "network_hash": network_hash, "stops_hash": retired["stops_hash"], "from": "2026-12-01", "until": "2026-12-01"})).contains("until"));
+}
+
+/// GTFS out and in with the stops' history: a stop moved inside the
+/// export's dates is two stops sharing its code, the export read back
+/// adds no event (the round trip through a GTFS zip is transit-codec's
+/// law: the codec stays in its homes), and a feed's rename is an event
+/// on its first date.
+#[test]
+fn the_export_carries_the_history_and_the_import_records_a_feeds_differences() {
+    let network_hash = sample_network()["network_hash"].clone();
+    let seeded = ok(json!({"op": "seed", "network_hash": network_hash}));
+    let b = seeded["stops"]["stops"]["B"][0].clone();
+    let moved = ok(json!({"op": "add_event", "stops_hash": seeded["stops_hash"], "stop_id": "B",
+        "event": {"on": "2026-10-15", "event": "moved", "lat": b["lat"].as_f64().unwrap() + 0.001, "lon": b["lon"]}}));
+    let exported = ok(json!({"op": "export_versions", "network_hash": network_hash, "stops_hash": moved["stops_hash"], "from": "2026-10-01", "until": "2026-12-01"}));
+    let stops = exported["network"]["stops"].as_object().unwrap();
+    assert!(stops.contains_key("B@2026-10-01") && stops.contains_key("B"));
+    assert_eq!(stops["B@2026-10-01"]["info"]["code"], stops["B"]["info"]["code"]);
+    let again = ok(json!({"op": "import_events", "stops_hash": moved["stops_hash"], "network_hash": exported["network_hash"], "on": "2026-10-01"}));
+    assert_eq!(again["added"], json!([]), "{again}");
+    assert_eq!(again["stops_hash"], moved["stops_hash"]);
+
+    // a feed (one with no history) whose stop A is renamed records the
+    // change on the feed's first date
+    let mut renamed: transit_network::Network = serde_json::from_value(sample_network_value()).unwrap();
+    renamed.stops.get_mut("A").unwrap().name = "A Street Station".into();
+    let renamed_hash = ok(json!({"op": "load_network", "network": renamed}))["network_hash"].clone();
+    let changed = ok(json!({"op": "import_events", "stops_hash": moved["stops_hash"], "network_hash": renamed_hash, "on": "2026-10-01"}));
+    assert_eq!(changed["added"], json!([{"stop": "A", "event": {"on": "2026-10-01", "event": "changed", "name": "A Street Station"}}]));
 }

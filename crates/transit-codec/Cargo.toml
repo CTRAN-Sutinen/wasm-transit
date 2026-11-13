@@ -23,3 +23,7 @@ proptest = "1"
 # The transfer-fixture regression test reads the composed question
 # (walking groups, timed connections) through the analysis library.
 transit-analysis = { path = "../transit-analysis" }
+# The stops' history through a GTFS zip and back (D-151): the stops
+# document a pick reads.
+transit-stops = { path = "../transit-stops" }
+chrono = { workspace = true }

@@ -8,7 +8,14 @@ transit-network The authored network model (planner authority):
                 `visit_warnings` warns of a stop its patterns visit
                 that is not in service over its period (planned,
                 permitted, built, retired, not there yet; suspended
-                only for the whole period or with no end); `seed`
+                only for the whole period or with no end); GTFS out
+                and in carry the stops' history (D-150, D-151):
+                `export_versions` makes a stop whose record changes
+                inside the export's dates one stop per version (its id
+                last, `<id>@<date>` before) and splits each pattern
+                visiting it by calendar, and `import_events` records a
+                feed's differences as events dated its first service
+                date, a made id read back as a version; `seed`
                 begins a stops document from a network's stops;
                 routes and their DIRECTIONS (`Route.directions`,
                 each named; a pattern runs in at most one —
@@ -676,7 +683,9 @@ cap-stops       The stops capability: what is a stop on a date?
                 each checked as a write is; read_records and
                 visit_warnings (what a pick reads: each stop's record
                 on its first date, and the stops it visits not in
-                service over its period).
+                service over its period); export_versions and
+                import_events (GTFS out and in with the stops'
+                history).
                 transit-stops and transit-network's
                 `stop_record` are the libraries; the kernel's `stops`
                 kind registers a document only if validate would pass
