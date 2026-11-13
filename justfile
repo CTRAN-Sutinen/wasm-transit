@@ -37,6 +37,10 @@ caps:
     set -e
     profile="${CAPS_PROFILE:-release}"
     cargo run --quiet -p cap-abi --bin gen-assemblies
+    # A new UI's assembly, or a new crate, is a workspace member the
+    # lock does not list yet: record it (offline; only the workspace's
+    # own entries change), so the --locked build below finds it.
+    cargo update --workspace --offline --quiet
     just _modules target "$profile"
     CAPS_PROFILE="$profile" cargo run --quiet -p cap-abi --features gen-manifest --bin gen-manifest
     mkdir -p web/pkg
@@ -99,6 +103,10 @@ reproducible:
     #!/usr/bin/env bash
     set -e
     cargo run --quiet -p cap-abi --bin gen-assemblies
+    # A new UI's assembly, or a new crate, is a workspace member the
+    # lock does not list yet: record it (offline; only the workspace's
+    # own entries change), so the --locked build below finds it.
+    cargo update --workspace --offline --quiet
     just _modules
     work="$PWD/target/reproducible"
     rm -rf "$work"
@@ -664,6 +672,18 @@ _host-tests:
 # the published-network spec (module surfaces as the UIs read them).
 e2e: caps build (build-ui "ride-now") (build-ui "stop-display")
     cd web && npx playwright test
+
+# The edit loop's browser runner: `e2e` over the wasm-fast modules
+# (`caps-fast`), the pages and the two rider UIs built alone over them,
+# with Playwright's arguments passed through — one spec, one test by
+# name, or every spec when none is given:
+#   just e2e-fast e2e/ui-stops.spec.mjs
+#   just e2e-fast e2e/ui-service-change.spec.mjs -g "a published pick"
+# Not the gate: `just e2e` (release modules) is.
+e2e-fast *args: caps-fast types
+    cd web && npm run typecheck && npm run build
+    cd web && UI=ride-now npx vite build && UI=stop-display npx vite build
+    cd web && npx playwright test {{ args }}
 
 # Both runners — for changes that touch both sides.
 check: test e2e

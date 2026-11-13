@@ -849,6 +849,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "module-ui-stops"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-directory",
+ "cap-network",
+ "cap-stops",
+]
+
+[[package]]
 name = "multimap"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

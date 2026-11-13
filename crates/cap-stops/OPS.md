@@ -8,11 +8,11 @@ What a write must pass: every refusal, each naming its stop, the event's index i
 
 ## stops_on
 
-Every stop as its events make it on the date, in id order — or only stop_ids, where given: its status (planned, permitted, built, in_service, suspended, retired), its point, and its details and amenities. A stop not yet there on the date (its first event is later) is not listed. Read over a document registered by load_stops.
+Every stop as its events make it on the date, in id order — or only stop_ids, where given, and only those at statuses, where given: its status (planned, permitted, built, in_service, suspended, retired), when that status began (since; none for a stop in service from before any record), when it ends (until, a temporary one), the note on the event that set it, its point, and its details and amenities. Beside them, counts: the stops on the date by status (every one, whatever stop_ids and statuses ask), only the statuses some stop has. A stop not yet there on the date (its first event is later) is not listed. Read over a document registered by load_stops.
 
 ## stop
 
-One stop on the date — null before it exists — and every event it has, oldest first: the card's record and its history. A stop the document does not hold is an error.
+One stop on the date — null before it exists — and every event it has, oldest first: the card's record and its history. Beside them, next: what the stop may become that day — the lifecycle events (planned, permitted, built, in_service, suspended, retired) a write dated that day would accept, in that order; a move or a change of details is always a choice while it is not retired. A stop the document does not hold is an error.
 
 ## seed
 
@@ -21,3 +21,7 @@ A stops document from a registered network's stops: each stop one in_service eve
 ## add_event
 
 One edit: the document with `event` added to stop `stop_id` in its place by date — after every event dated on or before it (an undated first event first), before every later one, every other event in its order; an id the document does not hold begins a stop. Then checked as a write is (validate): every refusal, each naming its stop, event, and problem, and no document; or none, and the document registered and answered with its stops_hash. A page writes the answer through the deployment's receive path (POST /stops), which checks it again.
+
+## correct_event
+
+One correction: a correction edits the event that was wrong (D-153; the store keeps the earlier version). The document with event `index` (its place in the stop's list, from 0) of stop `stop_id` taken out and `event` placed by date as add_event places one — the same event in its place changes nothing — or, with no `event`, taken out. Then checked as a write is: every refusal and no document, or none and the document registered and answered with its stops_hash. A stop or index the document does not hold is an error.

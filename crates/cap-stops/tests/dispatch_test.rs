@@ -86,7 +86,7 @@ fn the_date_questions_answer_over_a_registered_document() {
     let spring = on("2027-04-01");
     assert_eq!(spring[0]["status"], "suspended");
     assert_eq!(spring[0]["amenities"], json!({"bench": true, "bin": true, "shelter": true}));
-    assert_eq!(spring[1], json!({"stop_id": "7001", "status": "planned", "lat": 45.70, "lon": -122.66, "name": "NE 104th St"}));
+    assert_eq!(spring[1], json!({"stop_id": "7001", "status": "planned", "since": "2027-01-10", "lat": 45.70, "lon": -122.66, "name": "NE 104th St"}));
     let only = ok(json!({"op": "stops_on", "stops_hash": hash, "date": "2027-10-01", "stop_ids": ["6124", "nope"]}))["stops"].clone();
     assert_eq!((only.as_array().unwrap().len(), only[0]["lat"].clone(), only[0]["status"].clone()), (1, json!(45.6936), json!("in_service")));
 
@@ -94,6 +94,11 @@ fn the_date_questions_answer_over_a_registered_document() {
     assert_eq!(card["stop"]["status"], "in_service", "until is the first day back");
     assert_eq!(card["events"].as_array().unwrap().len(), 4);
     assert_eq!(card["events"][2]["note"], "water main");
+    assert_eq!(card["next"], json!(["suspended"]), "in service again, and a move recorded later: it may not be retired before it");
+    let later = ok(json!({"op": "stop", "stops_hash": hash, "stop_id": "6124", "date": "2027-10-01"}));
+    assert_eq!(later["next"], json!(["suspended", "retired"]), "after its last event: suspended or retired");
+    let away = ok(json!({"op": "stop", "stops_hash": hash, "stop_id": "6124", "date": "2027-04-01"}));
+    assert_eq!(away["next"], json!(["in_service"]), "suspended: back in service (retiring waits on the move recorded later)");
     let before = ok(json!({"op": "stop", "stops_hash": hash, "stop_id": "6124", "date": "2000-01-01"}));
     assert!(before["stop"].is_null() && before["events"].as_array().unwrap().len() == 4);
     assert!(err(json!({"op": "stop", "stops_hash": hash, "stop_id": "nope", "date": "2027-01-01"})).contains("no stop \"nope\""));
@@ -142,4 +147,29 @@ fn add_event_places_an_edit_and_checks_it() {
     let refused = ok(json!({"op": "add_event", "stops_hash": hash, "stop_id": "6124", "event": {"on": "2026-01-05", "event": "in_service"}}));
     assert_eq!(refused["refusals"][0]["problem"]["kind"], "already_in_service");
     assert!(refused["stops"].is_null() && refused["stops_hash"].is_null());
+}
+
+#[test]
+fn stops_on_filters_by_status_and_counts_them() {
+    let hash = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();
+    let spring = ok(json!({"op": "stops_on", "stops_hash": hash, "date": "2027-04-01", "statuses": ["suspended"]}));
+    assert_eq!(spring["stops"].as_array().unwrap().len(), 1);
+    assert_eq!(spring["stops"][0]["since"], "2027-03-03");
+    assert_eq!(spring["stops"][0]["until"], "2027-07-01");
+    assert_eq!(spring["stops"][0]["note"], "water main");
+    assert_eq!(spring["counts"], json!([{"status": "planned", "stops": 1}, {"status": "suspended", "stops": 1}]), "every stop counted, whatever the filter");
+}
+
+#[test]
+fn correct_event_edits_the_event_that_was_wrong() {
+    let hash = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();
+    let fixed = ok(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "6124", "index": 2,
+        "event": {"on": "2027-03-10", "event": "suspended", "until": "2027-07-01", "note": "water main"}}));
+    assert_eq!(fixed["refusals"], json!([]));
+    assert_eq!(fixed["stops"]["stops"]["6124"][2]["on"], "2027-03-10");
+    let removed = ok(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "6124", "index": 3}));
+    assert_eq!(removed["stops"]["stops"]["6124"].as_array().unwrap().len(), 3);
+    let refused = ok(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "6124", "index": 0}));
+    assert_eq!(refused["refusals"][0]["problem"]["kind"], "first_event", "taking out the first event leaves no beginning");
+    assert!(err(json!({"op": "correct_event", "stops_hash": hash, "stop_id": "6124", "index": 9})).contains("no event 9"));
 }

@@ -131,9 +131,11 @@ export default defineConfig({
     // the published documents, the manifest, edit sync and the store,
     // the geocoder, and /rt — the dev feed relay the dev
     // live-feeds.json names, for feeds that send no CORS header (D-67;
-    // `just dev` runs the server with -rt-proxy).
+    // `just dev` runs the server with -rt-proxy). A key is a path prefix,
+    // or a pattern when it begins with ^: the stops document's writes are
+    // `/stops` exactly, never the stops page (`/stops.html`).
     proxy: Object.fromEntries(
-      ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/plans", "/stops", "/feed", "/geocode"].map(
+      ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/plans", "^/stops$", "/feed", "/geocode"].map(
         // TRANSIT_SERVER names another server (`just qa` runs its own).
         (route) => [route, process.env.TRANSIT_SERVER ?? "http://127.0.0.1:8080"],
       ),

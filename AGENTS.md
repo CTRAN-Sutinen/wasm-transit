@@ -140,7 +140,9 @@ host-side gate (no browser) — run it before declaring any change
 done; `just e2e` adds the browser runner, for UI-visible changes;
 `just check` runs both, for changes that touch both sides. While
 iterating, `just test-fast` runs the same host-side suites over the
-wasm-fast modules; it is not the gate.
+wasm-fast modules, and `just e2e-fast` the browser specs — one spec,
+or one test by name, when given; neither is the gate. Build and test
+through these recipes, not by hand.
 
 ```
 just build                 # frontend (type-checks first — the TS layer is a gate)
@@ -174,6 +176,9 @@ just test-fast             # the same suites over `caps-fast` modules — the ed
                            # loop's runner, never the gate (WASM_TEST_CACHE=off:
                            # the Go tests compile modules afresh, no disk cache)
 just e2e                   # the browser runner (Playwright, builds first) — UI changes
+just e2e-fast [args]       # the same over `caps-fast` modules, Playwright's args
+                           # passed through (a spec file, -g "test name") — the
+                           # edit loop's browser runner, never the gate
 just check                 # both runners — changes touching both sides
 just types                 # regenerate TS bindings (gitignored; build runs it)
 just serve [feed.zip [streets.geojson ["Publisher" [addr]]]]   # sync server on :8080
@@ -233,8 +238,8 @@ just perf                  # browser perf baselines on the real feed — reports
 
 The Rust toolchain is pinned in `rust-toolchain.toml` (rustup runs
 that release in this tree; upgrading it is a change of its own).
-Toolchains live in `~/.cargo/bin` and `~/.local/bin` (rustc, pmtiles,
-just, go at `~/.local/go/bin`) — export PATH if a shell lacks them.
+The toolchains (just, cargo and rustc, go, node, pmtiles) are on the
+shell's PATH already; run the recipes as they are.
 Installs (toolchains, release binaries) are the user's job;
 cargo/npm/go module fetches are fine. Java 11+ and
 `~/bin/tla2tools.jar` are the same and OPTIONAL — only `just spec`
@@ -286,8 +291,9 @@ transit-plans    THE service-plan chain (resolve, periods, validity — pure, de
                  and the published plan set (publish, the pick in force)
 transit-stops    THE stops document, beside the plans: each stop a list of dated events
                  (planned, permitted, built, in_service, suspended, moved, changed, retired), the
-                 stop on a date, served, what a write must pass, its edit (an
-                 event placed by date) — pure; a stop's life is its own, and a
+                 stop on a date, served, what a write must pass, its edits (an
+                 event placed by date, a correction), what a stop may become —
+                 pure; a stop's life is its own, and a
                  pick only reads it (D-157)
 transit-runs     THE runs layer beside the network: the work-rule document (recovery,
                  interlining per route pair, run rules, pay — every rule optional), the

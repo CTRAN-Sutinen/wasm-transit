@@ -68,3 +68,4 @@ updates, and rolls back on its own.
 | stop-display | Yes | Detours and cancels, picks dated ahead |
 | service-design | No | Loading the published network, publishing picks |
 | service-change | No | Loading the published network, publishing picks |
+| stops | No | Reading and saving the stops document |

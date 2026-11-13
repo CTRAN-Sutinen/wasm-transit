@@ -339,7 +339,7 @@ impl Details {
 }
 
 /// Where a stop stands on a date.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
@@ -374,11 +374,32 @@ impl Status {
 pub struct StopOn {
     pub stop_id: String,
     pub status: Status,
+    /// The date the status began (none for a stop in service from
+    /// before any record).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub since: Option<String>,
+    /// The date a temporary status ends (a suspension with an end).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub until: Option<String>,
+    /// The note on the event that set the status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub note: Option<String>,
     pub lat: f64,
     pub lon: f64,
     #[serde(flatten)]
     #[ts(flatten)]
     pub details: Details,
+}
+
+/// How many stops stand at a status on a date.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct StatusCount {
+    pub status: Status,
+    pub stops: u32,
 }
 
 /// Why a write is refused: the stop, the event (its index in the
@@ -497,11 +518,23 @@ fn fold(id: &str, events: &[Event], date: NaiveDate) -> Option<StopOn> {
             EventKind::Moved | EventKind::Changed | EventKind::Unknown(_) => None,
         };
         if e.event.stage().is_some() && state.is_none() {
-            state = Some(StopOn { stop_id: id.to_string(), status: Status::InService, lat: f64::NAN, lon: f64::NAN, details: Details::default() });
+            state = Some(StopOn {
+                stop_id: id.to_string(),
+                status: Status::InService,
+                since: None,
+                until: None,
+                note: None,
+                lat: f64::NAN,
+                lon: f64::NAN,
+                details: Details::default(),
+            });
         }
         let Some(s) = state.as_mut() else { continue };
         if let Some(status) = status {
             s.status = status;
+            s.since.clone_from(&e.on);
+            s.until.clone_from(&e.until);
+            s.note.clone_from(&e.note);
         }
         if let (Some(lat), Some(lon)) = (e.lat, e.lon) {
             s.lat = lat;
@@ -551,6 +584,53 @@ impl Stops {
         };
         events.insert(at, event);
         next
+    }
+
+    /// What stop `id` may become on `date`: the lifecycle events
+    /// (`planned`, `permitted`, `built`, `in_service`, `suspended`,
+    /// `retired`) a write would accept dated that day, in that order —
+    /// each tried as [`Stops::add_event`] and kept where the document
+    /// still passes [`Stops::checked`]. A move or a change of details is
+    /// always one more choice while the stop is not retired.
+    pub fn next_events(&self, id: &str, date: NaiveDate) -> Vec<EventKind> {
+        let on = date.format("%Y-%m-%d").to_string();
+        [EventKind::Planned, EventKind::Permitted, EventKind::Built, EventKind::InService, EventKind::Suspended, EventKind::Retired]
+            .into_iter()
+            .filter(|kind| {
+                let event = Event { on: Some(on.clone()), event: kind.clone(), ..Event::default() };
+                self.add_event(id, event).checked().is_ok()
+            })
+            .collect()
+    }
+
+    /// The stops on `date` counted by status, in status order; only the
+    /// statuses some stop has.
+    pub fn counts_on(&self, date: NaiveDate) -> Vec<StatusCount> {
+        let mut counts: BTreeMap<Status, u32> = BTreeMap::new();
+        for s in self.on_date(date) {
+            *counts.entry(s.status).or_default() += 1;
+        }
+        counts.into_iter().map(|(status, stops)| StatusCount { status, stops }).collect()
+    }
+
+    /// The document with event `index` of stop `id` corrected — the
+    /// wrong event taken out and `event` placed by date
+    /// ([`Stops::add_event`]), or with none, taken out. A correction
+    /// edits the event that was wrong (D-153); the store keeps the
+    /// earlier version. None when the stop or the index is not there.
+    /// Unchecked: a write passes `checked`.
+    pub fn correct_event(&self, id: &str, index: usize, event: Option<Event>) -> Option<Stops> {
+        let mut next = self.clone();
+        let events = next.stops.get_mut(id)?;
+        if index >= events.len() {
+            return None;
+        }
+        let was = events.remove(index);
+        Some(match event {
+            Some(e) if e == was => self.clone(),
+            Some(e) => next.add_event(id, e),
+            None => next,
+        })
     }
 
     /// The document, if a write may store it, or every reason it may

@@ -62,8 +62,12 @@ test` runs, over the `wasm-fast` modules (`just caps-fast`: release
 semantics without whole-program LTO), so a library change costs
 seconds to a minute of module build instead of about ten minutes. It
 is the loop, not the gate: a change still passes `just test` before
-it is called done, because only release modules are what ships. Two
-more things keep the loop short without testing less:
+it is called done, because only release modules are what ships.
+`just e2e-fast` is the browser side of the same loop: the specs over
+the `wasm-fast` modules, Playwright's arguments passed through, so one
+spec (`just e2e-fast e2e/ui-stops.spec.mjs`) or one test by name
+(`-g`) runs alone; `just e2e` is the gate. Two more things keep the
+loop short without testing less:
 
 - Dependencies are optimized in dev and test builds
   (`[profile.dev.package."*"]` in `Cargo.toml`); the workspace's own

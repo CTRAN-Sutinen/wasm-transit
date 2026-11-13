@@ -1,0 +1,33 @@
+{
+  "id": "stops",
+  "title": "Stops",
+  "summary": "Every stop's own life, apart from the service plans: planned, permitted, built, in service, suspended for a while, retired. Each stop on a map and in a list as it stands on a chosen day, its details and amenities, the routes that stop there in the schedule running that day, and its history — and every change recorded as a dated event: a new stop, the next stage, a suspension and the return, a move, a change of details, or a correction of an event entered wrong.",
+  "questions": [
+    "Where is each stop, and where does it stand on a given day: planned, permitted, built, in service, suspended, or retired?",
+    "Which stops are out of service on a day, since when, until when, and why?",
+    "What is at a stop — shelter, bench, lighting, a schedule — and can a wheelchair user board there?",
+    "Which routes stop here in the schedule running that day?",
+    "What has happened to this stop, and when?",
+    "Record a change: a new stop, its next stage, a suspension and its return, a move, new details, or a correction."
+  ],
+  "ops": [
+    "stops.seed",
+    "stops.stops_on",
+    "stops.stop",
+    "stops.add_event",
+    "stops.correct_event",
+    "directory.stop_detail",
+    "network.validate"
+  ],
+  "components": [
+    "StopLifeMap",
+    "StopLifeList",
+    "StopLifeCard",
+    "NewStopForm",
+    "Combobox",
+    "Unavailable"
+  ],
+  "session": "2026-11-12 on C-TRAN (testdata/ctran-gtfs.zip, `just qa`): no stops document yet, the 901 stops of the schedule running today shown; stop 6136 suspended for dates (the first change saved them), listed alone under Suspended, back early, the return's date corrected, shelter and bench recorded, moved for a month; a new stop QA-1 planned at a clicked point, permitted, built, in service, retired; the phone layout. Found and fixed: the dev proxy sent /stops.html to the server, the move form had no end date, the map key covered the attribution on a phone.",
+  "spec": "web/e2e/ui-stops.spec.mjs",
+  "generated": "2026-11-12"
+}

@@ -14,6 +14,11 @@
 //! * a temporary suspension or move ends on its `until`: from that date
 //!   the stop is what it would be without the event;
 //! * served is in service, nothing else;
+//! * a stop on a date says when its status began, when it ends (a
+//!   temporary one), and the note on the event that set it;
+//! * a correction edits the event that was wrong: it is the event taken
+//!   out and the corrected one placed by date, nothing else moving;
+//! * the stops on a date are counted by status;
 //! * a document that breaks the model is refused, each reason named;
 //! * one document is one byte sequence however its stops and keys are
 //!   ordered;
@@ -83,7 +88,8 @@ fn status_of(k: &EventKind) -> Option<Status> {
 
 fn oracle(events: &[Event], id: &str, d: NaiveDate) -> Option<StopOn> {
     let live: Vec<&Event> = events.iter().filter(|e| active(e, d)).collect();
-    let status = live.iter().rev().find_map(|e| status_of(&e.event))?;
+    let by = live.iter().rev().find(|e| status_of(&e.event).is_some())?;
+    let status = status_of(&by.event)?;
     let point = live.iter().rev().find(|e| e.lat.is_some())?;
     let last = |f: &dyn Fn(&Details) -> Option<Value>| -> Option<Value> { live.iter().rev().find_map(|e| f(&e.details)) };
     let mut details = Details::default();
@@ -98,7 +104,16 @@ fn oracle(events: &[Event], id: &str, d: NaiveDate) -> Option<StopOn> {
         let v = live.iter().rev().find_map(|e| e.details.amenities.get(k)).unwrap();
         details.amenities.insert(k.clone(), *v);
     }
-    Some(StopOn { stop_id: id.to_string(), status, lat: point.lat.unwrap(), lon: point.lon.unwrap(), details })
+    Some(StopOn {
+        stop_id: id.to_string(),
+        status,
+        since: by.on.clone(),
+        until: by.until.clone(),
+        note: by.note.clone(),
+        lat: point.lat.unwrap(),
+        lon: point.lon.unwrap(),
+        details,
+    })
 }
 
 /// How far along a stop is: the stages in order, a suspension counting
@@ -310,6 +325,58 @@ proptest! {
         let mut without = doc.clone();
         without.stops.get_mut(&id).unwrap().remove(i);
         prop_assert_eq!(doc.stop_on(&id, when), without.stop_on(&id, when));
+    }
+
+    /// A correction is the wrong event taken out and the corrected one
+    /// placed by date; the same event in its place changes nothing; a
+    /// removal takes the event out; an index past the list is no edit.
+    #[test]
+    fn a_correction_edits_the_event_that_was_wrong(doc in arb_doc(), pick in any::<prop::sample::Index>(), on in 0u32..400, remove in any::<bool>()) {
+        let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
+        let all: Vec<(String, usize)> = doc.stops.iter().flat_map(|(id, es)| (0..es.len()).map(move |i| (id.clone(), i))).collect();
+        let (id, i) = pick.get(&all).clone();
+        prop_assert_eq!(doc.correct_event(&id, i, Some(doc.stops[&id][i].clone())), Some(doc.clone()));
+        let mut taken = doc.clone();
+        let mut was = taken.stops.get_mut(&id).unwrap().remove(i);
+        if remove {
+            prop_assert_eq!(doc.correct_event(&id, i, None), Some(taken));
+        } else {
+            if was.on.is_some() || i > 0 {
+                was.on = Some(date(on));
+            }
+            prop_assert_eq!(doc.correct_event(&id, i, Some(was.clone())), Some(taken.add_event(&id, was)));
+        }
+        prop_assert_eq!(doc.correct_event(&id, doc.stops[&id].len(), None), None);
+        prop_assert_eq!(doc.correct_event("no-such-stop", 0, None), None);
+    }
+
+    /// What a stop may become on a date is exactly the lifecycle events
+    /// a write would accept there: each offered one passes, each other
+    /// one is refused.
+    #[test]
+    fn what_a_stop_may_become_is_what_a_write_accepts(doc in arb_doc(), d in 0u32..400) {
+        let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
+        for id in doc.stops.keys() {
+            let next = doc.next_events(id, day(d));
+            for kind in [EventKind::Planned, EventKind::Permitted, EventKind::Built, EventKind::InService, EventKind::Suspended, EventKind::Retired] {
+                let passes = doc.add_event(id, event(kind.clone(), Some(d))).checked().is_ok();
+                prop_assert_eq!(next.contains(&kind), passes, "stop {} on {}: {:?}", id, date(d), kind);
+            }
+        }
+    }
+
+    /// The stops on a date, counted by status: every listed stop counted
+    /// once, under its status.
+    #[test]
+    fn the_stops_on_a_date_are_counted_by_status(doc in arb_doc(), d in 0u32..400) {
+        let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
+        let on = doc.on_date(day(d));
+        let counts = doc.counts_on(day(d));
+        prop_assert_eq!(counts.iter().map(|c| c.stops as usize).sum::<usize>(), on.len());
+        for c in &counts {
+            prop_assert!(c.stops > 0, "only statuses some stop has");
+            prop_assert_eq!(c.stops as usize, on.iter().filter(|s| s.status == c.status).count());
+        }
     }
 
     /// One document is one byte sequence: its stops and every object's
@@ -569,6 +636,8 @@ fn the_worked_example_reads_as_the_unit_says() {
     assert_eq!(at("6124", "2025-05-11").unwrap().details.amenities, BTreeMap::new(), "amenities not recorded yet");
     assert_eq!(at("6124", "2025-05-12").unwrap().details.amenities.get("shelter"), Some(&true));
     assert_eq!(at("6124", "2027-03-03").unwrap().status, Status::Suspended);
+    let away = at("6124", "2027-04-01").unwrap();
+    assert_eq!((away.since.as_deref(), away.until.as_deref()), (Some("2027-03-03"), Some("2027-07-01")), "suspended since, back on");
     assert_eq!(at("6124", "2027-06-30").unwrap().status, Status::Suspended);
     assert_eq!(at("6124", "2027-07-01").unwrap().status, Status::InService, "until is the first day back");
     assert_eq!((at("6124", "2027-08-31").unwrap().lat, at("6124", "2027-09-01").unwrap().lat), (45.6934, 45.6936));

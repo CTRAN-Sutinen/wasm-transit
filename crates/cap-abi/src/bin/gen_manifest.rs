@@ -287,7 +287,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "stops",
         file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stop", "seed", "add_event"],
+        ops: &["validate", "stops_on", "stop", "seed", "add_event", "correct_event"],
         documents: &["stops", "network"],
         // The stops document is the host's (beside the plans, D-147):
         // validate answers its canonical bytes and hash, which the
@@ -1700,7 +1700,7 @@ fn example_for(
             let date = chrono::NaiveDate::from_ymd_opt(2027, 4, 1)?;
             (
                 json!({ "op": "stops_on", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "date": "2027-04-01" }),
-                json!({ "ok": { "op": "stops_on", "stops": stops.on_date(date) } }),
+                json!({ "ok": { "op": "stops_on", "stops": stops.on_date(date), "counts": stops.counts_on(date) } }),
             )
         }
         ("stops", "stop") => {
@@ -1708,7 +1708,8 @@ fn example_for(
             let date = chrono::NaiveDate::from_ymd_opt(2027, 7, 1)?;
             (
                 json!({ "op": "stop", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stop_id": "6124", "date": "2027-07-01" }),
-                json!({ "ok": { "op": "stop", "stop": stops.stop_on("6124", date), "events": stops.stops["6124"] } }),
+                json!({ "ok": { "op": "stop", "stop": stops.stop_on("6124", date), "events": stops.stops["6124"],
+                    "next": stops.next_events("6124", date).iter().map(|k| k.as_str()).collect::<Vec<_>>() } }),
             )
         }
         ("stops", "seed") => {
@@ -1727,6 +1728,17 @@ fn example_for(
             (
                 json!({ "op": "add_event", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stop_id": "6124", "event": event }),
                 json!({ "ok": { "op": "add_event", "refusals": [], "stops_hash": cap_abi::canonical_hash(&next).ok()?, "stops": next } }),
+            )
+        }
+        ("stops", "correct_event") => {
+            // 7001's permit was entered on the wrong date: the event is
+            // corrected, and the stop is permitted from 2027-04-19.
+            let stops = fixture_stops().checked().ok()?;
+            let event: transit_stops::Event = serde_json::from_value(json!({"on": "2027-04-19", "event": "permitted"})).ok()?;
+            let next = stops.correct_event("7001", 1, Some(event.clone()))?.checked().ok()?;
+            (
+                json!({ "op": "correct_event", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stop_id": "7001", "index": 1, "event": event }),
+                json!({ "ok": { "op": "correct_event", "refusals": [], "stops_hash": cap_abi::canonical_hash(&next).ok()?, "stops": next } }),
             )
         }
         ("kernel", "load_work_rules") => {

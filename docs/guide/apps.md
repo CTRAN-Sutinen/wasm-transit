@@ -59,6 +59,22 @@ Sundays, against a plan you choose there.
 
 **Server:** needed.
 
+## Stops
+
+**For staff who look after the stops themselves.**
+
+Stops keeps each stop's own story, apart from the schedules: when it
+was planned, permitted, built, put in service, suspended for a while,
+or retired. Pick a day to see every stop as it stood then, coloured by
+where it is in that story. Open a stop to see what is there (a
+shelter, a bench, lighting), which routes stop there that day, and
+everything that has happened to it. Record a change on the day it
+happens: a new stop, its next step, a suspension and the return, a
+move, or new details. A change entered wrong is corrected, not added
+to. Schedules read these stops but never change them.
+
+**Server:** needed.
+
 ## Read next
 
 [How it works](how-it-works.md) follows one stop display from

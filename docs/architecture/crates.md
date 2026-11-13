@@ -567,8 +567,13 @@ transit-stops   THE stops document, beside the plans (D-147, D-153):
                 another tool's field, an agency's amenity — is kept
                 through a read and a write. A correction edits the
                 event that was wrong; a real change adds one. Its
-                edit answers the next document: `add_event` (one event
-                in its place by date). Depends on no other model
+                edits answer the next document: `add_event` (one event
+                in its place by date) and `correct_event` (the event
+                that was wrong taken out, the corrected one placed by
+                date). `next_events` is what a stop may become on a
+                date — exactly the lifecycle events a write would
+                accept — and `counts_on` the stops on a date by
+                status. Depends on no other model
                 crate. cap-stops is the seam. A stop's life is its own,
                 managed apart from the picks, which only read it
                 (D-157).
@@ -656,10 +661,14 @@ cap-stops       The stops capability: what is a stop on a date?
                 validate (what a write must pass — every refusal, or
                 the canonical document and its hash, the one the
                 kernel's load_stops answers), stops_on (every stop, or
-                those named, as on a date) and stop (one stop on a
-                date and its events, oldest first); seed (a stops
-                document from a network's stops) and add_event (one
-                edit placed by date and checked as a write is).
+                those named or at the statuses asked, as on a date —
+                its status with since, until, and note — and the stops
+                counted by status) and stop (one stop on a date, its
+                events, oldest first, and what it may become that
+                day); seed (a stops document from a network's stops),
+                add_event (one edit placed by date) and correct_event
+                (an event that was wrong, corrected or taken out),
+                each checked as a write is.
                 transit-stops and transit-network's
                 `stop_record` are the libraries; the kernel's `stops`
                 kind registers a document only if validate would pass

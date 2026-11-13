@@ -410,3 +410,27 @@ date's after-midnight trips (`previous`), and it follows the
 deployment and works offline ([updates-offline.md](updates-offline.md)): a new
 build applies itself at a poll while the server answers and the
 setup is closed. Its questions and session are its `ui.json`.
+
+`stops` (`src/uis/stops/`): every stop's own life, apart from the
+service plans, which only read it (D-157). Across the top, the date
+read (today until chosen), a search, and a filter per status —
+planned, permitted, built, in service, suspended, retired (hidden
+until shown) — each with its count that day (stops `stops_on`'s
+`counts`). The map colours each stop shown by its status; beside it,
+the list of those stops with since when, until when, and the note
+("every stop out of service today"), or the open stop's card (stops
+`stop`): where it stands that day, its details and amenities, the
+routes that stop there in the schedule running that day (directory
+`stop_detail` over `servedNetwork` on the date — read only, which is
+why the page links the network capability too), and its history.
+The card offers only what the stop may become that day (`stop`'s
+`next`), a move (a point clicked on the map, optionally until a
+date), and a change of details and amenities; each event in the
+history can be corrected or taken out (stops `correct_event`). A new
+stop is placed by a click on the map, planned or already in service.
+Each change is one event — stops `add_event` places and checks it,
+`POST /stops` checks it again and stores it (409: the page reads the
+stops again and asks for the change again). With no stops document
+yet, the page shows the stops of the network running today (stops
+`seed`), and the first change saves them. The date, the open stop,
+and the filters live in the URL hash.
