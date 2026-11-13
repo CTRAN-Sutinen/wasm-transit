@@ -144,8 +144,8 @@ done; `just e2e` adds the browser runner, for UI-visible changes;
 just build                 # frontend (type-checks first — the TS layer is a gate)
 just caps                  # assemblies/ (generated, gitignored) → the modules: each
                            # capability alone and each UI's linked assembly + manifest
-                           # (+ cap_sync, cap_network, cap_streets, cap_authz and
-                           # cap_plans .wasm for the server)
+                           # (+ cap_sync, cap_network, cap_streets, cap_authz,
+                           # cap_plans, cap_migrate and cap_stops .wasm for the server)
 just caps-fast             # the same, under the wasm-fast profile (no whole-program
                            # LTO, incremental): a library change rebuilds in ~10 s, not
                            # ~10 min — the loop's build; the local registry's evidence
@@ -304,6 +304,7 @@ server/          Go + wazero host over cap-sync, cap-network, cap-plans and
                  cap-streets (the network, picks, streets and walk table it
                  publishes; in store mode every build it serves, kept and
                  rolled back by pointer — D-80), cap-migrate (an older document, at receive),
+                 cap-stops (the stops document's writes; each pick refreshed from it),
                  cap-authz when auth is on, and the proxies
                  (/geocode to a Pelias geocoder; /rt, a dev feed relay off
                  unless -rt-proxy) — scaffolding, never a domain decision
@@ -435,7 +436,8 @@ e2e, real-data dogfood) are spelled out in `docs/TESTING.md`.
   becomes a capability module (it hosts cap-sync, cap-network for
   the import and the picks it publishes, cap-plans for the published
   plan set, cap-streets for the streets and walk table it
-  publishes, cap-migrate for an older document at receive).
+  publishes, cap-migrate for an older document at receive, cap-stops
+  for the stops document and each pick's stops refreshed from it).
 - The bus is the architecture: no capability grows a private
   document format — shared data crosses capabilities as kernel
   documents addressed by content hash only, and capabilities never

@@ -67,6 +67,8 @@ import type { Request as RtRequest } from "./types/cap_rt/Request";
 import type { Response as RtResponse } from "./types/cap_rt/Response";
 import type { Request as RuncutRequest } from "./types/cap_runcut/Request";
 import type { Response as RuncutResponse } from "./types/cap_runcut/Response";
+import type { Request as StopsRequest } from "./types/cap_stops/Request";
+import type { Response as StopsResponse } from "./types/cap_stops/Response";
 import type { Request as StreetsRequest } from "./types/cap_streets/Request";
 import type { Response as StreetsResponse } from "./types/cap_streets/Response";
 import type { Boundary } from "./types/Boundary";
@@ -93,6 +95,7 @@ type Caps = {
   router: [RouterRequest, RouterResponse];
   rt: [RtRequest, RtResponse];
   runcut: [RuncutRequest, RuncutResponse];
+  stops: [StopsRequest, StopsResponse];
   streets: [StreetsRequest, StreetsResponse];
 };
 export type CapId = keyof Caps;
@@ -116,7 +119,8 @@ export type Kind =
   | "streets"
   | "watchlist"
   | "layer"
-  | "gtfs_rt";
+  | "gtfs_rt"
+  | "stops";
 
 /// One document version. Immutable: a new version is a new Doc.
 export class Doc<V = unknown> {
@@ -234,6 +238,7 @@ const LOADERS: Record<Kind, Loader> = {
   layer: { bytes: 265, hash: "layer_hash" },
   feed: { bytes: 266, hash: "feed_hash" },
   gtfs_rt: { bytes: 267, hash: "rt_hash" },
+  stops: { bytes: 270, hash: "stops_hash" },
 };
 
 // ---------------------------------------------------------------------
@@ -523,6 +528,7 @@ type DeploymentManifest = {
   network_hash?: string;
   boundary_hash?: string;
   plans_hash?: string;
+  stops_hash?: string;
   streets_hash?: string;
   walks_hash?: string;
   /// A serverless deployment that follows the agency's GTFS URL (D-132).
@@ -754,6 +760,39 @@ export async function publishedPickValue(pick: PublishedPlan): Promise<Doc<Netwo
   const network = new Doc<Network>("network", { value: JSON.parse(text) as Network }, { pin: pick.network_hash });
   await load("network", network);
   return network;
+}
+
+/// The deployment's stops document (the manifest's `stops_hash`; D-153):
+/// every stop as a list of dated events, bytes the page never parses,
+/// refused unless they answer the pin. Null when the deployment keeps
+/// none.
+export async function servedStops(): Promise<Doc | null> {
+  const pin = (await deploymentManifestNow())?.stops_hash;
+  if (!pin) return null;
+  const resp = await blobGz(pin);
+  if (!resp?.ok) return null;
+  return new Doc("stops", { bytes: new Uint8Array(await resp.arrayBuffer()) }, { pin });
+}
+
+/// A plan's network with its stops refreshed from the deployment's stops
+/// document for the plan's window (D-156: a pick's stops are a copy) —
+/// from its pick date until the next published pick's, as cap-plans
+/// derives it over the published set with the plan placed by id. Null
+/// when nothing changes: no stops document, no pick date, or a copy
+/// already the document's.
+export async function refreshedFromStops(network: Doc<Network>, published: PublishedPlans | null): Promise<Doc<Network> | null> {
+  const plan = network.value?.plan;
+  if (!plan?.id || !plan.effective_from || !(await available("stops"))) return null;
+  const stops = await servedStops();
+  if (!stops) return null;
+  const others = (published?.plans ?? [])
+    .filter((p) => p.status !== "retired" && p.id !== plan.id)
+    .map((p) => ({ id: p.id, name: p.name, effective_from: p.effective_from }));
+  const { periods } = await ask("plans", "periods", { plans: [...others, { id: plan.id, name: plan.name, effective_from: plan.effective_from }] });
+  const until = periods.find((p) => p.id === plan.id)?.until ?? null;
+  const answer = await ask("stops", "refresh", { network_hash: network, stops_hash: stops, from: plan.effective_from, until: until ?? undefined, plan: plan.id });
+  if (answer.network_hash === network.hash) return null;
+  return produced("network", answer.network, "stops", answer.network_hash);
 }
 
 /// The deployment's published streets: the manifest's `streets_hash`,

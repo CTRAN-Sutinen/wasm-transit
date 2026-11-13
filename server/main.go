@@ -59,6 +59,7 @@ func main() {
 	today := flag.String("today", "", "pin the server's date (YYYY-MM-DD) for hermetic test servers; empty = the host clock. Publishing reads it: a new pick never lands before today, and only a pick after today is retired (D-75, D-76)")
 	migrateWasm := flag.String("migrate-wasm", dataPath("pkg/cap_migrate.wasm", defaultMigrateWasm), "the migration capability module (cap-migrate): an older document comes forward at receive, and a store's older heads at startup")
 	plansWasm := flag.String("plans-wasm", dataPath("pkg/cap_plans.wasm", "../web/pkg/cap_plans.wasm"), "the plan-chain capability module (cap-plans) hosted in store mode: it answers the published plan set POST /plans commits")
+	stopsWasm := flag.String("stops-wasm", dataPath("pkg/cap_stops.wasm", "../web/pkg/cap_stops.wasm"), "the stops capability module (cap-stops) in store mode: it validates every POST /stops and refreshes each pick's stops from the stops document")
 	authzWasm := flag.String("authz-wasm", dataPath("pkg/cap_authz.wasm", "../web/pkg/cap_authz.wasm"), "the authorization capability module (cap-authz) hosted when OIDC is configured")
 	oidcIssuer := flag.String("oidc-issuer", "", "expected JWT iss (D-60); with any -oidc flag this turns authentication on")
 	oidcJWKS := flag.String("oidc-jwks-url", "", "the IdP's JWKS URL: keys are fetched, cached by kid, refetched on an unknown kid (rate-limited)")
@@ -105,11 +106,12 @@ func main() {
 			log.Fatalf("plans module: %v", err)
 		}
 		s.networkWasm = *networkWasm
+		s.stopsWasm = *stopsWasm
 		s.seedStore(*editsPath)
 		s.commitForward()
 		s.seedPolicy(*policyFile)
 		s.maybeCompactEdits()
-		s.serverModules = map[string]string{"sync": *wasmPath, "network": *networkWasm, "streets": *streetsWasm, "plans": *plansWasm, "migrate": *migrateWasm}
+		s.serverModules = map[string]string{"sync": *wasmPath, "network": *networkWasm, "streets": *streetsWasm, "plans": *plansWasm, "migrate": *migrateWasm, "stops": *stopsWasm}
 		if *oidcIssuer != "" || *oidcJWKS != "" || *oidcKey != "" {
 			s.serverModules["authz"] = *authzWasm
 		}
@@ -255,6 +257,7 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("/pointers/", s.protectWrite(pointerNameOf, s.handlePointers))
 	mux.HandleFunc("/plans", s.protectWrite(func(*http.Request) string { return "plans" }, s.handlePlans))
 	mux.HandleFunc("/plans/retire", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleRetire))
+	mux.HandleFunc("/stops", s.protectWrite(func(*http.Request) string { return stopsPointer }, s.handleStops))
 	mux.HandleFunc("/builds", s.protectWrite(func(*http.Request) string { return buildPointer }, s.handleBuilds))
 	mux.HandleFunc("/feed", s.handleFeed)
 	mux.HandleFunc("/permissions", s.requireAuth(s.handlePermissions))
@@ -307,6 +310,14 @@ type server struct {
 	// makes one publish one step.
 	plans       *WasmHost
 	networkWasm string
+	// The stops capability (cap-stops) behind POST /stops and each
+	// pick's refresh (stops.go); empty: no stops document, picks publish
+	// as sent.
+	stopsWasm string
+	// The held cap-stops instance (stops.go `withStops`): created on
+	// first use, emptied after every use.
+	stopsMu   sync.Mutex
+	stopsHeld *WasmHost
 	// The migration capability (cap-migrate), loaded on first use
 	// (migrator): an older document comes forward at receive.
 	migrateWasm string
@@ -480,6 +491,7 @@ type Manifest struct {
 	AuthzHash   string  `json:"authz_hash,omitempty"`   // sha256 of the cap-authz module, when auth is on
 	PolicyHash  string  `json:"policy_hash,omitempty"`  // the store's policy pointer head, store mode (D-61)
 	PlansHash   string  `json:"plans_hash,omitempty"`   // the published plan set (the plans pointer head), store mode
+	StopsHash   string  `json:"stops_hash,omitempty"`   // the stops document (the stops pointer head), store mode
 	BuildHash   string  `json:"build_hash,omitempty"`   // the build the pages are served from (the build pointer head), store mode
 	GeneratedAt int64   `json:"generated_at"`
 	Publisher   *string `json:"publisher,omitempty"`
@@ -548,6 +560,9 @@ func (s *server) buildManifest() (Manifest, error) {
 		if head, found, err := s.store.Head("plans"); err == nil && found {
 			manifest.PlansHash = head.Hash
 		}
+		if head, found, err := s.store.Head(stopsPointer); err == nil && found {
+			manifest.StopsHash = head.Hash
+		}
 		if head, found, err := s.store.Head(buildPointer); err == nil && found {
 			manifest.BuildHash = head.Hash
 		}
@@ -560,7 +575,7 @@ func (s *server) buildManifest() (Manifest, error) {
 func manifestKeyOf(m Manifest) string {
 	services, _ := json.Marshal(m.Services)
 	sum := sha256.Sum256([]byte(strings.Join([]string{
-		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.BuildHash, m.NetworkHash, m.BoundaryHash, m.FeedHash, orEmpty(m.FeedVersion),
+		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.StopsHash, m.BuildHash, m.NetworkHash, m.BoundaryHash, m.FeedHash, orEmpty(m.FeedVersion),
 		m.StreetsHash, m.WalksHash, orEmpty(m.Publisher), m.Timezone, string(services), m.FeedURL,
 	}, "|")))
 	return hex.EncodeToString(sum[:])

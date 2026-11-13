@@ -160,6 +160,12 @@ func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
 		Document     *string         `json:"document"`
 		DocumentHash *string         `json:"document_hash"`
 	}
+	// A pick's stops are a copy (D-156): with a stops document, the pick
+	// is refreshed from it for its window before anything is stored.
+	if err := s.refreshPick(r.Context(), &pick, current); err != nil {
+		fail(w, err, http.StatusInternalServerError)
+		return
+	}
 	if err := s.plans.Invoke(r.Context(), map[string]any{
 		"op": "publish", "published": current, "plan": pick.Plan, "network_hash": pick.DocumentHash, "today": s.today(),
 	}, &next); err != nil {

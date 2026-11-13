@@ -63,11 +63,12 @@ The blob's metadata key `envelope` holds (S3 `x-amz-meta-envelope`):
 ```
 
 - `kind` — one of `network_document`, `edit_records`,
-  `diversion_draft`, `manifest`, `plans`, `policy`, and the boot
+  `diversion_draft`, `manifest`, `plans`, `policy`, `stops`, and the boot
   sources' `gtfs_feed` (a GTFS zip) and `street_layer` (GeoJSON) —
   external open formats, stored as read (D-115, D-118). `produced_by`
-  on a `network_document` is `cap-network@sha256:…`; on `plans`,
-  `cap-plans@sha256:…`.
+  on a `network_document` is `cap-network@sha256:…` (a pick refreshed
+  from the stops document, `cap-stops@sha256:…`); on `plans`,
+  `cap-plans@sha256:…`; on `stops`, `cap-stops@sha256:…`.
 - `schema_version` — the payload's version, the same number the
   document carries inside it (see "Versions" below); a writer bumps it
   deliberately. Migrations happen at receive, never at read.
@@ -90,7 +91,8 @@ Each commit is one record object,
   `-`, starting with a letter or digit, at most 128 bytes. The store
   refuses any other name.
 - The pointers the server keeps: `edits`, `policy`, `manifest`,
-  `plans` (the published plan set), `plan.<id>` per published pick
+  `plans` (the published plan set), `stops` (the stops document,
+  written through `POST /stops`), `plan.<id>` per published pick
   (its network document; every revision stays in the log), `build`
   (each release committed from `-dist`, and each move — "Builds"), and
   `source.feed` and `source.streets` — each read of `-feed` and
@@ -160,6 +162,12 @@ that is missing, does not hash to its name, or carries no envelope.
   service in its period — D-76) or `422 {issues}` (cap-plans refuses
   the pick: the chain, or a new, restored or moved pick dated before
   the server's today), or `400`.
+- `POST /stops` body `{"from": "<hash or empty>", "stops": <document>}` →
+  `200 {stops_hash, republished}`, `422 {refusals}` (cap-stops
+  `validate`), or `409 {current, seq}`. The server commits the module's
+  canonical document to `stops`, then republishes each pick in force or
+  to come whose network the refresh changes (`plan.<id>`, then
+  `plans`). `POST /pointers/stops` is `400`.
 - `GET /feed?date=YYYY-MM-DD` → the GTFS zip in force on the date
   (default the server's today; `application/zip`, ETag its hash):
   cap-network `export` of the pick in force, or the `-feed` zip before
@@ -263,7 +271,7 @@ Every persisted kind, by what a version change does to it:
 | `watchlist` | transit-dispatch | authored | `"version": "vN"` |
 | `policy` | transit-authz | authored | `kind`, `schema_version` |
 | `work_rules` | transit-runs | authored | `kind`, `version` |
-| `stops` | transit-stops | authored | `kind`, `schema_version` (not stored by the server yet) |
+| `stops` | transit-stops | authored | `kind`, `schema_version` |
 | `diversion_draft` | transit-dispatch | authored | — (never persisted yet) |
 | a rider's device records (recent places, live-feed URLs) | the ride-now host | authored | — (`localStorage`) |
 | `network` (imported) | transit-codec | derived | `kind`, `schema_version` |
@@ -348,7 +356,7 @@ and, after a second commit, log record
 `{"seq":2,"from":"sha256:<first>","to":"sha256:<this>","kind":"edit_records","schema_version":2,"produced_by":"cap-sync@sha256:<hex>","writer":"anonymous","policy":null,"at_ms":2000}`.
 
 A `manifest` blob is the manifest object itself
-(`{"network_hash","feed_hash","feed_version","streets_hash","walks_hash","wasm_hash","authz_hash","policy_hash","plans_hash","build_hash","generated_at","publisher","timezone","services"}`,
+(`{"network_hash","feed_hash","feed_version","streets_hash","walks_hash","wasm_hash","authz_hash","policy_hash","plans_hash","stops_hash","build_hash","generated_at","publisher","timezone","services"}`,
 the optional ones omitted when empty),
 envelope `{"kind":"manifest","schema_version":1,"produced_by":"server"}`.
 

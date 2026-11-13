@@ -26,9 +26,9 @@ default:
 # loads it). Hash-pinned modules land in web/public/caps/, served under
 # their content hash so the HTTP cache holds them forever. The sync
 # server's modules also land at stable paths in web/pkg/ (cap_sync,
-# cap_network, cap_streets, cap_authz, cap_plans, cap_migrate — the
+# cap_network, cap_streets, cap_authz, cap_plans, cap_migrate, cap_stops — the
 # server's default -wasm, -network-wasm, -streets-wasm, -authz-wasm,
-# -plans-wasm and -migrate-wasm flags; rebuilt with the modules, never
+# -plans-wasm, -migrate-wasm and -stops-wasm flags; rebuilt with the modules, never
 # by hand). The
 # registry also publishes every document kind's JSON Schema and a
 # worked example (registry/documents.json, docs/FORMATS.md).
@@ -40,7 +40,7 @@ caps:
     just _modules target "$profile"
     CAPS_PROFILE="$profile" cargo run --quiet -p cap-abi --features gen-manifest --bin gen-manifest
     mkdir -p web/pkg
-    for cap in sync network streets authz plans migrate; do
+    for cap in sync network streets authz plans migrate stops; do
         cp "target/wasm32-unknown-unknown/$profile/module_$cap.wasm" "web/pkg/cap_$cap.wasm"
     done
 
@@ -819,7 +819,7 @@ server-image repo="" tag="latest": caps build
     set -e
     rm -rf server/kodata
     mkdir -p server/kodata/pkg
-    for cap in sync network streets authz plans migrate; do
+    for cap in sync network streets authz plans migrate stops; do
         cp "web/pkg/cap_$cap.wasm" server/kodata/pkg/
     done
     cp -r web/dist server/kodata/dist

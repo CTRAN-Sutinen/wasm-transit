@@ -9,7 +9,10 @@ and authz keeps its own instance), all rebuilt by
 `just caps` into web/pkg/: cap-sync (the -wasm flag, cap_sync.wasm),
 the op behind POST /edits, held for the server's lifetime; cap-authz
 (-authz-wasm) when authentication is on; cap-plans (-plans-wasm) in
-store mode, the op behind POST /plans; cap-network
+store mode, the op behind POST /plans; cap-stops (-stops-wasm) in
+store mode, one instance made on first use and emptied after each
+(the kernel's `evict`) — the validation behind a stops write, and each
+pick's stops refreshed from the stops document; cap-network
 (the -network-wasm flag, cap_network.wasm), which imports the
 configured GTFS zip (the kernel's `load_feed` + `import`) — and canonicalizes and
 validates each published pick — in a fresh instance
@@ -17,9 +20,11 @@ that is closed afterwards, so its working memory goes with
 it; and cap-streets (the -streets-wasm flag, cap_streets.wasm),
 which imports the configured street layer (`import`) and derives
 the walk table over it and the published network (the kernel's
-`load_network` + `walks`) in a fresh instance, closed the same way. Machine code
-is cached per module bytes for the process, so a re-import does
-not recompile. The manifest pins the network it publishes, the zip
+`load_network` + `walks`) in a fresh instance, closed the same way. Each module's
+bytes are compiled once per process (decoding, validating, machine
+code: 1–3 s for cap-network) and every instance is made from that
+compiled module in well under a millisecond, so a fresh instance per
+import or publish costs only its memory. The manifest pins the network it publishes, the zip
 it was imported from, the published plan set (store mode), the
 streets and walk table it publishes, and the sync module's hash. (Reentrancy and the Go-host serialization live in
 `docs/CONVENTIONS.md`.)
@@ -161,7 +166,7 @@ Its HTTP surface:
   `GEOCODER=http://127.0.0.1:4000 just serve …` (or `just dev`)
   proxies it.
 - `/manifest` — `{network_hash, boundary_hash, feed_url, feed_hash, feed_version,
-  plans_hash, streets_hash, walks_hash, wasm_hash, authz_hash,
+  plans_hash, stops_hash, streets_hash, walks_hash, wasm_hash, authz_hash,
   policy_hash, build_hash, generated_at, publisher, timezone, services}`
   (the optional ones omitted when empty): which network is
   authoritative and its boundary (the import's numbering, named by the
@@ -265,7 +270,21 @@ Its HTTP surface:
   server. The server commits the network to
   `plan.<id>`, then the set to `plans`, and the manifest pins it as
   `plans_hash`. Clients read the set and each pick's network from
-  `/blobs`.
+  `/blobs`. With a stops document, the pick is refreshed from it
+  first (cap-stops `refresh`, D-156), for its window — from its date
+  until the next pick's, as cap-plans `periods` derives it — so the
+  network stored is the refreshed one, whatever copy was sent.
+- `POST /stops` (store mode) — write the stops document (D-153):
+  `{"from": "<the head read, or empty>", "stops": {...}}`. A fresh
+  cap-stops validates it (422 with `refusals`) and answers its
+  canonical bytes, committed to the `stops` pointer by CAS (409 with
+  `current` when another writer moved it); the manifest pins it as
+  `stops_hash`. Then every pick in force or to come is refreshed from
+  it, and each whose network changed is republished (`plan.<id>`, then
+  the set), answered as `republished`. A raw pointer commit of the
+  stops is refused (400). With no stops document a pick publishes as
+  sent; the first one arrives through this route (a page makes it with
+  cap-stops `seed`).
 - `GET /feed?date=` — the GTFS zip in force on the date (default the
   server's today): cap-network `export` of the published pick in
   force (cap-plans `in_force` answers which), kept by network hash;

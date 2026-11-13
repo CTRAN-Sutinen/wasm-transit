@@ -91,6 +91,41 @@ test("a retired pick never reaches a rider", async ({ page, request }) => {
   await publish(request, "winter-2026", "Winter 2026 pick", "2026-12-01");
 });
 
+// A stop closed in the stops document (POST /stops, D-153) reaches a
+// rider through the pick it touches (D-156: the server refreshes and
+// republishes it): stop C — served by the A–C–B pattern — closed for
+// Wednesday 2026-11-04 shows no departures that day, and its
+// departures are back on Thursday. The other stops are as the import
+// has them.
+test("a stop closed for a day shows no departures that day", async ({ page, request }) => {
+  await publish(request, "fall-2026", "Fall 2026 pick", "2026-10-01");
+  await publish(request, "winter-2026", "Winter 2026 pick", "2026-12-01");
+  const { network } = await (await request.get("/network")).json();
+  const stops = {};
+  for (const [id, s] of Object.entries(network.stops)) {
+    stops[id] = [{
+      event: "opened", lat: s.lat, lon: s.lon,
+      ...(s.name ? { name: s.name } : {}), ...(s.kind === "station" ? { kind: "station" } : {}),
+      ...(s.parent ? { parent: s.parent } : {}), ...(s.info ?? {}), ...(s.transfer ? { transfer: true } : {}),
+    }];
+  }
+  stops.C.push({ on: "2026-11-04", event: "closed", until: "2026-11-05", note: "water main" });
+  const from = (await (await request.get("/manifest")).json()).stops_hash ?? "";
+  const written = await request.post("/stops", { data: { from, stops: { kind: "stops", schema_version: 1, stops } } });
+  expect(written.status(), await written.text()).toBe(200);
+  expect((await written.json()).republished).toContain("fall-2026");
+
+  await live(page, "2026-11-04T07:55:00-05:00");
+  await page.goto("/stop-display.html?stop=C&layout=routes");
+  await expect(page.getByTestId("display-stop")).toHaveText(/./, { timeout: 10_000 });
+  await expect(page.getByTestId("display-time")).toHaveCount(0);
+
+  const next = await page.context().newPage();
+  await live(next, "2026-11-05T07:55:00-05:00");
+  await next.goto("/stop-display.html?stop=C&layout=routes");
+  await expect(next.getByTestId("display-time").first()).toBeVisible({ timeout: 10_000 });
+});
+
 // The planner publishes from the service-design UI: the "Ready to
 // publish?" panel posts the active plan to POST /plans and shows the
 // server's answer as given — published, or each reason it was refused.

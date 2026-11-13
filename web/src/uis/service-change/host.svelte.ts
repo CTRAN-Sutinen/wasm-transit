@@ -20,7 +20,7 @@
 /// service-design host's, copied: one UI never imports another's files.
 
 import { getAllPlans, getActivePlanId, putPlan, readPlan, removePlan, setActivePlan, restorePlans } from "../../plans.svelte";
-import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, servedNetworkValue, Doc } from "../../engine";
+import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, refreshedFromStops, servedNetworkValue, Doc } from "../../engine";
 import { answerGraph, readAgencyZone, today } from "../kit";
 
 // This page's capabilities answer inside its linked assembly (D-77).
@@ -256,6 +256,23 @@ async function readStoredNetwork(stored: unknown): Promise<Network | null> {
   const answer = await ask("author", "apply", { network_hash: new Doc("network", { value: stored as Network }), edits: [] });
   docs.set(answer.network, produced("network", answer.network, "author", answer.network_hash));
   return answer.network;
+}
+
+/// A draft's stops refreshed from the deployment's stops document for
+/// its window (D-156: a pick's stops are a copy, and the copy never
+/// wins). Not an edit: it is not on the undo stack. A published pick is
+/// the server's, refreshed when it publishes.
+async function refreshStops(key: string, published: PublishedPlans | null): Promise<void> {
+  const doc = getAllPlans()[key];
+  if (!doc) return;
+  try {
+    const refreshed = await refreshedFromStops(docOf(doc), published);
+    if (!refreshed?.value) return;
+    docs.set(refreshed.value, refreshed);
+    putPlan(key, refreshed.value);
+  } catch (e) {
+    say(`The stops could not be refreshed: ${e instanceof Error ? e.message : e}`, true);
+  }
 }
 
 function release(): Promise<void> {
@@ -732,6 +749,7 @@ export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<v
 /// A plan opened; nothing is compared until the planner chooses (D-141).
 export async function openPlan(key: string): Promise<void> {
   if (!(await ensureLoaded(key))) return;
+  if (!sc.plans.find((p) => p.key === key)?.published) await refreshStops(key, sc.pickSet);
   sc.activeKey = key;
   setActivePlan(key);
   if (sc.compareKey === key) sc.compareKey = "";

@@ -99,7 +99,12 @@ File ownership:
   is the planner's: the network as a value it forks; `publishedPlanSet`
   and `publishedPickValue` are its timeline (D-139) — every published
   pick, and one pick's network as a value, fetched gzipped and
-  decompressed in the page (a value is parsed either way). A module may drop what
+  decompressed in the page (a value is parsed either way).
+  `servedStops` is the deployment's stops document (the manifest's
+  `stops_hash`, bytes the page never parses), and `refreshedFromStops`
+  a plan's network with its stops refreshed from it for the plan's
+  window (cap-plans `periods` over the published set, then cap-stops
+  `refresh`; D-156) — null when nothing changes. A module may drop what
   it holds (see "The bus worker", below): asking for a dropped document is
   the module's unknown-hash error, and the engine registers the
   document again (or mints it again) and asks once more — a host

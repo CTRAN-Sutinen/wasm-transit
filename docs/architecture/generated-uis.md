@@ -299,7 +299,9 @@ the one running today marked (plans `in_force` over the published set,
 else, before the first pick takes effect, the deployment's feed). A
 published pick, and the deployment's feed, are read-only: a change goes
 into a fork (author `set_plan`, the fork's calendar its period, D-138).
-A draft is renamed (`update_plan`), given its period — picks on and,
+A draft opened has its stops refreshed from the deployment's stops
+document for its window (engine `refreshedFromStops`, D-156; not an
+edit, not on the undo stack; service design does the same). A draft is renamed (`update_plan`), given its period — picks on and,
 optionally, runs through, by the fork's own edit (`set_plan`: weekly
 service carried to the end, the calendar cut to the period; undone like
 any change) — and deleted from the device. An imported feed is a draft picking on its first service date

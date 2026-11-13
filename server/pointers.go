@@ -327,6 +327,12 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 		http.Error(w, "picks publish through POST /plans", http.StatusBadRequest)
 		return
 	}
+	// The stops document is written only by POST /stops (stops.go): a
+	// raw write would skip cap-stops' validation and the picks' refresh.
+	if kind == "stops" || name == stopsPointer {
+		http.Error(w, "the stops document is written through POST /stops", http.StatusBadRequest)
+		return
+	}
 	// A build names files the store must hold: builds land from -dist,
 	// and the pointer moves only to a build its log holds (POST /builds).
 	if kind == store.BuildKind || kind == store.BuildFileKind || name == buildPointer {

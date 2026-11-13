@@ -40,7 +40,8 @@
     "directory.service_keys",
     "runcut.suggest_blocks",
     "runcut.block_trips",
-    "runcut.fleet_summary"
+    "runcut.fleet_summary",
+    "stops.refresh"
   ],
   "components": [
     "NetworkMap",

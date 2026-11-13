@@ -4,10 +4,13 @@ GTFS speaks only of what is in service now; a stop's past and future
 (proposed, opened, closed for a while, moved, changed, removed) has no
 place in it. The stops document holds them: every stop a list of dated
 events, on the bus as `transit-stops` and `cap-stops`, the kernel's
-`stops` kind (`docs/architecture/crates.md`; D-153, D-154). What is left
-is joining it to everything else: a pick's stops refreshed from it, the
-day serving what is open, GTFS in and out, the server storing it, and
-the Stops stage reading it. The network document keeps its shape (D-156):
+`stops` kind (`docs/architecture/crates.md`; D-153, D-154). A pick's stops
+are a copy refreshed from it — by the server when it publishes and on
+every stops write, by the planner pages when they open a draft — and a
+dated day serves only open stops (`docs/architecture/crates.md`,
+`server.md`, `web.md`). What is left is the planner's timetable on a
+date, GTFS in and out, and the Stops stage reading and writing it. The
+network document keeps its shape (D-156):
 nothing that reads a network today changes. A stop is the rider's
 stop, kept through a move (D-145); the document sits beside the plans,
 and a fork never copies it (D-147); its dates are service days (D-148).
@@ -20,30 +23,15 @@ unit.
 
 ## Scope, in order
 
-1. **Loading and publishing refresh a pick** (D-156). The refresh is on
-   the bus (cap-stops `seed` and `refresh`, transit-network's
-   `stop_record`; `docs/architecture/crates.md`). Left: every host
-   refreshes a pick before it reads it — the service-change and
-   service-design pages when they load or fork a plan, the server when
-   it publishes a pick — over the pick's window, from its effective
-   date until the next pick's (open-ended when there is none); the
-   first stops document is seeded from the network in force. Stop edits
-   (add, move, change) are edits of the stops document, never of a
-   pick's copy. Publishing a pick publishes the refreshed network; a
-   stop event inside a published window publishes it again, and pages
-   follow it as they follow a new pick. Rider pages load that one
-   document, as now; a page that imports the agency's GTFS URL (D-132)
-   builds its network from the feed and sees no stops document; a
-   static export carries the network of its day.
-2. **The timetable on a date.** A dated day serves only open stops and
+1. **The timetable on a date.** A dated day serves only open stops and
    the planner is warned of short trips (transit-network `materialize`,
    `served_warnings`; D-155; `docs/architecture/crates.md`). Left: the
    planner's timetable is date-free (one route, one direction, one
    service combination), so it does not show a closure; read for a
    date, it keeps a closed stop's column and marks it closed. And a
    published plan opens its proposed stops from its first date (an
-   `opened` event the publish writes, item 1).
-3. **GTFS in and out.** transit-codec imports a feed into a network
+   `opened` event its publish writes to the stops document).
+2. **GTFS in and out.** transit-codec imports a feed into a network
    and a stops document, and exports a network with its stops over the
    feed's window: where a closure starts or ends inside the window, the
    affected trips split by calendar. The lossless round-trip law holds
@@ -59,21 +47,17 @@ unit.
    from the stop's id and its start date, all sharing the `stop_code` —
    with the trips split by calendar, and an import reads a made id back
    as a version of its stop (D-151).
-4. **Serving and storing it.** The server keeps the stops document in
-   the store, serves it to any reader, and runs cap-stops' `validate`
-   on every write; a stop change inside a published window republishes
-   the rider's network. A write names the version it read and is
-   refused when another writer moved the document first (the store's
-   conditional create; the writer re-reads and re-applies).
-5. **The Stops stage reads it.** The card and the map show a stop on a
+3. **The Stops stage reads it.** The card and the map show a stop on a
    date the planner chooses — its status, point, details, and amenities
    — and its events; closing and reopening a stop for dates (D-144) are
    its first edits. The stage lists the events the last import added and
-   the stops it did not list (item 3), each one fixable — a `moved`
+   the stops it did not list (item 2), each one fixable — a `moved`
    turned into a correction of the earlier point — and the warnings of
-   item 2. The rest of
+   item 1. The rest of
    [ui-stops.md](ui-stops.md)'s stop edits (create, move, consolidate,
-   remove) are edits of this document.
+   remove) are edits of this document, never of a pick's copy; the
+   stage's first write makes the stops document with cap-stops `seed`
+   when the manifest pins none.
 
 ## Done when
 

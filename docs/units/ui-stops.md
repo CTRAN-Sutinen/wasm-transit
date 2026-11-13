@@ -25,7 +25,7 @@ and removals become dated edits of that document, not of the network.
    library function measures where a stop falls along a pattern's line;
    a move re-measures every visit and warns where the line is now far
    from the stop. Closing and reopening a stop (D-144) is built in
-   [stop-lifecycle.md](stop-lifecycle.md) item 5.
+   [stop-lifecycle.md](stop-lifecycle.md) item 3.
 3. **Consolidate and remove.** One stop replaced by another on every
    pattern that visits it, then removed (a new gesture,
    `replace_stop {from, to}`); a stop withdrawn from every pattern and
