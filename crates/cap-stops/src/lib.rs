@@ -9,12 +9,16 @@
 //! a host stores exactly those bytes). `stops_on` and `stop` answer
 //! stops as their events make them on a date, over a document the
 //! kernel's `load_stops` registered (refused there unless `validate`
-//! would pass it). The domain code lives in the shared `transit-stops`
-//! library; the module writes nothing.
+//! would pass it). A pick's stops are a copy (D-156): `seed` starts a
+//! stops document from a network's stops, and `refresh` rewrites a
+//! pick's stops from the stops document for its window, answering the
+//! refreshed network under its hash (transit-network's `stop_record`).
+//! The domain code lives in the shared `transit-stops` library; the
+//! module writes nothing.
 
 #![forbid(unsafe_code)]
 
-use cap_abi::kernel::STOPS;
+use cap_abi::kernel::{NETWORK, STOPS};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -41,6 +45,29 @@ pub enum Request {
     /// One stop on `date` (null before it exists) and every event it
     /// has, oldest first — the card's record and its history.
     Stop { stops_hash: String, stop_id: String, date: String },
+    /// A stops document from a network's stops: each one `opened`
+    /// event with no date, carrying its point and details — registered,
+    /// answered with its hash. Refreshing the network from it gives the
+    /// network back.
+    Seed { network_hash: String },
+    /// The network with its stops refreshed from the stops document for
+    /// the window `[from, until)` (open-ended without `until`), for the
+    /// pick's `plan`: each stop the document holds as the window opens,
+    /// carrying the events inside the window unless it is open as
+    /// recorded every day of it; another plan's proposals left out; a
+    /// stop the document does not hold left as it was. Registered,
+    /// answered with its hash.
+    Refresh {
+        network_hash: String,
+        stops_hash: String,
+        from: String,
+        #[serde(default)]
+        #[ts(optional)]
+        until: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        plan: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -50,6 +77,8 @@ pub enum Response {
     Validate { refusals: Vec<Refusal>, document: Option<String>, document_hash: Option<String> },
     StopsOn { stops: Vec<StopOn> },
     Stop { stop: Option<StopOn>, events: Vec<Event> },
+    Seed { stops_hash: String, stops: Stops },
+    Refresh { network_hash: String, network: transit_network::Network },
 }
 
 fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
@@ -93,6 +122,27 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let events = stops.stops.get(&stop_id).ok_or_else(|| format!("no stop {stop_id:?} in the stops document"))?;
             Ok(Response::Stop { stop: stops.stop_on(&stop_id, date), events: events.clone() })
         }
+        Request::Seed { network_hash } => {
+            let network = NETWORK.require(&network_hash)?;
+            let seeded = transit_network::stop_record::seed(&network).checked().map_err(|refusals| {
+                let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
+                format!("the network's stops do not make a stops document: {}", reasons.join("; "))
+            })?;
+            let (stops_hash, held) = STOPS.register(seeded)?;
+            Ok(Response::Seed { stops_hash, stops: (*held).clone() })
+        }
+        Request::Refresh { network_hash, stops_hash, from, until, plan } => {
+            let from = parse_date(&from)?;
+            let until = until.as_deref().map(parse_date).transpose()?;
+            if until.is_some_and(|u| u <= from) {
+                return Err("until must come after from".into());
+            }
+            let network = NETWORK.require(&network_hash)?;
+            let stops = STOPS.require(&stops_hash)?;
+            let next = transit_network::stop_record::refresh(&network, &stops, from, until, plan.as_deref());
+            let (network_hash, next) = NETWORK.register(next)?;
+            Ok(Response::Refresh { network_hash, network: (*next).clone() })
+        }
     }
 }
 
@@ -112,5 +162,5 @@ cap_abi::capability! {
     id: "stops",
     json: dispatch_json,
     bytes: dispatch_bytes,
-    documents: [STOPS],
+    documents: [STOPS, NETWORK],
 }

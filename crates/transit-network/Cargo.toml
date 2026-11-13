@@ -7,6 +7,8 @@ license.workspace = true
 
 [dependencies]
 transit-version = { path = "../transit-version" }
+# The stops document: a pick's stops are refreshed from it (D-156).
+transit-stops = { path = "../transit-stops" }
 serde = { workspace = true }
 ts-rs = { workspace = true }
 schemars = { workspace = true }

@@ -354,6 +354,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "transit-network",
  "transit-stops",
  "transit-version",
  "ts-rs",
@@ -1458,6 +1459,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+ "transit-stops",
  "transit-version",
  "ts-rs",
 ]

@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-156**.
+- IDs are never reused; the next new decision is **D-157**.
 
 ## Summary
 
@@ -209,6 +209,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-153 | How is the stops document stored? | decided | nothing |
 | D-154 | What does the stops document say about amenities? | decided | nothing |
 | D-155 | What happens when a closure leaves a trip short? | decided | nothing |
+| D-156 | Does the network document change for the stops? | decided | nothing |
 
 ## The trip model
 
@@ -965,6 +966,26 @@ that gates export and publish": the closure is a fact on the ground,
 and holding the schedule back would leave riders one that shows the
 stop open.
 Context: `docs/units/stop-lifecycle.md` item 2.
+Blocks: nothing.
+
+### D-156 — Does the network document change for the stops?
+State: Decided.
+Answer: 2026-11-12 — no: the network document keeps its shape, stops
+included, and the split is the planners'. The user: "so we leave the
+existing document alone and make a split for planners?", then "yes that
+is what i mean, proceed." Encoded as: the stops document beside the
+picks is the record of every stop; a pick's stops are a copy, refreshed
+from it for the pick's window whenever the pick is loaded or published,
+so the copy never wins; stop edits are edits of the stops document,
+never of a pick's copy; the network's stop gains one optional field,
+the stop's events inside the window, which a reader that does not know
+it ignores — every existing document stays valid under its hash. How
+D-147 is carried out: a fork still never copies the stops' record (its
+copy is refreshed, not kept).
+Context: `docs/units/stop-lifecycle.md` item 1. The other way — stops
+leaving the stored pick, a new network version, and every older network
+split by cap-migrate — changes every network reader and every stored
+document to gain nothing a refresh does not.
 Blocks: nothing.
 
 ### D-53 — What ridership data does the planner bring?

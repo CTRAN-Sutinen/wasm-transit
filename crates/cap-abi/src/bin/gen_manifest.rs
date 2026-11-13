@@ -287,13 +287,15 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "stops",
         file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stop"],
-        documents: &["stops"],
+        ops: &["validate", "stops_on", "stop", "seed", "refresh"],
+        documents: &["stops", "network"],
         // The stops document is the host's (beside the plans, D-147):
         // validate answers its canonical bytes and hash, which the
         // kernel's load_stops answers too; the date questions read it.
-        consumes: &[],
-        speaks: &[("stops", &[transit_stops::SCHEMA_VERSION])],
+        // A pick's stops are a copy (D-156): seed reads a network's
+        // stops, refresh mints the network with its stops refreshed.
+        consumes: &[("network", "network")],
+        speaks: &[("stops", &[transit_stops::SCHEMA_VERSION]), ("network", &[transit_network::SCHEMA_VERSION])],
         migrates: &[],
         // Its purpose and per-op agent context: crates/cap-stops/OPS.md
         // (a `#` heading, the purpose, then one `##` section per op).
@@ -1705,6 +1707,33 @@ fn example_for(
             (
                 json!({ "op": "stop", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stop_id": "6124", "date": "2027-07-01" }),
                 json!({ "ok": { "op": "stop", "stop": stops.stop_on("6124", date), "events": stops.stops["6124"] } }),
+            )
+        }
+        ("stops", "seed") => {
+            let net = net?;
+            let seeded = transit_network::stop_record::seed(net.derived_network()).checked().ok()?;
+            (
+                json!({ "op": "seed", "network_hash": net.network_hash }),
+                json!({ "ok": { "op": "seed", "stops_hash": cap_abi::canonical_hash(&seeded).ok()?, "stops": seeded } }),
+            )
+        }
+        ("stops", "refresh") => {
+            // The fixture's stops seeded, stop A closed for one day
+            // inside the window: A carries its events, the rest do not.
+            let net = net?;
+            let mut stops = transit_network::stop_record::seed(net.derived_network());
+            stops.stops.get_mut("A")?.push(transit_stops::Event {
+                on: Some("2026-10-23".into()),
+                event: transit_stops::EventKind::Closed,
+                until: Some("2026-10-24".into()),
+                ..Default::default()
+            });
+            let stops = stops.checked().ok()?;
+            let from = chrono::NaiveDate::from_ymd_opt(2026, 10, 1)?;
+            let refreshed = transit_network::stop_record::refresh(net.derived_network(), &stops, from, None, None);
+            (
+                json!({ "op": "refresh", "network_hash": net.network_hash, "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "from": "2026-10-01" }),
+                json!({ "ok": { "op": "refresh", "network_hash": cap_abi::canonical_hash(&refreshed).ok()?, "network": refreshed } }),
             )
         }
         ("kernel", "load_work_rules") => {

@@ -111,3 +111,36 @@ fn garbage_is_an_error_not_a_panic() {
     let bulk: Value = serde_json::from_str(&cap_stops::invoke_bytes(0, b"whatever")).unwrap();
     assert!(bulk["error"].as_str().unwrap().contains("unknown bulk op"), "{bulk}");
 }
+
+fn sample_network() -> Value {
+    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../web/public/caps/sample-network-load.json")).unwrap();
+    ok(serde_json::from_str(&text).unwrap())
+}
+
+#[test]
+fn seed_and_refresh_give_the_network_back_and_carry_a_closure() {
+    let network_hash = sample_network()["network_hash"].clone();
+    let seeded = ok(json!({"op": "seed", "network_hash": network_hash}));
+    let stops = &seeded["stops"]["stops"];
+    assert_eq!(stops["A"].as_array().unwrap().len(), 1, "one opened event per stop");
+    assert!(stops["A"][0].get("on").is_none() && stops["A"][0]["event"] == "opened");
+    // the seed is registered under its hash: load it again, same identity
+    assert_eq!(ok(json!({"op": "load_stops", "stops": seeded["stops"]}))["stops_hash"], seeded["stops_hash"]);
+
+    let same = ok(json!({"op": "refresh", "network_hash": network_hash, "stops_hash": seeded["stops_hash"], "from": "2026-10-01"}));
+    assert_eq!(same["network_hash"], network_hash, "a network whose stops do not change keeps its hash");
+
+    let mut closed = seeded["stops"].clone();
+    closed["stops"]["A"].as_array_mut().unwrap().push(json!({"on": "2026-10-23", "event": "closed", "until": "2026-10-24"}));
+    let closed_hash = ok(json!({"op": "load_stops", "stops": closed}))["stops_hash"].clone();
+    let refreshed = ok(json!({"op": "refresh", "network_hash": network_hash, "stops_hash": closed_hash, "from": "2026-10-01", "until": "2026-12-01"}));
+    assert_ne!(refreshed["network_hash"], network_hash);
+    assert_eq!(refreshed["network"]["stops"]["A"]["events"].as_array().unwrap().len(), 2);
+    assert!(refreshed["network"]["stops"]["B"].get("events").is_none(), "an unchanged stop carries none");
+    // after the closure's window, nothing changes
+    let later = ok(json!({"op": "refresh", "network_hash": network_hash, "stops_hash": closed_hash, "from": "2026-11-01"}));
+    assert_eq!(later["network_hash"], network_hash);
+
+    assert!(err(json!({"op": "refresh", "network_hash": network_hash, "stops_hash": closed_hash, "from": "2026-11-01", "until": "2026-11-01"})).contains("until"));
+    assert!(err(json!({"op": "seed", "network_hash": "sha256:none"})).contains("load_network"));
+}

@@ -2,6 +2,16 @@
 
 ```
 transit-network The authored network model (planner authority):
+                its stops a COPY of the stops document's (D-156):
+                `stop_record` seeds a stops document from a network's
+                stops and refreshes a pick's stops from one for its
+                window — each as the window opens, carrying
+                `Stop.events` (the events inside the window) only
+                where it is not open as recorded every day of it, so
+                a network whose stops do not change keeps its bytes
+                and hash; `stop_on` answers a network's stop on a
+                date. The day does not read the events yet
+                (`docs/units/stop-lifecycle.md`);
                 routes and their DIRECTIONS (`Route.directions`,
                 each named; a pattern runs in at most one —
                 `Pattern.direction`, validated against its route;
@@ -561,9 +571,9 @@ transit-stops   THE stops document, beside the plans (D-147, D-153):
                 another tool's field, an agency's amenity — is kept
                 through a read and a write. A correction edits the
                 event that was wrong; a real change adds one. Depends
-                on no other model crate. cap-stops is the seam; the
-                network does not read it yet
-                (`docs/units/stop-lifecycle.md`).
+                on no other model crate. cap-stops is the seam; a
+                pick's stops are refreshed from it (transit-network's
+                `stop_record`).
 transit-streets THE streets model. `model.rs`: the streets document
                 (`Streets`: ways — points as [lat, lon] microdegrees,
                 one-way, class, name), CANONICAL so its hash is the
@@ -649,9 +659,14 @@ cap-stops       The stops capability: what is a stop on a date?
                 the canonical document and its hash, the one the
                 kernel's load_stops answers), stops_on (every stop, or
                 those named, as on a date) and stop (one stop on a
-                date and its events, oldest first). transit-stops is
-                the library; the kernel's `stops` kind registers a
-                document only if validate would pass it.
+                date and its events, oldest first); seed (a stops
+                document from a network's stops) and refresh (a
+                pick's stops refreshed from the stops document for
+                its window, the network answered under its hash —
+                D-156). transit-stops and transit-network's
+                `stop_record` are the libraries; the kernel's `stops`
+                kind registers a document only if validate would pass
+                it.
 cap-author      The authoring capability: what does this network
                 become after these edits? apply (typed edits,
                 atomic) answers the next document under its hash,

@@ -5,9 +5,10 @@ GTFS speaks only of what is in service now; a stop's past and future
 place in it. The stops document holds them: every stop a list of dated
 events, on the bus as `transit-stops` and `cap-stops`, the kernel's
 `stops` kind (`docs/architecture/crates.md`; D-153, D-154). What is left
-is joining it to everything else: the network refers to stops by id and
-stops carrying them, the day serves what is open, GTFS in and out, the
-server storing it, and the Stops stage reading it. A stop is the rider's
+is joining it to everything else: a pick's stops refreshed from it, the
+day serving what is open, GTFS in and out, the server storing it, and
+the Stops stage reading it. The network document keeps its shape (D-156):
+nothing that reads a network today changes. A stop is the rider's
 stop, kept through a move (D-145); the document sits beside the plans,
 and a fork never copies it (D-147); its dates are service days (D-148).
 The split is the authoring side's: riders get one published network, as
@@ -19,24 +20,24 @@ unit.
 
 ## Scope, in order
 
-1. **The network refers to stops by id.** `Network.stops` leaves the
-   network document (a new version; cap-migrate splits an older
-   network into a network and a stops document, each stop one `opened`
-   event with no date). An authoring capability reaches a stop's record through the
-   kernel's composed entry for a pick and the stops, so an op's
-   arguments keep one network handle. Publishing a pick builds the
-   riders' network (D-147): its stops as they are over the window — from
-   the pick's effective date until the next pick's, open-ended when
-   there is none — each carrying the events that fall inside it, so a
-   rider's day skips a closed stop on its dates; a reader that knows no
-   events still reads it. Earlier events and unpublished proposals stay
-   out. A stop event inside a published window rebuilds it, and pages
+1. **Loading and publishing refresh a pick** (D-156). The refresh is on
+   the bus (cap-stops `seed` and `refresh`, transit-network's
+   `stop_record`; `docs/architecture/crates.md`). Left: every host
+   refreshes a pick before it reads it — the service-change and
+   service-design pages when they load or fork a plan, the server when
+   it publishes a pick — over the pick's window, from its effective
+   date until the next pick's (open-ended when there is none); the
+   first stops document is seeded from the network in force. Stop edits
+   (add, move, change) are edits of the stops document, never of a
+   pick's copy. Publishing a pick publishes the refreshed network; a
+   stop event inside a published window publishes it again, and pages
    follow it as they follow a new pick. Rider pages load that one
    document, as now; a page that imports the agency's GTFS URL (D-132)
-   builds its network from the feed and sees no stops document; a static
-   export carries the network of its day.
-2. **Served, not positional.** The day does not serve a stop that is
-   closed, proposed, retired, or not yet opened on its date; the readers that index a trip's stop times
+   builds its network from the feed and sees no stops document; a
+   static export carries the network of its day.
+2. **Served, not positional.** The day reads a stop's `events`
+   (transit-network `stop_record::stop_on`) and does not serve a stop
+   that is closed, proposed, retired, or not yet opened on its date; the readers that index a trip's stop times
    by position (the timetable's slots, signs, dispatch's patching and
    geometry, the analysis ops) read the served stops. Every pattern
    keeps its visit and place; the timetable keeps a closed stop's column
@@ -81,9 +82,6 @@ unit.
 
 ## Done when
 
-- The migration that splits an older network into a network and a
-  stops document has its frozen fixture (cap-migrate), and the network's
-  laws read stops through transit-stops.
 - The codec's round-trip law, a closure-splits-trips law, a move-inside-the-window
   law (one row per version, one `stop_code`, the made id read back), and
   the import law (a re-import of this repo's own feed adds no event)

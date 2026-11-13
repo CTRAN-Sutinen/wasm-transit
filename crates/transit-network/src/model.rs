@@ -165,6 +165,17 @@ pub struct Stop {
     /// the timed connections it enables).
     #[serde(default)]
     pub transfer: bool,
+    /// The stop's events inside its pick's window, from the stops
+    /// document (`transit-stops`; D-156) — present only where the stop
+    /// is not open, as recorded, every day of the window: a closure, a
+    /// move, a rename, an opening or a retirement inside it. The stop
+    /// on a date is then these events applied
+    /// ([`crate::stop_record::stop_on`]). Absent on every network
+    /// written before it and on every stop that does not change, so
+    /// those documents keep their bytes and hashes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<transit_stops::Event>>")]
+    pub events: Vec<transit_stops::Event>,
 }
 
 /// A route as a planner authors it: its public name (the short one
