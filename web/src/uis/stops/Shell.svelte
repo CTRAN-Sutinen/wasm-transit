@@ -44,8 +44,8 @@
     </div>
     <div class="filters" role="group" aria-label="Statuses shown">
       {#each STATUSES as s (s)}
-        <button type="button" class="chip" class:on={st.show.includes(s)} aria-pressed={st.show.includes(s)} onclick={() => toggleStatus(s)} data-testid="filter-{s}">
-          <i class="dot" style="background:{STATUS_COLORS[s][0]};border-color:{STATUS_COLORS[s][1]}"></i>{STATUS_WORDS[s]} <span class="n">{count(s)}</span>
+        <button type="button" class="filter" class:on={st.show.includes(s)} aria-pressed={st.show.includes(s)} onclick={() => toggleStatus(s)} data-testid="filter-{s}">
+          <i class="dot" style="--fill:{STATUS_COLORS[s][0]};--edge:{STATUS_COLORS[s][1]}"></i>{STATUS_WORDS[s]}<span class="n">{count(s)}</span>
         </button>
       {/each}
     </div>
@@ -61,12 +61,12 @@
     </div>
     <aside class="side">
       {#if st.picking === "new"}
-        <NewStopForm date={readDate()} point={st.point} busy={st.busy} onsave={newStop} oncancel={() => startPicking("")} />
+        <NewStopForm date={readDate()} point={st.point} busy={st.busy} onpoint={picked} onsave={newStop} oncancel={() => startPicking("")} />
       {:else if st.open}
         {#if st.failed.Card}{@render failure("Card", "The stop")}
         {:else if st.card}
           <StopLifeCard stopId={st.open} card={st.card} served={st.served} date={readDate()} busy={st.busy} refusals={st.refusals}
-            moving={st.picking === "move"} point={st.point}
+            point={st.point} onpoint={picked}
             onevent={(e, done) => addEvent(st.open, e, done)}
             oncorrect={(i, e, done) => correctEvent(st.open, i, e, done)}
             onmove={(start) => startPicking(start ? "move" : "")}
@@ -88,10 +88,19 @@
   h1 { font-size: 1.05rem; margin: 0; }
   .find { min-width: 16rem; flex: 1; max-width: 26rem; }
   .filters { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-  .chip { display: inline-flex; align-items: center; gap: 0.3rem; opacity: 0.7; }
-  .chip.on { opacity: 1; }
-  .n { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid; }
+  /* A status filter: on is filled and in the text colour, off is flat
+     and muted with a hollow dot — the state reads without the count. */
+  .filter {
+    display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.6rem;
+    border: 1px solid var(--line); border-radius: 6px; background: transparent;
+    color: var(--muted); font: inherit; font-size: 0.85rem; cursor: pointer;
+  }
+  .filter:hover { background: var(--hover); }
+  .filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .filter.on { background: var(--hover); color: var(--text); border-color: color-mix(in srgb, var(--text) 30%, var(--line)); }
+  .n { font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--edge); background: var(--fill); }
+  .filter:not(.on) .dot { background: transparent; border-color: var(--muted); }
   .status { margin: 0 0 0 auto; color: var(--muted); font-size: 0.85rem; }
   .status.alert { color: var(--bad); }
   .body { display: grid; grid-template-columns: 1fr minmax(20rem, 28rem); min-height: 0; }

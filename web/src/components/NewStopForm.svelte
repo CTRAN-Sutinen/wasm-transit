@@ -1,20 +1,24 @@
 <script lang="ts">
-  /// A new stop: its id, name, and code, the point chosen on the map,
-  /// and where its life starts — planned, or in service for a stop that
-  /// is there but was never recorded. The host writes it as the stop's
-  /// first event. A RENDER component.
+  /// A new stop: its id, name, and code, its point (clicked on the map,
+  /// or typed as measured), and where its life starts — planned, or in
+  /// service for a stop that is there but was never recorded. The host
+  /// writes it as the stop's first event. A RENDER component.
   import type { Event } from "../types/Event";
+  import PointFields from "./PointFields.svelte";
 
   let {
     date,
     point,
     busy,
+    onpoint,
     onsave,
     oncancel,
   }: {
     date: string;
     point: { lat: number; lon: number } | null;
     busy: boolean;
+    /// A point typed in the fields (a map click comes by the map).
+    onpoint: (lat: number, lon: number) => void;
     onsave: (stopId: string, event: Event) => void;
     oncancel: () => void;
   } = $props();
@@ -48,7 +52,7 @@
   }}
 >
   <h2>New stop</h2>
-  <p>{point ? `Point: ${point.lat.toFixed(5)}, ${point.lon.toFixed(5)}` : "Click the map where the stop goes."}</p>
+  <PointFields {point} {onpoint} testid="new-point" />
   <label>Id <input type="text" bind:value={id} required placeholder="A new id" data-testid="new-id" /></label>
   <label>Name <input type="text" bind:value={name} data-testid="new-name" /></label>
   <label>Code <input type="text" bind:value={code} placeholder="The number on the sign" data-testid="new-code" /></label>

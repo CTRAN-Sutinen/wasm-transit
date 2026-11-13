@@ -122,6 +122,10 @@ the screen. It never calculates an answer itself.
 
 **Kernel.** See **Core**.
 
+**Latitude and longitude.** The two numbers that say where a point is
+on the earth, in degrees: latitude north or south, longitude east or
+west. Stops use them for where each stop stands.
+
 **Layover.** Time a vehicle waits at the end of a trip before its
 next trip. See also **Recovery**.
 

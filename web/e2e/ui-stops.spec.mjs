@@ -8,8 +8,10 @@
 //     there in the schedule running that day;
 //   - suspended for dates (a refused end before its start first), it
 //     reads suspended on a day inside them, counted and listed so;
-//   - it returns early, the return's date corrected, and it moves;
-//   - a new stop is planned at a point on the map, permitted, and
+//   - it returns early, the return's date corrected, and it moves —
+//     the map's click fills the point's fields, and a measured point
+//     typed over it is the one saved, to the digit;
+//   - a new stop is planned at a point typed, permitted, and
 //     retired — hidden from the map until retired stops are shown.
 
 import { test, expect } from "@playwright/test";
@@ -59,24 +61,33 @@ test("a stop's life: suspended and back, moved, and a new stop planned, permitte
   await expect(events.last()).toContainText("2026-11-11");
   await expect(page.getByTestId("stop-status")).toContainText("Suspended", { timeout: 10_000 });
 
-  // Moved, from a point clicked on the map.
+  // Moved: a click on the map fills the point's fields; the measured
+  // point typed over it is the one saved, to the digit.
   await page.getByTestId("stops-on").fill("2026-11-20");
   await expect(page.getByTestId("stop-status")).toContainText("In service");
   await page.getByTestId("action-move").click();
+  await expect(page.getByTestId("form-save")).toBeDisabled();
   await page.getByTestId("stop-life-map").locator("canvas").click({ position: { x: 300, y: 300 } });
-  await expect(page.getByTestId("stop-form")).toContainText("New point:");
+  await expect(page.getByTestId("move-point-lat")).toHaveValue(/^-?\d+(\.\d+)?$/);
+  await expect(page.getByTestId("move-point-lon")).toHaveValue(/^-?\d+(\.\d+)?$/);
+  await page.getByTestId("move-point-lat").fill("45.5123456");
+  await page.getByTestId("move-point-lon").fill("-73.5123456");
   await page.getByTestId("form-save").click();
   await expect(page.getByTestId("status")).toContainText("Moved B from 2026-11-20", { timeout: 15_000 });
-  await expect(events.last()).toContainText("Moved to");
+  await expect(events.last()).toContainText("Moved to 45.5123456, -73.5123456");
+  await expect(page.getByTestId("stop-location")).toHaveText("45.5123456, -73.5123456");
 
-  // A new stop, planned where the map is clicked, then permitted.
+  // A new stop, planned at a point typed (no map click), then permitted.
   await page.getByTestId("new-stop-start").click();
-  await page.getByTestId("stop-life-map").locator("canvas").click({ position: { x: 340, y: 260 } });
+  await expect(page.getByTestId("new-save")).toBeDisabled();
+  await page.getByTestId("new-point-lat").fill("45.5051234");
+  await page.getByTestId("new-point-lon").fill("-73.5051234");
   await page.getByTestId("new-id").fill("N1");
   await page.getByTestId("new-name").fill("Main & 9th");
   await page.getByTestId("new-save").click();
   await expect(page.getByTestId("status")).toContainText("Added stop N1", { timeout: 15_000 });
   await expect(page.getByTestId("stop-status")).toContainText("Planned since 2026-11-20");
+  await expect(page.getByTestId("stop-location")).toHaveText("45.5051234, -73.5051234");
   await expect(page.getByTestId("action-in_service")).toBeVisible();
   await expect(page.getByTestId("action-suspended")).toHaveCount(0);
   await page.getByTestId("action-permitted").click();

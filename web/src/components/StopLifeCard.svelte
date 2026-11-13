@@ -4,13 +4,15 @@
   /// it in the schedule running that day, and its history. Its changes:
   /// what it may become that day (the op's `next` — only those are
   /// offered), a move, a change of details, and a correction of an event
-  /// that was wrong. Each is one event the host writes. A RENDER
-  /// component: the stop, its events, and its choices come in as props.
+  /// that was wrong. A move's point is clicked on the map or typed.
+  /// Each is one event the host writes. A RENDER component: the stop,
+  /// its events, and its choices come in as props.
   import type { Details } from "../types/Details";
   import type { Event } from "../types/Event";
   import type { Refusal } from "../types/Refusal";
   import type { StopDetail } from "../types/StopDetail";
   import type { StopOn } from "../types/StopOn";
+  import PointFields from "./PointFields.svelte";
   import { ACTION_WORDS, AMENITIES, EVENT_WORDS, STATUS_WORDS, amenityWords, problemWords } from "./stopWords";
 
   let {
@@ -20,8 +22,8 @@
     date,
     busy,
     refusals,
-    moving,
     point,
+    onpoint,
     onevent,
     oncorrect,
     onmove,
@@ -35,9 +37,10 @@
     date: string;
     busy: boolean;
     refusals: Refusal[];
-    /// The map is choosing the stop's new point, and the point chosen.
-    moving: boolean;
+    /// The move's point: clicked on the map or typed.
     point: { lat: number; lon: number } | null;
+    /// A point typed in the move form (a map click comes by the map).
+    onpoint: (lat: number, lon: number) => void;
     onevent: (event: Event, done: string) => void;
     oncorrect: (index: number, event: Event | null, done: string) => void;
     onmove: (start: boolean) => void;
@@ -134,7 +137,7 @@
   function what(e: Event): string {
     const parts: string[] = [];
     if (e.until) parts.push(`until ${e.until}`);
-    if (e.event === "moved" && e.lat != null && e.lon != null) parts.push(`to ${e.lat.toFixed(5)}, ${e.lon.toFixed(5)}`);
+    if (e.event === "moved" && e.lat != null && e.lon != null) parts.push(`to ${e.lat}, ${e.lon}`);
     if (e.name && e.event === "changed") parts.push(`name "${e.name}"`);
     if (e.code && e.event === "changed") parts.push(`code ${e.code}`);
     if (e.wheelchair != null && e.event === "changed") parts.push(`wheelchair boarding ${yesNo(e.wheelchair)}`);
@@ -163,7 +166,7 @@
       {#if s.note}<span class="muted">— {s.note}</span>{/if}
     </p>
     <dl>
-      <dt>Location</dt><dd>{s.lat.toFixed(5)}, {s.lon.toFixed(5)}</dd>
+      <dt>Location</dt><dd data-testid="stop-location">{s.lat}, {s.lon}</dd>
       <dt>Wheelchair boarding</dt><dd>{yesNo(s.wheelchair)}</dd>
       {#if s.fare_zone}<dt>Fare zone</dt><dd>{s.fare_zone}</dd>{/if}
       {#if s.description}<dt>Description</dt><dd>{s.description}</dd>{/if}
@@ -211,7 +214,7 @@
       }}
     >
       {#if form === "move"}
-        <p>{moving && !point ? "Click the map where the stop goes." : point ? `New point: ${point.lat.toFixed(5)}, ${point.lon.toFixed(5)}` : ""}</p>
+        <PointFields {point} {onpoint} testid="move-point" />
       {/if}
       <label>From <input type="date" bind:value={on} required data-testid="form-on" /></label>
       {#if canUntil(form)}

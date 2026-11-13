@@ -430,10 +430,15 @@ routes that stop there in the schedule running that day (directory
 `stop_detail` over `servedNetwork` on the date — read only, which is
 why the page links the network capability too), and its history.
 The card offers only what the stop may become that day (`stop`'s
-`next`), a move (a point clicked on the map, optionally until a
-date), and a change of details and amenities; each event in the
-history can be corrected or taken out (stops `correct_event`). A new
-stop is placed by a click on the map, planned or already in service.
+`next`), a move (to a new point, optionally until a date), and a
+change of details and amenities; each event in the history can be
+corrected or taken out (stops `correct_event`). A new stop is placed
+at a point, planned or already in service. A point is clicked on the
+map (kept to six decimals, about 0.1 m — a click knows no more) or
+typed as measured in the form's latitude and longitude fields, and
+saved as typed; the two edit one point, so a click fills the fields
+and a typed pair moves the marker (`PointFields`). Whether the point
+is on the earth is the receive path's check (stops `add_event`).
 Each change is one event — stops `add_event` places and checks it,
 `POST /stops` checks it again and stores it (409: the page reads the
 stops again and asks for the change again). With no stops document

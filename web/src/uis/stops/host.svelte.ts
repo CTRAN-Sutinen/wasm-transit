@@ -27,7 +27,7 @@ import type { StopDetail } from "../../types/StopDetail";
 
 export type Next = "planned" | "permitted" | "built" | "in_service" | "suspended" | "retired";
 /// What a click on the map does: open a stop, or place a new stop or
-/// a stop's new point.
+/// a stop's new point (a point the forms' fields may also type).
 export type Picking = "" | "new" | "move";
 
 export const STATUSES: Status[] = ["planned", "permitted", "built", "in_service", "suspended", "retired"];
@@ -245,8 +245,8 @@ export function closeStop(): Promise<void> {
   return openStop("");
 }
 
-/// The next click on the map places a new stop, or the open stop's new
-/// point.
+/// The next click on the map (or the point typed in the form) places a
+/// new stop, or the open stop's new point.
 export function startPicking(what: Picking): void {
   st.picking = what;
   st.point = null;
@@ -275,7 +275,7 @@ export function correctEvent(stopId: string, index: number, event: Event | null,
   );
 }
 
-/// A new stop: its first event, at the point chosen on the map. An id
+/// A new stop: its first event, at the point clicked or typed. An id
 /// the document already holds is another stop's.
 export function newStop(stopId: string, event: Event): Promise<void> {
   if (st.all.some((s) => s.stop_id === stopId) || st.card?.stop?.stop_id === stopId) {

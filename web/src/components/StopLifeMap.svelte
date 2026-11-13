@@ -78,7 +78,9 @@
           paint: { "circle-radius": 8, "circle-color": "#16a34a", "circle-stroke-color": "#fff", "circle-stroke-width": 2.5 },
         });
         map!.on("click", (e) => {
-          if (pickingNow) return onpoint(e.lngLat.lat, e.lngLat.lng);
+          // A click is no finer than a pixel: six decimals (about 0.1 m)
+          // say all it knows. A measured point is typed (PointFields).
+          if (pickingNow) return onpoint(+e.lngLat.lat.toFixed(6), +e.lngLat.lng.toFixed(6));
           const hit = map!.queryRenderedFeatures(e.point, { layers: ["stops"] })[0];
           const id = hit?.properties?.stop_id;
           if (id) onstop(String(id));
@@ -126,6 +128,10 @@
     if (!loaded || !map) return;
     const features = point ? [{ type: "Feature", geometry: { type: "Point", coordinates: [point.lon, point.lat] }, properties: {} }] : [];
     (map.getSource("point") as maplibregl.GeoJSONSource).setData({ type: "FeatureCollection", features } as any);
+    // A typed point off screen is brought into view (one the map can
+    // draw; whether it is on the earth is the receive path's to say).
+    if (point && Math.abs(point.lat) < 85 && Math.abs(point.lon) <= 180 && !map.getBounds().contains([point.lon, point.lat]))
+      map.easeTo({ center: [point.lon, point.lat] });
   });
 
   // The open stop marked, and brought into view when it is off screen.
@@ -144,7 +150,7 @@
       <span data-testid="map-key-{s}"><i class="dot" style="background:{STATUS_COLORS[s][0]};border-color:{STATUS_COLORS[s][1]}"></i>{STATUS_WORDS[s]}</span>
     {/each}
     <span><i class="dot open"></i>this stop</span>
-    {#if picking}<strong>Click the map to choose the point</strong>{:else if hover}<strong>{hover}</strong>{/if}
+    {#if picking}<strong>Click the map to choose the point, or type it</strong>{:else if hover}<strong>{hover}</strong>{/if}
   </div>
 </div>
 

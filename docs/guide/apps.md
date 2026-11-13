@@ -70,8 +70,10 @@ where it is in that story. Open a stop to see what is there (a
 shelter, a bench, lighting), which routes stop there that day, and
 everything that has happened to it. Record a change on the day it
 happens: a new stop, its next step, a suspension and the return, a
-move, or new details. A change entered wrong is corrected, not added
-to. Schedules read these stops but never change them.
+move, or new details. Place a new stop, or move one, by clicking the
+map, or type its latitude and longitude as measured at the stop. A
+typed point is saved exactly as typed. A change entered wrong is
+corrected, not added to. Schedules read these stops but never change them.
 
 **Server:** needed.
 
