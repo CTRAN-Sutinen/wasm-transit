@@ -1,4 +1,6 @@
 <script lang="ts">
+  import SignInControl from "../../components/SignInControl.svelte";
+  import { signin as signinState, signIn, signOut } from "../../signin.svelte";
   /// The service-change UI's layout: PLACEMENT ONLY. One selection bar
   /// (plan, day type, hours, route) over the stage that is open — the
   /// plan and its calendar, the scan, one route's day with a hub beside
@@ -302,7 +304,9 @@
         {#if sc.failed.Readiness}{@render failure("Readiness", "Ready to publish?")}{:else}
           <Readiness issues={sc.issues} warnings={sc.warnings} {framed} {locked} exported={sc.exported} exportError={sc.failed.Export ?? ""} onexport={exportPlan}
             published={sc.published} publishRefused={sc.publishRefused} publishError={sc.failed.Publish ?? ""} onpublish={publishPlan}
-            onhold={gestures.retime} onblock={showBlock} />
+            onhold={gestures.retime} onblock={showBlock}>
+            {#snippet signin()}<SignInControl available={signinState.available} name={signinState.name} error={signinState.error} onsignin={signIn} onsignout={signOut} />{/snippet}
+          </Readiness>
         {/if}
       </div>
     {/if}

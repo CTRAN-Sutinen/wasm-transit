@@ -1,11 +1,12 @@
 # Store durability — the sync store on object storage
 
 The sync store (`server/store/`; the layout and protocol in
-`docs/FORMATS.md`, the engine in `docs/architecture/server.md`) runs over object storage — S3, Azure Blob, GCS (D-113) —
+`docs/FORMATS.md`, the model in `docs/architecture/storage.md`) runs over object storage — S3, Azure Blob, GCS (D-113) —
 with offline GC, boot sources, and degraded mode. Which provider a
 deployment runs on is open (D-116); the engine favors none. What is
-left: the contract run on each provider's real account, the edits
-layout, and a backup the agency can restore.
+left: the contract run on each provider's real account and a backup
+the agency can restore. How each shape of data is laid out in the
+bucket — the edits among them — is [storage-model.md](storage-model.md).
 
 The north star for every choice here: a transit agency runs 24/7 or
 near it, at moderate to low traffic, with high auditability needs. So
@@ -54,9 +55,7 @@ choice, and none has a code path of its own.
    recorded above — no one of them privileged (D-116). Azure lists
    from a key with `StartFrom` and filters client-side; a run against
    a real account says whether a pointer's refresh stays one page.
-2. **The edits layout** (Blocked: D-121): whole per commit, or
-   record by record.
-3. **Backup and restore** (Blocked: D-82, where the copies go and how
+2. **Backup and restore** (Blocked: D-82, where the copies go and how
    often). Cross-region replication is asynchronous on every provider,
    so one bucket takes the writes and any replica serves reads and
    backup only. Every object is create-only, so a copy taken records
@@ -76,4 +75,3 @@ choice, and none has a code path of its own.
   verifies, and a server started on it serves the same manifest, plan
   set, and edit document. D-82 is decided, and the runbook names the
   drill.
-- D-121 is decided and the edits layout matches it.

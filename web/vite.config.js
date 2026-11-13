@@ -133,9 +133,10 @@ export default defineConfig({
     // live-feeds.json names, for feeds that send no CORS header (D-67;
     // `just dev` runs the server with -rt-proxy). A key is a path prefix,
     // or a pattern when it begins with ^: the stops document's writes are
-    // `/stops` exactly, never the stops page (`/stops.html`).
+    // `/stops` exactly, never the stops page (`/stops.html`); the stop
+    // requests' writes are `/stop-requests`.
     proxy: Object.fromEntries(
-      ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/plans", "^/stops$", "/feed", "/geocode"].map(
+      ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/plans", "^/stops$", "^/stop-requests$", "/feed", "/geocode"].map(
         // TRANSIT_SERVER names another server (`just qa` runs its own).
         (route) => [route, process.env.TRANSIT_SERVER ?? "http://127.0.0.1:8080"],
       ),

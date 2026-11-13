@@ -104,8 +104,13 @@ File ownership:
   `stops_hash`, bytes the page never parses; D-153); `stopWarnings` the
   warnings of the stops a plan visits that are not in service over its
   period (cap-plans `periods`, then cap-stops `visit_warnings`), and
-  `withStopRecords` a plan with each stop's record on its pick date
-  (`read_records`) — what an export carries, as a publish does (D-157).
+  `servedFeed` the agency's feed as the deployment imported it (the
+  manifest's `network_hash`, with `feed_hash` its id) — what the stops
+  page shows the feed's recorded changes by (D-150); `withStopVersions`
+  a plan with the stops' history over its period
+  (`export_versions`: each stop's record on its pick date, and a stop
+  whose record changes inside the period one stop per version) — what
+  an export carries, as the server's `GET /feed` does (D-151, D-157).
   A module may drop what
   it holds (see "The bus worker", below): asking for a dropped document is
   the module's unknown-hash error, and the engine registers the
@@ -199,6 +204,25 @@ replaces the instance once per op with the same answer. It pins the
 one instance too ("the display runs one linked module", and
 ride-now's first spec): every capability asked answers in the UI's
 assembly, holding the network once.
+
+## Signing in
+
+A page reads without signing in (D-58); a write carries the signed-in
+person's token. `src/signin.svelte.ts` is the pages' one sign-in: the
+pages are a public single-page client of the agency's provider (the
+manifest's `auth`: issuer, client id, scopes — the server's
+`-oidc-client-id`), signing in by the authorization code flow with PKCE
+(the provider's discovery document, out to its authorize endpoint and
+back to the same page and hash, the code exchanged at its token
+endpoint), the tokens kept in the tab's session storage and refreshed
+with the refresh token. A read that needs the signed-in person (an
+attachment, D-162) goes through `readFetch`. Every page write goes through `writeFetch`
+(`POST /stops`, `/stop-requests`, `/plans`); a 401 says "sign in" in a
+person's words, and a survey's draft waits on the device meanwhile.
+`SignInControl` shows who is signed in where the deployment asks for
+it (the stops page's header, beside Publish on the planner pages).
+Nothing here decides who may write: the server's policy does, and the
+person a record names is the server's reading of the token (D-163).
 
 ## External services
 

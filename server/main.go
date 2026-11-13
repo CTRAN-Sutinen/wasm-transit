@@ -59,6 +59,9 @@ func main() {
 	today := flag.String("today", "", "pin the server's date (YYYY-MM-DD) for hermetic test servers; empty = the host clock. Publishing reads it: a new pick never lands before today, and only a pick after today is retired (D-75, D-76)")
 	migrateWasm := flag.String("migrate-wasm", dataPath("pkg/cap_migrate.wasm", defaultMigrateWasm), "the migration capability module (cap-migrate): an older document comes forward at receive, and a store's older heads at startup")
 	plansWasm := flag.String("plans-wasm", dataPath("pkg/cap_plans.wasm", "../web/pkg/cap_plans.wasm"), "the plan-chain capability module (cap-plans) hosted in store mode: it answers the published plan set POST /plans commits")
+	attachmentsURL := flag.String("attachments", "", "the attachments' own bucket (D-162): any store URL (s3://, gs://, azblob://, mem://); photos and drawings on surveys and requests, read only by the signed-in; unset, none are taken")
+	workOrdersSpec := flag.String("work-orders", "", "the work order system's adapter (D-165): unset, none — a request's work order is entered by hand; stub: (or stub:<name>) a stand-in that opens STUB-<request>, for tests and demos")
+	requestsWasm := flag.String("requests-wasm", dataPath("pkg/cap_requests.wasm", "../web/pkg/cap_requests.wasm"), "the stop requests capability module (cap-requests) in store mode: it validates every POST /stop-requests (D-159)")
 	stopsWasm := flag.String("stops-wasm", dataPath("pkg/cap_stops.wasm", "../web/pkg/cap_stops.wasm"), "the stops capability module (cap-stops) in store mode: it validates every POST /stops and refreshes each pick's stops from the stops document")
 	authzWasm := flag.String("authz-wasm", dataPath("pkg/cap_authz.wasm", "../web/pkg/cap_authz.wasm"), "the authorization capability module (cap-authz) hosted when OIDC is configured")
 	oidcIssuer := flag.String("oidc-issuer", "", "expected JWT iss (D-60); with any -oidc flag this turns authentication on")
@@ -66,6 +69,8 @@ func main() {
 	oidcAud := flag.String("oidc-audience", "", "expected JWT aud (string or array member)")
 	oidcKey := flag.String("oidc-key", "", "pinned PEM public key for JWT verification (used when -oidc-jwks-url is empty)")
 	oidcRoles := flag.String("oidc-roles-claim", "roles", "dotted JWT claim path holding the roles string array (D-59)")
+	oidcClientID := flag.String("oidc-client-id", "", "the pages' own registration at the sign-in provider (a public single-page application client, PKCE): with it, the manifest names the issuer, this client, and -oidc-scope, and the pages sign in to write (D-58 reads stay public)")
+	oidcScope := flag.String("oidc-scope", "openid profile offline_access", "the scopes a page asks for, its access token's audience the server's -oidc-audience (for Entra: openid profile offline_access api://<server app>/<scope>)")
 	oidcName := flag.String("oidc-name-claim", "name", "dotted JWT claim path holding the person's name, recorded as a survey's surveyor (D-158): name (Entra's display name), preferred_username or upn (the UPN), email; a token without it records its sub")
 	policyFile := flag.String("policy", "", "the authorization policy document's source (JSON; a URL, bucket:<key>, or a dev path): seeds the store's policy pointer at first boot (D-61); with no -store it is the policy")
 	geocoderURL := flag.String("geocoder", "", "base URL of a Pelias geocoder (e.g. http://127.0.0.1:4000): enables /geocode/{autocomplete,search,reverse} and lists it in the manifest's services")
@@ -97,6 +102,21 @@ func main() {
 		fixedToday:    *today,
 		migrateWasm:   *migrateWasm,
 	}
+	if *attachmentsURL != "" {
+		if s.attachments, err = store.OpenBackend(context.Background(), *attachmentsURL); err != nil {
+			log.Fatalf("attachments: %v", err)
+		}
+		log.Printf("attachments: %s (D-162)", *attachmentsURL)
+	}
+	// the work order adapter before the store's first manifest, which
+	// offers it (services.work_orders)
+	var woErr error
+	if s.workOrders, woErr = newWorkOrders(*workOrdersSpec); woErr != nil {
+		log.Fatal(woErr)
+	}
+	if s.workOrders != nil {
+		log.Printf("work orders: the %s adapter (D-165)", s.workOrders.Name())
+	}
 	if *storeURL != "" {
 		st, err := store.OpenServing(*storeURL)
 		if err != nil {
@@ -108,11 +128,12 @@ func main() {
 		}
 		s.networkWasm = *networkWasm
 		s.stopsWasm = *stopsWasm
+		s.requestsWasm = *requestsWasm
 		s.seedStore(*editsPath)
 		s.commitForward()
 		s.seedPolicy(*policyFile)
 		s.maybeCompactEdits()
-		s.serverModules = map[string]string{"sync": *wasmPath, "network": *networkWasm, "streets": *streetsWasm, "plans": *plansWasm, "migrate": *migrateWasm, "stops": *stopsWasm}
+		s.serverModules = map[string]string{"sync": *wasmPath, "network": *networkWasm, "streets": *streetsWasm, "plans": *plansWasm, "migrate": *migrateWasm, "stops": *stopsWasm, "requests": *requestsWasm}
 		if *oidcIssuer != "" || *oidcJWKS != "" || *oidcKey != "" {
 			s.serverModules["authz"] = *authzWasm
 		}
@@ -126,6 +147,7 @@ func main() {
 		a, err := loadAuthz(ctx, oidcConfig{
 			issuer: *oidcIssuer, jwksURL: *oidcJWKS, audience: *oidcAud,
 			keyFile: *oidcKey, rolesClaim: *oidcRoles, nameClaim: *oidcName,
+			clientID: *oidcClientID, scope: *oidcScope,
 		}, *authzWasm, *policyFile)
 		if err != nil {
 			log.Fatalf("authz: %v", err)
@@ -143,6 +165,11 @@ func main() {
 	}
 	if *feedPath != "" {
 		s.feeder = &feedSource{src: newSource(*feedPath, "source.feed", "gtfs_feed", s.store), networkWasm: *networkWasm}
+		s.feeder.onImport = func(feed *loadedFeed) {
+			if err := s.recordFeed(context.Background(), feed); err != nil {
+				log.Printf("stops: the feed's differences were not recorded: %v", err)
+			}
+		}
 		if _, err := s.feeder.Load(); err != nil {
 			log.Fatalf("feed: %v", err)
 		}
@@ -259,6 +286,10 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("/plans", s.protectWrite(func(*http.Request) string { return "plans" }, s.handlePlans))
 	mux.HandleFunc("/plans/retire", s.protectWrite(func(*http.Request) string { return "plans" }, s.handleRetire))
 	mux.HandleFunc("/stops", s.protectWrite(func(*http.Request) string { return stopsPointer }, s.handleStops))
+	mux.HandleFunc("/stop-requests", s.protectWrite(func(*http.Request) string { return requestsPointer }, s.handleStopRequests))
+	mux.HandleFunc("/attachments", s.protectWrite(func(*http.Request) string { return "attachments" }, s.handleAttachments))
+	mux.HandleFunc("/attachments/", s.protectSignedIn(s.handleAttachments))
+	mux.HandleFunc("/stop-requests/work-order", s.protectWrite(func(*http.Request) string { return requestsPointer }, s.handleWorkOrder))
 	mux.HandleFunc("/builds", s.protectWrite(func(*http.Request) string { return buildPointer }, s.handleBuilds))
 	mux.HandleFunc("/feed", s.handleFeed)
 	mux.HandleFunc("/permissions", s.requireAuth(s.handlePermissions))
@@ -319,6 +350,17 @@ type server struct {
 	// first use, emptied after every use.
 	stopsMu   sync.Mutex
 	stopsHeld *WasmHost
+	// The stop requests capability (cap-requests) behind POST
+	// /stop-requests (requests.go), held like cap-stops.
+	requestsWasm string
+	requestsMu   sync.Mutex
+	requestsHeld *WasmHost
+	// The attachments' own bucket (attachments.go, -attachments); nil:
+	// none are taken.
+	attachments store.Backend
+	// The work order system's adapter (workorders.go, -work-orders); nil:
+	// none configured, a request's work order entered by hand.
+	workOrders workOrderSystem
 	// The migration capability (cap-migrate), loaded on first use
 	// (migrator): an older document comes forward at receive.
 	migrateWasm string
@@ -493,17 +535,33 @@ type Manifest struct {
 	PolicyHash  string  `json:"policy_hash,omitempty"`  // the store's policy pointer head, store mode (D-61)
 	PlansHash   string  `json:"plans_hash,omitempty"`   // the published plan set (the plans pointer head), store mode
 	StopsHash   string  `json:"stops_hash,omitempty"`   // the stops document (the stops pointer head), store mode
-	BuildHash   string  `json:"build_hash,omitempty"`   // the build the pages are served from (the build pointer head), store mode
-	GeneratedAt int64   `json:"generated_at"`
-	Publisher   *string `json:"publisher,omitempty"`
+	// The stop requests document (the stop_requests pointer head), store mode (D-159).
+	StopRequestsHash string  `json:"stop_requests_hash,omitempty"`
+	BuildHash        string  `json:"build_hash,omitempty"` // the build the pages are served from (the build pointer head), store mode
+	GeneratedAt      int64   `json:"generated_at"`
+	Publisher        *string `json:"publisher,omitempty"`
 	// The agency's zone (the network's operator timezone, as today()
 	// counts in it): a page reads its clock there, never in the
 	// device's zone (web/src/clock.ts). Empty while none is known.
 	Timezone string `json:"timezone,omitempty"`
+	// How a page signs in to write (with -oidc-client-id): the issuer,
+	// the pages' public client, and the scopes it asks for. Absent:
+	// sign-in is off, or the pages have no client of their own.
+	Auth *ManifestAuth `json:"auth,omitempty"`
 	// The external services this deployment offers, by name — a
 	// service it does not list is off, and the frames that need it
 	// say so (docs/architecture/web.md, "External services").
 	Services map[string]Service `json:"services,omitempty"`
+}
+
+// ManifestAuth is how a page signs in (D-58: writes need a token; reads
+// stay public): the provider's issuer (its discovery document is
+// <issuer>/.well-known/openid-configuration), the pages' public client,
+// and the scopes a page asks for.
+type ManifestAuth struct {
+	Issuer   string `json:"issuer"`
+	ClientID string `json:"client_id"`
+	Scope    string `json:"scope"`
 }
 
 // Service is where a page asks an external service on this origin,
@@ -545,11 +603,26 @@ func (s *server) buildManifest() (Manifest, error) {
 		manifest.Publisher = &s.publisher
 	}
 	manifest.FeedURL = s.feedURL
+	if s.authz != nil && s.authz.cfg.clientID != "" {
+		manifest.Auth = &ManifestAuth{Issuer: s.authz.cfg.issuer, ClientID: s.authz.cfg.clientID, Scope: s.authz.cfg.scope}
+	}
 	if loc := s.agencyZone(); loc != nil {
 		manifest.Timezone = loc.String()
 	}
 	if s.geocoder != nil {
 		manifest.Services = map[string]Service{"geocoder": s.geocoder.service()}
+	}
+	if s.attachments != nil {
+		if manifest.Services == nil {
+			manifest.Services = map[string]Service{}
+		}
+		manifest.Services["attachments"] = Service{Path: "/attachments"}
+	}
+	if s.workOrders != nil && s.store != nil {
+		if manifest.Services == nil {
+			manifest.Services = map[string]Service{}
+		}
+		manifest.Services["work_orders"] = Service{Path: "/stop-requests/work-order"}
 	}
 	if s.authz != nil {
 		manifest.AuthzHash = s.authz.wasm.Hash()
@@ -564,6 +637,9 @@ func (s *server) buildManifest() (Manifest, error) {
 		if head, found, err := s.store.Head(stopsPointer); err == nil && found {
 			manifest.StopsHash = head.Hash
 		}
+		if head, found, err := s.store.Head(requestsPointer); err == nil && found {
+			manifest.StopRequestsHash = head.Hash
+		}
 		if head, found, err := s.store.Head(buildPointer); err == nil && found {
 			manifest.BuildHash = head.Hash
 		}
@@ -576,8 +652,8 @@ func (s *server) buildManifest() (Manifest, error) {
 func manifestKeyOf(m Manifest) string {
 	services, _ := json.Marshal(m.Services)
 	sum := sha256.Sum256([]byte(strings.Join([]string{
-		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.StopsHash, m.BuildHash, m.NetworkHash, m.BoundaryHash, m.FeedHash, orEmpty(m.FeedVersion),
-		m.StreetsHash, m.WalksHash, orEmpty(m.Publisher), m.Timezone, string(services), m.FeedURL,
+		m.WasmHash, m.AuthzHash, m.PolicyHash, m.PlansHash, m.StopsHash, m.StopRequestsHash, m.BuildHash, m.NetworkHash, m.BoundaryHash, m.FeedHash, orEmpty(m.FeedVersion),
+		m.StreetsHash, m.WalksHash, orEmpty(m.Publisher), m.Timezone, string(services), m.FeedURL, fmt.Sprint(m.Auth),
 	}, "|")))
 	return hex.EncodeToString(sum[:])
 }

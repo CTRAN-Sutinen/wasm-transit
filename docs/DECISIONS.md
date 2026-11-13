@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-165**.
+- IDs are never reused; the next new decision is **D-166**.
 
 ## Summary
 
@@ -174,7 +174,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-118 | Where does a server read its inputs at boot? | decided | nothing |
 | D-119 | What does the server serve when the store is unreachable? | decided | nothing |
 | D-120 | Does compaction drop a record whose dates have passed? | unanswered | nothing |
-| D-121 | Does the store keep the edit document whole per commit, or record by record? | unanswered | the edits layout in `store-durability` |
+| D-121 | Does the store keep the edit document whole per commit, or record by record? | unanswered | collections in `storage-model` |
 | D-122 | Is the dispatcher's day in scope? | decided | nothing |
 | D-123 | Do trip, block, and run ids survive from one pick to the next? | unanswered | nothing |
 | D-124 | Does this repo publish its cancels and detours as GTFS-rt? | decided; deferred | nothing |
@@ -218,6 +218,11 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-162 | Where do photos and drawings live, and how does a record name one? | decided | nothing |
 | D-163 | Who is a survey's surveyor? | decided | nothing |
 | D-164 | Does the store log hide who wrote each change from callers without audit? | unanswered | nothing |
+| D-165 | How does a request reach the work order system before its API is wired? | decided | nothing |
+| D-166 | What is the smallest part of the stops document two writers can change at once? | unanswered | the stop event ids and the stops merge in `storage-model` |
+| D-167 | Do authored documents keep the fields they do not know? | unanswered | the shapes and the kind table's strictness in `storage-model` |
+| D-168 | Where does personal data live, and how is it removed when the law requires? | unanswered | restricted reads in `storage-model` |
+| D-169 | Is a document's canonical form serde's field order, or RFC 8785? | unanswered | nothing (before the first deployment's baseline) |
 
 ## The trip model
 
@@ -883,11 +888,16 @@ was a survey correction, turned into an edit of the earlier point (a
 feed cannot tell the two apart; D-153). Every difference counts, however
 small: the export writes points exactly, so a re-import of this repo's
 own feed adds nothing.
-Context: the stops' GTFS import and export (`docs/architecture/crates.md`, transit-stops). A feed has no dates for
-its stops; the document already holds events, some in the future. A
-review step before riders get the feed was weighed: on the rider path a
-feed is the agency's published statement, and a stop its trips visit
-must exist when riders get it.
+Pinned by: `crates/transit-network/tests/stop_versions_law_test.rs`
+(`a_feed_difference_is_an_event_on_its_first_date`,
+`an_import_names_its_feed_on_every_event_it_records`,
+`unlisted_names_only_the_stops_a_feed_should_list`), cap-stops'
+dispatch test, `server/stops_test.go`
+(`TestTheFeedRecordsItsDifferences`), and `web/e2e/ui-stops.spec.mjs`
+(the feed notice test). The stops page has no GTFS control (the user,
+2026-11-13: a notice of what the feed did "makes sense").
+Why: `docs/architecture/crates.md`, "A feed's stops apply, and the
+planner sees what they did".
 Blocks: nothing.
 
 ### D-151 — What does the export write when a stop changes inside its window?
@@ -904,15 +914,13 @@ software, one per exported version when the window needs more than one,
 while the stops document keeps one lasting key per stop (refining
 D-145). An import (D-150) reads a made id back as a version of its
 stop. A real-time producer's ids are outside this decision.
-Context: the stops' GTFS import and export (`docs/architecture/crates.md`, transit-stops). stops.txt holds one row
-per stop id, with one point and one name; a move or rename inside the
-feed's window has two.
-Options:
-- The window ends at the change (rider apps show no service past a
-  feed's end, so riders could not plan past it).
-- One row per version, sharing the `stop_code` (chosen).
-- The record in force on the window's first date (wrong after the
-  change; a construction move is the common case).
+Pinned by: `crates/transit-network/tests/stop_versions_law_test.rs`,
+`crates/transit-codec/tests/stop_versions_round_trip_test.rs`,
+cap-stops' dispatch test, and `server/stops_test.go`
+(`TestTheFeedCarriesTheStopsHistory`: `GET /feed`); the planner pages'
+Export runs the same op (engine `withStopVersions`).
+Why: `docs/architecture/crates.md`, "A feed's stops apply, and the
+planner sees what they did".
 Blocks: nothing.
 
 ### D-153 — How is the stops document stored?
@@ -1062,6 +1070,10 @@ time point, the previous and next stop) is shown from it, never typed
 — but only for a stop a schedule serves: "if this is a new stop, it
 wont be in the schedule yet", so a new stop's intended routes and
 direction are the request's (D-159).
+When a survey happens (asked 2026-11-13, after the user first
+thought it part of planning a new stop): "i was wrong about the
+surveys, they are done periodically by internal staff as time
+permits" — a survey is recorded at any time, on any stop not retired.
 Pinned by: `crates/transit-stops/tests/stop_site_law_test.rs`, the
 fold law in `stops_law_test.rs`, cap-stops' dispatch test
 (`questions_are_the_librarys_and_a_bad_answer_is_refused`), and
@@ -1084,24 +1096,16 @@ The sheet's Control # is the work order system's number: "it comes
 from the work order system". The user agreed to it as its own
 document kind beside the stops document ("everything else looks
 good").
-Context: C-TRAN's Bus Stop Sign & Shelter Installation Worksheet: the
-kind of job (new, reinstall, relocate/remove, repair/improve,
-temporary), the stop, route and direction, the requester and date,
-parcel and township/range/section, the site drawing and the measured
-offset from the cross street, how the spot is marked, the utility
-locate ticket and the utilities called, and the completion. A request
-is work, not a fact about the stop, with its own life (drafted,
-submitted, work order opened, completed); the stop's own event (built,
-moved, retired) names the request it came from. The work order
-reference holds the system, its id (the Control #), a link, and the
-status as last read with when it was read — read from that system,
-shown as given. Calling its API is the server's, as an adjacent
-system's writes are (`docs/architecture/adjacent-systems.md`).
-Options: its own document kind (recommended); events on the stop (mixes
-the work into the stop's facts).
-Pinned by: nothing yet (`docs/units/stop-site-and-requests.md`).
+Pinned by: `crates/transit-requests/tests/requests_law_test.rs`,
+cap-requests' dispatch test, the runner gate in `just test` (the stop
+requests capability), `server/requests_test.go`
+(`TestStopRequestsWritesAreValidated`), `stop_site_law_test.rs`
+(`an_event_names_its_request`), and `web/e2e/ui-stops.spec.mjs` (the
+stop request test).
+Why: `docs/architecture/crates.md`, "A request for work is its own
+record, not a stop's event".
 Blocks: nothing. Which work order system, and its API, are taken up
-when the call-out is scoped.
+when the call-out is scoped (`docs/units/stop-site-and-requests.md`).
 
 ### D-160 — Are a stop's signs, posts, and shelters records of their own?
 State: Decided.
@@ -1135,14 +1139,20 @@ attachments, but those should probably be in their own bucket? not
 sure what best practice is here, but i would think we'd have a field
 in the stop that just holds bucket urls where the photos live", then
 agreed to naming by hash ("everything else looks good").
-Context: a URL ties every record to one provider and bucket name; a
-hash keeps the record portable (the deployment names the bucket, the
-server hands out the link), shows a swapped file, and lets the store's
-garbage collection see which files are still referenced. Each
-attachment carries its hash, type, file name, caption, and who took it
-and when, on a request (D-159) or a stop's event (D-158).
-Options: by content hash (recommended); by bucket URL.
-Pinned by: nothing yet (`docs/units/stop-site-and-requests.md`).
+Who may see them (2026-11-13): the signed-in. The user: "when we say
+'public' these aren't going into public storage buckets, this is
+internal facing. but yes, i agree, you should be signed in to view
+those attachments."
+Encoded as: a record's `attachments` (a stop's event, a request), each
+its hash, media type, and optionally file name, caption, and the day it
+was taken; who took it is the record's own (the surveyor, the
+requester).
+Pinned by: `stop_site_law_test.rs` (`an_event_names_its_attachments_by_hash`),
+`requests_law_test.rs` (`a_request_names_its_attachments_by_hash`),
+`server/attachments_test.go`, and `web/e2e/ui-stops.spec.mjs` (a photo
+on a survey, a drawing on a request, a photo signed in).
+Why: `docs/architecture/server.md`, "Attachments live apart and are
+read only signed in".
 Blocks: nothing.
 
 ### D-163 — Who is a survey's surveyor?
@@ -1181,6 +1191,110 @@ the open stops document (D-163).
 Options: show `writer` to any caller allowed to read the log; keep the
 redaction (encoded now).
 Blocks: nothing.
+
+### D-165 — How does a request reach the work order system before its API is wired?
+State: Decided.
+Answer: 2026-11-13 — through an adapter the server holds, stubbed for
+now, with a clean fallback when none is configured. The user: "for the
+work order system, it does have an api, but for now i just want you to
+stub the adapter, because we don't want a tight coupling to that system
+anyways, when i'm ready i'll give you the openapi spec and we can wire
+it but for now it should have a clean fallback for when it isn't
+configured."
+Encoded as: the server's `-work-orders` names the adapter (`stub:` a
+stand-in for tests and demos); unset, nothing is offered and a
+request's work order is entered by hand, as before. Configured, the
+manifest's `services.work_orders` says so and the stops page offers to
+open a work order for a submitted request and to read its status; what
+the adapter answers is written onto the request through POST
+/stop-requests' checks, the writer `work-orders:<system>`.
+Pinned by: `crates/transit-requests/tests/requests_law_test.rs`
+(`a_work_order_lands_on_its_request`), cap-requests' dispatch test,
+`server/requests_test.go` (`TestWorkOrdersGoThroughTheAdapter`), and
+`web/e2e/ui-stops.spec.mjs` (the work order test, over `stub:`).
+Why: `docs/architecture/adjacent-systems.md`, "The work order system
+is behind an adapter, and optional".
+Blocks: the real adapter, which waits on the system's OpenAPI spec.
+
+### D-166 — What is the smallest part of the stops document two writers can change at once?
+State: Unanswered.
+Context: `POST /stops` replaces the whole document under `from`, so
+two surveyors saving different stops conflict, and the page asks the
+second to make the change again (`web/src/uis/stops/host.svelte.ts`).
+Stored record by record (`docs/units/storage-model.md`, item 3), a
+write that changes other stops rebases with no conflict; two writers
+changing one stop still meet. A stop's events carry no id
+(`transit_stops::Event`), so the module cannot tell two added events
+from one edited event.
+Options:
+- The record is the stop (D-153's shape), and every event gets a
+  stable id: the module merges by event id — two added events both
+  land; one event changed by both is the conflict. The document's
+  shape stays; events gain a field.
+- The record is the event: no merge needed, but the stored layout no
+  longer matches the document's one record per stop.
+- The record is the stop, no event ids: any two writes to one stop
+  conflict.
+Blocks: the stop event ids and the stops merge in
+`docs/units/storage-model.md` (items 1 and 3).
+
+### D-167 — Do authored documents keep the fields they do not know?
+State: Unanswered.
+Context: the parts of a deployment ship at different times
+(`docs/units/release-artifacts.md`), so a writer on an older build can
+save a document a newer one wrote. The stops and stop requests types
+carry an `extra` map and keep a field they do not know; every other
+authored type (edits, plans, policy, work rules, the network) drops it
+silently on the next write, except the network's patterns, which
+refuse one (`deny_unknown_fields` on `transit_network::Pattern`).
+Encoded today: all three, by kind.
+Options:
+- Keep, for every authored kind: each type carries `extra` and its
+  schema says so; an added optional field needs no version bump, and
+  an older writer round-trips it. A misspelled field is kept too, and
+  shows in `extra` for a projection to flag.
+- Refuse: unknown fields are a `422`; every added field is a version
+  bump through the two releases of D-79, and an older writer is
+  refused and reloads.
+- As today: keep for stops and stop requests, drop for the rest.
+Blocks: the shapes and the kind table's strictness in
+`docs/units/storage-model.md` (items 1 and 2).
+
+### D-168 — Where does personal data live, and how is it removed when the law requires?
+State: Unanswered.
+Context: the open documents name people — a stop request's
+`requested_by`, `called_by`, `marked_by`, `completed_by`; a survey's
+surveyor (D-163); the pointer log's `writer` (D-164). The record is
+create-only and kept forever, and the bucket may carry the provider's
+immutability, while public-records retention schedules and a request
+to remove someone's data may require deletion. Reads are open
+(D-152); only the policy is restricted today. What the law requires
+is the agency's records officer's to say.
+Options:
+- Restricted collections plus crypto-shredding: personal data in a
+  kind whose read class is restricted (never served by hash, read
+  through authz), each person's records encrypted with a key of their
+  own; removal deletes the key, and history stays whole.
+- Out of the bucket: the record holds a reference to a person
+  (an IdP subject), never their details.
+- As today: names in the open documents, kept forever.
+Blocks: restricted reads in `docs/units/storage-model.md` (item 6).
+
+### D-169 — Is a document's canonical form serde's field order, or RFC 8785?
+State: Unanswered.
+Context: a document's identity is the sha256 of its canonical bytes,
+today serde_json in struct field order (`docs/FORMATS.md`, "Addressing
+and hash"), which only this repo's Rust reproduces. Any writer's
+bytes hash correctly; what another implementation cannot do is
+produce the same identity for the same content. Changing the form
+moves every document's hash, which costs nothing before the first
+deployment and a version change for every kind after it.
+Options:
+- serde field order (encoded): no change.
+- RFC 8785 (JSON Canonicalization Scheme): sorted keys and one number
+  form, reproducible in any language; every hash moves once.
+Blocks: nothing (it is cheapest before the first deployment's
+baseline, `docs/units/document-versioning.md`, item 5).
 
 ### D-53 — What ridership data does the planner bring?
 State: Decided.
@@ -2305,7 +2419,7 @@ strongly consistent read and list, object metadata, delete, modified
 time — and Ceph RGW and RustFS are dev endpoints, used only as far as
 they honor that contract; neither earns a code path of its own. Which
 managed provider a deployment runs on is open (D-116).
-Why: `docs/architecture/server.md`, Why, "Object storage, create-only".
+Why: `docs/architecture/storage.md`, Why, "Object storage, create-only".
 Blocks: nothing (`docs/units/store-durability.md` carries the work).
 
 ### D-116 — Which managed object store does a deployment run on?
@@ -2329,7 +2443,7 @@ Answer: 2026-11-06 — offline: "intuitively i think GC should be
 offline"; after the trade-offs, "yes, keep it offline." Serving
 processes never delete; an offline `store gc` with its own
 delete-capable credentials collects orphans.
-Why: `docs/architecture/server.md`, Why, "Object storage, create-only".
+Why: `docs/architecture/storage.md`, Why, "Object storage, create-only".
 Blocks: nothing (`docs/units/store-durability.md` carries the work).
 
 ### D-118 — Where does a server read its inputs at boot?
@@ -2391,7 +2505,9 @@ Options:
 With D-122, detours and cancels are the only row-shaped data this
 repo holds, so the answer also settles whether it needs a row store at
 all: record by record in the bucket keeps it to one durable service.
-Blocks: the edits layout in `docs/units/store-durability.md`.
+The storage model proposes the second for every collection — edits,
+stops, stop requests (`docs/units/storage-model.md`, item 3).
+Blocks: collections in `docs/units/storage-model.md`.
 
 ### D-122 — Is the dispatcher's day in scope?
 State: Decided.

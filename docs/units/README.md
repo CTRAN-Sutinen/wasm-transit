@@ -41,7 +41,8 @@ archive — nothing here records what is finished.
 | [runtime-cost-gate.md](runtime-cost-gate.md) | a ratchet on per-module memory and registration time |
 | [document-versioning.md](document-versioning.md) | every persisted document versioned, migrated forward at receive, rolled back under one rule, the schema-lock gate |
 | [release-artifacts.md](release-artifacts.md) | op and HTTP contracts changed by expand-then-contract |
-| [store-durability.md](store-durability.md) | the sync store's contract run on each provider's real account, the edits layout (D-121), backup and restore (D-82) |
+| [store-durability.md](store-durability.md) | the sync store's contract run on each provider's real account, backup and restore (D-82) |
+| [storage-model.md](storage-model.md) | a layout per shape of data: collections record by record, the kind table and governed writes, a self-describing bucket, projections, permissions per change |
 | [observability-rollout.md](observability-rollout.md) | what production runs and whether it is healthy; a display's automatic revert |
 | [deploy-rider-apps.md](deploy-rider-apps.md) | ride-now and the stop display beyond localhost: the units it waits on, the agency's feed fixes (HTTPS, CORS, caching, start_date), and the Pi 4 and phone dogfood |
 | [streets-model.md](streets-model.md) | streets as a model document: serving it, the bus profile, walking for riders, drawing on streets, the geography release |
@@ -49,7 +50,7 @@ archive — nothing here records what is finished.
 | [grade-debt.md](grade-debt.md) | on the bus, but not yet read by a UI or dogfooded |
 | [ui-disruptions.md](ui-disruptions.md) | generated UI: running today's service through disruptions (late buses, detours, coverage) |
 | [ui-proposal-compare.md](ui-proposal-compare.md) | generated UI: the public comparing service proposals |
-| [stop-site-and-requests.md](stop-site-and-requests.md) | a stop's site survey filled in the field, stop requests tracking the work order system's orders, their photos and drawings, and the stops' GTFS import and export wired |
+| [stop-site-and-requests.md](stop-site-and-requests.md) | the agency's other data beside a stop's survey, the work order system's real adapter, and the field forms dogfooded |
 | [ui-stops.md](ui-stops.md) | generated UI: stops as their own stage of the service change (create, move, consolidate, remove), a route's map choosing the stops it serves, and its line redrawn along the streets |
 | [ui-service-design.md](ui-service-design.md) | generated UI: designing a service change in six chained views — the blocked questions and the views' remaining parts |
 | [runs-layer.md](runs-layer.md) | the runs cut under the work rules; the run view, legality, and run edits; suggested blocking, extended |
@@ -82,11 +83,6 @@ before starting it.
   the rest keep A, promoted once it has stayed healthy. Promotion on
   reported health needs an authenticated heartbeat (D-130's takes no
   token) and a server, so a static-only deployment has none.
-- **Governed writes** — every write meets the receive contract
-  (`docs/architecture/agency-data.md`, D-152): a pointer commit for any
-  kind but the edits stores the document verbatim today; each kind's
-  commit runs its module's validation and cap-migrate. The stops
-  document is the first new kind that needs it (cap-stops' `validate`). Scope it into a unit before starting.
 - **Fuel metering** in the runner, once it may point at untrusted
   registry entries (the wall-clock guard is the stopgap).
 

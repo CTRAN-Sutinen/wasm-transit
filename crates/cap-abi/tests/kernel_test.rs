@@ -160,6 +160,7 @@ fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
     }));
     law::<transit_runs::WorkRules>(serde_json::json!({"version": 1}));
     law::<transit_stops::Stops>(serde_json::json!({"stops": {}}));
+    law::<transit_requests::StopRequests>(serde_json::json!({"requests": {}}));
     law::<transit_plans::PublishedPlans>(serde_json::json!({"schema_version": 1, "plans": []}));
     law::<transit_authz::Policy>(serde_json::json!({"schema_version": 1, "rules": []}));
 }

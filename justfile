@@ -26,9 +26,9 @@ default:
 # loads it). Hash-pinned modules land in web/public/caps/, served under
 # their content hash so the HTTP cache holds them forever. The sync
 # server's modules also land at stable paths in web/pkg/ (cap_sync,
-# cap_network, cap_streets, cap_authz, cap_plans, cap_migrate, cap_stops — the
-# server's default -wasm, -network-wasm, -streets-wasm, -authz-wasm,
-# -plans-wasm, -migrate-wasm and -stops-wasm flags; rebuilt with the modules, never
+# cap_network, cap_streets, cap_authz, cap_plans, cap_migrate, cap_stops,
+# cap_requests — the server's default -wasm, -network-wasm, -streets-wasm,
+# -authz-wasm, -plans-wasm, -migrate-wasm, -stops-wasm and -requests-wasm flags; rebuilt with the modules, never
 # by hand). The
 # registry also publishes every document kind's JSON Schema and a
 # worked example (registry/documents.json, docs/FORMATS.md).
@@ -44,7 +44,7 @@ caps:
     just _modules target "$profile"
     CAPS_PROFILE="$profile" cargo run --quiet -p cap-abi --features gen-manifest --bin gen-manifest
     mkdir -p web/pkg
-    for cap in sync network streets authz plans migrate stops; do
+    for cap in sync network streets authz plans migrate stops requests; do
         cp "target/wasm32-unknown-unknown/$profile/module_$cap.wasm" "web/pkg/cap_$cap.wasm"
     done
 
@@ -391,6 +391,16 @@ _host-tests:
       --as back --op '{"op":"stop","stops_hash":"$l.stops_hash","stop_id":"6124","date":"2027-07-01"}' \
       --as bad --op '{"op":"validate","stops":{"stops":{"a":[{"event":"in_service","lat":45,"lon":-122},{"on":"2027-01-02","event":"in_service"}]}}}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (ok("v").document_hash !== ok("l").stops_hash || ok("spring").stop.status !== "suspended" || ok("back").stop.status !== "in_service" || ok("bad").refusals[0]?.problem.kind !== "already_in_service") process.exit(1)'
+    # The stop requests capability (D-159): the first request begins the
+    # document, put answers it under the hash load_stop_requests and
+    # validate answer, a stop's requests read back, and a request at
+    # "ordered" with no work order id is refused, named.
+    node tools/caps-run.mjs requests \
+      --as first --op '{"op":"put","id":"R-1","request":{"stop":"6124","job":"repair_improve","status":"submitted","requested_on":"2027-02-01"}}' \
+      --as v --op '{"op":"validate","requests":"$first.requests"}' \
+      --as mine --op '{"op":"requests_for","requests_hash":"$first.requests_hash","stop":"6124"}' \
+      --as bad --op '{"op":"put","requests_hash":"$first.requests_hash","id":"R-1","request":{"stop":"6124","job":"repair_improve","status":"ordered"}}' \
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (ok("v").document_hash !== ok("first").requests_hash || ok("mine").requests[0]?.id !== "R-1" || ok("bad").refusals[0]?.problem.kind !== "no_work_order") process.exit(1)'
     # The first stops document begins from a network (D-157): the sample
     # network's stops seeded, then one edit placed and checked — stop A
     # suspended on 2026-10-23 reads suspended that day.
@@ -763,11 +773,13 @@ serve feed="" streets="" publisher="" addr="127.0.0.1:8080":
     if [ -n "{{ publisher }}" ]; then args+=(-publisher "{{ publisher }}"); fi
     if [ -n "${GEOCODER:-}" ]; then args+=(-geocoder "$GEOCODER"); fi
     if [ -n "${STORE:-}" ]; then args+=(-store "$STORE"); fi
+    if [ -n "${ATTACHMENTS:-}" ]; then args+=(-attachments "$ATTACHMENTS"); fi
+    if [ -n "${WORK_ORDERS:-}" ]; then args+=(-work-orders "$WORK_ORDERS"); fi
     # Auth (D-58..D-61): OIDC_* turns authentication on; POLICY seeds the
     # store's policy pointer at first boot. Example:
     # OIDC_ISSUER=https://idp.example OIDC_JWKS_URL=https://idp.example/jwks \
     #   OIDC_AUDIENCE=transit-server POLICY=./policy.json STORE=mem:// just serve feed.zip
-    for v in OIDC_ISSUER OIDC_JWKS_URL OIDC_AUDIENCE OIDC_KEY OIDC_ROLES_CLAIM OIDC_NAME_CLAIM POLICY; do
+    for v in OIDC_ISSUER OIDC_JWKS_URL OIDC_AUDIENCE OIDC_KEY OIDC_ROLES_CLAIM OIDC_NAME_CLAIM OIDC_CLIENT_ID OIDC_SCOPE POLICY; do
         if [ -n "${!v:-}" ]; then args+=("-$(echo "${v,,}" | tr '_' '-')" "${!v}"); fi
     done
     exec go run . "${args[@]}"
@@ -854,7 +866,7 @@ server-image repo="" tag="latest": caps build
     set -e
     rm -rf server/kodata
     mkdir -p server/kodata/pkg
-    for cap in sync network streets authz plans migrate stops; do
+    for cap in sync network streets authz plans migrate stops requests; do
         cp "web/pkg/cap_$cap.wasm" server/kodata/pkg/
     done
     cp -r web/dist server/kodata/dist
@@ -935,8 +947,10 @@ dev: caps types
     set -e
     geo=(); if [ -n "${GEOCODER:-}" ]; then geo=(-geocoder "$GEOCODER"); fi
     store=(); if [ -n "${STORE:-}" ]; then store=(-store "$STORE"); fi
+    if [ -n "${ATTACHMENTS:-}" ]; then store+=(-attachments "$ATTACHMENTS"); fi
+    if [ -n "${WORK_ORDERS:-}" ]; then store+=(-work-orders "$WORK_ORDERS"); fi
     oidc=()
-    for v in OIDC_ISSUER OIDC_JWKS_URL OIDC_AUDIENCE OIDC_KEY OIDC_ROLES_CLAIM OIDC_NAME_CLAIM POLICY; do
+    for v in OIDC_ISSUER OIDC_JWKS_URL OIDC_AUDIENCE OIDC_KEY OIDC_ROLES_CLAIM OIDC_NAME_CLAIM OIDC_CLIENT_ID OIDC_SCOPE POLICY; do
         if [ -n "${!v:-}" ]; then oidc+=("-$(echo "${v,,}" | tr '_' '-')" "${!v}"); fi
     done
     (cd server && go build -o /tmp/transit-server . && \

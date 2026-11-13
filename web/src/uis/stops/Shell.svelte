@@ -21,11 +21,19 @@
     keepDraft,
     survey,
     locate,
+    putRequest,
+    workOrder,
+    addAttachment,
+    attachmentSrc,
   } from "./host.svelte";
   import StopLifeMap from "../../components/StopLifeMap.svelte";
   import StopLifeList from "../../components/StopLifeList.svelte";
   import StopLifeCard from "../../components/StopLifeCard.svelte";
   import NewStopForm from "../../components/NewStopForm.svelte";
+  import StopRequests from "../../components/StopRequests.svelte";
+  import SignInControl from "../../components/SignInControl.svelte";
+  import { signin, signIn, signOut } from "../../signin.svelte";
+  import FeedNotice from "../../components/FeedNotice.svelte";
   import Combobox from "../../components/Combobox.svelte";
   import Unavailable from "../../components/Unavailable.svelte";
   import { STATUS_COLORS, STATUS_WORDS, problemWords } from "../../components/stopWords";
@@ -54,6 +62,7 @@
       {/each}
     </div>
     <button type="button" class="new" disabled={st.busy || st.picking === "new"} onclick={() => { void closeStop(); startPicking("new"); }} data-testid="new-stop-start">New stop</button>
+    <SignInControl available={signin.available} name={signin.name} error={signin.error} onsignin={signIn} onsignout={signOut} />
     <p class="status" class:alert={st.alert} role="status" data-testid="status">{st.busy ? "… " : ""}{st.status}</p>
   </header>
 
@@ -71,14 +80,22 @@
         {:else if st.card}
           <StopLifeCard stopId={st.open} card={st.card} served={st.served} date={readDate()} busy={st.busy} refusals={st.refusals}
             point={st.point} onpoint={picked} onlocate={locate}
-            questions={st.questions} draft={readDraft(st.open)} ondraft={(d) => keepDraft(st.open, d)}
+            questions={st.questions} requests={st.requests} draft={readDraft(st.open)} ondraft={(d) => keepDraft(st.open, d)}
             onsurvey={(e, done) => survey(st.open, e, done)}
+            attachments={st.attachments ? { onadd: addAttachment, src: attachmentSrc } : null}
             onevent={(e, done) => addEvent(st.open, e, done)}
             oncorrect={(i, e, done) => correctEvent(st.open, i, e, done)}
             onmove={(start) => startPicking(start ? "move" : "")}
             onclose={closeStop} />
+          {#if st.failed.Requests}{@render failure("Requests", "The stop's requests")}
+          {:else}
+            <StopRequests stopId={st.open} requests={st.requests} vocab={st.requestVocab} date={readDate()} busy={st.busy}
+              refusals={st.requestRefusals} onsave={putRequest} workOrders={!!st.workOrders} onworkorder={workOrder}
+              attachments={st.attachments ? { onadd: addAttachment, src: attachmentSrc } : null} />
+          {/if}
         {/if}
       {:else}
+        {#if st.feed}<FeedNotice feed={st.feed} onstop={openStop} />{/if}
         <StopLifeList stops={st.shown} onstop={openStop} />
       {/if}
       {#if st.picking === "new" && st.refusals.length}
@@ -112,7 +129,7 @@
   .body { display: grid; grid-template-columns: 1fr minmax(20rem, 28rem); min-height: 0; }
   /* A survey is a long form: while one is open the side takes most of
      the width, and the map keeps a strip to place the stop. */
-  .body:has(:global(.survey)) { grid-template-columns: minmax(16rem, 1fr) minmax(28rem, 62%); }
+  .body:has(:global(.survey)), .body:has(:global(.wide-form)) { grid-template-columns: minmax(16rem, 1fr) minmax(28rem, 62%); }
   .map { position: relative; min-height: 0; }
   .side { overflow: auto; padding: 0.9rem; border-left: 1px solid var(--line); }
   .refused { color: var(--bad); padding-left: 1rem; }

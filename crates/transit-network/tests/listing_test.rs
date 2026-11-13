@@ -373,3 +373,34 @@ fn a_timetable_trip_names_its_service_key() {
         assert_eq!(t.service_type, net.pattern_trips[&t.pattern_trips].service_type);
     }
 }
+
+/// A stop's visit names the stops either side of it on its pattern
+/// (D-158: what the schedule says beside a survey) — the one before
+/// (none at the first stop), the one after (none at the last), each
+/// with the distance along the pattern between them, and whether the
+/// agency published both distances or either is an estimate.
+#[test]
+fn a_visit_names_its_neighbours_and_the_distance_to_each() {
+    {
+        let net = network();
+        for stop in net.stops.keys() {
+            for v in stop_detail(&net, stop, None).unwrap().visits {
+                let p = &net.patterns[&v.pattern];
+                let i = v.index as usize;
+                let here = &p.stops[i];
+                let side = |j: Option<usize>| {
+                    j.map(|j| {
+                        let s = &p.stops[j];
+                        (s.stop.clone(), net.stops.get(&s.stop).map_or_else(|| s.stop.clone(), |x| x.name.clone()), (s.distance_m - here.distance_m).abs(), s.distance_published && here.distance_published)
+                    })
+                };
+                let got = |n: &Option<transit_network::Neighbour>| n.as_ref().map(|n| (n.stop.clone(), n.name.clone(), n.metres, n.published));
+                assert_eq!(got(&v.previous), side(i.checked_sub(1)), "{stop} on {} at {i}", v.pattern);
+                assert_eq!(got(&v.next), side((i + 1 < p.stops.len()).then_some(i + 1)), "{stop} on {} at {i}", v.pattern);
+            }
+        }
+    }
+    // and the fixture's middle stop has both
+    let b = stop_detail(&network(), "B", None).unwrap();
+    assert!(b.visits.iter().any(|v| v.previous.is_some() && v.next.is_some()));
+}

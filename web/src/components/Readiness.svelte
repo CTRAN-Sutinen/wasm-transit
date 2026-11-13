@@ -26,6 +26,7 @@
     onpublish,
     onhold,
     onblock,
+    signin,
     locked = "This is the base network, not a pick. Fork it into a plan (Plans view) to export or publish.",
   }: {
     issues: NetworkError[];
@@ -43,6 +44,9 @@
     onhold?: (trip: string, toSecs: number) => void;
     /// Open a block an issue names; absent, the block is text.
     onblock?: (block: string) => void;
+    /// Who is signed in to publish, beside the button (the page's
+    /// SignInControl); absent where the deployment asks for no sign-in.
+    signin?: import("svelte").Snippet;
     /// Why the plan cannot be exported or published (shown when it
     /// cannot): the host's words for its plan set.
     locked?: string;
@@ -69,6 +73,7 @@
     <h2>Ready to publish?</h2>
     <button type="button" class="quiet" onclick={onexport} disabled={!framed} data-testid="export">Export GTFS</button>
     <button type="button" onclick={onpublish} disabled={!framed} data-testid="publish">Publish</button>
+    {@render signin?.()}
   </header>
   {#if issues.length}
     <p class="gate" data-testid="readiness-gate">

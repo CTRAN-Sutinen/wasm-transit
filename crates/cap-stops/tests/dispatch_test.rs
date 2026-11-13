@@ -222,6 +222,22 @@ fn the_export_carries_the_history_and_the_import_records_a_feeds_differences() {
     let renamed_hash = ok(json!({"op": "load_network", "network": renamed}))["network_hash"].clone();
     let changed = ok(json!({"op": "import_events", "stops_hash": moved["stops_hash"], "network_hash": renamed_hash, "on": "2026-10-01"}));
     assert_eq!(changed["added"], json!([{"stop": "A", "event": {"on": "2026-10-01", "event": "changed", "name": "A Street Station"}}]));
+    assert_eq!(changed["on"], "2026-10-01");
+
+    // with no date, the feed's own first service date: the date a feed
+    // starts on is the feed's to say (cap-network import answers it too)
+    let first = transit_network::first_service_date(&renamed).unwrap().to_string();
+    let dated = ok(json!({"op": "import_events", "stops_hash": moved["stops_hash"], "network_hash": renamed_hash}));
+    assert_eq!(dated["on"], first);
+    assert_eq!(dated["added"][0]["event"]["on"], first);
+
+    // a feed named on the import is named on every event it records, and
+    // found again by its id (D-150: the planner sees what the feed did)
+    let named = ok(json!({"op": "import_events", "stops_hash": moved["stops_hash"], "network_hash": renamed_hash, "feed": "sha256:feed"}));
+    assert_eq!(named["added"][0]["event"]["from_feed"], "sha256:feed");
+    let shown = ok(json!({"op": "feed_events", "stops_hash": named["stops_hash"], "feed": "sha256:feed"}));
+    assert_eq!(shown["events"], named["added"]);
+    assert_eq!(ok(json!({"op": "feed_events", "stops_hash": named["stops_hash"], "feed": "sha256:other"}))["events"], json!([]));
 }
 
 /// What a survey asks (D-158) is the library's: every core question in

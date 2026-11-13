@@ -155,6 +155,7 @@ const ANSWER_WORDS: Record<string, string> = {
   driveway_close: "Driveway cut close",
   right_turn_only: "Right turn only",
   mid_block: "Mid-block",
+  curb_mark: "Mark on curb",
   ada: "ADA",
 };
 
@@ -174,4 +175,28 @@ export const REFS: [string, string][] = [
 
 export function refWords(name: string): string {
   return REFS.find(([k]) => k === name)?.[1] ?? plain(name);
+}
+
+/// Why a request was refused (cap-requests' refusals, D-159), in words.
+export function requestProblemWords(p: { kind: string; field?: string; value?: string; date?: string }): string {
+  switch (p.kind) {
+    case "no_id":
+      return "the request needs an id";
+    case "no_stop":
+      return "the request names no stop";
+    case "unknown":
+      return `${(p.field ?? "").replaceAll("_", " ")} "${p.value}" is not one this app knows`;
+    case "bad_date":
+      return `"${p.date}" is not a date`;
+    case "negative_offset":
+      return "the distance from the cross street cannot be below zero";
+    case "no_work_order":
+      return "a request whose work order is open needs the work order's id";
+    case "no_completion":
+      return "a completed request needs the date it was completed";
+    case "completed_before_requested":
+      return "it cannot be completed before it was requested";
+    default:
+      return p.kind.replaceAll("_", " ");
+  }
 }

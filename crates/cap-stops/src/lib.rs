@@ -120,7 +120,23 @@ pub enum Request {
     /// checked as a write is — registered, answered with the events
     /// added, the stops the feed does not list, and those whose
     /// difference does not fit their history.
-    ImportEvents { stops_hash: String, network_hash: String, on: String },
+    ImportEvents {
+        stops_hash: String,
+        network_hash: String,
+        /// The feed's first service date; omitted, the feed's own (the
+        /// earliest date any of its service runs).
+        #[serde(default)]
+        #[ts(optional)]
+        on: Option<String>,
+        /// The feed's id (its hash): every event recorded names it
+        /// (`from_feed`), so the planner is shown what the feed did.
+        #[serde(default)]
+        #[ts(optional)]
+        feed: Option<String>,
+    },
+    /// The events the document holds that the feed `feed` (its id)
+    /// recorded — what the planner is shown of an import (D-150).
+    FeedEvents { stops_hash: String, feed: String },
     /// What a survey asks (D-158): the core site questions in the
     /// worksheet's order, each with the kind of answer it takes, and
     /// the core amenity names (D-154). Reads no document.
@@ -160,11 +176,14 @@ pub enum Response {
     ImportEvents {
         stops_hash: String,
         stops: Stops,
+        /// The date the differences were recorded on.
+        on: String,
         added: Vec<transit_network::stop_record::AddedEvent>,
         unlisted: Vec<String>,
         unapplied: Vec<String>,
     },
     Questions { site: Vec<SiteQuestion>, amenities: Vec<String> },
+    FeedEvents { events: Vec<transit_network::stop_record::AddedEvent> },
     AttributeSurveys { stops: Stops },
 }
 
@@ -285,15 +304,26 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let (network_hash, exported) = NETWORK.register(exported)?;
             Ok(Response::ExportVersions { network_hash, network: (*exported).clone() })
         }
-        Request::ImportEvents { stops_hash, network_hash, on } => {
-            let on = parse_date(&on)?;
-            let network = NETWORK.require(&network_hash)?;
+        Request::FeedEvents { stops_hash, feed } => {
             let stops = STOPS.require(&stops_hash)?;
-            let imported = transit_network::stop_record::import_events(&stops, &network, on);
+            Ok(Response::FeedEvents { events: transit_network::stop_record::feed_events(&stops, &feed) })
+        }
+        Request::ImportEvents { stops_hash, network_hash, on, feed } => {
+            let network = NETWORK.require(&network_hash)?;
+            let on = match on {
+                Some(on) => parse_date(&on)?,
+                None => transit_network::first_service_date(&network).ok_or("the feed runs no service, so it has no first service date: name `on`")?,
+            };
+            let stops = STOPS.require(&stops_hash)?;
+            let imported = match feed {
+                Some(feed) => transit_network::stop_record::import_feed(&stops, &network, on, &feed),
+                None => transit_network::stop_record::import_events(&stops, &network, on),
+            };
             let (stops_hash, next) = STOPS.register(imported.stops)?;
             Ok(Response::ImportEvents {
                 stops_hash,
                 stops: (*next).clone(),
+                on: on.to_string(),
                 added: imported.added,
                 unlisted: imported.unlisted,
                 unapplied: imported.unapplied,

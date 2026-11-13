@@ -50,7 +50,7 @@ pub use geometry::{authored_alignment, entity_focus, route_lines, RouteLines, pa
 pub use combinations::{date_spans, first_service_date, service_combination, service_combinations, DateSpan, ServiceCombination};
 pub use listing::{
     entity_rows, route_detail, service_keys, stop_detail, timetable, timetable_against, DirectionGroup, EntityRow, PatternTripsGroup,
-    RemovedTrip, RouteDetail, RouteVariant, ServiceKey, ServiceKeyRoute, StopDetail, StopVisit, Timetable, TimetablePattern, TimetableStop, TimetableTrip, VariantStop,
+    RemovedTrip, RouteDetail, RouteVariant, ServiceKey, ServiceKeyRoute, StopDetail, StopVisit, Neighbour, Timetable, TimetablePattern, TimetableStop, TimetableTrip, VariantStop,
 };
 pub use materialize::{
     materialize, materialize_service, produce_times, trip_arrival_end_secs, trip_instance, MaterializedTrip, StopTime,

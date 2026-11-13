@@ -123,10 +123,65 @@ pub struct Event {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub surveyed_by: Option<String>,
+    /// The stop request this event carries out (D-159): its id in the
+    /// stop requests document — a new stop built, a stop relocated or
+    /// removed. Not checked here: the requests are their own document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub request: Option<String>,
+    /// The agency's feed an import recorded this event from (D-150): the
+    /// feed's id (its hash), so the events a feed recorded are found again
+    /// and shown to the planner. A person's own event has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub from_feed: Option<String>,
+    /// Its photos and drawings (D-162): a survey's approach and cross
+    /// street, a closure's sign.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<Attachment>>")]
+    pub attachments: Vec<Attachment>,
     /// Fields this repo does not know, kept as written.
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: BTreeMap<String, Value>,
+}
+
+/// A photo or drawing a record carries (D-162): named by its content
+/// hash, never a URL — the deployment names the bucket, the server hands
+/// out the link, and only a signed-in person may read it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct Attachment {
+    /// "sha256:" and the 64 hex digits of the file's bytes.
+    pub hash: String,
+    /// Its media type ("image/jpeg", "application/pdf").
+    #[serde(rename = "type")]
+    pub media_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub name: Option<String>,
+    /// What it shows, in a few words ("approaching", "the cross street").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub caption: Option<String>,
+    /// The day it was taken.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub taken_on: Option<String>,
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+impl Attachment {
+    /// Whether it is named as a record names a file: a sha256 content
+    /// hash and a media type.
+    pub fn well_named(&self) -> bool {
+        let hex = self.hash.strip_prefix("sha256:").unwrap_or("");
+        hex.len() == 64
+            && hex.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            && self.media_type.split_once('/').is_some_and(|(a, b)| !a.is_empty() && !b.is_empty())
+    }
 }
 
 /// What an event is. A name this build does not know reads as
@@ -564,6 +619,8 @@ pub enum Problem {
     /// A core site question (D-158) answered outside its kind: an
     /// answer not on its list, or a count that is not a whole number.
     BadAnswer { key: String, value: String },
+    /// An attachment not named by a sha256 content hash and a media type.
+    BadAttachment { hash: String },
     /// A consolidation naming a stop the document does not hold.
     UnknownStop { stop: String },
     /// A consolidation naming the stop itself.
@@ -587,6 +644,7 @@ impl fmt::Display for Refusal {
             Problem::Misplaced { field } => format!("carries {field}, which its type does not set"),
             Problem::NoPoint => "lacks a whole point (lat and lon)".into(),
             Problem::BadPoint => "has a point off the earth".into(),
+            Problem::BadAttachment { hash } => format!("names an attachment {hash:?} that is not a sha256 hash with a media type"),
             Problem::BadAnswer { key, value } => format!("answers {key} with {value:?}, which it does not take"),
             Problem::UnknownStop { stop } => format!("replaces {stop:?}, which is not in the document"),
             Problem::ReplacesItself => "replaces itself".into(),
@@ -884,6 +942,13 @@ fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> 
         }
         if e.surveyed_by.is_some() && !e.event.sets_details() {
             refuse(Problem::Misplaced { field: "surveyed_by".into() });
+        }
+        for a in &e.attachments {
+            if !a.well_named() {
+                refuse(Problem::BadAttachment { hash: a.hash.clone() });
+            } else if let Some(d) = a.taken_on.as_ref().filter(|d| parse_date(d).is_none()) {
+                refuse(Problem::BadDate { date: d.clone() });
+            }
         }
         for (key, value) in &e.details.site {
             if SITE.iter().any(|(k, a)| k == key && !a.takes(value)) {

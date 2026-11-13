@@ -37,6 +37,8 @@ transit-runs = { path = "../transit-runs" }
 # …and the stops document kind (each stop a list of dated events,
 # beside the plans; D-153).
 transit-stops = { path = "../transit-stops" }
+# …and the stop requests kind (D-159).
+transit-requests = { path = "../transit-requests" }
 # …and the router's examples compute REAL itineraries over the same
 # composition (materialize, patch, build, query) the module runs.
 transit-router = { path = "../transit-router", optional = true }

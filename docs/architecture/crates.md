@@ -15,7 +15,11 @@ transit-network The authored network model (planner authority):
                 last, `<id>@<date>` before) and splits each pattern
                 visiting it by calendar, and `import_events` records a
                 feed's differences as events dated its first service
-                date, a made id read back as a version; `seed`
+                date, a made id read back as a version (`import_feed`
+                the same, each event naming the feed — `from_feed`, its
+                hash — and `feed_events` the events a feed recorded);
+                the stops it calls unlisted are only those in service
+                or suspended that day, the ones a feed should list; `seed`
                 begins a stops document from a network's stops;
                 routes and their DIRECTIONS (`Route.directions`,
                 each named; a pattern runs in at most one —
@@ -575,7 +579,9 @@ transit-stops   THE stops document, beside the plans (D-147, D-153):
                 GIS, shelter, …, not checked) set only by events. An
                 event that records a survey names its surveyor
                 (`surveyed_by`); a stop on a date says when it was
-                last surveyed and by whom.
+                last surveyed and by whom. Any event carries its photos
+                and drawings (`attachments`, D-162: each named by its
+                sha256 content hash with its media type, never a URL).
                 Nothing in it means today: `stop_on` is a stop's
                 events applied in order up to a date, a temporary
                 suspended or moved applying until its `until`; `served`
@@ -601,6 +607,29 @@ transit-stops   THE stops document, beside the plans (D-147, D-153):
                 crate. cap-stops is the seam. A stop's life is its own,
                 managed apart from the picks, which only read it
                 (D-157).
+transit-requests THE stop requests document (D-159): the planning
+                team's requests for work at a stop — C-TRAN's Bus Stop
+                Sign & Shelter Installation Worksheet — each a record by
+                id: the job (new, reinstall, relocate_remove,
+                repair_improve, temporary), the stop, the status
+                (drafted, submitted, ordered — the work order opened —
+                completed, or cancelled, the tombstone), and the
+                worksheet's fields: who asked and when, the intended
+                routes and direction, the street, the cross street the
+                offset is measured from, the offset, the side, city,
+                county, township, range, section, parcel, the marking,
+                the utility locate (the utilities as free text, the
+                agency's own list), the work order it tracks (system,
+                id — the Control # — link, its status as last read, and
+                when), the completion, a note, its photos and drawing
+                (`attachments`, by hash, D-162). `checked` refuses only
+                what makes a request wrong, each refusal naming its
+                request; `put` places one request by id; `for_stop` is
+                a stop's requests. Canonical as it stands (requests by
+                id), what it does not know kept. Depends on no other
+                model crate; cap-requests is the seam. A stop's event
+                names the request it carries out (transit-stops
+                `request`, not checked across the two documents).
 transit-streets THE streets model. `model.rs`: the streets document
                 (`Streets`: ways — points as [lat, lon] microdegrees,
                 one-way, class, name), CANONICAL so its hash is the
@@ -698,7 +727,9 @@ cap-stops       The stops capability: what is a stop on a date?
                 service over its period); export_versions and
                 import_events (GTFS out and in with the stops'
                 history; amenities, site answers, and references are
-                the document's alone); questions (what a site survey
+                the document's alone; `on` defaults to the feed's
+                first service date, and a named `feed` is named on each
+                event recorded), feed_events (what a feed recorded); questions (what a site survey
                 asks: the core site questions with the kind of answer
                 each takes, and the core amenity names) and
                 attribute_surveys (the write's new surveys named for
@@ -707,6 +738,14 @@ cap-stops       The stops capability: what is a stop on a date?
                 `stop_record` are the libraries; the kernel's `stops`
                 kind registers a document only if validate would pass
                 it.
+cap-requests    The stop requests capability: what work has been asked
+                for at a stop, and where is it? validate (what a write
+                must pass, or the canonical document and its hash — the
+                one load_stop_requests answers), requests_for (a stop's
+                requests), put (one request placed by id, checked; with
+                no document, the first begins one), and vocabulary (the
+                lists a request's answers come from). transit-requests
+                is the library.
 cap-author      The authoring capability: what does this network
                 become after these edits? apply (typed edits,
                 atomic) answers the next document under its hash,
@@ -848,6 +887,18 @@ reading **Because**.
 - **Because:** many answers are a choice from a list or a type, which yes/no amenities cannot hold, and widening amenities would change a decided shape; a map of named answers keeps the agency's own questions next to the core ones, as amenities do. Signs, posts, and shelters get records of their own only if they move between stops with histories of their own. A v1 reader keeps fields it does not know, so the new fields need no new version.
 - **Rejected:** typed values inside `amenities`; a separate survey document (the answers are facts about the stop and change by its events); asset records for each part.
 - **Decided:** D-158, D-160, D-163 (D-154 for amenities).
+
+### A feed's stops apply, and the planner sees what they did (transit-network `stop_record`, cap-stops `import_events`, `export_versions`, `feed_events`)
+- **Holds:** when the server imports the agency's feed, each difference between the feed's stops and the stops document on the feed's first service date is recorded as an event dated that day, naming the feed; a stop the feed does not list keeps its events, and events dated later stand. The stops page shows what the feed recorded and the stops in service it does not list, each fixable on its card — a move that was a survey correction becomes a correction of the earlier point. Out, a stop whose record changes inside an export's dates is one stops.txt row per version sharing its `stop_code`: the version in force last keeps the id, an earlier one takes `<id>@<its first date>`, and a re-import reads those back as versions.
+- **Because:** the feed is the agency's published statement and riders get it at once; a bad feed is fixed by a correct one, and a planner must see what a feed did. A feed has no dates for its stops, so its first service date is the only date it states. The rider's stop is its `stop_code`; a `stop_id` is for software.
+- **Rejected:** a review step before a feed's differences are recorded; ending an export's window at a stop's change (riders could not plan past it); the record in force on the window's first date (wrong after a construction move).
+- **Decided:** D-150, D-151.
+
+### A request for work is its own record, not a stop's event (transit-requests, cap-requests)
+- **Holds:** a request for work at a stop — the installation worksheet the planning team submits — is a record of its own in a document of its own, by id, changed by replacing it whole; it tracks the work order the work order system opens (system, id, link, status as last read), shown as given, never decided here. Its fields are the worksheet's and free where the worksheet's are (the utilities, the work order system); only what makes a request wrong is refused. A new stop's intended routes and direction are the request's, since no schedule serves it yet. A stop's event names the request it carries out; nothing checks that across the two documents.
+- **Because:** the sheet is not a work order and not a fact about the stop: it is work with its own life (drafted, submitted, ordered, completed, cancelled), and the work order lives in the agency's work order system, which this app will one day call to open one and read its status.
+- **Rejected:** events on the stop (it mixes the work into the stop's facts); a built-in list of utilities (one agency's list, not the format's).
+- **Decided:** D-159.
 
 ### Stop search is fuzzy on the stops' own names (directory `stops`)
 - **Holds:** typos and abbreviations match the names the feed gives; no authored aliases.

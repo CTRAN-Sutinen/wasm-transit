@@ -347,8 +347,10 @@ pub struct ImportedStops {
     pub stops: Stops,
     /// Each event added, in stop order.
     pub added: Vec<AddedEvent>,
-    /// The stops the document holds that the feed does not list: they
-    /// keep their events (many feeds list only the stops they serve).
+    /// The stops the document has in service or suspended on the feed's
+    /// date that the feed does not list — for a person to look at; they
+    /// keep their events. A stop planned, permitted, built, retired, or
+    /// not there yet is expected missing from a feed, and is not named.
     pub unlisted: Vec<String>,
     /// The stops whose difference could not be recorded without breaking
     /// their history (a retired stop the feed still lists with another
@@ -368,6 +370,29 @@ pub struct ImportedStops {
 /// the version in force on `on` is compared. The document is never
 /// written here: the caller writes the answer through the receive path.
 pub fn import_events(stops: &Stops, feed: &Network, on: NaiveDate) -> ImportedStops {
+    import(stops, feed, on, None)
+}
+
+/// [`import_events`] with every event it records naming the feed it came
+/// from (`from_feed`, the feed's id — its hash), so the planner is shown
+/// what the feed did (D-150; [`feed_events`]).
+pub fn import_feed(stops: &Stops, feed: &Network, on: NaiveDate, feed_id: &str) -> ImportedStops {
+    import(stops, feed, on, Some(feed_id))
+}
+
+/// The events the document holds that the feed `feed_id` recorded, in
+/// stop order, each stop's in its order.
+pub fn feed_events(stops: &Stops, feed_id: &str) -> Vec<AddedEvent> {
+    stops
+        .stops
+        .iter()
+        .flat_map(|(id, events)| {
+            events.iter().filter(|e| e.from_feed.as_deref() == Some(feed_id)).map(move |e| AddedEvent { stop: id.clone(), event: e.clone() })
+        })
+        .collect()
+}
+
+fn import(stops: &Stops, feed: &Network, on: NaiveDate, feed_id: Option<&str>) -> ImportedStops {
     let mut next = stops.clone();
     let mut added = Vec::new();
     let mut unapplied = Vec::new();
@@ -410,6 +435,9 @@ pub fn import_events(stops: &Stops, feed: &Network, on: NaiveDate) -> ImportedSt
         if events.is_empty() {
             continue;
         }
+        for e in &mut events {
+            e.from_feed = feed_id.map(str::to_string);
+        }
         let mut trial = next.clone();
         for e in &events {
             trial = trial.add_event(id, e.clone());
@@ -421,7 +449,16 @@ pub fn import_events(stops: &Stops, feed: &Network, on: NaiveDate) -> ImportedSt
             unapplied.push(id.to_string());
         }
     }
-    let unlisted = stops.stops.keys().filter(|id| !listed.contains_key(id.as_str())).cloned().collect();
+    // a feed lists the stops in service: one in service or suspended on
+    // `on` that it does not list is for a person to look at; one planned,
+    // permitted, built, retired, or not there yet is expected missing
+    let unlisted = stops
+        .stops
+        .keys()
+        .filter(|id| !listed.contains_key(id.as_str()))
+        .filter(|id| matches!(stops.stop_on(id, on).map(|s| s.status), Some(Status::InService | Status::Suspended)))
+        .cloned()
+        .collect();
     ImportedStops { stops: next, added, unlisted, unapplied }
 }
 

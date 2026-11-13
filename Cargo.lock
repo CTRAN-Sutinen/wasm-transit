@@ -126,6 +126,7 @@ dependencies = [
  "transit-live",
  "transit-network",
  "transit-plans",
+ "transit-requests",
  "transit-router",
  "transit-rt",
  "transit-runs",
@@ -289,6 +290,18 @@ dependencies = [
  "serde",
  "serde_json",
  "transit-plans",
+ "transit-version",
+ "ts-rs",
+]
+
+[[package]]
+name = "cap-requests"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "serde",
+ "serde_json",
+ "transit-requests",
  "transit-version",
  "ts-rs",
 ]
@@ -745,6 +758,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "module-requests"
+version = "0.1.0"
+dependencies = [
+ "cap-abi",
+ "cap-requests",
+]
+
+[[package]]
 name = "module-router"
 version = "0.1.0"
 dependencies = [
@@ -857,6 +878,7 @@ dependencies = [
  "cap-abi",
  "cap-directory",
  "cap-network",
+ "cap-requests",
  "cap-stops",
 ]
 
@@ -1479,6 +1501,19 @@ dependencies = [
 
 [[package]]
 name = "transit-plans"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "proptest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "transit-version",
+ "ts-rs",
+]
+
+[[package]]
+name = "transit-requests"
 version = "0.1.0"
 dependencies = [
  "chrono",

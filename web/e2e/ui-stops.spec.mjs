@@ -16,10 +16,29 @@
 //   - a stop is surveyed (D-158): the half-filled survey survives a
 //     reload on this device, a count that is not a number is stopped at
 //     its field, the surveyor is the person writing (the server's, never
-//     typed), and the saved survey shows on the card grouped as the
-//     worksheet groups it, with its surveyor and date.
+//     typed), a photo is added and named by its hash, and the saved
+//     survey shows on the card grouped as the
+//     worksheet groups it, with its surveyor and date;
+//   - a request for work at a stop (D-159) is started, refused in words
+//     while it claims an open work order it does not name, saved with
+//     the work order, and named by the stop change that carries it out;
+//   - the work order system through its adapter (D-165; the stub on this
+//     server): a submitted request's work order opened, then its status
+//     read — the answers written on the request;
+//   - signed in (D-58, D-163; its own server on :8090 with sign-in on,
+//     and a stand-in provider on :8089): a write before signing in is
+//     refused in words and its draft kept; signing in goes out to the
+//     provider and back to the same stop; the survey then saves, its
+//     surveyor the signed-in person's name, and a photo added and shown
+//     only to the signed-in;
+//   - what the agency's feed did to the stops record (D-150: the feed
+//     applies, and the planner sees what it did): one line, reviewed,
+//     each stop linked to its card.
 
 import { test, expect } from "@playwright/test";
+
+/// A 1x1 PNG: a photo as small as a test needs.
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
 
 test.use({ baseURL: "http://127.0.0.1:8084" });
 
@@ -118,6 +137,8 @@ test("a stop's site survey: kept as a draft, checked, saved, and shown", async (
   await page.goto("/stops.html#on=2026-11-02&open=A");
   await expect(page.getByTestId("stop-card")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("stop-surveyed")).toHaveText("Never surveyed.");
+  // what the schedule says beside the survey: the stop beside it, and how far
+  await expect(page.getByTestId("stop-visits")).toContainText(/(before|after) Main & 2nd \((about )?\d+ m\)/);
 
   // Half filled, then the tab is reloaded: the survey is back.
   await page.getByTestId("action-survey").click();
@@ -141,6 +162,10 @@ test("a stop's site survey: kept as a draft, checked, saved, and shown", async (
   await page.getByTestId("survey-surface").selectOption("concrete");
   await page.getByTestId("survey-amenity-rear_boarding_pad").selectOption("yes");
   await page.getByTestId("survey-ref-sign").fill("S-1180");
+  // a photo, added at once and named by its hash (D-162)
+  await page.getByTestId("survey-attachments-file").setInputFiles({ name: "approach.png", mimeType: "image/png", buffer: PNG });
+  await expect(page.getByTestId("survey-attachments").getByTestId("attachment-img")).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("textbox", { name: "Caption for approach.png" }).fill("approaching");
   await page.getByTestId("survey-save").click();
   await expect(page.getByTestId("status")).toContainText("Survey of A on 2026-11-02 saved.", { timeout: 15_000 });
   // the surveyor is the person writing — with sign-in off, "anonymous"
@@ -152,8 +177,95 @@ test("a stop's site survey: kept as a draft, checked, saved, and shown", async (
   await expect(page.getByTestId("stop-refs")).toContainText("S-1180");
   await expect(page.getByTestId("stop-amenities")).toContainText("Rear door pad: there");
   await expect(page.getByTestId("stop-event").last()).toContainText("Surveyed by anonymous");
+  await expect(page.getByTestId("stop-event").last().getByTestId("attachment-img")).toBeVisible();
+  await expect(page.getByTestId("stop-event").last()).toContainText("approaching");
   // saved: no draft is kept
   await expect(page.getByTestId("action-survey")).toHaveText("Survey");
+});
+
+test("a stop request: started, checked, tracking its work order, and carried out", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
+  await page.goto("/stops.html#on=2026-11-02&open=B");
+  await expect(page.getByTestId("stop-requests")).toContainText("No requests for this stop.", { timeout: 15_000 });
+  await page.getByTestId("request-new").click();
+  await expect(page.getByTestId("request-id")).toHaveValue("B-20261102");
+  await page.getByTestId("request-job").selectOption("relocate_remove");
+  await page.getByTestId("request-routes").fill("10");
+  await page.getByTestId("request-street").fill("Main St");
+  await page.getByTestId("request-cross").fill("2nd Ave");
+  await page.getByTestId("request-offset").fill("60");
+  await page.getByTestId("request-side").selectOption("south");
+  await page.getByTestId("request-ticket").fill("26123456");
+  await page.getByTestId("request-attachments-file").setInputFiles({ name: "site drawing.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 a drawing") });
+  await expect(page.getByTestId("request-attachments")).toContainText("site drawing.pdf", { timeout: 15_000 });
+  await page.getByTestId("request-status").selectOption("ordered");
+  await page.getByTestId("request-save").click();
+  await expect(page.getByTestId("request-refused")).toContainText("needs the work order's id", { timeout: 15_000 });
+  await page.getByTestId("request-wo-system").fill("Maintenance");
+  await page.getByTestId("request-wo-id").fill("WO-88123");
+  await page.getByTestId("request-wo-status").fill("open");
+  await page.getByTestId("request-save").click();
+  await expect(page.getByTestId("status")).toContainText("Request B-20261102 saved.", { timeout: 15_000 });
+  const row = page.getByTestId("request-row");
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText("Relocate/Remove");
+  await expect(row).toContainText("Work order open");
+  await expect(row).toContainText("Maintenance WO-88123 · open");
+  await expect(row.getByRole("link", { name: "site drawing.pdf" })).toBeVisible();
+
+  // the stop's change names the request it carries out
+  await page.getByTestId("action-details").click();
+  await page.getByTestId("form-name").fill("Main & 2nd (relocated)");
+  await page.getByTestId("form-request").selectOption("B-20261102");
+  await page.getByTestId("form-save").click();
+  await expect(page.getByTestId("stop-event").filter({ hasText: "relocated" })).toContainText("(request B-20261102)", { timeout: 15_000 });
+
+  // edited later: completed, the id kept
+  await page.getByTestId("request-edit").click();
+  await expect(page.getByTestId("request-id")).toHaveValue("B-20261102");
+  await page.getByTestId("request-status").selectOption("completed");
+  await page.getByTestId("request-completed-on").fill("2026-11-20");
+  await page.getByTestId("request-save").click();
+  await expect(row).toContainText("Completed", { timeout: 15_000 });
+  await expect(row).toHaveCount(1);
+});
+
+test("a request's work order opened and read through the work order system's adapter", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
+  await page.goto("/stops.html#on=2026-11-02&open=C");
+  await expect(page.getByTestId("stop-requests")).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId("request-new").click();
+  await page.getByTestId("request-job").selectOption("repair_improve");
+  await page.getByTestId("request-status").selectOption("submitted");
+  await page.getByTestId("request-save").click();
+  const row = page.getByTestId("request-row").filter({ hasText: "C-20261102" });
+  await expect(row).toContainText("Submitted", { timeout: 15_000 });
+  await row.getByTestId("request-wo-open").click();
+  await expect(page.getByTestId("status")).toContainText("Work order STUB-C-20261102 opened for C-20261102.", { timeout: 15_000 });
+  await expect(row).toContainText("Work order open");
+  await expect(row).toContainText("Maintenance STUB-C-20261102 · open (2026-08-01)");
+  await row.getByTestId("request-wo-refresh").click();
+  await expect(page.getByTestId("status")).toContainText("Work order STUB-C-20261102: open.", { timeout: 15_000 });
+});
+
+test("what the agency's feed did to the stops record: one line, reviewed, each stop linked", async ({ page, request }) => {
+  // the record as the server's import leaves it (D-150): a change naming
+  // the feed it came from, and a stop in service the feed does not list
+  const manifest = await (await request.get("/manifest")).json();
+  const doc = await (await request.get(`/blobs/${manifest.stops_hash}`)).json();
+  doc.stops.A.push({ on: "2026-11-21", event: "changed", name: "Main & First", from_feed: manifest.feed_hash });
+  doc.stops.ZZ = [{ event: "in_service", lat: 45.505, lon: -73.505, name: "Old Mill" }];
+  const written = await request.post("/stops", { data: { from: manifest.stops_hash, stops: doc } });
+  expect(written.status(), await written.text()).toBe(200);
+
+  await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
+  await page.goto("/stops.html#on=2026-11-02");
+  const notice = page.getByTestId("feed-notice");
+  await expect(notice).toContainText("recorded 1 change; does not list 1 stop in service", { timeout: 15_000 });
+  await page.getByTestId("feed-review").click();
+  await expect(notice).toContainText("A changed (name), from 2026-11-21");
+  await notice.getByRole("button", { name: "ZZ" }).click();
+  await expect(page.getByTestId("stop-card")).toContainText("Old Mill");
 });
 
 // A pick only reads the stops (D-157): published over stop C, retired
@@ -187,4 +299,38 @@ test("a pick published over a retired stop carries the warning", async ({ page, 
   await page.goto("/service-change.html#stage=proposal");
   await expect(page.getByTestId("plan-select")).toHaveValue("published:late-2026", { timeout: 15_000 });
   await expect(page.getByTestId("stage-proposal")).toContainText("The plan stops at C, which is retired from 2026-12-14 on", { timeout: 15_000 });
+});
+
+test.describe("signed in", () => {
+  test.use({ baseURL: "http://127.0.0.1:8090" });
+
+  test("a write needs sign-in; signed in, the surveyor is the person", async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
+    await page.goto("/stops.html#on=2026-11-02&open=A");
+    await expect(page.getByTestId("stop-card")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("signin-button")).toBeVisible();
+
+    // not signed in: refused in words, the survey's draft kept
+    await page.getByTestId("action-survey").click();
+    await page.getByTestId("survey-on_street").fill("Main St");
+    await page.getByTestId("survey-save").click();
+    await expect(page.getByTestId("status")).toContainText("Sign in to save changes", { timeout: 15_000 });
+    await expect(page.getByTestId("action-survey")).toHaveText("Survey (draft)");
+
+    // out to the provider and back to the same stop
+    await page.getByTestId("signin-button").click();
+    await expect(page.getByTestId("signin-name")).toHaveText("Rosa Ortiz", { timeout: 15_000 });
+    await expect(page).toHaveURL(/stops\.html#.*open=A/);
+    await expect(page).not.toHaveURL(/[?&]code=/);
+
+    await page.getByTestId("action-survey").click();
+    await expect(page.getByTestId("survey-on_street")).toHaveValue("Main St");
+    await page.getByTestId("survey-attachments-camera").setInputFiles({ name: "sign.png", mimeType: "image/png", buffer: PNG });
+    await expect(page.getByTestId("survey-attachments").getByTestId("attachment-img")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("survey-save").click();
+    await expect(page.getByTestId("stop-surveyed")).toHaveText("Last surveyed on 2026-11-02 by Rosa Ortiz.", { timeout: 15_000 });
+
+    await page.getByTestId("signout").click();
+    await expect(page.getByTestId("signin-button")).toBeVisible();
+  });
 });

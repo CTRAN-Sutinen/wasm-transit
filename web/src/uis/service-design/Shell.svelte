@@ -1,4 +1,6 @@
 <script lang="ts">
+  import SignInControl from "../../components/SignInControl.svelte";
+  import { signin as signinState, signIn, signOut } from "../../signin.svelte";
   /// The service-design UI — six views over one selection, chained:
   /// a rail of views (keys 1–6) and a context bar (plan, baseline,
   /// group, route, stop, hours) frame whichever view is open. Plans
@@ -325,7 +327,9 @@
           {:else}
             <Readiness issues={sd.issues} warnings={sd.warnings} {framed} exported={sd.exported} exportError={sd.failed.Export ?? ""} onexport={exportPlan}
               published={sd.published} publishRefused={sd.publishRefused} publishError={sd.failed.Publish ?? ""} onpublish={publishPlan}
-              onhold={gestures.retime} />
+              onhold={gestures.retime}>
+            {#snippet signin()}<SignInControl available={signinState.available} name={signinState.name} error={signinState.error} onsignin={signIn} onsignout={signOut} />{/snippet}
+          </Readiness>
           {/if}
         </div>
       {/if}

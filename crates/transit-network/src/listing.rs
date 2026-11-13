@@ -312,6 +312,24 @@ pub struct StopVisit {
     /// service type when none were named): every trip's instances, the
     /// expansion materialize runs.
     pub trips: u32,
+    /// The stop before this one on the pattern (none at its first
+    /// stop), and the stop after it (none at its last).
+    pub previous: Option<Neighbour>,
+    pub next: Option<Neighbour>,
+}
+
+/// A stop beside a visit on its pattern, and how far apart they are.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct Neighbour {
+    pub stop: String,
+    /// Its name (the id where the network has no such stop).
+    pub name: String,
+    /// The distance along the pattern between the two, in metres.
+    pub metres: f64,
+    /// Whether both distances were published by the agency; otherwise
+    /// at least one is the import's estimate.
+    pub published: bool,
 }
 
 fn row(id: &str, name: &str) -> EntityRow {
@@ -706,6 +724,15 @@ pub fn timetable_against(
     Some(t)
 }
 
+fn neighbour(network: &Network, here: &crate::model::PatternStop, there: &crate::model::PatternStop) -> Neighbour {
+    Neighbour {
+        stop: there.stop.clone(),
+        name: network.stops.get(&there.stop).map_or_else(|| there.stop.clone(), |s| s.name.clone()),
+        metres: (there.distance_m - here.distance_m).abs(),
+        published: there.distance_published && here.distance_published,
+    }
+}
+
 /// The routes serving a stop, in id order; `None` for an unknown
 /// stop. The board's rule: a stop with service of its own answers
 /// its own routes and never pools, and a stop no pattern visits (a
@@ -743,6 +770,8 @@ pub fn stop_detail(network: &Network, stop: &str, members: Option<&[String]>) ->
                 endpoint: i == 0 || i + 1 == p.stops.len(),
                 timepoint: ps.timepoint,
                 trips: trips(),
+                previous: i.checked_sub(1).map(|j| neighbour(network, ps, &p.stops[j])),
+                next: p.stops.get(i + 1).map(|n| neighbour(network, ps, n)),
             });
         }
     }

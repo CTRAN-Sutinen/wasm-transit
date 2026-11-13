@@ -19,7 +19,8 @@ here for their detail.
 | [agency-data.md](agency-data.md) | Who owns the data (the agency), applications as interfaces, reads open and writes governed by the receive contract |
 | [crates.md](crates.md) | Every crate, bottom up: the model, the codecs, the libraries, the kernel, the capabilities, the generated assemblies |
 | [bus.md](bus.md) | The capability bus: one flat ABI, documents by hash, linked assemblies, and its load-bearing rules |
-| [server.md](server.md) | The Go host: its routes, the published documents, the store, auth, publishing picks |
+| [server.md](server.md) | The Go host: its routes, the published documents, auth, publishing picks |
+| [storage.md](storage.md) | The agency's record: the bucket, what it holds by shape, how it is written and read |
 | [static-deployment.md](static-deployment.md) | A rider UI deployed with no server: the export, the bundle, following a GTFS URL |
 | [web.md](web.md) | The frontend: parity, the bus worker, external services |
 | [generated-uis.md](generated-uis.md) | The generated UIs and the procedure a new one follows |

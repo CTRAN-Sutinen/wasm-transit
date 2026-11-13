@@ -7,6 +7,9 @@
     amenities: Record<string, string>;
     refs: Record<string, string>;
     note: string;
+    /// Photos added while surveying (their hashes; the files are kept
+    /// by the deployment as each is added).
+    attachments?: { hash: string; type: string; name?: string; caption?: string; taken_on?: string }[];
   };
 </script>
 
@@ -23,6 +26,7 @@
   import type { Event } from "../types/Event";
   import type { StopOn } from "../types/StopOn";
   import type { SiteQuestion } from "../types/cap_stops/SiteQuestion";
+  import Attachments from "./Attachments.svelte";
   import { REFS, SITE_GROUPS, amenityWords, answerWords, refWords, siteWords } from "./stopWords";
 
   let {
@@ -34,6 +38,7 @@
     ondraft,
     onsave,
     oncancel,
+    attachments = null,
   }: {
     stop: StopOn | null;
     questions: { site: SiteQuestion[]; amenities: string[] };
@@ -44,6 +49,8 @@
     ondraft: (draft: SurveyDraft | null) => void;
     onsave: (event: Event, done: string) => void;
     oncancel: () => void;
+    /// Adding and showing photos, where the deployment keeps them (D-162).
+    attachments?: { onadd: (file: File) => Promise<{ hash: string; type: string; name?: string; caption?: string; taken_on?: string } | null>; src: (hash: string) => Promise<string | null> } | null;
   } = $props();
 
   const yn = (v: boolean | undefined) => (v == null ? "" : v ? "yes" : "no");
@@ -57,6 +64,7 @@
       amenities: Object.fromEntries(questions.amenities.map((a) => [a, yn(stop?.amenities?.[a])])),
       refs,
       note: "",
+      attachments: [],
     };
   }
 
@@ -115,6 +123,7 @@
       ...(Object.keys(refs).length ? { refs } : {}),
       ...(Object.keys(amenities).length ? { amenities } : {}),
       ...(d.note.trim() ? { note: d.note.trim() } : {}),
+      ...(d.attachments?.length ? { attachments: d.attachments } : {}),
     };
     onsave(event, `Survey of ${stop?.stop_id ?? "the stop"} on ${d.on} saved.`);
   }
@@ -194,6 +203,10 @@
       <button type="button" onclick={addRef} disabled={!extraRef.trim()}>Add</button>
     </div>
   </fieldset>
+
+  {#if attachments}
+    <Attachments bind:items={() => d.attachments ?? [], (v) => (d.attachments = v)} onadd={attachments.onadd} src={attachments.src} testid="survey-attachments" />
+  {/if}
 
   <label class="note">Note <input type="text" bind:value={d.note} placeholder="Anything else, in a few words" data-testid="survey-note" /></label>
   <div class="row">

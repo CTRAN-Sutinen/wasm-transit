@@ -1,0 +1,14 @@
+[package]
+name = "cap-requests"
+description = "The stop requests capability (transit-requests; D-159): the planning team's requests for work at a stop, each tracking the work order the agency's work order system opens for it. validate answers what a write must pass — each refusal named, or the canonical document and its hash; requests_for answers a stop's requests; put answers the next document with one request placed by id, checked; vocabulary answers the lists a request's answers come from. The kernel's load_stop_requests registers a document the host holds. The module writes nothing."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+transit-version = { path = "../transit-version" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ts-rs = { workspace = true }
+transit-requests = { path = "../transit-requests" }
+cap-abi = { path = "../cap-abi" }

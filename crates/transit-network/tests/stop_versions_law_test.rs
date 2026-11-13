@@ -19,7 +19,7 @@
 
 use chrono::NaiveDate;
 use proptest::prelude::*;
-use transit_network::stop_record::{export_versions, import_events, read_records, seed};
+use transit_network::stop_record::{feed_events, import_feed, AddedEvent, export_versions, import_events, read_records, seed};
 use transit_network::{materialize, Network};
 use transit_stops::{Details, Event, EventKind, Stops};
 
@@ -238,4 +238,48 @@ fn an_import_records_a_new_stop_and_names_the_ones_it_does_not_list() {
     let c = imported.added.iter().find(|a| a.stop == "C").expect("C is added");
     assert_eq!((c.event.event.clone(), c.event.on.clone()), (EventKind::InService, Some(date(5))));
     assert_eq!(imported.stops.stops["Z"], stops.stops["Z"]);
+}
+
+/// A feed lists the stops in service: a stop the document has in service
+/// or suspended on the feed's first date and the feed does not list is
+/// one a person looks at (the stops page's notice); a stop planned,
+/// permitted, built, retired, or not there yet that day is expected to be
+/// missing from a feed, and is not named.
+#[test]
+fn unlisted_names_only_the_stops_a_feed_should_list() {
+    let net = fixture();
+    let mut stops = seed(&net);
+    let at = |kind: EventKind, on: u32| Event { lat: Some(45.0), lon: Some(-122.0), ..ev(kind, on) };
+    stops.stops.insert("P".into(), vec![at(EventKind::Planned, 1)]);
+    stops.stops.insert("R".into(), vec![at(EventKind::InService, 1), ev(EventKind::Retired, 3)]);
+    stops.stops.insert("S".into(), vec![at(EventKind::InService, 1), ev(EventKind::Suspended, 3)]);
+    stops.stops.insert("L".into(), vec![at(EventKind::Planned, 20)]);
+    stops.stops.insert("Z".into(), vec![Event { lat: Some(45.0), lon: Some(-122.0), ..Event::default() }]);
+    let stops = stops.checked().unwrap();
+    let imported = import_events(&stops, &net, day(5));
+    assert_eq!(imported.unlisted, vec!["S".to_string(), "Z".to_string()]);
+}
+
+/// An import names the feed it came from on every event it records
+/// (D-150: the planner sees what the feed did), and is otherwise the
+/// same import; the events a feed recorded are found again by its id,
+/// and only those.
+#[test]
+fn an_import_names_its_feed_on_every_event_it_records() {
+    let net = fixture();
+    let mut stops = seed(&net);
+    stops.stops.remove("C");
+    let a = stops.stops.get_mut("A").unwrap();
+    a[0].details.name = Some("Old A".into());
+    let stops = stops.checked().unwrap();
+    let plain = import_events(&stops, &net, day(5));
+    let named = import_feed(&stops, &net, day(5), "sha256:feed");
+    assert!(!named.added.is_empty());
+    assert!(named.added.iter().all(|a| a.event.from_feed.as_deref() == Some("sha256:feed")));
+    let strip = |events: &[AddedEvent]| events.iter().map(|a| AddedEvent { event: Event { from_feed: None, ..a.event.clone() }, ..a.clone() }).collect::<Vec<_>>();
+    assert_eq!(strip(&named.added), plain.added);
+    assert_eq!((named.unlisted.clone(), named.unapplied.clone()), (plain.unlisted, plain.unapplied));
+    assert_eq!(feed_events(&named.stops, "sha256:feed"), named.added);
+    assert!(feed_events(&named.stops, "sha256:other").is_empty());
+    assert!(feed_events(&stops, "sha256:feed").is_empty());
 }

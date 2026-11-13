@@ -52,6 +52,8 @@ type oidcConfig struct {
 	keyFile    string // pinned PEM public key (used when jwksURL is empty, or as bootstrap)
 	rolesClaim string // dotted claim path, default "roles" (D-59)
 	nameClaim  string // dotted claim path to the person's name, default "name" (D-158)
+	clientID   string // the pages' public client (PKCE), published in the manifest
+	scope      string // the scopes a page asks for
 }
 
 // authzState is the auth-enabled server state: nil means auth is OFF

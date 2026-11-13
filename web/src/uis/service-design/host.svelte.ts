@@ -20,9 +20,10 @@
 /// answers (a production failure, shown gracefully).
 
 import { getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
-import { ask, assemble, available, keep, load, produced, servedNetworkValue, Doc, stopWarnings, withStopRecords, publishedPlanSet } from "../../engine";
+import { ask, assemble, available, keep, load, produced, servedNetworkValue, Doc, stopWarnings, withStopVersions, publishedPlanSet } from "../../engine";
 import { answerGraph, readAgencyZone, today } from "../kit";
 
+import { resumeSignIn, writeFetch } from "../../signin.svelte";
 // This page's capabilities answer inside its linked assembly — one
 // module, one registry: each document registers once (D-77).
 assemble("service-design");
@@ -709,7 +710,7 @@ async function select(...inputs: string[]): Promise<void> {
 export async function boot(): Promise<void> {
   // The agency's zone before anything reads the date (the pick in
   // force is the agency's today's).
-  await Promise.all([restorePlans(), readAgencyZone()]);
+  await Promise.all([restorePlans(), readAgencyZone(), resumeSignIn()]);
   syncPlanRows();
   sd.activeKey = getAllPlans()[getActivePlanId()] ? getActivePlanId() : (sd.plans[0]?.key ?? "");
   readHash();
@@ -1018,7 +1019,8 @@ export async function publishPlan(): Promise<void> {
   sd.published = null;
   sd.publishRefused = [];
   await framed("Publish", () => {}, async () => {
-    const resp = await fetch("/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(doc) });
+    const resp = await writeFetch("/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(doc) });
+    if (resp.status === 401 || resp.status === 403) throw new Error(resp.status === 401 ? "sign in to publish" : "your sign-in may not publish plans here");
     if (resp.status === 422) {
       const answer = (await resp.json()) as { issues?: object[]; refusals?: object[] };
       sd.publishRefused = [...(answer.issues ?? []), ...(answer.refusals ?? [])];
@@ -1033,8 +1035,8 @@ export async function exportPlan(): Promise<void> {
   const doc = active();
   if (!doc) return;
   await framed("Export", () => (sd.exported = ""), async () => {
-    // the export carries each stop's record on the pick date (D-157)
-    const out = await ask("network", "export", { network_hash: await withStopRecords(docOf(doc)) });
+    // the export carries the stops' history over the plan's period (D-151, D-157)
+    const out = await ask("network", "export", { network_hash: await withStopVersions(docOf(doc), await publishedPlanSet().catch(() => null)) });
     const bytes = Uint8Array.from(atob(out.zip_b64), (c) => c.charCodeAt(0));
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));

@@ -263,3 +263,39 @@ fn nothing_but_surveyors_changes_and_twice_is_once() {
     fresh.stops.insert("n".into(), vec![Event { surveyed_by: Some("x".into()), ..Event { event: EventKind::Planned, ..begun(0) } }]);
     assert_eq!(Stops::default().attribute_surveys(fresh, "rosa.ortiz").stops["n"][0].surveyed_by.as_deref(), Some("rosa.ortiz"));
 }
+
+/// An event names the stop request it carries out (D-159); the stops
+/// document keeps it as given — the requests are their own document.
+#[test]
+fn an_event_names_its_request() {
+    let built = Event { request: Some("R-2027-014".into()), ..Event { event: EventKind::Built, on: Some(date(3)), ..Event::default() } };
+    let planned = Event { event: EventKind::Planned, ..begun(0) };
+    let d = doc(vec![planned, built]);
+    assert_eq!(refused(d.clone()), vec![]);
+    let read: Stops = serde_json::from_value(serde_json::to_value(&d).unwrap()).unwrap();
+    assert_eq!(read.stops["a"][1].request.as_deref(), Some("R-2027-014"));
+}
+
+/// A stop's event carries its photos and drawings (D-162): each named by
+/// its content hash ("sha256:" and 64 hex digits), never a URL, with its
+/// media type, and optionally its file name, caption, and the day it was
+/// taken; a hash or type of another shape, or a day that is not a date,
+/// is refused, named.
+#[test]
+fn an_event_names_its_attachments_by_hash() {
+    let hash = format!("sha256:{}", "ab".repeat(32));
+    let with = |a: serde_json::Value| {
+        let mut e = serde_json::to_value(changed(1, &[("surface", "concrete")])).unwrap();
+        e["attachments"] = json!([a]);
+        let e: Event = serde_json::from_value(e).unwrap();
+        refused(doc(vec![begun(0), e]))
+    };
+    assert_eq!(with(json!({"hash": hash, "type": "image/jpeg", "name": "approach.jpg", "caption": "approaching", "taken_on": "2027-01-02"})), vec![]);
+    assert_eq!(with(json!({"hash": "https://bucket/x.jpg", "type": "image/jpeg"})), vec![Problem::BadAttachment { hash: "https://bucket/x.jpg".into() }]);
+    assert_eq!(with(json!({"hash": hash, "type": "jpeg"})), vec![Problem::BadAttachment { hash: hash.clone() }]);
+    assert_eq!(with(json!({"hash": hash, "type": "image/png", "taken_on": "Jan 2"})), vec![Problem::BadDate { date: "Jan 2".into() }]);
+    // on any event, a suspension's sign photo included
+    let mut s = serde_json::to_value(Event { event: EventKind::Suspended, on: Some(date(2)), ..Event::default() }).unwrap();
+    s["attachments"] = json!([{"hash": hash, "type": "image/jpeg"}]);
+    assert_eq!(refused(doc(vec![begun(0), serde_json::from_value(s).unwrap()])), vec![]);
+}

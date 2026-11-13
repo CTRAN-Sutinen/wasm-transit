@@ -205,6 +205,11 @@ downloads new builds in the background.
 **Static web host.** A service that serves files and runs no program
 of yours, such as Cloudflare. The rider apps can be deployed to one.
 
+**Stop request.** A request for work at a stop: a new stop, a
+reinstall, a move or removal, a repair, or a temporary stop. It is the
+planning team's record of the work, and it keeps the number of the
+**Work order** that the work order system opens for it.
+
 **Store.** The server's durable storage for documents, kept in cloud
 object storage. It only ever adds files. See
 [FORMATS.md](../FORMATS.md).
@@ -240,6 +245,10 @@ a transit center are one walking group.
 **WebAssembly (wasm).** A standard format for programs that browsers
 and servers can both run, safely and at near-native speed. The
 project's name comes from it.
+
+**Work order.** The job record in the agency's work order system
+that crews work from. This app does not hold work orders; a **Stop
+request** keeps a work order's number, link, and last known status.
 
 **Work rules.** The agency's rules for scheduling vehicles and
 operators, such as minimum recovery time and which routes may share

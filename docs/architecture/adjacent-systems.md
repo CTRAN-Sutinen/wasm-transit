@@ -44,6 +44,19 @@ call, an extra-board fill, a swap, a vehicle assignment). The seam:
    and serves it for audit joins and never branches on it — the rule
    an oracle's label follows.
 
+**The work order system** (D-159, D-165) is reached the other way: the
+server calls it through an adapter (`server/workorders.go`), so nothing
+here couples to it. A stop request tracks the work order it opens; the
+adapter opens one for a submitted request and reads its status back,
+and what it answers is written onto the request through cap-requests
+(`record_work_order`, checked as any write) under the `stop_requests`
+pointer, the writer `work-orders:<system>` — an effect in this repo's
+vocabulary, its reference opaque. `-work-orders` names the adapter:
+unset, none is configured, the manifest offers nothing, and a request's
+work order is entered by hand; `stub:` is a stand-in for tests and
+demos. The real system's adapter is written from its OpenAPI spec
+behind the same interface.
+
 ## Why
 
 One entry per load-bearing choice, headed by the code it governs.
@@ -55,3 +68,9 @@ reading **Because**.
 - **Because:** the dispatcher's day (sick calls, fills, swaps, assignments) is row-shaped data written by many hands and searched by attribute, which those systems already hold; this repo's data is published and acted on as whole documents. One home per fact keeps audits answerable.
 - **Rejected:** a row store in this repo for daily operations.
 - **Decided:** D-122.
+
+### The work order system is behind an adapter, and optional (`server/workorders.go`, `-work-orders`)
+- **Holds:** the server reaches the agency's work order system only through an adapter; with none configured, nothing is offered and a request's work order is entered by hand. What the system answers lands on the request through cap-requests, checked as any write, shown as given.
+- **Because:** no tight coupling to one vendor's system; the agency picks when to wire it, from the system's OpenAPI spec.
+- **Rejected:** calling the system's API straight from the pages; requiring it for requests to work.
+- **Decided:** D-159, D-165.

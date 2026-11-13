@@ -1,0 +1,3 @@
+{"kind": "policy", "schema_version": 1, "rules": [
+  {"name": "planning", "roles": ["planner"], "actions": ["write"], "pointers": ["stops", "stop_requests", "plans", "attachments"]}
+]}

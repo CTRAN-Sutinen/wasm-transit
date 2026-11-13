@@ -13,8 +13,9 @@
 /// yet, the page reads the stops of the network that runs today
 /// (cap-stops `seed`), and the first change saves that document.
 
-import { ask, assemble, available, produced, servedNetwork, servedStops, Doc } from "../../engine";
-import { answerGraph, readAgencyZone, today } from "../kit";
+import { ask, assemble, available, produced, servedFeed, servedNetwork, servedStopRequests, servedStops, Doc } from "../../engine";
+import { answerGraph, deploymentManifest, readAgencyZone, today } from "../kit";
+import { readFetch, resumeSignIn, writeFetch } from "../../signin.svelte";
 
 // This page's capabilities answer inside its linked assembly (D-77).
 assemble("stops");
@@ -26,6 +27,9 @@ import type { StopOn } from "../../types/StopOn";
 import type { StopDetail } from "../../types/StopDetail";
 import type { SiteQuestion } from "../../types/cap_stops/SiteQuestion";
 import type { SurveyDraft } from "../../components/SiteSurvey.svelte";
+import type { IdRequest } from "../../types/cap_requests/IdRequest";
+import type { StopRequest } from "../../types/StopRequest";
+import type { RequestRefusal } from "../../types/RequestRefusal";
 
 export type Next = "planned" | "permitted" | "built" | "in_service" | "suspended" | "retired";
 /// What a click on the map does: open a stop, or place a new stop or
@@ -65,6 +69,26 @@ export const st = $state({
   /// What a site survey asks (cap-stops `questions`, D-158): the core
   /// site questions and amenity names.
   questions: { site: [] as SiteQuestion[], amenities: [] as string[] },
+  /// The open stop's requests for work (cap-requests `requests_for`,
+  /// D-159), the lists their answers come from (`vocabulary`), and why
+  /// the last request was refused.
+  requests: [] as IdRequest[],
+  requestVocab: { jobs: [] as string[], statuses: [] as string[], sides: [] as string[], directions: [] as string[], markings: [] as string[] },
+  requestRefusals: [] as RequestRefusal[],
+  /// Where the work order system's adapter answers (the manifest's
+  /// `services.work_orders`, D-165); null when none is connected — a
+  /// request's work order is then entered by hand.
+  workOrders: null as string | null,
+  /// Where photos and drawings are added and read (the manifest's
+  /// `services.attachments`, D-162); null when the deployment keeps none.
+  attachments: null as string | null,
+  /// What the agency's feed did to the stops record (D-150: the feed
+  /// applies, and the planner sees what it did): the feed's first
+  /// service date, each event it recorded (cap-stops `feed_events`), the
+  /// stops in service it does not list, and those whose difference did
+  /// not fit their history (`import_events`, run without writing). Null
+  /// when there is nothing to say.
+  feed: null as null | { on: string; recorded: { stop: string; event: Event }[]; unlisted: string[]; unapplied: string[] },
   /// Bumped whenever this device's survey drafts change (they live in
   /// the device's storage, which nothing watches).
   drafts: 0,
@@ -79,6 +103,9 @@ export function readDate(): string {
 }
 
 let stopsDoc: Doc | null = null;
+/// The deployment's stop requests document; null until the first
+/// request begins it.
+let requestsDoc: Doc | null = null;
 
 function say(text: string, alert = false): void {
   st.status = text;
@@ -123,6 +150,43 @@ const request = answerGraph(
         const seeded = await ask("stops", "seed", { network_hash: network.network });
         stopsDoc = produced("stops", seeded.stops, "stops", seeded.stops_hash);
       },
+    },
+    {
+      id: "document.requests",
+      frame: "",
+      needs: ["requests-doc"],
+      run: async () => {
+        requestsDoc = (await available("requests")) ? await servedStopRequests().catch(() => null) : null;
+      },
+    },
+    {
+      id: "requests.requests_for",
+      frame: "Requests",
+      needs: ["document.requests", "open"],
+      run: () =>
+        framed("Requests", () => (st.requests = []), async () => {
+          if (!requestsDoc || !st.open) return void (st.requests = []);
+          st.requests = (await ask("requests", "requests_for", { requests_hash: requestsDoc, stop: st.open })).requests;
+        }),
+    },
+    {
+      // What the agency's feed did to the stops record (D-150): the
+      // server records its differences when it imports it; the page
+      // shows them, and what the feed does not list.
+      id: "stops.feed_events",
+      frame: "Feed",
+      needs: ["document.stops"],
+      run: () =>
+        framed("Feed", () => (st.feed = null), async () => {
+          st.feed = null;
+          if (!stopsDoc || !st.held) return;
+          const feed = await servedFeed("stops");
+          if (!feed) return;
+          const recorded = (await ask("stops", "feed_events", { stops_hash: stopsDoc, feed: feed.id })).events;
+          const now = await ask("stops", "import_events", { stops_hash: stopsDoc, network_hash: feed.network });
+          if (!recorded.length && !now.unlisted.length && !now.unapplied.length) return;
+          st.feed = { on: now.on, recorded, unlisted: now.unlisted, unapplied: now.unapplied };
+        }),
     },
     {
       id: "stops.stops_on",
@@ -215,13 +279,20 @@ addEventListener("popstate", () => {
 });
 
 export async function boot(): Promise<void> {
-  await readAgencyZone();
+  await Promise.all([readAgencyZone(), resumeSignIn()]);
   readHash();
   if (await available("stops")) {
     const q = await ask("stops", "questions", {});
     st.questions = { site: q.site, amenities: q.amenities };
   }
-  await select("stops-doc", "date", "show", "open");
+  const manifest = await deploymentManifest<{ services?: Record<string, { path: string }> }>().catch(() => null);
+  st.workOrders = manifest?.services?.work_orders?.path ?? null;
+  st.attachments = manifest?.services?.attachments?.path ?? null;
+  if (await available("requests")) {
+    const v = await ask("requests", "vocabulary", {});
+    st.requestVocab = { jobs: v.jobs, statuses: v.statuses, sides: v.sides, directions: v.directions, markings: v.markings };
+  }
+  await select("stops-doc", "requests-doc", "date", "show", "open");
   say(
     !stopsDoc
       ? "The deployment publishes no stops yet."
@@ -366,7 +437,11 @@ async function write(
       return false;
     }
     const from = st.held ? (doc.pin ?? "") : "";
-    const resp = await fetch("/stops", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from, stops: answer.stops }) });
+    const resp = await writeFetch("/stops", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from, stops: answer.stops }) });
+    if (resp.status === 401 || resp.status === 403) {
+      say(resp.status === 401 ? "Sign in to save changes. Your change is not saved yet." : "Your sign-in may not change the stops here.", true);
+      return false;
+    }
     if (resp.status === 422) {
       st.refusals = ((await resp.json()) as { refusals?: Refusal[] }).refusals ?? [];
       say("The server refuses that change.", true);
@@ -393,6 +468,118 @@ async function write(
   }
 }
 
+/// The work order system, through the server's adapter (D-165): open a
+/// work order for a request, or read its status — the answer written on
+/// the request by the server, the requests read again.
+export async function workOrder(id: string, action: "open" | "refresh"): Promise<void> {
+  if (!st.workOrders) return;
+  st.busy = true;
+  say(action === "open" ? "Opening a work order…" : "Reading the work order's status…");
+  try {
+    const resp = await writeFetch(st.workOrders, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request: id, action }) });
+    if (resp.status === 501) return say("No work order system is connected. Enter the work order by hand.", true);
+    if (resp.status === 401 || resp.status === 403) return say(resp.status === 401 ? "Sign in to reach the work order system." : "Your sign-in may not change requests here.", true);
+    if (resp.status === 409) return void (await select("requests-doc"), say("The requests changed meanwhile. They are read again: try again.", true));
+    if (!resp.ok) throw new Error(`the work order system did not answer: ${(await resp.text()).trim() || resp.status}`);
+    const out = (await resp.json()) as { work_order: { id: string; status?: string } };
+    await select("requests-doc");
+    say(action === "open" ? `Work order ${out.work_order.id} opened for ${id}.` : `Work order ${out.work_order.id}: ${out.work_order.status ?? "no status"}.`);
+  } catch (e) {
+    say(`Error: ${message(e)}`, true);
+    console.error(e);
+  } finally {
+    st.busy = false;
+  }
+}
+
+// ---------------------------------------------------------------------
+// photos and drawings (D-162): added to the deployment's bucket, named
+// by their hash, read only by the signed-in
+// ---------------------------------------------------------------------
+
+export type Attachment = { hash: string; type: string; name?: string; caption?: string; taken_on?: string };
+
+/// One file added: its hash and type, or null with the reason said.
+export async function addAttachment(file: File): Promise<Attachment | null> {
+  if (!st.attachments) return null;
+  const resp = await writeFetch(st.attachments, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+  if (resp.status === 401) return (say("Sign in to add photos.", true), null);
+  if (resp.status === 403) return (say("Your sign-in may not add photos here.", true), null);
+  if (resp.status === 413) return (say(`${file.name} is larger than 25 MB.`, true), null);
+  if (resp.status === 415) return (say(`${file.name} is not a photo or a PDF.`, true), null);
+  if (!resp.ok) return (say(`Error: the photo was not kept: ${(await resp.text()).trim() || resp.status}`, true), null);
+  const out = (await resp.json()) as { hash: string; type: string };
+  return { hash: out.hash, type: out.type, name: file.name, taken_on: readDate() };
+}
+
+const shown = new Map<string, Promise<string | null>>();
+
+/// An attachment as this page can show it (an object URL of its bytes,
+/// read with the signed-in person's token), or null — not signed in, or
+/// gone. Kept for the page's life: a hash's bytes never change.
+export function attachmentSrc(hash: string): Promise<string | null> {
+  if (!st.attachments) return Promise.resolve(null);
+  let got = shown.get(hash);
+  if (!got) {
+    got = readFetch(`${st.attachments}/${hash}`)
+      .then(async (r) => (r.ok ? URL.createObjectURL(await r.blob()) : null))
+      .catch(() => null);
+    // a refusal (not signed in yet) is asked again after signing in
+    got.then((u) => u === null && shown.delete(hash));
+    shown.set(hash, got);
+  }
+  return got;
+}
+
 export function retry(): Promise<void> {
-  return select("stops-doc");
+  return select("stops-doc", "requests-doc");
+}
+
+// ---------------------------------------------------------------------
+// requests for work at a stop (D-159): each put whole, through
+// POST /stop-requests
+// ---------------------------------------------------------------------
+
+/// One request placed by id — new, or replacing the one held — checked
+/// by cap-requests `put`, then stored by the deployment's receive path.
+/// True when it is saved.
+export async function putRequest(id: string, request: StopRequest, done: string): Promise<boolean> {
+  const doc = requestsDoc;
+  st.requestRefusals = [];
+  st.busy = true;
+  say("Saving…");
+  try {
+    const answer = await ask("requests", "put", { ...(doc ? { requests_hash: doc } : {}), id, request });
+    if (answer.refusals.length || !answer.requests) {
+      st.requestRefusals = answer.refusals;
+      say("That request is not complete.", true);
+      return false;
+    }
+    const from = doc?.pin ?? "";
+    const resp = await writeFetch("/stop-requests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from, requests: answer.requests }) });
+    if (resp.status === 401 || resp.status === 403) {
+      say(resp.status === 401 ? "Sign in to save the request. It is not saved yet." : "Your sign-in may not change requests here.", true);
+      return false;
+    }
+    if (resp.status === 422) {
+      st.requestRefusals = ((await resp.json()) as { refusals?: RequestRefusal[] }).refusals ?? [];
+      say("The server refuses that request.", true);
+      return false;
+    }
+    if (resp.status === 409) {
+      await select("requests-doc");
+      say("Someone else saved a request first. The requests are read again: save yours again.", true);
+      return false;
+    }
+    if (!resp.ok) throw new Error(`the server did not save it: ${(await resp.text()).trim() || resp.status}`);
+    await select("requests-doc");
+    say(done);
+    return true;
+  } catch (e) {
+    say(`Error: ${message(e)}`, true);
+    console.error(e);
+    return false;
+  } finally {
+    st.busy = false;
+  }
 }

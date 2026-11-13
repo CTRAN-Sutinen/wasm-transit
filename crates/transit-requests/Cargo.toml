@@ -1,0 +1,17 @@
+[package]
+name = "transit-requests"
+description = "The stop requests document (D-159): the planning team's submissions for work at a stop — a new stop, a reinstall, a relocation or removal, a repair, a temporary stop — each tracking the work order the agency's work order system opens for it. What a write must pass, and canonical bytes. Pure and stateless."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+transit-version = { path = "../transit-version" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ts-rs = { workspace = true }
+schemars = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"

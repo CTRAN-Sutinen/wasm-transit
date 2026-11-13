@@ -185,6 +185,9 @@ func feedInfoVersion(zipBytes []byte) string {
 type feedSource struct {
 	src         *source
 	networkWasm string // the cap-network module that imports it
+	// onImport runs after each new import (a feed whose bytes changed):
+	// the server records the feed's stop differences (stops.go).
+	onImport func(*loadedFeed)
 
 	mu   sync.Mutex
 	feed *loadedFeed
@@ -242,6 +245,9 @@ func (f *feedSource) Load() (*loadedFeed, error) {
 	}
 	log.Printf("network imported from %s in %s: %s (%d KB, %d KB gzipped)",
 		f.src.raw, time.Since(started).Round(time.Millisecond), networkHash, len(parts.Network)/1024, len(f.feed.documentGzip)/1024)
+	if f.onImport != nil {
+		f.onImport(f.feed)
+	}
 	return f.feed, nil
 }
 

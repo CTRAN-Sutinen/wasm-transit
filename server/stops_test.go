@@ -6,8 +6,12 @@ package main
 // document, so a stops write changes no pick.
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
+	"io"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -34,6 +38,7 @@ func newStopsServer(t *testing.T, b store.Backend) (*server, string) {
 	mux.HandleFunc("/plans", s.handlePlans)
 	mux.HandleFunc("/plans/retire", s.handleRetire)
 	mux.HandleFunc("/stops", s.handleStops)
+	mux.HandleFunc("/feed", s.handleFeed)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return s, srv.URL
@@ -278,5 +283,108 @@ func TestASurveyNamesTheWriter(t *testing.T) {
 	events := stored(out["stops_hash"].(string))
 	if a, b := events[1].(map[string]any)["surveyed_by"], events[2].(map[string]any)["surveyed_by"]; a != "Rosa Ortiz" || b != "Sam Lee" {
 		t.Fatalf("held %v, new %v", a, b)
+	}
+}
+
+// GTFS out carries the stops' history (D-151): a stop moved inside the
+// pick's period is one stops.txt row per version — the version in force
+// on the period's last dates under the stop's own id, the earlier one
+// under `<id>@<its first date>` — and GET /feed serves it.
+func TestTheFeedCarriesTheStopsHistory(t *testing.T) {
+	s, base := newStopsServer(t, store.NewMemory())
+	_ = s
+	raw, _ := json.Marshal(seededStops(t))
+	var doc map[string]any
+	json.Unmarshal(raw, &doc)
+	stops := doc["stops"].(map[string]any)
+	stops["A"] = append(stops["A"].([]any), map[string]any{"on": "2026-10-01", "event": "moved", "lat": 45.501, "lon": -73.501})
+	if code, out := postStops(t, base, "", doc); code != 200 {
+		t.Fatalf("the stops: %d %v", code, out)
+	}
+	if code, out := publishPick(t, base, fixtureNetwork(t, "fall-2026", "Fall 2026", "2026-09-07")); code != 200 {
+		t.Fatalf("publish fall: %d %v", code, out)
+	}
+	code, _, body := httpGet(t, base+"/feed?date=2026-09-10")
+	if code != 200 {
+		t.Fatalf("GET /feed: %d %s", code, body)
+	}
+	zr, err := zip.NewReader(bytes.NewReader([]byte(body)), int64(len(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stopsTxt string
+	for _, f := range zr.File {
+		if f.Name == "stops.txt" {
+			rc, _ := f.Open()
+			b, _ := io.ReadAll(rc)
+			rc.Close()
+			stopsTxt = string(b)
+		}
+	}
+	rows, err := csv.NewReader(strings.NewReader(stopsTxt)).ReadAll()
+	if err != nil || len(rows) == 0 {
+		t.Fatalf("stops.txt: %v %q", err, stopsTxt)
+	}
+	col := map[string]int{}
+	for i, h := range rows[0] {
+		col[h] = i
+	}
+	ids := map[string]string{}
+	for _, r := range rows[1:] {
+		ids[r[col["stop_id"]]] = r[col["stop_lat"]]
+	}
+	if _, ok := ids["A@2026-09-07"]; !ok {
+		t.Fatalf("A's earlier version under its own row: %v", ids)
+	}
+	if ids["A"] == "" || ids["A"] == ids["A@2026-09-07"] {
+		t.Fatalf("A's version in force last, at its new point: %v", ids)
+	}
+}
+
+// The agency's feed applies, and the planner sees what it did (D-150): a
+// feed whose stop A is named otherwise than the stops document records
+// the difference as an event on the feed's first service date naming the
+// feed, written as `import:feed`; a feed that differs in nothing writes
+// nothing.
+func TestTheFeedRecordsItsDifferences(t *testing.T) {
+	s, base := newStopsServer(t, store.NewMemory())
+	raw, _ := json.Marshal(seededStops(t))
+	var doc map[string]any
+	json.Unmarshal(raw, &doc)
+	first := doc["stops"].(map[string]any)["A"].([]any)[0].(map[string]any)
+	first["name"] = "Main & First (old sign)"
+	if code, out := postStops(t, base, "", doc); code != 200 {
+		t.Fatalf("the stops: %d %v", code, out)
+	}
+	feeder := fileFeed(sampleFeed, networkWasm)
+	feed, err := feeder.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.recordFeed(context.Background(), feed); err != nil {
+		t.Fatal(err)
+	}
+	head, held, _, err := s.stopsHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var after struct {
+		Stops map[string][]map[string]any `json:"stops"`
+	}
+	json.Unmarshal(held, &after)
+	last := after.Stops["A"][len(after.Stops["A"])-1]
+	if last["event"] != "changed" || last["from_feed"] != feed.hash || last["name"] == nil {
+		t.Fatalf("A's difference recorded, naming the feed: %v", last)
+	}
+	entries, _, _ := s.store.Log(stopsPointer, "")
+	if w := entries[len(entries)-1].Writer; w != "import:feed" {
+		t.Fatalf("the writer is the import: %q", w)
+	}
+	// again: nothing differs, nothing is written
+	if err := s.recordFeed(context.Background(), feed); err != nil {
+		t.Fatal(err)
+	}
+	if again, _, _, _ := s.stopsHead(); again != head {
+		t.Fatalf("a feed that differs in nothing writes nothing: %s → %s", head, again)
 	}
 }

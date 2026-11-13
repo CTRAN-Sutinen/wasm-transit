@@ -67,9 +67,29 @@ export default defineConfig({
     },
     {
       command:
-        'bash -c \'exec go run . -addr 127.0.0.1:8084 -today 2026-08-01 -store mem:// -feed ../web/e2e/fixtures/sample-gtfs.zip\'',
+        'bash -c \'exec go run . -addr 127.0.0.1:8084 -today 2026-08-01 -store mem:// -feed ../web/e2e/fixtures/sample-gtfs.zip -work-orders stub:Maintenance -attachments mem://\'',
       cwd: "../server",
       url: "http://127.0.0.1:8084",
+      reuseExistingServer: false,
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+    {
+      // A stand-in sign-in provider (e2e/fake-idp.mjs) for the pages'
+      // sign-in (e2e/ui-stops.spec.mjs, "signed in").
+      command: "node e2e/fake-idp.mjs 8089 transit-server",
+      url: "http://127.0.0.1:8089/.well-known/openid-configuration",
+      reuseExistingServer: false,
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+    {
+      // The stops page with sign-in on (D-58, D-163): writes need the
+      // provider's token, the policy lets a planner write the stops.
+      command:
+        "bash -c 'exec go run . -addr 127.0.0.1:8090 -today 2026-08-01 -store mem:// -feed ../web/e2e/fixtures/sample-gtfs.zip -oidc-issuer http://127.0.0.1:8089 -oidc-jwks-url http://127.0.0.1:8089/jwks -oidc-audience transit-server -oidc-client-id transit-pages -oidc-scope \"openid profile offline_access transit.write\" -policy ../web/e2e/fixtures/signin-policy.json -attachments mem://'",
+      cwd: "../server",
+      url: "http://127.0.0.1:8090",
       reuseExistingServer: false,
       stdout: "ignore",
       stderr: "pipe",

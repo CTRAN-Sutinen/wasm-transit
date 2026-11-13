@@ -12,11 +12,13 @@
   import type { Details } from "../types/Details";
   import type { Event } from "../types/Event";
   import type { Refusal } from "../types/Refusal";
+  import type { Neighbour } from "../types/Neighbour";
   import type { StopDetail } from "../types/StopDetail";
   import type { StopOn } from "../types/StopOn";
   import type { SiteQuestion } from "../types/cap_stops/SiteQuestion";
   import PointFields from "./PointFields.svelte";
   import SiteSurvey, { type SurveyDraft } from "./SiteSurvey.svelte";
+  import AttachmentThumbs from "./AttachmentThumbs.svelte";
   import { ACTION_WORDS, EVENT_WORDS, SITE_GROUPS, STATUS_WORDS, amenityWords, answerWords, problemWords, refWords, siteWords } from "./stopWords";
 
   let {
@@ -30,9 +32,11 @@
     onpoint,
     onlocate,
     questions,
+    requests,
     draft,
     ondraft,
     onsurvey,
+    attachments = null,
     onevent,
     oncorrect,
     onmove,
@@ -55,9 +59,14 @@
     /// What a survey asks (cap-stops `questions`), the survey this device
     /// kept for the stop, and where a survey's draft and its save go.
     questions: { site: SiteQuestion[]; amenities: string[] };
+    /// The stop's requests for work (D-159): a change may name the one
+    /// it carries out.
+    requests: { id: string }[];
     draft: SurveyDraft | null;
     ondraft: (draft: SurveyDraft | null) => void;
     onsurvey: (event: Event, done: string) => void;
+    /// Adding and showing photos, where the deployment keeps them (D-162).
+    attachments?: { onadd: (file: File) => Promise<{ hash: string; type: string; name?: string; caption?: string; taken_on?: string } | null>; src: (hash: string) => Promise<string | null> } | null;
     onevent: (event: Event, done: string) => void;
     oncorrect: (index: number, event: Event | null, done: string) => void;
     onmove: (start: boolean) => void;
@@ -74,6 +83,21 @@
     const other = Object.entries(site).filter(([k, v]) => v && !named.has(k));
     return [...groups, { title: "Other", rows: other }].filter((g) => g.rows.length);
   });
+  /// The stop's visits as a person reads them: one line per route,
+  /// direction, and the stops either side (patterns that agree on those
+  /// read as one).
+  const visits = $derived.by(() => {
+    const seen = new Map<string, { key: string; route: string; direction: string; timepoint: boolean; previous: Neighbour | null; next: Neighbour | null }>();
+    for (const v of served?.visits ?? []) {
+      const key = [v.route, v.direction ?? "", v.previous?.stop ?? "", v.next?.stop ?? ""].join("|");
+      const was = seen.get(key);
+      if (was) was.timepoint ||= v.timepoint;
+      else seen.set(key, { key, route: v.route_name, direction: v.direction_name ?? "", timepoint: v.timepoint, previous: v.previous, next: v.next });
+    }
+    return [...seen.values()];
+  });
+  /// A distance along the route; "about" when the import estimated it.
+  const metres = (n: Neighbour) => `${n.published ? "" : "about "}${n.metres < 1000 ? `${Math.round(n.metres)} m` : `${(n.metres / 1000).toFixed(1)} km`}`;
   const refs = $derived(Object.entries(s?.refs ?? {}).filter(([, v]) => v));
   /// A list answer in words; a written one as written.
   const answerOf = (key: string, v: string) => (questions.site.find((q) => q.key === key)?.answer.kind === "one_of" ? answerWords(v) : v);
@@ -84,6 +108,8 @@
   let on = $state("");
   let until = $state("");
   let note = $state("");
+  /// The request a change carries out ("": none).
+  let fromRequest = $state("");
   // the details form
   let dName = $state("");
   let dCode = $state("");
@@ -95,6 +121,7 @@
     on = date;
     until = "";
     note = "";
+    fromRequest = "";
     if (which === "details") {
       dName = s?.name ?? "";
       dCode = s?.code ?? "";
@@ -115,7 +142,7 @@
     onmove(false);
   }
 
-  const withNote = (e: Event): Event => (note.trim() ? { ...e, note: note.trim() } : e);
+  const withNote = (e: Event): Event => ({ ...e, ...(note.trim() ? { note: note.trim() } : {}), ...(fromRequest ? { request: fromRequest } : {}) });
 
   function submitLifecycle(kind: string) {
     const e: Event = withNote({ on, event: kind as Event["event"], ...(kind === "suspended" && until ? { until } : {}) });
@@ -164,6 +191,7 @@
   function what(e: Event): string {
     const parts: string[] = [];
     if (e.until) parts.push(`until ${e.until}`);
+    if (e.request) parts.push(`(request ${e.request})`);
     if (e.event === "moved" && e.lat != null && e.lon != null) parts.push(`to ${e.lat}, ${e.lon}`);
     if (e.name && e.event === "changed") parts.push(`name "${e.name}"`);
     if (e.code && e.event === "changed") parts.push(`code ${e.code}`);
@@ -234,6 +262,19 @@
   <h3>Routes that stop here</h3>
   {#if served?.routes.length}
     <p data-testid="stop-routes">{served.routes.map((r) => r.name).join(", ")}</p>
+    {#if visits.length}
+      <ul class="visits" data-testid="stop-visits">
+        {#each visits as v (v.key)}
+          <li data-testid="stop-visit">
+            <strong>{v.route}</strong>{v.direction ? ` ${v.direction}` : ""}{v.timepoint ? " · time point" : ""}
+            <span class="muted">
+              {v.previous ? `after ${v.previous.name} (${metres(v.previous)})` : "first stop"} ·
+              {v.next ? `before ${v.next.name} (${metres(v.next)})` : "last stop"}
+            </span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
     <p class="muted small">In the schedule running on {date}.</p>
   {:else}
     <p class="muted" data-testid="stop-routes">No route stops here in the schedule running on {date}.</p>
@@ -254,7 +295,7 @@
   {/if}
 
   {#if form === "survey"}
-    <SiteSurvey stop={s} {questions} {date} {busy} {draft} {ondraft}
+    <SiteSurvey stop={s} {questions} {date} {busy} {draft} {ondraft} {attachments}
       onsave={(e, done) => ((form = ""), onsurvey(e, done))} oncancel={() => (form = "")} />
   {:else if form && !form.startsWith("fix-")}
     <form
@@ -290,6 +331,11 @@
           {/each}
         </fieldset>
       {/if}
+      {#if requests.length}
+        <label>From request
+          <select bind:value={fromRequest} data-testid="form-request"><option value="">none</option>{#each requests as r (r.id)}<option value={r.id}>{r.id}</option>{/each}</select>
+        </label>
+      {/if}
       <label>Note <input type="text" bind:value={note} placeholder="Why, in a few words" data-testid="form-note" /></label>
       <div class="row">
         <button type="submit" disabled={busy || !on || (form === "move" && !point)} data-testid="form-save">Save</button>
@@ -312,6 +358,7 @@
         <span>{e.surveyed_by && e.event === "changed" ? "Surveyed" : (EVENT_WORDS[e.event] ?? e.event)}{what(e) ? ` ${what(e)}` : ""}</span>
         {#if e.note}<span class="muted">— {e.note}</span>{/if}
         <button type="button" class="link" disabled={busy} onclick={() => open(`fix-${i}`)} data-testid="fix-{i}">Fix</button>
+        {#if attachments && e.attachments?.length}<div class="event-attachments"><AttachmentThumbs items={e.attachments} src={attachments.src} /></div>{/if}
         {#if form === `fix-${i}`}
           <form
             class="edit fix"
@@ -349,6 +396,7 @@
   h4 { font-size: 0.85rem; margin: 0.5rem 0 0.15rem; color: var(--muted); font-weight: 600; }
   .site { margin: 0 0 0.3rem; }
   dd { margin: 0; }
+  .visits { list-style: none; padding: 0; margin: 0.2rem 0; display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.9rem; }
   .amenities { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.2rem 0.8rem; }
   .amenities .absent { color: var(--muted); }
   .actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
@@ -363,5 +411,6 @@
   .events li { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; align-items: baseline; padding: 0.15rem 0; }
   .when { font-variant-numeric: tabular-nums; min-width: 6.5rem; color: var(--muted); }
   .fix { flex-basis: 100%; }
+  .event-attachments { flex-basis: 100%; }
   .link { background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; font: inherit; }
 </style>

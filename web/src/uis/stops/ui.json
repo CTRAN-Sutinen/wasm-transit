@@ -1,14 +1,17 @@
 {
   "id": "stops",
   "title": "Stops",
-  "summary": "Every stop's own life, apart from the service plans: planned, permitted, built, in service, suspended for a while, retired. Each stop on a map and in a list as it stands on a chosen day, its details and amenities, the routes that stop there in the schedule running that day, and its history — and every change recorded as a dated event: a new stop, the next stage, a suspension and the return, a move, a change of details, or a correction of an event entered wrong.",
+  "summary": "Every stop's own life, apart from the service plans: planned, permitted, built, in service, suspended for a while, retired. Each stop on a map and in a list as it stands on a chosen day, its details and amenities, the routes that stop there in the schedule running that day, and its history — and every change recorded as a dated event: a new stop, the next stage, a suspension and the return, a move, a change of details, or a correction of an event entered wrong; a site survey filled at the stop on a phone or tablet; and the planning team's requests for work at a stop, each tracking its work order.",
   "questions": [
     "Where is each stop, and where does it stand on a given day: planned, permitted, built, in service, suspended, or retired?",
     "Which stops are out of service on a day, since when, until when, and why?",
     "What is at a stop — shelter, bench, lighting, a schedule — and can a wheelchair user board there?",
     "Which routes stop here in the schedule running that day?",
     "What has happened to this stop, and when?",
-    "Record a change: a new stop, its next stage, a suspension and its return, a move, new details, or a correction."
+    "Record a change: a new stop, its next stage, a suspension and its return, a move, new details, or a correction.",
+    "What did the last site survey find at this stop, and who surveyed it?",
+    "What work has been requested at this stop, and where is its work order?",
+    "What did the agency's feed change in the stops record, and which stops in service does it not list?"
   ],
   "ops": [
     "stops.seed",
@@ -16,6 +19,12 @@
     "stops.stop",
     "stops.add_event",
     "stops.correct_event",
+    "stops.feed_events",
+    "stops.import_events",
+    "stops.questions",
+    "requests.requests_for",
+    "requests.put",
+    "requests.vocabulary",
     "directory.stop_detail",
     "network.validate"
   ],
@@ -24,6 +33,12 @@
     "StopLifeList",
     "StopLifeCard",
     "NewStopForm",
+    "PointFields",
+    "SiteSurvey",
+    "StopRequests",
+    "FeedNotice",
+    "Attachments",
+    "AttachmentThumbs",
     "Combobox",
     "Unavailable"
   ],

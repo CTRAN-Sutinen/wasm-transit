@@ -52,6 +52,7 @@ pub use transit_streets::walking::WalkTable;
 pub use transit_sync::{EditDocument, EditRecord};
 pub use transit_dispatch::watchlist::Watchlist;
 pub use transit_runs::WorkRules;
+pub use transit_requests::StopRequests;
 pub use transit_stops::Stops;
 
 // ---------------------------------------------------------------------
@@ -80,6 +81,9 @@ pub const OP_LOAD_WORK_RULES: u32 = 269;
 
 /// The stops document's load.
 pub const OP_LOAD_STOPS: u32 = 270;
+
+/// The stop requests document's load.
+pub const OP_LOAD_STOP_REQUESTS: u32 = 271;
 
 /// [`OP_ABOUT`]'s answer.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -134,6 +138,8 @@ pub enum Loaded {
     LoadWorkRules { work_rules_hash: String, version: u32 },
     /// How many stops the document holds.
     LoadStops { stops_hash: String, stops: u32 },
+    /// How many requests the document holds.
+    LoadStopRequests { requests_hash: String, requests: u32 },
 }
 
 /// The JSON lane's envelope: the op, the capability it names, and the
@@ -163,6 +169,8 @@ pub struct Envelope<'a> {
     work_rules: Option<&'a RawValue>,
     #[serde(borrow, default)]
     stops: Option<&'a RawValue>,
+    #[serde(borrow, default)]
+    requests: Option<&'a RawValue>,
     #[serde(borrow, default)]
     bytes: Option<&'a RawValue>,
 }
@@ -450,6 +458,27 @@ pub static STOPS: Kind<Stops> = Kind {
     },
     json: |e| e.field(e.stops, "stops").map(Cow::Borrowed),
     answer: |stops_hash, stops| Loaded::LoadStops { stops_hash, stops: stops.stops.len() as u32 },
+};
+
+/// Stop requests documents (transit-requests: the planning team's
+/// requests for work at a stop, each tracking its work order, D-159),
+/// refused unless a write could store them — each refusal named.
+pub static STOP_REQUESTS: Kind<StopRequests> = Kind {
+    id: "stop_requests",
+    name: "stop requests document",
+    load_op: "load_stop_requests",
+    op: OP_LOAD_STOP_REQUESTS,
+    identity: Identity::Canonical(crate::canonical_hash),
+    registry: Registry::documents("stop requests document", "load_stop_requests", Retain::Host),
+    parse: |bytes| {
+        let requests: StopRequests = crate::parse_versioned(bytes).map_err(|e| format!("stop requests document: {e}"))?;
+        requests.checked().map_err(|refusals| {
+            let reasons: Vec<String> = refusals.iter().map(|r| r.to_string()).collect();
+            format!("stop requests document: {}", reasons.join("; "))
+        })
+    },
+    json: |e| e.field(e.requests, "requests").map(Cow::Borrowed),
+    answer: |requests_hash, requests| Loaded::LoadStopRequests { requests_hash, requests: requests.requests.len() as u32 },
 };
 
 /// Weighted layers (GeoJSON points and polygons — people, jobs,

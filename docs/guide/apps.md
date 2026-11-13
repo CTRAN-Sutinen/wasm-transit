@@ -75,9 +75,18 @@ map, or type its latitude and longitude as measured at the stop. A
 typed point is saved exactly as typed. On a phone at the stop, "Use
 my location" gives a starting point. Survey a stop on a phone or
 tablet: the questions on the paper stop worksheet, what is at the
-stop, and its numbers in other systems. The survey records you as
-the surveyor, from your sign-in. A survey you have not
-finished stays on the device until you save it. A change entered
+stop, and its numbers in other systems. Sign in to save a change;
+looking needs no sign-in. The survey records you as the surveyor,
+from your sign-in. A survey you have not
+finished stays on the device until you save it. Add photos from the
+phone's camera, or a site drawing, to a survey or a request; only
+people who are signed in can see them. Request work at a
+stop the way the paper installation sheet does: a new stop, a
+reinstall, a move or removal, a repair, or a temporary stop. A request
+keeps the work order number from the work order system, and its
+status. When the server takes in a new schedule feed from the agency,
+it records how the feed's stops differ, and the page says so in one
+line you can open to check each stop. A change entered
 wrong is corrected, not added to. Schedules read these stops but never change them.
 
 **Server:** needed.

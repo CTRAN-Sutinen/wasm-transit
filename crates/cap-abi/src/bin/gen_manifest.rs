@@ -287,7 +287,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "stops",
         file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stop", "seed", "add_event", "correct_event", "read_records", "visit_warnings", "export_versions", "import_events", "questions", "attribute_surveys"],
+        ops: &["validate", "stops_on", "stop", "seed", "add_event", "correct_event", "read_records", "visit_warnings", "export_versions", "import_events", "questions", "attribute_surveys", "feed_events"],
         documents: &["stops", "network"],
         // The stops document is the host's (beside the plans, D-147):
         // validate answers its canonical bytes and hash, which the
@@ -300,6 +300,20 @@ const MODULES: &[ModuleSpec] = &[
         // Its purpose and per-op agent context: crates/cap-stops/OPS.md
         // (a `#` heading, the purpose, then one `##` section per op).
         docs: include_str!("../../../cap-stops/OPS.md"),
+    },
+    ModuleSpec {
+        id: "requests",
+        file: "module_requests.wasm",
+        ops: &["validate", "requests_for", "put", "record_work_order", "vocabulary"],
+        documents: &["stop_requests"],
+        // The stop requests document is the host's (D-159): validate
+        // answers its canonical bytes and hash, which the kernel's
+        // load_stop_requests answers too; put answers the next one.
+        consumes: &[],
+        speaks: &[("stop_requests", &[transit_requests::SCHEMA_VERSION])],
+        migrates: &[],
+        // Its purpose and per-op agent context: crates/cap-requests/OPS.md.
+        docs: include_str!("../../../cap-requests/OPS.md"),
     },
     ModuleSpec {
         id: "migrate",
@@ -365,6 +379,7 @@ fn kernel_ops(feed_hash: &str, net: Option<&NetworkExampleContext>) -> Vec<Kerne
         load(kernel::OP_LOAD_FEED, "load_feed", "Register a GTFS zip under the content hash of its bytes (idempotent), answering the feed's summary — stops, routes, trips, stop_times — the at-a-glance read the feed line shows. Bulk: the raw zip."),
         load(kernel::OP_LOAD_WORK_RULES, "load_work_rules", "Register the WORK RULES (transit-runs: the rules work is cut under — recovery per route and/or service type in minutes and/or a percent of the run, the route pairs one vehicle may interline, the run rules, pay; every rule optional, D-50) under its canonical hash, answering its version. Checked and normalized at the load (rules and pairs sorted, each pair's routes in order — two orderings are one identity); refused: another version, a rule requiring nothing, one scope twice, a share over 1000 percent, a pair of one route or listed twice, a minimum piece over the maximum. JSON: {\"op\": \"load_work_rules\", \"work_rules\": …}; bulk: its JSON."),
         load(kernel::OP_LOAD_STOPS, "load_stops", "Register a STOPS document (transit-stops: every stop a list of dated events — planned, permitted, built, in_service, suspended, moved, changed, retired; D-153, D-157) under its canonical hash — the same hash the stops capability's validate answers — with how many stops it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_stops\", \"stops\": …}; bulk: its JSON."),
+        load(kernel::OP_LOAD_STOP_REQUESTS, "load_stop_requests", "Register a STOP REQUESTS document (transit-requests: the planning team's requests for work at a stop — new, reinstall, relocate/remove, repair/improve, temporary — each tracking the work order the work order system opens for it; D-159) under its canonical hash — the same hash the requests capability's validate answers — with how many requests it holds. Refused unless validate would pass it, every refusal named. JSON: {\"op\": \"load_stop_requests\", \"requests\": …}; bulk: its JSON."),
         load(kernel::OP_LOAD_RT, "load_rt", "Register a GTFS-rt protobuf payload (a snapshot) under the content hash of its bytes, answering the hash only (the rt capability's decode answers the overview too). Ephemeral: the last 8 stay. Bulk: the raw payload."),
         KernelOp {
             code: OP_EVICT,
@@ -761,6 +776,7 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
         kind::<transit_streets::walking::WalkTable>("walks", None, 1, walks_example),
         kind::<transit_runs::WorkRules>("work_rules", None, transit_runs::SCHEMA_VERSION, Some(value(&fixture_work_rules()))),
         kind::<transit_stops::Stops>("stops", None, transit_stops::SCHEMA_VERSION, Some(value(&fixture_stops()))),
+        kind::<transit_requests::StopRequests>("stop_requests", None, transit_requests::SCHEMA_VERSION, Some(value(&fixture_requests()))),
         kind::<transit_live::LiveDay>("live", None, 2, live_example().map(|(live, _)| value(&live))),
     ]
 }
@@ -1123,6 +1139,27 @@ fn fixture_stops() -> transit_stops::Stops {
         }
     }))
     .expect("the fixture stops parse")
+}
+
+/// Two stop requests: a new stop at 7001 with its work order open, and
+/// a repair at 6124 drafted.
+fn fixture_requests() -> transit_requests::StopRequests {
+    serde_json::from_value(serde_json::json!({
+        "kind": "stop_requests", "schema_version": 1,
+        "requests": {
+            "R-2027-014": {
+                "stop": "7001", "job": "new", "status": "ordered",
+                "requested_by": "Planning", "requested_on": "2027-01-04",
+                "routes": ["37"], "direction": "eastbound",
+                "street": "NE 104th St", "cross_street": "NE 20th Ave", "offset_ft": 60, "side": "south",
+                "city": "Vancouver", "county": "Clark", "marked_by": "curb_mark",
+                "locate": {"ticket": "26123456", "called_on": "2027-01-06", "utilities": ["City of Vancouver", "NW Natural"]},
+                "work_order": {"system": "Maintenance", "id": "WO-88123", "status": "open", "read_on": "2027-01-07"}
+            },
+            "R-2027-020": {"stop": "6124", "job": "repair_improve", "status": "drafted", "note": "pad cracked at the rear door"}
+        }
+    }))
+    .expect("the fixture requests parse")
 }
 
 /// every trip, route 10's own rule, routes 10 and 20 interlined, and an
@@ -1795,8 +1832,20 @@ fn example_for(
             let imported = transit_network::stop_record::import_events(&stops, net.derived_network(), on);
             (
                 json!({ "op": "import_events", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "network_hash": net.network_hash, "on": "2026-10-01" }),
-                json!({ "ok": { "op": "import_events", "stops_hash": cap_abi::canonical_hash(&imported.stops).ok()?, "stops": imported.stops,
+                json!({ "ok": { "op": "import_events", "stops_hash": cap_abi::canonical_hash(&imported.stops).ok()?, "stops": imported.stops, "on": "2026-10-01",
                     "added": imported.added, "unlisted": imported.unlisted, "unapplied": imported.unapplied } }),
+            )
+        }
+        ("stops", "feed_events") => {
+            // The fixture's feed recorded stop C, which the document lacked.
+            let net = net?;
+            let mut stops = transit_network::stop_record::seed(net.derived_network());
+            stops.stops.remove("C");
+            let on = chrono::NaiveDate::from_ymd_opt(2026, 10, 1)?;
+            let imported = transit_network::stop_record::import_feed(&stops.checked().ok()?, net.derived_network(), on, "sha256:feed").stops;
+            (
+                json!({ "op": "feed_events", "stops_hash": cap_abi::canonical_hash(&imported).ok()?, "feed": "sha256:feed" }),
+                json!({ "ok": { "op": "feed_events", "events": transit_network::stop_record::feed_events(&imported, "sha256:feed") } }),
             )
         }
         ("stops", "questions") => (
@@ -1817,6 +1866,54 @@ fn example_for(
                 json!({ "ok": { "op": "attribute_surveys", "stops": stops.attribute_surveys(next.clone(), "Rosa Ortiz") } }),
             )
         }
+        ("kernel", "load_stop_requests") => {
+            let requests = fixture_requests().checked().ok()?;
+            (
+                json!({ "op": "load_stop_requests", "requests": requests }),
+                json!({ "ok": { "op": "load_stop_requests", "requests_hash": cap_abi::canonical_hash(&requests).ok()?, "requests": requests.requests.len() } }),
+            )
+        }
+        ("requests", "validate") => {
+            let requests = fixture_requests().checked().ok()?;
+            let document = serde_json::to_string(&requests).ok()?;
+            (
+                json!({ "op": "validate", "requests": requests }),
+                json!({ "ok": { "op": "validate", "refusals": [], "document": document, "document_hash": cap_abi::content_hash(document.as_bytes()) } }),
+            )
+        }
+        ("requests", "requests_for") => {
+            let requests = fixture_requests().checked().ok()?;
+            let listed: Vec<_> = requests.for_stop("7001").into_iter().map(|(id, r)| json!({ "id": id, "request": r })).collect();
+            (
+                json!({ "op": "requests_for", "requests_hash": cap_abi::canonical_hash(&requests).ok()?, "stop": "7001" }),
+                json!({ "ok": { "op": "requests_for", "requests": listed } }),
+            )
+        }
+        ("requests", "put") => {
+            // The repair at 6124 submitted.
+            let requests = fixture_requests().checked().ok()?;
+            let request: transit_requests::StopRequest = serde_json::from_value(json!({"stop": "6124", "job": "repair_improve", "status": "submitted", "requested_on": "2027-02-01", "note": "pad cracked at the rear door"})).ok()?;
+            let next = requests.put("R-2027-020", request.clone()).checked().ok()?;
+            (
+                json!({ "op": "put", "requests_hash": cap_abi::canonical_hash(&requests).ok()?, "id": "R-2027-020", "request": request }),
+                json!({ "ok": { "op": "put", "refusals": [], "requests_hash": cap_abi::canonical_hash(&next).ok()?, "requests": next } }),
+            )
+        }
+        ("requests", "record_work_order") => {
+            // The repair at 6124: the work order system opened WO-90001.
+            let requests = fixture_requests().checked().ok()?;
+            let answer = transit_requests::WorkOrder { system: Some("Maintenance".into()), id: "WO-90001".into(), status: Some("open".into()), read_on: Some("2027-02-02".into()), ..Default::default() };
+            let next = requests.record_work_order("R-2027-020", answer.clone())?.checked().ok()?;
+            (
+                json!({ "op": "record_work_order", "requests_hash": cap_abi::canonical_hash(&requests).ok()?, "id": "R-2027-020", "work_order": answer }),
+                json!({ "ok": { "op": "record_work_order", "refusals": [], "requests_hash": cap_abi::canonical_hash(&next).ok()?, "requests": next } }),
+            )
+        }
+        ("requests", "vocabulary") => (
+            json!({ "op": "vocabulary" }),
+            json!({ "ok": { "op": "vocabulary", "jobs": transit_requests::JOBS, "statuses": transit_requests::STATUSES,
+                "sides": transit_requests::SIDES, "directions": transit_requests::DIRECTIONS, "markings": transit_requests::MARKINGS } }),
+        ),
         ("kernel", "load_work_rules") => {
             let rules = fixture_work_rules().checked().ok()?;
             let work_rules_hash = cap_abi::canonical_hash(&rules).ok()?;

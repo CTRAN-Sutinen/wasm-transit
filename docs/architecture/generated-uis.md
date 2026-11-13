@@ -273,8 +273,8 @@ budget wait on D-108), the redline, readiness (each issue in words, a broken
 block's next trip held from its issue — the host's `retime_trip`; the
 warnings include each stop the plan visits that the stops document
 has not in service over its period, engine `stopWarnings`, D-157),
-the export (carrying each stop's record on the pick date, engine
-`withStopRecords`), and publishing the
+the export (carrying the stops' history over the plan's period, engine
+`withStopVersions`), and publishing the
 pick to the deployment (D-74). A frame with no answer says so in a
 planner's words, and keeps the decision or finding it waits on as a
 tag. The selection
@@ -428,9 +428,12 @@ the list of those stops with since when, until when, and the note
 `stop`): where it stands that day, its details and amenities, its
 site as last surveyed (when, by whom, and the answers grouped as the
 Service Stop Worksheet groups them, its ids in other systems), the
-routes that stop there in the schedule running that day (directory
-`stop_detail` over `servedNetwork` on the date — read only, which is
-why the page links the network capability too), and its history.
+routes that stop there in the schedule running that day — each route
+and direction once, whether the stop is a time point on it, and the
+stops either side with the distance along the route to each ("about"
+where the import estimated it), read with directory `stop_detail`
+over `servedNetwork` on the date (read only, which is why the page
+links the network capability too), and its history.
 The card offers only what the stop may become that day (`stop`'s
 `next`), a move (to a new point, optionally until a date), a
 change of details and amenities, and a site survey (`SiteSurvey`,
@@ -442,7 +445,27 @@ carrying every answer recorded, its surveyor left to the server,
 which names the person signed in (D-163). A survey half
 filled is kept on the device (`localStorage`, per stop) until it is
 saved or thrown away, so a reload or a dropped connection loses
-nothing; the card says a draft is kept. Each event in the history can be
+nothing; the card says a draft is kept. Below the card, the stop's
+requests for work (`StopRequests`, D-159; requests `requests_for` over
+the manifest's `stop_requests_hash`): each its job, its status, and the
+work order it tracks (system, id, linked, its status as last read), and
+one form that starts a request (its id suggested from the stop and the
+date) or edits one, laid out as the installation worksheet is, its
+lists from requests `vocabulary`; requests `put` places and checks it
+and `POST /stop-requests` stores it (409: read again, save again). A
+stop change may name the request it carries out (its event's
+`request`). Each form that long widens the side panel while open.
+Where the deployment connects a work order system (the manifest's
+`services.work_orders`, D-165), a submitted request offers "Open work
+order" and one with a work order "Check status" — the server's adapter
+answers, and the answer lands on the request; with none connected, the
+work order is entered by hand on the form. Where the deployment
+keeps attachments (the manifest's `services.attachments`, D-162), the
+survey and request forms take photos and drawings ("Take photo" opens
+the camera, "Add file" a photo or a PDF; `Attachments`), each added at
+once and named on the record by its hash with a caption, and the
+card's history and the request list show them small
+(`AttachmentThumbs`), read with the signed-in person's token. Each event in the history can be
 corrected or taken out (stops `correct_event`). A new stop is placed
 at a point, planned or already in service. A point is clicked on the
 map (kept to six decimals, about 0.1 m — a click knows no more) or
@@ -457,5 +480,17 @@ Each change is one event — stops `add_event` places and checks it,
 `POST /stops` checks it again and stores it (409: the page reads the
 stops again and asks for the change again). With no stops document
 yet, the page shows the stops of the network running today (stops
-`seed`), and the first change saves them. The date, the open stop,
+`seed`), and the first change saves them. Where the deployment asks for
+sign-in, the header shows who is signed in or a Sign in button
+(`SignInControl`, web.md "Signing in"); a change saved before signing
+in is refused in words, a survey's draft kept. Above the list, with a stops
+document held, one notice of what the agency's feed did to it (D-150:
+the server records the feed's differences when it imports it): the
+feed's first service date, the changes it recorded (stops
+`feed_events` for the manifest's `feed_hash`), and the stops in service
+it does not list or whose difference did not fit their history (stops
+`import_events` run without writing) — reviewed in place, each stop
+linked to its card, where a change is fixed (`FeedNotice`). The page
+has no GTFS control; a feed a planner loads into a draft plan is a
+draft, never recorded here. The date, the open stop,
 and the filters live in the URL hash.

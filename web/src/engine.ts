@@ -65,6 +65,8 @@ import type { Request as RouterRequest } from "./types/cap_router/Request";
 import type { Response as RouterResponse } from "./types/cap_router/Response";
 import type { Request as RtRequest } from "./types/cap_rt/Request";
 import type { Response as RtResponse } from "./types/cap_rt/Response";
+import type { Request as RequestsRequest } from "./types/cap_requests/Request";
+import type { Response as RequestsResponse } from "./types/cap_requests/Response";
 import type { Request as RuncutRequest } from "./types/cap_runcut/Request";
 import type { Response as RuncutResponse } from "./types/cap_runcut/Response";
 import type { Request as StopsRequest } from "./types/cap_stops/Request";
@@ -93,6 +95,7 @@ type Caps = {
   migrate: [MigrateRequest, MigrateResponse];
   network: [NetworkRequest, NetworkResponse];
   plans: [PlansRequest, PlansResponse];
+  requests: [RequestsRequest, RequestsResponse];
   router: [RouterRequest, RouterResponse];
   rt: [RtRequest, RtResponse];
   runcut: [RuncutRequest, RuncutResponse];
@@ -121,7 +124,8 @@ export type Kind =
   | "watchlist"
   | "layer"
   | "gtfs_rt"
-  | "stops";
+  | "stops"
+  | "stop_requests";
 
 /// One document version. Immutable: a new version is a new Doc.
 export class Doc<V = unknown> {
@@ -240,6 +244,7 @@ const LOADERS: Record<Kind, Loader> = {
   feed: { bytes: 266, hash: "feed_hash" },
   gtfs_rt: { bytes: 267, hash: "rt_hash" },
   stops: { bytes: 270, hash: "stops_hash" },
+  stop_requests: { bytes: 271, hash: "requests_hash" },
 };
 
 // ---------------------------------------------------------------------
@@ -530,6 +535,12 @@ type DeploymentManifest = {
   boundary_hash?: string;
   plans_hash?: string;
   stops_hash?: string;
+  stop_requests_hash?: string;
+  /// The agency's feed the deployment imported (its zip's hash).
+  feed_hash?: string;
+  /// How a page signs in to write (the server's -oidc-client-id): the
+  /// provider's issuer, the pages' public client, the scopes it asks for.
+  auth?: { issuer: string; client_id: string; scope: string };
   streets_hash?: string;
   walks_hash?: string;
   /// A serverless deployment that follows the agency's GTFS URL (D-132).
@@ -716,6 +727,33 @@ export async function servedNetwork(
   return { network, boundary };
 }
 
+/// How a page signs in to write to this deployment (D-58: writes need a
+/// token, reads stay public), from the manifest — null when sign-in is
+/// off or the pages have no client of their own (src/signin.svelte.ts).
+export async function deploymentAuth(): Promise<{ issuer: string; client_id: string; scope: string } | null> {
+  return (await deploymentManifestNow())?.auth ?? null;
+}
+
+/// The agency's own feed as the deployment imported it (the manifest's
+/// `network_hash`, the server's import of its `-feed`), registered in the
+/// first of `readers` that assembles, with the feed's id (its zip's hash,
+/// `feed_hash`) — what a stops page compares the stops record with and
+/// names an import's events by (D-150). Null when the deployment imports
+/// none.
+export async function servedFeed(...readers: CapId[]): Promise<{ network: Doc<Network>; id: string } | null> {
+  let cap: CapId | null = null;
+  for (const c of readers.length ? readers : (["network"] as CapId[])) if (!cap && (await available(c))) cap = c;
+  if (!cap) return null;
+  const manifest = await deploymentManifestNow();
+  const pin = manifest?.network_hash;
+  if (!pin || !manifest?.feed_hash) return null;
+  const doc = await blobGz(pin);
+  if (!doc?.ok) return null;
+  const network = new Doc<Network>("network", { bytes: new Uint8Array(await doc.arrayBuffer()) }, { pin });
+  await load(cap, network);
+  return { network, id: manifest.feed_hash };
+}
+
 /// The deployment's published network as a VALUE, for a page that
 /// edits it (the planner forks it into a plan; JS owns the documents
 /// it authors): `GET /network`, the import's whole answer, registered
@@ -775,35 +813,55 @@ export async function servedStops(): Promise<Doc | null> {
   return new Doc("stops", { bytes: new Uint8Array(await resp.arrayBuffer()) }, { pin });
 }
 
+/// The deployment's stop requests document (the manifest's
+/// `stop_requests_hash`; D-159): the planning team's requests for work at
+/// a stop, bytes the page never parses, refused unless they answer the
+/// pin. Null when the deployment keeps none yet.
+export async function servedStopRequests(): Promise<Doc | null> {
+  const pin = (await deploymentManifestNow())?.stop_requests_hash;
+  if (!pin) return null;
+  const resp = await blobGz(pin);
+  if (!resp?.ok) return null;
+  return new Doc("stop_requests", { bytes: new Uint8Array(await resp.arrayBuffer()) }, { pin });
+}
+
+/// A plan's period: from its pick date until the next published pick's,
+/// as cap-plans derives it with the plan placed by id (undefined: open).
+async function planUntil(plan: { id: string; name?: string | null; effective_from: string }, published: PublishedPlans | null): Promise<string | undefined> {
+  const others = (published?.plans ?? [])
+    .filter((p) => p.status !== "retired" && p.id !== plan.id)
+    .map((p) => ({ id: p.id, name: p.name, effective_from: p.effective_from }));
+  const { periods } = await ask("plans", "periods", { plans: [...others, { id: plan.id, name: plan.name ?? plan.id, effective_from: plan.effective_from }] });
+  return periods.find((p) => p.id === plan.id)?.until ?? undefined;
+}
+
 /// What a plan reads of the deployment's stops document (D-157: a pick
 /// only reads it): the warnings of the stops its patterns visit that are
-/// not in service over its period — from its pick date until the next
-/// published pick's, as cap-plans derives it with the plan placed by id.
-/// Empty with no stops document or no pick date.
+/// not in service over its period. Empty with no stops document or no
+/// pick date.
 export async function stopWarnings(network: Doc<Network>, published: PublishedPlans | null): Promise<NetworkWarning[]> {
   const plan = network.value?.plan;
   if (!plan?.id || !plan.effective_from || !(await available("stops"))) return [];
   const stops = await servedStops();
   if (!stops) return [];
-  const others = (published?.plans ?? [])
-    .filter((p) => p.status !== "retired" && p.id !== plan.id)
-    .map((p) => ({ id: p.id, name: p.name, effective_from: p.effective_from }));
-  const { periods } = await ask("plans", "periods", { plans: [...others, { id: plan.id, name: plan.name, effective_from: plan.effective_from }] });
-  const until = periods.find((p) => p.id === plan.id)?.until ?? undefined;
+  const until = await planUntil({ id: plan.id, name: plan.name, effective_from: plan.effective_from }, published);
   return (await ask("stops", "visit_warnings", { network_hash: network, stops_hash: stops, from: plan.effective_from, until })).warnings;
 }
 
-/// A plan with each stop's record as the deployment's stops document has
-/// it on the plan's pick date — what an export carries, as a publish
-/// does (D-157). The plan itself when there is no stops document or pick
-/// date.
-export async function withStopRecords(network: Doc<Network>): Promise<Doc<Network>> {
-  const on = network.value?.plan?.effective_from;
-  if (!on || !(await available("stops"))) return network;
+/// What an export carries of the deployment's stops document (D-151,
+/// D-157): the plan with the stops' history over its period — each
+/// stop's record on its pick date, and a stop whose record changes
+/// inside the period one stop per version (cap-stops export_versions),
+/// as the server's GET /feed exports a pick. The plan itself when there
+/// is no stops document or pick date.
+export async function withStopVersions(network: Doc<Network>, published: PublishedPlans | null): Promise<Doc<Network>> {
+  const plan = network.value?.plan;
+  if (!plan?.id || !plan.effective_from || !(await available("stops"))) return network;
   const stops = await servedStops();
   if (!stops) return network;
-  const read = await ask("stops", "read_records", { network_hash: network, stops_hash: stops, on });
-  return read.network_hash === network.hash ? network : produced("network", read.network, "stops", read.network_hash);
+  const until = await planUntil({ id: plan.id, name: plan.name, effective_from: plan.effective_from }, published);
+  const out = await ask("stops", "export_versions", { network_hash: network, stops_hash: stops, from: plan.effective_from, until });
+  return out.network_hash === network.hash ? network : produced("network", out.network, "stops", out.network_hash);
 }
 
 /// The deployment's published streets: the manifest's `streets_hash`,

@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -272,4 +273,67 @@ func (s *server) handleStops(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"stops_hash": hash})
+}
+
+// recordFeed records the agency's feed in the stops document (D-150):
+// each difference between the feed's stops and the document on the
+// feed's first service date an event dated that day, naming the feed
+// (cap-stops import_events with the feed's hash), committed through the
+// same CAS as any write, the writer `import:feed`. The planner is shown
+// what it did (the stops page's notice, cap-stops feed_events). Nothing
+// without a store, the stops module, or a stops document; nothing when
+// the feed differs in nothing.
+func (s *server) recordFeed(ctx context.Context, feed *loadedFeed) error {
+	if s.store == nil || s.stopsWasm == "" {
+		return nil
+	}
+	head, held, found, err := s.stopsHead()
+	if err != nil || !found {
+		return err
+	}
+	var checked struct {
+		Document     *string         `json:"document"`
+		DocumentHash *string         `json:"document_hash"`
+		Refusals     json.RawMessage `json:"refusals"`
+	}
+	var added int
+	var producedBy string
+	err = s.withStops(ctx, func(host *WasmHost) error {
+		producedBy = "cap-stops@" + host.Hash()
+		var loadedNet struct {
+			NetworkHash string `json:"network_hash"`
+		}
+		if err := host.InvokeBytes(ctx, opLoadNetwork, feed.document, &loadedNet); err != nil {
+			return fmt.Errorf("the feed's network: %w", err)
+		}
+		var loadedStops struct {
+			StopsHash string `json:"stops_hash"`
+		}
+		if err := host.InvokeBytes(ctx, opLoadStops, held, &loadedStops); err != nil {
+			return fmt.Errorf("the stops document: %w", err)
+		}
+		var imported struct {
+			Stops json.RawMessage   `json:"stops"`
+			Added []json.RawMessage `json:"added"`
+		}
+		if err := host.Invoke(ctx, map[string]any{"op": "import_events", "stops_hash": loadedStops.StopsHash, "network_hash": loadedNet.NetworkHash, "feed": feed.hash}, &imported); err != nil {
+			return err
+		}
+		added = len(imported.Added)
+		if added == 0 {
+			return nil
+		}
+		return host.Invoke(ctx, map[string]any{"op": "validate", "stops": imported.Stops}, &checked)
+	})
+	if err != nil || added == 0 {
+		return err
+	}
+	if checked.Document == nil {
+		return fmt.Errorf("the recorded document is refused: %s", checked.Refusals)
+	}
+	if _, _, err := s.store.CAS(stopsPointer, head, []byte(*checked.Document), s.stopsEnvelope(producedBy), *checked.DocumentHash, "import:feed", time.Now().UnixMilli()); err != nil {
+		return err
+	}
+	log.Printf("stops: the feed %s recorded %d change(s)", feed.hash, added)
+	return nil
 }

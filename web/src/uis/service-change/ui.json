@@ -42,7 +42,7 @@
     "runcut.block_trips",
     "runcut.fleet_summary",
     "stops.visit_warnings",
-    "stops.read_records"
+    "stops.export_versions"
   ],
   "components": [
     "NetworkMap",
