@@ -100,7 +100,9 @@ file's name. Secrets stay out of the files: the store's credentials
 come from each SDK's own chain (the environment, a workload identity).
 `server/dev.toml` is the development defaults (the fixture feed and
 streets, `mem://` store and attachments, the stub work order system,
-`-rt-proxy`); `server/local.toml`, gitignored, is a developer's own,
+`-rt-proxy`) and lists every setting, the rest commented out at their
+defaults (`TestDevConfigShowsEverySetting` refuses a flag it does not
+show); `server/local.toml`, gitignored, is a developer's own,
 laid over it (`server/local.example.toml`). `just serve`, `just dev`
 and `just qa` read both.
 

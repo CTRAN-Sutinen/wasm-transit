@@ -1356,7 +1356,8 @@ flag's name and a `[table]` its keys' prefix; the command line beats
 every file, a later file an earlier; a relative path is read from the
 file's directory; an unknown key refuses the boot. `server/dev.toml`
 holds the development defaults (fixture feed and streets, `mem://`
-store and attachments, the stub work order system, `-rt-proxy`), and a
+store and attachments, the stub work order system, `-rt-proxy`) and
+shows every other setting commented out, and a
 gitignored `server/local.toml` is laid over it (`local.example.toml`);
 `just serve`, `just dev` and `just qa` read both, and the recipes no
 longer pass environment variables through. Every flag stays. Reading,

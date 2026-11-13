@@ -1,6 +1,7 @@
-# Your own settings, laid over dev.toml. Copy this file to
-# server/local.toml (gitignored) and keep the lines you want; a relative
-# path is read from this file's directory.
+# Your own settings, laid over dev.toml (which lists every setting and
+# what it does). Copy this file to server/local.toml (gitignored) and
+# keep the lines you want; a relative path is read from this file's
+# directory.
 
 # The agency's feed and street layer.
 feed = "../testdata/ctran-gtfs.zip"

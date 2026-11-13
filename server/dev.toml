@@ -1,32 +1,113 @@
 # The server's development defaults: what `just serve`, `just dev` and
-# `just qa` start with. Your own settings go in server/local.toml
-# (gitignored; copy local.example.toml), laid over this file; a flag on
-# the command line beats both.
+# `just qa` start with. Every setting the server has is here: the ones
+# development needs are set, and the rest are commented out at their
+# built-in defaults. Your own settings go in server/local.toml (gitignored;
+# copy local.example.toml), laid over this file; a flag on the command
+# line beats both.
 #
-# Each key is a flag's name (`go run ./server -help` lists them); a
+# Each key is a flag's name (`go run ./server -help` describes each); a
 # [table] prefixes its keys ([oidc] issuer is -oidc-issuer). A relative
-# path is read from this file's directory.
+# path is read from this file's directory. Credentials never go here:
+# the store's come from the environment (AWS_ACCESS_KEY_ID, …) or the
+# platform's identity.
+
+# --- Listening ---------------------------------------------------------
 
 addr = "127.0.0.1:8080"
+# How long /readyz answers 503 "draining" on SIGTERM before the listener
+# closes, so a load balancer stops sending first.
+# drain = "5s"
+# Pin the server's date (YYYY-MM-DD) for test servers; unset = the clock.
+# today = ""
 
-# The schedule: the e2e fixture feed, so the server starts with no
-# download. Point local.toml at the agency's feed.
-feed = "../testdata/ctran-gtfs.zip"
-streets = "../testdata/CTRANTrapezeRoads_-7802340045063204687.geojson"
+# --- The schedule and the streets ---------------------------------------
+
+# The GTFS zip: a path, an http(s) URL, or bucket:<key> (the object
+# inputs/<key> in the store's bucket). The e2e fixture, so the server
+# starts with no download; point local.toml at the agency's feed.
+feed = "../web/e2e/fixtures/sample-gtfs.zip"
+# The street layer (GeoJSON lines), in the same forms: walking and /walks.
+streets = "../web/e2e/fixtures/walk-streets.geojson"
+# Who publishes the schedule, shown as its source.
 publisher = "Dev Transit"
 
-# A store held in memory: publishing, history, and the stops and stop
-# requests writes all work, and nothing survives a restart. Point
-# local.toml at `just store-dev`'s SeaweedFS to keep it.
+# --- The store ----------------------------------------------------------
+
+# The agency's record: s3://bucket/prefix[?endpoint=URL&region=R],
+# azblob://container/prefix, gs://bucket/prefix, or mem:// (nothing
+# survives a restart). Publishing, history, and the stops and stop
+# requests writes need it. `just store-dev` starts a SeaweedFS to keep it:
+# store = "s3://transit/dev?endpoint=http://127.0.0.1:8333"
 store = "mem://"
+# With no store (the dev store): a file to keep edits in across restarts.
+# With a store, it seeds the edits pointer once.
+# edits = ""
+# How long deleted edits are kept before compaction drops them (days).
+# retention-days = 90
 
-# Photos on surveys and requests, held in memory too (D-162).
+# --- Stops: photos and work orders --------------------------------------
+
+# The photos' own bucket (any store URL); unset, none are taken (D-162).
 attachments = "mem://"
-
-# The stand-in work order system: Open work order answers STUB-<request>
-# (D-165).
+# The work order system's adapter (D-165): unset, a request's work order
+# is entered by hand; stub:<name> is a stand-in that opens STUB-<request>.
 work-orders = "stub:Maintenance"
 
+# --- Address search -----------------------------------------------------
+
+# A Pelias geocoder's base URL (`just geocoder` runs one on :4000):
+# turns on /geocode and address search on the pages.
+# geocoder = "http://127.0.0.1:4000"
+# What the server asks Pelias for (layers, distance, result counts).
+# geocoder-policy = "geocoder.json"
+
+# --- Live feeds ---------------------------------------------------------
+
 # The dev relay for live feeds that send no CORS header (D-67). Never on
-# in a deployment.
+# in a deployment: it relays any URL for any caller.
 rt-proxy = true
+
+# --- The capability modules (`just caps` builds them) -------------------
+
+# dist = "../web/dist"
+# wasm = "../web/pkg/cap_sync.wasm"
+# network-wasm = "../web/pkg/cap_network.wasm"
+# streets-wasm = "../web/pkg/cap_streets.wasm"
+# plans-wasm = "../web/pkg/cap_plans.wasm"
+# stops-wasm = "../web/pkg/cap_stops.wasm"
+# requests-wasm = "../web/pkg/cap_requests.wasm"
+# migrate-wasm = "../web/pkg/cap_migrate.wasm"
+# authz-wasm = "../web/pkg/cap_authz.wasm"
+
+# --- Export instead of serving (`just export` sets these) ---------------
+
+# Write the deployment as a static bundle into this (empty) directory
+# and exit.
+# export = ""
+# The bundle's live-feeds.json (the agency's feeds, no relay).
+# live-feeds = ""
+# Instead of feed: the GTFS URL the exported pages fetch themselves.
+# feed-url = ""
+
+# --- Sign-in (D-58..D-61) -----------------------------------------------
+
+# The authorization policy (JSON; a path, URL or bucket:<key>): who may
+# write what. Seeds the store's policy at first boot.
+# policy = "../web/e2e/fixtures/signin-policy.json"
+
+# Setting issuer, jwks-url or key turns sign-in on: writes then need a
+# signed-in person the policy lets write; reads stay open.
+[oidc]
+# issuer = "https://login.microsoftonline.com/<tenant>/v2.0"
+# jwks-url = "https://login.microsoftonline.com/<tenant>/discovery/v2.0/keys"
+# A pinned PEM public key file, instead of jwks-url.
+# key = ""
+# audience = "api://<server app>"
+# The pages' own app registration; with it, the pages sign in to write.
+# client-id = ""
+# scope = "openid profile offline_access"
+# The token claim holding the person's roles.
+# roles-claim = "roles"
+# The token claim recorded as a survey's surveyor: name, preferred_username
+# or upn, email.
+# name-claim = "name"

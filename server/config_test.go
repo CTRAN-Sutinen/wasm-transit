@@ -11,6 +11,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -152,4 +153,32 @@ func TestDevConfigNamesRealFlags(t *testing.T) {
 	if _, err := os.Stat(*f.feedPath); err != nil {
 		t.Fatalf("dev.toml's feed must exist in the tree: %v", err)
 	}
+}
+
+// dev.toml shows every setting the server has: each flag is a key there,
+// set or commented out, so the file is the list of what can be set.
+func TestDevConfigShowsEverySetting(t *testing.T) {
+	body, err := os.ReadFile("dev.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := regexp.MustCompile(`^#?\s*([a-z][a-z-]*)\s*=`)
+	table := regexp.MustCompile(`^\[([a-z-]+)\]`)
+	shown := map[string]bool{}
+	prefix := ""
+	for _, line := range strings.Split(string(body), "\n") {
+		if m := table.FindStringSubmatch(line); m != nil {
+			prefix = m[1] + "-"
+			continue
+		}
+		if m := key.FindStringSubmatch(line); m != nil {
+			shown[prefix+m[1]] = true
+		}
+	}
+	fs, _ := parsed(t)
+	fs.VisitAll(func(f *flag.Flag) {
+		if f.Name != "config" && !shown[f.Name] {
+			t.Errorf("dev.toml does not show -%s (set it, or add it commented out)", f.Name)
+		}
+	})
 }
