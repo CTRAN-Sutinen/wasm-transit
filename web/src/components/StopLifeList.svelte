@@ -20,7 +20,7 @@
         <button type="button" onclick={() => onstop(s.stop_id)} data-testid="stop-row">
           <span class="name">{s.name || s.stop_id}</span>
           <span class="muted">{s.stop_id}{s.code && s.code !== s.stop_id ? ` · ${s.code}` : ""}</span>
-          <span class="status {s.status}">{STATUS_WORDS[s.status]}{s.since ? ` since ${s.since}` : ""}{s.until ? `, back ${s.until}` : ""}</span>
+          <span class="status {s.status}">{STATUS_WORDS[s.status]}{s.since ? ` since ${s.since}` : ""}{s.until ? `, until ${s.until}` : ""}</span>
           {#if s.note}<span class="muted note">{s.note}</span>{/if}
         </button>
       </li>

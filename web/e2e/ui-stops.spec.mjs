@@ -8,9 +8,13 @@
 //     there in the schedule running that day;
 //   - suspended for dates (a refused end before its start first), it
 //     reads suspended on a day inside them, counted and listed so;
-//   - it returns early, the return's date corrected, and it moves —
+//   - it returns early, the return's date corrected — the suspension
+//     then ends on the return, not its planned end — and it moves —
 //     the map's click fills the point's fields, and a measured point
 //     typed over it is the one saved, to the digit;
+//   - details saved with nothing changed say so; the map's key names
+//     "this stop" only while one is open; on a phone the survey is one
+//     column;
 //   - a new stop is planned at a point typed, permitted, and
 //     retired — hidden from the map until retired stops are shown;
 //   - a stop is surveyed (D-158): the half-filled survey survives a
@@ -66,7 +70,7 @@ test("a stop's life: suspended and back, moved, and a new stop planned, permitte
   await expect(page.getByTestId("status")).toContainText("Suspend: B from 2026-11-09 until 2026-11-12", { timeout: 15_000 });
 
   await page.getByTestId("stops-on").fill("2026-11-10");
-  await expect(page.getByTestId("stop-status")).toContainText("Suspended since 2026-11-09, back 2026-11-12");
+  await expect(page.getByTestId("stop-status")).toContainText("Suspended since 2026-11-09, until 2026-11-12");
   await expect(page.getByTestId("stop-status")).toContainText("Paving");
   await expect(page.getByTestId("filter-suspended")).toContainText("1");
   await expect(page.getByTestId("map-key-suspended")).toBeVisible();
@@ -84,6 +88,8 @@ test("a stop's life: suspended and back, moved, and a new stop planned, permitte
   await expect(page.getByTestId("status")).toContainText("Corrected in service on B", { timeout: 15_000 });
   await expect(events.last()).toContainText("2026-11-11");
   await expect(page.getByTestId("stop-status")).toContainText("Suspended", { timeout: 10_000 });
+  // back early: the suspension ends on the return, not on its planned end
+  await expect(page.getByTestId("stop-status")).toContainText("until 2026-11-11");
 
   // Moved: a click on the map fills the point's fields; the measured
   // point typed over it is the one saved, to the digit.
@@ -100,6 +106,12 @@ test("a stop's life: suspended and back, moved, and a new stop planned, permitte
   await expect(page.getByTestId("status")).toContainText("Moved B from 2026-11-20", { timeout: 15_000 });
   await expect(events.last()).toContainText("Moved to 45.5123456, -73.5123456");
   await expect(page.getByTestId("stop-location")).toHaveText("45.5123456, -73.5123456");
+  // details saved with nothing changed say so, and the form stays open
+  await page.getByTestId("action-details").click();
+  await page.getByTestId("form-save").click();
+  await expect(page.getByTestId("form-unchanged")).toBeVisible();
+  await expect(page.getByTestId("stop-form")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
 
   // A new stop, planned at a point typed (no map click), then permitted.
   await page.getByTestId("new-stop-start").click();
@@ -126,6 +138,8 @@ test("a stop's life: suspended and back, moved, and a new stop planned, permitte
   await expect(page.getByTestId("stop-status")).toContainText("Retired", { timeout: 15_000 });
   await expect(page.getByTestId("filter-retired")).toContainText("1");
   await page.getByRole("button", { name: "Close" }).click();
+  // the map's key names "this stop" only while one is open
+  await expect(page.getByTestId("map-key-open")).toHaveCount(0);
   const rows = page.getByTestId("stop-row");
   await expect(rows.filter({ hasText: "Main & 9th" })).toHaveCount(0);
   await page.getByTestId("filter-retired").click();
@@ -150,6 +164,10 @@ test("a stop's site survey: kept as a draft, checked, saved, and shown", async (
   await expect(page.getByTestId("survey-restored")).toBeVisible();
   await expect(page.getByTestId("survey-on_street")).toHaveValue("Main St");
   await expect(page.getByTestId("survey-position")).toHaveValue("far_side");
+  // on a phone the survey is one column: the page never scrolls sideways
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   // A count that is not a whole number is stopped at the field (the
   // write would refuse it too: cap-stops' dispatch test), and nothing

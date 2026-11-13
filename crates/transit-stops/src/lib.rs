@@ -535,7 +535,9 @@ pub struct StopOn {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub since: Option<String>,
-    /// The date a temporary status ends (a suspension with an end).
+    /// The date a temporary status ends (a suspension with an end): its
+    /// `until`, or sooner the next status event after the date — a stop
+    /// back early, or retired while suspended.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub until: Option<String>,
@@ -717,6 +719,22 @@ fn fold(id: &str, events: &[Event], date: NaiveDate) -> Option<StopOn> {
         if e.surveyed_by.is_some() {
             s.surveyed_on.clone_from(&e.on);
             s.surveyed_by.clone_from(&e.surveyed_by);
+        }
+    }
+    // A temporary status ends on its `until`, or sooner where a later
+    // stage event changes the status first: a stop back early, or
+    // retired while suspended.
+    if let Some(s) = state.as_mut() {
+        if let Some(until) = s.until.as_deref().and_then(parse_date) {
+            let sooner = events
+                .iter()
+                .filter(|e| e.event.stage().is_some() || matches!(e.event, EventKind::Suspended | EventKind::Retired))
+                .filter_map(|e| e.on.as_deref().and_then(parse_date))
+                .filter(|&on| on > date && on < until)
+                .min();
+            if let Some(on) = sooner {
+                s.until = Some(on.format("%Y-%m-%d").to_string());
+            }
         }
     }
     state

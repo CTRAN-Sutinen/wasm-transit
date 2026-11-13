@@ -42,7 +42,7 @@
     "Combobox",
     "Unavailable"
   ],
-  "session": "2026-11-12 on C-TRAN (testdata/ctran-gtfs.zip, `just qa`): no stops document yet, the 901 stops of the schedule running today shown; stop 6136 suspended for dates (the first change saved them), listed alone under Suspended, back early, the return's date corrected, shelter and bench recorded, moved for a month; a new stop QA-1 planned at a clicked point, permitted, built, in service, retired; the phone layout. Found and fixed: the dev proxy sent /stops.html to the server, the move form had no end date, the map key covered the attribution on a phone.",
+  "session": "2026-11-13 on C-TRAN (testdata/ctran-gtfs.zip, `just qa`), every control walked at 2560x1300 and the survey and a request at 390x844: stop 1132 suspended (an end before its start refused), back early and the return corrected, moved for a while at a clicked then typed point, its details changed, surveyed with a photo, a request refused while claiming a work order it did not name, then submitted, its work order opened and read through the stub, and a change carrying it; a wrong suspension removed; a new stop QA-1 planned, permitted, built, in service, retired, shown under Retired; a taken id refused; a stop opened by a map click and by typing its name; the feed notice reviewed and its stop opened. Found and fixed: the dev proxy did not pass /attachments or /stop-requests/work-order, a suspended stop back early still read its planned end, the survey and request forms scrolled sideways on a phone, details saved with nothing changed closed silently, value-like placeholders, the map key named \"this stop\" with none open. Open: QAF-108, QAF-109.",
   "spec": "web/e2e/ui-stops.spec.mjs",
   "generated": "2026-11-12"
 }

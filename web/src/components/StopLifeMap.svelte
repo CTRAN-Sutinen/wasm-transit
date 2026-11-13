@@ -149,7 +149,7 @@
     {#each shownStatuses as s (s)}
       <span data-testid="map-key-{s}"><i class="dot" style="background:{STATUS_COLORS[s][0]};border-color:{STATUS_COLORS[s][1]}"></i>{STATUS_WORDS[s]}</span>
     {/each}
-    <span><i class="dot open"></i>this stop</span>
+    {#if selected}<span data-testid="map-key-open"><i class="dot open"></i>this stop</span>{/if}
     {#if picking}<strong>Click the map to choose the point, or type it</strong>{:else if hover}<strong>{hover}</strong>{/if}
   </div>
 </div>

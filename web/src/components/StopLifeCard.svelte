@@ -110,6 +110,8 @@
   let note = $state("");
   /// The request a change carries out ("": none).
   let fromRequest = $state("");
+  /// A details form saved with nothing that differs from the stop.
+  let unchanged = $state(false);
   // the details form
   let dName = $state("");
   let dCode = $state("");
@@ -122,6 +124,7 @@
     until = "";
     note = "";
     fromRequest = "";
+    unchanged = false;
     if (which === "details") {
       dName = s?.name ?? "";
       dCode = s?.code ?? "";
@@ -171,7 +174,7 @@
       if (now && now !== before) amen[k] = now === "yes";
     }
     if (Object.keys(amen).length) details.amenities = amen;
-    if (!Object.keys(details).length) return void (form = "");
+    if (!Object.keys(details).length) return void (unchanged = true);
     onevent(withNote({ on, event: "changed", ...details }), `Changed ${stopId} from ${on}.`);
     form = "";
   }
@@ -224,7 +227,7 @@
   {:else}
     <p data-testid="stop-status">
       <strong class="status {s.status}">{STATUS_WORDS[s.status]}</strong>
-      {#if s.since}<span>since {s.since}</span>{/if}{#if s.until}<span>, back {s.until}</span>{/if}
+      {#if s.since}<span>since {s.since}</span>{/if}{#if s.until}<span>, until {s.until}</span>{/if}
       {#if s.note}<span class="muted">— {s.note}</span>{/if}
     </p>
     <dl>
@@ -337,6 +340,7 @@
         </label>
       {/if}
       <label>Note <input type="text" bind:value={note} placeholder="Why, in a few words" data-testid="form-note" /></label>
+      {#if unchanged}<p class="muted small" data-testid="form-unchanged">Nothing to save: every detail is as the stop already has it.</p>{/if}
       <div class="row">
         <button type="submit" disabled={busy || !on || (form === "move" && !point)} data-testid="form-save">Save</button>
         <button type="button" onclick={cancel}>Cancel</button>

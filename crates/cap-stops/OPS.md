@@ -8,7 +8,7 @@ What a write must pass: every refusal, each naming its stop, the event's index i
 
 ## stops_on
 
-Every stop as its events make it on the date, in id order — or only stop_ids, where given, and only those at statuses, where given: its status (planned, permitted, built, in_service, suspended, retired), when that status began (since; none for a stop in service from before any record), when it ends (until, a temporary one), the note on the event that set it, when it was last surveyed and by whom (surveyed_on, surveyed_by), its point, and its details, amenities, site answers, and references. Beside them, counts: the stops on the date by status (every one, whatever stop_ids and statuses ask), only the statuses some stop has. A stop not yet there on the date (its first event is later) is not listed. Read over a document registered by load_stops.
+Every stop as its events make it on the date, in id order — or only stop_ids, where given, and only those at statuses, where given: its status (planned, permitted, built, in_service, suspended, retired), when that status began (since; none for a stop in service from before any record), when it ends (until, a temporary one: its until, or sooner the next status event after the date — a stop back early, or retired while suspended), the note on the event that set it, when it was last surveyed and by whom (surveyed_on, surveyed_by), its point, and its details, amenities, site answers, and references. Beside them, counts: the stops on the date by status (every one, whatever stop_ids and statuses ask), only the statuses some stop has. A stop not yet there on the date (its first event is later) is not listed. Read over a document registered by load_stops.
 
 ## stop
 

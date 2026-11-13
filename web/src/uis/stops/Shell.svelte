@@ -128,8 +128,11 @@
   .status.alert { color: var(--bad); }
   .body { display: grid; grid-template-columns: 1fr minmax(20rem, 28rem); min-height: 0; }
   /* A survey is a long form: while one is open the side takes most of
-     the width, and the map keeps a strip to place the stop. */
-  .body:has(:global(.survey)), .body:has(:global(.wide-form)) { grid-template-columns: minmax(16rem, 1fr) minmax(28rem, 62%); }
+     the width, and the map keeps a strip to place the stop. Above the
+     phone width only: on a phone the page is one column, form and all. */
+  @media (min-width: 801px) {
+    .body:has(:global(.survey)), .body:has(:global(.wide-form)) { grid-template-columns: minmax(16rem, 1fr) minmax(28rem, 62%); }
+  }
   .map { position: relative; min-height: 0; }
   .side { overflow: auto; padding: 0.9rem; border-left: 1px solid var(--line); }
   .refused { color: var(--bad); padding-left: 1rem; }

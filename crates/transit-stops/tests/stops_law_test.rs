@@ -15,7 +15,9 @@
 //!   the stop is what it would be without the event;
 //! * served is in service, nothing else;
 //! * a stop on a date says when its status began, when it ends (a
-//!   temporary one), and the note on the event that set it;
+//!   temporary one: its `until`, or sooner the next stage event after
+//!   the date — a stop back early, or retired while suspended), and the
+//!   note on the event that set it;
 //! * a correction edits the event that was wrong: it is the event taken
 //!   out and the corrected one placed by date, nothing else moving;
 //! * the stops on a date are counted by status;
@@ -121,7 +123,19 @@ fn oracle(events: &[Event], id: &str, d: NaiveDate) -> Option<StopOn> {
         stop_id: id.to_string(),
         status,
         since: by.on.clone(),
-        until: by.until.clone(),
+        // a temporary status ends on its `until`, or sooner where a
+        // later stage event (dated after `d`) changes the status first
+        until: by.until.as_ref().map(|u| {
+            let p = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+            events
+                .iter()
+                .filter(|e| status_of(&e.event).is_some())
+                .filter_map(|e| e.on.as_deref())
+                .filter(|on| p(on) > d && p(on) < p(u))
+                .min_by_key(|on| p(on))
+                .unwrap_or(u)
+                .to_string()
+        }),
         note: by.note.clone(),
         lat: point.lat.unwrap(),
         lon: point.lon.unwrap(),
@@ -307,6 +321,19 @@ proptest! {
         let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
         for (id, events) in &doc.stops {
             prop_assert_eq!(doc.stop_on(id, day(d)), oracle(events, id, day(d)), "stop {} on {}", id, date(d));
+        }
+    }
+
+    /// Every day of a history, not one sampled: a temporary status's
+    /// end is read on each day it applies, so a stop back early (or
+    /// retired while suspended) is met inside its suspension.
+    #[test]
+    fn every_day_of_a_history_is_its_events_applied(doc in arb_doc()) {
+        let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
+        for (id, events) in &doc.stops {
+            for d in 0u32..320 {
+                prop_assert_eq!(doc.stop_on(id, day(d)), oracle(events, id, day(d)), "stop {} on {}", id, date(d));
+            }
         }
     }
 
@@ -559,6 +586,34 @@ fn nothing_follows_retirement() {
         vec![in_service(Some(0), 45.0, -122.0, "A"), event(EventKind::Retired, Some(3)), event(EventKind::Suspended, Some(4))],
     )]));
     assert_eq!(p, vec![Problem::AfterRetired]);
+}
+
+/// The walk's case: suspended from day 16 until day 30, back early on
+/// day 24 — on day 23 it is suspended and ends on day 24, not day 30;
+/// retired on day 20 instead, it ends on day 20.
+#[test]
+fn a_suspension_ends_when_the_stop_is_back_early() {
+    let back = doc(vec![(
+        "s",
+        vec![
+            in_service(None, 45.0, -122.0, "A"),
+            Event { until: Some(date(30)), ..event(EventKind::Suspended, Some(16)) },
+            event(EventKind::InService, Some(24)),
+        ],
+    )]);
+    let on23 = back.stop_on("s", day(23)).unwrap();
+    assert_eq!((on23.status, on23.until.as_deref()), (Status::Suspended, Some(date(24).as_str())));
+    let on24 = back.stop_on("s", day(24)).unwrap();
+    assert_eq!((on24.status, on24.until), (Status::InService, None));
+    let retired = doc(vec![(
+        "s",
+        vec![
+            in_service(None, 45.0, -122.0, "A"),
+            Event { until: Some(date(30)), ..event(EventKind::Suspended, Some(16)) },
+            event(EventKind::Retired, Some(20)),
+        ],
+    )]);
+    assert_eq!(retired.stop_on("s", day(18)).unwrap().until, Some(date(20)));
 }
 
 #[test]

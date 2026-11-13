@@ -25,9 +25,9 @@ addr = "127.0.0.1:8080"
 # The GTFS zip: a path, an http(s) URL, or bucket:<key> (the object
 # inputs/<key> in the store's bucket). The e2e fixture, so the server
 # starts with no download; point local.toml at the agency's feed.
-feed = "../web/e2e/fixtures/sample-gtfs.zip"
+feed = "../testdata/ctran-gtfs.zip"
 # The street layer (GeoJSON lines), in the same forms: walking and /walks.
-streets = "../web/e2e/fixtures/walk-streets.geojson"
+streets = "../testdata/CTRANTrapezeRoads_-7802340045063204687.geojson"
 # Who publishes the schedule, shown as its source.
 publisher = "Dev Transit"
 

@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-108**. A
+IDs are never reused; the next new finding is **QAF-110**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -274,6 +274,23 @@ work rules, and the bid over them.
   within 300 m straight-line have none. Router `plan` 812 → 852 on
   2026-10-29 at 08:20 walks 158 s in a straight line, and over the
   walk table rides route 007 around, arriving 08:51.
+
+## The stops page
+
+- **QAF-108 OP GAP** — a stop's card lists the routes that stop there
+  "in the schedule running on" the date read, but on a date the
+  schedule does not run the card still lists them: C-TRAN's feed ends
+  2027-01-09, and on 2027-03-01 stop 1132 (Andresen & Fourth Plain)
+  still reads "032 … In the schedule running on 2027-03-01". The page
+  asks cap-directory `stop_detail` over the pick in force on the date,
+  which answers the patterns that visit the stop, whatever runs that
+  day.
+  Pin: `just qa`, `stops.html#on=2027-03-01&open=1132`.
+- **QAF-109 DEFECT** — a new stop whose id is taken is refused only in
+  the status line at the top right ("There is already a stop 1132.
+  Choose another id."), not beside the form being filled; at 2560 px
+  the two are a screen apart.
+  Pin: `just qa`, New stop, id 1132, a point typed, Save.
 
 ## Data the bus does not have
 

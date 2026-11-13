@@ -234,7 +234,7 @@
       <fieldset>
         <legend>Service</legend>
         <div class="grid">
-          <label>Routes <input type="text" bind:value={f.routes} placeholder="37, 71" data-testid="request-routes" /></label>
+          <label>Routes <input type="text" bind:value={f.routes} placeholder="e.g. 37, 71" data-testid="request-routes" /></label>
           <label>Direction
             <select bind:value={f.direction} data-testid="request-direction"><option value="">not given</option>{#each vocab.directions as d (d)}<option value={d}>{answerWords(d)}</option>{/each}</select>
           </label>
@@ -269,14 +269,14 @@
           <label>Locate ticket <input type="text" bind:value={f.ticket} data-testid="request-ticket" /></label>
           <label>Called in on <input type="date" bind:value={f.called_on} /></label>
           <label>Called in by <input type="text" bind:value={f.called_by} /></label>
-          <label class="wide">Utilities called <input type="text" bind:value={f.utilities} placeholder="City of Vancouver, NW Natural, …" /></label>
+          <label class="wide">Utilities called <input type="text" bind:value={f.utilities} placeholder="e.g. City of Vancouver, NW Natural" /></label>
         </div>
       </fieldset>
 
       <fieldset>
         <legend>Work order</legend>
         <div class="grid">
-          <label>System <input type="text" bind:value={f.wo_system} placeholder="Maintenance" data-testid="request-wo-system" /></label>
+          <label>System <input type="text" bind:value={f.wo_system} placeholder="e.g. Maintenance" data-testid="request-wo-system" /></label>
           <label>Work order id <input type="text" bind:value={f.wo_id} data-testid="request-wo-id" /></label>
           <label>Link <input type="url" bind:value={f.wo_url} /></label>
           <label>Its status <input type="text" bind:value={f.wo_status} data-testid="request-wo-status" /></label>
