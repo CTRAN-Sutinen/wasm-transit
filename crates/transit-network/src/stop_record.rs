@@ -1,5 +1,5 @@
 //! A pick's stops are a copy, refreshed from the stops document
-//! (`transit-stops`; D-156, `docs/units/stop-lifecycle.md` item 1).
+//! (`transit-stops`; D-156).
 //!
 //! The network document keeps its shape, stops included. The stops
 //! document beside the picks is the record of every stop; [`refresh`]

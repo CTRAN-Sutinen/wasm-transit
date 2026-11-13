@@ -157,3 +157,46 @@ test("a planner publishes a fork from service design", async ({ page, request })
   await page.getByTestId("publish").click();
   await expect(page.getByTestId("publish-refused")).toContainText("pick dated in past", { timeout: 10_000 });
 });
+
+// The Stops stage (service-change) reads the stops document on the date
+// the planner chooses and writes a closure through POST /stops (D-144,
+// D-153, D-155): stop B closed from Monday 2026-11-09, open again from
+// Wednesday 11-11, reads closed that week on its card, on the map, and
+// as a marked column of route 10's timetable (its pick, Fall 2026, is
+// republished with the closure) — and open again on the Wednesday.
+test("a planner closes a stop for dates on the Stops stage", async ({ page, request }) => {
+  await publish(request, "fall-2026", "Fall 2026 pick", "2026-10-01");
+  await publish(request, "winter-2026", "Winter 2026 pick", "2026-12-01");
+  await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
+  await page.goto("/service-change.html#stage=stops&open=B&on=2026-11-10");
+  await expect(page.getByTestId("plan-select")).toHaveValue("published:fall-2026", { timeout: 15_000 });
+  await expect(page.getByTestId("stops-on")).toHaveValue("2026-11-10");
+  await expect(page.getByTestId("stop-events")).toBeVisible({ timeout: 10_000 });
+
+  await page.getByTestId("stop-edit-from").fill("2026-11-09");
+  await page.getByTestId("stop-edit-until").fill("2026-11-11");
+  await page.getByTestId("stop-edit-note").fill("Paving");
+  await page.getByTestId("stop-edit-submit").click();
+  await expect(page.getByTestId("status")).toContainText("Closed B from 2026-11-09 until 2026-11-11", { timeout: 15_000 });
+  await expect(page.getByTestId("status")).toContainText("Fall 2026 pick");
+  await expect(page.getByTestId("stop-status")).toContainText("Closed");
+  await expect(page.getByTestId("stop-event").last()).toContainText("Paving");
+  await expect(page.getByTestId("stop-map-closed")).toBeVisible();
+  // An A–B trip has one stop left that week: it does not run (a warning).
+  await expect(page.getByTestId("stop-warnings")).toContainText("fewer than two open stops from 2026-11-09 until 2026-11-11");
+
+  // The timetable marks B's column that day.
+  await page.getByTestId("stop-visit").first().getByRole("button").click();
+  await expect(page.getByTestId("stage-route")).toBeVisible();
+  await page.getByLabel("timetable").check();
+  const marked = page.getByTestId("timetable").locator("th[data-unserved]");
+  await expect(marked).toHaveCount(1, { timeout: 10_000 });
+  await expect(marked).toHaveAttribute("data-unserved", "closed");
+  await expect(marked).toContainText("closed");
+
+  // Wednesday: open again, nothing marked.
+  await page.getByTestId("stops-on").fill("2026-11-11");
+  await expect(marked).toHaveCount(0, { timeout: 10_000 });
+  await page.getByRole("navigation", { name: "Stages" }).getByRole("button", { name: /Stops/ }).click();
+  await expect(page.getByTestId("stop-status")).toContainText("Open", { timeout: 10_000 });
+});

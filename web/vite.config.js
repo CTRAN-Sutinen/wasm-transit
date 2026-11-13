@@ -133,7 +133,7 @@ export default defineConfig({
     // live-feeds.json names, for feeds that send no CORS header (D-67;
     // `just dev` runs the server with -rt-proxy).
     proxy: Object.fromEntries(
-      ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/plans", "/feed", "/geocode"].map(
+      ["/rt", "/manifest", "/network", "/streets", "/walks", "/edits", "/pointers", "/blobs", "/permissions", "/plans", "/stops", "/feed", "/geocode"].map(
         // TRANSIT_SERVER names another server (`just qa` runs its own).
         (route) => [route, process.env.TRANSIT_SERVER ?? "http://127.0.0.1:8080"],
       ),

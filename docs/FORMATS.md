@@ -157,7 +157,9 @@ that is missing, does not hash to its name, or carries no envelope.
   compressed; `GET /blobs/{hash}.gz` answers the same by path, the
   layout a static bundle carries (docs/architecture/static-deployment.md). A `policy` blob is never served.
 - `POST /plans` body: a network document, any serialization, gzipped
-  or not → `200 {plan_id, network_hash, plans_hash, warnings}`, `422
+  or not → `200 {plan_id, network_hash, plans_hash, warnings}` (with
+  `opened` and `republished` when the plan proposed stops still to
+  open: the stops document records them open from its date), `422
   {issues, refusals}` (the network does not validate, or runs no
   service in its period — D-76) or `422 {issues}` (cap-plans refuses
   the pick: the chain, or a new, restored or moved pick dated before

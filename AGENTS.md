@@ -286,7 +286,9 @@ transit-plans    THE service-plan chain (resolve, periods, validity — pure, de
                  and the published plan set (publish, the pick in force)
 transit-stops    THE stops document, beside the plans: each stop a list of dated events
                  (opened, closed, reopened, moved, changed, proposed, retired), the
-                 stop on a date, served, what a write must pass — pure; a pick's
+                 stop on a date, served, what a write must pass, its edits (an
+                 event placed by date; a published plan's proposals opened) —
+                 pure; a pick's
                  stops are a copy refreshed from it (transit-network `stop_record`)
 transit-runs     THE runs layer beside the network: the work-rule document (recovery,
                  interlining per route pair, run rules, pay — every rule optional), the

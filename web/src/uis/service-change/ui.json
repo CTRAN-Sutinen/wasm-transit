@@ -41,12 +41,17 @@
     "runcut.suggest_blocks",
     "runcut.block_trips",
     "runcut.fleet_summary",
-    "stops.refresh"
+    "stops.refresh",
+    "stops.stops_on",
+    "stops.stop",
+    "stops.seed",
+    "stops.add_event"
   ],
   "components": [
     "NetworkMap",
     "StopMap",
     "StopRecord",
+    "StopEvents",
     "DayTypePicker",
     "HourWindowPicker",
     "PlanScore",

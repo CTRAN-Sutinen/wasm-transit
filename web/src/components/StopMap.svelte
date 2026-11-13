@@ -1,7 +1,9 @@
 <script lang="ts">
   /// Every stop of the plan on a map (cap-directory `stops`), over the
   /// network's lines (cap-directory `route_lines`) drawn quietly for
-  /// orientation; the open stop marked. A click on a stop opens it. A
+  /// orientation; the open stop marked, and each stop not open on the
+  /// date read (`status`, cap-stops `stops_on`) marked by its status. A
+  /// click on a stop opens it. A
   /// RENDER component: the stops and lines come in as props; the map
   /// computes no geometry (`mapview.ts` only reorders coordinates).
   import { onMount } from "svelte";
@@ -16,7 +18,18 @@
     lines,
     selected,
     onstop,
-  }: { stops: DirectoryStop[]; lines: RouteLines[]; selected: string; onstop: (stop: string) => void } = $props();
+    status = {},
+  }: {
+    stops: DirectoryStop[];
+    lines: RouteLines[];
+    selected: string;
+    onstop: (stop: string) => void;
+    /// Each stop not open on the date read, by id: closed, proposed, or
+    /// retired.
+    status?: Record<string, string>;
+  } = $props();
+
+  const marked = $derived(Object.values(status));
 
   let container: HTMLDivElement;
   let map: maplibregl.Map | null = null;
@@ -57,8 +70,8 @@
           source: "stops",
           paint: {
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 2, 14, 4.5, 17, 7],
-            "circle-color": "#fff",
-            "circle-stroke-color": "#334155",
+            "circle-color": ["match", ["get", "status"], "closed", "#fecaca", "retired", "#e2e8f0", "proposed", "#ede9fe", "#fff"],
+            "circle-stroke-color": ["match", ["get", "status"], "closed", "#b91c1c", "retired", "#94a3b8", "proposed", "#7c3aed", "#334155"],
             "circle-stroke-width": 1.5,
           },
         });
@@ -92,7 +105,9 @@
 
   $effect(() => {
     if (!loaded || !map) return;
-    (map.getSource("stops") as maplibregl.GeoJSONSource).setData(stopsFeatures(stops) as any);
+    const features = stopsFeatures(stops);
+    for (const f of features.features) (f.properties as Record<string, string>).status = status[f.properties.stop_id] ?? "open";
+    (map.getSource("stops") as maplibregl.GeoJSONSource).setData(features as any);
     (map.getSource("lines") as maplibregl.GeoJSONSource).setData(lineCollection(lines) as any);
     // Frame the stops once; after that the planner's view stays.
     if (framed || stops.length === 0) return;
@@ -116,7 +131,10 @@
   <div class="canvas" bind:this={container}></div>
   <div class="legend">
     <span><i class="dot"></i>stop</span>
-    <span><i class="dot open"></i>open</span>
+    <span><i class="dot open"></i>this stop</span>
+    {#if marked.includes("closed")}<span data-testid="stop-map-closed"><i class="dot closed"></i>closed</span>{/if}
+    {#if marked.includes("proposed")}<span><i class="dot proposed"></i>proposed</span>{/if}
+    {#if marked.includes("retired")}<span><i class="dot retired"></i>retired</span>{/if}
     {#if hover}<strong>{hover}</strong>{/if}
   </div>
 </div>
@@ -131,5 +149,8 @@
   }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: middle;
     background: #fff; border: 1.5px solid #334155; }
+  .dot.closed { background: #fecaca; border-color: #b91c1c; }
+  .dot.proposed { background: #ede9fe; border-color: #7c3aed; }
+  .dot.retired { background: #e2e8f0; border-color: #94a3b8; }
   .dot.open { background: #ea580c; border-color: #fff; box-shadow: 0 0 0 1px #ea580c; }
 </style>

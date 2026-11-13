@@ -162,6 +162,16 @@ pub struct TimetableStop {
     /// A timepoint on some pattern visiting it (a public timetable's
     /// columns are its timepoints).
     pub timepoint: bool,
+    /// Read for a date (`timetable_on`): the stop is not open that
+    /// date, so no trip stops here. Absent otherwise.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(optional, as = "Option<bool>")]
+    pub unserved: bool,
+    /// Read for a date: where an unserved stop stands — closed,
+    /// proposed, or retired; absent when it is not there yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub status: Option<transit_stops::Status>,
 }
 
 /// One pattern in a timetable, with the pattern trips that run it
@@ -629,6 +639,8 @@ fn pooled_timetable(network: &Network, route: &str, direction: Option<&str>, mem
             timepoint: order
                 .iter()
                 .any(|pid| network.patterns[*pid].stops.iter().any(|ps| ps.stop == *stop && ps.timepoint)),
+            unserved: false,
+            status: None,
         })
         .collect();
     let patterns = order
@@ -657,6 +669,60 @@ fn pooled_timetable(network: &Network, route: &str, direction: Option<&str>, mem
         trips,
         removed: Vec::new(),
     })
+}
+
+/// The timetable read for `date` (D-155): every column kept, and one
+/// whose stop is not open that date marked `unserved` (with its
+/// status, when it is there at all); each trip's time there blank, a
+/// trip left with fewer than two times taken out (it does not run that
+/// date, as `materialize` answers the day), a trip cut short running
+/// to its last stop served, and the legend counting what runs. Which
+/// trips the combination runs is not the date's question: the
+/// timetable stays one service combination. A network whose stops
+/// carry no events reads the same on every date.
+pub fn timetable_on(network: &Network, mut t: Timetable, date: chrono::NaiveDate) -> Timetable {
+    use std::collections::HashMap;
+    let unserved = crate::stop_record::unserved_on(network, date);
+    if !t.stops.iter().any(|c| unserved.contains(c.stop.as_str())) {
+        return t;
+    }
+    let marked: Vec<bool> = t.stops.iter().map(|c| unserved.contains(c.stop.as_str())).collect();
+    for (column, &u) in t.stops.iter_mut().zip(&marked) {
+        column.unserved = u;
+        column.status = u
+            .then(|| crate::stop_record::stop_on(network, &column.stop, date).map(|s| s.status))
+            .flatten();
+    }
+    // each trip's last arrival at a stop served, for its running time
+    let mut materialized: HashMap<String, Vec<crate::MaterializedTrip>> = HashMap::new();
+    let mut last_arrival = |pattern_trips: &str, trip: &str, start: u32| -> Option<u32> {
+        let trips = materialized
+            .entry(pattern_trips.to_string())
+            .or_insert_with(|| materialize_service(network, pattern_trips).unwrap_or_default());
+        let found = trips.iter().find(|m| m.trip == trip && m.start_secs == start)?;
+        found.stop_times.iter().rev().find(|st| !unserved.contains(st.stop.as_str())).map(|st| st.arrival_secs)
+    };
+    t.trips = std::mem::take(&mut t.trips)
+        .into_iter()
+        .filter_map(|mut trip| {
+            for (time, &u) in trip.times.iter_mut().zip(&marked) {
+                if u {
+                    *time = None;
+                }
+            }
+            if trip.times.iter().flatten().count() < 2 {
+                return None;
+            }
+            if let Some(end) = last_arrival(&trip.pattern_trips, &trip.trip, trip.start_secs) {
+                trip.run_secs = end.saturating_sub(trip.start_secs);
+            }
+            Some(trip)
+        })
+        .collect();
+    for p in &mut t.patterns {
+        p.trips = t.trips.iter().filter(|x| x.pattern == p.pattern).count() as u32;
+    }
+    t
 }
 
 /// The proposal's timetable marked against a baseline. A trip's id

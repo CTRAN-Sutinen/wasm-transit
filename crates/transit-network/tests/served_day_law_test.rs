@@ -1,5 +1,4 @@
-//! A dated day serves what is open (docs/units/stop-lifecycle.md item
-//! 2, D-155) — the laws, from the user's intent, before the
+//! A dated day serves what is open (D-155) — the laws, from the user's intent, before the
 //! implementation:
 //!
 //! * a trip on a date stops only where the stop is open on that date:

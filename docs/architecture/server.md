@@ -274,7 +274,11 @@ Its HTTP surface:
   `/blobs`. With a stops document, the pick is refreshed from it
   first (cap-stops `refresh`, D-156), for its window — from its date
   until the next pick's, as cap-plans `periods` derives it — so the
-  network stored is the refreshed one, whatever copy was sent.
+  network stored is the refreshed one, whatever copy was sent. Before
+  the refresh, the stops the plan proposed are opened from its date
+  (cap-stops `open_plan`, D-147); once the pick is committed that
+  document is committed to `stops` and every other pick is refreshed
+  from it, the answer naming them as `opened` and `republished`.
 - `POST /stops` (store mode) — write the stops document (D-153):
   `{"from": "<the head read, or empty>", "stops": {...}}`. A fresh
   cap-stops validates it (422 with `refusals`) and answers its

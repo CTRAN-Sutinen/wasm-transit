@@ -287,7 +287,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "stops",
         file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stop", "seed", "refresh"],
+        ops: &["validate", "stops_on", "stop", "seed", "refresh", "open_plan", "add_event"],
         documents: &["stops", "network"],
         // The stops document is the host's (beside the plans, D-147):
         // validate answers its canonical bytes and hash, which the
@@ -1734,6 +1734,26 @@ fn example_for(
             (
                 json!({ "op": "refresh", "network_hash": net.network_hash, "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "from": "2026-10-01" }),
                 json!({ "ok": { "op": "refresh", "network_hash": cap_abi::canonical_hash(&refreshed).ok()?, "network": refreshed } }),
+            )
+        }
+        ("stops", "open_plan") => {
+            // Publishing fall-2027 from 2027-09-06 opens 7001, its
+            // proposal; 6124 keeps its events.
+            let stops = fixture_stops().checked().ok()?;
+            let (next, opened) = stops.open_plan("fall-2027", chrono::NaiveDate::from_ymd_opt(2027, 9, 6)?);
+            (
+                json!({ "op": "open_plan", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "plan": "fall-2027", "from": "2027-09-06" }),
+                json!({ "ok": { "op": "open_plan", "stops_hash": cap_abi::canonical_hash(&next).ok()?, "stops": next, "opened": opened } }),
+            )
+        }
+        ("stops", "add_event") => {
+            // 6124 closed for a week of paving: in its place by date.
+            let stops = fixture_stops().checked().ok()?;
+            let event: transit_stops::Event = serde_json::from_value(json!({"on": "2026-01-05", "event": "closed", "until": "2026-01-12", "note": "paving"})).ok()?;
+            let next = stops.add_event("6124", event.clone()).checked().ok()?;
+            (
+                json!({ "op": "add_event", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stop_id": "6124", "event": event }),
+                json!({ "ok": { "op": "add_event", "refusals": [], "stops_hash": cap_abi::canonical_hash(&next).ok()?, "stops": next } }),
             )
         }
         ("kernel", "load_work_rules") => {

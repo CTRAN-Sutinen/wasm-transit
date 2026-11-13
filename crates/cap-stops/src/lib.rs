@@ -68,6 +68,16 @@ pub enum Request {
         #[ts(optional)]
         plan: Option<String>,
     },
+    /// The document with `plan`'s proposed stops opened from `from`,
+    /// the plan's first date (or the proposal's own, when later) — what
+    /// publishing the plan writes. Registered, answered with its hash
+    /// and the stops it opened.
+    OpenPlan { stops_hash: String, plan: String, from: String },
+    /// The document with `event` added to stop `stop_id` in its place
+    /// by date — an id the document does not hold begins a stop — then
+    /// checked as a write is: every refusal, or the document registered
+    /// and answered with its hash.
+    AddEvent { stops_hash: String, stop_id: String, event: Event },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -79,6 +89,8 @@ pub enum Response {
     Stop { stop: Option<StopOn>, events: Vec<Event> },
     Seed { stops_hash: String, stops: Stops },
     Refresh { network_hash: String, network: transit_network::Network },
+    OpenPlan { stops_hash: String, stops: Stops, opened: Vec<String> },
+    AddEvent { refusals: Vec<Refusal>, stops_hash: Option<String>, stops: Option<Stops> },
 }
 
 fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
@@ -142,6 +154,22 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let next = transit_network::stop_record::refresh(&network, &stops, from, until, plan.as_deref());
             let (network_hash, next) = NETWORK.register(next)?;
             Ok(Response::Refresh { network_hash, network: (*next).clone() })
+        }
+        Request::OpenPlan { stops_hash, plan, from } => {
+            let from = parse_date(&from)?;
+            let (next, opened) = STOPS.require(&stops_hash)?.open_plan(&plan, from);
+            let (stops_hash, next) = STOPS.register(next)?;
+            Ok(Response::OpenPlan { stops_hash, stops: (*next).clone(), opened })
+        }
+        Request::AddEvent { stops_hash, stop_id, event } => {
+            let next = STOPS.require(&stops_hash)?.add_event(&stop_id, event);
+            Ok(match next.checked() {
+                Ok(next) => {
+                    let (stops_hash, next) = STOPS.register(next)?;
+                    Response::AddEvent { refusals: vec![], stops_hash: Some(stops_hash), stops: Some((*next).clone()) }
+                }
+                Err(refusals) => Response::AddEvent { refusals, stops_hash: None, stops: None },
+            })
         }
     }
 }

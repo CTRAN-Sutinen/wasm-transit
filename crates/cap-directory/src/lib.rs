@@ -226,6 +226,11 @@ pub enum Request {
         #[serde(default)]
         #[ts(optional)]
         compare_hash: Option<String>,
+        /// Read for a service date (YYYY-MM-DD): a column whose stop
+        /// is not open that date is marked unserved, its times blank.
+        #[serde(default)]
+        #[ts(optional)]
+        date: Option<String>,
     },
 }
 
@@ -379,7 +384,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let network = network_arc(&network_hash)?;
             Ok(Response::StopDetail { detail: transit_network::stop_detail(&network, &stop_id, members.as_deref()) })
         }
-        Request::Timetable { network_hash, route_id, direction, members, compare_hash } => {
+        Request::Timetable { network_hash, route_id, direction, members, compare_hash, date } => {
             let network = network_arc(&network_hash)?;
             let timetable = match compare_hash {
                 Some(base) => transit_network::timetable_against(
@@ -390,6 +395,14 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                     &members,
                 ),
                 None => transit_network::timetable(&network, &route_id, direction.as_deref(), &members),
+            };
+            let timetable = match date {
+                Some(date) => {
+                    let date = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d")
+                        .map_err(|e| format!("invalid date {date:?}: {e}"))?;
+                    timetable.map(|t| transit_network::timetable_on(&network, t, date))
+                }
+                None => timetable,
             };
             Ok(Response::Timetable { timetable })
         }

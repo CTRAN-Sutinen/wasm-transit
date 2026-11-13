@@ -20,7 +20,7 @@
 /// service-design host's, copied: one UI never imports another's files.
 
 import { getAllPlans, getActivePlanId, putPlan, readPlan, removePlan, setActivePlan, restorePlans } from "../../plans.svelte";
-import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, refreshedFromStops, servedNetworkValue, Doc } from "../../engine";
+import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, refreshedFromStops, servedNetwork, servedNetworkValue, servedStops, Doc } from "../../engine";
 import { answerGraph, readAgencyZone, today } from "../kit";
 
 // This page's capabilities answer inside its linked assembly (D-77).
@@ -50,6 +50,10 @@ import type { BlockChainTrip } from "../../types/BlockChainTrip";
 import type { PlanIssue } from "../../types/cap_plans/PlanIssue";
 import type { PlanPeriod } from "../../types/cap_plans/PlanPeriod";
 import type { PublishedPlans } from "../../types/cap_plans/PublishedPlans";
+import type { Event } from "../../types/Event";
+import type { Refusal } from "../../types/Refusal";
+import type { Status } from "../../types/Status";
+import type { StopOn } from "../../types/StopOn";
 
 export type Stage = "calendar" | "scan" | "stops" | "route" | "resources" | "proposal";
 export const STAGES: { id: Stage; label: string }[] = [
@@ -106,6 +110,20 @@ export const sc = $state({
   /// The stop open on the Stops stage, and its card.
   stopOpen: "",
   stopCard: null as StopDetail | null,
+  /// The date the Stops stage and the timetable read ("": the plan's
+  /// first date) — `readDate()`.
+  onDate: "",
+  /// The deployment keeps a stops document (the manifest pins one).
+  stopsHeld: false,
+  /// Each stop not open on the date, by id, with its status (cap-stops
+  /// `stops_on`): the map marks them.
+  stopStatus: {} as Record<string, Status>,
+  /// The open stop in the stops document: as it stands on the date
+  /// (null before it exists) and every event it has (cap-stops `stop`);
+  /// null when the document does not hold it.
+  stopHistory: null as { stop: StopOn | null; events: Event[] } | null,
+  /// Why the last stop change was refused, each naming its event.
+  stopsRefused: [] as Refusal[],
   // The drawer: a route, or a hub.
   route: "",
   direction: null as string | null,
@@ -158,6 +176,17 @@ function groupDay(): string {
 function periodFrom(): string {
   return active()?.plan?.effective_from || today();
 }
+
+/// The date the Stops stage and the timetable read: the planner's
+/// choice, else the plan's first date.
+export function readDate(): string {
+  return sc.onDate || periodFrom();
+}
+
+/// The deployment's stops document (D-153), read through the manifest
+/// whenever the Stops stage opens or a write lands; null when it keeps
+/// none (the stage's first write seeds it).
+let stopsDoc: Doc | null = null;
 
 function syncEditType(): void {
   const members = groupMembers();
@@ -491,7 +520,7 @@ const request = answerGraph(
     {
       id: "directory.timetable",
       frame: "StringLine",
-      needs: ["document.active", "document.compare", "route", "direction", "group", "stage"],
+      needs: ["document.active", "document.compare", "route", "direction", "group", "stage", "on"],
       visible: () => sc.stage === "route" && !!sc.route,
       run: () =>
         framed("StringLine", () => (sc.timetable = null), async () => {
@@ -504,6 +533,8 @@ const request = answerGraph(
               direction: sc.direction ?? undefined,
               members: groupMembers(),
               compare_hash: base ? docOf(base) : undefined,
+              // read for the date: a stop not open then is marked
+              date: readDate(),
             })
           ).timetable;
         }),
@@ -533,6 +564,49 @@ const request = answerGraph(
           sc.stopCard = (
             await ask("directory", "stop_detail", { network_hash: docOf(doc), stop_id: sc.stopOpen, members: groupMembers() })
           ).detail;
+        }),
+    },
+    {
+      id: "document.stops",
+      frame: "",
+      needs: ["document.active", "stops-doc", "stage"],
+      visible: () => sc.stage === "stops",
+      run: async () => {
+        stopsDoc = (await available("stops")) ? await servedStops().catch(() => null) : null;
+        sc.stopsHeld = !!stopsDoc;
+      },
+    },
+    {
+      // The stops on the date: the map marks each one not open.
+      id: "stops.stops_on",
+      frame: "StopStatus",
+      needs: ["document.stops", "on", "stage"],
+      visible: () => sc.stage === "stops",
+      run: () =>
+        framed("StopStatus", () => (sc.stopStatus = {}), async () => {
+          if (!stopsDoc) return void (sc.stopStatus = {});
+          const { stops } = await ask("stops", "stops_on", { stops_hash: stopsDoc, date: readDate() });
+          sc.stopStatus = Object.fromEntries(stops.filter((x) => x.status !== "open").map((x) => [x.stop_id, x.status]));
+        }),
+    },
+    {
+      // The open stop in the stops document: on the date, and its events.
+      id: "stops.stop",
+      frame: "StopHistory",
+      needs: ["document.stops", "on", "stop-open", "stage"],
+      visible: () => sc.stage === "stops" && !!sc.stopOpen,
+      run: () =>
+        framed("StopHistory", () => (sc.stopHistory = null), async () => {
+          if (!stopsDoc || !sc.stopOpen) return void (sc.stopHistory = null);
+          const { stops } = await ask("stops", "stops_on", { stops_hash: stopsDoc, date: readDate(), stop_ids: [sc.stopOpen] });
+          // `stop` refuses an id the document does not hold; a stop
+          // not yet there on the date is held all the same
+          try {
+            sc.stopHistory = await ask("stops", "stop", { stops_hash: stopsDoc, stop_id: sc.stopOpen, date: readDate() });
+          } catch (e) {
+            if (stops.length) throw e;
+            sc.stopHistory = null;
+          }
         }),
     },
     {
@@ -631,6 +705,7 @@ function writeHash(): void {
   if (sc.direction != null) q.set("dir", sc.direction);
   if (sc.stop) q.set("stop", sc.stop);
   if (sc.stopOpen) q.set("open", sc.stopOpen);
+  if (sc.onDate) q.set("on", sc.onDate);
   if (sc.block) q.set("block", sc.block);
   if (sc.window) q.set("hours", `${sc.window.from}-${sc.window.to}`);
   const next = `#${q}`;
@@ -662,6 +737,7 @@ function readHash(): string[] {
   set("direction", q.get("dir"), "direction");
   set("stop", q.get("stop") ?? "", "stop");
   set("stopOpen", q.get("open") ?? "", "stop-open");
+  set("onDate", q.get("on")?.match(/^\d{4}-\d{2}-\d{2}$/) ? q.get("on")! : "", "on");
   set("block", q.get("block") ?? "", "block");
   const hours = q.get("hours")?.match(/^(\d+)-(\d+)$/);
   set("window", hours ? { from: Number(hours[1]), to: Number(hours[2]) } : null, "window");
@@ -903,6 +979,77 @@ export function openStop(stop: string): Promise<void> {
   sc.stopOpen = stop;
   sc.stage = "stops";
   return select("stop-open", "stage");
+}
+
+/// The date the Stops stage and the timetable read ("": the plan's
+/// first date).
+export function setReadDate(date: string): Promise<void> {
+  sc.onDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "";
+  return select("on");
+}
+
+/// A stop closed from `from` until `until` (the first day back; empty:
+/// until it is reopened), with a note (D-144, D-155).
+export function closeStop(stop: string, from: string, until: string, note: string): Promise<void> {
+  const event: Event = { on: from, event: "closed", ...(until ? { until } : {}), ...(note.trim() ? { note: note.trim() } : {}) };
+  return writeStopEvent(stop, event, `Closed ${stop} from ${from}${until ? ` until ${until}` : ""}.`);
+}
+
+/// A closed stop reopened from `on`.
+export function reopenStop(stop: string, on: string, note: string): Promise<void> {
+  const event: Event = { on, event: "reopened", ...(note.trim() ? { note: note.trim() } : {}) };
+  return writeStopEvent(stop, event, `Reopened ${stop} from ${on}.`);
+}
+
+/// One event written to the stops document (cap-stops `add_event` places
+/// and checks it; POST /stops is the receive path, which checks it again
+/// and republishes the picks it changes). With no stops document yet, the
+/// first write seeds one from the network that runs today. A stop change
+/// is the deployment's, not the plan's: it is not on the undo stack.
+async function writeStopEvent(stopId: string, event: Event, done: string): Promise<void> {
+  sc.stopsRefused = [];
+  await step("Writing the stops…", async () => {
+    const from = stopsDoc?.pin ?? "";
+    let doc = stopsDoc;
+    if (!doc) {
+      const served = await servedNetwork(today(), "stops");
+      if (!served) throw new Error("the deployment publishes no network to begin the stops document from");
+      const seeded = await ask("stops", "seed", { network_hash: served.network });
+      doc = produced("stops", seeded.stops, "stops", seeded.stops_hash);
+    }
+    const placed = await ask("stops", "add_event", { stops_hash: doc, stop_id: stopId, event });
+    if (placed.refusals.length || !placed.stops) {
+      sc.stopsRefused = placed.refusals;
+      return say("The stops document refuses that change.", true);
+    }
+    const resp = await fetch("/stops", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from, stops: placed.stops }) });
+    if (resp.status === 422) {
+      sc.stopsRefused = ((await resp.json()) as { refusals?: Refusal[] }).refusals ?? [];
+      return say("The deployment refuses that change.", true);
+    }
+    if (resp.status === 409) {
+      await select("stops-doc");
+      return say("The stops changed since this page read them. They are read again: make the change again.", true);
+    }
+    if (!resp.ok) throw new Error(`the server did not store it: ${(await resp.text()).trim() || resp.status}`);
+    const written = (await resp.json()) as { stops_hash: string; republished: string[] };
+    // The picks the change republished, where this device holds them,
+    // and the open draft, refreshed from the new document.
+    sc.pickSet = await publishedPlanSet().catch(() => sc.pickSet);
+    for (const row of sc.plans.filter((r) => r.published && r.loaded && written.republished.includes(r.id))) {
+      const pick = sc.pickSet?.plans.find((p) => p.id === row.id);
+      const fresh = pick ? await publishedPickValue(pick) : null;
+      if (fresh?.value) {
+        docs.set(fresh.value, fresh);
+        putPlan(row.key, fresh.value);
+      }
+    }
+    if (editable()) await refreshStops(sc.activeKey, sc.pickSet);
+    syncPlanRows();
+    await select("stops-doc", "active");
+    const also = written.republished.length ? ` Republished: ${written.republished.map((id) => sc.plans.find((r) => r.id === id)?.name ?? id).join(", ")}.` : "";
+    say(`${done}${also}`);
+  });
 }
 
 /// A visit on a stop's card opens its route in the visit's direction.

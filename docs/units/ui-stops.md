@@ -10,9 +10,10 @@ consolidates, or removes a stop, and no gesture redraws a line.
 
 ## Scope, in order
 
-Items 2 and 3 edit the stops document and wait on
-[stop-lifecycle.md](stop-lifecycle.md): its `add_stop`, `update_stop`,
-and removals become dated edits of that document, not of the network.
+Items 2 and 3 edit the stops document, never a plan's copy (D-156):
+author's `add_stop`, `update_stop`, and removals become dated events of
+that document (stops `add_event`: `opened` or `proposed`, `moved`,
+`changed`, `retired`).
 
 1. **A station's bays on its card.** The card names a bay's station,
    but a station's card does not list its bays: `stop_detail` answers
@@ -24,8 +25,9 @@ and removals become dated edits of that document, not of the network.
    (`update_stop` grows code, access, fare zone, and station). One
    library function measures where a stop falls along a pattern's line;
    a move re-measures every visit and warns where the line is now far
-   from the stop. Closing and reopening a stop (D-144) is built in
-   [stop-lifecycle.md](stop-lifecycle.md) item 3.
+   from the stop. Closing and reopening a stop (D-144) are already the
+   stage's: each is one stops `add_event` written through `POST /stops`,
+   the path these edits take too.
 3. **Consolidate and remove.** One stop replaced by another on every
    pattern that visits it, then removed (a new gesture,
    `replace_stop {from, to}`); a stop withdrawn from every pattern and

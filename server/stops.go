@@ -11,6 +11,8 @@ package main
 //     every refusal (422) or the canonical bytes and hash the host
 //     stores under the stops pointer; a write naming a version that is
 //     no longer the head is refused (409), and the writer re-reads;
+//   - publishing a plan opens the stops it proposed from its first date
+//     (cap-stops open_plan), stored once the pick is;
 //   - a pick's stops are a copy: publishing a pick refreshes it from the
 //     stops document for its window (cap-stops refresh), and a stops
 //     write republishes every pick in force or to come whose stops it
@@ -301,33 +303,81 @@ func (s *server) republish(ctx context.Context, stops []byte, writer string) ([]
 	return republished, nil
 }
 
+// stopsOpening is what publishing a pick writes to the stops document:
+// the plan's proposed stops opened from its first date (cap-stops
+// open_plan), stored once the pick is.
+type stopsOpening struct {
+	from, hash, producedBy string
+	doc                    []byte
+	opened                 []string
+}
+
 // refreshPick refreshes a pick being published from the stops document
 // for its window over the published set (`set`, "null" before the
-// first publish); nothing changes without a stops document or a pick
-// date (an undated pick never publishes).
-func (s *server) refreshPick(ctx context.Context, pick *canonicalNetwork, set json.RawMessage) error {
+// first publish), its plan's proposed stops opened from its first date;
+// nothing changes without a stops document or a pick date (an undated
+// pick never publishes). It answers the opening to store with the pick,
+// nil when the plan proposed nothing still to open.
+func (s *server) refreshPick(ctx context.Context, pick *canonicalNetwork, set json.RawMessage) (*stopsOpening, error) {
 	if s.stopsWasm == "" {
-		return nil
+		return nil, nil
 	}
 	var frame publishedEntry
 	json.Unmarshal(pick.Plan, &frame)
 	if frame.EffectiveFrom == "" {
-		return nil
+		return nil, nil
 	}
-	_, stops, found, err := s.stopsHead()
+	head, stops, found, err := s.stopsHead()
 	if err != nil || !found {
-		return err
+		return nil, err
+	}
+	var opening *stopsOpening
+	err = s.withStops(ctx, func(host *WasmHost) error {
+		var loaded struct {
+			StopsHash string `json:"stops_hash"`
+		}
+		if err := host.InvokeBytes(ctx, opLoadStops, stops, &loaded); err != nil {
+			return fmt.Errorf("the stops document: %w", err)
+		}
+		var out struct {
+			StopsHash string          `json:"stops_hash"`
+			Stops     json.RawMessage `json:"stops"`
+			Opened    []string        `json:"opened"`
+		}
+		if err := host.Invoke(ctx, map[string]any{"op": "open_plan", "stops_hash": loaded.StopsHash, "plan": frame.ID, "from": frame.EffectiveFrom}, &out); err != nil {
+			return err
+		}
+		if len(out.Opened) > 0 {
+			opening = &stopsOpening{from: head, hash: out.StopsHash, producedBy: "cap-stops@" + host.Hash(), doc: out.Stops, opened: out.Opened}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if opening != nil {
+		stops = opening.doc
 	}
 	windows, err := s.windows(ctx, set, &frame)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	doc, hash, producedBy, err := s.refreshed(ctx, []byte(pick.Document), stops, frame.ID, frame.EffectiveFrom, windows[frame.ID])
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if hash != pick.DocumentHash {
 		pick.Document, pick.DocumentHash, pick.ProducedBy = string(doc), hash, producedBy
 	}
-	return nil
+	return opening, nil
+}
+
+// storeOpening stores the stops a publish opened, once the pick is
+// committed, and refreshes every other pick from them. The caller holds
+// plansMu.
+func (s *server) storeOpening(ctx context.Context, o *stopsOpening, writer string) ([]string, error) {
+	if _, _, err := s.store.CAS(stopsPointer, o.from, o.doc, s.stopsEnvelope(o.producedBy), o.hash, writer, time.Now().UnixMilli()); err != nil {
+		return nil, err
+	}
+	return s.republish(ctx, o.doc, writer)
 }

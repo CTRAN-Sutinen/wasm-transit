@@ -144,3 +144,30 @@ fn seed_and_refresh_give_the_network_back_and_carry_a_closure() {
     assert!(err(json!({"op": "refresh", "network_hash": network_hash, "stops_hash": closed_hash, "from": "2026-11-01", "until": "2026-11-01"})).contains("until"));
     assert!(err(json!({"op": "seed", "network_hash": "sha256:none"})).contains("load_network"));
 }
+
+#[test]
+fn open_plan_opens_the_plans_proposals() {
+    let hash = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();
+    let answer = ok(json!({"op": "open_plan", "stops_hash": hash, "plan": "fall-2027", "from": "2027-09-06"}));
+    assert_eq!(answer["opened"], json!(["7001"]));
+    assert_eq!(answer["stops"]["stops"]["7001"][1], json!({"on": "2027-09-06", "event": "opened"}));
+    assert_eq!(ok(json!({"op": "load_stops", "stops": answer["stops"]}))["stops_hash"], answer["stops_hash"], "registered under its hash");
+    let card = ok(json!({"op": "stop", "stops_hash": answer["stops_hash"], "stop_id": "7001", "date": "2027-09-06"}));
+    assert_eq!(card["stop"]["status"], "open");
+    let other = ok(json!({"op": "open_plan", "stops_hash": hash, "plan": "spring-2028", "from": "2028-01-03"}));
+    assert_eq!((other["opened"].clone(), other["stops_hash"].clone()), (json!([]), hash), "another plan opens nothing");
+}
+
+#[test]
+fn add_event_places_an_edit_and_checks_it() {
+    let hash = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();
+    let closed = ok(json!({"op": "add_event", "stops_hash": hash, "stop_id": "6124",
+        "event": {"on": "2026-01-05", "event": "closed", "until": "2026-01-10", "note": "paving"}}));
+    assert_eq!(closed["refusals"], json!([]));
+    assert_eq!(closed["stops"]["stops"]["6124"][2]["note"], "paving", "in its place by date");
+    let card = ok(json!({"op": "stop", "stops_hash": closed["stops_hash"], "stop_id": "6124", "date": "2026-01-06"}));
+    assert_eq!(card["stop"]["status"], "closed");
+    let refused = ok(json!({"op": "add_event", "stops_hash": hash, "stop_id": "6124", "event": {"on": "2026-01-05", "event": "reopened"}}));
+    assert_eq!(refused["refusals"][0]["problem"]["kind"], "nothing_closed");
+    assert!(refused["stops"].is_null() && refused["stops_hash"].is_null());
+}

@@ -21,3 +21,11 @@ A stops document from a registered network's stops: each stop one opened event w
 ## refresh
 
 The network with its stops refreshed from the stops document for the window from–until (until exclusive; open-ended without it), for the pick's plan — the copy never wins. Each stop the document holds is the pick's as the window opens (or as it first exists inside it); unless it is open as recorded on every day of the window, it carries the events that apply inside it (a closure, a move, a rename, an opening, a retirement), so a day reads it on its dates. A stop is in the network when it exists on a date of the window other than retired, or when the network already has it; another plan's proposals stay out, the plan's own are in as proposed; a stop the document does not hold is left as it was. A network whose stops do not change keeps its bytes and hash. Registered, answered with the network and its network_hash.
+
+## open_plan
+
+What publishing a plan writes: the document with the plan's proposed stops opened from `from`, the plan's first date — an `opened` event appended to each stop whose only event is the plan's proposal, dated `from` (or the proposal's own date, when later), so the stop is open from then at the proposal's point with its details. Another plan's proposals, a proposal whose history has gone on, and every other stop keep their events; publishing again opens nothing more. Registered, answered with its stops_hash and the ids it opened, in id order.
+
+## add_event
+
+One edit: the document with `event` added to stop `stop_id` in its place by date — after every event dated on or before it (an undated opening first), before every later one, every other event in its order; an id the document does not hold begins a stop. Then checked as a write is (validate): every refusal, each naming its stop, event, and problem, and no document; or none, and the document registered and answered with its stops_hash. A page writes the answer through the deployment's receive path (POST /stops), which checks it again.

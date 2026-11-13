@@ -319,7 +319,20 @@ there or by name (directory `stops`), one opened to its card (directory
 `stop_detail` under the day type's members: its record, and every
 pattern position that visits it with the trips it runs; a station pin
 no pattern visits names the routes its bays serve); a visit opens its
-route on the Route stage in that direction. Creating, moving,
+route on the Route stage in that direction. The stage reads the
+deployment's stops document on a date the planner chooses ("Stops on",
+the plan's first date until chosen; the Route stage's timetable reads
+on the same date, directory `timetable` with `date`): the map marks
+each stop not open that day (stops `stops_on`), the card adds the stop
+as it stands then — status, amenities — and every event it has (stops
+`stop`), and the plan's warnings of a trip cut short or not run by a
+closure are listed. A stop is closed for dates (a first day and,
+optionally, the day it opens again, with a note) or reopened: stops
+`add_event` places and checks the event, `POST /stops` stores it and
+republishes the picks it changes, and the page refreshes the open plan
+— a change to the deployment's stops, not to the plan, so not on the
+undo stack. With no stops document the first change begins one (stops
+`seed` over the network that runs today). Creating, moving,
 consolidating and removing stops, and a route's own map, are
 `docs/units/ui-stops.md`. Route: one route's day in one direction, chosen on the route's bar (the first by default; a direction that runs nothing under the day type offers the others), closed again from its stage tab — the string-line or the timetable, the
 changes (the service-design gestures), running time by start, gaps by

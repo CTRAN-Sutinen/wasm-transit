@@ -1,5 +1,5 @@
 //! A pick's stops are a copy, refreshed from the stops document
-//! (docs/units/stop-lifecycle.md item 1, D-156) — the laws, derived from
+//! (D-156) — the laws, derived from
 //! the user's intent and written before the implementation:
 //!
 //! * the copy never wins: after a refresh, each stop the document holds
