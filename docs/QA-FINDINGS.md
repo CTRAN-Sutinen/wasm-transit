@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-110**. A
+IDs are never reused; the next new finding is **QAF-112**. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -192,6 +192,27 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   27–30; the only fix is reading the pattern trips back and
   rewriting each new trip's times (`upsert_pattern_trips`).
   Blocked: D-3 (re-opened), D-54.
+- **QAF-110 DEFECT** — a fork's export keeps its source's
+  `feed_info.txt`: the dates and version are the import's, not the
+  fork's period, so the exported feed says it is good only for days
+  before its own service starts. `set_plan` (the fork) carries the
+  publisher record unchanged, and the codec writes it back verbatim.
+  Pin: 2026-11-13 C-TRAN, the service-change UI: fork "QA Spring"
+  picking 2027-01-10 through 2027-05-31, published, Export GTFS —
+  `calendar.txt` runs 20270110–20270531, `feed_info.txt` still says
+  `feed_start_date` 20260913, `feed_end_date` 20270109,
+  `feed_version` 20260913-20270109.
+- **QAF-111 OP GAP** — a fork's "runs through" works only at the
+  fork. Forked without it, the fork's calendar is cut to its period
+  (D-138), so a pick past the import's last date leaves every key
+  with no range. Setting "runs through" afterwards (Change dates,
+  the same `set_plan` with `through`) carries nothing, because no
+  weekly range is left to carry (D-41). The plan says it runs
+  nothing, and the only way back is to delete it and fork again.
+  Pin: 2026-11-13 C-TRAN, the service-change UI: fork picking
+  2027-01-10 with "Runs through" empty, then Change dates, Runs
+  through 2027-05-31 — 1-WKDY says "This key has no range", the bar
+  shows no day types.
 
 
 

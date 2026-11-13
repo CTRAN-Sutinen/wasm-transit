@@ -57,8 +57,8 @@
   <h3>What serves it</h3>
   {#if detail.visits.length === 0}
     <p class="muted" data-testid="stop-unserved">
-      No pattern visits this stop.{#if detail.routes.length}
-        Its station is served by {detail.routes.map((r) => r.name).join(", ")}.{/if}
+      No pattern visits this {s.kind === "station" ? "station itself" : "stop"}.{#if detail.routes.length}{" "}{s.kind === "station" ? "Its stops are" : "Its station is"}
+        served by {detail.routes.map((r) => r.name).join(", ")}.{/if}
     </p>
   {:else}
     <p class="muted">Trips are counted under {groupName || "every service key"}.</p>

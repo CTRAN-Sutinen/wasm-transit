@@ -11,6 +11,8 @@
   import type { Suggestion } from "../types/transit_runs/Suggestion";
   import type { BlockChainTrip } from "../types/BlockChainTrip";
   import { clock, fixed, mins } from "./designFormat";
+  /// "1 trip", "2 trips".
+  const n = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
 
   let {
     fleet,
@@ -58,7 +60,7 @@
   {#if fleet}
     <div class="cards">
       <div><small>Peak vehicles</small><b>{fleet.peak_vehicles}</b><span>{fleet.peak_at_secs != null ? `at ${clock(fleet.peak_at_secs)}` : ""}</span></div>
-      <div><small>Platform hours</small><b>{fixed(fleet.platform_hours)}</b><span>{fleet.blocks} blocks</span></div>
+      <div><small>Platform hours</small><b>{fixed(fleet.platform_hours)}</b><span>{n(fleet.blocks, "block")}</span></div>
       <div><small>Revenue hours</small><b>{fixed(fleet.revenue_hours)}</b></div>
       <div><small>Layover hours</small><b>{fixed(fleet.layover_hours)}</b></div>
     </div>
@@ -69,15 +71,15 @@
       <p class="muted" data-testid="all-blocked">Every trip of the day is on a block.</p>
     {:else}
       <p data-testid="unblocked">
-        {unassigned} trips are on no block, so no vehicle is counted for them.
-        Suggested: {suggestion.blocks.length} blocks, {suggestion.added_vehicles > 0 ? `${suggestion.added_vehicles} more vehicles at the peak (${suggestion.peak_vehicles})` : "no more vehicles at the peak"}.
+        {unassigned === 1 ? "1 trip is" : `${unassigned} trips are`} on no block, so no vehicle is counted for them.
+        Suggested: {n(suggestion.blocks.length, "block")}, {suggestion.added_vehicles > 0 ? `${n(suggestion.added_vehicles, "more vehicle", "more vehicles")} at the peak (${suggestion.peak_vehicles})` : "no more vehicles at the peak"}.
         {#if suggestion.unblocked.length}{suggestion.unblocked.length} cannot be blocked.{/if}
       </p>
       <ul class="blocks">
         {#each suggestion.blocks as b (b.block_id)}
           <li>
             <strong>{b.block_id}</strong>
-            {b.trips.length} trips, {clock(b.trips[0].start_secs)}–{clock(b.trips.at(-1)?.end_secs)},
+            {n(b.trips.length, "trip")}, {clock(b.trips[0].start_secs)}–{clock(b.trips.at(-1)?.end_secs)},
             {#each [...new Set(b.trips.map((t) => t.route))] as r (r)}<button type="button" class="chip" onclick={() => onroute(r)}>{r}</button>{/each}
           </li>
         {/each}
@@ -103,7 +105,7 @@
                 title="longest gap {mins(b.longest_gap_secs)} min from {clock(b.longest_gap_at_secs)}"></span>
             {/if}
           </span>
-          <span class="bnum">{b.trips} trips · {clock(b.first_start_secs)}–{clock(b.last_end_secs)} · {fixed(b.span_secs / 3600)} h</span>
+          <span class="bnum">{n(b.trips, "trip")} · {clock(b.first_start_secs)}–{clock(b.last_end_secs)} · {fixed(b.span_secs / 3600)} h</span>
         </button>
         {#if b.block_id === block}
           <div class="chain" data-testid="block-chain">

@@ -7,7 +7,11 @@
 
   let { timetable }: { timetable: Timetable } = $props();
 
-  const W = 400;
+  /// Drawn at the width it is given (measured), so the plot spans the
+  /// card and the hour labels under it sit at its ends; a fixed
+  /// viewBox would letterbox it on a wide screen.
+  let width = $state(400);
+  const W = $derived(Math.max(200, width));
   const H = 130;
   const bounds = $derived.by(() => {
     const starts = timetable.trips.map((t) => t.start_secs);
@@ -25,12 +29,14 @@
 
 <section class="panel" aria-label="Running time by start" data-testid="run-times">
   <header><h2>Running time by start</h2><span class="muted">end to end, minutes; gridlines every 5</span></header>
-  <svg viewBox="0 0 {W} {H}" role="img" aria-label="Each trip's running time by its start">
+  <div class="plot" bind:clientWidth={width}>
+  <svg viewBox="0 0 {W} {H}" width={W} height={H} role="img" aria-label="Each trip's running time by its start">
     {#each lines as m (m)}<line x1="0" x2={W} y1={y(m)} y2={y(m)}></line><text x="2" y={y(m) - 2}>{m}</text>{/each}
     {#each timetable.trips as t (`${t.trip}@${t.start_secs}`)}
       <circle cx={x(t.start_secs)} cy={y(t.run_secs / 60)} r="2.6" class:added={t.added}><title>{t.trip} {clock(t.start_secs)} — {Math.round(t.run_secs / 60)} min</title></circle>
     {/each}
   </svg>
+  </div>
   <div class="ticks"><span>{clock(bounds.lo)}</span><span>{clock(bounds.hi)}</span></div>
 </section>
 
@@ -39,10 +45,13 @@
   header { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: baseline; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--line); }
   h2 { margin: 0; font-size: 0.9rem; }
   .muted { color: var(--muted); font-size: 0.78rem; }
-  svg { display: block; width: 100%; height: 9rem; padding: 0.4rem 0.9rem 0; box-sizing: border-box; }
+  /* margin, not padding: the measured width is the plot's own */
+  .plot { margin: 0.4rem 0.9rem 0; }
+  svg { display: block; }
   line { stroke: var(--line); }
   text { font-size: 9px; fill: var(--muted); }
   circle { fill: var(--text); opacity: 0.75; }
   circle.added { fill: #2563eb; opacity: 1; }
-  .ticks { display: flex; justify-content: space-between; padding: 0 0.9rem 0.5rem; font-size: 0.68rem; color: var(--muted); }
+  /* the labels under the first and last hour: x() insets the plot 8 px */
+  .ticks { display: flex; justify-content: space-between; padding: 0 calc(0.9rem + 8px) 0.5rem; font-size: 0.68rem; color: var(--muted); }
 </style>

@@ -83,6 +83,11 @@ test("the stages: calendar, scan, route, vehicles, proposal", async ({ page }) =
   await expect(line).toContainText("2 trips");
   const trips = page.getByTestId("trip-list");
   await expect(trips.locator("tbody tr").first()).toContainText("WK");
+  // The running-time chart spans its card, so its hour labels sit at
+  // the plot's ends (a fixed viewBox letterboxed it on a wide screen).
+  const runTimes = page.getByTestId("run-times");
+  const [plotBox, cardBox] = [await runTimes.locator("svg").boundingBox(), await runTimes.boundingBox()];
+  expect(plotBox.width).toBeGreaterThan(cardBox.width - 40);
 
   // Move the first trip to 7:55; the trip list says it moved.
   await page.getByTestId("edit-toggle").click();
@@ -155,7 +160,7 @@ test("stops: a stop's card lists every pattern that visits it", async ({ page })
   await find.fill("Main Station");
   await page.getByRole("listbox", { name: "Find a stop" }).getByRole("option", { name: /^Main Station(?!:)/ }).click();
   await expect(card).toContainText("Station");
-  await expect(card.getByTestId("stop-unserved")).toContainText("Its station is served by");
+  await expect(card.getByTestId("stop-unserved")).toContainText("No pattern visits this station itself. Its stops are served by");
 });
 
 // The controls that manage the plan set and move between the stages:
