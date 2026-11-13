@@ -266,7 +266,8 @@ This is the same module, giving the same answer, as the browser runs.
 | Modules, documents, and the core in detail | [architecture/bus.md](../architecture/bus.md) |
 | The browser side: the engine and the background worker | [architecture/web.md](../architecture/web.md) |
 | Updates and offline use | [architecture/updates-offline.md](../architecture/updates-offline.md) |
-| The server and its store | [architecture/server.md](../architecture/server.md) |
+| The server | [architecture/server.md](../architecture/server.md) |
+| How the data is stored | [architecture/storage.md](../architecture/storage.md) |
 | Deploying with no server | [architecture/static-deployment.md](../architecture/static-deployment.md) |
 
 ## Read next

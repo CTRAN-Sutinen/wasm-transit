@@ -1,7 +1,7 @@
 # Formats — what the store persists
 
-The at-rest contract of the sync store
-(`docs/architecture/server.md`). Every document is an open
+The at-rest contract of the sync store (the storage model is
+`docs/architecture/storage.md`). Every document is an open
 format, readable without the app (D-115): plain JSON, or an external
 open format (GTFS, GTFS-rt, GeoJSON). Everything here is readable
 without any wasm: the blobs are plain bytes, the envelopes and log
@@ -63,11 +63,13 @@ The blob's metadata key `envelope` holds (S3 `x-amz-meta-envelope`):
 ```
 
 - `kind` — one of `network_document`, `edit_records`,
-  `diversion_draft`, `manifest`, `plans`, `policy`, `stops`, and the boot
+  `diversion_draft`, `manifest`, `plans`, `policy`, `stops`,
+  `stop_requests`, and the boot
   sources' `gtfs_feed` (a GTFS zip) and `street_layer` (GeoJSON) —
   external open formats, stored as read (D-115, D-118). `produced_by`
   on a `network_document` is `cap-network@sha256:…`; on `plans`,
-  `cap-plans@sha256:…`; on `stops`, `cap-stops@sha256:…`.
+  `cap-plans@sha256:…`; on `stops`, `cap-stops@sha256:…`; on
+  `stop_requests`, `cap-requests@sha256:…`.
 - `schema_version` — the payload's version, the same number the
   document carries inside it (see "Versions" below); a writer bumps it
   deliberately. Migrations happen at receive, never at read.
@@ -91,12 +93,14 @@ Each commit is one record object,
   refuses any other name.
 - The pointers the server keeps: `edits`, `policy`, `manifest`,
   `plans` (the published plan set), `stops` (the stops document,
-  written through `POST /stops`), `plan.<id>` per published pick
+  written through `POST /stops`), `stop_requests` (the stop requests
+  document, written through `POST /stop-requests`), `plan.<id>` per published pick
   (its network document; every revision stays in the log), `build`
   (each release committed from `-dist`, and each move — "Builds"), and
   `source.feed` and `source.streets` — each read of `-feed` and
   `-streets` whose bytes changed, the record's `writer`
-  `import:<source>` (D-118). A server whose source does not answer at
+  `import:<source>` (D-118); a `stops` commit of the agency's feed's
+  differences has the writer `import:feed` (D-150). A server whose source does not answer at
   boot imports that pointer's head instead, so a replacement given
   only the bucket and the same configuration serves the same manifest.
 - `from` is the hash the writer last saw; a commit lands only when
@@ -167,10 +171,28 @@ that is missing, does not hash to its name, or carries no envelope.
   `200 {stops_hash}`, `422 {refusals}` (cap-stops `validate`), or `409
   {current, seq}`. The server commits the module's canonical document
   to `stops`; no pick changes (D-157). `POST /pointers/stops` is `400`.
+- `POST /stop-requests` body `{"from": "<hash or empty>", "requests":
+  <document>}` → `200 {requests_hash}`, `422 {refusals}` (cap-requests
+  `validate`), or `409 {current, seq}`. The server commits the module's
+  canonical document to `stop_requests`. `POST /pointers/stop_requests`
+  is `400`.
+- `POST /attachments` body the file, `Content-Type` its media type (a
+  photo — JPEG, PNG, WebP, HEIC — or a PDF, at most 25 MB) → `200
+  {hash, type, bytes}`, `413`, `415`, or `501 {configured: false}`
+  (no `-attachments`). `GET /attachments/sha256:<hex>` → the bytes with
+  their type (signed-in only when sign-in is on: `401` otherwise). The
+  attachments' bucket holds `attachments/<hex>`, each object's media
+  type in its metadata; a record names a file by `sha256:<hex>`.
+- `POST /stop-requests/work-order` body `{"request", "action": "open" |
+  "refresh"}` → `200 {requests_hash, work_order}` (the work order
+  system's answer on the request, the log's writer
+  `work-orders:<system>`), `501 {configured: false}` with no adapter
+  (`-work-orders`), `404`, `409 {current, seq}`, or `422 {refusals}`.
 - `GET /feed?date=YYYY-MM-DD` → the GTFS zip in force on the date
   (default the server's today; `application/zip`, ETag its hash):
-  cap-network `export` of the pick in force, or the `-feed` zip before
-  the first pick takes effect.
+  cap-network `export` of the pick in force, carrying the stops'
+  history over its period (cap-stops `export_versions`), or the `-feed`
+  zip before the first pick takes effect.
 - `POST /plans/retire` body `{"id"}` → `200 {plans_hash}`, or `422
   {issues}` (the pick has taken effect, or no pick has the id), `404`
   when nothing is published (D-75). The server commits the module's canonical
@@ -271,6 +293,7 @@ Every persisted kind, by what a version change does to it:
 | `policy` | transit-authz | authored | `kind`, `schema_version` |
 | `work_rules` | transit-runs | authored | `kind`, `version` |
 | `stops` | transit-stops | authored | `kind`, `schema_version` |
+| `stop_requests` | transit-requests | authored | `kind`, `schema_version` |
 | `diversion_draft` | transit-dispatch | authored | — (never persisted yet) |
 | a rider's device records (recent places, live-feed URLs) | the ride-now host | authored | — (`localStorage`) |
 | `network` (imported) | transit-codec | derived | `kind`, `schema_version` |
@@ -355,7 +378,7 @@ and, after a second commit, log record
 `{"seq":2,"from":"sha256:<first>","to":"sha256:<this>","kind":"edit_records","schema_version":2,"produced_by":"cap-sync@sha256:<hex>","writer":"anonymous","policy":null,"at_ms":2000}`.
 
 A `manifest` blob is the manifest object itself
-(`{"network_hash","feed_hash","feed_version","streets_hash","walks_hash","wasm_hash","authz_hash","policy_hash","plans_hash","stops_hash","build_hash","generated_at","publisher","timezone","services"}`,
+(`{"network_hash","feed_hash","feed_version","streets_hash","walks_hash","wasm_hash","authz_hash","policy_hash","plans_hash","stops_hash","stop_requests_hash","build_hash","generated_at","publisher","timezone","services","auth"}`,
 the optional ones omitted when empty),
 envelope `{"kind":"manifest","schema_version":1,"produced_by":"server"}`.
 

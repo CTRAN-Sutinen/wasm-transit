@@ -1,5 +1,5 @@
 // Package store is the content-addressed document store the sync
-// server keeps when run with -store (docs/architecture/server.md; docs/FORMATS.md). Its home is an object store (D-113): the
+// server keeps when run with -store (docs/architecture/storage.md; docs/FORMATS.md). Its home is an object store (D-113): the
 // engine runs over a Backend (backend.go) and assumes only its
 // contract — a whole-object create of an absent key, a consistent read
 // and list after write, metadata, delete, a modified time.

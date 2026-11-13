@@ -277,7 +277,7 @@ behind its choices, including the alternatives that were rejected:
 |---|---|
 | 2, 3, 5 | [architecture/bus.md](../architecture/bus.md) |
 | 4 | [architecture/crates.md](../architecture/crates.md) and [crates/AGENTS.md](../../crates/AGENTS.md) |
-| 6, 7, 8 | [architecture/server.md](../architecture/server.md) and [FORMATS.md](../FORMATS.md) |
+| 6, 7, 8 | [architecture/storage.md](../architecture/storage.md), [architecture/server.md](../architecture/server.md) and [FORMATS.md](../FORMATS.md) |
 | 9 | [architecture/static-deployment.md](../architecture/static-deployment.md) |
 | 1, 10 | [architecture/updates-offline.md](../architecture/updates-offline.md) and [architecture/web.md](../architecture/web.md) |
 | 11 | [TESTING.md](../TESTING.md) |

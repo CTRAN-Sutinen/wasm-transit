@@ -165,13 +165,15 @@ it.
    ```json
    {"kind": "policy", "schema_version": 1, "rules": [
      {"name": "dispatch-edits", "roles": ["dispatcher"], "actions": ["write"], "pointers": ["edits"]},
-     {"name": "planning",       "roles": ["planner"],    "actions": ["write"], "pointers": ["plans"]},
+     {"name": "planning",       "roles": ["planner"],    "actions": ["write"], "pointers": ["plans", "stops", "stop_requests"]},
      {"name": "releases",       "roles": ["admin"],      "actions": ["write"], "pointers": ["build"]}
    ]}
    ```
 
    `edits` is detours and cancellations, `plans` is published schedule
-   changes, and `build` is the app version
+   changes, `stops` is the stops record (and its surveys),
+   `stop_requests` is the requests for work at stops, and `build` is
+   the app version
    ([section 9](#9-update-or-roll-back-the-app)). Everyone can read.
 3. Add the options:
 
@@ -195,11 +197,47 @@ The policy file is read the first time the server starts on a bucket.
 After that the bucket's copy is the policy, and every change to it is
 logged.
 
-The log of every change names the person who made it.
+The log of every change names the person who made it. When the server
+takes in a new schedule feed, it records how the feed's stops differ
+from the stops record; the log names that change `import:feed`.
 
-**Not yet:** the app pages do not sign in yet. With sign-in turned
-on, changes made in the apps (such as publishing from service design)
-are refused. Tools that send their own sign-in token still work.
+4. Let the app pages sign in. Register the pages as a second app with
+   your provider, of the "single-page application" kind (in Entra:
+   Authentication, then Add a platform, then Single-page application).
+   Add each page's address as a redirect address:
+   `https://<your server>/stops.html`,
+   `https://<your server>/service-change.html`, and
+   `https://<your server>/service-design.html`. Give the pages' app
+   permission to ask for a token for the server's app. Then add:
+
+   ```
+   -oidc-client-id <the pages' app's client ID> \
+   -oidc-scope "openid profile offline_access api://<server app>/<scope>"
+   ```
+
+   The pages then show a **Sign in** button. A person signs in once per
+   browser tab; reading never needs it. Without `-oidc-client-id`, the
+   pages cannot sign in and their changes are refused; tools that send
+   their own sign-in token still work.
+
+### Keep photos and drawings
+
+Stop surveys and requests can carry photos and site drawings. They are
+kept in a bucket of their own, apart from the store: create one (any
+provider the store supports) and add `-attachments s3://<bucket>` (or
+`gs://…`, `azblob://…`). Only people who are signed in can see them.
+To let a role add them, give it write on `attachments` in the policy.
+Without `-attachments`, the pages offer no photos. The store's clean-up
+tool never touches this bucket.
+
+### Connect the work order system
+
+Stop requests keep the number of the work order your work order system
+opens. Until a connection to that system is set up, staff type the
+number in by hand on the request, and nothing else is needed. The
+option `-work-orders stub:` turns on a stand-in that makes up work
+order numbers, for training and demonstrations only. A real connection
+is added when the system's API is wired in.
 
 ## 7. Run it behind a load balancer
 
@@ -309,4 +347,6 @@ image.
 | A new schedule does not appear | Wait two minutes, then check that the file at the `-feed` address really changed. |
 
 How the server works inside is in
-[docs/architecture/server.md](docs/architecture/server.md).
+[docs/architecture/server.md](docs/architecture/server.md), and how it
+stores the data in
+[docs/architecture/storage.md](docs/architecture/storage.md).

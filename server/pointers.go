@@ -2,7 +2,7 @@ package main
 
 // The generic store surface (store mode, -store <url>): pointers and
 // blobs over the content-addressed store (docs/FORMATS.md,
-// docs/architecture/server.md). /edits is the edit_records
+// docs/architecture/storage.md). /edits is the edit_records
 // specialization of POST /pointers/edits (edits.go).
 //
 //	GET  /pointers/{name}              -> {name, hash, seq, envelope} (404 when absent)
@@ -331,6 +331,12 @@ func (s *server) handlePointerPost(w http.ResponseWriter, r *http.Request, name 
 	// raw write would skip cap-stops' validation and the picks' refresh.
 	if kind == "stops" || name == stopsPointer {
 		http.Error(w, "the stops document is written through POST /stops", http.StatusBadRequest)
+		return
+	}
+	// The stop requests document is written only by POST /stop-requests
+	// (requests.go): a raw write would skip cap-requests' validation.
+	if kind == "stop_requests" || name == requestsPointer {
+		http.Error(w, "the stop requests document is written through POST /stop-requests", http.StatusBadRequest)
 		return
 	}
 	// A build names files the store must hold: builds land from -dist,

@@ -50,11 +50,13 @@ surface"). Where it holds today:
 |---|---|---|---|---|
 | `POST /edits`, and an `edit_records` pointer commit | migrated at receive (cap-migrate) | cap-sync's receive (D-56) and the LWW merge | merged per record | the log's `writer` |
 | `POST /plans`, `/plans/retire` | read and canonicalized by cap-network | cap-network's validation, cap-plans' chain (`422`) | the server commits by CAS | the log's `writer` |
-| any other kind's pointer commit (the plan set and picks are refused there) | stored verbatim | **not checked** | `from` / `409` | the log's `writer` |
+| `POST /stops` | read by cap-stops | cap-stops' `validate` (`422`); a survey's surveyor named for the writer (D-163) | `from` / `409` | the log's `writer` |
+| `POST /stop-requests` | read by cap-requests | cap-requests' `validate` (`422`) | `from` / `409` | the log's `writer` |
+| any other kind's pointer commit (the plan set, picks, stops, and stop requests are refused there) | stored verbatim | **not checked** | `from` / `409` | the log's `writer` |
 
 The last row is the gap: a pointer commit for any kind but the edits
-stores the document as given (`docs/units/README.md`, queued, "Governed
-writes").
+stores the document as given (`docs/units/storage-model.md`, item 2,
+the kind table).
 
 **The gate refuses only what makes the data wrong** — a broken shape
 or a broken invariant. A legitimate change with consequences (a pick

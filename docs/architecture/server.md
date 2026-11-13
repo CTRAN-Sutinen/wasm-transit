@@ -12,7 +12,9 @@ the op behind POST /edits, held for the server's lifetime; cap-authz
 store mode, the op behind POST /plans; cap-stops (-stops-wasm) in
 store mode, one instance made on first use and emptied after each
 (the kernel's `evict`) — the validation behind a stops write, and what a
-published pick reads of the stops document; cap-network
+published pick reads of the stops document; cap-requests
+(-requests-wasm) in store mode, held the same way — the validation
+behind a stop requests write; cap-network
 (the -network-wasm flag, cap_network.wasm), which imports the
 configured GTFS zip (the kernel's `load_feed` + `import`) — and canonicalizes and
 validates each published pick — in a fresh instance
@@ -55,36 +57,11 @@ spends 11.8 s on the import and the table; the page fetches 4.5 MB
 document in 0.47 s; the first `access` builds the walking graph in
 0.32 s, later ones answer in ~14 ms.
 
-With `-store <url>` the server keeps a content-addressed store in
-object storage (`docs/FORMATS.md`; D-113): `s3://bucket/prefix`
-(S3 or an S3-compatible endpoint, `?endpoint=` naming it),
-`azblob://container/prefix`, `gs://bucket/prefix`, or `mem://` (gone
-with the process). The engine (`server/store/`) runs over one small
-backend interface (`backend.go`: get, stat, create-if-absent, list
-from a key, delete) and assumes only its contract — no append, rename,
-fsync, or lock; the in-memory backend and the S3, Azure Blob and GCS
-adapters (`s3.go`, `azure.go`, `gcs.go`) all pass one contract suite
-(`contract_test.go`; `just store-contract` runs it and every engine
-law against local SeaweedFS, Azurite and fake-gcs-server). Immutable
-blobs are `blobs/<hex>` objects with the typed envelope as metadata,
-and each commit is one record object `pointers/<name>/<seq>.json` —
-the pointer is its highest record, and a commit is a blob create plus
-a conditional create of record N+1, which is the CAS on the `from`
-hash, then a re-read of its blob. Several server processes may share
-one bucket; each caches heads and reads at most 2 s behind another's
-commit. The `manifest` pointer is the root (publishing is one CAS on
-it); the `edits` pointer is the multi-writer LWW document; the `plans`
-pointer is the published plan set, and each pick's network is its own
-`plan.<id>` pointer (D-74). The model (`store.tla`, `just spec`)
-checks processes sharing a bucket with the offline collector beside
-them.
-
-A serving process opens the store with `store.OpenServing`: it
-creates, reads and lists, and never deletes (D-117). The offline tools
-are `server/cmd/store` (`just store …`): `gc` collects orphans with
-its own delete-capable credentials, `verify` reads a whole store and
-exits non-zero on the first break, and `copy` carries a directory
-store an older build wrote into a bucket and verifies it.
+With `-store <url>` the server keeps the agency's record in object
+storage (D-113): the engine, its backends, the pointers it keeps, and
+the offline tools are [storage.md](storage.md), and the bytes at rest
+`docs/FORMATS.md`. A serving process opens the store with
+`store.OpenServing` and never deletes (D-117).
 
 The server's inputs come from their sources (D-118): `-feed`,
 `-streets` and `-policy` each take an http(s) URL, `bucket:<key>` (the
@@ -231,6 +208,11 @@ Its HTTP surface:
   later changes are authenticated CAS commits. `-oidc-name-claim`
   (dotted, default `name`) is what a record names the person by — a
   survey's surveyor (D-158); a token without it is named by its `sub`.
+  `-oidc-client-id` is the pages' own public client at the provider
+  (authorization code with PKCE) and `-oidc-scope` the scopes a page
+  asks for: with the client id, the manifest's `auth` names the issuer,
+  the client, and the scopes, and the pages sign in to write
+  (`web/src/signin.svelte.ts`).
   No `-oidc-*` = auth off,
   logged loudly (dev only). `STORE`/`OIDC_*`/`POLICY` env vars pass the
   flags through `just serve`/`just dev`. What the server leaves to the
@@ -294,10 +276,48 @@ Its HTTP surface:
   `stops_hash`. A stops write changes no pick: a stop's life is its own,
   and a pick only reads the document (D-157). A raw pointer commit of
   the stops is refused (400). The first document arrives through this
-  route (a page makes it with cap-stops `seed`).
+  route (a page makes it with cap-stops `seed`). Each new import of
+  the agency's feed (`-feed`, at boot or when its bytes change) is
+  recorded in a stops document the store holds (D-150: the feed
+  applies, and the planner sees what it did): cap-stops `import_events`
+  on the feed's first service date, each event naming the feed's hash,
+  committed by the same CAS, the writer `import:feed`; nothing when it
+  differs in nothing (`recordFeed`, stops.go).
+- `POST /attachments` and `GET /attachments/<hash>` (`-attachments`, a
+  bucket of its own — any store URL): the photos and drawings surveys
+  and requests carry (D-162), each object `attachments/<hex>` created
+  only if absent, its media type in the object's metadata. A POST (write
+  on the policy's `attachments` pointer) takes a photo (JPEG, PNG, WebP,
+  HEIC) or a PDF up to 25 MB and answers `{hash, type, bytes}`; a GET
+  needs any signed-in person whenever sign-in is on (`protectSignedIn`)
+  and answers the bytes, `Cache-Control: private`. 501
+  `{configured: false}` without the bucket; the manifest's
+  `services.attachments` offers it only with one. `store gc` never
+  touches this bucket.
+- `POST /stop-requests/work-order` (store mode, `-work-orders`) —
+  `{"request": "<id>", "action": "open"|"refresh"}`: the work order
+  system's adapter (D-165, `docs/architecture/adjacent-systems.md`)
+  opens a work order for the request or reads its status, and cap-requests
+  `record_work_order` writes the answer on it (dated the server's
+  today), committed by CAS, the writer `work-orders:<system>`; 200
+  `{requests_hash, work_order}`, 501 `{configured: false}` with no
+  adapter, 409 when the requests moved meanwhile. The manifest's
+  `services.work_orders` offers it only when an adapter is configured.
+- `POST /stop-requests` (store mode) — write the stop requests document
+  (D-159): `{"from": "<the head read, or empty>", "requests": {...}}`.
+  A fresh cap-requests validates it (422 with `refusals`) and answers
+  its canonical bytes, committed to the `stop_requests` pointer by CAS
+  (409 with `current` when another writer moved it); the manifest pins
+  it as `stop_requests_hash`. A raw pointer commit of the requests is
+  refused (400). The first request begins the document (a page makes
+  it with cap-requests `put`).
 - `GET /feed?date=` — the GTFS zip in force on the date (default the
   server's today): cap-network `export` of the published pick in
-  force (cap-plans `in_force` answers which), kept by network hash;
+  force (cap-plans `in_force` answers which) — with a stops document,
+  first cap-stops `export_versions` over the pick's period (cap-plans
+  `periods`), so a stop whose record changes inside it is one stop per
+  version (D-151) — kept by the pick's network hash and the stops
+  document's;
   before the first pick takes effect, the configured `-feed` zip
   itself (D-74); 404 when neither runs. ETag the zip's hash.
 
@@ -334,12 +354,6 @@ reading **Because**.
 - **Holds:** a gzipped document is served as `application/gzip` bytes, never `Content-Encoding: gzip`. `/blobs/<hash>` answers gzip on `Accept: application/gzip`; `/blobs/<hash>.gz` answers it by path. Both stay.
 - **Because:** the page hands compressed bytes to the module, which decodes as it parses (kernel op 256), so the 9.6 MB network text never exists whole on the page. The `.gz` path exists because a static host cannot negotiate on a header. A host that decompresses anyway still works: the modules read either form.
 
-### Object storage, create-only (`server/store/`, `backend.go`, `store.OpenServing`)
-- **Holds:** the engine assumes only whole-object writes and a conditional create of an absent key — no append, rename, fsync, or lock. Serving processes never delete; `store gc` runs offline with its own credentials.
-- **Because:** the store must survive losing a node, and S3, Azure Blob, and GCS all provide exactly that contract. A server that cannot delete cannot erase history, and the bucket can carry the provider's immutability settings.
-- **Rejected:** a crash-hardened directory store (one node, its disk's failure the store's); online GC in every server (races a commit over object storage; needs delete rights everywhere); never deleting (kept as an option for immutable buckets).
-- **Decided:** D-113, D-117.
-
 ### Inputs from a URL or the bucket (`-feed`, `-streets`, `-policy`, `source.go`)
 - **Holds:** each input is a URL, `bucket:<key>`, or a dev path; with `-store` each read is committed (`source.feed`, `source.streets`).
 - **Because:** a process must be disposable: its replacement, given the bucket and the same flags, serves the same manifest. Local files tie a deployment to one machine.
@@ -356,6 +370,12 @@ reading **Because**.
 - **Holds:** GETs are public; writes need a role the policy grants on that pointer; tokens verify by JWKS or a pinned key, RS256/ES256 only; the roles' claim path is configurable; the policy is a store document seeded from a file at first boot and changed by audited commits.
 - **Because:** reads publish what riders need; writes are the shared state. Symmetric or `none` algorithms would let anyone mint tokens. The claim's location is the IdP's. A file re-read per request would leave policy changes unaudited; a store-only policy needs a break-glass bootstrap.
 - **Decided:** D-58, D-59, D-60, D-61.
+
+### Attachments live apart and are read only signed in (`attachments.go`, `-attachments`)
+- **Holds:** photos and drawings sit in a bucket of their own, each object named by its content hash; a record names a file only by that hash, never a URL, and the server hands out the bytes — to a signed-in person whenever sign-in is on, unlike every other read.
+- **Because:** files are large and their access and keeping differ from the documents'; a URL would tie every record to one provider and bucket name (the infrastructure must not couple to one store or provider), while a hash keeps a record portable and shows a swapped file. A site drawing can show parcels and private property, and a photo can catch people: the deployment is internal-facing, and its attachments are staff's to see.
+- **Rejected:** URLs in the records; attachments among the store's blobs; public reads.
+- **Decided:** D-162.
 
 ### Degraded is ready (`/readyz`, `health.go`)
 - **Holds:** `/readyz` stays 200 while the bucket does not answer and cached heads serve; `/healthz` reads nothing.

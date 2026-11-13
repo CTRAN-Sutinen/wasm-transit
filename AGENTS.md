@@ -108,7 +108,8 @@ Where the detail lives:
   under `crates/` (enforced by arch gates in `just test`)
 - `docs/architecture/` — the architecture reference, one file per
   topic (its README indexes them): per-crate detail, the bus and its
-  rules, the server, static deployment, the web, the generated UIs —
+  rules, the server, storage (the agency's record), static deployment,
+  the web, the generated UIs —
   each topic's What, and its Why where the reason is not obvious
 - `docs/units/` — the open work, one file per unit (read its
   README before touching anything); a unit's file is deleted when
@@ -149,7 +150,7 @@ just build                 # frontend (type-checks first — the TS layer is a g
 just caps                  # assemblies/ (generated, gitignored) → the modules: each
                            # capability alone and each UI's linked assembly + manifest
                            # (+ cap_sync, cap_network, cap_streets, cap_authz,
-                           # cap_plans, cap_migrate and cap_stops .wasm for the server)
+                           # cap_plans, cap_migrate, cap_stops and cap_requests .wasm for the server)
 just caps-fast             # the same, under the wasm-fast profile (no whole-program
                            # LTO, incremental): a library change rebuilds in ~10 s, not
                            # ~10 min — the loop's build; the local registry's evidence
@@ -212,7 +213,10 @@ just store-dev             # local object stores in podman: SeaweedFS (:8333, th
 just store-contract        # the store's laws against each of them (opt-in, never
                            # in `just test`)
                            # OIDC_ISSUER/OIDC_JWKS_URL/OIDC_AUDIENCE/OIDC_KEY/POLICY=…
-                           # (OIDC_NAME_CLAIM: the claim a survey's surveyor is)
+                           # (OIDC_NAME_CLAIM: the claim a survey's surveyor is;
+                           # OIDC_CLIENT_ID/OIDC_SCOPE: the pages sign in)
+                           # ATTACHMENTS=url: the photos' own bucket (D-162);
+                           # WORK_ORDERS=stub: the work order adapter (D-165)
                            # turn on JWT auth + policy (D-58..D-61;
                            # docs/architecture/server.md)
 just dev                   # vite hot reload + server alongside
@@ -296,6 +300,10 @@ transit-stops    THE stops document, beside the plans: each stop a list of dated
                  event placed by date, a correction), what a stop may become —
                  pure; a stop's life is its own, and a
                  pick only reads it (D-157)
+transit-requests THE stop requests document: the planning team's requests for work at a
+                 stop (new, reinstall, relocate/remove, repair/improve, temporary), each
+                 tracking the work order the agency's work order system opens for it;
+                 what a write must pass, a request placed by id — pure (D-159)
 transit-runs     THE runs layer beside the network: the work-rule document (recovery,
                  interlining per route pair, run rules, pay — every rule optional), the
                  recovery a wait requires and its slack, the suggested blocking — pure
@@ -309,7 +317,7 @@ cap-abi          the kernel and the seam: the registries (one per document kind,
                  a capability only registers with `capability!`), the kernel ops
                  (loads, evict, held, about), manifest, validator, gen-manifest,
                  gen-assemblies, arch-gates
-cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops
+cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops cap-requests
                  the capabilities: rlibs that register, forbid unsafe, declare no
                  state, and never depend on each other (docs/architecture/bus.md)
 assemblies/      GENERATED (gen-assemblies, gitignored): module-<cap> (one capability
@@ -319,6 +327,7 @@ server/          Go + wazero host over cap-sync, cap-network, cap-plans and
                  publishes; in store mode every build it serves, kept and
                  rolled back by pointer — D-80), cap-migrate (an older document, at receive),
                  cap-stops (the stops document's writes; what a published pick reads of it),
+                 cap-requests (the stop requests document's writes),
                  cap-authz when auth is on, and the proxies
                  (/geocode to a Pelias geocoder; /rt, a dev feed relay off
                  unless -rt-proxy) — scaffolding, never a domain decision
@@ -351,7 +360,8 @@ Per-crate detail: `docs/architecture/crates.md`.
   S3-compatible, Azure Blob, GCS — D-113). The engine may assume only
   whole-object writes and a conditional create of an absent key —
   never an append, a rename, an fsync, or a file lock. There is no
-  directory store.
+  directory store. The bucket is the agency's record; every other copy
+  is a working copy (`docs/architecture/storage.md`).
 - **Documents are open formats (D-115)**: plain JSON (gzip allowed)
   or an external open format (GTFS, GTFS-rt, GeoJSON), never a
   private encoding; each says its kind and version inside it, and
@@ -451,7 +461,8 @@ e2e, real-data dogfood) are spelled out in `docs/TESTING.md`.
   the import and the picks it publishes, cap-plans for the published
   plan set, cap-streets for the streets and walk table it
   publishes, cap-migrate for an older document at receive, cap-stops
-  for the stops document's writes).
+  for the stops document's writes, cap-requests for the stop
+  requests document's).
 - The bus is the architecture: no capability grows a private
   document format — shared data crosses capabilities as kernel
   documents addressed by content hash only, and capabilities never
