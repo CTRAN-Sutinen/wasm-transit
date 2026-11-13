@@ -1060,20 +1060,12 @@ time point, the previous and next stop) is shown from it, never typed
 — but only for a stop a schedule serves: "if this is a new stop, it
 wont be in the schedule yet", so a new stop's intended routes and
 direction are the request's (D-159).
-Context: C-TRAN's paper Service Stop Worksheet: on and cross street,
-near side / far side / opposite / mid-block, side of street, stop and
-sidewalk surface, sidewalk connection, curb and curb cuts, front and
-rear door pads, shoulder, turnout, a crossing within 200 ft, street
-light, advertising, the seat and the post, sign, shelter, kiosk and
-light types, landmark, remarks, photos, the surveyor and date. Many
-answers are a choice from a list or a type, which the yes/no
-amenities (D-154) cannot hold. OpenStreetMap names many of them
-(`surface`, `kerb`, `sidewalk`, `crossing`, `advertising`, `lit`).
-Options: typed site fields beside the amenities, OpenStreetMap's
-names where one exists and the agency's own kept (recommended);
-widening amenities to typed values (a format change to a decided
-shape).
-Pinned by: nothing yet (`docs/units/stop-site-and-requests.md`).
+Pinned by: `crates/transit-stops/tests/stop_site_law_test.rs`, the
+fold law in `stops_law_test.rs`, cap-stops' dispatch test
+(`questions_are_the_librarys_and_a_bad_answer_is_refused`), and
+`web/e2e/ui-stops.spec.mjs` (the site survey test).
+Why: `docs/architecture/crates.md`, "A stop's site survey is typed
+answers beside its amenities".
 Blocks: nothing.
 
 ### D-159 — What is a stop request, and how does it reach the work order system?
@@ -1115,10 +1107,11 @@ Answer: 2026-11-13 — not yet: each is a type and an optional asset id
 on the stop, with the other systems' ids for the stop (the Sign ID, TMS,
 HP, GIS) kept as cross-references. The user: "agreed with your
 recommendation".
-Context: the worksheets name a sign id and the post, sign, shelter,
-kiosk and light types. Records of their own are worth it only if
-these things move between stops with a history of their own.
-Pinned by: nothing yet (`docs/units/stop-site-and-requests.md`).
+Pinned by: `crates/transit-stops/tests/stop_site_law_test.rs` (the
+references kept unchecked) and `web/e2e/ui-stops.spec.mjs` (a Sign ID
+recorded and shown).
+Why: `docs/architecture/crates.md`, "A stop's site survey is typed
+answers beside its amenities".
 Blocks: nothing.
 
 ### D-161 — When a survey and the agency's other data disagree, which wins?

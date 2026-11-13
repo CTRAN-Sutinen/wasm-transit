@@ -24,6 +24,8 @@ import type { Status } from "../../types/Status";
 import type { StatusCount } from "../../types/StatusCount";
 import type { StopOn } from "../../types/StopOn";
 import type { StopDetail } from "../../types/StopDetail";
+import type { SiteQuestion } from "../../types/cap_stops/SiteQuestion";
+import type { SurveyDraft } from "../../components/SiteSurvey.svelte";
 
 export type Next = "planned" | "permitted" | "built" | "in_service" | "suspended" | "retired";
 /// What a click on the map does: open a stop, or place a new stop or
@@ -60,6 +62,12 @@ export const st = $state({
   /// What the next click on the map does, and the point it chose.
   picking: "" as Picking,
   point: null as { lat: number; lon: number } | null,
+  /// What a site survey asks (cap-stops `questions`, D-158): the core
+  /// site questions and amenity names.
+  questions: { site: [] as SiteQuestion[], amenities: [] as string[] },
+  /// Bumped whenever this device's survey drafts change (they live in
+  /// the device's storage, which nothing watches).
+  drafts: 0,
   /// Why the last change was refused, each naming its event.
   refusals: [] as Refusal[],
   failed: {} as Record<string, string>,
@@ -209,6 +217,10 @@ addEventListener("popstate", () => {
 export async function boot(): Promise<void> {
   await readAgencyZone();
   readHash();
+  if (await available("stops")) {
+    const q = await ask("stops", "questions", {});
+    st.questions = { site: q.site, amenities: q.amenities };
+  }
   await select("stops-doc", "date", "show", "open");
   say(
     !stopsDoc
@@ -262,13 +274,63 @@ export function picked(lat: number, lon: number): void {
 // ---------------------------------------------------------------------
 
 /// One event added to the open stop (or to a new one).
-export function addEvent(stopId: string, event: Event, done: string): Promise<void> {
-  return write(done, (doc) => ask("stops", "add_event", { stops_hash: doc, stop_id: stopId, event }), stopId);
+export async function addEvent(stopId: string, event: Event, done: string): Promise<void> {
+  await write(done, (doc) => ask("stops", "add_event", { stops_hash: doc, stop_id: stopId, event }), stopId);
+}
+
+// ---------------------------------------------------------------------
+// the field: a survey's draft kept on this device, and the device's fix
+// ---------------------------------------------------------------------
+
+/// A survey half filled is kept on this device until it is saved or
+/// thrown away, so a dropped connection or a closed tab loses nothing
+/// (D-158). Per stop; never shared, never sent.
+const draftKey = (stopId: string) => `stops.survey-draft.${stopId}`;
+
+export function readDraft(stopId: string): SurveyDraft | null {
+  void st.drafts;
+  try {
+    const text = localStorage.getItem(draftKey(stopId));
+    return text ? (JSON.parse(text) as SurveyDraft) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function keepDraft(stopId: string, draft: SurveyDraft | null): void {
+  const had = readDraft(stopId) !== null;
+  try {
+    if (draft) localStorage.setItem(draftKey(stopId), JSON.stringify(draft));
+    else localStorage.removeItem(draftKey(stopId));
+  } catch {
+    // no storage here (a private window): the draft lives as long as the page
+  }
+  // only a draft begun or dropped changes what the card says
+  if (had !== (draft !== null)) st.drafts++;
+}
+
+/// A survey recorded: one event, its draft dropped once it is saved.
+export async function survey(stopId: string, event: Event, done: string): Promise<void> {
+  if (await write(done, (doc) => ask("stops", "add_event", { stops_hash: doc, stop_id: stopId, event }), stopId)) keepDraft(stopId, null);
+}
+
+/// The device's own fix, with how far off it may be (metres). A start,
+/// not a measurement: the point typed from a survey-grade tool is the
+/// record.
+export function locate(): Promise<{ lat: number; lon: number; accuracy: number }> {
+  return new Promise((resolve, reject) => {
+    if (!("geolocation" in navigator)) return reject(new Error("this device gives no location"));
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude, accuracy: p.coords.accuracy }),
+      (e) => reject(new Error(e.code === e.PERMISSION_DENIED ? "the location was not allowed" : "no location could be found")),
+      { enableHighAccuracy: true, timeout: 20_000, maximumAge: 0 },
+    );
+  });
 }
 
 /// An event that was wrong, corrected — or, with no event, taken out.
-export function correctEvent(stopId: string, index: number, event: Event | null, done: string): Promise<void> {
-  return write(
+export async function correctEvent(stopId: string, index: number, event: Event | null, done: string): Promise<void> {
+  await write(
     done,
     (doc) => ask("stops", "correct_event", { stops_hash: doc, stop_id: stopId, index, event: event ?? undefined }),
     stopId,
@@ -277,21 +339,21 @@ export function correctEvent(stopId: string, index: number, event: Event | null,
 
 /// A new stop: its first event, at the point clicked or typed. An id
 /// the document already holds is another stop's.
-export function newStop(stopId: string, event: Event): Promise<void> {
+export async function newStop(stopId: string, event: Event): Promise<void> {
   if (st.all.some((s) => s.stop_id === stopId) || st.card?.stop?.stop_id === stopId) {
     st.refusals = [];
     say(`There is already a stop ${stopId}. Choose another id.`, true);
-    return Promise.resolve();
+    return;
   }
-  return addEvent(stopId, event, `Added stop ${stopId}.`);
+  await addEvent(stopId, event, `Added stop ${stopId}.`);
 }
 
 async function write(
   done: string,
   edit: (doc: Doc) => Promise<{ refusals: Refusal[]; stops: unknown | null }>,
   stopId: string,
-): Promise<void> {
-  if (!stopsDoc) return;
+): Promise<boolean> {
+  if (!stopsDoc) return false;
   const doc = stopsDoc;
   st.refusals = [];
   st.busy = true;
@@ -300,17 +362,20 @@ async function write(
     const answer = await edit(doc);
     if (answer.refusals.length || !answer.stops) {
       st.refusals = answer.refusals;
-      return say("That change does not fit the stop's history.", true);
+      say("That change does not fit the stop's history.", true);
+      return false;
     }
     const from = st.held ? (doc.pin ?? "") : "";
     const resp = await fetch("/stops", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from, stops: answer.stops }) });
     if (resp.status === 422) {
       st.refusals = ((await resp.json()) as { refusals?: Refusal[] }).refusals ?? [];
-      return say("The server refuses that change.", true);
+      say("The server refuses that change.", true);
+      return false;
     }
     if (resp.status === 409) {
       await select("stops-doc");
-      return say("Someone else saved a change first. The stops are read again: make your change again.", true);
+      say("Someone else saved a change first. The stops are read again: make your change again.", true);
+      return false;
     }
     if (!resp.ok) throw new Error(`the server did not save it: ${(await resp.text()).trim() || resp.status}`);
     st.picking = "";
@@ -318,9 +383,11 @@ async function write(
     st.open = stopId;
     await select("stops-doc", "open");
     say(done);
+    return true;
   } catch (e) {
     say(`Error: ${message(e)}`, true);
     console.error(e);
+    return false;
   } finally {
     st.busy = false;
   }

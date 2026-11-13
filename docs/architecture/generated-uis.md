@@ -425,19 +425,32 @@ until shown) — each with its count that day (stops `stops_on`'s
 `counts`). The map colours each stop shown by its status; beside it,
 the list of those stops with since when, until when, and the note
 ("every stop out of service today"), or the open stop's card (stops
-`stop`): where it stands that day, its details and amenities, the
+`stop`): where it stands that day, its details and amenities, its
+site as last surveyed (when, by whom, and the answers grouped as the
+Service Stop Worksheet groups them, its ids in other systems), the
 routes that stop there in the schedule running that day (directory
 `stop_detail` over `servedNetwork` on the date — read only, which is
 why the page links the network capability too), and its history.
 The card offers only what the stop may become that day (`stop`'s
-`next`), a move (to a new point, optionally until a date), and a
-change of details and amenities; each event in the history can be
+`next`), a move (to a new point, optionally until a date), a
+change of details and amenities, and a site survey (`SiteSurvey`,
+D-158): who surveyed and when, the questions stops `questions` asks
+— a list answer chosen, a count typed as a whole number, the rest
+written — what is at the stop, and the stop's ids in other systems,
+starting from what the stop records and saved as one `changed` event
+carrying every answer recorded and its `surveyed_by`. A survey half
+filled is kept on the device (`localStorage`, per stop) until it is
+saved or thrown away, so a reload or a dropped connection loses
+nothing; the card says a draft is kept. Each event in the history can be
 corrected or taken out (stops `correct_event`). A new stop is placed
 at a point, planned or already in service. A point is clicked on the
 map (kept to six decimals, about 0.1 m — a click knows no more) or
 typed as measured in the form's latitude and longitude fields, and
 saved as typed; the two edit one point, so a click fills the fields
-and a typed pair moves the marker (`PointFields`). Whether the point
+and a typed pair moves the marker (`PointFields`); "Use my
+location" fills them from the device's fix (the host's `locate`),
+shown with its accuracy, a start and never the measurement. The forms
+are laid out for a phone or tablet at the stop. Whether the point
 is on the earth is the receive path's check (stops `add_event`).
 Each change is one event — stops `add_event` places and checks it,
 `POST /stops` checks it again and stores it (409: the page reads the

@@ -12,7 +12,11 @@
 //     the map's click fills the point's fields, and a measured point
 //     typed over it is the one saved, to the digit;
 //   - a new stop is planned at a point typed, permitted, and
-//     retired — hidden from the map until retired stops are shown.
+//     retired — hidden from the map until retired stops are shown;
+//   - a stop is surveyed (D-158): the half-filled survey survives a
+//     reload on this device, a count that is not a number is stopped at
+//     its field, and the saved survey shows on the card grouped as the
+//     worksheet groups it, with its surveyor and date.
 
 import { test, expect } from "@playwright/test";
 
@@ -106,6 +110,49 @@ test("a stop's life: suspended and back, moved, and a new stop planned, permitte
   await expect(rows.filter({ hasText: "Main & 9th" })).toHaveCount(0);
   await page.getByTestId("filter-retired").click();
   await expect(rows.filter({ hasText: "Main & 9th" })).toHaveCount(1);
+});
+
+test("a stop's site survey: kept as a draft, checked, saved, and shown", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
+  await page.goto("/stops.html#on=2026-11-02&open=A");
+  await expect(page.getByTestId("stop-card")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("stop-surveyed")).toHaveText("Never surveyed.");
+
+  // Half filled, then the tab is reloaded: the survey is back.
+  await page.getByTestId("action-survey").click();
+  await page.getByTestId("survey-by").fill("R. Ortiz");
+  await page.getByTestId("survey-position").selectOption("far_side");
+  await page.getByTestId("survey-on_street").fill("Main St");
+  await page.reload();
+  await expect(page.getByTestId("action-survey")).toHaveText("Survey (draft)", { timeout: 15_000 });
+  await page.getByTestId("action-survey").click();
+  await expect(page.getByTestId("survey-restored")).toBeVisible();
+  await expect(page.getByTestId("survey-by")).toHaveValue("R. Ortiz");
+  await expect(page.getByTestId("survey-position")).toHaveValue("far_side");
+
+  // A count that is not a whole number is stopped at the field (the
+  // write would refuse it too: cap-stops' dispatch test), and nothing
+  // is lost.
+  await page.getByTestId("survey-lanes").fill("four");
+  await page.getByTestId("survey-save").click();
+  await expect(page.getByTestId("survey-form")).toBeVisible();
+  expect(await page.getByTestId("survey-lanes").evaluate((el) => el.validity.valid)).toBe(false);
+  await page.getByTestId("survey-lanes").fill("4");
+  await page.getByTestId("survey-surface").selectOption("concrete");
+  await page.getByTestId("survey-amenity-rear_boarding_pad").selectOption("yes");
+  await page.getByTestId("survey-ref-sign").fill("S-1180");
+  await page.getByTestId("survey-save").click();
+  await expect(page.getByTestId("status")).toContainText("Survey of A on 2026-11-02 saved.", { timeout: 15_000 });
+  await expect(page.getByTestId("stop-surveyed")).toHaveText("Last surveyed on 2026-11-02 by R. Ortiz.");
+  const site = page.getByTestId("stop-site");
+  await expect(site.first()).toContainText("On street");
+  await expect(site.first()).toContainText("Main St");
+  await expect(site.first()).toContainText("Far side");
+  await expect(page.getByTestId("stop-refs")).toContainText("S-1180");
+  await expect(page.getByTestId("stop-amenities")).toContainText("Rear door pad: there");
+  await expect(page.getByTestId("stop-event").last()).toContainText("Surveyed by R. Ortiz");
+  // saved: no draft is kept
+  await expect(page.getByTestId("action-survey")).toHaveText("Survey");
 });
 
 // A pick only reads the stops (D-157): published over stop C, retired

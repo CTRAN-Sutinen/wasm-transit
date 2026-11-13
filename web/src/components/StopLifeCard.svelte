@@ -4,7 +4,9 @@
   /// it in the schedule running that day, and its history. Its changes:
   /// what it may become that day (the op's `next` — only those are
   /// offered), a move, a change of details, and a correction of an event
-  /// that was wrong. A move's point is clicked on the map or typed.
+  /// that was wrong, and a site survey (D-158) — the answers shown
+  /// grouped as the worksheet groups them, with the stop's ids in other
+  /// systems (D-160). A move's point is clicked on the map or typed.
   /// Each is one event the host writes. A RENDER component: the stop,
   /// its events, and its choices come in as props.
   import type { Details } from "../types/Details";
@@ -12,8 +14,10 @@
   import type { Refusal } from "../types/Refusal";
   import type { StopDetail } from "../types/StopDetail";
   import type { StopOn } from "../types/StopOn";
+  import type { SiteQuestion } from "../types/cap_stops/SiteQuestion";
   import PointFields from "./PointFields.svelte";
-  import { ACTION_WORDS, AMENITIES, EVENT_WORDS, STATUS_WORDS, amenityWords, problemWords } from "./stopWords";
+  import SiteSurvey, { type SurveyDraft } from "./SiteSurvey.svelte";
+  import { ACTION_WORDS, EVENT_WORDS, SITE_GROUPS, STATUS_WORDS, amenityWords, answerWords, problemWords, refWords, siteWords } from "./stopWords";
 
   let {
     stopId,
@@ -24,6 +28,11 @@
     refusals,
     point,
     onpoint,
+    onlocate,
+    questions,
+    draft,
+    ondraft,
+    onsurvey,
     onevent,
     oncorrect,
     onmove,
@@ -41,6 +50,14 @@
     point: { lat: number; lon: number } | null;
     /// A point typed in the move form (a map click comes by the map).
     onpoint: (lat: number, lon: number) => void;
+    /// The device's own fix, for the move's point (the host's).
+    onlocate?: () => Promise<{ lat: number; lon: number; accuracy: number }>;
+    /// What a survey asks (cap-stops `questions`), the survey this device
+    /// kept for the stop, and where a survey's draft and its save go.
+    questions: { site: SiteQuestion[]; amenities: string[] };
+    draft: SurveyDraft | null;
+    ondraft: (draft: SurveyDraft | null) => void;
+    onsurvey: (event: Event, done: string) => void;
     onevent: (event: Event, done: string) => void;
     oncorrect: (index: number, event: Event | null, done: string) => void;
     onmove: (start: boolean) => void;
@@ -50,6 +67,16 @@
   const s = $derived(card.stop);
   const name = $derived(s?.name || card.events.find((e) => e.name)?.name || stopId);
   const amenities = $derived(Object.entries(s?.amenities ?? {}));
+  const siteGroups = $derived.by(() => {
+    const site = s?.site ?? {};
+    const named = new Set(SITE_GROUPS.flatMap((g) => g.keys));
+    const groups = SITE_GROUPS.map((g) => ({ title: g.title, rows: g.keys.filter((k) => site[k]).map((k) => [k, site[k]] as [string, string]) }));
+    const other = Object.entries(site).filter(([k, v]) => v && !named.has(k));
+    return [...groups, { title: "Other", rows: other }].filter((g) => g.rows.length);
+  });
+  const refs = $derived(Object.entries(s?.refs ?? {}).filter(([, v]) => v));
+  /// A list answer in words; a written one as written.
+  const answerOf = (key: string, v: string) => (questions.site.find((q) => q.key === key)?.answer.kind === "one_of" ? answerWords(v) : v);
   const yesNo = (v: boolean | undefined) => (v == null ? "not recorded" : v ? "yes" : "no");
 
   /// The open form: a lifecycle event, "move", "details", or "fix-<i>".
@@ -72,7 +99,7 @@
       dName = s?.name ?? "";
       dCode = s?.code ?? "";
       dWheelchair = s?.wheelchair == null ? "" : s.wheelchair ? "yes" : "no";
-      dAmenities = Object.fromEntries(AMENITIES.map(([k]) => [k, s?.amenities?.[k] == null ? "" : s.amenities[k] ? "yes" : "no"]));
+      dAmenities = Object.fromEntries(questions.amenities.map((k) => [k, s?.amenities?.[k] == null ? "" : s.amenities[k] ? "yes" : "no"]));
     }
     if (which.startsWith("fix-")) {
       const e = card.events[Number(which.slice(4))];
@@ -111,7 +138,7 @@
     const was = s?.wheelchair == null ? "" : s.wheelchair ? "yes" : "no";
     if (dWheelchair && dWheelchair !== was) details.wheelchair = dWheelchair === "yes";
     const amen: Record<string, boolean> = {};
-    for (const [k] of AMENITIES) {
+    for (const k of questions.amenities) {
       const now = dAmenities[k];
       const before = s?.amenities?.[k] == null ? "" : s.amenities[k] ? "yes" : "no";
       if (now && now !== before) amen[k] = now === "yes";
@@ -141,7 +168,14 @@
     if (e.name && e.event === "changed") parts.push(`name "${e.name}"`);
     if (e.code && e.event === "changed") parts.push(`code ${e.code}`);
     if (e.wheelchair != null && e.event === "changed") parts.push(`wheelchair boarding ${yesNo(e.wheelchair)}`);
+    if (e.surveyed_by) {
+      const n = Object.keys(e.site ?? {}).length + Object.keys(e.amenities ?? {}).length + Object.keys(e.refs ?? {}).length;
+      parts.push(`by ${e.surveyed_by}: ${n} answer${n === 1 ? "" : "s"} recorded`);
+      return parts.join(", ");
+    }
     for (const [k, v] of Object.entries(e.amenities ?? {})) parts.push(`${amenityWords(k).toLowerCase()} ${v ? "there" : "not there"}`);
+    for (const [k, v] of Object.entries(e.site ?? {})) parts.push(`${siteWords(k).toLowerCase()} ${answerOf(k, v)}`);
+    for (const [k, v] of Object.entries(e.refs ?? {})) parts.push(`${refWords(k)} ${v}`);
     return parts.join(", ");
   }
 
@@ -179,6 +213,22 @@
     {:else}
       <p class="muted">Nothing recorded.</p>
     {/if}
+    <h3>The site</h3>
+    <p class="muted small" data-testid="stop-surveyed">
+      {s.surveyed_by ? `Last surveyed ${s.surveyed_on ? `on ${s.surveyed_on} ` : ""}by ${s.surveyed_by}.` : "Never surveyed."}
+    </p>
+    {#each siteGroups as g (g.title)}
+      <h4>{g.title}</h4>
+      <dl class="site" data-testid="stop-site">
+        {#each g.rows as [k, v] (k)}<dt>{siteWords(k)}</dt><dd>{answerOf(k, v)}</dd>{/each}
+      </dl>
+    {/each}
+    {#if refs.length}
+      <h4>Ids in other systems</h4>
+      <dl class="site" data-testid="stop-refs">
+        {#each refs as [k, v] (k)}<dt>{refWords(k)}</dt><dd>{v}</dd>{/each}
+      </dl>
+    {/if}
   {/if}
 
   <h3>Routes that stop here</h3>
@@ -198,11 +248,15 @@
       {#if s}
         <button type="button" class:on={form === "move"} disabled={busy} onclick={() => open("move")} data-testid="action-move">Move</button>
         <button type="button" class:on={form === "details"} disabled={busy} onclick={() => open("details")} data-testid="action-details">Change details</button>
+        <button type="button" class:on={form === "survey"} disabled={busy} onclick={() => open("survey")} data-testid="action-survey">{draft ? "Survey (draft)" : "Survey"}</button>
       {/if}
     </div>
   {/if}
 
-  {#if form && !form.startsWith("fix-")}
+  {#if form === "survey"}
+    <SiteSurvey stop={s} {questions} {date} {busy} {draft} {ondraft}
+      onsave={(e, done) => ((form = ""), onsurvey(e, done))} oncancel={() => (form = "")} />
+  {:else if form && !form.startsWith("fix-")}
     <form
       class="edit"
       data-testid="stop-form"
@@ -214,7 +268,7 @@
       }}
     >
       {#if form === "move"}
-        <PointFields {point} {onpoint} testid="move-point" />
+        <PointFields {point} {onpoint} {onlocate} testid="move-point" />
       {/if}
       <label>From <input type="date" bind:value={on} required data-testid="form-on" /></label>
       {#if canUntil(form)}
@@ -229,8 +283,8 @@
         </label>
         <fieldset>
           <legend>At the stop</legend>
-          {#each AMENITIES as [k, label] (k)}
-            <label>{label}
+          {#each questions.amenities as k (k)}
+            <label>{amenityWords(k)}
               <select bind:value={dAmenities[k]} data-testid="form-amenity-{k}"><option value="">not recorded</option><option value="yes">there</option><option value="no">not there</option></select>
             </label>
           {/each}
@@ -255,7 +309,7 @@
     {#each card.events as e, i (i)}
       <li data-testid="stop-event">
         <span class="when">{e.on ?? "before records"}</span>
-        <span>{EVENT_WORDS[e.event] ?? e.event}{what(e) ? ` ${what(e)}` : ""}</span>
+        <span>{e.surveyed_by && e.event === "changed" ? "Surveyed" : (EVENT_WORDS[e.event] ?? e.event)}{what(e) ? ` ${what(e)}` : ""}</span>
         {#if e.note}<span class="muted">— {e.note}</span>{/if}
         <button type="button" class="link" disabled={busy} onclick={() => open(`fix-${i}`)} data-testid="fix-{i}">Fix</button>
         {#if form === `fix-${i}`}
@@ -292,6 +346,8 @@
   .status.planned, .status.permitted, .status.built { color: var(--accent); }
   dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.2rem 0.8rem; margin: 0.4rem 0; }
   dt { color: var(--muted); }
+  h4 { font-size: 0.85rem; margin: 0.5rem 0 0.15rem; color: var(--muted); font-weight: 600; }
+  .site { margin: 0 0 0.3rem; }
   dd { margin: 0; }
   .amenities { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.2rem 0.8rem; }
   .amenities .absent { color: var(--muted); }

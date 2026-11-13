@@ -60,26 +60,118 @@ const PROBLEMS: Record<string, string> = {
   bad_point: "the location is not on the earth",
   unknown_stop: "it names a stop that is not recorded",
   replaces_itself: "a stop cannot replace itself",
+  bad_answer: "a survey answer is not one the question takes",
 };
 
 export function problemWords(kind: string): string {
   return PROBLEMS[kind] ?? kind.replaceAll("_", " ");
 }
 
-/// The core amenity names (D-154, transit-stops `AMENITIES`) as a
-/// person reads them.
-export const AMENITIES: [string, string][] = [
-  ["shelter", "Shelter"],
-  ["bench", "Bench"],
-  ["bin", "Garbage can"],
-  ["lit", "Lighting"],
-  ["departures_board", "Printed schedule"],
-  ["passenger_information_display", "Real-time sign"],
-  ["bicycle_parking", "Bike rack"],
-  ["boarding_pad", "Boarding pad"],
-  ["tactile_paving", "Tactile paving"],
-];
+/// The amenity names (D-154; the list a page offers is cap-stops
+/// `questions`') as a person reads them.
+const AMENITY_WORDS: Record<string, string> = {
+  shelter: "Shelter",
+  bench: "Bench",
+  bin: "Garbage can",
+  lit: "Lighting",
+  departures_board: "Printed schedule",
+  passenger_information_display: "Real-time sign",
+  bicycle_parking: "Bike rack",
+  boarding_pad: "Front door pad",
+  tactile_paving: "Tactile paving",
+  rear_boarding_pad: "Rear door pad",
+  seat: "Seat (not a bench)",
+  post: "Sign post",
+};
 
 export function amenityWords(name: string): string {
-  return AMENITIES.find(([k]) => k === name)?.[1] ?? name.replaceAll("_", " ");
+  return AMENITY_WORDS[name] ?? plain(name);
+}
+
+/// A name or an answer with no words of its own, readable.
+function plain(name: string): string {
+  const t = name.replaceAll(":", " ").replaceAll("_", " ");
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/// The site questions (D-158; the questions and their answers are
+/// cap-stops `questions`') as the worksheet words them, grouped as it
+/// groups them. A question the library adds and no group names shows
+/// under "Other".
+const SITE_WORDS: Record<string, string> = {
+  on_street: "On street",
+  cross_street: "Cross street",
+  city: "City",
+  county: "County",
+  lanes: "Traffic lanes",
+  speed_limit_mph: "Speed limit (mph)",
+  direction: "Route direction",
+  side: "Side of street",
+  position: "Near or far side",
+  land_use: "Land use",
+  shoulder: "Shoulder",
+  surface: "Stop surface",
+  sidewalk: "Sidewalk",
+  "sidewalk:surface": "Sidewalk surface",
+  "sidewalk:connection": "Sidewalk connection",
+  ada: "ADA",
+  curb: "Curb",
+  curb_cut: "Curb cut",
+  street_light: "Street light",
+  turnout: "Turnout",
+  crossing: "Pedestrian crossing",
+  advertising: "Advertising",
+  "light:source": "Light source",
+  "light:type": "Light type",
+  "post:type": "Post type",
+  "sign:type": "Sign type",
+  "shelter:type": "Shelter type",
+  "kiosk:type": "Schedule kiosk type",
+  "bin:type": "Garbage can type",
+  "seat:type": "Seating type",
+  landmark: "Landmark",
+  remarks: "Remarks",
+};
+
+export const SITE_GROUPS: { title: string; keys: string[] }[] = [
+  { title: "Location", keys: ["on_street", "cross_street", "city", "county", "direction", "side", "position", "land_use"] },
+  { title: "Street", keys: ["lanes", "speed_limit_mph", "shoulder", "turnout", "crossing", "street_light"] },
+  { title: "Surface and access", keys: ["surface", "sidewalk", "sidewalk:surface", "sidewalk:connection", "ada", "curb", "curb_cut"] },
+  { title: "Fixtures", keys: ["post:type", "sign:type", "shelter:type", "kiosk:type", "seat:type", "bin:type", "light:source", "light:type", "advertising"] },
+  { title: "Notes", keys: ["landmark", "remarks"] },
+];
+
+export function siteWords(key: string): string {
+  return SITE_WORDS[key] ?? plain(key);
+}
+
+const ANSWER_WORDS: Record<string, string> = {
+  counterclockwise: "Counter clockwise",
+  one_direction: "1 direction",
+  within_200ft: "Within 200 ft of the stop",
+  within_50ft: "Within 50 ft",
+  at_stop: "At the stop",
+  other_source: "Other source",
+  driveway_close: "Driveway cut close",
+  right_turn_only: "Right turn only",
+  mid_block: "Mid-block",
+  ada: "ADA",
+};
+
+export function answerWords(value: string): string {
+  return ANSWER_WORDS[value] ?? plain(value);
+}
+
+/// The other systems a stop or its parts are named in (D-160), as the
+/// worksheets name them; the agency may add its own.
+export const REFS: [string, string][] = [
+  ["sign", "Sign ID"],
+  ["tms", "TMS"],
+  ["hp", "HP"],
+  ["gis", "GIS"],
+  ["shelter", "Shelter ID"],
+];
+
+export function refWords(name: string): string {
+  return REFS.find(([k]) => k === name)?.[1] ?? plain(name);
 }

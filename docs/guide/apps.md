@@ -72,8 +72,12 @@ everything that has happened to it. Record a change on the day it
 happens: a new stop, its next step, a suspension and the return, a
 move, or new details. Place a new stop, or move one, by clicking the
 map, or type its latitude and longitude as measured at the stop. A
-typed point is saved exactly as typed. A change entered wrong is
-corrected, not added to. Schedules read these stops but never change them.
+typed point is saved exactly as typed. On a phone at the stop, "Use
+my location" gives a starting point. Survey a stop on a phone or
+tablet: the questions on the paper stop worksheet, what is at the
+stop, and its numbers in other systems. A survey you have not
+finished stays on the device until you save it. A change entered
+wrong is corrected, not added to. Schedules read these stops but never change them.
 
 **Server:** needed.
 

@@ -21,8 +21,12 @@
 //! canonical as it stands — stops by id, each stop's events in the
 //! date order its writer gave — so its bytes, and so its hash, do not
 //! depend on how a writer ordered its keys. What this repo does not
-//! know (another tool's field, the agency's own amenity names) is kept
-//! through a read and a write.
+//! know (another tool's field, the agency's own amenity names and site
+//! questions) is kept through a read and a write.
+//!
+//! A stop's site survey (D-158) is details like any other: the answers
+//! to the site questions ([`SITE`]), its references to other systems
+//! (D-160), and on the event that records it, who surveyed.
 //!
 //! The stops document sits beside the plans: every plan refers to a
 //! stop by its id, and a fork never copies it (D-147). This crate
@@ -113,6 +117,12 @@ pub struct Event {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub note: Option<String>,
+    /// Who surveyed the stop, as they gave their name: the event records
+    /// a site survey (D-158), dated the day of the survey. Only on an
+    /// event that sets details (a stage, `changed`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub surveyed_by: Option<String>,
     /// Fields this repo does not know, kept as written.
     #[serde(flatten)]
     #[ts(skip)]
@@ -285,6 +295,90 @@ pub struct Details {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(optional, as = "Option<BTreeMap<String, bool>>")]
     pub amenities: BTreeMap<String, bool>,
+    /// The site as surveyed (D-158): each question's answer by name,
+    /// absent not recorded. The core questions ([`SITE`]) are C-TRAN's
+    /// Service Stop Worksheet's, each answer checked against its kind;
+    /// the agency's own questions are kept and not checked. What a
+    /// survey says the agency's other data may contradict (D-161) — both
+    /// are kept as given.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(optional, as = "Option<BTreeMap<String, String>>")]
+    pub site: BTreeMap<String, String>,
+    /// The stop and its parts in other systems (D-160): each system or
+    /// part by name, its id there (`sign` — the Sign ID, `tms`, `hp`,
+    /// `gis`, `shelter`, …). Kept and not checked.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(optional, as = "Option<BTreeMap<String, String>>")]
+    pub refs: BTreeMap<String, String>,
+}
+
+/// The kind of answer a site question takes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+#[serde(tag = "kind", content = "answers", rename_all = "snake_case")]
+pub enum Answer {
+    /// One answer from its list.
+    OneOf(#[ts(type = "Array<string>")] &'static [&'static str]),
+    /// A whole number ("0", "4", "35").
+    Number,
+    /// Any text.
+    Text,
+}
+
+const YES_NO: &[&str] = &["yes", "no"];
+
+/// The core site questions (D-158): C-TRAN's Service Stop Worksheet, in
+/// its order. What the worksheet asks that the document already holds
+/// elsewhere is there: the stop number (`code`), the point, lift access
+/// (`wheelchair`), and what is at the stop (the amenities — a front and
+/// rear door pad, a bench and a seat, a shelter, a post, a schedule
+/// kiosk, a garbage can, lighting); a part's type is a written answer
+/// here and its id a reference (`refs`). What a schedule says — the
+/// routes, a time point, the previous and next stop — is the schedule's,
+/// never asked.
+pub const SITE: [(&str, Answer); 32] = [
+    ("on_street", Answer::Text),
+    ("cross_street", Answer::Text),
+    ("city", Answer::Text),
+    ("county", Answer::Text),
+    ("lanes", Answer::Number),
+    ("speed_limit_mph", Answer::Number),
+    ("direction", Answer::OneOf(&["northbound", "southbound", "eastbound", "westbound", "clockwise", "counterclockwise"])),
+    ("side", Answer::OneOf(&["north", "south", "east", "west"])),
+    ("position", Answer::OneOf(&["near_side", "far_side", "opposite", "mid_block"])),
+    ("land_use", Answer::OneOf(&["residential", "commercial", "public", "school", "hospital", "mixed"])),
+    ("shoulder", Answer::OneOf(&["improved", "unimproved", "none"])),
+    ("surface", Answer::OneOf(&["asphalt", "concrete", "brick", "gravel", "dirt"])),
+    ("sidewalk", Answer::OneOf(YES_NO)),
+    ("sidewalk:surface", Answer::Text),
+    ("sidewalk:connection", Answer::OneOf(&["continuous", "one_direction", "isolated", "none"])),
+    ("ada", Answer::OneOf(YES_NO)),
+    ("curb", Answer::OneOf(YES_NO)),
+    ("curb_cut", Answer::OneOf(&["at_all_corners", "at_stop_corners", "driveway_close", "none"])),
+    ("street_light", Answer::OneOf(&["at_stop", "within_50ft", "other_source", "none"])),
+    ("turnout", Answer::OneOf(&["yes", "no", "right_turn_only"])),
+    ("crossing", Answer::OneOf(&["within_200ft", "none"])),
+    ("advertising", Answer::OneOf(YES_NO)),
+    ("light:source", Answer::OneOf(&["commercial", "solar"])),
+    ("light:type", Answer::Text),
+    ("post:type", Answer::Text),
+    ("sign:type", Answer::Text),
+    ("shelter:type", Answer::Text),
+    ("kiosk:type", Answer::Text),
+    ("bin:type", Answer::Text),
+    ("seat:type", Answer::Text),
+    ("landmark", Answer::Text),
+    ("remarks", Answer::Text),
+];
+
+impl Answer {
+    fn takes(&self, value: &str) -> bool {
+        match self {
+            Answer::OneOf(list) => list.contains(&value),
+            Answer::Number => !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()),
+            Answer::Text => true,
+        }
+    }
 }
 
 /// The core amenity names (D-154). Seven are OpenStreetMap's keys on a
@@ -294,8 +388,10 @@ pub struct Details {
 /// `tactile_paving`. OpenStreetMap has no key on a stop for the other
 /// two, so they are this document's: `bicycle_parking` (a bike rack,
 /// OpenStreetMap's name for one standing on its own) and
-/// `boarding_pad`.
-pub const AMENITIES: [&str; 9] = [
+/// `boarding_pad` (the front door's). The site survey (D-158) adds
+/// three of the agency's: `rear_boarding_pad`, `seat` (a seat that is
+/// not a bench, such as a Simme Seat), and `post` (the sign's own post).
+pub const AMENITIES: [&str; 12] = [
     "shelter",
     "bench",
     "bin",
@@ -305,6 +401,9 @@ pub const AMENITIES: [&str; 9] = [
     "bicycle_parking",
     "boarding_pad",
     "tactile_paving",
+    "rear_boarding_pad",
+    "seat",
+    "post",
 ];
 
 impl Details {
@@ -335,6 +434,8 @@ impl Details {
         set(&mut self.timezone, &next.timezone);
         set(&mut self.street_access, &next.street_access);
         self.amenities.extend(next.amenities.iter().map(|(k, v)| (k.clone(), *v)));
+        self.site.extend(next.site.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.refs.extend(next.refs.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
 }
 
@@ -387,6 +488,14 @@ pub struct StopOn {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub note: Option<String>,
+    /// The date and the surveyor of the last survey (D-158); none if the
+    /// stop was never surveyed (an undated survey has no date).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub surveyed_on: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub surveyed_by: Option<String>,
     pub lat: f64,
     pub lon: f64,
     #[serde(flatten)]
@@ -452,6 +561,9 @@ pub enum Problem {
     /// A point off the earth (latitude beyond ±90°, longitude beyond
     /// ±180°, or not a number).
     BadPoint,
+    /// A core site question (D-158) answered outside its kind: an
+    /// answer not on its list, or a count that is not a whole number.
+    BadAnswer { key: String, value: String },
     /// A consolidation naming a stop the document does not hold.
     UnknownStop { stop: String },
     /// A consolidation naming the stop itself.
@@ -475,6 +587,7 @@ impl fmt::Display for Refusal {
             Problem::Misplaced { field } => format!("carries {field}, which its type does not set"),
             Problem::NoPoint => "lacks a whole point (lat and lon)".into(),
             Problem::BadPoint => "has a point off the earth".into(),
+            Problem::BadAnswer { key, value } => format!("answers {key} with {value:?}, which it does not take"),
             Problem::UnknownStop { stop } => format!("replaces {stop:?}, which is not in the document"),
             Problem::ReplacesItself => "replaces itself".into(),
         };
@@ -524,6 +637,8 @@ fn fold(id: &str, events: &[Event], date: NaiveDate) -> Option<StopOn> {
                 since: None,
                 until: None,
                 note: None,
+                surveyed_on: None,
+                surveyed_by: None,
                 lat: f64::NAN,
                 lon: f64::NAN,
                 details: Details::default(),
@@ -541,6 +656,10 @@ fn fold(id: &str, events: &[Event], date: NaiveDate) -> Option<StopOn> {
             s.lon = lon;
         }
         s.details.apply(&e.details);
+        if e.surveyed_by.is_some() {
+            s.surveyed_on.clone_from(&e.on);
+            s.surveyed_by.clone_from(&e.surveyed_by);
+        }
     }
     state
 }
@@ -739,6 +858,14 @@ fn check_stop(id: &str, events: &[Event], ids: &BTreeSet<&str>) -> Vec<Refusal> 
         }
         if !e.details.is_empty() && !e.event.sets_details() {
             refuse(Problem::Misplaced { field: "details".into() });
+        }
+        if e.surveyed_by.is_some() && !e.event.sets_details() {
+            refuse(Problem::Misplaced { field: "surveyed_by".into() });
+        }
+        for (key, value) in &e.details.site {
+            if SITE.iter().any(|(k, a)| k == key && !a.takes(value)) {
+                refuse(Problem::BadAnswer { key: key.clone(), value: value.clone() });
+            }
         }
         if !e.replaces.is_empty() {
             if !begins {

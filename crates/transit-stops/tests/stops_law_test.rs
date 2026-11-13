@@ -104,7 +104,20 @@ fn oracle(events: &[Event], id: &str, d: NaiveDate) -> Option<StopOn> {
         let v = live.iter().rev().find_map(|e| e.details.amenities.get(k)).unwrap();
         details.amenities.insert(k.clone(), *v);
     }
+    // site answers and references (D-158, D-160): by name, the last
+    // active event's
+    let mut site: BTreeMap<String, String> = BTreeMap::new();
+    let mut refs: BTreeMap<String, String> = BTreeMap::new();
+    for e in &live {
+        site.extend(e.details.site.iter().map(|(k, v)| (k.clone(), v.clone())));
+        refs.extend(e.details.refs.iter().map(|(k, v)| (k.clone(), v.clone())));
+    }
+    details.site = site;
+    details.refs = refs;
+    let survey = live.iter().rev().find(|e| e.surveyed_by.is_some());
     Some(StopOn {
+        surveyed_on: survey.and_then(|e| e.on.clone()),
+        surveyed_by: survey.and_then(|e| e.surveyed_by.clone()),
         stop_id: id.to_string(),
         status,
         since: by.on.clone(),
@@ -146,7 +159,7 @@ fn arb_step() -> impl Strategy<Value = Step> {
         (0usize..4).prop_map(Step::Stage),
         proptest::option::of(1u32..60).prop_map(Step::Suspend),
         (proptest::option::of(1u32..60), -500i32..500).prop_map(|(u, d)| Step::Move(u, d)),
-        (0u8..4, any::<bool>()).prop_map(|(f, b)| Step::Change(f, b)),
+        (0u8..6, any::<bool>()).prop_map(|(f, b)| Step::Change(f, b)),
         Just(Step::Retire),
     ]
 }
@@ -195,18 +208,30 @@ fn arb_history() -> impl Strategy<Value = Vec<Event>> {
                     },
                     Step::Change(f, b) => {
                         let mut details = Details::default();
+                        let mut surveyor: Option<&str> = None;
                         match f {
                             0 => details.name = Some(format!("Stop {at}")),
                             1 => details.wheelchair = Some(b),
                             2 => {
                                 details.amenities.insert("shelter".into(), b);
                             }
-                            _ => {
+                            3 => {
                                 details.amenities.insert("bench".into(), b);
                                 details.code = Some(format!("{at}"));
                             }
+                            4 => {
+                                // a survey: answers by name, and who surveyed
+                                details.site.insert("surface".into(), if b { "concrete" } else { "gravel" }.into());
+                                if b {
+                                    details.site.insert("landmark".into(), format!("pole {at}"));
+                                }
+                                surveyor = Some(if b { "A. Lee" } else { "R. Ortiz" });
+                            }
+                            _ => {
+                                details.refs.insert(if b { "gis" } else { "sign" }.into(), format!("R-{at}"));
+                            }
                         }
-                        Event { details, ..event(EventKind::Changed, Some(at)) }
+                        Event { details, surveyed_by: surveyor.map(String::from), ..event(EventKind::Changed, Some(at)) }
                     }
                     Step::Retire => event(EventKind::Retired, Some(at)),
                 };

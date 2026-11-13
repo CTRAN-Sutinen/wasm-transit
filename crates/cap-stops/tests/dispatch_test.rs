@@ -223,3 +223,32 @@ fn the_export_carries_the_history_and_the_import_records_a_feeds_differences() {
     let changed = ok(json!({"op": "import_events", "stops_hash": moved["stops_hash"], "network_hash": renamed_hash, "on": "2026-10-01"}));
     assert_eq!(changed["added"], json!([{"stop": "A", "event": {"on": "2026-10-01", "event": "changed", "name": "A Street Station"}}]));
 }
+
+/// What a survey asks (D-158) is the library's: every core question in
+/// its order with its kind of answer, and the core amenity names — and
+/// an answer outside its kind is refused at add_event, named.
+#[test]
+fn questions_are_the_librarys_and_a_bad_answer_is_refused() {
+    let q = ok(json!({ "op": "questions" }));
+    let keys: Vec<&str> = q["site"].as_array().unwrap().iter().map(|x| x["key"].as_str().unwrap()).collect();
+    let core: Vec<&str> = transit_stops::SITE.iter().map(|(k, _)| *k).collect();
+    assert_eq!(keys, core);
+    let position = q["site"].as_array().unwrap().iter().find(|x| x["key"] == "position").unwrap();
+    assert_eq!(position["answer"], json!({ "kind": "one_of", "answers": ["near_side", "far_side", "opposite", "mid_block"] }));
+    let lanes = q["site"].as_array().unwrap().iter().find(|x| x["key"] == "lanes").unwrap();
+    assert_eq!(lanes["answer"], json!({ "kind": "number" }));
+    assert_eq!(q["amenities"].as_array().unwrap().len(), transit_stops::AMENITIES.len());
+
+    let loaded = ok(json!({ "op": "load_stops", "stops": sample() }));
+    let hash = loaded["stops_hash"].clone();
+    let survey = |position: &str| {
+        ok(json!({ "op": "add_event", "stops_hash": hash, "stop_id": "6124",
+            "event": { "on": "2026-02-02", "event": "changed", "surveyed_by": "R. Ortiz",
+                "site": { "position": position, "x_bike_lane": "painted" }, "refs": { "sign": "S-1180" } } }))
+    };
+    let good = survey("far_side");
+    assert_eq!(good["refusals"], json!([]));
+    let bad = survey("behind");
+    assert_eq!(bad["refusals"][0]["problem"], json!({ "kind": "bad_answer", "key": "position", "value": "behind" }));
+    assert!(bad["stops_hash"].is_null());
+}

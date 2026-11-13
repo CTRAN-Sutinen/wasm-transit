@@ -44,6 +44,8 @@ fn opening(stop: &Stop) -> Event {
             timezone: info.timezone.clone(),
             street_access: info.street_access,
             amenities: BTreeMap::new(),
+            site: BTreeMap::new(),
+            refs: BTreeMap::new(),
         },
         ..Event::default()
     }
@@ -64,8 +66,8 @@ pub fn read_records(network: &Network, stops: &Stops, on: NaiveDate) -> Network 
     next
 }
 
-/// A stop's record in the network's terms (amenities are the stops
-/// document's alone).
+/// A stop's record in the network's terms (amenities, the site survey,
+/// and references are the stops document's alone).
 fn record(on: &StopOn) -> Stop {
     let d = &on.details;
     Stop {
@@ -445,5 +447,7 @@ fn differing(now: &Details, feed: &Details) -> Details {
         timezone: pick(&now.timezone, &feed.timezone),
         street_access: pick(&now.street_access, &feed.street_access),
         amenities: BTreeMap::new(),
+        site: BTreeMap::new(),
+        refs: BTreeMap::new(),
     }
 }

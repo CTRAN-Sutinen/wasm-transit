@@ -11,6 +11,7 @@
     point,
     busy,
     onpoint,
+    onlocate,
     onsave,
     oncancel,
   }: {
@@ -19,6 +20,8 @@
     busy: boolean;
     /// A point typed in the fields (a map click comes by the map).
     onpoint: (lat: number, lon: number) => void;
+    /// The device's own fix (the host's).
+    onlocate?: () => Promise<{ lat: number; lon: number; accuracy: number }>;
     onsave: (stopId: string, event: Event) => void;
     oncancel: () => void;
   } = $props();
@@ -52,7 +55,7 @@
   }}
 >
   <h2>New stop</h2>
-  <PointFields {point} {onpoint} testid="new-point" />
+  <PointFields {point} {onpoint} {onlocate} testid="new-point" />
   <label>Id <input type="text" bind:value={id} required placeholder="A new id" data-testid="new-id" /></label>
   <label>Name <input type="text" bind:value={name} data-testid="new-name" /></label>
   <label>Code <input type="text" bind:value={code} placeholder="The number on the sign" data-testid="new-code" /></label>

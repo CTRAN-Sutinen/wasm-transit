@@ -18,7 +18,8 @@
 //! not in service on its dates. GTFS out and in carry the stops'
 //! history (D-150, D-151): `export_versions` gives cap-network's export
 //! one stop per version, and `import_events` records a feed's
-//! differences as events.
+//! differences as events. `questions` answers what a site survey asks
+//! (D-158): the core site questions and amenity names.
 //! The domain code lives in the shared `transit-stops` library; the
 //! module writes nothing.
 
@@ -28,7 +29,15 @@ use cap_abi::kernel::{NETWORK, STOPS};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub use transit_stops::{Event, Refusal, Status, StatusCount, StopOn, Stops};
+pub use transit_stops::{Answer, Event, Refusal, Status, StatusCount, StopOn, Stops};
+
+/// One core site question (D-158) and the kind of answer it takes.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "cap_stops/")]
+pub struct SiteQuestion {
+    pub key: String,
+    pub answer: Answer,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "cap_stops/")]
@@ -110,6 +119,10 @@ pub enum Request {
     /// added, the stops the feed does not list, and those whose
     /// difference does not fit their history.
     ImportEvents { stops_hash: String, network_hash: String, on: String },
+    /// What a survey asks (D-158): the core site questions in the
+    /// worksheet's order, each with the kind of answer it takes, and
+    /// the core amenity names (D-154). Reads no document.
+    Questions {},
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -137,6 +150,7 @@ pub enum Response {
         unlisted: Vec<String>,
         unapplied: Vec<String>,
     },
+    Questions { site: Vec<SiteQuestion>, amenities: Vec<String> },
 }
 
 fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
@@ -147,6 +161,10 @@ fn parse_date(s: &str) -> Result<chrono::NaiveDate, String> {
 /// are `{"error": ...}`, never panics — a total seam.
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
+        Request::Questions {} => Ok(Response::Questions {
+            site: transit_stops::SITE.iter().map(|(key, answer)| SiteQuestion { key: key.to_string(), answer: answer.clone() }).collect(),
+            amenities: transit_stops::AMENITIES.iter().map(|a| a.to_string()).collect(),
+        }),
         Request::Validate { stops } => {
             use transit_version::Versioned;
             cap_abi::speaks(Stops::KIND, stops.schema_version(), Stops::READS)?;

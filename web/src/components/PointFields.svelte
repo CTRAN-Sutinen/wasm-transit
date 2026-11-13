@@ -5,16 +5,42 @@
   /// them, and a whole pair of numbers typed here moves the marker.
   /// Whether a point is on the earth is the receive path's to say
   /// (transit-stops refuses one that is not), not these fields'.
-  /// A RENDER component.
+  /// "Use my location" fills them from the device's fix (the host's),
+  /// a start at the stop and never the record. A RENDER component.
   let {
     point,
     onpoint,
+    onlocate,
     testid,
   }: {
     point: { lat: number; lon: number } | null;
     onpoint: (lat: number, lon: number) => void;
+    /// The device's own fix (the host's): a start at the stop, shown
+    /// with how far off it may be; the typed point is the record.
+    onlocate?: () => Promise<{ lat: number; lon: number; accuracy: number }>;
     testid: string;
   } = $props();
+
+  let fix = $state("");
+  let locating = $state(false);
+
+  async function here() {
+    if (!onlocate) return;
+    locating = true;
+    fix = "Finding this device's location…";
+    try {
+      const p = await onlocate();
+      // seven decimals: about 1 cm, finer than any device's fix
+      lat = String(+p.lat.toFixed(7));
+      lon = String(+p.lon.toFixed(7));
+      onpoint(+lat, +lon);
+      fix = `This device's location, good to about ${Math.round(p.accuracy)} m. Type the measured point if you have one.`;
+    } catch (e) {
+      fix = `No location: ${(e as Error).message}.`;
+    } finally {
+      locating = false;
+    }
+  }
 
   let lat = $state("");
   let lon = $state("");
@@ -43,7 +69,10 @@
   <label>Longitude
     <input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="decimal degrees" value={lon} oninput={(e) => { lon = e.currentTarget.value; typed(); }} data-testid="{testid}-lon" />
   </label>
-  <p class="muted small">{point ? "Click the map, or type the measured point." : "Click the map where the stop goes, or type its measured point."}</p>
+  {#if onlocate}
+    <button type="button" class="here" disabled={locating} onclick={here} data-testid="{testid}-here">Use my location</button>
+  {/if}
+  <p class="muted small" data-testid="{testid}-fix">{fix || (point ? "Click the map, or type the measured point." : "Click the map where the stop goes, or type its measured point.")}</p>
 </fieldset>
 
 <style>
@@ -52,5 +81,6 @@
   label { display: flex; justify-content: space-between; gap: 0.6rem; align-items: center; }
   input { flex: 1; min-width: 0; max-width: 12rem; font-variant-numeric: tabular-nums; }
   p { margin: 0; }
+  .here { align-self: flex-start; min-height: 2.25rem; padding: 0 0.8rem; }
   .small { font-size: 0.8rem; }
 </style>

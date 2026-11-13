@@ -563,9 +563,19 @@ transit-stops   THE stops document, beside the plans (D-147, D-153):
                 back by in_service, or never), moved, changed, retired
                 (the tombstone) — with the point, the
                 details (name, code, station, access, fare zone, …)
-                and the amenities (D-154: true, false, or absent for
+                the amenities (D-154: true, false, or absent for
                 not recorded; OpenStreetMap's bus-stop names where one
-                exists, the agency's own kept) set only by events.
+                exists, the agency's own kept), the site survey's
+                answers (`site`, D-158: each question's answer by
+                name; the core questions `SITE` are the Service Stop
+                Worksheet's, each answer checked against its kind —
+                one of a list, a whole number, or text — the agency's
+                own kept and not checked), and the stop's ids in other
+                systems and its parts' (`refs`, D-160: sign, TMS, HP,
+                GIS, shelter, …, not checked) set only by events. An
+                event that records a survey names its surveyor
+                (`surveyed_by`); a stop on a date says when it was
+                last surveyed and by whom.
                 Nothing in it means today: `stop_on` is a stop's
                 events applied in order up to a date, a temporary
                 suspended or moved applying until its `until`; `served`
@@ -685,7 +695,10 @@ cap-stops       The stops capability: what is a stop on a date?
                 on its first date, and the stops it visits not in
                 service over its period); export_versions and
                 import_events (GTFS out and in with the stops'
-                history).
+                history; amenities, site answers, and references are
+                the document's alone); questions (what a site survey
+                asks: the core site questions with the kind of answer
+                each takes, and the core amenity names).
                 transit-stops and transit-network's
                 `stop_record` are the libraries; the kernel's `stops`
                 kind registers a document only if validate would pass
@@ -825,6 +838,12 @@ reading **Because**.
 - **Because:** "Next: Monday 5:12 am" is what a rider at a stopped route needs; one weekly cycle covers every regular pattern.
 - **Rejected:** tomorrow only; until the calendar ends.
 - **Decided:** D-42.
+
+### A stop's site survey is typed answers beside its amenities (transit-stops `site`, `SITE`; stops `questions`)
+- **Holds:** the site survey — C-TRAN's Service Stop Worksheet, filled at the stop on a phone or tablet — is part of the stop's details: each question's answer by name, set by an event like any detail, the event naming its surveyor. A core question takes only an answer of its kind (one of its list, a whole number, or text); the agency's own questions are kept and not checked. A part's type (sign, post, shelter, kiosk, light, seat, garbage can) is a written answer, its id a reference (`refs`), as are the stop's ids in other systems (Sign ID, TMS, HP, GIS) — a type and an id on the stop, not records of their own. What a schedule says (the routes, a time point, the previous and next stop) is never asked: it is read from a schedule that serves the stop; a new stop's intended routes are its request's. The answers stay in this document: GTFS has no place for them, so the export and the import leave them alone, and a survey never splits a stop into versions. The page asks `questions` for the questions, so a question added here needs no page change.
+- **Because:** many answers are a choice from a list or a type, which yes/no amenities cannot hold, and widening amenities would change a decided shape; a map of named answers keeps the agency's own questions next to the core ones, as amenities do. Signs, posts, and shelters get records of their own only if they move between stops with histories of their own. A v1 reader keeps fields it does not know, so the new fields need no new version.
+- **Rejected:** typed values inside `amenities`; a separate survey document (the answers are facts about the stop and change by its events); asset records for each part.
+- **Decided:** D-158, D-160 (D-154 for amenities).
 
 ### Stop search is fuzzy on the stops' own names (directory `stops`)
 - **Holds:** typos and abbreviations match the names the feed gives; no authored aliases.

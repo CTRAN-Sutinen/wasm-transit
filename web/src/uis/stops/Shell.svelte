@@ -17,6 +17,10 @@
     correctEvent,
     newStop,
     retry,
+    readDraft,
+    keepDraft,
+    survey,
+    locate,
   } from "./host.svelte";
   import StopLifeMap from "../../components/StopLifeMap.svelte";
   import StopLifeList from "../../components/StopLifeList.svelte";
@@ -61,12 +65,14 @@
     </div>
     <aside class="side">
       {#if st.picking === "new"}
-        <NewStopForm date={readDate()} point={st.point} busy={st.busy} onpoint={picked} onsave={newStop} oncancel={() => startPicking("")} />
+        <NewStopForm date={readDate()} point={st.point} busy={st.busy} onpoint={picked} onlocate={locate} onsave={newStop} oncancel={() => startPicking("")} />
       {:else if st.open}
         {#if st.failed.Card}{@render failure("Card", "The stop")}
         {:else if st.card}
           <StopLifeCard stopId={st.open} card={st.card} served={st.served} date={readDate()} busy={st.busy} refusals={st.refusals}
-            point={st.point} onpoint={picked}
+            point={st.point} onpoint={picked} onlocate={locate}
+            questions={st.questions} draft={readDraft(st.open)} ondraft={(d) => keepDraft(st.open, d)}
+            onsurvey={(e, done) => survey(st.open, e, done)}
             onevent={(e, done) => addEvent(st.open, e, done)}
             oncorrect={(i, e, done) => correctEvent(st.open, i, e, done)}
             onmove={(start) => startPicking(start ? "move" : "")}
@@ -104,6 +110,9 @@
   .status { margin: 0 0 0 auto; color: var(--muted); font-size: 0.85rem; }
   .status.alert { color: var(--bad); }
   .body { display: grid; grid-template-columns: 1fr minmax(20rem, 28rem); min-height: 0; }
+  /* A survey is a long form: while one is open the side takes most of
+     the width, and the map keeps a strip to place the stop. */
+  .body:has(:global(.survey)) { grid-template-columns: minmax(16rem, 1fr) minmax(28rem, 62%); }
   .map { position: relative; min-height: 0; }
   .side { overflow: auto; padding: 0.9rem; border-left: 1px solid var(--line); }
   .refused { color: var(--bad); padding-left: 1rem; }

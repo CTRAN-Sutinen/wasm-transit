@@ -287,7 +287,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "stops",
         file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stop", "seed", "add_event", "correct_event", "read_records", "visit_warnings", "export_versions", "import_events"],
+        ops: &["validate", "stops_on", "stop", "seed", "add_event", "correct_event", "read_records", "visit_warnings", "export_versions", "import_events", "questions"],
         documents: &["stops", "network"],
         // The stops document is the host's (beside the plans, D-147):
         // validate answers its canonical bytes and hash, which the
@@ -1799,6 +1799,12 @@ fn example_for(
                     "added": imported.added, "unlisted": imported.unlisted, "unapplied": imported.unapplied } }),
             )
         }
+        ("stops", "questions") => (
+            json!({ "op": "questions" }),
+            json!({ "ok": { "op": "questions",
+                "site": transit_stops::SITE.iter().map(|(key, answer)| json!({ "key": key, "answer": answer })).collect::<Vec<_>>(),
+                "amenities": transit_stops::AMENITIES } }),
+        ),
         ("kernel", "load_work_rules") => {
             let rules = fixture_work_rules().checked().ok()?;
             let work_rules_hash = cap_abi::canonical_hash(&rules).ok()?;
