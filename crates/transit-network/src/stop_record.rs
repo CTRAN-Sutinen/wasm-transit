@@ -11,13 +11,13 @@
 //! apply on its dates, and [`stop_on`] answers it on a date. [`seed`]
 //! starts a stops document from a network's stops.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::NaiveDate;
 use transit_stops::{Details, Event, EventKind, Status, StopOn, Stops};
 
 use crate::places::{StopInfo, StopKind};
-use crate::{Network, Stop};
+use crate::{Network, NetworkWarning, Stop};
 
 /// A stops document from a network's stops: each stop one `opened`
 /// event with no date (no feed records a stop's opening), carrying its
@@ -173,4 +173,80 @@ pub fn stop_on(network: &Network, id: &str, date: NaiveDate) -> Option<StopOn> {
     }
     let held = Stops { stops: BTreeMap::from([(id.to_string(), stop.events.clone())]), ..Stops::default() };
     held.stop_on(id, date)
+}
+
+/// The stops not open on `date`: those whose events make them closed,
+/// proposed, retired, or not yet there. A stop with no events is open.
+pub fn unserved_on(network: &Network, date: NaiveDate) -> BTreeSet<&str> {
+    network
+        .stops
+        .iter()
+        .filter(|(_, s)| !s.events.is_empty())
+        .filter(|(id, _)| stop_on(network, id, date).is_none_or(|s| s.status != Status::Open))
+        .map(|(id, _)| id.as_str())
+        .collect()
+}
+
+/// What the planner is told about the stops' events (D-155): each
+/// pattern's first or last stop not served, and each pattern left with
+/// fewer than two served stops, over the dates it holds — a warning,
+/// never a refusal.
+pub fn served_warnings(network: &Network) -> Vec<NetworkWarning> {
+    let mut out = Vec::new();
+    for (pattern_id, pattern) in &network.patterns {
+        let stops: Vec<&str> = pattern.stops.iter().map(|ps| ps.stop.as_str()).collect();
+        let events: Vec<&Event> =
+            stops.iter().filter_map(|s| network.stops.get(*s)).flat_map(|s| s.events.iter()).collect();
+        if events.is_empty() || stops.len() < 2 {
+            continue;
+        }
+        let mut dates: Vec<NaiveDate> = events.iter().flat_map(|e| [parse(&e.on), parse(&e.until)]).flatten().collect();
+        dates.sort();
+        dates.dedup();
+        // the spans between the dates, each read on its first day (the
+        // one before the first date read the day before it)
+        let mut spans: Vec<(Option<NaiveDate>, Option<NaiveDate>, NaiveDate)> = Vec::new();
+        if let Some(first) = dates.first() {
+            spans.push((None, Some(*first), first.pred_opt().unwrap_or(*first)));
+        }
+        for (i, d) in dates.iter().enumerate() {
+            spans.push((Some(*d), dates.get(i + 1).copied(), *d));
+        }
+        let served = |stop: &str, d: NaiveDate| stop_on(network, stop, d).is_some_and(|s| s.status == Status::Open);
+        let mut found: Vec<(NetworkWarning, Option<NaiveDate>, Option<NaiveDate>)> = Vec::new();
+        let mut note = |w: NetworkWarning, from: Option<NaiveDate>, until: Option<NaiveDate>| {
+            // a span that continues the last one of the same warning
+            // widens it
+            if let Some(last) = found.iter_mut().rev().find(|(l, _, _)| *l == w) {
+                if last.2 == from {
+                    last.2 = until;
+                    return;
+                }
+            }
+            found.push((w, from, until));
+        };
+        for (from, until, on) in spans {
+            let first = stops[0];
+            let last = stops[stops.len() - 1];
+            for end in [first, last] {
+                if !served(end, on) {
+                    note(NetworkWarning::EndpointNotServed { pattern: pattern_id.clone(), stop: end.into(), from: None, until: None }, from, until);
+                }
+            }
+            if stops.iter().filter(|s| served(s, on)).count() < 2 {
+                note(NetworkWarning::UnderTwoServed { pattern: pattern_id.clone(), from: None, until: None }, from, until);
+            }
+        }
+        let text = |d: Option<NaiveDate>| d.map(|d| d.format("%Y-%m-%d").to_string());
+        for (w, from, until) in found {
+            out.push(match w {
+                NetworkWarning::EndpointNotServed { pattern, stop, .. } => {
+                    NetworkWarning::EndpointNotServed { pattern, stop, from: text(from), until: text(until) }
+                }
+                NetworkWarning::UnderTwoServed { pattern, .. } => NetworkWarning::UnderTwoServed { pattern, from: text(from), until: text(until) },
+                other => other,
+            });
+        }
+    }
+    out
 }

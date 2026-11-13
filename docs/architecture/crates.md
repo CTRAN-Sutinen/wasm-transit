@@ -10,8 +10,17 @@ transit-network The authored network model (planner authority):
                 where it is not open as recorded every day of it, so
                 a network whose stops do not change keeps its bytes
                 and hash; `stop_on` answers a network's stop on a
-                date. The day does not read the events yet
-                (`docs/units/stop-lifecycle.md`);
+                date. A DATED DAY SERVES WHAT IS OPEN (D-155):
+                `materialize` drops a stop not open on its date —
+                closed, proposed, retired, not yet opened — from every
+                trip's stop times, as a diversion's skip does, so a
+                trip runs to or from its nearest open stop, and drops
+                a trip left with under two; `served_warnings` (in
+                `validation_warnings`) tells the planner, with the
+                dates, of an endpoint not served and a pattern left
+                with under two served stops — never a refusal. The
+                date-free readers (`materialize_service`, the
+                timetable, the analysis) read every visit;
                 routes and their DIRECTIONS (`Route.directions`,
                 each named; a pattern runs in at most one —
                 `Pattern.direction`, validated against its route;

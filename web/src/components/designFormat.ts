@@ -63,6 +63,10 @@ export function issueWords(item: object): { kind: string; detail: string } {
       return { kind, detail: `Block ${f.block}: the wait after trip number ${Number(f.after_trip) + 1} of the block is ${mins(secs("gap_secs"))} min; ${mins(secs("required_secs"))} min is required there.` };
     case "unassigned_trips":
       return { kind, detail: `${f.trips} ${f.trips === 1 ? "trip" : "trips"} of ${f.pattern_trips} ${f.trips === 1 ? "is" : "are"} on no block, so no vehicle is counted for ${f.trips === 1 ? "it" : "them"}.` };
+    case "endpoint_not_served":
+      return { kind, detail: `${f.pattern} ends at stop ${f.stop}, which is not open ${spanText(f.from, f.until)}. Its trips run to or from the nearest open stop then.` };
+    case "under_two_served":
+      return { kind, detail: `${f.pattern} has fewer than two open stops ${spanText(f.from, f.until)}, so its trips do not run then.` };
     case "no_service_in_plan_period":
       return { kind, detail: `${f.plan_name} picks on ${f.effective_from}, and no service type runs from that day. Fork with a "runs through" date to carry the calendar.` };
   }
@@ -70,6 +74,16 @@ export function issueWords(item: object): { kind: string; detail: string } {
     .map(([k, v]) => `${k.replace(/_/g, " ")} ${typeof v === "object" ? JSON.stringify(v) : v}`)
     .join(", ");
   return { kind, detail };
+}
+
+/// A span of service dates as a warning names it: `from` and `until`
+/// (the first day back) are "YYYY-MM-DD", either absent for "since
+/// before any record" or "until further notice".
+function spanText(from: unknown, until: unknown): string {
+  if (typeof from === "string" && typeof until === "string") return `from ${from} until ${until}`;
+  if (typeof from === "string") return `from ${from} on`;
+  if (typeof until === "string") return `until ${until}`;
+  return "on any date";
 }
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];

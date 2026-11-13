@@ -35,19 +35,14 @@ unit.
    document, as now; a page that imports the agency's GTFS URL (D-132)
    builds its network from the feed and sees no stops document; a
    static export carries the network of its day.
-2. **Served, not positional.** The day reads a stop's `events`
-   (transit-network `stop_record::stop_on`) and does not serve a stop
-   that is closed, proposed, retired, or not yet opened on its date; the readers that index a trip's stop times
-   by position (the timetable's slots, signs, dispatch's patching and
-   geometry, the analysis ops) read the served stops. Every pattern
-   keeps its visit and place; the timetable keeps a closed stop's column
-   marked closed. A closure is never refused and holds nothing up
-   (D-155): a pattern whose first or last stop is closed runs to or from
-   its nearest open stop on those dates, and the planner is warned; a
-   trip left with under two open stops does not run on those dates, for
-   riders and in the export, and the planner is warned with the trips
-   and dates. A published plan opens its proposed stops from its first
-   date.
+2. **The timetable on a date.** A dated day serves only open stops and
+   the planner is warned of short trips (transit-network `materialize`,
+   `served_warnings`; D-155; `docs/architecture/crates.md`). Left: the
+   planner's timetable is date-free (one route, one direction, one
+   service combination), so it does not show a closure; read for a
+   date, it keeps a closed stop's column and marks it closed. And a
+   published plan opens its proposed stops from its first date (an
+   `opened` event the publish writes, item 1).
 3. **GTFS in and out.** transit-codec imports a feed into a network
    and a stops document, and exports a network with its stops over the
    feed's window: where a closure starts or ends inside the window, the

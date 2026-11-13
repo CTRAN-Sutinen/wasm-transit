@@ -489,7 +489,7 @@ impl<'a> DaySignatures<'a> {
 /// [`NetworkWarning`]), in deterministic order: unassigned trips by
 /// schedule id, then the plan-period check.
 pub fn validation_warnings(network: &Network) -> Vec<NetworkWarning> {
-    let mut warnings = Vec::new();
+    let mut warnings = crate::stop_record::served_warnings(network);
 
     if !network.blocks.is_empty() {
         let blocked: BTreeSet<&str> =
