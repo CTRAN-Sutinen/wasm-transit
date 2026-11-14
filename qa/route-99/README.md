@@ -11,20 +11,27 @@ these four apps, the server's publish path, or the stops document.
 Each run updates "Last run" and "Findings" below; a fixed finding is
 deleted with its pin (the e2e spec or gate that now holds it).
 
-## Setup
+## Running it
 
-- `just qa`, run capped:
+- Start a fresh `just qa`, capped:
   `systemd-run --user --unit=qa-loop -p MemoryMax=8G --working-directory=$PWD -E PATH="$PATH" -E HOME="$HOME" just qa`.
   The server runs on :8091 over the C-TRAN feed
   (`testdata/ctran-gtfs.zip`) with a memory store (`mem://`), so
   every run starts clean. The pages are on :5174.
-- Drive the pages with `node tools/ui-shot.mjs <ui> --hash … --steps walk.mjs`.
-  Start from an empty browser profile (`--fresh` on the first page),
-  so no draft plan from an earlier run is on the device.
+- `qa/route-99/run.sh` runs every step in order (`run.sh 3 4` runs
+  only those), each a walk script driven by `tools/ui-shot.mjs`: it
+  prints PASS or FAIL for each check below and exits 1 when any
+  failed. Pictures land in `.qa/route-99/`. Step 1 starts from an
+  empty browser profile, so no draft plan from an earlier run is on
+  the device.
 - Run on a weekday before 7:30 pm (the agency's time), so route 99
-  still has trips today. All dates below assume today is the run date;
-  shift them to match.
+  still has trips today. The dates are counted back from today
+  (`route.mjs`).
 - Stop `qa-loop` when done.
+
+The files: `route.mjs` (the route's stops, timetable, and dates),
+`check.mjs` (PASS/FAIL), and one walk per step, `1-stops.mjs` to
+`4-stop-display.mjs`.
 
 ## The route
 
@@ -38,7 +45,7 @@ deleted with its pin (the e2e spec or gate that now holds it).
 | 9901 | East Fourth Plain Transit Center | 45.6727, -122.5060 | 40 min |
 
 Route `099` "Washougal/Camas/East Fourth Plain", two directions (to
-East Fourth Plain TC, to Washougal TC). Every stop is a timepoint.
+East Fourth Plain TC, to Washougal TC), 40 minutes end to end.
 Weekdays (`1-WKDY`) every 30 minutes, 6:00–20:00. Saturdays and
 Sundays (`2-SAT`, `3-SUN`) every 60 minutes, 7:00–19:00. Trips to
 Washougal start 15 minutes after the hour.
@@ -75,12 +82,14 @@ In the service-change app (`service-change.html#stage=calendar`):
 
 1. **Fork** the plan in force: "Route 99 — 2045 concept", picks on
    today. *Pass:* the fork is the open draft.
-2. **Stops stage:** find "East Fourth Plain" and "9901". *Pass:* each
-   of the six new stops is found and opens on its card.
-3. **Build the route:** create route 099, its two directions, a
-   pattern each way through the six stops, timing, and the trips above.
-   *Pass:* the Route stage shows 099 with 57 weekday trips, span
-   6:00–20:40, a 40-minute running time.
+2. **Route stage → New route:** ID and short name `099`, the long
+   name; direction 1 "East Fourth Plain TC", 40 min, its stops added
+   by name in order from Washougal TC. *Pass:* each of the six new
+   stops is offered "in service in the stops record".
+3. Direction 2 "Washougal TC", 40 min, the same stops reversed; the
+   trips per direction and key as above; **Create route**. *Pass:*
+   "Route 099 created", and the Route stage shows 099 with 57 weekday
+   trips, span 6:00–20:40.
 4. **Vehicles & hours:** adopt the suggested blocks on each day type
    (Mon–Fri, Sat, Sun). *Pass:* every trip of route 99 is on a block.
 5. **Proposal:** compare with the plan in force. *Pass:* the
@@ -110,19 +119,17 @@ Open `stop-display.html?stop=9906&layout=route`, then
 departures with minutes to each; at 9906 to East Fourth Plain TC, at
 9901 to Washougal TC; no bay tag at a stop that is not a station.
 
-## Last run — 2026-11-13, 4:20–4:40 pm
+## Last run — 2026-11-13
 
-Fails. Network import `sha256:d4b9b780…` (feed `aa8dbc62…`).
+Steps 1 and 2: pass (55/55, 16/16), with the New route task. Steps 3
+and 4 were last run before it, on a network built through the runner,
+at 4:20–4:40 pm; network import `sha256:d4b9b780…` (feed
+`aa8dbc62…`).
 
 | Step | Result |
 |---|---|
-| 1. Stops | **Pass.** All six stops planned → permitted → built → in service, each with its request submitted, its work order opened and completed. No page errors. |
-| 2.1 Fork | Pass. |
-| 2.2 New stops in the plan | **Fail** — none of the six is found or drawn (QAF-113). |
-| 2.3 Build the route | **Fail** — no control creates a route, pattern, or trip (QAF-112). Done instead through the runner (`caps-run`: author `apply` with `upsert_stop`, `upsert_route`, `upsert_pattern`, `upsert_pattern_trips`, then network `export`); the zip was imported as a draft, renamed, and dated today in the UI. |
-| 2.3 (read back) | Pass — the Route stage shows 099: 57 trips, 6:00–20:40, 40 min, both directions. |
-| 2.4 Blocks | Partial — adopting on Mon–Fri blocked the weekday trips (3 blocks, peak 80); Sat and Sun were not adopted, so 4 warnings remained. |
-| 2.5–2.6 Proposal, publish | Pass — 0 issues, no stop warnings, published for 2026-11-13; `/feed` lists 099 and 9901–9906. |
+| 1. Stops | **Pass.** All six stops planned → permitted → built → in service, each with its request submitted, its work order opened and completed. |
+| 2. Service change | **Pass.** The six stops offered from the stops record; route 099 created in one change (57 weekday trips, 6:00–20:40); blocks adopted on every day type; 0 issues, no stop warnings; published for 2026-11-13; `/feed` carries 099. |
 | 3.1 Board | Pass — 099 at 5:00 … 8:00 pm, Scheduled. |
 | 3.2–3.3 Trip, last bus | **Fail** — "Couldn't plan this trip right now (walk table … walks network d4b9…, not 7d07…)". Every trip fails, not only route 99 (Van Mall TC → Fisher's Landing TC fails the same way) (QAF-114, QAF-115). |
 | 3.4 Routes | Not reached. |
@@ -137,20 +144,6 @@ It does not stop any step.
 
 IDs continue `docs/QA-FINDINGS.md`'s sequence.
 
-- **QAF-112 UI GAP** — The service-change UI cannot create a route, a
-  pattern, or a trip. The edits exist in cap-author (`add_route`,
-  `add_pattern`, `add_pattern_trips`, `add_trip`, `upsert_*`), but its
-  host sends only calendar, span, running-time, retime, and
-  insert/remove-stop edits. A new route can reach a plan only as an
-  imported GTFS zip.
-  Pin: step 2.3; `web/src/uis/service-change/host.svelte.ts` (the
-  `gestures` and `calendar` edits).
-- **QAF-113 MODEL GAP** — A stop the stops app creates never reaches
-  a plan. The service-change Stops stage does not find or draw it, no
-  UI adds a stop to the network, and a published pick's `read_records`
-  only updates stops the network already holds. The stops document and
-  the plan meet only over stops the feed already had.
-  Pin: step 2.2 (search "9901" on the fork: no matches).
 - **QAF-114 DEFECT** — The server's walk table is always derived over
   the `-feed` import's network (`server/streets.go`, the `walks` op on
   `feed.networkHash`), never over the pick in force. Once a published

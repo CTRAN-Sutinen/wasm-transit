@@ -20,8 +20,6 @@ for s in "${steps[@]}"; do
     1) echo "== 1. stops"
        shot stops --fresh --hash "#on=$(date +%F)" --wait 500 --steps qa/route-99/1-stops.mjs --out "$out/1-stops.png" || failed+=(1) ;;
     2) echo "== 2. service change"
-       # the stand-in for 2.3 until the UI can build the route (QAF-112)
-       node qa/route-99/build-route.mjs || failed+=(2-build)
        shot service-change --hash '#stage=calendar' --wait 1200 --steps qa/route-99/2-service-change.mjs --out "$out/2-sc.png" || failed+=(2) ;;
     3) echo "== 3. ride now"
        shot ride-now --wait 1500 --steps qa/route-99/3-ride-now.mjs --out "$out/3-ride.png" || failed+=(3) ;;

@@ -287,7 +287,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "stops",
         file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stops_near", "stop", "seed", "add_event", "correct_event", "read_records", "visit_warnings", "export_versions", "import_events", "questions", "attribute_surveys", "feed_events"],
+        ops: &["validate", "stops_on", "stops_near", "stop", "seed", "add_event", "correct_event", "read_records", "records", "visit_warnings", "export_versions", "import_events", "questions", "attribute_surveys", "feed_events"],
         documents: &["stops", "network"],
         // The stops document is the host's (beside the plans, D-147):
         // validate answers its canonical bytes and hash, which the
@@ -1037,6 +1037,7 @@ fn edit_kind_examples() -> Vec<serde_json::Value> {
         json!({ "edit": "add_stop", "id": "D", "lat": 45.53, "lon": -73.53 }),
         json!({ "edit": "add_route", "id": "30" }),
         json!({ "edit": "add_pattern", "id": "pat-30", "route": "30" }),
+        json!({ "edit": "add_pattern_through", "id": "pat-10-0-3", "route": "10", "direction": "0", "stops": ["A", "B", "C"], "run_secs": 900 }),
         json!({ "edit": "add_service_type", "id": "SAT", "from": "2026-10-19" }),
         json!({ "edit": "add_pattern_trips", "id": "SAT:pat-10-0-1", "pattern": "pat-10-0-1", "service_type": "SAT" }),
         // field gestures
@@ -1800,6 +1801,21 @@ fn example_for(
             (
                 json!({ "op": "read_records", "network_hash": net.network_hash, "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "on": "2026-10-05" }),
                 json!({ "ok": { "op": "read_records", "network_hash": cap_abi::canonical_hash(&read).ok()?, "network": read } }),
+            )
+        }
+        ("stops", "records") => {
+            // A stop the stops app planned (9906, from 2026-10-20): the
+            // record a plan takes when its planner picks it; a stop not
+            // held answers nothing.
+            let stops = transit_stops::Stops::empty()
+                .add_event("9906", serde_json::from_value(json!({"on": "2026-10-20", "event": "planned", "lat": 45.58, "lon": -122.348, "name": "Washougal Transit Center", "code": "9906"})).ok()?)
+                .checked()
+                .ok()?;
+            let ids = vec!["9906".to_string(), "9999".to_string()];
+            let records = transit_network::stop_record::records(&stops, &ids, chrono::NaiveDate::from_ymd_opt(2026, 11, 13)?);
+            (
+                json!({ "op": "records", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "stop_ids": ids, "on": "2026-11-13" }),
+                json!({ "ok": { "op": "records", "records": records } }),
             )
         }
         ("stops", "visit_warnings") => {

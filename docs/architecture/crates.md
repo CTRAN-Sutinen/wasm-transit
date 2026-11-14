@@ -138,7 +138,12 @@ transit-network The authored network model (planner authority):
                 calendar's final week to it while dated service and
                 closed periods stay as they are, D-41, D-112; a redrawn line names
                 whether it moves one pattern or every pattern on its
-                alignment and reports the patterns it touched, D-11) —
+                alignment and reports the patterns it touched, D-11;
+                a new pattern laid through stops picked in order —
+                `add_pattern_through`: great-circle distances, its
+                ends timepoints, one all-day profile end to end —
+                so a new route is a route, its directions, a pattern
+                each way, and their headways in one change) —
                 and the TIMETABLE's gestures (`timetable_edit.rs`:
                 headway, span, running time, and stops, stated
                 for a route + direction (+ service type) and
@@ -731,7 +736,10 @@ cap-stops       The stops capability: what is a stop on a date?
                 each checked as a write is; read_records and
                 visit_warnings (what a pick reads: each stop's record
                 on its first date, and the stops it visits not in
-                service over its period); export_versions and
+                service over its period); records (the record a plan
+                takes of a stop the document holds and the plan does
+                not, on the pick date — D-173: the plan copies it, the
+                document is never written); export_versions and
                 import_events (GTFS out and in with the stops'
                 history; amenities, site answers, and references are
                 the document's alone; `on` defaults to the feed's

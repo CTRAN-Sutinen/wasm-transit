@@ -20,7 +20,7 @@
 /// service-design host's, copied: one UI never imports another's files.
 
 import { getAllPlans, getActivePlanId, putPlan, readPlan, removePlan, setActivePlan, restorePlans } from "../../plans.svelte";
-import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, servedNetworkValue, stopWarnings, withStopVersions, Doc } from "../../engine";
+import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, servedNetworkValue, servedStops, stopWarnings, withStopVersions, Doc } from "../../engine";
 import { answerGraph, readAgencyZone, today } from "../kit";
 
 import { resumeSignIn, writeFetch } from "../../signin.svelte";
@@ -45,6 +45,7 @@ import type { Timetable } from "../../types/Timetable";
 import type { DayType } from "../../types/DayType";
 import type { DayTypeComparison } from "../../types/DayTypeComparison";
 import type { ServiceKey } from "../../types/ServiceKey";
+import type { Stop } from "../../types/Stop";
 import type { FleetSummary } from "../../types/FleetSummary";
 import type { Suggestion } from "../../types/transit_runs/Suggestion";
 import type { BlockChainTrip } from "../../types/BlockChainTrip";
@@ -126,7 +127,27 @@ export const sc = $state({
   published: null as { plans_hash: string } | null,
   publishRefused: [] as object[],
   failed: {} as Record<string, string>,
+  /// The new-route task is open on the Route stage, and what
+  /// it offers: every stop the plan can visit — its own, and the stops
+  /// document's in service or planned by the pick date (D-173) — and
+  /// the plan's service keys.
+  creating: false,
+  newRoute: null as NewRouteOptions | null,
+  newRouteProblems: [] as string[],
 });
+
+export type NewRouteStop = { value: string; label: string; sub?: string; fromStops: boolean };
+export type NewRouteOptions = { stops: NewRouteStop[]; keys: { id: string; name: string }[]; routeIds: string[] };
+/// What the planner asked for: the route, each direction's stops in
+/// order and its run time, and the trips — per direction and service
+/// key, a first and last departure and the minutes between.
+export type NewRouteSpec = {
+  id: string;
+  name: string;
+  longName: string;
+  directions: { id: string; name: string; stops: string[]; runSecs: number }[];
+  trips: { direction: string; serviceType: string; firstSecs: number; lastSecs: number; everySecs: number }[];
+};
 
 // ---------------------------------------------------------------------
 // documents
@@ -619,6 +640,7 @@ function writeHash(): void {
   if (sc.stopOpen) q.set("open", sc.stopOpen);
   if (sc.block) q.set("block", sc.block);
   if (sc.window) q.set("hours", `${sc.window.from}-${sc.window.to}`);
+  if (sc.creating) q.set("new", "route");
   const next = `#${q}`;
   if (location.hash === next) return;
   writing = true;
@@ -649,6 +671,11 @@ function readHash(): string[] {
   set("stop", q.get("stop") ?? "", "stop");
   set("stopOpen", q.get("open") ?? "", "stop-open");
   set("block", q.get("block") ?? "", "block");
+  const creating = q.get("new") === "route";
+  if (creating !== sc.creating) {
+    sc.creating = creating;
+    if (creating) void readNewRouteOptions();
+  }
   const hours = q.get("hours")?.match(/^(\d+)-(\d+)$/);
   set("window", hours ? { from: Number(hours[1]), to: Number(hours[2]) } : null, "window");
   return changed;
@@ -915,6 +942,119 @@ export function closeRoute(): Promise<void> {
   sc.stop = "";
   sc.editing = false;
   return select("route", "direction", "stop");
+}
+
+/// The new-route task opened on the Route stage: the route
+/// open there closes, and the stops and keys it offers are read.
+export async function startNewRoute(): Promise<void> {
+  await closeRoute();
+  sc.creating = true;
+  sc.newRouteProblems = [];
+  sc.stage = "route";
+  await select("stage");
+  await readNewRouteOptions();
+}
+
+export function endNewRoute(): Promise<void> {
+  sc.creating = false;
+  sc.newRouteProblems = [];
+  return select("stage");
+}
+
+/// The stops a new route may visit: the plan's own, then the stops
+/// document's that are there by the pick date (in service, or on their
+/// way: planned, permitted, built) and the plan does not hold yet.
+async function readNewRouteOptions(): Promise<void> {
+  const doc = active();
+  if (!doc) return;
+  const [own, keys, routes] = await Promise.all([
+    ask("directory", "stops", { network_hash: docOf(doc), limit: null }),
+    ask("directory", "service_keys", { network_hash: docOf(doc) }),
+    ask("directory", "routes", { network_hash: docOf(doc) }),
+  ]);
+  const held = new Set(own.stops.map((x) => x.stop_id));
+  const stops: NewRouteStop[] = own.stops.map((x) => ({ value: x.stop_id, label: x.name || x.stop_id, sub: x.stop_id, fromStops: false }));
+  const record = await servedStops();
+  if (record) {
+    const theirs = await ask("stops", "stops_on", {
+      stops_hash: record,
+      date: periodFrom(),
+      statuses: ["planned", "permitted", "built", "in_service"],
+    });
+    for (const x of theirs.stops) {
+      if (held.has(x.stop_id)) continue;
+      const name = x.name || x.stop_id;
+      stops.push({ value: x.stop_id, label: name, sub: `${x.stop_id} · ${x.status.replace("_", " ")} in the stops record`, fromStops: true });
+    }
+  }
+  sc.newRoute = { stops, keys: keys.keys.map((k) => ({ id: k.id, name: k.name })), routeIds: routes.routes.map((r) => r.route_id) };
+}
+
+/// The new route as one change: the route and its directions, each
+/// stop the stops document holds and the plan does not taken in with
+/// its record on the pick date (D-173), a pattern each way laid through
+/// its stops, and the trips at their headways. Refused whole, said
+/// beside the task.
+export async function createRoute(spec: NewRouteSpec): Promise<void> {
+  const doc = active();
+  if (!doc || !sc.newRoute) return;
+  if (!editable()) {
+    sc.newRouteProblems = [`${planName(sc.activeKey)} does not change: fork it (Plan & calendar) and add the route to the fork.`];
+    return;
+  }
+  sc.newRouteProblems = [];
+  const fromStops = new Set(sc.newRoute.stops.filter((x) => x.fromStops).map((x) => x.value));
+  const taken = [...new Set(spec.directions.flatMap((d) => d.stops))].filter((id) => fromStops.has(id));
+  const edits: NetworkEdit[] = [
+    { edit: "add_route", id: spec.id },
+    { edit: "upsert_route", id: spec.id, route: { name: spec.name, mode: "bus", ...(spec.longName ? { long_name: spec.longName } : {}) } },
+    ...spec.directions.map((d) => ({ edit: "set_direction" as const, route: spec.id, id: d.id, name: d.name })),
+  ];
+  if (taken.length) {
+    const record = await servedStops();
+    const records: Partial<Record<string, Stop>> = record ? (await ask("stops", "records", { stops_hash: record, stop_ids: taken, on: periodFrom() })).records : {};
+    for (const id of taken) {
+      const stop = records[id];
+      if (!stop) {
+        sc.newRouteProblems = [`Stop ${id} is not in the stops record on ${periodFrom()}.`];
+        return;
+      }
+      edits.push({ edit: "upsert_stop", id, stop });
+    }
+  }
+  for (const d of spec.directions) {
+    edits.push({ edit: "add_pattern_through", id: `${spec.id}-${d.id}`, route: spec.id, direction: d.id, stops: d.stops, run_secs: d.runSecs });
+  }
+  for (const t of spec.trips) {
+    edits.push({
+      edit: "set_headway",
+      route: spec.id,
+      direction: t.direction,
+      service_type: t.serviceType,
+      from_secs: t.firstSecs,
+      to_secs: t.lastSecs + 1,
+      headway_secs: t.everySecs,
+      pattern: `${spec.id}-${t.direction}`,
+    });
+  }
+  if (!(await available("author"))) {
+    sc.newRouteProblems = ["The authoring capability did not load — changes are off."];
+    return;
+  }
+  let applied;
+  try {
+    applied = await ask("author", "apply", { network_hash: docOf(doc), edits });
+  } catch (e) {
+    sc.newRouteProblems = [`Not created: ${message(e)}`];
+    return;
+  }
+  docs.set(applied.network, produced("network", applied.network, "author", applied.network_hash));
+  (undo[sc.activeKey] ??= []).push(doc);
+  redo[sc.activeKey] = [];
+  sc.creating = false;
+  sc.newRoute = null;
+  await adopt(applied.network, { issues: applied.issues, warnings: applied.warnings }, `Route ${spec.name || spec.id} created.`);
+  await openRoute(spec.id);
 }
 
 /// A block opened on Vehicles & hours, from wherever it was named (a

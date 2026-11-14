@@ -49,6 +49,10 @@
     redoChange,
     exportPlan,
     publishPlan,
+    editable,
+    startNewRoute,
+    endNewRoute,
+    createRoute,
   } from "./host.svelte";
   import NetworkMap from "../../components/NetworkMap.svelte";
   import StopMap from "../../components/StopMap.svelte";
@@ -57,6 +61,7 @@
   import HourWindowPicker from "../../components/HourWindowPicker.svelte";
   import ServiceKeys from "../../components/ServiceKeys.svelte";
   import FleetPanel from "../../components/FleetPanel.svelte";
+  import NewRouteFlow from "../../components/NewRouteFlow.svelte";
   import TripList from "../../components/TripList.svelte";
   import PlanScore from "../../components/PlanScore.svelte";
   import FrequencyGrid from "../../components/FrequencyGrid.svelte";
@@ -208,8 +213,16 @@
       </div>
 
     {:else if sc.stage === "route"}
-      {#if !sc.route}
+      {#if sc.creating}
+        {#if sc.newRoute}
+          <NewRouteFlow stops={sc.newRoute.stops} keys={sc.newRoute.keys} routeIds={sc.newRoute.routeIds} busy={sc.busy} problems={sc.newRouteProblems}
+            oncreate={createRoute} onclose={endNewRoute} />
+        {:else}
+          <p class="muted">Reading the stops and service keys…</p>
+        {/if}
+      {:else if !sc.route}
         <Unavailable title="No route open" reason="Open a route: a row of the frequency grid, a line on the map, a route a service key carries, or the route box at the top right." />
+        <button type="button" class="closer new" onclick={startNewRoute} disabled={!editable()} title={editable() ? "" : "A published plan does not change: fork it first"} data-testid="new-route-start">New route</button>
       {:else if sc.routes.length && !routeRow}
         <Unavailable title="No such route" reason={`${planName(sc.activeKey)} has no route ${sc.route}. Open one from the frequency grid, the map, or the route box at the top right.`} />
         <button type="button" class="closer" onclick={closeRoute}>Close route</button>
@@ -333,6 +346,7 @@
   .stages button.close:hover { color: var(--text); }
   .routebar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem; }
   .routebar .mode { margin-left: auto; }
+  .closer.new { align-self: flex-start; font-size: 0.85rem; padding: 0.35rem 0.9rem; }
   .closer { font: inherit; font-size: 0.78rem; border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 6px; padding: 0.2rem 0.6rem; cursor: pointer; }
   .status { margin: 0 0 0 auto; font-size: 0.78rem; color: var(--muted); max-width: 40rem; text-align: right; }
   .status.alert { color: var(--bad); }

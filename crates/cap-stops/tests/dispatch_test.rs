@@ -210,6 +210,19 @@ fn a_pick_reads_the_records_and_is_warned_of_stops_not_in_service() {
         "event": {"on": "2026-10-01", "event": "changed", "name": "A Street Station"}}));
     let read = ok(json!({"op": "read_records", "network_hash": network_hash, "stops_hash": renamed["stops_hash"], "on": "2026-10-05"}));
     assert_eq!(read["network"]["stops"]["A"]["name"], "A Street Station");
+    // a plan takes a stop the document holds (D-173): its record in the
+    // network's terms, as read_records gives it; a stop not there yet,
+    // or not held, is not answered
+    let planned = ok(json!({"op": "add_event", "stops_hash": seeded["stops_hash"], "stop_id": "N1",
+        "event": {"on": "2026-10-20", "event": "planned", "lat": 45.58, "lon": -122.348, "name": "Washougal TC", "code": "9906"}}));
+    let taken = ok(json!({"op": "records", "stops_hash": planned["stops_hash"], "stop_ids": ["N1", "A", "Z"], "on": "2026-10-20"}));
+    assert_eq!(taken["records"]["N1"]["name"], "Washougal TC");
+    assert_eq!(taken["records"]["N1"]["info"]["code"], "9906");
+    let pick = ok(json!({"op": "read_records", "network_hash": network_hash, "stops_hash": planned["stops_hash"], "on": "2026-10-20"}));
+    assert_eq!(taken["records"]["A"], pick["network"]["stops"]["A"], "the record a pick reads");
+    assert!(taken["records"].get("Z").is_none());
+    let early = ok(json!({"op": "records", "stops_hash": planned["stops_hash"], "stop_ids": ["N1"], "on": "2026-10-19"}));
+    assert_eq!(early["records"], json!({}));
     let retired = ok(json!({"op": "add_event", "stops_hash": seeded["stops_hash"], "stop_id": "B", "event": {"on": "2026-11-02", "event": "retired"}}));
     let warned = ok(json!({"op": "visit_warnings", "network_hash": network_hash, "stops_hash": retired["stops_hash"], "from": "2026-10-01", "until": "2026-12-01"}));
     assert_eq!(warned["warnings"], json!([{"stop_not_in_service": {"stop": "B", "status": "retired", "from": "2026-11-02", "until": "2026-12-01"}}]));

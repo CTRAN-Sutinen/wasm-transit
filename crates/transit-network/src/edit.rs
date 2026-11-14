@@ -143,6 +143,28 @@ pub enum NetworkEdit {
         #[ts(optional)]
         route: Option<String>,
     },
+    /// A new pattern on `route` laid through `stops` in order (a new
+    /// route's, or another variant): each visit at the great-circle
+    /// length of the legs before it (estimated, never published), the
+    /// first and last timepoints, one all-day profile running
+    /// `run_secs` end to end, in `direction` (one of the route's),
+    /// named `name` else "<route> → <last stop>", drawn stop to stop.
+    /// Refused: fewer than two stops, an unknown stop, a stop twice in
+    /// a row, an unknown route or direction, a zero run time.
+    AddPatternThrough {
+        #[serde(default)]
+        #[ts(optional)]
+        id: Option<String>,
+        route: String,
+        #[serde(default)]
+        #[ts(optional)]
+        direction: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        name: Option<String>,
+        stops: Vec<String>,
+        run_secs: u32,
+    },
     /// A new weekday service type running a year from `from`.
     AddServiceType {
         #[serde(default)]
@@ -878,6 +900,53 @@ fn apply_gesture(net: &mut Network, edit: &NetworkEdit) -> Result<Option<Option<
                         PatternStop { stop: second, timepoint: true, distance_m: 500.0, ..Default::default() },
                     ],
                     timing: vec![TimingProfile { start_secs: 0, end_secs: 30 * 3600, at_timepoints: vec![0, 600] }],
+                },
+            );
+            created("pattern", &id)
+        }
+        NetworkEdit::AddPatternThrough { id, route, direction, name, stops, run_secs } => {
+            let r = net.routes.get(route).ok_or_else(|| format!("unknown route {route}"))?;
+            if let Some(d) = direction {
+                if !r.directions.contains_key(d) {
+                    return Err(format!("route {route} has no direction {d}"));
+                }
+            }
+            if stops.len() < 2 {
+                return Err("a pattern runs through at least two stops".into());
+            }
+            for s in stops {
+                exists(net.stops.contains_key(s), "stop", s)?;
+            }
+            if let Some(w) = stops.windows(2).find(|w| w[0] == w[1]) {
+                return Err(format!("stop {} is visited twice in a row", w[0]));
+            }
+            if *run_secs == 0 {
+                return Err("a pattern needs a run time longer than zero".into());
+            }
+            let label = if r.name.is_empty() { r.long_name.clone().unwrap_or_else(|| route.clone()) } else { r.name.clone() };
+            let id = mint(&net.patterns, id, "pat", "pattern")?;
+            let mut along = 0.0;
+            let visits: Vec<PatternStop> = stops
+                .iter()
+                .enumerate()
+                .map(|(i, s)| {
+                    if i > 0 {
+                        let (a, b) = (&net.stops[&stops[i - 1]], &net.stops[s]);
+                        along += crate::listing::haversine_m(a.lat, a.lon, b.lat, b.lon);
+                    }
+                    PatternStop { stop: s.clone(), timepoint: i == 0 || i == stops.len() - 1, distance_m: along, ..Default::default() }
+                })
+                .collect();
+            let last = &net.stops[stops.last().expect("two stops")].name;
+            net.patterns.insert(
+                id.clone(),
+                Pattern {
+                    route: route.clone(),
+                    direction: direction.clone(),
+                    name: name.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| format!("{label} → {last}")),
+                    alignment: None,
+                    stops: visits,
+                    timing: vec![TimingProfile { start_secs: 0, end_secs: 30 * 3600, at_timepoints: vec![0, *run_secs] }],
                 },
             );
             created("pattern", &id)

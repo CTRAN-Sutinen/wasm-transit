@@ -34,6 +34,10 @@ One correction: a correction edits the event that was wrong (D-153; the store ke
 
 What a pick reads of the stops (D-157): the registered network with each stop's record — its point, name, code, station, and details (amenities, site answers, and references are the stops document's alone) — as the stops document has it on `on`, the pick's first date. A stop the document does not hold, or that is not there yet that day, keeps the network's own record; nothing else in the network changes, and the stops document is never written. A network read from a document seeded from it comes back under the same hash. Registered, answered with the network and its network_hash.
 
+## records
+
+What a plan takes of a stop the stops document holds (D-173): the planner adding a stop to a pattern may pick one the stops app made, and the plan copies its record. Each of `stop_ids` that is there on `on` (the pick date) — its record in the network's terms, the same record read_records gives a pick (point, name, code, station, and details; amenities, site answers, and references stay the stops document's), keyed by stop id. A stop not there yet that day, or not held, is not answered. The plan takes a record with author `upsert_stop`; the stops document is never written. Reads no network.
+
 ## visit_warnings
 
 What the planner is told of the stops the network's patterns visit over its period, from `from` until `until` (exclusive; open-ended without): each span a stop is not in service — planned, permitted, built, retired, or not there yet (no status) — and each span it is suspended when the suspension covers the whole period or has no end (a shorter suspension is real time's to say, not the pick's). Each warning is `stop_not_in_service` with the stop, its status, and the span, in stop order. Warnings, never refusals; a stop the document does not hold says nothing.

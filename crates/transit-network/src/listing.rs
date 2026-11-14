@@ -814,7 +814,7 @@ pub struct NearbyStop {
 }
 
 /// Great-circle distance in meters (haversine, mean earth radius).
-fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+pub(crate) fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let (p1, p2) = (lat1.to_radians(), lat2.to_radians());
     let (dp, dl) = ((lat2 - lat1).to_radians(), (lon2 - lon1).to_radians());
     let a = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);

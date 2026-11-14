@@ -18,6 +18,9 @@
 //   4. Vehicles & hours: the fixture's trips on no block are named, and
 //      adopting the suggested blocks leaves none.
 //   5. Proposal: every day type, and the route changed.
+//   A new route: built on the Route stage — its id (a taken one
+//   refused), each way's stops picked in order (the way back the way out
+//   reversed), its trips per service key — as one change, then opened.
 //   Back and forward move through the stages.
 
 import { test, expect } from "@playwright/test";
@@ -161,6 +164,58 @@ test("stops: a stop's card lists every pattern that visits it", async ({ page })
   await page.getByRole("listbox", { name: "Find a stop" }).getByRole("option", { name: /^Main Station(?!:)/ }).click();
   await expect(card).toContainText("Station");
   await expect(card.getByTestId("stop-unserved")).toContainText("No pattern visits this station itself. Its stops are served by");
+});
+
+test("a new route: its stops picked in order, its trips per key, created as one change", async ({ page }) => {
+  await startPlan(page);
+  await page.getByRole("navigation", { name: "Stages" }).getByRole("button", { name: /Route/ }).click();
+  // Cancel leaves the stage as it was
+  await page.getByTestId("new-route-start").click();
+  await expect(page.getByTestId("new-route")).toBeVisible();
+  await page.getByTestId("new-route-close").click();
+  await expect(page.getByTestId("new-route-start")).toBeVisible();
+
+  await page.getByTestId("new-route-start").click();
+  await page.getByTestId("new-route-id").fill("10");
+  await page.getByTestId("new-route-name").fill("77");
+  await expect(page.getByTestId("new-route-taken")).toContainText("already has route 10");
+  await expect(page.getByTestId("new-route-next")).toBeDisabled();
+  await page.getByTestId("new-route-id").fill("77");
+  await page.getByTestId("new-route-long-name").fill("Crosstown");
+  await page.getByTestId("new-route-next").click();
+
+  await page.getByTestId("new-route-way-0-name").fill("To Main & 3rd");
+  await page.getByTestId("new-route-way-0-run").fill("12");
+  const add = page.getByTestId("new-route-way-0-add").getByRole("combobox");
+  for (const name of ["Main & 1st", "Main & 3rd", "Main & 2nd"]) {
+    await add.fill(name);
+    await page.getByRole("listbox", { name: "Add a stop" }).getByRole("option", { name: new RegExp(`^${name}`) }).first().click();
+    await expect(add).toHaveValue("");
+  }
+  const out = page.getByTestId("new-route-way-0-stops");
+  await out.getByRole("button", { name: "Move Main & 2nd up" }).click();
+  await expect(out.locator("li")).toHaveText([/Main & 1st/, /Main & 2nd/, /Main & 3rd/]);
+  // the way back: the way out, reversed
+  await page.getByTestId("new-route-way-1-name").fill("To Main & 1st");
+  await page.getByTestId("new-route-way-1-run").fill("12");
+  await expect(page.getByTestId("new-route-way-1-stops").locator("li")).toHaveText([/Main & 3rd/, /Main & 2nd/, /Main & 1st/]);
+  await page.getByTestId("new-route-next").click();
+
+  for (const dir of [0, 1]) {
+    const row = page.getByTestId(`new-route-trips-${dir}`).getByTestId("new-route-trip-row").first();
+    await row.getByLabel("Service key").selectOption("WK");
+    await row.getByLabel("First departure").fill("07:00");
+    await row.getByLabel("Last departure").fill("09:00");
+    await row.getByLabel("Minutes between trips").fill("30");
+  }
+  await page.getByTestId("new-route-create").click();
+  await expect(page.getByTestId("status")).toContainText("Route 77 created", { timeout: 15_000 });
+  // opened: both ways, every 30 min 07:00–09:00 (five trips each)
+  const stage = page.getByTestId("stage-route");
+  await expect(stage).toContainText("Crosstown");
+  await expect(page.getByTestId("string-line")).toBeVisible();
+  await expect(stage).toContainText(/Trips\s*10/i);
+  expect(page.url()).toContain("route=77");
 });
 
 // The controls that manage the plan set and move between the stages:

@@ -66,6 +66,14 @@ pub fn read_records(network: &Network, stops: &Stops, on: NaiveDate) -> Network 
     next
 }
 
+/// The named stops' records in the network's terms on `on` — the
+/// record [`read_records`] gives a pick — for a plan to take a stop the
+/// stops document holds (D-173). A stop not there yet that day, or not
+/// held, is not answered; the document is never written.
+pub fn records(stops: &Stops, ids: &[String], on: NaiveDate) -> BTreeMap<String, Stop> {
+    ids.iter().filter_map(|id| stops.stop_on(id, on).map(|found| (id.clone(), record(&found)))).collect()
+}
+
 /// A stop's record in the network's terms (amenities, the site survey,
 /// and references are the stops document's alone).
 fn record(on: &StopOn) -> Stop {

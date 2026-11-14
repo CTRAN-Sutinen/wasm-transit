@@ -328,7 +328,20 @@ changes (the service-design gestures), running time by start, gaps by
 hour, the trips by start with the key and the block each runs under (a
 block opens on Vehicles & hours) — with a stop the route serves read
 beside it (its connections, near misses and waits), and, once a plan
-is compared, the change ledger below it. Vehicles & hours: runcut
+is compared, the change ledger below it. With no route open, New
+route builds one the plan does not run, a task in three
+steps: the route (a taken id refused), each way it runs — a name,
+its stops picked in order and the time end to end, the way back the
+way out reversed until changed — and its trips, per way and service
+key a first and last departure and the minutes between. The picker
+offers the plan's stops and the stops document's in service or on
+their way by the pick date (stops `stops_on`); one the plan does not
+hold is taken in with its record (stops `records`, D-173: the stop's
+life stays the stops app's, and the plan only copies its record, as a
+pick reads it at publish). Create is one change — author
+`add_route`, `upsert_route`, `set_direction`, `upsert_stop`,
+`add_pattern_through` and `set_headway` — refused whole beside the
+task, else the route opens. Vehicles & hours: runcut
 `fleet_summary` and `suggest_blocks` on a date the day type runs —
 the peak, platform, revenue and layover hours, the trips on no block
 and the suggested blocks adopted as one change, and every running

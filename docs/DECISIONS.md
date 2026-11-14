@@ -225,7 +225,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-169 | Is a document's canonical form serde's field order, or RFC 8785? | unanswered | nothing (before the first deployment's baseline) |
 | D-170 | Are the migration steps from before the first deployment kept? | unanswered | nothing |
 | D-171 | How does a UI at its own URL reach the server, and how is it rolled back? | unanswered | each UI at its own URL in `release-artifacts` |
-| D-173 | How does a stop the stops app made reach a plan? | decided; not built | QAF-113 |
+| D-173 | How does a stop the stops app made reach a plan? | decided | nothing |
 
 ## The trip model
 
@@ -1369,7 +1369,7 @@ kept out of the files (the SDKs' credential chains). Why:
 flags". Pins: `server/config_test.go`.
 
 ### D-173 — How does a stop the stops app made reach a plan?
-State: Decided; not built.
+State: Decided.
 Answer: 2026-11-13 — through the plan's stop picker. When the planner
 adds a stop to a pattern in service change, the picker offers the stops
 document's stops that are in service, or planned, by the pick date, as
@@ -1382,7 +1382,11 @@ Context: the route 99 end-to-end test (`qa/route-99/README.md`): six
 stops created and put in service in the stops app could not be found on
 a service-change fork, and no UI adds a stop to a network; a published
 pick's `read_records` only updates stops the network already holds.
-Pins: none yet — `qa/route-99` step 2.2.
+Built: service change's New route picker (`docs/architecture/generated-uis.md`).
+Pins: `crates/transit-network/tests/plan_takes_stops_law_test.rs`;
+cap-stops `records` in `crates/cap-stops/tests/dispatch_test.rs`;
+`web/e2e/ui-service-change.spec.mjs` ("a new route"); `qa/route-99`
+step 2.2.
 Blocks: nothing.
 
 ### D-53 — What ridership data does the planner bring?

@@ -5,19 +5,17 @@
 //   node tools/ui-shot.mjs service-change --hash '#stage=calendar' \
 //     --steps qa/route-99/2-service-change.mjs --out .qa/route-99/sc.png
 //
-// Until QAF-112 is fixed the UI cannot build the route: steps 2.2 and
-// 2.3 are checked (and fail), then the route is imported as a draft from
-// the runner's zip (`node qa/route-99/build-route.mjs`) so the rest of
-// the test runs.
+// The route is built on the Route stage's New route task,
+// its stops picked from the stops record (D-173).
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { STOPS, DATES, ROUTE } from "./route.mjs";
+import { STOPS, DATES, ROUTE, RUN_SECS, SERVICE } from "./route.mjs";
 import { check, done, clean } from "./check.mjs";
 
 const T = (p, id) => p.getByTestId(id);
-const ZIP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.qa/route-99/ctran-route99.zip");
+const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.qa/route-99");
 const FORK = "Route 99 — 2045 concept";
 
 export default async function (page, { shot, status, settle }) {
@@ -41,48 +39,53 @@ export default async function (page, { shot, status, settle }) {
   }
   check("2.1 the fork is the open draft", clean(await open().textContent()).includes(FORK), await status());
 
-  // 2.2 the stops app's new stops, on the fork
-  await stage("Stops");
-  const find = page.getByPlaceholder("Find a stop by name or id…");
-  for (const [id, name] of [STOPS[5], STOPS[0]]) {
-    await find.fill(name);
-    await page.waitForTimeout(800);
-    const listed = clean(await page.getByRole("listbox").textContent().catch(() => ""));
-    check(`2.2 ${id} ${name} found on the fork`, listed.includes(name), listed.slice(0, 120));
-  }
-  await find.fill("");
-  await shot("stops-stage");
-
-  // 2.3 a control that makes a route
+  // 2.2 + 2.3 a new route: the stops app's stops offered in
+  // its picker (D-173), laid each way, its trips per service key
   await stage("Route");
-  const make = page.getByRole("button", { name: /new route|add route/i });
-  check("2.3 the UI can create a route", await make.count());
-  // (until it can: the runner's network, imported as a draft)
-  const built = rows.filter({ hasText: "(built)" });
-  if (!(await built.count())) {
-    await stage("Plan");
-    await T(page, "feed-input").setInputFiles(ZIP);
-    await page.waitForTimeout(2000);
-    await settle();
-    await open().getByTestId("rename-plan").click();
-    await page.getByLabel(/^New name for/).fill(`${FORK} (built)`);
-    await page.getByLabel(/^New name for/).press("Enter");
-    await settle();
-    await built.getByTestId("date-plan").click();
-    await page.getByLabel(/^New pick date for/).fill(DATES.today);
-    await page.getByLabel(/^New pick date for/).press("Enter");
-    await settle();
-  } else if (!(await built.locator(".tag.open").count())) {
-    await built.getByRole("button", { name: "Open" }).click();
-    await settle();
+  if (await T(page, "close-route").count()) { await T(page, "close-route").click(); await settle(); }
+  await T(page, "new-route-start").click();
+  await T(page, "new-route-id").waitFor({ timeout: 30000 });
+  await T(page, "new-route-id").fill(ROUTE.id);
+  await T(page, "new-route-name").fill(ROUTE.id);
+  await T(page, "new-route-long-name").fill(ROUTE.long_name);
+  await T(page, "new-route-next").click();
+  await T(page, "new-route-way-0-name").fill("East Fourth Plain TC");
+  await T(page, "new-route-way-0-run").fill(String(RUN_SECS / 60));
+  const add = T(page, "new-route-way-0-add").getByRole("combobox");
+  for (const [id, name] of STOPS) {
+    await add.fill(name);
+    await page.waitForTimeout(700);
+    const offered = clean(await page.getByRole("listbox").textContent().catch(() => ""));
+    check(`2.2 ${id} ${name} offered, from the stops record`, offered.includes(name) && offered.includes("stops record"), offered.slice(0, 120));
+    await add.press("Enter");
+    await page.waitForTimeout(300);
   }
-  check("2.3 the built draft is open and picks today", clean(await open().textContent()).includes(`(built)`) && clean(await open().textContent()).includes(DATES.today), clean(await open().textContent()));
+  const laid = clean(await T(page, "new-route-way-0-stops").textContent());
+  check("2.3 direction 1 runs the six stops in order", STOPS.every(([id], i) => laid.indexOf(id) >= 0 && (i === 0 || laid.indexOf(id) > laid.indexOf(STOPS[i - 1][0]))), laid.slice(0, 200));
+  await T(page, "new-route-way-1-name").fill("Washougal TC");
+  await T(page, "new-route-way-1-run").fill(String(RUN_SECS / 60));
+  await shot("new-route-directions", { full: true });
+  await T(page, "new-route-next").click();
+  for (const [dir, offset] of [[0, 0], [1, 15]]) {
+    const table = T(page, `new-route-trips-${dir}`);
+    for (let k = 0; k < SERVICE.length; k++) {
+      if ((await table.getByTestId("new-route-trip-row").count()) <= k) await T(page, `new-route-add-row-${dir}`).click();
+      const [key, first, last, every] = SERVICE[k];
+      const row = table.getByTestId("new-route-trip-row").nth(k);
+      const hhmm = (h, m) => `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      await row.getByLabel("Service key").selectOption(key);
+      await row.getByLabel("First departure").fill(hhmm(first, offset));
+      await row.getByLabel("Last departure").fill(dir === 1 && every === 30 ? hhmm(last - 1, 45) : hhmm(dir === 1 ? last - 1 : last, dir === 1 ? offset : 0));
+      await row.getByLabel("Minutes between trips").fill(String(every));
+    }
+  }
+  await shot("new-route-trips", { full: true });
+  await T(page, "new-route-create").click();
+  await settle();
+  const made = await status();
+  check("2.3 the route is created", made.includes("created"), made + " " + clean(await T(page, "new-route-problems").textContent().catch(() => "")));
 
   // 2.3 read back: route 099 on the Route stage
-  const box = page.getByPlaceholder("Open a route…");
-  await box.fill(ROUTE.id);
-  await page.waitForTimeout(600);
-  await box.press("Enter");
   await settle();
   const route = clean(await T(page, "stage-route").textContent());
   check("2.3 route 099 shows 57 weekday trips, 6:00–20:40", route.includes(ROUTE.long_name) && /TRIPS\s*57/i.test(route) && route.includes("6:00–20:40"), route.slice(0, 160));
@@ -125,7 +128,8 @@ export default async function (page, { shot, status, settle }) {
   const said = await status();
   check(`2.6 published, taking effect ${DATES.today}`, said.startsWith("Published") && said.includes(DATES.today), said);
   const feed = await fetch(`http://127.0.0.1:8091/feed?date=${DATES.today}`).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
-  const file = ZIP.replace("ctran-route99.zip", "feed-today.zip");
+  fs.mkdirSync(OUT, { recursive: true });
+  const file = path.join(OUT, "feed-today.zip");
   if (feed) fs.writeFileSync(file, Buffer.from(feed));
   const routes = feed ? execFileSync("unzip", ["-p", file, "routes.txt"]).toString() : "";
   check("2.6 the feed in force today carries route 99", routes.includes(ROUTE.long_name));

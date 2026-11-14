@@ -14,7 +14,7 @@ Format, grouped by theme:
 ```
 
 IDs are never reused; the next new finding is **QAF-118**. The
-standing route 99 test keeps its own findings (QAF-112..117) in
+standing route 99 test keeps its own findings (QAF-114..117) in
 `qa/route-99/README.md`. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times

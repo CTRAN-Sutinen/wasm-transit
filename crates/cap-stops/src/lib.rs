@@ -112,6 +112,11 @@ pub enum Request {
     /// `on`, its first date (D-157: a pick only reads the stops) —
     /// registered, answered with its hash.
     ReadRecords { network_hash: String, stops_hash: String, on: String },
+    /// The named stops' records in the network's terms on `on` — what a
+    /// plan takes when its planner picks a stop the stops document holds
+    /// (D-173); a stop not there yet that day, or not held, is not
+    /// answered.
+    Records { stops_hash: String, stop_ids: Vec<String>, on: String },
     /// What the planner is told of the stops the pick visits over
     /// `[from, until)`: each not in service, and each suspended for the
     /// whole period or with no end — warnings, never refusals.
@@ -192,6 +197,7 @@ pub enum Response {
     AddEvent { refusals: Vec<Refusal>, stops_hash: Option<String>, stops: Option<Stops> },
     CorrectEvent { refusals: Vec<Refusal>, stops_hash: Option<String>, stops: Option<Stops> },
     ReadRecords { network_hash: String, network: transit_network::Network },
+    Records { records: std::collections::BTreeMap<String, transit_network::Stop> },
     VisitWarnings { warnings: Vec<transit_network::NetworkWarning> },
     ExportVersions { network_hash: String, network: transit_network::Network },
     ImportEvents {
@@ -313,6 +319,11 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let read = transit_network::stop_record::read_records(&network, &stops, on);
             let (network_hash, read) = NETWORK.register(read)?;
             Ok(Response::ReadRecords { network_hash, network: (*read).clone() })
+        }
+        Request::Records { stops_hash, stop_ids, on } => {
+            let on = parse_date(&on)?;
+            let stops = STOPS.require(&stops_hash)?;
+            Ok(Response::Records { records: transit_network::stop_record::records(&stops, &stop_ids, on) })
         }
         Request::VisitWarnings { network_hash, stops_hash, from, until } => {
             let from = parse_date(&from)?;
