@@ -244,6 +244,10 @@ among them):
   needs no build, a Rust edit only `just caps-fast` and a reload. Every
   control on every stage, on a forked plan, then the paths between
   stages; each control fixed is pinned in the UI's spec.
+- **The standing end-to-end test** is `docs/qa/route-99-end-to-end.md`:
+  one new route from the stops app through service change to ride now
+  and the stop display, run in the UI on `just qa`; it keeps its last
+  run and its own findings.
 - **Findings are open work, not a log.** A session adds new
   findings (and re-confirmation lines on old ones) to
   `docs/QA-FINDINGS.md`; the change that fixes a finding deletes it

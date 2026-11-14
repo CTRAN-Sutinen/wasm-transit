@@ -13,7 +13,9 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-112**. A
+IDs are never reused; the next new finding is **QAF-118**. The
+standing route 99 test keeps its own findings (QAF-112..117) in
+`docs/qa/route-99-end-to-end.md`. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
