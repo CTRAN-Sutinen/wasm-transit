@@ -65,29 +65,44 @@ Sundays, against a plan you choose there.
 
 Stops keeps each stop's own story, apart from the schedules: when it
 was planned, permitted, built, put in service, suspended for a while,
-or retired. Pick a day to see every stop as it stood then, coloured by
-where it is in that story. Open a stop to see what is there (a
-shelter, a bench, lighting), which routes stop there that day, and
-everything that has happened to it. Record a change on the day it
-happens: a new stop, its next step, a suspension and the return, a
-move, or new details. Place a new stop, or move one, by clicking the
-map, or type its latitude and longitude as measured at the stop. A
-typed point is saved exactly as typed. On a phone at the stop, "Use
-my location" gives a starting point. Survey a stop on a phone or
-tablet: the questions on the paper stop worksheet, what is at the
-stop, and its numbers in other systems. Sign in to save a change;
-looking needs no sign-in. The survey records you as the surveyor,
-from your sign-in. A survey you have not
-finished stays on the device until you save it. Add photos from the
-phone's camera, or a site drawing, to a survey or a request; only
-people who are signed in can see them. Request work at a
-stop the way the paper installation sheet does: a new stop, a
-reinstall, a move or removal, a repair, or a temporary stop. A request
-keeps the work order number from the work order system, and its
-status. When the server takes in a new schedule feed from the agency,
-it records how the feed's stops differ, and the page says so in one
-line you can open to check each stop. A change entered
-wrong is corrected, not added to. Schedules read these stops but never change them.
+or retired. Every job gets the whole screen.
+
+- **Stops** shows every stop on a chosen day, coloured by where it is
+  in that story, on a map beside a list or as a table. On a phone at
+  the stop, "Nearby stops" lists the stops closest to you first.
+- **Work** is a table of the work asked for at every stop, by status
+  and kind of job.
+- **Feed review** shows how the agency's latest schedule feed differs
+  from the stops record, with a link to each stop.
+
+A stop opens as a page: where it is, what is there, which routes stop
+there that day, the work asked for there, its last site survey, and
+everything that has happened to it. From there:
+
+- **Record change**: a new stage, a suspension and the return, a move,
+  or new details. It offers only the changes the stop can take that
+  day, and says in one line what will be saved.
+- **Survey**: the paper stop worksheet as one page, with a list of its
+  sections beside it showing how far each is filled. Each answer starts
+  from the record, so you only change what has changed, and the side
+  column lists the differences before you save. A survey you have not
+  finished stays on the device until you save it. On a phone it fills
+  the screen.
+- **Request work**: the paper installation sheet as a page. A request
+  shows where it stands (draft, submitted, work order open, completed)
+  and the next step: submit it, open its work order, complete it, then
+  update the stop's record.
+- **Report issue**: a description and photos, saved as a draft request
+  for the planning team to finish.
+
+Place a new stop, or move one, by clicking the map, or type its
+latitude and longitude as measured at the stop. A typed point is saved
+exactly as typed. "Use my location" gives a starting point. Add photos
+from the phone's camera, or a site drawing, to a survey or a request;
+only people who are signed in can see them. Sign in to save a change;
+looking needs no sign-in. The survey records you as the surveyor, from
+your sign-in. A change entered wrong is corrected, not added to.
+Schedules read these stops but never change them.
 
 **Server:** needed.
 

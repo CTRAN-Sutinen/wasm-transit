@@ -294,14 +294,15 @@ transit-plans    THE service-plan chain (resolve, periods, validity — pure, de
                  and the published plan set (publish, the pick in force)
 transit-stops    THE stops document, beside the plans: each stop a list of dated events
                  (planned, permitted, built, in_service, suspended, moved, changed, retired), the
-                 stop on a date, served, what a write must pass, its edits (an
+                 stop on a date, the stops near a point, served, what a write must pass, its edits (an
                  event placed by date, a correction), what a stop may become —
                  pure; a stop's life is its own, and a
                  pick only reads it (D-157)
 transit-requests THE stop requests document: the planning team's requests for work at a
                  stop (new, reinstall, relocate/remove, repair/improve, temporary), each
                  tracking the work order the agency's work order system opens for it;
-                 what a write must pass, a request placed by id — pure (D-159)
+                 what a write must pass, a request placed by id, the work across every
+                 stop — pure (D-159)
 transit-runs     THE runs layer beside the network: the work-rule document (recovery,
                  interlining per route pair, run rules, pay — every rule optional), the
                  recovery a wait requires and its slack, the suggested blocking — pure

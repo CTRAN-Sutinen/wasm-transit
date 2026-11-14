@@ -602,8 +602,11 @@ transit-stops   THE stops document, beside the plans (D-147, D-153):
                 that was wrong taken out, the corrected one placed by
                 date). `next_events` is what a stop may become on a
                 date — exactly the lifecycle events a write would
-                accept — and `counts_on` the stops on a date by
-                status. Depends on no other model
+                accept — `counts_on` the stops on a date by
+                status, and `near` the stops on a date nearest a point
+                (great-circle, nearest first, ties by id, at most a
+                limit, within a radius where asked, at the statuses
+                asked). Depends on no other model
                 crate. cap-stops is the seam. A stop's life is its own,
                 managed apart from the picks, which only read it
                 (D-157).
@@ -625,7 +628,9 @@ transit-requests THE stop requests document (D-159): the planning
                 (`attachments`, by hash, D-162). `checked` refuses only
                 what makes a request wrong, each refusal naming its
                 request; `put` places one request by id; `for_stop` is
-                a stop's requests. Canonical as it stands (requests by
+                a stop's requests; `list` the work across every stop
+                (at the statuses and of the jobs asked) and `counts`
+                every request by status. Canonical as it stands (requests by
                 id), what it does not know kept. Depends on no other
                 model crate; cap-requests is the seam. A stop's event
                 names the request it carries out (transit-stops
@@ -716,7 +721,9 @@ cap-stops       The stops capability: what is a stop on a date?
                 kernel's load_stops answers), stops_on (every stop, or
                 those named or at the statuses asked, as on a date —
                 its status with since, until, and note — and the stops
-                counted by status) and stop (one stop on a date, its
+                counted by status), stops_near (the stops on a date
+                nearest a point, each with its distance — the field's
+                "which stop am I at?") and stop (one stop on a date, its
                 events, oldest first, and what it may become that
                 day); seed (a stops document from a network's stops),
                 add_event (one edit placed by date) and correct_event
@@ -742,9 +749,12 @@ cap-requests    The stop requests capability: what work has been asked
                 for at a stop, and where is it? validate (what a write
                 must pass, or the canonical document and its hash — the
                 one load_stop_requests answers), requests_for (a stop's
-                requests), put (one request placed by id, checked; with
-                no document, the first begins one), and vocabulary (the
-                lists a request's answers come from). transit-requests
+                requests), list (the work across every stop, by status
+                and job, with every request counted by status), put (one request placed by id, checked; with
+                no document, the first begins one), record_work_order
+                (what the work order system answered, on its request),
+                and vocabulary (the lists a request's answers come
+                from). transit-requests
                 is the library.
 cap-author      The authoring capability: what does this network
                 become after these edits? apply (typed edits,

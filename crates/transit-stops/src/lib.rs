@@ -560,6 +560,26 @@ pub struct StopOn {
     pub details: Details,
 }
 
+/// A stop as it stands on a date, and how far it is from the point
+/// asked (great-circle metres).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct NearStop {
+    pub distance_m: f64,
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub stop: StopOn,
+}
+
+/// Great-circle distance in metres (haversine, mean earth radius — the
+/// directory's `stops_near` measures alike).
+fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    let (p1, p2) = (lat1.to_radians(), lat2.to_radians());
+    let (dp, dl) = ((lat2 - lat1).to_radians(), (lon2 - lon1).to_radians());
+    let a = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
+    2.0 * 6_371_000.0 * a.sqrt().asin()
+}
+
 /// How many stops stand at a status on a date.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
@@ -755,6 +775,23 @@ impl Stops {
     /// Every stop that exists on `date`, in id order.
     pub fn on_date(&self, date: NaiveDate) -> Vec<StopOn> {
         self.stops.iter().filter_map(|(id, events)| fold(id, events, date)).collect()
+    }
+
+    /// The stops near a point on `date` — "which stop am I standing at?":
+    /// those that exist that day at `statuses` (every status, where not
+    /// given), each at its great-circle distance, nearest first (ties by
+    /// id), at most `limit`, and none farther than `radius_m` where given.
+    pub fn near(&self, date: NaiveDate, lat: f64, lon: f64, limit: usize, radius_m: Option<f64>, statuses: Option<&[Status]>) -> Vec<NearStop> {
+        let mut out: Vec<NearStop> = self
+            .on_date(date)
+            .into_iter()
+            .filter(|s| statuses.is_none_or(|w| w.contains(&s.status)))
+            .map(|s| NearStop { distance_m: haversine_m(lat, lon, s.lat, s.lon), stop: s })
+            .filter(|n| radius_m.is_none_or(|r| n.distance_m <= r))
+            .collect();
+        out.sort_by(|a, b| a.distance_m.total_cmp(&b.distance_m).then_with(|| a.stop.stop_id.cmp(&b.stop.stop_id)));
+        out.truncate(limit);
+        out
     }
 
     /// Whether a trip at the stop on `date`, at `secs` since the service

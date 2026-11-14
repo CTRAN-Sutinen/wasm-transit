@@ -307,11 +307,7 @@ work rules, and the bid over them.
   which answers the patterns that visit the stop, whatever runs that
   day.
   Pin: `just qa`, `stops.html#on=2027-03-01&open=1132`.
-- **QAF-109 DEFECT** — a new stop whose id is taken is refused only in
-  the status line at the top right ("There is already a stop 1132.
-  Choose another id."), not beside the form being filled; at 2560 px
-  the two are a screen apart.
-  Pin: `just qa`, New stop, id 1132, a point typed, Save.
+
 
 ## Data the bus does not have
 

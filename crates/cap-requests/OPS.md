@@ -10,6 +10,10 @@ What a write must pass: every refusal, each naming its request and its problem �
 
 A stop's requests — each its id and the request — in id order, over a document registered by load_stop_requests. A stop with none answers none.
 
+## list
+
+The work across every stop — what is in flight, and where: every request, each its id and the request, in id order, only those at `statuses` and of `jobs` where given (each filter only where given). Beside them, counts: every request in the document by status, whatever the filters ask, in the statuses' order (drafted, submitted, ordered, completed, cancelled), only the statuses some request has. Over a document registered by load_stop_requests.
+
 ## put
 
 One change: the document with `request` placed under `id` — a new request, or the one held replaced whole, every other request as it was; with no requests_hash, the first request of a new document. Then checked as a write is (validate): every refusal and no document, or none and the document registered and answered with its requests_hash. A page writes the answer through the deployment's receive path (POST /stop-requests), which checks it again.

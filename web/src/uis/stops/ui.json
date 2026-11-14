@@ -1,9 +1,10 @@
 {
   "id": "stops",
   "title": "Stops",
-  "summary": "Every stop's own life, apart from the service plans: planned, permitted, built, in service, suspended for a while, retired. Each stop on a map and in a list as it stands on a chosen day, its details and amenities, the routes that stop there in the schedule running that day, and its history — and every change recorded as a dated event: a new stop, the next stage, a suspension and the return, a move, a change of details, or a correction of an event entered wrong; a site survey filled at the stop on a phone or tablet; and the planning team's requests for work at a stop, each tracking its work order.",
+  "summary": "Every stop's own life, apart from the service plans, and the work asked for at the stops, each job on a screen of its own: the stops on a map beside their list or as a table, the stops nearest you in the field, one stop's page (its record under headings, its changes as a card), a site survey as one page of the worksheet's sections, a request's page from draft to its work order and completion, the work across every stop as a table, and what the feed changed.",
   "questions": [
     "Where is each stop, and where does it stand on a given day: planned, permitted, built, in service, suspended, or retired?",
+    "Which stops are nearest me, here in the field?",
     "Which stops are out of service on a day, since when, until when, and why?",
     "What is at a stop — shelter, bench, lighting, a schedule — and can a wheelchair user board there?",
     "Which routes stop here in the schedule running that day?",
@@ -11,11 +12,13 @@
     "Record a change: a new stop, its next stage, a suspension and its return, a move, new details, or a correction.",
     "What did the last site survey find at this stop, and who surveyed it?",
     "What work has been requested at this stop, and where is its work order?",
+    "What work is in flight across every stop, and where?",
     "What did the agency's feed change in the stops record, and which stops in service does it not list?"
   ],
   "ops": [
     "stops.seed",
     "stops.stops_on",
+    "stops.stops_near",
     "stops.stop",
     "stops.add_event",
     "stops.correct_event",
@@ -23,7 +26,9 @@
     "stops.import_events",
     "stops.questions",
     "requests.requests_for",
+    "requests.list",
     "requests.put",
+    "requests.record_work_order",
     "requests.vocabulary",
     "directory.stop_detail",
     "network.validate"
@@ -31,18 +36,22 @@
   "components": [
     "StopLifeMap",
     "StopLifeList",
-    "StopLifeCard",
-    "NewStopForm",
+    "StopsTable",
+    "StopPage",
+    "ChangeFlow",
+    "TaskFrame",
+    "SurveyPage",
+    "RequestPage",
+    "WorkTable",
+    "NewStopFlow",
     "PointFields",
-    "SiteSurvey",
-    "StopRequests",
-    "FeedNotice",
+    "FeedReview",
     "Attachments",
     "AttachmentThumbs",
     "Combobox",
     "Unavailable"
   ],
-  "session": "2026-11-13 on C-TRAN (testdata/ctran-gtfs.zip, `just qa`), every control walked at 2560x1300 and the survey and a request at 390x844: stop 1132 suspended (an end before its start refused), back early and the return corrected, moved for a while at a clicked then typed point, its details changed, surveyed with a photo, a request refused while claiming a work order it did not name, then submitted, its work order opened and read through the stub, and a change carrying it; a wrong suspension removed; a new stop QA-1 planned, permitted, built, in service, retired, shown under Retired; a taken id refused; a stop opened by a map click and by typing its name; the feed notice reviewed and its stop opened. Found and fixed: the dev proxy did not pass /attachments or /stop-requests/work-order, a suspended stop back early still read its planned end, the survey and request forms scrolled sideways on a phone, details saved with nothing changed closed silently, value-like placeholders, the map key named \"this stop\" with none open. Open: QAF-108, QAF-109.",
+  "session": "2026-11-13 on C-TRAN (testdata/ctran-gtfs.zip, `just qa`), at 2560x1300 and 390x844, after the full-width rebuild: stop 1132 found by typing its name and opened as a page; suspended from the change card; surveyed on the survey page (a section reached from the index, an amenity set, saved with a photo); a repair request made on its page, submitted, its work order opened through the stub, its utility locate edited in place; the Work table and Feed review; the stops' map kept across two trips to a stop and back (no map rebuilt), each stop's map opened at the stop; the stops as a table; on the phone, Nearby stops from the device's location, the stop page, the survey full screen, a field report saved as a draft, and the details card. Found and fixed before it: every job squeezed into one side panel (the survey a nine-step wizard with unnamed steps), conversational headings, the stops' map rebuilt and the stop's map flying in on each visit. Open: QAF-108.",
   "spec": "web/e2e/ui-stops.spec.mjs",
   "generated": "2026-11-12"
 }

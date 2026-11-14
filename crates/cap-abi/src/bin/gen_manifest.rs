@@ -287,7 +287,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "stops",
         file: "module_stops.wasm",
-        ops: &["validate", "stops_on", "stop", "seed", "add_event", "correct_event", "read_records", "visit_warnings", "export_versions", "import_events", "questions", "attribute_surveys", "feed_events"],
+        ops: &["validate", "stops_on", "stops_near", "stop", "seed", "add_event", "correct_event", "read_records", "visit_warnings", "export_versions", "import_events", "questions", "attribute_surveys", "feed_events"],
         documents: &["stops", "network"],
         // The stops document is the host's (beside the plans, D-147):
         // validate answers its canonical bytes and hash, which the
@@ -304,7 +304,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "requests",
         file: "module_requests.wasm",
-        ops: &["validate", "requests_for", "put", "record_work_order", "vocabulary"],
+        ops: &["validate", "requests_for", "list", "put", "record_work_order", "vocabulary"],
         documents: &["stop_requests"],
         // The stop requests document is the host's (D-159): validate
         // answers its canonical bytes and hash, which the kernel's
@@ -1740,6 +1740,17 @@ fn example_for(
                 json!({ "ok": { "op": "stops_on", "stops": stops.on_date(date), "counts": stops.counts_on(date) } }),
             )
         }
+        ("stops", "stops_near") => {
+            // Standing at a point by 6124 in the field: the two nearest stops.
+            let stops = fixture_stops().checked().ok()?;
+            let date = chrono::NaiveDate::from_ymd_opt(2027, 4, 1)?;
+            let at = stops.stop_on("6124", date)?;
+            let (lat, lon) = (at.lat + 0.0002, at.lon);
+            (
+                json!({ "op": "stops_near", "stops_hash": cap_abi::canonical_hash(&stops).ok()?, "date": "2027-04-01", "lat": lat, "lon": lon, "limit": 2 }),
+                json!({ "ok": { "op": "stops_near", "stops": stops.near(date, lat, lon, 2, None, None) } }),
+            )
+        }
         ("stops", "stop") => {
             let stops = fixture_stops().checked().ok()?;
             let date = chrono::NaiveDate::from_ymd_opt(2027, 7, 1)?;
@@ -1887,6 +1898,16 @@ fn example_for(
             (
                 json!({ "op": "requests_for", "requests_hash": cap_abi::canonical_hash(&requests).ok()?, "stop": "7001" }),
                 json!({ "ok": { "op": "requests_for", "requests": listed } }),
+            )
+        }
+        ("requests", "list") => {
+            // The work in flight across every stop: drafted and submitted.
+            let requests = fixture_requests().checked().ok()?;
+            let statuses = vec!["drafted".to_string(), "submitted".to_string()];
+            let listed: Vec<_> = requests.list(Some(&statuses), None).into_iter().map(|(id, r)| json!({ "id": id, "request": r })).collect();
+            (
+                json!({ "op": "list", "requests_hash": cap_abi::canonical_hash(&requests).ok()?, "statuses": statuses }),
+                json!({ "ok": { "op": "list", "requests": listed, "counts": requests.counts() } }),
             )
         }
         ("requests", "put") => {

@@ -10,7 +10,8 @@
 //! a host stores exactly those bytes). `stops_on` and `stop` answer
 //! stops as their events make them on a date, over a document the
 //! kernel's `load_stops` registered (refused there unless `validate`
-//! would pass it). `seed` starts a stops document from a network's
+//! would pass it), and `stops_near` the stops nearest a point on a date
+//! (the field's "which stop am I at?"). `seed` starts a stops document from a network's
 //! stops (transit-network's `stop_record`), and `add_event` places one
 //! edit and checks it. A pick only reads the document (D-157):
 //! `read_records` gives it each stop's record on its first date, and
@@ -59,6 +60,25 @@ pub enum Request {
         #[serde(default)]
         #[ts(optional)]
         stop_ids: Option<Vec<String>>,
+        #[serde(default)]
+        #[ts(optional)]
+        statuses: Option<Vec<Status>>,
+    },
+    /// The stops nearest a point on `date`, nearest first (ties by id),
+    /// each with its great-circle distance: at most `limit` (default 10),
+    /// none farther than `radius_m` where given, only those at `statuses`
+    /// where given.
+    StopsNear {
+        stops_hash: String,
+        date: String,
+        lat: f64,
+        lon: f64,
+        #[serde(default)]
+        #[ts(optional)]
+        limit: Option<u32>,
+        #[serde(default)]
+        #[ts(optional)]
+        radius_m: Option<f64>,
         #[serde(default)]
         #[ts(optional)]
         statuses: Option<Vec<Status>>,
@@ -161,6 +181,7 @@ pub enum Request {
 pub enum Response {
     Validate { refusals: Vec<Refusal>, document: Option<String>, document_hash: Option<String> },
     StopsOn { stops: Vec<StopOn>, counts: Vec<StatusCount> },
+    StopsNear { stops: Vec<transit_stops::NearStop> },
     Stop {
         stop: Option<StopOn>,
         events: Vec<Event>,
@@ -234,6 +255,17 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 stops: listed.into_iter().filter(|s| statuses.as_ref().is_none_or(|w| w.contains(&s.status))).collect(),
                 counts: stops.counts_on(date),
             })
+        }
+        Request::StopsNear { stops_hash, date, lat, lon, limit, radius_m, statuses } => {
+            let date = parse_date(&date)?;
+            if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
+                return Err(format!("the point {lat}, {lon} is not on the earth"));
+            }
+            if radius_m.is_some_and(|r| !(r >= 0.0)) {
+                return Err("radius_m must not be negative".into());
+            }
+            let stops = STOPS.require(&stops_hash)?;
+            Ok(Response::StopsNear { stops: stops.near(date, lat, lon, limit.unwrap_or(10) as usize, radius_m, statuses.as_deref()) })
         }
         Request::Stop { stops_hash, stop_id, date } => {
             let date = parse_date(&date)?;

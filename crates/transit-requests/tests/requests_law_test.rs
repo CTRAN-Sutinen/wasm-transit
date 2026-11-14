@@ -18,6 +18,11 @@
 //! * `put` places one request by id (new, or replacing the one held)
 //!   and nothing else changes; `for_stop` is a stop's requests in id
 //!   order;
+//! * `list` is the work across every stop — "what work is in flight,
+//!   and where is it?": every request in id order, only those at the
+//!   statuses and of the jobs asked, where asked; beside it the count
+//!   of every request by status, whatever the filters ask, in the
+//!   statuses' order, only the statuses some request has;
 //! * one document is one byte sequence however its keys are ordered,
 //!   and what this repo does not know — another tool's field — is kept.
 
@@ -165,6 +170,37 @@ proptest! {
         let got: Vec<String> = d.for_stop(&stop).into_iter().map(|(id, _)| id.to_string()).collect();
         let want: Vec<String> = d.requests.iter().filter(|(_, r)| r.stop == stop).map(|(k, _)| k.clone()).collect();
         prop_assert_eq!(got, want);
+    }
+
+    /// list is every request at the statuses and of the jobs asked (each
+    /// filter only where given), in id order, and its counts are every
+    /// request's by status whatever the filters ask.
+    #[test]
+    fn list_is_the_work_asked_and_counts_all_of_it(
+        d in arb_doc(),
+        statuses in proptest::option::of(proptest::sample::subsequence(STATUSES.to_vec(), 0..=5)),
+        jobs in proptest::option::of(proptest::sample::subsequence(JOBS.to_vec(), 0..=5)),
+    ) {
+        let s: Option<Vec<String>> = statuses.map(|v| v.into_iter().map(String::from).collect());
+        let j: Option<Vec<String>> = jobs.map(|v| v.into_iter().map(String::from).collect());
+        let got: Vec<String> = d.list(s.as_deref(), j.as_deref()).into_iter().map(|(id, _)| id.to_string()).collect();
+        let want: Vec<String> = d
+            .requests
+            .iter()
+            .filter(|(_, r)| s.as_ref().is_none_or(|s| s.contains(&r.status)))
+            .filter(|(_, r)| j.as_ref().is_none_or(|j| j.contains(&r.job)))
+            .map(|(k, _)| k.clone())
+            .collect();
+        prop_assert_eq!(got, want);
+        let counts = d.counts();
+        let total: u32 = counts.iter().map(|c| c.requests).sum();
+        prop_assert_eq!(total as usize, d.requests.len());
+        let order: Vec<&str> = counts.iter().map(|c| c.status.as_str()).collect();
+        let expected: Vec<&str> = STATUSES.iter().copied().filter(|st| d.requests.values().any(|r| r.status == *st)).collect();
+        prop_assert_eq!(order, expected);
+        for c in &counts {
+            prop_assert_eq!(c.requests as usize, d.requests.values().filter(|r| r.status == c.status).count());
+        }
     }
 
     /// What this repo does not know survives a read and a write, and the

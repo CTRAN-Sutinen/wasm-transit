@@ -200,3 +200,75 @@ export function requestProblemWords(p: { kind: string; field?: string; value?: s
       return p.kind.replaceAll("_", " ");
   }
 }
+
+/// A request's job (cap-requests `vocabulary`), as the planner chooses
+/// it: its name, and what it means at the stop.
+export const JOB_WORDS: Record<string, [string, string]> = {
+  new: ["New stop", "Install sign, post, and amenities."],
+  reinstall: ["Reinstall", "Replace a removed sign or fixture."],
+  relocate_remove: ["Relocate / remove", "Move or remove sign and fixtures."],
+  repair_improve: ["Repair / improve", "Fix damage or add amenities."],
+  temporary: ["Temporary stop", "For a closure, construction, or event."],
+};
+
+export function jobWords(job: string): string {
+  return JOB_WORDS[job]?.[0] ?? plain(job);
+}
+
+/// A request's status (cap-requests `vocabulary`), in words.
+export const REQUEST_STATUS_WORDS: Record<string, string> = {
+  drafted: "Draft",
+  submitted: "Submitted",
+  ordered: "Work order open",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+export function requestStatusWords(status: string): string {
+  return REQUEST_STATUS_WORDS[status] ?? plain(status);
+}
+
+/// What each change offered on a stop says it does — the choice's name
+/// and a line under it. `in_service` reads as a return when the stop is
+/// suspended. The changes a stop may take are cap-stops `stop`'s `next`.
+/// What was saved, as the status line says it.
+export function changedWords(kind: string, status: string | undefined, name: string, from: string, until: string): string {
+  const till = until ? ` until ${until}` : "";
+  switch (kind) {
+    case "suspended":
+      return `Suspended ${name} from ${from}${till}.`;
+    case "in_service":
+      return status === "suspended" ? `Returned ${name} to service from ${from}.` : `${name} in service from ${from}.`;
+    case "retired":
+      return `Retired ${name} from ${from}.`;
+    case "move":
+      return `Moved ${name} from ${from}${till}.`;
+    case "details":
+      return `Updated ${name} from ${from}.`;
+    default:
+      return `${name} marked ${(STATUS_WORDS[kind] ?? kind).toLowerCase()} from ${from}.`;
+  }
+}
+
+export function changeWords(kind: string, status: string | undefined): [string, string] {
+  switch (kind) {
+    case "planned":
+      return ["Mark planned", ""];
+    case "permitted":
+      return ["Mark permitted", "Permits granted."];
+    case "built":
+      return ["Mark built", "Installed, not yet served."];
+    case "in_service":
+      return status === "suspended" ? ["Return to service", ""] : ["Put in service", ""];
+    case "suspended":
+      return ["Suspend", "Temporary closure."];
+    case "retired":
+      return ["Retire", "Permanent removal. History is kept."];
+    case "move":
+      return ["Move", "Permanent or temporary relocation."];
+    case "details":
+      return ["Edit details", "Name, code, accessibility, amenities."];
+    default:
+      return [plain(kind), ""];
+  }
+}

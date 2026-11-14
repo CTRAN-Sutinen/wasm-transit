@@ -21,6 +21,11 @@
 //! * a correction edits the event that was wrong: it is the event taken
 //!   out and the corrected one placed by date, nothing else moving;
 //! * the stops on a date are counted by status;
+//! * the stops near a point on a date — "which stop am I standing at?",
+//!   asked in the field — are those the date and the statuses asked
+//!   hold, each at its great-circle distance, nearest first (ties by
+//!   id), at most the limit asked and none past the radius asked; a stop
+//!   left out is no nearer than the last one listed;
 //! * a document that breaks the model is refused, each reason named;
 //! * one document is one byte sequence however its stops and keys are
 //!   ordered;
@@ -258,6 +263,69 @@ fn arb_history() -> impl Strategy<Value = Vec<Event>> {
 
 fn arb_doc() -> impl Strategy<Value = Stops> {
     proptest::collection::btree_map("[a-z0-9]{1,6}", arb_history(), 1..6).prop_map(|stops| Stops { stops, ..Stops::default() })
+}
+
+/// The great-circle distance, written apart from the library's: the
+/// spherical law of cosines on the same mean earth radius.
+fn cosine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    let (p1, p2, dl) = (lat1.to_radians(), lat2.to_radians(), (lon2 - lon1).to_radians());
+    let c = (p1.sin() * p2.sin() + p1.cos() * p2.cos() * dl.cos()).clamp(-1.0, 1.0);
+    6_371_000.0 * c.acos()
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
+
+    #[test]
+    fn the_stops_near_a_point_are_the_nearest_asked(
+        doc in arb_doc(),
+        d in 0u32..400,
+        lat in 45.55f64..45.75,
+        lon in -122.75f64..-122.45,
+        limit in 1usize..8,
+        radius in proptest::option::of(10.0f64..30_000.0),
+        statuses in proptest::option::of(proptest::sample::subsequence(
+            vec![Status::Planned, Status::Permitted, Status::Built, Status::InService, Status::Suspended, Status::Retired], 0..=6)),
+    ) {
+        let doc = doc.checked().map_err(|r| TestCaseError::fail(format!("{r:?}")))?;
+        let got = doc.near(day(d), lat, lon, limit, radius, statuses.as_deref());
+        let eligible: Vec<(String, f64)> = doc
+            .on_date(day(d))
+            .into_iter()
+            .filter(|s| statuses.as_ref().is_none_or(|w| w.contains(&s.status)))
+            .map(|s| { let m = cosine_m(lat, lon, s.lat, s.lon); (s.stop_id, m) })
+            .filter(|(_, m)| radius.is_none_or(|r| *m <= r + 0.5))
+            .collect();
+        prop_assert!(got.len() <= limit);
+        if got.len() < limit {
+            // fewer than the limit: every stop clearly inside the radius is listed
+            let listed: Vec<&str> = got.iter().map(|n| n.stop.stop_id.as_str()).collect();
+            for (id, m) in &eligible {
+                prop_assert!(radius.is_some_and(|r| *m > r - 0.5) || listed.contains(&id.as_str()), "{} at {} left out", id, m);
+            }
+        }
+        for (i, n) in got.iter().enumerate() {
+            prop_assert_eq!(Some(n.stop.clone()), doc.stop_on(&n.stop.stop_id, day(d)));
+            prop_assert!(statuses.as_ref().is_none_or(|w| w.contains(&n.stop.status)));
+            let want = cosine_m(lat, lon, n.stop.lat, n.stop.lon);
+            prop_assert!((n.distance_m - want).abs() < 0.5, "{} at {} not {}", n.stop.stop_id, n.distance_m, want);
+            prop_assert!(radius.is_none_or(|r| n.distance_m <= r));
+            if i > 0 {
+                let p = &got[i - 1];
+                prop_assert!(p.distance_m < n.distance_m || (p.distance_m == n.distance_m && p.stop.stop_id < n.stop.stop_id));
+            }
+        }
+        if let Some(last) = got.last() {
+            let listed: Vec<&str> = got.iter().map(|n| n.stop.stop_id.as_str()).collect();
+            for (id, m) in &eligible {
+                if !listed.contains(&id.as_str()) {
+                    prop_assert!(*m >= last.distance_m - 0.5, "{} at {} left out, nearer than {}", id, m, last.distance_m);
+                }
+            }
+        } else {
+            prop_assert!(eligible.iter().all(|(_, m)| radius.is_some_and(|r| *m > r - 0.5)));
+        }
+    }
 }
 
 // ---------------------------------------------------------------------

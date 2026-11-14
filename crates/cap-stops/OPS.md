@@ -10,6 +10,10 @@ What a write must pass: every refusal, each naming its stop, the event's index i
 
 Every stop as its events make it on the date, in id order — or only stop_ids, where given, and only those at statuses, where given: its status (planned, permitted, built, in_service, suspended, retired), when that status began (since; none for a stop in service from before any record), when it ends (until, a temporary one: its until, or sooner the next status event after the date — a stop back early, or retired while suspended), the note on the event that set it, when it was last surveyed and by whom (surveyed_on, surveyed_by), its point, and its details, amenities, site answers, and references. Beside them, counts: the stops on the date by status (every one, whatever stop_ids and statuses ask), only the statuses some stop has. A stop not yet there on the date (its first event is later) is not listed. Read over a document registered by load_stops.
 
+## stops_near
+
+The stops nearest a point on the date — the field's "which stop am I standing at?", asked from the device's location: every stop that exists that day (only those at statuses, where given — a planned stop not yet in any schedule is one), as stops_on answers it, plus distance_m, its great-circle distance in metres from {lat, lon} (haversine, mean earth radius — the directory's stops_near measures alike), nearest first, ties by stop id. limit caps the rows (default 10); radius_m drops every stop farther than it. A lat outside -90..90, a lon outside -180..180, or a negative radius is a request error. Read over a document registered by load_stops.
+
 ## stop
 
 One stop on the date — null before it exists — and every event it has, oldest first: the card's record and its history. Beside them, next: what the stop may become that day — the lifecycle events (planned, permitted, built, in_service, suspended, retired) a write dated that day would accept, in that order; a move or a change of details is always a choice while it is not retired. A stop the document does not hold is an error.

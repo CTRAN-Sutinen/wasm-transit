@@ -9,7 +9,9 @@
 //! request and problem, or the canonical document and its hash (the
 //! module is the hash authority; a host stores exactly those bytes).
 //! `requests_for` answers a stop's requests over a document the
-//! kernel's `load_stop_requests` registered; `put` answers the next
+//! kernel's `load_stop_requests` registered, and `list` the work across
+//! every stop (by status and job, with every request counted by
+//! status); `put` answers the next
 //! document with one request placed by id, checked as a write is; and
 //! `vocabulary` answers the lists a request's answers come from, and
 //! `record_work_order` puts what the work order system answered on a
@@ -35,6 +37,18 @@ pub enum Request {
     Validate { requests: StopRequests },
     /// A stop's requests, in id order.
     RequestsFor { requests_hash: String, stop: String },
+    /// The work across every stop: every request in id order, only those
+    /// at `statuses` and of `jobs` where given, with every request
+    /// counted by status.
+    List {
+        requests_hash: String,
+        #[serde(default)]
+        #[ts(optional)]
+        statuses: Option<Vec<String>>,
+        #[serde(default)]
+        #[ts(optional)]
+        jobs: Option<Vec<String>>,
+    },
     /// The document with `request` placed under `id` — new, or
     /// replacing the one held — then checked as a write is: every
     /// refusal, or the document registered and answered with its hash.
@@ -71,6 +85,7 @@ pub struct IdRequest {
 pub enum Response {
     Validate { refusals: Vec<RequestRefusal>, document: Option<String>, document_hash: Option<String> },
     RequestsFor { requests: Vec<IdRequest> },
+    List { requests: Vec<IdRequest>, counts: Vec<transit_requests::RequestCount> },
     Put { refusals: Vec<RequestRefusal>, requests_hash: Option<String>, requests: Option<StopRequests> },
     RecordWorkOrder { refusals: Vec<RequestRefusal>, requests_hash: Option<String>, requests: Option<StopRequests> },
     Vocabulary { jobs: Vec<String>, statuses: Vec<String>, sides: Vec<String>, directions: Vec<String>, markings: Vec<String> },
@@ -100,6 +115,17 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             let held = STOP_REQUESTS.require(&requests_hash)?;
             Ok(Response::RequestsFor {
                 requests: held.for_stop(&stop).into_iter().map(|(id, r)| IdRequest { id: id.to_string(), request: r.clone() }).collect(),
+            })
+        }
+        Request::List { requests_hash, statuses, jobs } => {
+            let held = STOP_REQUESTS.require(&requests_hash)?;
+            Ok(Response::List {
+                requests: held
+                    .list(statuses.as_deref(), jobs.as_deref())
+                    .into_iter()
+                    .map(|(id, r)| IdRequest { id: id.to_string(), request: r.clone() })
+                    .collect(),
+                counts: held.counts(),
             })
         }
         Request::Put { requests_hash, id, request } => {

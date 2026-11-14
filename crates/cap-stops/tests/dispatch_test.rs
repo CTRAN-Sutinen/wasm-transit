@@ -165,6 +165,27 @@ fn stops_on_filters_by_status_and_counts_them() {
     assert_eq!(spring["counts"], json!([{"status": "planned", "stops": 1}, {"status": "suspended", "stops": 1}]), "every stop counted, whatever the filter");
 }
 
+/// The field's "which stop am I at?": nearest first with its distance,
+/// a planned stop included, filtered by status and radius; a point off
+/// the earth is an error.
+#[test]
+fn stops_near_answers_the_nearest_stops_on_the_date() {
+    let hash = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();
+    let near = ok(json!({"op": "stops_near", "stops_hash": hash, "date": "2027-04-01", "lat": 45.6935, "lon": -122.6512}));
+    let ids: Vec<&str> = near["stops"].as_array().unwrap().iter().map(|s| s["stop_id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["6124", "7001"], "the planned stop is a stop too");
+    assert!(near["stops"][0]["distance_m"].as_f64().unwrap() < 20.0);
+    assert_eq!(near["stops"][0]["status"], "suspended");
+    let one = ok(json!({"op": "stops_near", "stops_hash": hash, "date": "2027-04-01", "lat": 45.6935, "lon": -122.6512, "limit": 1}));
+    assert_eq!(one["stops"].as_array().unwrap().len(), 1);
+    let planned = ok(json!({"op": "stops_near", "stops_hash": hash, "date": "2027-04-01", "lat": 45.6935, "lon": -122.6512, "statuses": ["planned"]}));
+    assert_eq!(planned["stops"][0]["stop_id"], "7001");
+    let close = ok(json!({"op": "stops_near", "stops_hash": hash, "date": "2027-04-01", "lat": 45.6935, "lon": -122.6512, "radius_m": 100}));
+    assert_eq!(close["stops"].as_array().unwrap().len(), 1);
+    assert!(err(json!({"op": "stops_near", "stops_hash": hash, "date": "2027-04-01", "lat": 95.0, "lon": 0.0})).contains("not on the earth"));
+    assert!(err(json!({"op": "stops_near", "stops_hash": hash, "date": "2027-04-01", "lat": 45.0, "lon": 0.0, "radius_m": -1})).contains("negative"));
+}
+
 #[test]
 fn correct_event_edits_the_event_that_was_wrong() {
     let hash = ok(json!({"op": "load_stops", "stops": sample()}))["stops_hash"].clone();

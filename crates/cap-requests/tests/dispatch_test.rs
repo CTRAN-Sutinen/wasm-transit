@@ -62,6 +62,25 @@ fn put_begins_and_changes_the_document() {
     assert_eq!(ok(json!({ "op": "requests_for", "requests_hash": next["requests_hash"], "stop": "nope" }))["requests"], json!([]));
 }
 
+/// The work across every stop: filtered by status and job, every
+/// request counted by status whatever the filters ask.
+#[test]
+fn list_is_the_work_across_every_stop() {
+    let a = ok(json!({ "op": "put", "id": "R-1", "request": { "stop": "N1", "job": "new", "status": "drafted" } }));
+    let b = ok(json!({ "op": "put", "requests_hash": a["requests_hash"], "id": "R-2", "request": { "stop": "N2", "job": "repair_improve", "status": "submitted" } }));
+    let c = ok(json!({ "op": "put", "requests_hash": b["requests_hash"], "id": "R-3", "request": { "stop": "N1", "job": "repair_improve", "status": "drafted" } }));
+    let hash = c["requests_hash"].clone();
+    let all = ok(json!({ "op": "list", "requests_hash": hash }));
+    let ids: Vec<&str> = all["requests"].as_array().unwrap().iter().map(|r| r["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["R-1", "R-2", "R-3"]);
+    assert_eq!(all["counts"], json!([{ "status": "drafted", "requests": 2 }, { "status": "submitted", "requests": 1 }]));
+    let some = ok(json!({ "op": "list", "requests_hash": hash, "statuses": ["drafted"], "jobs": ["repair_improve"] }));
+    assert_eq!(some["requests"].as_array().unwrap().len(), 1);
+    assert_eq!(some["requests"][0]["id"], "R-3");
+    assert_eq!(some["counts"], all["counts"]);
+    assert!(run(json!({ "op": "list", "requests_hash": "sha256:00" }))["error"].is_string());
+}
+
 #[test]
 fn the_vocabulary_is_the_librarys() {
     let v = ok(json!({ "op": "vocabulary" }));

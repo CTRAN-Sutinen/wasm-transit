@@ -393,23 +393,27 @@ _host-tests:
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (ok("v").document_hash !== ok("l").stops_hash || ok("spring").stop.status !== "suspended" || ok("back").stop.status !== "in_service" || ok("bad").refusals[0]?.problem.kind !== "already_in_service") process.exit(1)'
     # The stop requests capability (D-159): the first request begins the
     # document, put answers it under the hash load_stop_requests and
-    # validate answer, a stop's requests read back, and a request at
+    # validate answer, a stop's requests read back, the work across every
+    # stop listed by status and counted, and a request at
     # "ordered" with no work order id is refused, named.
     node tools/caps-run.mjs requests \
       --as first --op '{"op":"put","id":"R-1","request":{"stop":"6124","job":"repair_improve","status":"submitted","requested_on":"2027-02-01"}}' \
       --as v --op '{"op":"validate","requests":"$first.requests"}' \
       --as mine --op '{"op":"requests_for","requests_hash":"$first.requests_hash","stop":"6124"}' \
+      --as work --op '{"op":"list","requests_hash":"$first.requests_hash","statuses":["submitted"]}' \
       --as bad --op '{"op":"put","requests_hash":"$first.requests_hash","id":"R-1","request":{"stop":"6124","job":"repair_improve","status":"ordered"}}' \
-      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (ok("v").document_hash !== ok("first").requests_hash || ok("mine").requests[0]?.id !== "R-1" || ok("bad").refusals[0]?.problem.kind !== "no_work_order") process.exit(1)'
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (ok("v").document_hash !== ok("first").requests_hash || ok("mine").requests[0]?.id !== "R-1" || ok("work").requests[0]?.id !== "R-1" || ok("work").counts[0]?.requests !== 1 || ok("bad").refusals[0]?.problem.kind !== "no_work_order") process.exit(1)'
     # The first stops document begins from a network (D-157): the sample
     # network's stops seeded, then one edit placed and checked — stop A
-    # suspended on 2026-10-23 reads suspended that day.
+    # suspended on 2026-10-23 reads suspended that day, and is the nearest
+    # stop to its own point (stops_near, the field's "which stop am I at?").
     node tools/caps-run.mjs stops \
       --op @web/public/caps/sample-network-load.json \
       --as seed --op '{"op":"seed","network_hash":"$load_network.network_hash"}' \
       --as edit --op '{"op":"add_event","stops_hash":"$seed.stops_hash","stop_id":"A","event":{"on":"2026-10-23","event":"suspended","until":"2026-10-24"}}' \
       --as on --op '{"op":"stop","stops_hash":"$edit.stops_hash","stop_id":"A","date":"2026-10-23"}' \
-      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (!ok("seed").stops.stops.A || ok("edit").refusals.length || ok("on").stop.status !== "suspended") process.exit(1)'
+      --as near --op '{"op":"stops_near","stops_hash":"$edit.stops_hash","date":"2026-10-23","lat":"$on.stop.lat","lon":"$on.stop.lon","limit":3}' \
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; if (!ok("seed").stops.stops.A || ok("edit").refusals.length || ok("on").stop.status !== "suspended" || ok("near").stops[0]?.stop_id !== "A" || ok("near").stops[0].distance_m !== 0 || ok("near").stops.length !== 3) process.exit(1)'
     # The map's geometry is answered, never computed by a host (W4):
     # a plan's ridden segment (router), the diverted 08:40 trip drawn
     # along the diversion's traced detour from A (runcut), and a route

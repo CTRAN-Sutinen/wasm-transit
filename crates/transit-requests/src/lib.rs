@@ -267,6 +267,14 @@ pub struct WorkOrder {
     pub extra: BTreeMap<String, Value>,
 }
 
+/// How many requests stand at one status.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
+#[ts(export)]
+pub struct RequestCount {
+    pub status: String,
+    pub requests: u32,
+}
+
 /// Why a write is refused: the request, and the problem.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, schemars::JsonSchema)]
 #[ts(export)]
@@ -359,6 +367,27 @@ impl StopRequests {
     /// A stop's requests, in id order.
     pub fn for_stop(&self, stop: &str) -> Vec<(&str, &StopRequest)> {
         self.requests.iter().filter(|(_, r)| r.stop == stop).map(|(k, r)| (k.as_str(), r)).collect()
+    }
+
+    /// The work across every stop: every request in id order, only those
+    /// at `statuses` and of `jobs` — each filter only where given.
+    pub fn list(&self, statuses: Option<&[String]>, jobs: Option<&[String]>) -> Vec<(&str, &StopRequest)> {
+        self.requests
+            .iter()
+            .filter(|(_, r)| statuses.is_none_or(|s| s.contains(&r.status)))
+            .filter(|(_, r)| jobs.is_none_or(|j| j.contains(&r.job)))
+            .map(|(k, r)| (k.as_str(), r))
+            .collect()
+    }
+
+    /// Every request counted by status, in [`STATUSES`]' order, only the
+    /// statuses some request has.
+    pub fn counts(&self) -> Vec<RequestCount> {
+        STATUSES
+            .iter()
+            .map(|st| RequestCount { status: st.to_string(), requests: self.requests.values().filter(|r| r.status == *st).count() as u32 })
+            .filter(|c| c.requests > 0)
+            .collect()
     }
 
     /// The document, if a write may store it, or every reason it may

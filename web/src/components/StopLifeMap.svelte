@@ -1,6 +1,8 @@
 <script lang="ts">
   /// Every stop the stops document holds on a date, coloured by its
-  /// status there (cap-stops `stops_on`); the open stop marked. A click
+  /// status there (cap-stops `stops_on`); the open stop marked, and
+  /// brought close while a task on it is under way (`focus`); the
+  /// device's location, when the page asked for it (`me`). A click
   /// on a stop opens it; while the page is choosing a point (a new stop,
   /// a move), a click anywhere chooses it, and the point is marked. A
   /// RENDER component: the stops come in as props; the map computes no
@@ -16,6 +18,9 @@
     selected,
     picking,
     point,
+    me = null,
+    focus = false,
+    at = null,
     onstop,
     onpoint,
   }: {
@@ -24,6 +29,13 @@
     /// A click chooses a point, not a stop.
     picking: boolean;
     point: { lat: number; lon: number } | null;
+    /// The device's location and how far off it may be (metres).
+    me?: { lat: number; lon: number; accuracy: number } | null;
+    /// Bring the open stop close (a survey, a change on it).
+    focus?: boolean;
+    /// Where the map opens, close in (a stop's own map): it starts there
+    /// rather than framing every stop and flying in.
+    at?: { lat: number; lon: number } | null;
     onstop: (stop: string) => void;
     onpoint: (lat: number, lon: number) => void;
   } = $props();
@@ -47,12 +59,28 @@
     (async () => {
       const { style, initialView } = await pickStyle();
       if (gone) return;
-      map = new maplibregl.Map({ container, style, center: initialView.center, zoom: initialView.zoom });
+      // svelte-ignore state_referenced_locally
+      const start = at ? { center: [at.lon, at.lat] as [number, number], zoom: 17 } : { center: initialView.center, zoom: initialView.zoom };
+      // svelte-ignore state_referenced_locally
+      if (at) framed = true;
+      map = new maplibregl.Map({ container, style, ...start });
+      // Kept while hidden (the page keeps the stops' map under another
+      // screen): it sizes itself again when shown.
+      const sized = new ResizeObserver(() => map?.resize());
+      sized.observe(container);
+      map.on("remove", () => sized.disconnect());
       map.addControl(new maplibregl.NavigationControl({ showCompass: false }));
       map.on("load", () => {
         const empty = { type: "FeatureCollection", features: [] } as any;
         map!.addSource("stops", { type: "geojson", data: empty });
         map!.addSource("point", { type: "geojson", data: empty });
+        map!.addSource("me", { type: "geojson", data: empty });
+        map!.addLayer({
+          id: "me",
+          type: "circle",
+          source: "me",
+          paint: { "circle-radius": 7, "circle-color": "#2563eb", "circle-stroke-color": "#fff", "circle-stroke-width": 2.5 },
+        });
         map!.addLayer({
           id: "stops",
           type: "circle",
@@ -134,23 +162,37 @@
       map.easeTo({ center: [point.lon, point.lat] });
   });
 
-  // The open stop marked, and brought into view when it is off screen.
+  // The open stop marked, and brought into view when it is off screen —
+  // or close, to street level, while a task on it is under way.
   $effect(() => {
     if (!loaded || !map) return;
     map.setFilter("stop-open", ["==", ["get", "stop_id"], selected]);
     const s = stops.find((x) => x.stop_id === selected);
-    if (s && !map.getBounds().contains([s.lon, s.lat])) map.easeTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 15) });
+    if (s && focus) map.easeTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 17) });
+    else if (s && !map.getBounds().contains([s.lon, s.lat])) map.easeTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 15) });
+  });
+
+  // The device's location, brought into view when it is first given.
+  let metMe = "";
+  $effect(() => {
+    if (!loaded || !map) return;
+    const features = me ? [{ type: "Feature", geometry: { type: "Point", coordinates: [me.lon, me.lat] }, properties: {} }] : [];
+    (map.getSource("me") as maplibregl.GeoJSONSource).setData({ type: "FeatureCollection", features } as any);
+    const key = me ? `${me.lat},${me.lon}` : "";
+    if (me && key !== metMe) map.easeTo({ center: [me.lon, me.lat], zoom: Math.max(map.getZoom(), 16) });
+    metMe = key;
   });
 </script>
 
-<div class="stop-map" data-testid="stop-life-map">
+<div class="stop-map" data-testid="stop-life-map" data-ready={loaded}>
   <div class="canvas" bind:this={container}></div>
   <div class="legend">
     {#each shownStatuses as s (s)}
       <span data-testid="map-key-{s}"><i class="dot" style="background:{STATUS_COLORS[s][0]};border-color:{STATUS_COLORS[s][1]}"></i>{STATUS_WORDS[s]}</span>
     {/each}
-    {#if selected}<span data-testid="map-key-open"><i class="dot open"></i>this stop</span>{/if}
-    {#if picking}<strong>Click the map to choose the point, or type it</strong>{:else if hover}<strong>{hover}</strong>{/if}
+    {#if selected}<span data-testid="map-key-open"><i class="dot open"></i>the open stop</span>{/if}
+    {#if me}<span data-testid="map-key-me"><i class="dot me"></i>you</span>{/if}
+    {#if picking}<strong data-testid="map-placing">Click the map to set the location</strong>{:else if hover}<strong>{hover}</strong>{/if}
   </div>
 </div>
 
@@ -164,4 +206,6 @@
   }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: middle; border: 1.5px solid; }
   .dot.open { background: #ea580c; border-color: #fff; box-shadow: 0 0 0 1px #ea580c; }
+  .dot.me { background: #2563eb; border-color: #fff; box-shadow: 0 0 0 1px #2563eb; }
+  .legend strong { color: var(--accent); }
 </style>

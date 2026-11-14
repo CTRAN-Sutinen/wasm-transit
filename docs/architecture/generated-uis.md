@@ -418,79 +418,123 @@ build applies itself at a poll while the server answers and the
 setup is closed. Its questions and session are its `ui.json`.
 
 `stops` (`src/uis/stops/`): every stop's own life, apart from the
-service plans, which only read it (D-157). Across the top, the date
-read (today until chosen), a search, and a filter per status —
-planned, permitted, built, in service, suspended, retired (hidden
-until shown) — each with its count that day (stops `stops_on`'s
-`counts`). The map colours each stop shown by its status; beside it,
-the list of those stops with since when, until when, and the note
-("every stop out of service today"), or the open stop's card (stops
-`stop`): where it stands that day, its details and amenities, its
-site as last surveyed (when, by whom, and the answers grouped as the
-Service Stop Worksheet groups them, its ids in other systems), the
-routes that stop there in the schedule running that day — each route
-and direction once, whether the stop is a time point on it, and the
-stops either side with the distance along the route to each ("about"
-where the import estimated it), read with directory `stop_detail`
-over `servedNetwork` on the date (read only, which is why the page
-links the network capability too), and its history.
-The card offers only what the stop may become that day (`stop`'s
-`next`), a move (to a new point, optionally until a date), a
-change of details and amenities, and a site survey (`SiteSurvey`,
-D-158): the date, the questions stops `questions` asks
-— a list answer chosen, a count typed as a whole number, the rest
-written — what is at the stop, and the stop's ids in other systems,
-starting from what the stop records and saved as one `changed` event
-carrying every answer recorded, its surveyor left to the server,
-which names the person signed in (D-163). A survey half
-filled is kept on the device (`localStorage`, per stop) until it is
-saved or thrown away, so a reload or a dropped connection loses
-nothing; the card says a draft is kept. Below the card, the stop's
-requests for work (`StopRequests`, D-159; requests `requests_for` over
-the manifest's `stop_requests_hash`): each its job, its status, and the
-work order it tracks (system, id, linked, its status as last read), and
-one form that starts a request (its id suggested from the stop and the
-date) or edits one, laid out as the installation worksheet is, its
-lists from requests `vocabulary`; requests `put` places and checks it
-and `POST /stop-requests` stores it (409: read again, save again). A
-stop change may name the request it carries out (its event's
-`request`). Each form that long widens the side panel while open.
-Where the deployment connects a work order system (the manifest's
-`services.work_orders`, D-165), a submitted request offers "Open work
-order" and one with a work order "Check status" — the server's adapter
-answers, and the answer lands on the request; with none connected, the
-work order is entered by hand on the form. Where the deployment
-keeps attachments (the manifest's `services.attachments`, D-162), the
-survey and request forms take photos and drawings ("Take photo" opens
-the camera, "Add file" a photo or a PDF; `Attachments`), each added at
-once and named on the record by its hash with a caption, and the
-card's history and the request list show them small
-(`AttachmentThumbs`), read with the signed-in person's token. Each event in the history can be
-corrected or taken out (stops `correct_event`). A new stop is placed
-at a point, planned or already in service. A point is clicked on the
-map (kept to six decimals, about 0.1 m — a click knows no more) or
-typed as measured in the form's latitude and longitude fields, and
-saved as typed; the two edit one point, so a click fills the fields
-and a typed pair moves the marker (`PointFields`); "Use my
-location" fills them from the device's fix (the host's `locate`),
-shown with its accuracy, a start and never the measurement. The forms
-are laid out for a phone or tablet at the stop. Whether the point
-is on the earth is the receive path's check (stops `add_event`).
-Each change is one event — stops `add_event` places and checks it,
-`POST /stops` checks it again and stores it (409: the page reads the
-stops again and asks for the change again). With no stops document
-yet, the page shows the stops of the network running today (stops
-`seed`), and the first change saves them. Where the deployment asks for
-sign-in, the header shows who is signed in or a Sign in button
-(`SignInControl`, web.md "Signing in"); a change saved before signing
-in is refused in words, a survey's draft kept. Above the list, with a stops
-document held, one notice of what the agency's feed did to it (D-150:
-the server records the feed's differences when it imports it): the
-feed's first service date, the changes it recorded (stops
-`feed_events` for the manifest's `feed_hash`), and the stops in service
-it does not list or whose difference did not fit their history (stops
-`import_events` run without writing) — reviewed in place, each stop
-linked to its card, where a change is fixed (`FeedNotice`). The page
-has no GTFS control; a feed a planner loads into a draft plan is a
-draft, never recorded here. The date, the open stop,
-and the filters live in the URL hash.
+service plans, which only read it (D-157), and the work asked for at
+the stops (D-159). Each job has a screen the width of the page, laid out
+for that job; a bar across the top holds the views — Stops, Work, Feed
+review — the date read (today until chosen), a search, New stop,
+sign-in, and the status line.
+
+- **Stops**: a filter per status — planned, permitted, built, in
+  service, suspended, retired (hidden until shown) — each with its
+  count that day (stops `stops_on`'s `counts`), and the stops shown,
+  either on a map (coloured by status) beside their list, or as a table
+  (`StopsTable`: name, id, status, since, until, last surveyed, notes,
+  sorted by any column). "Nearby stops" asks the device for its
+  location (the host's `locate`) and lists the stops nearest it on the
+  date at the statuses shown, each with its distance (stops
+  `stops_near`), the device drawn on the map. The map stays mounted
+  under the other screens, so going to a stop and back does not rebuild
+  it.
+- **Work** (`WorkTable`): every request across the stops (requests
+  `list` over the manifest's `stop_requests_hash`) as a table — request,
+  stop (stops `stops_on` for the requests' stops), job, status,
+  requested on, work order, notes, sorted by any column — drafted,
+  submitted, and ordered by default, each status a filter with its
+  count, each job a filter; a row opens the request's page, whose back
+  link returns to the table.
+- **Feed review** (`FeedReview`): what the agency's feed did to the
+  stops record (D-150: the server records the feed's differences when it
+  imports it) — the feed's first service date, the changes it recorded
+  (stops `feed_events` for the manifest's `feed_hash`), the stops in
+  service it does not list, and those whose difference did not fit
+  their history (stops `import_events` run without writing), each stop
+  linked to its page, where a change is corrected. The page has no GTFS
+  control; a feed a planner loads into a draft plan is a draft, never
+  recorded here.
+
+A stop (`StopPage`; stops `stop`) opens as a page: its name, id and
+code, and where it stands that day in the header, with Survey, Record
+change (only what the stop may become that day — `stop`'s `next` — and
+a move and new details, each with a line saying what it does), Request
+work, and Report issue; below, its record as headed cards in as many
+columns as the screen holds — Location (its point on a map of the stops
+around it, opened at the stop), Details and amenities, Routes (each
+route and direction once, whether the stop is a time point on it, and
+the stops either side with the distance along the route to each, "~"
+where the import estimated it — directory `stop_detail` over
+`servedNetwork` on the date, read only, which is why the page links the
+network capability too), Work (its requests, requests `requests_for`),
+Last survey (when, by whom, the answers grouped as the Service Stop
+Worksheet groups them, its ids in other systems), and History (every
+event, newest first, each correctable). A change (`ChangeFlow`) opens as
+a card under the header: a lifecycle event, new details and amenities,
+or the correction of an event entered wrong (stops `correct_event`, or
+the event deleted after a confirmation), each asking only what it needs,
+with a one-line summary of what will be saved, the routes the schedule
+still runs there beside a suspension or a retirement (the schedule
+changes only in a service change), the request it carries out where the
+stop has any (its event's `request`), and why it was refused beside its
+Save (`TaskFrame`). A move, and a new stop (`NewStopFlow`: placed, then
+given its id, name, code, and where its life starts — planned, or in
+service; a planned one may go straight on to its installation request;
+an id the document holds is refused beside the form), take the map with
+a panel beside it, the one job that needs a large map.
+
+A survey (`SurveyPage`, D-158) is a page of the worksheet's sections,
+each under its heading — the site questions as the worksheet groups
+them, then amenities, external IDs, and photos and notes — with a
+section index beside it (each section's answered count and a mark where
+it changed; a click goes there) and a summary column: the survey date,
+what differs from the record, and Save, with why a save was refused.
+Each question shows what the record had where the answer differs; a
+list answer is a row of choices, a count typed with − and +; a section
+can be put back to the record. It starts from what the stop records and
+is saved as one `changed` event carrying every answer recorded, its
+surveyor left to the server, which names the person signed in (D-163).
+A survey half filled is kept on the device (`localStorage`, per stop)
+until it is saved or discarded, so a reload or a dropped connection
+loses nothing; the stop says a draft is kept. On a phone the survey is
+the whole screen: the index a bar of sections, Save held at the bottom.
+
+A request (`RequestPage`, D-159) is a page: its job, id, and stop in the
+header with its status track — drafted, submitted, work order open,
+completed (or cancelled, after a confirmation) — the worksheet below as
+headed sections (Location, Service, Utility locate, Work order,
+Completion, Notes & photos), each edited in place, and beside them the
+one next step for its status: submit; open the work order where the
+deployment connects a work order system (the manifest's
+`services.work_orders`, D-165 — the server's adapter answers, and the
+answer lands on the request), or, with none connected, enter it by hand
+(requests `record_work_order`, as the adapter's answer would be); check
+its status; complete it; and, completed, record the change on the stop
+that carried it out (a change naming the request). A new request is the
+same page with every section open and the job chosen first (a field
+report: a repair, unless chosen otherwise; a new stop's installation:
+a new stop), its id suggested from the stop and the date and never one
+the stop's requests already have, saved as a draft or submitted.
+Requests `put` places and checks it and `POST /stop-requests` stores it
+(409: read again, save again).
+
+Where the deployment keeps attachments (the manifest's
+`services.attachments`, D-162), the survey and request pages take
+photos and drawings ("Take photo" opens the camera, "Add file" a photo
+or a PDF; `Attachments`), each added at once and named on the record by
+its hash with a caption, and the history and the request show them small
+(`AttachmentThumbs`), read with the signed-in person's token. A point is
+clicked on the map (kept to six decimals, about 0.1 m — a click knows no
+more) or typed as measured in the latitude and longitude fields, and
+saved as typed; the two edit one point, so a click fills the fields and
+a typed pair moves the marker (`PointFields`); "Use my location" fills
+them from the device's fix, shown with its accuracy, a start and never
+the measurement. Whether the point is on the earth is the receive
+path's check (stops `add_event`). Each change is one event — stops
+`add_event` places and checks it, `POST /stops` checks it again and
+stores it (409: the page reads the stops again and asks for the change
+again). With no stops document yet, the page shows the stops of the
+network running today (stops `seed`), and the first change saves them.
+Where the deployment asks for sign-in, the header shows who is signed in
+or a Sign in button (`SignInControl`, web.md "Signing in"); a change
+saved before signing in is refused in words beside its Save, a survey's
+draft kept. The view, the stops' mode, the date, the open stop, the open
+request, the task, and the filters live in the URL hash, so the
+browser's Back leaves a task.
