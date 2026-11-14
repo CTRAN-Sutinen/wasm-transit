@@ -119,9 +119,9 @@ Where the detail lives:
   rules
 - `docs/FORMATS.md` — the sync store's at-rest formats (blobs,
   envelopes, pointer logs) and the invariants JSON Schema cannot say
-- `docs/qa/route-99-end-to-end.md` — the standing end-to-end QA test
-  (stops → service change → ride now → stop display) with its last
-  run and its findings
+- `qa/` — the standing end-to-end QA tests, one folder each (its
+  README the steps, the last run and its findings; its walk scripts):
+  `qa/route-99/`, the stops app → service change → ride now → stop display
 - `docs/QA-FINDINGS.md` — the open real-data findings (defects,
   op/UI/data gaps), each pinned; deleted when fixed
 - `docs/DECISIONS.md` — the questions for the user and their
