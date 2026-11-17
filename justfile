@@ -659,7 +659,7 @@ _host-tests:
         echo "$violations"
         exit 1
     fi
-    # DETERMINISM (docs/units/host-discipline.md): modules are pure — no
+    # DETERMINISM (docs/architecture/web.md, "The engine"): modules are pure — no
     # clock, randomness, or environment in any crate's library code;
     # hosts pass time in (`now_ms`, dates, seconds since midnight), so
     # an answer is a function of its inputs and the engine's journal
@@ -709,7 +709,7 @@ _host-tests:
         "" \
         "$(grep -rl 'structuredClone' web/src --include='*.ts' --include='*.svelte' | grep -v '^web/src/types/' | sort | tr '\n' ' ')" \
         "clones a document to mutate it; send NetworkEdits through cap-author"
-    # W0d: one op caller (docs/units/host-discipline.md) — the engine
+    # W0d: one op caller (docs/architecture/web.md, "The engine") — the engine
     # (src/engine.ts) is the only importer of the bus (src/bus.ts), the
     # bus the only spawner of the bus worker, and the worker the only
     # wasm loader and caller of a module's ABI; hosts ask the engine,

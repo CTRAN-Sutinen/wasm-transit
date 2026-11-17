@@ -6,8 +6,8 @@ the same flat WebAssembly interface with no imports. A generated UI's
 capabilities link into one module over one kernel registry (D-77).
 
 The point of the project is that every host runs the same document and
-the same contracts: the browser, Node, and Go with wazero. The bytes
-are assembled for each user from the manifest. The bus is the
+the same contracts: the browser, Node, and Go with wazero. Each
+generated UI links the capabilities it needs at build time (D-176). The bus is the
 architecture: every host instantiates the capability modules it needs.
 
 **Two deployment shapes, both complete.** A deployment runs with the
@@ -314,7 +314,8 @@ enforces them:
 1. The network is the core data model. GTFS (and its siblings TODS and
    TIDES) is a serialization for sharing data with other systems.
 2. No module rebuilds the monolith inside it.
-3. Each module answers one need. Personas assemble at wire time.
+3. Each module answers one need. Personas assemble in a UI, never in a
+   module.
 
 ```
 transit-network  the authored network model. Trips are stored records (their own id,

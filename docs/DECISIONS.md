@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-176**.
+- IDs are never reused; the next new decision is **D-177**.
 
 ## Summary
 
@@ -228,6 +228,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-173 | How does a stop the stops app made reach a plan? | decided | nothing |
 | D-174 | How are code comments and the developer documents written? | decided | nothing |
 | D-175 | Whose clock does the runner read for $TODAY and $NOW_SECS? | decided | nothing |
+| D-176 | Does a user's own selection assemble capabilities at wire time? | decided | nothing |
 
 ## The trip model
 
@@ -2901,6 +2902,23 @@ Why: `docs/architecture/server.md`, Why, "Single-capability modules, fresh per i
 Blocks: nothing. Pinned by `server/main.go` (one module flag per
 capability) and the `caps` recipe (each `module_<cap>.wasm` copied to
 `web/pkg/`).
+
+### D-176 — Does a user's own selection assemble capabilities at wire time?
+State: Decided.
+Answer: 2026-11-17. No. Each generated UI's capabilities link at build
+time, from its `ui.json`. A UI's flows stay code in its host, run by the
+answer graph. Its layout stays Svelte. There is no user selection, no
+UI manifest document, and no layout document. The user: "i don't need
+the per user ui wiring, it was a zany idea. once that goes away i get
+back a lot of simplicity by just having to specify more at build time,
+nbd", on the proposal to drop wire-time assembly and flow maps as data,
+and to keep the journal and replay.
+Why: `docs/architecture/bus.md`, Why, "One linked module per page, one
+registry"; `docs/architecture/web.md`, Why, "A UI's flows are code, run
+by the answer graph".
+Pinned by: `gen-assemblies` (one assembly for each `ui.json`) and the
+assembly-independence gate.
+Blocks: nothing.
 
 ### D-85 — Are the generated assembly crates committed?
 State: Decided.

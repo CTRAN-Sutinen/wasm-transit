@@ -274,8 +274,8 @@ async function framed(frame: string, clear: () => void, run: () => Promise<void>
 }
 
 // ---------------------------------------------------------------------
-// TRANSIENT — this UI's answer graph (src/uis/kit.ts, "the answer
-// graph"). Inputs: "active" / "compare" / "plans" (the documents),
+// This UI's answer graph (src/uis/kit.ts, "the answer graph").
+// Inputs: "active" / "compare" / "plans" (the documents),
 // "group" / "route" / "direction" / "stop" / "window" (the selection),
 // "view" (which view is on screen), "layer" / "coverage-params".
 // ---------------------------------------------------------------------

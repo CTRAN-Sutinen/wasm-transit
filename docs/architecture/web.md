@@ -401,6 +401,12 @@ true. Change it only with the user, after you read **Because**.
 - **Rejected:** `services.live` in the server's manifest.
 - **Decided:** D-39.
 
+### A UI's flows are code, run by the answer graph (`answerGraph` in `src/uis/kit.ts`, each `host.svelte.ts`)
+- **Holds:** a host declares its flows as `AnswerNode`s in TypeScript. The answer graph schedules them, and knows nothing about transit. A UI's layout is its `Shell.svelte`. Both ship with the UI's build. There is no flow or layout document.
+- **Because:** a node's body builds op arguments from host state, checks that its capability assembled, and keeps its frame's failure. As data, that needs an expression language that the host interprets. That moves the host's code into a JSON dialect, and takes no logic out of the host. A layout document would put product code into the agency's record. It would then need versions, migrations, and a receive path, and a second rollback beside the UI's own.
+- **Rejected:** flow maps as data in a UI manifest, interpreted by the engine; layouts as documents over a component catalog.
+- **Decided:** D-176.
+
 ### The basemap's labels are served locally when installed (`just basemap-assets`, `pickStyle`)
 - **Holds:** the glyphs and sprites are fetched once into `web/public/basemap-assets/` (gitignored). They are read from there when present, else from protomaps.github.io.
 - **Because:** a stop display that loses its uplink would otherwise lose every map label. Installs are the user's job, so the repo does not vendor them.

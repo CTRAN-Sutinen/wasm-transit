@@ -1,5 +1,5 @@
 /// THE ENGINE — the one piece of host code that calls a module op
-/// (docs/units/host-discipline.md). A host layer asks questions as
+/// (docs/architecture/web.md, "The engine"). A host layer asks questions as
 /// data — `ask(capability, op, args)` — and holds DOCUMENTS, never
 /// modules or hashes:
 ///

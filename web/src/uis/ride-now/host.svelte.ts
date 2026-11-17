@@ -78,8 +78,7 @@ export type Picked = { key: string; trip: string | null; route: string | null };
 export type When = { mode: "now" | "depart" | "arrive" | "last"; secs: number | null };
 
 /// How often the host re-reads the live feeds, the edit document, and
-/// the clock (one timer: the polled input,
-/// docs/units/host-discipline.md).
+/// the clock (one timer, kit's whileVisible).
 const POLL_MS = 30_000;
 const BOARD_ROWS = 10;
 const CARD_ROWS = 3;
@@ -312,8 +311,8 @@ async function stopBoard(stopId: string, rows: number): Promise<StopBoard> {
 }
 
 // ---------------------------------------------------------------------
-// TRANSIENT — this UI's answer graph (src/uis/kit.ts, "the answer
-// graph"): the first draft of its flow map. Inputs: "network",
+// This UI's answer graph (src/uis/kit.ts, "the answer graph").
+// Inputs: "network",
 // "edits" (the sync server's edit document), "snapshot" (the decoded
 // live feeds), "clock" (the poll's tick), "query" / "near" / "stop" /
 // "departure" / "trip" (the selection), "saved" (the watchlist

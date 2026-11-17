@@ -35,8 +35,7 @@ export type Place = { id: string; name: string };
 
 const LAYOUTS: Layout[] = ["center", "route", "routes"];
 /// How often the host re-reads the live feeds, the edit document, and
-/// the clock (one timer: the polled input,
-/// docs/units/host-discipline.md).
+/// the clock (one timer, kit's whileVisible).
 const POLL_MS = 20_000;
 const FOUND = 25;
 /// How long a board whose op threw stays on screen (marked) before the
@@ -108,8 +107,8 @@ function fail(e: unknown): void {
 }
 
 // ---------------------------------------------------------------------
-// TRANSIENT — this UI's answer graph (src/uis/kit.ts, "the answer
-// graph"): the first draft of its flow map. Inputs: "network",
+// This UI's answer graph (src/uis/kit.ts, "the answer graph").
+// Inputs: "network",
 // "edits" (the sync server's edit document), "snapshot" (the decoded
 // live feeds), "clock" (the poll's tick), "query" / "stop" (the
 // selection), "setup" (whether the setup is on screen).

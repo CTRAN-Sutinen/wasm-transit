@@ -75,15 +75,14 @@ A capability module is one need, as one unit. Examples: "see the
 departures at a stop", "watch one vehicle's connections", and "plan a
 trip".
 
-The persona or bundle comes together at wire time: the user's selection
-over the manifest. It never comes together in a module's design. Do not
+The persona or bundle comes together in a generated UI: the ops its
+`ui.json` lists. It never comes together in a module's design. Do not
 design a module around who will use it. Do not merge ops because the
 same users wire them together.
 
-Linking assembles the bytes of the capabilities that a selection
-chooses into one binary. A generated UI's selection links at build
-time. A user's selection will link at wire time (D-77;
-`docs/architecture/bus.md`, "Bus rules"). Linking merges no surface.
+Linking assembles the bytes of the capabilities that a UI lists into
+one binary, at build time (D-77, D-176; `docs/architecture/bus.md`,
+"Bus rules"). Linking merges no surface.
 Each capability keeps its crate, its `Request` enum, and its manifest
 entry, and can still be retired alone.
 

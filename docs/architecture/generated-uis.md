@@ -61,9 +61,8 @@ Shared by every generated UI:
     ([updates-offline.md](updates-offline.md)).
   - `whileVisible()` is every page's poll. A hidden page makes no
     requests and re-reads on its return.
-  - The answer graph is transient. It is hand-built ahead of the flow
-    maps that `docs/units/host-discipline.md` designs, which replace
-    it. A host declares its answers as `AnswerNode`s: the inputs each
+  - The answer graph runs each host's flows. A UI's flows are code,
+    not data (D-176). A host declares its answers as `AnswerNode`s: the inputs each
     reads, the frame that renders it, and when that frame is on
     screen. `answerGraph` answers the nodes downstream of a changed
     input in declared order. It yields between nodes, so each frame
@@ -251,13 +250,11 @@ any code. Delete it when the UI lands.
    - the frame that renders it
    - when that frame is on screen
 
-   The table is the UI's first draft of its flow map
-   (`docs/units/host-discipline.md`). The engine will be designed from
-   these tables. Some questions cannot be expressed in the table: a
-   timer, a stream, or a node whose inputs depend on another node's
-   answer in a way `needs` cannot say. Write each such question into
-   host-discipline.md as an engine requirement. Do not extend `kit.ts`'s
-   transient runner to cover it.
+   The host's nodes are written from this table. Some questions cannot
+   be expressed in the table: a timer, a stream, or a node whose inputs
+   depend on another node's answer in a way `needs` cannot say. Ask the
+   user before you extend the answer graph in `kit.ts` to cover one.
+   The answer graph carries no domain knowledge.
 6. **Write the host from the table.** `host.svelte.ts` declares the
    table's nodes as `AnswerNode`s. It requests inputs from event
    handlers. The host `ask`s the engine for every op that a node runs,

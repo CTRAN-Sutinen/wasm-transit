@@ -1,10 +1,10 @@
 # The capability bus
 
 The bus is the architecture. Each capability answers one need. The
-capabilities are horizontal: no capability belongs to one user. The
-manifest assembles the capabilities for each user. So the capability
-bytes differ for each user, and the documents and the contracts are the
-same everywhere.
+capabilities are horizontal: no capability belongs to one user. Each
+generated UI links the capabilities it needs. So the capability bytes
+differ for each UI, and the documents and the contracts are the same
+everywhere.
 
 A **module** is an assembly over the kernel (`cap-abi`). There are two
 kinds:
@@ -16,9 +16,8 @@ kinds:
   for each page, and the shared code ships once.
 
 Linking joins bytes and merges no surface. Each capability keeps its
-crate, its `Request` enum, and its manifest entry. Linking a user's own
-selection at wire time is the open work in
-`docs/units/wire-time-assembly.md`.
+crate, its `Request` enum, and its manifest entry. Linking happens at
+build time only. A user does not choose capabilities (D-176).
 
 The assembly crates are in `assemblies/`. `gen-assemblies` generates
 them from the capability crates and from the `ops` list in each
@@ -566,8 +565,13 @@ rules whose reasons are not clear from the rules alone.
     parsed heap across separately compiled modules, breaks the zero
     imports, and needs COOP/COEP and nightly Rust;
   - a compact format that needs no parse, which makes smaller copies
-    but still one copy for each module.
-- **Decided:** D-77.
+    but still one copy for each module;
+  - a user's own selection, linked on demand at wire time. A static
+    deployment has no server to link it, so it needs a prebuilt set of
+    selections. It also makes a UI's bytes differ for each user, so a UI
+    is no longer one product that is deployed and rolled back alone. The
+    UIs already link only what each one needs (D-176).
+- **Decided:** D-77, D-176.
 
 ### The module verifies every pin by hashing (`canonical_hash`, kernel loads)
 - **Holds:** a module registers a document only under the hash it

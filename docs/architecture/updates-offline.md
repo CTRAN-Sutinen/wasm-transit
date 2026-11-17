@@ -58,8 +58,7 @@ never sees what a worker answers. `e2e/deploy-builds.spec.mjs` allows
 workers on its own server. It publishes a new build by rewriting that
 server's copy of `sw.js`.
 
-Layouts are hand-placed Svelte. Layouts as documents are open work:
-`docs/units/wire-time-assembly.md`.
+Layouts are hand-placed Svelte, and ship with each UI's build (D-176).
 
 Frontend conventions and gotchas: `docs/CONVENTIONS.md`.
 

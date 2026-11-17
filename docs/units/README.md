@@ -36,8 +36,7 @@ archive — nothing here records what is finished.
 
 | unit | what it is |
 |---|---|
-| [host-discipline.md](host-discipline.md) | the composition layer: one op caller, flow maps as data, the journal, replay |
-| [wire-time-assembly.md](wire-time-assembly.md) | per-user selection over the manifest; layouts as documents |
+| [host-discipline.md](host-discipline.md) | the journal and replay; a node's failure in its frame; the `ui.json` ops gate |
 | [runtime-cost-gate.md](runtime-cost-gate.md) | a ratchet on per-module memory and registration time |
 | [document-versioning.md](document-versioning.md) | every persisted document versioned, migrated forward at receive, rolled back under one rule; the schema lock and the published spec |
 | [release-artifacts.md](release-artifacts.md) | op and HTTP contracts changed by expand-then-contract; each UI at its own URL, deployed and rolled back alone |
@@ -68,8 +67,8 @@ before starting it.
   browses the catalog and assembles its own harness.
 - **caps-run harness as data** — when a session improvisation
   recurs, crystallize it; until then improvisations are findings.
-  The journal ([host-discipline.md](host-discipline.md))
-  crystallizes the chained-session format first.
+  The journal ([host-discipline.md](host-discipline.md)) uses the
+  chained-session format first.
 - **Law 3 re-cuts** — a split costs no network copy now (a page's
   capabilities share one registry): cap-analysis into service
   numbers, headways, coverage, and connections; cap-directory into

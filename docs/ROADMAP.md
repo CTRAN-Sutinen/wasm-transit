@@ -10,7 +10,7 @@ facts change.
 
 The architecture thesis has four parts:
 
-- **The same documents and contracts everywhere, assembled per user
+- **The same documents and contracts everywhere, assembled for each UI
   from the capability bus.**
 - **Local-first.**
 - **The document is the authority.**

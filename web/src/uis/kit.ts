@@ -85,23 +85,15 @@ export function whileVisible(ms: number, tick: () => void): void {
 }
 
 // ---------------------------------------------------------------------
-// TRANSIENT — the answer graph, hand-built ahead of flow maps.
+// The answer graph. A UI's flows are code: a host declares what it
+// answers as nodes, and this runner schedules them (D-176). The engine
+// (src/engine.ts) makes every op call, and caches each answer under
+// the journal's key.
 //
-// The engine (src/engine.ts) makes every op call;
-// docs/units/host-discipline.md has it interpret flow maps next (data
-// in the UI manifest, docs/units/wire-time-assembly.md). Until then,
-// a host declares what it answers as nodes and this runner schedules
-// them. It is shaped to be REPLACED by flow maps, not grown into them:
-//
-// - a node is what a flow-map entry will be — the inputs it reads,
-//   the frame that renders it, when that frame is on screen, and
-//   the op calls — so a host's node list is the first draft of its
-//   flow map (the engine's answers are already cached by the
-//   journal's key);
-// - it knows nothing about transit. If a node name, a field,
+// - A node is the inputs it reads, the frame that renders it, when
+//   that frame is on screen, and the op calls.
+// - The runner knows nothing about transit. If a node name, a field,
 //   or a rule of the domain appears in this section, it leaked.
-//
-// Do not add features here; add them to the unit.
 // ---------------------------------------------------------------------
 
 /// One answer a host keeps: an op (or a short run of ops over the
