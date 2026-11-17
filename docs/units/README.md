@@ -46,7 +46,6 @@ archive — nothing here records what is finished.
 | [observability-rollout.md](observability-rollout.md) | what production runs and whether it is healthy; a display's automatic revert |
 | [deploy-rider-apps.md](deploy-rider-apps.md) | ride-now and the stop display beyond localhost: the units it waits on, the agency's feed fixes (HTTPS, CORS, caching, start_date), and the Pi 4 and phone dogfood |
 | [streets-model.md](streets-model.md) | streets as a model document: serving it, the bus profile, walking for riders, drawing on streets, the geography release |
-| [caps-run-sessions.md](caps-run-sessions.md) | the runner across sessions; shaping the import's output |
 | [grade-debt.md](grade-debt.md) | on the bus, but not yet read by a UI or dogfooded |
 | [ui-disruptions.md](ui-disruptions.md) | generated UI: running today's service through disruptions (late buses, detours, coverage) |
 | [ui-proposal-compare.md](ui-proposal-compare.md) | generated UI: the public comparing service proposals |

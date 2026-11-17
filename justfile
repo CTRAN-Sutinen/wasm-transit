@@ -326,6 +326,28 @@ _host-tests:
       --cap board --as board_net --op '{"op":"load_network","network":"$net.network"}' \
       --op '{"op":"stop_board","network_hash":"$board_net.network_hash","stop_id":"A","date":"$TODAY","from_secs":"$NOW_SECS","limit":1}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const id = (n) => r.find((x) => x.as === n).ok.network_hash; if (id("net") !== id("board_net") || r.at(-1).ok?.op !== "stop_board") process.exit(1)'
+    # A session lasts across commands (docs/architecture/registry.md).
+    # The first command imports the feed and names the result. The
+    # second command, in the same session, gives the named network to
+    # the board. The second command does not import again, and the
+    # board registers the network under the import's hash.
+    sessions=$(mktemp -d)
+    CAPS_RUN_SESSIONS="$sessions" node tools/caps-run.mjs network --session gate \
+      --load feed:web/public/caps/sample-gtfs.zip \
+      --as net --op '{"op":"import","feed_hash":"$load.feed_hash"}' \
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); require("fs").writeFileSync(process.argv[1], r.find((x) => x.as === "net").ok.network_hash)' "$sessions/imported"
+    CAPS_RUN_SESSIONS="$sessions" node tools/caps-run.mjs board --session gate \
+      --as bnet --op '{"op":"load_network","network":"$net.network"}' \
+      --op '{"op":"stop_board","network_hash":"$bnet.network_hash","stop_id":"A","date":"2026-10-23","from_secs":25200,"limit":1}' \
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const imported = require("fs").readFileSync(process.argv[1], "utf8"); if (r.some((x) => x.ok?.op === "import") || r.find((x) => x.as === "bnet").ok.network_hash !== imported || r.at(-1).ok?.op !== "stop_board") process.exit(1)' "$sessions/imported"
+    rm -rf "$sessions"
+    # --brief prints a whole document as its kind, version, and size.
+    # The session keeps the whole document, so a reference still gives
+    # the board the full network under the same hash.
+    node tools/caps-run.mjs network --brief --load feed:web/public/caps/sample-gtfs.zip \
+      --as net --op '{"op":"import","feed_hash":"$load.feed_hash"}' \
+      --cap board --as bnet --op '{"op":"load_network","network":"$net.network"}' \
+      | node -e 'const lines = require("fs").readFileSync(0, "utf8").trim().split("\n"); const r = lines.map(JSON.parse); const net = r.find((x) => x.as === "net"); const line = lines[r.indexOf(net)]; const o = net.ok.network.omitted; if (line.length > 1000 || o?.kind !== "network" || o.schema_version !== 2 || !(o.bytes > 1000) || net.ok.boundary.omitted?.kind !== "boundary" || r.find((x) => x.as === "bnet").ok.network_hash !== net.ok.network_hash) process.exit(1)'
     # The live board — the parity chain every host runs (browser,
     # runner, server): import → cap-rt resolves the rt snapshot against
     # the network into THE live document → the board reads it by hash.

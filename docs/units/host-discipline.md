@@ -42,9 +42,10 @@ describing half (flow maps), the journal written down, and replay.
 ## Order
 
 The engine landed first, keyed by the journal's entry, and the
-worker behind it. Next the journal and replay in the runner (`caps-run`'s chained-session
-format becomes the journal format, closing
-[caps-run-sessions.md](caps-run-sessions.md)'s session store); flow
+worker behind it. Next the journal and replay in the runner.
+`caps-run`'s chained-session format becomes the journal format, and the
+journal uses the runner's session store (`--session`;
+`docs/architecture/registry.md`). Do not add a second store. Flow
 maps as data last, with
 [wire-time-assembly.md](wire-time-assembly.md)'s UI manifest.
 

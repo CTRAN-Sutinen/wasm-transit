@@ -62,5 +62,9 @@ crates/*/bindings/
 # walk forked, kept between runs
 .qa/
 
+# The runner's session store (tools/caps-run.mjs --session): named
+# results kept between commands
+.caps-sessions/
+
 # The server settings a developer keeps to themselves (server/local.example.toml).
 /server/local.toml

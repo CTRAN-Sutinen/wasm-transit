@@ -13,9 +13,21 @@
 //   caps-run tools <capability>         the tool catalog (op docs, and
 //                                       per-kind examples where an op
 //                                       takes a tagged vocabulary)
-//   caps-run <capability> [--cap ID] [--as NAME]
+//   caps-run <capability> [--session NAME] [--brief] [--cap ID] [--as NAME]
 //          [--load [N:|KIND:]FILE]... [--op '<json>|@FILE']... [--ask URL]...
 //          [--post URL REF]... [--timeout MS]   run a session
+//
+// --session NAME keeps the session across commands. Each result named
+// with --as is saved in the session's store (.caps-sessions/NAME/, or
+// $CAPS_RUN_SESSIONS/NAME/). A later command with the same --session
+// reaches it as $name, without running its step again. Only --as names
+// reach across commands. Save happens only when every step succeeds.
+// Each command makes new module instances, so load a stored document
+// into a capability again before you use it.
+//
+// --brief prints each whole document (an object that carries `kind`
+// and `schema_version`) as {"omitted": {kind, schema_version, bytes}}.
+// The session keeps the whole document, so references still reach it.
 //
 // Every run compares the registry's recorded source digest with the
 // tree's and says on stderr when they differ — the registry runs the
@@ -78,7 +90,8 @@
 
 import { createHash } from "node:crypto";
 import { parentPort, workerData, isMainThread } from "node:worker_threads";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -164,7 +177,7 @@ function sha256(bytes) {
 function usage() {
   console.error(
     "usage: caps-run list | caps-run tools <capability> | " +
-      "caps-run <capability> [--cap ID] [--as NAME] [--load FILE]... [--op JSON|@FILE]... [--ask URL]... [--post URL REF]... [--timeout MS]",
+      "caps-run <capability> [--session NAME] [--brief] [--cap ID] [--as NAME] [--load FILE]... [--op JSON|@FILE]... [--ask URL]... [--post URL REF]... [--timeout MS]",
   );
   process.exit(2);
 }
@@ -173,7 +186,7 @@ function parseArgs(argv) {
   // Steps keep command-line order: each names the capability it runs
   // against (the positional one until a --cap switches it) and the
   // name a following --as gave it.
-  const out = { capability: null, steps: [], timeout: 10_000 };
+  const out = { capability: null, steps: [], timeout: 10_000, session: null, brief: false };
   let current = null;
   let pendingName = null;
   const step = (kind, value) => {
@@ -190,6 +203,14 @@ function parseArgs(argv) {
     else if (arg === "--cap") current = argv[++i] ?? usage();
     else if (arg === "--as") pendingName = argv[++i] ?? usage();
     else if (arg === "--timeout") out.timeout = Number(argv[++i]);
+    else if (arg === "--brief") out.brief = true;
+    else if (arg === "--session") {
+      out.session = argv[++i] ?? usage();
+      if (!/^[A-Za-z0-9._-]+$/.test(out.session) || out.session.startsWith(".")) {
+        console.error(`--session ${out.session}: a session name uses letters, digits, ".", "_", and "-", and does not start with "."`);
+        process.exit(2);
+      }
+    }
     else if (arg.startsWith("--")) usage();
     else if (out.capability === null) out.capability = current = arg;
     else usage();
@@ -242,8 +263,56 @@ function instantiate(capability) {
   };
 }
 
+// A session's store: one directory for each session name. index.json
+// lists the named results, and each result is its outcome text,
+// gzipped, in <name>.json.gz.
+function sessionDir(name) {
+  return join(process.env.CAPS_RUN_SESSIONS ?? join(HERE, "..", ".caps-sessions"), name);
+}
+
+function readSessionIndex(name) {
+  const file = join(sessionDir(name), "index.json");
+  return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : [];
+}
+
+// Save the named results of this command. A name from an earlier
+// command is replaced. The index is written last, through a rename, so
+// a reader never sees an index that names a missing file.
+function saveSession(name, named) {
+  if (named.length === 0) return;
+  const dir = sessionDir(name);
+  mkdirSync(dir, { recursive: true });
+  const index = readSessionIndex(name).filter((e) => !named.some((r) => r.as === e.as));
+  for (const r of named) {
+    writeFileSync(join(dir, `${r.as}.json.gz`), gzipSync(r.text));
+    index.push({ as: r.as, cap: r.cap ?? r.capability, op: r.op ?? JSON.parse(r.text).ok?.op ?? null });
+  }
+  writeFileSync(join(dir, "index.json.tmp"), JSON.stringify(index, null, 2));
+  renameSync(join(dir, "index.json.tmp"), join(dir, "index.json"));
+}
+
+// --brief: a whole document prints as its kind, version, and size.
+// Every persisted document carries `kind` and `schema_version` inside it
+// (docs/architecture/bus.md, "Every document says what it is"). The
+// session keeps the whole document, so references still reach it.
+function briefText(text) {
+  const shorten = (value) => {
+    if (Array.isArray(value)) return value.map(shorten);
+    if (value === null || typeof value !== "object") return value;
+    if (typeof value.kind === "string" && typeof value.schema_version === "number") {
+      return { omitted: { kind: value.kind, schema_version: value.schema_version, bytes: Buffer.byteLength(JSON.stringify(value)) } };
+    }
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, shorten(v)]));
+  };
+  const outcome = JSON.parse(text);
+  if (outcome.ok && typeof outcome.ok === "object") {
+    outcome.ok = Object.fromEntries(Object.entries(outcome.ok).map(([k, v]) => [k, shorten(v)]));
+  }
+  return JSON.stringify(outcome);
+}
+
 async function runSession() {
-  const { steps } = workerData;
+  const { steps, session, brief } = workerData;
   const modules = new Map();
   const moduleFor = (capability) => {
     if (!modules.has(capability)) modules.set(capability, instantiate(capability));
@@ -253,7 +322,23 @@ async function runSession() {
   // Each result: its metadata (`as`, `cap`, `load`, `ask`, the op its
   // answer is tagged with) and its outcome as JSON text, parsed only
   // when a reference reaches into it.
-  const results = [];
+  //
+  // With --session, the named results of earlier commands come first.
+  // Each one's text is read from the store only when a reference
+  // reaches it. Only `--as` names reach across commands: $load, $ask,
+  // $post, $op, and $N address this command's results.
+  const results = session
+    ? readSessionIndex(session).map((e) => ({
+        as: e.as,
+        op: e.op,
+        prior: true,
+        get text() {
+          const text = gunzipSync(readFileSync(join(sessionDir(session), `${e.as}.json.gz`))).toString("utf8");
+          Object.defineProperty(this, "text", { value: text });
+          return text;
+        },
+      }))
+    : [];
   const outcomeOf = (r) => JSON.parse(r.text);
   // The op an answer is tagged with, read the first time a `$op`
   // reference asks — only the tag is kept.
@@ -277,23 +362,25 @@ async function runSession() {
     if (!m) throw new Error(`bad result reference ${JSON.stringify(ref)}: expected $<name|load|ask|post|op|N>.<path>`);
     const [, base, path] = m;
     let current;
-    const named = results.find((r) => r.as === base);
+    // A name in this command wins over the same name from an earlier one.
+    const named = [...results].reverse().find((r) => r.as === base);
+    const here = results.filter((r) => !r.prior);
     if (named) {
       current = named;
     } else if (base === "load") {
-      current = [...results].reverse().find((r) => r.load !== undefined);
+      current = [...here].reverse().find((r) => r.load !== undefined);
       if (!current) throw new Error(`reference ${ref}: no --load result to resolve against`);
     } else if (base === "ask") {
-      current = [...results].reverse().find((r) => r.ask !== undefined);
+      current = [...here].reverse().find((r) => r.ask !== undefined);
       if (!current) throw new Error(`reference ${ref}: no --ask result to resolve against`);
     } else if (base === "post") {
-      current = [...results].reverse().find((r) => r.post !== undefined);
+      current = [...here].reverse().find((r) => r.post !== undefined);
       if (!current) throw new Error(`reference ${ref}: no --post result to resolve against`);
     } else if (/^\d+$/.test(base)) {
-      current = results[Number(base) - 1];
-      if (!current) throw new Error(`reference ${ref}: no result ${base} (the session has ${results.length})`);
+      current = here[Number(base) - 1];
+      if (!current) throw new Error(`reference ${ref}: no result ${base} (the session has ${here.length})`);
     } else {
-      current = [...results].reverse().find((r) => opOf(r) === base);
+      current = [...here].reverse().find((r) => opOf(r) === base);
       if (!current) throw new Error(`reference ${ref}: no prior result tagged op:"${base}"`);
     }
     // References resolve into the result's ok payload — the document
@@ -330,7 +417,7 @@ async function runSession() {
     // capability, then the step's own (load, ask), then the outcome.
     const result = {};
     if (step.name) {
-      if (results.some((r) => r.as === step.name)) throw new Error(`--as ${step.name}: the name is already taken`);
+      if (results.some((r) => r.as === step.name && !r.prior)) throw new Error(`--as ${step.name}: the name is already taken`);
       result.as = step.name;
     }
     // The capability rides on every line once a session spans more
@@ -372,13 +459,18 @@ async function runSession() {
         : JSON.parse(step.value);
       result.text = module.invoke(resolveRefs(request));
     }
+    Object.defineProperty(result, "capability", { value: step.capability });
     results.push(result);
   }
-  // One printed line per result: the leading fields, then the
-  // outcome's own fields — spliced as text, never re-parsed.
-  const lines = results.map(({ text, op, ...lead }) => {
+  const here = results.filter((r) => !r.prior);
+  if (session) saveSession(session, here.filter((r) => r.as));
+  // One printed line per result of this command: the leading fields,
+  // then the outcome's own fields. Without --brief they are spliced as
+  // text and never parsed again.
+  const lines = here.map(({ text, op, ...lead }) => {
     const head = JSON.stringify(lead);
-    return head === "{}" ? text : `${head.slice(0, -1)},${text.slice(1)}`;
+    const body = brief ? briefText(text) : text;
+    return head === "{}" ? body : `${head.slice(0, -1)},${body.slice(1)}`;
   });
   parentPort.postMessage({ ok: lines });
 }
@@ -418,12 +510,12 @@ export async function main(argv) {
     return 0;
   }
 
-  const { steps, timeout } = parseArgs(argv);
+  const { steps, timeout, session, brief } = parseArgs(argv);
   // Unknown capabilities fail before the sandbox spins up.
   for (const capability of new Set(steps.map((s) => s.capability))) capabilityRecord(capability);
   const { Worker } = await import("node:worker_threads");
   const worker = new Worker(new URL(import.meta.url), {
-    workerData: { steps },
+    workerData: { steps, session, brief },
   });
 
   const outcome = await new Promise((resolve, reject) => {

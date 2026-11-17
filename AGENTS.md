@@ -201,6 +201,10 @@ node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op .
                            # --ask URL asks an oracle ($ask.x). --post URL REF writes a
                            # document to the deployment ($post.x). For example,
                            # POST /plans '$apply.network' publishes a pick.
+                           # --session NAME keeps the --as results across commands
+                           # (.caps-sessions/NAME/), so a later command reuses an
+                           # import. --brief prints a whole document as its kind,
+                           # version, and size (docs/architecture/registry.md).
 just test                  # the host-side runner (Rust, smokes, runner gates, web parity
                            # ratchets, Go -race), with no browser
 just test-fast             # the same suites over `caps-fast` modules. The edit loop's
