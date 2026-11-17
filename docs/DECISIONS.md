@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-175**.
+- IDs are never reused; the next new decision is **D-176**.
 
 ## Summary
 
@@ -227,6 +227,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-171 | How does a UI at its own URL reach the server, and how is it rolled back? | unanswered | each UI at its own URL in `release-artifacts` |
 | D-173 | How does a stop the stops app made reach a plan? | decided | nothing |
 | D-174 | How are code comments and the developer documents written? | decided | nothing |
+| D-175 | Whose clock does the runner read for $TODAY and $NOW_SECS? | decided | nothing |
 
 ## The trip model
 
@@ -3474,3 +3475,20 @@ Why: `docs/CONVENTIONS.md`, "Writing", "Why: about 80% of ASD-STE100".
 Pinned by: review. No check in `just test` measures the rules.
 Blocks: nothing. The rewrite of the existing documents is
 `docs/units/plain-docs.md`.
+
+## The runner
+
+### D-175 — Whose clock does the runner read for $TODAY and $NOW_SECS?
+State: Decided.
+Answer: 2026-11-17. The agency's, never the machine's. The zone is
+`--tz`, or else the zone of the last network the session saw. With no
+zone, `$TODAY` fails and names `--tz`. The user: "go ahead and take care
+of those issues", on the proposal that `$TODAY` resolve in the network's
+zone or a passed `--tz`, after a dogfood session found that a machine
+set to Tokyo read C-TRAN's Wednesday services on a Tuesday.
+Why: the ownership rules in `AGENTS.md` (hosts read the clock in the
+agency's zone); `docs/architecture/registry.md`, "The clock".
+Pinned by: the clock gates in `just test` (`$TODAY` from Asia/Tokyo and
+Pacific/Honolulu equals `web/src/clock.ts` in the network's zone;
+`--tz`; a failure with no zone).
+Blocks: nothing.

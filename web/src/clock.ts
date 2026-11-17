@@ -3,7 +3,9 @@
 /// AGENCY's zone (the manifest's `timezone`, the network's operator
 /// zone, as the server counts its own today), never the device's —
 /// a phone or a display set to another zone answers the same service
-/// day. No imports: `node --test web/src/clock.test.mjs` runs it bare.
+/// day. The agent runner (`tools/caps-run.mjs`) reads `$TODAY` and
+/// `$NOW_SECS` through it too, so the runner and the pages agree. No
+/// imports: `node --test web/src/clock.test.mjs` runs it bare.
 ///
 /// The date is the agency's calendar date; the seconds count from
 /// noon minus 12 h on that date (the GTFS spec's anchor), which is

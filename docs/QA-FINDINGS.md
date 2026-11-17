@@ -13,7 +13,7 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-121**. The
+IDs are never reused; the next new finding is **QAF-122**. The
 standing route 99 test keeps its own findings (QAF-114..117) in
 `qa/route-99/README.md`, and the C-TRAN 2045 service-change sessions
 theirs (QAF-118..120) in `LRP/SESSIONS.md`. A
@@ -30,10 +30,11 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   20260913-20270109. rt payloads: trip updates and vehicle positions
   from gtfs-rt.c-tran.org, service alerts from
   https://gtfs-rt.c-tran.com/Alerts.
-- Network import: `sha256:c6847464f1b9f7b882abac3e458d54105d92f698
-  e7a903d7d195e26e4bb68b37` (the whole spec: every file round-trips;
-  C-TRAN's dated calendars read as weekly rules, D-105; findings
-  before 2026-11-06 were seen on `2beddcb3…`, the import that kept them
+- Network import: `sha256:d4b9b78074b65ab2c073e52e225e146fb1c2547d
+  c5d3e678c8a1daf34879d201`, re-measured 2026-11-17 (the whole spec:
+  every file round-trips; C-TRAN's dated calendars read as weekly
+  rules, D-105; findings before 2026-11-13 were seen on `c6847464…`;
+  findings before 2026-11-06 were seen on `2beddcb3…`, the import that kept them
   dated; findings from
   2026-10-27–28 were seen on `2e27c511…`, the import before stored
   trips; before 2026-10-27 on `89631f1a…`, the
@@ -81,6 +82,16 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
 
 ## Resources and comparison (the planner's core loop)
 
+- **QAF-121 OP GAP** — No op answers how often each route serves one
+  stop, hour by hour. `stop_gaps` folds every route at the stop into one
+  profile. `route_frequency` reads each route at its own headway stop,
+  not at the stop asked. So the question "how often does each route
+  serve Fisher's Landing at midday?" gets the stop's total (13
+  departures an hour, a median gap of 3 minutes) but not the split by
+  route. It is likely a facet of `stop_gaps`: the same question, by
+  route (`crates/AGENTS.md`, "The cut").
+  Pin: after an import of the C-TRAN feed in session `s`,
+  `caps-run analysis --session s --op '{"op":"stop_gaps","network_hash":"$net.network_hash","stop_id":"106","date":"$TODAY"}'`.
 - **QAF-3 OP GAP** — the fleet summary answers a DATE (`runcut
   fleet_summary`; a proposal's vehicle need is `suggest_blocks`'
   `added_vehicles`), never one service type: a planner asking

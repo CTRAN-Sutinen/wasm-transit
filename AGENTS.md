@@ -191,7 +191,7 @@ just registry              # publish the capability registry (gates, then blobs 
                            # It refuses a compiler other than rust-toolchain.toml's.
 just reproducible          # two clean builds of the tree, compared byte for byte (a gate
                            # of `just registry`; docs/architecture/release-artifacts.md)
-node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op ...
+node tools/caps-run.mjs    # the agent runner: list | tools <cap> [<op>] | session | <cap> --op ...
                            # Steps run in command-line order. --cap ID changes the
                            # capability during a session (documents cross by $ref).
                            # --as NAME names a result. $refs: $name.x, $load.x, $op.x,
@@ -203,8 +203,14 @@ node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op .
                            # POST /plans '$apply.network' publishes a pick.
                            # --session NAME keeps the --as results across commands
                            # (.caps-sessions/NAME/), so a later command reuses an
-                           # import. --brief prints a whole document as its kind,
-                           # version, and size (docs/architecture/registry.md).
+                           # import; a stored document registers itself when an op
+                           # names its hash. --brief prints a whole document as its
+                           # kind, version, and size. $TODAY and $NOW_SECS read the
+                           # agency's zone: --tz ZONE, else the session's network
+                           # (D-175). `caps-run session [NAME]` lists what a session
+                           # holds. `tools <cap> --brief` gives each op's first
+                           # sentence and example request; `tools <cap> <op>` gives
+                           # one op in full (docs/architecture/registry.md).
 just test                  # the host-side runner (Rust, smokes, runner gates, web parity
                            # ratchets, Go -race), with no browser
 just test-fast             # the same suites over `caps-fast` modules. The edit loop's

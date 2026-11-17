@@ -249,7 +249,9 @@ these rules:
   from c-tran.com. The reference hashes are in `docs/QA-FINDINGS.md`'s
   header. Import the feed once in a named session (`--session`), and
   use `--brief` so the 9.6 MB network does not print. Later commands in
-  the session reuse the import (`docs/architecture/registry.md`).
+  the session reuse the import, and name it only by
+  `$net.network_hash`. Browse a capability with `tools <cap> --brief`
+  (`docs/architecture/registry.md`).
 - **A one-off script is never tooling. It is a finding.** If a QA
   session needs bespoke glue (a bootstrap script, a summarizer), that
   is a missing op or runner feature. Log it in `docs/QA-FINDINGS.md`.

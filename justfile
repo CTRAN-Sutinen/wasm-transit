@@ -273,6 +273,29 @@ _host-tests:
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"active_services","network_hash":"$load_network.network_hash","date":"$TODAY"}' \
       | grep '"op":"active_services"' > /dev/null
+    # The runner reads the clock in the agency's zone, never the
+    # machine's (D-175). From Tokyo and from Honolulu, $TODAY is the
+    # date that web/src/clock.ts gives in the network's zone
+    # (America/Montreal). --tz names another zone. With no zone known,
+    # $TODAY fails.
+    for tz in Asia/Tokyo Pacific/Honolulu; do
+      TZ=$tz node tools/caps-run.mjs analysis --op @web/public/caps/sample-network-load.json \
+        --op '{"op":"network_stats","network_hash":"$load_network.network_hash","date":"$TODAY","include_routes":false,"include_service_types":false,"include_stops":false}' \
+        | node --input-type=module -e 'import { serviceClock } from "./web/src/clock.ts"; const r = (await new Response(process.stdin).text()).trim().split("\n").map(JSON.parse); if (r.at(-1).ok?.stats?.date !== serviceClock(Date.now(), "America/Montreal").date) process.exit(1)'
+    done
+    node tools/caps-run.mjs analysis --tz Asia/Tokyo --op @web/public/caps/sample-network-load.json \
+      --op '{"op":"network_stats","network_hash":"$load_network.network_hash","date":"$TODAY","include_routes":false,"include_service_types":false,"include_stops":false}' \
+      | node --input-type=module -e 'import { serviceClock } from "./web/src/clock.ts"; const r = (await new Response(process.stdin).text()).trim().split("\n").map(JSON.parse); if (r.at(-1).ok?.stats?.date !== serviceClock(Date.now(), "Asia/Tokyo").date) process.exit(1)'
+    node tools/caps-run.mjs analysis \
+      --op '{"op":"network_stats","network_hash":"sha256:00","date":"$TODAY"}' 2>&1 \
+      | grep -- '--tz' > /dev/null
+    # Discovery stays cheap. `tools <cap> --brief` gives each op's first
+    # sentence and its example with the documents omitted. `tools <cap>
+    # <op>` gives one op in full.
+    node tools/caps-run.mjs tools analysis --brief \
+      | node -e 'const t = require("fs").readFileSync(0, "utf8"); const j = JSON.parse(t); const ops = Object.values(j.tools); if (t.length > 30000 || ops.length < 10 || ops.some((o) => typeof o.summary !== "string" || o.summary.length > 400) || j.tools.network_stats.example.request.network_hash === undefined) process.exit(1)'
+    node tools/caps-run.mjs tools analysis stop_gaps \
+      | node -e 'const j = JSON.parse(require("fs").readFileSync(0, "utf8")); if (j.op !== "stop_gaps" || !(j.description.length > 100) || j.example?.request?.op !== "stop_gaps") process.exit(1)'
     # The calendar read backwards: WK's fixture dates across a window
     # that crosses the feed's calendar exception (removed 10-29) —
     # the reverse read must carry it.
@@ -340,6 +363,16 @@ _host-tests:
       --as bnet --op '{"op":"load_network","network":"$net.network"}' \
       --op '{"op":"stop_board","network_hash":"$bnet.network_hash","stop_id":"A","date":"2026-10-23","from_secs":25200,"limit":1}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const imported = require("fs").readFileSync(process.argv[1], "utf8"); if (r.some((x) => x.ok?.op === "import") || r.find((x) => x.as === "bnet").ok.network_hash !== imported || r.at(-1).ok?.op !== "stop_board") process.exit(1)' "$sessions/imported"
+    # An op that names a document the module does not hold, by a hash the
+    # session holds, registers it and runs again. The line says what it
+    # registered.
+    CAPS_RUN_SESSIONS="$sessions" node tools/caps-run.mjs board --session gate \
+      --op '{"op":"stop_board","network_hash":"$net.network_hash","stop_id":"A","date":"2026-10-23","from_secs":25200,"limit":1}' \
+      | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const imported = require("fs").readFileSync(process.argv[1], "utf8"); const last = r.at(-1); if (last.ok?.op !== "stop_board" || !last.registered?.includes(`network ${imported}`)) process.exit(1)' "$sessions/imported"
+    # `session NAME` lists what a session holds: each name, its op, and
+    # the documents in it.
+    CAPS_RUN_SESSIONS="$sessions" node tools/caps-run.mjs session gate \
+      | node -e 'const j = JSON.parse(require("fs").readFileSync(0, "utf8")); const net = j.results.find((x) => x.as === "net"); if (net?.op !== "import" || !net.documents.some((d) => d.kind === "network") || !net.documents.some((d) => d.kind === "boundary")) process.exit(1)'
     rm -rf "$sessions"
     # --brief prints a whole document as its kind, version, and size.
     # The session keeps the whole document, so a reference still gives

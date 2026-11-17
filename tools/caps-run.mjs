@@ -10,10 +10,17 @@
 // agent's context does.
 //
 //   caps-run list                       capabilities + evidence
+//   caps-run session [NAME]             the sessions in the store, or
+//                                       what one session holds
+//   caps-run tools <capability> <op>    one op: its description and
+//                                       its worked example
+//   caps-run tools <capability> --brief each op's first sentence and
+//                                       its example request, with the
+//                                       documents omitted
 //   caps-run tools <capability>         the tool catalog (op docs, and
 //                                       per-kind examples where an op
 //                                       takes a tagged vocabulary)
-//   caps-run <capability> [--session NAME] [--brief] [--cap ID] [--as NAME]
+//   caps-run <capability> [--session NAME] [--brief] [--tz ZONE] [--cap ID] [--as NAME]
 //          [--load [N:|KIND:]FILE]... [--op '<json>|@FILE']... [--ask URL]...
 //          [--post URL REF]... [--timeout MS]   run a session
 //
@@ -22,8 +29,8 @@
 // $CAPS_RUN_SESSIONS/NAME/). A later command with the same --session
 // reaches it as $name, without running its step again. Only --as names
 // reach across commands. Save happens only when every step succeeds.
-// Each command makes new module instances, so load a stored document
-// into a capability again before you use it.
+// Each command makes new module instances. A stored document registers
+// itself the first time an op names its hash (below).
 //
 // --brief prints each whole document (an object that carries `kind`
 // and `schema_version`) as {"omitted": {kind, schema_version, bytes}}.
@@ -83,14 +90,22 @@
 // (numeric segments index arrays). A reference must be the whole
 // string value; unresolvable references fail the session loudly.
 //
-// The clock (the HOST owns it — dates never cross as magic):
-//   $TODAY             the host's local date, "YYYY-MM-DD"
-//   $NOW_SECS          the host's local seconds since midnight (a
-//                      number — the seconds fields are u32)
+// The clock. The host owns it, and reads it in the agency's zone, never
+// the machine's (D-175). The zone is --tz ZONE, or else the zone of the
+// last network the session saw (its operators' zone, or an import's
+// `timezone`). With no zone, $TODAY and $NOW_SECS fail.
+//   $TODAY             the agency's service date, "YYYY-MM-DD"
+//   $NOW_SECS          seconds from noon minus 12 h on that date (a
+//                      number; the seconds fields are u32). This is
+//                      web/src/clock.ts, the browser's own clock.
+//
+// A document the module does not hold, named by a hash the session
+// holds, registers itself: the runner loads it through the kind's
+// kernel load and runs the op again. The line lists it in `registered`.
 
 import { createHash } from "node:crypto";
 import { parentPort, workerData, isMainThread } from "node:worker_threads";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -155,11 +170,19 @@ function sourceDigest() {
 }
 
 // A registry published from another tree runs other code than the
-// tree says: say so on every run (QAF-77), never silently.
-function warnIfStale() {
+// tree says: say so, never silently (QAF-77). In a session, say it
+// once for each registry: the session's directory remembers the digest
+// it was told about.
+function warnIfStale(session = null) {
   const published = registryPointer().evidence?.source_digest ?? null;
   const tree = sourceDigest();
   if (!published || !tree || published === tree) return;
+  if (session) {
+    const marker = join(sessionDir(session), ".stale-warned");
+    if (existsSync(marker) && readFileSync(marker, "utf8") === published) return;
+    mkdirSync(sessionDir(session), { recursive: true });
+    writeFileSync(marker, published);
+  }
   console.error(
     `caps-run: the registry is STALE — published from source ${published.slice(0, 19)}…, ` +
       `the tree is ${tree.slice(0, 19)}…; \`just caps\` republishes it`,
@@ -176,8 +199,8 @@ function sha256(bytes) {
 
 function usage() {
   console.error(
-    "usage: caps-run list | caps-run tools <capability> | " +
-      "caps-run <capability> [--session NAME] [--brief] [--cap ID] [--as NAME] [--load FILE]... [--op JSON|@FILE]... [--ask URL]... [--post URL REF]... [--timeout MS]",
+    "usage: caps-run list | caps-run tools <capability> [<op>] [--brief] | caps-run session [NAME] | " +
+      "caps-run <capability> [--session NAME] [--brief] [--tz ZONE] [--cap ID] [--as NAME] [--load FILE]... [--op JSON|@FILE]... [--ask URL]... [--post URL REF]... [--timeout MS]",
   );
   process.exit(2);
 }
@@ -186,7 +209,7 @@ function parseArgs(argv) {
   // Steps keep command-line order: each names the capability it runs
   // against (the positional one until a --cap switches it) and the
   // name a following --as gave it.
-  const out = { capability: null, steps: [], timeout: 10_000, session: null, brief: false };
+  const out = { capability: null, steps: [], timeout: 10_000, session: null, brief: false, tz: null };
   let current = null;
   let pendingName = null;
   const step = (kind, value) => {
@@ -204,6 +227,15 @@ function parseArgs(argv) {
     else if (arg === "--as") pendingName = argv[++i] ?? usage();
     else if (arg === "--timeout") out.timeout = Number(argv[++i]);
     else if (arg === "--brief") out.brief = true;
+    else if (arg === "--tz") {
+      out.tz = argv[++i] ?? usage();
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: out.tz });
+      } catch {
+        console.error(`--tz ${out.tz}: not a time zone the host knows (an IANA name, such as America/Los_Angeles)`);
+        process.exit(2);
+      }
+    }
     else if (arg === "--session") {
       out.session = argv[++i] ?? usage();
       if (!/^[A-Za-z0-9._-]+$/.test(out.session) || out.session.startsWith(".")) {
@@ -275,9 +307,41 @@ function readSessionIndex(name) {
   return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : [];
 }
 
+// Every persisted document carries `kind` and `schema_version` inside it
+// (docs/architecture/bus.md, "Every document says what it is").
+const isDocument = (value) =>
+  value !== null && typeof value === "object" && typeof value.kind === "string" && typeof value.schema_version === "number";
+
+// The documents an answer carries at its top level: each with its
+// field, its kind, and the hash beside it (`network` and
+// `network_hash`, `boundary` and `boundary_hash`).
+function documentsOf(ok) {
+  if (!ok || typeof ok !== "object") return [];
+  return Object.entries(ok)
+    .filter(([, value]) => isDocument(value))
+    .map(([field, value]) => ({ kind: value.kind, field, hash: ok[`${field}_hash`] ?? null }));
+}
+
+// The agency's time zone, as a network says it: its operators' one
+// zone. An import or a document answer also states it as `timezone`.
+function zoneOf(value) {
+  if (!value || typeof value !== "object") return null;
+  if (typeof value.timezone === "string") return value.timezone;
+  if (value.kind === "network" && value.operators) {
+    const zones = [...new Set(Object.values(value.operators).map((o) => o?.timezone).filter(Boolean))];
+    return zones.length === 1 ? zones[0] : null;
+  }
+  for (const field of ["network", "document"]) {
+    if (value[field]?.kind === "network") return zoneOf(value[field]);
+  }
+  return null;
+}
+
 // Save the named results of this command. A name from an earlier
-// command is replaced. The index is written last, through a rename, so
-// a reader never sees an index that names a missing file.
+// command is replaced. Each entry lists the documents its result
+// carries, and the agency's zone when the result states one. The index
+// is written last, through a rename, so a reader never sees an index
+// that names a missing file.
 function saveSession(name, named) {
   if (named.length === 0) return;
   const dir = sessionDir(name);
@@ -285,34 +349,40 @@ function saveSession(name, named) {
   const index = readSessionIndex(name).filter((e) => !named.some((r) => r.as === e.as));
   for (const r of named) {
     writeFileSync(join(dir, `${r.as}.json.gz`), gzipSync(r.text));
-    index.push({ as: r.as, cap: r.cap ?? r.capability, op: r.op ?? JSON.parse(r.text).ok?.op ?? null });
+    const ok = JSON.parse(r.text).ok;
+    const entry = { as: r.as, cap: r.capability, op: ok?.op ?? null, documents: documentsOf(ok) };
+    const zone = r.zone ?? zoneOf(ok);
+    if (zone) entry.timezone = zone;
+    index.push(entry);
   }
   writeFileSync(join(dir, "index.json.tmp"), JSON.stringify(index, null, 2));
   renameSync(join(dir, "index.json.tmp"), join(dir, "index.json"));
 }
 
 // --brief: a whole document prints as its kind, version, and size.
-// Every persisted document carries `kind` and `schema_version` inside it
-// (docs/architecture/bus.md, "Every document says what it is"). The
-// session keeps the whole document, so references still reach it.
+// The session keeps the whole document, so references still reach it.
+function briefValue(value) {
+  if (Array.isArray(value)) return value.map(briefValue);
+  if (value === null || typeof value !== "object") return value;
+  if (isDocument(value)) {
+    return { omitted: { kind: value.kind, schema_version: value.schema_version, bytes: Buffer.byteLength(JSON.stringify(value)) } };
+  }
+  return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, briefValue(v)]));
+}
+
 function briefText(text) {
-  const shorten = (value) => {
-    if (Array.isArray(value)) return value.map(shorten);
-    if (value === null || typeof value !== "object") return value;
-    if (typeof value.kind === "string" && typeof value.schema_version === "number") {
-      return { omitted: { kind: value.kind, schema_version: value.schema_version, bytes: Buffer.byteLength(JSON.stringify(value)) } };
-    }
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, shorten(v)]));
-  };
   const outcome = JSON.parse(text);
   if (outcome.ok && typeof outcome.ok === "object") {
-    outcome.ok = Object.fromEntries(Object.entries(outcome.ok).map(([k, v]) => [k, shorten(v)]));
+    outcome.ok = Object.fromEntries(Object.entries(outcome.ok).map(([k, v]) => [k, briefValue(v)]));
   }
   return JSON.stringify(outcome);
 }
 
 async function runSession() {
-  const { steps, session, brief } = workerData;
+  const { steps, session, brief, tz } = workerData;
+  // The browser's own service clock: the agency's date, and seconds
+  // from noon minus 12 h (web/src/clock.ts has no imports).
+  const { serviceClock } = await import("../web/src/clock.ts");
   const modules = new Map();
   const moduleFor = (capability) => {
     if (!modules.has(capability)) modules.set(capability, instantiate(capability));
@@ -332,6 +402,8 @@ async function runSession() {
         as: e.as,
         op: e.op,
         prior: true,
+        zone: e.timezone,
+        documents: e.documents,
         get text() {
           const text = gunzipSync(readFileSync(join(sessionDir(session), `${e.as}.json.gz`))).toString("utf8");
           Object.defineProperty(this, "text", { value: text });
@@ -346,16 +418,45 @@ async function runSession() {
     if (r.op === undefined) r.op = outcomeOf(r).ok?.op ?? null;
     return r.op;
   };
-  // The clock: the HOST owns it, so $TODAY / $NOW_SECS resolve to the
-  // host's here-and-now before the ops ever see them. Result
-  // references ($load.x, $import.x, $1.x) resolve against the
-  // session's prior results — both BEFORE the bytes cross the ABI,
-  // so the agent never hand-copies a hash or computes a date.
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  const clockRefs = {
-    $TODAY: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
-    $NOW_SECS: now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds(),
+  // The clock. The host owns it, so $TODAY and $NOW_SECS resolve before
+  // the ops see them. They read the agency's zone, never the machine's
+  // (D-175). The zone comes from --tz. Without --tz, it comes from the
+  // last network the session has seen: one an op loads, one an import
+  // or a document answer names, or one an earlier command of the
+  // session saved. Result references ($load.x, $import.x, $1.x) also
+  // resolve before the bytes cross the ABI, so the agent never copies a
+  // hash or computes a date by hand.
+  const nowMs = Date.now();
+  let zone = tz ?? [...results].reverse().find((r) => r.zone)?.zone ?? null;
+  const learnZone = (value, result) => {
+    if (tz) return;
+    const found = zoneOf(value);
+    if (found) {
+      zone = found;
+      Object.defineProperty(result, "zone", { value: found, configurable: true });
+    }
+  };
+  const clockRef = (name) => {
+    if (!zone) {
+      throw new Error(`${name} needs the agency's time zone: pass --tz ZONE, or load or import a network in the session first`);
+    }
+    const clock = serviceClock(nowMs, zone);
+    return name === "$TODAY" ? clock.date : clock.secs;
+  };
+  const clockRefs = { $TODAY: true, $NOW_SECS: true };
+  // The kernel load of each document kind, by its bulk op code.
+  const loadCodes = Object.fromEntries((registryPointer().kernel_ops ?? []).map((k) => [k.name, k.code]));
+  // A document the session holds, found by its kind and hash: in this
+  // command's results, or in the store of an earlier command.
+  const listedDocuments = new Map();
+  const heldDocument = (kind, hash) => {
+    for (const r of [...results].reverse()) {
+      if (!listedDocuments.has(r)) listedDocuments.set(r, r.documents ?? documentsOf(outcomeOf(r).ok));
+      const listed = listedDocuments.get(r);
+      const found = listed.find((d) => d.kind === kind && d.hash === hash);
+      if (found) return outcomeOf(r).ok[found.field];
+    }
+    return null;
   };
   const resolveRef = (ref) => {
     const m = /^\$(load|ask|post|\d+|[a-zA-Z_][a-zA-Z0-9_]*)(?:\.([a-zA-Z0-9_.]*))?$/.exec(ref);
@@ -401,7 +502,7 @@ async function runSession() {
   };
   const resolveRefs = (value) => {
     if (typeof value === "string") {
-      if (clockRefs[value] !== undefined) return clockRefs[value];
+      if (clockRefs[value] !== undefined) return clockRef(value);
       if (value.startsWith("$")) return resolveRef(value);
       return value;
     }
@@ -457,7 +558,30 @@ async function runSession() {
       const request = step.value.startsWith("@")
         ? JSON.parse(readFileSync(step.value.slice(1), "utf8"))
         : JSON.parse(step.value);
-      result.text = module.invoke(resolveRefs(request));
+      const resolved = resolveRefs(request);
+      for (const value of Object.values(resolved)) learnZone(value, result);
+      result.text = module.invoke(resolved);
+      // The module does not hold a document the op names, and the session
+      // does: register it through the kind's kernel load, then run the op
+      // again. The line says what was registered.
+      for (let tries = 0; tries < 8; tries++) {
+        const missing = /^\{"error":"unknown ([a-z_]+) (sha256:[0-9a-f]+): (load_[a-z_]+) first"\}$/.exec(result.text);
+        const document = missing && heldDocument(missing[1], missing[2]);
+        if (!document || loadCodes[missing[3]] === undefined) break;
+        const loaded = JSON.parse(module.invokeBytes(loadCodes[missing[3]], Buffer.from(JSON.stringify(document))));
+        const hash = loaded.ok?.[`${missing[1]}_hash`];
+        if (hash !== missing[2]) {
+          throw new Error(`registering ${missing[1]} ${missing[2]}: the module answered ${JSON.stringify(loaded).slice(0, 200)}`);
+        }
+        (result.registered ??= []).push(`${missing[1]} ${missing[2]}`);
+        result.text = module.invoke(resolved);
+      }
+    }
+    // An answer that states the agency's zone (an import, a network
+    // document) sets the zone for the steps after it.
+    if (!tz && result.text?.includes('"timezone"') && result.text.length < 64 * 1024 * 1024) {
+      const ok = JSON.parse(result.text).ok;
+      learnZone(ok, result);
     }
     Object.defineProperty(result, "capability", { value: step.capability });
     results.push(result);
@@ -486,8 +610,8 @@ if (!isMainThread) {
 // -----------------------------------------------------------------
 
 export async function main(argv) {
-  warnIfStale();
   if (argv[0] === "list") {
+    warnIfStale();
     const pointer = registryPointer();
     // The kernel ops by name and code (their worked examples are in
     // `tools <capability>`, under loads).
@@ -496,26 +620,71 @@ export async function main(argv) {
     return 0;
   }
   if (argv[0] === "tools") {
-    const record = capabilityRecord(argv[1] ?? usage());
+    warnIfStale();
+    const args = argv.slice(1);
+    const brief = args.includes("--brief");
+    const [id, only] = args.filter((a) => a !== "--brief");
+    const record = capabilityRecord(id ?? usage());
+    const docOf = (op) => record.op_docs[op] ?? { description: null, example: null };
+    // One op: everything about it, documents included.
+    if (only !== undefined) {
+      if (!record.ops.includes(only)) {
+        console.error(`${record.id} has no op ${only}; its ops: ${record.ops.join(", ")}`);
+        return 1;
+      }
+      console.log(JSON.stringify({ id: record.id, op: only, documents: record.documents ?? [], ...docOf(only) }, null, 2));
+      return 0;
+    }
+    // --brief: each op's first sentence and its example request, with
+    // each document in the request omitted. `tools <capability> <op>`
+    // gives the full description and the example's answer.
+    const firstSentence = (text) => {
+      const match = /^(.+?[.!?])(?=\s+[A-Z(`"]|$)/s.exec(text ?? "");
+      const sentence = (match ? match[1] : text ?? "").replace(/\s+/g, " ").trim();
+      return sentence.length > 300 ? `${sentence.slice(0, 297)}…` : sentence;
+    };
     const tools = Object.fromEntries(
-      record.ops.map((op) => [op, record.op_docs[op] ?? { description: null, example: null }]),
+      record.ops.map((op) => {
+        const doc = docOf(op);
+        if (!brief) return [op, doc];
+        return [op, { summary: firstSentence(doc.description), example: { request: briefValue(doc.example?.request ?? null) } }];
+      }),
     );
     // The kernel's loads of the documents it reads: every module
     // linking it answers them.
     const loadOps = new Set((record.documents ?? []).map((kind) => KIND_LOADS[kind]));
-    const loads = Object.fromEntries(
-      (registryPointer().kernel_ops ?? []).filter((k) => loadOps.has(k.name)).map((k) => [k.name, k]),
-    );
+    const kernel = (registryPointer().kernel_ops ?? []).filter((k) => loadOps.has(k.name));
+    const loads = brief
+      ? Object.fromEntries(kernel.map((k) => [k.name, k.code]))
+      : Object.fromEntries(kernel.map((k) => [k.name, k]));
     console.log(JSON.stringify({ id: record.id, purpose: record.purpose, documents: record.documents ?? [], loads, tools }, null, 2));
     return 0;
   }
+  if (argv[0] === "session") {
+    // What a session holds: each name, its op and capability, the
+    // documents in it, and the zone it states. Without a name, the
+    // sessions in the store.
+    const root = process.env.CAPS_RUN_SESSIONS ?? join(HERE, "..", ".caps-sessions");
+    if (argv[1] === undefined) {
+      const names = existsSync(root) ? readdirSync(root).filter((n) => existsSync(join(root, n, "index.json"))) : [];
+      console.log(JSON.stringify({ store: root, sessions: names.map((name) => ({ name, results: readSessionIndex(name).length })) }, null, 2));
+      return 0;
+    }
+    if (!existsSync(join(sessionDir(argv[1]), "index.json"))) {
+      console.error(`no session ${argv[1]} in ${root}`);
+      return 1;
+    }
+    console.log(JSON.stringify({ session: argv[1], dir: sessionDir(argv[1]), results: readSessionIndex(argv[1]) }, null, 2));
+    return 0;
+  }
 
-  const { steps, timeout, session, brief } = parseArgs(argv);
+  const { steps, timeout, session, brief, tz } = parseArgs(argv);
+  warnIfStale(session);
   // Unknown capabilities fail before the sandbox spins up.
   for (const capability of new Set(steps.map((s) => s.capability))) capabilityRecord(capability);
   const { Worker } = await import("node:worker_threads");
   const worker = new Worker(new URL(import.meta.url), {
-    workerData: { steps, session, brief },
+    workerData: { steps, session, brief, tz },
   });
 
   const outcome = await new Promise((resolve, reject) => {
