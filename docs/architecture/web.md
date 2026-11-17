@@ -436,11 +436,17 @@ true. Change it only with the user, after you read **Because**.
 - **Rejected:** Popover with a small fallback; Popover with a polyfill (`@oddbird/popover-polyfill`); a named browser floor.
 - **Decided:** D-135.
 
-### A UI's flows are code, run by the answer graph (`answerGraph` in `src/uis/kit.ts`, each `host.svelte.ts`)
+### A UI's flows are code, run by the answer graph (`src/uis/answers.ts`, `answerGraph` in `src/uis/kit.ts`, each `host.svelte.ts`)
 - **Holds:** a host declares its flows as `AnswerNode`s in TypeScript. The answer graph schedules them, and knows nothing about transit. A UI's layout is its `Shell.svelte`. Both ship with the UI's build. There is no flow or layout document.
-- **Because:** a node's body builds op arguments from host state, checks that its capability assembled, and keeps its frame's failure. As data, that needs an expression language that the host interprets. That moves the host's code into a JSON dialect, and takes no logic out of the host. A layout document would put product code into the agency's record. It would then need versions, migrations, and a receive path, and a second rollback beside the UI's own.
+- **Because:** a node's body builds op arguments from host state. As data, that needs an expression language that the host interprets. That moves the host's code into a JSON dialect, and takes no logic out of the host. A layout document would put product code into the agency's record. It would then need versions, migrations, and a receive path, and a second rollback beside the UI's own.
 - **Rejected:** flow maps as data in a UI manifest, interpreted by the engine; layouts as documents over a component catalog.
 - **Decided:** D-176.
+
+### A failure belongs to its frame (`FrameState`, each host's `frames`)
+- **Holds:** the answer graph keeps why each frame has no answer: unassembled, starved, or failed. A host declares a node's capabilities and what it clears, and keeps no failure state of its own. Every other frame answers.
+- **Because:** each host kept failures by hand, two ways: a `framed` wrapper and `failed[frame]` in the planner hosts, and per-capability `off` flags and error fields in the rider hosts. Each node repeated the same checks. A capability that did not load silently emptied some frames and failed others.
+- **Rejected:** one failure box for every UI. The rider components say an outage in their own words (`off`, `error`), so the rider shells map the state onto those props.
+- **Pinned:** `web/src/uis/answers.test.mjs`.
 
 ### The basemap's labels are served locally when installed (`just basemap-assets`, `pickStyle`)
 - **Holds:** the glyphs and sprites are fetched once into `web/public/basemap-assets/` (gitignored). They are read from there when present, else from protomaps.github.io.

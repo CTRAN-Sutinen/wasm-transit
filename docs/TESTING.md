@@ -180,7 +180,9 @@ and before a release.
    `window.__bus`).
    These specs pin the bus as a page sees it:
    - The generated UIs' specs pin assembly and per-frame degraded
-     state (`ui-ride-now` and `ui-service-design`).
+     state (`ui-ride-now` and `ui-service-design`). The answer graph's
+     laws (`web/src/uis/answers.test.mjs`, in `just test`) pin each
+     node's state: unassembled, starved, failed, and answered.
    - `web/e2e/published-network.spec.mjs` pins that a document is
      refused unless it registers under the pinned hash.
    - `web/e2e/published-picks.spec.mjs` has its own store-mode server

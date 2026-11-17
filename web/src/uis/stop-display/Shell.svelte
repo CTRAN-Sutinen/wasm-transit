@@ -8,7 +8,7 @@
   import DisplayGroup from "../../components/DisplayGroup.svelte";
   import DisplayHeader from "../../components/DisplayHeader.svelte";
   import DisplaySetup from "../../components/DisplaySetup.svelte";
-  import { closeSetup, display, loadFeedBytes, openSetup, pickStop, setLayout, typed } from "./host.svelte";
+  import { closeSetup, display, failure, loadFeedBytes, off, openSetup, pickStop, setLayout, typed } from "./host.svelte";
 </script>
 
 {#if !display.feed && !display.busy}
@@ -27,7 +27,7 @@
     layout={display.layout}
     found={display.found}
     limit={25}
-    off={display.off.directory}
+    off={off("DisplaySetup")}
     current={display.stop}
     ontype={typed}
     onlayout={setLayout}
@@ -49,17 +49,17 @@
       {#if display.editsStale}
         <p class="note" data-testid="display-stale">{display.editsStale}</p>
       {/if}
-      {#if display.board && (display.boardError || display.problem)}
+      {#if display.board && (failure("DisplayGroup") || display.problem)}
         <p class="note" data-testid="display-note">
-          {display.boardError ? `Departures could not be updated: ${display.boardError}` : display.problem}
+          {failure("DisplayGroup") ? `Departures could not be updated: ${failure("DisplayGroup")}` : display.problem}
         </p>
       {/if}
       {#if display.status}
         <p class="status" data-testid="display-status">{display.status}</p>
-      {:else if display.off.board}
+      {:else if off("DisplayGroup")}
         <p class="status">Departures are unavailable — the board capability could not be assembled.</p>
-      {:else if display.boardError && !display.board}
-        <p class="status">Departures could not be answered: {display.boardError}</p>
+      {:else if failure("DisplayGroup") && !display.board}
+        <p class="status">Departures could not be answered: {failure("DisplayGroup")}</p>
       {:else if display.board && display.board.groups.length === 0}
         <p class="status" data-testid="display-status">No routes serve this stop today.</p>
       {:else if display.board}
@@ -75,7 +75,7 @@
       {/if}
     </div>
     <div class="alerts">
-      <DisplayAlerts alerts={display.board?.alerts ?? []} routes={display.routes} off={display.off.rt} />
+      <DisplayAlerts alerts={display.board?.alerts ?? []} routes={display.routes} off={off("Live")} />
     </div>
   </main>
 {/if}

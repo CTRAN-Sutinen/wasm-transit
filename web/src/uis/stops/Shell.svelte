@@ -39,6 +39,7 @@
     addAttachment,
     attachmentSrc,
     retry,
+    why,
   } from "./host.svelte";
   import StopLifeMap from "../../components/StopLifeMap.svelte";
   import StopLifeList from "../../components/StopLifeList.svelte";
@@ -90,11 +91,11 @@
 </script>
 
 {#snippet failure(frame: string, title: string)}
-  <Unavailable {title} error={st.failed[frame]} onretry={retry} />
+  <Unavailable {title} state={st.frames[frame]} onretry={retry} />
 {/snippet}
 
 {#snippet map(focus: boolean, at: { lat: number; lon: number } | null = null)}
-  {#if st.failed.Stops}{@render failure("Stops", "The stops")}{:else}
+  {#if st.frames.Stops}{@render failure("Stops", "The stops")}{:else}
     <StopLifeMap stops={st.shown} selected={st.open} picking={placing()} point={st.point} me={st.near} {focus} {at}
       onstop={(id) => { if (!task) void openStop(id); }} onpoint={picked} />
   {/if}
@@ -160,7 +161,7 @@
           {:else}
             <div class="split">
               <aside class="list">
-                {#if st.failed.Near}{@render failure("Near", "The stops near you")}
+                {#if st.frames.Near}{@render failure("Near", "The stops near you")}
                 {:else if st.nearby}<StopLifeList stops={st.nearby} near onstop={(id) => openStop(id)} />
                 {:else}<StopLifeList stops={st.shown} onstop={(id) => openStop(id)} />{/if}
               </aside>
@@ -185,7 +186,7 @@
         onsave={(e, done) => survey(st.open, e, done)} onclose={endTask} attachments={files} />
     {:else if screen === "new-request" || screen === "request"}
       {#if screen === "request" && !held}
-        {#if st.failed.Requests}{@render failure("Requests", "The stop's requests")}{:else}<p class="pad muted">Reading request {st.request}… <button type="button" class="f-link" onclick={() => openRequest("")}>Back to the stop</button></p>{/if}
+        {#if st.frames.Requests}{@render failure("Requests", "The stop's requests")}{:else}<p class="pad muted">Reading request {st.request}… <button type="button" class="f-link" onclick={() => openRequest("")}>Back to the stop</button></p>{/if}
       {:else}
         {#key screen + st.request + task}
           <RequestPage id={held?.id ?? ""} request={screen === "request" ? (held?.request ?? null) : null} stopId={st.open} {stopName}
@@ -200,24 +201,24 @@
         {/key}
       {/if}
     {:else if screen === "stop"}
-      {#if st.failed.Card}{@render failure("Card", "The stop")}
+      {#if st.frames.Card}{@render failure("Card", "The stop")}
       {:else if !st.card}<p class="pad muted">Reading the stop…</p>
       {:else}
         {#snippet mini()}{@render map(true, st.card?.stop ?? null)}{/snippet}
         {#snippet changeCard()}{@render change(task.startsWith("fix:") ? task : kind)}{/snippet}
-        <StopPage stopId={st.open} card={st.card} served={st.served} date={readDate()} busy={st.busy}
+        <StopPage stopId={st.open} card={st.card} served={st.served} servedError={why("Served")} date={readDate()} busy={st.busy}
           questions={st.questions} requests={st.requests} draft={readDraft(st.open) !== null} attachments={files}
           map={mini} change={task.startsWith("change") || task.startsWith("fix:") ? changeCard : undefined} backLabel={back}
           ontask={startTask} onrequest={(id) => openStop(st.open, id)} onback={closeStop} />
       {/if}
     {:else if screen === "work"}
-      {#if st.failed.Work}{@render failure("Work", "The work across the stops")}
+      {#if st.frames.Work}{@render failure("Work", "The work across the stops")}
       {:else}
         <WorkTable requests={st.work} counts={st.workCounts} stops={st.workStops} statuses={st.workStatuses} jobs={st.workJobs}
           vocab={st.requestVocab} onfilter={setWork} onopen={(stop, id) => openStop(stop, id)} />
       {/if}
     {:else if screen === "feed"}
-      {#if st.failed.Feed}{@render failure("Feed", "What the feed did")}
+      {#if st.frames.Feed}{@render failure("Feed", "What the feed did")}
       {:else}<FeedReview feed={st.feed} held={st.held} onstop={(id) => openStop(id)} />{/if}
     {/if}
   </main>

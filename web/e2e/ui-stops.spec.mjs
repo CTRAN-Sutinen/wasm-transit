@@ -269,6 +269,17 @@ test("on a phone a survey is the whole screen and never scrolls sideways", async
   await expect(page.getByTestId("stop-card")).toBeVisible();
 });
 
+test("a stop whose routes cannot be read says so, never that no route stops there", async ({ page }) => {
+  // The page's assembly and the directory do not load; the stop's page
+  // answers from the stops capability, and the routes card says why it
+  // has none (the answer graph's frame state).
+  await page.route(/\/caps\/(ui-stops|directory)-[0-9a-f]+\.wasm$/, (route) => route.abort());
+  await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
+  await page.goto("/stops.html#on=2026-11-02&open=A");
+  await expect(page.getByTestId("stop-card")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("stop-routes")).toContainText("The routes are not available: This part of the app did not load.");
+});
+
 test("a stop request: made on its page, submitted, its work order opened, completed, and carried out", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-11-02T09:00:00-05:00"));
   await page.goto("/stops.html#on=2026-11-02&open=B");

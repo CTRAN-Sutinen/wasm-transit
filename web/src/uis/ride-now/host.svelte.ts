@@ -30,7 +30,7 @@
 
 import { ask, assemble, available, keep, load, produced, servedNetwork, servedNetworkPin, servedStreets, servedWalks, Doc } from "../../engine";
 import { currentDocument, putDocument, restoreDocuments } from "../../documents.svelte";
-import { answerGraph, applyBuild, buildWaiting, clockLabel, deploymentFeeds, installApp, previousDay, deploymentManifest, fetchFeed, nowSecs, readAgencyZone, setAgencyZone, staleLabel, today, whileVisible, type LiveUrls } from "../kit";
+import { answerGraph, applyBuild, type FrameState, buildWaiting, clockLabel, deploymentFeeds, installApp, previousDay, deploymentManifest, fetchFeed, nowSecs, readAgencyZone, setAgencyZone, staleLabel, today, whileVisible, type LiveUrls } from "../kit";
 
 // This page's capabilities answer inside its linked assembly — one
 // module, one registry: each document registers once (D-77).
@@ -139,7 +139,9 @@ export const ride = $state({
   busy: true,
   feed: "",
   /// Frames whose capability the bus could not assemble.
-  off: { directory: false, board: false, router: false, rt: false },
+  /// Each frame that shows no answer, and why (the answer graph's;
+  /// src/uis/answers.ts).
+  frames: {} as Record<string, FrameState>,
   view: "home" as View,
   routes: [] as DirectoryRoute[],
   /// Every stop, for the map (directory `stops`, no query).
@@ -174,7 +176,6 @@ export const ride = $state({
   nearbyBoards: {} as Record<string, StopBoard | null>,
   stop: null as Place | null,
   board: null as StopBoard | null,
-  boardError: "",
   /// A departure picked on the board: its route on the map, its bus
   /// marked.
   departure: null as { trip: string; start_secs: number; route: string } | null,
@@ -188,7 +189,7 @@ export const ride = $state({
   from: null as Place | null,
   to: null as Place | null,
   when: { mode: "now", secs: null } as When,
-  plan: null as { itinerary: Itinerary | null; notice: string | null; error?: string } | null,
+  plan: null as { itinerary: Itinerary | null; notice: string | null } | null,
   paths: null as LegPath[] | null,
   /// The network: the routes list (filtered as typed), one route (its
   /// directions and the variants a rider rides), one bus (its trip's
@@ -289,6 +290,18 @@ async function routerEnds(from: Place, to: Place): Promise<{ from: End; to: End;
 }
 
 
+/// Whether a frame's capability did not assemble: its component says
+/// so (the answer graph's state, src/uis/answers.ts).
+export function off(frame: string): boolean {
+  return ride.frames[frame]?.kind === "unassembled";
+}
+
+/// A frame's failure, as text ("" when it answered).
+export function failure(frame: string): string {
+  const state = ride.frames[frame];
+  return state?.kind === "failed" ? state.message : "";
+}
+
 function fail(e: unknown): void {
   ride.status = `Something went wrong: ${(e as Error)?.message ?? e}`;
   console.error(e);
@@ -327,9 +340,9 @@ const request = answerGraph(
       id: "directory.stops+routes",
       frame: "RideMap",
       needs: ["network"],
+      caps: ["directory"],
       run: async () => {
-        ride.off.directory = !(await available("directory"));
-        if (!network || ride.off.directory) return;
+        if (!network) return;
         ride.stops = (await ask("directory", "stops", { network_hash: network, limit: null })).stops;
         ride.routes = (await ask("directory", "routes", { network_hash: network })).routes;
       },
@@ -339,9 +352,11 @@ const request = answerGraph(
       id: "directory.stops?query",
       frame: "PlaceSearch",
       needs: ["network", "query"],
+      caps: ["directory"],
+      clear: () => (ride.found = null),
       run: async () => {
         const q = ride.query;
-        if (!network || !q || !q.text.trim() || !(await available("directory"))) {
+        if (!network || !q || !q.text.trim()) {
           ride.found = null;
           return;
         }
@@ -353,7 +368,9 @@ const request = answerGraph(
     {
       // The near point's walks to the stops, along the streets.
       id: "streets.access[near]",
-      frame: "NearbyList",
+      // An input to the list, not a frame: without the streets the
+      // list orders by distance.
+      frame: "",
       needs: ["network", "streets", "near"],
       run: async () => {
         const near = ride.near;
@@ -366,9 +383,11 @@ const request = answerGraph(
       id: "directory.stops_near",
       frame: "NearbyList",
       needs: ["network", "near", "streets.access[near]"],
+      caps: ["directory"],
+      clear: () => (ride.nearby = null),
       run: async () => {
         const near = ride.near;
-        if (!network || !near || !(await available("directory"))) {
+        if (!network || !near) {
           ride.nearby = null;
           return;
         }
@@ -395,10 +414,14 @@ const request = answerGraph(
       id: "rt.live",
       frame: "LiveFeeds",
       needs: ["network", "snapshot"],
+      caps: ["rt"],
+      clear: () => {
+        live = null;
+        ride.live = null;
+      },
       run: async (touch) => {
-        ride.off.rt = !(await available("rt"));
         const { trips, vehicles, alerts } = snapshots;
-        if (!network || !boundary || ride.off.rt || (!trips && !vehicles && !alerts)) {
+        if (!network || !boundary || (!trips && !vehicles && !alerts)) {
           live = null;
           ride.live = null;
           return;
@@ -431,25 +454,15 @@ const request = answerGraph(
       frame: "RiderBoard",
       needs: ["network", "edits", "rt.live", "stop", "clock", "view"],
       visible: () => ride.view === "stop",
-      hide: () => {
-        ride.board = null;
-      },
+      caps: ["board"],
+      clear: () => (ride.board = null),
       run: async (touch) => {
         const stop = ride.stop;
-        ride.off.board = !(await available("board"));
-        if (!network || ride.off.board || !stop) {
+        if (!network || !stop) {
           ride.board = null;
           return;
         }
-        try {
-          ride.board = await stopBoard(stop.id, BOARD_ROWS);
-          ride.boardError = "";
-        } catch (e) {
-          console.error(e);
-          ride.board = null;
-          ride.boardError = (e as Error).message ?? String(e);
-          return;
-        }
+        ride.board = await stopBoard(stop.id, BOARD_ROWS);
         // A picked departure that has left the board is unpicked.
         const d = ride.departure;
         if (d && !ride.board.rows.some((r) => r.trip === d.trip && r.start_secs === d.start_secs)) {
@@ -462,12 +475,13 @@ const request = answerGraph(
       // Each nearby place's next departures — the same board, one
       // call per card.
       id: "board.stop_board[nearby]",
-      frame: "NearbyList",
+      frame: "NearbyBoards",
       needs: ["network", "edits", "rt.live", "directory.stops_near", "clock", "view"],
       visible: () => ride.view === "home",
+      caps: ["board"],
+      clear: () => (ride.nearbyBoards = {}),
       run: async () => {
-        ride.off.board = !(await available("board"));
-        if (!network || ride.off.board || !ride.nearby) {
+        if (!network || !ride.nearby) {
           ride.nearbyBoards = {};
           return;
         }
@@ -488,9 +502,10 @@ const request = answerGraph(
       frame: "SavedList",
       needs: ["network", "edits", "rt.live", "saved", "clock", "view"],
       visible: () => ride.view === "home",
+      caps: ["board"],
+      clear: () => (ride.savedBoards = null),
       run: async () => {
-        ride.off.board = !(await available("board"));
-        if (!network || ride.off.board || !watchlist || ride.saved.length === 0) {
+        if (!network || !watchlist || ride.saved.length === 0) {
           ride.savedBoards = null;
           return;
         }
@@ -513,10 +528,12 @@ const request = answerGraph(
       id: "directory.focus",
       frame: "RideMap",
       needs: ["network", "departure", "route", "vehicle", "view"],
+      caps: ["directory"],
+      clear: () => (ride.routeFocus = null),
       run: async () => {
         const route = focusRoute();
         ride.focusRoute = route;
-        if (!network || !route || !(await available("directory"))) {
+        if (!network || !route) {
           ride.routeFocus = null;
           return;
         }
@@ -529,9 +546,10 @@ const request = answerGraph(
       frame: "RouteList",
       needs: ["network", "routeQuery", "view"],
       visible: () => ride.view === "routes",
+      caps: ["directory"],
+      clear: () => (ride.routeRows = null),
       run: async () => {
-        ride.off.directory = !(await available("directory"));
-        if (!network || ride.off.directory) {
+        if (!network) {
           ride.routeRows = null;
           return;
         }
@@ -546,9 +564,11 @@ const request = answerGraph(
       frame: "RouteView",
       needs: ["network", "route", "view"],
       visible: () => ride.view === "route",
+      caps: ["directory"],
+      clear: () => (ride.routeInfo = null),
       run: async () => {
         const route = ride.route;
-        if (!network || !route || !(await available("directory"))) {
+        if (!network || !route) {
           ride.routeInfo = null;
           return;
         }
@@ -563,9 +583,10 @@ const request = answerGraph(
       frame: "BusView",
       needs: ["network", "snapshot", "vehicle", "view"],
       visible: () => ride.view === "bus",
+      caps: ["rt"],
       run: async () => {
         const v = ride.vehicle;
-        if (!network || !boundary || !v?.trip || !snapshots.trips || !(await available("rt"))) {
+        if (!network || !boundary || !v?.trip || !snapshots.trips) {
           ride.progress = v ? { progress: null, names: [] } : null;
           return;
         }
@@ -590,39 +611,35 @@ const request = answerGraph(
       id: "router.plan",
       frame: "TripPlan",
       needs: ["network", "edits", "rt.live", "trip", "streets", "walks"],
+      caps: ["router"],
+      // The trip panel says it could not plan, never "no trips".
+      clear: () => (ride.plan = null),
       run: async () => {
-        ride.off.router = !(await available("router"));
-        if (!network || ride.off.router || !trip) {
+        if (!network || !trip) {
           ride.plan = null;
           return;
         }
         const t = trip;
-        try {
-          const ends = await routerEnds(t.from, t.to);
-          planEnds = ends;
-          const common = {
-            network_hash: network,
-            edits_hash: edits,
-            from: ends.from,
-            to: ends.to,
-            date: t.date,
-            max_legs: MAX_LEGS,
-            live_hash: live,
-            walks_hash: walks,
-            direct: ends.direct,
-          };
-          if (t.when.mode === "now" || t.when.mode === "depart") {
-            const { active, notice } = await ask("router", "plan_compare", { ...common, depart_secs: t.when.secs ?? nowSecs() });
-            ride.plan = { itinerary: active, notice: notice?.text ?? null };
-          } else {
-            const deadline = t.when.mode === "arrive" ? t.when.secs : null;
-            const { itinerary } = await ask("router", "plan_arrive_by", { ...common, arrive_by_secs: deadline });
-            ride.plan = { itinerary, notice: null };
-          }
-        } catch (e) {
-          // The trip panel says it could not plan, never "no trips".
-          console.error(e);
-          ride.plan = { itinerary: null, notice: null, error: (e as Error).message ?? String(e) };
+        const ends = await routerEnds(t.from, t.to);
+        planEnds = ends;
+        const common = {
+          network_hash: network,
+          edits_hash: edits,
+          from: ends.from,
+          to: ends.to,
+          date: t.date,
+          max_legs: MAX_LEGS,
+          live_hash: live,
+          walks_hash: walks,
+          direct: ends.direct,
+        };
+        if (t.when.mode === "now" || t.when.mode === "depart") {
+          const { active, notice } = await ask("router", "plan_compare", { ...common, depart_secs: t.when.secs ?? nowSecs() });
+          ride.plan = { itinerary: active, notice: notice?.text ?? null };
+        } else {
+          const deadline = t.when.mode === "arrive" ? t.when.secs : null;
+          const { itinerary } = await ask("router", "plan_arrive_by", { ...common, arrive_by_secs: deadline });
+          ride.plan = { itinerary, notice: null };
         }
       },
     },
@@ -631,9 +648,11 @@ const request = answerGraph(
       id: "router.itinerary_paths",
       frame: "RideMap",
       needs: ["router.plan"],
+      caps: ["router"],
+      clear: () => (ride.paths = null),
       run: async () => {
         const it = ride.plan?.itinerary;
-        if (!network || !it || !trip || !(await available("router"))) {
+        if (!network || !it || !trip) {
           ride.paths = null;
           return;
         }
@@ -650,6 +669,7 @@ const request = answerGraph(
       },
     },
   ],
+  ride.frames,
   fail,
 );
 
@@ -875,8 +895,7 @@ async function fetchLive(): Promise<boolean> {
     snapshots.trips = snapshots.vehicles = snapshots.alerts = null;
     return !!had;
   }
-  ride.off.rt = !(await available("rt"));
-  if (ride.off.rt) return false;
+  if (!(await available("rt"))) return false;
   const results = await Promise.all(
     kinds.map(async (kind) => {
       try {
@@ -1128,7 +1147,6 @@ export function openStop(place: Place): Promise<void> {
   place = located(place);
   ride.stop = place;
   ride.board = null;
-  ride.boardError = "";
   ride.departure = null;
   ride.view = "stop";
   remember(place);

@@ -1,37 +1,50 @@
 <script lang="ts">
   /// A frame with no answer, said plainly: what it would show, why it
   /// cannot (an op the bus does not have yet, a decision it waits on,
-  /// or a capability that failed), and — for a failure — a retry. The
-  /// rest of the view keeps answering around it.
+  /// a capability that did not load, a document that is not there, or
+  /// an op that refused), and — for a failure — a retry. The rest of
+  /// the view keeps answering around it. `state` is the frame's state
+  /// as the answer graph keeps it (src/uis/answers.ts).
+  type FrameState =
+    | { kind: "unassembled"; cap: string }
+    | { kind: "starved"; missing: string }
+    | { kind: "failed"; message: string };
   let {
     title,
     reason,
     blockers = [],
     error = "",
+    state,
     onretry,
   }: {
     title: string;
     reason?: string;
     blockers?: string[];
     error?: string;
+    state?: FrameState;
     onretry?: () => void;
   } = $props();
+  const failure = $derived(state?.kind === "failed" ? state.message : error);
+  const said = $derived(
+    state?.kind === "unassembled" ? "This part of the app did not load." : state?.kind === "starved" ? `Waiting for ${state.missing}.` : reason,
+  );
+  const retry = $derived(state && state.kind !== "failed" ? undefined : onretry);
 </script>
 
-<div class="unavailable" class:failed={!!error} role="status" data-testid="unavailable">
+<div class="unavailable" class:failed={!!failure} role="status" data-testid="unavailable" data-state={state?.kind ?? (error ? "failed" : "")}>
   <div class="head">
-    <span class="icon" aria-hidden="true">{error ? "!" : "–"}</span>
+    <span class="icon" aria-hidden="true">{failure ? "!" : "–"}</span>
     <strong>{title}</strong>
   </div>
-  {#if error}
-    <p>Couldn't answer this: {error}</p>
-  {:else if reason}
-    <p>{reason}</p>
+  {#if failure}
+    <p>Couldn't answer this: {failure}</p>
+  {:else if said}
+    <p>{said}</p>
   {/if}
-  {#if blockers.length || onretry}
+  {#if blockers.length || retry}
     <div class="foot">
       {#each blockers as b (b)}<span class="blocker">{b}</span>{/each}
-      {#if onretry}<button type="button" onclick={onretry}>Try again</button>{/if}
+      {#if retry}<button type="button" onclick={retry}>Try again</button>{/if}
     </div>
   {/if}
 </div>

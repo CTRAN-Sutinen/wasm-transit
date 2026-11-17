@@ -36,7 +36,6 @@ archive — nothing here records what is finished.
 
 | unit | what it is |
 |---|---|
-| [host-discipline.md](host-discipline.md) | node states in the answer graph: a node's failure in its frame |
 | [runtime-cost-gate.md](runtime-cost-gate.md) | a ratchet on per-module memory and registration time |
 | [document-versioning.md](document-versioning.md) | every persisted document versioned, migrated forward at receive, rolled back under one rule; the schema lock and the published spec |
 | [release-artifacts.md](release-artifacts.md) | op and HTTP contracts changed by expand-then-contract; each UI at its own URL, deployed and rolled back alone |

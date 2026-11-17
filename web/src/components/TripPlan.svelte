@@ -21,6 +21,7 @@
     addresses = null,
     limit,
     plan,
+    error = "",
     routes,
     here = false,
     onhere,
@@ -44,7 +45,9 @@
     /// The geocoder's addresses for the field being typed, if any.
     addresses?: { field: Field; text: string; places: Place[] } | null;
     limit: number;
-    plan: { itinerary: Plan | null; notice: string | null; error?: string } | null;
+    plan: { itinerary: Plan | null; notice: string | null } | null;
+    /// Planning failed: the panel says it could not plan, never "no trips".
+    error?: string;
     routes: DirectoryRoute[];
     /// The rider's location can be an end (walking the streets).
     here?: boolean;
@@ -153,10 +156,10 @@
     <p class="hint">Choose where you’re starting and where you’re going — type a stop, or tap one on the map and choose “Directions”.</p>
   {:else if from.id === to.id}
     <p class="hint">Those are the same place.</p>
+  {:else if error}
+    <p class="off">Couldn’t plan this trip right now ({error}).</p>
   {:else if !plan}
     <div class="skeleton" role="progressbar" aria-label="planning the trip"><span></span><span></span></div>
-  {:else if plan.error}
-    <p class="off">Couldn’t plan this trip right now ({plan.error}).</p>
   {:else}
     <div class="answer" data-testid="plan-now">
       {#if plan.notice}

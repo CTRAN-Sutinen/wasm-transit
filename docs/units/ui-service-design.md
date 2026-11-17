@@ -66,7 +66,11 @@ Two specs drive this UI to publish and to open the published
 network (`e2e/published-picks.spec.mjs`, "a planner publishes a fork
 from service design"; `e2e/published-network.spec.mjs`, "service
 design opens the published network as a plan"). They move to
-service-change in the same change.
+service-change in the same change. The first fails today: its "Too
+late" fork, dated 2026-07-01, has no service in its period, so the
+server refuses it for that (`no_service_in_plan_period`,
+`server/plans_test.go`) before it checks the date. The moved test
+dates the fork inside the fixture's calendar.
 
 ## Answer graph
 

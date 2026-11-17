@@ -11,12 +11,13 @@
 /// routes have stopped for the day, and the alerts and detours here.
 ///
 /// It asks every question through the engine (src/engine.ts) and holds
-/// documents, never modules or hashes. A capability the bus cannot
-/// assemble turns its frames OFF (`off`), and they say so — nothing
-/// here answers in its place.
+/// documents, never modules or hashes. The answer graph keeps why a
+/// frame has no answer (`display.frames`; src/uis/answers.ts): a
+/// capability the bus cannot assemble turns its frames off, and they
+/// say so. Nothing here answers in its place.
 
 import { ask, assemble, available, keep, load, produced, servedNetwork, servedNetworkPin, together, Doc } from "../../engine";
-import { answerGraph, applyBuild, buildWaiting, clockLabel, deploymentFeeds, deploymentManifest, installApp, previousDay, serverAnswers, fetchFeed, nowSecs, readAgencyZone, setAgencyZone, staleLabel, today, whileVisible, type LiveUrls } from "../kit";
+import { answerGraph, applyBuild, type FrameState, buildWaiting, clockLabel, deploymentFeeds, deploymentManifest, installApp, previousDay, serverAnswers, fetchFeed, nowSecs, readAgencyZone, setAgencyZone, staleLabel, today, whileVisible, type LiveUrls } from "../kit";
 
 // This page's capabilities answer inside its linked assembly — one
 // module, one registry: each document registers once (D-77).
@@ -50,8 +51,8 @@ export const display = $state({
   editsStale: "",
   busy: true,
   feed: "",
-  /// Frames whose capability the bus could not assemble.
-  off: { directory: false, board: false, rt: false },
+  /// Each frame that shows no answer, and why (the answer graph's).
+  frames: {} as Record<string, FrameState>,
   layout: "routes" as Layout,
   /// The stop on screen, as the directory names it; null shows the
   /// setup.
@@ -60,7 +61,6 @@ export const display = $state({
   found: null as { text: string; places: Place[] } | null,
   routes: [] as DirectoryRoute[],
   board: null as GroupedBoard | null,
-  boardError: "",
   /// An answer that failed after the board was up: shown beside the
   /// board, never instead of it.
   problem: "",
@@ -99,6 +99,17 @@ let boardAt = 0;
 /// A failed answer. Before the network is up it is the page's status;
 /// after, it sits beside the board — a display never blanks over one
 /// failed answer.
+/// Whether a frame's capability did not assemble: its component says so.
+export function off(frame: string): boolean {
+  return display.frames[frame]?.kind === "unassembled";
+}
+
+/// A frame's failure, as text ("" when it answered).
+export function failure(frame: string): string {
+  const state = display.frames[frame];
+  return state?.kind === "failed" ? state.message : "";
+}
+
 function fail(e: unknown): void {
   const message = `Something went wrong: ${(e as Error)?.message ?? e}`;
   if (network) display.problem = message;
@@ -121,9 +132,9 @@ const request = answerGraph(
       id: "directory.routes",
       frame: "DisplayAlerts",
       needs: ["network"],
+      caps: ["directory"],
       run: async () => {
-        display.off.directory = !(await available("directory"));
-        if (!network || display.off.directory) return;
+        if (!network) return;
         display.routes = (await ask("directory", "routes", { network_hash: network })).routes;
       },
     },
@@ -133,12 +144,11 @@ const request = answerGraph(
       frame: "DisplaySetup",
       needs: ["network", "query", "setup"],
       visible: () => display.setup,
-      hide: () => {
-        display.found = null;
-      },
+      caps: ["directory"],
+      clear: () => (display.found = null),
       run: async () => {
         const text = query.trim();
-        if (!network || !text || !(await available("directory"))) {
+        if (!network || !text) {
           display.found = null;
           return;
         }
@@ -151,9 +161,10 @@ const request = answerGraph(
       id: "directory.stops_by_ids",
       frame: "DisplayHeader",
       needs: ["network", "stop"],
+      caps: ["directory"],
+      clear: () => (display.stop = null),
       run: async () => {
-        display.off.directory = !(await available("directory"));
-        if (!network || display.off.directory || !stopId) {
+        if (!network || !stopId) {
           display.stop = null;
           return;
         }
@@ -166,12 +177,16 @@ const request = answerGraph(
       // THE live document over whichever feeds were fetched; the
       // board reads it by hash.
       id: "rt.live",
-      frame: "DisplayHeader",
+      frame: "Live",
       needs: ["network", "snapshot"],
+      caps: ["rt"],
+      clear: () => {
+        live = null;
+        display.live = false;
+      },
       run: async () => {
-        display.off.rt = !(await available("rt"));
         const { trips, vehicles, alerts } = snapshots;
-        if (!network || !boundary || display.off.rt || (!trips && !vehicles && !alerts)) {
+        if (!network || !boundary || (!trips && !vehicles && !alerts)) {
           live = null;
           display.live = false;
           return;
@@ -198,9 +213,13 @@ const request = answerGraph(
       id: "board.grouped_board",
       frame: "DisplayGroup",
       needs: ["network", "edits", "rt.live", "stop", "clock"],
+      caps: ["board"],
+      clear: () => (display.board = null),
+      // The last board stays, marked, while its waits are still near
+      // right; then the error replaces it.
+      keepOnFailure: true,
       run: async () => {
-        display.off.board = !(await available("board"));
-        if (!network || display.off.board || !stopId) {
+        if (!network || !stopId) {
           display.board = null;
           return;
         }
@@ -218,19 +237,16 @@ const request = answerGraph(
             })
           ).board;
           display.board = board;
-          display.boardError = "";
           display.problem = "";
           boardAt = Date.now();
         } catch (e) {
-          // The last board stays, marked, while its waits are still
-          // near right; then the error replaces it.
-          console.error(e);
           if (Date.now() - boardAt > STALE_BOARD_MS) display.board = null;
-          display.boardError = (e as Error).message ?? String(e);
+          throw e;
         }
       },
     },
   ],
+  display.frames,
   fail,
 );
 
@@ -429,8 +445,7 @@ async function syncEdits(): Promise<boolean> {
 async function fetchLive(): Promise<boolean> {
   const kinds = (["trips", "vehicles", "alerts"] as const).filter((k) => urls[k]);
   if (kinds.length === 0) return false;
-  display.off.rt = !(await available("rt"));
-  if (display.off.rt) return false;
+  if (!(await available("rt"))) return false;
   let changed = false;
   const errors: string[] = [];
   for (const kind of kinds) {

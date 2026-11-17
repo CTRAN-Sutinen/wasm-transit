@@ -321,11 +321,13 @@ test("a capability that fails to load fails its frames, not the page", async ({ 
   await page.getByTestId("feed-input").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
 
   // The plan set answers (cap-network); the groups frame says why it
-  // has none, and offers to try again.
+  // has none. A capability that did not load stays unloaded until the
+  // page loads again, so the frame offers no retry (a failed op does).
   await expect(page.getByTestId("plan-list")).toContainText("Base network", { timeout: 10_000 });
   const failed = page.getByTestId("unavailable").filter({ hasText: "Service groups" });
   await expect(failed).toContainText("did not load");
-  await expect(failed.getByRole("button", { name: "Try again" })).toBeVisible();
+  await expect(failed).toHaveAttribute("data-state", "unassembled");
+  await expect(failed.getByRole("button", { name: "Try again" })).toHaveCount(0);
 });
 
 // A plan saved before the 2026-10-27 rename (`schedules` / `schedule`)

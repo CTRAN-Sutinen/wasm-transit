@@ -53,6 +53,7 @@
     startNewRoute,
     endNewRoute,
     createRoute,
+    why,
   } from "./host.svelte";
   import NetworkMap from "../../components/NetworkMap.svelte";
   import StopMap from "../../components/StopMap.svelte";
@@ -109,7 +110,7 @@
 </script>
 
 {#snippet failure(frame: string, title: string)}
-  <Unavailable {title} error={sc.failed[frame]} onretry={retry} />
+  <Unavailable {title} state={sc.frames[frame]} onretry={retry} />
 {/snippet}
 
 <div class="shell">
@@ -119,7 +120,7 @@
         {#each sc.plans as p (p.key)}<option value={p.key}>{p.name}</option>{/each}
       </select>
     </label>
-    {#if sc.failed.DayTypes}{@render failure("DayTypes", "Day types")}{:else}
+    {#if sc.frames.DayTypes}{@render failure("DayTypes", "Day types")}{:else}
       <DayTypePicker dayTypes={sc.dayTypes} selected={sc.group} onselect={selectGroup} />
     {/if}
     <HourWindowPicker window={sc.window} onwindow={setWindow} />
@@ -155,7 +156,7 @@
     {/if}
 
     {#if sc.stage === "calendar"}
-      {#if sc.failed.Plans}{@render failure("Plans", "Pick timeline")}
+      {#if sc.frames.Plans}{@render failure("Plans", "Pick timeline")}
       {:else if sc.chain}
         <PickTimeline periods={sc.chain.periods} names={Object.fromEntries(sc.plans.map((p) => [p.id, p.name]))} inForce={sc.chain.inForce}
           issues={sc.chain.issues} today={today()} activeId={sc.plans.find((p) => p.key === sc.activeKey)?.id ?? ""} />
@@ -165,7 +166,7 @@
           onrename={renamePlan} ondate={setPickDates} ondelete={deletePlan}
           onfeed={async (f) => loadFeedBytes(new Uint8Array(await f.arrayBuffer()), f.name)} />
         <div class="card">
-          {#if sc.failed.Keys}{@render failure("Keys", "Service keys")}{:else}
+          {#if sc.frames.Keys}{@render failure("Keys", "Service keys")}{:else}
             <ServiceKeys keys={sc.keys} dayTypes={sc.dayTypes} {framed} {locked}
               ontoggleday={calendar.toggleDay} onaddrange={calendar.addRange} onsetrange={calendar.setRange} onremoverange={calendar.removeRange}
               onsetexception={calendar.setException} onremoveexception={calendar.removeException} onrename={calendar.rename} onmove={calendar.move}
@@ -181,10 +182,10 @@
         <button type="button" class:on={sc.scanView === "map"} aria-pressed={sc.scanView === "map"} onclick={() => setScanView("map")}>Map</button>
       </div>
       {#if sc.scanView === "grid"}
-        {#if sc.failed.Grid}{@render failure("Grid", "Frequency by hour")}
+        {#if sc.frames.Grid}{@render failure("Grid", "Frequency by hour")}
         {:else if sc.frequency}<FrequencyGrid frequency={sc.frequency} window={sc.window} {changed} selected={sc.route} onroute={openRoute} />{/if}
       {:else}
-        {#if sc.failed.Map}{@render failure("Map", "The network")}{:else}
+        {#if sc.frames.Map}{@render failure("Map", "The network")}{:else}
           <div class="map"><NetworkMap routes={sc.lines} {changed} selected={sc.route} onroute={openRoute} /></div>
         {/if}
       {/if}
@@ -196,14 +197,14 @@
             <Combobox label="Find a stop" bind:value={stopFind} options={stopOptions} placeholder="Find a stop by name or id…"
               onchange={(v) => { if (v) openStop(v); stopFind = ""; }} />
           </div>
-          {#if sc.failed.Stops}{@render failure("Stops", "The stops")}{:else}
+          {#if sc.frames.Stops}{@render failure("Stops", "The stops")}{:else}
             <div class="map"><StopMap stops={sc.stops} lines={sc.lines} selected={sc.stopOpen} onstop={openStop} /></div>
           {/if}
         </div>
         <aside class="side">
           {#if !sc.stopOpen}
             <p class="muted" data-testid="stop-none">Open a stop: click it on the map, or find it by name. A stop belongs to the network, not to a route: every route that visits it is listed on its card.</p>
-          {:else if sc.failed.StopCard}{@render failure("StopCard", "The stop")}
+          {:else if sc.frames.StopCard}{@render failure("StopCard", "The stop")}
           {:else if sc.stopCard}
             <div class="card"><StopRecord stopId={sc.stopOpen} detail={sc.stopCard} stationName={openStation} groupName={sc.group} onvisit={openVisit} /></div>
           {:else if sc.stops.length && !sc.stops.some((x) => x.stop_id === sc.stopOpen)}
@@ -236,8 +237,8 @@
           frequency={sc.frequency} comparison={sc.comparison} editing={sc.editing} onedit={toggleEdit} shortcut="" />
         <div class="route">
           <div class="work">
-            {#if sc.failed.Route}{@render failure("Route", "The route")}{/if}
-            {#if sc.failed.StringLine}{@render failure("StringLine", "Timetable")}
+            {#if sc.frames.Route}{@render failure("Route", "The route")}{/if}
+            {#if sc.frames.StringLine}{@render failure("StringLine", "Timetable")}
             {:else if sc.timetable}
               {#if tableMode}
                 <TimetableGrid timetable={sc.timetable} baselineName={planName(sc.compareKey)} selectedStop={sc.selectedStop} onstop={selectTimetableStop} />
@@ -274,7 +275,7 @@
               <h2>At a stop on this route</h2>
               <Combobox label="Read a stop or hub" bind:value={hub} options={routeStops} placeholder="Pick one of its stops…" onchange={(v) => { if (v) openHub(v); hub = ""; }} />
               {#if sc.stop}
-                {#if sc.failed.Hub}{@render failure("Hub", "The stop")}{:else}
+                {#if sc.frames.Hub}{@render failure("Hub", "The stop")}{:else}
                   {#if sc.connections}<HubMatrix connections={sc.connections} stopName={sc.gaps?.name ?? sc.stop} onroute={openRoute} />{/if}
                   {#if sc.missed}<NearMisses missed={sc.missed} stopName={sc.gaps?.name ?? sc.stop} onroute={openRoute} />{/if}
                   {#if sc.gaps}<StopWaits gaps={sc.gaps} window={sc.window} />{/if}
@@ -290,9 +291,9 @@
       {/if}
 
     {:else if sc.stage === "resources"}
-      {#if sc.failed.Fleet}{@render failure("Fleet", "Vehicles and hours")}{:else}
+      {#if sc.frames.Fleet}{@render failure("Fleet", "Vehicles and hours")}{:else}
         <FleetPanel fleet={sc.fleet} suggestion={sc.suggestion} {framed} onadopt={adoptBlocks} onroute={openRoute}
-          block={sc.block} blockTrips={sc.blockTrips} blockError={sc.failed.Block ?? ""} onblock={openBlock} stopName={(id) => stopNames.get(id) ?? id} />
+          block={sc.block} blockTrips={sc.blockTrips} blockError={why("Block")} onblock={openBlock} stopName={(id) => stopNames.get(id) ?? id} />
       {/if}
 
     {:else}
@@ -308,14 +309,14 @@
         <div>
           {#if !sc.compareKey}
             <Unavailable title="The proposal" reason="Choose a plan above to compare it with." />
-          {:else if sc.failed.Proposal}{@render failure("Proposal", "The proposal")}
+          {:else if sc.frames.Proposal}{@render failure("Proposal", "The proposal")}
           {:else if sc.planCompare}
             <PlanScore dayTypes={sc.planCompare} selected={sc.group} onselect={scanGroup} onroute={openRoute} />
           {/if}
         </div>
-        {#if sc.failed.Readiness}{@render failure("Readiness", "Ready to publish?")}{:else}
-          <Readiness issues={sc.issues} warnings={sc.warnings} {framed} {locked} exported={sc.exported} exportError={sc.failed.Export ?? ""} onexport={exportPlan}
-            published={sc.published} publishRefused={sc.publishRefused} publishError={sc.failed.Publish ?? ""} onpublish={publishPlan}
+        {#if sc.frames.Readiness}{@render failure("Readiness", "Ready to publish?")}{:else}
+          <Readiness issues={sc.issues} warnings={sc.warnings} {framed} {locked} exported={sc.exported} exportError={why("Export")} onexport={exportPlan}
+            published={sc.published} publishRefused={sc.publishRefused} publishError={why("Publish")} onpublish={publishPlan}
             onhold={gestures.retime} onblock={showBlock}>
             {#snippet signin()}<SignInControl available={signinState.available} name={signinState.name} error={signinState.error} onsignin={signIn} onsignout={signOut} />{/snippet}
           </Readiness>

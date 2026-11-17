@@ -17,7 +17,7 @@
   import {
     sd, VIEWS, setView, openPlan, setCompare, fork, loadFeedBytes, loadLayerBytes, setLayerReading, selectGroup, openRoute, clearRoute,
     selectDirection, selectTimetableStop, openStop, clearStop, setWindow, setCoverageParams, gestures, undoChange,
-    redoChange, exportPlan, publishPlan, toggleEdit, selectTrip, pickUnserved, retry, setEditType, type View,
+    redoChange, exportPlan, publishPlan, toggleEdit, selectTrip, pickUnserved, retry, why, setEditType, type View,
   } from "./host.svelte";
   import { today } from "../kit";
   import { spansText } from "../../components/designFormat";
@@ -76,7 +76,7 @@
 <svelte:window onkeydown={keys} />
 
 {#snippet failure(frame: string, title: string)}
-  <Unavailable {title} error={sd.failed[frame]} onretry={retry} />
+  <Unavailable {title} state={sd.frames[frame]} onretry={retry} />
 {/snippet}
 
 <div class="shell">
@@ -110,7 +110,7 @@
     <main class="view" data-testid="view-{sd.view}">
       {#if sd.view === "plans"}
         <h1>Plans <span>where each plan sits in the pick cycle</span></h1>
-        {#if sd.failed.PickTimeline}
+        {#if sd.frames.PickTimeline}
           {@render failure("PickTimeline", "Pick timeline")}
         {:else if sd.chain}
           <PickTimeline
@@ -133,7 +133,7 @@
             onfork={fork}
             onfeed={async (f) => loadFeedBytes(await bytesOf(f), f.name)}
           />
-          {#if sd.failed.Groups}
+          {#if sd.frames.Groups}
             {@render failure("Groups", "Service groups")}
           {:else}
             <GroupTable groups={sd.groups} selected={sd.group} onselect={selectGroup} />
@@ -141,14 +141,14 @@
         </div>
       {:else if sd.view === "network"}
         <h1>Network <span>{group ? `${group.id} — ${spansText(group.spans)}` : ""}</span></h1>
-        {#if sd.failed.Comparison}{@render failure("Comparison", "Against the baseline")}{/if}
-        <GroupLedger {group} comparison={sd.comparison} baselineName={planName(sd.compareKey)} vehicles={sd.vehicles} vehiclesError={sd.failed.Vehicles ?? ""} />
-        {#if sd.failed.DayProfile}
+        {#if sd.frames.Comparison}{@render failure("Comparison", "Against the baseline")}{/if}
+        <GroupLedger {group} comparison={sd.comparison} baselineName={planName(sd.compareKey)} vehicles={sd.vehicles} vehiclesError={why("Vehicles")} />
+        {#if sd.frames.DayProfile}
           {@render failure("DayProfile", "Trips per hour")}
         {:else if sd.hourly}
           <DayProfile hours={sd.hourly} stats={sd.dayStats} window={sd.window} onwindow={setWindow} />
         {/if}
-        {#if sd.failed.FrequencyGrid}
+        {#if sd.frames.FrequencyGrid}
           {@render failure("FrequencyGrid", "Frequency by hour")}
         {:else if sd.frequency}
           <FrequencyGrid frequency={sd.frequency} window={sd.window} {changed} selected={sd.route} onroute={openRoute} />
@@ -169,8 +169,8 @@
             onselect={pickUnserved}
           />
           <div class="map-area">
-            {#if sd.failed.Coverage}{@render failure("Coverage", "Coverage")}{/if}
-            {#if sd.failed.Unserved}{@render failure("Unserved", "Unserved points")}{/if}
+            {#if sd.frames.Coverage}{@render failure("Coverage", "Coverage")}{/if}
+            {#if sd.frames.Unserved}{@render failure("Unserved", "Unserved points")}{/if}
             <Unavailable title="Gained and lost against the baseline" reason="Not shown yet: who gains and who loses coverage against the baseline. It waits on a rule for matching this plan's service groups to the baseline's when a fork renames or splits a service type." blockers={["D-43", "QAF-20"]} />
             <div class="map"><CoverageMap points={sd.unserved ?? []} selected={sd.unservedPick} onselect={pickUnserved} /></div>
           </div>
@@ -178,7 +178,7 @@
       {:else if sd.view === "hubs"}
         <h1>Hubs &amp; corridors <span>{group ? `${group.id} — ${spansText(group.spans)}` : ""}</span></h1>
         <div class="picker">
-          {#if sd.failed.HubPicker}
+          {#if sd.frames.HubPicker}
             {@render failure("HubPicker", "Stops")}
           {:else}
             <Combobox
@@ -191,7 +191,7 @@
           {/if}
         </div>
         <div class="row">
-          {#if sd.failed.HubMatrix}
+          {#if sd.frames.HubMatrix}
             {@render failure("HubMatrix", "Connections")}
           {:else if sd.connections && sd.stop}
             <HubMatrix connections={sd.connections} stopName={sd.gaps?.name ?? sd.stop} onroute={openRoute} />
@@ -199,26 +199,26 @@
             <Unavailable title="Connections" reason="Pick a stop or station to read who connects to whom there." />
           {/if}
           <div class="col">
-            {#if sd.failed.StopWaits}
+            {#if sd.frames.StopWaits}
               {@render failure("StopWaits", "Waits")}
             {:else if sd.gaps && sd.gaps.departures === 0}
               <Unavailable title="Waits at {sd.gaps.name}" reason="Nothing departs here on the group's day." />
             {:else if sd.gaps}
               <StopWaits gaps={sd.gaps} window={sd.window} />
             {/if}
-            {#if sd.failed.NearMisses}
+            {#if sd.frames.NearMisses}
               {@render failure("NearMisses", "Just missed")}
             {:else if sd.missed && sd.stop}
               <NearMisses missed={sd.missed} stopName={sd.gaps?.name ?? sd.stop} onroute={openRoute} />
             {/if}
-            {#if sd.failed.LongestWaits}
+            {#if sd.frames.LongestWaits}
               {@render failure("LongestWaits", "Longest waits across the network")}
             {:else if sd.waits}
               <LongestWaits waits={sd.waits} window={sd.window} onstop={openStop} />
             {/if}
           </div>
         </div>
-        {#if sd.failed.Corridors}
+        {#if sd.frames.Corridors}
           {@render failure("Corridors", "Shared corridors")}
         {:else if sd.overlaps}
           <CorridorTable overlaps={sd.overlaps} onroute={openRoute} onstop={openStop} />
@@ -239,14 +239,14 @@
           />
           <div class="workbench">
             <div class="center">
-              {#if sd.failed.RouteHeader}{@render failure("RouteHeader", "The route")}{/if}
+              {#if sd.frames.RouteHeader}{@render failure("RouteHeader", "The route")}{/if}
               {#if sd.routeDetail}
                 <div class="dirs">
                   <DirectionTabs directions={sd.routeDetail.directions} selected={sd.direction} onselect={selectDirection} />
                   <label class="mode"><input type="checkbox" bind:checked={tableMode} /> timetable</label>
                 </div>
               {/if}
-              {#if sd.failed.StringLine}
+              {#if sd.frames.StringLine}
                 {@render failure("StringLine", "Timetable")}
               {:else if sd.timetable}
                 {#if sd.editing}
@@ -303,7 +303,7 @@
                 onredo={redoChange}
                 onroute={openRoute}
               />
-              {#if sd.failed.RouteMap}
+              {#if sd.frames.RouteMap}
                 {@render failure("RouteMap", "Where it runs")}
               {:else}
                 <div class="route-map"><FocusMap focus={sd.focus} label={`route ${sd.route}`} /></div>
@@ -313,20 +313,20 @@
         {/if}
       {:else if sd.view === "proposal"}
         <h1>{planName(sd.activeKey)} <span>{sd.compareKey ? `against ${planName(sd.compareKey)}` : "no baseline"}</span></h1>
-        {#if sd.failed.Comparison}
+        {#if sd.frames.Comparison}
           {@render failure("Comparison", "Against the baseline")}
         {:else if sd.comparison}
-          <ProposalScore comparison={sd.comparison} vehicles={sd.vehicles} vehiclesError={sd.failed.Vehicles ?? ""} />
+          <ProposalScore comparison={sd.comparison} vehicles={sd.vehicles} vehiclesError={why("Vehicles")} />
         {:else}
           <Unavailable title="Against the baseline" reason="Choose a baseline plan on the bar to compare against." />
         {/if}
         <div class="row">
           {#if sd.comparison}<Redline comparison={sd.comparison} onroute={openRoute} />{/if}
-          {#if sd.failed.Readiness}
+          {#if sd.frames.Readiness}
             {@render failure("Readiness", "Ready to publish?")}
           {:else}
-            <Readiness issues={sd.issues} warnings={sd.warnings} {framed} exported={sd.exported} exportError={sd.failed.Export ?? ""} onexport={exportPlan}
-              published={sd.published} publishRefused={sd.publishRefused} publishError={sd.failed.Publish ?? ""} onpublish={publishPlan}
+            <Readiness issues={sd.issues} warnings={sd.warnings} {framed} exported={sd.exported} exportError={why("Export")} onexport={exportPlan}
+              published={sd.published} publishRefused={sd.publishRefused} publishError={why("Publish")} onpublish={publishPlan}
               onhold={gestures.retime}>
             {#snippet signin()}<SignInControl available={signinState.available} name={signinState.name} error={signinState.error} onsignin={signIn} onsignout={signOut} />{/snippet}
           </Readiness>

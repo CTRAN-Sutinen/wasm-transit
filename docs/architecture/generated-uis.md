@@ -61,15 +61,30 @@ Shared by every generated UI:
     ([updates-offline.md](updates-offline.md)).
   - `whileVisible()` is every page's poll. A hidden page makes no
     requests and re-reads on its return.
-  - The answer graph runs each host's flows. A UI's flows are code,
-    not data (D-176). A host declares its answers as `AnswerNode`s: the inputs each
-    reads, the frame that renders it, and when that frame is on
-    screen. `answerGraph` answers the nodes downstream of a changed
-    input in declared order. It yields between nodes, so each frame
-    paints as its answer lands. A request made mid-pass supersedes
-    the pass. A hidden frame's node waits until the frame shows. The
-    graph carries no domain knowledge. The host asks the engine
-    (`src/engine.ts`) for every op that a node runs.
+  - The answer graph (`src/uis/answers.ts`, through kit's
+    `answerGraph`) runs each host's flows. A UI's flows are code, not
+    data (D-176). A host declares its answers as `AnswerNode`s: the
+    inputs each reads, the frame that renders it, when that frame is
+    on screen, the capabilities its ops ask (`caps`), a document it
+    cannot answer without (`requires`), and what it clears
+    (`clear`). `answerGraph` answers the nodes downstream of a
+    changed input in declared order. It yields between nodes, so each
+    frame paints as its answer lands. A request made mid-pass
+    supersedes the pass. A hidden frame's node waits until the frame
+    shows. The graph carries no domain knowledge. The host asks the
+    engine (`src/engine.ts`) for every op that a node runs.
+  - The answer graph keeps each frame's state in the host's `frames`
+    record. A frame that answered has none. Otherwise it is
+    unassembled (a capability in `caps` did not assemble, and the
+    node does not run), starved (`requires` names a missing document,
+    and the node does not run), or failed (the node threw). Each of
+    them runs the node's `clear`, except a failure of a node that
+    keeps its last answer (`keepOnFailure`, the stop display's board).
+    The next answer clears the state. `request.retry()` runs each
+    failed node again. A frame with several nodes shows the first that
+    has a state. A document read (frame `""`) that fails goes to the
+    page's handler. `reason(state)` gives the state as a sentence for
+    a prop that takes text. The laws are `src/uis/answers.test.mjs`.
 - `src/plans.svelte.ts` (`getAllPlans`, `putPlan`,
   `setActivePlan`, `restorePlans`, `readPlan`): the service plans.
   JavaScript owns the documents. A host reads every plan it uses
@@ -266,6 +281,13 @@ any code. Delete it when the UI lands.
    - track which frames are on screen
    - adopt answers as-is
 
+   A host keeps no failure state of its own. A node declares its
+   `caps` and `clear`, and the answer graph records why its frame has
+   no answer. The shell renders the state: a planner shell through
+   `Unavailable` (`state`), a rider shell through each component's
+   `off` and `error` props (the host's `off(frame)` and
+   `failure(frame)`).
+
    A host never joins, filters, sorts, counts, thresholds, or falls
    back by a domain rule. A policy value is an op parameter. The op
    owns its default. Use this test: if `caps-run` or the Go server
@@ -349,8 +371,8 @@ decision or finding that it waits on as a tag. The selection lives in
 the URL hash. With no stored plan, the UI opens the server's `/network`
 as the base plan, which every view calls the Base network. Its host
 answers through the answer graph. A view's nodes answer only while the
-view is open. Each frame records its own failure (`sd.failed`) and
-renders Unavailable with a retry while the rest answers. The plan's
+view is open. Each frame's state is the answer graph's (`sd.frames`),
+and the frame renders Unavailable with a retry while the rest answers. The plan's
 health adopts cap-author's issues and warnings for a document that the
 UI authored. After every change that the host adopts, the host names
 its keep-set (the plan set's current networks and the layer). Undo

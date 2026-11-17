@@ -25,7 +25,7 @@
 /// task as a phone user expects.
 
 import { ask, assemble, available, produced, servedFeed, servedNetwork, servedStopRequests, servedStops, Doc } from "../../engine";
-import { answerGraph, deploymentManifest, readAgencyZone, today } from "../kit";
+import { answerGraph, reason, type FrameState, deploymentManifest, readAgencyZone, today } from "../kit";
 import { readFetch, resumeSignIn, writeFetch } from "../../signin.svelte";
 
 // This page's capabilities answer inside its linked assembly (D-77).
@@ -129,7 +129,9 @@ export const st = $state({
   refusals: [] as Refusal[],
   /// A refusal said in words beside the task (a new stop's taken id).
   taskError: "",
-  failed: {} as Record<string, string>,
+  /// Each frame that shows no answer, and why (the answer graph's,
+  /// and an action's failure: export, publish).
+  frames: {} as Record<string, FrameState>,
 });
 
 /// The date read.
@@ -151,13 +153,15 @@ function message(e: unknown): string {
   return (e as Error)?.message ?? String(e);
 }
 
-async function framed(frame: string, clear: () => void, run: () => Promise<void>): Promise<void> {
+/// An action's failure (an export, a publish) belongs to its frame, as
+/// a node's does: the frame says why, and its next answer clears it.
+async function act(frame: string, clear: () => void, run: () => Promise<void>): Promise<void> {
   try {
     await run();
-    delete st.failed[frame];
+    delete st.frames[frame];
   } catch (e) {
     clear();
-    st.failed[frame] = message(e);
+    st.frames[frame] = { kind: "failed", message: message(e) };
     console.error(frame, e);
   }
 }
@@ -198,11 +202,12 @@ const request = answerGraph(
       id: "requests.requests_for",
       frame: "Requests",
       needs: ["document.requests", "open"],
-      run: () =>
-        framed("Requests", () => (st.requests = []), async () => {
-          if (!requestsDoc || !st.open) return void (st.requests = []);
-          st.requests = (await ask("requests", "requests_for", { requests_hash: requestsDoc, stop: st.open })).requests;
-        }),
+      caps: ["requests"],
+      clear: () => (st.requests = []),
+      run: async () => {
+        if (!requestsDoc || !st.open) return void (st.requests = []);
+        st.requests = (await ask("requests", "requests_for", { requests_hash: requestsDoc, stop: st.open })).requests;
+      },
     },
     {
       // The work across every stop, and its stops on the date (the
@@ -210,73 +215,78 @@ const request = answerGraph(
       id: "requests.list",
       frame: "Work",
       needs: ["document.requests", "document.stops", "date", "work"],
-      run: () =>
-        framed("Work", () => ((st.work = []), (st.workCounts = []), (st.workStops = [])), async () => {
-          if (!requestsDoc) return void ((st.work = []), (st.workCounts = []), (st.workStops = []));
-          const listed = await ask("requests", "list", {
-            requests_hash: requestsDoc,
-            ...(st.workStatuses.length ? { statuses: [...st.workStatuses] } : {}),
-            ...(st.workJobs.length ? { jobs: [...st.workJobs] } : {}),
-          });
-          st.work = listed.requests;
-          st.workCounts = listed.counts;
-          st.workStops = stopsDoc
-            ? (await ask("stops", "stops_on", { stops_hash: stopsDoc, date: readDate(), stop_ids: listed.requests.map((r) => r.request.stop) })).stops
-            : [];
-        }),
+      caps: ["requests", "stops"],
+      clear: () => ((st.work = []), (st.workCounts = []), (st.workStops = [])),
+      run: async () => {
+        if (!requestsDoc) return void ((st.work = []), (st.workCounts = []), (st.workStops = []));
+        const listed = await ask("requests", "list", {
+          requests_hash: requestsDoc,
+          ...(st.workStatuses.length ? { statuses: [...st.workStatuses] } : {}),
+          ...(st.workJobs.length ? { jobs: [...st.workJobs] } : {}),
+        });
+        st.work = listed.requests;
+        st.workCounts = listed.counts;
+        st.workStops = stopsDoc
+          ? (await ask("stops", "stops_on", { stops_hash: stopsDoc, date: readDate(), stop_ids: listed.requests.map((r) => r.request.stop) })).stops
+          : [];
+      },
     },
     {
       // What the agency's feed did to the stops record (D-150).
       id: "stops.feed_events",
       frame: "Feed",
       needs: ["document.stops"],
-      run: () =>
-        framed("Feed", () => (st.feed = null), async () => {
-          st.feed = null;
-          if (!stopsDoc || !st.held) return;
-          const feed = await servedFeed("stops");
-          if (!feed) return;
-          const recorded = (await ask("stops", "feed_events", { stops_hash: stopsDoc, feed: feed.id })).events;
-          const now = await ask("stops", "import_events", { stops_hash: stopsDoc, network_hash: feed.network });
-          if (!recorded.length && !now.unlisted.length && !now.unapplied.length) return;
-          st.feed = { on: now.on, recorded, unlisted: now.unlisted, unapplied: now.unapplied };
-        }),
+      caps: ["stops"],
+      clear: () => (st.feed = null),
+      run: async () => {
+        st.feed = null;
+        if (!stopsDoc || !st.held) return;
+        const feed = await servedFeed("stops");
+        if (!feed) return;
+        const recorded = (await ask("stops", "feed_events", { stops_hash: stopsDoc, feed: feed.id })).events;
+        const now = await ask("stops", "import_events", { stops_hash: stopsDoc, network_hash: feed.network });
+        if (!recorded.length && !now.unlisted.length && !now.unapplied.length) return;
+        st.feed = { on: now.on, recorded, unlisted: now.unlisted, unapplied: now.unapplied };
+      },
     },
     {
       id: "stops.stops_on",
       frame: "Stops",
       needs: ["document.stops", "date", "show"],
-      run: () =>
-        framed("Stops", () => ((st.all = []), (st.shown = []), (st.counts = [])), async () => {
-          if (!stopsDoc) return void ((st.all = []), (st.shown = []), (st.counts = []));
-          const all = await ask("stops", "stops_on", { stops_hash: stopsDoc, date: readDate() });
-          st.all = all.stops;
-          st.counts = all.counts;
-          st.shown = (await ask("stops", "stops_on", { stops_hash: stopsDoc, date: readDate(), statuses: [...st.show] })).stops;
-        }),
+      caps: ["stops"],
+      clear: () => ((st.all = []), (st.shown = []), (st.counts = [])),
+      run: async () => {
+        if (!stopsDoc) return void ((st.all = []), (st.shown = []), (st.counts = []));
+        const all = await ask("stops", "stops_on", { stops_hash: stopsDoc, date: readDate() });
+        st.all = all.stops;
+        st.counts = all.counts;
+        st.shown = (await ask("stops", "stops_on", { stops_hash: stopsDoc, date: readDate(), statuses: [...st.show] })).stops;
+      },
     },
     {
       // The field's "which stop am I at?": the stops nearest the device.
       id: "stops.stops_near",
       frame: "Near",
       needs: ["document.stops", "date", "show", "near"],
-      run: () =>
-        framed("Near", () => (st.nearby = null), async () => {
-          if (!stopsDoc || !st.near) return void (st.nearby = null);
-          st.nearby = (
-            await ask("stops", "stops_near", { stops_hash: stopsDoc, date: readDate(), lat: st.near.lat, lon: st.near.lon, limit: 12, statuses: [...st.show] })
-          ).stops;
-        }),
+      caps: ["stops"],
+      clear: () => (st.nearby = null),
+      run: async () => {
+        if (!stopsDoc || !st.near) return void (st.nearby = null);
+        st.nearby = (
+          await ask("stops", "stops_near", { stops_hash: stopsDoc, date: readDate(), lat: st.near.lat, lon: st.near.lon, limit: 12, statuses: [...st.show] })
+        ).stops;
+      },
     },
     {
       id: "stops.stop",
       frame: "Card",
       needs: ["document.stops", "date", "open"],
-      run: () =>
-        framed("Card", () => (st.card = null), async () => {
-          if (!stopsDoc || !st.open) return void (st.card = null);
-          st.card = await ask("stops", "stop", { stops_hash: stopsDoc, stop_id: st.open, date: readDate() });
-        }),
+      caps: ["stops"],
+      clear: () => (st.card = null),
+      run: async () => {
+        if (!stopsDoc || !st.open) return void (st.card = null);
+        st.card = await ask("stops", "stop", { stops_hash: stopsDoc, stop_id: st.open, date: readDate() });
+      },
     },
     {
       // The routes visiting the open stop in the schedule running on the
@@ -284,15 +294,17 @@ const request = answerGraph(
       id: "directory.stop_detail",
       frame: "Served",
       needs: ["date", "open"],
-      run: () =>
-        framed("Served", () => (st.served = null), async () => {
-          if (!st.open || !(await available("directory"))) return void (st.served = null);
-          const network = await servedNetwork(readDate(), "directory");
-          if (!network) return void (st.served = null);
-          st.served = (await ask("directory", "stop_detail", { network_hash: network.network, stop_id: st.open })).detail;
-        }),
+      caps: ["directory"],
+      clear: () => (st.served = null),
+      run: async () => {
+        if (!st.open) return void (st.served = null);
+        const network = await servedNetwork(readDate(), "directory");
+        if (!network) return void (st.served = null);
+        st.served = (await ask("directory", "stop_detail", { network_hash: network.network, stop_id: st.open })).detail;
+      },
     },
   ],
+  st.frames,
   (e) => say(`Error: ${message(e)}`, true),
 );
 
@@ -791,6 +803,12 @@ export function attachmentSrc(hash: string): Promise<string | null> {
   return got;
 }
 
+/// Why a frame has no answer, as text ("" when it answered).
+export function why(frame: string): string {
+  return reason(st.frames[frame]);
+}
+
+/// Each failed frame asks again: errors are never cached.
 export function retry(): Promise<void> {
-  return request("stops-doc", "requests-doc");
+  return request.retry();
 }

@@ -21,7 +21,7 @@
 
 import { getAllPlans, getActivePlanId, putPlan, readPlan, removePlan, setActivePlan, restorePlans } from "../../plans.svelte";
 import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, servedNetworkValue, servedStops, stopWarnings, withStopVersions, Doc } from "../../engine";
-import { answerGraph, readAgencyZone, today } from "../kit";
+import { answerGraph, reason, type FrameState, readAgencyZone, today } from "../kit";
 
 import { resumeSignIn, writeFetch } from "../../signin.svelte";
 // This page's capabilities answer inside its linked assembly (D-77).
@@ -126,7 +126,9 @@ export const sc = $state({
   exported: "",
   published: null as { plans_hash: string } | null,
   publishRefused: [] as object[],
-  failed: {} as Record<string, string>,
+  /// Each frame that shows no answer, and why (the answer graph's,
+  /// and an action's failure: export, publish).
+  frames: {} as Record<string, FrameState>,
   /// The new-route task is open on the Route stage, and what
   /// it offers: every stop the plan can visit — its own, and the stops
   /// document's in service or planned by the pick date (D-173) — and
@@ -305,13 +307,15 @@ function message(e: unknown): string {
   return (e as Error)?.message ?? String(e);
 }
 
-async function framed(frame: string, clear: () => void, run: () => Promise<void>): Promise<void> {
+/// An action's failure (an export, a publish) belongs to its frame, as
+/// a node's does: the frame says why, and its next answer clears it.
+async function act(frame: string, clear: () => void, run: () => Promise<void>): Promise<void> {
   try {
     await run();
-    delete sc.failed[frame];
+    delete sc.frames[frame];
   } catch (e) {
     clear();
-    sc.failed[frame] = message(e);
+    sc.frames[frame] = { kind: "failed", message: message(e) };
     console.error(frame, e);
   }
 }
@@ -345,46 +349,49 @@ const request = answerGraph(
       id: "analysis.day_types",
       frame: "DayTypes",
       needs: ["document.active"],
-      run: (touch) =>
-        framed("DayTypes", () => (sc.dayTypes = []), async () => {
-          const doc = active();
-          if (!doc) return;
-          sc.dayTypes = (await ask("analysis", "day_types", { network_hash: docOf(doc), from: periodFrom() })).day_types;
-          sc.noService = sc.dayTypes.length === 0;
-          // The selection keys on a combination's id; it stays while
-          // the plan's period still holds it, else the first type's
-          // regular service.
-          if (!sc.dayTypes.some((t) => t.groups.some((g) => g.id === sc.group))) {
-            sc.group = sc.dayTypes[0]?.groups[0]?.id ?? "";
-            touch("group");
-          }
-          syncEditType();
-        }),
+      caps: ["analysis"],
+      clear: () => (sc.dayTypes = []),
+      run: async (touch) => {
+        const doc = active();
+        if (!doc) return;
+        sc.dayTypes = (await ask("analysis", "day_types", { network_hash: docOf(doc), from: periodFrom() })).day_types;
+        sc.noService = sc.dayTypes.length === 0;
+        // The selection keys on a combination's id; it stays while
+        // the plan's period still holds it, else the first type's
+        // regular service.
+        if (!sc.dayTypes.some((t) => t.groups.some((g) => g.id === sc.group))) {
+          sc.group = sc.dayTypes[0]?.groups[0]?.id ?? "";
+          touch("group");
+        }
+        syncEditType();
+      },
     },
     {
       id: "directory.routes",
       frame: "Jump",
       needs: ["document.active"],
-      run: () =>
-        framed("Jump", () => (sc.routes = []), async () => {
-          const doc = active();
-          if (!doc) return;
-          sc.routes = (await ask("directory", "routes", { network_hash: docOf(doc) })).routes;
-        }),
+      caps: ["directory"],
+      clear: () => (sc.routes = []),
+      run: async () => {
+        const doc = active();
+        if (!doc) return;
+        sc.routes = (await ask("directory", "routes", { network_hash: docOf(doc) })).routes;
+      },
     },
     {
       id: "directory.route_lines",
       frame: "Map",
       needs: ["document.active", "group", "stage", "scan-view"],
+      caps: ["directory"],
       // The network's lines: the scan's map, and the Stops stage's
       // ground under the stops.
       visible: () => (sc.stage === "scan" && sc.scanView === "map") || sc.stage === "stops",
-      run: () =>
-        framed("Map", () => (sc.lines = []), async () => {
-          const doc = active();
-          if (!doc || !sc.group) return void (sc.lines = []);
-          sc.lines = (await ask("directory", "route_lines", { network_hash: docOf(doc), members: groupMembers() })).routes;
-        }),
+      clear: () => (sc.lines = []),
+      run: async () => {
+        const doc = active();
+        if (!doc || !sc.group) return void (sc.lines = []);
+        sc.lines = (await ask("directory", "route_lines", { network_hash: docOf(doc), members: groupMembers() })).routes;
+      },
     },
     {
       id: "analysis.service_type_compare",
@@ -393,28 +400,29 @@ const request = answerGraph(
       // and the route's ledger and before → after. The comparison is
       // the proposal's; elsewhere it stays quiet.
       needs: ["document.active", "document.compare", "group", "stage"],
+      caps: ["analysis"],
       visible: () => !!sc.compareKey && (sc.stage === "scan" || sc.stage === "route"),
-      hide: () => (sc.comparison = null),
-      run: () =>
-        framed("Comparison", () => (sc.comparison = null), async () => {
-          const [doc, base] = [active(), baseline()];
-          if (!doc || !base || !sc.group) return void (sc.comparison = null);
-          sc.comparison = (
-            await ask("analysis", "service_type_compare", { base_hash: docOf(base), network_hash: docOf(doc), members: groupMembers() })
-          ).comparison;
-        }),
+      clear: () => (sc.comparison = null),
+      run: async () => {
+        const [doc, base] = [active(), baseline()];
+        if (!doc || !base || !sc.group) return void (sc.comparison = null);
+        sc.comparison = (
+          await ask("analysis", "service_type_compare", { base_hash: docOf(base), network_hash: docOf(doc), members: groupMembers() })
+        ).comparison;
+      },
     },
     {
       id: "directory.service_keys",
       frame: "Keys",
       needs: ["document.active", "stage"],
+      caps: ["directory"],
       visible: () => sc.stage === "calendar",
-      run: () =>
-        framed("Keys", () => (sc.keys = []), async () => {
-          const doc = active();
-          if (!doc) return;
-          sc.keys = (await ask("directory", "service_keys", { network_hash: docOf(doc) })).keys;
-        }),
+      clear: () => (sc.keys = []),
+      run: async () => {
+        const doc = active();
+        if (!doc) return;
+        sc.keys = (await ask("directory", "service_keys", { network_hash: docOf(doc) })).keys;
+      },
     },
     {
       // What the change needs, on a date the day type runs: the
@@ -423,16 +431,17 @@ const request = answerGraph(
       id: "runcut.fleet",
       frame: "Fleet",
       needs: ["document.active", "group", "stage"],
+      caps: ["runcut"],
       visible: () => sc.stage === "resources",
-      run: () =>
-        framed("Fleet", () => ((sc.fleet = null), (sc.suggestion = null)), async () => {
-          const doc = active();
-          const date = groupDay();
-          if (!doc || !date) return void ((sc.fleet = null), (sc.suggestion = null));
-          const at = { network_hash: docOf(doc), edits_hash: null, date };
-          sc.fleet = (await ask("runcut", "fleet_summary", at)).summary;
-          sc.suggestion = (await ask("runcut", "suggest_blocks", at)).suggestion;
-        }),
+      clear: () => ((sc.fleet = null), (sc.suggestion = null)),
+      run: async () => {
+        const doc = active();
+        const date = groupDay();
+        if (!doc || !date) return void ((sc.fleet = null), (sc.suggestion = null));
+        const at = { network_hash: docOf(doc), edits_hash: null, date };
+        sc.fleet = (await ask("runcut", "fleet_summary", at)).summary;
+        sc.suggestion = (await ask("runcut", "suggest_blocks", at)).suggestion;
+      },
     },
     {
       // One block's chain on the same date: its trips in order and
@@ -440,89 +449,95 @@ const request = answerGraph(
       id: "runcut.block_trips",
       frame: "Block",
       needs: ["document.active", "group", "stage", "block"],
+      caps: ["runcut"],
       visible: () => sc.stage === "resources" && !!sc.block,
-      run: () =>
-        framed("Block", () => (sc.blockTrips = null), async () => {
-          const doc = active();
-          const date = groupDay();
-          if (!doc || !date || !sc.block) return void (sc.blockTrips = null);
-          const answer = await ask("runcut", "block_trips", { network_hash: docOf(doc), edits_hash: null, block_id: sc.block, date });
-          sc.blockTrips = answer.trips;
-        }),
+      clear: () => (sc.blockTrips = null),
+      run: async () => {
+        const doc = active();
+        const date = groupDay();
+        if (!doc || !date || !sc.block) return void (sc.blockTrips = null);
+        const answer = await ask("runcut", "block_trips", { network_hash: docOf(doc), edits_hash: null, block_id: sc.block, date });
+        sc.blockTrips = answer.trips;
+      },
     },
     {
       id: "analysis.plan_compare",
       frame: "Proposal",
       needs: ["document.active", "document.compare", "stage"],
+      caps: ["analysis"],
       visible: () => sc.stage === "proposal",
-      run: () =>
-        framed("Proposal", () => (sc.planCompare = null), async () => {
-          const [doc, base] = [active(), baseline()];
-          if (!doc || !base) return void (sc.planCompare = null);
-          sc.planCompare = (
-            await ask("analysis", "plan_compare", { base_hash: docOf(base), network_hash: docOf(doc), from: periodFrom() })
-          ).day_types;
-        }),
+      clear: () => (sc.planCompare = null),
+      run: async () => {
+        const [doc, base] = [active(), baseline()];
+        if (!doc || !base) return void (sc.planCompare = null);
+        sc.planCompare = (
+          await ask("analysis", "plan_compare", { base_hash: docOf(base), network_hash: docOf(doc), from: periodFrom() })
+        ).day_types;
+      },
     },
     {
       id: "analysis.route_frequency",
       frame: "Grid",
       needs: ["document.active", "group", "stage", "scan-view"],
+      caps: ["analysis"],
       visible: () => (sc.stage === "scan" && sc.scanView === "grid") || sc.stage === "route",
-      run: () =>
-        framed("Grid", () => (sc.frequency = null), async () => {
-          const doc = active();
-          if (!doc || !sc.group) return void (sc.frequency = null);
-          sc.frequency = (await ask("analysis", "route_frequency", { network_hash: docOf(doc), members: groupMembers() })).frequency;
-        }),
+      clear: () => (sc.frequency = null),
+      run: async () => {
+        const doc = active();
+        if (!doc || !sc.group) return void (sc.frequency = null);
+        sc.frequency = (await ask("analysis", "route_frequency", { network_hash: docOf(doc), members: groupMembers() })).frequency;
+      },
     },
     {
       id: "directory.route_detail",
       frame: "Route",
       needs: ["document.active", "route", "stage"],
+      caps: ["directory"],
       visible: () => sc.stage === "route" && !!sc.route,
-      run: (touch) =>
-        framed("Route", () => (sc.routeDetail = null), async () => {
-          const doc = active();
-          if (!doc || !sc.route) return void (sc.routeDetail = null);
-          sc.routeDetail = (await ask("directory", "route_detail", { network_hash: docOf(doc), route_id: sc.route })).detail;
-          const directions = sc.routeDetail?.directions ?? [];
-          if (!directions.some((d) => d.direction === sc.direction)) {
-            sc.direction = directions[0]?.direction ?? null;
-            touch("direction");
-          }
-        }),
+      clear: () => (sc.routeDetail = null),
+      run: async (touch) => {
+        const doc = active();
+        if (!doc || !sc.route) return void (sc.routeDetail = null);
+        sc.routeDetail = (await ask("directory", "route_detail", { network_hash: docOf(doc), route_id: sc.route })).detail;
+        const directions = sc.routeDetail?.directions ?? [];
+        if (!directions.some((d) => d.direction === sc.direction)) {
+          sc.direction = directions[0]?.direction ?? null;
+          touch("direction");
+        }
+      },
     },
     {
       id: "directory.timetable",
       frame: "StringLine",
       needs: ["document.active", "document.compare", "route", "direction", "group", "stage"],
+      caps: ["directory"],
       visible: () => sc.stage === "route" && !!sc.route,
-      run: () =>
-        framed("StringLine", () => (sc.timetable = null), async () => {
-          const [doc, base] = [active(), baseline()];
-          if (!doc || !sc.route || !sc.group) return void (sc.timetable = null);
-          sc.timetable = (
-            await ask("directory", "timetable", {
-              network_hash: docOf(doc),
-              route_id: sc.route,
-              direction: sc.direction ?? undefined,
-              members: groupMembers(),
-              compare_hash: base ? docOf(base) : undefined,
-            })
-          ).timetable;
-        }),
+      clear: () => (sc.timetable = null),
+      run: async () => {
+        const [doc, base] = [active(), baseline()];
+        if (!doc || !sc.route || !sc.group) return void (sc.timetable = null);
+        sc.timetable = (
+          await ask("directory", "timetable", {
+            network_hash: docOf(doc),
+            route_id: sc.route,
+            direction: sc.direction ?? undefined,
+            members: groupMembers(),
+            compare_hash: base ? docOf(base) : undefined,
+          })
+        ).timetable;
+      },
     },
     {
       id: "directory.stops",
       frame: "Stops",
       needs: ["document.active"],
-      run: () =>
-        framed("Stops", () => (sc.stops = []), async () => {
-          const doc = active();
-          if (!doc) return;
-          sc.stops = (await ask("directory", "stops", { network_hash: docOf(doc), limit: null })).stops;
-        }),
+      caps: ["directory"],
+      clear: () => (sc.stops = []),
+      run: async () => {
+        const doc = active();
+        if (!doc) return;
+        sc.stops = (await ask("directory", "stops", { network_hash: docOf(doc), limit: null })).stops;
+      },
     },
     {
       // The open stop's card: its record and every pattern that
@@ -530,66 +545,71 @@ const request = answerGraph(
       id: "directory.stop_detail",
       frame: "StopCard",
       needs: ["document.active", "group", "stop-open", "stage"],
+      caps: ["directory"],
       visible: () => sc.stage === "stops" && !!sc.stopOpen,
-      run: () =>
-        framed("StopCard", () => (sc.stopCard = null), async () => {
-          const doc = active();
-          if (!doc || !sc.stopOpen) return void (sc.stopCard = null);
-          sc.stopCard = (
-            await ask("directory", "stop_detail", { network_hash: docOf(doc), stop_id: sc.stopOpen, members: groupMembers() })
-          ).detail;
-        }),
+      clear: () => (sc.stopCard = null),
+      run: async () => {
+        const doc = active();
+        if (!doc || !sc.stopOpen) return void (sc.stopCard = null);
+        sc.stopCard = (
+          await ask("directory", "stop_detail", { network_hash: docOf(doc), stop_id: sc.stopOpen, members: groupMembers() })
+        ).detail;
+      },
     },
     {
       id: "analysis.hub",
       frame: "Hub",
       needs: ["document.active", "group", "stop", "stage"],
+      caps: ["analysis"],
       visible: () => sc.stage === "route" && !!sc.stop,
-      run: () =>
-        framed("Hub", () => ((sc.gaps = null), (sc.connections = null), (sc.missed = null)), async () => {
-          const doc = active();
-          const date = groupDay();
-          if (!doc || !date || !sc.stop) return void ((sc.gaps = null), (sc.connections = null), (sc.missed = null));
-          const at = { network_hash: docOf(doc), date, stop_id: sc.stop };
-          sc.gaps = (await ask("analysis", "stop_gaps", at)).gaps;
-          sc.connections = (await ask("analysis", "hub_connections", at)).connections;
-          sc.missed = (await ask("analysis", "missed_connections", at)).missed;
-        }),
+      clear: () => ((sc.gaps = null), (sc.connections = null), (sc.missed = null)),
+      run: async () => {
+        const doc = active();
+        const date = groupDay();
+        if (!doc || !date || !sc.stop) return void ((sc.gaps = null), (sc.connections = null), (sc.missed = null));
+        const at = { network_hash: docOf(doc), date, stop_id: sc.stop };
+        sc.gaps = (await ask("analysis", "stop_gaps", at)).gaps;
+        sc.connections = (await ask("analysis", "hub_connections", at)).connections;
+        sc.missed = (await ask("analysis", "missed_connections", at)).missed;
+      },
     },
     {
       id: "plans.chain",
       frame: "Plans",
       needs: ["plans", "stage"],
+      caps: ["plans"],
       visible: () => sc.stage === "calendar",
-      run: () =>
-        framed("Plans", () => (sc.chain = null), async () => {
-          const infos = sc.plans.filter((p) => p.id).map((p) => ({ id: p.id, name: p.name, effective_from: p.effectiveFrom }));
-          // Only a published pick is ever in force (a draft runs
-          // nowhere): the plans module answers it from the published set.
-          const inForce = sc.pickSet ? (await ask("plans", "in_force", { published: sc.pickSet, date: today() })).plan?.id ?? null : null;
-          sc.chain = {
-            inForce,
-            periods: (await ask("plans", "periods", { plans: infos })).periods,
-            issues: (await ask("plans", "validate", { plans: infos })).issues,
-          };
-        }),
+      clear: () => (sc.chain = null),
+      run: async () => {
+        const infos = sc.plans.filter((p) => p.id).map((p) => ({ id: p.id, name: p.name, effective_from: p.effectiveFrom }));
+        // Only a published pick is ever in force (a draft runs
+        // nowhere): the plans module answers it from the published set.
+        const inForce = sc.pickSet ? (await ask("plans", "in_force", { published: sc.pickSet, date: today() })).plan?.id ?? null : null;
+        sc.chain = {
+          inForce,
+          periods: (await ask("plans", "periods", { plans: infos })).periods,
+          issues: (await ask("plans", "validate", { plans: infos })).issues,
+        };
+      },
     },
     {
       id: "network.validate",
       frame: "Readiness",
       needs: ["document.active"],
-      run: () =>
-        framed("Readiness", () => ((sc.issues = []), (sc.warnings = [])), async () => {
-          const doc = active();
-          if (!doc) return;
-          const { issues, warnings } = authoredHealth.get(doc) ?? (await ask("network", "validate", { network_hash: docOf(doc) }));
-          sc.issues = issues;
-          // and the stops it visits that are not in service over its
-          // period, as the stops document records them (D-157)
-          sc.warnings = [...warnings, ...(await stopWarnings(docOf(doc), sc.pickSet))];
-        }),
+      caps: ["network"],
+      clear: () => ((sc.issues = []), (sc.warnings = [])),
+      run: async () => {
+        const doc = active();
+        if (!doc) return;
+        const { issues, warnings } = authoredHealth.get(doc) ?? (await ask("network", "validate", { network_hash: docOf(doc) }));
+        sc.issues = issues;
+        // and the stops it visits that are not in service over its
+        // period, as the stops document records them (D-157)
+        sc.warnings = [...warnings, ...(await stopWarnings(docOf(doc), sc.pickSet))];
+      },
     },
   ],
+  sc.frames,
   (e) => {
     say(`Error: ${message(e)}`, true);
     console.error(e);
@@ -1105,8 +1125,14 @@ export function toggleEdit(): void {
   sc.editing = !sc.editing;
 }
 
+/// Why a frame has no answer, as text ("" when it answered).
+export function why(frame: string): string {
+  return reason(sc.frames[frame]);
+}
+
+/// Each failed frame asks again: errors are never cached.
 export function retry(): Promise<void> {
-  return select("active", "compare", "plans", "stage", "scan-view", "stop-open", "route", "stop", "block");
+  return request.retry();
 }
 
 // ---------------------------------------------------------------------
@@ -1134,8 +1160,8 @@ async function adopt(next: Network, health: { issues: NetworkError[]; warnings: 
   sc.exported = "";
   sc.published = null;
   sc.publishRefused = [];
-  delete sc.failed.Export;
-  delete sc.failed.Publish;
+  delete sc.frames.Export;
+  delete sc.frames.Publish;
   syncHistory();
   await release();
   await step("Re-reading the plan…", () => select("active"));
@@ -1230,7 +1256,7 @@ export async function publishPlan(): Promise<void> {
   if (!doc) return;
   sc.published = null;
   sc.publishRefused = [];
-  await framed("Publish", () => {}, async () => {
+  await act("Publish", () => {}, async () => {
     const resp = await writeFetch("/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(doc) });
     if (resp.status === 401 || resp.status === 403) throw new Error(resp.status === 401 ? "sign in to publish" : "your sign-in may not publish plans here");
     if (resp.status === 422) {
@@ -1251,7 +1277,7 @@ export async function publishPlan(): Promise<void> {
 export async function exportPlan(): Promise<void> {
   const doc = active();
   if (!doc) return;
-  await framed("Export", () => (sc.exported = ""), async () => {
+  await act("Export", () => (sc.exported = ""), async () => {
     // the export carries the stops' history over the plan's period (D-151, D-157)
     const out = await ask("network", "export", { network_hash: await withStopVersions(docOf(doc), sc.pickSet) });
     const bytes = Uint8Array.from(atob(out.zip_b64), (c) => c.charCodeAt(0));

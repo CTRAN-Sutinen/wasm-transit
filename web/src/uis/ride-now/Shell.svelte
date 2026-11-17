@@ -16,7 +16,7 @@
   import {
     ride, loadFeedBytes, setLiveUrls, typed, clearFound, show, openStop, pickDeparture, directions, setEnd, swapEnds,
     setWhen, toggleSaved, locate, nearPoint, showRoutes, filterRoutes, openRoute, openVehicle, setFollow, directionsToSpot,
-    fromHere, chooseOnMap, rememberFramed, applyUpdate, type Place,
+    fromHere, chooseOnMap, rememberFramed, applyUpdate, off, failure, type Place,
   } from "./host.svelte";
   import RideMap from "../../components/RideMap.svelte";
   import LiveFeeds from "../../components/LiveFeeds.svelte";
@@ -96,7 +96,7 @@
     if (ride.view === "home" && ride.nearby) return `${n(ride.nearby.length, "stop")} near you`;
     if (ride.view === "stop" && ride.board) return `${n(ride.board.rows.length, "departure")}`;
     if (ride.view === "routes" && ride.routeRows) return n(ride.routeRows.length, "route");
-    if (ride.view === "trip" && ride.plan && !ride.plan.error) return ride.plan.itinerary ? "Trip found" : "No trip found";
+    if (ride.view === "trip" && ride.plan) return ride.plan.itinerary ? "Trip found" : "No trip found";
     return "";
   });
 
@@ -159,7 +159,7 @@
         <span aria-hidden="true">⚠</span> {alerts.length} alert{alerts.length === 1 ? "" : "s"}
       </button>
     {/if}
-    <LiveFeeds urls={ride.urls} summary={ride.live?.summary ?? null} at={ride.liveAt} error={ride.liveError} off={ride.off.rt} onurls={setLiveUrls} />
+    <LiveFeeds urls={ride.urls} summary={ride.live?.summary ?? null} at={ride.liveAt} error={ride.liveError || failure("LiveFeeds")} off={off("LiveFeeds")} onurls={setLiveUrls} />
   </header>
 
   <main class="panel" class:down={narrow && !sheetUp} bind:this={panel}>
@@ -188,7 +188,7 @@
             found={searchFound}
             addresses={searchAddresses}
             limit={FOUND}
-            off={ride.off.directory}
+            off={off("PlaceSearch")}
             ontype={(t) => typed("search", t)}
             onpick={openStop}
             onclose={clearFound}
@@ -224,10 +224,10 @@
                   name={p.name}
                   distance={p.distance_m ?? null}
                   walk={p.walk_secs ?? null}
-                  rows={b === undefined ? null : (b?.rows ?? [])}
+                  rows={b === undefined ? (off("NearbyBoards") ? [] : null) : (b?.rows ?? [])}
                   pooled={b?.pooled ?? false}
                   routes={ride.routes}
-                  note={b === null ? "Departures for this stop are unavailable right now." : ""}
+                  note={b === null || off("NearbyBoards") ? "Departures for this stop are unavailable right now." : ""}
                   onopen={() => openStop(p)}
                 />
               {:else}
@@ -245,10 +245,10 @@
                 {@const b = ride.savedBoards?.find((w) => w.id === s.id)}
                 <StopCard
                   name={s.label}
-                  rows={b ? b.board.rows : ride.off.board ? [] : null}
+                  rows={b ? b.board.rows : off("SavedList") ? [] : null}
                   pooled={b?.board.pooled ?? false}
                   routes={ride.routes}
-                  note={ride.off.board ? "Departures are unavailable right now." : ""}
+                  note={off("SavedList") ? "Departures are unavailable right now." : ""}
                   onopen={() => openStop({ id: s.id, name: s.label })}
                 />
               {/each}
@@ -272,10 +272,10 @@
           name={ride.stop.name}
           stopId={ride.stop.id}
           board={ride.board}
-          error={ride.boardError}
+          error={failure("RiderBoard")}
           routes={ride.routes}
-          off={ride.off.board}
-          liveOff={ride.off.rt}
+          off={off("RiderBoard")}
+          liveOff={off("LiveFeeds")}
           {saved}
           picked={ride.departure}
           tracked={departureBus ? { label: departureBus.label ?? departureBus.vehicle_id ?? departureBus.key } : null}
@@ -295,6 +295,7 @@
           addresses={ride.addresses}
           limit={FOUND}
           plan={ride.plan}
+          error={failure("TripPlan")}
           routes={ride.routes}
           here={ride.walking && !!ride.here}
           onhere={fromHere}
@@ -306,8 +307,8 @@
             if (ride.picking !== end) sheetUp = false;
             chooseOnMap(end);
           }}
-          off={ride.off.router}
-          searchOff={ride.off.directory}
+          off={off("TripPlan")}
+          searchOff={off("PlaceSearch")}
           ontype={typed}
           onpick={setEnd}
           onclose={clearFound}
@@ -316,13 +317,13 @@
           onback={() => show(ride.stop ? "stop" : "home")}
         />
       {:else if ride.view === "routes"}
-        <RouteList rows={ride.routeRows} routes={ride.routes} query={ride.routeQuery} off={ride.off.directory}
+        <RouteList rows={ride.routeRows} routes={ride.routes} query={ride.routeQuery} off={off("RouteList")}
           onfilter={filterRoutes} onopen={openRoute} onback={() => show("home")} />
       {:else if ride.view === "route"}
-        <RouteView route={ride.routes.find((r) => r.route_id === ride.route) ?? null} info={ride.routeInfo} off={ride.off.directory}
+        <RouteView route={ride.routes.find((r) => r.route_id === ride.route) ?? null} info={ride.routeInfo} off={off("RouteView")}
           onstop={openStop} onback={showRoutes} />
       {:else if ride.view === "bus"}
-        <BusView vehicle={bus} progress={ride.progress} routes={ride.routes} follow={ride.follow} liveOff={ride.off.rt}
+        <BusView vehicle={bus} progress={ride.progress} routes={ride.routes} follow={ride.follow} liveOff={off("BusView") || off("LiveFeeds")}
           onfollow={setFollow} onstop={openStop} onroute={openRoute} onback={() => show("home")} />
       {:else if ride.view === "alerts"}
         <header class="sub-head">

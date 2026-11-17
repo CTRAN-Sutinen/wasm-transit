@@ -8,7 +8,8 @@
 /// and `<id>.html` at the web root.
 
 import { previousClock, serviceClock } from "../clock";
-import { readJournal, startJournal } from "../engine";
+import { available, readJournal, startJournal, type CapId } from "../engine";
+import { answers, type AnswerNode, type FrameState, type Request } from "./answers";
 
 // The journal, on request. `?journal` in the page's URL starts the
 // engine's journal before the host's first ask, and
@@ -96,100 +97,26 @@ export function whileVisible(ms: number, tick: () => void): void {
 }
 
 // ---------------------------------------------------------------------
-// The answer graph. A UI's flows are code: a host declares what it
-// answers as nodes, and this runner schedules them (D-176). The engine
-// (src/engine.ts) makes every op call, and caches each answer under
-// the journal's key.
-//
-// - A node is the inputs it reads, the frame that renders it, when
-//   that frame is on screen, and the op calls.
-// - The runner knows nothing about transit. If a node name, a field,
-//   or a rule of the domain appears in this section, it leaked.
+// The answer graph (src/uis/answers.ts): a host's nodes, scheduled, and
+// each frame's state. Here it gets the engine's `available`.
 // ---------------------------------------------------------------------
 
-/// One answer a host keeps: an op (or a short run of ops over the
-/// same inputs) and the host state it writes.
-export type AnswerNode = {
-  /// The op(s) it answers ("analysis.service_groups"), or
-  /// "document.<name>" for a document read before any op sees it.
-  id: string;
-  /// The component that renders the answer ("" for a document read).
-  frame: string;
-  /// The inputs (selection keys, document keys) and earlier nodes'
-  /// ids it reads: a change to any of them re-answers it. A node may
-  /// only name nodes declared before it.
-  needs: string[];
-  /// False while its frame is off screen: the node is not answered,
-  /// `hide` clears what it wrote, and its dependents count as
-  /// changed. Name the visibility input in `needs` so showing the
-  /// frame answers it.
-  visible?: () => boolean;
-  hide?: () => void;
-  /// Answer, write the host state, and `touch` any input it repaired
-  /// (a selection the new answer no longer holds) — later nodes that
-  /// read that input re-answer in the same pass.
-  run: (touch: (input: string) => void) => Promise<void>;
-};
+export type { AnswerNode, FrameState, Request } from "./answers";
 
-const yieldToPaint = () => new Promise<void>((r) => setTimeout(r, 0));
+/// The host's answer graph. `frames` is the host's `$state` record of
+/// frame states, so the shell redraws when one changes. `onerror`
+/// hears a document read that fails (a node whose frame is "").
+/// Why a frame has no answer, as a sentence for a prop that takes text
+/// (a block's error, an export's): "" when it answered.
+export function reason(state: FrameState | undefined): string {
+  if (!state) return "";
+  if (state.kind === "failed") return state.message;
+  if (state.kind === "unassembled") return "This part of the app did not load.";
+  return `Waiting for ${state.missing}.`;
+}
 
-/// The runner: `request(...inputs)` marks inputs changed and answers
-/// every node downstream of them, in declared order, yielding between
-/// nodes so each frame paints as its answer lands. A request made
-/// while a pass runs supersedes it: the pass stops at the next node
-/// and one merged pass starts from the top (nodes already answered
-/// hit `answer`'s cache). The returned promise settles when no
-/// request is left.
-export function answerGraph(nodes: AnswerNode[], onerror: (e: unknown) => void) {
-  const declared = new Set<string>();
-  const ids = new Set(nodes.map((n) => n.id));
-  for (const node of nodes) {
-    for (const need of node.needs) {
-      if (ids.has(need) && !declared.has(need)) throw new Error(`answer node ${node.id} reads ${need} before it is declared`);
-    }
-    declared.add(node.id);
-  }
-
-  let pending = new Set<string>();
-  let draining: Promise<void> | null = null;
-
-  async function pass(changed: Set<string>): Promise<void> {
-    for (const node of nodes) {
-      if (!node.needs.some((n) => changed.has(n))) continue;
-      if (node.visible && !node.visible()) {
-        node.hide?.();
-        changed.add(node.id);
-        continue;
-      }
-      await yieldToPaint();
-      if (pending.size) {
-        for (const c of changed) pending.add(c);
-        return;
-      }
-      try {
-        await node.run((input) => changed.add(input));
-      } catch (e) {
-        onerror(e);
-      }
-      changed.add(node.id);
-    }
-  }
-
-  return function request(...inputs: string[]): Promise<void> {
-    for (const input of inputs) pending.add(input);
-    draining ??= (async () => {
-      try {
-        while (pending.size) {
-          const changed = pending;
-          pending = new Set();
-          await pass(changed);
-        }
-      } finally {
-        draining = null;
-      }
-    })();
-    return draining;
-  };
+export function answerGraph(nodes: AnswerNode[], frames: Record<string, FrameState>, onerror: (e: unknown) => void): Request {
+  return answers(nodes, { frames, onerror, available: (cap) => available(cap as CapId) });
 }
 
 // ---------------------------------------------------------------------

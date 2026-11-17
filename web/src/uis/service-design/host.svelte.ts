@@ -14,14 +14,13 @@
 /// direction, stop, and the hour window — lives in the URL hash, so
 /// a view can be bookmarked and returned to.
 ///
-/// Every frame fails on its own: a node whose capability did not
-/// assemble or whose op refused writes the frame's failure into
-/// `sd.failed`, and the frame says so while the rest of the view
-/// answers (a production failure, shown gracefully).
+/// Every frame fails on its own: the answer graph writes why a frame
+/// has no answer into `sd.frames` (src/uis/answers.ts), and the frame
+/// says so while the rest of the view answers.
 
 import { getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
 import { ask, assemble, available, keep, load, produced, servedNetworkValue, Doc, stopWarnings, withStopVersions, publishedPlanSet } from "../../engine";
-import { answerGraph, readAgencyZone, today } from "../kit";
+import { answerGraph, reason, type FrameState, readAgencyZone, today } from "../kit";
 
 import { resumeSignIn, writeFetch } from "../../signin.svelte";
 // This page's capabilities answer inside its linked assembly — one
@@ -136,7 +135,9 @@ export const sd = $state({
   publishRefused: [] as object[],
   /// Each frame's failure, by frame: why it has no answer (a
   /// capability that did not assemble, or an op that refused).
-  failed: {} as Record<string, string>,
+  /// Each frame that shows no answer, and why (the answer graph's,
+  /// and an action's failure: export, publish).
+  frames: {} as Record<string, FrameState>,
 });
 
 // ---------------------------------------------------------------------
@@ -262,13 +263,15 @@ function message(e: unknown): string {
 
 /// Run one frame's answer: a throw becomes that frame's failure and
 /// clears what it shows; the next answer clears the failure.
-async function framed(frame: string, clear: () => void, run: () => Promise<void>): Promise<void> {
+/// An action's failure (an export, a publish) belongs to its frame, as
+/// a node's does: the frame says why, and its next answer clears it.
+async function act(frame: string, clear: () => void, run: () => Promise<void>): Promise<void> {
   try {
     await run();
-    delete sd.failed[frame];
+    delete sd.frames[frame];
   } catch (e) {
     clear();
-    sd.failed[frame] = message(e);
+    sd.frames[frame] = { kind: "failed", message: message(e) };
     console.error(frame, e);
   }
 }
@@ -296,55 +299,59 @@ const request = answerGraph(
       id: "analysis.service_groups",
       frame: "Groups",
       needs: ["document.active"],
-      run: (touch) =>
-        framed("Groups", () => (sd.groups = []), async () => {
-          const doc = active();
-          if (!doc) return;
-          sd.groups = (await ask("analysis", "service_groups", { network_hash: docOf(doc) })).groups;
-          // The selection keys on a combination's id; it stays while
-          // the new answer still holds that combination.
-          if (!sd.groups.some((g) => g.id === sd.group)) {
-            sd.group = sd.groups[0]?.id ?? "";
-            touch("group");
-          }
-          syncEditType();
-        }),
+      caps: ["analysis"],
+      clear: () => (sd.groups = []),
+      run: async (touch) => {
+        const doc = active();
+        if (!doc) return;
+        sd.groups = (await ask("analysis", "service_groups", { network_hash: docOf(doc) })).groups;
+        // The selection keys on a combination's id; it stays while
+        // the new answer still holds that combination.
+        if (!sd.groups.some((g) => g.id === sd.group)) {
+          sd.group = sd.groups[0]?.id ?? "";
+          touch("group");
+        }
+        syncEditType();
+      },
     },
     {
       id: "directory.routes",
       frame: "ContextBar",
       needs: ["document.active"],
-      run: () =>
-        framed("ContextBar", () => (sd.routes = []), async () => {
-          const doc = active();
-          if (!doc) return;
-          sd.routes = (await ask("directory", "routes", { network_hash: docOf(doc) })).routes;
-        }),
+      caps: ["directory"],
+      clear: () => (sd.routes = []),
+      run: async () => {
+        const doc = active();
+        if (!doc) return;
+        sd.routes = (await ask("directory", "routes", { network_hash: docOf(doc) })).routes;
+      },
     },
     {
       id: "analysis.route_frequency",
       frame: "FrequencyGrid",
       needs: ["document.active", "group", "view"],
+      caps: ["analysis"],
       visible: on("network", "route"),
-      run: () =>
-        framed("FrequencyGrid", () => (sd.frequency = null), async () => {
-          const doc = active();
-          if (!doc || !sd.group) return void (sd.frequency = null);
-          sd.frequency = (await ask("analysis", "route_frequency", { network_hash: docOf(doc), members: groupMembers() })).frequency;
-        }),
+      clear: () => (sd.frequency = null),
+      run: async () => {
+        const doc = active();
+        if (!doc || !sd.group) return void (sd.frequency = null);
+        sd.frequency = (await ask("analysis", "route_frequency", { network_hash: docOf(doc), members: groupMembers() })).frequency;
+      },
     },
     {
       id: "analysis.hourly_trips",
       frame: "DayProfile",
       needs: ["document.active", "group", "view"],
+      caps: ["analysis"],
       visible: on("network"),
-      run: () =>
-        framed("DayProfile", () => (sd.hourly = null), async () => {
-          const doc = active();
-          const date = groupDay();
-          if (!doc || !date) return void (sd.hourly = null);
-          sd.hourly = (await ask("analysis", "hourly_trips", { network_hash: docOf(doc), date })).hours;
-        }),
+      clear: () => (sd.hourly = null),
+      run: async () => {
+        const doc = active();
+        const date = groupDay();
+        if (!doc || !date) return void (sd.hourly = null);
+        sd.hourly = (await ask("analysis", "hourly_trips", { network_hash: docOf(doc), date })).hours;
+      },
     },
     {
       // The day's numbers beside its shape, on the same date: when
@@ -352,22 +359,23 @@ const request = answerGraph(
       id: "analysis.network_stats",
       frame: "DayProfile",
       needs: ["document.active", "group", "view"],
+      caps: ["analysis"],
       visible: on("network"),
-      run: () =>
-        framed("DayProfile", () => (sd.dayStats = null), async () => {
-          const doc = active();
-          const date = groupDay();
-          if (!doc || !date) return void (sd.dayStats = null);
-          sd.dayStats = (
-            await ask("analysis", "network_stats", {
-              network_hash: docOf(doc),
-              date,
-              include_routes: false,
-              include_stops: false,
-              include_service_types: false,
-            })
-          ).stats;
-        }),
+      clear: () => (sd.dayStats = null),
+      run: async () => {
+        const doc = active();
+        const date = groupDay();
+        if (!doc || !date) return void (sd.dayStats = null);
+        sd.dayStats = (
+          await ask("analysis", "network_stats", {
+            network_hash: docOf(doc),
+            date,
+            include_routes: false,
+            include_stops: false,
+            include_service_types: false,
+          })
+        ).stats;
+      },
     },
     {
       id: "document.compare",
@@ -381,14 +389,15 @@ const request = answerGraph(
       id: "analysis.service_type_compare",
       frame: "Comparison",
       needs: ["document.active", "document.compare", "group"],
-      run: () =>
-        framed("Comparison", () => (sd.comparison = null), async () => {
-          const [doc, base] = [active(), baseline()];
-          if (!doc || !base || !sd.group) return void (sd.comparison = null);
-          sd.comparison = (
-            await ask("analysis", "service_type_compare", { base_hash: docOf(base), network_hash: docOf(doc), members: groupMembers() })
-          ).comparison;
-        }),
+      caps: ["analysis"],
+      clear: () => (sd.comparison = null),
+      run: async () => {
+        const [doc, base] = [active(), baseline()];
+        if (!doc || !base || !sd.group) return void (sd.comparison = null);
+        sd.comparison = (
+          await ask("analysis", "service_type_compare", { base_hash: docOf(base), network_hash: docOf(doc), members: groupMembers() })
+        ).comparison;
+      },
     },
     {
       // The vehicles the plan needs on the group's day (D-46): the
@@ -398,110 +407,116 @@ const request = answerGraph(
       id: "runcut.suggest_blocks",
       frame: "Vehicles",
       needs: ["document.active", "group"],
-      run: () =>
-        framed("Vehicles", () => (sd.vehicles = null), async () => {
-          const doc = active();
-          const date = groupDay();
-          if (!doc || !date) return void (sd.vehicles = null);
-          sd.vehicles = (await ask("runcut", "suggest_blocks", { network_hash: docOf(doc), edits_hash: null, date })).suggestion;
-        }),
+      caps: ["runcut"],
+      clear: () => (sd.vehicles = null),
+      run: async () => {
+        const doc = active();
+        const date = groupDay();
+        if (!doc || !date) return void (sd.vehicles = null);
+        sd.vehicles = (await ask("runcut", "suggest_blocks", { network_hash: docOf(doc), edits_hash: null, date })).suggestion;
+      },
     },
     {
       id: "directory.route_detail",
       frame: "RouteHeader",
       needs: ["document.active", "route", "view"],
+      caps: ["directory"],
       visible: on("route"),
-      run: (touch) =>
-        framed("RouteHeader", () => (sd.routeDetail = null), async () => {
-          const doc = active();
-          if (!doc || !sd.route) return void (sd.routeDetail = null);
-          sd.routeDetail = (await ask("directory", "route_detail", { network_hash: docOf(doc), route_id: sd.route })).detail;
-          const directions = sd.routeDetail?.directions ?? [];
-          if (!directions.some((d) => d.direction === sd.direction)) {
-            sd.direction = directions[0]?.direction ?? null;
-            touch("direction");
-          }
-        }),
+      clear: () => (sd.routeDetail = null),
+      run: async (touch) => {
+        const doc = active();
+        if (!doc || !sd.route) return void (sd.routeDetail = null);
+        sd.routeDetail = (await ask("directory", "route_detail", { network_hash: docOf(doc), route_id: sd.route })).detail;
+        const directions = sd.routeDetail?.directions ?? [];
+        if (!directions.some((d) => d.direction === sd.direction)) {
+          sd.direction = directions[0]?.direction ?? null;
+          touch("direction");
+        }
+      },
     },
     {
       id: "directory.timetable",
       frame: "StringLine",
       needs: ["document.active", "document.compare", "route", "direction", "group", "view"],
+      caps: ["directory"],
       visible: on("route"),
-      run: () =>
-        framed("StringLine", () => (sd.timetable = null), async () => {
-          const [doc, base] = [active(), baseline()];
-          if (!doc || !sd.route || !sd.group) return void (sd.timetable = null);
-          sd.timetable = (
-            await ask("directory", "timetable", {
-              network_hash: docOf(doc),
-              route_id: sd.route,
-              direction: sd.direction ?? undefined,
-              members: groupMembers(),
-              compare_hash: base ? docOf(base) : undefined,
-            })
-          ).timetable;
-        }),
+      clear: () => (sd.timetable = null),
+      run: async () => {
+        const [doc, base] = [active(), baseline()];
+        if (!doc || !sd.route || !sd.group) return void (sd.timetable = null);
+        sd.timetable = (
+          await ask("directory", "timetable", {
+            network_hash: docOf(doc),
+            route_id: sd.route,
+            direction: sd.direction ?? undefined,
+            members: groupMembers(),
+            compare_hash: base ? docOf(base) : undefined,
+          })
+        ).timetable;
+      },
     },
     {
       id: "directory.focus",
       frame: "RouteMap",
       needs: ["document.active", "route", "view"],
+      caps: ["directory"],
       visible: on("route"),
-      run: () =>
-        framed("RouteMap", () => (sd.focus = null), async () => {
-          const doc = active();
-          if (!doc || !sd.route) return void (sd.focus = null);
-          sd.focus = (await ask("directory", "focus", { network_hash: docOf(doc), kind: "route", id: sd.route })).focus;
-        }),
+      clear: () => (sd.focus = null),
+      run: async () => {
+        const doc = active();
+        if (!doc || !sd.route) return void (sd.focus = null);
+        sd.focus = (await ask("directory", "focus", { network_hash: docOf(doc), kind: "route", id: sd.route })).focus;
+      },
     },
     {
       id: "analysis.type_coverage",
       frame: "Coverage",
       needs: ["document.active", "group", "layer", "coverage-params", "window", "view"],
+      caps: ["analysis"],
       visible: on("coverage"),
-      run: () =>
-        framed("Coverage", () => (sd.coverage = null), async () => {
-          const doc = active();
-          if (!doc || !layer || !sd.layer || !sd.group) return void ((sd.coverage = null), (sd.coverageReading = null));
-          const p = sd.coverageParams;
-          const window = sd.window ? { start_secs: sd.window.from * 3600, end_secs: sd.window.to * 3600 } : undefined;
-          const answer = await ask("analysis", "type_coverage", {
-            network_hash: docOf(doc),
-            layer_hash: layer,
-            members: groupMembers(),
-            field: sd.layer.field,
-            label: sd.layer.label,
-            radius_m: p.radius_m,
-            frequent_secs: p.frequent_secs,
-            min_departures: p.min_departures,
-            window,
-          });
-          sd.coverage = answer.coverage;
-          sd.coverageReading = answer.layer;
-        }),
+      clear: () => (sd.coverage = null),
+      run: async () => {
+        const doc = active();
+        if (!doc || !layer || !sd.layer || !sd.group) return void ((sd.coverage = null), (sd.coverageReading = null));
+        const p = sd.coverageParams;
+        const window = sd.window ? { start_secs: sd.window.from * 3600, end_secs: sd.window.to * 3600 } : undefined;
+        const answer = await ask("analysis", "type_coverage", {
+          network_hash: docOf(doc),
+          layer_hash: layer,
+          members: groupMembers(),
+          field: sd.layer.field,
+          label: sd.layer.label,
+          radius_m: p.radius_m,
+          frequent_secs: p.frequent_secs,
+          min_departures: p.min_departures,
+          window,
+        });
+        sd.coverage = answer.coverage;
+        sd.coverageReading = answer.layer;
+      },
     },
     {
       id: "analysis.unserved_points",
       frame: "Unserved",
       needs: ["document.active", "group", "layer", "coverage-params", "view"],
+      caps: ["analysis"],
       visible: on("coverage"),
-      run: () =>
-        framed("Unserved", () => (sd.unserved = null), async () => {
-          const doc = active();
-          if (!doc || !layer || !sd.layer || !sd.group) return void (sd.unserved = null);
-          sd.unserved =
-            (
-              await ask("analysis", "unserved_points", {
-                network_hash: docOf(doc),
-                layer_hash: layer,
-                field: sd.layer.field,
-                label: sd.layer.label,
-                radius_m: sd.coverageParams.radius_m,
-                members: groupMembers(),
-              })
-            ).unserved?.points ?? null;
-        }),
+      clear: () => (sd.unserved = null),
+      run: async () => {
+        const doc = active();
+        if (!doc || !layer || !sd.layer || !sd.group) return void (sd.unserved = null);
+        sd.unserved =
+          (
+            await ask("analysis", "unserved_points", {
+              network_hash: docOf(doc),
+              layer_hash: layer,
+              field: sd.layer.field,
+              label: sd.layer.label,
+              radius_m: sd.coverageParams.radius_m,
+              members: groupMembers(),
+            })
+          ).unserved?.points ?? null;
+      },
     },
     {
       // The stops by name: the hub picker, and the route view's
@@ -509,65 +524,70 @@ const request = answerGraph(
       id: "directory.stops",
       frame: "HubPicker",
       needs: ["document.active", "view"],
+      caps: ["directory"],
       visible: on("hubs", "route"),
-      run: () =>
-        framed("HubPicker", () => (sd.stops = []), async () => {
-          const doc = active();
-          if (!doc) return;
-          sd.stops = (await ask("directory", "stops", { network_hash: docOf(doc), limit: null })).stops;
-        }),
+      clear: () => (sd.stops = []),
+      run: async () => {
+        const doc = active();
+        if (!doc) return;
+        sd.stops = (await ask("directory", "stops", { network_hash: docOf(doc), limit: null })).stops;
+      },
     },
     {
       id: "analysis.route_overlap",
       frame: "Corridors",
       needs: ["document.active", "group", "view"],
+      caps: ["analysis"],
       visible: on("hubs"),
-      run: () =>
-        framed("Corridors", () => (sd.overlaps = null), async () => {
-          const doc = active();
-          const date = groupDay();
-          if (!doc || !date) return void (sd.overlaps = null);
-          sd.overlaps = (await ask("analysis", "route_overlap", { network_hash: docOf(doc), date })).overlaps;
-        }),
+      clear: () => (sd.overlaps = null),
+      run: async () => {
+        const doc = active();
+        const date = groupDay();
+        if (!doc || !date) return void (sd.overlaps = null);
+        sd.overlaps = (await ask("analysis", "route_overlap", { network_hash: docOf(doc), date })).overlaps;
+      },
     },
     {
       id: "analysis.hub_connections",
       frame: "HubMatrix",
       needs: ["document.active", "group", "stop", "view"],
+      caps: ["analysis"],
       visible: on("hubs"),
-      run: () =>
-        framed("HubMatrix", () => (sd.connections = null), async () => {
-          const doc = active();
-          const date = groupDay();
-          if (!doc || !date || !sd.stop) return void (sd.connections = null);
-          sd.connections = (await ask("analysis", "hub_connections", { network_hash: docOf(doc), date, stop_id: sd.stop })).connections;
-        }),
+      clear: () => (sd.connections = null),
+      run: async () => {
+        const doc = active();
+        const date = groupDay();
+        if (!doc || !date || !sd.stop) return void (sd.connections = null);
+        sd.connections = (await ask("analysis", "hub_connections", { network_hash: docOf(doc), date, stop_id: sd.stop })).connections;
+      },
     },
     {
       id: "analysis.stop_gaps",
       frame: "StopWaits",
       needs: ["document.active", "group", "stop", "view"],
+      caps: ["analysis"],
       visible: on("hubs"),
-      run: () =>
-        framed("StopWaits", () => (sd.gaps = null), async () => {
-          const doc = active();
-          const date = groupDay();
-          if (!doc || !date || !sd.stop) return void (sd.gaps = null);
-          sd.gaps = (await ask("analysis", "stop_gaps", { network_hash: docOf(doc), date, stop_id: sd.stop })).gaps;
-        }),
+      clear: () => (sd.gaps = null),
+      run: async () => {
+        const doc = active();
+        const date = groupDay();
+        if (!doc || !date || !sd.stop) return void (sd.gaps = null);
+        sd.gaps = (await ask("analysis", "stop_gaps", { network_hash: docOf(doc), date, stop_id: sd.stop })).gaps;
+      },
     },
     {
       id: "analysis.missed_connections",
       frame: "NearMisses",
       needs: ["document.active", "group", "stop", "view"],
+      caps: ["analysis"],
       visible: on("hubs"),
-      run: () =>
-        framed("NearMisses", () => (sd.missed = null), async () => {
-          const doc = active();
-          const date = groupDay();
-          if (!doc || !date || !sd.stop) return void (sd.missed = null);
-          sd.missed = (await ask("analysis", "missed_connections", { network_hash: docOf(doc), date, stop_id: sd.stop })).missed;
-        }),
+      clear: () => (sd.missed = null),
+      run: async () => {
+        const doc = active();
+        const date = groupDay();
+        if (!doc || !date || !sd.stop) return void (sd.missed = null);
+        sd.missed = (await ask("analysis", "missed_connections", { network_hash: docOf(doc), date, stop_id: sd.stop })).missed;
+      },
     },
     {
       // The ranking a planner scans before picking a hub: the
@@ -575,30 +595,32 @@ const request = answerGraph(
       id: "analysis.longest_waits",
       frame: "LongestWaits",
       needs: ["document.active", "group", "window", "view"],
+      caps: ["analysis"],
       visible: on("hubs"),
-      run: () =>
-        framed("LongestWaits", () => (sd.waits = null), async () => {
-          const doc = active();
-          const date = groupDay();
-          if (!doc || !date) return void (sd.waits = null);
-          const window = sd.window ? { start_secs: sd.window.from * 3600, end_secs: sd.window.to * 3600 } : undefined;
-          sd.waits = (await ask("analysis", "longest_waits", { network_hash: docOf(doc), date, window, limit: 25 })).waits;
-        }),
+      clear: () => (sd.waits = null),
+      run: async () => {
+        const doc = active();
+        const date = groupDay();
+        if (!doc || !date) return void (sd.waits = null);
+        const window = sd.window ? { start_secs: sd.window.from * 3600, end_secs: sd.window.to * 3600 } : undefined;
+        sd.waits = (await ask("analysis", "longest_waits", { network_hash: docOf(doc), date, window, limit: 25 })).waits;
+      },
     },
     {
       id: "plans.chain",
       frame: "PickTimeline",
       needs: ["plans"],
-      run: () =>
-        framed("PickTimeline", () => (sd.chain = null), async () => {
-          const infos = sd.plans.filter((p) => p.id).map((p) => ({ id: p.id, name: p.name, effective_from: p.effectiveFrom }));
-          const date = today();
-          sd.chain = {
-            inForce: (await ask("plans", "resolve", { plans: infos, date })).plan,
-            periods: (await ask("plans", "periods", { plans: infos })).periods,
-            issues: (await ask("plans", "validate", { plans: infos })).issues,
-          };
-        }),
+      caps: ["plans"],
+      clear: () => (sd.chain = null),
+      run: async () => {
+        const infos = sd.plans.filter((p) => p.id).map((p) => ({ id: p.id, name: p.name, effective_from: p.effectiveFrom }));
+        const date = today();
+        sd.chain = {
+          inForce: (await ask("plans", "resolve", { plans: infos, date })).plan,
+          periods: (await ask("plans", "periods", { plans: infos })).periods,
+          issues: (await ask("plans", "validate", { plans: infos })).issues,
+        };
+      },
     },
     {
       // The plan's health — last: registering the document in
@@ -607,19 +629,21 @@ const request = answerGraph(
       id: "network.validate",
       frame: "Readiness",
       needs: ["document.active"],
-      run: () =>
-        framed("Readiness", () => ((sd.issues = []), (sd.warnings = [])), async () => {
-          const doc = active();
-          if (!doc) return;
-          const { issues, warnings } =
-            authoredHealth.get(doc) ?? (await ask("network", "validate", { network_hash: docOf(doc) }));
-          sd.issues = issues;
-          // and the stops it visits that are not in service over its
-          // period, as the stops document records them (D-157)
-          sd.warnings = [...warnings, ...(await stopWarnings(docOf(doc), await publishedPlanSet().catch(() => null)))];
-        }),
+      caps: ["network"],
+      clear: () => ((sd.issues = []), (sd.warnings = [])),
+      run: async () => {
+        const doc = active();
+        if (!doc) return;
+        const { issues, warnings } =
+          authoredHealth.get(doc) ?? (await ask("network", "validate", { network_hash: docOf(doc) }));
+        sd.issues = issues;
+        // and the stops it visits that are not in service over its
+        // period, as the stops document records them (D-157)
+        sd.warnings = [...warnings, ...(await stopWarnings(docOf(doc), await publishedPlanSet().catch(() => null)))];
+      },
     },
   ],
+  sd.frames,
   (e) => {
     say(`Error: ${message(e)}`, true);
     console.error(e);
@@ -754,7 +778,7 @@ export async function loadFeedBytes(bytes: Uint8Array, label: string): Promise<v
 }
 
 export async function loadLayerBytes(bytes: Uint8Array): Promise<void> {
-  await framed("Coverage", () => ((sd.layer = null), (layer = null)), async () => {
+  await act("Coverage", () => ((sd.layer = null), (layer = null)), async () => {
     const doc = new Doc("layer", { bytes });
     const loaded = await load("analysis", doc);
     layer = doc;
@@ -901,10 +925,14 @@ export function pickUnserved(i: number): void {
   sd.unservedPick = i;
 }
 
-/// A failed frame asks again: errors are never cached, so every node
-/// re-answers its inputs.
+/// Why a frame has no answer, as text ("" when it answered).
+export function why(frame: string): string {
+  return reason(sd.frames[frame]);
+}
+
+/// Each failed frame asks again: errors are never cached.
 export function retry(): Promise<void> {
-  return select("active", "compare", "plans", "view", "layer", "stop");
+  return request.retry();
 }
 
 export function setCoverageParams(params: CoverageParams): Promise<void> {
@@ -938,8 +966,8 @@ async function adopt(next: Network, health: { issues: NetworkError[]; warnings: 
   sd.exported = "";
   sd.published = null;
   sd.publishRefused = [];
-  delete sd.failed.Export;
-  delete sd.failed.Publish;
+  delete sd.frames.Export;
+  delete sd.frames.Publish;
   syncHistory();
   await release();
   await step("Answering the change…", () => select("active"));
@@ -1018,7 +1046,7 @@ export async function publishPlan(): Promise<void> {
   if (!doc) return;
   sd.published = null;
   sd.publishRefused = [];
-  await framed("Publish", () => {}, async () => {
+  await act("Publish", () => {}, async () => {
     const resp = await writeFetch("/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(doc) });
     if (resp.status === 401 || resp.status === 403) throw new Error(resp.status === 401 ? "sign in to publish" : "your sign-in may not publish plans here");
     if (resp.status === 422) {
@@ -1034,7 +1062,7 @@ export async function publishPlan(): Promise<void> {
 export async function exportPlan(): Promise<void> {
   const doc = active();
   if (!doc) return;
-  await framed("Export", () => (sd.exported = ""), async () => {
+  await act("Export", () => (sd.exported = ""), async () => {
     // the export carries the stops' history over the plan's period (D-151, D-157)
     const out = await ask("network", "export", { network_hash: await withStopVersions(docOf(doc), await publishedPlanSet().catch(() => null)) });
     const bytes = Uint8Array.from(atob(out.zip_b64), (c) => c.charCodeAt(0));

@@ -25,6 +25,7 @@
     stopId,
     card,
     served,
+    servedError = "",
     date,
     busy,
     questions,
@@ -41,6 +42,9 @@
     stopId: string;
     card: { stop: StopOn | null; events: Event[]; next: string[] };
     served: StopDetail | null;
+    /// Why the routes have no answer (the directory did not load, or it
+    /// refused): the card says so, never "no routes".
+    servedError?: string;
     date: string;
     busy: boolean;
     questions: { site: SiteQuestion[]; amenities: string[] };
@@ -198,6 +202,8 @@
             </table>
           {/if}
           <p class="muted small">Schedule in effect {date}.</p>
+        {:else if servedError}
+          <p class="muted" data-testid="stop-routes">The routes are not available: {servedError}</p>
         {:else}
           <p class="muted" data-testid="stop-routes">No routes in the schedule in effect {date}.</p>
         {/if}
