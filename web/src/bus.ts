@@ -19,7 +19,10 @@ export type BusRequest =
   /// A bulk op over bytes (the module's own op, or a kernel op from 256).
   | { type: "bytes"; cap: string; op: number; bytes: Uint8Array; load: boolean }
   | { type: "inspect"; cap: string }
-  | { type: "ceiling"; bytes: number; minResetMs: number };
+  | { type: "ceiling"; bytes: number; minResetMs: number }
+  /// Start the journal (src/bus.worker.ts), or read it.
+  | { type: "journal"; run: string }
+  | { type: "journal-read" };
 
 /// The worker's answer: a value, or the error the call threw. An op's
 /// value is the module's outcome text; `reset` says the instance was

@@ -8,6 +8,17 @@
 /// and `<id>.html` at the web root.
 
 import { previousClock, serviceClock } from "../clock";
+import { readJournal, startJournal } from "../engine";
+
+// The journal, on request. `?journal` in the page's URL starts the
+// engine's journal before the host's first ask, and
+// `transitJournal()` (the console, or a test) reads it as one file for
+// `caps-run replay FILE.json` (docs/architecture/web.md, "The
+// journal").
+if (typeof location !== "undefined" && new URLSearchParams(location.search).has("journal")) {
+  void startJournal();
+  (globalThis as { transitJournal?: typeof readJournal }).transitJournal = readJournal;
+}
 
 // ---------------------------------------------------------------------
 // the clock — hosts own it; ops take it as arguments. Read in the

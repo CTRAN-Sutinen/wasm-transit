@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-177**.
+- IDs are never reused; the next new decision is **D-180**.
 
 ## Summary
 
@@ -61,7 +61,7 @@ the rest of the work can go ahead while the decision is reviewed.
 |---|---|---|---|
 | D-1 | Is a trip's start its first arrival or its first departure? | encoded | nothing |
 | D-2 | What does a running-time change touch besides fixed-start trips? | encoded | nothing |
-| D-3 | Which timing profile does the import give a pattern? | encoded; re-opened | QAF-90 |
+| D-3 | Which timing profile does the import give a pattern? | decided; not built | nothing |
 | D-5 | Does the import keep a block that breaks the spec? | encoded | nothing |
 | D-6 | Does "frequent" count terminal arrivals? | decided | nothing |
 | D-8 | Do timetable edits act on the whole service family? | decided | nothing |
@@ -99,7 +99,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-41 | What carries a service type's calendar into a fork's period? | decided | nothing |
 | D-42 | When a route has stopped for the day, how far ahead does a stop look? | decided | nothing |
 | D-43 | What does a coverage comparison report? | encoded | QAF-20's matching rule |
-| D-44 | Is a branch of a direction its own thing? | unanswered | QAF-63 |
+| D-44 | Is a branch of a direction its own thing? | decided; not built | nothing |
 | D-45 | Which dispatcher edits does the edit document carry beyond the diversion? | decided | nothing |
 | D-46 | How many more vehicles does a proposal need? | decided | the work-rule policy document (D-50's shape) |
 | D-47 | Which layers does coverage take? | decided | nothing |
@@ -109,7 +109,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-51 | What does a revenue hour, a revenue mile, and a vehicle cost? | decided | nothing |
 | D-52 | How is a route-hour's frequency judged and drawn? | encoded | nothing |
 | D-53 | What ridership data does the planner bring? | decided | nothing |
-| D-54 | What does a frequency change keep of the trips already there? | unanswered | QAF-90, `ui-service-design` question 16 |
+| D-54 | What does a frequency change keep of the trips already there? | decided; not built | nothing |
 | D-55 | Which members does a service group count on a day? | decided | nothing |
 | D-56 | Whose clock is the LWW clock? | encoded | nothing |
 | D-57 | How long does a tombstone live? | encoded | nothing |
@@ -195,8 +195,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-139 | Is there a base network the plans fork from? | decided | nothing |
 | D-140 | What date does an imported feed pick on? | decided | nothing |
 | D-141 | What does an open plan compare against by default? | decided | nothing |
-| D-142 | Does serving a stop act on the direction or on one pattern? | unanswered | `ui-stops` item 4 |
-| D-143 | What does redrawing a line do to running time? | unanswered | `ui-stops` item 5 |
+| D-142 | Does serving a stop act on the direction or on one pattern? | decided; not built | nothing |
+| D-143 | What does redrawing a line do to running time? | decided; not built | nothing |
 | D-144 | What does closing a stop do to a plan? | decided; replaced by D-157 | nothing |
 | D-145 | What makes a stop the same stop over time? | decided | nothing |
 | D-146 | Does this repo own the stop data? | decided | nothing |
@@ -229,6 +229,9 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-174 | How are code comments and the developer documents written? | decided | nothing |
 | D-175 | Whose clock does the runner read for $TODAY and $NOW_SECS? | decided | nothing |
 | D-176 | Does a user's own selection assemble capabilities at wire time? | decided | nothing |
+| D-177 | What does a journal keep, and where? | encoded provisionally | nothing |
+| D-178 | Is a page's journal on by default? | encoded provisionally | nothing |
+| D-179 | Which module does replay run a journal's call on? | encoded provisionally | nothing |
 
 ## The trip model
 
@@ -275,7 +278,24 @@ Pinned by: `running_time_changes_only_the_named_trips`
 Blocks: nothing.
 
 ### D-3 — Which timing profile does the import give a pattern?
-State: Encoded provisionally.
+State: Decided. The code still encodes the old answer (the all-day
+profile) until the work below lands.
+Answer: 2026-11-17 — the import derives no profile. The user: "i
+don't think the import should derive anything, it isn't necessary. it
+isn't in GTFS and it should be specified by the planner." And on what
+a profile is for: "the original build was too rigid and applied to
+*everything*, a planner needs to be able to make granular adjustments,
+blanket timing profiles as originally built where they made every trip
+a fixed space apart are bad. that said, they are good as a base to
+build off of." So a profile stays as an optional base that the planner
+authors. It never governs a stored trip. A new trip uses a
+planner-authored profile that covers its departure. Without one, it
+copies its times from the nearest trip in time on the pattern (the
+user confirmed this order, 2026-11-17). No time bands are added: the
+profile's own start and end stay as they are.
+To build: the import writes no profile; `add_trip` and the frequency
+gesture take times as above; `trip_import_law_test.rs` and
+`codec_prop_test.rs` are rewritten to pin the new answer.
 Context: profiles only produce times for new trips; they never
 govern stored trips. GTFS has no profiles, so the import has to
 derive one.
@@ -298,7 +318,7 @@ and names the band rule.
 Update 2026-11-05: the user, on timing profiles: "we need to rethink
 timing profiles all together". Neither option stands; it is a
 design conversation with D-44, not a choice among these.
-Blocks: QAF-90.
+Blocks: nothing. QAF-90 stays open until the work above is built.
 
 ### D-11 — Does editing a shared alignment change every pattern on it?
 State: Decided.
@@ -353,7 +373,15 @@ that nothing is invented on export.
 Blocks: nothing.
 
 ### D-44 — Is a branch of a direction its own thing?
-State: Unanswered.
+State: Decided. Not built yet.
+Answer: 2026-11-17 — the pattern is the unit, and a branch needs no
+group of its own. The user: "a direction can have more than one
+headsign, because a pattern can serve a different destination as
+another one going the same direction. too much uniformity in these
+designs." And: "patterns are enough." So each pattern carries its own
+headsign (and its own stops and timing). A direction can hold several
+headsigns and names none. Nothing reads `direction_id` as inbound or
+outbound. The timetable and the stop gestures (D-142) work per pattern.
 Context: QAF-63. GTFS direction_id groups branches, not only
 variants: C-TRAN's 006 direction 1 holds a Fruit Valley pattern and
 a VA Medical Center pattern leaving at the same minutes all day,
@@ -375,7 +403,7 @@ consistent across routes, so nothing may read it as inbound/outbound.
 Naming a direction after its majority headsign is a bad pattern. "All
 this needs to be rethought" — a design conversation with D-3 (and
 D-22, D-12), not a choice among these options.
-Blocks: QAF-63.
+Blocks: nothing. QAF-63 stays open until the work above is built.
 
 ## Analysis and live
 
@@ -705,7 +733,14 @@ on its own.
 Blocks: nothing.
 
 ### D-142 — Does serving a stop act on the direction or on one pattern?
-State: Unanswered.
+State: Decided. Not built yet.
+Answer: 2026-11-17 — the direction by default, one pattern on request,
+and the per-pattern choice is visible. The user: "agreed with your
+recommendation, but i definitely need to see that per pattern
+granularity." When a direction has more than one pattern, the stage
+shows each pattern, and the planner can scope a stop gesture to one.
+The default scope is every pattern of the direction whose line passes
+the stop. A pattern the stop is not near is left alone.
 Context: `docs/units/ui-stops.md` item 4. The Route stage's map adds
 a nearby stop to the route or drops one. Today's stop gestures
 (`insert_direction_stop`, `remove_direction_stop`) act on every
@@ -717,10 +752,14 @@ Options:
   serves it; a pattern the stop is not near is left alone.
 - One pattern, picked on the map when the direction has more than one.
 - The direction by default, one pattern on request.
-Blocks: `docs/units/ui-stops.md` item 4.
+Blocks: nothing. `docs/units/ui-stops.md` item 4 builds it.
 
 ### D-143 — What does redrawing a line do to running time?
-State: Unanswered.
+State: Decided. Not built yet.
+Answer: 2026-11-17 — nothing moves. The user: "agreed with your
+recommendation." The stage shows the change in length. The planner
+enters any running-time change with `adjust_running_time`. A proposed
+delta may be added later without changing this answer.
 Context: `docs/units/ui-stops.md` item 5. A redrawn line is longer
 or shorter; `draw_alignment` changes geometry only, and every trip
 keeps its times. Running time is the planner's (no rigid
@@ -732,7 +771,7 @@ Options:
 - The stage proposes a delta from the change in length at the
   direction's speed in each band, for the planner to accept or edit.
 - The trips are retimed in proportion to the new length.
-Blocks: `docs/units/ui-stops.md` item 5.
+Blocks: nothing. `docs/units/ui-stops.md` item 5 builds it.
 
 ### D-144 — What does closing a stop do to a plan?
 State: Decided; replaced by D-157 (a closure is a suspension on the
@@ -1414,7 +1453,15 @@ Options:
 Blocks: nothing (question 10 stays a recorded data gap).
 
 ### D-54 — What does a frequency change keep of the trips already there?
-State: Unanswered.
+State: Decided. Not built yet.
+Answer: 2026-11-17 — a target with a tolerance, over a range the
+planner enters for that one change (the first option). The user
+confirmed this wording, and said of time bands: "you're trying to do
+too much with time bands". No band is stored. Trips whose gaps are
+within the tolerance keep their times. Trips are added or removed only
+where a gap is out of tolerance. A new trip goes in the middle of its
+gap and takes its times as D-3 says. A hand-nudged trip moves only if
+the planner's range includes it.
 Context: QAF-90 and the user's direction of 2026-10-30, against rigid
 timetables: a route's trips are adjusted around a target through the
 day, for traffic, layover, and reliefs. `set_headway` moves every
@@ -1432,8 +1479,8 @@ Options:
 - Keep the exact grid as one option among these, chosen per change.
 Open in every option: which running time a new trip takes (D-3),
 and whether a hand-nudged trip is ever moved by a later target.
-Blocks: QAF-90, the service-design question 16 (the frequency
-gesture).
+Blocks: nothing. QAF-90 and the service-design question 16 (the
+frequency gesture) build it.
 
 ### D-55 — Which members does a service group count on a day?
 State: Decided.
@@ -3509,4 +3556,55 @@ agency's zone); `docs/architecture/registry.md`, "The clock".
 Pinned by: the clock gates in `just test` (`$TODAY` from Asia/Tokyo and
 Pacific/Honolulu equals `web/src/clock.ts` in the network's zone;
 `--tz`; a failure with no zone).
+Blocks: nothing.
+
+### D-177 — What does a journal keep, and where?
+State: Encoded provisionally.
+Context: the journal is "hashes only". Replay needs each request's
+bytes (a feed, an rt snapshot, a loaded document), so hashes alone
+cannot repeat a call. The unit asked that the journal reuse the
+runner's session store, with no second store.
+Options:
+- (encoded) Lines of hashes in `journal.jsonl`, and each request's
+  bytes once, gzipped, in `blobs/<hex>.gz` in the same session
+  directory. Every call can be repeated, so no input is marked
+  ephemeral. A page's journal is one file (`{journal, blobs}`) that
+  unpacks to the same layout.
+- Lines of hashes only, with ephemeral inputs marked. Replay depends
+  on the documents being found elsewhere, and an rt snapshot never is.
+- The documents in the lines. A line is then no longer a hash record.
+Pinned by: `tools/journal.test.mjs`; the journal gate in `just test`;
+`e2e/journal.spec.mjs`.
+Blocks: nothing.
+
+### D-178 — Is a page's journal on by default?
+State: Encoded provisionally.
+Context: the journal keeps the bytes of every request. A rider page
+that polls keeps an rt snapshot for each poll, and a Pi runs the stop
+display all day. Hashing each answer also costs time on every call.
+Options:
+- (encoded) Off. `?journal` in the page's URL turns it on, and
+  `transitJournal()` reads it. It is a tool for developers and tests.
+- On, with a bound on what it keeps. The page then always carries the
+  cost, and a bounded journal cannot replay from its start.
+Pinned by: `e2e/journal.spec.mjs`; `src/uis/kit.ts`.
+Blocks: nothing.
+
+### D-179 — Which module does replay run a journal's call on?
+State: Encoded provisionally.
+Context: a page's calls run on its linked assembly. The stop display
+keeps its live document inside the assembly (QAF-49), so the board
+reads it by hash where rt minted it. On single-capability modules, the
+board cannot get it.
+Options:
+- (encoded) The recorded module when the runner has its bytes (a
+  registry blob, or a page's assembly in `web/public/caps`), else the
+  capability's own module. `--single` runs every call on the
+  capability's own module, which checks assembly independence and says
+  which calls it cannot repeat. `evict` and `held` answer about the
+  instance, so they are compared only on the recorded module.
+- Always the capability's own module. A page that keeps a document in
+  its assembly can then never replay in full.
+Pinned by: `tools/journal.test.mjs`; `e2e/journal.spec.mjs` (both
+replays).
 Blocks: nothing.

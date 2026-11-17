@@ -63,7 +63,11 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   day; the direction is named "Fruit Valley" by 31 headsigns to 30.
   A planner reads these as two branches.
   Pin: directory `timetable` 006 "1" 1-WKDY.
-  Blocked: D-44.
+  Decided: D-44 (2026-11-17). The pattern is the unit and carries its
+  own headsign; a direction names none, and no group is added. To
+  build: the import and the directory's reads stop naming a direction
+  after its majority headsign, and the timetable lists each pattern's
+  headsign.
 - **QAF-44 MODEL GAP** — service types duplicate rather than
   relate: 4-NYE carries a full copy of 1-WKDY's pattern trips
   (identical starts on all four 006 patterns), so a weekday change
@@ -209,7 +213,11 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   (1-WKDY) gives each new trip 20 min beside neighbours running
   27–30; the only fix is reading the pattern trips back and
   rewriting each new trip's times (`upsert_pattern_trips`).
-  Blocked: D-3 (re-opened), D-54.
+  Decided: D-3, D-54 (2026-11-17). To build: the import derives no
+  profile. A new trip uses a planner-authored profile that covers its
+  departure, else copies the nearest trip's times. A frequency change
+  is a target with a tolerance over a range the planner enters, and it
+  moves no trip that is within tolerance.
 - **QAF-110 DEFECT** — a fork's export keeps its source's
   `feed_info.txt`: the dates and version are the import's, not the
   fork's period, so the exported feed says it is good only for days

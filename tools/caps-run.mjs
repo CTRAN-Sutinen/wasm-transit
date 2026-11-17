@@ -12,6 +12,10 @@
 //   caps-run list                       capabilities + evidence
 //   caps-run session [NAME]             the sessions in the store, or
 //                                       what one session holds
+//   caps-run replay NAME|FILE.json [--single] [--module CAP=FILE]...
+//                                       replay a session's journal, or a
+//                                       page's, and compare every output
+//                                       hash
 //   caps-run tools <capability> <op>    one op: its description and
 //                                       its worked example
 //   caps-run tools <capability> --brief each op's first sentence and
@@ -29,6 +33,11 @@
 // $CAPS_RUN_SESSIONS/NAME/). A later command with the same --session
 // reaches it as $name, without running its step again. Only --as names
 // reach across commands. Save happens only when every step succeeds.
+// The session also keeps a journal of every module call: hashes only,
+// with each request's bytes stored once by hash (tools/journal.mjs).
+// `replay NAME` runs it again on fresh instances and reports each
+// output that differs; `--module CAP=FILE` replays CAP against a
+// candidate module.
 // Each command makes new module instances. A stored document registers
 // itself the first time an op names its hash (below).
 //
@@ -103,9 +112,11 @@
 // holds, registers itself: the runner loads it through the kind's
 // kernel load and runs the op again. The line lists it in `registered`.
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { UNKNOWN_DOCUMENT, journalWriter, readJournal, replay, unpackJournal } from "./journal.mjs";
 import { parentPort, workerData, isMainThread } from "node:worker_threads";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -200,6 +211,7 @@ function sha256(bytes) {
 function usage() {
   console.error(
     "usage: caps-run list | caps-run tools <capability> [<op>] [--brief] | caps-run session [NAME] | " +
+      "caps-run replay NAME|FILE.json [--single] [--module CAP=FILE]... | " +
       "caps-run <capability> [--session NAME] [--brief] [--tz ZONE] [--cap ID] [--as NAME] [--load FILE]... [--op JSON|@FILE]... [--ask URL]... [--post URL REF]... [--timeout MS]",
   );
   process.exit(2);
@@ -259,11 +271,15 @@ function parseArgs(argv) {
 
 // One verified, instantiated capability module: the bytes are checked
 // against the registry record's pin before anything runs.
-function instantiate(capability) {
+//
+// `file` replaces the registry's blob with a candidate module (replay
+// --module). `journal`, when given, hears each call: its request bytes
+// and its outcome text.
+function instantiate(capability, { file = null, journal = null } = {}) {
   const record = capabilityRecord(capability);
-  const bytes = readFileSync(join(REGISTRY, record.blob));
+  const bytes = readFileSync(file ?? join(REGISTRY, record.blob));
   const hash = sha256(bytes);
-  if (hash !== record.hash) {
+  if (!file && hash !== record.hash) {
     throw new Error(`registry integrity: blob is ${hash}, record pins ${record.hash}`);
   }
   const mod = new WebAssembly.Module(bytes);
@@ -289,10 +305,43 @@ function instantiate(capability) {
     ex.transit_free(ptr, payload.length);
     return read(outPtr);
   };
-  return {
-    invokeBytes: (op, payload) => call(payload, (ptr, len) => ex.transit_invoke_bytes(op, ptr, len)),
-    invoke: (request) => call(Buffer.from(JSON.stringify(request)), (ptr, len) => ex.transit_invoke(ptr, len)),
+  const json = (payload) => {
+    const outcome = call(payload, (ptr, len) => ex.transit_invoke(ptr, len));
+    journal?.({ module: hash, call: "json", op: JSON.parse(payload.toString("utf8")).op ?? null, payload, outcome });
+    return outcome;
   };
+  const bulk = (op, payload) => {
+    const outcome = call(payload, (ptr, len) => ex.transit_invoke_bytes(op, ptr, len));
+    journal?.({ module: hash, call: op, op: bulkOpName(op), payload, outcome });
+    return outcome;
+  };
+  return {
+    module: hash,
+    invokeBytes: (op, payload) => bulk(op, Buffer.isBuffer(payload) ? payload : Buffer.from(payload)),
+    invoke: (request) => json(Buffer.from(JSON.stringify(request))),
+    invokeRaw: json,
+  };
+}
+
+/// The pages' linked assemblies the runner has (web/public/caps, from
+/// `just caps`), by module hash: a page's journal replays on the bytes
+/// the page ran.
+function linkedAssemblies() {
+  const caps = join(HERE, "..", "web", "public", "caps");
+  const file = join(caps, "manifest.json");
+  if (!existsSync(file)) return new Map();
+  const manifest = JSON.parse(readFileSync(file, "utf8"));
+  return new Map(
+    (manifest.assemblies ?? [])
+      .filter((a) => a.capabilities.length > 1 && existsSync(join(caps, "..", a.url)))
+      .map((a) => [a.hash, join(caps, "..", a.url)]),
+  );
+}
+
+/// A bulk op's name for the journal's reader: a kernel load's name, or
+/// the capability's own op code.
+function bulkOpName(code) {
+  return (registryPointer().kernel_ops ?? []).find((k) => k.code === code)?.name ?? `bulk ${code}`;
 }
 
 // A session's store: one directory for each session name. index.json
@@ -384,8 +433,15 @@ async function runSession() {
   // from noon minus 12 h (web/src/clock.ts has no imports).
   const { serviceClock } = await import("../web/src/clock.ts");
   const modules = new Map();
+  // With --session, each module call is journaled (tools/journal.mjs):
+  // one run for this command, one instance for each capability.
+  const run = `${new Date().toISOString()}-${randomUUID().slice(0, 8)}`;
+  const journal = session ? journalWriter(sessionDir(session), run) : null;
   const moduleFor = (capability) => {
-    if (!modules.has(capability)) modules.set(capability, instantiate(capability));
+    if (!modules.has(capability)) {
+      const record = journal && ((call) => journal.record({ instance: `${run}/${capability}`, cap: capability, ...call }));
+      modules.set(capability, instantiate(capability, { journal: record }));
+    }
     return modules.get(capability);
   };
 
@@ -565,15 +621,18 @@ async function runSession() {
       // does: register it through the kind's kernel load, then run the op
       // again. The line says what was registered.
       for (let tries = 0; tries < 8; tries++) {
-        const missing = /^\{"error":"unknown ([a-z_]+) (sha256:[0-9a-f]+): (load_[a-z_]+) first"\}$/.exec(result.text);
-        const document = missing && heldDocument(missing[1], missing[2]);
+        // The kernel's label for the kind is free text ("live
+        // document"); the load op's name is exact.
+        const missing = UNKNOWN_DOCUMENT.exec(result.text);
+        const kind = missing && Object.keys(KIND_LOADS).find((k) => KIND_LOADS[k] === missing[3]);
+        const document = kind && heldDocument(kind, missing[2]);
         if (!document || loadCodes[missing[3]] === undefined) break;
         const loaded = JSON.parse(module.invokeBytes(loadCodes[missing[3]], Buffer.from(JSON.stringify(document))));
-        const hash = loaded.ok?.[`${missing[1]}_hash`];
+        const hash = loaded.ok?.[`${kind}_hash`];
         if (hash !== missing[2]) {
-          throw new Error(`registering ${missing[1]} ${missing[2]}: the module answered ${JSON.stringify(loaded).slice(0, 200)}`);
+          throw new Error(`registering ${kind} ${missing[2]}: the module answered ${JSON.stringify(loaded).slice(0, 200)}`);
         }
-        (result.registered ??= []).push(`${missing[1]} ${missing[2]}`);
+        (result.registered ??= []).push(`${kind} ${missing[2]}`);
         result.text = module.invoke(resolved);
       }
     }
@@ -587,7 +646,10 @@ async function runSession() {
     results.push(result);
   }
   const here = results.filter((r) => !r.prior);
-  if (session) saveSession(session, here.filter((r) => r.as));
+  if (session) {
+    journal.flush();
+    saveSession(session, here.filter((r) => r.as));
+  }
   // One printed line per result of this command: the leading fields,
   // then the outcome's own fields. Without --brief they are spliced as
   // text and never parsed again.
@@ -660,21 +722,71 @@ export async function main(argv) {
     console.log(JSON.stringify({ id: record.id, purpose: record.purpose, documents: record.documents ?? [], loads, tools }, null, 2));
     return 0;
   }
+  if (argv[0] === "replay") {
+    // Replay a journal (tools/journal.mjs) on fresh instances and
+    // compare every output hash. NAME is a session in the store, or a
+    // page's journal file (FILE.json, from the engine's journal).
+    // Each entry runs on the module it recorded when the runner has
+    // those bytes (a capability's registry blob, or a page's linked
+    // assembly in web/public/caps), else on the capability's own module.
+    // --single runs every entry on the capability's own module (assembly
+    // independence); --module CAP=FILE runs CAP on a candidate.
+    const name = argv[1] ?? usage();
+    const candidates = {};
+    let single = false;
+    for (let i = 2; i < argv.length; i++) {
+      if (argv[i] === "--single") {
+        single = true;
+        continue;
+      }
+      const m = argv[i] === "--module" && /^([a-z_]+)=(.+)$/.exec(argv[i + 1] ?? "");
+      if (!m) usage();
+      candidates[m[1]] = m[2];
+      i++;
+    }
+    let dir = sessionDir(name);
+    if (name.endsWith(".json") && existsSync(name)) {
+      dir = mkdtempSync(join(tmpdir(), "caps-run-replay-"));
+      unpackJournal(dir, JSON.parse(readFileSync(name, "utf8")));
+    } else if (!existsSync(join(dir, "journal.jsonl"))) {
+      console.error(`no journal in session ${name} (${dir})`);
+      return 1;
+    } else {
+      warnIfStale(name);
+    }
+    const kernelLoads = Object.fromEntries((registryPointer().kernel_ops ?? []).filter((k) => k.name.startsWith("load_")).map((k) => [k.name, k.code]));
+    const assemblies = linkedAssemblies();
+    const place = (cap, recorded) => {
+      if (candidates[cap]) return { linked: false, open: () => instantiate(cap, { file: candidates[cap] }) };
+      const linked = !single && assemblies.get(recorded);
+      if (linked) return { linked: true, open: () => instantiate(cap, { file: linked }) };
+      return { linked: false, open: () => instantiate(cap) };
+    };
+    const stateOps = Object.fromEntries((registryPointer().kernel_ops ?? []).filter((k) => k.name === "evict" || k.name === "held").map((k) => [k.name, k.code]));
+    const report = replay({ dir, kernelLoads, stateOps, place });
+    if (dir !== sessionDir(name)) rmSync(dir, { recursive: true, force: true });
+    console.log(JSON.stringify({ journal: name, ...report }, null, 2));
+    return report.differ.length === 0 && report.cannot.length === 0 ? 0 : 1;
+  }
   if (argv[0] === "session") {
     // What a session holds: each name, its op and capability, the
     // documents in it, and the zone it states. Without a name, the
     // sessions in the store.
     const root = process.env.CAPS_RUN_SESSIONS ?? join(HERE, "..", ".caps-sessions");
     if (argv[1] === undefined) {
-      const names = existsSync(root) ? readdirSync(root).filter((n) => existsSync(join(root, n, "index.json"))) : [];
-      console.log(JSON.stringify({ store: root, sessions: names.map((name) => ({ name, results: readSessionIndex(name).length })) }, null, 2));
+      const names = existsSync(root)
+        ? readdirSync(root).filter((n) => existsSync(join(root, n, "index.json")) || existsSync(join(root, n, "journal.jsonl")))
+        : [];
+      const listing = (name) => ({ name, results: readSessionIndex(name).length, journal: readJournal(sessionDir(name)).length });
+      console.log(JSON.stringify({ store: root, sessions: names.map(listing) }, null, 2));
       return 0;
     }
-    if (!existsSync(join(sessionDir(argv[1]), "index.json"))) {
+    const dir = sessionDir(argv[1]);
+    if (!existsSync(join(dir, "index.json")) && !existsSync(join(dir, "journal.jsonl"))) {
       console.error(`no session ${argv[1]} in ${root}`);
       return 1;
     }
-    console.log(JSON.stringify({ session: argv[1], dir: sessionDir(argv[1]), results: readSessionIndex(argv[1]) }, null, 2));
+    console.log(JSON.stringify({ session: argv[1], dir, results: readSessionIndex(argv[1]), journal: readJournal(dir).length }, null, 2));
     return 0;
   }
 

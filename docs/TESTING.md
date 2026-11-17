@@ -202,6 +202,11 @@ and before a release.
    - `web/e2e/basemap-assets.spec.mjs` pins that the map's glyphs and
      sprites are local when installed and networked when not. It skips
      without a local `basemap.pmtiles`.
+   - `web/e2e/journal.spec.mjs` pins the page's journal: the stop
+     display's calls replay through `caps-run replay` to the same
+     output hashes on the page's own assembly, and `--single` names
+     the calls it cannot repeat (`docs/architecture/web.md`, "The
+     journal").
    - `web/e2e/viewport.spec.mjs` pins the pure camera rules: where a
      map opens, and when it frames the network.
    - `web/e2e/ride-map-load.spec.mjs` pins that the ride map opens on
@@ -228,6 +233,8 @@ and before a release.
    become findings and the UI's blockers
    (`docs/architecture/generated-uis.md`, the procedure). The
    generated UIs gate in `just test` refuses a UI without its spec.
+   The UI ops gate (`tools/ui-ops.mjs`) refuses a host that asks an op
+   its `ui.json` does not list.
    `e2e/picker.spec.mjs` covers its card with no edit.
 7. **Dogfood on real data.** Capability work that touches feeds or
    payload size runs a `caps-run` session against the C-TRAN feed

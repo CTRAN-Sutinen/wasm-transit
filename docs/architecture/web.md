@@ -216,6 +216,35 @@ change it adopts: the plan set's current networks and the layer. Each
 - a replay of the last op asked of a capability, past the answer
   cache
 
+### The journal
+
+A page can journal every module call in the runner's format
+([registry.md](registry.md), "The journal"; `tools/journal.mjs`). So a
+page's session replays through `caps-run`.
+
+- `?journal` in the page's URL turns it on (`src/uis/kit.ts`). The
+  journal is off by default, because it keeps the bytes of every
+  request: each document the page registers and each rt snapshot.
+- The bus worker records each call when the module answers. A line
+  names the page's run, the instance (the module and its resets), the
+  capability, the module hash (the page's linked assembly), the op, and
+  the hashes of the request and the outcome. A refusal that the engine
+  recovers from (a dropped document) is not recorded.
+- `transitJournal()` (the console, or a test) gives the journal as one
+  file: `{journal, blobs}`, with each request's bytes in base64 by
+  hash. `caps-run replay FILE.json` replays it.
+- Replay runs the page's journal on the page's own linked assembly
+  (from `web/public/caps`), so every call answers the same. With
+  `--single`, it runs each capability on its own module. A document
+  that stayed in the page's assembly (the stop display's live
+  document) then cannot cross, and replay says which calls it cannot
+  repeat.
+
+On C-TRAN, the stop display at Fisher's Landing TC journals 8 calls
+and 0.7 MB of requests (the network crosses as the server's gzipped
+bytes), and replays in under a second. `e2e/journal.spec.mjs` pins
+both replays on the fixture.
+
 ## The bus worker
 
 `src/bus.worker.ts` is the only wasm loader. Every module that a page

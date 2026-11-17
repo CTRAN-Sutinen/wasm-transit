@@ -461,6 +461,27 @@ async function asked(cap: CapId, op: string, args: Record<string, unknown>, cach
   });
 }
 
+/// The journal: every module call this page makes, as hashes, in the
+/// format the runner replays (tools/journal.mjs). It is off by default,
+/// because it keeps the bytes of every request (each document and each
+/// rt snapshot). Start it before the first ask.
+export async function startJournal(): Promise<void> {
+  await call({ type: "journal", run: `${new Date().toISOString()}-page` });
+}
+
+/// The journal as one file: `caps-run replay FILE.json` replays it on
+/// the page's own assembly (docs/architecture/web.md, "The journal").
+export async function readJournal(): Promise<{ journal: string; blobs: Record<string, string> }> {
+  const { ok } = await call({ type: "journal-read" });
+  const { journal, blobs } = ok as { journal: string; blobs: Record<string, Uint8Array> };
+  const base64 = (bytes: Uint8Array): string => {
+    let text = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(text);
+  };
+  return { journal, blobs: Object.fromEntries(Object.entries(blobs).map(([hash, bytes]) => [hash, base64(bytes)])) };
+}
+
 /// The kernel's registry ops (cap_abi::registry), answered by every
 /// module.
 const OP_EVICT = 257;

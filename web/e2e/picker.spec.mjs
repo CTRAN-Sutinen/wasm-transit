@@ -11,7 +11,7 @@ import path from "node:path";
 const uisDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/uis");
 const uis = fs
   .readdirSync(uisDir, { withFileTypes: true })
-  .filter((d) => d.isDirectory())
+  .filter((d) => d.isDirectory() && !d.name.startsWith("."))
   .map((d) => JSON.parse(fs.readFileSync(path.join(uisDir, d.name, "ui.json"), "utf8")));
 
 test("the picker lists every generated UI", async ({ page }) => {

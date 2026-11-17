@@ -212,7 +212,10 @@ node tools/caps-run.mjs    # the agent runner: list | tools <cap> [<op>] | sessi
                            # kind, version, and size. $TODAY and $NOW_SECS read the
                            # agency's zone: --tz ZONE, else the session's network
                            # (D-175). `caps-run session [NAME]` lists what a session
-                           # holds. `tools <cap> --brief` gives each op's first
+                           # holds. A session journals every module call as hashes;
+                           # `caps-run replay NAME|FILE.json [--single]
+                           # [--module CAP=FILE]` runs a session's or a page's
+                           # journal (`?journal`) again and compares every output hash. `tools <cap> --brief` gives each op's first
                            # sentence and example request; `tools <cap> <op>` gives
                            # one op in full (docs/architecture/registry.md).
 just test                  # the host-side runner (Rust, smokes, runner gates, web parity

@@ -80,7 +80,7 @@ class Instance {
 /// One assembled module (a linked assembly or a capability alone): its
 /// verified, compiled bytes (kept, so a reset re-instantiates without
 /// fetching) and its live instance.
-type Assembled = { key: string; module: WebAssembly.Module; instance: Instance; resets: number; resetAt: number };
+type Assembled = { key: string; hash: string; module: WebAssembly.Module; instance: Instance; resets: number; resetAt: number };
 
 /// The memory ceiling per instance, and the least time between two
 /// resets of one module (a working set above the ceiling must not
@@ -146,7 +146,7 @@ function assemble(key: string, entry: { url: string; hash: string }): Promise<As
         }
         const module = await WebAssembly.compile(bytes);
         const instance = new Instance(await WebAssembly.instantiate(module, {}).then((i) => i.exports));
-        return { key, module, instance, resets: 0, resetAt: 0 };
+        return { key, hash, module, instance, resets: 0, resetAt: 0 };
       } catch (error) {
         errors[key] = error instanceof Error ? error.message : String(error);
         return null;
@@ -190,6 +190,37 @@ async function reclaim(a: Assembled): Promise<boolean> {
   return true;
 }
 
+/// The journal: every module call, as hashes, in the format the runner
+/// replays (tools/journal.mjs; `caps-run replay FILE.json`). It is off
+/// until the engine starts it, because it keeps every request's bytes.
+/// A line's place is taken when the module answers, so the lines keep
+/// the order of the calls while their hashes are computed.
+type Journal = { run: string; lines: (string | null)[]; blobs: Map<string, Uint8Array>; pending: Promise<void>[] };
+let journal: Journal | null = null;
+
+/// The refusal the engine recovers from by registering the document:
+/// not journaled. The kernel's label for the kind is free text.
+const UNKNOWN_DOCUMENT = /^\{"error":"unknown (.+?) (sha256:[0-9a-f]{64}): (load_[a-z_]+) first"\}$/;
+/// The op a JSON request names: the engine writes `cap` (in a linked
+/// assembly) and `op` first.
+const OP_NAME = /^\{(?:"cap":"[a-z_]+",)?"op":"([a-z_]+)"/;
+
+function record(a: Assembled, cap: string, call: "json" | number, payload: Uint8Array, outcome: string): void {
+  const j = journal;
+  if (!j || UNKNOWN_DOCUMENT.test(outcome)) return;
+  const slot = j.lines.push(null) - 1;
+  const instance = `${j.run}/${a.key}@${a.resets}`;
+  const op = call === "json" ? (OP_NAME.exec(new TextDecoder().decode(payload.subarray(0, 120)))?.[1] ?? null) : `bulk ${call}`;
+  j.pending.push(
+    (async () => {
+      const request = await contentHash(payload as Uint8Array<ArrayBuffer>);
+      j.blobs.set(request, payload);
+      const output = await contentHash(new TextEncoder().encode(outcome));
+      j.lines[slot] = JSON.stringify({ run: j.run, instance, cap, module: a.hash, call, op, request, output });
+    })(),
+  );
+}
+
 async function handle(request: BusRequest): Promise<BusReply> {
   switch (request.type) {
     case "init":
@@ -221,6 +252,7 @@ async function handle(request: BusRequest): Promise<BusReply> {
       const reset = !request.load && (await reclaim(a));
       const out = a.instance.text(request.text);
       if (!request.load && out.startsWith('{"ok"')) a.instance.ops += 1;
+      if (journal) record(a, request.cap, "json", new TextEncoder().encode(request.text), out);
       return { ok: out, reset };
     }
     case "bytes": {
@@ -228,6 +260,7 @@ async function handle(request: BusRequest): Promise<BusReply> {
       const reset = !request.load && (await reclaim(a));
       const out = a.instance.bytes(request.op, request.bytes);
       if (!request.load && out.startsWith('{"ok"')) a.instance.ops += 1;
+      if (journal) record(a, request.cap, request.op, request.bytes, out);
       return { ok: out, reset };
     }
     case "inspect": {
@@ -238,6 +271,15 @@ async function handle(request: BusRequest): Promise<BusReply> {
       ceiling = request.bytes;
       minResetMs = request.minResetMs;
       return { ok: null };
+    case "journal":
+      journal = { run: request.run, lines: [], blobs: new Map(), pending: [] };
+      return { ok: null };
+    case "journal-read": {
+      if (!journal) throw new Error("the journal is off: the engine's startJournal() turns it on");
+      await Promise.all(journal.pending);
+      const lines = journal.lines.filter((l): l is string => l !== null);
+      return { ok: { journal: lines.map((l) => l + "\n").join(""), blobs: Object.fromEntries(journal.blobs) } };
+    }
   }
 }
 

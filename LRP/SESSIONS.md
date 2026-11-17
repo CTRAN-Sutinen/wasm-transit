@@ -50,7 +50,7 @@ feed's numbers are already extracted (`scenarios.csv`,
 | A new route on existing or new stops | Route stage, New route (new stops come from the Stops app) |
 | Calendar: keys, weekdays, dates, holidays | Plan & calendar, Service keys |
 | Vehicles for new trips | Vehicles & hours, adopt the suggested blocks (new blocks only: `docs/units/runs-layer.md` item 5) |
-| A frequency change on a running route | **No.** Blocked: D-54 (QAF-90) |
+| A frequency change on a running route | **No.** Not built (QAF-90; D-54 decided) |
 | Service on a day the route does not run | **No.** QAF-118 |
 | A route renamed or retired | **No.** QAF-120 |
 | A route rerouted | **No.** No gesture draws a pattern along the streets (`docs/units/streets-model.md` item 4) |
@@ -91,7 +91,7 @@ from `current-feed.csv`.
 
 | # | Session | Plan change | Status |
 |---|---|---|---|
-| R1 | Locals to hourly | 6, 12, 25, 32, 34, 72, 78, 92 from 30 to 60 min weekdays | blocked, D-54 (QAF-90) |
+| R1 | Locals to hourly | 6, 12, 25, 32, 34, 72, 78, 92 from 30 to 60 min weekdays | blocked, not built (QAF-90; D-54 decided) |
 | R2 | Express and SR 14 end | 105, 105X, 164, 190, 041 retired | blocked, QAF-120 |
 | R3 | Limited trips cut | 47 to 4 trips, 48 to 8 | blocked: no trip removal in the UI (part of QAF-118's gap) |
 

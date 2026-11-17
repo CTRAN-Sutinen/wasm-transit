@@ -211,6 +211,12 @@ _host-tests:
     # registry. Each capability, op, kernel op, and document kind has
     # its place, and no local link is broken.
     node --test tools/docs-site.test.mjs
+    # UI OPS (tools/ui-ops.mjs): every op a generated UI's host asks is
+    # in its ui.json, so its assembly links it. A missing op would turn
+    # a frame off at runtime with no error. The broken fixtures run
+    # first.
+    node --test tools/ui-ops.test.mjs
+    node tools/ui-ops.mjs
     # The runner knows which tree its registry was built from
     # (QAF-77): just published, the registry's source digest (Rust,
     # gen-manifest) equals the tree's (JS, caps-run) — nothing on
@@ -391,6 +397,16 @@ _host-tests:
     # the documents in it.
     CAPS_RUN_SESSIONS="$sessions" node tools/caps-run.mjs session gate \
       | node -e 'const j = JSON.parse(require("fs").readFileSync(0, "utf8")); const net = j.results.find((x) => x.as === "net"); if (net?.op !== "import" || !net.documents.some((d) => d.kind === "network") || !net.documents.some((d) => d.kind === "boundary")) process.exit(1)'
+    # THE JOURNAL (tools/journal.mjs; docs/architecture/registry.md,
+    # "The journal"): the session journaled every module call above, as
+    # hashes. Replay runs it again on fresh instances and gets the same
+    # output hashes. A changed output hash fails the replay. The
+    # replay's broken fixtures run first.
+    node --test tools/journal.test.mjs
+    CAPS_RUN_SESSIONS="$sessions" node tools/caps-run.mjs replay gate \
+      | node -e 'const j = JSON.parse(require("fs").readFileSync(0, "utf8")); if (j.entries < 5 || j.same !== j.entries) process.exit(1)'
+    node -e 'const fs = require("fs"); const f = process.argv[1]; const l = fs.readFileSync(f, "utf8").trim().split("\n").map(JSON.parse); l.at(-1).output = "sha256:" + "0".repeat(64); fs.writeFileSync(f, l.map((x) => JSON.stringify(x)).join("\n") + "\n")' "$sessions/gate/journal.jsonl"
+    if CAPS_RUN_SESSIONS="$sessions" node tools/caps-run.mjs replay gate >/dev/null; then echo "JOURNAL GATE FAIL: a changed output hash replayed as the same"; exit 1; fi
     rm -rf "$sessions"
     # --brief prints a whole document as its kind, version, and size.
     # The session keeps the whole document, so a reference still gives

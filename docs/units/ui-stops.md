@@ -34,7 +34,8 @@ a plan only says which stops its service visits.
    `after` and guesses the distance), stop serving one
    (`remove_direction_stop`), and open a stop on the Stops stage. The
    Route stage never creates, moves, or renames a stop. Whether serving
-   acts on the direction or on one of its patterns: Blocked: D-142.
+   acts on the direction by default and on one pattern on request. The
+   stage shows each pattern when a direction has more than one (D-142).
 5. **Redrawing a line** on the Route stage's map: waypoints traced
    along the streets (cap-streets `snap` / `route`, the published
    streets registered as ride-now registers them), the streets to
@@ -44,7 +45,8 @@ a plan only says which stops its service visits.
    line and warns where a stop is now far from it; the stage offers to
    stop serving it or opens it on the Stops stage. With no streets
    document the line is drawn freehand (D-31). What a longer or shorter
-   line does to running time: Blocked: D-143. This is item 4 of
+   line does to running time: nothing. The stage shows the change in
+   length, and the planner uses `adjust_running_time` (D-143). This is item 4 of
    [streets-model.md](streets-model.md); that item closes with this one.
 
 ## Done when

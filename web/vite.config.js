@@ -13,7 +13,9 @@ import { createHash } from "node:crypto";
 const root = path.dirname(fileURLToPath(import.meta.url));
 const uis = fs
   .readdirSync(path.join(root, "src/uis"), { withFileTypes: true })
-  .filter((d) => d.isDirectory())
+  // A hidden directory (an editor's or a tool's) is never a UI; the
+  // justfile's UI gate skips it the same way.
+  .filter((d) => d.isDirectory() && !d.name.startsWith("."))
   .map((d) => d.name);
 for (const id of uis) {
   for (const need of [`${id}.html`, `src/uis/${id}/ui.json`]) {

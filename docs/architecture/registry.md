@@ -45,7 +45,8 @@ again. On C-TRAN, the later command answers a board in about 0.5 s.
 
 - The store is `.caps-sessions/<name>/` in the tree (gitignored), or
   the directory that `CAPS_RUN_SESSIONS` names. It holds `index.json`
-  and one gzipped outcome for each name, `<name>.json.gz`.
+  and one gzipped outcome for each name, `<name>.json.gz`. It also
+  holds the session's journal (below).
 - Only `--as` names reach across commands. `$load`, `$ask`, `$post`,
   `$op`, and `$N` address the results of the current command.
 - A name in the current command replaces the same name from an earlier
@@ -60,6 +61,48 @@ again. On C-TRAN, the later command answers a board in about 0.5 s.
 - `caps-run session` lists the sessions in the store. `caps-run session
   NAME` lists one session's names, each with its op, its capability,
   its documents and their hashes, and the zone it states.
+
+**The journal.** A session records every module call in its journal.
+The format and replay are in `tools/journal.mjs`.
+
+- `journal.jsonl` has one line for each call: the run (one command),
+  the module instance, the capability, the hash of the module bytes,
+  the op, the hash of the request bytes, and the hash of the outcome
+  text. A line holds hashes only.
+- `blobs/<hex>.gz` holds each request's bytes once, gzipped, by their
+  hash. So a feed, an rt snapshot, and a loaded document are all kept,
+  and replay can repeat every call.
+- A call that a module refuses because it does not hold a document
+  (`unknown <kind> <hash>: <load op> first`) is not recorded. The load
+  that follows it and the answer are recorded.
+- `caps-run replay NAME` runs a session's journal again, in order, on
+  fresh instances. `caps-run replay FILE.json` does the same for a
+  page's journal ([web.md](web.md), "The journal"). Replay compares
+  each output hash with the recorded one, and reports the calls that
+  differ and the calls it cannot repeat. It exits 1 when there is one
+  of either.
+- Each call runs on the module it recorded when the runner has those
+  bytes: a capability's registry blob, or a page's linked assembly in
+  `web/public/caps`. A linked assembly gets one instance for each
+  instance of the journal, and each request is sent as recorded.
+  Otherwise the call runs on the capability's own module, with one
+  instance for each capability. `--single` makes every call run that
+  way, which checks assembly independence on the journal.
+- When a call asks for a document that another instance registered or
+  minted, replay registers it in the asking instance first, as a page's
+  linked assembly shares it. Assembly independence makes the answer the
+  same (`docs/architecture/bus.md`, "Bus rules"). A document that never
+  left a linked assembly cannot cross, and replay says so.
+- `evict` and `held` answer about the instance. Replay runs them, and
+  compares their answers only on the recorded module. Elsewhere it
+  counts them as `unchecked`.
+- `--module CAP=FILE` replays the capability against a candidate
+  module. To replace a module, replay the journals that use it against
+  the candidate.
+
+On C-TRAN, a session that imports the feed and then asks the board,
+the directory, and the router journals 9 calls, keeps 3.8 MB of
+gzipped requests, and replays in about 5 s.
 
 **The clock.** The runner reads the clock in the agency's zone, never
 the machine's (D-175). `$TODAY` is the agency's service date, and

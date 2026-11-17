@@ -68,14 +68,16 @@ that variation as information, never as error.
 - A headway is shown as its target and its observed range (shortest,
   typical, and longest gap), never as one number standing in for the
   hour.
-- Running time is per time band, as the trips run it. No all-day
-  figure stands in for it.
-- A change states a target and a tolerance. Trips already inside the
-  tolerance keep their own times. Only the trips the target needs
-  are moved, added, or removed, and each new trip takes the running
-  time of its band (QAF-90; D-3, D-54).
-- Any trip can be nudged on its own, and a nudge is never undone by
-  a later target.
+- Running time is what each trip carries. No all-day figure stands in
+  for it, and the import derives no profile (D-3).
+- A change states a target and a tolerance, over a range the planner
+  enters for that change. Trips already inside the tolerance keep
+  their own times. Only the trips the target needs are added or
+  removed. Each new trip uses a planner-authored profile that covers
+  its departure, else copies the nearest trip's times (QAF-90; D-3,
+  D-54).
+- Any trip can be nudged on its own. A later target moves a nudged
+  trip only if the planner's range includes it.
 - No view snaps, rounds, or regularizes an authored time.
 
 ## Op inventory
@@ -92,12 +94,12 @@ that variation as information, never as error.
 | 8 | analysis `stop_gaps`, `longest_waits` | answered: one stop's waits, a station's pooled over its bays (StopWaits); every stop ranked by its longest wait in the hour window (LongestWaits, D-134) |
 | 9 | analysis `hub_connections`, `missed_connections` | answered (HubMatrix; NearMisses: each near miss with the route's next departure, D-133) |
 | 10 | none | data gap: no ridership (D-53: to be built in, later); adherence history is `docs/ROADMAP.md` 3, read as TIDES (D-127) |
-| 11 | directory `route_detail`, `focus` | answered (DirectionTabs, FocusMap); branches read as one direction, QAF-63 (Blocked: D-44) |
+| 11 | directory `route_detail`, `focus` | answered (DirectionTabs, FocusMap); branches read as one direction, QAF-63 (D-44 decided: the pattern is the unit; not built) |
 | 12 | directory `timetable` (`compare_hash`) | answered (StringLine, TimetableGrid), pooled over the group's members; stop spacing is by order — the timetable carries no distance along the pattern |
-| 13 | directory `timetable` (`run_secs`) | each trip's end-to-end time answered (RunTimes); by segment and band, no op; the model keeps one profile per pattern, D-3 |
+| 13 | directory `timetable` (`run_secs`) | each trip's end-to-end time answered (RunTimes); by segment and band, no op; the import derives no profile, D-3 |
 | 14 | runcut `blocks`, `block_trips`, `fleet_summary` | not in the UI: no route scoping; runcut `recovery` answers required recovery (D-9), unread by a UI; `suggest_blocks` answers the day's peak (questions 2 and 18) |
 | 15 | author `apply` (`set_plan`, its `through`) | answered (PlanList: a fork's period end carries the weekly calendars still running, D-41, D-112; C-TRAN's dated calendars import as weekly, D-105); a fork keeps the calendar's dates before its pick, so its groups and the day counts beside the baseline's include them |
-| 16 | author `apply` (`set_span`, `adjust_running_time`, `retime_trip`, `insert_direction_stop`, `remove_direction_stop`) | answered (GesturePanel, a dragged trip on StringLine, a stop picked by its name on StringLine and inserted by name from directory `stops`); the frequency target is Blocked: D-54, D-3 (QAF-90); each gesture acts on one service type of the group, picked in the panel, which warns what else runs with it (D-8, D-95); after each change the status states the plan's issues and warnings as `apply` answered them |
+| 16 | author `apply` (`set_span`, `adjust_running_time`, `retime_trip`, `insert_direction_stop`, `remove_direction_stop`) | answered (GesturePanel, a dragged trip on StringLine, a stop picked by its name on StringLine and inserted by name from directory `stops`); the frequency target is decided and not built (D-54, D-3; QAF-90); each gesture acts on one service type of the group, picked in the panel, which warns what else runs with it (D-8, D-95); after each change the status states the plan's issues and warnings as `apply` answered them |
 | 17 | author `apply` (`add_route`, `add_pattern`, `update_pattern`, `draw_alignment`, `upsert_*`, `remove_*`), streets `route` (`streets`, `to_confirm`) | ops exist; not in the UI: no gesture draws a pattern along the streets (`docs/units/streets-model.md` item 4) |
 | 18 | analysis `service_type_compare` | answered (ProposalScore, Redline) for the selected group; no dollar cost (D-51: platform hours against an hours budget — what a budget is, Blocked: D-108); vehicles: runcut `suggest_blocks` (ProposalScore: authored peak → peak with the suggestion adopted, D-46) |
 | 19 | analysis `coverage_compare` | on the bus (gained and lost between two named sides, D-99), not in the UI: which combination answers to which across the plans waits on D-43's matching rule (QAF-20); connections made and broken wait on the same rule (Blocked: D-43), then compare `hub_connections` across the two plans |
@@ -145,7 +147,7 @@ hash), `view` (which view is open), `layer`, `coverage-params`.
   and timepoints, clicked to pick a stop); the route's blocks, and
   with them the layover ripple a held trip starts (today one hold at a
   time, from the Proposal view's issue); the frequency target with its
-  preview (Blocked: D-54).
+  preview (D-54 decided; not built).
 - **The bar**: the jump box finds routes only — stops, plans, and
   views too.
 - **Proposal**: previewing the pick as a rider will see it, before
