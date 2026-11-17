@@ -1,19 +1,105 @@
 # rt
 
-Realtime decoding and the schedule join: turn a GTFS-rt protobuf payload (trip updates, vehicle positions, service alerts) into the flat view hosts show, and answer the dispatcher's joined questions — one trip's predicted times, the ranked what's-late-now view with the delayed-but-dark flag. The third capability extracted from the monolith; the domain code lives in the shared transit-rt library. It mints THE LIVE DOCUMENT: the snapshot resolved against the network into model vocabulary (delays per trip instance and stop, vehicles on their trip instances, statuses under the caller's on-time window, the service alerts in force with their informed entities resolved to routes, stops, and trip instances) — an rt trip id is a model trip id, resolved here once. Assemble for riders (live boards) and dispatchers (the operation view) alike.
+Realtime decoding and the schedule join. The capability turns a GTFS-rt protobuf payload (trip updates, vehicle positions, service alerts) into the flat view that hosts show. It also answers the dispatcher's joined questions: one trip's predicted times, and the ranked what's-late-now view with the delayed-but-dark flag.
+
+It is the third capability extracted from the monolith. The domain code lives in the shared transit-rt library.
+
+It mints the live document. The live document is the snapshot resolved against the network into the model's vocabulary:
+
+- Delays for each trip instance and stop.
+- Vehicles on their trip instances.
+- Statuses under the caller's on-time window.
+- The service alerts in force, with their informed entities resolved to routes, stops, and trip instances.
+
+An rt trip id is a model trip id. The capability resolves it once, here.
+
+Assemble this capability for riders (live boards) and dispatchers (the operation view) alike.
 
 ## decode
 
-Decode a GTFS-rt protobuf payload into the overview (entity counts, trip updates with per-stop delays — `canceled` when the trip descriptor's schedule_relationship is CANCELED or DELETED, a stop update `skipped` when SKIPPED — vehicle positions, service alerts with their cause, effect, severity, text, periods, and informed entities in the feed's ids), and register the snapshot under its content hash — idempotent, the same bytes are the same snapshot — so trip_progress/late_trips can address it. Bulk-bytes op 0. Garbage bytes are an error outcome, never a trap.
+Decode a GTFS-rt protobuf payload into the overview, and register the snapshot under its content hash. The registration is idempotent: the same bytes are the same snapshot. So `trip_progress` and `late_trips` can address the snapshot.
+
+The overview has these parts:
+
+- Entity counts.
+- Trip updates with per-stop delays. A trip update is `canceled` when the trip descriptor's schedule_relationship is CANCELED or DELETED. A stop update is `skipped` when its schedule_relationship is SKIPPED.
+- Vehicle positions.
+- Service alerts with their cause, effect, severity, text, periods, and informed entities in the feed's ids.
+
+This is bulk-bytes op 0. Garbage bytes give an error outcome, never a trap.
 
 ## trip_progress
 
-One trip's joined board: every scheduled stop with the live delay and the PREDICTED time (schedule + delay) — the dispatcher's most-asked question in one op. A stop the update does not mention carries the last stated delay upstream of it (the GTFS-rt propagation rule); stops before the first update stay null. The instance is the one the snapshot's update names (a frequency trip's by the update's start_time); updates pair with stops by the published stop_sequence (boundary_hash; 1..n without one), by stop id only when they name no sequence. Null when the snapshot has no update for the trip or the update names no instance of it.
+Answer one trip's joined board: every scheduled stop with the live delay and the predicted time (schedule plus delay). This is the dispatcher's most-asked question in one op.
+
+A stop that the update does not mention carries the last stated delay upstream of it. This is the GTFS-rt propagation rule. Stops before the first update stay null.
+
+The op chooses the trip instance and pairs updates with stops by these rules:
+
+- The instance is the one that the snapshot's update names. For a frequency trip, the update's `start_time` names it.
+- Updates pair with stops by the published stop_sequence. `boundary_hash` names the numbering. Without it, the numbering is 1..n.
+- An update pairs by stop id only when it names no sequence.
+
+The answer is null when the snapshot has no update for the trip, or when the update names no instance of it.
 
 ## late_trips
 
-The ranked what's-late-now view: every trip whose worst stop delay reaches min_delay_secs, worst first, each carrying the located vehicle (vehicle_id, label, position) — found on the trip itself or, failing that, on another trip of its block (position_trip_id names the trip the bus is actually running: a delay propagated to a block's next trip is a late bus, not a dark one) — and the DELAYED-BUT-DARK flag (has_position false) when no vehicle of the block is visible. vp_hash names the VehiclePositions snapshot (agencies serve it as a SEPARATE feed — C-TRAN does); omit it for combined feeds.
+Answer the ranked what's-late-now view: every trip whose worst stop delay reaches `min_delay_secs`, worst first.
+
+Each trip carries the located vehicle (`vehicle_id`, label, position). The op finds the vehicle in one of two places:
+
+- On the trip itself.
+- Failing that, on another trip of its block. `position_trip_id` names the trip that the bus actually runs. A delay propagated to a block's next trip is a late bus, not a dark one.
+
+When no vehicle of the block is visible, the trip carries the delayed-but-dark flag (`has_position` is false).
+
+`vp_hash` names the VehiclePositions snapshot. Agencies serve it as a separate feed (C-TRAN does). Omit it for combined feeds.
 
 ## live
 
-THE LIVE DOCUMENT: one rt moment resolved into model vocabulary. rt_hash (trip updates), vp_hash (vehicle positions), and/or alerts_hash (service alerts) — agencies often serve them separately; at least one — resolve against the registered network (an rt trip id is a model trip id; a frequency trip's instance is the update's start_time) into delays per trip instance ((trip, start_secs)) and stop (propagated downstream, with the predicted departure), vehicles on their trips, and statuses (early / on_time / late / very_late / no_prediction) classified under `window` — the caller's on-time policy, default: ANY earliness is early (early_secs 0 — a bus leaving before its time is a missed bus), up to 60 s late on time, past 300 s very late — which the document records so every reader classifies the same way. Trip and vehicle lateness is the trip's worst stated delay. What does not run: a trip instance the feed cancels (CANCELED or DELETED) is `canceled: true` (no_prediction — it is not late, it does not run), and a stop it skips (SKIPPED) is an entry `skipped: true` with no delay of its own (the delay before it carries past it); both fields are absent when false, and every reader drops what does not run (the board shows no row, the router never rides it — D-73). Unresolvable rt trips are counted (unmatched_trips), never silently dropped. alerts: the service alerts in force at the snapshot's moment (the header timestamp inside a communication period, else the deprecated active period; none = always), gathered from every snapshot given, one per entity id — each informed entity resolved to a scope (route, stop, trip, start_secs; every present field must match, all absent = the whole agency; a route_type names every route published under it; direction is not matched). An alert none of whose entities name anything in the network is counted (unmatched_alerts). The response also carries the summary a status panel reads: vehicles by status and the late list worst first (late_limit, default 15) — late BUSES when positions exist, late trips (predictions) when they do not. The live document registers where it is minted: a module linking the board or the router reads it by live_hash at once (a host there may decline the document itself — with_document: false answers live null — QAF-49); a module of its own registers it with the kernel's load_live.
+Answer the live document: one rt moment resolved into the model's vocabulary.
+
+The inputs are snapshots:
+
+- `rt_hash`: trip updates.
+- `vp_hash`: vehicle positions.
+- `alerts_hash`: service alerts.
+
+Agencies often serve these separately. At least one is required. The op resolves them against the registered network. An rt trip id is a model trip id. A frequency trip's instance is the update's `start_time`.
+
+The document holds these parts:
+
+- Delays for each trip instance, `(trip, start_secs)`, and for each stop. A delay propagates downstream, with the predicted departure.
+- Vehicles on their trips.
+- Statuses: `early`, `on_time`, `late`, `very_late`, or `no_prediction`.
+
+Trip and vehicle lateness is the trip's worst stated delay.
+
+`window` is the caller's on-time policy. The document records it, so every reader classifies the same way. The default is:
+
+- Any earliness is early (`early_secs` 0). A bus that leaves before its time is a missed bus.
+- Up to 60 s late is on time.
+- Past 300 s late is very late.
+
+What does not run:
+
+- A trip instance that the feed cancels (CANCELED or DELETED) is `canceled: true`. Its status is `no_prediction`: it is not late, because it does not run.
+- A stop that the feed skips (SKIPPED) is an entry with `skipped: true`. It has no delay of its own. The delay before it carries past it.
+- Both fields are absent when false.
+- Every reader drops what does not run. The board shows no row, and the router never rides it.
+
+`unmatched_trips` counts the rt trips that cannot be resolved. The op never drops them silently.
+
+`alerts` holds the service alerts in force at the snapshot's moment:
+
+- An alert is in force when the header timestamp is inside a communication period. Else the deprecated active period decides. An alert with no period is always in force.
+- The op gathers alerts from every snapshot given, one for each entity id.
+- Each informed entity resolves to a scope: `route`, `stop`, `trip`, `start_secs`. Every present field must match. A scope with every field absent is the whole agency. A `route_type` names every route published under it. `direction` is not matched.
+- `unmatched_alerts` counts an alert when none of its entities names anything in the network.
+
+The response also carries the summary that a status panel reads:
+
+- Vehicles by status.
+- The late list, worst first. `late_limit` sets its length (default 15). It lists late buses when positions exist, and late trips (predictions) when they do not.
+
+The live document registers where the op mints it. A module that links the board or the router reads it by `live_hash` at once. A host there may decline the document itself: `with_document: false` answers `live` as null. A module of its own registers the document with the kernel's `load_live`.

@@ -100,7 +100,15 @@ A capability's agent context is its purpose and each op's description.
 It lives in the `OPS.md` beside its crate. It is Markdown that an agent
 edits like any doc. The generator reads it. The generator refuses an
 `OPS.md` whose op sections are not the capability's ops. The generator
-computes the worked examples. Nobody writes them by hand. `just test`
+computes the worked examples. Nobody writes them by hand.
+
+An op description is paragraphs and lists. A line that starts with `- `
+is a list item, and a line indented by two spaces that starts with `- `
+is an item under it. The runner prints the text as written, and the
+docs site renders the lists. An op that takes a tagged union of edits
+(`apply` in author) gives one item for each edit, with its arguments and
+its rule. It does not give one long paragraph.
+ `just test`
 gates the runner itself. The fixture feed hash is stable, so registry or
 fixture drift fails the gate.
 

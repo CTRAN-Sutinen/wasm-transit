@@ -1,23 +1,86 @@
 # streets
 
-Where along the streets? Snap a point to the nearest street and route between two positions along the street graph, so a traced detour (or a pattern drawn the same way) is street geometry, never freehand chords — and how long a rider walks along them: between a network's stops (the walk table the router plans transfers over), and from any point to the stops near it (the ends of a trip from anywhere). The streets are a document: import reads a street layer (an agency GIS export, TIGER, OSM — GeoJSON lines) into the canonical streets document, whose hash is the streets' own, not the file's. The domain code lives in the shared transit-streets library; the module writes nothing.
+Where along the streets? The capability snaps a point to the nearest street. It routes between two positions along the street graph, so a traced detour (or a pattern drawn the same way) is street geometry, never freehand chords. It also answers how long a rider walks along the streets:
+
+- between a network's stops: the walk table that the router plans transfers over;
+- from any point to the stops near it: the ends of a trip from anywhere.
+
+The streets are a document. `import` reads a street layer into the canonical streets document. A street layer is an agency GIS export, TIGER, or OSM, as GeoJSON lines. The document's hash is the streets' own hash, not the file's hash. The domain code lives in the shared transit-streets library. The module writes nothing.
 
 ## import
 
-Read a street layer — a GeoJSON FeatureCollection or Feature of LineString/MultiLineString geometries — into the canonical streets document and register it: the answer carries the document (the host keeps it), its streets_hash, and its ways, segments and nodes. Lines that are not streets (a CFCC railroad or water line, an MTFCC outside S1, an OSM railway or waterway) are left out; every street gets a class from its CFCC, MTFCC or OSM highway (unknown when none says), a name (FULLNAME, name, NAME), and its one-way (TIGER OneWay, OSM oneway — a one-way runs first point to last). The same streets in another feature order, digitized the other way, or with other properties are the same document and hash. Errors when the layer holds no street. Bulk-bytes op 0; pass the raw GeoJSON to transit_invoke_bytes.
+Read a street layer into the canonical streets document, and register it. The layer is a GeoJSON FeatureCollection or Feature of LineString or MultiLineString geometries.
+
+The answer carries these fields:
+
+- the document, which the host keeps;
+- `streets_hash`;
+- the counts of its ways, segments, and nodes.
+
+The op leaves out lines that are not streets. These are a CFCC railroad or water line, an MTFCC outside S1, and an OSM railway or waterway.
+
+Every street gets these properties:
+
+- A class, from its CFCC, MTFCC, or OSM highway. The class is `unknown` when none of them says.
+- A name, from the property `FULLNAME`, `name`, or `NAME`.
+- Its one-way, from TIGER OneWay or OSM oneway. A one-way runs from the first point to the last.
+
+The same streets give the same document and hash when they come in another feature order, digitized the other way, or with other properties. The op returns an error when the layer holds no street.
+
+This is a bulk-bytes op, op 0. Pass the raw GeoJSON to `transit_invoke_bytes`.
 
 ## walks
 
-The WALK TABLE: every walk between the network's stops along the streets, within max_walk_secs (default 600 — ten minutes) at speed_mps (default 1.3), as a document {streets_hash, network_hash, speed_mps, max_walk_secs, walks: [{from, to, walk_secs}]} in (from, to) order, symmetric — and its walks_hash (the router's load_walks answers the same). A rider walks every street class but motorway, ramp and unknown, both ways along one-way streets; a walk is each stop's walk to its nearest walkable street, the street distance, and the walk on to the other stop, rounded up to the second. A stop with no walkable street nearby walks nowhere. Which streets the document holds is the host's choice of source (walking wants one with real classes and footways).
+Build the walk table: every walk between the network's stops along the streets, within `max_walk_secs` (default 600, which is ten minutes) at `speed_mps` (default 1.3).
+
+The answer is a document `{streets_hash, network_hash, speed_mps, max_walk_secs, walks: [{from, to, walk_secs}]}`. The walks are in `(from, to)` order, and the table is symmetric. The answer also carries its `walks_hash`. The router's `load_walks` answers the same.
+
+A rider walks every street class except motorway, ramp, and unknown. A rider walks both ways along one-way streets. A walk has three parts:
+
+- each stop's walk to its nearest walkable street;
+- the street distance;
+- the walk on to the other stop.
+
+The walk time is rounded up to the second. A stop with no walkable street nearby walks nowhere.
+
+The host chooses which streets the document holds, by its choice of source. Walking needs a source with real classes and footways.
 
 ## access
 
-The walks from a POINT ({lat, lon}: a tapped spot, the rider's location) to the network's stops within max_walk_secs (default 600) at speed_mps (default 1.3) — the walks a stop at the point would have in the walk table — nearest first, each {stop_id, walk_secs, path}: the path the rider walks, from the point to its street, along walkable streets, to the stop. With `to` (another point), direct is the walk from the point straight to it ({walk_secs, path}; null when none is within the limit or no `to` was given). The walks are a router PLACE's walks as they are (plan's {id, name, walks}: planning reads the seconds, itinerary_paths draws the paths), direct is plan's direct, and the walks rank the directory's stops_near. A point with no walkable street nearby walks nowhere (walks empty).
+Find the walks from a point `{lat, lon}` to the network's stops within `max_walk_secs` (default 600) at `speed_mps` (default 1.3). The point is a tapped spot or the rider's location. The walks are the walks that a stop at the point would have in the walk table.
+
+The answer lists the walks nearest first. Each walk is `{stop_id, walk_secs, path}`. The `path` is the path the rider walks: from the point to its street, along walkable streets, to the stop.
+
+With `to` (another point), `direct` is the walk from the point straight to it, as `{walk_secs, path}`. It is null when no walk is within the limit or when the request gave no `to`.
+
+The answer relates to other ops in these ways:
+
+- The walks are a router place's walks as they are: plan's `{id, name, walks}`. Planning reads the seconds. `itinerary_paths` draws the paths.
+- `direct` is plan's `direct`.
+- The walks rank the directory's `stops_near`.
+
+A point with no walkable street nearby walks nowhere, and `walks` is empty.
 
 ## snap
 
-The nearest street position to (lat, lon) — the projected point plus its graph address (segment, parameter along it), and how far the query point was. Segments are numbered through the document, way by way, so an address holds for one streets hash: a trace commits the geometry, never the address. Null when no street is nearby.
+Find the nearest street position to `(lat, lon)`. The answer holds these fields:
+
+- the projected point;
+- its graph address: the segment, and the parameter along it;
+- how far the query point was.
+
+Segments are numbered through the document, way by way. So an address holds for one streets hash. A trace commits the geometry, never the address. The answer is null when no street is nearby.
 
 ## route
 
-The street geometry between two snapped positions: the shortest path along the graph, as points ending exactly at the target and starting AFTER the origin (traces chain legs — each leg's start is the previous leg's committed end; prepend `from` for a standalone trace), plus length_m: the path's length along the graph from the origin itself — "how far by road?" answered by the router, never a host-side sum. Empty points and null length when the positions sit on disconnected parts of the network — the caller falls back to a straight line. `streets`: the streets the path follows, in order ({class, name?, length_m}; a street is one entry however many segments it has). The BUS PROFILE (D-26): a bus is drawn down any street — the planner judges a grey area — and `to_confirm` names the streets whose class is in `confirm` (default unknown, path, steps, track) for the planner to confirm; `confirm: []` asks nothing. Never a refusal.
+Find the street geometry between two snapped positions. It is the shortest path along the graph, as points. The points end exactly at the target and start after the origin. Traces chain legs, and each leg's start is the previous leg's committed end. For a standalone trace, prepend `from`.
+
+The answer holds these fields:
+
+- `length_m`: the path's length along the graph from the origin itself. This answers "how far by road?". The router answers it, never a host-side sum.
+- `streets`: the streets that the path follows, in order, as `{class, name?, length_m}`. A street is one entry however many segments it has.
+- `to_confirm`: the streets whose class is in `confirm`, for the planner to confirm.
+
+The points are empty and `length_m` is null when the positions sit on disconnected parts of the network. The caller then falls back to a straight line.
+
+The op uses the bus profile. A bus is drawn down any street, and the planner judges a grey area. `confirm` defaults to `unknown`, `path`, `steps`, and `track`. `confirm: []` asks nothing. The op never refuses.

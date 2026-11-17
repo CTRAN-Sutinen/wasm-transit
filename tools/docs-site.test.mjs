@@ -130,3 +130,21 @@ test("an example shows as a collapsible tree, with the raw JSON beside it", () =
 test("example strings are escaped in the tree", () => {
   assert.ok(!/<img|<svg/i.test(page("doc-network.html")));
 });
+
+test("a list in an op description renders as a nested list, and every edit of author apply is listed", () => {
+  const html = page("cap-author.html");
+  const apply = html.slice(html.indexOf('id="op-apply"'));
+  assert.match(apply, /<ul>\s*<li><code>set_plan/, "a bullet list of edits");
+  assert.match(apply, /<li>[^]*<ul>[^]*<\/ul>[^]*<\/li>/, "a nested list");
+  assert.ok(!/<p>- /.test(apply), "no bullet is left as plain text");
+  // Each edit the Rust enum defines (docs/units: the edit vocabulary
+  // lives in transit-network) is named in the description. The
+  // upsert_ and remove_ edits of the six entity kinds are named by
+  // their pattern, so they are not checked one by one.
+  const source = readFileSync(join(ROOT, "crates/transit-network/src/edit.rs"), "utf8");
+  const enumBody = source.slice(source.indexOf("pub enum NetworkEdit"), source.indexOf("\n}\n", source.indexOf("pub enum NetworkEdit")));
+  const edits = [...enumBody.matchAll(/^    ([A-Z][A-Za-z]+)\b/gm)].map((m) => m[1].replace(/(?<!^)([A-Z])/g, "_$1").toLowerCase());
+  assert.ok(edits.length > 50, "found the edits");
+  const missing = edits.filter((e) => !/^(upsert|remove)_(stop|route|pattern|service_type|pattern_trips|block)$/.test(e) && !apply.includes(e));
+  assert.deepEqual(missing, [], "edits the description never names");
+});

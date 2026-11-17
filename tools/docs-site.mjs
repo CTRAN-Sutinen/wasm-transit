@@ -38,12 +38,38 @@ const docKinds = new Set(documents.map((d) => d.kind));
 const esc = (text) =>
   String(text ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-// Text from the registry: paragraphs split at blank lines, and `code`
-// spans.
+// Text from the registry: paragraphs split at blank lines, `code`
+// spans, and lists. A block whose lines start with "- " is a list. A
+// line indented by two spaces and starting with "- " is an item of the
+// list under the item above it. Another indented line continues the
+// item above it.
+const inline = (text) => esc(text).replace(/`([^`]+)`/g, "<code>$1</code>");
+
+function list(lines) {
+  const items = [];
+  for (const line of lines) {
+    const nested = /^ {2}- (.*)$/.exec(line);
+    const top = /^- (.*)$/.exec(line);
+    if (top) items.push({ text: top[1], kids: [] });
+    else if (nested && items.length) items.at(-1).kids.push(nested[1]);
+    else if (items.length) {
+      const item = items.at(-1);
+      if (item.kids.length) item.kids[item.kids.length - 1] += ` ${line.trim()}`;
+      else item.text += ` ${line.trim()}`;
+    }
+  }
+  const html = (item) =>
+    `<li>${inline(item.text)}${item.kids.length ? `<ul>${item.kids.map((k) => `<li>${inline(k)}</li>`).join("")}</ul>` : ""}</li>`;
+  return `<ul>${items.map(html).join("")}</ul>`;
+}
+
 const prose = (text) =>
   String(text ?? "")
     .split(/\n\s*\n/)
-    .map((p) => `<p>${esc(p.trim()).replace(/`([^`]+)`/g, "<code>$1</code>")}</p>`)
+    .map((block) => {
+      const lines = block.replace(/\s+$/, "").split("\n");
+      return lines[0].startsWith("- ") ? list(lines) : `<p>${inline(block.trim())}</p>`;
+    })
     .join("\n");
 
 const raw = (value) => `<pre>${esc(JSON.stringify(value, null, 2))}</pre>`;

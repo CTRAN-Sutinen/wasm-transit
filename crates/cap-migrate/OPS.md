@@ -1,11 +1,32 @@
 # migrate
 
-Bring an older document forward to the version this build reads. Every authored kind's chain is kept forever (D-66) in the library that owns the kind — one pure step per version, every record id kept, every loss reported as a note naming its step — and this capability wraps them, so a consumer reads the current version only and refuses any other at its load. Assemble it where an older document arrives: the server's receive, a browser's restore, a file an agent loads. Migration never destroys: the answer is a new document under its own hash, and the caller keeps the old bytes.
+Bring an older document forward to the version this build reads.
+
+The library that owns each authored kind keeps that kind's chain forever. A chain has one pure step for each version. Every record id is kept. Every loss is reported as a note that names its step. This capability wraps the chains. So a consumer reads the current version only, and it refuses any other version at its load.
+
+Assemble this capability where an older document arrives: the server's receive, a browser's restore, or a file that an agent loads.
+
+Migration never destroys. The answer is a new document under its own hash, and the caller keeps the old bytes.
 
 ## migrate
 
-The document of kind ("network", "edit_records", "watchlist") brought to version `to` (omitted: the version this build reads) through every step between: the migrated document, its canonical bytes and document_hash (the identity every module registers it under), from, to, and notes — every loss, each naming the step it came from. A network without schema_version is v1 (every untagged shape, pre-trip and pre-alignment included); a bare edit array is v1. Refused: a document already at or past `to` (nothing to migrate), a document newer than this build (naming both versions — never re-emitted), an unknown kind (naming the kinds it knows).
+Bring a document of a given kind to version `to`, through every step between. The kinds are `network`, `edit_records`, and `watchlist`. When `to` is omitted, it is the version this build reads.
+
+The answer holds these parts:
+
+- the migrated document;
+- its canonical bytes, and `document_hash`, which is the identity that every module registers it under;
+- `from` and `to`;
+- `notes`: every loss, each naming the step it came from.
+
+Two untagged shapes have a fixed version. A network without `schema_version` is v1. This covers every untagged shape, including pre-trip and pre-alignment ones. A bare edit array is v1.
+
+The op refuses in these cases:
+
+- A document already at or past `to`: there is nothing to migrate.
+- A document newer than this build: the error names both versions, and the op never re-emits the document.
+- An unknown kind: the error names the kinds it knows.
 
 ## version
 
-The version a document of kind is in, and the version this build reads — whether it needs migrate, without migrating it.
+The version that a document of a given kind is in, and the version this build reads. The answer tells whether the document needs `migrate`, without migrating it.
