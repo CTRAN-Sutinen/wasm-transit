@@ -1,194 +1,219 @@
-# AGENTS.md — the crates
+# AGENTS.md: the crates
 
-Three laws govern everything under this directory. If a design
-violates any one, the design is wrong — not the law.
+Three laws govern everything in this directory. If a design breaks one
+of them, the design is wrong. Do not change the law to fit the design.
 
-## Law 1: the NETWORK is the core data model
+## Law 1: the network is the core data model
 
-GTFS is a serialization spec for external data sharing. Nothing
-new goes "in GTFS," and model-side code does not read
+GTFS is a serialization for sharing data with other systems. Nothing
+new goes into GTFS. Code on the model side does not read a
 serialization.
 
-- GTFS lives only at the boundary: transit-codec (the whole-spec
-  feed layer and import/export), cap-gtfs and cap-network (the
-  boundary capabilities), and cap-rt (rt trip ids resolve against
-  the network there, with the import's stop numbering). cap-gtfs's charter is
-  CLOSED: parse, export, primitive boundary queries — no more.
-- **"Network vs feed" is never a decision.** Model-side
-  capabilities compose over the NETWORK document (+ its day
-  views) — presenting composition over the feed as an option,
-  a trade-off, or an open question is the law broken in prose.
-  No new feed-composing code, and no plan may reopen the
-  question.
-- Capabilities compose over the network document, addressed by
-  content hash. The module is the hash authority.
-- Operator edits, rt joins, analysis, dispatch views: all work in
-  MODEL vocabulary (network, service type, pattern trips,
-  walking group, materialized trip). Route/stop ids cross over;
-  GTFS types and row shapes do not.
-- Streets are the same kind of thing: a street layer (an agency GIS
-  export, TIGER, OSM) is a serialization read into the streets
-  document by `transit_streets::geojson` and nowhere else; the graph
-  and every op read the document. A network never references a
-  streets document or a graph position — a trace commits geometry.
-- GTFS's siblings are the same kind of thing. TODS serializes the
-  operations plan (the runs layer, deadheads, internal locations)
-  beside GTFS, and lives in transit-codec with it (D-126); TIDES is
-  operations history, read as a source into a document (D-127) and
-  never written (D-128); GTFS-rt is read for the live picture and
-  is the serialization of the authored cancels and detours, which the
-  edit document models (D-124). Their row shapes stay at the
-  boundary.
+- GTFS lives only at the boundary. Its homes are:
+  - transit-codec: the whole-spec feed layer, and import and export;
+  - cap-gtfs and cap-network: the boundary capabilities;
+  - cap-rt: rt trip ids resolve against the network here, with the
+    import's stop numbering.
+- The charter of cap-gtfs is closed. It parses, exports, and answers
+  primitive boundary queries. Add nothing else.
+- **"Network or feed" is never a design choice.** Capabilities on the
+  model side compose over the network document and its day views. Do
+  not present composition over the feed as an option, a trade-off, or
+  an open question. That breaks this law. Write no new code that
+  composes over the feed. No plan may open the question again.
+- Capabilities compose over the network document, named by its content
+  hash. The module is the hash authority.
+- Operator edits, rt joins, analysis, and dispatch views all work in
+  the model's vocabulary: network, service type, pattern trips, walking
+  group, and materialized trip. Route ids and stop ids cross the
+  boundary. GTFS types and row shapes do not.
+- Streets follow the same rule. A street layer (an agency GIS export,
+  TIGER, or OSM) is a serialization. Only `transit_streets::geojson`
+  reads it, into the streets document. The graph and every op read the
+  document. A network never refers to a streets document or a graph
+  position. A trace commits geometry.
+- The formats beside GTFS follow the same rule.
+  - TODS serializes the operations plan: the runs layer, deadheads, and
+    internal locations. It lives in transit-codec, beside GTFS (D-126).
+  - TIDES is the history of operations. It is read as a source into a
+    document (D-127) and is never written (D-128).
+  - GTFS-rt is read for the live picture. It is also the serialization
+    of the authored cancellations and detours, which the edit document
+    models (D-124).
 
-## Law 2: do not reinvent the monolith inside a module
+  Their row shapes stay at the boundary.
 
-The monolith (one artifact answering every op) is gone. A
-capability that re-erects it with hash-keyed registries is the
-same bug with new clothes.
-Rejected on sight:
+## Law 2: do not rebuild the monolith inside a module
 
-- a whole GTFS feed written where a day would do
-  (`transit_codec::export` inside a capability — it is the codec's
-  publish path, nothing else);
-- derived/effective FEED caches keyed by date (the monolith's
-  `FeedState`/`with_effective` shape) — what is derived is the
-  model's day, a library's pure function held by the kernel;
-- GTFS-shaped registries or GTFS row types in responses
-  (`transit_codec::feed::TripRow`, ...) — responses are
-  model-native types.
+The monolith was one artifact that answered every op. It is gone. A
+capability that builds it again with hash-keyed registries has the
+same defect.
 
-The day view is `transit_network::materialize(net, date)` — the
-day's trips. Patch the DAY (operator edits over materialized
-stop_times), never the calendar: `transit_dispatch::day` is the
-effective day and what the edits took away, one materialization,
-held by the kernel per (network, edits, date) (`cap_abi::kernel::day`
-— a derived entry, bounded, dropped with its documents) so every
-capability that reads it finds the same day.
+Reject these on sight:
 
-## Law 3: one NEED per module — personas assemble at wire time
+- A whole GTFS feed written where a day is enough. For example,
+  `transit_codec::export` inside a capability. That function is the
+  codec's publish path and has no other use.
+- Caches of a derived or effective feed, keyed by date. This was the
+  monolith's `FeedState` and `with_effective` shape. The derived thing
+  is the model's day: a library's pure function, held by the kernel.
+- GTFS-shaped registries, or GTFS row types in responses, such as
+  `transit_codec::feed::TripRow`. Responses use the model's own types.
 
-A capability module is ONE need, atomically ("see the departures
-at a stop", "watch one vehicle's connections", "plan a trip").
-The persona/bundle comes together at WIRE time — the user's
-selection over the manifest — never in a module's design. Do not
-design a module around who will use it, and do not merge ops
-because the same users end up wiring them together. Linking the
-capabilities a selection assembles into one binary (a generated
-UI's at build time, a user's at wire time — D-77,
-`docs/architecture/bus.md`, "Bus rules") assembles BYTES and merges no
-surface: each capability keeps its crate, its Request enum, and its
-manifest entry, and stays independently retirable.
+The day view is `transit_network::materialize(net, date)`: the trips of
+the day. Patch the day, never the calendar. Operator edits patch the
+materialized stop times. `transit_dispatch::day` is the effective day
+and what the edits took away, in one materialization. The kernel holds
+it for each (network, edits, date) as a derived entry
+(`cap_abi::kernel::day`). The entry is bounded, and it goes when its
+documents go. So every capability that reads the day finds the same
+day.
 
-Rejected on sight:
+## Law 3: one need for each module
 
-- ops serving different needs in one module because one persona
-  downloads them together (a rider's board behind an operator's
-  contract);
-- DUPLICATING an op across modules (two answers to one need on
-  the bus — the monolith rebuilt sideways);
-- shared DAY MACHINERY is a LIBRARY's job (transit-dispatch), not
-  a reason to merge module surfaces.
+A capability module is one need, as one unit. Examples: "see the
+departures at a stop", "watch one vehicle's connections", and "plan a
+trip".
 
-Registration (`load_network`, `load_edits`, `load_feed`, …) is
-composition fabric, not authoring, and it is the KERNEL's: each
-document kind's load is a kernel op (`cap_abi::kernel`), never in a
-capability's Request. The host owns every document,
-wholesale-replaced. Authoring ops MINT documents (and register them
-where they are minted); readers have none by construction.
+The persona or bundle comes together at wire time: the user's selection
+over the manifest. It never comes together in a module's design. Do not
+design a module around who will use it. Do not merge ops because the
+same users wire them together.
 
-### The cut — criteria every capability must pass
+Linking assembles the bytes of the capabilities that a selection
+chooses into one binary. A generated UI's selection links at build
+time. A user's selection will link at wire time (D-77;
+`docs/architecture/bus.md`, "Bus rules"). Linking merges no surface.
+Each capability keeps its crate, its `Request` enum, and its manifest
+entry, and can still be retired alone.
 
-A capability is a named question over hash-addressed documents.
-A cut that fails one criterion is a bundle or a duplicate:
+Reject these on sight:
 
-1. **One question.** The purpose states as a single question. If
-   it needs "and", cut at the "and".
-2. **Persona-blind.** No role words in the purpose (dispatcher,
-   rider, planner, operator). Two personas using disjoint op
-   subsets of one module for different ends is a bundle.
-3. **One subject.** Every answer describes one subject (a street
-   graph, a vehicle's chain, a service calendar). Documents are
-   inputs, not subjects.
-4. **Facets, not surface.** Ops are the one question at other
-   granularities or parameterizations (list → detail; stop →
-   station → saved set). An op that is not a facet does not
-   belong, however related.
-5. **Alone-valuable.** Worth assembling by itself; if it only
-   feeds another capability, it is that capability's op.
-   Capabilities never call capabilities — composition is
+- Ops that serve different needs in one module, because one persona
+  downloads them together. An example is a rider's board behind an
+  operator's contract.
+- An op duplicated across modules. Two answers to one need on the bus
+  are the monolith built again in a different place.
+- Shared day machinery as a reason to merge module surfaces. Shared
+  day machinery is a library's job (transit-dispatch).
+
+Registration belongs to the kernel. Loads such as `load_network`,
+`load_edits`, and `load_feed` connect documents to capabilities. They
+are not authoring. Each document kind's load is a kernel op
+(`cap_abi::kernel`) and is never in a capability's `Request`. The host
+owns every document and replaces it whole. Authoring ops mint
+documents, and register them where they mint them. A reader has no
+authoring op, by construction.
+
+### The cut: the criteria every capability must pass
+
+A capability is a named question over documents named by hash. A cut
+that fails one criterion is a bundle or a duplicate.
+
+1. **One question.** State the purpose as one question. If it needs
+   "and", cut at the "and".
+2. **Persona-blind.** The purpose has no role words: dispatcher, rider,
+   planner, or operator. Two personas that use separate subsets of one
+   module's ops, for different ends, make a bundle.
+3. **One subject.** Every answer describes one subject, such as a
+   street graph, a vehicle's chain, or a service calendar. Documents
+   are inputs, not subjects.
+4. **Facets, not surface.** Each op is the one question at another
+   granularity or with other parameters: a list then a detail, or a
+   stop then a station then a saved set. An op that is not a facet does
+   not belong, however related it is.
+5. **Valuable alone.** The capability is worth assembling by itself.
+   If it only feeds another capability, it is an op of that capability.
+   Capabilities never call capabilities. Composition is through
    documents only.
-6. **No two answers to one question** across the whole manifest.
-   A duplicate answer is deleted with the change that obsoletes
-   it, never kept "for compatibility".
-7. **Registration is plumbing.** The kernel's loads never justify
-   a capability and are not among its ops.
-8. **Independently retirable.** The module can die alone.
+6. **No two answers to one question** in the whole manifest. Delete a
+   duplicate answer in the change that makes it obsolete. Never keep it
+   for compatibility.
+7. **Registration is plumbing.** The kernel's loads never justify a
+   capability, and they are not among its ops.
+8. **Retirable alone.** The module can be removed alone.
 
-### The split — triggers that end a module's growth
+### The split: when a module stops growing
 
-The cut is re-judged at every change to a module, not only at
-its birth: a module conforming at birth drifts into a bundle one
-op at a time. Any one trigger makes SPLIT the answer to "where
-does the next op go", in the change that trips it:
+Judge the cut again at every change to a module, not only when it is
+made. A module that conforms when it is made can become a bundle one op
+at a time. Any one of these triggers makes a split the answer to "where
+does the next op go". Split in the change that trips the trigger.
 
-1. **The second cluster.** The module's ops partition into
-   groups that share neither documents nor response vocabulary.
-   One cluster is a facet family; two is one module holding two
-   questions. The next op added to either cluster is the new
-   module's first op.
-2. **The second document.** An op takes a document none of the
-   module's other ops take. One such op is a facet; the second
-   composes a question this module does not otherwise answer —
-   those ops go where the need that composes it lives.
+1. **The second cluster.** The module's ops fall into groups that share
+   neither documents nor response vocabulary. One cluster is a family
+   of facets. Two clusters are one module that holds two questions. The
+   next op added to either cluster is the first op of the new module.
+2. **The second document.** An op takes a document that none of the
+   module's other ops take. One such op is a facet. The second one
+   composes a question this module does not otherwise answer. Those
+   ops go to the module of the need that composes them.
 3. **The near neighbor.** An op answers inside another module's
-   question. Criterion 6 applies to converging answers, not only
-   born duplicates: the next op that moves either module toward
-   the other's answer deletes one of the pair in that change.
+   question. Criterion 6 applies to answers that move toward each
+   other, not only to duplicates that start that way. When the next op
+   moves either module toward the other's answer, delete one of the
+   pair in that change.
 
 ## Where new things go
 
-The extraction pattern, always in this order:
+Always use the extraction pattern, in this order:
 
-1. crate boundary first — the domain logic lands in a shared
-   library crate (transit-analysis, transit-rt, transit-dispatch,
-   transit-runs,
-   transit-plans) with the law tests;
-2. capability wrapper second — a thin module over the library, its
-   purpose and each op's description in the crate's `OPS.md` (a `#`
-   heading naming the capability, then one `##` section per op, in
-   its `ops` order — gen-manifest refuses anything else) and its
-   worked example computed in gen-manifest's `example_for`.
+1. **Library first.** Put the domain logic in a shared library crate,
+   with its law tests. Examples: transit-analysis, transit-rt,
+   transit-dispatch, transit-runs, and transit-plans.
+2. **Capability second.** Write a thin module over the library. Put its
+   purpose and each op's description in the crate's `OPS.md`. The file
+   has a `#` heading that names the capability, then one `##` section
+   for each op, in the order of its `ops`. gen-manifest refuses any
+   other shape. Compute the op's worked example in gen-manifest's
+   `example_for`.
 
-A new domain op is a library and a capability, never a host. A
-capability declares no state: the documents it reads are the
-kernel's kinds, named in its `capability! { documents: [...] }` (a
-new kind lands in `cap_abi::kernel` with its bound and its load);
-what it derives from documents is a library's pure function and its
-key, held through `cap_abi::kernel::derive` under a `Derivation` —
-a cache, never a dependency. Capabilities never call capabilities:
-a capability crate depends on cap-abi and libraries only; only a
-generated assembly (`assemblies/`) links capabilities.
+A new domain op is a library and a capability, never host code.
+
+A capability declares no state.
+
+- The documents it reads are the kernel's kinds, named in its
+  `capability! { documents: [...] }`. A new kind goes into
+  `cap_abi::kernel` with its bound and its load.
+- What it derives from documents is a library's pure function and its
+  key. The kernel holds it through `cap_abi::kernel::derive`, under a
+  `Derivation`. A derived entry is a cache, never a dependency.
+
+Capabilities never call capabilities. A capability crate depends only
+on cap-abi and libraries. Only a generated assembly (`assemblies/`)
+links capabilities.
 
 ## Enforcement
 
-The justfile `test` recipe asserts laws 1 and 2 and the linking
-rule: `arch-gates` reads the dependency graph (`cargo metadata`,
-deny by default — a capability depends only on cap-abi and
-libraries, only assemblies depend on capabilities, only the codec's
-homes read transit-codec, and the kernel requires only the libraries
-its own code names — every module carries the kernel's closure, so a
-generator's extra library is an optional dependency behind its
-feature; docs/architecture/release-artifacts.md), and every
-capability crate's source
-(`#![forbid(unsafe_code)]`, no static or thread_local of its own);
-the registry constructor is private to the kernel (its
-`compile_fail` doctests); `transit_codec::export` may not appear
-outside the codec's homes; no library code reads a clock,
-randomness, or the environment (DETERMINISM); and every worked
-example answers identically alone and inside each UI's assembly
-(`crates/cap-abi/independence.mjs`). Each gate fails on a broken
-fixture in its own test (`crates/cap-abi/tests/arch_gates_test.rs`,
-`independence.test.mjs`). Law 3
-is a review gate (the criteria above are the checklist — every
-new module's ops must each name one need). If a gate fails your
-change, reread this file — do not widen the gate.
+The `test` recipe in the justfile checks laws 1 and 2 and the linking
+rule:
+
+- `arch-gates` reads the dependency graph (`cargo metadata`) and denies
+  by default:
+  - a capability depends only on cap-abi and libraries;
+  - only assemblies depend on capabilities;
+  - only the codec's homes read transit-codec;
+  - the kernel requires only the libraries its own code names. Every
+    module carries the kernel's closure, so a generator's extra library
+    is an optional dependency behind its feature
+    (`docs/architecture/release-artifacts.md`).
+- `arch-gates` also reads the source of every capability crate. It
+  requires `#![forbid(unsafe_code)]`, and no static or `thread_local`
+  of the crate's own.
+- The registry constructor is private to the kernel. Its
+  `compile_fail` doctests check this.
+- `transit_codec::export` may not appear outside the codec's homes.
+- No library code reads a clock, randomness, or the environment. This
+  is the determinism gate.
+- Every worked example gives the same answer alone and inside each UI's
+  assembly (`crates/cap-abi/independence.mjs`).
+
+Each gate fails on a broken fixture in its own test:
+`crates/cap-abi/tests/arch_gates_test.rs` and
+`independence.test.mjs`.
+
+Law 3 is a review gate. The criteria above are the checklist: each op
+of every new module must name one need.
+
+If a gate fails your change, read this file again. Do not widen the
+gate.

@@ -401,6 +401,12 @@ Per-crate detail: `docs/architecture/crates.md`.
 
 ## Conventions
 
+- **Write at about 80% of ASD-STE100.** This applies to code comments
+  and to the developer documents. Use short sentences and one
+  instruction in each sentence. Use the active voice and one name for
+  each concept. Do not use dash asides, capitals for emphasis, or
+  aphorisms. The rules and the reasons are in `docs/CONVENTIONS.md`,
+  "Writing". The guide keeps ISO 24495-1.
 - **Clarify, don't assume.** When a directive is ambiguous, conflicts
   with the GTFS spec or an architecture law, or leaves a design
   decision open, ask before building on an answer you picked —

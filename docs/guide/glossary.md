@@ -105,6 +105,10 @@ It is removed when it is fixed.
 **Fork.** A copy of the network that a planner changes to make a
 future schedule. Publishing a fork makes it a **pick**.
 
+**Gate.** An automated check in the test run that fails the build
+when a project rule is broken. An example is a capability that uses
+another capability. See [crates/AGENTS.md](../../crates/AGENTS.md).
+
 **Geocoder.** An outside service that turns an address into a place
 on the map. The server can pass address searches to one. The
 software shows its answers as they come and does not store them.
@@ -125,6 +129,12 @@ the screen. It never calculates an answer itself.
 **Latitude and longitude.** The two numbers that say where a point is
 on the earth, in degrees: latitude north or south, longitude east or
 west. Stops use them for where each stop stands.
+
+**Law.** A test that states a rule the code must always follow, and
+checks it against many generated inputs. Laws are written from what the
+behavior should be, before the code. The three rules in
+[crates/AGENTS.md](../../crates/AGENTS.md) are also called laws. See
+[TESTING.md](../TESTING.md).
 
 **Layover.** Time a vehicle waits at the end of a trip before its
 next trip. See also **Recovery**.

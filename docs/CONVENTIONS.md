@@ -88,6 +88,51 @@ holds the gotchas, Rust/wasm/ops and frontend alike.
   peeled with the document left raw (`RawValue`) — no capability's
   Request carries a document to register.
 
+## Writing
+
+Write code comments and the developer documents at about 80% of
+ASD-STE100, Simplified Technical English. The developer documents are
+`AGENTS.md`, `crates/AGENTS.md`, everything under `docs/` except
+`docs/guide/`, the capabilities' `OPS.md` files, and `qa/`. The guide
+(`docs/guide/`) and the operator guides (`DEPLOYMENTS.md`,
+`DEPLOYMENTS-SERVER.md`) follow ISO 24495-1. The two standards agree.
+
+- Write sentences of 20 words or fewer when you can. A sentence that
+  describes may have 25 words.
+- Write one instruction in each sentence. Write an instruction as a
+  command.
+- Use the active voice. Name the thing that does the action.
+- Use one name for each concept. A code name is permitted. A synonym is
+  not. When the code and a document use different names for one
+  concept, fix the document.
+- Do not use dash asides, words in capitals for emphasis, metaphors, or
+  aphorisms.
+- Do not put a decision number or a finding number inside a sentence.
+  Put it at the end of the paragraph, or in a Why entry.
+- Keep each paragraph to one topic.
+- Keep every fact. A shorter text that drops a fact is wrong.
+
+"About 80%" means: apply the sentence rules above, and do not apply the
+STE dictionary. Technical words and code names stay.
+
+### Why: about 80% of ASD-STE100
+
+- **Holds:** the developer documents and the code comments follow the
+  rules above. New and changed text follows them now. Older text
+  changes when it is next edited, or in the plain-docs unit
+  (`docs/units/plain-docs.md`).
+- **Because:** people read these documents as well as agents. The
+  earlier style was difficult for a new developer to read. It had dash
+  asides, words in capitals, aphorisms, and decision numbers inside
+  sentences, and one concept often had two names. Agents read plain
+  sentences as well as dense ones. So the plain style costs nothing.
+- **Rejected:** the full standard, because its dictionary removes
+  technical words a developer needs. One reported test also found that
+  a model told to apply the full standard dropped facts. No rule was
+  also rejected, because each documentation sweep brings the old
+  style back.
+- **Decided:** D-174.
+
 ## Frontend
 
 - **TypeScript end to end** — every type that crosses the wasm

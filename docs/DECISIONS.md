@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-166**.
+- IDs are never reused; the next new decision is **D-175**.
 
 ## Summary
 
@@ -226,6 +226,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-170 | Are the migration steps from before the first deployment kept? | unanswered | nothing |
 | D-171 | How does a UI at its own URL reach the server, and how is it rolled back? | unanswered | each UI at its own URL in `release-artifacts` |
 | D-173 | How does a stop the stops app made reach a plan? | decided | nothing |
+| D-174 | How are code comments and the developer documents written? | decided | nothing |
 
 ## The trip model
 
@@ -3459,3 +3460,17 @@ State: Decided.
 Answer: 2026-11-06 — "documents should also be open formats that can be simply understood without requiring the app." Encoded as: every persisted document is plain JSON (gzip allowed) or an external open format (a GTFS zip, a GTFS-rt protobuf, GeoJSON), never a private encoding; a document on its own says what it is — its kind and its version inside it (extending D-62); and every kind's schema and a worked example, per version, are published as plain files beside the documentation (`registry/schemas/`, `docs/FORMATS.md`), so a person or another tool reads a document with no module, no wasm, and no running deployment.
 Why: `docs/architecture/bus.md`, Why, "Every document says what it is".
 Blocks: nothing; `document-versioning` scope 2 and 6 carry it.
+
+## Documentation
+
+### D-174 — How are code comments and the developer documents written?
+State: Decided.
+Answer: 2026-11-17. Write them at about 80% of ASD-STE100 (Simplified
+Technical English), after Andrej Karpathy's suggestion. Use the sentence
+rules, not the STE dictionary. The guide keeps ISO 24495-1. The user: "i
+like adrej karpathy's 80% ASD-STE100 guide for code comments, etc", and
+"go ahead" to the proposed rule.
+Why: `docs/CONVENTIONS.md`, "Writing", "Why: about 80% of ASD-STE100".
+Pinned by: review. No check in `just test` measures the rules.
+Blocks: nothing. The rewrite of the existing documents is
+`docs/units/plain-docs.md`.

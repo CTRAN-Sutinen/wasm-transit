@@ -24,6 +24,7 @@ Read the pages in this order. Each one builds on the one before.
 | [The apps](apps.md) | What does each app do, and does it need a server? |
 | [How it works](how-it-works.md) | What happens, step by step, when a stop display shows its departures? |
 | [Why it is built this way](why-it-is-built-this-way.md) | Why these design choices, and what do they cost? |
+| [Making your first change](first-change.md) | For developers: what does one real change touch, from the library to the screen? |
 | [Glossary](glossary.md) | What does each term mean, and what might an agency call it? |
 
 ## Where to go next
@@ -36,6 +37,8 @@ Read the pages in this order. Each one builds on the one before.
   the same reader.
 - **To build and run the project** on your own computer, read the
   [README](../../README.md).
+- **To make your first change** to the code, read
+  [Making your first change](first-change.md).
 - **For the full technical detail** of any part, read the
   [architecture reference](../architecture/README.md). It is the
   authority: where this guide and the reference disagree, the
