@@ -16,7 +16,7 @@
 /// here answers in its place.
 
 import { ask, assemble, available, keep, load, produced, servedNetwork, servedNetworkPin, together, Doc } from "../../engine";
-import { answerGraph, applyBuild, buildWaiting, clockLabel, deploymentFeeds, installApp, previousDay, serverAnswers, fetchFeed, nowSecs, readAgencyZone, setAgencyZone, staleLabel, today, whileVisible, type LiveUrls } from "../kit";
+import { answerGraph, applyBuild, buildWaiting, clockLabel, deploymentFeeds, deploymentManifest, installApp, previousDay, serverAnswers, fetchFeed, nowSecs, readAgencyZone, setAgencyZone, staleLabel, today, whileVisible, type LiveUrls } from "../kit";
 
 // This page's capabilities answer inside its linked assembly — one
 // module, one registry: each document registers once (D-77).
@@ -245,19 +245,7 @@ export async function boot(): Promise<void> {
   // The agency's zone before anything reads the date: the pick in
   // force is the agency's today's.
   await Promise.all([restoreUrls(), readAgencyZone()]);
-  await adoptNetwork("the agency's network", async () => {
-    // The pick in force today when the deployment publishes picks,
-    // else its import. Its pin is checked in a module this page reads it with (the
-    // directory answers the first question; the board and rt when the
-    // directory did not assemble): none holds a copy only to check it.
-    const served = await servedNetwork(today(), "directory", "board", "rt");
-    // A deployment that names its GTFS URL: the zip's zone (D-132).
-    setAgencyZone(served?.timezone);
-    followsServer = !!served;
-    if (served) return served;
-    display.status = "This server publishes no network — load the agency's GTFS zip to begin.";
-    return null;
-  });
+  await adoptNetwork("the agency's network", obtainServed);
   // A hidden display makes no requests; it re-reads on return.
   whileVisible(POLL_MS, () => void poll());
   // The header's clock reads the agency's clock between polls.
@@ -326,6 +314,34 @@ async function adoptNetwork(
 /// by hand): it follows the deployment as it moves.
 let followsServer = false;
 
+/// The deployment names the agency's GTFS URL (D-132) and the last read
+/// of it failed: the next poll reads it again.
+let retryFeed = false;
+
+/// The deployment's network: the pick in force today when it publishes
+/// picks, else its import. Its pin is checked in a module this page
+/// reads it with (the directory answers the first question; the board
+/// and rt when the directory did not assemble): none holds a copy only
+/// to check it.
+async function obtainServed() {
+  const served = await servedNetwork(today(), "directory", "board", "rt");
+  // A deployment that names its GTFS URL: the zip's zone (D-132).
+  setAgencyZone(served?.timezone);
+  followsServer = !!served;
+  retryFeed = false;
+  if (served) return served;
+  // A feed URL that did not answer is not a missing network. Nobody at
+  // a display can load a zip: say so, and read the URL on the next poll.
+  const manifest = await deploymentManifest<{ feed_url?: string }>();
+  if (manifest?.feed_url) {
+    retryFeed = true;
+    display.status = "The agency's schedule could not be read. This screen will try again.";
+  } else {
+    display.status = "This server publishes no network — load the agency's GTFS zip to begin.";
+  }
+  return null;
+}
+
 /// The deployment moved past the network this page holds — a
 /// republish, a new pick in force, or today crossing a pick's
 /// effective date (D-63): adopt the network it serves now, without a
@@ -368,6 +384,7 @@ function release(): Promise<void> {
 
 /// One tick: the edit document, the live feeds, and the clock.
 export async function poll(): Promise<void> {
+  if (!network && retryFeed && !display.busy) await adoptNetwork("the agency's network", obtainServed, { quiet: true });
   if (!network || display.busy) return;
   if (await followDeployment()) return;
   if (await applyWaitingBuild()) return;

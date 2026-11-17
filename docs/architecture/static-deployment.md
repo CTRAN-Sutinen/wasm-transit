@@ -44,17 +44,43 @@ A static deployment has none of these:
 A page under a path prefix works. The pages and the service worker read
 every path relative to themselves.
 
-Set the host's headers as follows. A content-addressed file may be
-cached forever: `assets/*-<hash>.*`, `caps/*-<sha256>.wasm`,
-`blobs/<hash>`, and `blobs/<hash>.gz`. Make these files revalidate
-(`no-cache`): the pages, `manifest`, `caps/manifest.json`,
-`live-feeds.json`, and `sw.js`. The server applies the same rule
-(`staticCacheControl`).
+A host must send these headers. The rules are in
+`server/headers.go`. The server sends them on its
+static files, and the export writes the same rules as `_headers` in the
+bundle. Cloudflare Workers and Netlify read that file. A host that does
+not read it must send the same headers by hand
+(`DEPLOYMENTS.md`, "Headers every host must send").
 
-Serve a `.gz` blob as its bytes, with `application/gzip` or
-`octet-stream`. Never send `Content-Encoding` for it. A host that adds
-one anyway still works, because the modules read a document gzipped or
-not.
+- **Caching.** A content-addressed file may be cached forever:
+  `assets/*-<hash>.*`, `caps/*-<sha256>.wasm`, `blobs/<hash>`, and
+  `blobs/<hash>.gz`. These files revalidate (`no-cache`): the pages,
+  `manifest`, `caps/manifest.json`, `live-feeds.json`, and `sw.js`.
+  The host's default does that, so the file has no rule for them. The
+  server applies the same rule (`staticCacheControl`). Without the
+  immutable rule, a first visit fetches each large file twice, because
+  the service worker's precache cannot reuse an uncached response.
+- **Every file** sends `X-Content-Type-Options: nosniff` and
+  `Referrer-Policy: strict-origin-when-cross-origin`.
+- **Each rider page** (`ride-now.html`, `stop-display.html`) sends a
+  `Content-Security-Policy` and a `Permissions-Policy`. The policy lists
+  what the page reads: its own origin, the origins in `live-feeds.json`,
+  the agency's GTFS URL when the export has one (`-feed-url`), and, for
+  the page that draws a map, the two tile hosts (OpenFreeMap and
+  Protomaps). The policy allows `'wasm-unsafe-eval'` for the modules and
+  nothing else that runs code. It refuses frames (`frame-ancestors
+  'none'`). Ride now allows the rider's location for itself. The stop
+  display allows none. `index.html` has no policy, because it holds an
+  inline script that forwards to the page.
+- **Compression.** The server gzips text and wasm types for a client
+  that takes gzip. A static host does it itself. Never compress a `.gz`
+  blob again, and never send `Content-Encoding` for it. A host that adds
+  one anyway still works, because the modules read a document gzipped or
+  not.
+
+`web/e2e/headers.spec.mjs` runs each rider page under its policy, from
+the server and from the export, and fails on any violation.
+`web/e2e/static-server.mjs` applies a bundle's `_headers` as Cloudflare
+does. `go test` pins the rules (`server/headers_test.go`).
 
 An upload adds files. It never deletes blobs. An open page pinned to
 the previous manifest still reads its documents. A rollback uploads the

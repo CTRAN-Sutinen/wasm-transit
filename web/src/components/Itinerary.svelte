@@ -28,7 +28,7 @@
     {#each itinerary.legs as leg, i (i)}
       {#if leg.type === "transit"}
         {@const late = delayText(leg.board_delay_secs)}
-        <li class="ride" style:--route={colors.get(leg.route_id) ?? null}>
+        <li class="ride" style:--route={colors.get(leg.route_id) ?? null} style:--route-text={colors.get(leg.route_id) ? "#fff" : null}>
           <div class="stopline">
             <span class="t">{clockText(leg.board_secs)}</span>
             <span class="place">{leg.board_stop_name}</span>
@@ -75,7 +75,7 @@
   .place { font-size: 0.9rem; }
   .end .place { color: var(--muted); }
   .body { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.45rem 0 0.45rem 5rem; }
-  .badge { background: var(--route, var(--accent)); color: #fff; font-weight: 750; border-radius: 6px; padding: 0.05rem 0.4rem; font-size: 0.85rem; }
+  .badge { background: var(--route, var(--accent)); color: var(--route-text, var(--on-accent)); font-weight: 750; border-radius: 6px; padding: 0.05rem 0.4rem; font-size: 0.85rem; }
   .to { font-weight: 600; font-size: 0.9rem; }
   .late { color: var(--warn); font-size: 0.8rem; font-weight: 650; }
   .late.early { color: var(--bad); }

@@ -332,7 +332,19 @@ test("a detour served while the server's store is not answering says its age", a
 
 // D-67: a deployment's config names no relay, and the page fetches the
 // agency's feeds directly (HTTPS with CORS) — /rt is a dev convenience.
-test("a deployment's live feeds are fetched directly", async ({ page }) => {
+// The test swaps live-feeds.json on the client, but the server writes
+// the page's Content-Security-Policy from the file on disk, so the policy
+// would refuse the invented host. This test runs without the policy;
+// e2e/headers.spec.mjs runs the pages under it.
+test.describe("a deployment's live feeds", () => {
+  test.use({ bypassCSP: true });
+
+  test("are fetched directly", async ({ page }) => {
+    await fetchedDirectly(page);
+  });
+});
+
+async function fetchedDirectly(page) {
   const feed = "https://feeds.example.test/TripUpdates";
   let relayed = 0;
   await page.route("**/live-feeds.json", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ trips: feed }) }));
@@ -350,7 +362,7 @@ test("a deployment's live feeds are fetched directly", async ({ page }) => {
   await expect(page.getByTestId("display-live")).toContainText("Live", { timeout: 10_000 });
   await expect(group(page, "10", "Downtown").getByTestId("display-time").first()).toContainText("2 min late");
   expect(relayed).toBe(0);
-});
+}
 
 // The previous service day's after-midnight trips (overnight-gtfs.zip:
 // owl route 90 at A — Friday's n1 at 24:40, Saturday's s1 at 00:50 and

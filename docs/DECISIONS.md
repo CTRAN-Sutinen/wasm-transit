@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-182**.
+- IDs are never reused; the next new decision is **D-185**.
 
 ## Summary
 
@@ -188,7 +188,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-132 | Can a serverless deployment follow the agency's GTFS URL? | decided | nothing |
 | D-133 | What counts as a just-missed connection? | encoded | nothing |
 | D-134 | How does the network rank its longest waits? | encoded | nothing |
-| D-135 | Which browsers must the generated UIs support? | unanswered | the live-feeds panel in `web-conformance` |
+| D-135 | Which browsers must the generated UIs support? | decided | nothing |
 | D-136 | What does the worklist call weak? | encoded | nothing |
 | D-137 | How are a plan's service combinations shown as day types? | encoded | nothing |
 | D-138 | Does a fork keep the dates outside its period? | decided | nothing |
@@ -234,6 +234,9 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-179 | Which module does replay run a journal's call on? | encoded provisionally | nothing |
 | D-180 | What is service design for, beside service change? | decided; not built | nothing |
 | D-181 | What is the network review called? | unanswered | the review UI's title and id |
+| D-182 | Does the server compress its own static files? | encoded | nothing |
+| D-183 | What policy do the rider pages send, and who writes the export's `_headers`? | encoded | nothing |
+| D-184 | What color is the text on a route's badge? | encoded | nothing |
 
 ## The trip model
 
@@ -3489,26 +3492,86 @@ Blocks: nothing; the revert's window is pinned by the revert e2e in
 `docs/units/observability-rollout.md` when it lands.
 
 ### D-135 — Which browsers must the generated UIs support?
-State: Unanswered.
-Context: `docs/units/web-conformance.md`. No policy is written down.
-The modern-web-guidance corpus treats Baseline "widely available"
-features (30 months in every major browser) as safe, and requires a
-fallback for "newly available" ones. The live-feeds panel's native
-replacement, the Popover API (Escape, light dismiss, the top layer),
-is Baseline since 2025-01-27, so it is newly available until mid-2027.
-The rider UIs run on riders' own phones, often old ones; the stop
-display runs on a Pi 4's Chromium the agency controls.
+State: Decided.
+Answer: 2026-11-17 — "widely available only". The generated UIs use only
+features that are Baseline widely available (30 months in every major
+browser). A newer feature, such as the Popover API (Baseline since
+2025-01-27), is not used until it has been available that long. No
+polyfill, and no feature with a fallback.
+Why: `docs/architecture/web.md`, Why, "The pages use only widely
+available web features".
+Pinned by: the live-feeds panel keeps its own Escape, outside-press, and
+focus handling (`web/e2e/a11y-keyboard.spec.mjs`, "the live-feeds panel
+closes on Escape").
+Blocks: nothing.
+
+### D-182 — Does the server compress its own static files?
+State: Encoded provisionally.
+Context: the Go server sent JS, CSS, and the assemblies uncompressed
+(ride-now's assembly is 4.99 MB, gzip takes it to about 1.5 MB). The
+load balancer could compress instead. The server must never compress
+`application/gzip` documents: the modules decode those themselves.
 Options:
-- Baseline widely available only: the panel keeps a hand-rolled
-  Escape, outside-click, and focus handling (~30 lines), no Popover.
-- Widely available, plus newly available with a small fallback (no
-  polyfill, a fallback of about 20 lines or fewer): Popover where the
-  browser has it, the current panel where it does not.
-- Newly available with the guide's polyfills (`@oddbird/popover-polyfill`,
-  loaded only when the browser lacks Popover): one more dependency.
-- A named floor (for example, the last two major versions of each browser
-  and iOS Safari 16.4+), checked against each feature's support data.
-Blocks: the live-feeds panel in `docs/units/web-conformance.md`.
+- **The server compresses (encoded).** Text and wasm types, for a client
+  that sends `Accept-Encoding: gzip`, at gzip level 5, on each request
+  with no cache. A Range request, a HEAD request, and any other type
+  (the basemap archive, images) go out as stored. The ETag turns weak.
+  The deployment is right with no load balancer rule.
+- The load balancer compresses. Less code in the server. Every operator
+  must set it, and a missing rule costs a rider 3 times the bytes
+  without any error.
+Pinned by: `server/headers_test.go` (`TestStaticCompression`,
+`TestGzipMakesTheETagWeak`, `TestCompressibleTypes`) and
+`web/e2e/headers.spec.mjs`.
+Blocks: nothing. A busy deployment may want a cache of the compressed
+bytes. Measure first.
+
+### D-183 — What policy do the rider pages send, and who writes the export's `_headers`?
+State: Encoded provisionally.
+Context: neither shape sent a Content-Security-Policy, a
+Referrer-Policy, or a Permissions-Policy. A policy must name the
+deployment's own origins: the live feeds, the agency's GTFS URL, the
+tile hosts. The export knows each one. The server knows the live feeds.
+Operators had to write a `_headers` file by hand (caching rules only).
+Options:
+- **Rider pages only, from one source (encoded).** The two rider pages
+  (ride-now.html, stop-display.html) get a strict policy: default-src
+  none, script-src self and `'wasm-unsafe-eval'`, style-src self,
+  connect-src self plus the origins in `live-feeds.json` and the feed
+  URL, and the tile hosts for the page that draws a map. The stop display
+  allows no location. Every file gets `nosniff` and a Referrer-Policy.
+  The server sends them. The export writes the same rules, with the
+  caching rules, as `_headers` (Cloudflare and Netlify read it), so the
+  operator no longer writes one. DEPLOYMENTS.md lists the rules for a
+  host that does not read the file.
+- A policy for every page. The service-change, service-design, and
+  stops pages have not been walked under one. They are not rider pages.
+- The operator owns the policy. The origins drift from the code.
+Pinned by: `server/headers_test.go`, `web/e2e/headers.spec.mjs` (each
+page runs under its policy with no violation, in both shapes), and the
+`_headers` test in `web/e2e/static-deploy.spec.mjs`.
+Blocks: a policy for the other pages (`docs/units/web-conformance.md`).
+
+### D-184 — What color is the text on a route's badge?
+State: Encoded provisionally.
+Context: a badge is the route's number on the route's color. A feed may
+name `route_color` and `route_text_color`. The C-TRAN fixture and some
+feeds name neither, so the badge falls back to the page's accent, and
+white text on the dark-mode accent is 2.26:1.
+Options:
+- **Authored colors as given; else the accent with `--on-accent`
+  (encoded).** A route that names a color keeps white text (the GTFS
+  default). The stop display's badge uses the route's own
+  `route_text_color` when the feed names one. A route with no color
+  takes the accent and the accent's text color. The ride-now badges do
+  not read `route_text_color`: the directory does not carry it.
+- Pick black or white from the authored color's luminance. This infers
+  a fact the feed did not state (D-10, "The feed's own facts are not
+  inferred").
+Pinned by: `web/e2e/a11y.spec.mjs` (axe color contrast, dark mode, on the
+fixture's route badges). An authored pair below 4.5:1 is shown as given,
+and is a finding about the agency's data.
+Blocks: nothing.
 
 ## Agency data
 

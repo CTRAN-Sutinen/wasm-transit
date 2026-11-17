@@ -42,7 +42,7 @@
   const tone = $derived(vehicle ? statusTone(vehicle.status) : "sched");
 </script>
 
-<section class="bus" data-testid="bus-view" style:--route={routeColor(route?.color)}>
+<section class="bus" data-testid="bus-view" style:--route={routeColor(route?.color)} style:--route-text={route?.color ? "#fff" : null}>
   <header>
     <button class="back" onclick={onback} aria-label="back">‹</button>
     {#if vehicle?.route_name}<span class="badge">{vehicle.route_name}</span>{/if}
@@ -68,7 +68,7 @@
     {#if !vehicle.trip}
       <p class="quiet">This bus isn’t on a scheduled trip right now.</p>
     {:else if !progress}
-      <div class="skeleton"><span></span><span></span><span></span></div>
+      <div class="skeleton" role="progressbar" aria-label="loading"><span></span><span></span><span></span></div>
     {:else if !progress.progress}
       <p class="quiet">No predictions for this bus’s trip right now.</p>
     {:else}
@@ -99,7 +99,7 @@
   header { display: flex; align-items: center; gap: 0.5rem; }
   .back { border: 0; background: none; color: var(--text); cursor: pointer; border-radius: 10px; width: 2.25rem; height: 2.25rem; font-size: 1.6rem; line-height: 1; flex: none; }
   .back:hover { background: var(--hover); }
-  .badge { min-width: 2.8rem; padding: 0.2rem 0.45rem; border-radius: 8px; text-align: center; font-weight: 750; background: var(--route, var(--accent)); color: #fff; flex: none; }
+  .badge { min-width: 2.8rem; padding: 0.2rem 0.45rem; border-radius: 8px; text-align: center; font-weight: 750; background: var(--route, var(--accent)); color: var(--route-text, var(--on-accent)); flex: none; }
   .title { min-width: 0; }
   h2 { font-size: 1.1rem; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { color: var(--muted); font-size: 0.78rem; }
@@ -133,6 +133,5 @@
   .quiet { color: var(--muted); margin: 0.8rem 0; }
   .off { color: var(--bad); font-size: 0.9rem; }
   .skeleton { display: grid; gap: 0.5rem; padding: 0.75rem 0; }
-  .skeleton span { height: 2rem; border-radius: 10px; background: linear-gradient(90deg, var(--hover), var(--line), var(--hover)); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
-  @keyframes shimmer { to { background-position: -200% 0; } }
+  .skeleton span { height: 2rem; border-radius: 10px; }
 </style>

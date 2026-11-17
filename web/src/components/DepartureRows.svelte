@@ -41,7 +41,7 @@
         disabled={!onpick}
         onclick={() => onpick?.(r)}
       >
-        <span class="badge" style:--route={colors.get(r.route) ?? null}>{r.route_name}</span>
+        <span class="badge" style:--route={colors.get(r.route) ?? null} style:--route-text={colors.get(r.route) ? "#fff" : null}>{r.route_name}</span>
         <span class="where">
           <span class="dest">{r.destination}</span>
           {#if pooled || (!compact && r.route_long_name)}
@@ -78,7 +78,7 @@
   .badge {
     min-width: 2.6rem; padding: 0.2rem 0.4rem; border-radius: 8px; text-align: center;
     font-weight: 750; font-size: 0.95rem; font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
-    background: var(--route, var(--accent)); color: #fff;
+    background: var(--route, var(--accent)); color: var(--route-text, var(--on-accent));
   }
   .compact .badge { min-width: 2.2rem; font-size: 0.85rem; padding: 0.1rem 0.3rem; border-radius: 6px; }
   .where { display: grid; min-width: 0; }
@@ -97,6 +97,6 @@
   .time.sched { color: var(--text); }
   .alert-dot {
     display: inline-grid; place-items: center; width: 1rem; height: 1rem; border-radius: 50%;
-    background: var(--warn); color: #fff; font-size: 0.7rem; font-weight: 800;
+    background: var(--warn); color: var(--on-accent); font-size: 0.7rem; font-weight: 800;
   }
 </style>

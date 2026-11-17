@@ -430,6 +430,12 @@ true. Change it only with the user, after you read **Because**.
 - **Rejected:** `services.live` in the server's manifest.
 - **Decided:** D-39.
 
+### The pages use only widely available web features (the live-feeds panel in `LiveFeeds.svelte`)
+- **Holds:** a page uses only features that are Baseline widely available: 30 months in every major browser. A newer feature waits until it has been available that long. The pages ship no polyfill. The live-feeds panel is a plain element with its own dialog habits: opening moves focus in, Escape closes it and returns focus to the pill, and a press outside it closes it. About 30 lines.
+- **Because:** the rider pages run on riders' own phones, and many are old. A polyfill is one more dependency to keep, and a fallback is a second code path that no one tests on the device that needs it. The Popover API does the same three things natively. It is Baseline since 2025-01-27, so it is newly available until mid-2027.
+- **Rejected:** Popover with a small fallback; Popover with a polyfill (`@oddbird/popover-polyfill`); a named browser floor.
+- **Decided:** D-135.
+
 ### A UI's flows are code, run by the answer graph (`answerGraph` in `src/uis/kit.ts`, each `host.svelte.ts`)
 - **Holds:** a host declares its flows as `AnswerNode`s in TypeScript. The answer graph schedules them, and knows nothing about transit. A UI's layout is its `Shell.svelte`. Both ship with the UI's build. There is no flow or layout document.
 - **Because:** a node's body builds op arguments from host state, checks that its capability assembled, and keeps its frame's failure. As data, that needs an expression language that the host interprets. That moves the host's code into a JSON dialect, and takes no logic out of the host. A layout document would put product code into the agency's record. It would then need versions, migrations, and a receive path, and a second rollback beside the UI's own.

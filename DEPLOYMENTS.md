@@ -210,11 +210,9 @@ deploy/
     wrangler.jsonc
     site/
       .assetsignore
-      _headers
   stop-display/
     wrangler.jsonc
     site/
-      _headers
 ```
 
 **`deploy/ride-now/wrangler.jsonc`**:
@@ -258,23 +256,18 @@ no key. Phones need internet access to it for the map; departures and
 trip planning do not depend on it. The stop display has no map, so it
 needs no `.assetsignore`.
 
-**`site/_headers`**, the caching rules, the same file for both apps:
+**`_headers`** is a file you do not write. Each export writes it into
+its folder, with the rest of the files. It tells Cloudflare which files
+to keep forever, and which security headers each page sends. It is
+different for each app, because each page names its own sources (the
+live feeds, the map's tile hosts). Copying an export into `site/`
+replaces the old `_headers`, as it should.
 
-```
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable
-/caps/*
-  Cache-Control: public, max-age=31536000, immutable
-/blobs/*
-  Cache-Control: public, max-age=31536000, immutable
-/manifest
-  Content-Type: application/json
-```
-
-Why these rules:
+What the file says:
 
 - **Files named by their hash never change**, so browsers may keep
-  them forever. A new version of one of them has a new name.
+  them forever: `/assets/*`, `/caps/*`, and `/blobs/*`. A new version of
+  one of them has a new name.
 - **Every other file** must be checked with Cloudflare on each use:
   the pages, `manifest`, `sw.js`, `caps/manifest.json`, and
   `live-feeds.json`. Cloudflare does this by default
@@ -282,13 +275,21 @@ Why these rules:
   need no rule. **Do not add a long cache time for `manifest` or
   `sw.js`**: screens would stop picking up new schedules and new
   versions.
-- `manifest` has no file extension, so the last rule labels it as
-  JSON. The pages read it either way; the label is for people and
-  tools looking at it.
+- `manifest` has no file extension, so a rule labels it as JSON. The
+  pages read it either way; the label is for people and tools looking at
+  it.
+- **Security headers.** Every file says it must not be guessed at
+  (`X-Content-Type-Options`). The page itself lists the places it may
+  load from and connect to, and which phone features it may use. Ride-now
+  may ask for the rider's location. The stop display may not.
 - **Do not set `Content-Encoding` on the `.gz` files.** They are
   meant to arrive compressed: the app decompresses them itself, which
   keeps the 10 MB schedule out of the device's memory. The app still
   works if something decompresses them in transit.
+
+If you change `live-feeds.json` by hand after the export, run the export
+again. The page's security header names the feed hosts the export saw.
+A feed on another host would be refused.
 
 **Log in once:**
 
@@ -318,8 +319,8 @@ cd deploy/stop-display && npx wrangler deploy
 
 **Never use `rsync --delete`, and never empty `site/`**: see
 [section 8](#8-publish-a-new-schedule-or-a-new-app-version) for why.
-The `.assetsignore` and `_headers` you created stay in place, because
-an export has no files with those names.
+The `.assetsignore` you created stays in place, because an export has
+no file with that name. Each export brings its own `_headers`.
 
 Before the first real deployment, `npx wrangler deploy --dry-run`
 checks the configuration and the files without uploading anything.
@@ -342,6 +343,10 @@ curl -sI "https://HOST/blobs/$NET.gz" | grep -iE '^HTTP|content-type|content-enc
 
 # The page: expect 200, not a redirect (stop-display.html for the stop display).
 curl -sI https://HOST/ride-now.html | head -1
+
+# The page's security headers: expect a content-security-policy and a
+# permissions-policy line.
+curl -sI https://HOST/ride-now.html | grep -iE 'content-security-policy|permissions-policy'
 ```
 
 Then open `https://HOST/` in a browser. It opens the app. For
@@ -434,7 +439,7 @@ outside service hours, for example for ride-now:
 ```sh
 mv deploy/ride-now/site deploy/ride-now/site.old
 mkdir deploy/ride-now/site
-cp deploy/ride-now/site.old/.assetsignore deploy/ride-now/site.old/_headers deploy/ride-now/site/
+cp deploy/ride-now/site.old/.assetsignore deploy/ride-now/site/
 rsync -a exports/ride-now/<latest>/ deploy/ride-now/site/
 ```
 
@@ -477,7 +482,7 @@ These need the server deployment ([DEPLOYMENTS-SERVER.md](DEPLOYMENTS-SERVER.md)
 | `/ride-now.html` (or `/stop-display.html`) redirects to `/ride-now` | `html_handling` is not `"none"` in that app's `wrangler.jsonc`. |
 | Boards show only timetable times, never live predictions or bus positions | A live feed is not readable from the browser. In the browser's developer console, a CORS or mixed-content error names it. Check it with `curl -sI <feed URL>`: it must be `https://` and include `access-control-allow-origin`. The fix is on the feed's server. Also check `https://HOST/live-feeds.json` is your file, not the development copy. |
 | The map is grey, but stops and departures work | The phone cannot reach OpenFreeMap (`tiles.openfreemap.org`), for example behind a firewall. Allow it. |
-| A screen keeps showing an old schedule | Check `https://HOST/manifest` names the new schedule. If it does, check `_headers` does not give `/manifest` or `/sw.js` a long cache time. A screen that is offline keeps its last schedule until it reconnects. |
+| A screen keeps showing an old schedule | Check `https://HOST/manifest` names the new schedule. If it does, check that the `_headers` file in `site/` does not give `/manifest` or `/sw.js` a long cache time (only a rule added by hand would). A screen that is offline keeps its last schedule until it reconnects. |
 | Option B: the app stays empty or keeps saying it is loading | The GTFS URL is not readable from the browser. Check it with the `curl` command in [section 3](#3-build-a-deployment); it must send `access-control-allow-origin`. The developer console names the error. |
 | Option B: a new feed has not appeared | Devices check once a day. Reload the page, or restart the screen, to check now. Check `https://HOST/manifest` names the right `feed_url`. |
 | The export stops with "is not empty" | Exports go to a new folder every time. Pick a new name. |
@@ -486,3 +491,27 @@ These need the server deployment ([DEPLOYMENTS-SERVER.md](DEPLOYMENTS-SERVER.md)
 
 For how this works inside the project, see
 `docs/architecture/static-deployment.md`.
+
+## Headers every host must send
+
+Cloudflare Workers and Netlify read the `_headers` file in each export,
+so on those hosts you do nothing. Any other static host (a bucket behind
+a CDN, nginx, Apache) must send the same headers. Read them from the
+`_headers` file in the export, which is plain text: a path, then one
+header on each indented line. These are the rules.
+
+| Files | Header | Why |
+|---|---|---|
+| `/assets/*`, `/caps/*`, `/blobs/*` | `Cache-Control: public, max-age=31536000, immutable` | Their names carry a hash, so they never change. Without this rule, a first visit downloads every large file twice (33 MB for ride-now on a bare host), because the app's offline cache cannot reuse an uncached answer. |
+| Every other file, above all `manifest`, `sw.js`, and the pages | Revalidate on each use (`no-cache`, or the host's default). Never a long cache time. | Screens must pick up a new schedule and a new version. |
+| `/manifest` | `Content-Type: application/json` | The file has no extension. |
+| Every file | `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin` | A browser must not guess a file's type, and must not tell other sites which page the rider came from. |
+| `/ride-now.html`, `/stop-display.html` | `Content-Security-Policy` and `Permissions-Policy`, exactly as the export wrote them | The page may load and connect only to the hosts it needs. |
+| Text and `.wasm` files | Compress with gzip (or Brotli) | Ride-now's schedule engine is 5 MB, and about 1.5 MB compressed. Cloudflare compresses text types. Check on a real deployment that it also compresses `application/wasm`. |
+| `/blobs/*.gz` | No `Content-Encoding`, and no second compression | The app decompresses these files itself. |
+
+Do not put a policy on `index.html`. It runs one small script that
+forwards to the page, and the policy would block it.
+
+If you change the feed hosts, run the export again, so the policy names
+the new hosts. A page cannot read a feed its policy does not name.

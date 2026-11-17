@@ -78,5 +78,5 @@
   fieldset button span { color: var(--muted); font-size: 0.85rem; }
   fieldset button.on { border-color: var(--accent); background: var(--accent-soft); }
   .stop { display: grid; }
-  .back { justify-self: start; font: inherit; border: 0; border-radius: 8px; padding: 0.6rem 1rem; background: var(--accent); color: #fff; cursor: pointer; }
+  .back { justify-self: start; font: inherit; border: 0; border-radius: 8px; padding: 0.6rem 1rem; background: var(--accent); color: var(--on-accent); cursor: pointer; }
 </style>

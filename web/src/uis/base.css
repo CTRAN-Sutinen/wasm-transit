@@ -4,13 +4,14 @@
   color-scheme: light;
   --surface: #ffffff;
   --text: #1c1917;
-  --muted: #78716c;
+  --muted: #6b6560;
   --line: #e7e5e4;
   --hover: #f5f5f4;
   --accent: #c2410c;
   --accent-soft: #fde7da;
+  --on-accent: #ffffff;
   --bad: #b91c1c;
-  --warn: #a16207;
+  --warn: #8a5206;
   --ok: #15803d;
 }
 @media (prefers-color-scheme: dark) {
@@ -23,6 +24,7 @@
     --hover: #292524;
     --accent: #fb923c;
     --accent-soft: #4a2a17;
+    --on-accent: #1c1917;
     --bad: #f87171;
     --warn: #facc15;
     --ok: #4ade80;
@@ -37,6 +39,7 @@
   --hover: #292524;
   --accent: #fb923c;
   --accent-soft: #4a2a17;
+  --on-accent: #1c1917;
   --bad: #f87171;
   --warn: #facc15;
   --ok: #4ade80;
@@ -70,3 +73,36 @@ body {
 .chip { display: inline-block; padding: 0 0.4rem; border-radius: 999px; font-size: 0.75rem; }
 .chip.warn { background: color-mix(in srgb, var(--warn) 25%, transparent); }
 .chip.bad { background: color-mix(in srgb, var(--bad) 25%, transparent); }
+
+/* Text on a filled --accent or --warn surface (a button, a pill):
+   --on-accent, never white. White on the dark accent is 2.26:1. */
+
+/* Focus: one ring, drawn as an outline. An outline survives forced
+   colors (Windows High Contrast); a box-shadow does not. A control
+   that hides the native ring draws its own with :focus-visible. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (forced-colors: active) {
+  :focus-visible { outline-color: Highlight; }
+}
+/* A heading focused by script (a view change) is a target, not a control. */
+[tabindex="-1"]:focus { outline: none; }
+/* MapLibre's zoom buttons draw focus as a box-shadow. */
+.maplibregl-ctrl-group button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; box-shadow: none; }
+@media (forced-colors: active) {
+  .maplibregl-ctrl-group button:focus-visible { outline-color: Highlight; }
+}
+
+/* The loading placeholder every panel shares: a block per expected
+   row (the panel sets its height). The shimmer moves only for a
+   rider who has not asked for less motion. */
+.skeleton span { display: block; background: linear-gradient(90deg, var(--hover), var(--line), var(--hover)); background-size: 200% 100%; }
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton span { animation: wb-shimmer 1.2s infinite; }
+}
+@keyframes wb-shimmer { to { background-position: -200% 0; } }
+
+/* A visually hidden live region: spoken, never drawn. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; border: 0;
+}

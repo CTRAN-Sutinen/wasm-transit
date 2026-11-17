@@ -12,14 +12,17 @@
 </script>
 
 {#if !display.feed && !display.busy}
-  <label class="feed">
-    <span>{display.status || "Load the agency's GTFS feed to begin"}</span>
-    <input type="file" accept=".zip" aria-label="Agency GTFS zip" onchange={async (e) => {
-      const f = e.currentTarget.files?.[0];
-      if (f) await loadFeedBytes(new Uint8Array(await f.arrayBuffer()), f.name);
-    }} />
-  </label>
+  <main>
+    <label class="feed">
+      <span role="status">{display.status || "Load the agency's GTFS feed to begin"}</span>
+      <input type="file" accept=".zip" aria-label="Agency GTFS zip" onchange={async (e) => {
+        const f = e.currentTarget.files?.[0];
+        if (f) await loadFeedBytes(new Uint8Array(await f.arrayBuffer()), f.name);
+      }} />
+    </label>
+  </main>
 {:else if display.setup}
+  <main>
   <DisplaySetup
     layout={display.layout}
     found={display.found}
@@ -32,6 +35,7 @@
     onclose={closeSetup}
   />
   {#if display.status}<p class="status" data-testid="display-status">{display.status}</p>{/if}
+  </main>
 {:else}
   <main class="screen {display.layout}" data-testid="display" data-layout={display.layout}>
     <DisplayHeader

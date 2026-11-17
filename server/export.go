@@ -9,6 +9,8 @@ package main
 //	DIR/blobs/<hash>        each published document's JSON (sha256 = hash)
 //	DIR/blobs/<hash>.gz     the same bytes gzipped
 //	DIR/live-feeds.json     -live-feeds when given, else -dist's copy
+//	DIR/_headers            the headers the pages must send (headers.go):
+//	                        caching, security, and the policy of each page
 //
 // The server answers the same paths (/manifest, /blobs/<hash>[.gz] —
 // pointers.go), so a page reads either deployment through one layout.
@@ -24,6 +26,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 // publishedBlob answers a published document by its hash — the
@@ -132,6 +135,20 @@ func (s *server) export(dir, liveFeeds string) error {
 		if json.Unmarshal(feeds, &config) == nil && config.Proxy != "" {
 			log.Printf("export: live-feeds.json names the relay %q, which a static host does not serve — pass the deployment's own with -live-feeds (D-67)", config.Proxy)
 		}
+	}
+	// The headers the host must send: the origins in the policy are the
+	// ones this bundle's live-feeds.json and feed URL name.
+	var pages []string
+	for page := range riderPages {
+		if _, err := os.Stat(filepath.Join(dir, page)); err == nil {
+			pages = append(pages, page)
+		}
+	}
+	sort.Strings(pages)
+	live, _ := os.ReadFile(filepath.Join(dir, "live-feeds.json"))
+	rules := deploymentRules(pages, feedOrigins(live, s.feedURL))
+	if err := os.WriteFile(filepath.Join(dir, "_headers"), []byte(renderHeadersFile(rules)), 0o644); err != nil {
+		return err
 	}
 	log.Printf("export: %s — manifest, %d documents, the pages from %s", dir, len(docs), s.dist)
 	return nil

@@ -140,6 +140,40 @@ test("each deployment carries its own UI and nothing else", async ({ page, reque
   await expect(page.getByTestId("display-stop")).toHaveText("Main & 1st", { timeout: 10_000 });
 });
 
+// The export writes the headers a host must send (server/headers.go):
+// the caching of the hash-named files, the baseline, and a policy for
+// the page it holds, naming the origins its live-feeds.json names. A
+// host that reads `_headers` (Cloudflare, Netlify) needs no rule of the
+// operator's own; any other host sends the same by hand
+// (DEPLOYMENTS.md, "Headers every host must send").
+test("each export writes the headers its host must send", () => {
+  const rules = (bundle) => fs.readFileSync(path.join(bundle, "_headers"), "utf8");
+  const rideRules = rules(ride);
+  const displayRules = rules(display);
+  for (const want of [
+    "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n",
+    "/caps/*\n  Cache-Control: public, max-age=31536000, immutable\n",
+    "/blobs/*\n  Cache-Control: public, max-age=31536000, immutable\n",
+    "/manifest\n  Content-Type: application/json\n",
+    "/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n",
+  ]) {
+    expect(rideRules).toContain(want);
+    expect(displayRules).toContain(want);
+  }
+  // Each bundle's policy names its own page, and the feeds it reads.
+  expect(rideRules).toMatch(/\n\/ride-now\.html\n {2}Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'/);
+  expect(rideRules).toContain("Permissions-Policy: geolocation=(self)");
+  expect(rideRules).toContain("connect-src 'self' http://feeds.test https://tiles.openfreemap.org");
+  expect(rideRules).not.toContain("/stop-display.html");
+  expect(displayRules).toMatch(/\n\/stop-display\.html\n {2}Content-Security-Policy:/);
+  expect(displayRules).toContain("Permissions-Policy: geolocation=()");
+  // The display draws no map: it reads no tile host.
+  expect(displayRules).not.toContain("openfreemap");
+  expect(displayRules).not.toContain("/ride-now.html");
+  // The forwarding index.html runs an inline script: no policy for it.
+  expect(rideRules).not.toContain("/index.html");
+});
+
 test.describe("offline", () => {
   test.use({ serviceWorkers: "allow" });
 
