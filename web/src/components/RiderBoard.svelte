@@ -75,7 +75,7 @@
   {:else if error}
     <p class="off">Couldn’t load departures for this stop right now ({error}).</p>
   {:else if !board}
-    <div class="skeleton" aria-label="loading departures"><span></span><span></span><span></span></div>
+    <div class="skeleton" role="progressbar" aria-label="loading departures"><span></span><span></span><span></span></div>
   {:else}
     {#if board.alerts.length}
       <AlertList alerts={board.alerts} {routes} compact />
@@ -169,9 +169,8 @@
     padding: 0.5rem 0.7rem; border-radius: 12px; background: var(--accent-soft); font-size: 0.85rem;
   }
   .track span { display: flex; align-items: center; gap: 0.4rem; }
-  .track button { border: 0; background: var(--accent); color: #fff; font: inherit; font-weight: 700; padding: 0.3rem 0.7rem; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+  .track button { border: 0; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 700; padding: 0.3rem 0.7rem; border-radius: 999px; cursor: pointer; white-space: nowrap; }
   .quiet-inline { color: var(--muted); }
   .skeleton { display: grid; gap: 0.5rem; padding: 0.75rem 0; }
-  .skeleton span { height: 2.6rem; border-radius: 10px; background: linear-gradient(90deg, var(--hover), var(--line), var(--hover)); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
-  @keyframes shimmer { to { background-position: -200% 0; } }
+  .skeleton span { height: 2.6rem; border-radius: 10px; }
 </style>

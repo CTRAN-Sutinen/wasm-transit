@@ -3,6 +3,7 @@
   /// `directions` (named directions in id order, then the patterns in
   /// none). RENDER only: picking one is an event.
   import type { DirectionGroup } from "../types/DirectionGroup";
+  import { roving } from "./roving";
 
   let {
     directions,
@@ -15,11 +16,12 @@
   } = $props();
 </script>
 
-<div class="tabs" role="tablist" data-testid="direction-tabs">
+<div class="tabs" role="tablist" data-testid="direction-tabs" use:roving>
   {#each directions as d (d.direction ?? "")}
     <button
       role="tab"
       aria-selected={d.direction === selected}
+      tabindex={d.direction === selected ? 0 : -1}
       class:sel={d.direction === selected}
       onclick={() => onselect(d.direction)}
     >

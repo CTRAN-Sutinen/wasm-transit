@@ -229,7 +229,31 @@ and before a release.
    (`docs/architecture/generated-uis.md`, the procedure). The
    generated UIs gate in `just test` refuses a UI without its spec.
    `e2e/picker.spec.mjs` covers its card with no edit.
-7. **Dogfood on real data.** Capability work that touches feeds or
+7. **Accessibility and delivery gates** (`just e2e`). A change to a
+   rider page, a shared component, or the static headers keeps these
+   green:
+   - `web/e2e/a11y.spec.mjs` runs axe-core over every view of ride now
+     and the stop display, and over the picker. It checks WCAG 2.2 A and
+     AA and the best-practice rules, at a desktop width in light mode
+     and a phone width in dark mode, from the server and from the
+     static exports. Any violation fails the test and names the rule
+     and the nodes. A new view of a rider UI adds its walk there. Service
+     design is not in the gate yet (`docs/units/web-conformance.md`).
+   - `web/e2e/a11y-keyboard.spec.mjs` pins what axe cannot see: focus
+     moves to the new view's heading and a polite region speaks, the
+     one `<main>`, the arrow keys in the radio and tab groups, the
+     live-feeds panel's Escape and focus, the accent text token in both
+     modes, reduced motion, and the message when an agency's GTFS URL
+     fails.
+   - `server/headers_test.go` and `web/e2e/headers.spec.mjs` pin the
+     headers: compression, `nosniff`, and each rider page's policy.
+     The spec runs each page under its policy, from the server and from
+     the export, and fails on any reported violation. The `_headers`
+     the export writes is asserted in `web/e2e/static-deploy.spec.mjs`.
+   A screen reader run by hand (VoiceOver, TalkBack, NVDA) is the part
+   no gate covers. It is a dogfood session
+   (`docs/units/web-conformance.md`).
+8. **Dogfood on real data.** Capability work that touches feeds or
    payload size runs a `caps-run` session against the C-TRAN feed
    before it is done. Fixture-scale gates do not catch real-data
    defects.

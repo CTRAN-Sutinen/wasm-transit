@@ -3,6 +3,7 @@
   /// times on screen are live (when the agency's feeds were last read,
   /// how many buses cap-rt's live document saw) or the schedule, and
   /// behind it the feed URLs the host reads.
+  import { tick } from "svelte";
   import type { LiveSummary } from "../types/LiveSummary";
 
   type Urls = { trips: string; vehicles: string; alerts: string };
@@ -26,16 +27,47 @@
   } = $props();
 
   let open = $state(false);
+  let root: HTMLElement | undefined = $state();
+  let pill: HTMLButtonElement | undefined = $state();
   let draft = $state({ trips: "", vehicles: "", alerts: "" });
   $effect(() => {
     draft = { ...urls };
   });
 
+  /// The panel is a plain element (D-135: no Popover API), so it keeps
+  /// its own dialog habits: opening moves focus into it, Escape closes it
+  /// and returns focus to the pill, and a press outside it closes it.
+  async function toggle() {
+    open = !open;
+    if (open) {
+      await tick();
+      root?.querySelector<HTMLInputElement>(".pop input")?.focus();
+    }
+  }
+  function close() {
+    open = false;
+    pill?.focus();
+  }
+  function key(e: KeyboardEvent) {
+    if (e.key === "Escape" && open) {
+      e.stopPropagation();
+      close();
+    }
+  }
+  $effect(() => {
+    if (!open) return;
+    const outside = (e: PointerEvent) => {
+      if (root && !root.contains(e.target as Node)) open = false;
+    };
+    addEventListener("pointerdown", outside, true);
+    return () => removeEventListener("pointerdown", outside, true);
+  });
+
   const mode = $derived(off ? "off" : error && !summary ? "error" : summary ? "live" : "schedule");
 </script>
 
-<div class="live" data-testid="live-feeds">
-  <button class="pill {mode}" onclick={() => (open = !open)} aria-expanded={open}>
+<div class="live" data-testid="live-feeds" bind:this={root} onkeydown={key} role="presentation">
+  <button class="pill {mode}" bind:this={pill} onclick={toggle} aria-expanded={open}>
     <span class="dot" aria-hidden="true"></span>
     {#if mode === "live" && summary}
       Live {at} · {summary.vehicles} buses
@@ -58,12 +90,12 @@
         <p>No live data — every time shown is the schedule.</p>
       {/if}
       {#if error}<p class="bad">Last read failed ({error}); showing the last good data.</p>{/if}
-      <form onsubmit={(e) => { e.preventDefault(); onurls(draft); open = false; }}>
+      <form onsubmit={(e) => { e.preventDefault(); onurls(draft); close(); }}>
         <label>Trip updates <input type="url" aria-label="trip updates url" bind:value={draft.trips} placeholder="https://…/TripUpdates" /></label>
         <label>Vehicle positions <input type="url" aria-label="vehicle positions url" bind:value={draft.vehicles} placeholder="https://…/VehiclePositions" /></label>
         <label>Service alerts <input type="url" aria-label="service alerts url" bind:value={draft.alerts} placeholder="https://…/Alerts" /></label>
         <div class="row">
-          <button type="button" onclick={() => (open = false)}>Close</button>
+          <button type="button" onclick={close}>Close</button>
           <button type="submit" class="primary">Use these feeds</button>
         </div>
       </form>
@@ -79,7 +111,10 @@
     box-shadow: 0 2px 10px rgb(0 0 0 / 0.15); white-space: nowrap;
   }
   .dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--muted); }
-  .live .pill.live .dot { background: var(--ok); animation: pulse 2s infinite; }
+  .live .pill.live .dot { background: var(--ok); }
+  @media (prefers-reduced-motion: no-preference) {
+    .live .pill.live .dot { animation: pulse 2s infinite; }
+  }
   .pill.error .dot, .pill.off .dot { background: var(--bad); }
   @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
   .pop {
@@ -94,5 +129,5 @@
   input { font: inherit; font-size: 0.82rem; padding: 0.35rem 0.5rem; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); }
   .row { display: flex; justify-content: flex-end; gap: 0.4rem; margin-top: 0.2rem; }
   .row button { font: inherit; padding: 0.35rem 0.8rem; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
-  .row .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .row .primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 </style>

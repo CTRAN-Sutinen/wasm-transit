@@ -301,6 +301,26 @@ checks less often than every 5 seconds, raise `-drain` to match.
 bucket and the same options. A change made through one copy reaches
 the others within 2 seconds.
 
+**Compression and headers.** The server does both itself. The load
+balancer needs no rule for them.
+
+- The server compresses text and `.wasm` files (gzip) for a browser that
+  asks. Ride-now's schedule engine goes from 5 MB to about 1.5 MB. It
+  never compresses the `.gz` schedule documents again. A load balancer
+  that also compresses is fine. It must not remove `Vary` or
+  `Content-Encoding`, and it must not compress the `.gz` documents.
+- Every file carries `X-Content-Type-Options: nosniff` and a referrer
+  policy. The two rider pages (`/ride-now.html`, `/stop-display.html`)
+  also carry a `Content-Security-Policy` and a `Permissions-Policy`.
+  The policy lists the hosts in the deployment's `live-feeds.json`. If
+  you change the live feeds, the next page load carries the new list.
+  Do not add a different `Content-Security-Policy` at the load balancer:
+  the browser would apply both, and the stricter one would win.
+- To check: `curl -sI https://HOST/ride-now.html | grep -iE
+  'content-security-policy|permissions-policy'`, and `curl -sI -H
+  'Accept-Encoding: gzip' https://HOST/caps/manifest.json | grep -i
+  content-encoding`.
+
 ## 8. Publish a new schedule
 
 Replace the GTFS file at the `-feed` address. The server checks it

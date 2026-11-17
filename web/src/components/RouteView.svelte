@@ -7,6 +7,9 @@
   import type { RouteDetail } from "../types/RouteDetail";
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import { routeColor } from "./rideFormat";
+  import { roving } from "./roving";
+
+  const uid = crypto.randomUUID();
 
   let {
     route,
@@ -33,7 +36,7 @@
   const color = $derived(routeColor(route?.color));
 </script>
 
-<section class="route" data-testid="route-view" style:--route={color}>
+<section class="route" data-testid="route-view" style:--route={color} style:--route-text={color ? "#fff" : null}>
   <header>
     <button class="back" onclick={onback} aria-label="back">‹</button>
     {#if route}
@@ -45,18 +48,19 @@
   {#if off}
     <p class="off">The route directory is unavailable right now.</p>
   {:else if !info}
-    <div class="skeleton"><span></span><span></span><span></span></div>
+    <div class="skeleton" role="progressbar" aria-label="loading"><span></span><span></span><span></span></div>
   {:else if !info.detail}
     <p class="quiet">This route isn’t in the network.</p>
   {:else}
     <p class="hint">Its buses are highlighted on the map. Tap a stop to see what leaves it.</p>
     {#if directions.length > 1}
-      <div class="tabs" role="tablist">
+      <div class="tabs" role="tablist" aria-label="Direction" use:roving>
         {#each directions as d, i (d.direction ?? i)}
-          <button role="tab" aria-selected={direction === i} class:on={direction === i} onclick={() => (direction = i)}>{d.name}</button>
+          <button role="tab" id="{uid}-tab-{i}" aria-controls="{uid}-panel" aria-selected={direction === i} tabindex={direction === i ? 0 : -1} class:on={direction === i} onclick={() => (direction = i)}>{d.name}</button>
         {/each}
       </div>
     {/if}
+    <div id="{uid}-panel" role={directions.length > 1 ? "tabpanel" : undefined} aria-labelledby={directions.length > 1 ? `${uid}-tab-${direction}` : undefined}>
     {#each directions[direction]?.variants ?? [] as v, i (v.patterns.join(","))}
       <details class="variant" open={i === 0} data-testid="route-variant">
         <summary>
@@ -72,6 +76,7 @@
         </ol>
       </details>
     {/each}
+    </div>
   {/if}
 </section>
 
@@ -80,7 +85,7 @@
   h2 { font-size: 1.15rem; margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .back { border: 0; background: none; color: var(--text); cursor: pointer; border-radius: 10px; width: 2.25rem; height: 2.25rem; font-size: 1.6rem; line-height: 1; flex: none; }
   .back:hover { background: var(--hover); }
-  .badge { min-width: 2.8rem; padding: 0.2rem 0.45rem; border-radius: 8px; text-align: center; font-weight: 750; background: var(--route, var(--accent)); color: #fff; flex: none; }
+  .badge { min-width: 2.8rem; padding: 0.2rem 0.45rem; border-radius: 8px; text-align: center; font-weight: 750; background: var(--route, var(--accent)); color: var(--route-text, var(--on-accent)); flex: none; }
   .hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.6rem; }
   .tabs { display: flex; gap: 0.25rem; background: var(--hover); padding: 0.2rem; border-radius: 10px; margin-bottom: 0.6rem; }
   .tabs button {
@@ -106,6 +111,5 @@
   .quiet { color: var(--muted); }
   .off { color: var(--bad); font-size: 0.9rem; }
   .skeleton { display: grid; gap: 0.5rem; padding: 0.75rem 0; }
-  .skeleton span { height: 2.4rem; border-radius: 10px; background: linear-gradient(90deg, var(--hover), var(--line), var(--hover)); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
-  @keyframes shimmer { to { background-position: -200% 0; } }
+  .skeleton span { height: 2.4rem; border-radius: 10px; }
 </style>

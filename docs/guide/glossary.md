@@ -14,6 +14,12 @@ trip cancellation entered by staff. A draft is being written. A
 submitted record is waiting for review. An accepted record is in
 effect. A retired record no longer applies, but stays in the history.
 
+**Accessibility check.** An automated test that looks for screens a
+person could not use: text that is too faint to read, a button a
+keyboard cannot reach, or a control a screen reader cannot name. It
+runs every time the software is built. It does not replace trying the
+app with a screen reader.
+
 **Alignment.** The line a route follows on the ground. Agencies may
 call it the route path or the shape. In GTFS it is a `shapes.txt`
 shape. Several patterns can share one alignment.
@@ -207,6 +213,10 @@ blocks. Work on runs is still in progress.
 each may hold. Another program can check a document against it, and
 read the document without this software. See
 [architecture/registry.md](../architecture/registry.md).
+
+**Screen reader.** Software that reads a screen aloud, for people who
+cannot see it well. VoiceOver (on iPhone), TalkBack (on Android), and
+NVDA (on Windows) are screen readers.
 
 **Service combination.** A set of service types that run together on
 the same dates, such as "Weekday + School Day". Every date with

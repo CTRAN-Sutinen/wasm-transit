@@ -18,6 +18,7 @@ The choices are:
 10. [Read the clock in the agency's time zone](#10-read-the-clock-in-the-agencys-time-zone)
 11. [Check the rules by machine, and test from intent](#11-check-the-rules-by-machine-and-test-from-intent)
 12. [The agency owns its data, not the apps](#12-the-agency-owns-its-data-not-the-apps)
+13. [Make the rider apps work for everyone, on old phones too](#13-make-the-rider-apps-work-for-everyone-on-old-phones-too)
 
 ## 1. Do the work on the rider's device
 
@@ -263,6 +264,29 @@ files, while real responsibility is often split by field and role. And
 owning the data gives the agency the work of keeping it clean; the apps
 can make that easier, but cannot do it for the agency.
 
+## 13. Make the rider apps work for everyone, on old phones too
+
+**The choice.** The rider apps must pass an accessibility check on
+every screen, and they use only web features that every major browser
+has had for about two and a half years. A test runs the check every
+time the software is built. It covers colors, keyboard use, screen
+readers, and phone widths. The apps also tell the browser what they may
+load and connect to, and which phone features they may use.
+
+**Why.** Riders are the public. Some use a screen reader, some use only a
+keyboard, some have low vision, and many have an older phone. A check
+that no one runs gets forgotten, so a test holds it. Limiting the
+apps to well-known features keeps them working on old phones without
+extra code that no one tests. The list of allowed sources keeps a mistake
+or an attack on another site from changing what a rider sees.
+
+**The cost.** The apps wait for a new web feature to become common. A few
+parts, such as the live-feeds panel, are written by hand when the
+browser has a ready-made version. The list of allowed sources must
+name every feed and map host, so a new host needs a new export. A test
+cannot replace a person who uses a screen reader. That check is done by
+hand.
+
 ## Questions still open
 
 Some choices are not settled yet. Each open question, with its
@@ -280,4 +304,5 @@ behind its choices, including the alternatives that were rejected:
 | 6, 7, 8 | [architecture/storage.md](../architecture/storage.md), [architecture/server.md](../architecture/server.md) and [FORMATS.md](../FORMATS.md) |
 | 9 | [architecture/static-deployment.md](../architecture/static-deployment.md) |
 | 1, 10 | [architecture/updates-offline.md](../architecture/updates-offline.md) and [architecture/web.md](../architecture/web.md) |
+| 13 | [architecture/web.md](../architecture/web.md), [architecture/static-deployment.md](../architecture/static-deployment.md), and [TESTING.md](../TESTING.md) |
 | 11 | [TESTING.md](../TESTING.md) |

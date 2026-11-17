@@ -7,6 +7,7 @@
   import type { DirectoryRoute } from "../types/cap_directory/DirectoryRoute";
   import PlaceSearch from "./PlaceSearch.svelte";
   import Itinerary from "./Itinerary.svelte";
+  import { roving } from "./roving";
 
   type Place = { id: string; name: string; lat?: number; lon?: number; detail?: string };
   type Field = "search" | "from" | "to";
@@ -134,9 +135,9 @@
     {/if}
   {/if}
 
-  <div class="when" role="radiogroup" aria-label="when">
+  <div class="when" role="radiogroup" aria-label="when" use:roving>
     {#each MODES as m (m.mode)}
-      <button role="radio" aria-checked={when.mode === m.mode} class:on={when.mode === m.mode} onclick={() => mode(m.mode)}>{m.label}</button>
+      <button role="radio" aria-checked={when.mode === m.mode} tabindex={when.mode === m.mode ? 0 : -1} class:on={when.mode === m.mode} onclick={() => mode(m.mode)}>{m.label}</button>
     {/each}
   </div>
   {#if when.mode === "depart" || when.mode === "arrive"}
@@ -153,7 +154,7 @@
   {:else if from.id === to.id}
     <p class="hint">Those are the same place.</p>
   {:else if !plan}
-    <div class="skeleton" aria-label="planning"><span></span><span></span></div>
+    <div class="skeleton" role="progressbar" aria-label="planning the trip"><span></span><span></span></div>
   {:else if plan.error}
     <p class="off">Couldn’t plan this trip right now ({plan.error}).</p>
   {:else}
@@ -188,7 +189,7 @@
   .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); width: 6.5rem; }
   .link.on { text-decoration: underline; }
   .picking { margin: 0.4rem 0 0; padding: 0.45rem 0.65rem; border-radius: 10px; font-size: 0.85rem; background: color-mix(in srgb, var(--accent) 12%, transparent); }
-  .link { border: 0; background: none; color: var(--accent); font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; padding: 0; }
+  .link { border: 0; background: none; color: var(--accent); font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; padding: 0; min-height: 1.5rem; }
   .when { display: flex; gap: 0.25rem; margin: 0.75rem 0 0.4rem; background: var(--hover); padding: 0.2rem; border-radius: 10px; }
   .when button {
     flex: 1; border: 0; background: none; color: var(--muted); font: inherit; font-size: 0.82rem; font-weight: 600;
@@ -203,6 +204,5 @@
   .hint { color: var(--muted); font-size: 0.9rem; line-height: 1.45; }
   .off { color: var(--bad); font-size: 0.9rem; }
   .skeleton { display: grid; gap: 0.5rem; padding: 0.75rem 0; }
-  .skeleton span { height: 2.8rem; border-radius: 10px; background: linear-gradient(90deg, var(--hover), var(--line), var(--hover)); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
-  @keyframes shimmer { to { background-position: -200% 0; } }
+  .skeleton span { height: 2.8rem; border-radius: 10px; }
 </style>

@@ -189,6 +189,18 @@ Its HTTP surface:
     `caps/manifest.json`, `live-feeds.json`, and the service worker
     `sw.js`. An open page's update check then meets a new build
     ([updates-offline.md](updates-offline.md)).
+  - Every file sends `X-Content-Type-Options: nosniff` and a
+    `Referrer-Policy`. `ride-now.html` and `stop-display.html` also send
+    a `Content-Security-Policy` and a `Permissions-Policy`. The policy
+    names the origins in the deployment's `live-feeds.json`. The rules
+    are the ones the export writes as `_headers`
+    ([static-deployment.md](static-deployment.md), "A host must send
+    these headers").
+  - The server gzips text and wasm types for a client that sends
+    `Accept-Encoding: gzip` (`gzipStatic` in `headers.go`). It never
+    compresses a Range request, a HEAD request, or any other type: the
+    basemap archive and the `.gz` documents go out as stored. A
+    compressed answer has a weak ETag and `Vary: Accept-Encoding`.
 - `/builds`: `POST {"build": "<hash>"}` moves the `build` pointer to a
   build that its log holds. This is a rollback, or a move forward again
   (store mode; docs/FORMATS.md, "Builds"). It is a write, protected
@@ -476,6 +488,12 @@ reading **Because**.
 ### Gzip as content, never transport (`/blobs/<hash>.gz`, `Accept: application/gzip`, `/network/document`)
 - **Holds:** the server serves a gzipped document as `application/gzip` bytes, never `Content-Encoding: gzip`. `/blobs/<hash>` answers gzip on `Accept: application/gzip`. `/blobs/<hash>.gz` answers it by path. Both stay.
 - **Because:** the page hands compressed bytes to the module, which decodes as it parses (kernel op 256). The 9.6 MB network text therefore never exists whole on the page. The `.gz` path exists because a static host cannot negotiate on a header. A host that decompresses anyway still works, because the modules read either form.
+
+### The server compresses its static files and sends the rider pages' policies (`headers.go`, `gzipStatic`)
+- **Holds:** the server compresses text and wasm itself, and it sends a strict policy on the two rider pages. Both come from the same rules as the export's `_headers`.
+- **Because:** a deployment is right with no load balancer rule. A missing rule would cost a rider three times the bytes with no error. The policy needs the deployment's own origins, and the server and the export know them. The operator would let them drift.
+- **Rejected:** a load balancer that compresses. A policy on every page: only the rider pages have been walked under one.
+- **Provisional:** D-177 and D-178.
 
 ### Inputs from a URL or the bucket (`-feed`, `-streets`, `-policy`, `source.go`)
 - **Holds:** each input is a URL, `bucket:<key>`, or a dev path. With `-store`, the server commits each read (`source.feed`, `source.streets`).

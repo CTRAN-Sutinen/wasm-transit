@@ -116,6 +116,7 @@
       role="combobox"
       aria-expanded={open}
       aria-controls={listId}
+      aria-activedescendant={open && items[active] ? `${listId}-${active}` : undefined}
       value={editing ? text : value}
       oninput={input}
       onkeydown={key}
@@ -131,12 +132,12 @@
     <ul class="results" id={listId} role="listbox">
       {#if found}
         {#each found.places as p, i (p.id)}
-          <li role="option" aria-selected={i === active}>
-            <button class:active={i === active} onmousedown={(e) => e.preventDefault()} onclick={() => pick(p)}>
-              <span class="pin" aria-hidden="true"></span>
-              <span class="name">{#each marked(p.name, found.text) as part, j (j)}{#if part.hit}<b>{part.s}</b>{:else}{part.s}{/if}{/each}</span>
-              <span class="id">#{p.id}</span>
-            </button>
+          <!-- The input owns the keys (arrows, Enter, Escape); a pointer picks with a click. -->
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <li role="option" id="{listId}-{i}" aria-selected={i === active} class:active={i === active} onmousedown={(e) => e.preventDefault()} onclick={() => pick(p)}>
+            <span class="pin" aria-hidden="true"></span>
+            <span class="name">{#each marked(p.name, found.text) as part, j (j)}{#if part.hit}<b>{part.s}</b>{:else}{part.s}{/if}{/each}</span>
+            <span class="id">#{p.id}</span>
           </li>
         {:else}
           {#if !addresses?.places.length}
@@ -153,12 +154,11 @@
         <li class="head" role="presentation">Addresses and places</li>
         {#each addresses.places as p, k (p.id)}
           {@const i = stopCount + k}
-          <li role="option" aria-selected={i === active} data-testid="address-result">
-            <button class:active={i === active} onmousedown={(e) => e.preventDefault()} onclick={() => pick(p)}>
-              <span class="pin addr" aria-hidden="true"></span>
-              <span class="name">{#each marked(p.name, addresses.text) as part, j (j)}{#if part.hit}<b>{part.s}</b>{:else}{part.s}{/if}{/each}</span>
-              {#if p.detail}<span class="id">{p.detail}</span>{/if}
-            </button>
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <li role="option" id="{listId}-{i}" aria-selected={i === active} class:active={i === active} data-testid="address-result" onmousedown={(e) => e.preventDefault()} onclick={() => pick(p)}>
+            <span class="pin addr" aria-hidden="true"></span>
+            <span class="name">{#each marked(p.name, addresses.text) as part, j (j)}{#if part.hit}<b>{part.s}</b>{:else}{part.s}{/if}{/each}</span>
+            {#if p.detail}<span class="id">{p.detail}</span>{/if}
           </li>
         {/each}
       {/if}
@@ -171,9 +171,10 @@
   .field {
     display: flex; align-items: center; gap: 0.4rem;
     background: var(--hover); border: 1px solid var(--line); border-radius: 12px;
-    padding: 0 0.7rem; transition: border-color 0.15s, box-shadow 0.15s;
+    padding: 0 0.7rem;
   }
-  .field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--surface); }
+  /* The ring is an outline: forced colors keep it (a box-shadow is dropped). */
+  .field:focus-within { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; background: var(--surface); }
   .icon { display: grid; place-items: center; color: var(--muted); width: 18px; flex: none; }
   .icon.from::before, .icon.to::before { content: ""; width: 10px; height: 10px; border-radius: 50%; border: 2.5px solid var(--accent); }
   .icon.to::before { background: var(--accent); }
@@ -187,11 +188,11 @@
     background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
     box-shadow: 0 12px 32px rgb(0 0 0 / 0.16); max-height: min(22rem, 50dvh); overflow-y: auto;
   }
-  .results button {
-    width: 100%; display: flex; align-items: center; gap: 0.6rem; text-align: left;
-    border: 0; background: none; color: var(--text); font: inherit; padding: 0.55rem 0.6rem; border-radius: 8px; cursor: pointer;
+  .results li[role="option"] {
+    display: flex; align-items: center; gap: 0.6rem; text-align: left;
+    color: var(--text); padding: 0.55rem 0.6rem; border-radius: 8px; cursor: pointer;
   }
-  .results button.active, .results button:hover { background: var(--hover); }
+  .results li[role="option"].active, .results li[role="option"]:hover { background: var(--hover); }
   .pin { width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--muted); flex: none; }
   .pin.addr { border-radius: 2px; }
   .head {

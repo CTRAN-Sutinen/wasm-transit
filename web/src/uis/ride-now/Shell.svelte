@@ -12,6 +12,7 @@
   /// that slides up over the map.
   /// Every panel is a render component fed from the host's `ride`;
   /// this file only places them and routes their events to the host.
+  import { tick } from "svelte";
   import {
     ride, loadFeedBytes, setLiveUrls, typed, clearFound, show, openStop, pickDeparture, directions, setEnd, swapEnds,
     setWhen, toggleSaved, locate, nearPoint, showRoutes, filterRoutes, openRoute, openVehicle, setFollow, directionsToSpot,
@@ -68,6 +69,37 @@
       : { top: 72, right: 72, bottom: 48, left: 456 },
   );
 
+  /// A view change moves focus to the new view's heading, so a rider
+  /// with a screen reader hears where they are (WCAG 2.4.3). The first
+  /// view takes no focus: the page has just opened.
+  let panel: HTMLElement | undefined = $state();
+  let shownView: string | null = null;
+  $effect(() => {
+    const view = ride.view;
+    if (shownView !== null && shownView !== view) {
+      void tick().then(() => {
+        const heading = panel?.querySelector<HTMLElement>("h1, h2");
+        if (!heading) return;
+        heading.tabIndex = -1;
+        heading.focus({ preventScroll: true });
+      });
+    }
+    shownView = view;
+  });
+
+  /// What the polite region says: the status line, else the size of
+  /// the answer on screen (the rows, the stops, the trip). It changes
+  /// only when the answer does.
+  const announcement = $derived.by(() => {
+    if (ride.status) return ride.status;
+    const n = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+    if (ride.view === "home" && ride.nearby) return `${n(ride.nearby.length, "stop")} near you`;
+    if (ride.view === "stop" && ride.board) return `${n(ride.board.rows.length, "departure")}`;
+    if (ride.view === "routes" && ride.routeRows) return n(ride.routeRows.length, "route");
+    if (ride.view === "trip" && ride.plan && !ride.plan.error) return ride.plan.itinerary ? "Trip found" : "No trip found";
+    return "";
+  });
+
   async function stopFromMap(place: Place) {
     sheetUp = true;
     await openStop(place);
@@ -81,7 +113,7 @@
 </script>
 
 <div class="app">
-  <div class="map">
+  <div class="map" role="region" aria-label="Map view">
     <RideMap
       stops={ride.stops}
       marked={ride.view === "home" ? (ride.nearby?.map((p) => p.id) ?? []) : []}
@@ -107,31 +139,30 @@
       onpoint={spotFromMap}
       onvehicle={(v) => { if (ride.picking) return; sheetUp = true; openVehicle(v); }}
     />
+    {#if ride.updateReady && !ride.picking}
+      <div class="pick-banner" data-testid="update-ready" role="status">
+        A new version is ready
+        <button onclick={applyUpdate}>Reload</button>
+      </div>
+    {/if}
+    {#if ride.picking}
+      <div class="pick-banner" data-testid="pick-banner">
+        Tap the map to set your {ride.picking === "from" ? "start" : "destination"}
+        <button onclick={() => { sheetUp = true; chooseOnMap(null); }}>Cancel</button>
+      </div>
+    {/if}
   </div>
 
-  {#if ride.updateReady && !ride.picking}
-    <div class="pick-banner" data-testid="update-ready" role="status">
-      A new version is ready
-      <button onclick={applyUpdate}>Reload</button>
-    </div>
-  {/if}
-  {#if ride.picking}
-    <div class="pick-banner" data-testid="pick-banner">
-      Tap the map to set your {ride.picking === "from" ? "start" : "destination"}
-      <button onclick={() => { sheetUp = true; chooseOnMap(null); }}>Cancel</button>
-    </div>
-  {/if}
-
-  <div class="corner">
+  <header class="corner">
     {#if alerts.length}
       <button class="alerts-btn" onclick={() => { sheetUp = true; show("alerts"); }} data-testid="alerts-button">
         <span aria-hidden="true">⚠</span> {alerts.length} alert{alerts.length === 1 ? "" : "s"}
       </button>
     {/if}
     <LiveFeeds urls={ride.urls} summary={ride.live?.summary ?? null} at={ride.liveAt} error={ride.liveError} off={ride.off.rt} onurls={setLiveUrls} />
-  </div>
+  </header>
 
-  <aside class="panel" class:down={narrow && !sheetUp}>
+  <main class="panel" class:down={narrow && !sheetUp} bind:this={panel}>
     <button class="handle" onclick={() => (sheetUp = !sheetUp)} aria-label={sheetUp ? "show the map" : "show the panel"}><span></span></button>
     <div class="body">
       {#if ride.view === "home"}
@@ -312,7 +343,8 @@
         <p class="status" data-testid="ride-status">{ride.status}</p>
       {/if}
     </div>
-  </aside>
+  </main>
+  <div class="sr-only" role="status" aria-live="polite" data-testid="ride-announce">{announcement}</div>
 </div>
 
 <style>
@@ -328,7 +360,7 @@
   .corner { position: absolute; top: 0.9rem; right: 0.9rem; display: flex; gap: 0.5rem; align-items: flex-start; z-index: 3; }
   .alerts-btn {
     border: 0; cursor: pointer; font: inherit; font-size: 0.8rem; font-weight: 700; padding: 0.4rem 0.75rem; border-radius: 999px;
-    background: var(--warn); color: #fff; box-shadow: 0 2px 10px rgb(0 0 0 / 0.15);
+    background: var(--warn); color: var(--on-accent); box-shadow: 0 2px 10px rgb(0 0 0 / 0.15);
   }
 
   .panel {
@@ -345,7 +377,7 @@
   .group-head { display: flex; align-items: baseline; justify-content: space-between; }
   .group h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0; }
   .links { display: flex; gap: 0.9rem; }
-  .link { border: 0; background: none; color: var(--accent); font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; padding: 0; }
+  .link { border: 0; background: none; color: var(--accent); font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; padding: 0; min-height: 1.5rem; display: inline-flex; align-items: center; }
   .quiet { color: var(--muted); font-size: 0.88rem; margin: 0; line-height: 1.45; }
   .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
   .chip-btn {
@@ -354,7 +386,7 @@
   }
   .chip-btn:hover { border-color: var(--accent); color: var(--accent); }
   .cta {
-    display: flex; align-items: center; gap: 0.5rem; border: 0; background: var(--accent); color: #fff;
+    display: flex; align-items: center; gap: 0.5rem; border: 0; background: var(--accent); color: var(--on-accent);
     font: inherit; font-weight: 700; padding: 0.65rem 0.9rem; border-radius: 12px; cursor: pointer; margin-top: -0.4rem;
   }
   .cta:hover { filter: brightness(1.08); }
@@ -365,7 +397,10 @@
   .tip { margin: -0.4rem 0 0; font-size: 0.8rem; color: var(--muted); }
   .feed { display: grid; gap: 0.4rem; padding: 1rem; border: 2px dashed var(--line); border-radius: 14px; color: var(--muted); }
   .loading { display: flex; align-items: center; gap: 0.6rem; color: var(--muted); }
-  .loading span { width: 1rem; height: 1rem; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
+  .loading span { width: 1rem; height: 1rem; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); }
+  @media (prefers-reduced-motion: no-preference) {
+    .loading span { animation: spin 0.8s linear infinite; }
+  }
   @keyframes spin { to { transform: rotate(360deg); } }
   .sub-head { display: flex; align-items: center; gap: 0.4rem; }
   .sub-head h2 { margin: 0; font-size: 1.2rem; }
@@ -377,10 +412,13 @@
   @media (max-width: 760px) {
     .panel {
       top: auto; left: 0; right: 0; bottom: 0; width: auto; height: 62dvh;
-      border-radius: 18px 18px 0 0; transition: transform 0.25s ease;
+      border-radius: 18px 18px 0 0;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .panel { transition: transform 0.25s ease; }
     }
     .panel.down { transform: translateY(calc(62dvh - 7.5rem)); }
-    .handle { display: grid; place-items: center; border: 0; background: none; padding: 0.5rem 0 0.1rem; cursor: pointer; }
+    .handle { display: grid; place-items: center; border: 0; background: none; padding: 0.5rem 0 0.1rem; min-height: 1.75rem; cursor: pointer; }
     .handle span { width: 2.6rem; height: 0.3rem; border-radius: 999px; background: var(--line); }
     .body { padding-top: 0.4rem; }
     .corner { top: 0.6rem; right: 0.6rem; }

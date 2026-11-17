@@ -668,19 +668,7 @@ export async function boot(): Promise<void> {
   restoreRecent();
   void locateIfAllowed();
   void discoverServices();
-  await adoptNetwork("the agency's network", async () => {
-    // The pick in force today when the deployment publishes picks,
-    // else its import. Its pin is checked in a module this page reads it with (the
-    // directory answers the first question; the board and rt when the
-    // directory did not assemble): none holds a copy only to check it.
-    const served = await servedNetwork(today(), "directory", "board", "rt");
-    // A deployment that names its GTFS URL: the zip's zone (D-132).
-    setAgencyZone(served?.timezone);
-    followsServer = !!served;
-    if (served) return served;
-    ride.status = "This server publishes no network — load the agency's GTFS zip to begin.";
-    return null;
-  });
+  await adoptNetwork("the agency's network", obtainServed);
   if (network) void loadStreets();
   // A hidden page makes no requests; it re-reads on return.
   whileVisible(POLL_MS, () => void poll());
@@ -767,6 +755,34 @@ async function adoptNetwork(
 /// by hand): it follows the deployment as it moves.
 let followsServer = false;
 
+/// The deployment names the agency's GTFS URL (D-132) and the last read
+/// of it failed: the next poll reads it again.
+let retryFeed = false;
+
+/// The deployment's network: the pick in force today when it publishes
+/// picks, else its import. Its pin is checked in a module this page
+/// reads it with (the directory answers the first question; the board
+/// and rt when the directory did not assemble): none holds a copy only
+/// to check it.
+async function obtainServed() {
+  const served = await servedNetwork(today(), "directory", "board", "rt");
+  // A deployment that names its GTFS URL: the zip's zone (D-132).
+  setAgencyZone(served?.timezone);
+  followsServer = !!served;
+  retryFeed = false;
+  if (served) return served;
+  // A feed URL that did not answer is not a missing network: say so,
+  // and read the URL on the next poll.
+  const manifest = await deploymentManifest<{ feed_url?: string }>();
+  if (manifest?.feed_url) {
+    retryFeed = true;
+    ride.status = "The agency's schedule could not be read. This page will try again.";
+  } else {
+    ride.status = "This server publishes no network — load the agency's GTFS zip to begin.";
+  }
+  return null;
+}
+
 /// The deployment moved past the network this page holds — a
 /// republish, a new pick in force, or today crossing a pick's
 /// effective date (D-63): adopt the network it serves now, without a
@@ -799,6 +815,10 @@ function release(): Promise<void> {
 /// One tick: the edit document, the live feeds, and the clock; a trip
 /// asked for "now" is asked again from the new now.
 export async function poll(): Promise<void> {
+  if (!network && retryFeed && !ride.busy) {
+    await adoptNetwork("the agency's network", obtainServed, { quiet: true });
+    if (network) void loadStreets();
+  }
   if (!network || ride.busy) return;
   if (await followDeployment()) return;
   ride.updateReady = buildWaiting();

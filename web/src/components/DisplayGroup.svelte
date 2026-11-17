@@ -27,7 +27,7 @@
   } = $props();
 
   const bg = $derived(routeColor(group.route_color) ?? "var(--accent)");
-  const fg = $derived(routeColor(group.route_text_color) ?? "#fff");
+  const fg = $derived(routeColor(group.route_text_color) ?? (group.route_color ? "#fff" : "var(--on-accent)"));
   const cancelled = $derived(group.skipped.filter((s) => s.cancel).length);
   const detoured = $derived(group.skipped.length - cancelled);
 </script>

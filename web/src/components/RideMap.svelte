@@ -156,7 +156,7 @@
         const m = map!;
         const accent = token("--accent", "#c2410c");
         const ok = token("--ok", "#15803d");
-        const warn = token("--warn", "#a16207");
+        const warn = token("--warn", "#8a5206");
         const bad = token("--bad", "#b91c1c");
         const muted = token("--muted", "#78716c");
         for (const id of ["route", "route-stops", "legs", "stops", "vehicles", "ends", "here"]) m.addSource(id, { type: "geojson", data: EMPTY as any });

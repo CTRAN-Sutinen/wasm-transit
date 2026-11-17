@@ -170,6 +170,40 @@ STE dictionary. Technical words and code names stay.
   components render with. A look kept in a page's stylesheet is lost
   when that page goes. Combobox's list rendered as bare bullets this
   way.
+- **Use only widely available web features** (D-135): Baseline widely
+  available, which is 30 months in every major browser. A newer feature
+  waits. Add no polyfill. The live-feeds panel handles Escape, an outside
+  press, and focus itself, for this reason.
+- **Accessibility is a gate, so write to it** (`web/e2e/a11y.spec.mjs`,
+  `docs/TESTING.md`). These rules come from what the gate caught:
+  - **Text on an accent or warn fill is `var(--on-accent)`**, never
+    `#fff`. White on the dark accent is 2.26:1. A route badge with an
+    authored route color keeps white (D-179).
+  - **Draw focus as an `outline`**, never as a `box-shadow` alone.
+    Forced colors (Windows High Contrast) drop a box-shadow.
+    `base.css` gives every `:focus-visible` a ring. A control that sets
+    `outline: none` must draw its own.
+  - **Motion is opt-in.** Put every animation and transition inside
+    `@media (prefers-reduced-motion: no-preference)`. The loading
+    placeholder is `.skeleton span` in `base.css`. A panel sets only
+    its height and radius.
+  - **A view change moves focus.** The shell focuses the new view's
+    heading (`h1` or `h2`, which gets `tabindex="-1"`). A polite region
+    (`role="status"`, class `sr-only`) says the status line or the size of
+    the answer. The status line is never the only place a message
+    lives.
+  - **The page has one `<main>`**, and no content sits outside a
+    landmark. The map is a labelled region, and the corner controls are
+    a `<header>`.
+  - **A radio group or a tab list takes the arrow keys.** Use the
+    `roving` action (`components/roving.ts`): the selected item has
+    `tabindex="0"`, the others `-1`. A tab list names its panel
+    (`aria-controls`, `role="tabpanel"`).
+  - **A combobox option is the `role="option"` element itself**, never
+    a button inside one. The input names the active option with
+    `aria-activedescendant`.
+  - **A target is at least 24 by 24 CSS pixels.** `--muted` text must
+    keep 4.5:1 on `--hover` and `--accent-soft`.
 - **A clipped panel in a column needs `flex: none`.** A flex child with
   `overflow: hidden` has no minimum height. A scrolling column then
   squeezes it to a line (the pick timeline did). A spec that only

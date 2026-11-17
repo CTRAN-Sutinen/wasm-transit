@@ -364,10 +364,51 @@ type server struct {
 	serverModules map[string]string
 }
 
-// handleStatic serves the built frontend. http.ServeContent gives
+// handleStatic serves the built frontend with the deployment's headers
+// (headers.go): the baseline on every file, the policies on each rider
+// page, and gzip for the text and wasm types.
+func (s *server) handleStatic(w http.ResponseWriter, r *http.Request) {
+	h := w.Header()
+	for _, b := range baselineHeaders() {
+		h.Set(b.name, b.value)
+	}
+	// Only a rider page needs its origins read (a store mode read).
+	if page := strings.TrimPrefix(path.Clean(r.URL.Path), "/"); isRiderPage(page) {
+		for _, p := range pageHeaders(page, s.connectOrigins()) {
+			h.Set(p.name, p.value)
+		}
+	}
+	gzipStatic(w, r, s.serveStatic)
+}
+
+// connectOrigins is the origins the rider pages fetch beyond the
+// server's own: the live feeds the deployment names, and the agency's
+// GTFS URL.
+func (s *server) connectOrigins() []string {
+	return feedOrigins(s.staticBytes("live-feeds.json"), s.feedURL)
+}
+
+// staticBytes is a served file's bytes: the pinned build's in store
+// mode, else -dist's. Nil when there is none.
+func (s *server) staticBytes(name string) []byte {
+	if s.store != nil {
+		if _, files := s.pinnedFiles(); files != nil {
+			if f, ok := files[name]; ok {
+				if data, _, err := s.store.GetBlob(f.Hash); err == nil {
+					return data
+				}
+			}
+		}
+		return nil
+	}
+	data, _ := os.ReadFile(filepath.Join(s.dist, name))
+	return data
+}
+
+// serveStatic serves the built frontend. http.ServeContent gives
 // Range requests (PMTiles needs them), If-Modified-Since, and content
 // types by extension — no hand-rolled 206s.
-func (s *server) handleStatic(w http.ResponseWriter, r *http.Request) {
+func (s *server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	upath := r.URL.Path
 	if strings.Contains(upath, "..") {
 		http.Error(w, "bad path", http.StatusBadRequest)
