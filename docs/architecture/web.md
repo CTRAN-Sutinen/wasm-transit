@@ -1,317 +1,408 @@
 # The web (`web/`)
 
-Svelte 5 runes + Vite, TypeScript end to end, as a multi-page
-build: `/` is the PICKER (`index.html` → `src/picker/`), one card
-per generated UI ([generated-uis.md](generated-uis.md)). Every page lives at the bundle's root
-because every fetch (the built assets — Vite's `base: "./"` —
-`caps/manifest.json`, `basemap.pmtiles`, the deployment's `manifest`
-and `blobs/`) is relative, so a bundle serves from any path. Every page is a generated UI; there is no other shell.
+The web layer is Svelte 5 runes + Vite, in TypeScript end to end. It
+is a multi-page build. `/` is the picker (`index.html` →
+`src/picker/`), with one card per generated UI
+([generated-uis.md](generated-uis.md)). Every page is a generated UI.
+There is no other shell.
+
+Every page lives at the bundle's root. Every fetch is relative, so a
+bundle serves from any path. The relative fetches are:
+
+- the built assets (Vite's `base: "./"`)
+- `caps/manifest.json`
+- `basemap.pmtiles`
+- the deployment's `manifest` and `blobs/`
 
 ## Parity
 
-An agent (caps-run), the Go server, and the browser a human uses
-run the SAME ops and get the SAME bytes. Any answer the browser
-computes in TypeScript is an answer the other two hosts cannot
-give — so `web/` holds host glue (I/O, fetch and pagination,
-IndexedDB, the clock, settings, polling, the sync POST, the
-bus worker) and RENDER components (props in, events out,
-formatting), and nothing else. A join, fallback, threshold, record
-builder, or geometry rule in TypeScript is a parity break, however
-small: it lands as an op instead.
+An agent (caps-run), the Go server, and the browser a human uses run
+the same ops and get the same bytes. If the browser computes an answer
+in TypeScript, the other two hosts cannot give that answer. So `web/`
+holds only two kinds of code:
 
-Two rulings that follow from it:
+- host glue: I/O, fetch and pagination, IndexedDB, the clock,
+  settings, polling, the sync POST, and the bus worker
+- render components: props in, events out, and formatting
 
-- **The live document.** cap-rt answers "what is live" in MODEL
-  vocabulary: an rt snapshot plus the network resolve into a
-  kernel document of delays per trip instance and stop and of the
-  service alerts in force, addressed by hash; cap-board (and the
-  router) consume it by hash. Which alert touches which departure
-  is the board's answer, never the host's. rt trip ids resolve
-  INSIDE the op, never in a host. Thresholds (the on-time
-  window) are op parameters.
-- **Geometry is a model answer.** "What path does this trip take
-  today" (diversions, the authored alignment, an itinerary leg's
-  ridden segment) answers in an op; `web/` only draws the GeoJSON
-  it is handed.
+A join, fallback, threshold, record builder, or geometry rule in
+TypeScript is a parity break, however small. Put it in an op instead.
 
-The WEB GATES in `just test` hold it: no component imports the
-bus, no host code reads raw rt `stop_updates`, nothing clones a
-document to mutate it (every change is a NetworkEdit through
-cap-author), and the engine is the one op caller — no file but
-`src/engine.ts` imports the bus (`src/bus.ts`), no file but the bus
-spawns the bus worker, and no file but the worker loads or calls a
-module. Each
-gate's allowlist only shrinks, and all are empty. Beside them, the
-DETERMINISM gate holds the modules pure: no clock, randomness, or
-environment in any crate's library code (hosts pass time in), so an
+Two rulings follow from this:
+
+- **The live document.** cap-rt answers "what is live" in model
+  vocabulary. An rt snapshot plus the network resolve into a kernel
+  document, addressed by hash. The document holds the delays per trip
+  instance and stop, and the service alerts in force. cap-board (and
+  the router) consume it by hash. The board decides which alert
+  touches which departure, never the host. The op resolves rt trip
+  ids, never a host. Thresholds (the on-time window) are op
+  parameters.
+- **Geometry is a model answer.** An op answers "what path does this
+  trip take today" (diversions, the authored alignment, an itinerary
+  leg's ridden segment). `web/` only draws the GeoJSON it receives.
+
+The web gates in `just test` enforce parity:
+
+- No component imports the bus.
+- No host code reads raw rt `stop_updates`.
+- Nothing clones a document to mutate it. Every change is a
+  NetworkEdit through cap-author.
+- The engine is the one op caller. Only `src/engine.ts` imports the
+  bus (`src/bus.ts`). Only the bus spawns the bus worker. Only the
+  worker loads or calls a module.
+
+Each gate's allowlist only shrinks, and all are empty. The determinism
+gate also holds the modules pure. No crate's library code uses a
+clock, randomness, or the environment (hosts pass time in). So an
 answer is a function of its inputs.
 
 File ownership:
 
-- `src/mapview.ts` only shapes GeoJSON: every line the map draws
-  is an answer from the bus (cap-router `itinerary_paths`,
-  cap-directory `focus`); it turns `[{lat, lon}]` into
-  `[lon, lat]` and computes no geometry.
-- Components are RENDER-ONLY: props in, events out. No component
-  imports the bus or a UI's host layer (the WEB GATES and the
-  GENERATED UIs gates in `just test`).
-- `src/engine.ts` is THE ENGINE — the one caller of a module's ops.
-  A host asks `ask(capability, op, args)`, the generated request
-  types with every `*_hash` argument taking a `Doc` (a document
-  version: its kind, its value or bytes, the document it is read
-  over, the hash its server pins). A generated UI's host names its
-  page first (`assemble("<id>")`): every capability its linked
-  assembly links answers in that ONE module instance (the bus worker,
-  below), and a capability it does not link answers alone. The engine
-  registers a `Doc` in a module instance on first use through the
-  kernel's load of its kind (`load` answers the load's whole answer —
-  a feed's summary, a layer's headcount), so a document registers
-  once per page however many capabilities read it; it asserts every
-  instance answers the same identity, and caches answers under the
-  journal's key (the module's pinned hash — the assembly's — and the
-  request's bytes, which name the capability in a linked module).
-  `produced` adopts a document an op answered (an import, an `apply`,
-  the live document) as registered where it was made — for every
-  capability linked there; a document the page declined to receive
-  (the stop display's live document, `with_document: false`) carries
-  the ask that mints it again (`remint`), and `together` says whether
-  capabilities share an instance (so a host may decline it). `available` says
-  whether a capability assembled, and `ask` throws `Unavailable`
-  when it did not. `servedNetwork`, `servedStreets`, and
-  `servedWalks` read the deployment's published documents and refuse
-  one that does not answer its pinned hash — `servedNetwork` in the
-  first of the page's named readers that assembles, so no module
-  holds a copy only to check it. `servedNetwork` takes the page's local
-  date: when the manifest pins a published plan set (`plans_hash`) it
-  asks the plans module which pick is in force (`in_force`) and loads
-  that pick's network by hash (`blobs/<network_hash>.gz`) with the
-  default boundary; before the first pick takes effect it loads the
+- `src/mapview.ts` only shapes GeoJSON. Every line the map draws is an
+  answer from the bus (cap-router `itinerary_paths`, cap-directory
+  `focus`). It turns `[{lat, lon}]` into `[lon, lat]` and computes no
+  geometry.
+- Components are render-only: props in, events out. No component
+  imports the bus or a UI's host layer (the web gates and the
+  generated UIs gates in `just test`).
+- `src/engine.ts` is the engine. It is the one caller of a module's
+  ops. "The engine (`src/engine.ts`)", below, describes it.
+- `src/bus.ts` is the page's side of the bus worker. Only the engine
+  imports it. It holds the one Worker, spawned on first use, and its
+  calls as promises. It carries messages and decides nothing.
+- `src/documents.svelte.ts` is the device's document store. Every
+  version is hash-chained by `produced_by`. `current` is a pointer.
+  IndexedDB persists the store. ride-now's watchlist lives there.
+- `src/plans.svelte.ts` owns the service plans. These are the authored
+  network documents that service-design keeps on the device: plain
+  data, wholesale-replaced, persisted in IndexedDB. Stored plans
+  restore through a module. `restorePlans(readStoredNetwork)` reads
+  each plan through cap-author (an `apply` with no edits answers the
+  canonical document). So a plan saved under older field names comes
+  back in the current shape. A bare `restorePlans()` restores the
+  plans as stored. `readPlan(id, readStoredNetwork)` reads one plan on
+  first use. The host never sniffs a shape.
+- `src/basemap.ts` is the basemap choice that every map view shares
+  (local pmtiles, else OpenFreeMap). It also holds the MapLibre worker
+  wiring. It probes the archive by reading its header with the one
+  `PMTiles` instance that the protocol then serves every tile from.
+  There is no separate probe request, and the page fetches the header
+  once. The local style's glyphs and sprites are `basemap-assets/`
+  beside the tiles, when `just basemap-assets` installed them. The
+  code probes for them and never configures them. Otherwise the style
+  uses protomaps.github.io. `pickStyle(near)` returns the view the map
+  opens on. Each map component owns its map (`window.__map` is the e2e
+  hook).
+- `src/viewport.ts` decides where a map's camera starts and when it
+  frames the whole network. These are pure presentation rules:
+  - `startView` chooses the rider's last fix where tiles cover it.
+    Otherwise it chooses the view the network was last framed on.
+    Otherwise it chooses the archive's view.
+  - `shouldFrameNetwork` is true only when nothing better is known:
+    no fix is pending, no fix arrived, and the camera did not open
+    inside the network.
+  - `sameView` stops the code from moving a camera that is already on
+    a view.
+
+  The purpose is that no camera move precedes the move the rider ends
+  on. Each such move fetches tiles that are thrown away. The last fix
+  and the last network frame are the rider app's own device data
+  (`ride-now:last-fix`, `ride-now:network-view`). Its host layer keeps
+  them in `localStorage` and passes them to RideMap as `start` and
+  `framed`. RideMap reports a frame it gave as `onframed` (D-90).
+
+### The engine (`src/engine.ts`)
+
+A host asks `ask(capability, op, args)`. The request types are
+generated. Every `*_hash` argument takes a `Doc`. A `Doc` is a
+document version: its kind, its value or bytes, the document it is
+read over, and the hash its server pins.
+
+A generated UI's host names its page first (`assemble("<id>")`).
+Every capability that its linked assembly links answers in that one
+module instance (the bus worker, below). A capability that the
+assembly does not link answers alone.
+
+**Registration and answers.** These functions register documents and
+return answers:
+
+- The engine registers a `Doc` in a module instance on first use. It
+  uses the kernel's load of the document's kind. `load` answers the
+  load's whole answer (a feed's summary, a layer's headcount). So a
+  document registers once per page, however many capabilities read
+  it.
+- The engine asserts that every instance answers the same identity.
+- The engine caches answers under the journal's key. The key is the
+  module's pinned hash (the assembly's hash) and the request's bytes.
+  In a linked module, the request's bytes name the capability.
+- `produced` adopts a document that an op answered (an import, an
+  `apply`, the live document) as registered where it was made. It
+  does this for every capability linked there.
+- A page can decline to receive a document. The stop display's live
+  document is an example (`with_document: false`). Such a document
+  carries the ask that mints it again (`remint`).
+- `together` says whether capabilities share an instance, so a host
+  can decline a document.
+- `available` says whether a capability assembled. `ask` throws
+  `Unavailable` when the capability did not assemble.
+
+**Served documents.** These functions read the deployment's published
+documents:
+
+- `servedNetwork`, `servedStreets`, and `servedWalks` read the
+  deployment's published documents. They refuse a document that does
+  not answer its pinned hash. `servedNetwork` does this in the first
+  of the page's named readers that assembles, so no module holds a
+  copy only to check it.
+- `servedNetwork` takes the page's local date. When the manifest pins
+  a published plan set (`plans_hash`), it asks the plans module which
+  pick is in force (`in_force`). It then loads that pick's network by
+  hash (`blobs/<network_hash>.gz`) with the default boundary.
+- Before the first pick takes effect, `servedNetwork` loads the
   import by the manifest's pins (`blobs/<network_hash>.gz`,
-  `blobs/<boundary_hash>` — one manifest read names both, so the
-  boundary always belongs to the network). Every pin is the
-  manifest's, so a static host serves the same ([static-deployment.md](static-deployment.md)). It throws
-  Unavailable when picks are published and the plans module does not
-  assemble — a page never guesses which schedule runs. Either way it
-  holds the network as the gzipped bytes the server sends: the
-  page never unzips, parses, or re-encodes it, and every module it
-  registers in decodes the stream itself (a heading asks the
-  directory's `about` for the network's name). `servedNetworkValue`
-  is the planner's: the network as a value it forks; `publishedPlanSet`
-  and `publishedPickValue` are its timeline (D-139) — every published
-  pick, and one pick's network as a value, fetched gzipped and
-  decompressed in the page (a value is parsed either way).
-  `servedStops` is the deployment's stops document (the manifest's
-  `stops_hash`, bytes the page never parses; D-153); `stopWarnings` the
-  warnings of the stops a plan visits that are not in service over its
-  period (cap-plans `periods`, then cap-stops `visit_warnings`), and
-  `servedFeed` the agency's feed as the deployment imported it (the
-  manifest's `network_hash`, with `feed_hash` its id) — what the stops
-  page shows the feed's recorded changes by (D-150); `withStopVersions`
-  a plan with the stops' history over its period
-  (`export_versions`: each stop's record on its pick date, and a stop
-  whose record changes inside the period one stop per version) — what
-  an export carries, as the server's `GET /feed` does (D-151, D-157).
-  A module may drop what
-  it holds (see "The bus worker", below): asking for a dropped document is
-  the module's unknown-hash error, and the engine registers the
-  document again (or mints it again) and asks once more — a host
-  never sees it. `keep` names what survives: every module instance
-  drops every document not named (nor read over by one named); the
-  rider pages call it when they adopt a network and when the edit
-  document changes, and service-design after every change it adopts
-  (the plan set's current networks and the layer — each `apply` mints
-  a network, and undo registers a dropped version again). `window.__bus` is the e2e's inspection (the
-  module instance a capability answers in, what it holds, its memory
-  and resets, the ceiling, a replay of the last op asked of a
-  capability past the answer cache).
-- `src/bus.ts` is the page's side of the bus worker, imported only by
-  the engine: the one Worker, spawned on first use, and its calls as
-  promises — it carries messages and decides nothing.
-- `src/documents.svelte.ts` is the device's document store (every
-  version hash-chained by `produced_by`; `current` is a pointer;
-  IndexedDB-persisted — ride-now's watchlist lives there).
-- `src/plans.svelte.ts` owns the service plans (the authored
-  network documents service-design keeps on the device: plain data,
-  wholesale-replaced, IndexedDB-persisted). Stored plans restore
-  through a module: `restorePlans(readStoredNetwork)` reads each
-  through cap-author (an `apply` with no edits answers the canonical
-  document), so a plan saved under older field names comes back in
-  the current shape; a bare `restorePlans()` restores them as
-  stored, and `readPlan(id, readStoredNetwork)` reads one on first
-  use. The host never sniffs a shape.
-- `src/basemap.ts` is the basemap choice every map view shares
-  (local pmtiles, else OpenFreeMap) and the MapLibre worker wiring.
-  The archive is probed by reading its header with the one `PMTiles`
-  instance the protocol then serves every tile from (no separate
-  probe request, the header fetched once per page); the local
-  style's glyphs and sprites are `basemap-assets/` beside the tiles
-  when `just basemap-assets` installed them (probed, never
-  configured), else protomaps.github.io. `pickStyle(near)` returns
-  the view the map opens on. Each map component owns its map
-  (`window.__map` is the e2e hook).
-- `src/viewport.ts` is where a map's camera starts and when it
-  frames the whole network — pure presentation rules (`startView`:
-  the rider's last fix where tiles cover it, else the view the
-  network was last framed on, else the archive's view;
-  `shouldFrameNetwork`: only when nothing better is known — no fix
-  pending, none arrived, the camera not opened inside the network;
-  `sameView`: a camera already on a view is not moved to it). The
-  point is that no camera move precedes the one the rider ends on:
-  each fetches tiles that are thrown away. The last fix and the last
-  network frame are the rider app's own device data
-  (`ride-now:last-fix`, `ride-now:network-view`, D-90), kept in
-  `localStorage` by its host layer and passed to RideMap as `start`
-  and `framed` (RideMap reports a frame it gave as `onframed`).
+  `blobs/<boundary_hash>`). One manifest read names both pins, so the
+  boundary always belongs to the network.
+- Every pin is the manifest's, so a static host serves the same
+  ([static-deployment.md](static-deployment.md)).
+- `servedNetwork` throws `Unavailable` when picks are published and
+  the plans module does not assemble. A page never guesses which
+  schedule runs.
+- In either case, `servedNetwork` holds the network as the gzipped
+  bytes that the server sends. The page never unzips, parses, or
+  re-encodes it. Every module that it registers in decodes the stream
+  itself. A heading asks the directory's `about` for the network's
+  name.
+- `servedNetworkValue` is the planner's function. It returns the
+  network as a value that the planner forks.
+- `publishedPlanSet` and `publishedPickValue` are the planner's
+  timeline. They return every published pick, and one pick's network
+  as a value. The page fetches them gzipped and decompresses them (a
+  value is parsed in either case) (D-139).
+- `servedStops` returns the deployment's stops document. It is the
+  manifest's `stops_hash`, and the page never parses the bytes
+  (D-153).
+- `stopWarnings` returns the warnings of the stops that a plan
+  visits and that are not in service over its period. It uses cap-plans
+  `periods`, then cap-stops `visit_warnings`.
+- `servedFeed` returns the agency's feed as the deployment imported
+  it. It is the manifest's `network_hash`, with `feed_hash` as its
+  id. The stops page uses it to show the feed's recorded changes
+  (D-150).
+- `withStopVersions` returns a plan with the stops' history over its
+  period. It uses `export_versions`. Each stop's record is on its pick
+  date. A stop whose record changes inside the period becomes one stop
+  per version. An export carries this, as the server's `GET /feed`
+  does (D-151, D-157).
+
+**Dropped documents.** A module may drop what it holds (see "The bus
+worker", below). Asking for a dropped document gives the module's
+unknown-hash error. The engine then registers the document again (or
+mints it again) and asks once more. A host never sees this.
+
+`keep` names what survives. Every module instance drops every
+document that `keep` does not name, or that a named document is not
+read over. The rider pages call `keep` when they adopt a network and
+when the edit document changes. service-design calls it after every
+change it adopts: the plan set's current networks and the layer. Each
+`apply` mints a network, and undo registers a dropped version again.
+
+`window.__bus` is the e2e's inspection hook. It shows:
+
+- the module instance that a capability answers in
+- what the instance holds
+- its memory and resets
+- the ceiling
+- a replay of the last op asked of a capability, past the answer
+  cache
 
 ## The bus worker
 
-`src/bus.worker.ts` is the ONLY wasm loader: every module a page
-assembles lives in ONE module Worker, off the thread the page renders
-on. A generated UI's page runs ONE module instance — its linked
-assembly (the manifest's `assemblies`, D-77): every capability it
-uses over one kernel registry, so a document registers once per page
-and crosses between capabilities by hash without leaving the
-instance. A capability the assembly does not link — or every one,
-when the assembly does not load — runs alone in its own module
-instance. The worker validates the manifest at the seam, fetches each
-module demand-driven, verifies its bytes against the pinned hash,
-compiles and instantiates it, and degrades per capability (a module
-that fails to assemble is `Unavailable` for the capabilities it
-would answer; the rest answer). Each `ensure` answers a capability's
-ROUTE: the instance it answers in, that module's hash, its index
-there, and whether the module links several. Document bytes cross to
-it per registration (copied, never kept there: the page owns the
-documents, and a reset re-registers from them).
+`src/bus.worker.ts` is the only wasm loader. Every module that a page
+assembles lives in one module Worker, off the thread that the page
+renders on.
 
-Wasm linear memory never shrinks — eviction lets a module reuse what
-it freed, but a peak stays allocated for the instance's life. So the
-worker holds a MEMORY CEILING per instance (128 MiB, D-70: twice the
-largest working set measured on C-TRAN — service-design holding five
-plans' networks, 66 MB; a rider page holds one network, 16–18 MB):
-before an op (never a registration), an
-instance past it that has answered an op since it was made — and was
-not reset in the last minute — is replaced by a fresh instance of the
-same compiled module, dropping every linked capability's state
-together. The reply says so; the engine voids that instance's
-registrations (a generation per instance) and its recovery registers
-what the op names again, each document once. Modules are pure, so the
-fresh instance answers the same bytes; the guards keep a working set
-above the ceiling from looping. The e2e pins both bounds
-(`e2e/ui-stop-display.spec.mjs`, "a display left polling stays
-bounded"): sixty polls of distinct rt snapshots plateau the rt
-registry and the assembly's linear memory, and a forced ceiling
-replaces the instance once per op with the same answer. It pins the
-one instance too ("the display runs one linked module", and
-ride-now's first spec): every capability asked answers in the UI's
-assembly, holding the network once.
+A generated UI's page runs one module instance: its linked assembly
+(the manifest's `assemblies`). The assembly holds every capability
+that the page uses, over one kernel registry. So a document registers
+once per page. It crosses between capabilities by hash without
+leaving the instance (D-77). A capability that the assembly does not
+link runs alone in its own module instance. When the assembly does not
+load, every capability runs alone in its own module instance.
+
+The worker does these steps:
+
+- It validates the manifest at the seam.
+- It fetches each module on demand.
+- It verifies the module's bytes against the pinned hash.
+- It compiles and instantiates the module.
+- It degrades per capability. A module that fails to assemble is
+  `Unavailable` for the capabilities it would answer. The other
+  capabilities answer.
+
+Each `ensure` answers a capability's route. The route holds:
+
+- the instance it answers in
+- that module's hash
+- its index there
+- whether the module links several capabilities
+
+Document bytes cross to the worker per registration. The worker
+copies them and never keeps them. The page owns the documents, and a
+reset registers them again from the page.
+
+Wasm linear memory never shrinks. Eviction lets a module reuse what it
+freed, but a peak stays allocated for the instance's life. So the
+worker holds a memory ceiling per instance: 128 MiB. This is twice the
+largest working set measured on C-TRAN. service-design holding five
+plans' networks is 66 MB. A rider page holds one network, 16–18 MB
+(D-70).
+
+The worker applies the ceiling before an op, never before a
+registration. It replaces an instance when all of these are true:
+
+- The instance is past the ceiling.
+- The instance has answered an op since it was made.
+- The instance was not reset in the last minute.
+
+The fresh instance is of the same compiled module. It drops the state
+of every linked capability together. The reply says that this
+happened. The engine voids that instance's registrations (a generation
+per instance). Its recovery registers again what the op names, each
+document once. Modules are pure, so the fresh instance answers the
+same bytes. The guards stop a working set above the ceiling from
+looping.
+
+The e2e pins both bounds (`e2e/ui-stop-display.spec.mjs`, "a display
+left polling stays bounded"):
+
+- Sixty polls of distinct rt snapshots plateau the rt registry and the
+  assembly's linear memory.
+- A forced ceiling replaces the instance once per op, with the same
+  answer.
+
+The e2e also pins the one instance ("the display runs one linked
+module", and ride-now's first spec). Every capability asked answers in
+the UI's assembly, which holds the network once.
 
 ## Signing in
 
-A page reads without signing in (D-58); a write carries the signed-in
-person's token. `src/signin.svelte.ts` is the pages' one sign-in: the
-pages are a public single-page client of the agency's provider (the
-manifest's `auth`: issuer, client id, scopes — the server's
-`-oidc-client-id`), signing in by the authorization code flow with PKCE
-(the provider's discovery document, out to its authorize endpoint and
-back to the same page and hash, the code exchanged at its token
-endpoint), the tokens kept in the tab's session storage and refreshed
-with the refresh token. A read that needs the signed-in person (an
-attachment, D-162) goes through `readFetch`. Every page write goes through `writeFetch`
-(`POST /stops`, `/stop-requests`, `/plans`); a 401 says "sign in" in a
-person's words, and a survey's draft waits on the device meanwhile.
+A page reads without signing in (D-58). A write carries the signed-in
+person's token. `src/signin.svelte.ts` is the pages' one sign-in. The
+pages are a public single-page client of the agency's provider. The
+manifest's `auth` names the issuer, the client id, and the scopes (the
+server's `-oidc-client-id`).
+
+Sign-in uses the authorization code flow with PKCE:
+
+- The page reads the provider's discovery document.
+- The page goes out to the provider's authorize endpoint and back to
+  the same page and hash.
+- The page exchanges the code at the provider's token endpoint.
+- The tab's session storage keeps the tokens. The page refreshes them
+  with the refresh token.
+
+A read that needs the signed-in person (an attachment) goes through
+`readFetch` (D-162). Every page write goes through `writeFetch`
+(`POST /stops`, `/stop-requests`, `/plans`). A 401 says "sign in" in a
+person's words. A survey's draft waits on the device meanwhile.
 `SignInControl` shows who is signed in where the deployment asks for
-it (the stops page's header, beside Publish on the planner pages).
-Nothing here decides who may write: the server's policy does, and the
-person a record names is the server's reading of the token (D-163).
+it: the stops page's header, and beside Publish on the planner pages.
+
+Nothing here decides who may write. The server's policy decides. The
+person that a record names is the server's reading of the token
+(D-163).
 
 ## External services
 
-Parity holds the bus's answers; it does not say what a host may do
-with something OFF the bus. External things are sorted by what
-their answer BECOMES, not by how they are fetched (`/rt` and
-`/geocode` are the same proxy and different kinds):
+Parity holds the bus's answers. It does not say what a host may do
+with something off the bus. External things are sorted by what their
+answer becomes, not by how they are fetched. `/rt` and `/geocode` use
+the same proxy and are different kinds.
 
 | kind | its answer becomes | examples | rule |
 |---|---|---|---|
 | source | a document on the bus, by hash | the GTFS zip, a street layer, the GTFS-rt feeds | a module registers its bytes; ops read it by hash |
-| presentation | pixels — no op reads it | basemap tiles, glyphs, sprites | the map's; nothing else touches it |
+| presentation | pixels (no op reads it) | basemap tiles, glyphs, sprites | the map's; nothing else touches it |
 | oracle | an input the user could have given by hand | the geocoder | below |
 
 **The oracle test: could the user have done it themselves?** A
-geocoded point is a tap on the map; a geocoded name is a label the
-rider could have typed. An oracle only makes an input easier to
-give, so every op stays deterministic in its inputs and cannot tell
-where a point came from. A service whose answer no user could give
-by hand — another agency's itineraries, say — is not an oracle: it
-is a source (its answer becomes a document an op reads), or it is
-not used.
+geocoded point is a tap on the map. A geocoded name is a label that
+the rider could have typed. An oracle only makes an input easier to
+give. So every op stays deterministic in its inputs and cannot tell
+where a point came from.
+
+A service whose answer no user could give by hand is not an oracle.
+Another agency's itineraries are an example. Such a service is a
+source (its answer becomes a document that an op reads), or it is not
+used.
 
 The contract:
 
-- **A host may** ask the oracle with the user's input only (the
-  text typed, the point tapped, where the map looks), render the
-  answer exactly as given, in the oracle's order, and turn the item
-  the user picks into the input the user could have given: a point,
-  and the label it was shown with.
+- **A host may** ask the oracle with the user's input only: the text
+  typed, the point tapped, or where the map looks. The host renders
+  the answer exactly as given, in the oracle's order. It turns the
+  item that the user picks into the input that the user could have
+  given: a point, and the label it was shown with.
 - **A host may not** rank, filter, merge, or threshold the answers
-  (that is policy), or join them with a document (that is an op).
-  When the answers must meet model data — D-28's "rank stops and
-  addresses together" — the oracle is PROMOTED: its candidates
-  become an input document, like an rt snapshot, and an op joins
-  them.
-- **Ops may echo an oracle's label, never branch on it.** The
-  router repeats a geocoded pin's name in the itinerary (D-37); no
-  op decides anything by it.
-- **The query policy is the deployment's** (which layers, how far,
-  how many): the server's policy file (`server/geocoder.json`,
-  `-geocoder-policy`), applied by its proxy, which forwards only the
-  user's input from the page. Every host that asks through the path
-  asks the same question.
-- **Discovery is the manifest's.** `/manifest`'s `services` lists
-  each service the deployment offers (`{geocoder: {path, query}}`);
-  one it does not list is off, and the frames that need it say so —
-  the host never probes.
-- **Transport is the deployment's origin**, so a user's queries go
-  no further than the service the deployment chose.
-- **Durability:** nothing durable keeps a query or an oracle's id
-  for a result (Pelias's `gid`) — only the user-equivalent input
-  (the point and its label). The oracle's data drifts; a saved trip
-  end must not drift with it.
-- **Failure:** an oracle only makes input easier; down or slow,
-  the user types a stop, taps the map, or shares a location, and
-  nothing waits on it.
+  (that is policy). It may not join them with a document (that is an
+  op). When the answers must meet model data, the oracle is promoted.
+  An example is D-28's "rank stops and addresses together". The
+  oracle's candidates then become an input document, like an rt
+  snapshot, and an op joins them.
+- **Ops may echo an oracle's label, never branch on it.** The router
+  repeats a geocoded pin's name in the itinerary. No op decides
+  anything by the name (D-37).
+- **The query policy is the deployment's** (which layers, how far, how
+  many). The policy is the server's policy file
+  (`server/geocoder.json`, `-geocoder-policy`). The server's proxy
+  applies it and forwards only the user's input from the page. Every
+  host that asks through the path asks the same question.
+- **Discovery is the manifest's.** `/manifest`'s `services` lists each
+  service that the deployment offers (`{geocoder: {path, query}}`). A
+  service that it does not list is off. The frames that need it say
+  so. The host never probes.
+- **Transport is the deployment's origin.** So a user's queries go no
+  further than the service that the deployment chose.
+- **Durability:** nothing durable keeps a query or an oracle's id for
+  a result (Pelias's `gid`). Only the user-equivalent input stays: the
+  point and its label. The oracle's data drifts, and a saved trip end
+  must not drift with it.
+- **Failure:** an oracle only makes input easier. If it is down or
+  slow, the user types a stop, taps the map, or shares a location.
+  Nothing waits on the oracle.
 - **Parity:** caps-run asks an oracle the way a page does (`--ask`
-  through the deployment's path) and chains its answer into the
-  ops; the answers themselves drift with the oracle's data, so
-  sessions record them as reference, never as fixtures.
+  through the deployment's path). It chains the answer into the ops.
+  The answers drift with the oracle's data. So sessions record them as
+  reference, never as fixtures.
 
 ## Why
 
-One entry per load-bearing choice, headed by the code it governs.
-**Holds** is what must stay true; change it only with the user, after
-reading **Because**.
+Each entry covers one choice that the design depends on. The entry's
+heading names the code that it governs. **Holds** is what must stay
+true. Change it only with the user, after you read **Because**.
 
 ### Every page is a generated UI (`web/src/uis/<id>/`, the engine's one-op-caller gates)
-- **Holds:** there is no other shell; every page is a generated UI that asks only through the engine. A capability no UI reads is a gap recorded in `docs/units/grade-debt.md`, never a page outside the engine.
-- **Because:** one op caller is what lets the gates prove parity and journal every op; a page calling modules directly would be outside both.
+- **Holds:** there is no other shell. Every page is a generated UI that asks only through the engine. A capability that no UI reads is a gap recorded in `docs/units/grade-debt.md`, never a page outside the engine.
+- **Because:** one op caller lets the gates prove parity and journal every op. A page that calls modules directly is outside both.
 - **Rejected:** migrating the original persona-tabbed app onto the engine; keeping it on the gate's allowlist.
 - **Decided:** D-69.
 
 ### The geocoder is an oracle the host calls (`/geocode`, `services.geocoder`, `ride-now` place search)
-- **Holds:** geocoding is an external service, not a document on the bus; place search finds the network's stops and whatever the deployment's geocoder answers (addresses, streets, venues, places); the host follows the oracle contract in "External services" above.
-- **Because:** an op's answer depends only on the point, however the point was given (typed, tapped, located), so the geocoder only makes input easier. A gazetteer capability would rebuild a geocoder (interpolation, fuzzy matching, ranking, places) inside a module, and keeping places current is the hard part. The query policy is the deployment's, so every host asks the same question.
-- **Cost accepted:** no address search offline or where no geocoder runs; typed addresses reach whoever runs it; answers drift with its data, so nothing durable keeps a query, only the point and the name shown.
+- **Holds:** geocoding is an external service, not a document on the bus. Place search finds the network's stops and whatever the deployment's geocoder answers (addresses, streets, venues, places). The host follows the oracle contract in "External services" above.
+- **Because:** an op's answer depends only on the point, however the point was given (typed, tapped, located). So the geocoder only makes input easier. A gazetteer capability would rebuild a geocoder (interpolation, fuzzy matching, ranking, places) inside a module, and keeping places current is the hard part. The query policy is the deployment's, so every host asks the same question.
+- **Cost accepted:** no address search offline or where no geocoder runs. Typed addresses reach whoever runs the geocoder. Answers drift with its data, so nothing durable keeps a query, only the point and the name shown.
 - **Rejected:** a gazetteer document on the bus; leaving external answers to each host's judgment.
 - **Decided:** D-27, D-36, D-38. **Pinned:** `server/geocode_test.go`, `web/e2e/published-network.spec.mjs` ("ride now searches addresses through the geocoder"), the `--ask` runner gate.
 
 ### Live feeds are named in a static file (`live-feeds.json`, `deploymentFeeds`)
 - **Holds:** a deployment's GTFS-rt feeds are named in `live-feeds.json` beside the page, not in the manifest's `services`.
-- **Because:** the rider pages must run as plain static files with no sync server ([static-deployment.md](static-deployment.md)), so their default feeds cannot depend on a server-built document.
+- **Because:** the rider pages must run as plain static files with no sync server ([static-deployment.md](static-deployment.md)). So their default feeds cannot depend on a server-built document.
 - **Rejected:** `services.live` in the server's manifest.
 - **Decided:** D-39.
 
 ### The basemap's labels are served locally when installed (`just basemap-assets`, `pickStyle`)
-- **Holds:** the glyphs and sprites are fetched once into `web/public/basemap-assets/` (gitignored) and read from there when present, else from protomaps.github.io.
-- **Because:** a stop display that loses its uplink would otherwise lose every map label; installs are the user's job, so the repo does not vendor them.
+- **Holds:** the glyphs and sprites are fetched once into `web/public/basemap-assets/` (gitignored). They are read from there when present, else from protomaps.github.io.
+- **Because:** a stop display that loses its uplink would otherwise lose every map label. Installs are the user's job, so the repo does not vendor them.
 - **Rejected:** vendoring the assets into the repo; keeping the network fetch as a known offline limit.
 - **Decided:** D-49. **Pinned:** `web/e2e/basemap-assets.spec.mjs`.

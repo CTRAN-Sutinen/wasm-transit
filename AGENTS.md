@@ -1,403 +1,443 @@
 # AGENTS.md
 
-Local-first transit software: GTFS static + GTFS-rt, parsed by
-Rust, shipped as **capability modules** — one flat import-free
-wasm ABI everywhere; a generated UI's capabilities link into ONE
-module over one kernel registry (D-77). The same DOCUMENT and the same contracts on
-every host (browser, Node, Go + wazero) is the point of the
-project; the bytes are assembled per user from the manifest. The
-bus is the architecture: every host instantiates the capability
-modules it needs.
+wasm-transit is local-first transit software. It reads GTFS static and
+GTFS-rt with Rust, and ships as **capability modules**. Every module has
+the same flat WebAssembly interface with no imports. A generated UI's
+capabilities link into one module over one kernel registry (D-77).
 
-**Two deployment shapes, both first-class.** With the sync server
-(`just serve`), or with no server at all (`just export <ui>`: a
-rider UI as static files). The operator chooses per deployment.
-Neither is the other's subset: a UI that runs without a server keeps
-running without one, the server's features stay the server's, and a
-change made for one shape adds to it and takes no capability from the
-other. **Each generated UI is its own product**, deployed, updated, and
-rolled back on its own, not a part of one app; which UIs need the
+The point of the project is that every host runs the same document and
+the same contracts: the browser, Node, and Go with wazero. The bytes
+are assembled for each user from the manifest. The bus is the
+architecture: every host instantiates the capability modules it needs.
+
+**Two deployment shapes, both complete.** A deployment runs with the
+sync server (`just serve`), or with no server at all (`just export
+<ui>`, which exports a rider UI as static files). The operator chooses
+for each deployment. Neither shape is a subset of the other:
+
+- a UI that runs without a server keeps running without one;
+- the server's features stay with the server;
+- a change made for one shape adds to that shape and takes no
+  capability from the other.
+
+**Each generated UI is its own product.** It is deployed, updated, and
+rolled back on its own. It is not a part of one app. Which UIs need the
 server is in `docs/architecture/README.md` ("Deployment shapes", "Each
 UI is its own product").
 
-**This file is load-bearing, and so are its pointers.** The detail
-lives in the docs below; the rules that keep them from drifting:
+**The rules that keep the documents correct.** Other files hold the
+detail. These rules keep them from drifting, and later agents depend on
+them:
 
-- **Docs describe the repo as it is now.** History is git's: no
-  "was", no "moved from", no unit numbers for finished work, no
-  session narratives. Architecture docs are written in the present
-  tense.
-- One doc per topic. Architecture detail lives in
-  `docs/architecture/`, one file per topic (and `crates/AGENTS.md` for
-  the three laws);
-  open work lives only in `docs/units/`, one file per unit — never
-  restate status here or anywhere else. Architecture docs may be
-  many, but they must not overlap: each topic has exactly one home.
-  The guide (`docs/guide/`) explains the same topics to people in
-  plain language and links to each topic's home; it holds no detail
-  of its own, and where it and a home disagree, the home is right.
-- When your work changes the architecture, the ops surface, naming,
-  conventions, commands, or testing expectations — update this file
-  AND every doc whose topic the change touches, in the same change,
-  before you declare the work done.
-- When content moves between docs, fix every reference to it in the
-  same change. A pointer to a section that no longer exists is a
-  broken build for the next agent.
-- **Deleting a unit file is the DONE claim** (`docs/units/README.md`).
-  Do not delete one whose work is not done. The change that deletes
-  it NAMES ITS PIN — the gate, e2e spec, or dogfood session that
-  proves it — and describes what landed in the architecture docs.
-  On-the-bus, UI-reads-the-bus, and dogfooded are three different
-  claims; a unit missing a grade stays open. A fixed QA finding is
-  deleted the same way. Stale instructions are how the next agent
-  breaks the build.
-- If a section contradicts the code, the code wins for the moment
-  and the section must be fixed immediately.
+- **Docs describe the repo as it is now.** Git holds the history. Do
+  not write "was", "moved from", unit numbers for finished work, or
+  session narratives. Write architecture docs in the present tense.
+- **One doc for each topic.**
+  - Architecture detail lives in `docs/architecture/`, one file for
+    each topic. The three laws live in `crates/AGENTS.md`.
+  - Open work lives only in `docs/units/`, one file for each unit.
+    Never state status here or in any other place.
+  - Architecture docs can be many, but they must not overlap. Each
+    topic has exactly one home.
+  - The guide (`docs/guide/`) explains the same topics to people in
+    plain language, and links to the home of each topic. It holds no
+    detail of its own. Where the guide and a home disagree, the home is
+    right.
+- **Update the docs in the same change.** When your work changes the
+  architecture, the ops surface, naming, conventions, commands, or
+  testing expectations, update this file and every doc whose topic the
+  change touches. Do this in the same change, before you say the work
+  is done.
+- **Fix references when content moves.** When content moves between
+  docs, fix every reference to it in the same change. A pointer to a
+  section that no longer exists breaks the build for the next agent.
+- **Deleting a unit file is the claim that the unit is done**
+  (`docs/units/README.md`). Do not delete the file of a unit whose work
+  is not done. The change that deletes it names its pin: the gate, the
+  e2e spec, or the dogfood session that proves it. The change also
+  describes what landed in the architecture docs. On the bus, read by a
+  UI, and dogfooded are three different claims. A unit that is missing
+  a grade stays open. Delete a fixed QA finding the same way. Stale
+  instructions make the next agent break the build.
+- **The code wins.** If a section contradicts the code, the code is
+  right for the moment. Fix the section immediately.
 
-**Finishing work: the documentation sweep.** Work is not done, and
-is not reported as done, until its documentation is. Before you
-tell the user a piece of work is finished, sweep every place that
-describes what you changed, and say in your report what you
-updated:
+**Finishing work: the documentation sweep.** Work is not done, and you
+do not report it as done, until its documentation is done. Before you
+tell the user that work is finished, sweep every place that describes
+what you changed. Say in your report what you updated.
 
-1. **The docs.** `AGENTS.md` (the crate tree, commands, rules),
-   `README.md` (what the project is and how to start it),
-   `crates/AGENTS.md`, and every file under `docs/` whose topic the
-   change touches — in the present tense, one home per topic. That
-   includes `docs/guide/` when the change alters something it
-   describes: what an app does (a new UI gets a short entry in
-   `docs/guide/apps.md`), a step in its walkthrough, a design
-   choice or its cost, or a term in its glossary. The guide is
-   written for people to ISO 24495-1 (plain language): short
-   sentences, everyday words, every remaining term in its glossary,
-   no decision or finding numbers and no code names in its prose
-   unless the reader needs them to act.
-2. **The open-work records.** Edit a unit down to what is left, or
-   delete it with its pin; add every decision you had to encode to
-   `docs/DECISIONS.md` (provisional, with its pins) and mark the
-   ones the user settled Decided, with their answer — once built, a
-   decided entry's reasoning moves into its topic's Why
-   (`docs/architecture/<topic>.md`) and the entry keeps the record — a decision is
-   a durable record, never deleted; delete fixed findings in
-   `docs/QA-FINDINGS.md`, reword ones the change answers in part,
-   and update the reference hashes a dogfood session re-measured.
-3. **The contract an agent reads.** The capability's purpose and
-   op descriptions in its `crates/cap-<id>/OPS.md` (the generator
-   refuses one whose `##` sections are not exactly the capability's
-   ops), the worked examples in `crates/cap-abi/src/bin/gen_manifest.rs`
-   (computed; regenerate the manifest), the justfile's gate comments,
-   and the TS bindings (`just types`).
-4. **The comments.** Module and crate doc comments, the API notes
-   in law-test headers, and the web glue's comments — a comment
-   describing a retired type, op, field, or address misleads the
-   next reader exactly as a stale doc does.
-5. **The retired names.** Search the whole tree (`*.md`, `*.rs`,
-   `*.ts`, `*.svelte`, `*.mjs`, the justfile) for every name the
-   change removed or renamed — crates, types, ops, fields, decision
-   ids, unit files — and for phrases that describe the old design.
-   The search must come back empty, except for code that
-   deliberately reads old documents.
+1. **The docs.**
+   - `AGENTS.md`: the crate tree, the commands, and the rules.
+   - `README.md`: what the project is and how to start it.
+   - `crates/AGENTS.md`.
+   - Every file under `docs/` whose topic the change touches. Write in
+     the present tense, with one home for each topic.
+   - `docs/guide/`, when the change alters something it describes:
+     what an app does (a new UI gets a short entry in
+     `docs/guide/apps.md`), a step in its walkthrough, a design choice
+     or its cost, or a term in its glossary. The guide is written for
+     people to ISO 24495-1 (plain language). Use short sentences and
+     everyday words, and put every remaining term in its glossary. Use
+     no decision numbers, finding numbers, or code names in its prose,
+     unless the reader needs them to act.
+2. **The open-work records.**
+   - Edit a unit down to what is left, or delete it with its pin.
+   - Add every decision you had to encode to `docs/DECISIONS.md`, as
+     provisional, with its pins. Mark the ones the user settled as
+     Decided, with their answer.
+   - When a decided entry is built, its reasoning moves into the Why of
+     its topic (`docs/architecture/<topic>.md`), and the entry keeps
+     the record. A decision is a durable record. Never delete one.
+   - Delete fixed findings in `docs/QA-FINDINGS.md`. Reword the ones
+     the change answers in part. Update the reference hashes that a
+     dogfood session measured again.
+3. **The contract an agent reads.**
+   - The capability's purpose and op descriptions, in its
+     `crates/cap-<id>/OPS.md`. The generator refuses a file whose `##`
+     sections are not exactly the capability's ops.
+   - The worked examples in `crates/cap-abi/src/bin/gen_manifest.rs`.
+     They are computed. Generate the manifest again.
+   - The justfile's gate comments.
+   - The TS bindings (`just types`).
+4. **The comments.** Module and crate doc comments, the API notes in
+   law-test headers, and the web glue's comments. A comment that
+   describes a retired type, op, field, or address misleads the next
+   reader as much as a stale doc does.
+5. **The retired names.** Search the whole tree (`*.md`, `*.rs`, `*.ts`,
+   `*.svelte`, `*.mjs`, and the justfile) for every name the change
+   removed or renamed: crates, types, ops, fields, decision ids, and
+   unit files. Also search for phrases that describe the old design.
+   The search must find nothing, except code that reads old documents
+   on purpose.
 
 Where the detail lives:
 
-- `docs/guide/` — the plain-language guide for people (agency staff,
-  developers new to the project): what the software does, a
-  walkthrough of one stop display, the design choices and their
-  costs, and the glossary
-- `crates/AGENTS.md` — the three architecture laws for everything
-  under `crates/` (enforced by arch gates in `just test`)
-- `docs/architecture/` — the architecture reference, one file per
-  topic (its README indexes them): per-crate detail, the bus and its
-  rules, the server, storage (the agency's record), static deployment,
-  the web, the generated UIs —
-  each topic's What, and its Why where the reason is not obvious
-- `docs/units/` — the open work, one file per unit (read its
-  README before touching anything); a unit's file is deleted when
-  it lands
-- `docs/CONVENTIONS.md` — gotchas, Rust/wasm/ops and frontend
-- `docs/TESTING.md` — the testing expectations and the dogfood-QA
-  rules
-- `docs/FORMATS.md` — the sync store's at-rest formats (blobs,
-  envelopes, pointer logs) and the invariants JSON Schema cannot say
-- `qa/` — the standing end-to-end QA tests, one folder each (its
-  README the steps, the last run and its findings; its walk scripts):
-  `qa/route-99/`, the stops app → service change → ride now → stop display
-- `LRP/` — the C-TRAN 2045 long range plan as dogfood material: the
-  excerpt, its tables extracted (`scenarios.csv`,
-  `capital-projects.csv`, today's feed in the same shape), and the
-  service-change sessions built on it, each one step of the plan
-  (`LRP/SESSIONS.md`: the backlog, how to run one, the log, its
-  findings; `LRP/run.sh` runs the ones with walks)
-- `docs/QA-FINDINGS.md` — the open real-data findings (defects,
-  op/UI/data gaps), each pinned; deleted when fixed
-- `docs/DECISIONS.md` — the questions for the user and their
-  answers, the one durable record of them (never deleted); an open
-  one names the work it blocks (`Blocked: D-N`), and work that names
-  none is free to start
-- `docs/ROADMAP.md` — the sequenced feature plan (direction changes)
-- `DEPLOYMENTS.md` — the operator's guide: the static export deployed
-  to Cloudflare Workers, written for a sysadmin who never reads the code
-  (how it works inside is `docs/architecture/static-deployment.md`)
-- `DEPLOYMENTS-SERVER.md` — the operator's guide to the server: its
-  image, the bucket, sign-in, the load balancer's health checks,
-  updates and rollback, and the store's upkeep, for the same reader
-  (how it works inside is `docs/architecture/server.md`)
+- `docs/guide/`: the plain-language guide for people (agency staff, and
+  developers new to the project). It covers what the software does, a
+  walkthrough of one stop display, a developer's first change, the
+  design choices and their costs, and the glossary.
+- `crates/AGENTS.md`: the three architecture laws for everything under
+  `crates/`. Arch gates in `just test` enforce them.
+- `docs/architecture/`: the architecture reference, one file for each
+  topic. Its README indexes them. It covers the detail of each crate,
+  the bus and its rules, the server, storage (the agency's record),
+  static deployment, the web, and the generated UIs. Each topic gives
+  its What, and its Why where the reason is not obvious.
+- `docs/units/`: the open work, one file for each unit. Read its README
+  before you touch anything. A unit's file is deleted when the unit
+  lands.
+- `docs/CONVENTIONS.md`: how to write comments and documents, and the
+  gotchas for Rust, wasm, ops, and the frontend.
+- `docs/TESTING.md`: the testing expectations and the dogfood-QA rules.
+- `docs/FORMATS.md`: the sync store's formats at rest (blobs,
+  envelopes, and pointer logs), and the invariants that JSON Schema
+  cannot state.
+- `qa/`: the standing end-to-end QA tests, one folder each. Each
+  folder has a README (the steps, the last run, and its findings) and
+  its walk scripts. `qa/route-99/` goes from the stops app to service
+  change, ride now, and the stop display.
+- `LRP/`: the C-TRAN 2045 long range plan, as dogfood material. It holds
+  the excerpt, its extracted tables (`scenarios.csv`,
+  `capital-projects.csv`, and today's feed in the same shape), and the
+  service-change sessions built on it, each one step of the plan.
+  `LRP/SESSIONS.md` has the backlog, how to run a session, the log, and
+  its findings. `LRP/run.sh` runs the sessions that have walks.
+- `docs/QA-FINDINGS.md`: the open real-data findings (defects, and gaps
+  in ops, UIs, and data), each pinned. A finding is deleted when it is
+  fixed.
+- `docs/DECISIONS.md`: the questions for the user and their answers.
+  It is the one durable record of them, and nothing is deleted from it.
+  An open decision names the work it blocks (`Blocked: D-N`). Work that
+  names no decision is free to start.
+- `docs/ROADMAP.md`: the sequenced feature plan, for changes of
+  direction.
+- `DEPLOYMENTS.md`: the operator's guide to the static export deployed
+  to Cloudflare Workers. It is written for a sysadmin who never reads
+  the code. How it works inside is in
+  `docs/architecture/static-deployment.md`.
+- `DEPLOYMENTS-SERVER.md`: the operator's guide to the server, for the
+  same reader. It covers the image, the bucket, sign-in, the load
+  balancer's health checks, updates and rollback, and the store's
+  upkeep. How it works inside is in `docs/architecture/server.md`.
 
 ## Commands
 
-`just` is the task runner. Two runners: `just test` is the
-host-side gate (no browser) — run it before declaring any change
-done; `just e2e` adds the browser runner, for UI-visible changes;
-`just check` runs both, for changes that touch both sides. While
-iterating, `just test-fast` runs the same host-side suites over the
-wasm-fast modules, and `just e2e-fast` the browser specs — one spec,
-or one test by name, when given; neither is the gate. Build and test
-through these recipes, not by hand.
+`just` is the task runner. There are two runners:
+
+- `just test` is the host-side gate, with no browser. Run it before you
+  say any change is done.
+- `just e2e` adds the browser runner. Run it for changes the UI shows.
+- `just check` runs both. Run it for changes that touch both sides.
+
+While you iterate, `just test-fast` runs the same host-side suites over
+the wasm-fast modules. `just e2e-fast` runs the browser specs: all of
+them, or one spec or one test by name. Neither is the gate. Build and
+test through these recipes, not by hand.
 
 ```
-just build                 # frontend (type-checks first — the TS layer is a gate)
-just caps                  # assemblies/ (generated, gitignored) → the modules: each
-                           # capability alone and each UI's linked assembly + manifest
-                           # (+ cap_sync, cap_network, cap_streets, cap_authz,
-                           # cap_plans, cap_migrate, cap_stops and cap_requests .wasm for the server)
-just caps-fast             # the same, under the wasm-fast profile (no whole-program
-                           # LTO, incremental): a library change rebuilds in ~10 s, not
-                           # ~10 min — the loop's build; the local registry's evidence
-                           # says profile wasm-fast; test-fast runs over it;
-                           # test/e2e/registry build release
-just registry              # publish the capability registry (gates → blobs + evidence;
-                           # every `just caps` republishes it ungated); refuses a
-                           # compiler other than rust-toolchain.toml's
-just reproducible          # two clean builds of the tree, byte for byte (a gate of
-                           # `just registry`; docs/architecture/release-artifacts.md)
+just build                 # the frontend (it type-checks first: the TS layer is a gate)
+just caps                  # assemblies/ (generated, gitignored), then the modules: each
+                           # capability alone, and each UI's linked assembly and manifest
+                           # (and cap_sync, cap_network, cap_streets, cap_authz, cap_plans,
+                           # cap_migrate, cap_stops, and cap_requests .wasm for the server)
+just caps-fast             # the same, under the wasm-fast profile (no whole-program LTO,
+                           # incremental). A library change rebuilds in ~10 s, not ~10 min.
+                           # This is the loop's build. The local registry's evidence says
+                           # profile wasm-fast, and test-fast runs over it. test, e2e, and
+                           # registry build release.
+just registry              # publish the capability registry (gates, then blobs and
+                           # evidence). Every `just caps` publishes it again, ungated.
+                           # It refuses a compiler other than rust-toolchain.toml's.
+just reproducible          # two clean builds of the tree, compared byte for byte (a gate
+                           # of `just registry`; docs/architecture/release-artifacts.md)
 node tools/caps-run.mjs    # the agent runner: list | tools <cap> | <cap> --op ...
-                           # steps run in command-line order; --cap ID switches
-                           # capability mid-session (documents cross by $ref);
-                           # --as NAME names a result; $refs ($name.x, $load.x,
-                           # $op.x, $N.path) + $TODAY/$NOW_SECS (a number);
-                           # --load [N:|KIND:]FILE for bulk ops (feed:x.zip — the
-                           # kernel's loads); --op @FILE for big JSON;
-                           # --ask URL asks an oracle ($ask.x); --post URL REF
-                           # writes a document to the deployment ($post.x —
-                           # e.g. POST /plans '$apply.network' publishes a pick)
-just test                  # the host-side runner (Rust + smokes + runner gates + web
-                           # parity ratchets + Go -race) — no browser
-just test-fast             # the same suites over `caps-fast` modules — the edit
-                           # loop's runner, never the gate (WASM_TEST_CACHE=off:
-                           # the Go tests compile modules afresh, no disk cache)
-just e2e                   # the browser runner (Playwright, builds first) — UI changes
-just e2e-fast [args]       # the same over `caps-fast` modules, Playwright's args
-                           # passed through (a spec file, -g "test name") — the
-                           # edit loop's browser runner, never the gate
-just check                 # both runners — changes touching both sides
-just types                 # regenerate TS bindings (gitignored; build runs it)
-just serve [feed.zip [streets.geojson ["Publisher" [addr]]]]   # sync server on :8080
-                           # on its settings files: server/dev.toml (the fixture
-                           # feed and streets, a mem:// store and attachments, the
-                           # stub work order system, -rt-proxy — D-67), then
-                           # server/local.toml (gitignored; copy
-                           # local.example.toml: your feed, store, sign-in,
-                           # geocoder); each key a flag's name, the arguments
-                           # beat both (docs/architecture/server.md, "Settings")
-                           # feed/streets: a path, an http(s) URL, or bucket:<key>
-                           # (D-118); store = s3://bucket/prefix?endpoint=…,
-                           # azblob://…, gs://…, or mem:// (docs/FORMATS.md;
-                           # POST /plans publishes a pick)
+                           # Steps run in command-line order. --cap ID changes the
+                           # capability during a session (documents cross by $ref).
+                           # --as NAME names a result. $refs: $name.x, $load.x, $op.x,
+                           # $N.path, and $TODAY / $NOW_SECS (a number).
+                           # --load [N:|KIND:]FILE for bulk ops (feed:x.zip uses the
+                           # kernel's loads). --op @FILE for big JSON.
+                           # --ask URL asks an oracle ($ask.x). --post URL REF writes a
+                           # document to the deployment ($post.x). For example,
+                           # POST /plans '$apply.network' publishes a pick.
+just test                  # the host-side runner (Rust, smokes, runner gates, web parity
+                           # ratchets, Go -race), with no browser
+just test-fast             # the same suites over `caps-fast` modules. The edit loop's
+                           # runner, never the gate. WASM_TEST_CACHE=off: the Go tests
+                           # compile the modules again, with no disk cache.
+just e2e                   # the browser runner (Playwright; it builds first), for UI changes
+just e2e-fast [args]       # the same over `caps-fast` modules. Playwright's args pass
+                           # through (a spec file, -g "test name"). The edit loop's
+                           # browser runner, never the gate.
+just check                 # both runners, for changes that touch both sides
+just types                 # generate the TS bindings again (gitignored; build runs it)
+just serve [feed.zip [streets.geojson ["Publisher" [addr]]]]   # the sync server on :8080.
+                           # It reads its settings files: server/dev.toml (the fixture
+                           # feed and streets, a mem:// store and attachments, the stub
+                           # work order system, and -rt-proxy; D-67), then
+                           # server/local.toml (gitignored; copy local.example.toml for
+                           # your feed, store, sign-in, and geocoder). Each key is a
+                           # flag's name. The arguments beat both files
+                           # (docs/architecture/server.md, "Settings").
+                           # feed and streets: a path, an http(s) URL, or bucket:<key>
+                           # (D-118). store: s3://bucket/prefix?endpoint=…, azblob://…,
+                           # gs://…, or mem:// (docs/FORMATS.md). POST /plans publishes
+                           # a pick.
 just server-image [REPO [TAG]]   # the server as one container image (ko):
-                           # target/server-image.tar, or pushed to REPO for
-                           # amd64 + arm64 (DEPLOYMENTS-SERVER.md)
-just build-ui UI            # one UI built alone → web/dist-ui/UI/ (its page, its
-                           # assembly, the map only if it draws one)
-just export UI OUT feed.zip [streets.geojson ["Publisher"]]   # one rider UI (ride-now,
-                           # stop-display) as a static deployment of its own, no
-                           # server (D-131): its page, `manifest`, and each
-                           # published document as blobs/<hash>[.gz] — the paths
-                           # the server answers too; LIVE_FEEDS= names the
-                           # deployment's live-feeds.json (no proxy)
-just export-feed-url UI OUT URL [streets.geojson ["Publisher"]]   # the same, but the
-                           # pages fetch and import the agency's GTFS URL
-                           # themselves, checked daily — no redeploy per feed (D-132)
+                           # target/server-image.tar, or pushed to REPO for amd64 and
+                           # arm64 (DEPLOYMENTS-SERVER.md)
+just build-ui UI            # one UI built alone into web/dist-ui/UI/ (its page, its
+                           # assembly, and the map only if it draws one)
+just export UI OUT feed.zip [streets.geojson ["Publisher"]]   # one rider UI (ride-now or
+                           # stop-display) as a static deployment of its own, with no
+                           # server (D-131): its page, `manifest`, and each published
+                           # document as blobs/<hash>[.gz]. The server answers the same
+                           # paths. LIVE_FEEDS= names the deployment's live-feeds.json
+                           # (no proxy).
+just export-feed-url UI OUT URL [streets.geojson ["Publisher"]]   # the same, but the pages
+                           # fetch and import the agency's GTFS URL themselves and check
+                           # it daily. There is no redeploy for each feed (D-132).
 just store verify|gc|copy … # the store's offline tools (server/cmd/store): verify a
-                           # bucket, collect orphans (D-117), carry an older
-                           # build's directory store into a bucket
-just store-dev             # local object stores in podman: SeaweedFS (:8333, the one
-                           # to serve over), Azurite, fake-gcs-server (store-dev-stop)
-just store-contract        # the store's laws against each of them (opt-in, never
-                           # in `just test`)
-just dev                   # vite hot reload + server alongside
+                           # bucket, collect orphans (D-117), or carry an older build's
+                           # directory store into a bucket
+just store-dev             # local object stores in podman: SeaweedFS (:8333, the one to
+                           # serve over), Azurite, and fake-gcs-server (store-dev-stop)
+just store-contract        # the store's laws against each of them (opt-in, never in
+                           # `just test`)
+just dev                   # vite hot reload, with the server beside it
 just qa [feed.zip]         # the UI QA loop: modules under wasm-fast, a server on the
-                           # C-TRAN feed (else the e2e fixture) in a memory store,
-                           # vite hot reload on :5174 (server :8091, its own
-                           # ports beside serve/dev, on server/dev.toml + local.toml,
-                           # its store in memory); drive it with
+                           # C-TRAN feed (else the e2e fixture) in a memory store, and
+                           # vite hot reload on :5174. The server is on :8091, its own
+                           # port beside serve and dev, on server/dev.toml and
+                           # local.toml, with its store in memory. Drive it with:
 node tools/ui-shot.mjs UI  # [--hash H] [--steps walk.mjs] [--full] [--size WxH] [--base URL] [--profile NAME]:
-                           # a screenshot + status + page errors, one browser
-                           # profile in .qa/ (forked plans persist) — docs/TESTING.md
+                           # a screenshot, the status, and page errors. It keeps one
+                           # browser profile in .qa/ (forked plans persist).
+                           # docs/TESTING.md
 just geocoder-build        # once: a local Pelias (portland-metro) in .pelias/
-just geocoder              # start it on :4000 (geocoder = "http://127.0.0.1:4000"
-                           # in server/local.toml: serve|dev proxy it at /geocode);
+just geocoder              # start it on :4000 (geocoder = "http://127.0.0.1:4000" in
+                           # server/local.toml; serve and dev proxy it at /geocode);
                            # geocoder-stop
-just basemap-assets        # once: the basemap's glyphs + sprites into web/public/
-                           # (gitignored; labels read them locally, else the network)
-just fixtures              # regenerate the e2e GTFS fixture
-just soak                  # real-data soak (COUNTY_GEOJSON=… county roads)
-just spec                  # OPTIONAL: TLC model-check of the sync store engine
-                           # (server/store/store.tla) — only for changes touching the sync
-                           # engine; needs Java 11+ + tla2tools.jar, never part of `just test`
-just perf                  # browser perf baselines on the real feed — reports, never
-                           # gates (docs/TESTING.md, "Performance baselines")
+just basemap-assets        # once: the basemap's glyphs and sprites into web/public/
+                           # (gitignored; labels read them locally, else from the network)
+just fixtures              # generate the e2e GTFS fixture again
+just soak                  # the real-data soak (COUNTY_GEOJSON=… county roads)
+just spec                  # optional: the TLC model check of the sync store engine
+                           # (server/store/store.tla). Run it only for changes that touch
+                           # the sync engine. It needs Java 11+ and tla2tools.jar, and is
+                           # never part of `just test`.
+just perf                  # browser perf baselines on the real feed. It reports, and
+                           # never gates (docs/TESTING.md, "Performance baselines").
 ```
 
-The Rust toolchain is pinned in `rust-toolchain.toml` (rustup runs
-that release in this tree; upgrading it is a change of its own).
-The toolchains (just, cargo and rustc, go, node, pmtiles) are on the
-shell's PATH already; run the recipes as they are.
-Installs (toolchains, release binaries) are the user's job;
-cargo/npm/go module fetches are fine. Java 11+ and
-`~/bin/tla2tools.jar` are the same and OPTIONAL — only `just spec`
-uses them, never in `just test`'s path. On an immutable desktop
-(Fedora Atomic) either keep them in the home directory (a Temurin
-tarball under `~/.local`, symlinked into `~/.local/bin`) or use a
-toolbox: `sudo dnf install java-21-openjdk` inside the container —
-the jar needs no copy, toolbox shares $HOME, so `~/bin/tla2tools.jar`
-is already there; run `just spec` via `toolbx enter` or
-`toolbx run -c <name> bash -lc 'just spec'`. Don't rpm-ostree-layer
-them onto the base.
+**Toolchains.**
+
+- The Rust toolchain is pinned in `rust-toolchain.toml`. rustup runs
+  that release in this tree. Upgrading it is a change of its own.
+- The toolchains (just, cargo and rustc, go, node, and pmtiles) are on
+  the shell's PATH already. Run the recipes as they are.
+- Installs (toolchains, release binaries) are the user's job. cargo,
+  npm, and go module fetches are fine.
+- Java 11+ and `~/bin/tla2tools.jar` are also the user's to install, and
+  they are optional. Only `just spec` uses them, and it is never in
+  `just test`'s path.
+- On an immutable desktop (Fedora Atomic), keep them in the home
+  directory, or use a toolbox:
+  - In the home directory: a Temurin tarball under `~/.local`,
+    symlinked into `~/.local/bin`.
+  - In a toolbox: `sudo dnf install java-21-openjdk` inside the
+    container. The jar needs no copy, because toolbox shares $HOME, so
+    `~/bin/tla2tools.jar` is already there. Run `just spec` through
+    `toolbx enter`, or `toolbx run -c <name> bash -lc 'just spec'`.
+  - Do not layer them onto the base with rpm-ostree.
 
 ## Architecture
 
-**Three laws govern every crate** (spelled out and enforced — see
-`crates/AGENTS.md`): the NETWORK is the core data model, GTFS (and
-its siblings TODS and TIDES) is a serialization spec for external
-data sharing; nobody reinvents
-the monolith inside a module; and one NEED per module — personas
-assemble at wire time.
+**Three laws govern every crate.** `crates/AGENTS.md` states and
+enforces them:
+
+1. The network is the core data model. GTFS (and its siblings TODS and
+   TIDES) is a serialization for sharing data with other systems.
+2. No module rebuilds the monolith inside it.
+3. Each module answers one need. Personas assemble at wire time.
 
 ```
-transit-network  THE authored network model — trips are stored records (own id,
-                 departure, times); materialize answers a day's instances;
-                 authoring edits answer the next document (apply_edits);
-                 where things are (pattern alignments, entity focus);
-                 what exists, as the planner lists it (rows, route and stop composition,
-                 a direction's rider variants — a station's bays one place,
-                the timetable: one route, one direction, one service combination;
-                 the service combinations: the types that run together, and when)
-transit-codec   the network codec: the whole-spec GTFS feed (every file and column,
-                 deterministic zip bytes) ⇄ network document, losslessly
-transit-router  RAPTOR planning over the network model's materialized day (leave-at and
-                 arrive-by, live predictions, the diversion notice, transfers over a walk table,
-                 trips from and to any place)
-transit-analysis planner analysis library (stats, service types, coverage)
-transit-dispatch the operator's day library (patched materialized day — diversions
-                 patched, cancelled trips out — boards, authored block chains with
-                 the layover ripple, diversion drafts and trip cancels)
-transit-rt       GTFS-rt prost types + the joins over the network (an rt trip id is a
-                 model trip id; a trip instance is (trip, service date, start))
-transit-live     THE live document (rt in model vocabulary, each instance's service
-                 date, the on-time window, what does not run — a cancelled trip, a
-                 skipped stop — pure)
+transit-network  the authored network model. Trips are stored records (their own id,
+                 departure, and times). materialize answers a day's instances.
+                 Authoring edits answer the next document (apply_edits). It also
+                 answers where things are (pattern alignments, entity focus), and what
+                 exists as the planner lists it: rows, route and stop composition, a
+                 direction's rider variants (a station's bays are one place), the
+                 timetable (one route, one direction, one service combination), and the
+                 service combinations (the types that run together, and when).
+transit-codec    the network codec: the whole-spec GTFS feed (every file and column,
+                 deterministic zip bytes) to and from the network document, losslessly
+transit-router   RAPTOR planning over the network model's materialized day: leave-at and
+                 arrive-by, live predictions, the diversion notice, transfers over a walk
+                 table, and trips from and to any place
+transit-analysis the planner's analysis library (stats, service types, coverage)
+transit-dispatch the operator's day library: the patched materialized day (diversions
+                 patched, cancelled trips out), boards, authored block chains with the
+                 layover ripple, diversion drafts, and trip cancels
+transit-rt       GTFS-rt prost types and the joins over the network. An rt trip id is a
+                 model trip id. A trip instance is (trip, service date, start).
+transit-live     the live document: rt in the model's vocabulary, each instance's service
+                 date, the on-time window, and what does not run (a cancelled trip, a
+                 skipped stop). Pure.
 transit-version  a document's kind tag and version (D-115): the tag every persisted
                  document writes, and what a reader checks to refuse another version
-transit-sync     THE sync document (EditRecord: a Diversion or a TripCancel, merge, the record envelope — pure)
-transit-plans    THE service-plan chain (resolve, periods, validity — pure, derived)
+transit-sync     the sync document (EditRecord: a Diversion or a TripCancel), merge, and
+                 the record envelope. Pure.
+transit-plans    the service-plan chain (resolve, periods, validity; pure and derived),
                  and the published plan set (publish, the pick in force)
-transit-stops    THE stops document, beside the plans: each stop a list of dated events
-                 (planned, permitted, built, in_service, suspended, moved, changed, retired), the
-                 stop on a date, the stops near a point, served, what a write must pass, its edits (an
-                 event placed by date, a correction), what a stop may become —
-                 pure; a stop's life is its own, and a
-                 pick only reads it (D-157)
-transit-requests THE stop requests document: the planning team's requests for work at a
-                 stop (new, reinstall, relocate/remove, repair/improve, temporary), each
-                 tracking the work order the agency's work order system opens for it;
-                 what a write must pass, a request placed by id, the work across every
-                 stop — pure (D-159)
-transit-runs     THE runs layer beside the network: the work-rule document (recovery,
-                 interlining per route pair, run rules, pay — every rule optional), the
-                 recovery a wait requires and its slack, the suggested blocking — pure
-transit-streets  THE streets document (canonical: its hash is the streets', not a file's),
-                 its import from street layers (GeoJSON: agency exports, TIGER, OSM),
-                 the graph over it (snap, route), and walking (the walk table between stops,
-                 a point's walks to the stops near it)
-cap-abi          the kernel and the seam: the registries (one per document kind,
-                 constructor private), each kind's load, derived entries (the held
-                 day, graphs), the routing an assembly's exports run (`assembly!`;
-                 a capability only registers with `capability!`), the kernel ops
-                 (loads, evict, held, about), manifest, validator, gen-manifest,
-                 gen-assemblies, arch-gates
+transit-stops    the stops document, beside the plans. Each stop is a list of dated
+                 events (planned, permitted, built, in_service, suspended, moved,
+                 changed, retired). It answers the stop on a date, the stops near a
+                 point, served, what a write must pass, its edits (an event placed by
+                 date, a correction), and what a stop may become. Pure. A stop's life
+                 is its own, and a pick only reads it (D-157).
+transit-requests the stop requests document: the planning team's requests for work at a
+                 stop (new, reinstall, relocate/remove, repair/improve, temporary). Each
+                 tracks the work order that the agency's work order system opens for it.
+                 It answers what a write must pass, a request placed by id, and the work
+                 across every stop. Pure (D-159).
+transit-runs     the runs layer beside the network: the work-rule document (recovery,
+                 interlining for each route pair, run rules, pay; every rule optional),
+                 the recovery a wait requires and its slack, and the suggested blocking.
+                 Pure.
+transit-streets  the streets document (canonical: its hash is the streets' hash, not a
+                 file's), its import from street layers (GeoJSON: agency exports, TIGER,
+                 OSM), the graph over it (snap, route), and walking (the walk table
+                 between stops, and a point's walks to the stops near it)
+cap-abi          the kernel and the seam: the registries (one for each document kind,
+                 with a private constructor), each kind's load, derived entries (the
+                 held day, graphs), the routing that an assembly's exports run
+                 (`assembly!`; a capability only registers, with `capability!`), the
+                 kernel ops (loads, evict, held, about), the manifest, the validator,
+                 gen-manifest, gen-assemblies, and arch-gates
 cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops cap-requests
-                 the capabilities: rlibs that register, forbid unsafe, declare no
-                 state, and never depend on each other (docs/architecture/bus.md)
-assemblies/      GENERATED (gen-assemblies, gitignored): module-<cap> (one capability
-                 alone) and module-ui-<id> (a generated UI's capabilities linked)
-server/          Go + wazero host over cap-sync, cap-network, cap-plans and
-                 cap-streets (the network, picks, streets and walk table it
-                 publishes; in store mode every build it serves, kept and
-                 rolled back by pointer — D-80), cap-migrate (an older document, at receive),
-                 cap-stops (the stops document's writes; what a published pick reads of it),
-                 cap-requests (the stop requests document's writes),
-                 cap-authz when auth is on, and the proxies
-                 (/geocode to a Pelias geocoder; /rt, a dev feed relay off
-                 unless -rt-proxy) — scaffolding, never a domain decision
-web/             Svelte 5 + Vite frontend: / is a picker over the GENERATED UIs
-                 (src/uis/<id>/, each its own page and host layer; every page
-                 is one) (docs/architecture/generated-uis.md —
-                 the recipe a fresh agent follows); each page runs its linked
-                 assembly in the page's one bus worker, behind the engine
+                 the capabilities: rlibs that register, forbid unsafe, declare no state,
+                 and never depend on each other (docs/architecture/bus.md)
+assemblies/      generated (gen-assemblies, gitignored): module-<cap> (one capability
+                 alone) and module-ui-<id> (a generated UI's capabilities, linked)
+server/          the Go and wazero host. It runs cap-sync, cap-network, cap-plans, and
+                 cap-streets (the network, picks, streets, and walk table it publishes;
+                 in store mode, every build it serves, kept and rolled back by pointer;
+                 D-80). It also runs cap-migrate (an older document, at receive),
+                 cap-stops (the stops document's writes, and what a published pick reads
+                 of it), cap-requests (the stop requests document's writes), and
+                 cap-authz when sign-in is on. It has two proxies: /geocode to a Pelias
+                 geocoder, and /rt, a dev feed relay that is off unless -rt-proxy is
+                 set. It is scaffolding and never makes a domain decision.
+web/             the Svelte 5 and Vite frontend. / is a picker over the generated UIs
+                 (src/uis/<id>/, each its own page and host layer; every page is one).
+                 docs/architecture/generated-uis.md is the recipe a new agent follows.
+                 Each page runs its linked assembly in the page's one bus worker,
+                 behind the engine.
 ```
 
-Per-crate detail: `docs/architecture/crates.md`.
+The detail for each crate is in `docs/architecture/crates.md`.
 
-**Ownership rules** (violations here caused real bugs; keep them):
+**Ownership rules.** Breaking these rules caused real bugs. Keep them.
 
-- Hosts own I/O, files, and the clock — read in the agency's zone
-  (the manifest's `timezone`; `web/src/clock.ts`), never the
-  device's. The wasm module owns domain logic. Dates cross every boundary as "YYYY-MM-DD" strings, times
-  as u32 seconds since service-day midnight (values past 86400 are
-  legitimate — after-midnight trips).
-- The **base feed is immutable**. Diversions produce patched copies
-  per service date; patching never mutates its input.
-- **JS owns the documents** (plan set, watchlist): `$state.raw` in
-  the host layer (`src/plans.svelte.ts`, `src/documents.svelte.ts`),
-  wholesale-replaced, never mutated in place — that is what makes IndexedDB cloning and sync work. wasm
-  holds only materialized views. A service change is a FORK (the
-  next pick copies the whole world it changes); the chain (who is
-  in force, governing periods) is always derived by the artifact,
-  never stored.
+- **Hosts own I/O, files, and the clock.** They read the clock in the
+  agency's time zone (the manifest's `timezone`; `web/src/clock.ts`),
+  never the device's. The wasm module owns the domain logic.
+  - Dates cross every boundary as "YYYY-MM-DD" strings.
+  - Times cross as u32 seconds since service-day midnight. Values past
+    86400 are valid: they are trips after midnight.
+- **The base feed is immutable.** Diversions produce patched copies for
+  each service date. Patching never changes its input.
+- **JS owns the documents** (the plan set, the watchlist). They are
+  `$state.raw` in the host layer (`src/plans.svelte.ts`,
+  `src/documents.svelte.ts`). JS replaces each document whole and never
+  changes one in place. This is what makes IndexedDB cloning and sync
+  work. wasm holds only materialized views.
+  - A service change is a fork: the next pick copies the whole world it
+    changes.
+  - The chain (which pick is in force, and the governing periods) is
+    always derived by the artifact, and is never stored.
 - **The sync store's production home is object storage** (S3 and
-  S3-compatible, Azure Blob, GCS — D-113). The engine may assume only
-  whole-object writes and a conditional create of an absent key —
-  never an append, a rename, an fsync, or a file lock. There is no
-  directory store. The bucket is the agency's record; every other copy
-  is a working copy (`docs/architecture/storage.md`).
-- **Documents are open formats (D-115)**: plain JSON (gzip allowed)
-  or an external open format (GTFS, GTFS-rt, GeoJSON), never a
-  private encoding; each says its kind and version inside it, and
-  every kind's schema and a worked example are published per version
-  (`docs/FORMATS.md`) — a document reads without the app.
-- **The agency owns the data; applications are interfaces (D-146,
-  D-152)**: no application, this repo's included, is the record for a
-  document. Reads are open to any application; every write goes
-  through a receive path that checks shape, invariants, concurrency,
-  and attribution, refuses only what makes the data wrong, and leaves
-  a change with consequences to be flagged for a person. Import and
-  export are interfaces defined by their formats, never by their
-  callers (`docs/architecture/agency-data.md`).
-- **Retirement is the tombstone**: "delete" means
-  `status: "retired"`, rev bumped. No hard deletes.
-- Schedules change by **artifact replacement, not mutation**: the
-  planner publishes a new zip; the server imports it once
-  (cap-network) and publishes the NETWORK — browsers never parse
-  GTFS the server has (a serverless deployment may instead name the
-  agency's GTFS URL, and each page imports it — D-132); the manifest pins `network_hash` (with the
-  zip's `feed_hash` as provenance) + the published picks
-  (`plans_hash`; a page loads the pick in force) + the sync module's
-  `wasm_hash`; everyone re-pins and revalidates.
-- The sync protocol is **LWW per record id + tombstones**, not CRDT
-  (deliberate — the terminal authority is the agency scheduling
-  system; propose → review → accept). `transit_sync::merge` is a
-  property-tested semilattice; `POST /edits` is the whole client
-  protocol. The Go host treats documents as opaque JSON.
+  S3-compatible stores, Azure Blob, GCS; D-113). The engine may assume
+  only whole-object writes and a conditional create of an absent key.
+  It never assumes an append, a rename, an fsync, or a file lock. There
+  is no directory store. The bucket is the agency's record. Every other
+  copy is a working copy (`docs/architecture/storage.md`).
+- **Documents are open formats (D-115).** A document is plain JSON
+  (gzip allowed) or an external open format (GTFS, GTFS-rt, GeoJSON),
+  never a private encoding. Each document says its kind and version
+  inside it. Every kind's schema and a worked example are published for
+  each version (`docs/FORMATS.md`). So a document can be read without
+  the app.
+- **The agency owns the data, and applications are interfaces (D-146,
+  D-152).** No application, including this repo's, is the record for a
+  document.
+  - Reads are open to any application.
+  - Every write goes through a receive path. The receive path checks
+    shape, invariants, concurrency, and attribution. It refuses only
+    what makes the data wrong. It accepts a change that has
+    consequences, and flags it for a person.
+  - Import and export are interfaces defined by their formats, never by
+    their callers (`docs/architecture/agency-data.md`).
+- **Retirement is the tombstone.** "Delete" means `status: "retired"`,
+  with the rev increased. There are no hard deletes.
+- **Schedules change by replacing the artifact, not by changing it.**
+  - The planner publishes a new zip. The server imports it once
+    (cap-network) and publishes the network.
+  - Browsers never parse GTFS that the server has. A serverless
+    deployment may instead name the agency's GTFS URL, and each page
+    imports it (D-132).
+  - The manifest pins `network_hash` (with the zip's `feed_hash` as its
+    source), the published picks (`plans_hash`; a page loads the pick in
+    force), and the sync module's `wasm_hash`.
+  - Every client pins again and validates again.
+- **The sync protocol is LWW for each record id, with tombstones.** It
+  is not a CRDT, on purpose: the final authority is the agency's
+  scheduling system, through propose, review, and accept.
+  `transit_sync::merge` is a property-tested semilattice. `POST /edits`
+  is the whole client protocol. The Go host treats documents as opaque
+  JSON.
 
 ## Conventions
 
@@ -407,78 +447,82 @@ Per-crate detail: `docs/architecture/crates.md`.
   each concept. Do not use dash asides, capitals for emphasis, or
   aphorisms. The rules and the reasons are in `docs/CONVENTIONS.md`,
   "Writing". The guide keeps ISO 24495-1.
-- **Clarify, don't assume.** When a directive is ambiguous, conflicts
-  with the GTFS spec or an architecture law, or leaves a design
-  decision open, ask before building on an answer you picked —
-  and record the question in `docs/DECISIONS.md`, naming the work
-  it blocks, so the rest proceeds while it is decided.
-- **Git is the user's** — never commit, push, stash, or otherwise
-  move refs. Do the work, leave the tree, report what changed.
-- The TS bindings are GENERATED and gitignored (`just types`, run
-  by `just build`; never hand-edit, never commit) — Rust is the
-  source of truth, the manifest's computed examples the readable
-  wire contract.
-- **Parity**: the browser, caps-run, and the Go server run the
-  same ops and get the same bytes — `web/` is host glue plus
-  render components, never answers (`docs/architecture/web.md`, "Parity"; ratcheted in `just test`).
-- **One op caller**: a host asks through the engine
-  (`web/src/engine.ts`) — `ask(capability, op, args)`, holding
-  documents (`Doc`), never modules or hashes; nothing else imports
-  the bus or calls a module, and the modules live in the page's one
-  bus worker (`web/src/bus.worker.ts`), off the render thread (web
-  gates in `just test`). A generated UI's host names its page
-  (`assemble("<id>")`) so its capabilities answer in its linked
+- **Clarify, don't assume.** Ask before you build on an answer you
+  picked, when a directive is ambiguous, conflicts with the GTFS spec
+  or an architecture law, or leaves a design decision open. Record the
+  question in `docs/DECISIONS.md`, and name the work it blocks. The rest
+  of the work continues while the question is decided.
+- **Git is the user's.** Never commit, push, stash, or move refs in any
+  other way. Do the work, leave the tree, and report what changed.
+- **The TS bindings are generated and gitignored** (`just types`, which
+  `just build` runs). Never edit them by hand, and never commit them.
+  Rust is the source of truth. The manifest's computed examples are the
+  readable wire contract.
+- **Parity.** The browser, caps-run, and the Go server run the same ops
+  and get the same bytes. `web/` is host glue and render components. It
+  never computes answers (`docs/architecture/web.md`, "Parity"; a
+  ratchet in `just test` holds it).
+- **One op caller.** A host asks through the engine
+  (`web/src/engine.ts`) with `ask(capability, op, args)`. It holds
+  documents (`Doc`), never modules or hashes. No other code imports the
+  bus or calls a module. The modules live in the page's one bus worker
+  (`web/src/bus.worker.ts`), off the render thread. Web gates in
+  `just test` enforce this. A generated UI's host names its page
+  (`assemble("<id>")`), so its capabilities answer in its linked
   assembly.
-- **External services** are sources, presentation, or oracles — an
-  oracle (the geocoder) answers an input the user could have given
-  by hand; a host sends it the user's input only, shows its answer
-  as given, and finds it in the manifest's `services`
+- **External services are sources, presentation, or oracles.** An
+  oracle (the geocoder) answers an input the user could have given by
+  hand. A host sends it only the user's input, shows its answer as
+  given, and finds it in the manifest's `services`
   (`docs/architecture/web.md`, "External services").
-- **Adjacent systems** (CAD/AVL, workforce management, the
-  scheduling system) run the dispatcher's day, which is out of scope
-  (D-122): they read documents by hash and write only records, through
-  the receive path, as effects in this repo's vocabulary — one home
-  per fact (`docs/architecture/adjacent-systems.md`).
-- New ops go through the extraction pattern (crate boundary
-  first, capability wrapper second): the monolith that ops were
-  extracted FROM is gone, so a new op is a library + a capability
-  module, never a host.
+- **Adjacent systems** (CAD/AVL, workforce management, the scheduling
+  system) run the dispatcher's day, which is out of scope (D-122). They
+  read documents by hash. They write only records, through the receive
+  path, as effects in this repo's vocabulary. Each fact has one home
+  (`docs/architecture/adjacent-systems.md`).
+- **New ops follow the extraction pattern:** the crate boundary first,
+  the capability wrapper second. The monolith that the ops were
+  extracted from is gone. So a new op is a library and a capability
+  module, never host code.
 
-The rest of the gotchas: `docs/CONVENTIONS.md`.
+The other gotchas are in `docs/CONVENTIONS.md`.
 
 ## Testing
 
-**Laws first.** Every behavior change starts with the property
-tests that define it, derived from the user's stated intent and the
-GTFS spec — never from the current code — and written before the
-implementation. When the intent leaves a behavior ambiguous, ask
-the user; do not pick an answer and encode it. The rules are in
+**Laws first.** Every behavior change starts with the property tests
+that define it. Derive them from the user's stated intent and the GTFS
+spec, never from the current code. Write them before the
+implementation. When the intent leaves a behavior ambiguous, ask the
+user. Do not pick an answer and encode it. The rules are in
 `docs/TESTING.md`, "Laws first".
 
-Every change lands with tests at the layer that owns the logic —
-the expectations (unit/property in the owning crate, module
-dispatch test, caps-smoke + runner gates, Go round-trip, Playwright
-e2e, real-data dogfood) are spelled out in `docs/TESTING.md`.
+Every change lands with tests at the layer that owns the logic.
+`docs/TESTING.md` states the expectations: unit and property tests in
+the owning crate, a module dispatch test, caps-smoke and the runner
+gates, a Go round trip, Playwright e2e, and a real-data dogfood.
 
 ## Deliberate non-goals (do not "fix" these)
 
-- No CRDT/automerge for sync — LWW + tombstones is the design.
-- transit-network is the authored model; GTFS stays OUT of it — the
-  import/export codecs live at the boundary in transit-codec.
-- wasm-bindgen / JS glue is gone on purpose; every module is the
-  raw rustc output of an assembly crate with the same four exports —
-  no custom calling conventions.
-- The geocoder is an oracle, not a document on the bus — no
+- **No CRDT or automerge for sync.** LWW with tombstones is the design.
+- **GTFS stays out of transit-network.** transit-network is the
+  authored model. The import and export codecs live at the boundary,
+  in transit-codec.
+- **No wasm-bindgen and no JS glue, on purpose.** Every module is the
+  raw rustc output of an assembly crate, with the same four exports.
+  There are no custom calling conventions.
+- **The geocoder is an oracle, not a document on the bus.** There is no
   gazetteer capability ("External services").
-- The Go server stays scaffolding; domain logic the server needs
-  becomes a capability module (it hosts cap-sync, cap-network for
-  the import and the picks it publishes, cap-plans for the published
-  plan set, cap-streets for the streets and walk table it
-  publishes, cap-migrate for an older document at receive, cap-stops
-  for the stops document's writes, cap-requests for the stop
-  requests document's).
-- The bus is the architecture: no capability grows a private
-  document format — shared data crosses capabilities as kernel
-  documents addressed by content hash only, and capabilities never
-  call capabilities (linking assembles bytes, not surfaces — the
-  arch gates and assembly independence enforce it).
+- **The Go server stays scaffolding.** Domain logic that the server
+  needs becomes a capability module. The server hosts:
+  - cap-sync;
+  - cap-network, for the import and the picks it publishes;
+  - cap-plans, for the published plan set;
+  - cap-streets, for the streets and walk table it publishes;
+  - cap-migrate, for an older document at receive;
+  - cap-stops, for the stops document's writes;
+  - cap-requests, for the stop requests document's writes.
+- **The bus is the architecture.**
+  - No capability grows a private document format. Shared data crosses
+    capabilities only as kernel documents named by content hash.
+  - Capabilities never call capabilities. Linking assembles bytes, not
+    surfaces. The arch gates and assembly independence enforce this.

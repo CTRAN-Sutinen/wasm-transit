@@ -1,419 +1,529 @@
 # The server (`server/`)
 
-Go + wazero host: scaffolding only (HTTP, manifest, proxies). It must
-never make a domain decision; the host reads the feed's own
-feed_info.txt version field (one boundary CSV field — I/O, not
-domain). It instantiates the single-capability modules it needs
-(it links no assemblies — D-78: nothing it holds long is a network,
-and authz keeps its own instance), all rebuilt by
-`just caps` into web/pkg/: cap-sync (the -wasm flag, cap_sync.wasm),
-the op behind POST /edits, held for the server's lifetime; cap-authz
-(-authz-wasm) when authentication is on; cap-plans (-plans-wasm) in
-store mode, the op behind POST /plans; cap-stops (-stops-wasm) in
-store mode, one instance made on first use and emptied after each
-(the kernel's `evict`) — the validation behind a stops write, and what a
-published pick reads of the stops document; cap-requests
-(-requests-wasm) in store mode, held the same way — the validation
-behind a stop requests write; cap-network
-(the -network-wasm flag, cap_network.wasm), which imports the
-configured GTFS zip (the kernel's `load_feed` + `import`) — and canonicalizes and
-validates each published pick — in a fresh instance
-that is closed afterwards, so its working memory goes with
-it; and cap-streets (the -streets-wasm flag, cap_streets.wasm),
-which imports the configured street layer (`import`) and derives
-the walk table over it and the published network (the kernel's
-`load_network` + `walks`) in a fresh instance, closed the same way. Each module's
-bytes are compiled once per process (decoding, validating, machine
-code: 1–3 s for cap-network), different modules at the same time, so
-a request for one never waits behind another's compile; every instance is made from that
-compiled module in well under a millisecond, so a fresh instance per
-import or publish costs only its memory. The manifest pins the network it publishes, the zip
-it was imported from, the published plan set (store mode), the
-streets and walk table it publishes, and the sync module's hash. (Reentrancy and the Go-host serialization live in
-`docs/CONVENTIONS.md`.)
+The server is a Go + wazero host. It is scaffolding only: HTTP, the
+manifest, and proxies. It must never make a domain decision. The host
+reads the feed's own feed_info.txt version field. This is one boundary
+CSV field: I/O, not domain.
 
-**The deployment publishes the network, not the feed.** Browsers
-never parse GTFS a server has: the import runs once per published
-zip, on the server, through the module the browser runs (same
-bytes, same `network_hash`), and every client registers the
-answer. On the real C-TRAN feed that is the difference between
-~2.7 s of import and a ~187 MB network module on every rider's
-page, and ~0.45 s and ~9–12 MB per registration of the network
-(from its 680 KB gzip stream; wasm memory keeps a module's
-high-water mark) — once per page, in its linked assembly. A zip loaded by hand
-(the UIs' file input) still imports in the browser, and so does a
-serverless deployment that names the agency's GTFS URL instead of a
-network (D-132; [static-deployment.md](static-deployment.md)).
+The server links no assemblies (D-78). Nothing it holds for a long time
+is a network, and authz keeps its own instance. It instantiates the
+single-capability modules it needs. `just caps` rebuilds all of them
+into web/pkg/:
 
-**The deployment publishes the streets the same way.** The street
-layer is read once, on the server (`-streets`), and the walk table
-— every walk between the network's stops, 13 s of work on C-TRAN —
-is derived there too: a browser registers the canonical document
-by its BYTES (the kernel's `load_streets` bulk op parses it in the
-module; the page never parses it) and the table in the router. On
-C-TRAN's Trapeze roads (`sha256:48fe6c89…`) the server's startup
-spends 11.8 s on the import and the table; the page fetches 4.5 MB
-(the document, gzipped) and 43 KB (the table), and registers the
-document in 0.47 s; the first `access` builds the walking graph in
-0.32 s, later ones answer in ~14 ms.
+- cap-sync (the -wasm flag, cap_sync.wasm) is the op behind POST
+  /edits. The server holds it for its whole lifetime.
+- cap-authz (-authz-wasm) runs when authentication is on.
+- cap-plans (-plans-wasm) runs in store mode. It is the op behind
+  POST /plans.
+- cap-stops (-stops-wasm) runs in store mode. The server makes one
+  instance on first use and empties it after each use (the kernel's
+  `evict`). It does the validation behind a stops write. It also reads
+  the stops document for a published pick.
+- cap-requests (-requests-wasm) runs in store mode and is held the same
+  way. It does the validation behind a stop requests write.
+- cap-network (the -network-wasm flag, cap_network.wasm) imports the
+  configured GTFS zip (the kernel's `load_feed` + `import`). It also
+  canonicalizes and validates each published pick. It runs in a fresh
+  instance that the server closes afterwards, so its working memory
+  goes with it.
+- cap-streets (the -streets-wasm flag, cap_streets.wasm) imports the
+  configured street layer (`import`). It derives the walk table over
+  the street layer and the published network (the kernel's
+  `load_network` + `walks`). It runs in a fresh instance that the server
+  closes the same way.
+
+The server compiles each module's bytes once per process (decoding,
+validating, machine code: 1–3 s for cap-network). It compiles different
+modules at the same time, so a request for one module never waits
+behind the compile of another. It makes every instance from the
+compiled module in well under a millisecond. A fresh instance per
+import or publish therefore costs only its memory.
+
+The manifest pins these items:
+
+- the network the server publishes
+- the zip the network was imported from
+- the published plan set (store mode)
+- the streets and walk table the server publishes
+- the sync module's hash
+
+Reentrancy and the Go-host serialization are in `docs/CONVENTIONS.md`.
+
+**The deployment publishes the network, not the feed.** Browsers never
+parse GTFS that a server has. The import runs once per published zip,
+on the server. It uses the same module bytes that the browser runs, so
+the `network_hash` is the same. Every client registers the answer. On
+the real C-TRAN feed this makes a large difference:
+
+- The import takes ~2.7 s and needs a ~187 MB network module on every
+  rider's page.
+- Registering the network takes ~0.45 s and ~9–12 MB per registration
+  (from its 680 KB gzip stream). The wasm memory keeps a module's
+  high-water mark.
+- A page registers the network once, in its linked assembly.
+
+A zip that a person loads by hand (the UIs' file input) still imports in
+the browser. A serverless deployment that names the agency's GTFS URL
+instead of a network also imports in the browser (D-132;
+[static-deployment.md](static-deployment.md)).
+
+**The deployment publishes the streets the same way.** The server reads
+the street layer once (`-streets`). It also derives the walk table
+there: every walk between the network's stops, 13 s of work on C-TRAN. A
+browser registers the canonical document by its bytes. The kernel's
+`load_streets` bulk op parses it in the module, and the page never
+parses it. The browser registers the table in the router. These
+measurements are for C-TRAN's Trapeze roads (`sha256:48fe6c89…`):
+
+- The server's startup spends 11.8 s on the import and the table.
+- The page fetches 4.5 MB (the document, gzipped) and 43 KB (the table).
+- The page registers the document in 0.47 s.
+- The first `access` builds the walking graph in 0.32 s. Later ones
+  answer in ~14 ms.
 
 With `-store <url>` the server keeps the agency's record in object
-storage (D-113): the engine, its backends, the pointers it keeps, and
-the offline tools are [storage.md](storage.md), and the bytes at rest
-`docs/FORMATS.md`. A serving process opens the store with
+storage (D-113). The engine, its backends, the pointers it keeps, and
+the offline tools are in [storage.md](storage.md). The bytes at rest
+are in `docs/FORMATS.md`. A serving process opens the store with
 `store.OpenServing` and never deletes (D-117).
 
-The server's inputs come from their sources (D-118): `-feed`,
-`-streets` and `-policy` each take an http(s) URL, `bucket:<key>` (the
-object `inputs/<key>` in the store's bucket), or a dev path. A URL or
-bucket source is re-checked at most once a minute (a conditional GET;
-a stat), and only bytes that changed re-import. With `-store` each read
-of the feed and the layer is committed as `source.feed` /
-`source.streets`, the record naming its source; a source that does
-not answer serves the last read, else that pointer's head — so a
-process is disposable: a replacement given the bucket and the same
-configuration serves the same manifest.
+The server's inputs come from their sources (D-118). `-feed`,
+`-streets` and `-policy` each take one of these:
 
-While the bucket does not answer (D-119) the server serves the heads
-and blobs it holds (a byte-bounded blob cache; blobs are immutable),
-labels each such read `X-Store-Stale` / `X-Store-As-Of`, and refuses
-every write with 503 and `Retry-After`; the rider pages show the edit
+- an http(s) URL
+- `bucket:<key>` (the object `inputs/<key>` in the store's bucket)
+- a dev path
+
+The server re-checks a URL or bucket source at most once a minute (a
+conditional GET, or a stat). Only bytes that changed re-import. With
+`-store`, the server commits each read of the feed and the layer as
+`source.feed` / `source.streets`. This record names its source. If a
+source does not answer, the server serves the last read, else that
+pointer's head. A process is therefore disposable: a replacement that
+has the bucket and the same configuration serves the same manifest.
+
+While the bucket does not answer (D-119), the server serves the heads
+and blobs it holds (a byte-bounded blob cache; blobs are immutable). It
+labels each such read `X-Store-Stale` / `X-Store-As-Of`. It refuses
+every write with 503 and `Retry-After`. The rider pages show the edit
 document's age (kit's `staleLabel`).
 
-Without `-store` the server runs over **the dev store**: the edit
-document in memory (or, with `-edits <path>`, one flat file on this
-machine), no history, and no publishing — `/plans`, `/builds`,
-`/pointers` and the store's log are off. It is for `-export`, which
-refuses a store, and for a server started bare; the server logs `DEV
-STORE` at startup. `server/dev.toml` gives `just serve`, `just dev`
-and `just qa` a store in memory instead, and a deployment runs with
-`-store`.
+Without `-store`, the server runs over **the dev store**. The edit
+document is in memory (or, with `-edits <path>`, in one flat file on
+this machine). There is no history and no publishing: `/plans`,
+`/builds`, `/pointers` and the store's log are off. The dev store is
+for `-export`, which refuses a store, and for a server that starts
+bare. The server logs `DEV STORE` at startup. `server/dev.toml` gives
+`just serve`, `just dev` and `just qa` a store in memory instead. A
+deployment runs with `-store`.
 
-**Settings** (`config.go`, `flags.go`). Every setting is a flag, and
-`-config <file>` sets them from a TOML file: each key a flag's name, a
-`[table]` prefixing its keys with its name and a dash (`[oidc]` `issuer`
-is `-oidc-issuer`), a relative path read from the file's directory, a
-URL or `bucket:<key>` as given. `-config` repeats, a later file over an
-earlier, and a flag on the command line beats every file. A key that
-names no flag, or a value its flag refuses, stops the boot with the
-file's name. Secrets stay out of the files: the store's credentials
-come from each SDK's own chain (the environment, a workload identity).
-`server/dev.toml` is the development defaults (the fixture feed and
+**Settings** (`config.go`, `flags.go`). Every setting is a flag.
+`-config <file>` sets them from a TOML file:
+
+- Each key is a flag's name.
+- A `[table]` prefixes its keys with its name and a dash (`[oidc]`
+  `issuer` is `-oidc-issuer`).
+- A relative path is read from the file's directory.
+- A URL or `bucket:<key>` is used as given.
+
+`-config` repeats, and a later file overrides an earlier file. A flag on
+the command line overrides every file. A key that names no flag stops
+the boot with the file's name. A value that its flag refuses does the
+same. Secrets stay out of the files: the store's credentials come from
+each SDK's own chain (the environment, a workload identity).
+
+`server/dev.toml` holds the development defaults: the fixture feed and
 streets, `mem://` store and attachments, the stub work order system,
-`-rt-proxy`) and lists every setting, the rest commented out at their
-defaults (`TestDevConfigShowsEverySetting` refuses a flag it does not
-show); `server/local.toml`, gitignored, is a developer's own,
-laid over it (`server/local.example.toml`). `just serve`, `just dev`
-and `just qa` read both.
+`-rt-proxy`. It lists every setting, and the rest are commented out at
+their defaults (`TestDevConfigShowsEverySetting` refuses a flag that it
+does not show). `server/local.toml` is gitignored and is a developer's
+own. It is laid over `server/dev.toml` (`server/local.example.toml`).
+`just serve`, `just dev` and `just qa` read both.
 
 **Running it.** The server stops on SIGTERM or SIGINT in two steps:
-`/readyz` answers 503 `draining` for `-drain` (default 5 s), so a load
-balancer stops sending, then the listener closes and requests in
-flight get up to 30 s (`serve` in `main.go`). The HTTP server bounds
-each client (`newHTTPServer`): headers within 10 s, a request body
-within 5 min, idle keep-alives 2 min, a response 10 min. `just
-server-image` builds the server as one container image with ko (no
-Dockerfile): the binary on a distroless base, with the server's
-modules, `web/dist`, and the geocoder policy in `server/kodata/`,
-which ko copies to `$KO_DATA_PATH`. When `KO_DATA_PATH` is set, every
-module and file flag defaults to its copy there and `-addr` to `:8080`,
-so the image runs with only its deployment's flags. The operator's
-guide is [DEPLOYMENTS-SERVER.md](../../DEPLOYMENTS-SERVER.md).
+
+1. `/readyz` answers 503 `draining` for `-drain` (default 5 s), so a
+   load balancer stops sending requests.
+2. The listener closes, and requests in flight get up to 30 s (`serve`
+   in `main.go`).
+
+The HTTP server bounds each client (`newHTTPServer`):
+
+- headers within 10 s
+- a request body within 5 min
+- idle keep-alives 2 min
+- a response 10 min
+
+`just server-image` builds the server as one container image with ko
+(no Dockerfile). The image holds the binary on a distroless base. The
+server's modules, `web/dist`, and the geocoder policy are in
+`server/kodata/`, which ko copies to `$KO_DATA_PATH`. When
+`KO_DATA_PATH` is set, every module and file flag defaults to its copy
+there, and `-addr` defaults to `:8080`. The image therefore runs with
+only its deployment's flags. The operator's guide is
+[DEPLOYMENTS-SERVER.md](../../DEPLOYMENTS-SERVER.md).
 
 Its HTTP surface:
 
-- `/healthz` — liveness: 200 `ok` while the process answers HTTP. It
-  reads nothing (`health.go`).
-- `/readyz` — readiness, JSON `{status, store, store_as_of_ms,
-  error}`: 200 `ready`; 200 `degraded` while the bucket does not answer
-  and the cached heads serve labelled reads; 503 `unavailable` when
-  the store holds no head to serve; 503 `draining` once shutdown has
-  begun. Without `-store` it is `ready` with `store: "none"`. It reads
-  the `edits` head, which the store rechecks at most once per 2 s.
-- `/` — the pages: with `-store`, the pinned build's files (the
-  `build` pointer's head, [release-artifacts.md](release-artifacts.md)), and `-dist` (default
-  `web/dist`) for what no build holds (the basemap); without it,
-  `-dist` (stdlib `http.ServeContent` either way, so the Range
-  requests PMTiles needs work). A file whose name carries its content
-  hash (Vite's `assets/<name>-<hash>.<ext>`, the modules'
-  `caps/<name>-<sha256>.wasm`) is served `immutable`; everything else
-  (the pages, `caps/manifest.json`, `live-feeds.json`, the service
-  worker `sw.js`) `no-cache`, so an open page's update check meets a
-  new build ([updates-offline.md](updates-offline.md)).
-- `/builds` — `POST {"build": "<hash>"}` moves the `build` pointer to a
-  build its log holds: a rollback, or forward again (store mode;
-  docs/FORMATS.md, "Builds"). A write, protected like the others.
-- `/rt?url=<encoded>` — a DEV relay, a route only with `-rt-proxy`
-  (`server/dev.toml` turns it on; D-67): it fetches an http(s)
-  feed (15 s timeout, 32 MB cap) and returns it with CORS headers, for
-  a dev config whose feeds send no `Access-Control-Allow-Origin`. It
-  relays any URL for any caller, so the server binds 127.0.0.1 when
-  it is on. A deployment's pages fetch the agency's feeds directly.
-- `/geocode/{autocomplete,search,reverse}` — a proxy to the Pelias
-  geocoder named by `-geocoder` (`<url>/v1/<op>`): it forwards the
-  user's input only (`text`, the focus point, the reverse point) and
+- `/healthz`: liveness. It answers 200 `ok` while the process answers
+  HTTP. It reads nothing (`health.go`).
+- `/readyz`: readiness, JSON `{status, store, store_as_of_ms, error}`.
+  - 200 `ready`.
+  - 200 `degraded` while the bucket does not answer and the cached
+    heads serve labelled reads.
+  - 503 `unavailable` when the store holds no head to serve.
+  - 503 `draining` once shutdown has begun.
+  - Without `-store` it is `ready` with `store: "none"`.
+  - It reads the `edits` head, which the store rechecks at most once
+    per 2 s.
+- `/`: the pages. With `-store`, the server serves the pinned build's
+  files (the `build` pointer's head,
+  [release-artifacts.md](release-artifacts.md)). It serves `-dist`
+  (default `web/dist`) for what no build holds (the basemap). Without
+  `-store`, it serves `-dist`. Both use stdlib `http.ServeContent`, so
+  the Range requests that PMTiles needs work.
+  - A file whose name carries its content hash is served `immutable`.
+    Examples are Vite's `assets/<name>-<hash>.<ext>` and the modules'
+    `caps/<name>-<sha256>.wasm`.
+  - Everything else is served `no-cache`: the pages,
+    `caps/manifest.json`, `live-feeds.json`, and the service worker
+    `sw.js`. An open page's update check then meets a new build
+    ([updates-offline.md](updates-offline.md)).
+- `/builds`: `POST {"build": "<hash>"}` moves the `build` pointer to a
+  build that its log holds. This is a rollback, or a move forward again
+  (store mode; docs/FORMATS.md, "Builds"). It is a write, protected
+  like the others.
+- `/rt?url=<encoded>`: a dev relay. The route exists only with
+  `-rt-proxy` (`server/dev.toml` turns it on; D-67). It fetches an
+  http(s) feed (15 s timeout, 32 MB cap). It returns the feed with CORS
+  headers, for a dev config whose feeds send no
+  `Access-Control-Allow-Origin`. It relays any URL for any caller, so
+  the server binds 127.0.0.1 when it is on. A deployment's pages fetch
+  the agency's feeds directly.
+- `/geocode/{autocomplete,search,reverse}`: a proxy to the Pelias
+  geocoder that `-geocoder` names (`<url>/v1/<op>`). It forwards the
+  user's input only (`text`, the focus point, the reverse point). It
   adds the deployment's query policy (`-geocoder-policy`, default
-  `server/geocoder.json`); 404 when none is configured. The geocoder
-  is an oracle, never a document on the bus (D-36, D-38;
-  [web.md](web.md), "External services"). `just geocoder-build` builds a local Pelias
-  (`github.com/pelias/docker`'s portland-metro project, in the
-  gitignored `.pelias/`, its transit importer not run — stops are
-  the network's), `just geocoder` starts it on :4000, and
-  `geocoder = "http://127.0.0.1:4000"` in `server/local.toml` has
-  `just serve` (or `just dev`) proxy it.
-- `/manifest` — `{network_hash, boundary_hash, feed_url, feed_hash, feed_version,
-  plans_hash, stops_hash, streets_hash, walks_hash, wasm_hash, authz_hash,
-  policy_hash, build_hash, generated_at, publisher, timezone, services}`
-  (the optional ones omitted when empty): which network is
-  authoritative and its boundary (the import's numbering, named by the
-  sha256 of its bytes) — or, in an export that names the feed instead
-  (D-132), the GTFS URL the pages import themselves (`feed_url`) — the
-  GTFS zip it was imported from, the published plan
-  set, the build the pages are served from (store mode), which
-  sync module bytes the server runs, who says so, the agency's zone
-  (the one the server counts its today in, and every page reads its
-  clock in), and the external services it proxies
-  (`services.geocoder: {path, query}` with `-geocoder`). Served
-  `no-cache` with an ETag naming what it pins (the store's manifest
-  head; without the store, a hash of every field but `generated_at`),
-  so an open page's poll is a 304 while nothing moved.
-- `/streets` — the canonical streets document imported from the
-  configured layer (`-streets`), bare (the bytes `load_streets`
-  takes); gzipped, its ETag the streets hash, re-imported when the
-  file changes (mtime-checked). The pages read the same document by
-  the manifest's `streets_hash` (`/blobs`, below; `servedStreets` in
-  `src/engine.ts`).
-- `/walks` — the walk table over the published streets and network
-  (both `-streets` and `-feed`), derived again when either changes;
-  gzipped, its ETag the walks hash; the pages read it by the
-  manifest's `walks_hash` (`servedWalks`).
-- `/network` — the import's answer for the configured zip
-  (`-feed`), served as-is: `{network, boundary, notes,
-  network_hash}`. Gzipped when the client takes it; its ETag is the
-  network hash, so a client holding it revalidates for a 304.
-  Republishing the zip is re-imported on the next request
-  (mtime-checked). The planner's page takes it (it forks the
-  network into a plan — `servedNetworkValue` in `src/engine.ts`).
-- `/network/document` and `/network/boundary` — the same answer's
-  two documents, split off for pages that register them without
-  reading them: the bare network as gzipped bytes
-  (`application/gzip`, never `Content-Encoding`, so the browser
-  hands them to the modules compressed — kernel op 256 decodes the
-  stream as it parses), and the boundary as JSON, both under the
-  network hash's ETag. The document's bytes are the import's
-  canonical serialization (unzipped, they hash to the pin). The
-  pages read the same two documents by the manifest's `network_hash`
-  and `boundary_hash` (`/blobs`, below; `servedNetwork`).
-- `/blobs/{hash}` and `/blobs/{hash}.gz` — with or without the store,
-  every document the manifest pins (the network, its boundary, the
-  streets, the walk table) by its hash: its JSON, and the same bytes
-  gzipped (`application/gzip`, never `Content-Encoding`). Immutable,
-  the ETag the path. Every blob's bytes hash to its name. This is the
-  layout a static host serves too ([static-deployment.md](static-deployment.md)), so
-  one page code reads either deployment; a store blob of the same hash
-  wins, with its envelope (`publishedBlob` in `export.go`).
-- **Authentication/authorization** (D-58..D-61): with any `-oidc-*`
-  flag set, the server verifies bearer JWTs — JWKS (`-oidc-jwks-url`,
-  cached by `kid`, refetched on unknown kid) or a pinned PEM
-  (`-oidc-key`), RS256/ES256 only, iss/aud exact, exp/nbf with leeway —
-  and asks the hosted cap-authz module (`-authz-wasm`) over the policy
-  document before any write: reads stay public (D-58), writes
-  (`POST /edits`, `POST /pointers/*`, `POST /plans` — write on
-  `plans`) need a role the policy grants write on that pointer. 401 bad/missing token, 403 denied; the
-  verified `sub` is the store log's `writer`. The policy is the store's
-  `policy` pointer, seeded from the `-policy` source (a URL,
-  `bucket:<key>`, or a dev path) at first boot (D-61);
-  later changes are authenticated CAS commits. `-oidc-name-claim`
-  (dotted, default `name`) is what a record names the person by — a
-  survey's surveyor (D-158); a token without it is named by its `sub`.
-  `-oidc-client-id` is the pages' own public client at the provider
-  (authorization code with PKCE) and `-oidc-scope` the scopes a page
-  asks for: with the client id, the manifest's `auth` names the issuer,
-  the client, and the scopes, and the pages sign in to write
-  (`web/src/signin.svelte.ts`).
-  No `-oidc-*` = auth off,
-  logged loudly (dev only). For `just serve`/`just dev`, `policy` and
-  the `[oidc]` table go in `server/local.toml`. What the server leaves to the
-  deployment: the first JWKS fetch trusts the IdP's HTTPS (pin its
-  certificate at the proxy for more), throttling repeated 401s is the
-  reverse proxy's, and a browser gets and refreshes its IdP token on
-  its own, presenting it on writes only.
-- `/edits` — the edit document: `POST` a client document, receive
-  the LWW-merged result (cap-sync's `sync_edits`, with the receive
-  path clamping client timestamps to the server clock, D-56); `GET`
-  reads the server's. With `-store` this is the `edit_records`
-  pointer, CAS'd through the store (a CAS conflict retries against
-  the re-read document); without it, `-edits <path>` persists it as
-  one flat file across restarts, else in memory (the dev store).
-- Store mode also exposes the generic surface (`-store` only):
-  `GET /pointers/{name}`, `GET /pointers/{name}/log?since=<hash>`
-  (delta sync over the append-only log), `POST /pointers/{name}`
-  (`{from, …}` → 200 + new head, 409 + current on conflict), and
-  `GET /blobs/{hash}` (raw bytes, ETag the hash, envelope in headers;
-  gzipped as `application/gzip` for `Accept: application/gzip` or at
-  `/blobs/{hash}.gz` — except
-  kind `policy` blobs, which are never served: 404). `GET
-  /manifest` serves the `manifest` pointer's blob, re-committed when the
-  published feed, streets, module, or services change. With auth on, the
-  log endpoint requires a read (an `audit` rule implies it) and redacts
-  `writer` unless audit is granted (an agent's choice, not decided:
-  D-164); `GET /permissions` (any valid token)
-  returns the caller's effective-permissions projection (cap-authz
-  `effective`) — the only client-readable form of the policy.
-- `POST /plans` (store mode) — publish a pick (docs/ROADMAP.md 1,
-  D-74): the body is the pick's network in any serialization. A fresh
-  cap-network registers it and answers what refuses it (`publishable`:
-  its issues, and a pick with no service in its period — 422 with
-  `issues` and `refusals`) and its canonical bytes and plan frame;
-  cap-plans `publish` answers the next published set or why the pick
-  is refused (422: the chain, or a pick dated before today, D-76).
-  `POST /plans/retire` `{"id"}` retires a pick that has not taken
-  effect (D-75). "Today" is the agency's date: the host clock read in
-  the network's zone, as cap-network answers it beside the hash (the
-  feed's import, else the last published pick's `document`) — the
-  host's own zone only until one is known; `-today` pins it on a test
-  server. The server commits the network to
-  `plan.<id>`, then the set to `plans`, and the manifest pins it as
-  `plans_hash`. Clients read the set and each pick's network from
-  `/blobs`. With a stops document, the pick reads it first (D-157):
-  each stop's record on its first date (cap-stops `read_records`, so
-  the network stored is the read one, whatever copy was sent), and the
-  warnings of the stops it visits that are not in service over its
-  period (`visit_warnings`, the period as cap-plans `periods` derives
-  it), answered after cap-network's own. The stops document is never
-  written.
-- `POST /stops` (store mode) — write the stops document (D-153):
-  `{"from": "<the head read, or empty>", "stops": {...}}`. A fresh
-  cap-stops first names the person writing as the surveyor of every
-  survey the held document does not hold (`attribute_surveys`, D-158 —
-  never a name the client sent: the verified token's
-  `-oidc-name-claim`, default `name`, else its `sub`; with auth off the
-  caller's `X-Writer` label, else `anonymous`), then validates it (422 with `refusals`) and answers its
-  canonical bytes, committed to the `stops` pointer by CAS (409 with
-  `current` when another writer moved it); the manifest pins it as
-  `stops_hash`. A stops write changes no pick: a stop's life is its own,
-  and a pick only reads the document (D-157). A raw pointer commit of
-  the stops is refused (400). The first document arrives through this
-  route (a page makes it with cap-stops `seed`). Each new import of
-  the agency's feed (`-feed`, at boot or when its bytes change) is
-  recorded in a stops document the store holds (D-150: the feed
-  applies, and the planner sees what it did): cap-stops `import_events`
-  on the feed's first service date, each event naming the feed's hash,
-  committed by the same CAS, the writer `import:feed`; nothing when it
-  differs in nothing (`recordFeed`, stops.go).
-- `POST /attachments` and `GET /attachments/<hash>` (`-attachments`, a
-  bucket of its own — any store URL): the photos and drawings surveys
-  and requests carry (D-162), each object `attachments/<hex>` created
-  only if absent, its media type in the object's metadata. A POST (write
-  on the policy's `attachments` pointer) takes a photo (JPEG, PNG, WebP,
-  HEIC) or a PDF up to 25 MB and answers `{hash, type, bytes}`; a GET
-  needs any signed-in person whenever sign-in is on (`protectSignedIn`)
-  and answers the bytes, `Cache-Control: private`. 501
-  `{configured: false}` without the bucket; the manifest's
-  `services.attachments` offers it only with one. `store gc` never
-  touches this bucket.
-- `POST /stop-requests/work-order` (store mode, `-work-orders`) —
-  `{"request": "<id>", "action": "open"|"refresh"}`: the work order
-  system's adapter (D-165, `docs/architecture/adjacent-systems.md`)
-  opens a work order for the request or reads its status, and cap-requests
-  `record_work_order` writes the answer on it (dated the server's
-  today), committed by CAS, the writer `work-orders:<system>`; 200
-  `{requests_hash, work_order}`, 501 `{configured: false}` with no
-  adapter, 409 when the requests moved meanwhile. The manifest's
-  `services.work_orders` offers it only when an adapter is configured.
-- `POST /stop-requests` (store mode) — write the stop requests document
-  (D-159): `{"from": "<the head read, or empty>", "requests": {...}}`.
-  A fresh cap-requests validates it (422 with `refusals`) and answers
-  its canonical bytes, committed to the `stop_requests` pointer by CAS
-  (409 with `current` when another writer moved it); the manifest pins
-  it as `stop_requests_hash`. A raw pointer commit of the requests is
-  refused (400). The first request begins the document (a page makes
-  it with cap-requests `put`).
-- `GET /feed?date=` — the GTFS zip in force on the date (default the
-  server's today): cap-network `export` of the published pick in
-  force (cap-plans `in_force` answers which) — with a stops document,
-  first cap-stops `export_versions` over the pick's period (cap-plans
-  `periods`), so a stop whose record changes inside it is one stop per
-  version (D-151) — kept by the pick's network hash and the stops
-  document's;
-  before the first pick takes effect, the configured `-feed` zip
-  itself (D-74); 404 when neither runs. ETag the zip's hash.
+  `server/geocoder.json`). It answers 404 when no geocoder is
+  configured. The geocoder is an oracle, never a document on the bus
+  (D-36, D-38; [web.md](web.md), "External services").
+  - `just geocoder-build` builds a local Pelias
+    (`github.com/pelias/docker`'s portland-metro project, in the
+    gitignored `.pelias/`). Its transit importer does not run, because
+    stops are the network's.
+  - `just geocoder` starts it on :4000.
+  - `geocoder = "http://127.0.0.1:4000"` in `server/local.toml` makes
+    `just serve` (or `just dev`) proxy it.
+- `/manifest`: `{network_hash, boundary_hash, feed_url, feed_hash, feed_version, plans_hash, stops_hash, streets_hash, walks_hash, wasm_hash, authz_hash, policy_hash, build_hash, generated_at, publisher, timezone, services}`. The server omits the optional ones
+  when they are empty. The manifest says these things:
+  - which network is authoritative, and its boundary (the import's
+    numbering, named by the sha256 of its bytes)
+  - in an export that names the feed instead (D-132), the GTFS URL
+    that the pages import themselves (`feed_url`)
+  - the GTFS zip that the network was imported from
+  - the published plan set
+  - the build that the pages are served from (store mode)
+  - which sync module bytes the server runs
+  - who says so
+  - the agency's zone (the server counts its today in this zone, and
+    every page reads its clock in it)
+  - the external services that it proxies (`services.geocoder: {path, query}` with
+    `-geocoder`)
 
-`go test ./...` in `server/` proves the server runs the exact
-module bytes the manifest pins and answers what the browser does.
+  The server serves it `no-cache` with an ETag that names what it pins.
+  The ETag is the store's manifest head. Without the store, it is a
+  hash of every field but `generated_at`. An open page's poll is
+  therefore a 304 while nothing moved.
+- `/streets`: the canonical streets document imported from the
+  configured layer (`-streets`), bare (the bytes that `load_streets`
+  takes). It is gzipped, and its ETag is the streets hash. The server
+  re-imports it when the file changes (mtime-checked). The pages read
+  the same document by the manifest's `streets_hash` (`/blobs`, below;
+  `servedStreets` in `src/engine.ts`).
+- `/walks`: the walk table over the published streets and network (both
+  `-streets` and `-feed`). The server derives it again when either
+  changes. It is gzipped, and its ETag is the walks hash. The pages
+  read it by the manifest's `walks_hash` (`servedWalks`).
+- `/network`: the import's answer for the configured zip (`-feed`),
+  served as-is: `{network, boundary, notes, network_hash}`.
+  - It is gzipped when the client takes it.
+  - Its ETag is the network hash, so a client that holds it
+    revalidates for a 304.
+  - When the zip is republished, the server re-imports it on the next
+    request (mtime-checked).
+  - The planner's page takes it, because it forks the network into a
+    plan (`servedNetworkValue` in `src/engine.ts`).
+- `/network/document` and `/network/boundary`: the same answer's two
+  documents, split off for pages that register them without reading
+  them.
+  - `/network/document` is the bare network as gzipped bytes
+    (`application/gzip`, never `Content-Encoding`). The browser then
+    hands them to the modules compressed, and kernel op 256 decodes the
+    stream as it parses.
+  - `/network/boundary` is the boundary as JSON.
+  - Both are under the network hash's ETag.
+  - The document's bytes are the import's canonical serialization.
+    Unzipped, they hash to the pin.
+  - The pages read the same two documents by the manifest's
+    `network_hash` and `boundary_hash` (`/blobs`, below;
+    `servedNetwork`).
+- `/blobs/{hash}` and `/blobs/{hash}.gz`: with or without the store, the
+  server serves every document that the manifest pins (the network, its
+  boundary, the streets, the walk table) by its hash. It serves the
+  JSON, and the same bytes gzipped (`application/gzip`, never
+  `Content-Encoding`). The blobs are immutable, and the ETag is the
+  path. Every blob's bytes hash to its name. A static host serves this
+  same layout ([static-deployment.md](static-deployment.md)), so one
+  page code reads either deployment. A store blob of the same hash wins,
+  with its envelope (`publishedBlob` in `export.go`).
+- **Authentication and authorization** (D-58..D-61). Any `-oidc-*` flag
+  turns it on. Then the server verifies bearer JWTs:
+  - The key is a JWKS (`-oidc-jwks-url`, cached by `kid`, refetched on
+    an unknown kid) or a pinned PEM (`-oidc-key`).
+  - Only RS256 and ES256 are accepted.
+  - `iss` and `aud` must match exactly. `exp` and `nbf` have leeway.
+
+  Before any write, the server asks the hosted cap-authz module
+  (`-authz-wasm`) over the policy document. Reads stay public (D-58).
+  Writes (`POST /edits`, `POST /pointers/*`, `POST /plans`, which is a
+  write on `plans`) need a role that the policy grants write on that
+  pointer. The server answers 401 for a bad or missing token and 403 for
+  a denied one. The verified `sub` is the store log's `writer`.
+
+  The policy is the store's `policy` pointer. The server seeds it from
+  the `-policy` source (a URL, `bucket:<key>`, or a dev path) at first
+  boot (D-61). Later changes are authenticated CAS commits.
+
+  `-oidc-name-claim` (dotted, default `name`) is the claim that a record
+  uses to name the person, for example a survey's surveyor (D-158). A
+  token without it is named by its `sub`.
+
+  `-oidc-client-id` is the pages' own public client at the provider
+  (authorization code with PKCE). `-oidc-scope` is the scopes that a
+  page asks for. With the client id, the manifest's `auth` names the
+  issuer, the client, and the scopes. The pages then sign in to write
+  (`web/src/signin.svelte.ts`).
+
+  With no `-oidc-*` flag, auth is off. The server logs this loudly. Use
+  this for development only. For `just serve`/`just dev`, put `policy`
+  and the `[oidc]` table in `server/local.toml`.
+
+  The deployment handles these items:
+  - The first JWKS fetch trusts the IdP's HTTPS. Pin its certificate at
+    the proxy for more.
+  - The reverse proxy throttles repeated 401s.
+  - A browser gets and refreshes its IdP token on its own. It presents
+    the token on writes only.
+- `/edits`: the edit document. `POST` a client document and receive the
+  LWW-merged result (cap-sync's `sync_edits`). The receive path clamps
+  client timestamps to the server clock (D-56). `GET` reads the
+  server's document. With `-store`, this is the `edit_records` pointer,
+  and the store CASes it. A CAS conflict retries against the re-read
+  document. Without `-store`, `-edits <path>` persists it as one flat
+  file across restarts, else it is in memory (the dev store).
+- Store mode (`-store` only) also exposes the generic surface:
+  - `GET /pointers/{name}`.
+  - `GET /pointers/{name}/log?since=<hash>`: delta sync over the
+    append-only log.
+  - `POST /pointers/{name}` (`{from, …}`): 200 and the new head, or 409
+    and the current head on conflict.
+  - `GET /blobs/{hash}`: raw bytes, ETag the hash, envelope in headers.
+    The server gzips it as `application/gzip` for
+    `Accept: application/gzip` or at `/blobs/{hash}.gz`. Blobs of kind `policy`
+    are never served: 404.
+  - `GET /manifest` serves the `manifest` pointer's blob. The server
+    commits it again when the published feed, streets, module, or
+    services change.
+
+  With auth on, the log endpoint requires a read (an `audit` rule
+  implies it). It redacts `writer` unless audit is granted. This is an
+  agent's choice and is not decided (D-164). `GET /permissions` (any
+  valid token) returns the caller's effective-permissions projection
+  (cap-authz `effective`). It is the only client-readable form of the
+  policy.
+- `POST /plans` (store mode): publish a pick (docs/ROADMAP.md 1, D-74).
+  The body is the pick's network in any serialization.
+  - A fresh cap-network registers it. It answers what refuses it
+    (`publishable`: its issues, and a pick with no service in its
+    period, which gives 422 with `issues` and `refusals`). It also
+    answers the pick's canonical bytes and plan frame.
+  - cap-plans `publish` answers the next published set, or why it
+    refuses the pick (422: the chain, or a pick dated before today,
+    D-76).
+  - `POST /plans/retire` `{"id"}` retires a pick that has not taken
+    effect (D-75).
+  - "Today" is the agency's date. It is the host clock read in the
+    network's zone, as cap-network answers it beside the hash (the
+    feed's import, else the last published pick's `document`). Until a
+    zone is known, it uses the host's own zone. `-today` pins it on a
+    test server.
+  - The server commits the network to `plan.<id>`, then the set to
+    `plans`. The manifest pins the set as `plans_hash`. Clients read the
+    set and each pick's network from `/blobs`.
+  - With a stops document, the pick reads it first (D-157). It reads
+    each stop's record on its first date (cap-stops `read_records`), so
+    the network that the server stores is the read one, whatever copy
+    the client sent. It also warns about the stops it visits that are
+    not in service over its period (`visit_warnings`, the period as
+    cap-plans `periods` derives it). These warnings come after
+    cap-network's own.
+  - The server never writes the stops document here.
+- `POST /stops` (store mode): write the stops document (D-153):
+  `{"from": "<the head read, or empty>", "stops": {...}}`.
+  - A fresh cap-stops first names the person who writes as the surveyor
+    of every survey that the held document does not hold
+    (`attribute_surveys`, D-158). The name is never one that the client
+    sent. It is the verified token's `-oidc-name-claim` (default
+    `name`), else its `sub`. With auth off, it is the caller's
+    `X-Writer` label, else `anonymous`.
+  - It then validates the document (422 with `refusals`) and answers
+    its canonical bytes.
+  - The server commits the bytes to the `stops` pointer by CAS (409
+    with `current` when another writer moved it). The manifest pins the
+    document as `stops_hash`.
+  - A stops write changes no pick. A stop's life is its own, and a pick
+    only reads the document (D-157).
+  - The server refuses a raw pointer commit of the stops (400).
+  - The first document arrives through this route (a page makes it with
+    cap-stops `seed`).
+  - The server records each new import of the agency's feed (`-feed`,
+    at boot or when its bytes change) in a stops document that the
+    store holds (D-150: the feed applies, and the planner sees what it
+    did). cap-stops `import_events` runs on the feed's first service
+    date, and each event names the feed's hash. The same CAS commits
+    them, and the writer is `import:feed`. The server records nothing
+    when the feed differs in nothing (`recordFeed`, stops.go).
+- `POST /attachments` and `GET /attachments/<hash>` (`-attachments`, a
+  bucket of its own: any store URL). These carry the photos and
+  drawings that surveys and requests hold (D-162). The server creates
+  each object `attachments/<hex>` only if it is absent, with its media
+  type in the object's metadata.
+  - A POST (write on the policy's `attachments` pointer) takes a photo
+    (JPEG, PNG, WebP, HEIC) or a PDF up to 25 MB. It answers
+    `{hash, type, bytes}`.
+  - A GET needs any signed-in person whenever sign-in is on
+    (`protectSignedIn`). It answers the bytes with
+    `Cache-Control: private`.
+  - Without the bucket, the answer is 501 `{configured: false}`. The
+    manifest's `services.attachments` offers the route only with a
+    bucket.
+  - `store gc` never touches this bucket.
+- `POST /stop-requests/work-order` (store mode, `-work-orders`):
+  `{"request": "<id>", "action": "open"|"refresh"}`. The work order
+  system's adapter (D-165, `docs/architecture/adjacent-systems.md`)
+  opens a work order for the request, or reads its status. cap-requests
+  `record_work_order` writes the answer on the request (dated the
+  server's today). The same CAS commits it, and the writer is
+  `work-orders:<system>`.
+  - 200 `{requests_hash, work_order}`.
+  - 501 `{configured: false}` with no adapter.
+  - 409 when the requests moved meanwhile.
+  - The manifest's `services.work_orders` offers the route only when an
+    adapter is configured.
+- `POST /stop-requests` (store mode): write the stop requests document
+  (D-159): `{"from": "<the head read, or empty>", "requests": {...}}`.
+  - A fresh cap-requests validates it (422 with `refusals`) and answers
+    its canonical bytes.
+  - The server commits the bytes to the `stop_requests` pointer by CAS
+    (409 with `current` when another writer moved it). The manifest pins
+    the document as `stop_requests_hash`.
+  - The server refuses a raw pointer commit of the requests (400).
+  - The first request begins the document (a page makes it with
+    cap-requests `put`).
+- `GET /feed?date=`: the GTFS zip in force on the date (default the
+  server's today).
+  - It is cap-network `export` of the published pick in force (cap-plans
+    `in_force` answers which pick).
+  - With a stops document, cap-stops `export_versions` runs first over
+    the pick's period (cap-plans `periods`). A stop whose record changes
+    inside the period is then one stop per version (D-151).
+  - The server keeps the result by the pick's network hash and the stops
+    document's.
+  - Before the first pick takes effect, it is the configured `-feed` zip
+    itself (D-74).
+  - 404 when neither runs. The ETag is the zip's hash.
+
+`go test ./...` in `server/` proves two things: the server runs the
+exact module bytes that the manifest pins, and it answers what the
+browser does.
 
 
 ## Why
 
-One entry per load-bearing choice, headed by the code it governs.
-**Holds** is what must stay true; change it only with the user, after
+Each entry is one important choice, headed by the code it governs.
+**Holds** is what must stay true. Change it only with the user, after
 reading **Because**.
 
 ### No domain logic in Go (`server/*.go`)
-- **Holds:** every domain answer comes from a capability module; the Go host does I/O, routing, and proxies only. Logic the server needs becomes a capability.
-- **Because:** the server and a page given the same documents must answer the same bytes ([web.md](web.md), "Parity"); Go logic would be a second implementation to keep in step.
+- **Holds:** every domain answer comes from a capability module. The Go host does I/O, routing, and proxies only. Logic that the server needs becomes a capability.
+- **Because:** the server and a page that have the same documents must answer the same bytes ([web.md](web.md), "Parity"). Go logic is a second implementation to keep in step.
 
 ### The server imports the feed; pages register the network (`network.go`, `feedSource`)
-- **Holds:** with a server, pages never parse GTFS; they register the imported network.
-- **Because:** C-TRAN's import costs ~2.7 s and a ~187 MB module; registering the result costs ~0.45 s and ~9–12 MB (D-68 budgets).
+- **Holds:** with a server, pages never parse GTFS. They register the imported network.
+- **Because:** C-TRAN's import costs ~2.7 s and a ~187 MB module. Registering the result costs ~0.45 s and ~9–12 MB (D-68 budgets).
 - **Exception:** a serverless deployment may have each page import the agency's GTFS URL (D-132; [static-deployment.md](static-deployment.md)).
 
 ### Single-capability modules, fresh per import (`NewWasmHost`, `importFeed`, `streetsSource.Load`)
-- **Holds:** the server links no assemblies; cap-network and cap-streets get a fresh instance per import, closed after; authz keeps its own instance.
-- **Because:** wasm memory never shrinks, so closing the instance is the memory hygiene; the long-lived modules hold no network, so linking saves nothing; a trap elsewhere must not take the fail-closed authz check with it.
-- **Rejected:** one assembly for the long-lived modules; one for everything (loses the fresh instance). Revisit if the server hosts a long-lived network reader.
+- **Holds:** the server links no assemblies. cap-network and cap-streets get a fresh instance per import, closed after. authz keeps its own instance.
+- **Because:** wasm memory never shrinks, so closing the instance is the memory hygiene. The long-lived modules hold no network, so linking saves nothing. A trap in another module must not take the fail-closed authz check with it.
+- **Rejected:** one assembly for the long-lived modules. One assembly for everything (it loses the fresh instance). Revisit if the server hosts a long-lived network reader.
 - **Decided:** D-78.
 
 ### Two ways to fetch a published document (`/network/document`, `/network/boundary`, `/streets`, `/walks`, `/blobs/<hash>`)
-- **Holds:** both stay. The routes serve the current document at a stable address, pinned by ETag (a 304 while unchanged). `/blobs/<hash>` serves a document by the hash the manifest names; the pages read this one.
-- **Because:** a static host serves the `blobs/` layout too, so one page code reads either deployment; and one manifest read names the network and its boundary together, where the routes tie them only by matching ETags across two requests.
+- **Holds:** both stay. The routes serve the current document at a stable address, pinned by ETag (a 304 while unchanged). `/blobs/<hash>` serves a document by the hash that the manifest names. The pages read this one.
+- **Because:** a static host serves the `blobs/` layout too, so one page code reads either deployment. One manifest read names the network and its boundary together. The routes tie them only by matching ETags across two requests.
 
 ### Gzip as content, never transport (`/blobs/<hash>.gz`, `Accept: application/gzip`, `/network/document`)
-- **Holds:** a gzipped document is served as `application/gzip` bytes, never `Content-Encoding: gzip`. `/blobs/<hash>` answers gzip on `Accept: application/gzip`; `/blobs/<hash>.gz` answers it by path. Both stay.
-- **Because:** the page hands compressed bytes to the module, which decodes as it parses (kernel op 256), so the 9.6 MB network text never exists whole on the page. The `.gz` path exists because a static host cannot negotiate on a header. A host that decompresses anyway still works: the modules read either form.
+- **Holds:** the server serves a gzipped document as `application/gzip` bytes, never `Content-Encoding: gzip`. `/blobs/<hash>` answers gzip on `Accept: application/gzip`. `/blobs/<hash>.gz` answers it by path. Both stay.
+- **Because:** the page hands compressed bytes to the module, which decodes as it parses (kernel op 256). The 9.6 MB network text therefore never exists whole on the page. The `.gz` path exists because a static host cannot negotiate on a header. A host that decompresses anyway still works, because the modules read either form.
 
 ### Inputs from a URL or the bucket (`-feed`, `-streets`, `-policy`, `source.go`)
-- **Holds:** each input is a URL, `bucket:<key>`, or a dev path; with `-store` each read is committed (`source.feed`, `source.streets`).
-- **Because:** a process must be disposable: its replacement, given the bucket and the same flags, serves the same manifest. Local files tie a deployment to one machine.
+- **Holds:** each input is a URL, `bucket:<key>`, or a dev path. With `-store`, the server commits each read (`source.feed`, `source.streets`).
+- **Because:** a process must be disposable. Its replacement, given the bucket and the same flags, serves the same manifest. Local files tie a deployment to one machine.
 - **Rejected:** the bucket only, with a separate import step.
 - **Decided:** D-118.
 
 ### Stale reads labelled, writes refused (`degraded.go`, `X-Store-Stale`)
-- **Holds:** while the bucket does not answer, cached heads and blobs are served labelled with their age; every write is refused (503).
-- **Because:** blobs are immutable, so only a head can be stale; reads peak during disruptions, when outages are likeliest. Acknowledging a write the bucket has not taken would lose it with the process; the browser keeps its documents and resends.
-- **Rejected:** failing reads past an age; failing every request.
+- **Holds:** while the bucket does not answer, the server serves cached heads and blobs labelled with their age. It refuses every write (503).
+- **Because:** blobs are immutable, so only a head can be stale. Reads peak during disruptions, when outages are likeliest. If the server acknowledged a write that the bucket has not taken, the write would be lost with the process. The browser keeps its documents and resends.
+- **Rejected:** failing reads past an age. Failing every request.
 - **Decided:** D-119.
 
 ### Public reads, authenticated writes (`authz.go`, `protectWrite`, `-oidc-*`, `-policy`)
-- **Holds:** GETs are public; writes need a role the policy grants on that pointer; tokens verify by JWKS or a pinned key, RS256/ES256 only; the roles' claim path is configurable; the policy is a store document seeded from a file at first boot and changed by audited commits.
-- **Because:** reads publish what riders need; writes are the shared state. Symmetric or `none` algorithms would let anyone mint tokens. The claim's location is the IdP's. A file re-read per request would leave policy changes unaudited; a store-only policy needs a break-glass bootstrap.
+- **Holds:**
+  - GETs are public.
+  - Writes need a role that the policy grants on that pointer.
+  - Tokens verify by JWKS or a pinned key, RS256/ES256 only.
+  - The roles' claim path is configurable.
+  - The policy is a store document, seeded from a file at first boot and changed by audited commits.
+- **Because:** reads publish what riders need. Writes are the shared state. Symmetric or `none` algorithms would let anyone mint tokens. The claim's location is the IdP's. A file re-read per request would leave policy changes unaudited. A store-only policy needs a break-glass bootstrap.
 - **Decided:** D-58, D-59, D-60, D-61.
 
 ### Attachments live apart and are read only signed in (`attachments.go`, `-attachments`)
-- **Holds:** photos and drawings sit in a bucket of their own, each object named by its content hash; a record names a file only by that hash, never a URL, and the server hands out the bytes — to a signed-in person whenever sign-in is on, unlike every other read.
-- **Because:** files are large and their access and keeping differ from the documents'; a URL would tie every record to one provider and bucket name (the infrastructure must not couple to one store or provider), while a hash keeps a record portable and shows a swapped file. A site drawing can show parcels and private property, and a photo can catch people: the deployment is internal-facing, and its attachments are staff's to see.
-- **Rejected:** URLs in the records; attachments among the store's blobs; public reads.
+- **Holds:** photos and drawings sit in a bucket of their own, and each object is named by its content hash. A record names a file only by that hash, never a URL. The server hands out the bytes to a signed-in person whenever sign-in is on, unlike every other read.
+- **Because:** files are large, and their access and keeping differ from the documents'. A URL would tie every record to one provider and bucket name (the infrastructure must not couple to one store or provider). A hash keeps a record portable and shows a swapped file. A site drawing can show parcels and private property, and a photo can catch people. The deployment is internal-facing, and its attachments are staff's to see.
+- **Rejected:** URLs in the records. Attachments among the store's blobs. Public reads.
 - **Decided:** D-162.
 
 ### Degraded is ready (`/readyz`, `health.go`)
-- **Holds:** `/readyz` stays 200 while the bucket does not answer and cached heads serve; `/healthz` reads nothing.
-- **Because:** every instance shares one bucket, so all of them would fail the check at once; a balancer that pulled them all would turn a write outage into a read outage, while the pages read the cached heads fine (D-119). Restarting a process cannot fix the bucket.
+- **Holds:** `/readyz` stays 200 while the bucket does not answer and cached heads serve. `/healthz` reads nothing.
+- **Because:** every instance shares one bucket, so all of them would fail the check at once. A balancer that pulled them all would turn a write outage into a read outage, while the pages read the cached heads fine (D-119). Restarting a process cannot fix the bucket.
 
 ### The dev store is not a deployment mode (no `-store`)
-- **Holds:** without `-store` the server warns at startup and keeps working; it does not refuse.
-- **Because:** with no store there is no history, rollback, or publishing, and edits live on one machine — right for a developer and for `-export` (which writes a bundle and exits), never for a server riders depend on. A warning keeps a bare server one command.
+- **Holds:** without `-store`, the server warns at startup and keeps working. It does not refuse.
+- **Because:** with no store there is no history, rollback, or publishing, and edits live on one machine. This is right for a developer and for `-export` (which writes a bundle and exits). It is never right for a server that riders depend on. A warning keeps a bare server to one command.
 
 ### Settings are a file whose keys are the flags (`config.go`)
-- **Holds:** `-config` sets flags from TOML files; the command line beats a file, a later file an earlier; an unknown key refuses the boot; the flags themselves stay, every one.
-- **Because:** the server grew past thirty flags, and a long command line (or an environment variable per flag, passed through each recipe) is hard to read, review, and keep. A file keeps a deployment's settings in one reviewed place and the developer's defaults in the tree; keys that are the flags' own names mean one vocabulary (`-help` documents both), and the flags staying means the image, the e2e servers, and a one-off override need no file. TOML because people edit it and it takes comments; refusing an unknown key because a misspelt setting silently ignored is a deployment running on a default nobody chose.
+- **Holds:** `-config` sets flags from TOML files. The command line beats a file, and a later file beats an earlier file. An unknown key refuses the boot. The flags themselves stay, every one.
+- **Because:** the server grew past thirty flags. A long command line (or an environment variable per flag, passed through each recipe) is hard to read, review, and keep. A file keeps a deployment's settings in one reviewed place and the developer's defaults in the tree. Keys that are the flags' own names mean one vocabulary (`-help` documents both). The flags stay, so the image, the e2e servers, and a one-off override need no file. TOML is used because people edit it and it takes comments. An unknown key is refused because a misspelt setting that the server ignores silently is a deployment that runs on a default nobody chose.
 
 ### `/rt` is a dev relay, off by default (`handleProxy`, `-rt-proxy`)
-- **Holds:** the route exists only with `-rt-proxy`, which binds localhost; deployments fetch feeds directly.
-- **Because:** it fetches any URL for any caller — beyond localhost an open relay into the server's network. Feeds are fixed at their source (HTTPS with CORS).
+- **Holds:** the route exists only with `-rt-proxy`, which binds localhost. Deployments fetch feeds directly.
+- **Because:** it fetches any URL for any caller. Beyond localhost it is an open relay into the server's network. Feeds are fixed at their source (HTTPS with CORS).
 - **Decided:** D-67.
 
 ### Picks: retired, not removed; never landing in the past (`POST /plans`, `/plans/retire`)
-- **Holds:** a retired pick stays in the set marked `retired` and never governs; a pick with no service in its period is refused; a new, restored, or moved pick dated before today is refused; a correction under its own date always publishes.
-- **Because:** retirement is the tombstone everywhere (no hard deletes). A no-service pick would leave every rider page with a network that runs nothing on its date; a past-dated pick would rewrite what the deployment says ran.
-- **Rejected:** removal from the set; publishing with warnings only.
+- **Holds:** a retired pick stays in the set marked `retired` and never governs. The server refuses a pick with no service in its period. It refuses a new, restored, or moved pick dated before today. A correction under its own date always publishes.
+- **Because:** retirement is the tombstone everywhere (no hard deletes). A pick with no service would leave every rider page with a network that runs nothing on its date. A pick dated in the past would rewrite what the deployment says ran.
+- **Rejected:** removal from the set. Publishing with warnings only.
 - **Decided:** D-75, D-76. **Pinned:** `TestRetiringAPick`, `TestPublishRefusalsNameTheirReasons`.

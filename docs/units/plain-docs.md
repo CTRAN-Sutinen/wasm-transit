@@ -10,14 +10,12 @@ concept one name.
 1. **Test the first-change guide.** `docs/guide/first-change.md`
    exists. A developer new to the project makes one small change with
    it. Fix the guide where they get stuck.
-2. **The rewrite.** Rewrite each developer document to the writing
-   rules, in the order a new developer reads them. These are left:
-   `AGENTS.md`, the other files in `docs/architecture/`,
-   `docs/CONVENTIONS.md`, `docs/TESTING.md`, `docs/FORMATS.md`, and
-   `docs/ROADMAP.md`. `docs/architecture/README.md`,
-   `docs/architecture/bus.md`, and `crates/AGENTS.md` follow the rules.
-   Unit files and `qa/` change when they are next edited. Keep every
-   fact.
+2. **The rest of the rewrite.** `AGENTS.md`, `crates/AGENTS.md`, every
+   file in `docs/architecture/`, `docs/CONVENTIONS.md`,
+   `docs/TESTING.md`, `docs/FORMATS.md`, and `docs/ROADMAP.md` follow
+   the writing rules. Unit files, `docs/DECISIONS.md`,
+   `docs/QA-FINDINGS.md`, `qa/`, and the `OPS.md` files change when
+   they are next edited. Keep every fact.
 3. **The names.** These concepts have two names, or one name has two
    meanings:
    - kernel and core;
@@ -52,7 +50,8 @@ dashes.
 
 ## Done when
 
-- Every document in scope item 2 follows the writing rules.
+- The documents in scope item 2 that change when next edited follow
+  the writing rules.
 - The user has answered the names proposal, and the code and the
   documents use the chosen names.
 - A developer new to the project has made one small change with only
