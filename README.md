@@ -85,7 +85,8 @@ list is in `AGENTS.md`.
 
 The agent runner drives the same modules from the command line —
 `node tools/caps-run.mjs list` shows the capabilities,
-`node tools/caps-run.mjs tools <capability>` their ops.
+`node tools/caps-run.mjs tools <capability>` their ops. `just docs`
+writes the same catalog as a browsable static site (`docs-site/`).
 
 ## Basemap
 

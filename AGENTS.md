@@ -189,6 +189,10 @@ just caps-fast             # the same, under the wasm-fast profile (no whole-pro
 just registry              # publish the capability registry (gates, then blobs and
                            # evidence). Every `just caps` publishes it again, ungated.
                            # It refuses a compiler other than rust-toolchain.toml's.
+just docs [serve [PORT]]   # the docs site: static HTML from registry/ into docs-site/
+                           # (gitignored). `serve` then serves it on
+                           # http://127.0.0.1:8085/. Run `just caps` first
+                           # (docs/architecture/registry.md, "The docs site").
 just reproducible          # two clean builds of the tree, compared byte for byte (a gate
                            # of `just registry`; docs/architecture/release-artifacts.md)
 node tools/caps-run.mjs    # the agent runner: list | tools <cap> [<op>] | session | <cap> --op ...

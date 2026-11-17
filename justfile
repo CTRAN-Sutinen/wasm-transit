@@ -58,6 +58,20 @@ caps:
 caps-fast:
     CAPS_PROFILE=wasm-fast just caps
 
+# The docs site: static HTML from the registry (run `just caps` first),
+# into docs-site/ (gitignored). `just docs` builds it. `just docs serve
+# [PORT]` builds it, then serves it on http://127.0.0.1:8085/ (or PORT).
+# It has no content of its own: the registry holds the purposes, the op
+# descriptions, the examples, and the schemas.
+docs mode="build" port="8085":
+    #!/usr/bin/env bash
+    set -e
+    case "{{mode}}" in
+        build) node tools/docs-site.mjs docs-site ;;
+        serve) node tools/docs-site.mjs docs-site --serve {{port}} ;;
+        *) echo "just docs [build|serve [PORT]]"; exit 1 ;;
+    esac
+
 # Publish the registry: gates first (the records report them), then
 # build and publish — immutable blobs, evidence records per
 # capability, and the pointer. This is the artifact an agent (or a
@@ -193,6 +207,10 @@ _host-tests:
     # device's — across midnight and both 2026 clock changes, from a
     # host in another zone.
     TZ=Asia/Kolkata node --test web/src/clock.test.mjs
+    # The docs site (tools/docs-site.mjs): static pages from the
+    # registry. Each capability, op, kernel op, and document kind has
+    # its place, and no local link is broken.
+    node --test tools/docs-site.test.mjs
     # The runner knows which tree its registry was built from
     # (QAF-77): just published, the registry's source digest (Rust,
     # gen-manifest) equals the tree's (JS, caps-run) — nothing on
