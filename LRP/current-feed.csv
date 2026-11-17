@@ -1,0 +1,70 @@
+route,short_name,name,network,day,date,first_trip,last_trip,peak_headway_min,peak_vehicles,trips
+002,002,Lincoln,LOCAL,weekday,2026-11-18,6:21 AM,6:45 PM,60,1,26
+006,006,Fruit Valley/Grand,LOCAL,weekday,2026-11-18,5:41 AM,9:19 PM,15,2,92
+007,007,Battle Ground,LOCAL,weekday,2026-11-18,5:43 AM,9:49 PM,30,3,59
+009,009,Felida,LOCAL,weekday,2026-11-18,6:24 AM,6:27 PM,60,1,25
+012,012,112th Avenue,LOCAL,weekday,2026-11-18,5:23 AM,9:45 PM,30,3,64
+019,019,Salmon Creek,LOCAL,weekday,2026-11-18,5:50 AM,9:10 PM,30,2,52
+025,025,Saint Johns,LOCAL,weekday,2026-11-18,5:37 AM,8:37 PM,30,3,56
+030,030,Burton,LOCAL,weekday,2026-11-18,5:13 AM,9:42 PM,20,4,65
+031,031,Hazel Dell,LOCAL,weekday,2026-11-18,5:27 AM,9:11 PM,30,3,60
+032,032,Evergreen/Andresen,LOCAL,weekday,2026-11-18,5:41 AM,9:09 PM,30,4,59
+034,034,192nd Ave/34th St,LOCAL,weekday,2026-11-18,5:21 AM,11:51 PM,30,3,75
+041,041,SR 14,LOCAL,weekday,2026-11-18,6:50 AM,6:24 PM,30,2,8
+047,047,Battle Ground/Yacolt,LOCAL,weekday,2026-11-18,5:15 AM,6:50 PM,60,1,6
+048,048,Ridgefield,LOCAL,weekday,2026-11-18,6:20 AM,8:16 PM,60,1,16
+050,Vine-Green,The Vine on Fourth Plain,LOCAL,weekday,2026-11-18,4:25 AM,12:40 AM,10,7,176
+051,Vine-Red,The Vine on Mill Plain,LOCAL,weekday,2026-11-18,4:17 AM,12:40 AM,12,7,140
+060,060,Delta Park Regional,REGIONAL,weekday,2026-11-18,4:52 AM,12:34 AM,10,3,146
+065,065,Parkrose Regional,REGIONAL,weekday,2026-11-18,4:50 AM,12:24 AM,15,3,108
+067,067,Airport Regional,REGIONAL,weekday,2026-11-18,2:16 PM,11:59 PM,20,2,16
+071,071,Highway 99,LOCAL,weekday,2026-11-18,5:27 AM,11:34 PM,15,6,114
+072,072,Orchards,LOCAL,weekday,2026-11-18,5:00 AM,9:20 PM,30,2,60
+074,074,East Fourth Plain/162nd Ave,LOCAL,weekday,2026-11-18,4:44 AM,9:45 PM,30,5,65
+078,078,78th Street,LOCAL,weekday,2026-11-18,4:38 AM,9:40 PM,30,4,59
+080,080,Van Mall/Fishers,LOCAL,weekday,2026-11-18,5:20 AM,8:58 PM,30,4,63
+092,092,Camas/Washougal,LOCAL,weekday,2026-11-18,5:33 AM,9:56 PM,20,3,62
+105,105,I-5 Express,EXPRESS,weekday,2026-11-18,5:05 AM,8:40 PM,30,3,41
+106,105X,I-5X Express,EXPRESS,weekday,2026-11-18,5:27 AM,5:20 PM,30,2,9
+164,164,Fishers Landing Express,EXPRESS,weekday,2026-11-18,5:00 AM,8:30 PM,20,4,43
+190,190,Marquam Hill Express,EXPRESS,weekday,2026-11-18,6:00 AM,5:13 PM,20,3,8
+006,006,Fruit Valley/Grand,LOCAL,saturday,2026-11-21,8:11 AM,7:19 PM,30,1,35
+007,007,Battle Ground,LOCAL,saturday,2026-11-21,6:46 AM,9:21 PM,60,2,30
+012,012,112th Avenue,LOCAL,saturday,2026-11-21,6:15 AM,10:08 PM,60,2,32
+019,019,Salmon Creek,LOCAL,saturday,2026-11-21,8:20 AM,7:40 PM,60,1,24
+025,025,Saint Johns,LOCAL,saturday,2026-11-21,7:07 AM,7:37 PM,60,2,26
+030,030,Burton,LOCAL,saturday,2026-11-21,6:23 AM,8:44 PM,30,4,50
+031,031,Hazel Dell,LOCAL,saturday,2026-11-21,7:35 AM,8:07 PM,30,2,37
+032,032,Evergreen/Andresen,LOCAL,saturday,2026-11-21,7:48 AM,7:47 PM,30,3,37
+034,034,192nd Ave/34th St,LOCAL,saturday,2026-11-21,7:05 AM,11:46 PM,30,2,68
+048,048,Ridgefield,LOCAL,saturday,2026-11-21,7:50 AM,6:10 PM,60,1,12
+050,Vine-Green,The Vine on Fourth Plain,LOCAL,saturday,2026-11-21,5:52 AM,12:10 AM,12,5,126
+051,Vine-Red,The Vine on Mill Plain,LOCAL,saturday,2026-11-21,5:45 AM,12:10 AM,12,6,122
+060,060,Delta Park Regional,REGIONAL,saturday,2026-11-21,6:15 AM,12:17 AM,10,3,124
+065,065,Parkrose Regional,REGIONAL,saturday,2026-11-21,6:35 AM,12:15 AM,30,2,72
+071,071,Highway 99,LOCAL,saturday,2026-11-21,6:23 AM,11:16 PM,20,5,98
+072,072,Orchards,LOCAL,saturday,2026-11-21,7:21 AM,7:43 PM,60,1,26
+074,074,East Fourth Plain/162nd Ave,LOCAL,saturday,2026-11-21,7:18 AM,8:48 PM,60,2,28
+078,078,78th Street,LOCAL,saturday,2026-11-21,7:40 AM,7:40 PM,60,2,25
+080,080,Van Mall/Fishers,LOCAL,saturday,2026-11-21,6:20 AM,9:28 PM,30,3,56
+092,092,Camas/Washougal,LOCAL,saturday,2026-11-21,7:07 AM,9:28 PM,60,1,30
+006,006,Fruit Valley/Grand,LOCAL,sunday,2026-11-22,8:11 AM,7:19 PM,30,1,35
+007,007,Battle Ground,LOCAL,sunday,2026-11-22,6:46 AM,9:21 PM,60,2,30
+012,012,112th Avenue,LOCAL,sunday,2026-11-22,6:15 AM,10:08 PM,60,2,32
+019,019,Salmon Creek,LOCAL,sunday,2026-11-22,8:20 AM,7:40 PM,60,1,24
+025,025,Saint Johns,LOCAL,sunday,2026-11-22,7:07 AM,7:37 PM,60,2,26
+030,030,Burton,LOCAL,sunday,2026-11-22,6:23 AM,8:44 PM,60,2,30
+031,031,Hazel Dell,LOCAL,sunday,2026-11-22,7:34 AM,7:45 PM,60,2,25
+032,032,Evergreen/Andresen,LOCAL,sunday,2026-11-22,7:48 AM,7:47 PM,60,2,25
+034,034,192nd Ave/34th St,LOCAL,sunday,2026-11-22,7:05 AM,11:46 PM,30,2,68
+048,048,Ridgefield,LOCAL,sunday,2026-11-22,7:50 AM,6:10 PM,60,1,12
+050,Vine-Green,The Vine on Fourth Plain,LOCAL,sunday,2026-11-22,5:52 AM,12:10 AM,12,5,126
+051,Vine-Red,The Vine on Mill Plain,LOCAL,sunday,2026-11-22,5:45 AM,12:10 AM,12,6,122
+060,060,Delta Park Regional,REGIONAL,sunday,2026-11-22,6:15 AM,12:17 AM,10,3,124
+065,065,Parkrose Regional,REGIONAL,sunday,2026-11-22,6:35 AM,12:15 AM,30,2,72
+071,071,Highway 99,LOCAL,sunday,2026-11-22,6:23 AM,11:15 PM,30,3,68
+072,072,Orchards,LOCAL,sunday,2026-11-22,7:21 AM,7:43 PM,60,1,26
+074,074,East Fourth Plain/162nd Ave,LOCAL,sunday,2026-11-22,7:18 AM,8:48 PM,60,2,28
+078,078,78th Street,LOCAL,sunday,2026-11-22,7:40 AM,7:45 PM,60,2,25
+080,080,Van Mall/Fishers,LOCAL,sunday,2026-11-22,6:20 AM,9:28 PM,30,3,56
+092,092,Camas/Washougal,LOCAL,sunday,2026-11-22,7:07 AM,9:28 PM,60,1,30

@@ -122,6 +122,12 @@ Where the detail lives:
 - `qa/` — the standing end-to-end QA tests, one folder each (its
   README the steps, the last run and its findings; its walk scripts):
   `qa/route-99/`, the stops app → service change → ride now → stop display
+- `LRP/` — the C-TRAN 2045 long range plan as dogfood material: the
+  excerpt, its tables extracted (`scenarios.csv`,
+  `capital-projects.csv`, today's feed in the same shape), and the
+  service-change sessions built on it, each one step of the plan
+  (`LRP/SESSIONS.md`: the backlog, how to run one, the log, its
+  findings; `LRP/run.sh` runs the ones with walks)
 - `docs/QA-FINDINGS.md` — the open real-data findings (defects,
   op/UI/data gaps), each pinned; deleted when fixed
 - `docs/DECISIONS.md` — the questions for the user and their
@@ -224,7 +230,7 @@ just qa [feed.zip]         # the UI QA loop: modules under wasm-fast, a server o
                            # vite hot reload on :5174 (server :8091, its own
                            # ports beside serve/dev, on server/dev.toml + local.toml,
                            # its store in memory); drive it with
-node tools/ui-shot.mjs UI  # [--hash H] [--steps walk.mjs] [--full] [--size WxH]:
+node tools/ui-shot.mjs UI  # [--hash H] [--steps walk.mjs] [--full] [--size WxH] [--base URL] [--profile NAME]:
                            # a screenshot + status + page errors, one browser
                            # profile in .qa/ (forked plans persist) — docs/TESTING.md
 just geocoder-build        # once: a local Pelias (portland-metro) in .pelias/

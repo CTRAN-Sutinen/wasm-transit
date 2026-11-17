@@ -28,6 +28,9 @@
 ///   --light                           light scheme (default dark)
 ///   --base URL                        default http://127.0.0.1:5174
 ///   --fresh                           start from an empty profile
+///   --profile NAME                    the profile .qa/NAME (default
+///                                     profile): a second loop on other
+///                                     ports keeps its own plans
 ///
 /// Service workers are blocked (a worker would serve the last build's
 /// files, not the dev server's).
@@ -40,9 +43,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const { chromium } = await import(path.join(root, "web/node_modules/playwright/index.mjs"));
 
 const args = process.argv.slice(2);
-const ui = args.find((a, i) => !a.startsWith("--") && !args[i - 1]?.match(/^--(hash|steps|out|wait|size|base)$/));
+const ui = args.find((a, i) => !a.startsWith("--") && !args[i - 1]?.match(/^--(hash|steps|out|wait|size|base|profile)$/));
 if (!ui) {
-  console.error("usage: node tools/ui-shot.mjs <ui> [--hash H] [--steps FILE] [--out FILE] [--full] [--wait MS] [--size WxH] [--light] [--base URL] [--fresh]");
+  console.error("usage: node tools/ui-shot.mjs <ui> [--hash H] [--steps FILE] [--out FILE] [--full] [--wait MS] [--size WxH] [--light] [--base URL] [--fresh] [--profile NAME]");
   process.exit(2);
 }
 const opt = (name, fallback) => {
@@ -52,7 +55,7 @@ const opt = (name, fallback) => {
 const flag = (name) => args.includes(`--${name}`);
 
 const qa = path.join(root, ".qa");
-const profile = path.join(qa, "profile");
+const profile = path.join(qa, opt("profile", "profile"));
 const shots = path.join(qa, "shots");
 if (flag("fresh")) fs.rmSync(profile, { recursive: true, force: true });
 fs.mkdirSync(shots, { recursive: true });

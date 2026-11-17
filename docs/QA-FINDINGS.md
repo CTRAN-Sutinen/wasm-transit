@@ -13,9 +13,10 @@ Format, grouped by theme:
   Pin: the caps-run ops (or UI steps) that reproduce it.
 ```
 
-IDs are never reused; the next new finding is **QAF-118**. The
+IDs are never reused; the next new finding is **QAF-121**. The
 standing route 99 test keeps its own findings (QAF-114..117) in
-`qa/route-99/README.md`. A
+`qa/route-99/README.md`, and the C-TRAN 2045 service-change sessions
+theirs (QAF-118..120) in `LRP/SESSIONS.md`. A
 session that re-confirms a finding adds one line under it
 (`Re-confirmed: <date>, <what>`) — a finding confirmed three times
 is the next unit (`docs/units/`). A finding whose fix waits on the
@@ -73,6 +74,10 @@ user carries `Blocked: D-N`, the question in `docs/DECISIONS.md`.
   copies of the trips a gesture changes.
   Pin: the document's `4-NYE:pat-006-*` pattern trips equal
   `1-WKDY:pat-006-*` start for start.
+  Re-confirmed: 2026-11-17, service change — spans moved on 009 and
+  092 under 1-WKDY leave 4-NYE's copies as they were; the Proposal's
+  card says only "Also runs as 4-NYE + 4-NYE/31 (1 d, 0 routes
+  changed)" (`LRP/SESSIONS.md`, session 1).
 
 ## Resources and comparison (the planner's core loop)
 

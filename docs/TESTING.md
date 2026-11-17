@@ -239,8 +239,9 @@ among them):
   the wasm-fast profile, on `server/dev.toml`'s settings: the stub
   work order system and photos in memory) and drive it with `tools/ui-shot.mjs`: open a
   selection by its hash, run steps, read the screenshot, the status
-  line, and the page's errors. Its browser profile (`.qa/`) keeps the
-  plans a walk forked, so a fix is re-checked in seconds: a page edit
+  line, and the page's errors. Its browser profile (`.qa/profile`, or
+  `.qa/NAME` with `--profile NAME` for a second loop on other ports)
+  keeps the plans a walk forked, so a fix is re-checked in seconds: a page edit
   needs no build, a Rust edit only `just caps-fast` and a reload. Every
   control on every stage, on a forked plan, then the paths between
   stages; each control fixed is pinned in the UI's spec.
