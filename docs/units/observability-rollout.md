@@ -52,7 +52,7 @@ yet scoped").
   reported, not reverted. A revert never loops: a build that failed
   is not applied again until a newer one replaces it.
 - **A pick's first day.** The preview before publishing is the
-  planner's ([ui-service-design.md](ui-service-design.md)). Here,
+  planner's ([ui-service-change.md](ui-service-change.md)). Here,
   each display reports which pick it loaded on the pick's date, so the
   agency sees the switch land.
 

@@ -32,7 +32,7 @@ UI that reads the op pays the line instead.
   which services run on a date.
 - analysis `coverage_compare` — no UI asks it until D-43's matching
   rule says which of one plan's combinations answers to which of the
-  other's ([ui-service-design.md](ui-service-design.md) question 19,
+  other's ([ui-service-design.md](ui-service-design.md) question 8,
   [ui-proposal-compare.md](ui-proposal-compare.md) question 5).
 
 ## Done when

@@ -50,7 +50,8 @@ archive — nothing here records what is finished.
 | [ui-proposal-compare.md](ui-proposal-compare.md) | generated UI: the public comparing service proposals |
 | [stop-site-and-requests.md](stop-site-and-requests.md) | the agency's other data beside a stop's survey, the work order system's real adapter, and the field forms dogfooded |
 | [ui-stops.md](ui-stops.md) | generated UI: stops as their own stage of the service change (create, move, consolidate, remove), a route's map choosing the stops it serves, and its line redrawn along the streets |
-| [ui-service-design.md](ui-service-design.md) | generated UI: designing a service change in six chained views — the blocked questions and the views' remaining parts |
+| [ui-service-design.md](ui-service-design.md) | generated UI: reviewing how a plan's network performs (coverage, corridors, waits), read-only; the edit views come out |
+| [ui-service-change.md](ui-service-change.md) | generated UI: changing and publishing a plan — the frequency target, the layover ripple, the pattern strip, the rider preview |
 | [runs-layer.md](runs-layer.md) | the runs cut under the work rules; the run view, legality, and run edits; suggested blocking, extended |
 | [ui-runcut.md](ui-runcut.md) | generated UI: cutting a plan's work into blocks and runs |
 | [ui-work-bid.md](ui-work-bid.md) | generated UI: bidding on work (waits on the runs layer) |

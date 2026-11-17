@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-180**.
+- IDs are never reused; the next new decision is **D-182**.
 
 ## Summary
 
@@ -161,7 +161,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-105 | What does a fork carry when a feed's calendars are all dated? | decided | nothing |
 | D-106 | Does a recovery rule judge a trip that continues with no wait? | encoded | nothing |
 | D-107 | Which routes may interline when the rules do not say? | encoded | nothing |
-| D-108 | What is an hours budget? | unanswered | `ui-service-design` questions 2, 18 (hours against budget) |
+| D-108 | What is an hours budget? | unanswered | hours against a budget: `ui-service-design` question 2, `ui-service-change` (the proposal) |
 | D-109 | What does a suggested blocking change? | encoded | nothing |
 | D-110 | Which waits does a recovery requirement judge, and after which trip? | encoded | nothing |
 | D-111 | When does a dated service read as a weekly rule? | encoded | nothing |
@@ -232,6 +232,8 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-177 | What does a journal keep, and where? | encoded provisionally | nothing |
 | D-178 | Is a page's journal on by default? | encoded provisionally | nothing |
 | D-179 | Which module does replay run a journal's call on? | encoded provisionally | nothing |
+| D-180 | What is service design for, beside service change? | decided; not built | nothing |
+| D-181 | What is the network review called? | unanswered | the review UI's title and id |
 
 ## The trip model
 
@@ -577,7 +579,9 @@ Options:
 - A budget document on the bus (per service group, period, or pick),
   read by hash like the work rules.
 Blocks: the hours-against-budget line in `ui-service-design`
-questions 2 and 18.
+question 2 (each service group) and in `ui-service-change` (the
+proposal). Update 2026-11-17: the proposal moved to service-change
+(D-180).
 
 ### D-52 — How is a route-hour's frequency judged and drawn?
 State: Encoded provisionally — the third option: the grid shades
@@ -3608,3 +3612,48 @@ Options:
 Pinned by: `tools/journal.test.mjs`; `e2e/journal.spec.mjs` (both
 replays).
 Blocks: nothing.
+
+## The planner's UIs
+
+### D-180 — What is service design for, beside service change?
+State: Decided; not built.
+Answer: 2026-11-17. Service design becomes a read-only review of how a
+plan's network performs: its service groups, the shape of its day,
+who it reaches, where routes share a corridor, where riders wait
+longest, and who gains and who loses between two plans. It never
+forks, edits, or publishes. Service change is the one UI that changes
+and publishes a plan, and the two link to each other. The user: "they
+are too similar right now and it is confusing, too much overlap and
+visual overlap", and "go ahead" to the proposed split. Before that,
+the user had judged service change "functionally the same/improved"
+and asked to make sure the service-design unit stays covered.
+Context: both UIs forked plans, retimed trips, edited stops, checked
+readiness, and published. Both drew the frequency grid, the string
+line, the hub matrix, and the change ledger. Only service design read
+seven analysis ops: `service_groups`, `hourly_trips`, `network_stats`,
+`type_coverage`, `unserved_points`, `route_overlap`, and
+`longest_waits`.
+Options:
+- (chosen) Service design reviews and never edits. Service change
+  changes and publishes. The seven ops keep a UI that reads them.
+- Delete service design. The seven ops then have no UI, and coverage
+  and corridor analysis leave the planner's tools.
+- Keep both as they were: two UIs that do the same work.
+Why: the work is in `docs/units/ui-service-design.md` and
+`docs/units/ui-service-change.md`. The reasoning moves to the topic's
+Why when it is built.
+Pinned by: nothing yet. The service-design unit's "Done when" names
+the pins.
+Blocks: nothing.
+
+### D-181 — What is the network review called?
+State: Unanswered.
+Context: the review keeps the id and title `service-design` (D-180).
+The name suggests making changes, which the review no longer does.
+Options:
+- Keep "Service design".
+- A name that says review, such as "Network review". A new id renames
+  the UI's directory, page, spec, assembly, and the references to
+  them.
+Blocks: the review UI's title and id.
+
