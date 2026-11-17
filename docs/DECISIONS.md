@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-177**.
+- IDs are never reused; the next new decision is **D-181**.
 
 ## Summary
 
@@ -229,9 +229,9 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-174 | How are code comments and the developer documents written? | decided | nothing |
 | D-175 | Whose clock does the runner read for $TODAY and $NOW_SECS? | decided | nothing |
 | D-176 | Does a user's own selection assemble capabilities at wire time? | decided | nothing |
-| D-177 | Does the server compress its own static files? | encoded | nothing |
-| D-178 | What policy do the rider pages send, and who writes the export's `_headers`? | encoded | nothing |
-| D-179 | What color is the text on a route's badge? | encoded | nothing |
+| D-181 | Does the server compress its own static files? | encoded | nothing |
+| D-182 | What policy do the rider pages send, and who writes the export's `_headers`? | encoded | nothing |
+| D-183 | What color is the text on a route's badge? | encoded | nothing |
 
 ## The trip model
 
@@ -3454,7 +3454,7 @@ focus handling (`web/e2e/a11y-keyboard.spec.mjs`, "the live-feeds panel
 closes on Escape").
 Blocks: nothing.
 
-### D-177 — Does the server compress its own static files?
+### D-181 — Does the server compress its own static files?
 State: Encoded provisionally.
 Context: the Go server sent JS, CSS, and the assemblies uncompressed
 (ride-now's assembly is 4.99 MB, gzip takes it to about 1.5 MB). The
@@ -3475,7 +3475,7 @@ Pinned by: `server/headers_test.go` (`TestStaticCompression`,
 Blocks: nothing. A busy deployment may want a cache of the compressed
 bytes. Measure first.
 
-### D-178 — What policy do the rider pages send, and who writes the export's `_headers`?
+### D-182 — What policy do the rider pages send, and who writes the export's `_headers`?
 State: Encoded provisionally.
 Context: neither shape sent a Content-Security-Policy, a
 Referrer-Policy, or a Permissions-Policy. A policy must name the
@@ -3501,7 +3501,7 @@ page runs under its policy with no violation, in both shapes), and the
 `_headers` test in `web/e2e/static-deploy.spec.mjs`.
 Blocks: a policy for the other pages (`docs/units/web-conformance.md`).
 
-### D-179 — What color is the text on a route's badge?
+### D-183 — What color is the text on a route's badge?
 State: Encoded provisionally.
 Context: a badge is the route's number on the route's color. A feed may
 name `route_color` and `route_text_color`. The C-TRAN fixture and some

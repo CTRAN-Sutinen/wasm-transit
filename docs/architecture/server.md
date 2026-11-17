@@ -493,7 +493,7 @@ reading **Because**.
 - **Holds:** the server compresses text and wasm itself, and it sends a strict policy on the two rider pages. Both come from the same rules as the export's `_headers`.
 - **Because:** a deployment is right with no load balancer rule. A missing rule would cost a rider three times the bytes with no error. The policy needs the deployment's own origins, and the server and the export know them. The operator would let them drift.
 - **Rejected:** a load balancer that compresses. A policy on every page: only the rider pages have been walked under one.
-- **Provisional:** D-177 and D-178.
+- **Provisional:** D-181 and D-182.
 
 ### Inputs from a URL or the bucket (`-feed`, `-streets`, `-policy`, `source.go`)
 - **Holds:** each input is a URL, `bucket:<key>`, or a dev path. With `-store`, the server commits each read (`source.feed`, `source.streets`).

@@ -14,7 +14,7 @@ The rider UIs and the picker are held by a gate in `just e2e`
 ### The other generated UIs
 
 The stops and service-change pages are not in `web/e2e/a11y.spec.mjs`,
-and they send no Content-Security-Policy (D-178). Walk each under axe
+and they send no Content-Security-Policy (D-182). Walk each under axe
 and under a policy, then add them to the gate and to
 `server/headers.go`'s `riderPages`. Service design is outside this unit.
 
@@ -23,7 +23,7 @@ and under a policy, then add them to the gate and to
 A ride-now route badge shows white text on the route's color. The
 directory does not carry `route_text_color`, so the badge cannot use the
 feed's own pair (the stop display's does). An authored pair below 4.5:1
-shows as given (D-179) and is a finding about the agency's data. Carry
+shows as given (D-183) and is a finding about the agency's data. Carry
 `route_text_color` through the directory's route rows, then read it in
 the badges.
 

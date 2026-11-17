@@ -178,7 +178,7 @@ STE dictionary. Technical words and code names stay.
   `docs/TESTING.md`). These rules come from what the gate caught:
   - **Text on an accent or warn fill is `var(--on-accent)`**, never
     `#fff`. White on the dark accent is 2.26:1. A route badge with an
-    authored route color keeps white (D-179).
+    authored route color keeps white (D-183).
   - **Draw focus as an `outline`**, never as a `box-shadow` alone.
     Forced colors (Windows High Contrast) drop a box-shadow.
     `base.css` gives every `:focus-visible` a ring. A control that sets
