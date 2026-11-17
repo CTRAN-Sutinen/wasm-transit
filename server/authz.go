@@ -181,7 +181,7 @@ func (k jwk) publicKey() (crypto.PublicKey, error) {
 	return nil, fmt.Errorf("unsupported kty %q", k.Kty)
 }
 
-var jwksHTTP = &http.Client{Timeout: 10 * time.Second}
+var jwksHTTP = &http.Client{Transport: outbound, Timeout: 10 * time.Second}
 
 // keyFor returns the verification key for kid, fetching the JWKS on a
 // miss (rate-limited: at most one refetch per 30 s).

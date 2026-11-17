@@ -37,8 +37,60 @@ import (
 // to it is POST /builds — so a restart on the release a rollback left
 // behind keeps the rollback.
 
-// buildPointer is the pointer the builds are logged under.
+// buildPointer is the pointer the server's builds are logged under.
 const buildPointer = "build"
+
+// Each UI at its own URL (D-171): a UI's bundle (-ui-dist <id>=<dir>,
+// `just build-ui <id>`) is a build of its own, committed to the pointer
+// build.<id> the same way, with no server modules. The UI's host
+// serves it (`just ui-deploy` writes a logged build out for it) and
+// routes the data paths here. POST /builds?ui=<id> moves that UI's
+// pointer alone.
+
+// uiBuildPointer is the pointer a UI's builds are logged under.
+func uiBuildPointer(id string) string { return buildPointer + "." + id }
+
+// validUIID says whether id can name a UI's pointer: lower-case letters,
+// digits, and hyphens, as the generated UIs' ids are.
+func validUIID(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+// uiDist is one UI's bundle directory and what was last read of it.
+type uiDist struct {
+	id, dir string
+	state   buildState
+}
+
+// parseUIDists reads -ui-dist: "<id>=<dir>" pairs, comma-separated.
+func parseUIDists(spec string) ([]*uiDist, error) {
+	var out []*uiDist
+	seen := map[string]bool{}
+	for _, part := range strings.Split(spec, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		id, dir, ok := strings.Cut(part, "=")
+		if !ok || !validUIID(id) || dir == "" {
+			return nil, fmt.Errorf("-ui-dist: %q is not <id>=<dir> (an id of a-z, 0-9, and -)", part)
+		}
+		if seen[id] {
+			return nil, fmt.Errorf("-ui-dist: %s twice", id)
+		}
+		seen[id] = true
+		out = append(out, &uiDist{id: id, dir: dir})
+	}
+	return out, nil
+}
 
 var (
 	buildEnv     = store.Envelope{Kind: store.BuildKind, SchemaVersion: 1, ProducedBy: "server"}
@@ -66,16 +118,17 @@ type buildState struct {
 	byPath map[string]store.BuildFile
 }
 
-// distListing walks -dist (the build's files only) and answers its
-// relative paths, sorted, and a fingerprint of their sizes and times.
-func (s *server) distListing() ([]string, string, error) {
+// distListing walks a bundle directory (the build's files only) and
+// answers its relative paths, sorted, and a fingerprint of their sizes
+// and times.
+func distListing(dist string) ([]string, string, error) {
 	var paths []string
 	h := sha256.New()
-	err := filepath.WalkDir(s.dist, func(p string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(dist, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, _ := filepath.Rel(s.dist, p)
+		rel, _ := filepath.Rel(dist, p)
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
 			if rel != "." && buildExcluded(rel+"/") {
@@ -101,13 +154,13 @@ func (s *server) distListing() ([]string, string, error) {
 	return paths, hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// readBuild reads -dist and the hosted modules as a build: its
-// document and the bytes of every blob it names.
-func (s *server) readBuild(paths []string) ([]byte, map[string][]byte, error) {
+// readBuild reads a bundle directory and the modules named as a build:
+// its document and the bytes of every blob it names.
+func readBuild(dist string, paths []string, modules map[string]string) ([]byte, map[string][]byte, error) {
 	doc := store.BuildDoc{Kind: store.BuildKind, SchemaVersion: 1, Files: []store.BuildFile{}}
 	blobs := map[string][]byte{}
 	for _, rel := range paths {
-		data, err := os.ReadFile(filepath.Join(s.dist, filepath.FromSlash(rel)))
+		data, err := os.ReadFile(filepath.Join(dist, filepath.FromSlash(rel)))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -115,7 +168,7 @@ func (s *server) readBuild(paths []string) ([]byte, map[string][]byte, error) {
 		blobs[h] = data
 		doc.Files = append(doc.Files, store.BuildFile{Path: rel, Hash: h, Type: contentType(rel)})
 	}
-	for role, p := range s.serverModules {
+	for role, p := range modules {
 		data, err := os.ReadFile(p)
 		if err != nil {
 			return nil, nil, fmt.Errorf("the %s module: %w", role, err)
@@ -135,14 +188,24 @@ func contentType(rel string) string {
 	return "application/octet-stream"
 }
 
-// syncBuild commits -dist's release when it changed and is new to the
-// log (at most every buildEvery). Store mode only; a -dist that does not
-// read, or holds no page, commits nothing.
+// syncBuild commits -dist's release, and each -ui-dist bundle, when it
+// changed and is new to its log (at most every buildEvery). Store mode
+// only; a directory that does not read, or holds no page, commits
+// nothing.
 func (s *server) syncBuild() {
-	if s.store == nil || s.dist == "" {
+	if s.store == nil {
 		return
 	}
-	b := &s.builds
+	if s.dist != "" {
+		s.syncBuildOf(buildPointer, s.dist, &s.builds, s.serverModules)
+	}
+	for _, u := range s.uiDists {
+		s.syncBuildOf(uiBuildPointer(u.id), u.dir, &u.state, nil)
+	}
+}
+
+// syncBuildOf commits one directory's release to its pointer.
+func (s *server) syncBuildOf(pointer, dist string, b *buildState, modules map[string]string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	every := s.buildEvery
@@ -153,7 +216,7 @@ func (s *server) syncBuild() {
 		return
 	}
 	b.checked = time.Now()
-	paths, fingerprint, err := s.distListing()
+	paths, fingerprint, err := distListing(dist)
 	if err != nil || fingerprint == b.fingerprint {
 		return
 	}
@@ -161,13 +224,13 @@ func (s *server) syncBuild() {
 	if !containsString(paths, "index.html") {
 		return
 	}
-	doc, blobs, err := s.readBuild(paths)
+	doc, blobs, err := readBuild(dist, paths, modules)
 	if err != nil {
-		log.Printf("build: reading %s: %v (the pinned build stays)", s.dist, err)
+		log.Printf("build: reading %s: %v (the pinned build stays)", dist, err)
 		return
 	}
 	hash := store.HashOf(doc)
-	entries, _, err := s.store.Log(buildPointer, "")
+	entries, _, err := s.store.Log(pointer, "")
 	if err != nil {
 		log.Printf("build: %v", err)
 		return
@@ -179,13 +242,13 @@ func (s *server) syncBuild() {
 	}
 	for attempt := 0; attempt < 5; attempt++ {
 		from := ""
-		if head, found, err := s.store.Head(buildPointer); err != nil {
+		if head, found, err := s.store.Head(pointer); err != nil {
 			log.Printf("build: %v", err)
 			return
 		} else if found {
 			from = head.Hash
 		}
-		_, seq, err := s.store.CommitBuild(buildPointer, from, doc, buildEnv, blobs, buildFileEnv, "import:"+s.dist, time.Now().UnixMilli())
+		_, seq, err := s.store.CommitBuild(pointer, from, doc, buildEnv, blobs, buildFileEnv, "import:"+dist, time.Now().UnixMilli())
 		var ce *store.ConflictError
 		if errors.As(err, &ce) {
 			continue
@@ -194,7 +257,7 @@ func (s *server) syncBuild() {
 			log.Printf("build: commit: %v", err)
 			return
 		}
-		log.Printf("build: %s committed as %s seq %d (%d files)", s.dist, hash, seq, len(paths))
+		log.Printf("build: %s committed to %s as %s seq %d (%d files)", dist, pointer, hash, seq, len(paths))
 		return
 	}
 }
@@ -261,7 +324,8 @@ func (s *server) serveBuildFile(w http.ResponseWriter, r *http.Request, name str
 // handleBuilds moves the build pointer to a build its log holds — a
 // rollback, or forward again: POST {"build": "sha256:<hex>"}. Every
 // file of a logged build is retained, so the move is the whole act;
-// the manifest moves with it and the pages follow (D-63).
+// the manifest moves with it and the pages follow (D-63). With ?ui=<id>
+// it moves that UI's pointer (build.<id>) instead, and nothing else.
 func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		http.Error(w, "no store configured (start with -store <url>)", http.StatusNotFound)
@@ -269,6 +333,11 @@ func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	pointer, ok := buildsPointerOf(r)
+	if !ok {
+		http.Error(w, "ui: an id of a-z, 0-9, and -", http.StatusBadRequest)
 		return
 	}
 	var req struct {
@@ -279,7 +348,7 @@ func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `bad request: want {"build":"sha256:<hex>"}`, http.StatusBadRequest)
 		return
 	}
-	entries, _, err := s.store.Log(buildPointer, "")
+	entries, _, err := s.store.Log(pointer, "")
 	if err != nil {
 		fail(w, err, http.StatusInternalServerError)
 		return
@@ -289,7 +358,7 @@ func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 		logged = logged || e.To == req.Build
 	}
 	if !logged {
-		http.Error(w, "the build log holds no "+req.Build, http.StatusNotFound)
+		http.Error(w, "the "+pointer+" log holds no "+req.Build, http.StatusNotFound)
 		return
 	}
 	data, _, err := s.store.GetBlob(req.Build)
@@ -297,12 +366,12 @@ func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 		fail(w, err, http.StatusInternalServerError)
 		return
 	}
-	head, _, err := s.store.Head(buildPointer)
+	head, _, err := s.store.Head(pointer)
 	if err != nil {
 		fail(w, err, http.StatusInternalServerError)
 		return
 	}
-	_, seq, err := s.store.CAS(buildPointer, head.Hash, data, buildEnv, req.Build, writerOf(r, "anonymous"), time.Now().UnixMilli())
+	_, seq, err := s.store.CAS(pointer, head.Hash, data, buildEnv, req.Build, writerOf(r, "anonymous"), time.Now().UnixMilli())
 	if err != nil {
 		var ce *store.ConflictError
 		if errors.As(err, &ce) {
@@ -312,7 +381,20 @@ func (s *server) handleBuilds(w http.ResponseWriter, r *http.Request) {
 		fail(w, err, http.StatusInternalServerError)
 		return
 	}
-	log.Printf("build: moved to %s (seq %d)", req.Build, seq)
+	log.Printf("build: %s moved to %s (seq %d)", pointer, req.Build, seq)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"build": req.Build, "seq": seq})
+}
+
+// buildsPointerOf answers the pointer a POST /builds moves: build, or
+// build.<id> for ?ui=<id>. False for an id that names no UI pointer.
+func buildsPointerOf(r *http.Request) (string, bool) {
+	ui := r.URL.Query().Get("ui")
+	if ui == "" {
+		return buildPointer, true
+	}
+	if !validUIID(ui) {
+		return "", false
+	}
+	return uiBuildPointer(ui), true
 }

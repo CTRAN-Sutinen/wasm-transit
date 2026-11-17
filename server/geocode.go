@@ -31,7 +31,7 @@ var geocodeInputs = map[string][]string{
 	"reverse":      {"point.lat", "point.lon"},
 }
 
-var geocodeClient = &http.Client{Timeout: 5 * time.Second}
+var geocodeClient = &http.Client{Transport: outbound, Timeout: 5 * time.Second}
 
 // geocoder is the configured oracle: the Pelias base URL and the
 // deployment's query policy, per op (Pelias parameter → value).

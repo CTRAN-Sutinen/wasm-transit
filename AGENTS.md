@@ -229,6 +229,9 @@ just e2e-fast [args]       # the same over `caps-fast` modules. Playwright's arg
                            # browser runner, never the gate.
 just check                 # both runners, for changes that touch both sides
 just types                 # generate the TS bindings again (gitignored; build runs it)
+just http-lock             # the HTTP contract's lock: server/openapi.json copied to
+                           # openapi.lock.json once the compatibility gate passes. Run it
+                           # when a release ships (docs/architecture/release-artifacts.md).
 just serve [feed.zip [streets.geojson ["Publisher" [addr]]]]   # the sync server on :8080.
                            # It reads its settings files: server/dev.toml (the fixture
                            # feed and streets, a mem:// store and attachments, the stub
@@ -246,6 +249,11 @@ just server-image [REPO [TAG]]   # the server as one container image (ko):
                            # arm64 (DEPLOYMENTS-SERVER.md)
 just build-ui UI            # one UI built alone into web/dist-ui/UI/ (its page, its
                            # assembly, and the map only if it draws one)
+just ui-deploy SERVER UI OUT [BUILD]   # a UI at its own URL (D-171): the server keeps
+                           # each UI's builds on build.<id> (-ui-dist); this writes the
+                           # head, or a logged BUILD, into OUT for the UI's host, which
+                           # routes the data paths to the server. Rollback: POST
+                           # /builds?ui=<id>, then this again (DEPLOYMENTS-SERVER.md)
 just export UI OUT feed.zip [streets.geojson ["Publisher"]]   # one rider UI (ride-now or
                            # stop-display) as a static deployment of its own, with no
                            # server (D-131): its page, `manifest`, and each published
@@ -385,9 +393,11 @@ server/          the Go and wazero host. It runs cap-sync, cap-network, cap-plan
                  D-80). It also runs cap-migrate (an older document, at receive),
                  cap-stops (the stops document's writes, and what a published pick reads
                  of it), cap-requests (the stop requests document's writes), and
-                 cap-authz when sign-in is on. It has two proxies: /geocode to a Pelias
-                 geocoder, and /rt, a dev feed relay that is off unless -rt-proxy is
-                 set. It is scaffolding and never makes a domain decision.
+                 cap-authz when sign-in is on. Its HTTP surface is server/openapi.json,
+                 which changes by expand, then contract (D-81). It has two proxies:
+                 /geocode to a Pelias geocoder, and /rt, a dev feed relay that is off
+                 unless -rt-proxy is set. It is scaffolding and never makes a domain
+                 decision.
 web/             the Svelte 5 and Vite frontend. / is a picker over the generated UIs
                  (src/uis/<id>/, each its own page and host layer; every page is one).
                  docs/architecture/generated-uis.md is the recipe a new agent follows.

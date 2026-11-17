@@ -34,7 +34,7 @@ Related documents:
 | [updates-offline.md](updates-offline.md) | How an open page follows the deployment, applies a new build, and works offline |
 | [adjacent-systems.md](adjacent-systems.md) | CAD/AVL, workforce, and scheduling systems: what they read and write |
 | [registry.md](registry.md) | The capability registry and the agent runner |
-| [release-artifacts.md](release-artifacts.md) | Reproducible builds, kept builds, and rollback |
+| [release-artifacts.md](release-artifacts.md) | Reproducible builds, kept builds, rollback, the HTTP contract, and each UI at its own URL |
 
 Each topic file says what the code does, in the present tense. When the
 reason for a design is not clear from what it does, the topic's **Why**
@@ -73,8 +73,11 @@ that is deployed on its own. A deployment puts each UI at its own URL.
 - Each UI also builds alone: `just build-ui <id>` writes
   `web/dist-ui/<id>/`.
 - Each rider UI exports as its own static bundle (`just export`).
-- How a staff UI reaches the server from its own URL is open work
-  (`docs/units/release-artifacts.md`; D-171).
+- In a deployment, each UI is at its own URL. Its host serves the UI's
+  bundle and routes the data paths to the server. The store keeps each
+  UI's builds, and each UI rolls back alone
+  ([release-artifacts.md](release-artifacts.md), "Each UI at its own
+  URL"; D-171).
 
 | UI | Runs without a server | Needs the server for |
 |---|---|---|

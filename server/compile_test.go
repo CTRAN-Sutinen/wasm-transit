@@ -19,6 +19,10 @@ package main
 //
 // The server itself keeps no disk cache: these settings live only in
 // the test binary.
+//
+// TestMain also puts the HTTP contract's check in front of every
+// request a test sends (contract_test.go), and fails the run when the
+// contract does not admit what a test saw.
 
 import (
 	"context"
@@ -51,7 +55,15 @@ func TestMain(m *testing.M) {
 	compileMu.Unlock()
 
 	prewarmModules(ctx)
-	os.Exit(m.Run())
+	if err := installContractCheck(); err != nil {
+		fmt.Fprintf(os.Stderr, "the HTTP contract: %v\n", err)
+		os.Exit(1)
+	}
+	code := m.Run()
+	if !reportContract() && code == 0 {
+		code = 1
+	}
+	os.Exit(code)
 }
 
 // testCompileCacheDir is where compiled modules are kept between runs,

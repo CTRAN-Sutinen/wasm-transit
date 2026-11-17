@@ -70,6 +70,9 @@ rt-proxy = true
 # --- The capability modules (`just caps` builds them) -------------------
 
 # dist = "../web/dist"
+# With a store: each UI's own bundle (`just build-ui <id>`), committed to
+# the store's build.<id> pointer for the UI's own URL (D-171).
+# ui-dist = "stops=../web/dist-ui/stops,service-change=../web/dist-ui/service-change"
 # wasm = "../web/pkg/cap_sync.wasm"
 # network-wasm = "../web/pkg/cap_network.wasm"
 # streets-wasm = "../web/pkg/cap_streets.wasm"

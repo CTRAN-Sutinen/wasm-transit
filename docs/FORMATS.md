@@ -119,6 +119,8 @@ Each commit is one record object,
     revision stays in the log.
   - `build` (each release committed from `-dist`, and each move;
     see "Builds").
+  - `build.<id>` for each UI the server keeps (`-ui-dist`): each of
+    that UI's bundles, and each move (D-171).
   - `source.feed` and `source.streets`. Each read of `-feed` and
     `-streets` whose bytes changed commits a record. The record's
     `writer` is `import:<source>` (D-118). A `stops` commit of the
@@ -183,11 +185,12 @@ non-zero on the first break. A break is one of these:
   head record's commit time. `as_of_ms` is when the bucket last
   confirmed that the record is the head. The answer has `"stale": true`
   while the bucket does not answer (below).
-- `GET /pointers/{name}/log?since=<hash>` answers `{"entries":[…]}`.
-  The entries are the records after the latest record whose `to` is
-  `since`. An unknown `since` answers
-  `{"entries": [], "current": <head>, "whole": true}`, and the client
-  takes the whole current document.
+- `GET /pointers/{name}/log?since=<hash>` answers
+  `{"name", "entries", "since_found", "current", "whole"}`. The entries
+  are the records after the latest record whose `to` is `since`. An
+  unknown `since` answers `"entries": null`, `"since_found": false`,
+  and `"whole": true`, and the client takes the whole current document
+  (`current`, the head's hash).
 - `POST /pointers/{name}` takes the body `{"from": "<hash>", …}`. It
   answers `200` with the new head, or `409` with
   `{"current": "<hash>"}`. For `edit_records` the body is
@@ -260,11 +263,12 @@ non-zero on the first break. A break is one of these:
 - `POST /plans/retire` takes the body `{"id"}`. It answers `200
   {plans_hash}`, or `422 {issues}` (the pick has taken effect, or no
   pick has the id), or `404` when nothing is published (D-75). The
-  server commits the module's canonical network to `plan.<id>`, then
-  cap-plans' next set to `plans`.
+  server commits cap-plans' next set to `plans`. The pick's network
+  stays where it is.
 - `POST /builds` takes the body `{"build": "<hash>"}`. It answers `200
   {build, seq}`. It moves the `build` pointer to a build that its log
-  holds. The move is a rollback, or forward again. It answers `404` for
+  holds. With `?ui=<id>`, it moves that UI's pointer, `build.<id>`, and
+  nothing else (`400` for an id outside a-z, 0-9, and -). The move is a rollback, or forward again. It answers `404` for
   a build that the log never held, and `409` on a moved head. Builds
   land only from the server's `-dist` and move only here.
   `POST /pointers/build` (and any `build` or `build_file` kind) answers
@@ -298,7 +302,9 @@ Files are in path order and modules are in role order, so one tree is
 one document and one hash. A path is the file's path under the web
 root. The server serves the file at `/<path>` with `type`. The `build`
 pointer logs every build that the server committed and every move
-(`POST /builds`). The manifest's `build_hash` is its head.
+(`POST /builds`). The manifest's `build_hash` is its head. A UI's
+bundle (`-ui-dist`) is a build of the same shape on `build.<id>`, with
+no `server` modules. Its host serves it at the UI's own URL.
 
 A `build` blob is the one kind that names other blobs, and the store
 reads it. A build record names its document and every hash that the

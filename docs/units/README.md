@@ -38,7 +38,6 @@ archive — nothing here records what is finished.
 |---|---|
 | [runtime-cost-gate.md](runtime-cost-gate.md) | a ratchet on per-module memory and registration time |
 | [document-versioning.md](document-versioning.md) | every persisted document versioned, migrated forward at receive, rolled back under one rule; the schema lock and the published spec |
-| [release-artifacts.md](release-artifacts.md) | op and HTTP contracts changed by expand-then-contract; each UI at its own URL, deployed and rolled back alone |
 | [store-durability.md](store-durability.md) | the sync store's contract run on each provider's real account, backup and restore (D-82) |
 | [storage-model.md](storage-model.md) | a layout per shape of data: collections record by record, the kind table and governed writes, a self-describing bucket, projections, permissions per change |
 | [observability-rollout.md](observability-rollout.md) | what production runs and whether it is healthy; a display's automatic revert |

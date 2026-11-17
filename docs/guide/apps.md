@@ -1,8 +1,9 @@
 # The apps
 
-Each app does one job for one kind of user. Each one is deployed,
-updated, and rolled back on its own. A deployment's start page lists
-the apps it offers.
+Each app does one job for one kind of user. Each one has its own web
+address, and is deployed, updated, and rolled back on its own. The
+server also has a start page that lists every app it offers, which is
+handy for testing.
 
 ## Ride now
 

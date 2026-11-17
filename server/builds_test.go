@@ -195,3 +195,89 @@ func TestOnlyALoggedBuildIsMovedTo(t *testing.T) {
 		t.Fatal("nothing moved")
 	}
 }
+
+// Each UI at its own URL (D-171): a UI's bundle (-ui-dist) is a build
+// of its own on build.<id>, and POST /builds?ui=<id> moves that UI's
+// pointer and nothing else.
+func TestEachUIsBundleIsABuildOfItsOwnAndRollsBackAlone(t *testing.T) {
+	stops, change := t.TempDir(), t.TempDir()
+	writeDist(t, stops, map[string]string{"index.html": "stops", "stops.html": "<p>stops A</p>", "sw.js": "stops A", "basemap.pmtiles": "map data"})
+	writeDist(t, change, map[string]string{"index.html": "change", "service-change.html": "<p>change A</p>", "sw.js": "change A"})
+	dist := t.TempDir()
+	writeDist(t, dist, releaseA)
+	s := newStoreServer(t, store.NewMemory())
+	s.dist = dist
+	s.buildEvery = time.Nanosecond
+	s.serverModules = map[string]string{"sync": syncWasmPath}
+	uis, err := parseUIDists("stops=" + stops + ", service-change=" + change)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.uiDists = uis
+	s.syncBuild()
+	base := httptest.NewServer(s.routes()).URL
+	head := func(pointer string) string {
+		_, _, body := httpGet(t, base+"/pointers/"+pointer)
+		var h struct{ Hash string }
+		json.Unmarshal([]byte(body), &h)
+		return h.Hash
+	}
+	server := head("build")
+	stopsA, changeA := head("build.stops"), head("build.service-change")
+	if server == "" || stopsA == "" || changeA == "" || stopsA == changeA {
+		t.Fatalf("each UI's bundle is its own build: %q %q %q", server, stopsA, changeA)
+	}
+	data, _, err := s.store.GetBlob(stopsA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := store.ParseBuild(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Server) != 0 || len(doc.Files) != 3 {
+		t.Fatalf("a UI's build holds its bundle's files, no server modules, and no basemap: %+v", doc)
+	}
+
+	// Both UIs ship B.
+	writeDist(t, stops, map[string]string{"sw.js": "stops B"})
+	writeDist(t, change, map[string]string{"sw.js": "change B"})
+	s.syncBuild()
+	stopsB, changeB := head("build.stops"), head("build.service-change")
+	if stopsB == stopsA || changeB == changeA {
+		t.Fatalf("each UI's new bundle is a new build: %q %q", stopsB, changeB)
+	}
+
+	// Roll the stops UI back. The other UI and the server's build stay.
+	if code, _, body := httpPost(t, base+"/builds?ui=stops", `{"build":"`+stopsA+`"}`); code != 200 {
+		t.Fatalf("the stops UI rolls back: %d %s", code, body)
+	}
+	if head("build.stops") != stopsA || head("build.service-change") != changeB || head("build") != server {
+		t.Fatalf("only build.stops moved: %q %q %q", head("build.stops"), head("build.service-change"), head("build"))
+	}
+	// A build of another UI's log is not this UI's to move to.
+	if code, _, _ := httpPost(t, base+"/builds?ui=stops", `{"build":"`+changeA+`"}`); code != 404 {
+		t.Fatalf("another UI's build: %d", code)
+	}
+	if code, _, _ := httpPost(t, base+"/builds?ui=Stops/x", `{"build":"`+stopsA+`"}`); code != 400 {
+		t.Fatalf("an id that names no UI pointer: %d", code)
+	}
+	// A restart on B, in the UI's directory, keeps the rollback.
+	s.uiDists[0].state = buildState{}
+	s.syncBuild()
+	if head("build.stops") != stopsA {
+		t.Fatalf("a build the log holds is never committed again: %q", head("build.stops"))
+	}
+}
+
+func TestTheUIDistSettingIsRead(t *testing.T) {
+	for _, bad := range []string{"stops", "=dir", "Stops=dir", "a/b=dir", "stops=a,stops=b"} {
+		if _, err := parseUIDists(bad); err == nil {
+			t.Errorf("-ui-dist %q is refused", bad)
+		}
+	}
+	got, err := parseUIDists(" stops=a ,ride-now=b,")
+	if err != nil || len(got) != 2 || got[0].id != "stops" || got[0].dir != "a" || got[1].id != "ride-now" {
+		t.Fatalf("pairs: %+v %v", got, err)
+	}
+}

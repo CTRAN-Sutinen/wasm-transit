@@ -24,8 +24,7 @@ it depends on is:
 - **The static bundle** stands (`just export`; docs/architecture/static-deployment.md).
 
 The server's units ([store-durability.md](store-durability.md),
-[observability-rollout.md](observability-rollout.md),
-[release-artifacts.md](release-artifacts.md)) are not this
+[observability-rollout.md](observability-rollout.md)) are not this
 deployment's (D-131): a bundle ships each page with its assemblies,
 and a rollback redeploys the previous bundle.
 

@@ -136,7 +136,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-78 | Does the Go server host linked assemblies? | decided | nothing |
 | D-79 | How is a document version rolled back? | decided | nothing |
 | D-80 | Where do retired build artifacts live? | decided | nothing |
-| D-81 | How are op and HTTP contracts versioned? | unanswered | contract versioning in `release-artifacts` |
+| D-81 | How are op and HTTP contracts versioned? | decided | nothing |
 | D-82 | Where do the store's backups go, and how often? | unanswered | backup in `store-durability` |
 | D-83 | What does each deployed device report, and to where? | decided | nothing |
 | D-84 | Who takes a build first, and what counts as healthy? | decided | nothing |
@@ -224,7 +224,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-168 | Where does personal data live, and how is it removed when the law requires? | unanswered | restricted reads in `storage-model` |
 | D-169 | Is a document's canonical form serde's field order, or RFC 8785? | unanswered | nothing (before the first deployment's baseline) |
 | D-170 | Are the migration steps from before the first deployment kept? | unanswered | nothing |
-| D-171 | How does a UI at its own URL reach the server, and how is it rolled back? | unanswered | each UI at its own URL in `release-artifacts` |
+| D-171 | How does a UI at its own URL reach the server, and how is it rolled back? | decided | nothing |
 | D-173 | How does a stop the stops app made reach a plan? | decided | nothing |
 | D-174 | How are code comments and the developer documents written? | decided | nothing |
 | D-175 | Whose clock does the runner read for $TODAY and $NOW_SECS? | decided | nothing |
@@ -1293,7 +1293,7 @@ Blocks: the stop event ids and the stops merge in
 ### D-167 — Do authored documents keep the fields they do not know?
 State: Unanswered.
 Context: the parts of a deployment ship at different times
-(`docs/units/release-artifacts.md`), so a writer on an older build can
+(`docs/architecture/release-artifacts.md`), so a writer on an older build can
 save a document a newer one wrote. The stops and stop requests types
 carry an `extra` map and keep a field they do not know; every other
 authored type (edits, plans, policy, work rules, the network) drops it
@@ -1369,32 +1369,26 @@ Options:
 Blocks: nothing.
 
 ### D-171 — How does a UI at its own URL reach the server, and how is it rolled back?
-State: Unanswered.
-Context: the user, 2026-11-13: "the plan was always to have the UIs
-would actually be deployed to their own Urls, the single page was a
-dev convenience." The pages address the deployment by relative paths
-(`manifest`, `blobs/<hash>`, `edits`, `stops`, `stop-requests`,
-`geocode/…`; `web/src/engine.ts`, `web/src/uis/kit.ts`), the layout a
-static bundle and the server share (D-131), and the server sends no
-CORS headers (only the dev `/rt` relay does). A page signs in with its
-own address as the redirect (`web/src/signin.svelte.ts`) and sends the
-token as a header. Builds are retained in the store (D-80), as the
-server's one `build` pointer.
-Options, for reaching the server:
-- The UI's URL routes the data paths to the server: the UI's host (an
-  edge worker, a load balancer, a reverse proxy) serves the bundle and
-  forwards the paths the server answers. The pages stay as they are;
-  no CORS; each UI is same-origin with its data.
-- The bundle names the server's URL and the server answers
-  cross-origin: an allow-list of the UIs' origins (`Authorization`
-  allowed, no cookies); every page fetch takes the base.
-Options, for rollback and retention:
-- Each UI's bundle retained in the store as a build of its own
-  (`build.<id>`, D-80 extended), and a deploy tool puts a retained
-  bundle on the UI's host; rollback deploys the previous one.
-- The UI host's own versions (its deployments and rollback); the store
-  keeps the server's modules only.
-Blocks: each UI at its own URL in `docs/units/release-artifacts.md`.
+State: Decided.
+Answer: 2026-11-17 — "D-171 part 1: a, part 2: a." The UI's host
+routes the data paths to the server, so each UI is same-origin with
+its data, the pages do not change, and the server answers no
+cross-origin request. Each UI's bundle is kept in the store as a build
+of its own (`build.<id>`, D-80 extended); a deploy tool puts a kept
+bundle on the UI's host, and rollback moves that pointer back and
+deploys again. The server's own `build` pointer stays, as the
+development setup. A static rider export keeps its own rollback (the
+previous bundle redeployed); it has no store. Confirmed by the user
+("proceed") on that restatement.
+Why: `docs/architecture/release-artifacts.md`, Why, "A UI's host routes
+the data paths; each UI's builds are in the store".
+Pinned by: `web/e2e/ui-origins.spec.mjs` (two UIs at two origins over
+one server: each signs in at its own address, and one rolls back
+alone), `server/builds_test.go`
+(`TestEachUIsBundleIsABuildOfItsOwnAndRollsBackAlone`),
+`server/store/build_test.go`
+(`TestAUIsLoggedBuildsKeepTheirFilesThroughGC`).
+Blocks: nothing.
 
 ### D-172 — Where do the server's settings live?
 State: Decided.
@@ -3323,38 +3317,27 @@ files as named, and a rollback is `POST /builds` to a build the log
 holds (docs/FORMATS.md, "Builds"; pins: `server/store/build_test.go`,
 `server/builds_test.go`, `web/e2e/deploy-rollback.spec.mjs`).
 Why: `docs/architecture/release-artifacts.md`, Why, "Every build is kept in the sync store".
-Blocks: retention in `docs/units/release-artifacts.md`.
+Blocks: nothing.
 
 ### D-81 — How are op and HTTP contracts versioned?
-State: Unanswered.
-Context: `docs/units/release-artifacts.md`. Op requests and responses
-have no version of their own (the kernel version is one number for
-the whole ABI), and neither does the server's HTTP surface. The
-parts of a deployment ship at different times, so a host can send an
-old shape to a newer module or server. Example: cap-plans `publish`
-gained a required `today` field on 2026-11-05.
-Options:
-- Additive only, enforced by a gate: a field is added optional or an
-  op is added; nothing changes meaning; removal happens only after no
-  deployed host sends the old shape. No version numbers on the wire;
-  the generated schemas are diffed against the last published
-  registry.
-- A version per op (and per endpoint), declared in the manifest; a
-  host names the version it speaks; a module answers each version it
-  keeps.
-- A version prefix on the HTTP surface (`/v1/…`) plus additive-only
-  ops.
-- Ops private to their deployable; HTTP and documents public,
-  additive only, each behind a gate (proposed 2026-11-13). An op's
-  request never crosses a deployable: a page's host and its linked
-  assembly ship in one build, and the server's Go and its modules in
-  one image; between deployables only HTTP and documents cross
-  (documents under the schema lock and D-79,
-  `docs/units/document-versioning.md`). So an op shape changes freely
-  inside its deployable, and the gate diffs only the HTTP surface and
-  the documents' schemas. An agent's runner pins each module by hash,
-  so it meets no shape it was not built against.
-Blocks: contract versioning in `docs/units/release-artifacts.md`.
+State: Decided.
+Answer: 2026-11-17 — option 4, ops private to their deployable: "for
+D-81: 4, per your recommendation." An op's shape changes freely inside
+the deployable that ships it (a page's bundle, or the server's image).
+The HTTP surface and the documents' schemas are public. They change by
+expand, then contract, and a gate holds that: a breaking change fails
+unless the lock already marks the item deprecated. The server rolls
+back by its previous image (its Go and its modules together), never by
+newer Go on older modules. Confirmed by the user ("proceed") on that
+restatement.
+Why: `docs/architecture/release-artifacts.md`, Why, "Ops are private;
+HTTP and documents expand, then contract".
+Pinned by: `server/httpcontract/diff_test.go` (each breaking change
+fails, an additive change and a deprecated removal pass),
+`server/contract_test.go` (the routes, the contract transport, and the
+gate against `server/openapi.lock.json`).
+Blocks: nothing. The documents' lock is
+`docs/units/document-versioning.md`, item 5.
 
 ### D-83 — What does each deployed device report, and to where?
 State: Decided.

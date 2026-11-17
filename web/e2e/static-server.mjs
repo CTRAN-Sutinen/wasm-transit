@@ -8,17 +8,46 @@
 // pattern, then indented `Name: value` lines; `*` matches anything),
 // so the specs run each page under the policy the export wrote.
 //
-//   node e2e/static-server.mjs <root> <port> [cors]
+//   node e2e/static-server.mjs <root> <port> [cors | forward=<server URL>]
 //
 // `cors` adds `Access-Control-Allow-Origin: *`, as an agency's feed
 // host sends it (e2e/static-feed-url.spec.mjs).
+//
+// `forward=<server URL>` makes it a UI's own host (D-171;
+// e2e/ui-origins.spec.mjs): the UI's bundle from <root>, and the data
+// paths forwarded to the server, so the page is same-origin with its
+// data. The data paths are every route of the server's HTTP contract
+// (server/openapi.json, each path's `x-mux`) but the static files, and
+// the basemap, which is the deployment's map data.
 
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 
-const [root, port, cors] = process.argv.slice(2);
-const corsHeaders = cors === "cors" ? { "Access-Control-Allow-Origin": "*" } : {};
+const [root, port, mode = ""] = process.argv.slice(2);
+const corsHeaders = mode === "cors" ? { "Access-Control-Allow-Origin": "*" } : {};
+const upstream = mode.startsWith("forward=") ? mode.slice("forward=".length).replace(/\/+$/, "") : null;
+
+/// The server's data paths: a pattern that ends in "/" is a prefix.
+function dataPaths() {
+  const contract = JSON.parse(fs.readFileSync(new URL("../../server/openapi.json", import.meta.url), "utf8"));
+  const patterns = new Set(Object.values(contract.paths).map((item) => item["x-mux"]));
+  patterns.delete("/");
+  return [...patterns, "/basemap.pmtiles", "/basemap-assets/"];
+}
+const forwarded = upstream ? dataPaths() : [];
+const isData = (pathname) => forwarded.some((p) => (p.endsWith("/") ? pathname.startsWith(p) : pathname === p));
+
+/// Forward a request to the server as it is, and its answer back.
+function forward(req, res) {
+  const target = new URL(req.url, upstream);
+  const out = http.request(target, { method: req.method, headers: { ...req.headers, host: target.host } }, (answer) => {
+    res.writeHead(answer.statusCode ?? 502, answer.headers);
+    answer.pipe(res);
+  });
+  out.on("error", () => res.writeHead(502).end());
+  req.pipe(out);
+}
 const types = {
   ".html": "text/html",
   ".js": "text/javascript",
@@ -70,6 +99,10 @@ function headersFor(pathname) {
 http
   .createServer((req, res) => {
     const pathname = decodeURIComponent(new URL(req.url, "http://x").pathname);
+    if (upstream && isData(pathname)) {
+      forward(req, res);
+      return;
+    }
     let file = path.join(root, path.normalize(pathname));
     if (!file.startsWith(path.resolve(root))) {
       res.writeHead(400).end();

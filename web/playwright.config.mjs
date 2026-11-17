@@ -21,6 +21,10 @@ const staticNext = path.join(os.tmpdir(), "transit-e2e-static-next");
 /// (e2e/static-feed-url.spec.mjs, D-132): each rider UI's bundle (under
 /// /ride/ and /display/) and the feed under /feeds/, served with CORS.
 const staticFetchRoot = path.join(os.tmpdir(), "transit-e2e-static-fetch");
+/// Each UI at its own URL (e2e/ui-origins.spec.mjs, D-171): the copies
+/// of two UIs' bundles the server commits (src-<id>), and what each
+/// UI's host serves (host-<id>, written by tools/ui-deploy.mjs).
+const uiOriginsRoot = path.join(os.tmpdir(), "transit-e2e-ui-origins");
 
 // E2E tests run against the built app (npm run build) served by the
 // Go sync server — on their OWN port, never reused: a shared server
@@ -34,6 +38,7 @@ const staticFetchRoot = path.join(os.tmpdir(), "transit-e2e-static-fetch");
 // (e2e/published-picks.spec.mjs). In store mode a server commits its
 // -dist as a build and serves the pages from it (docs/architecture/release-artifacts.md); the fifth rolls one back. The sixth is no Go
 // server at all: the server's static export, on a plain file server.
+// The last three are two UIs, each at its own origin, over one server.
 export default defineConfig({
   testDir: "./e2e",
   timeout: 20_000,
@@ -135,5 +140,28 @@ export default defineConfig({
       stdout: "ignore",
       stderr: "pipe",
     },
+    {
+      // Each UI at its own URL (e2e/ui-origins.spec.mjs, D-171): one
+      // store-mode server with sign-in on commits two UIs' bundles to
+      // build.stops and build.service-change (-ui-dist).
+      command: `bash -c 'rm -rf "${uiOriginsRoot}" && mkdir -p "${uiOriginsRoot}" && cp -r ../web/dist-ui/stops "${uiOriginsRoot}/src-stops" && cp -r ../web/dist-ui/service-change "${uiOriginsRoot}/src-service-change" && exec go run . -addr 127.0.0.1:8092 -today 2026-08-01 -store mem:// -feed ../web/e2e/fixtures/sample-gtfs.zip -ui-dist "stops=${uiOriginsRoot}/src-stops,service-change=${uiOriginsRoot}/src-service-change" -oidc-issuer http://127.0.0.1:8089 -oidc-jwks-url http://127.0.0.1:8089/jwks -oidc-audience transit-server -oidc-client-id transit-pages -oidc-scope "openid profile offline_access transit.write" -policy ../web/e2e/fixtures/ui-origins-policy.json -attachments mem://'`,
+      cwd: "../server",
+      url: "http://127.0.0.1:8092/healthz",
+      reuseExistingServer: false,
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+    ...[
+      ["stops", 8093],
+      ["service-change", 8094],
+    ].map(([ui, port]) => ({
+      // That UI's own host: its logged build, written out by the deploy
+      // tool, and the data paths forwarded to the server.
+      command: `bash -c 'node ../tools/ui-deploy.mjs http://127.0.0.1:8092 ${ui} "${uiOriginsRoot}/host-${ui}" && exec node e2e/static-server.mjs "${uiOriginsRoot}/host-${ui}" ${port} forward=http://127.0.0.1:8092'`,
+      url: `http://127.0.0.1:${port}/${ui}.html`,
+      reuseExistingServer: false,
+      stdout: "ignore",
+      stderr: "pipe",
+    })),
   ],
 });

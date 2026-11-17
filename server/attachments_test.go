@@ -54,7 +54,7 @@ func getAttachment(t *testing.T, url, token string) (int, string, []byte) {
 func attachmentMux(s *server) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/attachments", s.protectWrite(func(*http.Request) string { return "attachments" }, s.handleAttachments))
-	mux.HandleFunc("/attachments/", s.protectSignedIn(s.handleAttachments))
+	mux.HandleFunc("/attachments/", s.protectSignedIn(s.handleAttachmentFile))
 	return mux
 }
 
@@ -107,6 +107,10 @@ func TestAttachmentsAreReadOnlySignedIn(t *testing.T) {
 	if code, _ := postAttachment(t, srv.URL+"/attachments", token("dispatcher"), "image/png", photo); code != 403 {
 		t.Fatalf("adding one needs write on attachments: %d", code)
 	}
+	// /attachments/<hash> is behind sign-in alone, so it never adds one.
+	if code, _ := postAttachment(t, srv.URL+"/attachments/sha256:"+strings.Repeat("0", 64), token("dispatcher"), "image/png", photo); code != 405 {
+		t.Fatalf("adding one through the read path: %d", code)
+	}
 	code, out := postAttachment(t, srv.URL+"/attachments", token("admin"), "image/png", photo)
 	if code != 200 {
 		t.Fatalf("added: %d %v", code, out)
@@ -117,5 +121,15 @@ func TestAttachmentsAreReadOnlySignedIn(t *testing.T) {
 	}
 	if code, _, body := getAttachment(t, url, token("dispatcher")); code != 200 || !bytes.Equal(body, photo) {
 		t.Fatalf("any signed-in person reads it: %d", code)
+	}
+	head, _ := http.NewRequest(http.MethodHead, url, nil)
+	head.Header.Set("Authorization", "Bearer "+token("dispatcher"))
+	resp, err := http.DefaultClient.Do(head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("HEAD: %d %q", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
 }

@@ -28,6 +28,7 @@ type settings struct {
 	workOrdersSpec *string
 	requestsWasm   *string
 	stopsWasm      *string
+	uiDist         *string
 	authzWasm      *string
 	oidcIssuer     *string
 	oidcJWKS       *string
@@ -56,6 +57,7 @@ func serverFlags(fs *flag.FlagSet) *settings {
 	f := &settings{
 		addr:           fs.String("addr", defaultAddr, "listen address (in the image: every interface, :8080; from a source tree: localhost only)"),
 		dist:           fs.String("dist", dataPath("dist", "../web/dist"), "directory of static files to serve"),
+		uiDist:         fs.String("ui-dist", "", "store mode: each UI's own bundle (`just build-ui <id>`), as <id>=<dir> pairs, comma-separated; each is committed to the store's build.<id> pointer like -dist, for the UI's host to serve at the UI's own URL (`just ui-deploy`; D-171)"),
 		wasmPath:       fs.String("wasm", dataPath("pkg/cap_sync.wasm", "../web/pkg/cap_sync.wasm"), "the sync capability module to host and pin"),
 		feedPath:       fs.String("feed", "", "the GTFS zip's source (D-118): an http(s) URL, bucket:<key> (the object inputs/<key> in the -store bucket), or a dev path; imported and published as the network (enables /network and the manifest's schedule section). With -store each read is committed as source.feed, and a source that does not answer at boot serves that"),
 		networkWasm:    fs.String("network-wasm", dataPath("pkg/cap_network.wasm", "../web/pkg/cap_network.wasm"), "the network capability module that imports the feed"),

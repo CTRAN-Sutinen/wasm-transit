@@ -54,6 +54,18 @@ func (s *server) handleAttachments(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleAttachmentFile answers /attachments/<hash>: reads only. Adding
+// a file is POST /attachments, behind the write check on the
+// `attachments` pointer. This path is behind sign-in alone, so it must
+// never add one.
+func (s *server) handleAttachmentFile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "GET /attachments/<hash>; add a file with POST /attachments", http.StatusMethodNotAllowed)
+		return
+	}
+	s.handleAttachments(w, r)
+}
+
 func (s *server) addAttachment(w http.ResponseWriter, r *http.Request) {
 	media := strings.ToLower(strings.TrimSpace(strings.SplitN(r.Header.Get("Content-Type"), ";", 2)[0]))
 	if !attachmentTypes[media] {

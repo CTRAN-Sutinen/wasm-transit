@@ -39,7 +39,7 @@ type source struct {
 
 func newSource(raw, pointer, kind string, st *store.Store) *source {
 	return &source{raw: raw, pointer: pointer, kind: kind, st: st,
-		every: time.Minute, client: &http.Client{Timeout: 2 * time.Minute}}
+		every: time.Minute, client: &http.Client{Transport: outbound, Timeout: 2 * time.Minute}}
 }
 
 // Read answers the source's current bytes and their hash.

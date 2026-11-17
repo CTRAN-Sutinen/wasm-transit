@@ -24,8 +24,9 @@ wants what only a shared server can hold:
 7. [Run it behind a load balancer](#7-run-it-behind-a-load-balancer)
 8. [Publish a new schedule](#8-publish-a-new-schedule)
 9. [Update or roll back the app](#9-update-or-roll-back-the-app)
-10. [Look after the bucket](#10-look-after-the-bucket)
-11. [Troubleshooting](#11-troubleshooting)
+10. [Give each app its own address](#10-give-each-app-its-own-address)
+11. [Look after the bucket](#11-look-after-the-bucket)
+12. [Troubleshooting](#12-troubleshooting)
 
 ---
 
@@ -96,7 +97,7 @@ draw.
    objects. The server never deletes anything, so it does not need
    delete permission. Leave it out.
 3. Keep a second set of credentials, **with** delete permission, for
-   the clean-up tool only ([section 10](#10-look-after-the-bucket)).
+   the clean-up tool only ([section 11](#11-look-after-the-bucket)).
 
 How the server finds its credentials:
 
@@ -239,7 +240,9 @@ from the stops record; the log names that change `import:feed`.
    Add each page's address as a redirect address:
    `https://<your server>/stops.html`,
    `https://<your server>/service-change.html`, and
-   `https://<your server>/service-design.html`. Give the pages' app
+   `https://<your server>/service-design.html`. When an app has its own
+   address ([section 10](#10-give-each-app-its-own-address)), add that
+   address instead, for example `https://stops.agency.example/stops.html`. Give the pages' app
    permission to ask for a token for the server's app. Then add:
 
    ```
@@ -357,7 +360,118 @@ Open apps follow the rollback like an update. The containers do not
 need to change: a server restarted on the newer image keeps serving
 the version you rolled back to.
 
-## 10. Look after the bucket
+## 10. Give each app its own address
+
+The server's start page lists every app at one address. That is fine
+for testing. In production, give each app its own address, such as
+`https://stops.agency.example`. Then you deploy, update, and roll back
+each app without touching the others.
+
+Each app's address is served by a web host of your choice (a load
+balancer, a reverse proxy such as nginx, or a Cloudflare Worker). The
+host does two things:
+
+- it serves the app's own files;
+- it sends the app's data requests on to the server.
+
+The app and its data then share one address, so the server needs no
+extra settings for it.
+
+**1. Keep each app's versions in the bucket.** Give the server
+`-ui-dist`, with each app's name and its files. The image carries every
+app's files under `/var/run/ko/dist-ui/`:
+
+```
+ui-dist = "stops=/var/run/ko/dist-ui/stops,service-change=/var/run/ko/dist-ui/service-change"
+```
+
+The names are `ride-now`, `stop-display`, `stops`, `service-change`, and
+`service-design`. On each start, the server records each app's files
+as a version in the bucket, under the name `build.<app>`. A version
+the bucket already holds is not recorded again.
+
+**2. Write out the app's files.** From a checkout of the repository:
+
+```
+just ui-deploy https://<your server> stops out/stops
+```
+
+This writes the app's newest version into `out/stops`, and checks each
+file. The folder must be empty or not exist. Upload the folder to the
+app's web host.
+
+**3. Send the data requests to the server.** Send these paths to the
+server, and serve everything else from the app's files. The paths in
+the first list must match exactly, because `/stops` is data and
+`/stops.html` is the app's page:
+
+- exactly: `/manifest`, `/edits`, `/feed`, `/network`,
+  `/network/document`, `/network/boundary`, `/streets`, `/walks`,
+  `/plans`, `/plans/retire`, `/stops`, `/stop-requests`,
+  `/stop-requests/work-order`, `/attachments`, `/builds`,
+  `/permissions`, `/healthz`, `/readyz`, `/basemap.pmtiles`;
+- everything under: `/blobs/`, `/pointers/`, `/attachments/`,
+  `/geocode/`, `/basemap-assets/`.
+
+With nginx, where `transit-server` is the server's upstream:
+
+```
+location ~ ^/(manifest|edits|feed|network|network/document|network/boundary|streets|walks|plans|plans/retire|stops|stop-requests|stop-requests/work-order|attachments|builds|permissions|healthz|readyz|basemap\.pmtiles)$ {
+    proxy_pass http://transit-server;
+}
+location ~ ^/(blobs|pointers|attachments|geocode|basemap-assets)/ {
+    proxy_pass http://transit-server;
+}
+location / {
+    root /srv/stops;   # the folder from step 2
+}
+```
+
+With a Cloudflare Worker that has the app's files as its static
+assets (`ASSETS`) and the server's address in `SERVER`:
+
+```js
+const exact = new Set(["/manifest", "/edits", "/feed", "/network", "/network/document", "/network/boundary", "/streets", "/walks", "/plans", "/plans/retire", "/stops", "/stop-requests", "/stop-requests/work-order", "/attachments", "/builds", "/permissions", "/healthz", "/readyz", "/basemap.pmtiles"]);
+const under = ["/blobs/", "/pointers/", "/attachments/", "/geocode/", "/basemap-assets/"];
+export default {
+  fetch(request, env) {
+    const url = new URL(request.url);
+    if (exact.has(url.pathname) || under.some((p) => url.pathname.startsWith(p))) {
+      return fetch(new Request(env.SERVER + url.pathname + url.search, request));
+    }
+    return env.ASSETS.fetch(request);
+  },
+};
+```
+
+**4. Let the app sign in at its address.** Add the app's address as a
+redirect address with your sign-in provider
+([section 6](#6-turn-on-sign-in), step 4).
+
+**To update an app,** build a new image and replace the server's
+containers ([section 9](#9-update-or-roll-back-the-app)). The server
+records the app's new version. Then run step 2 again into an empty
+folder, and upload it.
+
+**To roll an app back,** list its versions:
+
+```
+curl https://<your server>/pointers/build.stops/log
+```
+
+Choose the version to go back to, and move the app to it:
+
+```
+curl -X POST 'https://<your server>/builds?ui=stops' \
+  -H "Authorization: Bearer <token>" \
+  -d '{"build": "sha256:…"}'
+```
+
+Then run step 2 again and upload the folder. The other apps do not
+change. To let a role do this, give it write on `build.<app>` in the
+policy (for example `build.stops`).
+
+## 11. Look after the bucket
 
 These tools run from a checkout of the repository, not from the
 image.
@@ -386,7 +500,7 @@ image.
   `just store verify` on it. Where backups go and how often is still
   being decided.
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 | What you see | What to do |
 |---|---|

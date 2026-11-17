@@ -74,6 +74,34 @@ func TestEveryLoggedBuildKeepsItsFilesThroughGC(t *testing.T) {
 	})
 }
 
+// A UI's builds (D-171) are logged on a pointer of their own,
+// build.<id>. GC and verify read a build by its record's kind, so a
+// UI's logged builds keep their files the same way.
+func TestAUIsLoggedBuildsKeepTheirFilesThroughGC(t *testing.T) {
+	each(t, func(t *testing.T, b Backend, s *Store) {
+		a, aFiles := build(t, map[string]string{"index.html": "stops A", "sw.js": "stops build A"})
+		hashA, _, err := s.CommitBuild("build.stops", "", a, buildEnv, aFiles, fileEnv, "import:dist-ui/stops", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bDoc, bFiles := build(t, map[string]string{"index.html": "stops B", "sw.js": "stops build B"})
+		if _, _, err := s.CommitBuild("build.stops", hashA, bDoc, buildEnv, bFiles, fileEnv, "import:dist-ui/stops", 2); err != nil {
+			t.Fatal(err)
+		}
+		if r, err := aged(b).GC(OrphanGraceMs); err != nil || r.Removed != 0 {
+			t.Fatalf("GC removes none of a UI's logged builds' files: %+v %v", r, err)
+		}
+		for h, want := range aFiles {
+			if data, _, err := New(b).GetBlob(h); err != nil || string(data) != string(want) {
+				t.Fatalf("build A of the UI stays whole: %q %v", data, err)
+			}
+		}
+		if vr, err := Verify(context.Background(), b); err != nil || vr.Orphans != 0 {
+			t.Fatalf("verify reads a UI's builds as named: %+v %v", vr, err)
+		}
+	})
+}
+
 func TestABuildCommitRecreatesAFileGCRemovedUnderIt(t *testing.T) {
 	eachBackend(t, func(t *testing.T, b Backend) {
 		ctx := context.Background()

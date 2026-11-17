@@ -46,8 +46,8 @@ yet scoped").
   feed down) is reported, never a cause to revert. Within the
   probation window after it applies a build (one service day,
   across its rollover), a display whose health fails reverts to the
-  previous build it holds ([release-artifacts.md](release-artifacts.md)
-  keeps it in the store; the display's cache keeps it offline) and
+  previous build it holds (the store keeps it,
+  `docs/architecture/release-artifacts.md`; the display's cache keeps it offline) and
   reports the revert when it reports. Past the window, a failure is
   reported, not reverted. A revert never loops: a build that failed
   is not applied again until a newer one replaces it.

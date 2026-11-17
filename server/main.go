@@ -82,6 +82,9 @@ func main() {
 	if s.workOrders != nil {
 		log.Printf("work orders: the %s adapter (D-165)", s.workOrders.Name())
 	}
+	if *f.uiDist != "" && *f.storeURL == "" {
+		log.Fatalf("-ui-dist commits each UI's bundle to the store: it needs -store")
+	}
 	if *f.storeURL != "" {
 		st, err := store.OpenServing(*f.storeURL)
 		if err != nil {
@@ -102,6 +105,11 @@ func main() {
 		if *f.oidcIssuer != "" || *f.oidcJWKS != "" || *f.oidcKey != "" {
 			s.serverModules["authz"] = *f.authzWasm
 		}
+		uiDists, err := parseUIDists(*f.uiDist)
+		if err != nil {
+			log.Fatalf("%v", err)
+		}
+		s.uiDists = uiDists
 		s.syncBuild()
 		log.Printf("sync store open: %s (serving: creates and reads, never deletes — `store gc` collects orphans)", *f.storeURL)
 	}
@@ -253,9 +261,9 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("/stops", s.protectWrite(func(*http.Request) string { return stopsPointer }, s.handleStops))
 	mux.HandleFunc("/stop-requests", s.protectWrite(func(*http.Request) string { return requestsPointer }, s.handleStopRequests))
 	mux.HandleFunc("/attachments", s.protectWrite(func(*http.Request) string { return "attachments" }, s.handleAttachments))
-	mux.HandleFunc("/attachments/", s.protectSignedIn(s.handleAttachments))
+	mux.HandleFunc("/attachments/", s.protectSignedIn(s.handleAttachmentFile))
 	mux.HandleFunc("/stop-requests/work-order", s.protectWrite(func(*http.Request) string { return requestsPointer }, s.handleWorkOrder))
-	mux.HandleFunc("/builds", s.protectWrite(func(*http.Request) string { return buildPointer }, s.handleBuilds))
+	mux.HandleFunc("/builds", s.protectWrite(func(r *http.Request) string { p, _ := buildsPointerOf(r); return p }, s.handleBuilds))
 	mux.HandleFunc("/feed", s.handleFeed)
 	mux.HandleFunc("/permissions", s.requireAuth(s.handlePermissions))
 	mux.HandleFunc("/blobs/", s.handleBlob)
@@ -263,6 +271,14 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("/", s.handleStatic)
 	return mux
 }
+
+// outbound carries every request the server itself sends (the feed and
+// streets sources, the JWKS, the geocoder, the /rt relay). It is
+// http.DefaultTransport as it stands when the package starts. The
+// tests replace http.DefaultTransport to check their own requests
+// against the HTTP contract, and the server's requests must not pass
+// through that check.
+var outbound = http.DefaultTransport
 
 // server holds the host's few pieces of state.
 type server struct {
@@ -362,6 +378,9 @@ type server struct {
 	builds        buildState
 	buildEvery    time.Duration
 	serverModules map[string]string
+	// uiDists are the UIs' bundles (-ui-dist), each committed to its own
+	// build.<id> pointer (D-171).
+	uiDists []*uiDist
 }
 
 // handleStatic serves the built frontend with the deployment's headers
@@ -494,7 +513,7 @@ func (s *server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := (&http.Client{Transport: outbound}).Do(req)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("upstream fetch failed: %v", err), http.StatusBadGateway)
 		return

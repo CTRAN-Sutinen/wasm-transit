@@ -200,6 +200,11 @@ a poll, and only while the deployment is reachable. A rider's phone
 switches the next time the app opens, or when the rider accepts the
 update. Nothing changes under a rider in the middle of a task.
 
+With the server, the server keeps every version of each app in its
+store. Rolling one app back means choosing an older version of that
+app and uploading it to the app's address again. The other apps do not
+change.
+
 ## When staff enter a detour
 
 This needs the server. A detour or a trip cancellation is a

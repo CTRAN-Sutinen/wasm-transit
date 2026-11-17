@@ -1,0 +1,3430 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "wasm-transit server",
+    "version": "1",
+    "description": "The Go server's HTTP surface. Reads are public. When sign-in is on (-oidc flags), writes need a bearer token and a policy rule. When it is off, every request passes."
+  },
+  "paths": {
+    "/rt": {
+      "x-mux": "/rt",
+      "x-dev-only": true,
+      "get": {
+        "operationId": "relayFeed",
+        "summary": "Relay an agency feed that the browser cannot fetch directly.",
+        "description": "The route exists only with -rt-proxy. The server fetches the URL and relays the upstream status, body, and Content-Type, with Access-Control-Allow-Origin: *.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "description": "The http(s) URL to fetch.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The upstream answer. Other upstream statuses relay as they are.",
+            "content": {
+              "*/*": {}
+            }
+          },
+          "400": {
+            "description": "The url parameter is missing, or it is not http(s).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The upstream fetch failed, or its answer is larger than 32 MB.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The relay is off. Without -rt-proxy the path is a static file, and there is none.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "x-mux": "/healthz",
+      "get": {
+        "operationId": "getHealthz",
+        "summary": "Answer liveness.",
+        "description": "The handler reads nothing and accepts any method.",
+        "responses": {
+          "200": {
+            "description": "The process answers HTTP.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "const": "ok\n"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "x-mux": "/readyz",
+      "get": {
+        "operationId": "getReadyz",
+        "summary": "Answer whether this process should get traffic.",
+        "description": "The handler accepts any method.",
+        "responses": {
+          "200": {
+            "description": "Status ready, or degraded while the bucket does not answer but cached heads serve.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Status unavailable or draining.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/manifest": {
+      "x-mux": "/manifest",
+      "get": {
+        "operationId": "getManifest",
+        "summary": "Get the manifest that pins the published set.",
+        "description": "In store mode the manifest is the manifest pointer's head blob, and its ETag is that hash. Without a store the ETag is a key of what the manifest pins. A read the bucket did not confirm carries X-Store-Stale and X-Store-As-Of. The handler accepts any method.",
+        "responses": {
+          "200": {
+            "description": "The manifest.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Manifest"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/network": {
+      "x-mux": "/network",
+      "get": {
+        "operationId": "getNetwork",
+        "summary": "Get the import answer of the configured feed.",
+        "description": "The ETag is the network hash. The body is gzipped (Content-Encoding) when Accept-Encoding names gzip. The handler accepts any method.",
+        "responses": {
+          "200": {
+            "description": "The import answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkImport"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "404": {
+            "description": "No feed is configured (-feed).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The feed did not import.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/network/document": {
+      "x-mux": "/network/document",
+      "get": {
+        "operationId": "getNetworkDocument",
+        "summary": "Get the bare network document, gzipped.",
+        "description": "The body is gzip bytes as Content-Type application/gzip, never Content-Encoding. The ETag is the network hash. The handler accepts any method.",
+        "responses": {
+          "200": {
+            "description": "The network document, gzipped.",
+            "content": {
+              "application/gzip": {
+                "schema": {
+                  "type": "string",
+                  "x-document": "network",
+                  "description": "The network document, gzip-compressed.",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "404": {
+            "description": "No feed is configured (-feed).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The feed did not import.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/network/boundary": {
+      "x-mux": "/network/boundary",
+      "get": {
+        "operationId": "getNetworkBoundary",
+        "summary": "Get the import's boundary.",
+        "description": "The ETag is the network hash. The handler accepts any method.",
+        "responses": {
+          "200": {
+            "description": "The boundary.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "x-document": "boundary",
+                  "description": "The feed's numbering that the live feeds name."
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "404": {
+            "description": "No feed is configured (-feed).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The feed did not import.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/streets": {
+      "x-mux": "/streets",
+      "get": {
+        "operationId": "getStreets",
+        "summary": "Get the canonical streets document.",
+        "description": "The ETag is the streets hash. The body is gzipped (Content-Encoding) when Accept-Encoding names gzip. The handler accepts any method.",
+        "responses": {
+          "200": {
+            "description": "The streets document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "x-document": "streets",
+                  "description": "The streets document."
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "404": {
+            "description": "No street layer is configured (-streets).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The streets did not import.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/walks": {
+      "x-mux": "/walks",
+      "get": {
+        "operationId": "getWalks",
+        "summary": "Get the walk table over the published streets and network.",
+        "description": "The ETag is the walk table hash. The body is gzipped (Content-Encoding) when Accept-Encoding names gzip. The handler accepts any method.",
+        "responses": {
+          "200": {
+            "description": "The walk table.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "x-document": "walks",
+                  "description": "The walk table."
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "404": {
+            "description": "No feed or no street layer is configured.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The walk table did not derive.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/edits": {
+      "x-mux": "/edits",
+      "get": {
+        "operationId": "getEdits",
+        "summary": "Get the server's edit document.",
+        "description": "In store mode it is the edits pointer's head blob, with the hash as ETag, and a 304 on If-None-Match. Without a store it is the dev store's document. A read the bucket did not confirm carries X-Store-Stale and X-Store-As-Of.",
+        "responses": {
+          "200": {
+            "description": "The edit document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "x-document": "edit_records",
+                  "description": "The edit document."
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postEdits",
+        "summary": "Merge the client's edit document into the server's.",
+        "description": "cap-sync merges and submits the records. The answer is the converged document, and the client adopts it whole. In store mode the server retries the commit while the pointer moves. When sign-in is on, it needs write on the edits pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": [
+                  "object",
+                  "array"
+                ],
+                "x-document": "edit_records",
+                "description": "An edit document. An older version (a bare array, v1) comes forward through cap-migrate."
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The converged document. In store mode the ETag is its hash.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "x-document": "edit_records",
+                  "description": "The converged edit document."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body does not read, or the sync module refuses it.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Store mode: the edits pointer moved on every retry.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The dev store failed to persist the document.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pointers/{name}": {
+      "x-mux": "/pointers/",
+      "get": {
+        "operationId": "getPointer",
+        "summary": "Get a pointer's head.",
+        "description": "Store mode only. A read the bucket did not confirm carries X-Store-Stale and X-Store-As-Of.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "The pointer name.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointerHead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The path names no pointer, or it has extra segments.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No store is configured, or no such pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postPointer",
+        "summary": "Commit a document to a pointer (compare and swap).",
+        "description": "Store mode only. For kind edit_records the server merges `client` through cap-sync in one attempt. For other host-owned kinds it stores `document` verbatim. The server refuses the kinds and pointers that have their own route: plans, network_document, plan.*, stops, stop_requests, build, and build_file. X-Produced-By sets the envelope's producer for a verbatim kind (default server). X-Writer names the writer when sign-in is off. When sign-in is on, it needs write on the pointer.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "The pointer name.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PointerWrite"
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new head. The ETag is its hash.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointerCommit"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A bad path or body, a missing kind on create, a missing client or document, a refused kind or pointer, or a refused merge.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The pointer moved since `from`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conflict"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pointers/{name}/log": {
+      "x-mux": "/pointers/",
+      "get": {
+        "operationId": "getPointerLog",
+        "summary": "Get a pointer's log records after a hash.",
+        "description": "Store mode only. When sign-in is on, it needs read or audit on the pointer. Writers are shown only to an audit rule, and are empty otherwise.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "The pointer name.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "The hash the client holds. Empty or absent: the whole log.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The records.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointerLog"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The path names no pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plans": {
+      "x-mux": "/plans",
+      "post": {
+        "operationId": "publishPick",
+        "summary": "Publish a plan's network as a pick.",
+        "description": "Store mode only. The body is a network document in any serialization, gzipped or not. cap-network validates it, a stops document is read over it, and cap-plans answers the next published set. The server commits the network to plan.<id> and then the set to plans. When sign-in is on, it needs write on the plans pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "x-document": "network",
+                "description": "The pick's network document."
+              }
+            },
+            "application/gzip": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "x-document": "network",
+                "description": "The network document, gzipped."
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pick is published.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlansPublished"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not a network document, or the plan id cannot name a pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Publishing needs the store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A pointer moved during the commit.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "cap-network refuses the network ({issues, refusals}), or cap-plans refuses the pick ({issues}).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "cap-network refuses the network as a pick (issues and refusals), or cap-plans refuses the change (issues only).",
+                  "properties": {
+                    "issues": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "refusals": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "required": [
+                    "issues"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plans/retire": {
+      "x-mux": "/plans/retire",
+      "post": {
+        "operationId": "retirePick",
+        "summary": "Retire a pick that has not taken effect.",
+        "description": "Store mode only. cap-plans answers the next set, with the pick kept as a tombstone. When sign-in is on, it needs write on the plans pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "The plan id."
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new published set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlansHash"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {\"id\": \"<plan id>\"}.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No store is configured, or nothing is published.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The plans pointer moved.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "cap-plans refuses the retirement.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Issues"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stops": {
+      "x-mux": "/stops",
+      "post": {
+        "operationId": "writeStops",
+        "summary": "Write the stops document.",
+        "description": "Store mode only. cap-stops names the signed-in writer on each new survey, then validates the document. The server commits the canonical document to the stops pointer. When sign-in is on, it needs write on the stops pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "description": "The head the writer read. Empty on create."
+                  },
+                  "stops": {
+                    "type": "object",
+                    "x-document": "stops",
+                    "description": "The stops document."
+                  }
+                },
+                "required": [
+                  "stops"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopsHash"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {from, stops}, or the module fails.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The stops pointer is no longer at `from`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conflict"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "cap-stops refuses the document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusals"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stop-requests": {
+      "x-mux": "/stop-requests",
+      "post": {
+        "operationId": "writeStopRequests",
+        "summary": "Write the stop requests document.",
+        "description": "Store mode only. cap-requests validates the document. The server commits the canonical document to the stop_requests pointer. When sign-in is on, it needs write on the stop_requests pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "description": "The head the writer read. Empty on create."
+                  },
+                  "requests": {
+                    "type": "object",
+                    "x-document": "stop_requests",
+                    "description": "The stop requests document."
+                  }
+                },
+                "required": [
+                  "requests"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestsHash"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {from, requests}, or the module fails.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server runs without a store (-store).",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The stop_requests pointer is no longer at `from`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conflict"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "cap-requests refuses the document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusals"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stop-requests/work-order": {
+      "x-mux": "/stop-requests/work-order",
+      "post": {
+        "operationId": "workOrder",
+        "summary": "Open or refresh a stop request's work order.",
+        "description": "The work order adapter (-work-orders) answers. cap-requests records the answer on the request, and the server commits it with the writer work-orders:<system>. With no adapter, every method answers 501. When sign-in is on, it needs write on the stop_requests pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "request": {
+                    "type": "string",
+                    "description": "The request id."
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "refresh"
+                    ]
+                  }
+                },
+                "required": [
+                  "request",
+                  "action"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The recorded work order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkOrderResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {request, action}, or the module fails.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No store is configured, there are no stop requests, or no such request.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The stop_requests pointer moved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conflict"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "cap-requests refuses the recorded document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusals"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "No work order adapter is configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotConfigured"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The work order system failed.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/attachments": {
+      "x-mux": "/attachments",
+      "post": {
+        "operationId": "addAttachment",
+        "summary": "Add a photo or a PDF to the attachments bucket.",
+        "description": "The Content-Type names the media type. When sign-in is on, it needs write on the attachments pointer.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "image/jpeg": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/png": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/webp": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/heic": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/heif": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "application/pdf": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stored attachment. The same file twice is one object.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Attachment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is empty or does not read.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The file is larger than 25 MB.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The media type is not a photo (JPEG, PNG, WebP, HEIC, HEIF) or a PDF.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "No attachments bucket is configured (-attachments).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotConfigured"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/attachments/{hash}": {
+      "x-mux": "/attachments/",
+      "get": {
+        "operationId": "getAttachment",
+        "summary": "Get an attachment's bytes.",
+        "description": "When sign-in is on, any signed-in caller may read; no policy rule applies. The ETag is sha256:<hex>. The bytes come with their stored media type.",
+        "parameters": [
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "description": "The attachment's hash, with or without the sha256: prefix.",
+            "schema": {
+              "type": "string",
+              "pattern": "^(sha256:)?[0-9a-f]{64}$"
+            }
+          }
+        ],
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/heic": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/heif": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "400": {
+            "description": "The path is not sha256:<64 hex digits>.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such attachment.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "No attachments bucket is configured (-attachments).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotConfigured"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "operationId": "headAttachment",
+        "summary": "Get an attachment's headers.",
+        "description": "When sign-in is on, any signed-in caller may read; no policy rule applies. The ETag is sha256:<hex>. The bytes come with their stored media type.",
+        "parameters": [
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "description": "The attachment's hash, with or without the sha256: prefix.",
+            "schema": {
+              "type": "string",
+              "pattern": "^(sha256:)?[0-9a-f]{64}$"
+            }
+          }
+        ],
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/heic": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/heif": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "400": {
+            "description": "The path is not sha256:<64 hex digits>.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such attachment.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "No attachments bucket is configured (-attachments).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotConfigured"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/builds": {
+      "x-mux": "/builds",
+      "post": {
+        "operationId": "moveBuild",
+        "summary": "Move the build pointer, or one UI's, to a build its log holds.",
+        "description": "Store mode only. The move is a rollback, or forward again. Without ui, it moves the server's build pointer. With ui, it moves that UI's pointer (build.<id>) and nothing else. When sign-in is on, it needs write on the pointer it moves.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "build": {
+                    "type": "string",
+                    "description": "sha256:<hex> of a logged build."
+                  }
+                },
+                "required": [
+                  "build"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pointer moved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildMoved"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {\"build\": \"sha256:<hex>\"}, or ui is not a UI's id.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sign-in is on, and the policy (cap-authz) denies the action on the pointer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No store is configured, or the pointer's log holds no such build.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The pointer moved.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "ui",
+            "in": "query",
+            "required": false,
+            "description": "A UI's id (a-z, 0-9, and -). The move is that UI's pointer, build.<id> (D-171).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/feed": {
+      "x-mux": "/feed",
+      "get": {
+        "operationId": "getFeed",
+        "summary": "Get the GTFS zip in force on a date.",
+        "description": "The zip is cap-network's export of the pick in force, with the stops' history over its period. Before the first pick takes effect, it is the -feed zip. The ETag is the zip's hash. The handler accepts any method.",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "YYYY-MM-DD. Default: the agency's today.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The GTFS zip, as an attachment download.",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "x-document": "gtfs"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "400": {
+            "description": "The date is not YYYY-MM-DD, or cap-plans refuses the published set.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No feed is in force on the date.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/permissions": {
+      "x-mux": "/permissions",
+      "get": {
+        "operationId": "getPermissions",
+        "summary": "Get the caller's roles and capabilities under the policy.",
+        "description": "Sign-in must be on. The Authorization header carries a bearer token.",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "description": "Bearer <JWT>.",
+            "schema": {
+              "type": "string",
+              "pattern": "^Bearer "
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's effective permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Permissions"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in is on, and the request has no valid bearer token.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Sign-in is not configured.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The effective op failed.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/blobs/{hash}": {
+      "x-mux": "/blobs/",
+      "get": {
+        "operationId": "getBlob",
+        "summary": "Get a blob by its hash.",
+        "description": "The answer is a store blob or a published document (the network, its boundary, the streets, the walk table). Accept: application/gzip answers the same bytes gzipped as Content-Type application/gzip.",
+        "parameters": [
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "description": "sha256:<hex> of the blob.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The blob's bytes. Content-Type is application/json for every blob kind, or application/gzip on request. Store blobs carry X-Document-Kind and X-Schema-Version. The ETag is the path's last segment, and the bytes cache forever.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The blob's bytes as stored: any document kind."
+                }
+              },
+              "application/gzip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "400": {
+            "description": "The store failed to read the blob.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No blob or published document has the hash, or the blob is a policy document.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/blobs/{hash}.gz": {
+      "x-mux": "/blobs/",
+      "get": {
+        "operationId": "getBlobGzipped",
+        "summary": "Get a blob gzipped, by path.",
+        "description": "The answer is the gzipped bytes as Content-Type application/gzip. This is the layout a static export serves.",
+        "parameters": [
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "description": "sha256:<hex> of the blob.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The blob's bytes, gzipped.",
+            "content": {
+              "application/gzip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "400": {
+            "description": "The store failed to read the blob.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No blob or published document has the hash, or the blob is a policy document.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/geocode/{op}": {
+      "x-mux": "/geocode/",
+      "get": {
+        "operationId": "geocode",
+        "summary": "Ask the deployment's geocoder.",
+        "description": "The server forwards only the user's inputs for the op, adds the deployment's query policy, and relays the geocoder's status, body, and Content-Type. The handler accepts any method.",
+        "parameters": [
+          {
+            "name": "op",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "autocomplete",
+                "search",
+                "reverse"
+              ]
+            }
+          },
+          {
+            "name": "text",
+            "in": "query",
+            "required": false,
+            "description": "autocomplete and search: the text typed.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "focus.point.lat",
+            "in": "query",
+            "required": false,
+            "description": "autocomplete and search.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "focus.point.lon",
+            "in": "query",
+            "required": false,
+            "description": "autocomplete and search.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "point.lat",
+            "in": "query",
+            "required": false,
+            "description": "reverse: the point tapped.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "point.lon",
+            "in": "query",
+            "required": false,
+            "description": "reverse.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The geocoder's answer as given. Other geocoder statuses relay as they are.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "The geocoder's answer (Pelias GeoJSON), not read by the server."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No geocoder is configured, or the op is unknown.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The geocoder URL is bad.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The geocoder does not answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "x-mux": "/",
+      "get": {
+        "operationId": "getIndex",
+        "summary": "Get the frontend's index page.",
+        "description": "In store mode the file is the pinned build's, else -dist's. Baseline headers apply to every file, and rider pages add their policies. Text and wasm types are gzipped when the client takes gzip.",
+        "responses": {
+          "200": {
+            "description": "The file. The content type follows the extension.",
+            "content": {
+              "*/*": {}
+            }
+          },
+          "206": {
+            "description": "A Range request's part.",
+            "content": {
+              "*/*": {}
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "400": {
+            "description": "The path contains \"..\".",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such file.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "The Range cannot be satisfied.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "operationId": "headIndex",
+        "summary": "Get the index page's headers.",
+        "description": "In store mode the file is the pinned build's, else -dist's. Baseline headers apply to every file, and rider pages add their policies. Text and wasm types are gzipped when the client takes gzip.",
+        "responses": {
+          "200": {
+            "description": "The file. The content type follows the extension.",
+            "content": {
+              "*/*": {}
+            }
+          },
+          "206": {
+            "description": "A Range request's part.",
+            "content": {
+              "*/*": {}
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "400": {
+            "description": "The path contains \"..\".",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such file.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "The Range cannot be satisfied.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{file...}": {
+      "x-mux": "/",
+      "get": {
+        "operationId": "getStaticFile",
+        "summary": "Get a file of the built frontend.",
+        "description": "In store mode the file is the pinned build's, else -dist's. Baseline headers apply to every file, and rider pages add their policies. Text and wasm types are gzipped when the client takes gzip.",
+        "parameters": [
+          {
+            "name": "file",
+            "in": "path",
+            "required": true,
+            "description": "The file's path under the build. It may contain slashes.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file. The content type follows the extension.",
+            "content": {
+              "*/*": {}
+            }
+          },
+          "206": {
+            "description": "A Range request's part.",
+            "content": {
+              "*/*": {}
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "400": {
+            "description": "The path contains \"..\".",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such file.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "The Range cannot be satisfied.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "operationId": "headStaticFile",
+        "summary": "Get a frontend file's headers.",
+        "description": "In store mode the file is the pinned build's, else -dist's. Baseline headers apply to every file, and rider pages add their policies. Text and wasm types are gzipped when the client takes gzip.",
+        "parameters": [
+          {
+            "name": "file",
+            "in": "path",
+            "required": true,
+            "description": "The file's path under the build. It may contain slashes.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file. The content type follows the extension.",
+            "content": {
+              "*/*": {}
+            }
+          },
+          "206": {
+            "description": "A Range request's part.",
+            "content": {
+              "*/*": {}
+            }
+          },
+          "304": {
+            "description": "The If-None-Match header names the current ETag."
+          },
+          "400": {
+            "description": "The path contains \"..\".",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such file.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "The Range cannot be satisfied.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server failed to read the store or to run a module.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The store does not answer. Nothing was written. The response carries Retry-After.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Envelope": {
+        "type": "object",
+        "description": "A blob's envelope: its kind, its version, and the producer.",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "produced_by": {
+            "type": "string",
+            "description": "cap-<id>@sha256:<hex>, or server for host-owned documents."
+          }
+        },
+        "required": [
+          "kind",
+          "schema_version",
+          "produced_by"
+        ]
+      },
+      "PointerHead": {
+        "type": "object",
+        "description": "A pointer's current head.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string",
+            "description": "sha256:<hex> of the head blob."
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "envelope": {
+            "$ref": "#/components/schemas/Envelope"
+          },
+          "at_ms": {
+            "type": "integer",
+            "description": "The head record's commit time, Unix ms."
+          },
+          "as_of_ms": {
+            "type": "integer",
+            "description": "When the bucket last confirmed the head, Unix ms."
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "Present and true while the bucket does not answer."
+          }
+        },
+        "required": [
+          "name",
+          "hash",
+          "seq",
+          "envelope",
+          "at_ms",
+          "as_of_ms"
+        ]
+      },
+      "LogEntry": {
+        "type": "object",
+        "description": "One commit record of a pointer's log.",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "from": {
+            "type": "string",
+            "description": "The prior head. Empty on create."
+          },
+          "to": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "produced_by": {
+            "type": "string"
+          },
+          "writer": {
+            "type": "string",
+            "description": "The writer. Empty unless the caller holds an audit rule (or sign-in is off)."
+          },
+          "policy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "at_ms": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "from",
+          "to",
+          "kind",
+          "schema_version",
+          "produced_by",
+          "writer",
+          "policy",
+          "at_ms"
+        ]
+      },
+      "PointerLog": {
+        "type": "object",
+        "description": "The log records after `since`.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "entries": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/LogEntry"
+            },
+            "description": "The records after the latest record whose `to` is `since` (all records when `since` is empty). Null when `since` is not in the log or the pointer does not exist."
+          },
+          "since_found": {
+            "type": "boolean"
+          },
+          "current": {
+            "type": "string",
+            "description": "The head hash. Empty when the pointer does not exist."
+          },
+          "whole": {
+            "type": "boolean",
+            "description": "True when `since` is outside the log: the client takes the whole current document."
+          }
+        },
+        "required": [
+          "name",
+          "entries",
+          "since_found",
+          "current",
+          "whole"
+        ]
+      },
+      "PointerWrite": {
+        "type": "object",
+        "description": "A pointer write.",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "The head the writer read. Empty on create."
+          },
+          "kind": {
+            "type": "string",
+            "description": "The document kind. Required when the pointer does not exist. Ignored otherwise."
+          },
+          "client": {
+            "type": [
+              "object",
+              "array"
+            ],
+            "x-document": "edit_records",
+            "description": "For kind edit_records: the client's edit document. Required for that kind. A client on an older build sends version 1, a bare array of records."
+          },
+          "document": {
+            "type": "string",
+            "description": "For other kinds: the raw document text, stored verbatim. Required for those kinds."
+          },
+          "document_hash": {
+            "type": "string",
+            "description": "Optional. The store asserts it against the sha256 of the bytes."
+          }
+        }
+      },
+      "PointerCommit": {
+        "type": "object",
+        "description": "The new head after a commit.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "hash",
+          "seq"
+        ]
+      },
+      "Conflict": {
+        "type": "object",
+        "description": "The pointer moved since the writer read it. Re-read and retry.",
+        "properties": {
+          "current": {
+            "type": "string",
+            "description": "The current head hash."
+          },
+          "seq": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "current",
+          "seq"
+        ]
+      },
+      "Refusals": {
+        "type": "object",
+        "description": "The module's refusals. The write is not stored.",
+        "properties": {
+          "refusals": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "refusals"
+        ]
+      },
+      "Issues": {
+        "type": "object",
+        "description": "cap-plans refuses the change.",
+        "properties": {
+          "issues": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "issues"
+        ]
+      },
+      "PlansPublished": {
+        "type": "object",
+        "description": "The published pick.",
+        "properties": {
+          "plan_id": {
+            "type": "string"
+          },
+          "network_hash": {
+            "type": "string"
+          },
+          "plans_hash": {
+            "type": "string"
+          },
+          "warnings": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object"
+            },
+            "description": "The network's warnings, then each visited stop not in service over the pick's period."
+          }
+        },
+        "required": [
+          "plan_id",
+          "network_hash",
+          "plans_hash",
+          "warnings"
+        ]
+      },
+      "PlansHash": {
+        "type": "object",
+        "properties": {
+          "plans_hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "plans_hash"
+        ]
+      },
+      "StopsHash": {
+        "type": "object",
+        "properties": {
+          "stops_hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "stops_hash"
+        ]
+      },
+      "RequestsHash": {
+        "type": "object",
+        "properties": {
+          "requests_hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requests_hash"
+        ]
+      },
+      "NotConfigured": {
+        "type": "object",
+        "description": "The server has no backend for this service.",
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "const": false
+          }
+        },
+        "required": [
+          "configured"
+        ]
+      },
+      "WorkOrder": {
+        "type": "object",
+        "description": "The work order system's answer, in the request's terms.",
+        "properties": {
+          "system": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "read_on": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "WorkOrderResult": {
+        "type": "object",
+        "properties": {
+          "requests_hash": {
+            "type": "string"
+          },
+          "work_order": {
+            "$ref": "#/components/schemas/WorkOrder"
+          }
+        },
+        "required": [
+          "requests_hash",
+          "work_order"
+        ]
+      },
+      "Attachment": {
+        "type": "object",
+        "description": "A stored attachment.",
+        "properties": {
+          "hash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/webp",
+              "image/heic",
+              "image/heif",
+              "application/pdf"
+            ]
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 26214400
+          }
+        },
+        "required": [
+          "hash",
+          "type",
+          "bytes"
+        ]
+      },
+      "BuildMoved": {
+        "type": "object",
+        "properties": {
+          "build": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "build",
+          "seq"
+        ]
+      },
+      "Permissions": {
+        "type": "object",
+        "description": "The policy projected onto the caller.",
+        "properties": {
+          "roles": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "capabilities": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object",
+              "properties": {
+                "pointer": {
+                  "type": "string"
+                },
+                "actions": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "pointer",
+                "actions"
+              ]
+            }
+          }
+        },
+        "required": [
+          "roles",
+          "capabilities"
+        ]
+      },
+      "Readiness": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "degraded",
+              "unavailable",
+              "draining"
+            ]
+          },
+          "store": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "stale",
+              "unavailable",
+              "none"
+            ]
+          },
+          "store_as_of_ms": {
+            "type": "integer",
+            "description": "When the bucket last confirmed the head. Present while store is stale."
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "store"
+        ]
+      },
+      "NetworkImport": {
+        "type": "object",
+        "description": "cap-network's import answer for the configured feed, served as it is.",
+        "properties": {
+          "network": {
+            "type": "object",
+            "x-document": "network",
+            "description": "The imported network document."
+          },
+          "boundary": {
+            "type": "object",
+            "x-document": "boundary",
+            "description": "The feed's numbering that the live feeds name."
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "network_hash": {
+            "type": "string"
+          },
+          "boundary_hash": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_service_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          }
+        },
+        "required": [
+          "network",
+          "boundary",
+          "notes",
+          "network_hash"
+        ]
+      },
+      "Service": {
+        "type": "object",
+        "description": "Where a page asks an external service on this origin.",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "query": {
+            "type": "object",
+            "description": "The query policy the path applies, by op (parameter to value)."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "ManifestAuth": {
+        "type": "object",
+        "description": "How a page signs in.",
+        "properties": {
+          "issuer": {
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "issuer",
+          "client_id",
+          "scope"
+        ]
+      },
+      "Manifest": {
+        "type": "object",
+        "description": "The pins of the published set.",
+        "properties": {
+          "network_hash": {
+            "type": "string",
+            "description": "Empty when no feed is configured."
+          },
+          "boundary_hash": {
+            "type": "string"
+          },
+          "feed_url": {
+            "type": "string"
+          },
+          "feed_hash": {
+            "type": "string",
+            "description": "sha256:<hex> of the GTFS zip. Empty when no feed is configured."
+          },
+          "feed_version": {
+            "type": "string"
+          },
+          "streets_hash": {
+            "type": "string"
+          },
+          "walks_hash": {
+            "type": "string"
+          },
+          "wasm_hash": {
+            "type": "string",
+            "description": "The hash of the sync module this server runs."
+          },
+          "authz_hash": {
+            "type": "string"
+          },
+          "policy_hash": {
+            "type": "string"
+          },
+          "plans_hash": {
+            "type": "string"
+          },
+          "stops_hash": {
+            "type": "string"
+          },
+          "stop_requests_hash": {
+            "type": "string"
+          },
+          "build_hash": {
+            "type": "string"
+          },
+          "generated_at": {
+            "type": "integer",
+            "description": "Unix seconds when this manifest was built."
+          },
+          "publisher": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "auth": {
+            "$ref": "#/components/schemas/ManifestAuth"
+          },
+          "services": {
+            "type": "object",
+            "description": "The external services this deployment offers. A service it does not list is off.",
+            "properties": {
+              "geocoder": {
+                "$ref": "#/components/schemas/Service"
+              },
+              "attachments": {
+                "$ref": "#/components/schemas/Service"
+              },
+              "work_orders": {
+                "$ref": "#/components/schemas/Service"
+              }
+            }
+          }
+        },
+        "required": [
+          "network_hash",
+          "feed_hash",
+          "wasm_hash",
+          "generated_at"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "The IdP's JWT (RS256 or ES256). Required only when sign-in is on."
+      }
+    }
+  }
+}

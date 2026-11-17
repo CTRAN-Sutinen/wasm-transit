@@ -69,9 +69,11 @@ stop display keeps a URL parameter it does not know. What is left:
      (`{"kind":"plan_set","schema_version":N,"plans":[…]}`, not a bare
      array); `work_rules` names its version `schema_version`, as every
      other kind does; the watchlist joins `registry/documents.json`;
-     the Go host's `manifest` and `build` get hand-written schemas,
-     locked in `server/`, checked by a Go test against what the server
-     emits, and indexed as host-owned. The storage model's shape
+     the Go host's `build` gets a hand-written schema, locked in
+     `server/`, checked by a Go test against what the server emits,
+     and indexed as host-owned. The `manifest`'s schema is the HTTP
+     contract's (`docs/architecture/release-artifacts.md`, "The HTTP
+     contract"). The storage model's shape
      changes land in the same window
      ([storage-model.md](storage-model.md), item 1; D-166, D-167), as
      does the canonical form (D-169).
@@ -119,8 +121,8 @@ stop display keeps a URL parameter it does not know. What is left:
      order, with the backup rule (a backup restores into a build at
      least as new as it) and the archive's two readings (as it was,
      the default for an audit; as it is today, through the archive
-     piece). Rolling the CODE back is
-     [release-artifacts.md](release-artifacts.md)'s; both follow this
+     piece). Rolling the CODE back is in
+     `docs/architecture/release-artifacts.md`; both follow this
      policy.
 
 ## Done when

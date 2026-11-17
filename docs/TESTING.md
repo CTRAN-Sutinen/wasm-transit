@@ -161,7 +161,13 @@ and before a release.
    (`crates/cap-abi/independence.mjs`) re-runs every worked example
    inside each UI's assembly. An op whose answer leans on a derived
    entry that another capability computed fails it.
-3. **A Go round-trip test** if server-visible behavior changes.
+3. **A Go round-trip test** if server-visible behavior changes. A new
+   or changed route, method, parameter, or body also changes
+   `server/openapi.json`, the HTTP contract. The Go test binary checks
+   every request a test sends and every response it reads against it,
+   and a whole run must reach every operation it names. The change must
+   pass the compatibility gate against `server/openapi.lock.json`
+   (docs/architecture/release-artifacts.md, "The HTTP contract").
 4. **Playwright e2e for user-visible flows.** Svelte components should
    not need changes when only the ABI underneath changes.
    The spec answers external services with `page.route`:

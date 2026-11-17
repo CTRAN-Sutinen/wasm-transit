@@ -772,15 +772,34 @@ _host-tests:
     # (server/compile_test.go; WASM_TEST_CACHE=off compiles afresh).
     cd server && go test -race ./...
 
+# A UI at its own URL (D-171; docs/architecture/release-artifacts.md,
+# "Each UI at its own URL"; DEPLOYMENTS-SERVER.md): one of the UI's
+# logged builds (build.<id>, from the server's -ui-dist), written out
+# to OUT for the UI's host. The head unless BUILD names one. OUT must be
+# absent or empty. A rollback is POST /builds?ui=<id>, then this again.
+#
+#   just ui-deploy https://transit.agency.example stops out/stops
+ui-deploy server ui out build="":
+    node tools/ui-deploy.mjs "{{ server }}" "{{ ui }}" "{{ out }}" {{ if build == "" { "" } else { quote(build) } }}
+
+# The HTTP contract's lock (D-81; docs/architecture/release-artifacts.md,
+# "The HTTP contract"): server/openapi.json copied to
+# server/openapi.lock.json once the compatibility gate passes. Run it
+# when a release ships, never to make a breaking change pass.
+http-lock:
+    cd server && go test -count=1 -run 'TestTheContractIsCompatibleWithTheLock|TestEveryRouteIsInTheContract' .
+    cp server/openapi.json server/openapi.lock.json
+
 # Browser e2e (Chromium via Playwright, against the Go server).
 # Builds first; the runner starts the server unless :8080 is taken.
 # For UI-visible changes: each generated UI's spec, the picker, and
 # the published-network spec (module surfaces as the UIs read them).
-e2e: caps build (build-ui "ride-now") (build-ui "stop-display")
+e2e: caps build (build-ui "ride-now") (build-ui "stop-display") (build-ui "stops") (build-ui "service-change")
     cd web && npx playwright test
 
 # The edit loop's browser runner: `e2e` over the wasm-fast modules
-# (`caps-fast`), the pages and the two rider UIs built alone over them,
+# (`caps-fast`), the pages, and the UIs the specs serve alone (the two
+# rider UIs, and the stops and service-change UIs at their own origins),
 # with Playwright's arguments passed through — one spec, one test by
 # name, or every spec when none is given:
 #   just e2e-fast e2e/ui-stops.spec.mjs
@@ -788,7 +807,7 @@ e2e: caps build (build-ui "ride-now") (build-ui "stop-display")
 # Not the gate: `just e2e` (release modules) is.
 e2e-fast *args: caps-fast types
     cd web && npm run typecheck && npm run build
-    cd web && UI=ride-now npx vite build && UI=stop-display npx vite build
+    cd web && for ui in ride-now stop-display stops service-change; do UI=$ui npx vite build || exit 1; done
     cd web && npx playwright test {{ args }}
 
 # Both runners — for changes that touch both sides.
@@ -941,7 +960,8 @@ store +args:
 
 # The server as one container image, built with ko (no Dockerfile):
 # the Go binary on a distroless base, with the server's modules
-# (web/pkg/), the pages (web/dist), and the geocoder policy in
+# (web/pkg/), the pages (web/dist), each UI's own bundle
+# (web/dist-ui/<id>, for -ui-dist), and the geocoder policy in
 # server/kodata/, which ko copies into the image at $KO_DATA_PATH.
 # The flags' defaults find them there, and the listen address is
 # :8080, so the image runs with only its deployment's flags (-store,
@@ -949,15 +969,20 @@ store +args:
 # `podman load`; with a repo (ghcr.io/agency/transit-server) it pushes
 # linux/amd64 and linux/arm64 under the tag. Operator's guide:
 # DEPLOYMENTS-SERVER.md.
-server-image repo="" tag="latest": caps build
+server-image repo="" tag="latest": caps build (build-ui "ride-now") (build-ui "stop-display") (build-ui "stops") (build-ui "service-change") (build-ui "service-design")
     #!/usr/bin/env bash
     set -e
     rm -rf server/kodata
-    mkdir -p server/kodata/pkg
+    mkdir -p server/kodata/pkg server/kodata/dist-ui
     for cap in sync network streets authz plans migrate stops requests; do
         cp "web/pkg/cap_$cap.wasm" server/kodata/pkg/
     done
     cp -r web/dist server/kodata/dist
+    # Each UI's own bundle, for -ui-dist <id>=/var/run/ko/dist-ui/<id>
+    # (each UI at its own URL, D-171).
+    for ui in ride-now stop-display stops service-change service-design; do
+        cp -r "web/dist-ui/$ui" "server/kodata/dist-ui/$ui"
+    done
     cp server/geocoder.json server/kodata/
     cd server
     if [ -z "{{ repo }}" ]; then

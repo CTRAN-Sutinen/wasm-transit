@@ -204,7 +204,11 @@ Its HTTP surface:
 - `/builds`: `POST {"build": "<hash>"}` moves the `build` pointer to a
   build that its log holds. This is a rollback, or a move forward again
   (store mode; docs/FORMATS.md, "Builds"). It is a write, protected
-  like the others.
+  like the others. `POST /builds?ui=<id>` moves one UI's pointer,
+  `build.<id>`, instead. `-ui-dist <id>=<dir>,…` names each UI's
+  bundle, which the server commits to that pointer as it commits
+  `-dist` ([release-artifacts.md](release-artifacts.md), "Each UI at
+  its own URL").
 - `/rt?url=<encoded>`: a dev relay. The route exists only with
   `-rt-proxy` (`server/dev.toml` turns it on; D-67). It fetches an
   http(s) feed (15 s timeout, 32 MB cap). It returns the feed with CORS
@@ -326,6 +330,11 @@ Its HTTP surface:
   - The reverse proxy throttles repeated 401s.
   - A browser gets and refreshes its IdP token on its own. It presents
     the token on writes only.
+- **The HTTP contract** is `server/openapi.json` (D-81). It names every
+  route, method, parameter, and body this section describes. Go tests
+  hold it to the real server, and a gate holds each change to expand,
+  then contract ([release-artifacts.md](release-artifacts.md), "The
+  HTTP contract").
 - `/edits`: the edit document. `POST` a client document and receive the
   LWW-merged result (cap-sync's `sync_edits`). The receive path clamps
   client timestamps to the server clock (D-56). `GET` reads the
@@ -518,7 +527,7 @@ reading **Because**.
 - **Decided:** D-58, D-59, D-60, D-61.
 
 ### Attachments live apart and are read only signed in (`attachments.go`, `-attachments`)
-- **Holds:** photos and drawings sit in a bucket of their own, and each object is named by its content hash. A record names a file only by that hash, never a URL. The server hands out the bytes to a signed-in person whenever sign-in is on, unlike every other read.
+- **Holds:** photos and drawings sit in a bucket of their own, and each object is named by its content hash. A record names a file only by that hash, never a URL. The server hands out the bytes to a signed-in person whenever sign-in is on, unlike every other read. Only `POST /attachments` adds a file, behind the write check on `attachments`. `/attachments/<hash>` is behind sign-in alone, so it only reads (405 for any other method).
 - **Because:** files are large, and their access and keeping differ from the documents'. A URL would tie every record to one provider and bucket name (the infrastructure must not couple to one store or provider). A hash keeps a record portable and shows a swapped file. A site drawing can show parcels and private property, and a photo can catch people. The deployment is internal-facing, and its attachments are staff's to see.
 - **Rejected:** URLs in the records. Attachments among the store's blobs. Public reads.
 - **Decided:** D-162.
