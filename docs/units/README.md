@@ -42,7 +42,7 @@ work; a group is only a way to find them.
 | unit | what it is |
 |---|---|
 | [observability-rollout.md](observability-rollout.md) | what production runs and whether it is healthy; a display's automatic revert |
-| [perf-harness.md](perf-harness.md) | `just perf`: compare runs, fail on runaway use, every UI measured |
+| [perf-harness.md](perf-harness.md) | `just perf`: compare runs, fail on runaway use, every UI and the server measured; the server's memory tuned |
 | [web-conformance.md](web-conformance.md) | the generated UIs held to WCAG 2.2 AA and current web practice: the stops and service-change pages under the gate, route text color, a screen reader by hand |
 
 ### The agency's record

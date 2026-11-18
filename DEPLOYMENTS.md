@@ -121,6 +121,8 @@ later deployment.
 ### Create the live-feeds file
 
 Create `deploy/live-feeds.json` with the agency's GTFS-realtime feeds.
+The repository ignores the `deploy/` folder, so nothing in it (feed
+addresses, Cloudflare settings) is committed by accident.
 Both apps can use the same file. Any of the three may be left out:
 
 ```json
@@ -381,7 +383,14 @@ export again.
 
 ## 7. Set up the screens and phones
 
-**Stop displays.** Open the stop display's address on the screen. With
+**Stop displays.** First, make sure each screen keeps the right time.
+A display works out its departures from the device's clock, so a wrong
+clock shows wrong departures. Turn on network time (NTP), and check the
+time after the first boot. A Raspberry Pi has no battery to keep its
+clock: after a power cut with no network, it starts with the time it
+had when it shut down. Also turn off screen blanking and power saving.
+
+Open the stop display's address on the screen. With
 no stop chosen, it opens its setup: pick the stop and a layout. The
 page's address then holds both, for example
 `https://HOST/stop-display.html?stop=…&layout=routes`. Set that address

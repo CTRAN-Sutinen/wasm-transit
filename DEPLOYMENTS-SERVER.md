@@ -142,6 +142,14 @@ podman run -d --name transit-server -p 8080:8080 \
 The server listens on port 8080. Put TLS (HTTPS) in front of it at
 the load balancer.
 
+**Memory.** With C-TRAN's feed and its county roads street layer
+(99 MB), the server needs about 5 GB while it imports them at startup,
+and about 0.7 GB after that. Give the container at least 6 GB, and set
+`GOMEMLIMIT` to about 1 GB less than the container's limit (for
+example `-e GOMEMLIMIT=5GiB`). Without it, the server keeps memory it
+no longer uses for several minutes, and appears to need about 3 GB at
+rest. Without a street layer, about 1.5 GB is enough.
+
 The options you are most likely to use:
 
 | Option | What it does |
@@ -188,6 +196,18 @@ a one-off change. If the file has a name the server does not know, it
 stops at once and the log names the file and the line's name. A file
 path written in the file is read from the file's own folder.
 
+**Watch it.** The server writes its log to standard output, one line
+for each event. Send it to the platform's log store, and alert on
+these:
+
+- `/readyz` answers anything other than `ready` for more than 5
+  minutes ([section 7](#7-run-it-behind-a-load-balancer) says what each
+  answer means);
+- a log line that starts with `DEV STORE` or `auth OFF` in production;
+- a log line that starts with `authz deny`, when it repeats for one
+  person (they lack a role, or someone is trying their luck);
+- the container restarting.
+
 **Check it.** Open `https://<your address>/readyz`. It should say
 `{"status":"ready","store":"ok"}`. Then open the address itself: the
 start page lists the apps.
@@ -197,9 +217,12 @@ bucket. Edits are kept in memory and lost when it stops. Add `-store`.
 
 ## 6. Turn on sign-in
 
-Without sign-in, anyone who can reach the server can enter detours.
-The log says `auth OFF` at startup. Turn sign-in on before staff use
-it.
+**Do not let the internet reach the server until sign-in is on.**
+Without sign-in, anyone who can reach the server can change anything:
+publish a schedule, change the stops record, enter detours, and roll
+the apps back to an earlier version. The log says `auth OFF` at
+startup. Until sign-in is on, keep the server on a private network that
+only staff can reach.
 
 1. Register the server with your sign-in provider. Note the
    **issuer**, the **audience** (client ID), and the address of its
