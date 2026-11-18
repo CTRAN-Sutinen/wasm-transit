@@ -29,7 +29,8 @@ The engine assumes only that contract. It assumes no append, rename,
 fsync, or lock. The in-memory backend and the S3, Azure Blob and GCS
 adapters (`s3.go`, `azure.go`, `gcs.go`) all pass one contract suite
 (`contract_test.go`). `just store-contract` runs that suite and every
-engine law against local SeaweedFS, Azurite and fake-gcs-server.
+engine law against local SeaweedFS, Azurite and fake-gcs-server, or
+against one store's address (an operator's own bucket).
 
 - **Blobs** are `blobs/<hex>` objects. Each blob is immutable. Each
   carries its typed envelope (kind, schema version, producer) as

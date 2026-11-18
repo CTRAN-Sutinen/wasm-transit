@@ -6,9 +6,7 @@ D-63 every display applies a new build at its next poll, so a bad
 build reaches every stop at once. Publishing a pick has the same blast
 radius: it reaches every rider at midnight on its date. This unit
 makes each deployed part report what it runs and whether it is
-healthy, and gives a display a revert that needs no person.
-[deploy-rider-apps.md](deploy-rider-apps.md) depends on it for its
-heartbeat and revert. Staged rollout (canary rings) is not this
+healthy, and gives a display a revert that needs no person. Staged rollout (canary rings) is not this
 unit's (D-84: not needed now; `docs/units/README.md`, "Queued, not
 yet scoped").
 
@@ -71,6 +69,5 @@ yet scoped").
   window after build B reverts to A by itself, does not apply B
   again, and reports the revert; a failed feed fetch does not revert
   it; a failure past the window is reported, not reverted.
-- A C-TRAN dogfood on a Pi 4 display (with
-  [deploy-rider-apps.md](deploy-rider-apps.md)): the fleet view shows
-  it across a republish and a pick's effective date.
+- A C-TRAN dogfood on a Pi 4 display: the fleet view shows it across
+  a republish and a pick's effective date.

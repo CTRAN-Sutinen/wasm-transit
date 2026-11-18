@@ -113,6 +113,19 @@ provider's lock that stops anything being deleted for that time (S3
 Object Lock, Azure immutability policies, or a GCS bucket lock). The
 server works with it.
 
+Choose the provider your agency already uses. The server works the same
+on each. Before you go live, check your provider with the store's own
+test suite. Run it from a checkout of the repository, against a
+separate prefix that the server never uses, with credentials that can
+delete (the suite cleans up after itself):
+
+```
+just store-contract 's3://agency-transit/contract-check?region=us-west-2'
+```
+
+It must end with `ok`. Run it again if you move to another provider or
+region.
+
 ## 5. Run it
 
 A minimal production command, with Podman:

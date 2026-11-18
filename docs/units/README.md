@@ -41,7 +41,6 @@ work; a group is only a way to find them.
 
 | unit | what it is |
 |---|---|
-| [deploy-rider-apps.md](deploy-rider-apps.md) | ride-now and the stop display beyond localhost: the units it waits on, the agency's feed fixes (HTTPS, CORS, caching, start_date), a real deployment checked, and the Pi 4 and phone dogfood |
 | [observability-rollout.md](observability-rollout.md) | what production runs and whether it is healthy; a display's automatic revert |
 | [perf-harness.md](perf-harness.md) | `just perf`: compare runs, fail on runaway use, every UI measured |
 | [web-conformance.md](web-conformance.md) | the generated UIs held to WCAG 2.2 AA and current web practice: the stops and service-change pages under the gate, route text color, a screen reader by hand |
@@ -51,7 +50,7 @@ work; a group is only a way to find them.
 | unit | what it is |
 |---|---|
 | [offline-apps.md](offline-apps.md) | every generated UI offline: the staff pages installed and updated like the rider pages, and their writes queued on the device and sent when the server answers |
-| [store-durability.md](store-durability.md) | the sync store's contract run on each provider's real account, and a restore proved |
+| [store-durability.md](store-durability.md) | a restore of a C-TRAN-sized store proved |
 | [storage-model.md](storage-model.md) | a layout per shape of data: collections record by record, the kind table and governed writes, a self-describing bucket, projections, permissions per change |
 
 ### Stops and streets

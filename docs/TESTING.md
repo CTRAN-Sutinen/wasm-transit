@@ -59,8 +59,9 @@ backend contract and every engine law against real object stores.
 `just store-dev` starts SeaweedFS, Azurite and fake-gcs-server in
 podman. Run `just store-contract` for changes to `server/store/` or an
 adapter. `just test` runs the same laws on `mem://`. A managed
-provider's bucket runs the same way (`STORE_TEST_URL` and its
-credentials). The store-durability unit records that run.
+provider's bucket runs the same way: `just store-contract URL`, with
+the provider's credentials. That is the operator's check before going
+live (`DEPLOYMENTS-SERVER.md`, "Prepare the bucket").
 
 **The edit loop.** `just test-fast` runs every suite and gate `just
 test` runs, over the `wasm-fast` modules (`just caps-fast`: release

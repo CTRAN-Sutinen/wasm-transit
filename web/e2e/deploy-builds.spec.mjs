@@ -1,6 +1,6 @@
-// The app's build and offline — one lifecycle (docs/units/
-// deploy-rider-apps.md, D-63, D-65; web/service-worker.js, kit's "the
-// app's build"):
+// The app's build and offline — one lifecycle
+// (docs/architecture/updates-offline.md, D-63, D-65;
+// web/service-worker.js, kit's "the app's build"):
 //
 //   1. Both rider pages boot OFFLINE from the service worker — the
 //      shell and modules precached, the last network kept — and answer

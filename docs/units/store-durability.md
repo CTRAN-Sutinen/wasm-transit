@@ -3,9 +3,9 @@
 The sync store (`server/store/`; the layout and protocol in
 `docs/FORMATS.md`, the model in `docs/architecture/storage.md`) runs over object storage — S3, Azure Blob, GCS (D-113) —
 with offline GC, boot sources, and degraded mode. Which provider a
-deployment runs on is open (D-116); the engine favors none. What is
-left: the contract run on each provider's real account and a backup
-the agency can restore. How each shape of data is laid out in the
+deployment runs on is the operator's choice (D-116), and the operator
+checks it with `just store-contract URL`; the engine favors none. What
+is left: a backup the agency can restore. How each shape of data is laid out in the
 bucket — the edits among them — is [storage-model.md](storage-model.md).
 
 The north star for every choice here: a transit agency runs 24/7 or
@@ -40,7 +40,8 @@ decade at a busy agency's edit rate; the two decisions bound it.
 `just store-contract` runs the contract suite and every engine law
 (20 laws) against each endpoint; `just test` runs them on `mem://`.
 The local endpoints are for validation only — none is a production
-choice, and none has a code path of its own.
+choice, and none has a code path of its own. An operator runs the same
+suite against their own bucket (`just store-contract URL`).
 
 | Endpoint | Release | Date | Result |
 |---|---|---|---|
@@ -50,12 +51,7 @@ choice, and none has a code path of its own.
 
 ## Scope
 
-1. **The real accounts.** The contract suite against S3, Azure Blob
-   and GCS proper (`STORE_TEST_URL` and each provider's credentials),
-   recorded above — no one of them privileged (D-116). Azure lists
-   from a key with `StartFrom` and filters client-side; a run against
-   a real account says whether a pointer's refresh stays one page.
-2. **Restore, proved.** Where the copies go and how often is the
+1. **Restore, proved.** Where the copies go and how often is the
    operator's choice, made with the provider's own tools (D-82):
    bucket versioning and replication, a periodic copy to a second
    bucket, or both. The repo's part is that a copy works. Every object
@@ -69,8 +65,6 @@ choice, and none has a code path of its own.
 
 ## Done when
 
-- The contract suite passes on each managed provider's real account,
-  recorded under "Contract runs".
 - A backup of a C-TRAN-sized store, restored into a fresh bucket,
   verifies, and a server started on it serves the same manifest, plan
   set, and edit document. `DEPLOYMENTS-SERVER.md` names the

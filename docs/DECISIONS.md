@@ -169,7 +169,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-113 | Where does the sync store live in production? | decided | nothing |
 | D-114 | What does the clock answer in the hour before a fall-back day's anchor? | encoded | nothing |
 | D-115 | Must a document be readable without the app? | decided | nothing |
-| D-116 | Which managed object store does a deployment run on? | unanswered | the deployment runbook in `store-durability` |
+| D-116 | Which managed object store does a deployment run on? | decided | nothing |
 | D-117 | Who deletes from the store, and when? | decided | nothing |
 | D-118 | Where does a server read its inputs at boot? | decided | nothing |
 | D-119 | What does the server serve when the store is unreachable? | decided | nothing |
@@ -2663,7 +2663,14 @@ Why: `docs/architecture/storage.md`, Why, "Object storage, create-only".
 Blocks: nothing (`docs/units/store-durability.md` carries the work).
 
 ### D-116 — Which managed object store does a deployment run on?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-18 — the operator's concern, not this repo's. The user,
+on treating the store's provider and its real-account check like the
+backups (D-82): "yes". The agency picks S3, Azure Blob, or GCS with its
+own infrastructure. The engine favors none. Before going live, the
+operator runs the store's contract suite against their own bucket
+(`just store-contract URL`; `DEPLOYMENTS-SERVER.md`, "Prepare the
+bucket").
 Context: 2026-11-06, the user: "the decision between S3/Blob/GCS is
 open, so i don't want that locked." The engine is provider-neutral
 (D-113's contract), and each adapter passes one contract suite, so the
@@ -2673,9 +2680,7 @@ adapter is built first only because the dev endpoints speak the S3
 API; that order picks nothing for production.
 Options: AWS S3; Azure Blob; GCS — each needs only its adapter passing
 the contract suite against a real account.
-Blocks: the deployment runbook and the restore drill in
-`docs/units/store-durability.md` (they name a provider's replication,
-versioning and immutability settings); nothing in the engine.
+Blocks: nothing.
 
 ### D-117 — Who deletes from the store, and when?
 State: Decided.
@@ -3350,7 +3355,7 @@ local. On the day the clocks go back that anchor is 01:00 daylight
 time, so 00:00–01:00 is before the day's first second; seconds cross
 every boundary unsigned (AGENTS.md). The exact answer is the previous
 service day at 24:00–25:00, which a board cannot read until it reads
-two days (`docs/units/deploy-rider-apps.md`).
+two days (the `deploy-rider-apps` unit; its file is in git).
 Options:
 - **The day's first second (encoded):** the date is the calendar
   date, the seconds 0. A board in that hour starts at the day's first

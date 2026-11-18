@@ -276,7 +276,8 @@ just store verify|gc|copy|revert … # the store's offline tools (server/cmd/sto
                            # version back")
 just store-dev             # local object stores in podman: SeaweedFS (:8333, the one to
                            # serve over), Azurite, and fake-gcs-server (store-dev-stop)
-just store-contract        # the store's laws against each of them (opt-in, never in
+just store-contract [URL]  # the store's laws against each of them, or against URL alone
+                           # (an operator's own bucket) (opt-in, never in
                            # `just test`)
 just dev                   # vite hot reload, with the server beside it
 just qa [feed.zip]         # the UI QA loop: modules under wasm-fast, a server on the

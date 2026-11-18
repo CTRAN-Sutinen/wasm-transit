@@ -1062,12 +1062,19 @@ store-dev-stop:
 
 # The store's laws — the backend contract and every engine law — run
 # against each local store (`just store-dev` first), each test under its
-# own fresh prefix. Opt-in, never in `just test`; a managed provider's
-# bucket runs the same way with STORE_TEST_URL and its credentials.
-store-contract:
+# own fresh prefix. Opt-in, never in `just test`. With URL, they run
+# against that store alone, with the provider's usual credentials: an
+# operator's check of their own bucket before going live
+# (DEPLOYMENTS-SERVER.md, "Prepare the bucket").
+store-contract URL="":
     #!/usr/bin/env bash
     set -euo pipefail
     cd server
+    if [ -n "{{ URL }}" ]; then
+      echo "== {{ URL }}"
+      STORE_TEST_URL='{{ URL }}' go test -race -count=1 ./store/
+      exit 0
+    fi
     echo "== s3 (SeaweedFS)"
     {{ store_dev_env }} STORE_TEST_URL='s3://transit/contract?endpoint=http://127.0.0.1:8333' \
       go test -race -count=1 ./store/

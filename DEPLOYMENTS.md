@@ -138,6 +138,16 @@ the boards show the timetable instead. This is set on the feed's
 server, usually by the agency's CAD/AVL vendor.
 [Section 11](#11-troubleshooting) shows how to check a feed.
 
+Two more settings on the feed's server matter at scale:
+
+- **A short cache time.** `Cache-Control: max-age=` about the feed's
+  refresh interval (for example 15 seconds). Then a CDN in front of the
+  feed answers the many screens and phones that ask for the same bytes.
+- **Each trip's start date.** Trip updates should give each trip's
+  `start_date`. A trip that runs past midnight is then read as part of
+  the day it started. Without it, the apps read the trip as part of the
+  current service day.
+
 > Do not use the `live-feeds.json` in `web/public/`. It is a development
 > copy that sends feeds through a local relay (`"proxy": "/rt"`) that a
 > static site does not have.
@@ -347,11 +357,27 @@ curl -sI https://HOST/ride-now.html | head -1
 # The page's security headers: expect a content-security-policy and a
 # permissions-policy line.
 curl -sI https://HOST/ride-now.html | grep -iE 'content-security-policy|permissions-policy'
+
+# The schedule engine arrives compressed: expect a content-encoding line
+# (gzip or br). Take a file name from the caps/ folder of the export.
+curl -sI -H 'Accept-Encoding: gzip, br' https://HOST/caps/FILE.wasm | grep -i content-encoding
 ```
+
+If the last check prints nothing, the host does not compress `.wasm`
+files. The app still works, but a first visit downloads about 5 MB of
+engine instead of about 1.5 MB. Turn on compression for
+`application/wasm` in the host's settings.
 
 Then open `https://HOST/` in a browser. It opens the app. For
 ride-now, the nearby stops and their next departures should appear
 within a few seconds.
+
+Open the browser's developer console while the app loads a stop, its
+live departures, and the map. Do this once on a phone and once on a
+stop display. A message that a request was blocked by the
+`Content-Security-Policy` means the policy does not name a host the
+app needs. Check that `live-feeds.json` names that host, and run the
+export again.
 
 ## 7. Set up the screens and phones
 
@@ -507,7 +533,7 @@ header on each indented line. These are the rules.
 | `/manifest` | `Content-Type: application/json` | The file has no extension. |
 | Every file | `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin` | A browser must not guess a file's type, and must not tell other sites which page the rider came from. |
 | `/ride-now.html`, `/stop-display.html` | `Content-Security-Policy` and `Permissions-Policy`, exactly as the export wrote them | The page may load and connect only to the hosts it needs. |
-| Text and `.wasm` files | Compress with gzip (or Brotli) | Ride-now's schedule engine is 5 MB, and about 1.5 MB compressed. Cloudflare compresses text types. Check on a real deployment that it also compresses `application/wasm`. |
+| Text and `.wasm` files | Compress with gzip (or Brotli) | Ride-now's schedule engine is 5 MB, and about 1.5 MB compressed. [Section 6](#6-check-the-deployment) checks it. |
 | `/blobs/*.gz` | No `Content-Encoding`, and no second compression | The app decompresses these files itself. |
 
 Do not put a policy on `index.html`. It runs one small script that

@@ -227,7 +227,7 @@ test("the display runs one linked module, holding the network once", async ({ pa
   expect(networks).toHaveLength(1);
 });
 
-// The deployment (docs/units/deploy-rider-apps.md): a display reads
+// The deployment (docs/architecture/updates-offline.md): a display reads
 // the AGENCY's clock (the zip's zone, as the manifest names it for a
 // served network), stops polling while hidden, and when a live feed
 // stops answering it keeps its board, read from the schedule and

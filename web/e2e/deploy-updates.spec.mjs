@@ -1,5 +1,5 @@
-// An open page follows the deployment (docs/units/deploy-rider-apps.md,
-// D-63): a stop display stays open for weeks and a rider's tab for
+// An open page follows the deployment
+// (docs/architecture/updates-offline.md, D-63): a stop display stays open for weeks and a rider's tab for
 // days, so on the poll they already run both pages revalidate the
 // manifest, and a new network in force — a republish, a new pick, or
 // the date crossing a pick's effective date — re-pins WITHOUT a

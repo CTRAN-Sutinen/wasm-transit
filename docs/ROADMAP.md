@@ -51,8 +51,8 @@ The planner publishes from the service-design UI (or `caps-run --post`).
 The planner retires a pick that has not taken effect (D-75). The server
 serves the pick in force as GTFS (`GET /feed`).
 
-**Needs:** nothing. It runs. A deployment beyond localhost is
-`docs/units/deploy-rider-apps.md`.
+**Needs:** nothing. It runs. A deployment beyond localhost follows
+`DEPLOYMENTS.md` and `DEPLOYMENTS-SERVER.md`.
 
 **Unblocks:** 6, and multi-client deployments at all.
 
