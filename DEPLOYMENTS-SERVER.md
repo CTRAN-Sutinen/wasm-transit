@@ -522,12 +522,20 @@ image.
   with who made it. Those changes stay in the bucket. A person enters
   them again by hand in the app.
 
-- **Backups.** Every file in the bucket is written once and never
-  changed, so a copy is simple. Copy the `pointers/` folder first,
-  then `blobs/`. To restore, point the server at the copy and run
-  `just store verify` on it. Restore a backup only into the same version
-  of the app or a newer one. An older version refuses data that a newer
-  one wrote. Where backups go and how often is still being decided.
+- **Backups.** Choose where copies go and how often with your
+  provider's own tools: bucket versioning and replication to a second
+  site, a regular copy to a second bucket that the server's credentials
+  cannot change, or both. Every file in the bucket is written once and
+  never changed, so a copy is simple. Copy the `pointers/` folder
+  first, then `blobs/`. To restore, point the server at the copy and
+  run `just store verify` on it. Restore a backup only into the same
+  version of the app or a newer one. An older version refuses data
+  that a newer one wrote.
+
+  Practice a restore before you rely on it, and again after each
+  change to how you take copies: restore into a new, empty bucket, run
+  `just store verify` on it, start a server on it, and check that the
+  apps show the same schedule and detours.
 
 ## 12. Troubleshooting
 

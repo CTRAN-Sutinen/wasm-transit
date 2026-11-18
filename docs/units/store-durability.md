@@ -55,17 +55,17 @@ choice, and none has a code path of its own.
    recorded above — no one of them privileged (D-116). Azure lists
    from a key with `StartFrom` and filters client-side; a run against
    a real account says whether a pointer's refresh stays one page.
-2. **Backup and restore** (Blocked: D-82, where the copies go and how
-   often). Cross-region replication is asynchronous on every provider,
-   so one bucket takes the writes and any replica serves reads and
-   backup only. Every object is create-only, so a copy taken records
-   first, then the blobs they name, is consistent, and blobs copy
-   incrementally by key. Restore points the server at the copy and
-   runs `store verify`. The bucket can carry the provider's
-   immutability (S3 Object Lock, Azure immutability policies, GCS
-   bucket lock) for the agency's retention period — serving processes
-   never delete, and `store gc` keeps what retention refuses. A
-   restore drill is part of the deployment runbook.
+2. **Restore, proved.** Where the copies go and how often is the
+   operator's choice, made with the provider's own tools (D-82):
+   bucket versioning and replication, a periodic copy to a second
+   bucket, or both. The repo's part is that a copy works. Every object
+   is create-only, so a copy taken records first, then the blobs they
+   name, is consistent, and blobs copy incrementally by key. Restore
+   points the server at the copy and runs `store verify`. The bucket
+   can carry the provider's immutability (S3 Object Lock, Azure
+   immutability policies, GCS bucket lock) for the agency's retention
+   period: serving processes never delete, and `store gc` keeps what
+   retention refuses.
 
 ## Done when
 
@@ -73,5 +73,5 @@ choice, and none has a code path of its own.
   recorded under "Contract runs".
 - A backup of a C-TRAN-sized store, restored into a fresh bucket,
   verifies, and a server started on it serves the same manifest, plan
-  set, and edit document. D-82 is decided, and the runbook names the
+  set, and edit document. `DEPLOYMENTS-SERVER.md` names the
   drill.

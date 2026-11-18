@@ -51,7 +51,7 @@ work; a group is only a way to find them.
 | unit | what it is |
 |---|---|
 | [offline-apps.md](offline-apps.md) | every generated UI offline: the staff pages installed and updated like the rider pages, and their writes queued on the device and sent when the server answers |
-| [store-durability.md](store-durability.md) | the sync store's contract run on each provider's real account, backup and restore (D-82) |
+| [store-durability.md](store-durability.md) | the sync store's contract run on each provider's real account, and a restore proved |
 | [storage-model.md](storage-model.md) | a layout per shape of data: collections record by record, the kind table and governed writes, a self-describing bucket, projections, permissions per change |
 
 ### Stops and streets

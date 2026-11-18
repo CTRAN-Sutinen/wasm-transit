@@ -137,7 +137,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-79 | How is a document version rolled back? | decided | nothing |
 | D-80 | Where do retired build artifacts live? | decided | nothing |
 | D-81 | How are op and HTTP contracts versioned? | decided | nothing |
-| D-82 | Where do the store's backups go, and how often? | unanswered | backup in `store-durability` |
+| D-82 | Where do the store's backups go, and how often? | decided | nothing |
 | D-83 | What does each deployed device report, and to where? | decided | nothing |
 | D-84 | Who takes a build first, and what counts as healthy? | decided | nothing |
 | D-85 | Are the generated assembly crates committed? | decided | nothing |
@@ -2615,7 +2615,15 @@ Why: `docs/architecture/server.md`, Why, "Picks: retired, not removed; never lan
 Blocks: nothing.
 
 ### D-82 — Where do the store's backups go, and how often?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-18 — the operator's concern, not this repo's. The user:
+"isn't backups something that is outside this repo's concern", and
+"yes" to: where the copies go and how often is the agency's
+infrastructure, chosen with the provider's own tools. The repo keeps
+the store easy to copy (create-only objects, records first, then the
+blobs they name), documents the copy and restore steps in
+`DEPLOYMENTS-SERVER.md`, and proves a restore works (the restore test
+in `docs/units/store-durability.md`).
 Context: the sync store holds the edit document, the policy, the
 published picks, and the manifest's history, as objects in a bucket
 (D-113). Every object is create-only and the store never overwrites
@@ -2632,7 +2640,7 @@ Options:
   copy the primary's credentials cannot touch; at most that interval
   of edits is lost.
 - Both: replication for the site, a periodic copy for the account.
-Blocks: backup and restore in `docs/units/store-durability.md`.
+Blocks: nothing.
 
 ### D-113 — Where does the sync store live in production?
 State: Decided.
