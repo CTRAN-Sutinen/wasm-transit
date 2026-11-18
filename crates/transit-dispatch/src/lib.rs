@@ -19,6 +19,7 @@
 
 pub mod divert;
 pub mod watchlist;
+pub mod device;
 pub mod geometry;
 pub use geometry::{trip_path, trip_segment, LegKind, LegPath};
 pub use divert::{cancel_of, cancel_rows, diversion_of, diversion_rows, draft_view, CancelRow, DiversionDraft, DiversionRow, DraftPattern, DraftStop, DraftStopRole, DraftView};

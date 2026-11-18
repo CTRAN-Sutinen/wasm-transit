@@ -17,7 +17,6 @@
 //! 6. unknown hashes and garbage are errors, never panics.
 
 use cap_board::{dispatch, dispatch_bytes, dispatch_json, Request, Response, Watchlist};
-use transit_dispatch::watchlist::migrate as migrate_watchlist;
 use proptest::prelude::*;
 use sha2::Digest;
 use transit_network::Network;
@@ -280,22 +279,25 @@ fn an_invalid_edit_record_moves_nothing() {
 
 // ---------------------------------------------------------------------
 // The watchlist document — the personal parameter of the same
-// question. Both versions query; the migration reports its loss.
+// question. The board reads the current version; an older one is
+// refused at the load, naming the migration (its laws are
+// transit-dispatch's, watchlist_migration_test.rs).
 // ---------------------------------------------------------------------
 
-fn v1() -> Watchlist {
-    Watchlist::V1 {
-        stops: vec![
-            cap_board::WatchStopV1 { id: "A".into(), note: "home".into(), color: Some("blue".into()) },
-            cap_board::WatchStopV1 { id: "B".into(), note: "work".into(), color: None },
-        ],
-    }
+fn watchlist() -> Watchlist {
+    let stop = |id: &str, label: &str| cap_board::WatchStop { id: id.into(), label: label.into(), extra: Default::default() };
+    Watchlist::new(vec![stop("A", "home"), stop("B", "work")])
+}
+
+/// The load's answer through the module's seam, as every host
+/// registers it.
+fn load_watchlist_json(document: &serde_json::Value) -> serde_json::Value {
+    let request = serde_json::json!({ "op": "load_watchlist", "document": document }).to_string();
+    serde_json::from_str(&cap_board::invoke(&request)).unwrap()
 }
 
 fn load_watchlist(document: &Watchlist) -> (String, u32) {
-    // Through the module's seam, as every host registers it.
-    let request = serde_json::json!({ "op": "load_watchlist", "document": document }).to_string();
-    let outcome: serde_json::Value = serde_json::from_str(&cap_board::invoke(&request)).unwrap();
+    let outcome = load_watchlist_json(&serde_json::to_value(document).unwrap());
     let ok = &outcome["ok"];
     (ok["watchlist_hash"].as_str().expect("watchlist_hash").to_string(), ok["version"].as_u64().expect("version") as u32)
 }
@@ -318,47 +320,24 @@ fn watchlist_board(watchlist_hash: &str, network_hash: &str) -> Vec<cap_board::W
 }
 
 #[test]
-fn the_watchlist_migrates_with_loss_reported_and_both_versions_query() {
+fn the_watchlist_board_answers_each_saved_stop_in_order() {
     let network_hash = load_network();
-
-    // v1 queries: labels are the notes.
-    let (v1_hash, v1_version) = load_watchlist(&v1());
-    assert_eq!(v1_version, 1);
-    let board = watchlist_board(&v1_hash, &network_hash);
-    assert_eq!(board.len(), 2, "every watched stop answers, in authored order");
-    assert_eq!(board[0].id, "A");
-    assert_eq!(board[0].label, "home", "v1 labels are the notes");
+    let (hash, version) = load_watchlist(&watchlist());
+    assert_eq!(version, 2);
+    let board = watchlist_board(&hash, &network_hash);
+    assert_eq!(board.len(), 2, "every watched stop answers, in saved order");
+    assert_eq!((board[0].id.as_str(), board[0].label.as_str()), ("A", "home"));
     assert_eq!(board[1].label, "work");
     assert!(board.iter().all(|s| s.board.rows.iter().all(|r| !r.departure.trip.is_empty())), "model-native rows");
 
-    // The migration: label = note, the color dropped AND reported.
-    let (migrated, notes) = migrate_watchlist(&v1()).expect("v1 migrates");
-    assert_eq!(migrated.version(), 2);
-    assert_eq!(notes.len(), 1);
-    assert_eq!(notes[0].kind, "dropped_field");
-    assert_eq!(notes[0].field, "color");
-    assert_eq!(notes[0].count, 1, "one authored color, one report");
-    assert!(
-        migrate_watchlist(&migrated).is_err(),
-        "re-migrating v2 is an error, never a panic"
-    );
-
-    // v2 queries: labels are the labels.
-    let (v2_hash, v2_version) = load_watchlist(&migrated);
-    assert_eq!(v2_version, 2);
-    let board = watchlist_board(&v2_hash, &network_hash);
-    assert_eq!(board[0].label, "home", "the migration maps note → label");
-    assert_eq!(board[1].label, "work");
-
     // Loading is idempotent by content hash: same document, same
     // hash, one registry entry.
-    let (again, _) = load_watchlist(&v1());
-    assert_eq!(again, v1_hash);
+    assert_eq!(load_watchlist(&watchlist()).0, hash);
 
     // The board composes with the edits document like every board.
     let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 60)]);
     let patched = match dispatch(Request::WatchlistBoard { previous: None,
-        watchlist_hash: v1_hash,
+        watchlist_hash: hash,
         network_hash,
         edits_hash: Some(edits_hash),
         date: DATE.into(),
@@ -374,6 +353,26 @@ fn the_watchlist_migrates_with_loss_reported_and_both_versions_query() {
     assert_eq!(patched.len(), 2, "the personal board patches with the edits in force");
 }
 
+#[test]
+fn a_watchlist_from_before_the_tags_loads_as_its_version_or_is_refused() {
+    // A copy of v2 that names "version": "v2" is v2: it registers under
+    // the identity of the same document tagged.
+    let (tagged, _) = load_watchlist(&watchlist());
+    let legacy = load_watchlist_json(&serde_json::json!({"version": "v2", "stops": [{"id": "A", "label": "home"}, {"id": "B", "label": "work"}]}));
+    assert_eq!(legacy["ok"]["watchlist_hash"].as_str(), Some(tagged.as_str()), "{legacy}");
+    assert_eq!(legacy["ok"]["version"], 2);
+
+    // A copy of v1 is an older version: refused, naming the migration.
+    let v1 = load_watchlist_json(&serde_json::json!({"version": "v1", "stops": [{"id": "A", "note": "home", "color": "blue"}]}));
+    let refused = v1["error"].as_str().unwrap_or_else(|| panic!("{v1}"));
+    assert!(refused.contains("watchlist v1") && refused.contains("migrate"), "{refused}");
+
+    // A newer copy is refused naming both versions.
+    let v3 = load_watchlist_json(&serde_json::json!({"kind": "watchlist", "schema_version": 3, "stops": []}));
+    let refused = v3["error"].as_str().unwrap_or_else(|| panic!("{v3}"));
+    assert!(refused.contains("v3") && refused.contains("reads v2"), "{refused}");
+}
+
 /// QAF-79: a watched stop answers THE stop board — the same question
 /// parameterized by the personal document, so the same answer: live
 /// predictions and status with a live document, the skipped visits
@@ -384,12 +383,12 @@ fn the_watchlist_board_is_the_stop_board() {
     let network_hash = load_network();
     let (live_hash, _, row) = late_at_a(&network_hash);
     let edits_hash = load_edits(&network_hash, vec![record(EditStatus::Accepted, 60)]);
-    let watched = Watchlist::V2 {
-        stops: ["A", "STN", "C"]
+    let watched = Watchlist::new(
+        ["A", "STN", "C"]
             .into_iter()
-            .map(|id| cap_board::WatchStopV2 { id: id.into(), label: id.to_lowercase(), extra: Default::default() })
+            .map(|id| cap_board::WatchStop { id: id.into(), label: id.to_lowercase(), extra: Default::default() })
             .collect(),
-    };
+    );
     let (watchlist_hash, _) = load_watchlist(&watched);
     let from_secs = row.departure_secs + 60;
     let stops = match dispatch(Request::WatchlistBoard { previous: None,

@@ -331,10 +331,6 @@ impl<T: Send + Sync + 'static> Load for Kind<T> {
     }
 }
 
-fn canonical<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
-    crate::parse_document(bytes)
-}
-
 /// Networks: the document every model-side capability reads.
 pub static NETWORK: Kind<Network> = Kind {
     id: "network",
@@ -427,7 +423,8 @@ pub static STREETS: Kind<Streets> = Kind {
     },
 };
 
-/// Watchlists (the personal saved set, version-tagged).
+/// Watchlists (the personal saved set): the current version only. A
+/// copy from before the tags reads as the version it names.
 pub static WATCHLIST: Kind<Watchlist> = Kind {
     id: "watchlist",
     name: "watchlist",
@@ -435,9 +432,12 @@ pub static WATCHLIST: Kind<Watchlist> = Kind {
     op: OP_LOAD_WATCHLIST,
     identity: Identity::Canonical(crate::canonical_hash),
     registry: Registry::documents("watchlist", "load_watchlist", Retain::Host),
-    parse: canonical,
+    parse: crate::parse_versioned,
     json: |e| e.field(e.document, "document").map(Cow::Borrowed),
-    answer: |watchlist_hash, watchlist| Loaded::LoadWatchlist { watchlist_hash, version: watchlist.version() },
+    answer: |watchlist_hash, watchlist| Loaded::LoadWatchlist {
+        watchlist_hash,
+        version: transit_version::Versioned::schema_version(watchlist),
+    },
 };
 
 /// Work rules (transit-runs): the rules work is cut under, checked

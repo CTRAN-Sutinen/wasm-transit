@@ -164,3 +164,23 @@ fn every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy() {
     law::<transit_plans::PublishedPlans>(serde_json::json!({"schema_version": 1, "plans": []}));
     law::<transit_authz::Policy>(serde_json::json!({"schema_version": 1, "rules": []}));
 }
+
+/// The watchlist gained its tags at v2 (docs/FORMATS.md, "Versions"): a
+/// copy from before them that names "v2" reads as v2 and is written
+/// tagged; one that names "v1" is the older v1 and is refused naming
+/// the migration; a newer copy is refused naming both; another kind is
+/// refused.
+#[test]
+fn the_watchlist_reads_its_v2_from_before_the_tags_and_refuses_every_other_version() {
+    use transit_dispatch::watchlist::Watchlist;
+    let read: Watchlist = cap_abi::parse_versioned(br#"{"version":"v2","stops":[{"id":"A","label":"home"}]}"#).unwrap();
+    let written = serde_json::to_value(&read).unwrap();
+    assert_eq!(written, serde_json::json!({"kind": "watchlist", "schema_version": 2, "stops": [{"id": "A", "label": "home"}]}));
+    for older in [r#"{"version":"v1","stops":[{"id":"A","note":"home"}]}"#, r#"{"version":"v1","stops":[]}"#] {
+        let err = cap_abi::parse_versioned::<Watchlist>(older.as_bytes()).unwrap_err();
+        assert!(err.contains("watchlist v1") && err.contains("migrate"), "{older}: {err}");
+    }
+    let err = cap_abi::parse_versioned::<Watchlist>(br#"{"kind":"watchlist","schema_version":3,"stops":[]}"#).unwrap_err();
+    assert!(err.contains("watchlist v3") && err.contains("reads v2"), "{err}");
+    assert!(cap_abi::parse_versioned::<Watchlist>(br#"{"kind":"stops","schema_version":2,"stops":[]}"#).is_err());
+}

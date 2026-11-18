@@ -106,13 +106,14 @@ for (const cap of manifest.capabilities) {
   assert(Object.keys(cap.speaks).length > 0, `capability ${cap.id} declares the documents it speaks`);
 }
 
-// Compatibility documentation: the board reads both watchlist
-// versions; the migration capability carries every authored kind's
+// Compatibility documentation: the board reads the current watchlist
+// version only; the migration capability carries every authored kind's
 // chain (the board carries none); the validator accepted it.
 assert(
-  byId.board.speaks.watchlist.includes(1) && byId.board.speaks.watchlist.includes(2),
-  "board speaks watchlist v1 and v2",
+  byId.board.speaks.watchlist.length === 1 && byId.board.speaks.watchlist.includes(2),
+  "board speaks watchlist v2 only",
 );
+assert(byId.migrate.speaks.watchlist.includes(1), "the migration capability reads watchlist v1");
 assert(Object.keys(byId.board.migrates).length === 0, "a consumer carries no migration chain");
 for (const kind of ["network", "operator_edits", "watchlist"]) {
   assert(
@@ -710,8 +711,9 @@ assert(
 const noSnapshot = rt.raw({ op: "live", network_hash: loadedRt.network_hash });
 assert(noSnapshot.error && noSnapshot.error.includes("needs a snapshot"), "live without a snapshot is a request error");
 
-// The personal board — the watchlist document, migrated with its
-// loss reported, both versions querying over the network.
+// The personal board — the watchlist document: v1 refused at the
+// board's load naming the migration, migrated with its loss reported,
+// and the migrated document querying over the network.
 const v1 = {
   version: "v1",
   stops: [
@@ -722,7 +724,10 @@ const v1 = {
 // The chain is the migration capability's (cap-migrate): the board
 // reads documents, it never migrates them.
 const migrated = migrate.invoke({ op: "migrate", kind: "watchlist", document: v1 });
-assert(migrated.document.version === "v2", "migration produces v2");
+assert(
+  migrated.document.kind === "watchlist" && migrated.document.schema_version === 2,
+  "migration produces the tagged v2",
+);
 assert(migrated.document.stops[0].label === "home", "label = note");
 assert(
   migrated.notes.length === 1 &&
@@ -733,22 +738,22 @@ assert(
 );
 const againMigrate = migrate.raw({ op: "migrate", kind: "watchlist", document: migrated.document });
 assert(againMigrate.error && againMigrate.error.includes("nothing to migrate"), "re-migrating v2 errors, not panics");
-for (const document of [v1, migrated.document]) {
-  const loaded = board.invoke({ op: "load_watchlist", document });
-  const watch = board.invoke({
-    op: "watchlist_board",
-    watchlist_hash: loaded.watchlist_hash,
-    network_hash: loadedBoardNet.network_hash,
-    date: DATE,
-    from_secs: 25200,
-    limit: 3,
-  });
-  assert(watch.stops.length === 2, `the personal board answers at ${document.version}`);
-  assert(
-    watch.stops.every((s) => s.board.rows.every((r) => r.trip)),
-    `the personal board's rows are model-native at ${document.version}`,
-  );
-}
+const refusedV1 = board.raw({ op: "load_watchlist", document: v1 });
+assert(
+  refusedV1.error && refusedV1.error.includes("watchlist v1") && refusedV1.error.includes("migrate"),
+  "the board refuses v1 at the load, naming the migration",
+);
+const loadedWatch = board.invoke({ op: "load_watchlist", document: migrated.document });
+const watch = board.invoke({
+  op: "watchlist_board",
+  watchlist_hash: loadedWatch.watchlist_hash,
+  network_hash: loadedBoardNet.network_hash,
+  date: DATE,
+  from_secs: 25200,
+  limit: 3,
+});
+assert(watch.stops.length === 2, "the personal board answers every saved stop");
+assert(watch.stops.every((s) => s.board.rows.every((r) => r.trip)), "the personal board's rows are model-native");
 
 // THE RUNCUT — what does this vehicle do today? The day's blocks
 // list (the index) into one block's chain (the detail), with the

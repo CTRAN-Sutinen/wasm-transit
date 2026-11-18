@@ -19,7 +19,7 @@
 /// The authoring path (fork, apply, undo, export, publish) is the
 /// service-design host's, copied: one UI never imports another's files.
 
-import { getAllPlans, getActivePlanId, putPlan, readPlan, removePlan, setActivePlan, restorePlans } from "../../plans.svelte";
+import { type ReadPlan, getAllPlans, getActivePlanId, putPlan, readPlan, removePlan, setActivePlan, restorePlans } from "../../plans.svelte";
 import { ask, assemble, available, keep, produced, publishedPickValue, publishedPlanSet, servedNetworkValue, servedStops, stopWarnings, withStopVersions, Doc } from "../../engine";
 import { answerGraph, reason, type FrameState, readAgencyZone, today } from "../kit";
 
@@ -271,15 +271,25 @@ function docOf(network: Network): Doc<Network> {
   return doc;
 }
 
-async function readStoredNetwork(stored: unknown): Promise<Network | null> {
+/// The stored plan set, read through the network capability: its plans
+/// by store id, or a refusal naming both versions.
+async function readStoredSet(stored: unknown): Promise<Record<string, unknown>> {
+  return (await ask("network", "stored_plans", { document: stored })).plans;
+}
+
+async function readStoredNetwork(stored: unknown): Promise<ReadPlan | null> {
   if (!(await available("author"))) return null;
+  let migrated = false;
   if (await available("migrate")) {
     const { version, reads } = await ask("migrate", "version", { kind: "network", document: stored });
-    if (version < reads) stored = (await ask("migrate", "migrate", { kind: "network", document: stored })).document;
+    if (version < reads) {
+      stored = (await ask("migrate", "migrate", { kind: "network", document: stored })).document;
+      migrated = true;
+    }
   }
   const answer = await ask("author", "apply", { network_hash: new Doc("network", { value: stored as Network }), edits: [] });
   docs.set(answer.network, produced("network", answer.network, "author", answer.network_hash));
-  return answer.network;
+  return { network: answer.network, migrated };
 }
 
 function release(): Promise<void> {
@@ -726,7 +736,7 @@ addEventListener("popstate", () => {
 /// first pick takes effect — the deployment's feed, as a read-only
 /// pick on its first service date (D-140), beside the published picks.
 export async function boot(): Promise<void> {
-  await Promise.all([restorePlans(), readAgencyZone(), resumeSignIn()]);
+  await Promise.all([restorePlans(readStoredSet), readAgencyZone(), resumeSignIn()]);
   sc.pickSet = await publishedPlanSet().catch(() => null);
   syncPlanRows();
   sc.activeKey = getAllPlans()[getActivePlanId()] ? getActivePlanId() : "";

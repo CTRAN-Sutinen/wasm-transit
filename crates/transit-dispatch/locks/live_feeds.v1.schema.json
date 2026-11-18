@@ -1,0 +1,39 @@
+{
+  "$defs": {
+    "LiveFeedsKind": {
+      "const": "live_feeds"
+    },
+    "SchemaVersion": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "The rider's own GTFS-rt feed URLs, in place of the deployment's\n(`live-feeds.json`). An empty URL is a feed the rider does not read.",
+  "properties": {
+    "alerts": {
+      "default": "",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/$defs/LiveFeedsKind",
+      "default": "live_feeds",
+      "description": "The kind tag and version (D-115); a copy without them is this\nkind, version 1."
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": 1
+    },
+    "trips": {
+      "default": "",
+      "type": "string"
+    },
+    "vehicles": {
+      "default": "",
+      "type": "string"
+    }
+  },
+  "title": "LiveFeeds",
+  "type": "object"
+}

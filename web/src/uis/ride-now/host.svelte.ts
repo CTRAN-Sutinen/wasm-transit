@@ -29,7 +29,7 @@
 /// with; nothing durable keeps the query.
 
 import { ask, assemble, available, keep, load, produced, servedNetwork, servedNetworkPin, servedStreets, servedWalks, Doc } from "../../engine";
-import { currentDocument, putDocument, restoreDocuments } from "../../documents.svelte";
+import { currentDocument, putDocument, restoreDocuments, type DocRecord } from "../../documents.svelte";
 import { answerGraph, applyBuild, type FrameState, buildWaiting, clockLabel, deploymentFeeds, installApp, previousDay, deploymentManifest, fetchFeed, nowSecs, readAgencyZone, setAgencyZone, staleLabel, today, whileVisible, type LiveUrls } from "../kit";
 
 // This page's capabilities answer inside its linked assembly — one
@@ -54,6 +54,8 @@ import type { Network } from "../../types/Network";
 import type { StopBoard } from "../../types/StopBoard";
 import type { WatchBoardStop } from "../../types/cap_board/WatchBoardStop";
 import type { Watchlist } from "../../types/cap_board/Watchlist";
+import type { RecentPlaces } from "../../types/cap_board/RecentPlaces";
+import type { LiveFeeds } from "../../types/cap_board/LiveFeeds";
 
 /// A stop as the directory answers it, wherever it was picked from
 /// (typed, near a point, tapped on the map): enough to name it, put it
@@ -85,8 +87,11 @@ const CARD_ROWS = 3;
 const NEARBY = 5;
 const FOUND = 25;
 const MAX_LEGS = 4;
+// Where an older build kept the rider's feed URLs and recent places:
+// read once, moved into the document store, and removed.
 const URLS_KEY = "ride-now:live-urls";
 const RECENT_KEY = "ride-now:recent";
+// Presentation preferences, kept in localStorage.
 const FIX_KEY = "ride-now:last-fix";
 const FRAME_KEY = "ride-now:network-view";
 
@@ -683,9 +688,10 @@ export async function boot(): Promise<void> {
   void installApp();
   // The agency's zone before anything reads the date: the pick in
   // force is the agency's today's.
+  await restoreDocuments().catch((e) => console.warn("the device's documents did not restore:", e));
   await Promise.all([restoreUrls(), readAgencyZone()]);
   await restoreSaved();
-  restoreRecent();
+  await restoreRecent();
   void locateIfAllowed();
   void discoverServices();
   await adoptNetwork("the agency's network", obtainServed);
@@ -934,16 +940,18 @@ async function fetchLive(): Promise<boolean> {
   return changed;
 }
 
-/// The rider's own feed URLs, else the deployment's (live-feeds.json
-/// beside the page).
+/// The rider's own feed URLs (the `live_feeds` document, else the URLs
+/// an older build kept in `localStorage`, moved into the store), else
+/// the deployment's (live-feeds.json beside the page).
 async function restoreUrls(): Promise<void> {
   // Always read: the config also says whether a dev relay fetches the
   // feeds (a rider's own feed is fetched the same way).
   const deployed = await deploymentFeeds();
   try {
-    const stored = localStorage.getItem(URLS_KEY);
-    if (stored) {
-      ride.urls = { ...ride.urls, ...JSON.parse(stored) };
+    const record = currentDocument("live_feeds") ?? (await moveFromLocalStorage(URLS_KEY, "live_feeds", (urls: Partial<LiveUrls>) => urls));
+    if (record) {
+      const feeds = JSON.parse(record.bytes) as Partial<LiveFeeds>;
+      ride.urls = { ...ride.urls, trips: feeds.trips ?? "", vehicles: feeds.vehicles ?? "", alerts: feeds.alerts ?? "" };
       return;
     }
   } catch {
@@ -954,8 +962,9 @@ async function restoreUrls(): Promise<void> {
 
 export async function setLiveUrls(urls: LiveUrls): Promise<void> {
   ride.urls = { ...urls };
+  const doc: LiveFeeds = { kind: "live_feeds", schema_version: 1, trips: urls.trips, vehicles: urls.vehicles, alerts: urls.alerts };
   try {
-    localStorage.setItem(URLS_KEY, JSON.stringify(urls));
+    await putDocument("live_feeds", JSON.stringify(doc), doc.schema_version, { replace: true });
   } catch {
     // kept for this visit only
   }
@@ -1271,26 +1280,46 @@ function replan(): Promise<void> {
 // ---------------------------------------------------------------------
 
 async function restoreSaved(): Promise<void> {
-  let doc: Watchlist | null = null;
+  let doc: Doc<Watchlist> | null = null;
   try {
-    await restoreDocuments();
     const record = currentDocument("watchlist");
-    doc = record ? (JSON.parse(record.bytes) as Watchlist) : null;
+    doc = record ? await readStoredWatchlist(record) : null;
   } catch (e) {
-    console.warn("watchlist restore failed:", e);
+    // An older version this page cannot bring forward, or one that does
+    // not read: the stored record stays as it is.
+    console.warn("the saved stops did not restore:", e);
   }
-  watchlist = doc ? new Doc("watchlist", { value: doc }) : null;
-  ride.saved = doc
-    ? doc.version === "v2"
-      ? doc.stops.map((s) => ({ id: s.id, label: s.label }))
-      : doc.stops.map((s) => ({ id: s.id, label: s.note }))
-    : [];
+  watchlist = doc;
+  ride.saved = doc?.value ? doc.value.stops.map((s) => ({ id: s.id, label: s.label })) : [];
+}
+
+/// A stored watchlist in the version the board reads. The board's load
+/// decides: one it refuses comes forward through the migration
+/// capability when the deployment serves it (fetched only then), and the
+/// migrated document is a new record whose `produced_by` names the old
+/// one. A version nothing here brings forward stays as stored.
+async function readStoredWatchlist(record: DocRecord): Promise<Doc<Watchlist>> {
+  const stored: unknown = JSON.parse(record.bytes);
+  const doc = new Doc<Watchlist>("watchlist", { value: stored as Watchlist });
+  try {
+    await load("board", doc);
+    return doc;
+  } catch (refused) {
+    if (!(await available("migrate"))) throw refused;
+    const { version, reads } = await ask("migrate", "version", { kind: "watchlist", document: stored });
+    if (version >= reads) throw refused;
+    const migrated = await ask("migrate", "migrate", { kind: "watchlist", document: stored });
+    await putDocument("watchlist", migrated.canonical, migrated.to, { produced_by: { op: "migrate", from: record.hash, by: "migrate.migrate" } });
+    const next = new Doc<Watchlist>("watchlist", { value: migrated.document as Watchlist });
+    await load("board", next);
+    return next;
+  }
 }
 
 async function writeSaved(stops: { id: string; label: string }[]): Promise<void> {
-  const doc: Watchlist = { version: "v2", stops };
+  const doc: Watchlist = { kind: "watchlist", schema_version: 2, stops };
   try {
-    await putDocument("watchlist", JSON.stringify(doc), 2);
+    await putDocument("watchlist", JSON.stringify(doc), doc.schema_version);
   } catch (e) {
     console.warn("watchlist save failed:", e);
     ride.status = "Couldn't save on this device — your saved stops last until you leave.";
@@ -1306,20 +1335,35 @@ export function toggleSaved(place: Place): Promise<void> {
     : writeSaved([...ride.saved, { id: place.id, label: place.name }]);
 }
 
-function restoreRecent(): void {
+/// The rider's recent places: the `recent_places` document, else the
+/// list an older build kept in `localStorage`, moved into the store.
+async function restoreRecent(): Promise<void> {
+  ride.recent = [];
   try {
-    ride.recent = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]") as Place[];
-  } catch {
-    ride.recent = [];
+    const record = currentDocument("recent_places") ?? (await moveFromLocalStorage(RECENT_KEY, "recent_places", (places) => ({ places })));
+    if (record) ride.recent = (JSON.parse(record.bytes) as RecentPlaces).places;
+  } catch (e) {
+    console.warn("the recent places did not restore:", e);
   }
 }
 
 function remember(place: Place): void {
   if (place.point) return;
   ride.recent = [{ id: place.id, name: place.name, lat: place.lat, lon: place.lon }, ...ride.recent.filter((p) => p.id !== place.id)].slice(0, 6);
-  try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(ride.recent));
-  } catch {
+  const doc: RecentPlaces = { kind: "recent_places", schema_version: 1, places: ride.recent.map(({ id, name, lat, lon }) => ({ id, name, lat, lon })) };
+  putDocument("recent_places", JSON.stringify(doc), doc.schema_version, { replace: true }).catch(() => {
     // recent stops last this visit
-  }
+  });
+}
+
+/// A device record an older build kept under a `localStorage` key, moved
+/// into the store as the tagged document `kind` (the record names the key
+/// it came from), and the key removed. Null when the key holds nothing.
+async function moveFromLocalStorage(key: string, kind: "recent_places" | "live_feeds", tag: (stored: never) => object): Promise<DocRecord | null> {
+  const stored = localStorage.getItem(key);
+  if (stored === null) return null;
+  const doc = { kind, schema_version: 1, ...tag(JSON.parse(stored) as never) };
+  const record = await putDocument(kind, JSON.stringify(doc), 1, { produced_by: { op: "moved", from: `localStorage:${key}` } });
+  localStorage.removeItem(key);
+  return record;
 }

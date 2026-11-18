@@ -88,11 +88,11 @@ Shared by every generated UI:
 - `src/plans.svelte.ts` (`getAllPlans`, `putPlan`,
   `setActivePlan`, `restorePlans`, `readPlan`): the service plans.
   JavaScript owns the documents. A host reads every plan it uses
-  through cap-author before it uses the plan. It does this at boot
-  with `restorePlans(readStoredNetwork)`. Or it does this on first use
-  with a bare `restorePlans()` and `readPlan(id, readStoredNetwork)`
-  (the service-design host: a workspace of many forks reads the two it
-  opens). The UI reads documents in JavaScript, which has no serde
+  through cap-author before it uses the plan. It reads the set through
+  cap-network at boot (`restorePlans(readStoredSet)`), and each plan
+  then too (`restorePlans(readStoredSet, readStoredNetwork)`) or on
+  first use (`readPlan(id, readStoredNetwork)`; the service-design
+  host: a workspace of many forks reads the two it opens). The UI reads documents in JavaScript, which has no serde
   aliases. Only the `plan` frame may be read before this read, because
   every stored shape spells it alike.
 - `src/basemap.ts`: the basemap style choice (tiles, and glyphs and

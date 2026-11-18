@@ -15,7 +15,8 @@ transit-network = { path = "../transit-network" }
 transit-sync = { path = "../transit-sync" }
 # The live document (model vocabulary) the realtime-first board reads.
 transit-live = { path = "../transit-live" }
+# The watchlist's migration chain steps over JSON values.
+serde_json = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
 proptest = "1"

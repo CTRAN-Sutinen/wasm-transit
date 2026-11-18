@@ -11,6 +11,7 @@
 /// weeks.
 
 import { get as idbGet, set as idbSet } from "idb-keyval";
+import { keepRecord } from "./documents.svelte";
 import type { Network } from "./types/Network";
 import type { PlanSet } from "./types/PlanSet";
 
@@ -60,8 +61,28 @@ const readPlans = new Set<string>();
  * `PLAN_SET_VERSION`). */
 const PLAN_SET_VERSION = 1;
 
+/** A stored plan read through a module: its document in the current
+ * shape, and whether a migration brought it forward. */
+export type ReadPlan = { network: Network; migrated: boolean };
+
+/** The set as IndexedDB held it at restore, kept once in the device's
+ * document store (`plan_set`) before a migrated plan is written over it. */
+let storedSet: unknown = undefined;
+let storedSetKept = false;
+
+async function keepStoredSet(): Promise<void> {
+  if (storedSetKept || storedSet === undefined) return;
+  storedSetKept = true;
+  try {
+    await keepRecord("plan_set", JSON.stringify(storedSet), PLAN_SET_VERSION);
+  } catch (e) {
+    console.warn("the plan set from before the migration was not kept:", e);
+  }
+}
+
 /** Set when the stored set is one this build does not read (another
- * kind, or a newer version): the page then never writes over it. */
+ * kind, or a newer version, as the module's `stored_plans` answers):
+ * the page then never writes over it. */
 let storeRefused = false;
 
 /** Persist the plan set — serialized writes, one pending at a time. */
@@ -73,36 +94,40 @@ function persistPlans(): void {
     .catch((e) => console.warn("plan persistence failed:", e));
 }
 
-/** The plans a stored set holds: the tagged document, or a bare map of
- * plans by store id (the shape written before the set had its tag). A
- * set of another kind or a newer version is not read, and nothing is
- * written over it. */
-function storedPlans(stored: unknown): Record<string, unknown> | null {
-  if (!stored || typeof stored !== "object") return null;
-  const tagged = stored as { kind?: unknown; schema_version?: unknown; plans?: unknown };
-  if (tagged.kind === undefined) return stored as Record<string, unknown>;
-  if (tagged.kind !== "plan_set" || (tagged.schema_version ?? 1) !== PLAN_SET_VERSION || !tagged.plans || typeof tagged.plans !== "object") {
-    storeRefused = true;
-    throw new Error(`the stored plans are ${String(tagged.kind)} v${String(tagged.schema_version)}, and this build reads plan_set v${PLAN_SET_VERSION}`);
-  }
-  return tagged.plans as Record<string, unknown>;
-}
-
 /** Restore the plan set on startup (documents cross IN from
- * IndexedDB; JS owns them, so a shape guard keeps stale builds from
- * wedging the workspace). `read` canonicalizes each stored document
- * through a module (the host layer passes its
+ * IndexedDB; JS owns them). `readSet` reads the stored set through a
+ * module (the host passes network `stored_plans`): it answers the plans
+ * by store id, or refuses a set of another kind or a newer version, and
+ * then nothing is written over it. `read` canonicalizes each stored
+ * document through a module (the host layer passes its
  * `readStoredNetwork`): a plan saved under older field names comes
- * back in the current shape and is persisted that way. A plan the
- * module refuses is kept as stored and reported, never dropped. */
-export async function restorePlans(read?: (stored: unknown) => Promise<Network | null>): Promise<void> {
+ * back in the current shape and is persisted that way. When a migration
+ * brought a plan forward, the set as stored is kept first, in the
+ * device's document store (`plan_set`). A plan the module refuses is
+ * kept as stored and reported, never dropped. */
+export async function restorePlans(
+  readSet: (stored: unknown) => Promise<Record<string, unknown>>,
+  read?: (stored: unknown) => Promise<ReadPlan | null>,
+): Promise<void> {
   try {
-    const stored = storedPlans(await idbGet(PLANS_KEY));
+    const raw = await idbGet(PLANS_KEY);
+    storedSet = raw;
+    let stored: Record<string, unknown> | null = null;
+    if (raw !== undefined) {
+      try {
+        stored = await readSet(raw);
+      } catch (e) {
+        storeRefused = true;
+        throw e;
+      }
+    }
     if (stored) {
       const next: Record<string, Network> = {};
       for (const [key, doc] of Object.entries(stored)) {
         try {
-          next[key] = (read ? await read(doc) : null) ?? (doc as Network);
+          const answer = read ? await read(doc) : null;
+          if (answer?.migrated) await keepStoredSet();
+          next[key] = answer?.network ?? (doc as Network);
           if (read) readPlans.add(key);
         } catch (e) {
           console.warn(`stored plan ${key} could not be read:`, e);
@@ -122,19 +147,20 @@ export async function restorePlans(read?: (stored: unknown) => Promise<Network |
 }
 
 /** One stored plan read into the current shape on first use — the
- * on-demand half of a bare `restorePlans()`: a host that opens few of
+ * on-demand half of `restorePlans` without `read`: a host that opens few of
  * many plans reads only those (each read is a whole-document round
  * trip through a module). The canonical copy replaces the stored one
  * in memory and is written with the plan set's next persist. A plan
  * the module refuses stays as stored and is reported. Plan metadata
  * (`plan`) reads the same in every stored shape, so a host may list
  * plans before reading them. */
-export async function readPlan(id: string, read: (stored: unknown) => Promise<Network | null>): Promise<Network | null> {
+export async function readPlan(id: string, read: (stored: unknown) => Promise<ReadPlan | null>): Promise<Network | null> {
   const doc = plans[id];
   if (!doc || readPlans.has(id)) return doc ?? null;
   try {
-    const next = await read(doc);
-    if (next && plans[id] === doc) plans = { ...plans, [id]: next };
+    const answer = await read(doc);
+    if (answer?.migrated) await keepStoredSet();
+    if (answer && plans[id] === doc) plans = { ...plans, [id]: answer.network };
   } catch (e) {
     console.warn(`stored plan ${id} could not be read:`, e);
   }

@@ -58,3 +58,11 @@ Answer what refuses a registered network as a published pick. The answer has two
 - `refusals`: the warnings that refuse publication. A pick that runs no service in its period would hand every rider an empty schedule on its date.
 
 The remaining warnings ride along in `warnings` and never refuse. The sync server asks this op before `POST /plans` stores a pick.
+
+## stored_plans
+
+Read back a plan set that a page stored, and answer its plans by store id. Each plan comes back as stored: the page reads each plan's own version when it uses the plan.
+
+- A tagged set (`"kind": "plan_set"`) in the version this build reads answers its `plans`.
+- A set written before its tag is a bare map of plans by store id, and reads as the set.
+- A set of another kind or version is refused, and the refusal names both. The page then never writes over it.

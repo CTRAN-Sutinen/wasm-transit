@@ -7,6 +7,11 @@ uncovered. It follows the generated-UI procedure
 (`docs/architecture/generated-uis.md`). It is at step 2: no
 session has asked these questions as one sequence.
 
+A diversion draft is not persisted yet. When this UI first keeps one,
+the draft gains its kind and version tags and a schema lock like every
+persisted kind (`docs/FORMATS.md`, "Versions" and "The schema lock"),
+and its exemption in cap-abi `tests/formats_inventory_test.rs` goes.
+
 ## Questions, in the order asked
 
 1. What is late right now, and where is that bus?

@@ -1,0 +1,67 @@
+{
+  "$defs": {
+    "RecentPlace": {
+      "additionalProperties": true,
+      "description": "One recent place: a stop by its id and name, and its point when the\nrider's device has it.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "lat": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "lon": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "RecentPlacesKind": {
+      "const": "recent_places"
+    },
+    "SchemaVersion": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "The places a rider looked at last on this device, newest first.",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/RecentPlacesKind",
+      "default": "recent_places",
+      "description": "The kind tag and version (D-115); a copy without them is this\nkind, version 1."
+    },
+    "places": {
+      "items": {
+        "$ref": "#/$defs/RecentPlace"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": 1
+    }
+  },
+  "required": [
+    "places"
+  ],
+  "title": "RecentPlaces",
+  "type": "object"
+}

@@ -1,0 +1,53 @@
+{
+  "$defs": {
+    "SchemaVersion": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "WatchStop": {
+      "additionalProperties": true,
+      "description": "One watched stop.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ],
+      "type": "object"
+    },
+    "WatchlistKind": {
+      "const": "watchlist"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "A rider's saved stops, in the order the rider saved them.",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/WatchlistKind",
+      "default": "watchlist",
+      "description": "The kind tag and version (D-115)."
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": 2
+    },
+    "stops": {
+      "items": {
+        "$ref": "#/$defs/WatchStop"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "stops"
+  ],
+  "title": "Watchlist",
+  "type": "object"
+}

@@ -195,8 +195,8 @@ schema lock"). It then copies the locks out:
 The index holds, per kind and version: the `tag` the document carries,
 its bus `kind`, its `store_kind` (the store envelope's kind, when the
 store persists it), its `schema_version`, whether this build writes it
-(`written`), whether the kind is locked, the files' paths and hashes,
-and the registry's evidence. The docs site shows the version each kind
+(`written`), the crate that owns it (`owner`), the files' paths and
+hashes, and the registry's evidence. The docs site shows the version each kind
 writes.
 
 A reader maps a blob's envelope (`kind`, `schema_version`) to its schema
@@ -204,8 +204,8 @@ in that index (`docs/FORMATS.md`). `server/reader_test.go` checks every
 example against its schema. It reads a store with nothing but the
 bucket, the schemas, and FORMATS.md.
 
-The schemas are generated, not kept. `registry/` is gitignored and every
-`just caps` rewrites it. So it holds the version each kind writes today
-and no other. Nothing gates a serde change that moves one. No deployment
-serves them. Keeping every version, the gate, and serving them are in
-`docs/units/document-versioning.md`, item 5.
+`registry/` is gitignored, and every `just caps` writes it again from
+the locks: each kind's frozen schemas and examples, kept in the crate
+that owns it (`crates/<owner>/locks/`). The same files go into every
+page build, so every deployment serves them at `/schemas/`
+(`docs/FORMATS.md`, "The schema lock").

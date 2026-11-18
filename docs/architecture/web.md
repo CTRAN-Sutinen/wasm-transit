@@ -71,18 +71,31 @@ File ownership:
 - `src/bus.ts` is the page's side of the bus worker. Only the engine
   imports it. It holds the one Worker, spawned on first use, and its
   calls as promises. It carries messages and decides nothing.
-- `src/documents.svelte.ts` is the device's document store. Every
-  version is hash-chained by `produced_by`. `current` is a pointer.
-  IndexedDB persists the store. ride-now's watchlist lives there.
+- `src/documents.svelte.ts` is the device's document store. Each
+  record is keyed by the hash of its bytes, as the sync store keys its
+  blobs. A document's identity on the bus is its module's load answer.
+  `current` is a pointer. A record a migration made names the record
+  it came from (`produced_by`), and that record stays. IndexedDB
+  persists the store. ride-now keeps its watchlist and its device
+  records (`recent_places`, `live_feeds`) there. A kind written on
+  every use replaces its history (`replace`). `localStorage` keeps
+  only presentation preferences (the map's last frame and fix).
+  - ride-now reads a stored watchlist through the board's load. One
+    the board refuses comes forward through cap-migrate, fetched alone
+    beside the page's assembly only then, as a new record.
 - `src/plans.svelte.ts` owns the service plans. These are the authored
   network documents that service-design keeps on the device: plain
   data, wholesale-replaced, persisted in IndexedDB. Stored plans
-  restore through a module. `restorePlans(readStoredNetwork)` reads
-  each plan through cap-author (an `apply` with no edits answers the
+  restore through a module. `restorePlans(readStoredSet)` reads the set
+  through cap-network (`stored_plans`): its plans, or a refusal of
+  another kind or a newer version, and then the page never writes over
+  it. `restorePlans(readStoredSet, readStoredNetwork)` also reads each
+  plan through cap-author (an `apply` with no edits answers the
   canonical document). So a plan saved under older field names comes
-  back in the current shape. A bare `restorePlans()` restores the
-  plans as stored. `readPlan(id, readStoredNetwork)` reads one plan on
-  first use. The host never sniffs a shape.
+  back in the current shape. `readPlan(id, readStoredNetwork)` reads
+  one plan on first use. When a migration brought a plan forward, the
+  set as stored is kept first in the document store (`plan_set`). The
+  host never sniffs a shape.
 - `src/basemap.ts` is the basemap choice that every map view shares
   (local pmtiles, else OpenFreeMap). It also holds the MapLibre worker
   wiring. It probes the archive by reading its header with the one

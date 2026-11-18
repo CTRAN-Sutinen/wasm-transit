@@ -261,7 +261,7 @@ _host-tests:
     node tools/caps-run.mjs board \
       --op @web/public/caps/sample-network-load.json \
       --op '{"op":"stop_board","network_hash":"$load_network.network_hash","stop_id":"STN","date":"2026-10-23","from_secs":25200,"limit":10}' \
-      --op '{"op":"load_watchlist","document":{"version":"v2","stops":[{"id":"A","label":"home"}]}}' \
+      --op '{"op":"load_watchlist","document":{"kind":"watchlist","schema_version":2,"stops":[{"id":"A","label":"home"}]}}' \
       --op '{"op":"watchlist_board","watchlist_hash":"$load_watchlist.watchlist_hash","network_hash":"$load_network.network_hash","date":"2026-10-23","from_secs":25200,"limit":3}' \
       | grep '"label":"home"' > /dev/null
     # The registry kernel ops through the runner (any module, same

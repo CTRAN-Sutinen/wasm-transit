@@ -18,7 +18,7 @@
 /// has no answer into `sd.frames` (src/uis/answers.ts), and the frame
 /// says so while the rest of the view answers.
 
-import { getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
+import { type ReadPlan, getAllPlans, getActivePlanId, putPlan, readPlan, setActivePlan, restorePlans } from "../../plans.svelte";
 import { ask, assemble, available, keep, load, produced, servedNetworkValue, Doc, stopWarnings, withStopVersions, publishedPlanSet } from "../../engine";
 import { answerGraph, reason, type FrameState, readAgencyZone, today } from "../kit";
 
@@ -217,15 +217,25 @@ function docOf(network: Network): Doc<Network> {
 /// with no schema_version is v1 — every plan saved before the tag),
 /// then cap-author's `apply` with no edits answers the canonical
 /// document. Null when the authoring capability did not assemble.
-async function readStoredNetwork(stored: unknown): Promise<Network | null> {
+/// The stored plan set, read through the network capability: its plans
+/// by store id, or a refusal naming both versions.
+async function readStoredSet(stored: unknown): Promise<Record<string, unknown>> {
+  return (await ask("network", "stored_plans", { document: stored })).plans;
+}
+
+async function readStoredNetwork(stored: unknown): Promise<ReadPlan | null> {
   if (!(await available("author"))) return null;
+  let migrated = false;
   if (await available("migrate")) {
     const { version, reads } = await ask("migrate", "version", { kind: "network", document: stored });
-    if (version < reads) stored = (await ask("migrate", "migrate", { kind: "network", document: stored })).document;
+    if (version < reads) {
+      stored = (await ask("migrate", "migrate", { kind: "network", document: stored })).document;
+      migrated = true;
+    }
   }
   const answer = await ask("author", "apply", { network_hash: new Doc("network", { value: stored as Network }), edits: [] });
   docs.set(answer.network, produced("network", answer.network, "author", answer.network_hash));
-  return answer.network;
+  return { network: answer.network, migrated };
 }
 
 /// Name what the modules keep: each plan's current network (the
@@ -734,7 +744,7 @@ async function select(...inputs: string[]): Promise<void> {
 export async function boot(): Promise<void> {
   // The agency's zone before anything reads the date (the pick in
   // force is the agency's today's).
-  await Promise.all([restorePlans(), readAgencyZone(), resumeSignIn()]);
+  await Promise.all([restorePlans(readStoredSet), readAgencyZone(), resumeSignIn()]);
   syncPlanRows();
   sd.activeKey = getAllPlans()[getActivePlanId()] ? getActivePlanId() : (sd.plans[0]?.key ?? "");
   readHash();

@@ -1331,8 +1331,9 @@ network, natively: the parse is 1.1–1.2× slower with `extra` on its trip
 records. `noting_unknown` names the fields a read did not know; every
 kernel load, cap-stops' and cap-requests' `validate`, and cap-sync's
 `sync_edits` answer them (`unknown_fields`); the server sends them as
-`X-Unknown-Fields` and logs the write. The schema lock's rule waits on
-the lock (`docs/units/document-versioning.md`, item 5).
+`X-Unknown-Fields` and logs the write. The schema lock accepts an added
+optional field in the same version (`docs/FORMATS.md`, "The schema
+lock").
 Pinned by: `crates/cap-abi/tests/unknown_fields_law_test.rs`, the
 dispatch tests of cap-stops, cap-requests and cap-sync,
 `server/unknown_test.go`.
@@ -1383,7 +1384,7 @@ State: Decided.
 Answer: 2026-11-17 — RFC 8785 (JSON Canonicalization Scheme). The
 user: "yeah if that is the standard, i don't see why we wouldn't
 follow it". Every hash moves once, before the first deployment's
-baseline (`docs/units/document-versioning.md`, item 5).
+baseline (`docs/FORMATS.md`, "The schema lock").
 Built: `cap_abi::jcs` (the writer), `canonical_hash` and
 `canonical_bytes` over it, every module's canonical `document`, and
 `cap_abi::Canonical` for the documents an answer carries that a host
@@ -1407,7 +1408,7 @@ Options:
 - RFC 8785 (JSON Canonicalization Scheme): sorted keys and one number
   form, reproducible in any language; every hash moves once.
 Blocks: nothing (it is cheapest before the first deployment's
-baseline, `docs/units/document-versioning.md`, item 5).
+baseline, `docs/FORMATS.md`, "The schema lock").
 
 ### D-170 — Are the migration steps from before the first deployment kept?
 State: Decided.
@@ -1427,9 +1428,8 @@ watchlist's v1→v2 — and only development stores hold their older
 versions. The user, 2026-11-13: "this is all pre deployment right now
 so there is no old schema compatibility to worry about." cap-migrate
 carries every chain into each assembly that links it (about 0.8 MB in
-service design; `docs/units/document-versioning.md`, item 4), and the
-watchlist's v1 is why the kernel still reads two watchlist versions
-(item 1).
+service design; `docs/units/document-versioning.md`, item 2), and the
+watchlist's v1 was why the kernel read two watchlist versions.
 Options:
 - Keep them (D-66 as encoded): nothing changes.
 - Drop them at the first deployment's baseline: each kind's version
@@ -3406,8 +3406,8 @@ Pinned by: `server/httpcontract/diff_test.go` (each breaking change
 fails, an additive change and a deprecated removal pass),
 `server/contract_test.go` (the routes, the contract transport, and the
 gate against `server/openapi.lock.json`).
-Blocks: nothing. The documents' lock is
-`docs/units/document-versioning.md`, item 5.
+Blocks: nothing. The documents' lock is in `docs/FORMATS.md`, "The
+schema lock".
 
 ### D-83 — What does each deployed device report, and to where?
 State: Decided.
@@ -3784,7 +3784,7 @@ moved back. The server assembles it in Go (`store.BuildDoc`) and hashes
 the bytes `json.Marshal` writes. Every other document's identity is its
 RFC 8785 canonical bytes, with the module as the hash authority (D-169),
 and its schema is generated from a Rust type and locked
-(`docs/units/document-versioning.md`, item 5). The build has a
+(`docs/FORMATS.md`, "The schema lock"). The build has a
 hand-written schema in `server/schemas/`, held to the Go type by a Go
 reflection test. The manifest is the same case: Go assembles it, and its
 schema is the HTTP contract's. Listing, reading and hashing the files is
@@ -3800,4 +3800,4 @@ Options:
   recheck) and rollback stay. Every committed build hashes differently
   once, which touches only development stores.
 Blocks: the `build` schema's form in `docs/units/document-versioning.md`,
-item 5 (the hand-written schema stands until this is answered).
+item 3 (the hand-written schema stands until this is answered).

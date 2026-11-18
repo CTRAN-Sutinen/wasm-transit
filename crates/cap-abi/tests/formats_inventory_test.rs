@@ -9,7 +9,6 @@ use std::path::Path;
 
 /// Each kind in the table with no locked schema, and why.
 const NOT_LOCKED: &[(&str, &str)] = &[
-    ("watchlist", "locked once it carries its kind (docs/units/document-versioning.md, item 1)"),
     ("diversion_draft", "never persisted yet: it gains its tags when something first persists one"),
     ("manifest", "its schema is the HTTP contract's (server/openapi.json)"),
     ("build_file", "a build file is its exact bytes, of whatever type the file is"),

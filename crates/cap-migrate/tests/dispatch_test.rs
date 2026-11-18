@@ -61,7 +61,7 @@ fn a_bare_edit_array_comes_forward_as_the_tagged_document() {
 fn a_v1_watchlist_comes_forward_reporting_its_colors() {
     let v1 = json!({"version": "v1", "stops": [{"id": "A", "note": "home", "color": "red"}, {"id": "B", "note": "work"}]});
     let answer = ok(json!({"op": "migrate", "kind": "watchlist", "document": v1}));
-    assert_eq!(answer["document"], json!({"version": "v2", "stops": [{"id": "A", "label": "home"}, {"id": "B", "label": "work"}]}));
+    assert_eq!(answer["document"], json!({"kind": "watchlist", "schema_version": 2, "stops": [{"id": "A", "label": "home"}, {"id": "B", "label": "work"}]}));
     assert_eq!(answer["notes"], json!([{"from": 1, "kind": "dropped_field", "field": "color", "count": 1}]));
 }
 
@@ -86,6 +86,11 @@ fn version_answers_without_migrating() {
     assert_eq!(ok(json!({"op": "version", "kind": "edit_records", "document": []})), json!({"op": "version", "version": 1, "reads": 2}));
     assert_eq!(
         ok(json!({"op": "version", "kind": "watchlist", "document": {"version": "v2", "stops": []}})),
+        json!({"op": "version", "version": 2, "reads": 2}),
+        "a copy from before the tags names its version"
+    );
+    assert_eq!(
+        ok(json!({"op": "version", "kind": "watchlist", "document": {"kind": "watchlist", "schema_version": 2, "stops": []}})),
         json!({"op": "version", "version": 2, "reads": 2})
     );
 }

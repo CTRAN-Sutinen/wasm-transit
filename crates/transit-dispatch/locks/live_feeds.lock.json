@@ -1,0 +1,9 @@
+{
+  "tag": "live_feeds",
+  "versions": {
+    "1": {
+      "example_hash": "sha256:52266819a964d8c392530fa9ed22d3df7662ae44a4e24c5dd9db814e9cc57b4a",
+      "schema_hash": "sha256:3f7141e057da6c01770cdb2c13d9dde62a6518007bb5bf92880e3fa92f6123f8"
+    }
+  }
+}

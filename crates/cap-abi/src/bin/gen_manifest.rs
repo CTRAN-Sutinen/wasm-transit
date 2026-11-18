@@ -99,7 +99,7 @@ const MODULES: &[ModuleSpec] = &[
     ModuleSpec {
         id: "network",
         file: "module_network.wasm",
-        ops: &["import", "validate", "export", "document", "publishable"],
+        ops: &["import", "validate", "export", "document", "publishable", "stored_plans"],
         documents: &["feed", "network", "boundary"],
         consumes: &[],
         speaks: &[("feed", &[1]), ("network", &[transit_network::SCHEMA_VERSION]), ("boundary", &[1])],
@@ -150,9 +150,9 @@ const MODULES: &[ModuleSpec] = &[
         // The network document is produced by the network capability;
         // the operator edit document is host-owned (wholesale-replaced
         // — the sync contract); the watchlist is the PERSONAL document
-        // it reads in either version (cap-migrate migrates it).
+        // it reads in the current version (cap-migrate migrates it).
         consumes: &[("network", "network")],
-        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION]), ("watchlist", &[1, 2]), ("live", &[1])],
+        speaks: &[("network", &[transit_network::SCHEMA_VERSION]), ("operator_edits", &[transit_sync::SCHEMA_VERSION]), ("watchlist", &[transit_dispatch::watchlist::SCHEMA_VERSION]), ("live", &[1])],
         migrates: &[],
         // Its purpose and per-op agent context: crates/cap-board/OPS.md
         // (a `#` heading, the purpose, then one `##` section per op).
@@ -603,7 +603,7 @@ fn toolchain_pin(root: &Path) -> String {
 /// the publish recipe ran against them, at which commit. That
 /// record is what makes "known good" a checkable claim for an agent
 /// (or a human dogfooding `caps run`) rather than a marketing one.
-fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKind], locks: &[Option<schema_lock::Lock>], profile: &str) {
+fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKind], locks: &[schema_lock::Lock], profile: &str) {
     let registry = root.join("registry");
     let blobs = registry.join("blobs");
     let caps_dir = registry.join("capabilities");
@@ -732,9 +732,6 @@ struct DocumentKind {
     kind: &'static str,
     store_kind: Option<&'static str>,
     owner: &'static str,
-    /// False for a kind that is not locked yet: its schema and example
-    /// are published as generated.
-    locked: bool,
     spec: schema_lock::Kind,
 }
 
@@ -750,37 +747,33 @@ fn kind<T>(
 where
     T: transit_version::Versioned + schemars::JsonSchema + serde::Serialize + serde::de::DeserializeOwned,
 {
-    DocumentKind { kind, store_kind, owner, locked: true, spec: schema_lock::kind::<T>(T::KIND, T::READS, example, migrate) }
+    DocumentKind { kind, store_kind, owner, spec: schema_lock::kind::<T>(T::KIND, T::READS, example, migrate) }
 }
 
 /// Check every locked kind against its lock, or (`locking`) write what
 /// this build adds. Any drift ends the run with every drift named.
-fn lock_documents(root: &Path, documents: &[DocumentKind], locking: bool) -> Vec<Option<schema_lock::Lock>> {
+fn lock_documents(root: &Path, documents: &[DocumentKind], locking: bool) -> Vec<schema_lock::Lock> {
     let mut drifts = Vec::new();
     let mut locks = Vec::new();
     for doc in documents {
-        if !doc.locked {
-            locks.push(None);
-            continue;
-        }
         let owner = doc.owner;
         let dir = root.join("crates").join(owner).join("locks");
         let lock = schema_lock::read_lock(&dir, doc.spec.tag).unwrap_or_else(|e| panic!("{owner}'s lock: {e}"));
         if !locking {
             drifts.extend(schema_lock::check(&doc.spec, &lock));
-            locks.push(Some(lock));
+            locks.push(lock);
             continue;
         }
         match schema_lock::freeze(&doc.spec, &lock) {
-            Ok(next) if next == lock => locks.push(Some(lock)),
+            Ok(next) if next == lock => locks.push(lock),
             Ok(next) => {
                 schema_lock::write_lock(&dir, &next).unwrap_or_else(|e| panic!("{owner}'s lock: {e}"));
                 println!("schema lock: crates/{owner}/locks/ records {} v{}", doc.spec.tag, doc.spec.current);
-                locks.push(Some(next));
+                locks.push(next);
             }
             Err(refused) => {
                 drifts.extend(refused);
-                locks.push(Some(lock));
+                locks.push(lock);
             }
         }
     }
@@ -797,6 +790,18 @@ fn lock_documents(root: &Path, documents: &[DocumentKind], locking: bool) -> Vec
 /// Bring a network of an older version forward (transit-network's chain).
 fn migrate_network(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
     transit_network::migrate_to(doc, transit_network::SCHEMA_VERSION).map(|(doc, _)| doc)
+}
+
+/// Bring a watchlist of an older version forward (transit-dispatch's chain).
+fn migrate_watchlist(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
+    transit_dispatch::watchlist::migrate_to(doc, transit_dispatch::watchlist::SCHEMA_VERSION).map(|(doc, _)| doc)
+}
+
+/// The fixture watchlist: a rider's two saved stops, as the kernel's
+/// load and the board's example read it.
+fn fixture_watchlist() -> transit_dispatch::watchlist::Watchlist {
+    let stop = |id: &str, label: &str| transit_dispatch::watchlist::WatchStop { id: id.into(), label: label.into(), extra: Default::default() };
+    transit_dispatch::watchlist::Watchlist::new(vec![stop("A", "home"), stop("B", "work")])
 }
 
 /// Bring an edit document of an older version forward (transit-sync's chain).
@@ -834,22 +839,32 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
             net.map(|n| value(&transit_network::PlanSet { plans: [("plan-1".to_string(), n.derived_network().clone())].into(), ..Default::default() })),
             None,
         ),
-        // Not locked until it carries its kind (docs/units/document-versioning.md).
-        DocumentKind {
-            kind: "watchlist",
-            store_kind: None,
-            owner: "transit-dispatch",
-            locked: false,
-            spec: schema_lock::kind::<transit_dispatch::watchlist::Watchlist>(
-                "watchlist",
-                2,
-                serde_json::from_value(serde_json::json!({"version": "v2", "stops": [{"id": "A", "label": "Home"}, {"id": "C", "label": "Work"}]}))
-                    .ok()
-                    .map(|w: transit_dispatch::watchlist::Watchlist| value(&w)),
-                None,
-            ),
-        },
+        kind::<transit_dispatch::watchlist::Watchlist>(
+            "watchlist",
+            None,
+            "transit-dispatch",
+            Some(value(&fixture_watchlist())),
+            Some(migrate_watchlist),
+        ),
         kind::<transit_plans::PublishedPlans>("plans", Some("plans"), "transit-plans", plans_example, None),
+        kind::<transit_dispatch::device::RecentPlaces>(
+            "recent_places",
+            None,
+            "transit-dispatch",
+            Some(serde_json::json!({"kind": "recent_places", "schema_version": 1, "places": [
+                {"id": "A", "name": "Main St & 1st Ave", "lat": 45.5, "lon": -73.5},
+                {"id": "STN", "name": "Central Station"}
+            ]})),
+            None,
+        ),
+        kind::<transit_dispatch::device::LiveFeeds>(
+            "live_feeds",
+            None,
+            "transit-dispatch",
+            Some(serde_json::json!({"kind": "live_feeds", "schema_version": 1,
+                "trips": "https://agency.example/gtfs-rt/trip-updates.pb", "vehicles": "", "alerts": ""})),
+            None,
+        ),
         kind::<transit_authz::Policy>(
             "policy",
             Some("policy"),
@@ -926,29 +941,21 @@ const HOST_OWNED: &[(&str, u32)] = &[("build", 1)];
 /// `examples/<tag>.v<N>.json`, copied from the lock; and the index
 /// `documents.json`. Each entry names its files and their hashes, and
 /// says whether this build writes that version or reads it only through
-/// a migration (`written`). A kind that is not locked yet publishes its
-/// generated schema and example. Files are named by the tag a document
+/// a migration (`written`). Files are named by the tag a document
 /// carries inside it, so a reader holding only a document finds its
 /// schema. Each schema's `$id` names no host. `go test ./server/...`
 /// validates every example against its schema with no Rust
 /// (docs/FORMATS.md).
-fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[Option<schema_lock::Lock>], evidence: &serde_json::Value) {
+fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[schema_lock::Lock], evidence: &serde_json::Value) {
     let schemas = registry.join("schemas");
     let examples = registry.join("examples");
     fs::create_dir_all(&schemas).expect("create registry schemas");
     fs::create_dir_all(&examples).expect("create registry examples");
     let mut index = Vec::new();
     for (doc, lock) in documents.iter().zip(locks) {
-        let versions: Vec<(u32, serde_json::Value, Option<String>)> = match lock {
-            Some(lock) => lock.versions.iter().map(|(&v, locked)| (v, locked.schema.clone(), Some(locked.example.clone()))).collect(),
-            None => vec![(
-                doc.spec.current,
-                doc.spec.schema.clone(),
-                doc.spec.example.as_ref().map(|e| cap_abi::canonical_bytes(e).expect("example serializes")),
-            )],
-        };
         let tag = doc.spec.tag;
-        for (version, mut schema, example) in versions {
+        for (&version, locked) in &lock.versions {
+            let (mut schema, text) = (locked.schema.clone(), &locked.example);
             let stem = format!("{tag}.v{version}");
             schema["$id"] = format!("urn:transit-document:{tag}:v{version}").into();
             let schema = serde_json::to_string_pretty(&schema).expect("schema serializes") + "\n";
@@ -961,16 +968,13 @@ fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[Optio
                 "owner": doc.owner,
                 "schema_version": version,
                 "written": version == doc.spec.current,
-                "locked": lock.is_some(),
                 "schema": schema_path,
                 "schema_hash": cap_abi::content_hash(schema.as_bytes()),
             });
-            if let Some(text) = example {
-                let example_path = format!("examples/{stem}.json");
-                fs::write(registry.join(&example_path), &text).expect("write example");
-                entry["example"] = example_path.into();
-                entry["example_hash"] = cap_abi::content_hash(text.as_bytes()).into();
-            }
+            let example_path = format!("examples/{stem}.json");
+            fs::write(registry.join(&example_path), text).expect("write example");
+            entry["example"] = example_path.into();
+            entry["example_hash"] = cap_abi::content_hash(text.as_bytes()).into();
             index.push(entry);
         }
     }
@@ -996,7 +1000,6 @@ fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[Optio
             "owner": "server",
             "schema_version": version,
             "written": true,
-            "locked": true,
             "schema": schema_path,
             "schema_hash": cap_abi::content_hash(schema.as_bytes()),
             "example": example_path,
@@ -1539,6 +1542,14 @@ fn example_for(
                 json!({ "ok": { "op": "publishable", "issues": transit_network::validation_issues(&ctx.network),
                     "refusals": refusals, "warnings": warnings } }),
             )
+        }
+        ("network", "stored_plans") => {
+            // A stored plan as it was written: its own version is read
+            // when the page uses it.
+            let plan = json!({ "plan": { "id": "", "name": "Spring draft" } });
+            let document = json!({ "kind": "plan_set", "schema_version": 1, "plans": { "p1": plan } });
+            let plans = transit_network::plan_set::stored_plans(document.clone()).ok()?;
+            (json!({ "op": "stored_plans", "document": document }), json!({ "ok": { "op": "stored_plans", "plans": plans } }))
         }
         ("network", "export") => {
             let ctx = net?;
@@ -2170,13 +2181,10 @@ fn example_for(
             )
         }
         ("kernel", "load_watchlist") => {
-            let document = json!({ "version": "v2", "stops": [
-                { "id": "A", "label": "home" }, { "id": "B", "label": "work" }
-            ] });
-            let watchlist: transit_dispatch::watchlist::Watchlist = serde_json::from_value(document.clone()).ok()?;
+            let watchlist = fixture_watchlist();
             let watchlist_hash = cap_abi::canonical_hash(&watchlist).ok()?;
             (
-                json!({ "op": "load_watchlist", "document": document }),
+                json!({ "op": "load_watchlist", "document": watchlist }),
                 json!({ "ok": { "op": "load_watchlist", "watchlist_hash": watchlist_hash, "version": 2 } }),
             )
         }
@@ -2204,7 +2212,7 @@ fn example_for(
             let network = ctx.derived_network();
             let board = |stop: &str| transit_dispatch::stop_board(&network, &day, stop, 25200, 3, None, None);
             (
-                json!({ "op": "watchlist_board", "watchlist_hash": "sha256:<of the document>",
+                json!({ "op": "watchlist_board", "watchlist_hash": cap_abi::canonical_hash(&fixture_watchlist()).ok()?,
                     "network_hash": ctx.network_hash, "date": "2026-10-23", "from_secs": 25200, "limit": 3 }),
                 json!({ "ok": { "op": "watchlist_board", "stops": [
                     { "id": "A", "label": "home", "board": board("A") },

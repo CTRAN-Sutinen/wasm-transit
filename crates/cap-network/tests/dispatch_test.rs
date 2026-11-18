@@ -316,3 +316,22 @@ fn publishable_answers_what_refuses_a_pick() {
         other => panic!("publishable: {other:?}"),
     }
 }
+
+/// The stored plan set at the module seam: its plans by store id, as
+/// stored, and a refusal naming both versions for a newer set (the
+/// laws: transit-network `plan_set_test.rs`).
+#[test]
+fn stored_plans_answers_a_set_and_refuses_a_newer_one() {
+    let answer: serde_json::Value = serde_json::from_str(&cap_network::invoke(
+        &serde_json::json!({"op": "stored_plans", "document": {"kind": "plan_set", "schema_version": 1, "plans": {"p1": {"plan": {"id": "a"}}}}})
+            .to_string(),
+    ))
+    .unwrap();
+    assert_eq!(answer["ok"]["plans"], serde_json::json!({"p1": {"plan": {"id": "a"}}}), "{answer}");
+    let refused: serde_json::Value = serde_json::from_str(&cap_network::invoke(
+        &serde_json::json!({"op": "stored_plans", "document": {"kind": "plan_set", "schema_version": 2, "plans": {}}}).to_string(),
+    ))
+    .unwrap();
+    let error = refused["error"].as_str().unwrap_or_else(|| panic!("{refused}"));
+    assert!(error.contains("plan_set v2") && error.contains("reads v1"), "{error}");
+}

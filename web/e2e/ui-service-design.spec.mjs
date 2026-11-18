@@ -381,4 +381,52 @@ test("a plan stored under the old field names restores in the current shape", as
   const timetable = page.getByTestId("timetable");
   await expect(timetable.locator("tbody tr")).toHaveCount(3);
   await expect(timetable.locator("tbody tr").first()).toContainText("08:00");
+
+  // The set as it was stored is kept in the device's document store
+  // before the migrated plan is written over it (D-66: an older
+  // document is never destroyed).
+  const kept = await page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const open = indexedDB.open("keyval-store");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const get = open.result.transaction("keyval").objectStore("keyval").get("caps-documents");
+          get.onsuccess = () => resolve(Object.values(get.result?.kinds?.plan_set?.records ?? {}).map((r) => JSON.parse(r.bytes)));
+          get.onerror = () => reject(get.error);
+        };
+      }),
+  );
+  expect(kept).toEqual([{ legacy }]);
+});
+
+// A plan set a newer build wrote (docs/FORMATS.md, "Versions"): the
+// page reads it through the network capability, which refuses it naming
+// both versions, and the page never writes over it — not even when a
+// feed is imported into a plan of its own.
+test("a plan set from a newer build is refused and kept as written", async ({ page }) => {
+  const newer = { kind: "plan_set", schema_version: 2, plans: { p1: { plan: { id: "from-later" } } } };
+  const idb = (op, value) =>
+    page.evaluate(
+      ([op, value]) =>
+        new Promise((resolve, reject) => {
+          const open = indexedDB.open("keyval-store");
+          open.onupgradeneeded = () => open.result.createObjectStore("keyval");
+          open.onerror = () => reject(open.error);
+          open.onsuccess = () => {
+            const store = open.result.transaction("keyval", "readwrite").objectStore("keyval");
+            const req = op === "put" ? store.put(value, "transit:plans") : store.get("transit:plans");
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+          };
+        }),
+      [op, value],
+    );
+  await page.goto("/service-design.html");
+  await idb("put", newer);
+  await page.reload();
+  await page.getByTestId("design-rail").getByRole("button", { name: "Plans" }).click();
+  await page.getByTestId("feed-input").setInputFiles(path.join(fixtures, "sample-gtfs.zip"));
+  await expect(page.getByTestId("plan-list")).toContainText("Base network", { timeout: 10_000 });
+  expect(await idb("get")).toEqual(newer);
 });

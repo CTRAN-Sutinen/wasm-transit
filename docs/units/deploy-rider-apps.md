@@ -19,7 +19,8 @@ it depends on is:
   main-thread task over 50 ms after first paint.
 - **Versioning** — a display's cached build meets newer documents:
   [document-versioning.md](document-versioning.md)'s browser items
-  (1, 3, 5, and 6's reader of the next version; item 2 is the
+  (2, the migration module cut by use, and 4's reader of the next
+  version and the reload on a version refusal; item 1 is the
   server's).
 - **The static bundle** stands (`just export`; docs/architecture/static-deployment.md).
 

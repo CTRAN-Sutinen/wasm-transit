@@ -306,7 +306,7 @@ impl<T> std::ops::Deref for Current<T> {
 
 /// The version a copy of `T`'s kind carries in its version field.
 fn version_in<T: transit_version::Versioned>(value: &serde_json::Value) -> u32 {
-    value.get(T::VERSION_FIELD).and_then(serde_json::Value::as_u64).map_or(T::UNTAGGED, |v| v as u32)
+    T::version_in(value)
 }
 
 /// Parse a network document from bulk bytes ([`parse_versioned`]).

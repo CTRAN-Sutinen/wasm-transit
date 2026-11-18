@@ -95,7 +95,7 @@ pub enum Response {
 pub const KINDS: &[(&str, u32)] = &[
     (transit_network::KIND, transit_network::SCHEMA_VERSION),
     (transit_sync::KIND, transit_sync::SCHEMA_VERSION),
-    ("watchlist", 2),
+    (transit_dispatch::watchlist::KIND, transit_dispatch::watchlist::SCHEMA_VERSION),
 ];
 
 fn current(kind: &str) -> Result<u32, String> {
@@ -105,20 +105,11 @@ fn current(kind: &str) -> Result<u32, String> {
     })
 }
 
-/// The watchlist's version: its `"version": "vN"` tag.
-fn watchlist_version(doc: &serde_json::Value) -> Result<u32, String> {
-    doc.get("version")
-        .and_then(serde_json::Value::as_str)
-        .and_then(|v| v.strip_prefix('v'))
-        .and_then(|n| n.parse().ok())
-        .ok_or_else(|| "a watchlist names its version (\"version\": \"v1\")".into())
-}
-
 fn version_of(kind: &str, doc: &serde_json::Value) -> Result<u32, String> {
     match kind {
         transit_network::KIND => transit_network::schema_version_of(doc),
         transit_sync::KIND => transit_sync::version::schema_version_of(doc),
-        "watchlist" => watchlist_version(doc),
+        transit_dispatch::watchlist::KIND => transit_dispatch::watchlist::schema_version_of(doc),
         _ => current(kind),
     }
 }
@@ -135,16 +126,10 @@ fn migrate(kind: &str, doc: serde_json::Value, to: u32) -> Result<(serde_json::V
             let notes = notes.into_iter().map(|n| MigrationNote { from: n.from, kind: n.kind, field: n.field, count: n.count });
             Ok((doc, notes.collect()))
         }
-        "watchlist" => {
-            let from = watchlist_version(&doc)?;
-            if from >= to {
-                return Err(format!("watchlist v{from} is not older than v{to}: nothing to migrate"));
-            }
-            let watchlist: transit_dispatch::watchlist::Watchlist =
-                serde_json::from_value(doc).map_err(|e| format!("watchlist v{from}: {e}"))?;
-            let (migrated, notes) = transit_dispatch::watchlist::migrate(&watchlist)?;
-            let notes = notes.into_iter().map(|n| MigrationNote { from, kind: n.kind, field: n.field, count: n.count });
-            Ok((serde_json::to_value(migrated).expect("watchlists serialize"), notes.collect()))
+        transit_dispatch::watchlist::KIND => {
+            let (doc, notes) = transit_dispatch::watchlist::migrate_to(doc, to)?;
+            let notes = notes.into_iter().map(|n| MigrationNote { from: n.from, kind: n.kind, field: n.field, count: n.count });
+            Ok((doc, notes.collect()))
         }
         _ => Err(current(kind).err().unwrap_or_default()),
     }
@@ -163,7 +148,7 @@ fn canonical(kind: &str, doc: &serde_json::Value) -> Result<(String, String), St
     match kind {
         transit_network::KIND => typed::<transit_network::Network>(doc),
         transit_sync::KIND => typed::<transit_sync::EditDocument>(doc),
-        "watchlist" => typed::<transit_dispatch::watchlist::Watchlist>(doc),
+        transit_dispatch::watchlist::KIND => typed::<transit_dispatch::watchlist::Watchlist>(doc),
         _ => loose(doc),
     }
 }

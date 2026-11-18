@@ -53,3 +53,35 @@ impl transit_version::Versioned for PlanSet {
         self.schema_version.0
     }
 }
+
+/// The plans a stored set holds, by store id, each as stored: a page
+/// reads each plan's own version when it uses the plan. The set itself
+/// is read here. A tagged set in this version answers its `plans`. A set
+/// written before its tag is a bare map of plans by store id, and reads
+/// as the set. A set of another kind or version is refused, naming both,
+/// and the page never writes over it.
+pub fn stored_plans(doc: serde_json::Value) -> Result<BTreeMap<String, serde_json::Value>, String> {
+    let serde_json::Value::Object(mut root) = doc else {
+        return Err("a plan set is a JSON object".into());
+    };
+    let Some(kind) = root.get("kind") else {
+        return Ok(root.into_iter().collect());
+    };
+    if kind.as_str() != Some(<PlanSet as transit_version::Versioned>::KIND) {
+        return Err(format!("a {kind} document is not a plan set"));
+    }
+    let version = root.get("schema_version").map_or(Some(1), |v| v.as_u64().and_then(|n| u32::try_from(n).ok()));
+    match version {
+        Some(PLAN_SET_VERSION) => {}
+        Some(v) if v > PLAN_SET_VERSION => {
+            return Err(format!(
+                "plan_set v{v} is newer than this build, which reads v{PLAN_SET_VERSION}: a newer build wrote it (refused, never rewritten)"
+            ))
+        }
+        _ => return Err(format!("the plan set's schema_version {:?} is not a version this build reads", root.get("schema_version"))),
+    }
+    match root.remove("plans") {
+        Some(serde_json::Value::Object(plans)) => Ok(plans.into_iter().collect()),
+        _ => Err("a plan set has its plans".into()),
+    }
+}

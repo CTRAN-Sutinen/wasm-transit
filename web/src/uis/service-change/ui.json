@@ -20,6 +20,7 @@
     "network.import",
     "network.validate",
     "network.export",
+    "network.stored_plans",
     "analysis.day_types",
     "analysis.plan_compare",
     "analysis.service_type_compare",

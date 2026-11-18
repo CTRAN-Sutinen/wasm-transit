@@ -77,6 +77,15 @@ pub enum Request {
     /// pick that runs no service in its period, D-76). The remaining
     /// warnings ride along and never refuse.
     Publishable { network_hash: String },
+    /// A plan set a page stored, read back: its plans by store id, each
+    /// as stored (the page reads each plan's own version on use). A set
+    /// from before its tag is a bare map of plans and reads as the set.
+    /// Another kind or version is refused, naming both, and the page
+    /// never writes over it.
+    StoredPlans {
+        #[ts(type = "unknown")]
+        document: serde_json::Value,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -114,6 +123,10 @@ pub enum Response {
         issues: Vec<transit_network::NetworkError>,
         refusals: Vec<transit_network::NetworkWarning>,
         warnings: Vec<transit_network::NetworkWarning>,
+    },
+    StoredPlans {
+        #[ts(type = "Record<string, unknown>")]
+        plans: std::collections::BTreeMap<String, serde_json::Value>,
     },
 }
 
@@ -181,6 +194,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 transit_network::validation_warnings(&network).into_iter().filter(|w| !refusals.contains(w)).collect();
             Ok(Response::Publishable { issues: transit_network::validation_issues(&network), refusals, warnings })
         }
+        Request::StoredPlans { document } => Ok(Response::StoredPlans { plans: transit_network::plan_set::stored_plans(document)? }),
     }
 }
 

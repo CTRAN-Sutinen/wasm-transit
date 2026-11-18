@@ -323,6 +323,10 @@ The materialized day's views, model-native. It is a library shared by the cap-bo
 - For a diverted trip, the line is the alignment to the first kept stop, then the traced detour, then the alignment from the last kept stop. A skip-only diversion keeps the alignment.
 - The ridden segment is that line sliced between two stops.
 
+**A rider's own documents** (watchlist.rs, device.rs).
+- The watchlist: a rider's saved stops, tagged at v2 (`kind`, `schema_version`). A copy from before the tags names `"version": "vN"`. Its v2 reads as v2, and its v1 comes forward through the chain here (`migrate_to`), each note becoming a label and each dropped color reported. `Versioned::version_in` reads the old marker, so the kernel's refusal names it.
+- The device records ride-now keeps in the browser's store: `recent_places` (the last places a rider looked at) and `live_feeds` (the rider's own GTFS-rt URLs). Each is tagged at v1.
+
 ## transit-rt
 
 prost types from the official GTFS-rt proto, and the joins over the network.
@@ -641,7 +645,8 @@ The migration capability: what is this older document in the version this build 
 - `migrate` brings a document forward through every step of its chain:
   - a network (v1, every untagged shape, to v2);
   - an edit document (v1, the bare array, to v2);
-  - a watchlist (v1 to v2).
+  - a watchlist (v1, its notes and colors, to v2; a copy that names
+    `"version": "v2"` from before the tags is already v2).
 - The chains live in the owning libraries (transit-network, transit-sync, transit-dispatch). They are kept forever (D-66). Every record id is kept and every loss is a note.
 - `migrate` answers the new document's canonical bytes and hash.
 - `version` answers whether a document needs migration.

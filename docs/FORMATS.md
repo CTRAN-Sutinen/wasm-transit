@@ -24,7 +24,6 @@ holds:
 - its `schema_version`, and `written`: true for the version this build
   writes, false for an older version that it reads only through a
   migration;
-- `locked`: false for a kind that has no lock yet (the watchlist);
 - the files and their hashes.
 
 A reader maps a blob's envelope (`kind`, `schema_version`) to its
@@ -381,12 +380,12 @@ Every document says what it is inside it (D-62, D-115). So a copy
 anywhere names its kind and version without the app. A copy can be a
 blob, an export, or a file that another tool reads.
 
-- Each of our kinds carries `"kind"` and `"schema_version"` inside it,
-  except the watchlist (the table says which field). A network with no
-  `schema_version` is v1. This is every shape written before the tag. A
+- Each of our kinds carries `"kind"` and `"schema_version"` inside it.
+  A network with no `schema_version` is v1. This is every shape written before the tag. A
   bare array of edit records is edit document v1. A browser's plan set
   written before its tag is a bare map of plans by store id, and a page
-  reads it as the set.
+  reads it as the set. A watchlist written before its tags names its
+  version as `"version": "vN"`.
 - The byte kinds are a GTFS feed, a GTFS-rt snapshot, and a GeoJSON
   layer. They are open formats that their own specs version, and they
   carry no tag of ours.
@@ -399,13 +398,14 @@ Every persisted kind, by what a version change does to it:
 | `network` (authored or forked) | transit-network | authored | `kind`, `schema_version` |
 | `plans` (the published set) | transit-plans | authored | `kind`, `schema_version` |
 | `plan_set` (a browser's stored plans, by store id) | transit-network | authored | `kind`, `schema_version`; each plan's network its own |
-| `watchlist` | transit-dispatch | authored | `"version": "vN"` |
+| `watchlist` | transit-dispatch | authored | `kind`, `schema_version` (before its tags, `"version": "vN"`) |
 | `policy` | transit-authz | authored | `kind`, `schema_version` |
 | `work_rules` | transit-runs | authored | `kind`, `schema_version` |
 | `stops` | transit-stops | authored | `kind`, `schema_version` |
 | `stop_requests` | transit-requests | authored | `kind`, `schema_version` |
 | `diversion_draft` | transit-dispatch | authored | no tag (never persisted yet) |
-| a rider's device records (recent places, live-feed URLs) | the ride-now host | authored | no tag (`localStorage`) |
+| `recent_places` (a rider's recent places, on one device) | transit-dispatch | authored | `kind`, `schema_version` |
+| `live_feeds` (a rider's own live-feed URLs, on one device) | transit-dispatch | authored | `kind`, `schema_version` |
 | `network` (imported) | transit-codec | derived | `kind`, `schema_version` |
 | `boundary` | transit-codec | derived | `kind`, `schema_version` |
 | `streets` (imported) | transit-streets | derived | `kind`, `schema_version` |
@@ -439,13 +439,17 @@ schema is the HTTP contract's, and a build file is its exact bytes.
 
 A copy written before its kind's tags reads as that kind. An absent
 `kind` is the kind itself, and an absent version is v1. The network's
-and the edit document's untagged v1 are older versions. Every other
-kind gained its tags at v1, the version it already was. Every kernel
+and the edit document's untagged v1 are older versions. The watchlist
+gained its tags at v2, the version it already was: a copy that names
+`"version": "v2"` reads as v2 and is written tagged, and one that names
+`"v1"` is an older version. Every watchlist from before the tags named
+its version, so one with neither field is v2. Every other kind gained its tags at v1, the
+version it already was. Every kernel
 load checks the version the same way. So does every request field that
 takes one of these documents (`cap_abi::parse_versioned`,
-`cap_abi::Current`; the tag type is transit-version's `kind_tag!`). The
-kernel reads the watchlist's own `"version": "vN"` in both versions
-that it has had.
+`cap_abi::Current`; the tag type is transit-version's `kind_tag!`). A
+kind whose older copies name their version another way reads that too
+(`Versioned::version_in`).
 
 A module reads the version it was built for, and only that version. A
 module refuses an older document at its load, and the refusal names the
@@ -460,7 +464,9 @@ and the old bytes stay. It runs where a document arrives:
   merge. At startup, an older `edits` head is committed forward as an
   ordinary logged CAS, with the writer `migrate:<module hash>`. The
   older blob stays under its hash.
-- A browser's restore (service design brings a stored plan forward).
+- A browser's restore. The planners' pages bring a stored plan
+  forward, and ride-now a stored watchlist. The old record stays in
+  the device's document store.
 - An agent's load: `caps-run --load` of an older file is refused. The
   refusal names the op, which the agent runs through `--cap migrate`.
 
@@ -529,7 +535,7 @@ copies it. A static export carries the same files.
 Nothing was deployed before the lock, so each kind's baseline is the
 version it had then. The older versions of the network and the edit
 document have no lock. Their chains stay, and their own law tests pin
-them. The watchlist is not locked until it carries its `kind`.
+them.
 
 The kernel's own version is separate from the documents' versions. It
 bumps only when an existing kernel op changes meaning. A new kernel op

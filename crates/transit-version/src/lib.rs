@@ -34,6 +34,14 @@ pub trait Versioned {
     const UNTAGGED: u32 = 1;
     /// The version this copy carries.
     fn schema_version(&self) -> u32;
+    /// The version a copy carries, read from its JSON when it does not
+    /// read as this type (`cap_abi::parse_versioned` names it in the
+    /// refusal): the number in [`Self::VERSION_FIELD`], else
+    /// [`Self::UNTAGGED`]. A kind whose older copies name their version
+    /// another way reads that too.
+    fn version_in(value: &serde_json::Value) -> u32 {
+        value.get(Self::VERSION_FIELD).and_then(serde_json::Value::as_u64).map_or(Self::UNTAGGED, |v| v as u32)
+    }
 }
 
 /// The fields of a record that this build does not know (D-167): kept

@@ -27,6 +27,7 @@
     "network.import",
     "network.validate",
     "network.export",
+    "network.stored_plans",
     "analysis.service_groups",
     "analysis.route_frequency",
     "analysis.hourly_trips",

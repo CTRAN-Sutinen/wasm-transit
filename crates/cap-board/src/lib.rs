@@ -5,10 +5,8 @@
 //! of its own answers its POOLED walking group — the model's own
 //! concept), realtime-first when a LIVE document is supplied, the
 //! same stop grouped by route and destination for its display, and a
-//! personal saved set
-//! (the WATCHLIST document, version-tagged and migrated here — a
-//! personal multi-stop board is the same question parameterized by
-//! a personal document).
+//! personal saved set (the WATCHLIST document: a personal multi-stop
+//! board is the same question asked over a personal document).
 //!
 //! Every answer is one MATERIALIZED DAY — `materialize(net,
 //! date)`, patched with the edits in force on that date: the kernel's
@@ -29,8 +27,8 @@
 //!   from an rt snapshot in model vocabulary; the board reads its
 //!   predictions and alerts and classifies under its window — no host
 //!   joins rt;
-//! * **watchlist** — the personal document (v1 notes + colors,
-//!   v2 labels; its migration is cap-migrate's).
+//! * **watchlist** — the personal document, in the version this
+//!   build reads (its migration is cap-migrate's).
 
 #![forbid(unsafe_code)]
 
@@ -41,11 +39,10 @@ use std::sync::Arc;
 
 use transit_dispatch::{BoardAt, Day, GroupedBoard, Overnight, ServiceDay, StopBoard};
 
-pub use transit_dispatch::watchlist::{WatchStopV1, WatchStopV2, Watchlist};
+pub use transit_dispatch::watchlist::{WatchStop, Watchlist};
 
-/// One watched stop's board, with the version-appropriate label
-/// (v2 labels; v1 notes — the migration maps note → label). The board
-/// is THE stop board (`stop_board` with the same arguments).
+/// One watched stop's board, with its label. The board is THE stop
+/// board (`stop_board` with the same arguments).
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export, export_to = "cap_board/")]
 pub struct WatchBoardStop {
@@ -229,9 +226,9 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
                 .stop_ids()
                 .into_iter()
                 .map(|stop_id| WatchBoardStop {
-                    id: stop_id.to_string(),
-                    label: watchlist.label(stop_id),
-                    board: transit_dispatch::stop_board_at(&network, &at, stop_id, limit as usize, live.as_deref()),
+                    label: watchlist.label(&stop_id),
+                    board: transit_dispatch::stop_board_at(&network, &at, &stop_id, limit as usize, live.as_deref()),
+                    id: stop_id,
                 })
                 .collect();
             Ok(Response::WatchlistBoard { stops })

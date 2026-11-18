@@ -192,6 +192,101 @@ test("ride now keeps saved stops across a reload", async ({ page }) => {
   await expect(saved).toContainText("8:02");
 });
 
+/// Seed the device as an older build left it: a document store record
+/// in IndexedDB (idb-keyval's default store) and keys in localStorage,
+/// written before the page's own scripts run.
+async function seedDevice(page, { documents, local }) {
+  await page.goto("/manifest");
+  await page.evaluate(
+    ([documents, local]) => {
+      for (const [k, v] of Object.entries(local)) localStorage.setItem(k, v);
+      return new Promise((resolve, reject) => {
+        const open = indexedDB.open("keyval-store");
+        open.onupgradeneeded = () => open.result.createObjectStore("keyval");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const tx = open.result.transaction("keyval", "readwrite");
+          tx.objectStore("keyval").put(documents, "caps-documents");
+          tx.oncomplete = () => (open.result.close(), resolve());
+          tx.onerror = () => reject(tx.error);
+        };
+      });
+    },
+    [documents, local],
+  );
+}
+
+/// The device's document store and localStorage, as the page left them.
+async function readDevice(page) {
+  return page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const open = indexedDB.open("keyval-store");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const get = open.result.transaction("keyval").objectStore("keyval").get("caps-documents");
+          get.onsuccess = () =>
+            resolve({ documents: get.result, local: { recent: localStorage.getItem("ride-now:recent"), urls: localStorage.getItem("ride-now:live-urls") } });
+          get.onerror = () => reject(get.error);
+        };
+      }),
+  );
+}
+
+function storedWatchlist(bytes) {
+  return { kinds: { watchlist: { records: { "sha256:old": { hash: "sha256:old", version: 2, bytes } }, current: "sha256:old" } } };
+}
+
+// A device an older build wrote boots into the tagged documents, and
+// keeps what it had (docs/FORMATS.md, "Versions").
+test("ride now boots an older device into its tagged documents, keeping the old records", async ({ page }) => {
+  await seedDevice(page, {
+    documents: storedWatchlist(JSON.stringify({ version: "v2", stops: [{ id: "A", label: "home" }] })),
+    local: {
+      "ride-now:recent": JSON.stringify([{ id: "B", name: "Main & 2nd", lat: 45.51, lon: -73.51 }]),
+      "ride-now:live-urls": JSON.stringify({ trips: "https://agency.example/trip-updates.pb", vehicles: "", alerts: "" }),
+    },
+  });
+  await open(page);
+
+  // A watchlist from before its tags reads as v2: the saved stop answers.
+  const saved = page.getByTestId("saved");
+  await expect(saved).toContainText("home");
+  await expect(saved).toContainText("8:02");
+  // The recent places moved in from localStorage.
+  await expect(page.getByTestId("recent").getByRole("button", { name: "Main & 2nd" })).toBeVisible();
+
+  const { documents, local } = await readDevice(page);
+  expect(documents.kinds.watchlist.current).toBe("sha256:old");
+  expect(documents.kinds.watchlist.records["sha256:old"].bytes).toContain('"version":"v2"');
+  for (const [kind, key] of [["recent_places", "ride-now:recent"], ["live_feeds", "ride-now:live-urls"]]) {
+    const entry = documents.kinds[kind];
+    const record = entry.records[entry.current];
+    expect(JSON.parse(record.bytes)).toMatchObject({ kind, schema_version: 1 });
+    expect(record.produced_by).toEqual({ op: "moved", from: `localStorage:${key}` });
+  }
+  expect(JSON.parse(documents.kinds.live_feeds.records[documents.kinds.live_feeds.current].bytes).trips).toBe("https://agency.example/trip-updates.pb");
+  expect(local).toEqual({ recent: null, urls: null });
+});
+
+test("ride now brings an older saved-stops record forward, keeping the old one", async ({ page }) => {
+  const v1 = JSON.stringify({ version: "v1", stops: [{ id: "A", note: "home", color: "red" }] });
+  await seedDevice(page, { documents: storedWatchlist(v1), local: {} });
+  await open(page);
+  // The board refuses v1; the migration brings it forward (the note is
+  // the label), and the saved stop answers.
+  const saved = page.getByTestId("saved");
+  await expect(saved).toContainText("home");
+  await expect(saved).toContainText("8:02");
+  const { documents } = await readDevice(page);
+  const entry = documents.kinds.watchlist;
+  expect(entry.records["sha256:old"].bytes).toBe(v1);
+  const current = entry.records[entry.current];
+  expect(entry.current).not.toBe("sha256:old");
+  expect(JSON.parse(current.bytes)).toEqual({ kind: "watchlist", schema_version: 2, stops: [{ id: "A", label: "home" }] });
+  expect(current.produced_by).toEqual({ op: "migrate", from: "sha256:old", by: "migrate.migrate" });
+});
+
 test("ride now shows a detour on the board and on the trip", async ({ page }) => {
   await open(page, { edits: detour });
 
