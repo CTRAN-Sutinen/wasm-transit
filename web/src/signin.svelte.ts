@@ -13,6 +13,7 @@
 /// at boot (it finishes a sign-in the provider redirected back from) and
 /// shows `signin` (who is signed in) beside a sign-in control.
 
+import { noteRefusal } from "./versions";
 import { deploymentAuth } from "./engine";
 
 type Tokens = { access: string; refresh?: string; expires: number; name: string };
@@ -162,6 +163,9 @@ export async function writeFetch(url: string, init: RequestInit): Promise<Respon
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const resp = await fetch(url, { ...init, headers });
   if (resp.status === 401) signOut();
+  // A refusal of a document another build wrote asks for the
+  // deployment's build (src/versions.ts). The caller reads the body.
+  if (!resp.ok) void resp.clone().text().then(noteRefusal, () => {});
   return resp;
 }
 

@@ -82,10 +82,12 @@ const detour = [
   },
 ];
 
-async function open(page, { edits = [], staleAsOf = null } = {}) {
+async function open(page, { edits = [], staleAsOf = null, editsVersion = 2 } = {}) {
   await page.clock.setFixedTime(new Date("2026-10-23T07:55:00-04:00"));
   const headers = staleAsOf ? { "X-Store-Stale": "true", "X-Store-As-Of": String(staleAsOf) } : {};
-  await page.route("**/edits", (route) => route.fulfill({ contentType: "application/json", headers, body: JSON.stringify({ kind: "edit_records", schema_version: 2, records: edits }) }));
+  await page.route("**/edits", (route) =>
+    route.fulfill({ contentType: "application/json", headers, body: JSON.stringify({ kind: "edit_records", schema_version: editsVersion, records: edits }) }),
+  );
   await page.route(/\/rt\?url=/, (route) =>
     route.fulfill({ contentType: "application/octet-stream", body: fs.readFileSync(path.join(fixtures, "sample-rt.pb")) }),
   );
@@ -307,6 +309,24 @@ test("ride now lists a cancelled trip as cancelled, never as a departure", async
   await expect(board.getByTestId("board-cancelled")).toContainText("8:00");
   await expect(board.getByTestId("board-skipped")).toHaveCount(0);
   await expect(board.getByTestId("board-rows")).not.toContainText("8:02");
+});
+
+test("ride now refuses an edit document a newer build wrote, never reading it as its own", async ({ page }) => {
+  // After a rollback, a page can meet data a newer build wrote (D-79,
+  // D-186). Its module refuses it, naming both versions: the board says
+  // so, shows none of that document's detours as its own, and nothing
+  // is written. (The refusal's request for the deployment's build is
+  // src/versions.test.mjs.)
+  const posts = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/edits")) posts.push(request.url());
+  });
+  await open(page, { edits: detour, editsVersion: 3 });
+  await pick(page, "stop name", "main 3", "Main & 3rd");
+  const board = page.getByTestId("rider-board");
+  await expect(board).toContainText("edit_records v3 is newer than this module, which reads v2");
+  await expect(board.getByTestId("board-skipped")).toHaveCount(0);
+  expect(posts).toEqual([]);
 });
 
 test("ride now degrades frame by frame when a capability fails to load", async ({ page }) => {

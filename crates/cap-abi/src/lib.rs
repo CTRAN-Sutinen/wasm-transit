@@ -251,24 +251,83 @@ pub fn parse_document<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T,
 }
 
 /// Parse a document of a versioned kind from bulk bytes (JSON or
-/// gzipped JSON), in the version this build reads and only that: an
-/// older document is refused with the op that brings it forward, a
-/// newer one naming both versions — never parsed and re-emitted
-/// (docs/FORMATS.md, "Versions"). A copy with no version field is the
-/// kind's untagged version.
+/// gzipped JSON), in the version this build reads, or the next one
+/// where the kind reads one version ahead (`Versioned::AHEAD`, D-186).
+/// Any other version is refused, naming both: an older document with
+/// the op that brings it forward, a newer one as written by a newer
+/// build. It is never parsed and re-emitted (docs/FORMATS.md,
+/// "Versions"). A copy with no version field is the kind's untagged
+/// version. A copy read ahead is noted for the kernel ([`noting_read`]).
 pub fn parse_versioned<T>(bytes: &[u8]) -> Result<T, String>
 where
     T: serde::de::DeserializeOwned + transit_version::Versioned,
 {
+    let (document, read) = read_versioned::<T>(bytes)?;
+    if let Some(read) = read {
+        NOTED_READ.with(|noted| noted.set(Some(read)));
+    }
+    Ok(document)
+}
+
+/// A copy read one version ahead: how it was read, its version, and the
+/// canonical hash of the copy as stored (its identity on the bus).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadAhead {
+    pub how: transit_version::Ahead,
+    pub found: u32,
+    pub hash: String,
+}
+
+/// [`parse_versioned`], answering beside the document how it was read:
+/// `None` in this build's version, else the copy read ahead.
+pub fn read_versioned<T>(bytes: &[u8]) -> Result<(T, Option<ReadAhead>), String>
+where
+    T: serde::de::DeserializeOwned + transit_version::Versioned,
+{
+    use transit_version::ReadAs;
     match parse_document::<T>(bytes) {
-        Ok(document) => speaks(T::KIND, document.schema_version(), T::READS).map(|_| document),
+        Ok(document) => match transit_version::reads::<T>(document.schema_version())? {
+            ReadAs::Current => Ok((document, None)),
+            ReadAs::Ahead(how) => ahead(parse_document(bytes)?, how),
+        },
         // The typed read failed: an older or newer shape says so by its
         // version; a document in this version is just malformed.
         Err(typed) => match parse_document::<serde_json::Value>(bytes) {
-            Ok(value) => speaks(T::KIND, version_in::<T>(&value), T::READS).and(Err(typed)),
+            Ok(value) => match transit_version::reads::<T>(version_in::<T>(&value))? {
+                ReadAs::Current => Err(typed),
+                ReadAs::Ahead(how) => ahead(value, how),
+            },
             Err(_) => Err(typed),
         },
     }
+}
+
+/// A copy in the next version, read through its kind's step down.
+fn ahead<T>(value: serde_json::Value, how: transit_version::Ahead) -> Result<(T, Option<ReadAhead>), String>
+where
+    T: serde::de::DeserializeOwned + transit_version::Versioned,
+{
+    let found = version_in::<T>(&value);
+    let hash = canonical_hash(&value)?;
+    let down = T::step_down(value)?;
+    let document = serde_json::from_value(down).map_err(|e| format!("invalid document after the step down from v{found}: {e}"))?;
+    Ok((document, Some(ReadAhead { how, found, hash })))
+}
+
+thread_local! {
+    /// The copy [`parse_versioned`] read ahead while [`noting_read`]
+    /// runs.
+    static NOTED_READ: std::cell::Cell<Option<ReadAhead>> = const { std::cell::Cell::new(None) };
+}
+
+/// Run `read` and answer, beside its answer, the copy it read one
+/// version ahead, if any. The kernel's load uses it: a copy read ahead
+/// is held under its stored identity, and one read through a read-only
+/// step refuses a write ([`Kind::require_writable`](kernel::Kind::require_writable)).
+pub fn noting_read<R>(read: impl FnOnce() -> R) -> (R, Option<ReadAhead>) {
+    NOTED_READ.with(|noted| noted.set(None));
+    let answer = read();
+    (answer, NOTED_READ.with(|noted| noted.take()))
 }
 
 /// [`parse_versioned`] over a value already parsed (a request field).
@@ -276,14 +335,27 @@ pub fn versioned<T>(value: serde_json::Value) -> Result<T, String>
 where
     T: serde::de::DeserializeOwned + transit_version::Versioned,
 {
-    speaks(T::KIND, version_in::<T>(&value), T::READS)?;
-    serde_json::from_value(value).map_err(|e| format!("invalid document: {e}"))
+    read_value::<T>(value).map(|(document, _)| document)
+}
+
+fn read_value<T>(value: serde_json::Value) -> Result<(T, Option<ReadAhead>), String>
+where
+    T: serde::de::DeserializeOwned + transit_version::Versioned,
+{
+    match transit_version::reads::<T>(version_in::<T>(&value))? {
+        transit_version::ReadAs::Current => {
+            serde_json::from_value(value).map(|document| (document, None)).map_err(|e| format!("invalid document: {e}"))
+        }
+        transit_version::ReadAs::Ahead(how) => ahead(value, how),
+    }
 }
 
 /// A request field holding a document in the version this build
-/// reads ([`versioned`]): another version fails the request, naming
-/// both. Reads as the document (`Deref`); on the wire it is the
-/// document itself (`#[ts(as = "T")]` on the field).
+/// reads, or the next one it reads ahead ([`versioned`]): another
+/// version fails the request, naming both (docs/FORMATS.md, "Versions").
+/// It is for a document an op reads. The base of an op that answers the
+/// next document is a [`Base`]. Reads as the document (`Deref`); on the
+/// wire it is the document itself (`#[ts(as = "T")]` on the field).
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(transparent)]
 pub struct Current<T>(pub T);
@@ -298,6 +370,34 @@ where
 }
 
 impl<T> std::ops::Deref for Current<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+/// A request field holding the document an op writes over: it answers
+/// the next document from this one. It reads like [`Current`], and also
+/// refuses a copy read ahead through a read-only step, naming both
+/// versions (D-186). On the wire it is the document itself.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(transparent)]
+pub struct Base<T>(pub T);
+
+impl<'de, T> serde::Deserialize<'de> for Base<T>
+where
+    T: serde::de::DeserializeOwned + transit_version::Versioned,
+{
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let (document, read) = read_value::<T>(<serde_json::Value as serde::Deserialize>::deserialize(d)?).map_err(serde::de::Error::custom)?;
+        if let Some(read) = read {
+            transit_version::writes_over::<T>(read.found, transit_version::ReadAs::Ahead(read.how)).map_err(serde::de::Error::custom)?;
+        }
+        Ok(Base(document))
+    }
+}
+
+impl<T> std::ops::Deref for Base<T> {
     type Target = T;
     fn deref(&self) -> &T {
         &self.0
@@ -319,15 +419,10 @@ pub fn parse_network(bytes: &[u8]) -> Result<transit_network::Network, String> {
 /// both — an older one with the capability op that migrates it, a
 /// newer one as written by a newer build (refused, never rewritten).
 pub fn speaks(kind: &str, found: u32, reads: u32) -> Result<(), String> {
-    use std::cmp::Ordering::*;
-    match found.cmp(&reads) {
-        Equal => Ok(()),
-        Less => Err(format!(
-            "{kind} v{found}: this module reads v{reads} — bring it forward first (migrate.migrate, kind {kind:?})"
-        )),
-        Greater => Err(format!(
-            "{kind} v{found} is newer than this module, which reads v{reads}: a newer build wrote it (refused, never rewritten)"
-        )),
+    if found == reads {
+        Ok(())
+    } else {
+        Err(transit_version::refused(kind, found, reads))
     }
 }
 

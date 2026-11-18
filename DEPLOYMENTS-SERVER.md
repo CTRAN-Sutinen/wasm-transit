@@ -501,11 +501,33 @@ image.
   It only removes files more than 7 days old, so it is safe to run
   while the servers are running. Weekly is enough.
 
+- **Undo a bad update's data** (the emergency procedure). Use this only
+  when an update wrote data that the earlier version cannot use, and
+  rolling the app back ([section 9](#9-update-or-roll-back-the-app))
+  is not enough. First roll the app back. Then, for each kind of data
+  the update changed (for example `edits`), list its history:
+
+  ```
+  curl https://<your address>/pointers/edits/log
+  ```
+
+  Choose the last entry from before the update. Its `to` is the
+  version to go back to. Then run:
+
+  ```
+  just store revert -writer <your name> 's3://agency-transit/prod?region=us-west-2' edits sha256:…
+  ```
+
+  The tool moves the data back and lists every change made since then,
+  with who made it. Those changes stay in the bucket. A person enters
+  them again by hand in the app.
+
 - **Backups.** Every file in the bucket is written once and never
   changed, so a copy is simple. Copy the `pointers/` folder first,
   then `blobs/`. To restore, point the server at the copy and run
-  `just store verify` on it. Where backups go and how often is still
-  being decided.
+  `just store verify` on it. Restore a backup only into the same version
+  of the app or a newer one. An older version refuses data that a newer
+  one wrote. Where backups go and how often is still being decided.
 
 ## 12. Troubleshooting
 

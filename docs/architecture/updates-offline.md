@@ -33,6 +33,13 @@ stop display are such pages. They share one lifecycle (D-63, D-65):
   server answers (`serverAnswers`: not the worker's last copy) and its
   setup is closed.
 
+  A document another build wrote also makes the page look at once
+  (`web/src/versions.ts`, D-79). A module refuses a version newer than
+  it reads, or the server refuses a write over a copy it reads ahead
+  read-only. The engine and `writeFetch` pass every such refusal on,
+  and `installApp` asks the browser for the deployment's worker. The
+  page then applies the build by its rule above.
+
   A page another tab moved past counts as one with a build waiting. The
   worker keeps the previous build's shell beside the current one. So a
   page still on it loads its files.

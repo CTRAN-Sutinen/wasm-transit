@@ -36,7 +36,7 @@ archive — nothing here records what is finished.
 
 | unit | what it is |
 |---|---|
-| [runtime-cost-gate.md](runtime-cost-gate.md) | a ratchet on per-module memory and registration time |
+| [perf-harness.md](perf-harness.md) | `just perf`: compare runs, fail on runaway use, every UI measured |
 | [document-versioning.md](document-versioning.md) | every persisted document versioned, migrated forward at receive, rolled back under one rule; the schema lock and the published spec |
 | [store-durability.md](store-durability.md) | the sync store's contract run on each provider's real account, backup and restore (D-82) |
 | [storage-model.md](storage-model.md) | a layout per shape of data: collections record by record, the kind table and governed writes, a self-describing bucket, projections, permissions per change |

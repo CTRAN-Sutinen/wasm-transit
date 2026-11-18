@@ -67,8 +67,10 @@ pub enum Response {
     },
 }
 
+/// The network an edit applies to: the base of a write, so a network
+/// read one version ahead through a read-only step is refused (D-186).
 fn network_arc(network_hash: &str) -> Result<Arc<Network>, String> {
-    NETWORK.require(network_hash)
+    NETWORK.require_writable(network_hash)
 }
 
 /// The typed dispatch (native hosts call this directly). Failures

@@ -215,6 +215,10 @@ _host-tests:
     # The answer graph (web/src/uis/answers.ts): each node's state, and
     # a failure belonging to its frame alone.
     node --test web/src/uis/answers.test.mjs
+    # A refusal of a document another build wrote (web/src/versions.ts):
+    # the two texts transit-version writes, and nothing else, ask for
+    # the deployment's build (D-79, D-186).
+    node --test web/src/versions.test.mjs
     # The docs site (tools/docs-site.mjs): static pages from the
     # registry. Each capability, op, kernel op, and document kind has
     # its place, and no local link is broken.

@@ -151,7 +151,7 @@ blobs and CAS'd pointers as create-only objects in object storage —
 `azblob://container/prefix`, `gs://bucket/prefix`, or `mem://`
 (`/pointers`, `/blobs`, store-backed `/edits` and `/manifest`;
 `docs/FORMATS.md`); `server/dev.toml` holds it in memory. `just store-dev` runs a local SeaweedFS to serve
-over; `just store verify|gc|copy` are the offline tools. The feed,
+over; `just store verify|gc|copy|revert` are the offline tools. The feed,
 the street layer and the policy can come from a URL or the bucket
 (`bucket:<key>`) as well as a path.
 

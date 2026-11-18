@@ -34,7 +34,10 @@ pub enum Request {
     /// What a write must pass: every refusal (its request, its
     /// problem), or — when there is none — the canonical document and
     /// its hash.
-    Validate { requests: StopRequests },
+    Validate {
+        #[ts(as = "StopRequests")]
+        requests: cap_abi::Base<StopRequests>,
+    },
     /// A stop's requests, in id order.
     RequestsFor { requests_hash: String, stop: String },
     /// The work across every stop: every request in id order, only those
@@ -110,9 +113,8 @@ fn strings(list: &[&str]) -> Vec<String> {
 pub fn dispatch(request: Request) -> Result<Response, String> {
     match request {
         Request::Validate { requests } => {
-            use transit_version::Versioned;
-            cap_abi::speaks(StopRequests::KIND, requests.schema_version(), StopRequests::READS)?;
-            Ok(match requests.checked() {
+            // A received document: the base of a write (cap_abi::Base).
+            Ok(match requests.0.checked() {
                 Ok(requests) => {
                     let document = cap_abi::canonical_bytes(&requests)?;
                     let document_hash = cap_abi::content_hash(document.as_bytes());
@@ -140,7 +142,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::Put { requests_hash, id, request } => {
             let next = match requests_hash {
-                Some(h) => STOP_REQUESTS.require(&h)?.put(&id, request),
+                Some(h) => STOP_REQUESTS.require_writable(&h)?.put(&id, request),
                 None => StopRequests::default().put(&id, request),
             };
             Ok(match next.checked() {
@@ -152,7 +154,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             })
         }
         Request::RecordWorkOrder { requests_hash, id, work_order } => {
-            let next = STOP_REQUESTS.require(&requests_hash)?.record_work_order(&id, work_order).ok_or_else(|| format!("no request {id:?} in the document"))?;
+            let next = STOP_REQUESTS.require_writable(&requests_hash)?.record_work_order(&id, work_order).ok_or_else(|| format!("no request {id:?} in the document"))?;
             Ok(match next.checked() {
                 Ok(next) => {
                     let (requests_hash, held) = STOP_REQUESTS.register(next)?;

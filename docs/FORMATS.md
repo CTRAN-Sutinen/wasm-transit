@@ -487,6 +487,63 @@ new one. The manifest then pins those modules, and clients follow the
 manifest (D-63). Every client gets its modules from that manifest, so
 no client writes a version that the server does not read.
 
+### Rolling a version back
+
+A format change ships in two releases (D-79). Release A reads vN and
+vN+1 and writes vN. Release B writes vN+1. So a rollback goes one
+release back, to a build that reads everything the store holds. The
+reader of vN+1 leaves in the release after B.
+
+Release A declares, in the kind's `Versioned`, the version it reads
+ahead and how (`AHEAD`, D-186). The crate that owns the kind keeps the
+step down from vN+1 to vN (`step_down`), beside the migration step it
+reverses. The change is one of two kinds:
+
+- *Lossless*: vN+1 read down and brought forward again is the same
+  document. A law in the owning crate pins this. Release A reads the
+  document and writes over it as usual.
+- *Read-only*: vN+1 holds what vN cannot. Release A reads the document,
+  and refuses to write over it. The refusal names both versions. Edits
+  to that kind pause until the deployment moves forward again.
+
+Every reader reads ahead the same way: a kernel load, a request field
+(`cap_abi::Current`), and the base of a write (`cap_abi::Base`; a held
+document through `Kind::require_writable`; transit-sync's
+`read_document`). A copy read ahead is held under the hash it is stored
+with, so the page and the store name it alike. The laws are in cap-abi
+`tests/read_ahead_test.rs`. A kind whose ops still take the document as
+a plain typed field (cap-plans' published set) reads only its own
+version, and refuses the next one, until its change moves that field to
+`Current` or `Base`.
+
+A page whose module refuses a document as newer, or whose write the
+server refuses for its version, asks for the deployment's build
+(`web/src/versions.ts`). A page with a service worker (ride-now, the
+stop display) looks for the new build at once. It applies the build by
+its own rule, as for any new build (D-63).
+
+The emergency procedure is for a bad release A. It rolls the data back
+as well as the code, and an operator runs it by hand:
+
+1. Roll the code back ("Builds", above; `DEPLOYMENTS-SERVER.md`).
+2. Read each pointer's log (`GET /pointers/<name>/log`), and find its
+   last head from before the upgrade.
+3. Move the pointer back to that head: `store revert [-writer W] <url>
+   <pointer> <hash>` (`server/cmd/store`). The move is a new commit of
+   that head's document, under its envelope, so the log keeps every
+   commit. A pointer already at that head does not move.
+4. Read the commits the move dropped, which the tool lists: every log
+   entry after that head. Each one names its writer and its document
+   by hash, and the documents stay in the store as plain JSON (D-115).
+   A person enters their content again by hand, in the older build.
+
+A backup restores into a build at least as new as the backup. An older
+build refuses its newer documents, naming both versions.
+
+An archive reads two ways. As it was: its bytes and its version's
+published schema. This is the default for an audit. As it is today:
+brought forward through the migration chains on read, never stored.
+
 ### The schema lock
 
 The schemas are the agency's published spec for its data. Rust is the

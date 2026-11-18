@@ -481,7 +481,7 @@ reading **Because**.
 
 ### The server imports the feed; pages register the network (`network.go`, `feedSource`)
 - **Holds:** with a server, pages never parse GTFS. They register the imported network.
-- **Because:** C-TRAN's import costs ~2.7 s and a ~187 MB module. Registering the result costs ~0.45 s and ~9–12 MB (D-68 budgets).
+- **Because:** C-TRAN's import costs ~2.7 s and a ~187 MB module. Registering the result costs ~0.45 s and ~9–12 MB.
 - **Exception:** a serverless deployment may have each page import the agency's GTFS URL (D-132; [static-deployment.md](static-deployment.md)).
 
 ### Single-capability modules, fresh per import (`NewWasmHost`, `importFeed`, `streetsSource.Load`)

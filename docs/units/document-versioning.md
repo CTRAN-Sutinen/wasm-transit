@@ -27,7 +27,9 @@ older `edits` head and the older networks of the picks in use
 plan or watchlist forward at restore, keeping the old record, and
 ride-now's device records are tagged documents in the browser's store;
 cap-divert takes and answers the tagged edit document; a stop display
-keeps a URL parameter it does not know. What is left:
+keeps a URL parameter it does not know; a release reads one version
+ahead, lossless or read-only, and an operator can move a pointer back
+(`store revert`). What is left:
 
 ## Scope
 
@@ -45,30 +47,24 @@ keeps a URL parameter it does not know. What is left:
    schema lock"). The `build` document keeps its hand-written schema in
    `server/schemas/`, and the manifest its HTTP contract, until D-185 is
    answered.
-3. **Rolling a version back (D-79).** A format change ships in two
-   releases: A reads vN and vN+1 and writes vN, B writes vN+1, so
-   rollback one release back always reads what the store holds.
-   - The reader of the next version: a kind's load accepts its
-     version and, for one release, the next (`Versioned` names both;
-     `cap_abi::parse_versioned` reads either), and the store keeps
-     writing the current one.
-   - A client refused for its version reloads its manifest.
-   - The emergency procedure, for a bad release A: the pointers back
-     to their pre-upgrade heads, and the dropped commits listed from
-     the pointer log, to re-enter by hand.
-   - Written in `docs/FORMATS.md`, "Versions", beside the rollout
-     order, with the backup rule (a backup restores into a build at
-     least as new as it) and the archive's two readings (as it was,
-     the default for an audit; as it is today, through the archive
-     piece). Rolling the CODE back is in
-     `docs/architecture/release-artifacts.md`; both follow this
-     policy.
+3. **Rolling a version back (D-79, D-186).** The reader of the next
+   version, the write refusal, the page's request for the deployment's
+   build, the emergency procedure (`store revert`), and the rules stand
+   (`docs/FORMATS.md`, "Rolling a version back"). What is left:
+   - A page with no service worker (service design, service change,
+     the stops app) refused for its version. The engine passes the
+     refusal on (`web/src/versions.ts`), and nothing on those pages
+     acts on it yet.
+   - cap-plans' published set reads only its own version. Its ops take
+     the set as a plain typed field. They move to `cap_abi::Current`
+     and `cap_abi::Base` with the set's first format change.
 
 ## Done when
 
-- e2e: a page served a newer edit document than it reads does not
-  write it (a newer plan set is pinned:
-  `ui-service-design.spec.mjs`).
 - Go and e2e: a store written by release B (vN+1) is read by release
-  A (reads vN and vN+1) with no document lost or misread, and a page
-  refused for its version reloads its manifest.
+  A (reads vN and vN+1) with no document lost or misread. This needs a
+  real vN+1, so it lands with the first format change after the
+  baseline. The laws over fixture kinds stand (cap-abi
+  `tests/read_ahead_test.rs`, the kernel's read-ahead test).
+- e2e: a page with no service worker, refused for its version, gets
+  the deployment's build.

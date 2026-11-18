@@ -639,6 +639,22 @@ rules whose reasons are not clear from the rules alone.
   older documents.
 - **Decided:** D-66.
 
+### A release reads one version ahead (`Versioned::AHEAD`, `cap_abi::Base`, `Kind::require_writable`)
+- **Holds:** a format change ships in two releases. Release A reads vN
+  and vN+1 and writes vN. Release B writes vN+1. Release A reads vN+1
+  through a step down that the change declares lossless or read-only.
+  It refuses to write over a read-only copy, naming both versions.
+- **Because:** rollback is a pointer moved back, never an inverse
+  migration. So the build one release back must read what the store
+  holds. A step down that cannot keep everything must not store vN over
+  vN+1, or a write would drop data with no word.
+- **Rejected:** rolling the data back with the code, except as the
+  emergency procedure (`store revert`), because it can lose edits; and
+  one rule for every change, because most changes can step down
+  without loss.
+- **Decided:** D-79, D-186. The rules are in docs/FORMATS.md, "Rolling
+  a version back".
+
 ### The assembly crates are generated, never committed (`assemblies/`, `gen-assemblies`)
 - **Holds:** git ignores `assemblies/*`. A `.gitkeep` keeps the
   directory. `just caps` generates the crates again before every build.

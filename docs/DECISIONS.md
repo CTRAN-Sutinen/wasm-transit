@@ -238,7 +238,7 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-183 | What policy do the rider pages send, and who writes the export's `_headers`? | encoded | nothing |
 | D-184 | What color is the text on a route's badge? | encoded | nothing |
 | D-185 | Are the Go host's own documents (`build`, `manifest`) typed and hashed by a module? | unanswered | the `build` schema's form |
-| D-186 | What does a build that reads one version ahead write over a document in that version? | decided; not built | nothing |
+| D-186 | What does a build that reads one version ahead write over a document in that version? | decided; built | nothing |
 | D-187 | Is performance held to fixed budgets? | decided; not built | nothing |
 
 ## The trip model
@@ -3831,8 +3831,13 @@ Options:
 2. Read-only only: A never writes over a vN+1 head.
 3. Both: each change declares lossless or read-only, and a law checks
    the lossless claim.
-Blocks: nothing. Built with rollback in
-`docs/units/document-versioning.md`.
+Why: `docs/architecture/bus.md`, Why, "A release reads one version
+ahead"; the rules in `docs/FORMATS.md`, "Rolling a version back".
+Pinned by: cap-abi `tests/read_ahead_test.rs` (fixture kinds: a
+lossless step round-trips, a read-only step reads and refuses a write)
+and the kernel's read-ahead test (a copy read ahead keeps its stored
+identity, and a read-only one refuses `require_writable`).
+Blocks: nothing.
 
 ### D-187 — Is performance held to fixed budgets?
 State: Decided.

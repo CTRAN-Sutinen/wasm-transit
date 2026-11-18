@@ -16,7 +16,7 @@
 //!    refused naming the migration op, a newer one naming both
 //!    versions (docs/FORMATS.md, "Versions").
 
-use cap_abi::Current;
+use cap_abi::{Base, Current};
 use cap_divert::{dispatch, dispatch_bytes, dispatch_json, Request, Response};
 use transit_dispatch::DiversionDraft;
 use transit_network::Network;
@@ -45,8 +45,13 @@ fn doc(records: Vec<EditRecord>) -> Current<EditDocument> {
     Current(EditDocument::new(records))
 }
 
+/// The edit document as the base of a write.
+fn base(records: Vec<EditRecord>) -> Base<EditDocument> {
+    Base(EditDocument::new(records))
+}
+
 fn propose(hash: &str, records: Vec<EditRecord>, draft: DiversionDraft, now_ms: u64) -> Result<Vec<EditRecord>, String> {
-    match dispatch(Request::Propose { network_hash: hash.into(), draft, edits: doc(records), record_id: "e1".into(), now_ms })? {
+    match dispatch(Request::Propose { network_hash: hash.into(), draft, edits: base(records), record_id: "e1".into(), now_ms })? {
         Response::Propose { edits } => Ok(edits.records),
         _ => panic!("propose"),
     }
@@ -85,12 +90,12 @@ fn the_edit_document_walks_propose_retire_restore() {
     let again = propose(&hash, records, DiversionDraft { added_mins: 10.0, ..draft() }, 2_000).unwrap();
     assert_eq!((again[0].rev, again[0].diversion.as_ref().unwrap().id.as_str()), (2, "div-10-1000"), "the domain id is stable");
     let Response::Retire { edits } =
-        dispatch(Request::Retire { edits: doc(again), record_id: "e1".into(), now_ms: 3_000 }).unwrap()
+        dispatch(Request::Retire { edits: base(again), record_id: "e1".into(), now_ms: 3_000 }).unwrap()
     else {
         panic!("retire")
     };
     assert_eq!(edits.records[0].status, EditStatus::Retired);
-    let Response::Restore { edits } = dispatch(Request::Restore { edits: Current(edits), record_id: "e1".into(), now_ms: 4_000 }).unwrap()
+    let Response::Restore { edits } = dispatch(Request::Restore { edits: Base(edits), record_id: "e1".into(), now_ms: 4_000 }).unwrap()
     else {
         panic!("restore")
     };
@@ -132,7 +137,7 @@ fn refusals_are_errors_never_panics() {
     let hash = load();
     let err = propose(&hash, vec![], DiversionDraft { first_kept_stop: None, ..draft() }, 1).unwrap_err();
     assert!(err.contains("first stop"), "{err}");
-    assert!(dispatch(Request::Retire { edits: doc(vec![]), record_id: "nope".into(), now_ms: 1 }).is_err());
+    assert!(dispatch(Request::Retire { edits: base(vec![]), record_id: "nope".into(), now_ms: 1 }).is_err());
     assert!(dispatch(Request::Draft { network_hash: "sha256:nope".into(), draft: draft() }).is_err());
     assert!(dispatch_json("{not json").contains("\"error\""));
     assert!(dispatch_json(r#"{"op":"teleport"}"#).contains("invalid request"));
@@ -198,7 +203,7 @@ fn reports_say_what_each_record_amounts_to_on_the_network() {
 fn cancel(hash: &str, records: Vec<EditRecord>, start_secs: Option<u32>, date: &str, now_ms: u64) -> Result<Vec<EditRecord>, String> {
     let request = Request::Cancel {
         network_hash: hash.into(),
-        edits: doc(records),
+        edits: base(records),
         record_id: "c1".into(),
         trip_id: "10-weekday@28800".into(),
         start_secs,
@@ -234,7 +239,7 @@ fn a_trip_cancel_walks_the_edit_document() {
 
     let again = cancel(&hash, records, Some(28_800), "2026-10-23", 3_000).unwrap();
     assert_eq!((again[1].rev, again[1].cancel.as_ref().unwrap().id.as_str()), (2, "cancel-10-weekday@28800-2000"), "the domain id is stable");
-    let Response::Retire { edits } = dispatch(Request::Retire { edits: doc(again), record_id: "c1".into(), now_ms: 4_000 }).unwrap() else {
+    let Response::Retire { edits } = dispatch(Request::Retire { edits: base(again), record_id: "c1".into(), now_ms: 4_000 }).unwrap() else {
         panic!("retire")
     };
     assert_eq!(edits.records[1].status, EditStatus::Retired);

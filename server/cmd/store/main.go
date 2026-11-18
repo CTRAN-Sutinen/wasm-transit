@@ -6,6 +6,12 @@
 //	                              collector's own delete-capable credentials
 //	store copy <dir> <url>        carry a directory store an older build
 //	                              wrote into a bucket, then verify it
+//	store revert [-writer W] <url> <pointer> <hash>
+//	                              the emergency procedure: move a pointer
+//	                              back to a head its log holds, as a new
+//	                              logged commit, and list the commits the
+//	                              move dropped (docs/FORMATS.md, "Rolling
+//	                              a version back")
 //
 // <url> is a store URL: s3://bucket/prefix[?endpoint=URL&region=R],
 // azblob://container/prefix, or gs://bucket/prefix, with each
@@ -47,6 +53,14 @@ func main() {
 	case "copy":
 		need(args, 2)
 		report, err = withBackend(ctx, args[1], func(b store.Backend) (any, error) { return store.CopyDir(ctx, args[0], b) })
+	case "revert":
+		fs := flag.NewFlagSet("revert", flag.ExitOnError)
+		writer := fs.String("writer", "revert", "the writer the commit names (the operator)")
+		fs.Parse(args)
+		need(fs.Args(), 3)
+		report, err = withBackend(ctx, fs.Arg(0), func(b store.Backend) (any, error) {
+			return store.Revert(store.New(b), fs.Arg(1), fs.Arg(2), *writer, time.Now().UnixMilli())
+		})
 	default:
 		usage()
 	}
@@ -75,6 +89,6 @@ func need(args []string, n int) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: store verify <url> | store gc [-grace 168h] <url> | store copy <dir> <url>")
+	fmt.Fprintln(os.Stderr, "usage: store verify <url> | store gc [-grace 168h] <url> | store copy <dir> <url> | store revert [-writer W] <url> <pointer> <hash>")
 	os.Exit(2)
 }

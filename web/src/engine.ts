@@ -41,6 +41,7 @@
 /// It knows the ABI (which op loads which kind) and nothing of the
 /// domain: if a departure, a trip, or a stop appears here, it leaked.
 
+import { noteRefusal } from "./versions";
 import { call, type Assembly, type Route } from "./bus";
 import type { Capability } from "./types/cap_abi/Capability";
 import type { Evicted } from "./types/cap_abi/Evicted";
@@ -325,7 +326,12 @@ async function invoke(
   );
   if (reset) generations.set(route.module, (generations.get(route.module) ?? 0) + 1);
   const outcome = JSON.parse(ok as string) as { ok: unknown } | { error: string };
-  if ("error" in outcome) throw new Error(outcome.error);
+  if ("error" in outcome) {
+    // A document another build wrote asks for the deployment's build
+    // (src/versions.ts). The error is thrown as answered.
+    noteRefusal(outcome.error);
+    throw new Error(outcome.error);
+  }
   return outcome.ok;
 }
 

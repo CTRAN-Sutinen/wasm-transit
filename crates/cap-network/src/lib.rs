@@ -174,10 +174,13 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::Export { feed_hash, summary: counts, zip_b64: transit_codec::base64_encode(&bytes) })
         }
         Request::Document { network_hash } => {
-            let network = NETWORK.require(&network_hash)?;
+            // The document a host stores: a write. A network read one
+            // version ahead answers its bytes in this build's version, and
+            // a read-only one is refused (D-186).
+            let network = NETWORK.require_writable(&network_hash)?;
             let document = cap_abi::canonical_bytes(&*network)?;
             let document_hash = content_hash(document.as_bytes());
-            if document_hash != network_hash {
+            if document_hash != network_hash && NETWORK.read_ahead(&network_hash).is_none() {
                 return Err(format!("registered under {network_hash} but serializes to {document_hash}"));
             }
             Ok(Response::Document {

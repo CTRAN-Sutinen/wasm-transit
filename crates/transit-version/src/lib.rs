@@ -9,7 +9,8 @@
 //! - [`Version<N>`] is a version field whose absence reads as `N` —
 //!   for a kind whose untagged copies are that version.
 //! - [`Versioned`] is what a reader needs to refuse another version
-//!   at its load, naming both (`cap_abi::parse_versioned`).
+//!   at its load, naming both (`cap_abi::parse_versioned`), and to read
+//!   one version ahead for one release ([`Ahead`], D-79, D-186).
 //! - [`Extra`] is a record's fields that this build does not know,
 //!   kept as written (D-167).
 
@@ -41,6 +42,91 @@ pub trait Versioned {
     /// another way reads that too.
     fn version_in(value: &serde_json::Value) -> u32 {
         value.get(Self::VERSION_FIELD).and_then(serde_json::Value::as_u64).map_or(Self::UNTAGGED, |v| v as u32)
+    }
+    /// The next version this build also reads, for one release, and how
+    /// (D-79, D-186). A format change ships in two releases: release A
+    /// reads vN and vN+1 and writes vN, and release B writes vN+1. So a
+    /// rollback from B to A reads what B stored. `None`: this build
+    /// reads only [`Self::READS`].
+    const AHEAD: Option<(u32, Ahead)> = None;
+    /// A copy in the version [`Self::AHEAD`] names, stepped down to the
+    /// version this build reads. It is called only for that version.
+    /// The step lives in the crate that owns the kind, beside the
+    /// migration step it reverses.
+    fn step_down(next: serde_json::Value) -> Result<serde_json::Value, String> {
+        let _ = next;
+        Err(format!("{} has no step down from a newer version", Self::KIND))
+    }
+}
+
+/// How a build reads the next version of a kind (D-186). The format
+/// change declares it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ahead {
+    /// The step down loses nothing: vN+1 read down and brought forward
+    /// again is the same document (a law pins it). The build reads the
+    /// document and writes over it as usual.
+    Lossless,
+    /// vN+1 holds what vN cannot. The build reads the document through
+    /// the step down, and refuses to write over it, naming both
+    /// versions, until the deployment moves forward again.
+    ReadOnly,
+}
+
+/// How a copy was read: in the version this build reads, or one
+/// version ahead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadAs {
+    Current,
+    Ahead(Ahead),
+}
+
+impl ReadAs {
+    /// Whether a write over the copy is refused: a copy read ahead
+    /// through a read-only step.
+    pub fn read_only(self) -> bool {
+        self == ReadAs::Ahead(Ahead::ReadOnly)
+    }
+}
+
+/// How this build reads a copy of `T`'s kind in version `found`: the
+/// version it reads, the version [`Versioned::AHEAD`] names, or the
+/// refusal naming both ([`refused`]).
+pub fn reads<T: Versioned>(found: u32) -> Result<ReadAs, String> {
+    match T::AHEAD {
+        _ if found == T::READS => Ok(ReadAs::Current),
+        Some((next, how)) if found == next => Ok(ReadAs::Ahead(how)),
+        _ => Err(refused(T::KIND, found, T::READS)),
+    }
+}
+
+/// The refusal of a copy in another version, naming both: an older one
+/// with the capability op that migrates it, a newer one as written by a
+/// newer build (refused, never rewritten).
+pub fn refused(kind: &str, found: u32, reads: u32) -> String {
+    if found < reads {
+        format!("{kind} v{found}: this module reads v{reads} — bring it forward first (migrate.migrate, kind {kind:?})")
+    } else {
+        format!("{kind} v{found} is newer than this module, which reads v{reads}: a newer build wrote it (refused, never rewritten)")
+    }
+}
+
+/// The refusal of a write over a copy read ahead through a read-only
+/// step (D-186), naming both versions.
+pub fn write_refused(kind: &str, found: u32, reads: u32) -> String {
+    format!(
+        "{kind} v{found} was written by a newer build: this build reads it one version ahead of v{reads}, \
+         and does not write over it — move the deployment forward again to change it (D-186)"
+    )
+}
+
+/// The refusal of a write over a copy of `T`'s kind read as `read`, if
+/// it is refused.
+pub fn writes_over<T: Versioned>(found: u32, read: ReadAs) -> Result<(), String> {
+    if read.read_only() {
+        Err(write_refused(T::KIND, found, T::READS))
+    } else {
+        Ok(())
     }
 }
 

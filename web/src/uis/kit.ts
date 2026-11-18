@@ -7,6 +7,7 @@
 /// only file that asks the bus — through the engine, src/engine.ts),
 /// and `<id>.html` at the web root.
 
+import { onNewerBuild } from "../versions";
 import { previousClock, serviceClock } from "../clock";
 import { available, readJournal, startJournal, type CapId } from "../engine";
 import { answers, type AnswerNode, type FrameState, type Request } from "./answers";
@@ -156,6 +157,9 @@ export async function installApp(): Promise<void> {
     else if (hadController) movedOn = true;
   });
   if (registration.waiting && navigator.serviceWorker.controller) applyBuild();
+  // A document another build wrote: look for the deployment's build now.
+  // The page applies it by its own rule, as for any new build.
+  onNewerBuild(() => void registration?.update().catch(() => {}));
   void readBuild();
 }
 

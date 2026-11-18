@@ -489,23 +489,23 @@ pub fn compact(records: &[EditRecord], now_ms: u64, horizon_ms: u64) -> (Vec<Edi
 }
 
 /// Read a received edit document (a POST body, a stored head, a
-/// file) in the version this build reads, and only that: an older one
-/// is refused with the op that brings it forward (the migration
-/// capability), a newer one naming both versions. Its records are
+/// file) as the base of a merge, in the version this build reads. An
+/// older one is refused with the op that brings it forward (the
+/// migration capability), and a newer one naming both versions. The one
+/// exception is the next version where this build reads one version
+/// ahead (`Versioned::AHEAD`, D-186): a lossless step reads it down, and
+/// a read-only one refuses the write, naming both. Its records are
 /// [`sanitize_records`]'s.
 pub fn read_document(document: &serde_json::Value) -> Result<(EditDocument, usize), String> {
+    use transit_version::{ReadAs, Versioned};
     let found = version::schema_version_of(document)?;
-    if found < SCHEMA_VERSION {
-        return Err(format!(
-            "{KIND} v{found}: this module reads v{SCHEMA_VERSION} — bring it forward first (migrate.migrate, kind {KIND:?})"
-        ));
-    }
-    if found > SCHEMA_VERSION {
-        return Err(format!(
-            "{KIND} v{found} is newer than this module, which reads v{SCHEMA_VERSION}: a newer build wrote it (refused, never rewritten)"
-        ));
-    }
-    let (records, dropped) = sanitize_records(&document["records"]);
+    let (records, dropped) = match transit_version::reads::<EditDocument>(found)? {
+        ReadAs::Current => sanitize_records(&document["records"]),
+        ahead @ ReadAs::Ahead(_) => {
+            transit_version::writes_over::<EditDocument>(found, ahead)?;
+            sanitize_records(&EditDocument::step_down(document.clone())?["records"])
+        }
+    };
     Ok((EditDocument::new(records), dropped))
 }
 

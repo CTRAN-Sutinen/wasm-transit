@@ -247,6 +247,28 @@ impl<T: Send + Sync + 'static> Kind<T> {
         self.registry.get(hash)
     }
 
+    /// The document under `hash` as the base of a write: an op that
+    /// answers the next document from it. A copy read one version ahead
+    /// through a read-only step is refused, naming both versions
+    /// (D-186). Otherwise it is [`Self::require`].
+    pub fn require_writable(&self, hash: &str) -> Result<Arc<T>, String>
+    where
+        T: transit_version::Versioned,
+    {
+        let held = self.require(hash)?;
+        match self.registry.ahead(hash) {
+            Some((found, transit_version::Ahead::ReadOnly)) => Err(transit_version::write_refused(T::KIND, found, T::READS)),
+            _ => Ok(held),
+        }
+    }
+
+    /// The version the document under `hash` was in, where it was read
+    /// one version ahead (D-186), and how. It is held under the identity
+    /// it was stored with, and holds the document stepped down.
+    pub fn read_ahead(&self, hash: &str) -> Option<(u32, transit_version::Ahead)> {
+        self.registry.ahead(hash)
+    }
+
     /// Register a document an op minted (an import's network, cap-rt's
     /// live document) and answer its identity: the page holds a handle,
     /// and the document need not cross back in.
@@ -282,9 +304,18 @@ impl<T: Send + Sync + 'static> Kind<T> {
     fn load(&self, bytes: &[u8]) -> Result<LoadAnswer, String> {
         let (hash, held, unknown_fields) = match self.identity {
             Identity::Canonical(identity) => {
-                let (document, unknown_fields) = transit_version::noting_unknown(|| (self.parse)(bytes));
+                let ((document, unknown_fields), ahead) =
+                    crate::noting_read(|| transit_version::noting_unknown(|| (self.parse)(bytes)));
                 let document = document?;
-                let hash = identity(&document)?;
+                // A copy read one version ahead keeps the identity it is
+                // stored under (D-186). A read-only one refuses a write.
+                let hash = match &ahead {
+                    Some(read) => read.hash.clone(),
+                    None => identity(&document)?,
+                };
+                if let Some(read) = ahead {
+                    self.registry.mark_ahead(&hash, read.found, read.how);
+                }
                 (hash.clone(), self.registry.insert(hash, document), unknown_fields)
             }
             Identity::Bytes => {
@@ -824,5 +855,63 @@ mod tests {
         // A failed computation holds nothing.
         assert!(derive::<u64>(&SQUARE, "x", &[], || Err("no".into())).is_err());
         assert_eq!(derived_len(&SQUARE), 0);
+    }
+
+    // A copy read one version ahead (D-186): held under the identity it
+    // is stored with, and a read-only one refuses a write.
+    transit_version::kind_tag!(RatedKind = "rated");
+
+    /// v1 of a fixture kind whose v2 adds stars: read ahead, read-only.
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct Rated {
+        #[serde(default)]
+        kind: RatedKind,
+        schema_version: u32,
+        name: String,
+    }
+
+    impl transit_version::Versioned for Rated {
+        const KIND: &'static str = "rated";
+        const READS: u32 = 1;
+        const AHEAD: Option<(u32, transit_version::Ahead)> = Some((2, transit_version::Ahead::ReadOnly));
+        fn schema_version(&self) -> u32 {
+            self.schema_version
+        }
+        fn step_down(mut next: serde_json::Value) -> Result<serde_json::Value, String> {
+            let object = next.as_object_mut().ok_or("an object")?;
+            object.remove("stars");
+            object.insert("schema_version".into(), serde_json::json!(1));
+            Ok(next)
+        }
+    }
+
+    static RATED: Kind<Rated> = Kind {
+        id: "rated",
+        name: "rated",
+        load_op: "load_rated",
+        op: 0,
+        identity: Identity::Canonical(crate::canonical_hash),
+        registry: Registry::documents("rated", "load_rated", Retain::Host),
+        parse: crate::parse_versioned,
+        json: |e| e.field(e.edits, "edits").map(Cow::Borrowed),
+        answer: |edits_hash, _| Loaded::LoadEdits { edits_hash },
+    };
+
+    #[test]
+    fn a_copy_read_ahead_keeps_its_identity_and_a_read_only_one_refuses_a_write() {
+        let v2 = serde_json::json!({"kind": "rated", "schema_version": 2, "name": "a", "stars": 4});
+        let LoadAnswer { loaded, .. } = RATED.load(&serde_json::to_vec(&v2).unwrap()).unwrap();
+        let Loaded::LoadEdits { edits_hash: hash } = loaded else { panic!("{loaded:?}") };
+        assert_eq!(hash, crate::canonical_hash(&v2).unwrap(), "the identity it is stored under");
+        assert_eq!(RATED.require(&hash).unwrap().name, "a", "held stepped down, and read");
+        assert_eq!(RATED.read_ahead(&hash), Some((2, transit_version::Ahead::ReadOnly)));
+        let refused = RATED.require_writable(&hash).unwrap_err();
+        assert!(refused.contains("rated v2") && refused.contains("does not write over it"), "{refused}");
+
+        let v1 = serde_json::json!({"kind": "rated", "schema_version": 1, "name": "b"});
+        let LoadAnswer { loaded, .. } = RATED.load(&serde_json::to_vec(&v1).unwrap()).unwrap();
+        let Loaded::LoadEdits { edits_hash: hash } = loaded else { panic!("{loaded:?}") };
+        assert!(RATED.require_writable(&hash).is_ok(), "a copy in this version is a base as usual");
+        assert_eq!(RATED.read_ahead(&hash), None);
     }
 }

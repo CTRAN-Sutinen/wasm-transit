@@ -49,7 +49,10 @@ pub enum Request {
     /// What a write must pass: every refusal (its stop, its event's
     /// index, its problem), or — when there is none — the canonical
     /// document and its hash.
-    Validate { stops: Stops },
+    Validate {
+        #[ts(as = "Stops")]
+        stops: cap_abi::Base<Stops>,
+    },
     /// Every stop as its events make it on `date`, in id order —
     /// or only `stop_ids`, where given, and only those at `statuses`,
     /// where given — with the stops on the date counted by status. A
@@ -255,9 +258,8 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             amenities: transit_stops::AMENITIES.iter().map(|a| a.to_string()).collect(),
         }),
         Request::Validate { stops } => {
-            use transit_version::Versioned;
-            cap_abi::speaks(Stops::KIND, stops.schema_version(), Stops::READS)?;
-            Ok(match stops.identified().checked() {
+            // A received document: the base of a write (cap_abi::Base).
+            Ok(match stops.0.identified().checked() {
                 Ok(stops) => {
                     let document = cap_abi::canonical_bytes(&stops)?;
                     let document_hash = cap_abi::content_hash(document.as_bytes());
@@ -311,7 +313,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
             Ok(Response::Seed { stops_hash, stops: (*held).clone() })
         }
         Request::AddEvent { stops_hash, stop_id, event } => {
-            let next = STOPS.require(&stops_hash)?.add_event(&stop_id, event);
+            let next = STOPS.require_writable(&stops_hash)?.add_event(&stop_id, event);
             Ok(match next.identified().checked() {
                 Ok(next) => {
                     let (stops_hash, next) = STOPS.register(next)?;
@@ -322,7 +324,7 @@ pub fn dispatch(request: Request) -> Result<Response, String> {
         }
         Request::CorrectEvent { stops_hash, stop_id, event_id, event } => {
             let next = STOPS
-                .require(&stops_hash)?
+                .require_writable(&stops_hash)?
                 .correct_event_by_id(&stop_id, &event_id, event)
                 .ok_or_else(|| format!("no event {event_id:?} of stop {stop_id:?} in the stops document"))?;
             Ok(match next.identified().checked() {

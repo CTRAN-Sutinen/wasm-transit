@@ -35,7 +35,7 @@
 use std::sync::Arc;
 
 use cap_abi::kernel::NETWORK;
-use cap_abi::Current;
+use cap_abi::{Base, Current};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use transit_dispatch::{CancelRow, DiversionDraft, DiversionRow, DraftView};
@@ -76,7 +76,7 @@ pub enum Request {
         network_hash: String,
         draft: DiversionDraft,
         #[ts(as = "EditDocument")]
-        edits: Current<EditDocument>,
+        edits: Base<EditDocument>,
         record_id: String,
         #[ts(type = "number")]
         now_ms: u64,
@@ -90,7 +90,7 @@ pub enum Request {
     Cancel {
         network_hash: String,
         #[ts(as = "EditDocument")]
-        edits: Current<EditDocument>,
+        edits: Base<EditDocument>,
         record_id: String,
         trip_id: String,
         #[serde(default)]
@@ -102,7 +102,7 @@ pub enum Request {
     /// The edit document with `record_id` retired — the tombstone.
     Retire {
         #[ts(as = "EditDocument")]
-        edits: Current<EditDocument>,
+        edits: Base<EditDocument>,
         record_id: String,
         #[ts(type = "number")]
         now_ms: u64,
@@ -110,7 +110,7 @@ pub enum Request {
     /// The edit document with `record_id` back in force as a draft.
     Restore {
         #[ts(as = "EditDocument")]
-        edits: Current<EditDocument>,
+        edits: Base<EditDocument>,
         record_id: String,
         #[ts(type = "number")]
         now_ms: u64,

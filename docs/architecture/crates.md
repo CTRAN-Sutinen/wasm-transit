@@ -370,6 +370,8 @@ What every persisted document says about itself (D-115).
 - `kind_tag!` declares a kind's tag. A writer always writes it. A reader reads an absent tag as the kind and refuses another kind.
 - `Version<N>` is a version field whose absence reads as N.
 - `Versioned` is what a reader needs to refuse another version, naming both versions (`cap_abi::parse_versioned` at every kernel load, `cap_abi::Current` on a request field).
+- For one release, a kind may also read the next version (`AHEAD`, D-79, D-186). The owning crate keeps the step down (`step_down`). The change is lossless, and the build writes over the copy as usual, or read-only, and the build refuses to write over it, naming both versions. `reads` answers how a version reads. `refused` and `write_refused` are the two refusals, and the pages read their text (`web/src/versions.ts`).
+- The base of a write reads through `cap_abi::Base` (a request field) or `Kind::require_writable` (a held document). Both refuse a copy read ahead read-only. A copy read ahead is held under the hash it is stored with. The rules are in docs/FORMATS.md, "Rolling a version back".
 - Each owning library declares its kind's tag. The kinds and their versions are in docs/FORMATS.md's "Versions".
 - `Extra` is a record's fields that this build does not know (D-167). Every record of an authored kind flattens one in, so a read and a write keep them. A value (a point, a stop's two times, a set of weekdays) is not a record and carries none. `noting_unknown` runs a read and names the unknown fields it met. Every kernel load answers them (`unknown_fields`), and so does each receive op (`validate` for stops and stop requests, `sync_edits` for the client's records).
 
@@ -633,7 +635,7 @@ The operator-edit authoring capability: what does this operator edit amount to o
 
 **Contract.**
 - Every op takes the edit document whole (`edits`) and answers the next one tagged. So a host persists or posts the answer as given.
-- The capability refuses another version, naming both (`cap_abi::Current`, the version check that every kernel load shares).
+- The capability refuses another version, naming both (`cap_abi::Current`, the version check that every kernel load shares). `propose`, `cancel`, `retire`, and `restore` write: their edit document is a `cap_abi::Base`, which also refuses a copy read ahead read-only (D-186).
 - Reading a received document is cap-sync's `read_edits`.
 - This is a separate need from cap-sync's converge step. The Go server hosts that step without a network.
 - The host passes the clock and the record ids.

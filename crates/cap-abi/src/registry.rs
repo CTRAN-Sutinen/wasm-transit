@@ -89,24 +89,39 @@ pub struct Registry<T: ?Sized> {
     derived: bool,
     retain: Retain,
     entries: Mutex<Entries<T>>,
+    /// The documents read one version ahead (D-186), by hash, with the
+    /// version each was in and how it was read.
+    ahead: Mutex<BTreeMap<String, (u32, transit_version::Ahead)>>,
 }
 
 impl<T: ?Sized> Registry<T> {
     /// A document registry: values by their content hash. Private to
     /// the kernel — a capability cannot declare shared state.
     pub(crate) const fn documents(kind: &'static str, load_op: &'static str, retain: Retain) -> Self {
-        Registry { kind, load_op, derived: false, retain, entries: Mutex::new(Entries { next: 0, map: BTreeMap::new() }) }
+        Registry { kind, load_op, derived: false, retain, entries: Mutex::new(Entries { next: 0, map: BTreeMap::new() }), ahead: Mutex::new(BTreeMap::new()) }
     }
 
     /// A derived registry: values computed from documents, by any key.
     pub(crate) const fn derived(kind: &'static str, retain: Retain) -> Self {
-        Registry { kind, load_op: "", derived: true, retain, entries: Mutex::new(Entries { next: 0, map: BTreeMap::new() }) }
+        Registry { kind, load_op: "", derived: true, retain, entries: Mutex::new(Entries { next: 0, map: BTreeMap::new() }), ahead: Mutex::new(BTreeMap::new()) }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Entries<T>> {
         // A panic mid-op poisons nothing worth refusing: entries are
         // whole values, inserted atomically.
         self.entries.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Note that the document under `hash` was read one version ahead,
+    /// from version `found` (D-186).
+    pub(crate) fn mark_ahead(&self, hash: &str, found: u32, how: transit_version::Ahead) {
+        self.ahead.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(hash.to_string(), (found, how));
+    }
+
+    /// The version a document read one version ahead was in, and how it
+    /// was read.
+    pub(crate) fn ahead(&self, hash: &str) -> Option<(u32, transit_version::Ahead)> {
+        self.ahead.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(hash).copied()
     }
 
     /// The value under `key`, if held.

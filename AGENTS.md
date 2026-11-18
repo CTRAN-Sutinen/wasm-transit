@@ -268,9 +268,12 @@ just export UI OUT feed.zip [streets.geojson ["Publisher"]]   # one rider UI (ri
 just export-feed-url UI OUT URL [streets.geojson ["Publisher"]]   # the same, but the pages
                            # fetch and import the agency's GTFS URL themselves and check
                            # it daily. There is no redeploy for each feed (D-132).
-just store verify|gc|copy … # the store's offline tools (server/cmd/store): verify a
-                           # bucket, collect orphans (D-117), or carry an older build's
-                           # directory store into a bucket
+just store verify|gc|copy|revert … # the store's offline tools (server/cmd/store):
+                           # verify a bucket, collect orphans (D-117), carry an older
+                           # build's directory store into a bucket, or move a pointer
+                           # back to an older head and list the commits it dropped
+                           # (the emergency procedure; docs/FORMATS.md, "Rolling a
+                           # version back")
 just store-dev             # local object stores in podman: SeaweedFS (:8333, the one to
                            # serve over), Azurite, and fake-gcs-server (store-dev-stop)
 just store-contract        # the store's laws against each of them (opt-in, never in
@@ -359,8 +362,9 @@ transit-live     the live document: rt in the model's vocabulary, each instance'
                  skipped stop). Pure.
 transit-version  a document's kind tag and version (D-115): the tag every persisted
                  document writes, and what a reader checks to refuse another version;
-                 and a record's fields this build does not know, kept and named
-                 (`Extra`, D-167)
+                 the one version ahead a release reads, lossless or read-only
+                 (`Versioned::AHEAD`, D-186); and a record's fields this build does
+                 not know, kept and named (`Extra`, D-167)
 transit-sync     the sync document (EditRecord: a Diversion or a TripCancel), merge, and
                  the record envelope. Pure.
 transit-plans    the service-plan chain (resolve, periods, validity; pure and derived),
