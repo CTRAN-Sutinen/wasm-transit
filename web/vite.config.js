@@ -32,6 +32,7 @@ const input = {
 // it runs — the capability manifest, its linked assembly and, for the
 // fallback a page takes when the assembly does not load (D-88), each
 // of its capabilities alone; the deployment's live-feeds.json; the
+// documents' schemas (/schemas/); the
 // basemap's files only when the page draws a map (its code includes
 // src/basemap.ts). index.html forwards to the page. Without UI the
 // build is every page (the sync server's).
@@ -63,6 +64,8 @@ function oneUi(id) {
         for (const cap of caps.capabilities.filter((c) => linked.capabilities.includes(c.id))) copy(cap.url);
       }
       copy("live-feeds.json");
+      // The documents' schemas, served at /schemas/ by every deployment.
+      copy("schemas");
       if (drawsMap) {
         copy("basemap.pmtiles");
         copy("basemap-assets");

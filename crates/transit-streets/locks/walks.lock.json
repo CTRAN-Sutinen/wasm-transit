@@ -1,0 +1,9 @@
+{
+  "tag": "walks",
+  "versions": {
+    "1": {
+      "example_hash": "sha256:a69e27ea330493ce440503333415dd2f5670ce9f41b3277719f313850c037b2b",
+      "schema_hash": "sha256:9ebff5212ac7bea4b6deae14e46013e556bf7fd115c66b0bf40709496bb4d42b"
+    }
+  }
+}

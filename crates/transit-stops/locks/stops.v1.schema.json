@@ -1,0 +1,306 @@
+{
+  "$defs": {
+    "Attachment": {
+      "additionalProperties": true,
+      "description": "A photo or drawing a record carries (D-162): named by its content\nhash, never a URL — the deployment names the bucket, the server hands\nout the link, and only a signed-in person may read it.",
+      "properties": {
+        "caption": {
+          "description": "What it shows, in a few words (\"approaching\", \"the cross street\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hash": {
+          "description": "\"sha256:\" and the 64 hex digits of the file's bytes.",
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "taken_on": {
+          "description": "The day it was taken.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "description": "Its media type (\"image/jpeg\", \"application/pdf\").",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hash",
+        "type"
+      ],
+      "type": "object"
+    },
+    "Event": {
+      "additionalProperties": true,
+      "description": "One thing that happened, or will happen, to a stop.",
+      "properties": {
+        "amenities": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "description": "What is at the stop (D-154): `true` there, `false` checked and\nnot there, absent not recorded. The core names are\nOpenStreetMap's bus-stop tags ([`AMENITIES`]); the agency's own\nnames are kept and not checked.",
+          "type": "object"
+        },
+        "attachments": {
+          "description": "Its photos and drawings (D-162): a survey's approach and cross\nstreet, a closure's sign.",
+          "items": {
+            "$ref": "#/$defs/Attachment"
+          },
+          "type": "array"
+        },
+        "code": {
+          "description": "The number riders see on the sign — the rider's identifier, not\nunique (D-151).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "event": {
+          "$ref": "#/$defs/EventKind"
+        },
+        "fare_zone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "from_feed": {
+          "description": "The agency's feed an import recorded this event from (D-150): the\nfeed's id (its hash), so the events a feed recorded are found again\nand shown to the planner. A person's own event has none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Its id, unique within its stop (D-166), so two writers' events\nare told apart and a correction names the event it edits. A\nwriter may give one; an event written without one gets one at\nthe write, derived from its stop and its content\n([`Stops::identified`]).",
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StopKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A stop riders board at, or a station grouping stops."
+        },
+        "lat": {
+          "description": "The stop's point (WGS 84 degrees): set by a stage event and by\n`moved`; required of a stop's first event and of a move.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "level": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lon": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "note": {
+          "description": "A person's note on the event (\"water main work\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "on": {
+          "description": "The service date it takes effect (\"YYYY-MM-DD\", the agency's\nzone). Only a stop's first event, an `in_service`, may have\nnone: an imported stop whose start no feed records.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parent": {
+          "description": "The station a stop is part of.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "platform": {
+          "description": "The platform's own identifier (\"G\", \"3\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "refs": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The stop and its parts in other systems (D-160): each system or\npart by name, its id there (`sign` — the Sign ID, `tms`, `hp`,\n`gis`, `shelter`, …). Kept and not checked.",
+          "type": "object"
+        },
+        "replaces": {
+          "description": "The stops a consolidation or split succeeds (a stage event).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "request": {
+          "description": "The stop request this event carries out (D-159): its id in the\nstop requests document — a new stop built, a stop relocated or\nremoved. Not checked here: the requests are their own document.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "site": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The site as surveyed (D-158): each question's answer by name,\nabsent not recorded. The core questions ([`SITE`]) are C-TRAN's\nService Stop Worksheet's, each answer checked against its kind;\nthe agency's own questions are kept and not checked. What a\nsurvey says the agency's other data may contradict (D-161) — both\nare kept as given.",
+          "type": "object"
+        },
+        "spoken_name": {
+          "description": "How the name is read aloud, where it differs from the text.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "street_access": {
+          "description": "A station's stop: reached straight from the street or only\nthrough the station.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "surveyed_by": {
+          "description": "Who surveyed the stop, as they gave their name: the event records\na site survey (D-158), dated the day of the survey. Only on an\nevent that sets details (a stage, `changed`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timezone": {
+          "description": "The stop's own timezone, where it differs from its operator's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "transfer": {
+          "description": "A designated transfer point.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "until": {
+          "description": "A `suspended` or `moved` that is temporary: the first service\ndate after it, when the earlier state returns.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wheelchair": {
+          "description": "Whether a wheelchair user can board here; absent = not\nrecorded.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "event"
+      ],
+      "type": "object"
+    },
+    "EventKind": {
+      "enum": [
+        "planned",
+        "permitted",
+        "built",
+        "in_service",
+        "suspended",
+        "moved",
+        "changed",
+        "retired"
+      ],
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "StopKind": {
+      "description": "A stop or a station grouping stops.",
+      "enum": [
+        "stop",
+        "station"
+      ],
+      "type": "string"
+    },
+    "StopsKind": {
+      "const": "stops"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Every stop, by its lasting id, each a list of dated events.",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/StopsKind",
+      "default": "stops",
+      "description": "The kind tag and version (D-115); a copy without them is this\nkind, version 1."
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": 1
+    },
+    "stops": {
+      "additionalProperties": {
+        "items": {
+          "$ref": "#/$defs/Event"
+        },
+        "type": "array"
+      },
+      "description": "Each stop's events, oldest first. The key is the stop's lasting\nid: it stays the same through a move (D-145).",
+      "type": "object"
+    }
+  },
+  "required": [
+    "stops"
+  ],
+  "title": "Stops",
+  "type": "object"
+}

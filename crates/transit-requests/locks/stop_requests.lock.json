@@ -1,0 +1,9 @@
+{
+  "tag": "stop_requests",
+  "versions": {
+    "1": {
+      "example_hash": "sha256:844ddc15bdebe324d7622c85e40c7e48f13dbfbde0b7e4cdf11edd2a1a575bfc",
+      "schema_hash": "sha256:12c4b9df66e491d916bac4b782d49fc801341fea793de45c8c0386645f9f98e4"
+    }
+  }
+}

@@ -1,0 +1,234 @@
+{
+  "$defs": {
+    "DetourPoint": {
+      "description": "One vertex of a drawn detour polyline.",
+      "properties": {
+        "lat": {
+          "format": "double",
+          "type": "number"
+        },
+        "lon": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "lat",
+        "lon"
+      ],
+      "type": "object"
+    },
+    "Diversion": {
+      "additionalProperties": true,
+      "description": "One operator edit, serializable so the UI can persist it next to\nthe feed bytes and replay it after a reload. The edit document is\nTHE DISPATCHER'S OWN — it lives here, in the sync contract, not in\nthe GTFS codec (GTFS is a serialization spec for external data\nsharing; this document never crosses that boundary). Its fields\nreference routes and stops by the ids the network model carries.",
+      "properties": {
+        "added_secs": {
+          "default": 0,
+          "description": "Extra running time through the detour, applied from the last\nanchor onward.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "detour": {
+          "default": null,
+          "description": "Drawn detour polyline; `None` = alignment unchanged (skip only).",
+          "items": {
+            "$ref": "#/$defs/DetourPoint"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "direction_id": {
+          "default": null,
+          "description": "`None` = both directions. (GTFS's direction_id, kept for the\nboundary path; the model matches patterns, not directions.)",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "end_date": {
+          "format": "date",
+          "type": "string"
+        },
+        "first_kept_stop": {
+          "description": "Board/anchor points on the normal alignment: the detour happens\nbetween them, and they stay served.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "last_kept_stop": {
+          "type": "string"
+        },
+        "route_id": {
+          "type": "string"
+        },
+        "skipped_stops": {
+          "default": [],
+          "description": "Interior stops no longer served (must not include the anchors).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "start_date": {
+          "format": "date",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "route_id",
+        "first_kept_stop",
+        "last_kept_stop",
+        "start_date",
+        "end_date"
+      ],
+      "type": "object"
+    },
+    "EditRecord": {
+      "additionalProperties": true,
+      "description": "One operator edit plus its sync envelope. The payload is the domain\ncontent — exactly one of `diversion` and `cancel` (a record with\nneither or both is not a record: [`sanitize`] drops it); the\nenvelope fields are what any sync partner needs to merge, order,\nand retire records without understanding the domain. An absent\npayload is omitted, never `null`, so a diversion record's bytes\n(and every edit document's hash) are the ones it had before the\ncancel payload existed.",
+      "properties": {
+        "cancel": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TripCancel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "diversion": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Diversion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "rev": {
+          "description": "Monotonic per id; bumped on every change by the writer.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/EditStatus"
+        },
+        "updated_at": {
+          "description": "Unix epoch milliseconds, stamped by the writer.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "rev",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "EditStatus": {
+      "description": "Lifecycle of an edit record. `retired` is the tombstone: the record\nstays in the document (sync needs to see the deletion), but it is\nno longer in force and the UI hides it.",
+      "oneOf": [
+        {
+          "const": "draft",
+          "description": "Created locally, not yet submitted anywhere.",
+          "type": "string"
+        },
+        {
+          "const": "submitted",
+          "description": "Pushed to an ops server; still intended to run.",
+          "type": "string"
+        },
+        {
+          "const": "accepted",
+          "description": "Accepted by the ops authority; in force.",
+          "type": "string"
+        },
+        {
+          "const": "retired",
+          "description": "Withdrawn or failed revalidation against a new feed artifact.\nKept as evidence and as a sync tombstone.",
+          "type": "string"
+        }
+      ]
+    },
+    "EditsKind": {
+      "const": "edit_records"
+    },
+    "TripCancel": {
+      "additionalProperties": true,
+      "description": "A whole trip taken out of service on one service date (D-45): the\ntrip does not run, so no board offers it as a departure and the\nrouter never rides it — the boards list it as cancelled among the\nvisits the day's edits took away (D-100). The trip is the model's\nstored trip (`Network::trip`); a frequency trip's instances share\nit, so `start_secs` names one instance, and `None` cancels every\ninstance it runs that day. Partial cancellation (from a stop on),\ncover, hold, and swap are not this payload's (D-45: later).",
+      "properties": {
+        "date": {
+          "description": "The one service date it is cancelled on (D-101).",
+          "format": "date",
+          "type": "string"
+        },
+        "id": {
+          "description": "The cancel's own domain id (stable across re-proposals of one\nrecord, like a diversion's).",
+          "type": "string"
+        },
+        "start_secs": {
+          "default": null,
+          "description": "One instance (seconds after the service-day anchor); `None` =\nevery instance of the trip on the date.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "trip_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "trip_id",
+        "date"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "The operator edit document: every edit record, whole, keyed by id\n(LWW per id, retirement the tombstone — `merge`).",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/EditsKind"
+    },
+    "records": {
+      "items": {
+        "$ref": "#/$defs/EditRecord"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "kind",
+    "schema_version",
+    "records"
+  ],
+  "title": "EditDocument",
+  "type": "object"
+}

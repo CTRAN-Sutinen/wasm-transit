@@ -1,0 +1,100 @@
+{
+  "$defs": {
+    "BoundaryKind": {
+      "const": "boundary"
+    },
+    "DatedCalendar": {
+      "description": "How a feed wrote a service it published as dates alone.",
+      "properties": {
+        "row": {
+          "description": "The calendar.txt row's start_date and end_date as written; none\nwhen the feed had no row for the service.",
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "SchemaVersion": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "What the feed's bytes carry that the document does not: pure\nserialization, never planner intent. Emitted with the imported\ndocument; `Boundary::default()` for an authored one (stop_sequence\n1..=n, a frequency trip's rows based at its first band).",
+  "properties": {
+    "anonymous_operator": {
+      "description": "The id given the one agency the feed names without an\nagency_id.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "dated_calendars": {
+      "additionalProperties": {
+        "$ref": "#/$defs/DatedCalendar"
+      },
+      "description": "The services the feed published as dates alone whose weekly\nrule the import read (D-105): the export writes them back as\ndates, under the calendar.txt row they had (zero flags, its\nrange as written), if any.",
+      "type": "object"
+    },
+    "fare_networks_on_routes": {
+      "description": "Routes name their fare network in routes.txt (otherwise in\nroute_networks.txt).",
+      "type": "boolean"
+    },
+    "frequency_bases": {
+      "additionalProperties": {
+        "format": "uint32",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "description": "Per frequency trip, the first arrival its stop_times rows\ncarried (the spec reads those rows as offsets only).",
+      "type": "object"
+    },
+    "kind": {
+      "$ref": "#/$defs/BoundaryKind",
+      "default": "boundary",
+      "description": "The kind tag and version (D-115); a copy without them is this\nkind, version 1."
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": 1
+    },
+    "shape_sequences": {
+      "additionalProperties": {
+        "items": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": "array"
+      },
+      "description": "Per alignment, the feed's shape_pt_sequence numbers — kept only\nwhere they are not 1..=n.",
+      "type": "object"
+    },
+    "stop_sequences": {
+      "additionalProperties": {
+        "items": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": "array"
+      },
+      "description": "Per trip, the feed's stop_sequence numbers — kept only where\nthey are not 1..=n.",
+      "type": "object"
+    }
+  },
+  "title": "Boundary",
+  "type": "object"
+}

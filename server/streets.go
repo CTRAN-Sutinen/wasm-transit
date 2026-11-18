@@ -34,6 +34,10 @@ type servedDoc struct {
 	hash string
 	body []byte
 	gz   []byte
+	// tag is the document's kind, as it names itself inside (its
+	// schema at /schemas/). Set where the published documents are
+	// listed.
+	tag string
 }
 
 func newServedDoc(hash string, body []byte) servedDoc {

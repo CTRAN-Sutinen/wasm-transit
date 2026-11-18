@@ -1,0 +1,261 @@
+{
+  "$defs": {
+    "MealBreak": {
+      "additionalProperties": true,
+      "description": "A meal break: at least `min_secs` off within the first\n`within_secs` of work.",
+      "properties": {
+        "min_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "within_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "within_secs",
+        "min_secs"
+      ],
+      "type": "object"
+    },
+    "Pay": {
+      "additionalProperties": true,
+      "description": "What a run is paid, in time (D-51: no dollars — operators' rates\nvary by seniority).",
+      "properties": {
+        "guarantee_secs": {
+          "description": "A run is paid at least this long.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "overtime_after_secs": {
+          "description": "Work past this is overtime, paid at `overtime_pct` percent.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "overtime_pct": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "spread_after_secs": {
+          "description": "Spread past this earns a premium of `spread_pct` percent of the\ntime past it.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "spread_pct": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "RecoveryRule": {
+      "additionalProperties": true,
+      "description": "One recovery requirement: the larger of `min_secs` and\n`pct_of_run` percent of the run before the wait (rounded up to the\nsecond). Scoped by route and/or service type; neither = every trip.",
+      "properties": {
+        "min_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "pct_of_run": {
+          "description": "A whole percent of the run time (0–1000).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "route": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "service_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "RoutePair": {
+      "additionalProperties": true,
+      "description": "Two routes one vehicle may run back to back, either order.",
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "type": "object"
+    },
+    "RunRules": {
+      "additionalProperties": true,
+      "description": "The rules a run is cut under — each optional; the runs cut reads\nthem (`docs/units/runs-layer.md`).",
+      "properties": {
+        "clear_secs": {
+          "description": "Paid time after the last piece (pull-in, sign-off).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_piece_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_platform_secs": {
+          "description": "The longest a run may be on the platform (driving and waiting).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_spread_secs": {
+          "description": "The longest from report to clear, breaks included.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "meal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MealBreak"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "min_piece_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "relief_points": {
+          "description": "Where one operator may relieve another (stop ids). Empty: at\nthe ends of a block's trips only.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "report_secs": {
+          "description": "Paid time before the first piece (sign-on, pull-out).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "SchemaVersion": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "WorkRulesKind": {
+      "const": "work_rules"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "The rules work is cut under: generic, every rule optional, an\nagency's values as data. Nothing unset is written, so an empty\ndocument is `{\"kind\":\"work_rules\",\"schema_version\":1}`.",
+  "properties": {
+    "interline": {
+      "description": "The route pairs one vehicle may run back to back (D-46: set per\npair, either order). A route always follows itself; a pair not\nlisted is not interlined.",
+      "items": {
+        "$ref": "#/$defs/RoutePair"
+      },
+      "type": "array"
+    },
+    "kind": {
+      "$ref": "#/$defs/WorkRulesKind",
+      "default": "work_rules",
+      "description": "The kind tag (D-115): `\"work_rules\"`; a copy without one reads\nas work rules."
+    },
+    "name": {
+      "description": "What the agency calls this rule set (\"Winter 2027 agreement\").",
+      "type": "string"
+    },
+    "pay": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Pay"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "What a run is paid."
+    },
+    "recovery": {
+      "description": "The recovery a wait after a trip requires (D-9). The most\nspecific rule answers: route and service type, then route, then\nservice type, then neither. No rule applies → the terminal's\nfloor (the smallest authored layover there).",
+      "items": {
+        "$ref": "#/$defs/RecoveryRule"
+      },
+      "type": "array"
+    },
+    "runs": {
+      "$ref": "#/$defs/RunRules",
+      "description": "The rules a run is cut under."
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": 1,
+      "description": "The document's version, as every kind names it; a copy without\none is version 1."
+    }
+  },
+  "title": "WorkRules",
+  "type": "object"
+}

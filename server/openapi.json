@@ -2207,7 +2207,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The blob's bytes. Content-Type is application/json for every blob kind, or application/gzip on request. Store blobs carry X-Document-Kind and X-Schema-Version. The ETag is the path's last segment, and the bytes cache forever.",
+            "description": "The blob's bytes. Content-Type is application/json for every blob kind, or application/gzip on request. Store blobs carry X-Document-Kind and X-Schema-Version. A blob whose schema the build serves carries Link: </schemas/<tag>.v<N>.schema.json>; rel=\"describedby\" (docs/FORMATS.md). The ETag is the path's last segment, and the bytes cache forever.",
             "content": {
               "application/json": {
                 "schema": {

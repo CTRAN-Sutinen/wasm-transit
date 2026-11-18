@@ -49,7 +49,7 @@ test("the kernel page lists each kernel op by name and code", () => {
 });
 
 test("each document kind has a page with its schema and example", () => {
-  for (const doc of registry("documents.json").documents) {
+  for (const doc of registry("documents.json").documents.filter((d) => d.written)) {
     const html = page(`doc-${doc.kind}.html`);
     assert.ok(html.includes(`v${doc.schema_version}`), `${doc.kind} version`);
     assert.ok(html.includes('id="schema"') && html.includes('id="example"'), `${doc.kind} schema and example`);
@@ -99,7 +99,7 @@ test("--serve builds the site and serves it on the given port, on loopback only"
 });
 
 test("a schema shows as a property tree: each property, each definition, each reference resolved", () => {
-  for (const doc of registry("documents.json").documents) {
+  for (const doc of registry("documents.json").documents.filter((d) => d.written)) {
     const schema = registry(doc.schema);
     const html = page(`doc-${doc.kind}.html`);
     for (const name of Object.keys(schema.properties ?? {})) {

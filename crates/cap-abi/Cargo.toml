@@ -64,6 +64,28 @@ proptest = "1"
 transit-router = { path = "../transit-router" }
 transit-plans = { path = "../transit-plans" }
 transit-authz = { path = "../transit-authz" }
+# The real-output gate and the real-data soak (tests/real_output_test.rs,
+# tests/real_data_soak.rs): every capability's own dispatch, its answers
+# checked against the locked schemas. Tests only: no module links them.
+jsonschema = { version = "=0.26.1", default-features = false }
+cap-analysis = { path = "../cap-analysis" }
+cap-author = { path = "../cap-author" }
+cap-authz = { path = "../cap-authz" }
+cap-board = { path = "../cap-board" }
+cap-calendar = { path = "../cap-calendar" }
+cap-directory = { path = "../cap-directory" }
+cap-divert = { path = "../cap-divert" }
+cap-gtfs = { path = "../cap-gtfs" }
+cap-migrate = { path = "../cap-migrate" }
+cap-network = { path = "../cap-network" }
+cap-plans = { path = "../cap-plans" }
+cap-requests = { path = "../cap-requests" }
+cap-router = { path = "../cap-router" }
+cap-rt = { path = "../cap-rt" }
+cap-runcut = { path = "../cap-runcut" }
+cap-stops = { path = "../cap-stops" }
+cap-streets = { path = "../cap-streets" }
+cap-sync = { path = "../cap-sync" }
 
 # The generator's libraries: gen-manifest computes the router's, the
 # plan chain's and authorization's worked examples through them, but the

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Build",
+  "description": "A build (D-80): the files a page loads, each a build_file blob served at /<path>, and the modules the server hosts, retained beside them. Files are in path order and modules in role order, so one tree is one document and one hash. A UI's bundle is a build with no server modules. The Go host owns this kind: the schema is written by hand, and server/schema_test.go checks it against the Go type and against a build the server commits (docs/FORMATS.md, \"Builds\").",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "const": "build"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "files": {
+      "description": "The build's files, in path order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/BuildFile"
+      }
+    },
+    "server": {
+      "description": "The modules the server hosts, in role order. Absent in a UI's bundle.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/BuildModule"
+      }
+    }
+  },
+  "required": [
+    "kind",
+    "schema_version",
+    "files"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "BuildFile": {
+      "description": "One file of a build.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "The file's path under the web root, with no leading slash.",
+          "type": "string",
+          "minLength": 1
+        },
+        "hash": {
+          "description": "The build_file blob that holds the file's exact bytes.",
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "type": {
+          "description": "The content type the file is served with.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path",
+        "hash",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "BuildModule": {
+      "description": "A module the server hosts.",
+      "type": "object",
+      "properties": {
+        "role": {
+          "description": "The module's role (sync, network, plans, …).",
+          "type": "string",
+          "minLength": 1
+        },
+        "hash": {
+          "description": "The module's blob.",
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "role",
+        "hash"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

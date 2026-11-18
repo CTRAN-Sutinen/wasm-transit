@@ -229,6 +229,11 @@ just e2e-fast [args]       # the same over `caps-fast` modules. Playwright's arg
                            # browser runner, never the gate.
 just check                 # both runners, for changes that touch both sides
 just types                 # generate the TS bindings again (gitignored; build runs it)
+just schema-lock           # the documents' schema lock: freeze a kind's new version, or
+                           # record an added optional field in the same version (D-167),
+                           # into the owning crate's locks/. `just caps` fails while a
+                           # kind differs from its lock (docs/FORMATS.md, "The schema
+                           # lock"). It needs no module build.
 just http-lock             # the HTTP contract's lock: server/openapi.json copied to
                            # openapi.lock.json once the compatibility gate passes. Run it
                            # when a release ships (docs/architecture/release-artifacts.md).
@@ -384,8 +389,10 @@ cap-abi          the kernel and the seam: the registries (one for each document 
                  held day, graphs), the routing that an assembly's exports run
                  (`assembly!`; a capability only registers, with `capability!`), the
                  kernel ops (loads, evict, held, about), the canonical form (RFC 8785,
-                 `jcs`; D-169), the manifest, the validator, gen-manifest,
-                 gen-assemblies, and arch-gates
+                 `jcs`; D-169), the manifest, the validator, gen-manifest (with
+                 the schema lock: each kind's frozen schema and example,
+                 kept in the owning crate's locks/), gen-assemblies, and
+                 arch-gates
 cap-gtfs cap-router cap-analysis cap-network cap-rt cap-board cap-runcut cap-calendar cap-directory cap-streets cap-sync cap-authz cap-plans cap-author cap-divert cap-migrate cap-stops cap-requests
                  the capabilities: rlibs that register, forbid unsafe, declare no state,
                  and never depend on each other (docs/architecture/bus.md)

@@ -460,6 +460,9 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 	}
 	if err == store.ErrNotFound {
 		if doc, ok := s.publishedBlob(hash); ok {
+			if link := s.publishedSchemaLink(doc.tag); link != "" {
+				w.Header().Set("Link", link)
+			}
 			send(doc.body, func() []byte { return doc.gz })
 			return
 		}
@@ -481,6 +484,9 @@ func (s *server) handleBlob(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("X-Document-Kind", env.Kind)
 	w.Header().Set("X-Schema-Version", fmt.Sprintf("%d", env.SchemaVersion))
+	if link := s.storedSchemaLink(env.Kind, env.SchemaVersion); link != "" {
+		w.Header().Set("Link", link)
+	}
 	send(data, func() []byte { return s.gzippedBlob(hash, data) })
 }
 

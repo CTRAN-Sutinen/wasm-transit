@@ -15,7 +15,8 @@ The machinery stands (`docs/FORMATS.md`, "Versions" — the inventory
 of every persisted kind, the rollout order, the kernel-version rule,
 and URLs as persisted data; `docs/architecture/crates.md`, cap-migrate and
 transit-version): every kind in the inventory but the watchlist
-carries its kind and version inside it, and every kernel load and
+carries its kind and version inside it, and each one's schema and
+example are frozen in the schema lock and served at `/schemas/`; and every kernel load and
 every request field taking one refuses another version naming both
 (`cap_abi::parse_versioned`, `cap_abi::Current`); the network's,
 the edit document's and the watchlist's chains live in the owning
@@ -55,56 +56,11 @@ stop display keeps a URL parameter it does not know. What is left:
    only where its documents arrive (the server's receive, a page's
    restore), and one archive piece holding every chain (D-66), which
    reads an archive in today's shape on request.
-5. **The schema lock and the published spec.** The registry's
-   schemas become the agency's published spec for its data: a frozen
-   schema and example for every version of every kind, readable by a
-   person or another tool, served by every deployment, and the build
-   fails when the code drifts from it. Rust stays the one source; the
-   locks are what it has promised. Nothing is deployed yet, so there
-   are no older versions to recover: the baseline is each kind's
-   version at the first deployment, and the shapes are fixed in place
-   before it is frozen.
-   - **The shapes, before the baseline.** The shapes stand: the tagged
-     plan set, `work_rules`' `schema_version`, the watchlist in
-     `registry/documents.json`, the stop event ids (D-166), every
-     authored record's `extra` (D-167), and the RFC 8785 canonical form
-     (D-169). Left: the Go host's `build` gets a hand-written schema,
-     locked in `server/`, checked by a Go test against what the server
-     emits, and indexed as host-owned. The `manifest`'s schema is the
-     HTTP contract's (`docs/architecture/release-artifacts.md`, "The
-     HTTP contract").
-   - **The lock.** Per kind, per version, checked into the owning
-     crate: a frozen example, its generated JSON Schema, and the hash
-     of its canonical bytes. `just test` fails when the current
-     version's serde type changes without a version bump (the
-     generated schema differs), when any older example no longer
-     migrates to the current one, or when the current example's
-     canonical hash moves (a byte change is an identity change for
-     every document of the kind, so it is a version change too). An
-     added optional field needs no bump (D-167): the gate accepts a
-     changed schema in the same version when the frozen example still
-     parses and its canonical hash does not move. The generator is the
-     one the registry's documents use (gen-manifest's
-     schemas) — one schema emitter, which now compares rather than
-     writes; `just caps` copies the locks into `registry/`, so the
-     registry lists every locked version, each marked written or read
-     only through a migration.
-   - **Reachable.** The index is keyed by the tag a document carries
-     inside it (`edit_records`, beside the bus kind `operator_edits`
-     and the envelope's `store_kind`), and the files are named by it,
-     so a reader holding only a file finds its schema. Every schema
-     carries a stable `$id` that names no host. The server serves
-     `registry/documents.json` and the schemas under `/schemas/`,
-     open with auth on (reads are open, D-152); `just export` writes
-     the same paths into the bundle; a blob's response links its
-     schema. A Go test reads a blob through `/schemas/` alone, from a
-     running server and from an export directory.
-   - **The schemas describe the real bytes.** A gate runs every
-     capability's real output on the e2e fixture feed against its
-     locked schema, not only the worked examples — the places
-     `schemars` and serde disagree (`skip_serializing_if`, `untagged`,
-     `flatten`) — and the real-data soak checks the C-TRAN store's
-     blobs the same way, a mismatch a QA finding.
+5. **The Go host's own documents (D-185).** The schema lock, its
+   gates, `/schemas/`, and the soak stand (`docs/FORMATS.md`, "The
+   schema lock"). The `build` document keeps its hand-written schema in
+   `server/schemas/`, and the manifest its HTTP contract, until D-185 is
+   answered.
 6. **Rolling a version back (D-79).** A format change ships in two
    releases: A reads vN and vN+1 and writes vN, B writes vN+1, so
    rollback one release back always reads what the store holds.
@@ -128,15 +84,9 @@ stop display keeps a URL parameter it does not know. What is left:
 
 - The watchlist's load refuses another version naming both (every
   other kind's does: `cap-abi` `kernel_test.rs`,
-  `every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy`).
-- The schema-lock gate runs in `just test` and fails on each of its
-  three conditions (each proven by a deliberately broken fixture in
-  the gate's own test), and every persisted kind in `docs/FORMATS.md`,
-  "Versions" has an index entry (a gate compares the two lists).
-- `server/reader_test.go` reads a blob through `/schemas/` alone, from
-  a running server and from a `just export` directory.
-- The real-output gate runs in `just test`, and one real-data soak
-  reports no blob that fails its schema.
+  `every_versioned_kind_reads_untagged_as_v1_and_refuses_a_newer_copy`),
+  and its kind is locked (`formats_inventory_test.rs` drops its
+  exemption).
 - Go: a server started on a store holding an older pick commits it
   forward and republishes the plan set (the edit document's receive
   and startup are pinned: `server/version_test.go`).

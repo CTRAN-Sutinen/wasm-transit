@@ -7,17 +7,35 @@ or an external open format (GTFS, GTFS-rt, GeoJSON). Nothing here needs
 wasm to read. The blobs are plain bytes. The envelopes and log records
 are plain JSON. The hash is sha256.
 
-The JSON Schemas that the build generates from the serde types pin the
-*document payloads*. `just caps` publishes them in the registry as
-`registry/schemas/<kind>.v<N>.schema.json`. Each schema has a worked
-example (`registry/examples/<kind>.v<N>.json`). `registry/documents.json`
-indexes them. Each entry holds the document's bus `kind`, its
-`store_kind` (the envelope's `kind`, when the store persists it), its
-`schema_version`, and the files' hashes. A reader maps a blob's
-envelope (`kind`, `schema_version`) to its schema there. This file pins
-the *storage envelope* and the invariants that the schema cannot say.
-The manifest is the Go host's own document and has no generated schema.
-Its shape is below.
+The JSON Schemas pin the *document payloads*. Each version of each kind
+has a schema and a worked example, frozen in the schema lock ("The
+schema lock", below). `just caps` publishes them in the registry as
+`registry/schemas/<tag>.v<N>.schema.json` and
+`registry/examples/<tag>.v<N>.json`. The `<tag>` is the `kind` a
+document carries inside it, so a reader that holds only a document
+finds its schema. Each schema's `$id` is `urn:transit-document:<tag>:v<N>`,
+which names no host. `registry/documents.json` indexes them. Each entry
+holds:
+
+- the document's `tag`, and its bus `kind` (the manifest's `speaks`);
+- its `store_kind` (the envelope's `kind`, when the store persists it);
+- its `owner`: the crate that owns its type, or `server` for a kind the
+  Go host owns;
+- its `schema_version`, and `written`: true for the version this build
+  writes, false for an older version that it reads only through a
+  migration;
+- `locked`: false for a kind that has no lock yet (the watchlist);
+- the files and their hashes.
+
+A reader maps a blob's envelope (`kind`, `schema_version`) to its
+schema there. This file pins the *storage envelope* and the invariants
+that the schema cannot say.
+The Go host owns two kinds that no Rust type generates. The `build`
+document has a hand-written schema, locked in `server/schemas/` beside
+a frozen example. `server/schema_test.go` checks it against the Go
+type and against a build the server commits, and the index lists it
+with the owner `server`. The manifest's schema is the HTTP contract's
+(`server/openapi.json`). Its shape is below.
 
 The store lives in object storage: S3 and S3-compatible, Azure Blob, or
 GCS (D-113). The store holds create-only objects in one bucket, under
@@ -393,8 +411,8 @@ Every persisted kind, by what a version change does to it:
 | `streets` (imported) | transit-streets | derived | `kind`, `schema_version` |
 | `walks` | transit-streets | derived | `kind`, `schema_version` |
 | `live` | transit-live | ephemeral | `kind`, `schema_version` (v2: a trip instance names its service `date`) |
-| `manifest` | the Go server | host-owned | its own shape (below) |
-| `build`, `build_file` | the Go server | host-owned | its own shape ("Builds", below) |
+| `manifest` | the Go server | host-owned | its own shape (below); its schema is the HTTP contract's |
+| `build`, `build_file` | the Go server | host-owned | `kind`, `schema_version` in a build (a hand-written schema, "Builds", below); a build file is its exact bytes |
 
 - A person writes *authored* kinds, and the system cannot re-derive
   them. Their chains are kept forever (D-66). Every record of an
@@ -412,6 +430,12 @@ Every persisted kind, by what a version change does to it:
   same refusal.
 - The *host-owned* manifest and builds are versioned in their own
   envelope.
+
+A gate (cap-abi `tests/formats_inventory_test.rs`) holds this table
+and the locks to the same kinds. A kind in the table with no locked
+schema names its reason there: the watchlist is locked once it carries
+its kind, a diversion draft is never persisted yet, the manifest's
+schema is the HTTP contract's, and a build file is its exact bytes.
 
 A copy written before its kind's tags reads as that kind. An absent
 `kind` is the kind itself, and an absent version is v1. The network's
@@ -445,6 +469,67 @@ first. They accept the old and the new version at receive and store the
 new one. The manifest then pins those modules, and clients follow the
 manifest (D-63). Every client gets its modules from that manifest, so
 no client writes a version that the server does not read.
+
+### The schema lock
+
+The schemas are the agency's published spec for its data. Rust is the
+one source of each schema. The lock is what the build has promised.
+For each version of each kind, the crate that owns the kind keeps three
+files in its `locks/` folder:
+
+- `<tag>.v<N>.schema.json`: the JSON Schema of that version.
+- `<tag>.v<N>.example.json`: a worked example in its canonical bytes
+  (RFC 8785).
+- `<tag>.lock.json`: the index, with the hash of each file.
+
+`just caps` (gen-manifest) compares the build with the locks before it
+writes anything, and fails on any difference. So `just test` fails
+too. These are the failures:
+
+- The version that the build writes has no lock.
+- The serde type of the current version changed, and the frozen
+  example shows it. The example does not read, it has a field the type
+  does not know (a field was removed or renamed), or it writes other
+  bytes. Other bytes are a new hash for every document of the kind, so
+  they are a version change too.
+- The frozen example of an older version does not migrate to the
+  current version.
+- A lock file does not match its index. Never edit a lock by hand.
+- A version newer than the build is locked.
+
+To change a kind, bump its version and add its migration step, then
+run `just schema-lock`. That freezes the new version and keeps the
+older ones. One change needs no bump (D-167): an added optional field
+that writes nothing when it is absent. The frozen example then still
+reads to the same bytes. `just caps` fails until `just schema-lock`
+records the new schema in the same version. `just schema-lock` refuses
+every other change.
+
+Two more gates hold the schemas to the bytes the code really writes,
+where `schemars` and serde can disagree (`skip_serializing_if`,
+`untagged`, `flatten`). Both check with the locks in the tree:
+
+- The real-output gate (cap-abi `tests/real_output_test.rs`, in
+  `cargo test`) runs every capability's worked examples through its own
+  dispatch over the fixtures. Every document an answer holds must match
+  its locked schema, and every kind a worked example's recorded answer
+  holds must be checked from a real answer.
+- The real-data soak (`just soak`, cap-abi `tests/real_data_soak.rs`)
+  runs the agency's feed through the ops a server runs on it (import,
+  publish). A mismatch is a QA finding.
+
+A deployment serves the schemas at `/schemas/`, from its page build:
+the index `documents.json`, with paths relative to it, and each
+version's schema and example. A rollback serves the schemas of the build
+it moves to. A blob's response names its schema in a `Link` header
+(`rel="describedby"`). The index holds each header's value, by a stored
+blob's envelope and by a published document's tag, so the server only
+copies it. A static export carries the same files.
+
+Nothing was deployed before the lock, so each kind's baseline is the
+version it had then. The older versions of the network and the edit
+document have no lock. Their chains stay, and their own law tests pin
+them. The watchlist is not locked until it carries its `kind`.
 
 The kernel's own version is separate from the documents' versions. It
 bumps only when an existing kernel op changes meaning. A new kernel op

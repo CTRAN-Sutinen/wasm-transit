@@ -28,7 +28,9 @@ const out = positional[0] ?? join(ROOT, "docs-site");
 
 const read = (path) => JSON.parse(readFileSync(join(REGISTRY, path), "utf8"));
 const pointer = read("registry.json");
-const documents = read("documents.json").documents;
+// Each kind's page shows the version this build writes. The index also
+// lists the older versions it reads only through a migration.
+const documents = read("documents.json").documents.filter((d) => d.written);
 const capabilities = readdirSync(join(REGISTRY, "capabilities"))
   .filter((f) => f.endsWith(".json"))
   .map((f) => read(`capabilities/${f}`))

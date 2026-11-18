@@ -1,0 +1,9 @@
+{
+  "tag": "policy",
+  "versions": {
+    "1": {
+      "example_hash": "sha256:e3d45cf27142cbeaeae64df52af279c5b82e035f14c32a6a2186999ddf24fdcb",
+      "schema_hash": "sha256:7c4d34e3b70469ea8654ed9ce1b5bab48ed976130bb69ded2e5f46b422237d9b"
+    }
+  }
+}

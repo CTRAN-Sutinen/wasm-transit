@@ -1,0 +1,9 @@
+{
+  "tag": "streets",
+  "versions": {
+    "1": {
+      "example_hash": "sha256:73387cec2e4a97c98a9983d83ed1f4e08ee43ce6c7d32d7c2f25103fbabd01f8",
+      "schema_hash": "sha256:ad211cca5af73020c5abb6965ca0fcbfb0c5a691262276fdf51d2e6f451a9522"
+    }
+  }
+}

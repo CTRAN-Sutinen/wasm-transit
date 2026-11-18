@@ -1,0 +1,1 @@
+{"kind":"policy","rules":[{"actions":["write"],"name":"ops-write-edits","pointers":["edits"],"roles":["dispatcher"]}],"schema_version":1}

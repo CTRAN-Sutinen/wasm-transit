@@ -160,7 +160,12 @@ and before a release.
    (`cap_abi::kernel::NETWORK.register`). Assembly independence
    (`crates/cap-abi/independence.mjs`) re-runs every worked example
    inside each UI's assembly. An op whose answer leans on a derived
-   entry that another capability computed fails it.
+   entry that another capability computed fails it. The real-output
+   gate (cap-abi `tests/real_output_test.rs`) runs every worked example
+   through its capability's `invoke` over the fixtures, and every
+   document an answer holds must match its locked schema. A changed
+   document shape fails `just caps` until its version is bumped and
+   `just schema-lock` freezes it (docs/FORMATS.md, "The schema lock").
 3. **A Go round-trip test** if server-visible behavior changes. A new
    or changed route, method, parameter, or body also changes
    `server/openapi.json`, the HTTP contract. The Go test binary checks
@@ -271,7 +276,9 @@ and before a release.
 8. **Dogfood on real data.** Capability work that touches feeds or
    payload size runs a `caps-run` session against the C-TRAN feed
    before it is done. Fixture-scale gates do not catch real-data
-   defects.
+   defects. A change to a document's shape also runs `just soak`, whose
+   schema part checks what the C-TRAN feed's import and publish answer
+   against the locks.
 
 ## Dogfood QA — the agent interface mirrors the human UI
 

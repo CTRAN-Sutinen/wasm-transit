@@ -182,16 +182,22 @@ document kind has its place, and that no local link is broken.
 ## Document schemas
 
 Every `just caps` also publishes each document kind's JSON Schema and a
-worked example. gen-manifest generates the schema from the kind's serde
-type (`schemars`). It computes the example. It writes:
+worked example, for every version in the kind's schema lock. Before it
+writes anything, gen-manifest generates the current schema from the
+kind's serde type (`schemars`), computes the example, and compares both
+with the lock. Any difference fails the run (`docs/FORMATS.md`, "The
+schema lock"). It then copies the locks out:
 
-- `registry/schemas/<kind>.v<N>.schema.json`
-- `registry/examples/<kind>.v<N>.json`
+- `registry/schemas/<tag>.v<N>.schema.json`
+- `registry/examples/<tag>.v<N>.json`
 - the index `registry/documents.json`
 
-The index holds, per kind: its bus `kind`, its `store_kind` (the store
-envelope's kind, when the store persists it), its `schema_version`, the
-files' paths and hashes, and the registry's evidence.
+The index holds, per kind and version: the `tag` the document carries,
+its bus `kind`, its `store_kind` (the store envelope's kind, when the
+store persists it), its `schema_version`, whether this build writes it
+(`written`), whether the kind is locked, the files' paths and hashes,
+and the registry's evidence. The docs site shows the version each kind
+writes.
 
 A reader maps a blob's envelope (`kind`, `schema_version`) to its schema
 in that index (`docs/FORMATS.md`). `server/reader_test.go` checks every

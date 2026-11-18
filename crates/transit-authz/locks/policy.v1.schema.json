@@ -1,0 +1,68 @@
+{
+  "$defs": {
+    "PolicyKind": {
+      "const": "policy"
+    },
+    "Rule": {
+      "additionalProperties": true,
+      "description": "One policy rule: identities holding any of `roles` may perform any\nof `actions` on any of `pointers`. `\"*\"` matches all actions /\npointers. A rule with EMPTY `roles` never matches — an empty\nintersection is not an intersection.",
+      "properties": {
+        "actions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "pointers": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "roles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "roles"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "The policy document: a versioned rule list, evaluated in order.\nFail-closed by construction — see `authorize`.",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/PolicyKind",
+      "default": "policy",
+      "description": "The kind tag (D-115): `\"policy\"`; a copy without one reads as a\npolicy."
+    },
+    "rules": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Rule"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version"
+  ],
+  "title": "Policy",
+  "type": "object"
+}

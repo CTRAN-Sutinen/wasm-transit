@@ -3773,3 +3773,31 @@ Options:
   them.
 Blocks: the review UI's title and id.
 
+
+### D-185 — Are the Go host's own documents (`build`, `manifest`) typed and hashed by a module?
+State: Unanswered.
+Context: the server writes a `build` document for each release
+(`server/builds.go`; `docs/FORMATS.md`, "Builds"). It lists the files the
+pages load (path, `build_file` blob, content type) and the modules the
+server runs, and the `build` pointer logs it, so a rollback is a pointer
+moved back. The server assembles it in Go (`store.BuildDoc`) and hashes
+the bytes `json.Marshal` writes. Every other document's identity is its
+RFC 8785 canonical bytes, with the module as the hash authority (D-169),
+and its schema is generated from a Rust type and locked
+(`docs/units/document-versioning.md`, item 5). The build has a
+hand-written schema in `server/schemas/`, held to the Go type by a Go
+reflection test. The manifest is the same case: Go assembles it, and its
+schema is the HTTP contract's. Listing, reading and hashing the files is
+host I/O. The document's shape and identity are a rule about documents.
+Options:
+- Keep them host-owned: the hand-written `build` schema, locked in
+  `server/`, and the manifest's schema in the HTTP contract. Builds keep
+  Go's bytes as their identity.
+- Type them in Rust and hash them in a module: the types live in a
+  library crate, with generated schemas in the schema lock. The server
+  keeps the I/O and passes the file list to a module op, which answers the
+  canonical document and its hash. The commit order (files, document,
+  recheck) and rollback stay. Every committed build hashes differently
+  once, which touches only development stores.
+Blocks: the `build` schema's form in `docs/units/document-versioning.md`,
+item 5 (the hand-written schema stands until this is answered).

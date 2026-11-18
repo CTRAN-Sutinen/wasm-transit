@@ -1,0 +1,76 @@
+{
+  "$defs": {
+    "SchemaVersion": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "Walk": {
+      "description": "One walk: `from` to `to`, in seconds.",
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "walk_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "walk_secs"
+      ],
+      "type": "object"
+    },
+    "WalksKind": {
+      "const": "walks"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Every walk between a network's stops within the limit, and what\nit was derived from: the streets and network documents' hashes,\nthe speed, the limit. Walks in (from, to) order; symmetric.",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/WalksKind",
+      "default": "walks",
+      "description": "The kind tag and version (D-115); a copy without them is this\nkind, version 1."
+    },
+    "max_walk_secs": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "network_hash": {
+      "type": "string"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": 1
+    },
+    "speed_mps": {
+      "format": "double",
+      "type": "number"
+    },
+    "streets_hash": {
+      "type": "string"
+    },
+    "walks": {
+      "items": {
+        "$ref": "#/$defs/Walk"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "streets_hash",
+    "network_hash",
+    "speed_mps",
+    "max_walk_secs",
+    "walks"
+  ],
+  "title": "WalkTable",
+  "type": "object"
+}

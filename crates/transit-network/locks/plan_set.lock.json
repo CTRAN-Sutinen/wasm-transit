@@ -1,0 +1,9 @@
+{
+  "tag": "plan_set",
+  "versions": {
+    "1": {
+      "example_hash": "sha256:663ec56b131fbd79b3cc108ef6838c3ddfd1c95ac75d67808d8e2a7f44583fbd",
+      "schema_hash": "sha256:878e96efbf8c0a0d7c99a9bbd38431df3caf0ae72502582aabd4d95f318bb85f"
+    }
+  }
+}

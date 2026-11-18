@@ -13,8 +13,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -224,4 +226,153 @@ func TestStoreReadsWithoutTheModules(t *testing.T) {
 	edits := r.head(t, "edits")
 	editData, editEnv := r.blob(t, edits.To)
 	validateBytes(t, schemaFor(t, idx, editEnv.Kind, editEnv.SchemaVersion), "the edit document", editData)
+}
+
+// servedSchemasDir is the /schemas/ every page build carries, written
+// by `just caps` (gen-manifest) into web/public/schemas/.
+const servedSchemasDir = "../web/public/schemas"
+
+// withSchemas puts the build's /schemas/ into a -dist.
+func withSchemas(t *testing.T, dist string) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Join(servedSchemasDir, "documents.json")); err != nil {
+		t.Fatalf("the served schemas (run `just caps`): %v", err)
+	}
+	if err := copyTree(servedSchemasDir, filepath.Join(dist, "schemas")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// schemaOf finds a document's schema the way a reader with nothing but
+// a deployment does: the blob, the tag and version inside it, then
+// /schemas/documents.json, then the schema file it names, whose $id
+// names that tag and version. get answers a path under the deployment's
+// root. It returns the schema's path under /schemas/. That the bytes
+// match the schema is the Rust gates' to check (docs/FORMATS.md, "The
+// schema lock"); this checks that a reader can get there.
+func schemaOf(t *testing.T, get func(path string) []byte, hash, what string) string {
+	t.Helper()
+	var head struct {
+		Kind          string `json:"kind"`
+		SchemaVersion uint32 `json:"schema_version"`
+	}
+	if err := json.Unmarshal(get("blobs/"+hash), &head); err != nil || head.Kind == "" || head.SchemaVersion == 0 {
+		t.Fatalf("%s: the document names no kind and version inside it: %+v (%v)", what, head, err)
+	}
+	var index struct {
+		Documents []struct {
+			Tag           string `json:"tag"`
+			SchemaVersion uint32 `json:"schema_version"`
+			Schema        string `json:"schema"`
+		} `json:"documents"`
+	}
+	if err := json.Unmarshal(get("schemas/documents.json"), &index); err != nil {
+		t.Fatalf("/schemas/documents.json: %v", err)
+	}
+	for _, d := range index.Documents {
+		if d.Tag != head.Kind || d.SchemaVersion != head.SchemaVersion {
+			continue
+		}
+		var schema struct {
+			ID string `json:"$id"`
+		}
+		if err := json.Unmarshal(get("schemas/"+d.Schema), &schema); err != nil {
+			t.Fatalf("%s: /schemas/%s is not JSON: %v", what, d.Schema, err)
+		}
+		if want := "urn:transit-document:" + head.Kind + ":v" + strconv.FormatUint(uint64(head.SchemaVersion), 10); schema.ID != want {
+			t.Fatalf("%s: /schemas/%s has $id %q, want %q", what, d.Schema, schema.ID, want)
+		}
+		return d.Schema
+	}
+	t.Fatalf("%s: /schemas/ has no schema for %s v%d", what, head.Kind, head.SchemaVersion)
+	return ""
+}
+
+func linkTo(schema string) string {
+	return `</schemas/` + schema + `>; rel="describedby"; type="application/schema+json"`
+}
+
+// A static export holds its schemas beside its blobs, and every
+// published document finds its schema there.
+func TestAnExportReachesEachDocumentsSchema(t *testing.T) {
+	s := exportServer(t)
+	withSchemas(t, s.dist)
+	bundle := filepath.Join(t.TempDir(), "bundle")
+	if err := s.export(bundle, ""); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(bundle, "manifest"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	get := func(path string) []byte {
+		data, err := os.ReadFile(filepath.Join(bundle, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatalf("the bundle's %s: %v", path, err)
+		}
+		return data
+	}
+	for what, hash := range map[string]string{"network": m.NetworkHash, "boundary": m.BoundaryHash, "streets": m.StreetsHash, "walks": m.WalksHash} {
+		schemaOf(t, get, hash, "the exported "+what)
+	}
+}
+
+// The same from a running server: /schemas/ is served, open, from the
+// pages, and a blob's response links the schema a reader finds.
+func TestAServerLinksEachDocumentsSchema(t *testing.T) {
+	s := exportServer(t)
+	withSchemas(t, s.dist)
+	base := httptest.NewServer(s.routes()).URL
+	get := func(path string) []byte {
+		code, _, body := httpGet(t, base+"/"+path)
+		if code != 200 {
+			t.Fatalf("GET /%s: %d", path, code)
+		}
+		return []byte(body)
+	}
+	var m Manifest
+	if err := json.Unmarshal(get("manifest"), &m); err != nil {
+		t.Fatal(err)
+	}
+	for what, hash := range map[string]string{"network": m.NetworkHash, "boundary": m.BoundaryHash, "streets": m.StreetsHash, "walks": m.WalksHash} {
+		schema := schemaOf(t, get, hash, "the served "+what)
+		if _, hdr, _ := httpGet(t, base+"/blobs/"+hash); hdr.Get("Link") != linkTo(schema) {
+			t.Fatalf("/blobs/%s (%s) links %q, want %q", hash, what, hdr.Get("Link"), linkTo(schema))
+		}
+	}
+}
+
+// A stored blob links its schema by its envelope, in store mode, where
+// the pages (and so /schemas/) come from the pinned build.
+func TestAStoredBlobLinksItsSchema(t *testing.T) {
+	dist := t.TempDir()
+	writeDist(t, dist, releaseA)
+	withSchemas(t, dist)
+	_, base := newBuildServer(t, store.NewMemory(), dist)
+	if code, _, body := httpPost(t, base+"/edits", editDoc("e1", "draft", 1, 100)); code != 200 {
+		t.Fatalf("edits: %d %s", code, body)
+	}
+	_, _, body := httpGet(t, base+"/pointers/edits/log")
+	var log struct {
+		Entries []store.LogEntry `json:"entries"`
+	}
+	if err := json.Unmarshal([]byte(body), &log); err != nil || len(log.Entries) == 0 {
+		t.Fatalf("the edits log: %s (%v)", body, err)
+	}
+	hash := log.Entries[len(log.Entries)-1].To
+	get := func(path string) []byte {
+		code, _, body := httpGet(t, base+"/"+path)
+		if code != 200 {
+			t.Fatalf("GET /%s: %d", path, code)
+		}
+		return []byte(body)
+	}
+	schema := schemaOf(t, get, hash, "the stored edit document")
+	if _, hdr, _ := httpGet(t, base+"/blobs/"+hash); hdr.Get("Link") != linkTo(schema) {
+		t.Fatalf("the stored edit document links %q, want %q", hdr.Get("Link"), linkTo(schema))
+	}
 }

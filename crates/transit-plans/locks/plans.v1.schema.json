@@ -1,0 +1,73 @@
+{
+  "$defs": {
+    "PickStatus": {
+      "description": "Whether a published pick is in the chain. Retirement is the\ntombstone (D-75): a retired pick stays in the set, never governs,\nand republishing its id restores it.",
+      "enum": [
+        "published",
+        "retired"
+      ],
+      "type": "string"
+    },
+    "PlansKind": {
+      "const": "plans"
+    },
+    "PublishedPlan": {
+      "additionalProperties": true,
+      "description": "One published pick: its chain metadata and the network document it\nis, by content hash (the store's `plan.<id>` pointer holds the\ndocument itself).",
+      "properties": {
+        "effective_from": {
+          "description": "\"YYYY-MM-DD\": a published pick is always dated.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "network_hash": {
+          "description": "\"sha256:<hex>\" of the pick's canonical network document.",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/PickStatus",
+          "default": "published"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "effective_from",
+        "network_hash"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "The published plan set: every pick the deployment publishes — the\ndocument the server's `plans` pointer holds and the manifest pins\nas `plans_hash`. Every client resolves the pick in force from it.\nCanonical: picks sorted by (effective_from, id), one entry per id,\nso one set of picks is one byte sequence however it was published.",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/PlansKind",
+      "default": "plans",
+      "description": "The kind tag (D-115): `\"plans\"`; a copy without one reads as\nthe plans document."
+    },
+    "plans": {
+      "items": {
+        "$ref": "#/$defs/PublishedPlan"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "plans"
+  ],
+  "title": "PublishedPlans",
+  "type": "object"
+}

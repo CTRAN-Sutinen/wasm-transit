@@ -56,17 +56,21 @@ func (s *server) publishedDocs() ([]servedDoc, error) {
 			return nil, err
 		}
 		docs = append(docs,
-			servedDoc{hash: feed.networkHash, body: feed.document, gz: feed.documentGzip},
-			servedDoc{hash: feed.boundaryHash, body: feed.boundary, gz: feed.boundaryGzip})
+			servedDoc{hash: feed.networkHash, body: feed.document, gz: feed.documentGzip, tag: "network"},
+			servedDoc{hash: feed.boundaryHash, body: feed.boundary, gz: feed.boundaryGzip, tag: "boundary"})
 	}
 	if s.streets != nil {
 		streets, err := s.publishedStreets()
 		if err != nil {
 			return nil, err
 		}
-		docs = append(docs, streets.streets)
+		doc := streets.streets
+		doc.tag = "streets"
+		docs = append(docs, doc)
 		if streets.walks.hash != "" {
-			docs = append(docs, streets.walks)
+			walks := streets.walks
+			walks.tag = "walks"
+			docs = append(docs, walks)
 		}
 	}
 	return docs, nil

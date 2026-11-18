@@ -29,6 +29,8 @@ use cap_abi::manifest::{CapManifest, Capability, KernelOp, LinkedAssembly, Migra
 
 #[path = "common/assemblies.rs"]
 mod common;
+#[path = "common/schema_lock.rs"]
+mod schema_lock;
 use cap_abi::validate::validate_assembly;
 use sha2::{Digest as _, Sha256};
 
@@ -448,18 +450,12 @@ fn main() {
     let target = root.join("target/wasm32-unknown-unknown").join(&profile);
     let dist = root.join("web/public/caps");
 
-    // Hash-addressed files: the filename carries the content hash, so
-    // the HTTP cache holds each capability build forever.
-    let _ = fs::remove_dir_all(&dist);
-    fs::create_dir_all(&dist).expect("create caps dir");
-
     // The demo feed: the e2e fixture, served statically so dev and
     // e2e run the identical demo — and hashed now, so the worked
     // examples in op_docs carry the REAL document identity.
     let fixture = root.join("web/e2e/fixtures/sample-gtfs.zip");
     let feed_bytes = fs::read(&fixture).expect("fixture exists");
     let feed_hex = format!("{:x}", Sha256::digest(&feed_bytes));
-    fs::copy(&fixture, dist.join("sample-gtfs.zip")).expect("copy demo feed");
     let feed_hash = format!("sha256:{feed_hex}");
 
     // The network capability's worked examples are computed from the
@@ -467,6 +463,22 @@ fn main() {
     // zip — both through the shared transit-codec library, so the
     // examples are exactly what the module returns and cannot drift.
     let net_ctx = network_example_context(&feed_bytes);
+
+    // The schema lock (docs/FORMATS.md, "The schema lock"), before
+    // anything is written: `--lock` (`just schema-lock`) records what
+    // this build adds and stops; a plain run fails on any drift.
+    let documents = document_kinds(net_ctx.as_ref(), &feed_hash);
+    let locking = std::env::args().any(|a| a == "--lock");
+    let locks = lock_documents(root, &documents, locking);
+    if locking {
+        return;
+    }
+
+    // Hash-addressed files: the filename carries the content hash, so
+    // the HTTP cache holds each capability build forever.
+    let _ = fs::remove_dir_all(&dist);
+    fs::create_dir_all(&dist).expect("create caps dir");
+    fs::copy(&fixture, dist.join("sample-gtfs.zip")).expect("copy demo feed");
 
     // The day-view runner gates' document: the load_network request
     // for the REAL fixture-derived network (the same bytes the
@@ -572,8 +584,7 @@ fn main() {
     // reads it, so the loop runs the code it just changed); its
     // evidence names the profile, and only `just registry` — gated,
     // release — is a publish.
-    let documents = document_kinds(net_ctx.as_ref(), &feed_hash);
-    publish_registry(&root, &manifest, &documents, &profile);
+    publish_registry(root, &manifest, &documents, &locks, &profile);
 
     println!("manifest: {} capabilities, kernel v{KERNEL}, assembly valid", MODULES.len());
 }
@@ -592,7 +603,7 @@ fn toolchain_pin(root: &Path) -> String {
 /// the publish recipe ran against them, at which commit. That
 /// record is what makes "known good" a checkable claim for an agent
 /// (or a human dogfooding `caps run`) rather than a marketing one.
-fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKind], profile: &str) {
+fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKind], locks: &[Option<schema_lock::Lock>], profile: &str) {
     let registry = root.join("registry");
     let blobs = registry.join("blobs");
     let caps_dir = registry.join("capabilities");
@@ -700,7 +711,7 @@ fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKi
     let json = serde_json::to_string_pretty(&pointer).expect("pointer serializes");
     fs::write(registry.join("registry.json"), json + "\n").expect("write pointer");
 
-    publish_documents(&registry, documents, &evidence);
+    publish_documents(&registry, documents, locks, &evidence);
 
     println!(
         "registry: {} capabilities published (blobs + records + pointer)",
@@ -710,25 +721,87 @@ fn publish_registry(root: &Path, manifest: &CapManifest, documents: &[DocumentKi
 
 /// One document kind the registry describes: its bus name (the
 /// manifest's `speaks`), its store kind when the sync store persists
-/// it (the envelope's `kind`, docs/FORMATS.md), the schema version this
-/// build speaks, the JSON Schema generated from its serde type, and a
-/// worked example computed from the fixtures through the owning
-/// library — so the example is exactly a document the modules make.
+/// it (the envelope's `kind`, docs/FORMATS.md), the crate that owns its
+/// type and keeps its lock (`crates/<owner>/locks/`), and the kind as
+/// the schema lock reads it: its tag, the version this build writes,
+/// the JSON Schema generated from its serde type, a worked example
+/// computed from the fixtures through the owning library (so the
+/// example is exactly a document the modules make), and its migration
+/// chain.
 struct DocumentKind {
     kind: &'static str,
     store_kind: Option<&'static str>,
-    schema_version: u32,
-    schema: schemars::Schema,
-    example: Option<serde_json::Value>,
+    owner: &'static str,
+    /// False for a kind that is not locked yet: its schema and example
+    /// are published as generated.
+    locked: bool,
+    spec: schema_lock::Kind,
 }
 
-fn kind<T: schemars::JsonSchema>(
+/// A locked kind: its tag and version are the type's own
+/// (`transit_version::Versioned`).
+fn kind<T>(
     kind: &'static str,
     store_kind: Option<&'static str>,
-    schema_version: u32,
+    owner: &'static str,
     example: Option<serde_json::Value>,
-) -> DocumentKind {
-    DocumentKind { kind, store_kind, schema_version, schema: schemars::schema_for!(T), example }
+    migrate: Option<schema_lock::Migrate>,
+) -> DocumentKind
+where
+    T: transit_version::Versioned + schemars::JsonSchema + serde::Serialize + serde::de::DeserializeOwned,
+{
+    DocumentKind { kind, store_kind, owner, locked: true, spec: schema_lock::kind::<T>(T::KIND, T::READS, example, migrate) }
+}
+
+/// Check every locked kind against its lock, or (`locking`) write what
+/// this build adds. Any drift ends the run with every drift named.
+fn lock_documents(root: &Path, documents: &[DocumentKind], locking: bool) -> Vec<Option<schema_lock::Lock>> {
+    let mut drifts = Vec::new();
+    let mut locks = Vec::new();
+    for doc in documents {
+        if !doc.locked {
+            locks.push(None);
+            continue;
+        }
+        let owner = doc.owner;
+        let dir = root.join("crates").join(owner).join("locks");
+        let lock = schema_lock::read_lock(&dir, doc.spec.tag).unwrap_or_else(|e| panic!("{owner}'s lock: {e}"));
+        if !locking {
+            drifts.extend(schema_lock::check(&doc.spec, &lock));
+            locks.push(Some(lock));
+            continue;
+        }
+        match schema_lock::freeze(&doc.spec, &lock) {
+            Ok(next) if next == lock => locks.push(Some(lock)),
+            Ok(next) => {
+                schema_lock::write_lock(&dir, &next).unwrap_or_else(|e| panic!("{owner}'s lock: {e}"));
+                println!("schema lock: crates/{owner}/locks/ records {} v{}", doc.spec.tag, doc.spec.current);
+                locks.push(Some(next));
+            }
+            Err(refused) => {
+                drifts.extend(refused);
+                locks.push(Some(lock));
+            }
+        }
+    }
+    if !drifts.is_empty() {
+        eprintln!("schema lock: the code differs from what the documents promise (docs/FORMATS.md, \"The schema lock\"):");
+        for drift in &drifts {
+            eprintln!("  - {drift}");
+        }
+        std::process::exit(1);
+    }
+    locks
+}
+
+/// Bring a network of an older version forward (transit-network's chain).
+fn migrate_network(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
+    transit_network::migrate_to(doc, transit_network::SCHEMA_VERSION).map(|(doc, _)| doc)
+}
+
+/// Bring an edit document of an older version forward (transit-sync's chain).
+fn migrate_edits(doc: serde_json::Value, _from: u32) -> Result<serde_json::Value, String> {
+    transit_sync::version::migrate_to(doc, transit_sync::SCHEMA_VERSION).map(|(doc, _)| doc)
 }
 
 /// Every JSON document kind on the bus and in the store. Not here: the
@@ -745,31 +818,42 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
     let walks_example = example_for("streets", "walks", feed_hash, net)
         .and_then(|ex| ex.response.get("ok").and_then(|ok| ok.get("walks")).cloned());
     vec![
-        kind::<transit_network::Network>("network", Some("network_document"), transit_network::SCHEMA_VERSION, net.map(|n| n.derived.clone())),
-        kind::<transit_codec::Boundary>("boundary", None, 1, net.map(|n| n.boundary.clone())),
+        kind::<transit_network::Network>("network", Some("network_document"), "transit-network", net.map(|n| n.derived.clone()), Some(migrate_network)),
+        kind::<transit_codec::Boundary>("boundary", None, "transit-codec", net.map(|n| n.boundary.clone()), None),
         kind::<transit_sync::EditDocument>(
             "operator_edits",
             Some("edit_records"),
-            transit_sync::SCHEMA_VERSION,
+            "transit-sync",
             Some(value(&transit_sync::EditDocument::new(dispatch_fixture_edits()))),
+            Some(migrate_edits),
         ),
         kind::<transit_network::PlanSet>(
             "plan_set",
             None,
-            transit_network::PLAN_SET_VERSION,
+            "transit-network",
             net.map(|n| value(&transit_network::PlanSet { plans: [("plan-1".to_string(), n.derived_network().clone())].into(), ..Default::default() })),
-        ),
-        kind::<transit_dispatch::watchlist::Watchlist>(
-            "watchlist",
             None,
-            2,
-            serde_json::from_value(serde_json::json!({"version": "v2", "stops": [{"id": "A", "label": "Home"}, {"id": "C", "label": "Work"}]})).ok().map(|w: transit_dispatch::watchlist::Watchlist| value(&w)),
         ),
-        kind::<transit_plans::PublishedPlans>("plans", Some("plans"), transit_plans::PUBLISHED_SCHEMA_VERSION, plans_example),
+        // Not locked until it carries its kind (docs/units/document-versioning.md).
+        DocumentKind {
+            kind: "watchlist",
+            store_kind: None,
+            owner: "transit-dispatch",
+            locked: false,
+            spec: schema_lock::kind::<transit_dispatch::watchlist::Watchlist>(
+                "watchlist",
+                2,
+                serde_json::from_value(serde_json::json!({"version": "v2", "stops": [{"id": "A", "label": "Home"}, {"id": "C", "label": "Work"}]}))
+                    .ok()
+                    .map(|w: transit_dispatch::watchlist::Watchlist| value(&w)),
+                None,
+            ),
+        },
+        kind::<transit_plans::PublishedPlans>("plans", Some("plans"), "transit-plans", plans_example, None),
         kind::<transit_authz::Policy>(
             "policy",
             Some("policy"),
-            transit_authz::SCHEMA_VERSION,
+            "transit-authz",
             Some(value(&transit_authz::Policy::current(vec![transit_authz::Rule {
                 name: "ops-write-edits".into(),
                 roles: vec!["dispatcher".into()],
@@ -777,18 +861,14 @@ fn document_kinds(net: Option<&NetworkExampleContext>, feed_hash: &str) -> Vec<D
                 actions: vec!["write".into()],
                 extra: Default::default(),
             }]))),
-        ),
-        kind::<transit_streets::Streets>(
-            "streets",
             None,
-            1,
-            streets_example_context().map(|c| value(&c.streets)),
         ),
-        kind::<transit_streets::walking::WalkTable>("walks", None, 1, walks_example),
-        kind::<transit_runs::WorkRules>("work_rules", None, transit_runs::SCHEMA_VERSION, Some(value(&fixture_work_rules()))),
-        kind::<transit_stops::Stops>("stops", None, transit_stops::SCHEMA_VERSION, Some(value(&fixture_stops()))),
-        kind::<transit_requests::StopRequests>("stop_requests", None, transit_requests::SCHEMA_VERSION, Some(value(&fixture_requests()))),
-        kind::<transit_live::LiveDay>("live", None, 2, live_example().map(|(live, _)| value(&live))),
+        kind::<transit_streets::Streets>("streets", None, "transit-streets", streets_example_context().map(|c| value(&c.streets)), None),
+        kind::<transit_streets::walking::WalkTable>("walks", None, "transit-streets", walks_example, None),
+        kind::<transit_runs::WorkRules>("work_rules", None, "transit-runs", Some(value(&fixture_work_rules())), None),
+        kind::<transit_stops::Stops>("stops", None, "transit-stops", Some(value(&fixture_stops())), None),
+        kind::<transit_requests::StopRequests>("stop_requests", None, "transit-requests", Some(value(&fixture_requests())), None),
+        kind::<transit_live::LiveDay>("live", None, "transit-live", live_example().map(|(live, _)| value(&live)), None),
     ]
 }
 
@@ -797,42 +877,137 @@ fn value<T: serde::Serialize>(example: &T) -> serde_json::Value {
     serde_json::to_value(example).expect("example serializes")
 }
 
-/// Publish the documents: `schemas/<kind>.v<N>.schema.json`, the
-/// worked example `examples/<kind>.v<N>.json`, and the index
-/// `documents.json` (each entry names its files and their hashes, with
-/// the registry's evidence). `go test ./server/...` validates every
-/// example against its schema with no Rust (docs/FORMATS.md).
-fn publish_documents(registry: &Path, documents: &[DocumentKind], evidence: &serde_json::Value) {
+/// The schemas every deployment serves at `/schemas/`
+/// (web/public/schemas/, copied into every page build): the index
+/// `documents.json`, with each entry's paths relative to it, and each
+/// version's schema and example beside it. A reader holding only a
+/// document finds its schema by the tag and version inside it. The
+/// files ride in the build, so a rollback serves the schemas of the
+/// build it moves to.
+///
+/// The index also holds the `Link` header each blob's response sends
+/// (`links`): by a stored blob's envelope (`stored`, "<store kind>
+/// v<N>"), and by a published document's tag (`published`, the version
+/// this build writes). The server copies the value and decides nothing.
+fn publish_web_schemas(registry: &Path, index: &[serde_json::Value]) {
+    let web = registry.parent().expect("the registry is in the tree").join("web/public/schemas");
+    let _ = fs::remove_dir_all(&web);
+    fs::create_dir_all(&web).expect("create web/public/schemas");
+    let mut served = Vec::new();
+    let (mut stored, mut published) = (serde_json::Map::new(), serde_json::Map::new());
+    for entry in index {
+        let mut entry = entry.clone();
+        for (field, suffix) in [("schema", ".schema.json"), ("example", ".example.json")] {
+            let Some(path) = entry[field].as_str().map(str::to_string) else { continue };
+            let file = format!("{}.v{}{suffix}", entry["tag"].as_str().expect("an entry has its tag"), entry["schema_version"]);
+            fs::copy(registry.join(&path), web.join(&file)).expect("copy a schema file");
+            entry[field] = file.into();
+        }
+        let link = format!("</schemas/{}>; rel=\"describedby\"; type=\"application/schema+json\"", entry["schema"].as_str().expect("a schema"));
+        if let Some(store_kind) = entry["store_kind"].as_str() {
+            stored.insert(format!("{store_kind} v{}", entry["schema_version"]), link.clone().into());
+        }
+        if entry["written"] == true {
+            published.insert(entry["tag"].as_str().expect("a tag").to_string(), link.into());
+        }
+        served.push(entry);
+    }
+    let links = serde_json::json!({ "stored": stored, "published": published });
+    let json = serde_json::to_string_pretty(&serde_json::json!({ "documents": served, "links": links })).expect("the served index serializes");
+    fs::write(web.join("documents.json"), json + "\n").expect("write the served index");
+}
+
+/// The Go host's document kinds with a hand-written schema, by tag and
+/// version (server/schemas/).
+const HOST_OWNED: &[(&str, u32)] = &[("build", 1)];
+
+/// Publish the documents: for each locked version of each kind, its
+/// schema `schemas/<tag>.v<N>.schema.json` and its example
+/// `examples/<tag>.v<N>.json`, copied from the lock; and the index
+/// `documents.json`. Each entry names its files and their hashes, and
+/// says whether this build writes that version or reads it only through
+/// a migration (`written`). A kind that is not locked yet publishes its
+/// generated schema and example. Files are named by the tag a document
+/// carries inside it, so a reader holding only a document finds its
+/// schema. Each schema's `$id` names no host. `go test ./server/...`
+/// validates every example against its schema with no Rust
+/// (docs/FORMATS.md).
+fn publish_documents(registry: &Path, documents: &[DocumentKind], locks: &[Option<schema_lock::Lock>], evidence: &serde_json::Value) {
     let schemas = registry.join("schemas");
     let examples = registry.join("examples");
     fs::create_dir_all(&schemas).expect("create registry schemas");
     fs::create_dir_all(&examples).expect("create registry examples");
     let mut index = Vec::new();
-    for doc in documents {
-        let stem = format!("{}.v{}", doc.kind, doc.schema_version);
-        let schema = serde_json::to_string_pretty(&doc.schema).expect("schema serializes") + "\n";
-        let schema_path = format!("schemas/{stem}.schema.json");
+    for (doc, lock) in documents.iter().zip(locks) {
+        let versions: Vec<(u32, serde_json::Value, Option<String>)> = match lock {
+            Some(lock) => lock.versions.iter().map(|(&v, locked)| (v, locked.schema.clone(), Some(locked.example.clone()))).collect(),
+            None => vec![(
+                doc.spec.current,
+                doc.spec.schema.clone(),
+                doc.spec.example.as_ref().map(|e| cap_abi::canonical_bytes(e).expect("example serializes")),
+            )],
+        };
+        let tag = doc.spec.tag;
+        for (version, mut schema, example) in versions {
+            let stem = format!("{tag}.v{version}");
+            schema["$id"] = format!("urn:transit-document:{tag}:v{version}").into();
+            let schema = serde_json::to_string_pretty(&schema).expect("schema serializes") + "\n";
+            let schema_path = format!("schemas/{stem}.schema.json");
+            fs::write(registry.join(&schema_path), &schema).expect("write schema");
+            let mut entry = serde_json::json!({
+                "kind": doc.kind,
+                "tag": tag,
+                "store_kind": doc.store_kind,
+                "owner": doc.owner,
+                "schema_version": version,
+                "written": version == doc.spec.current,
+                "locked": lock.is_some(),
+                "schema": schema_path,
+                "schema_hash": cap_abi::content_hash(schema.as_bytes()),
+            });
+            if let Some(text) = example {
+                let example_path = format!("examples/{stem}.json");
+                fs::write(registry.join(&example_path), &text).expect("write example");
+                entry["example"] = example_path.into();
+                entry["example_hash"] = cap_abi::content_hash(text.as_bytes()).into();
+            }
+            index.push(entry);
+        }
+    }
+    // The host-owned kinds: no Rust type generates them, so their
+    // schemas are written by hand and locked in server/schemas/ beside a
+    // frozen example (server/schema_test.go holds them). The manifest's
+    // schema is the HTTP contract's (server/openapi.json).
+    for &(tag, version) in HOST_OWNED {
+        let stem = format!("{tag}.v{version}");
+        let dir = registry.parent().expect("the registry is in the tree").join("server/schemas");
+        let read = |file: String| fs::read_to_string(dir.join(&file)).unwrap_or_else(|e| panic!("server/schemas/{file}: {e}"));
+        let mut schema: serde_json::Value = serde_json::from_str(&read(format!("{stem}.schema.json"))).expect("a host-owned schema is JSON");
+        schema["$id"] = format!("urn:transit-document:{tag}:v{version}").into();
+        let schema = serde_json::to_string_pretty(&schema).expect("schema serializes") + "\n";
+        let example = read(format!("{stem}.example.json"));
+        let (schema_path, example_path) = (format!("schemas/{stem}.schema.json"), format!("examples/{stem}.json"));
         fs::write(registry.join(&schema_path), &schema).expect("write schema");
-        let mut entry = serde_json::json!({
-            "kind": doc.kind,
-            "store_kind": doc.store_kind,
-            "schema_version": doc.schema_version,
+        fs::write(registry.join(&example_path), &example).expect("write example");
+        index.push(serde_json::json!({
+            "kind": tag,
+            "tag": tag,
+            "store_kind": tag,
+            "owner": "server",
+            "schema_version": version,
+            "written": true,
+            "locked": true,
             "schema": schema_path,
             "schema_hash": cap_abi::content_hash(schema.as_bytes()),
-        });
-        if let Some(example) = &doc.example {
-            let text = serde_json::to_string(example).expect("example serializes");
-            let example_path = format!("examples/{stem}.json");
-            fs::write(registry.join(&example_path), &text).expect("write example");
-            entry["example"] = example_path.into();
-            entry["example_hash"] = cap_abi::content_hash(text.as_bytes()).into();
-        }
-        index.push(entry);
+            "example": example_path,
+            "example_hash": cap_abi::content_hash(example.as_bytes()),
+        }));
     }
     let json = serde_json::to_string_pretty(&serde_json::json!({ "documents": index, "evidence": evidence }))
         .expect("documents index serializes");
     fs::write(registry.join("documents.json"), json + "\n").expect("write documents index");
-    println!("registry: {} document kinds published (schemas + worked examples)", documents.len());
+    publish_web_schemas(registry, &index);
+    println!("registry: {} document versions published (schemas + worked examples)", index.len());
 }
 
 /// The digest of the source the modules are built from — every file
@@ -885,8 +1060,7 @@ impl NetworkExampleContext {
 
 fn network_example_context(feed_bytes: &[u8]) -> Option<NetworkExampleContext> {
     let outcome = transit_codec::import(&transit_codec::Feed::from_zip_bytes(feed_bytes).ok()?);
-    let canonical = serde_json::to_string(&outcome.network).ok()?;
-    let network_hash = format!("sha256:{:x}", Sha256::digest(canonical.as_bytes()));
+    let network_hash = cap_abi::canonical_hash(&outcome.network).ok()?;
     let derived = serde_json::to_value(&outcome.network).ok()?;
     let boundary = serde_json::to_value(&outcome.boundary).ok()?;
     let boundary_hash = cap_abi::canonical_hash(&outcome.boundary).ok()?;
@@ -978,10 +1152,9 @@ fn rt_example_context() -> Option<RtExampleContext> {
     ))
     .ok()?;
     let overview = transit_rt::decode_overview(&payload).ok()?;
-    let hash = |v: String| format!("sha256:{:x}", Sha256::digest(v.as_bytes()));
     Some(RtExampleContext {
-        network_hash: hash(serde_json::to_string(&outcome.network).ok()?),
-        boundary_hash: hash(serde_json::to_string(&outcome.boundary).ok()?),
+        network_hash: cap_abi::canonical_hash(&outcome.network).ok()?,
+        boundary_hash: cap_abi::canonical_hash(&outcome.boundary).ok()?,
         network: outcome.network,
         boundary: outcome.boundary,
         overview,
@@ -994,7 +1167,7 @@ fn rt_example_context() -> Option<RtExampleContext> {
 fn live_example() -> Option<(transit_live::LiveDay, String)> {
     let ctx = rt_example_context()?;
     let live = transit_rt::live_day(&ctx.network, &ctx.boundary, Some(&ctx.overview), None, None, transit_live::OnTimeWindow::default());
-    let live_hash = format!("sha256:{:x}", Sha256::digest(serde_json::to_string(&live).ok()?.as_bytes()));
+    let live_hash = cap_abi::canonical_hash(&live).ok()?;
     Some((live, live_hash))
 }
 
@@ -1271,10 +1444,8 @@ fn example_for(
             let date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).expect("fixture date");
             let network = ctx.derived_network();
             let records = dispatch_fixture_edits();
-            // The edits document's hash, computed the way the module
-            // does: sha256 of the canonical serialization.
-            let canonical = serde_json::to_string(&records).expect("records serialize");
-            let edits_hash = format!("sha256:{:x}", Sha256::digest(canonical.as_bytes()));
+            // The edit document's hash, as its load answers it.
+            let edits_hash = cap_abi::canonical_hash(&transit_sync::EditDocument::new(records.clone())).expect("the edit document serializes");
             let patched =
                 transit_dispatch::effective_day(network, date, &records).expect("patched day");
             let active_graph = transit_router::RouterNetwork::build_from_day(network, &patched, date);
@@ -1351,7 +1522,7 @@ fn example_for(
         }
         ("network", "document") => {
             let ctx = net?;
-            let document = serde_json::to_string(&ctx.network).ok()?;
+            let document = cap_abi::canonical_bytes(&ctx.network).ok()?;
             (
                 json!({ "op": "document", "network_hash": ctx.network_hash }),
                 json!({ "ok": { "op": "document", "document": document,
@@ -1739,7 +1910,7 @@ fn example_for(
         }
         ("stops", "validate") => {
             let stops = fixture_stops().checked().ok()?;
-            let document = serde_json::to_string(&stops).ok()?;
+            let document = cap_abi::canonical_bytes(&stops).ok()?;
             (
                 json!({ "op": "validate", "stops": stops }),
                 json!({ "ok": { "op": "validate", "refusals": [],
@@ -1917,7 +2088,7 @@ fn example_for(
         }
         ("requests", "validate") => {
             let requests = fixture_requests().checked().ok()?;
-            let document = serde_json::to_string(&requests).ok()?;
+            let document = cap_abi::canonical_bytes(&requests).ok()?;
             (
                 json!({ "op": "validate", "requests": requests }),
                 json!({ "ok": { "op": "validate", "refusals": [], "document": document, "document_hash": cap_abi::content_hash(document.as_bytes()) } }),
@@ -2014,7 +2185,7 @@ fn example_for(
                 "cancel": { "id": "c1", "trip_id": "t1", "start_secs": 28800, "date": "2026-10-23" } }]);
             let (document, notes) = transit_sync::version::migrate_to(v1.clone(), transit_sync::SCHEMA_VERSION).ok()?;
             let typed: transit_sync::EditDocument = serde_json::from_value(document.clone()).ok()?;
-            let canonical = serde_json::to_string(&typed).ok()?;
+            let canonical = cap_abi::canonical_bytes(&typed).ok()?;
             let document_hash = cap_abi::canonical_hash(&typed).ok()?;
             (
                 json!({ "op": "migrate", "kind": "edit_records", "document": v1 }),
@@ -2363,7 +2534,7 @@ fn example_for(
             draft[0].status = transit_sync::EditStatus::Draft;
             let now_ms: u64 = 1_770_000_000_000;
             let records = transit_sync::submit(transit_sync::merge(&draft, &[]), now_ms);
-            let document = serde_json::to_string(&transit_sync::EditDocument::new(records.clone())).unwrap();
+            let document = cap_abi::canonical_bytes(&transit_sync::EditDocument::new(records.clone())).unwrap();
             let document_hash = cap_abi::canonical_hash(&transit_sync::EditDocument::new(records.clone())).unwrap();
             (
                 json!({ "op": "sync_edits", "client": draft, "server": [], "now_ms": now_ms }),
@@ -2374,7 +2545,7 @@ fn example_for(
             let stored = serde_json::to_value(transit_sync::EditDocument::new(dispatch_fixture_edits())).unwrap();
             let (read, dropped) = transit_sync::read_document(&stored).ok()?;
             let records = read.records;
-            let document = serde_json::to_string(&transit_sync::EditDocument::new(records.clone())).unwrap();
+            let document = cap_abi::canonical_bytes(&transit_sync::EditDocument::new(records.clone())).unwrap();
             let document_hash = cap_abi::canonical_hash(&transit_sync::EditDocument::new(records.clone())).unwrap();
             (
                 json!({ "op": "read_edits", "document": stored }),
@@ -2388,7 +2559,7 @@ fn example_for(
             let now_ms: u64 = 1_770_000_000_000;
             let horizon_ms: u64 = 90 * 24 * 3600 * 1000;
             let (records, dropped) = transit_sync::compact(&old, now_ms, horizon_ms);
-            let document = serde_json::to_string(&transit_sync::EditDocument::new(records.clone())).unwrap();
+            let document = cap_abi::canonical_bytes(&transit_sync::EditDocument::new(records.clone())).unwrap();
             let document_hash = cap_abi::canonical_hash(&transit_sync::EditDocument::new(records.clone())).unwrap();
             (
                 json!({ "op": "compact_edits", "records": old, "now_ms": now_ms, "horizon_ms": horizon_ms }),
@@ -2456,11 +2627,10 @@ fn example_for(
             }, transit_network::NetworkEdit::AddStop { id: None, lat: Some(45.5), lon: Some(-73.5) }];
             let transit_network::Applied { network: next, created, touched } =
                 transit_network::apply_edits_reporting(ctx.derived_network(), &edits).ok()?;
-            let canonical = serde_json::to_string(&next).ok()?;
             (
                 json!({ "op": "apply", "network_hash": ctx.network_hash, "edits": edits }),
                 json!({ "ok": { "op": "apply",
-                    "network_hash": format!("sha256:{:x}", Sha256::digest(canonical.as_bytes())),
+                    "network_hash": cap_abi::canonical_hash(&next).ok()?,
                     "network": next,
                     "issues": transit_network::validation_issues(&next),
                     "warnings": transit_network::validation_warnings(&next),
@@ -2557,7 +2727,7 @@ fn example_for(
             let first = &fixture_plan_set()[0];
             let published =
                 transit_plans::publish(&transit_plans::PublishedPlans::empty(), first, &net.network_hash, fixture_today()).ok()?;
-            let document = serde_json::to_string(&published).ok()?;
+            let document = cap_abi::canonical_bytes(&published).ok()?;
             (
                 json!({ "op": "publish", "published": null, "plan": first, "network_hash": net.network_hash, "today": "2026-01-01" }),
                 json!({ "ok": { "op": "publish", "issues": [], "published": published,
@@ -2581,7 +2751,7 @@ fn example_for(
                 transit_plans::publish(&set, plan, &net.network_hash, fixture_today()).unwrap_or(set)
             });
             let retired = transit_plans::retire(&published, "fall", fixture_today()).ok()?;
-            let document = serde_json::to_string(&retired).ok()?;
+            let document = cap_abi::canonical_bytes(&retired).ok()?;
             (
                 json!({ "op": "retire", "published": published, "id": "fall", "today": "2026-01-01" }),
                 json!({ "ok": { "op": "retire", "issues": [], "published": retired,

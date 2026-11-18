@@ -1,0 +1,2531 @@
+{
+  "$defs": {
+    "Alignment": {
+      "additionalProperties": true,
+      "description": "A line on the ground: the path vehicles take, in travel order.\nPurely geographic — it carries no timing and no stops, and\nmaterialization only uses it for drawing, never for scheduling.\nPatterns run one by reference ([`Pattern::alignment`]); any number\nmay share one, and one no pattern runs still stands.",
+      "properties": {
+        "points": {
+          "items": {
+            "$ref": "#/$defs/AlignmentPoint"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "points"
+      ],
+      "type": "object"
+    },
+    "AlignmentPoint": {
+      "description": "One point of an [`Alignment`], with the distance along it where\none was published (in the units of the pattern stops' distances).\nIts fields are declared in canonical key order (RFC 8785, D-169), so\nits canonical bytes stream in one pass.",
+      "properties": {
+        "distance": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "lat": {
+          "format": "double",
+          "type": "number"
+        },
+        "lon": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "lat",
+        "lon"
+      ],
+      "type": "object"
+    },
+    "Anchor": {
+      "description": "Where a service day's second zero sits. `NoonMinusTwelve` is the\nGTFS convention, adopted on its merits rather than for\ncompatibility: no DST transition occurs near noon, so offsets\nstay unambiguous on change days. The authored model makes the\nconvention *explicit* where GTFS leaves it to inference.",
+      "oneOf": [
+        {
+          "const": "noon_minus_twelve",
+          "description": "Seconds after \"noon minus 12h\" of the service date.",
+          "type": "string"
+        }
+      ]
+    },
+    "Area": {
+      "additionalProperties": true,
+      "description": "A fare area: a set of stops.",
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stops": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Attribution": {
+      "additionalProperties": true,
+      "description": "An organization credited for the data.",
+      "properties": {
+        "authority": {
+          "type": "boolean"
+        },
+        "email": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "operator": {
+          "type": "boolean"
+        },
+        "organization": {
+          "type": "string"
+        },
+        "phone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "producer": {
+          "type": "boolean"
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AttributionScope"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "organization"
+      ],
+      "type": "object"
+    },
+    "AttributionScope": {
+      "description": "What an attribution credits: the whole dataset (`None` on the\nattribution), or one operator, route, or trip.",
+      "oneOf": [
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "operator",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "route",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "trip",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Block": {
+      "additionalProperties": true,
+      "description": "One vehicle's work: trips in order with the layovers between\nthem. Authored (runcutting), not derived from trip rows. A block\nmay hold trips of service types that never share a day; on each\nday it is the trips running that day, in this order.",
+      "properties": {
+        "layovers": {
+          "items": {
+            "$ref": "#/$defs/Layover"
+          },
+          "type": "array"
+        },
+        "trips": {
+          "items": {
+            "$ref": "#/$defs/TripRef"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "trips",
+        "layovers"
+      ],
+      "type": "object"
+    },
+    "BookingKind": {
+      "description": "How far ahead a ride must be booked.",
+      "oneOf": [
+        {
+          "const": "real_time",
+          "description": "Booked any time up to the ride.",
+          "type": "string"
+        },
+        {
+          "const": "same_day",
+          "description": "Booked the same day, some minutes ahead.",
+          "type": "string"
+        },
+        {
+          "const": "prior_days",
+          "description": "Booked one or more days ahead.",
+          "type": "string"
+        }
+      ]
+    },
+    "BookingRule": {
+      "additionalProperties": true,
+      "description": "How riders book a demand-responsive ride.",
+      "properties": {
+        "booking_days": {
+          "description": "The service type whose days count as booking days.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "booking_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "drop_off_message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "info_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/BookingKind"
+        },
+        "last_day": {
+          "description": "Prior days: the last day (days before the ride) and time a\nbooking is taken, and the first.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "last_time_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notice_max_minutes": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "notice_min_minutes": {
+          "description": "Same day: the minimum and maximum minutes of notice.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "phone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pickup_message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start_day": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "start_time_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "CalendarException": {
+      "additionalProperties": true,
+      "properties": {
+        "date": {
+          "format": "date",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/DayState"
+        }
+      },
+      "required": [
+        "date",
+        "state"
+      ],
+      "type": "object"
+    },
+    "CalendarRule": {
+      "additionalProperties": true,
+      "description": "Which days a service type runs on, as authored rules rather than\nGTFS exception rows: weekday flags plus date ranges, with explicit\nper-date exceptions that always win.",
+      "properties": {
+        "days": {
+          "$ref": "#/$defs/WeekdaySet",
+          "default": {
+            "fri": false,
+            "mon": false,
+            "sat": false,
+            "sun": false,
+            "thu": false,
+            "tue": false,
+            "wed": false
+          }
+        },
+        "exceptions": {
+          "default": [],
+          "description": "Explicit per-date overrides; always beat the weekly rule.",
+          "items": {
+            "$ref": "#/$defs/CalendarException"
+          },
+          "type": "array"
+        },
+        "ranges": {
+          "default": [],
+          "description": "Inclusive date ranges; a date in any range with its weekday\nflagged runs.",
+          "items": {
+            "$ref": "#/$defs/DateRange"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Contactless": {
+      "description": "Whether contactless bank cards are accepted.",
+      "enum": [
+        "unknown",
+        "accepted",
+        "not_accepted"
+      ],
+      "type": "string"
+    },
+    "Coord": {
+      "description": "A WGS84 position. Authored geometry (a pattern's alignment) is\nmodel data — `lat` first, matching `Stop`'s field order. (GeoJSON\nviews at the boundary reorder to [lon, lat]; the model never\nstores GeoJSON order.)",
+      "properties": {
+        "lat": {
+          "format": "double",
+          "type": "number"
+        },
+        "lon": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "lat",
+        "lon"
+      ],
+      "type": "object"
+    },
+    "DateRange": {
+      "additionalProperties": true,
+      "properties": {
+        "end": {
+          "format": "date",
+          "type": "string"
+        },
+        "start": {
+          "format": "date",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "type": "object"
+    },
+    "DayState": {
+      "oneOf": [
+        {
+          "const": "added",
+          "description": "Service runs this date even though the weekly rule says no.",
+          "type": "string"
+        },
+        {
+          "const": "removed",
+          "description": "Service does not run this date even though the weekly rule\nsays yes.",
+          "type": "string"
+        }
+      ]
+    },
+    "DemandResponsive": {
+      "additionalProperties": true,
+      "description": "Everything demand-responsive the network describes.",
+      "properties": {
+        "booking_rules": {
+          "additionalProperties": {
+            "$ref": "#/$defs/BookingRule"
+          },
+          "type": "object"
+        },
+        "location_groups": {
+          "additionalProperties": {
+            "$ref": "#/$defs/LocationGroup"
+          },
+          "type": "object"
+        },
+        "trips": {
+          "additionalProperties": {
+            "$ref": "#/$defs/DemandTrip"
+          },
+          "description": "The demand-responsive trips, by id (trip ids are unique across\nthese and the network's scheduled trips).",
+          "type": "object"
+        },
+        "zones": {
+          "description": "The zones riders are picked up or dropped off in: a GeoJSON\nFeatureCollection whose features' ids are the zone ids."
+        }
+      },
+      "type": "object"
+    },
+    "DemandTrip": {
+      "additionalProperties": true,
+      "description": "A demand-responsive trip: a route's service under a service type,\nvisiting places in order.",
+      "properties": {
+        "alignment": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bikes": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "block": {
+          "description": "The vehicle's block, as published.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cars": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "direction": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headsign": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "route": {
+          "type": "string"
+        },
+        "service_type": {
+          "type": "string"
+        },
+        "short_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "visits": {
+          "items": {
+            "$ref": "#/$defs/Visit"
+          },
+          "type": "array"
+        },
+        "wheelchair": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "route",
+        "service_type",
+        "visits"
+      ],
+      "type": "object"
+    },
+    "Departs": {
+      "description": "When a trip departs: once, or as a frequency.",
+      "oneOf": [
+        {
+          "description": "One instance, starting at `start_secs`.",
+          "properties": {
+            "kind": {
+              "const": "at",
+              "type": "string"
+            },
+            "start_secs": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "start_secs"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A frequency trip: one instance at `start_secs + k * headway_secs`\nwhile the start is `< end_secs`, per band (end-exclusive), all\nsharing the trip's id and times. `exact`: the instances run on\nexactly that grid (otherwise riders are promised the headway,\nnot the minutes).",
+          "properties": {
+            "bands": {
+              "items": {
+                "$ref": "#/$defs/HeadwayBand"
+              },
+              "type": "array"
+            },
+            "exact": {
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "every",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "bands",
+            "exact"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Direction": {
+      "additionalProperties": true,
+      "description": "One direction of a route, as a planner names it.",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "DurationLimit": {
+      "description": "How the time limit of a fare transfer is measured.",
+      "enum": [
+        "departure_to_arrival",
+        "departure_to_departure",
+        "arrival_to_departure",
+        "arrival_to_arrival"
+      ],
+      "type": "string"
+    },
+    "FareLegJoinRule": {
+      "additionalProperties": true,
+      "description": "Two consecutive legs that fares count as one.",
+      "properties": {
+        "from_network": {
+          "type": "string"
+        },
+        "from_stop": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "to_network": {
+          "type": "string"
+        },
+        "to_stop": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "from_network",
+        "to_network"
+      ],
+      "type": "object"
+    },
+    "FareLegRule": {
+      "additionalProperties": true,
+      "description": "Which product a leg costs: by network, areas, and timeframes\n(unset: any), the most specific (highest priority) rule winning.",
+      "properties": {
+        "from_area": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "from_timeframe": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "leg_group": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "network": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "priority": {
+          "description": "Higher wins; `None` is 0.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "product": {
+          "type": "string"
+        },
+        "to_area": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "to_timeframe": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "product"
+      ],
+      "type": "object"
+    },
+    "FareMedia": {
+      "additionalProperties": true,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/FareMediaKind"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "FareMediaKind": {
+      "description": "What a fare is held on.",
+      "oneOf": [
+        {
+          "enum": [
+            "paper_ticket",
+            "transit_card",
+            "mobile_app"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "none",
+          "description": "Nothing: cash or a fare paid with no medium.",
+          "type": "string"
+        },
+        {
+          "const": "contactless",
+          "description": "Contactless bank card or device.",
+          "type": "string"
+        }
+      ]
+    },
+    "FareNetwork": {
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "FareOffer": {
+      "additionalProperties": true,
+      "description": "One way a fare product is sold: its price for a rider category on\na medium (unset: any).",
+      "properties": {
+        "amount": {
+          "format": "double",
+          "type": "number"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "media": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rider_category": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "amount",
+        "currency"
+      ],
+      "type": "object"
+    },
+    "FareTransferKind": {
+      "description": "What a transfer between legs costs.",
+      "oneOf": [
+        {
+          "const": "first_leg_plus_transfer",
+          "description": "The first leg's fare plus the transfer's.",
+          "type": "string"
+        },
+        {
+          "const": "every_leg_plus_transfer",
+          "description": "Every leg's fare plus the transfer's.",
+          "type": "string"
+        },
+        {
+          "const": "transfer_only",
+          "description": "The transfer's fare alone.",
+          "type": "string"
+        }
+      ]
+    },
+    "FareTransferRule": {
+      "additionalProperties": true,
+      "description": "What changing from one leg group to another costs.",
+      "properties": {
+        "duration_limit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DurationLimit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "duration_limit_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "from_leg_group": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/FareTransferKind"
+        },
+        "product": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "to_leg_group": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "transfer_count": {
+          "description": "Transfers allowed; -1 = unlimited.",
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "Fares": {
+      "additionalProperties": true,
+      "description": "Every fare the network describes.",
+      "properties": {
+        "areas": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Area"
+          },
+          "type": "object"
+        },
+        "leg_join_rules": {
+          "items": {
+            "$ref": "#/$defs/FareLegJoinRule"
+          },
+          "type": "array"
+        },
+        "leg_rules": {
+          "items": {
+            "$ref": "#/$defs/FareLegRule"
+          },
+          "type": "array"
+        },
+        "media": {
+          "additionalProperties": {
+            "$ref": "#/$defs/FareMedia"
+          },
+          "type": "object"
+        },
+        "networks": {
+          "additionalProperties": {
+            "$ref": "#/$defs/FareNetwork"
+          },
+          "description": "Groups of routes fares treat alike (a route names its own).",
+          "type": "object"
+        },
+        "products": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/FareOffer"
+            },
+            "type": "array"
+          },
+          "description": "What riders buy, by id — one offer per rider category and\nmedium it is sold for.",
+          "type": "object"
+        },
+        "rider_categories": {
+          "additionalProperties": {
+            "$ref": "#/$defs/RiderCategory"
+          },
+          "type": "object"
+        },
+        "timeframes": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/Timeframe"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "transfer_rules": {
+          "items": {
+            "$ref": "#/$defs/FareTransferRule"
+          },
+          "type": "array"
+        },
+        "zone_fare_rules": {
+          "description": "Where each zone fare applies, in published order.",
+          "items": {
+            "$ref": "#/$defs/ZoneFareRule"
+          },
+          "type": "array"
+        },
+        "zone_fares": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ZoneFare"
+          },
+          "description": "Zone fares, by id.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "HeadwayBand": {
+      "additionalProperties": true,
+      "properties": {
+        "end_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "headway_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start_secs",
+        "end_secs",
+        "headway_secs"
+      ],
+      "type": "object"
+    },
+    "Layover": {
+      "additionalProperties": true,
+      "description": "Recovery time between two trips of a block.",
+      "properties": {
+        "after_trip": {
+          "description": "Index into the block's trips: the layover follows that trip.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "at": {
+          "description": "Where the vehicle waits, if it matters.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "after_trip",
+        "secs"
+      ],
+      "type": "object"
+    },
+    "Level": {
+      "additionalProperties": true,
+      "description": "One floor of a station.",
+      "properties": {
+        "index": {
+          "description": "Order of the levels: 0 is the ground, negative is below it.",
+          "format": "double",
+          "type": "number"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "type": "object"
+    },
+    "LocationGroup": {
+      "additionalProperties": true,
+      "description": "Stops served as one: a rider may board or alight at any of them.",
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stops": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Mode": {
+      "description": "Vehicle modes as a domain concept, not GTFS's numeric codes.",
+      "enum": [
+        "tram",
+        "subway",
+        "rail",
+        "bus",
+        "ferry",
+        "cable_car",
+        "gondola",
+        "funicular",
+        "trolleybus",
+        "monorail",
+        "other"
+      ],
+      "type": "string"
+    },
+    "NetworkKind": {
+      "const": "network"
+    },
+    "NetworkVersion": {
+      "description": "The network document's version. A network built in code is the\ncurrent version; a document read without one is version 1.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "Operator": {
+      "additionalProperties": true,
+      "description": "An agency that runs service.",
+      "properties": {
+        "contactless": {
+          "description": "Whether contactless bank cards are accepted; `None` = unknown.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "email": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fare_url": {
+          "description": "Where riders buy fares online.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "language": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "phone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timezone": {
+          "description": "The timezone every time of the operator's service is in.",
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "url",
+        "timezone"
+      ],
+      "type": "object"
+    },
+    "Pathway": {
+      "additionalProperties": true,
+      "description": "A way between two places of a station (stops, station parts).",
+      "properties": {
+        "both_ways": {
+          "description": "Walkable both ways (`false`: only from → to).",
+          "type": "boolean"
+        },
+        "from": {
+          "type": "string"
+        },
+        "length": {
+          "description": "Meters.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_slope": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "min_width": {
+          "description": "Meters.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "mode": {
+          "$ref": "#/$defs/PathwayMode"
+        },
+        "reversed_signposted_as": {
+          "description": "What the signs say walking it to → from.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "signposted_as": {
+          "description": "What the signs say walking it from → to.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stair_count": {
+          "description": "Steps, negative going down.",
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "to": {
+          "type": "string"
+        },
+        "traversal_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "mode",
+        "both_ways"
+      ],
+      "type": "object"
+    },
+    "PathwayMode": {
+      "description": "How a pathway is walked.",
+      "oneOf": [
+        {
+          "enum": [
+            "walkway",
+            "stairs",
+            "moving_sidewalk",
+            "escalator",
+            "elevator"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "fare_gate",
+          "description": "A fare gate: paying happens crossing it.",
+          "type": "string"
+        },
+        {
+          "const": "exit_gate",
+          "description": "An exit gate: a fare gate's way out.",
+          "type": "string"
+        }
+      ]
+    },
+    "Pattern": {
+      "additionalProperties": true,
+      "description": "A route pattern: the stop sequence a planner draws along its\nalignment, with the profiles new trips are timed from. Every trip\nruns a pattern. A document written before alignments (an inline\n`path`) is version 1, refused at its load and brought forward by\nthe migration (`migrate.rs`), which moves its line.",
+      "properties": {
+        "alignment": {
+          "description": "The [`Alignment`] the pattern runs, by id. `None` (omitted)\nmeans \"draw stop-to-stop lines\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "direction": {
+          "description": "Which of the route's [`Route::directions`] this pattern runs\nin; `None` (omitted) when the route has none or the pattern is\nnot yet placed. Bay and short-turn variants share a direction.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Human-facing description, e.g. \"5-K Ave to Downtown via MLK\".",
+          "type": "string"
+        },
+        "route": {
+          "type": "string"
+        },
+        "stops": {
+          "items": {
+            "$ref": "#/$defs/PatternStop"
+          },
+          "type": "array"
+        },
+        "timing": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TimingProfile"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "route",
+        "name",
+        "stops"
+      ],
+      "type": "object"
+    },
+    "PatternStop": {
+      "additionalProperties": true,
+      "description": "One stop visit within a pattern.",
+      "properties": {
+        "continuous_drop_off": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StopRule"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "continuous_pickup": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StopRule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Continuous stopping from here to the next stop; `None` = the\nroute's."
+        },
+        "distance_m": {
+          "description": "Meters along the pattern from its first stop. Non-decreasing.",
+          "format": "double",
+          "type": "number"
+        },
+        "distance_published": {
+          "description": "Whether `distance_m` was published (in the publisher's own\nunits) rather than estimated; an estimate is never published.",
+          "type": "boolean"
+        },
+        "drop_off": {
+          "$ref": "#/$defs/StopRule"
+        },
+        "drop_off_booking": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headsign": {
+          "description": "What the vehicle's sign says at this visit, where it differs\nfrom the trip's headsign (this visit only — `visit_destination`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pickup": {
+          "$ref": "#/$defs/StopRule"
+        },
+        "pickup_booking": {
+          "description": "The booking rule a rider follows to board (alight) here.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stop": {
+          "type": "string"
+        },
+        "timepoint": {
+          "description": "An exact stop: every trip of the pattern carries both its\narrival and its departure here. Other stops may leave times\nunscheduled (they materialize by distance between scheduled\nneighbours).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "stop",
+        "timepoint",
+        "distance_m"
+      ],
+      "type": "object"
+    },
+    "PatternTrips": {
+      "additionalProperties": true,
+      "description": "One pattern's trips under one service type. Everything RAPTOR and\ndispatch consume derives from these. Not a planner's \"schedule\":\nthe timetable a planner reads is a route's direction under one\nservice type, across all its patterns (`listing::timetable`).",
+      "properties": {
+        "pattern": {
+          "type": "string"
+        },
+        "service_type": {
+          "type": "string"
+        },
+        "trips": {
+          "items": {
+            "$ref": "#/$defs/Trip"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "pattern",
+        "service_type",
+        "trips"
+      ],
+      "type": "object"
+    },
+    "PlanMeta": {
+      "additionalProperties": true,
+      "description": "The service-plan frame of a network document. Agencies implement\na few service changes (\"picks\") a year at defined dates — the\nonly times permanent stop/route changes are allowed — and each\npick is one of these documents, effective from its service\nchange date until superseded by the next. A document without\nplan metadata is unversioned (e.g. a fresh GTFS import).",
+      "properties": {
+        "effective_from": {
+          "description": "The service change date this plan takes effect, \"YYYY-MM-DD\".\nNone on unversioned documents; a plan in a chain must have one.",
+          "format": "date",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "default": "",
+          "description": "The plan's identity — the sync key (LWW per plan). Empty on\nunversioned documents.",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Display name (\"Fall 2026 pick\").",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Publisher": {
+      "additionalProperties": true,
+      "description": "Who publishes the dataset, and what it covers.",
+      "properties": {
+        "contact_email": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "contact_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default_language": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "end_date": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "language": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "start_date": {
+          "description": "The first and last dates the dataset covers, \"YYYYMMDD\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": "string"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "url",
+        "language"
+      ],
+      "type": "object"
+    },
+    "RiderCategory": {
+      "additionalProperties": true,
+      "description": "Who a fare is for (adult, senior, youth).",
+      "properties": {
+        "default": {
+          "description": "The category a rider is in unless they say otherwise.",
+          "type": "boolean"
+        },
+        "eligibility_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "Route": {
+      "additionalProperties": true,
+      "description": "A route as a planner authors it: its public name (the short one\nriders see, \"12\"), its long name (\"Lincoln\"), a closed mode set.\nDisplay it by [`Route::label`].",
+      "properties": {
+        "color": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "contactless": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Contactless"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Whether contactless bank cards are accepted on board; `None` =\nas the operator says."
+        },
+        "continuous_drop_off": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StopRule"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "continuous_pickup": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StopRule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Riders may board (alight) anywhere along the route's line, by\nthis rule; `None` = only at stops."
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "directions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Direction"
+          },
+          "description": "The ways the route runs, by id, each named the way the planner\nsays it (\"To Downtown\", \"Northbound\"). A pattern belongs to at\nmost one; a timetable is one direction on one service type.\nEmpty (omitted) for a route nobody has split into directions.",
+          "type": "object"
+        },
+        "fare_network": {
+          "description": "The fare network it belongs to.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "long_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mode": {
+          "$ref": "#/$defs/Mode"
+        },
+        "name": {
+          "description": "The short public name; empty for a route known only by its\nlong name.",
+          "type": "string"
+        },
+        "operator": {
+          "description": "Who runs it; `None` = the network's only operator.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sort_order": {
+          "description": "Where the route sorts in lists (lower first).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "text_color": {
+          "description": "The text color drawn over `color`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "vehicle_type": {
+          "description": "The published vehicle type code, where the mode alone does not\nsay it (an extended type such as a regional rail or night bus).",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "mode"
+      ],
+      "type": "object"
+    },
+    "ServiceType": {
+      "additionalProperties": true,
+      "description": "A service type: the service identifier planners design —\nWeekday, Saturday, Sunday, a holiday — linked to the days it\nruns by its calendar rule. This, not the day-of-month, is the\naxis planners design on (GTFS calls it service_id).",
+      "properties": {
+        "name": {
+          "description": "Display name (\"Weekday\", \"Saturday service\", …).",
+          "type": "string"
+        },
+        "rule": {
+          "$ref": "#/$defs/CalendarRule",
+          "description": "The days it runs: weekday flags plus date ranges, with\nexplicit per-date exceptions that always win."
+        }
+      },
+      "required": [
+        "name",
+        "rule"
+      ],
+      "type": "object"
+    },
+    "StationPart": {
+      "additionalProperties": true,
+      "description": "An entrance, node, or boarding area: part of a station (a boarding\narea is part of its platform), linked to the rest by pathways.",
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Coord"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where it is, when published (required of an entrance)."
+        },
+        "info": {
+          "$ref": "#/$defs/StopInfo"
+        },
+        "kind": {
+          "$ref": "#/$defs/StationPartKind"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parent": {
+          "description": "The station (or, for a boarding area, the platform) it is part of.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "parent"
+      ],
+      "type": "object"
+    },
+    "StationPartKind": {
+      "description": "A part of a station riders walk through but never board at.",
+      "oneOf": [
+        {
+          "enum": [
+            "entrance"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "node",
+          "description": "A point where pathways meet.",
+          "type": "string"
+        },
+        {
+          "const": "boarding_area",
+          "description": "Where on a platform a rider boards.",
+          "type": "string"
+        }
+      ]
+    },
+    "Stop": {
+      "additionalProperties": true,
+      "description": "A stop as a planner authors it: one name, one location, optional\nparent (platform-in-station groupings) — a stop riders board at,\nor a station grouping stops.",
+      "properties": {
+        "info": {
+          "$ref": "#/$defs/StopInfo"
+        },
+        "kind": {
+          "$ref": "#/$defs/StopKind"
+        },
+        "lat": {
+          "format": "double",
+          "type": "number"
+        },
+        "lon": {
+          "format": "double",
+          "type": "number"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "transfer": {
+          "default": false,
+          "description": "A designated transfer point: where the network intends riders\nto change vehicles. Authored intent, not a badge — the flag\nonly means something composed with the routes that meet there\n(validation requires at least two; the analysis ops measure\nthe timed connections it enables).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "lat",
+        "lon"
+      ],
+      "type": "object"
+    },
+    "StopInfo": {
+      "additionalProperties": true,
+      "description": "What a rider can know about a place beyond its name and point.\nShared by stops and station parts.",
+      "properties": {
+        "code": {
+          "description": "The short code riders see on the sign or type into a phone.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fare_zone": {
+          "description": "The fare zone the place is in (zone fares).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "level": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "platform": {
+          "description": "The platform's own identifier (\"G\", \"3\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "spoken_name": {
+          "description": "How the name is read aloud, where it differs from the text.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "street_access": {
+          "description": "A station's stop: reached straight from the street (`true`) or\nonly through the station (`false`).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "timezone": {
+          "description": "The place's own timezone, where it differs from its operator's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wheelchair": {
+          "description": "Whether a wheelchair user can board here (or, for an entrance,\nget in); `None` = unknown (a child place inherits its parent's).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "StopKind": {
+      "description": "What kind of place a [`crate::Stop`] is: a stop or platform riders\nboard at, or a station grouping them.",
+      "enum": [
+        "stop",
+        "station"
+      ],
+      "type": "string"
+    },
+    "StopOffset": {
+      "description": "A trip's time at one pattern stop: seconds after the instance's\nstart. `None` = not scheduled there (the stop materializes between\nits scheduled neighbours). The first arrival is 0; the first and\nlast stops, and every timepoint, carry both.",
+      "properties": {
+        "arrival_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "departure_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "StopRule": {
+      "description": "Whether, and how, riders may board or alight: at a stop (pickup,\ndrop-off) or anywhere along the line (continuous stopping).",
+      "oneOf": [
+        {
+          "enum": [
+            "regular",
+            "not_available"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "phone_agency",
+          "description": "The rider phones the agency to arrange it.",
+          "type": "string"
+        },
+        {
+          "const": "ask_driver",
+          "description": "The rider arranges it with the driver.",
+          "type": "string"
+        }
+      ]
+    },
+    "Timeframe": {
+      "additionalProperties": true,
+      "description": "A span of a service type's day fares treat alike (peak, off-peak).\nNo start and end means the whole day.",
+      "properties": {
+        "end_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "service_type": {
+          "type": "string"
+        },
+        "start_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "service_type"
+      ],
+      "type": "object"
+    },
+    "TimingProfile": {
+      "additionalProperties": true,
+      "description": "Run-time profile for NEW trips departing in a time band\n`[start_secs, end_secs)` — the planner's production tool. Stored\ntrips carry their own times; a profile never governs them.\n\n`at_timepoints` is cumulative seconds from the first timepoint at\neach of the pattern's timepoints, in pattern order (the first\nentry is 0).",
+      "properties": {
+        "at_timepoints": {
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "end_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start_secs",
+        "end_secs",
+        "at_timepoints"
+      ],
+      "type": "object"
+    },
+    "TransferEnd": {
+      "additionalProperties": true,
+      "description": "One side of a transfer rule: where (and from or onto what) the\nrider changes. Unset parts match anything.",
+      "properties": {
+        "route": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stop": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trip": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "TransferKind": {
+      "description": "What a transfer rule says about changing vehicles.",
+      "oneOf": [
+        {
+          "const": "recommended",
+          "description": "A recommended place to change.",
+          "type": "string"
+        },
+        {
+          "const": "timed",
+          "description": "The departing vehicle waits for the arriving one.",
+          "type": "string"
+        },
+        {
+          "const": "minimum_time",
+          "description": "Changing takes at least `min_transfer_secs`.",
+          "type": "string"
+        },
+        {
+          "const": "not_possible",
+          "description": "Changing is not possible here.",
+          "type": "string"
+        },
+        {
+          "const": "in_seat",
+          "description": "The rider stays in the vehicle from one trip to the next.",
+          "type": "string"
+        },
+        {
+          "const": "in_seat_not_allowed",
+          "description": "The rider must leave the vehicle between the two trips.",
+          "type": "string"
+        }
+      ]
+    },
+    "TransferRule": {
+      "additionalProperties": true,
+      "description": "How riders change vehicles between two places, routes, or trips.",
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/TransferEnd"
+        },
+        "kind": {
+          "$ref": "#/$defs/TransferKind"
+        },
+        "min_transfer_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "to": {
+          "$ref": "#/$defs/TransferEnd"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "Translation": {
+      "additionalProperties": true,
+      "description": "One text of the network in another language. `table` and `field`\nname the text the way the published dataset does (\"stops\",\n\"stop_name\"); the text is found by record (`record`, and\n`sub_record` where a record needs two keys) or by its value in the\noriginal language.",
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        },
+        "record": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sub_record": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "table": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "table",
+        "field",
+        "language",
+        "text"
+      ],
+      "type": "object"
+    },
+    "Trip": {
+      "additionalProperties": true,
+      "description": "One trip: the agency's id, when it departs, and its own time at\nevery stop of its pattern (`times[i]` is `pattern.stops[i]`). Its\nfields are declared in canonical key order (RFC 8785, D-169), so its\ncanonical bytes stream in one pass (`cap-abi`, `jcs_law_test.rs`).",
+      "properties": {
+        "bikes": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "cars": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "departs": {
+          "$ref": "#/$defs/Departs"
+        },
+        "headsign": {
+          "description": "What the vehicle's sign says.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "short_name": {
+          "description": "The trip's public number, where riders know it by one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "times": {
+          "items": {
+            "$ref": "#/$defs/StopOffset"
+          },
+          "type": "array"
+        },
+        "wheelchair": {
+          "description": "Whether the vehicle takes a wheelchair (bikes, cars); `None` =\nunknown.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "departs",
+        "id",
+        "times"
+      ],
+      "type": "object"
+    },
+    "TripRef": {
+      "additionalProperties": true,
+      "description": "A block's reference to a trip, by id. A block runs a trip whole\n(as GTFS has it): a frequency trip in a block is every one of its\ninstances, back to back.",
+      "properties": {
+        "trip": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "trip"
+      ],
+      "type": "object"
+    },
+    "Visit": {
+      "additionalProperties": true,
+      "description": "One visit of a demand-responsive trip: a place, served at times or\nwithin a window (seconds after the service day's anchor).",
+      "properties": {
+        "arrival_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "continuous_drop_off": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StopRule"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "continuous_pickup": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StopRule"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "departure_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "distance": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "drop_off": {
+          "$ref": "#/$defs/StopRule"
+        },
+        "drop_off_booking": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headsign": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pickup": {
+          "$ref": "#/$defs/StopRule"
+        },
+        "pickup_booking": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "place": {
+          "$ref": "#/$defs/VisitPlace"
+        },
+        "timepoint": {
+          "description": "An exact time (`Some(true)`), an approximate one\n(`Some(false)`), or unstated.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "window_end_secs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "window_start_secs": {
+          "description": "The window riders are picked up or dropped off in.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "place"
+      ],
+      "type": "object"
+    },
+    "VisitPlace": {
+      "description": "Where a demand-responsive visit happens.",
+      "oneOf": [
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "stop",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "location_group",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "zone",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "WeekdaySet": {
+      "description": "Authored weekday flags. A rule with no flags still runs on dates\nexplicitly `Added` (special-event service) — see `runs_on`.",
+      "properties": {
+        "fri": {
+          "default": false,
+          "type": "boolean"
+        },
+        "mon": {
+          "default": false,
+          "type": "boolean"
+        },
+        "sat": {
+          "default": false,
+          "type": "boolean"
+        },
+        "sun": {
+          "default": false,
+          "type": "boolean"
+        },
+        "thu": {
+          "default": false,
+          "type": "boolean"
+        },
+        "tue": {
+          "default": false,
+          "type": "boolean"
+        },
+        "wed": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "ZoneFare": {
+      "additionalProperties": true,
+      "description": "A zone fare: its price and how it may be used.",
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "operator": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "paid_before_boarding": {
+          "description": "Paid before boarding (`false`: on board).",
+          "type": "boolean"
+        },
+        "price": {
+          "format": "double",
+          "type": "number"
+        },
+        "transfer_secs": {
+          "description": "How long transfers (or the fare) stay valid.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "transfers": {
+          "description": "Transfers allowed; `None` = unlimited.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "price",
+        "currency",
+        "paid_before_boarding"
+      ],
+      "type": "object"
+    },
+    "ZoneFareRule": {
+      "additionalProperties": true,
+      "description": "Where a zone fare applies: on a route, from a zone to a zone, or\nthrough a zone. Unset parts match anything.",
+      "properties": {
+        "contains_zone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "destination_zone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fare": {
+          "type": "string"
+        },
+        "origin_zone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "route": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "fare"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "The authored network document. BTreeMap-keyed so serialization is\ncanonical and per-entity sync falls out later.",
+  "properties": {
+    "alignments": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Alignment"
+      },
+      "description": "The lines on the ground patterns run, by id.",
+      "type": "object"
+    },
+    "anchor": {
+      "$ref": "#/$defs/Anchor",
+      "default": "noon_minus_twelve",
+      "description": "The service-day time anchor every offset in the network is\nmeasured from. Defaults to the noon-minus-12h convention."
+    },
+    "attributions": {
+      "items": {
+        "$ref": "#/$defs/Attribution"
+      },
+      "type": "array"
+    },
+    "blocks": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Block"
+      },
+      "type": "object"
+    },
+    "demand": {
+      "$ref": "#/$defs/DemandResponsive"
+    },
+    "fares": {
+      "$ref": "#/$defs/Fares"
+    },
+    "kind": {
+      "$ref": "#/$defs/NetworkKind",
+      "default": "network",
+      "description": "`\"network\"`: the document names its kind (D-115)."
+    },
+    "levels": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Level"
+      },
+      "type": "object"
+    },
+    "name": {
+      "type": "string"
+    },
+    "operators": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Operator"
+      },
+      "description": "Who runs the service, by id.",
+      "type": "object"
+    },
+    "pathways": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Pathway"
+      },
+      "type": "object"
+    },
+    "pattern_trips": {
+      "additionalProperties": {
+        "$ref": "#/$defs/PatternTrips"
+      },
+      "description": "Every pattern's trips, grouped by (pattern, service type).",
+      "type": "object"
+    },
+    "patterns": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Pattern"
+      },
+      "type": "object"
+    },
+    "plan": {
+      "$ref": "#/$defs/PlanMeta",
+      "default": {
+        "id": "",
+        "name": ""
+      },
+      "description": "The service plan this document is: the versioning frame for\nservice changes. Defaults to unversioned."
+    },
+    "publisher": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Publisher"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "routes": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Route"
+      },
+      "type": "object"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/NetworkVersion",
+      "default": 1,
+      "description": "The document's version (D-62): written on every write; a\ndocument without one is version 1 (`version.rs`)."
+    },
+    "service_types": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ServiceType"
+      },
+      "description": "The service types: what planners design and link to days.",
+      "type": "object"
+    },
+    "station_parts": {
+      "additionalProperties": {
+        "$ref": "#/$defs/StationPart"
+      },
+      "description": "Entrances, nodes, and boarding areas, by id (ids are unique\nacross these and the stops).",
+      "type": "object"
+    },
+    "stops": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Stop"
+      },
+      "type": "object"
+    },
+    "transfers": {
+      "description": "Transfer rules, in published order.",
+      "items": {
+        "$ref": "#/$defs/TransferRule"
+      },
+      "type": "array"
+    },
+    "translations": {
+      "items": {
+        "$ref": "#/$defs/Translation"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "name",
+    "stops",
+    "routes",
+    "patterns",
+    "service_types",
+    "pattern_trips",
+    "blocks"
+  ],
+  "title": "Network",
+  "type": "object"
+}

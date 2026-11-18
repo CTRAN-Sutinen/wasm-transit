@@ -1,0 +1,1 @@
+{"interline":[{"a":"10","b":"20"}],"kind":"work_rules","name":"Fixture rules","recovery":[{"min_secs":300,"pct_of_run":10},{"min_secs":240,"route":"10"}],"runs":{"clear_secs":900,"max_platform_secs":28800,"report_secs":900},"schema_version":1}

@@ -193,6 +193,11 @@ _host-tests:
     #!/usr/bin/env bash
     set -e
     export TS_RS_EXPORT_DIR="$PWD/web/src/types"
+    # `cargo test` includes THE SCHEMAS DESCRIBE THE REAL BYTES
+    # (cap-abi tests/real_output_test.rs; docs/FORMATS.md, "The schema
+    # lock"): every capability's worked examples, run through its own
+    # dispatch over the fixtures, answer documents that match their
+    # locked schemas. It reads the manifest `just caps` just wrote.
     cargo test
     node crates/cap-abi/caps-smoke.mjs
     # ASSEMBLY INDEPENDENCE (D-77): every worked example answers alike
@@ -472,13 +477,14 @@ _host-tests:
       --as fleet --op '{"op":"fleet_summary","network_hash":"$adopted.network_hash","date":"2026-10-23"}' \
       | node -e 'const r = require("fs").readFileSync(0, "utf8").trim().split("\n").map(JSON.parse); const ok = (n) => r.find((x) => x.as === n).ok; const s = ok("s").suggestion; if (!ok("rec").recovery.waits.length || ok("a").issues.some((i) => i.layover_infeasible) || ok("fleet").summary.peak_vehicles !== s.peak_vehicles) process.exit(1)'
     # The stops capability (D-153, D-157): a document validated,
-    # registered under the hash validate answered, and read on a date —
+    # registered under the hash validate answered (its events carry the
+    # ids validate would give them, D-166), and read on a date —
     # suspended while its suspension lasts, in service again on its
     # until; a return to service of a stop already in service is
     # refused, named.
     node tools/caps-run.mjs stops \
-      --as v --op '{"op":"validate","stops":{"kind":"stops","schema_version":1,"stops":{"6124":[{"on":"2004-09-01","event":"in_service","lat":45.6934,"lon":-122.6512,"name":"NE 99th St & Hwy 99"},{"on":"2027-03-03","event":"suspended","until":"2027-07-01"}]}}}' \
-      --as l --op '{"op":"load_stops","stops":{"kind":"stops","schema_version":1,"stops":{"6124":[{"on":"2004-09-01","event":"in_service","lat":45.6934,"lon":-122.6512,"name":"NE 99th St & Hwy 99"},{"on":"2027-03-03","event":"suspended","until":"2027-07-01"}]}}}' \
+      --as v --op '{"op":"validate","stops":{"kind":"stops","schema_version":1,"stops":{"6124":[{"id":"e7f43ace17772","on":"2004-09-01","event":"in_service","lat":45.6934,"lon":-122.6512,"name":"NE 99th St & Hwy 99"},{"id":"ead77f93b9e81","on":"2027-03-03","event":"suspended","until":"2027-07-01"}]}}}' \
+      --as l --op '{"op":"load_stops","stops":{"kind":"stops","schema_version":1,"stops":{"6124":[{"id":"e7f43ace17772","on":"2004-09-01","event":"in_service","lat":45.6934,"lon":-122.6512,"name":"NE 99th St & Hwy 99"},{"id":"ead77f93b9e81","on":"2027-03-03","event":"suspended","until":"2027-07-01"}]}}}' \
       --as spring --op '{"op":"stop","stops_hash":"$l.stops_hash","stop_id":"6124","date":"2027-04-01"}' \
       --as back --op '{"op":"stop","stops_hash":"$l.stops_hash","stop_id":"6124","date":"2027-07-01"}' \
       --as bad --op '{"op":"validate","stops":{"stops":{"a":[{"event":"in_service","lat":45,"lon":-122},{"on":"2027-01-02","event":"in_service"}]}}}' \
@@ -790,6 +796,15 @@ http-lock:
     cd server && go test -count=1 -run 'TestTheContractIsCompatibleWithTheLock|TestEveryRouteIsInTheContract' .
     cp server/openapi.json server/openapi.lock.json
 
+# The documents' schema lock (docs/FORMATS.md, "The schema lock"):
+# freeze a new version of a kind, or record an added optional field
+# in the same version (D-167), into the owning crate's locks/. It
+# refuses every other change: that one needs a version bump.
+# `just caps` (and so `just test`) fails while a kind differs from
+# its lock. It needs no module build.
+schema-lock:
+    cargo run --quiet -p cap-abi --features gen-manifest --bin gen-manifest -- --lock
+
 # Browser e2e (Chromium via Playwright, against the Go server).
 # Builds first; the runner starts the server unless :8080 is taken.
 # For UI-visible changes: each generated UI's spec, the picker, and
@@ -831,17 +846,24 @@ perf *args:
     cd web && npx vite build --minify false --outDir dist-perf --emptyOutDir
     npx playwright test -c perf/playwright.config.mjs {{args}}
 
-# Real-data soak: transit-streets against the downloaded county
-# export. Hermetic tests skip it; point COUNTY_GEOJSON at the file to
-# run it (e.g. the CTRAN Trapeze roads geojson from the open data
-# portal).
+# Real-data soak. Hermetic tests skip both parts.
+# - transit-streets against the downloaded county export: point
+#   COUNTY_GEOJSON at the file (e.g. the CTRAN Trapeze roads geojson
+#   from the open data portal).
+# - The schemas against the agency's feed (docs/FORMATS.md, "The
+#   schema lock"; cap-abi tests/real_data_soak.rs): SOAK_FEED, else
+#   testdata/ctran-gtfs.zip, through the ops a server runs on it. Every
+#   document they answer matches its locked schema. A mismatch is a QA
+#   finding.
 soak:
     #!/usr/bin/env bash
+    set -e
     if [ -z "$COUNTY_GEOJSON" ]; then
         echo "set COUNTY_GEOJSON to the downloaded county roads geojson"
         exit 1
     fi
     cargo test --release -p transit-streets --test county_data -- --nocapture
+    SOAK_FEED="$(realpath "${SOAK_FEED:-testdata/ctran-gtfs.zip}")" cargo test --release -p cap-abi --test real_data_soak -- --nocapture
 
 # Regenerate the e2e GTFS fixture (web/e2e/fixtures/sample-gtfs.zip).
 fixtures:
