@@ -425,7 +425,7 @@ heading names the code that it governs. **Holds** is what must stay
 true. Change it only with the user, after you read **Because**.
 
 ### Every page is a generated UI (`web/src/uis/<id>/`, the engine's one-op-caller gates)
-- **Holds:** there is no other shell. Every page is a generated UI that asks only through the engine. A capability that no UI reads is a gap recorded in `docs/units/grade-debt.md`, never a page outside the engine.
+- **Holds:** there is no other shell. Every page is a generated UI that asks only through the engine. A capability that no UI reads waits on the bus for one (caps-run reads it meanwhile). It is never read by a page outside the engine.
 - **Because:** one op caller lets the gates prove parity and journal every op. A page that calls modules directly is outside both.
 - **Rejected:** migrating the original persona-tabbed app onto the engine; keeping it on the gate's allowlist.
 - **Decided:** D-69.

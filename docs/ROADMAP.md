@@ -173,8 +173,8 @@ reaches them.
 - The runs cut. It is the work in `docs/units/runs-layer.md`
   (QAF-11, QAF-12, QAF-14, QAF-15).
 
-**Unblocks:** `docs/units/ui-runcut.md`'s runs questions and
-`docs/units/ui-work-bid.md`.
+**Unblocks:** `docs/units/ui-runcut.md`'s runs questions and the bid
+(queued in `docs/units/README.md`).
 
 ---
 

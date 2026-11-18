@@ -15,10 +15,9 @@ it depends on is:
   [perf-harness.md](perf-harness.md): a soak fails when memory does
   not level off. There is no fixed budget (D-187).
 - **Versioning** — a display's cached build meets newer documents:
-  [document-versioning.md](document-versioning.md)'s browser items
-  (2, the migration module cut by use, and 4's reader of the next
-  version and the reload on a version refusal; item 1 is the
-  server's).
+  [document-versioning.md](document-versioning.md), "Rolling a version
+  back". A display refused for its version looks for the deployment's
+  build at once (`web/src/versions.ts`).
 - **The static bundle** stands (`just export`; docs/architecture/static-deployment.md).
 
 The server's units ([store-durability.md](store-durability.md),
@@ -60,9 +59,14 @@ What is left here:
 
 - [perf-harness.md](perf-harness.md)'s runaway check stands, and
   document-versioning's browser items are pinned.
-- The static host chosen and its headers configured to the rule in
-  docs/architecture/static-deployment.md, the config recorded
-  here.
+- A real Cloudflare Workers deployment, set up as `DEPLOYMENTS.md`
+  says, checked against it and recorded in `DEPLOYMENTS.md`:
+  - each page's `Content-Security-Policy` against the deployment's
+    live feeds and tiles, in the browser console of a phone and of
+    the Pi 4 display (a blocked host shows as a violation);
+  - whether Cloudflare compresses `application/wasm` as it does text
+    types. If it does not, `DEPLOYMENTS.md`, "Headers every host must
+    send", says so.
 - Dogfood on C-TRAN, recorded here, served from that static host: a
   stop display on a Pi 4 left open 24 h across a service-day
   rollover and one redeploy (memory sampled, plateaued; the re-pin

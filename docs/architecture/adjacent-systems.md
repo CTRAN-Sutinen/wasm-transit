@@ -1,8 +1,12 @@
 # Adjacent systems
 
-The systems that run the dispatcher's day are out of scope (D-122).
-They are CAD/AVL, workforce management, and the agency's scheduling
-system. Each one touches everything here. Unlike a source, a
+The dispatcher's day is out of scope (D-122): sick calls, extra-board
+fills, swaps, and which person and vehicle are on a run today.
+CAD/AVL, workforce management, and the agency's scheduling system hold
+it. Only that day is out of scope, not everything those systems do.
+The runs and the bid are planned here (`docs/ROADMAP.md` 7), and the
+scheduling system is the final authority that a plan goes to. Each of
+these systems touches everything here. Unlike a source, a
 presentation, or an oracle, an adjacent system both reads this repo's
 documents and writes into its records. The data is the agency's,
 whichever system holds it (`docs/architecture/agency-data.md`). Each

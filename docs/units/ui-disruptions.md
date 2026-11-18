@@ -29,7 +29,7 @@ and its exemption in cap-abi `tests/formats_inventory_test.rs` goes.
 
 | # | op(s) | state |
 |---|---|---|
-| 1 | rt `live`, `late_trips` | op exists; no UI reads `late_trips` (`docs/units/grade-debt.md`); a vehicle with no label shows its id (D-10) |
+| 1 | rt `live`, `late_trips` | op exists; no UI reads `late_trips` yet; a vehicle with no label shows its id (D-10) |
 | 2 | runcut `block_trips` (`live_hash`) | op exists: a trip's live delay at its last stop against its next layover |
 | 3 | divert `list` | op exists (diversions in `rows`, trip cancels in `cancels`) |
 | 4 | divert `draft`, streets `snap` / `route`, divert `propose` | op exists; streets `import` / `snap` / `route` traced route 72's detour along NE 137th Ave on the county roads (2026-11-06) |

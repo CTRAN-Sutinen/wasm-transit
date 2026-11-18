@@ -33,21 +33,7 @@ ahead, lossless or read-only, and an operator can move a pointer back
 
 ## Scope
 
-1. **The migration module cut by use (D-79).** cap-migrate carries
-   every chain, so linking it into service design costs about
-   0.8 MB of assembly for chains that page never meets. Ride-now
-   fetches all of it, alone beside its assembly, when a stored
-   watchlist is older than the board reads (a static export of
-   ride-now does not carry it, so the old record waits there). Operational pieces, each linked
-   only where its documents arrive (the server's receive, a page's
-   restore), and one archive piece holding every chain (D-66), which
-   reads an archive in today's shape on request.
-2. **The Go host's own documents (D-185).** The schema lock, its
-   gates, `/schemas/`, and the soak stand (`docs/FORMATS.md`, "The
-   schema lock"). The `build` document keeps its hand-written schema in
-   `server/schemas/`, and the manifest its HTTP contract, until D-185 is
-   answered.
-3. **Rolling a version back (D-79, D-186).** The reader of the next
+1. **Rolling a version back (D-79, D-186).** The reader of the next
    version, the write refusal, the page's request for the deployment's
    build, the emergency procedure (`store revert`), and the rules stand
    (`docs/FORMATS.md`, "Rolling a version back"). What is left:

@@ -14,7 +14,7 @@
 //!    of its nearest member; a stop with no station is its own place.
 //!
 //! Asked with the point's WALKS to stops (cap-streets `access`, along
-//! the streets — docs/units/streets-model.md, item 3; D-34):
+//! the streets — docs/architecture/crates.md, transit-streets; D-34):
 //!
 //! 6. the places a walk reaches come first, by walk (then distance,
 //!    then id); the rest follow by distance, ties by id — a place

@@ -438,7 +438,7 @@ transit-streets library. The module writes nothing.
 Today the server uses cap-streets for the streets and the walk table it
 publishes, and ride-now uses it for walks from a point to the stops
 near it. Drawing a detour or a pattern on the streets is next
-(`docs/units/streets-model.md`, `docs/units/ui-disruptions.md`).
+(`docs/units/ui-stops.md`, `docs/units/ui-disruptions.md`).
 
 ## Bus rules
 

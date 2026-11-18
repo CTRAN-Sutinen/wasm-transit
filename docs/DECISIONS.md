@@ -53,7 +53,7 @@ the rest of the work can go ahead while the decision is reviewed.
   and the `Blocked: D-N` lines are removed. A later answer that
   reverses one is a new entry naming the entry it replaces; the old
   entry's state says so.
-- IDs are never reused; the next new decision is **D-185**.
+- IDs are never reused; the next new decision is **D-189**.
 
 ## Summary
 
@@ -237,9 +237,10 @@ the rest of the work can go ahead while the decision is reviewed.
 | D-182 | Does the server compress its own static files? | encoded | nothing |
 | D-183 | What policy do the rider pages send, and who writes the export's `_headers`? | encoded | nothing |
 | D-184 | What color is the text on a route's badge? | encoded | nothing |
-| D-185 | Are the Go host's own documents (`build`, `manifest`) typed and hashed by a module? | unanswered | the `build` schema's form |
+| D-185 | Are the Go host's own documents (`build`, `manifest`) typed and hashed by a module? | decided | nothing |
 | D-186 | What does a build that reads one version ahead write over a document in that version? | decided; built | nothing |
 | D-187 | Is performance held to fixed budgets? | decided; not built | nothing |
+| D-188 | Is the migration module cut by use? | decided | nothing |
 
 ## The trip model
 
@@ -650,8 +651,8 @@ Blocks: nothing.
 ### D-136 — What does the worklist call weak?
 State: Encoded provisionally.
 Context: a worklist for the service-change UI; withdrawn from it after
-the 2026-11-11 dogfood loop (no UI reads `network_findings` now —
-`docs/units/grade-debt.md`; its miss count misleads, QAF-103). The worklist
+the 2026-11-11 dogfood loop (no UI reads `network_findings` now; its
+miss count misleads, QAF-103). The worklist
 gathers findings a change can resolve; each kind needs a line between
 "look at this" and "fine".
 Encoded (analysis `network_findings`, each threshold a parameter the
@@ -1431,7 +1432,7 @@ watchlist's v1→v2 — and only development stores hold their older
 versions. The user, 2026-11-13: "this is all pre deployment right now
 so there is no old schema compatibility to worry about." cap-migrate
 carries every chain into each assembly that links it (about 0.8 MB in
-service design; `docs/units/document-versioning.md`, "The migration module cut by use"), and the
+service design; D-188 keeps it whole), and the
 watchlist's v1 was why the kernel read two watchlist versions.
 Options:
 - Keep them (D-66 as encoded): nothing changes.
@@ -2285,7 +2286,7 @@ State: Decided.
 Answer: 2026-11-05 — freehand only for now: a planned street is drawn freehand on the pattern. A streets edit document stays an option if planners need walking or routing on planned streets.
 Context: a service change often serves streets that do not exist
 yet (a subdivision under construction, a new connector). Drawing a
-pattern on streets (`docs/units/streets-model.md`) can only follow
+pattern on streets (`docs/units/ui-stops.md` item 5) can only follow
 streets the streets document has. A pattern's committed alignment
 is geometry and never references the streets document, so a
 pattern can always be drawn freehand.
@@ -2913,9 +2914,8 @@ State: Decided.
 Answer: 2026-11-03 — "Retire it now": delete `/app.html` and its host
 layer; anything only it answered becomes a gap recorded in a unit.
 Why: `docs/architecture/web.md`, Why, "Every page is a generated UI".
-Blocks: nothing. The gaps it left are lines in
-`docs/units/grade-debt.md` ("Not read by a UI"), paid by
-`ui-disruptions` and `ui-runcut`; the migrate/rollback pin is
+Blocks: nothing. The gaps it left are paid by `ui-disruptions` and
+`ui-runcut`; the migrate/rollback pin is
 `docs/units/document-versioning.md`'s browser e2e.
 
 ### D-70 — How do the module runtime's bounds default?
@@ -3377,6 +3377,8 @@ Options:
   pre-upgrade head; commits made since are replayed through the old
   build or lost. Simplest code; it can lose edits.
 Blocks: rollback in `docs/units/document-versioning.md`.
+Amended: 2026-11-18 by D-188. The migration module stays whole for
+now: it is not cut into operational and archive pieces.
 
 ### D-80 — Where do retired build artifacts live?
 State: Decided.
@@ -3781,7 +3783,14 @@ Blocks: the review UI's title and id.
 
 
 ### D-185 — Are the Go host's own documents (`build`, `manifest`) typed and hashed by a module?
-State: Unanswered.
+State: Decided.
+Answer: 2026-11-18 — keep them host-owned for now. The user: "leave
+what the go host is handling for now, we can revisit the potential
+drift later." The `build` document keeps its hand-written schema in
+`server/schemas/`, held to the Go type by the Go reflection test, and
+builds keep Go's bytes as their identity. The manifest's schema stays
+the HTTP contract's. A later change that types them in Rust is a new
+entry naming this one.
 Context: the server writes a `build` document for each release
 (`server/builds.go`; `docs/FORMATS.md`, "Builds"). It lists the files the
 pages load (path, `build_file` blob, content type) and the modules the
@@ -3805,9 +3814,7 @@ Options:
   canonical document and its hash. The commit order (files, document,
   recheck) and rollback stay. Every committed build hashes differently
   once, which touches only development stores.
-Blocks: the `build` schema's form in `docs/units/document-versioning.md`,
-"The Go host's own documents" (the hand-written schema stands until
-this is answered).
+Blocks: nothing.
 
 ### D-186 — What does a build that reads one version ahead write over a document in that version?
 State: Decided.
@@ -3863,3 +3870,20 @@ the budgets.
 Why: `docs/architecture/updates-offline.md`, Why, "Costs are measured,
 not budgeted".
 Blocks: nothing. Built in `docs/units/perf-harness.md`.
+
+### D-188 — Is the migration module cut by use?
+State: Decided.
+Answer: 2026-11-18 — not now. The user: "i don't think we need to
+split cap migrate for now." cap-migrate stays one capability with
+every chain. Service design and service change link it, the server
+hosts it, and ride-now fetches it alone only for a stored watchlist
+older than its board reads (`fetched_ops`). Amends D-79's cut by use.
+Context: D-79 cut the migration module into operational pieces, each
+linked only where its documents arrive, and one archive piece holding
+every chain. cap-migrate carries the network's, the edit document's,
+and the watchlist's chains, about 0.8 MB in service design's assembly.
+Options:
+- Cut it by use now (D-79 as encoded).
+- Keep it whole for now, and cut it when its size or a new chain
+  makes the cost matter.
+Blocks: nothing.

@@ -77,7 +77,7 @@ that keep the bucket the one record.
    changed since R, so a device's sync is bounded by changes, not by
    history. Where projections run — the server, a read tier, a CDN —
    is the deployment's; the contract is this repo's. The first: the
-   stops as GeoJSON for a GIS, the stops on a date, and the pages'
+   stops for a GIS (GeoJSON for a date, JSON-FG over a range), the stops on a date, and the pages'
    incremental sync of edits, stops and requests.
 5. **Permissions per change, restricted reads** (restricted reads
    Blocked: D-168). The receive path knows which records a write
@@ -90,21 +90,6 @@ that keep the bucket the one record.
 6. **The rebuild drill.** A gate drops every projection, rebuilds each
    from the bucket, and compares by hash. A store that cannot pass it
    has become a record.
-
-## Deferred, until a workload asks
-
-- **Event tables.** High-volume append data (TIDES, AVL, APC,
-  heartbeat history) as Parquet with an open table format (Apache
-  Iceberg) on the same bucket, committed through a pointer — the same
-  design as the record, built for rows, and queryable in place.
-- **A transactional engine in front of one collection**, only where
-  rules across records under sustained contention outrun the CAS and
-  its retry (work bidding is the likely first; [ui-work-bid.md](ui-work-bid.md)).
-  It holds working state, writes through to the collection before
-  acknowledging, and passes the rebuild drill.
-- **Checkpoints** in long pointer logs and an incremental `store
-  verify` and `gc`, once a real account's listings measure the need
-  ([store-durability.md](store-durability.md), item 1).
 
 ## Done when
 

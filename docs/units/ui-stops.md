@@ -46,8 +46,10 @@ a plan only says which stops its service visits.
    stop serving it or opens it on the Stops stage. With no streets
    document the line is drawn freehand (D-31). What a longer or shorter
    line does to running time: nothing. The stage shows the change in
-   length, and the planner uses `adjust_running_time` (D-143). This is item 4 of
-   [streets-model.md](streets-model.md); that item closes with this one.
+   length, and the planner uses `adjust_running_time` (D-143). The trace, the
+   streets to confirm, and the commit are on the bus (cap-streets
+   `route`'s `to_confirm`, `crates/transit-streets/tests/bus_profile_law_test.rs`;
+   author `draw_alignment`). What is left is the gesture.
 
 ## Done when
 

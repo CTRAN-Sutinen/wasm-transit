@@ -53,7 +53,7 @@ feed's numbers are already extracted (`scenarios.csv`,
 | A frequency change on a running route | **No.** Not built (QAF-90; D-54 decided) |
 | Service on a day the route does not run | **No.** QAF-118 |
 | A route renamed or retired | **No.** QAF-120 |
-| A route rerouted | **No.** No gesture draws a pattern along the streets (`docs/units/streets-model.md` item 4) |
+| A route rerouted | **No.** No gesture draws a pattern along the streets (`docs/units/ui-stops.md` item 5) |
 
 ## The sessions
 

@@ -10,9 +10,7 @@ A generated UI for cutting a service plan's work, in two layers:
   library beside the network (D-16). The work-rule document is on
   the bus; the runs cut is [runs-layer.md](runs-layer.md).
 
-It follows the generated-UI procedure (`docs/architecture/generated-uis.md`). The blocking questions are at step 2; the runs
-questions are at step 2 with no op to inventory, so their session
-logs the layer's op gaps.
+It follows the generated-UI procedure (`docs/architecture/generated-uis.md`). The blocking questions are at step 2.
 
 ## Questions (blocking), in the order asked
 
@@ -33,20 +31,12 @@ logs the layer's op gaps.
 | 4 | author `apply` (`add_block`, `add_block_trip`, `remove_block_trip`, `set_layover`), runcut `suggest_blocks` | op exists: a suggested chaining, adopted through its edits |
 | 5 | none | gap: deadhead estimation over cap-streets (`docs/ROADMAP.md` 2, 6) |
 
-## Questions (runs), in the order asked
+## Questions (runs)
 
-6. Which runs does a cut make from these blocks, and how many?
-7. For each run: its pieces, report and clear times and places,
-   platform time, and pay.
-8. Is each run legal under the work rules?
-9. Cut, join, or move a piece, and see what it does to the runs.
-
-| # | state |
-|---|---|
-| 6 | gap, QAF-11 (no runs cut); block structure, QAF-15 |
-| 7 | gap, QAF-14 (no run view); garages, QAF-17 |
-| 8 | gap, QAF-12 (the work-rule document exists; nothing judges a run) |
-| 9 | gap: no run edits (they follow the runs document) |
+The runs questions (which runs a cut makes, each run's pieces, times,
+and pay, whether a run is legal, and run edits) have no op yet. They
+are [runs-layer.md](runs-layer.md), steps 1 to 4, and this UI reads
+them when they land.
 
 ## Done when
 

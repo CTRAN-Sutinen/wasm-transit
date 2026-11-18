@@ -38,17 +38,16 @@ that is the codec's (step 7).
    the rules (QAF-12: the rules now have a home, but nothing judges a
    run yet).
 4. **Run edits.** Cut, join, or move a piece. These are edits to the
-   runs document, which follows the network's edit discipline
-   (`docs/units/ui-runcut.md` question 9).
+   runs document, which follows the network's edit discipline.
 5. **Suggested blocking, extended.** Today a suggestion keeps
    authored blocks as they are and chains only the trips no block
    carries, into new blocks, with no deadheads (D-109). Still open:
    appending a trip to an authored block's idle end, a full
    re-blocking, chaining frequency trips, and deadheads once a base
    exists (QAF-17).
-6. **A page.** The engine has no `work_rules` loader, and no UI holds
-   a work-rule document or reads recovery or suggested blocking
-   (`docs/units/grade-debt.md`). This lands with
+6. **A page.** The engine has no `work_rules` loader. No UI holds a
+   work-rule document, shows a wait's recovery (runcut `recovery`), or
+   reads author `apply`'s `work_rules_hash`. This lands with
    `docs/units/ui-runcut.md`.
 
 7. **The GTFS + TODS codec** (D-126): export the network with its

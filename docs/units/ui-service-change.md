@@ -40,7 +40,7 @@ variation as information, never as an error.
   and timepoints. A click picks a stop.
 - **A pattern drawn along the streets.** The ops exist (author
   `draw_alignment`, streets `route`). The gesture is
-  `docs/units/streets-model.md` item 4.
+  [ui-stops.md](ui-stops.md) item 5.
 - **The proposal's hours against a budget.** Blocked: D-108.
 - **The pick previewed as a rider will see it.** Before publishing,
   the rider pages open as of the pick's date, over the pick, not over

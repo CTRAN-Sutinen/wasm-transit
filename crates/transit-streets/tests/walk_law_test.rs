@@ -1,7 +1,7 @@
 //! The walk laws: how long a rider walks between two stops, along the
 //! streets.
 //!
-//! The intent they encode (docs/units/streets-model.md, the walk
+//! The intent they encode (docs/architecture/crates.md, transit-streets, the walk
 //! table; the user's answers to D-25 and D-26):
 //!
 //! * **Walks follow the streets document**, whatever source filled it.

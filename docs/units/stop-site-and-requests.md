@@ -32,23 +32,6 @@ about the stop.
    configured, and the page's controls are built
    (`docs/architecture/adjacent-systems.md`).
 
-## Deferred
-
-- **The stops page without a server's store, or offline** (the user,
-  2026-11-12, deferred; 2026-11-13: "in the future we will definitely
-  want to build full offline support", after the field forms here,
-  D-158): a copy of the stops document on the device that every edit
-  lands in first; begun from the deployment's document, the network it
-  serves, a GTFS zip loaded in the page, or a stops file opened; saved
-  to a file; sent to the deployment when its store answers; the page
-  installed to work offline; several stops surveyed with no signal and
-  sent later. Open: when the deployment's document moved on while
-  edits waited — the edits replayed one by one onto it, each checked,
-  the ones that no longer fit listed (recommended), or one of the two
-  documents chosen.
-- **Sharing the stops with a GIS**: GeoJSON for a date, JSON-FG over a
-  range.
-
 ## Done when
 
 - A dogfood session on C-TRAN fills a survey and a request on a phone
